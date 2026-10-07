@@ -89,7 +89,14 @@ it('distinguishes an execution that did not start from a completed run', () => {
       errorType: 'Error',
       errorCode: 'MODULE_NOT_FOUND',
     },
-    diagnostics: { directory: '/tmp/run', durationMs: 0, timeoutMs: 30_000, exitCode: null },
+    diagnostics: {
+      directory: '/tmp/run',
+      durationMs: 0,
+      timeoutMs: 30_000,
+      exitCode: null,
+      started: false,
+      command: undefined,
+    },
   };
 
   const text = runContext(behavior, observation(report));
@@ -104,6 +111,8 @@ it('shows bounded process diagnostics and readable artifact paths', () => {
     kind: 'timeout',
     diagnostics: {
       directory: '/tmp/run',
+      started: true,
+      command: ['vitest'],
       durationMs: 120_000,
       timeoutMs: 120_000,
       exitCode: null,

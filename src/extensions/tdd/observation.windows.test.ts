@@ -25,7 +25,7 @@ it('accepts native Windows separators in literal relative test paths', async () 
   );
 
   expect(runTests).toHaveBeenCalledWith(
-    expect.objectContaining({ files: ['tests/value.test.ts'], scope: 'changed' }),
+    expect.objectContaining({ files: ['tests/value.test.ts'], scope: 'focused' }),
   );
 });
 

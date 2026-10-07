@@ -206,6 +206,8 @@ it.for(['ordinary', 'long'] as const)(
 
     const diagnostics = {
       directory,
+      started: true,
+      command: ['vitest'],
       durationMs: 10,
       timeoutMs: 30_000,
       exitCode: size === 'ordinary' ? 0 : 1,

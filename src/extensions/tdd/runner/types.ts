@@ -1,14 +1,18 @@
-type RunTestsScope = 'changed' | 'file' | 'all';
-
-export interface RunTestsInput {
-  scope: RunTestsScope;
-  cwd: string;
-  path?: string;
-  testNames?: string[];
-  files?: string[];
-  verificationArgv?: readonly string[];
-  signal?: AbortSignal | undefined;
-}
+export type RunTestsInput =
+  | {
+      scope: 'focused';
+      cwd: string;
+      verificationArgv: readonly string[];
+      files: string[];
+      testNames: string[];
+      signal?: AbortSignal | undefined;
+    }
+  | {
+      scope: 'full';
+      cwd: string;
+      verificationArgv: readonly string[];
+      signal?: AbortSignal | undefined;
+    };
 
 export interface TestFailure {
   file: string;
@@ -51,8 +55,8 @@ export interface RunDiagnostics {
   directory: string;
   durationMs: number;
   timeoutMs: number;
-  started?: boolean;
-  command?: string[] | undefined;
+  started: boolean;
+  command: string[] | undefined;
   exitCode: number | null;
   stdout?: DiagnosticFile | undefined;
   stderr?: DiagnosticFile | undefined;
@@ -70,7 +74,7 @@ export type RunnerResult = { diagnostics?: RunDiagnostics } & (
       tests: TestResult[];
       truncated: boolean;
     }
-  | { kind: 'compile-error'; message: string; stdout: string; stderr: string; tests: TestResult[] }
+  | { kind: 'compile-error'; message: string; tests: TestResult[] }
   | { kind: 'no-tests-collected'; tests: TestResult[]; message?: string }
   | { kind: 'timeout' }
   | { kind: 'cancelled' }
@@ -82,11 +86,11 @@ export interface SpawnResult {
   stderr: string;
   code: number | null;
   timedOut: boolean;
-  command?: string[];
-  started?: boolean;
-  stdoutTruncated?: boolean;
-  stdoutBytes?: number;
-  stderrBytes?: number;
+  command: string[];
+  started: boolean;
+  stdoutTruncated: boolean;
+  stdoutBytes: number;
+  stderrBytes: number;
 }
 
 interface SpawnOptions {

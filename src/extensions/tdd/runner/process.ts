@@ -23,7 +23,7 @@ interface SettleRequest {
   resolve: (result: SpawnResult) => void;
   code: number | null;
   command: string[];
-  clearTimer: () => void;
+  release: () => void;
 }
 
 const bytesPerKibibyte = 1024;
@@ -86,14 +86,14 @@ const killChild = (child: ChildProcess, useProcessGroup: boolean): void => {
 };
 
 const settleSpawn = (request: SettleRequest): void => {
-  const { state, child, resolve, code, command, clearTimer } = request;
+  const { state, child, resolve, code, command, release } = request;
 
   if (state.settled) {
     return;
   }
 
   state.settled = true;
-  clearTimer();
+  release();
   state.stdout += state.stdoutDecoder.end();
   state.stderr += state.stderrDecoder.end();
 
@@ -133,19 +133,6 @@ const captureStderr = (state: SpawnState, chunk: Buffer): void => {
   state.stderrBytes += chunk.length;
 };
 
-const captureSpawnError = (state: SpawnState, error: Error): void => {
-  const message = Buffer.from(error.message);
-
-  state.stderr = appendChunk(
-    message,
-    state.stderrDecoder,
-    state.stderr,
-    maximumTotalBytes - state.stderrBytes,
-  );
-
-  state.stderrBytes += message.length;
-};
-
 export const defaultSpawn: SpawnCommand = (command, argumentsList, options) =>
   new Promise<SpawnResult>((resolve) => {
     // detached lets the timeout path signal the whole process group on POSIX.
@@ -171,6 +158,8 @@ export const defaultSpawn: SpawnCommand = (command, argumentsList, options) =>
       stderrDecoder: new StringDecoder('utf8'),
     };
 
+    const abortListener = new AbortController();
+
     const settle = (code: number | null) => {
       settleSpawn({
         state,
@@ -178,8 +167,10 @@ export const defaultSpawn: SpawnCommand = (command, argumentsList, options) =>
         resolve,
         code,
         command: commandLine,
-        clearTimer: () => {
+        release: () => {
           clearTimeout(timer);
+          // The signal can outlive this run; a listener left on it would kill this group later.
+          abortListener.abort();
         },
       });
     };
@@ -210,13 +201,16 @@ export const defaultSpawn: SpawnCommand = (command, argumentsList, options) =>
     child.on('close', settle);
 
     child.on('error', (error) => {
-      captureSpawnError(state, error);
+      captureStderr(state, Buffer.from(error.message));
       settle(null);
     });
 
     if (options.signal?.aborted === true) {
       abort();
     } else {
-      options.signal?.addEventListener('abort', abort, { once: true });
+      options.signal?.addEventListener('abort', abort, {
+        once: true,
+        signal: abortListener.signal,
+      });
     }
   });

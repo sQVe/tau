@@ -1,7 +1,6 @@
 import { readFile, rm } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
 
-import { defaultTddConfig } from '../config.js';
 import { saveDiagnostics } from './diagnostics.js';
 import { defaultSpawn } from './process.js';
 import { defaultResolveVitest, explainSessionCwd, resolutionFailure } from './resolution.js';
@@ -276,18 +275,18 @@ const collectFailures = (
 const toFilterArgument = (path: string) => (path.startsWith('-') ? `./${path}` : path);
 
 const scopedPaths = (input: RunTestsInput): string[] => {
-  const paths = input.scope === 'file' ? [input.path ?? ''] : (input.files ?? []);
+  const paths = input.scope === 'focused' ? input.files : [];
 
   return paths.filter((path) => path.trim().length > 0);
 };
 
 const buildArguments = (input: RunTestsInput, outputFile: string): string[] | null => {
   const runnerArguments: string[] = [
-    ...(input.verificationArgv ?? defaultTddConfig.verificationArgv).slice(1),
+    ...input.verificationArgv.slice(1),
     `--outputFile=${outputFile}`,
   ];
 
-  if (input.scope !== 'all') {
+  if (input.scope === 'focused') {
     const paths = scopedPaths(input);
 
     if (paths.length === 0) {
@@ -295,36 +294,27 @@ const buildArguments = (input: RunTestsInput, outputFile: string): string[] | nu
     }
 
     runnerArguments.push(...paths.map(toFilterArgument));
-  }
-
-  if (input.testNames !== undefined) {
     runnerArguments.push('-t', exactNamePattern(input.testNames));
   }
 
   return runnerArguments;
 };
 
-export const defaultDeps = (scope: RunTestsInput['scope'] = 'changed'): RunnerDeps => ({
+export const defaultDeps = (scope: RunTestsInput['scope'] = 'focused'): RunnerDeps => ({
   resolveVitest: defaultResolveVitest,
   spawn: defaultSpawn,
-  timeoutMs: scope === 'all' ? fullTimeoutMilliseconds : defaultTimeoutMilliseconds,
+  timeoutMs: scope === 'full' ? fullTimeoutMilliseconds : defaultTimeoutMilliseconds,
 });
 
-const compileErrorResult = (
-  result: SpawnResult,
-  tests: TestResult[],
-  message: string,
-): RunnerResult => ({
+const compileErrorResult = (tests: TestResult[], message: string): RunnerResult => ({
   kind: 'compile-error',
   message,
   tests,
-  stdout: result.stdout,
-  stderr: result.stderr,
 });
 
 const unparseableReportResult = (input: RunTestsInput, result: SpawnResult): RunnerResult => {
   if (result.code !== 0) {
-    return compileErrorResult(result, [], 'no parseable report from vitest');
+    return compileErrorResult([], 'no parseable report from vitest');
   }
 
   const output = result.stderr.length > 0 ? result.stderr : result.stdout;
@@ -371,7 +361,8 @@ const classifyReport = (
   report: VitestReport,
   version: string,
 ): RunnerResult => {
-  const tests = collectTests(report, selects(input.testNames), version);
+  const testNames = input.scope === 'focused' ? input.testNames : undefined;
+  const tests = collectTests(report, selects(testNames), version);
   const total = report.numTotalTests ?? 0;
   const failed = report.numFailedTests ?? 0;
   const files = report.testResults ?? [];
@@ -388,10 +379,10 @@ const classifyReport = (
   }
 
   if (result.code !== 0) {
-    return compileErrorResult(result, tests, 'vitest did not complete successfully');
+    return compileErrorResult(tests, 'vitest did not complete successfully');
   }
 
-  if (input.testNames !== undefined && tests.length === 0) {
+  if (input.scope === 'focused' && tests.length === 0) {
     return noFilterMatchResult(input, report, tests, version);
   }
 
@@ -477,7 +468,7 @@ export const runTests = async (
         durationMs: Math.round(performance.now() - started),
         timeoutMs: dependencies.timeoutMs,
         command: result?.command,
-        started: result?.started ?? result !== undefined,
+        started: result?.started ?? false,
         exitCode: result?.code ?? null,
         ...('resolution' in report ? { resolution: report.resolution } : {}),
       },
