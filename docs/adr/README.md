@@ -120,3 +120,4 @@ line that links to the replacement.
 - [0093: Enable skill tools from session start](./0093-enable-skill-tools-from-session-start.md)
 - [0094: Compose PR publication evidence](./0094-compose-pr-publication-evidence.md)
 - [0095: Keep repository routing in tracker config](./0095-keep-repository-routing-in-tracker-config.md)
+- [0096: Create and keep linear stacks with gh stack](./0096-create-and-keep-linear-stacks-with-gh-stack.md)

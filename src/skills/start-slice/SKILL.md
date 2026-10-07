@@ -77,8 +77,24 @@ Workers then carry out the agent tickets.
    - Read its dependencies with `linear issue relation list <slice>`. Keep the lines of the form
      `<slice> blocked-by <other>`.
    - The slice is ready when it is not merged, its state type is not `canceled`, and every
-     `blocked-by` slice is merged. If its state type is `completed` but no linked PR is merged, stop
-     and ask the user. If it is not ready for another reason, stop and report what blocks it.
+     `blocked-by` slice is merged or open in one chain. If its state type is `completed` but no
+     linked PR is merged, stop and ask the user. If it is not ready for another reason, stop and
+     report what blocks it.
+   - An unmerged blocker counts only when one of its attachment URLs is a pull request that
+     `gh pr view <url> --json state,headRefName,baseRefName` returns as `OPEN`. Run the GitHub reads
+     of the [stack skill](../stack/SKILL.md)'s stack check on each such PR's branch.
+   - Open blockers are in one chain when one GitHub stack holds them all, or when only one blocker
+     is open. The parent is the open blocker highest in that stack. Stop and report when open
+     blockers sit in different stacks, or when several are open and no stack holds them.
+   - When an open PR other than this slice's is based on the parent, or the parent's GitHub stack
+     lists a PR above it, the parent already has a branch above it. A stack cannot fork. When no
+     GitHub stack holds that PR, stop and report the chain. Otherwise ask with `ask_user_question`:
+     wait until the parent merges, recommended, or stack on the top of that stack instead. Stacking
+     there makes this slice depend on the slices above the parent too. On wait, the slice is not
+     ready. Otherwise that top branch becomes the parent.
+   - When `git worktree list --porcelain` shows the parent branch checked out in another worktree,
+     that worktree owns the stack. Stop, and offer to start the slice there with the
+     [handover skill](../handover/SKILL.md).
 
 3. Read the slice with `linear issue view <slice> --json --no-pager`. Note its `branchName`, team,
    and `## Acceptance`. If `$slicedir/start.md` exists, read it and every body file it names. Then
@@ -93,9 +109,14 @@ Workers then carry out the agent tickets.
    stop. When its body file is missing or differs, save its description as the body file, so the
    worker gets the same task as the ticket.
 
-4. Choose the base. Run `git fetch origin`, then use the remote's default branch from
-   `git symbolic-ref --short refs/remotes/origin/HEAD`, such as `origin/main`. If that ref is
-   missing, read the default branch from `git ls-remote --symref origin HEAD`.
+4. Choose the base. Run `git fetch origin`, then find the remote's default branch from
+   `git symbolic-ref --short refs/remotes/origin/HEAD`. If that ref is missing, read it from
+   `git ls-remote --symref origin HEAD`.
+   - Without a parent, the base is the default branch's remote-tracking branch, such as
+     `origin/<default branch>`.
+   - With a parent from step 2, the slice starts stacked. Its base is `origin/<parent>`. Its trunk
+     is the base of the bottom PR in the parent's GitHub stack, or the default branch when no stack
+     holds the parent.
 
 5. Read the code the slice touches in the tree the workers will use: the branch when
    `git rev-parse --verify --quiet refs/heads/<branchName>` finds it, otherwise the base. The
@@ -113,11 +134,14 @@ Workers then carry out the agent tickets.
 
 7. Preview and ask. Keep it to about 30 lines, without raw commands:
    - The slice, with the reason you picked it.
-   - The branch, its base, and whether the branch exists already.
+   - The branch, its base, and whether the branch exists already. For a stacked start, name the
+     parent's slice and PR, the trunk, and that the PR will target the parent branch. Name any
+     dependency that stacking on the top of the parent's stack adds.
    - Each agent ticket as `new` or `unchanged`, with its title and one line from its `## Outcome`.
    - Each acceptance criterion of the slice, with the agent ticket numbers that cover it.
    - The writes step 8 makes, numbered, one line each, such as
-     `Create branch eng-123-add-x from origin/main`, `Move ENG-123 to In Progress`, or
+     `Create branch eng-123-add-x from origin/<default branch>`,
+     `Create branch eng-124-add-y on eng-123-add-x with gh stack`, `Move ENG-123 to In Progress`, or
      `Create agent tickets 1-3 under ENG-123 in AI`.
 
    Approve with `ask_user_question`: approve, change the plan, or stop. After any change, write the
@@ -127,7 +151,9 @@ Workers then carry out the agent tickets.
    - Check that `git status --porcelain` prints nothing. If it prints anything, stop and report it.
    - Check that every one of your workers in the worktree is `stopped`, as the
      [stack skill](../stack/SKILL.md) checks before a switch. If one is not, stop and report it.
-   - Create the branch with `git switch --no-track -c <branchName> <base>`. If
+   - For a stacked start, create the branch on the parent with step 2 of the stack skill, passing
+     the trunk from step 4. If it stops, report what it found and stop.
+   - Otherwise create the branch with `git switch --no-track -c <branchName> <base>`. If
      `git rev-parse --verify --quiet refs/heads/<branchName>` shows it exists already, run
      `git switch <branchName>` instead.
    - Move the slice to In Progress as the tracker skill says.

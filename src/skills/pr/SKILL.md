@@ -48,12 +48,15 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
 
 ## Procedure
 
-1. Gather publication evidence with one read-only `codemode` script for both creates and updates.
-   Start it with `// @options: {"max_output_tokens": 4000}`. Filter before printing, print strings
-   as plain lines rather than result objects, and keep the output within that limit.
+1. Run the stack check of the [stack skill](../stack/SKILL.md) on the branch. Stop as it says for an
+   untracked or unknown result. For a tracked branch, note its parent.
+
+   Then gather publication evidence with one read-only `codemode` script for both creates and
+   updates. Start it with `// @options: {"max_output_tokens": 4000}`. Filter before printing, print
+   strings as plain lines rather than result objects, and keep the output within that limit.
    - Call the `pr` tool's `evidence` action. Pass the user-named remote as `remote`, when given.
-     Pass the user-named base, or the parent found by the [stack skill](../stack/SKILL.md), as
-     `base`. An open PR's base takes precedence. Pass the newest `.tau/workers/review-*` directory
+     Pass the user-named base, or the stack parent, as `base`. It wins over an open PR's base, so
+     the target and merge base follow the stack. Pass the newest `.tau/workers/review-*` directory
      saved for this branch as `review`, when one exists. Use saved review input or session evidence
      to check its branch; report unclear ownership as a gap rather than guessing.
    - The result has `target`, `branch`, `subjects`, `reuse`, `review`, `checks`, and `gaps`.
@@ -75,7 +78,8 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
    - Use `target.repository` as `--repo <repo>` for repository-scoped `gh` commands, `target.head`
      for the push remote and branch, and `target.mergeBase` as the merge base.
    - Use the open PR in `target.pr`. If it is null and `target.closedPrs` lists merged or closed
-     PRs, ask before continuing.
+     PRs, ask before continuing. When its `baseRefName` differs from `target.base.branch`, step 9
+     changes the PR's base.
    - Outside a stack, when the branch conflicts with the base or needs a base change for its checks,
      rebase it locally with the update-branch skill and tell the user. Do not ask to approve the
      rebase, even when the branch was already pushed. The update-branch question about a dirty
@@ -163,6 +167,7 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
    status, commits to push, and push command.
    - After a rebase in step 1 of a branch with a remote tip, say that the push is a force-push and
      show it with `--force-with-lease=refs/heads/<branch>:<old-tip>`.
+   - For an existing PR whose base changes, show the current base and the new one.
    - In a stack, list each branch to push with its local SHA and explain that each is force-pushed
      with a lease. Show the `gh stack link` command, or why step 9 cannot link.
    - Include the session report: commits made, comment removals, review and check sources, reviewer
@@ -177,19 +182,20 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      the stack skill instead. Stop and report a rejected push.
    - Create with `gh pr create`: specify approved base, head, title, and `--body-file`. Add
      `--draft` for approved draft status and `--head <owner>:<branch>` for a fork. Update with
-     `gh pr edit`. Change existing draft status with `gh pr ready`, adding `--undo` for draft.
-   - After creating a stacked PR, link with
+     `gh pr edit`, adding `--base <base>` when the base changes. Change existing draft status with
+     `gh pr ready`, adding `--undo` for draft.
+   - After creating a stacked PR, or updating one that no GitHub stack holds, link with
      `gh stack link --remote <remote> --base <trunk> <PR numbers, bottom to top>`. Keep `--base`;
      omitting it sets the bottom PR's base to the default branch. Never use `gh stack submit`, which
      publishes generated titles instead of approved ones.
    - `link` only appends to the top of a GitHub stack; it never removes PRs. Read the stack holding
      the PR below with
-     `gh api --hostname <host> "repos/<owner>/<name>/stacks?pull_request=<number>" --jq '.[0].pull_requests | map(.number)'`.
-     Pass its numbers, including merged PRs, then the new PR. If none exists, pass open PRs from
-     `gh stack view --json`. One open PR needs no link. If the new PR is not the local stack's top,
-     do not link; report GitHub's top-only limit.
-   - Read the remote stack again using the new PR's number. Check the passed numbers and their
-     order. `gh stack view --json` reads only the local stack and cannot confirm linking.
+     `gh api --hostname <host> "repos/<owner>/<name>/stacks?pull_request=<number>" --jq '(.[0].pull_requests // []) | map(.number)'`.
+     Pass its numbers, including merged PRs, then this PR. If it prints `[]`, pass open PRs from
+     `gh stack view --json`. One open PR needs no link. If this PR is not the local stack's top, do
+     not link; report GitHub's top-only limit.
+   - Read the remote stack again using this PR's number. Check the passed numbers and their order.
+     `gh stack view --json` reads only the local stack and cannot confirm linking.
 
 10. Check the published PR with the `pr` tool's `verify` action. Pass `$prdir` and the approved
     repository, PR number, title, base, and draft status. Stop if the call fails or shows a
