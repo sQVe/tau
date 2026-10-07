@@ -54,14 +54,17 @@ Use this skill when a branch belongs to a stack, or when another skill sends you
      `$(git rev-parse --git-dir)/gh-stack`, so a stack tracked in another worktree, or only on
      GitHub, does not show here. Read GitHub next:
      - The branch's open PR:
-       `gh pr list --repo <repo> --head <branch> --state open --json number,url,baseRefName`.
+       `gh pr list --repo <repo> --head <branch> --state open --json number,url,baseRefName,headRepositoryOwner,headRepository`.
+       `--head` matches the branch name in any fork. Keep only PRs whose head owner and repository
+       name are those of the repository the branch pushes to. More than one left means unknown.
      - Open PRs based on the branch:
        `gh pr list --repo <repo> --base <branch> --state open --json number,headRefName`.
      - For an open PR, the GitHub stack that holds it:
        `gh api --hostname <host> "repos/<owner>/<name>/stacks?pull_request=<number>" --jq '(.[0].pull_requests // []) | map(.number)'`.
        It prints `[]` when no stack holds the PR. A 404 means the repository has no stacked PRs.
      - When the PR's base is not the default branch, the open PR of that base:
-       `gh pr list --repo <repo> --head <baseRefName> --state open --json number,url`.
+       `gh pr list --repo <repo> --head <baseRefName> --state open --json number,url,headRepositoryOwner,headRepository`.
+       Keep only PRs from the base repository, since a PR's base branch lives there.
    - The result is untracked when a GitHub stack holds the PR, the PR's base has an open PR, or an
      open PR is based on the branch. When a GitHub stack holds it, import it with step 3 and run the
      check again. Otherwise stop and report the chain of PRs. Suggest
