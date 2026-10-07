@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai';
-import { expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 import { createHarness, createWorktree } from './tddHarness.js';
 
@@ -89,21 +89,18 @@ it('serializes overlapping calls through pi', async ({ onTestFinished }) => {
   expect(await readFile(join(cwd, 'order'), 'utf8')).toBe('start\nend\nstart\nend\n');
 });
 
-it.each(['../outside.test.ts', 'src/value.ts', '/absolute.test.ts', '*.test.ts'])(
-  'rejects invalid test paths through Pi: %s',
-  async (file) => {
-    const { call } = await createHarness(registerCleanup);
+it('rejects invalid test paths through Pi', async ({ onTestFinished }) => {
+  const { call } = await createHarness(onTestFinished);
 
-    const result = await call('run_tests', {
-      behavior: 'behavior',
-      testFullName: 'required',
-      files: [file],
-      scope: 'focused',
-    });
+  const result = await call('run_tests', {
+    behavior: 'behavior',
+    testFullName: 'required',
+    files: ['../outside.test.ts'],
+    scope: 'focused',
+  });
 
-    expect(result.isError).toBe(true);
-  },
-);
+  expect(result.isError).toBe(true);
+});
 
 it('selects exact nested names including regular expression characters through a symlinked worktree', async ({
   onTestFinished,

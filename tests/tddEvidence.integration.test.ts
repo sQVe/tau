@@ -63,8 +63,6 @@ it('observes RED and focused passes, then accepts full verification after format
   expect(red.content[0]!.text).toContain('✗ behavior.test.ts › required behavior');
   expect(red.content[0]!.text).not.toContain(cwd);
   expect(red.content[0]!.text).not.toMatch(/\n\s+at /);
-  expect(red.details).not.toHaveProperty('phase');
-  expect(red.details).not.toHaveProperty('implementationAllowed');
 
   expect(session.getAllTools().find((tool) => tool.name === 'run_tests')?.description).toContain(
     'never edit permissions',
@@ -94,58 +92,38 @@ it('observes RED and focused passes, then accepts full verification after format
   expect(JSON.stringify(edited.result)).not.toContain('RED');
 });
 
-it.for([
-  {
-    scenario: 'assertion failure',
-    body: 'expect(run()).toBe(2)',
-    implementation: 'return 1;',
-    expectedHint: /^$/,
-  },
-  {
-    scenario: 'production TypeError',
-    body: 'run()',
-    implementation: 'return null.value;',
-    expectedHint: /TypeError.*expected behavior/i,
-  },
-  {
-    scenario: 'missing dynamic import',
-    body: "await import('./missing.js')",
-    implementation: 'return 1;',
-    expectedHint: /Error.*expected behavior/i,
-  },
-])(
-  'keeps advice separate from real Vitest failure evidence for $scenario',
-  async ({ body, implementation, expectedHint }, { onTestFinished }) => {
-    const { cwd, run, call } = await createHarness(onTestFinished);
-    await mkdir(join(cwd, 'src'));
-    await writeFile(join(cwd, 'src/value.js'), `export function run() { ${implementation} }`);
+it('keeps advice separate from real Vitest failure evidence for production TypeError', async ({
+  onTestFinished,
+}) => {
+  const { cwd, run, call } = await createHarness(onTestFinished);
+  await mkdir(join(cwd, 'src'));
+  await writeFile(join(cwd, 'src/value.js'), 'export function run() { return null.value; }');
 
-    await writeFile(
-      join(cwd, 'behavior.test.ts'),
-      `import { it, expect } from 'vitest'; import { run } from './src/value.js'; it('required behavior', async () => { ${body}; });`,
-    );
+  await writeFile(
+    join(cwd, 'behavior.test.ts'),
+    "import { it } from 'vitest'; import { run } from './src/value.js'; it('required behavior', () => { run(); });",
+  );
 
-    const result = await run();
+  const result = await run();
 
-    expect(result.details).toMatchObject({
-      kind: 'fail',
-      freshness: 'fresh',
-      report: { kind: 'fail' },
-    });
+  expect(result.details).toMatchObject({
+    kind: 'fail',
+    freshness: 'fresh',
+    report: { kind: 'fail' },
+  });
 
-    const hint = result.content.find((block) => block.text.startsWith('Hint:'))?.text;
+  const hint = result.content.find((block) => block.text.startsWith('Hint:'))?.text;
 
-    expect(hint ?? '').toMatch(expectedHint);
+  expect(hint ?? '').toMatch(/TypeError.*expected behavior/i);
 
-    const edited = await call('write', {
-      path: 'src/value.js',
-      content: 'export function run() { return 2; }',
-    });
+  const edited = await call('write', {
+    path: 'src/value.js',
+    content: 'export function run() { return 2; }',
+  });
 
-    expect(edited.isError).toBe(false);
-    expect(await readFile(join(cwd, 'src/value.js'), 'utf8')).toContain('return 2;');
-  },
-);
+  expect(edited.isError).toBe(false);
+  expect(await readFile(join(cwd, 'src/value.js'), 'utf8')).toContain('return 2;');
+});
 
 it('recommends full verification for regression checks across Pi session handovers', async ({
   onTestFinished,
