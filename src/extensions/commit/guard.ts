@@ -5,7 +5,7 @@ import { parseShellCommands } from './shellCommands.js';
 import type { ShellCommand } from './shellCommands.js';
 
 export const commitGuardReason =
-  'Blocked git commit via bash. Use the `commit` tool instead. To amend the last commit when it is not a merge or root commit, run `git reset --soft HEAD~1`, then call `commit` with the files of both changes. To fix up an older commit, call `commit` for the fix, then mark it `fixup` in `git rebase -i` with `GIT_SEQUENCE_EDITOR`.';
+  'Blocked git commit via bash. Use the `commit` tool instead. To amend the last commit when it is not a merge or root commit, run `git reset --soft HEAD~1`, then call `commit` with the files of both changes. To fix up an older commit, call `commit` with the `fixup` field (kind `fixup`, `squash`, or `amend`) for the fix, then run `GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash <base>`.';
 
 // Used only when the command does not parse. It matches `commit` anywhere after `git` in a
 // statement, so it blocks mentions in quoted text too.

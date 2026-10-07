@@ -10,10 +10,12 @@ import type {
 import { defineTool } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../errors.js';
+import { buildFixupSubject, validateGroupMessage } from './autosquash.js';
 import {
   listStagedPaths,
   readIndexEntries,
   repositoryPathPrefix,
+  resolveFixupTarget,
   validateFileRequests,
 } from './gitCommands.js';
 import { executeGroup } from './groupExecution.js';
@@ -34,6 +36,11 @@ interface CommitToolRuntime {
   signal: AbortSignal | undefined;
 }
 
+type ResolvedGroup = CommitInput['groups'][number] & {
+  subject: string;
+  targetHash: string | undefined;
+};
+
 interface CommitToolResult {
   content: CommitSuccess['content'];
   details: { groups: CommitSuccess['details'][] };
@@ -42,7 +49,7 @@ interface CommitToolResult {
 export const commitToolGuidelines = [
   'When asked to commit, call commit with exact, ordered groups without asking for confirmation. It stages whole files, so assign each path to one group.',
   'Never bypass hooks through --no-verify, core.hooksPath, environment variables, or config changes. On failure, fix the cause; never add unrelated edits, other groups, or rejected sensitive paths to clear it.',
-  'Use a conventional commit subject. Do not commit sensitive files such as .env or SSH keys.',
+  'Use a conventional commit subject or the fixup field for autosquash. Do not commit sensitive files such as .env or SSH keys.',
 ];
 
 const cleanupTemporary = async (directory: string): Promise<string | null> => {
@@ -59,7 +66,12 @@ const validateCommitGroups = (parameters: CommitInput): void => {
   const assigned = new Set<string>();
 
   for (const group of parameters.groups) {
-    validateSubject(group.subject);
+    validateGroupMessage(group);
+
+    if (group.subject !== undefined) {
+      validateSubject(group.subject);
+    }
+
     normalizeBody(group.body ?? null);
     validatePaths(group.files);
 
@@ -94,6 +106,30 @@ const validateGroupFileRequests = async (
   await validateFileRequests(context.cwd, requests);
 };
 
+const resolveGroup = async (
+  runtime: CommitToolRuntime,
+  group: CommitInput['groups'][number],
+): Promise<ResolvedGroup> => {
+  if (group.subject !== undefined) {
+    return { ...group, subject: group.subject, targetHash: undefined };
+  }
+
+  if (group.fixup === undefined) {
+    throw new Error('A subject or fixup is required.');
+  }
+
+  const target = await resolveFixupTarget(
+    runtime.pi,
+    runtime.context.cwd,
+    group.fixup.target,
+    runtime.signal,
+  );
+
+  const subject = buildFixupSubject(group.fixup.kind, target.reference);
+
+  return { ...group, subject, targetHash: target.commitHash };
+};
+
 const prefixGroupContent = (
   items: CommitSuccess['content'],
   groupLabel: string,
@@ -106,7 +142,7 @@ const prefixGroupContent = (
 
 const runGroup = async (
   runtime: CommitToolRuntime,
-  group: CommitInput['groups'][number],
+  group: ResolvedGroup,
   committedGroups: CommitSuccess['details'][],
   groupCount: number,
 ): Promise<CommitSuccess> => {
@@ -116,6 +152,8 @@ const runGroup = async (
   try {
     outcome = await executeGroup({
       parameters: group,
+      subject: group.subject,
+      targetHash: group.targetHash,
       temporaryDirectory,
       pi: runtime.pi,
       context: runtime.context,
@@ -168,8 +206,12 @@ const executeCommitTool = async (
 
   await validateGroupFileRequests(runtime, parameters);
 
+  const resolvedGroups = await Promise.all(
+    parameters.groups.map((group) => resolveGroup(runtime, group)),
+  );
+
   /* oxlint-disable eslint/no-await-in-loop -- Each group must finish before the next stages its files. */
-  for (const [index, group] of parameters.groups.entries()) {
+  for (const [index, group] of resolvedGroups.entries()) {
     const groupLabel = `${index + 1}/${parameters.groups.length}`;
 
     try {

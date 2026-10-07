@@ -6,6 +6,7 @@ import type { ExecResult, ExtensionAPI, ExtensionContext } from '@earendil-works
 import { errorMessage, isMissingFile } from '../../errors.js';
 import {
   currentHead,
+  isCommitAncestor,
   listCommitPaths,
   readIndex,
   readIndexEntries,
@@ -40,6 +41,8 @@ interface StagedBefore {
 
 interface GroupExecution {
   parameters: CommitInput['groups'][number];
+  subject: string;
+  targetHash: string | undefined;
   temporaryDirectory: string;
   pi: Pick<ExtensionAPI, 'exec'>;
   context: ExtensionContext;
@@ -49,7 +52,6 @@ interface GroupExecution {
 
 interface GroupRun extends GroupExecution {
   messagePath: string;
-  subject: string;
   body: string | null;
   requestedFiles: Set<string>;
   prefix: string;
@@ -218,6 +220,15 @@ const snapshotStagedTree = async (run: GroupRun): Promise<boolean> => {
 
   if (run.signal?.aborted === true) {
     return false;
+  }
+
+  if (run.targetHash !== undefined) {
+    const targetInHistory =
+      head !== null && (await isCommitAncestor(run.pi, run.context.cwd, run.targetHash, head));
+
+    if (!targetInHistory) {
+      throw new Error('Fixup target is no longer an ancestor of the snapshot HEAD.');
+    }
   }
 
   await writeFile(run.messagePath, buildCommitMessage(run.subject, run.body), { mode: 0o600 });
@@ -436,7 +447,7 @@ const reportCommit = async (run: GroupRun, commitResult: ExecResult): Promise<Co
 };
 
 export const executeGroup = async (execution: GroupExecution): Promise<GroupOutcome> => {
-  const subject = execution.parameters.subject;
+  const subject = execution.subject;
   const body = normalizeBody(execution.parameters.body ?? null);
   const messagePath = join(execution.temporaryDirectory, 'message');
 

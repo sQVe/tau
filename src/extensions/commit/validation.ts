@@ -28,7 +28,22 @@ export const commitToolParameters = Type.Object({
   groups: Type.Array(
     Type.Object({
       files: Type.Array(Type.String(), { minItems: 1 }),
-      subject: Type.String(),
+      subject: Type.Optional(
+        Type.String({ description: 'Conventional subject; omit when using fixup.' }),
+      ),
+      fixup: Type.Optional(
+        Type.Object(
+          {
+            target: Type.String(),
+            kind: Type.Union([
+              Type.Literal('fixup'),
+              Type.Literal('squash'),
+              Type.Literal('amend'),
+            ]),
+          },
+          { description: 'Autosquash target and kind; use instead of subject.' },
+        ),
+      ),
       body: Type.Optional(Type.String()),
     }),
     { minItems: 1 },

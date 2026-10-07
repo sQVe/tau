@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { isMissingFile } from '../../errors.js';
+import { fixupSubjectSearchWord, selectFixupTargetReference } from './autosquash.js';
 import { unknownPaths } from './fileRequests.js';
 import type { FileRequest } from './fileRequests.js';
 import { normalizeRepositoryPath } from './validation.js';
@@ -32,6 +33,107 @@ export const runGit = async (
   }
 
   return result.stdout;
+};
+
+export const isCommitAncestor = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  workingDirectory: string,
+  target: string,
+  head: string,
+): Promise<boolean> => {
+  const ancestor = await pi.exec('git', ['merge-base', '--is-ancestor', target, head], {
+    cwd: workingDirectory,
+    timeout: defaultTimeoutMilliseconds,
+  });
+
+  if (ancestor.killed || ancestor.code > 1) {
+    throw new Error(`Could not check fixup target ancestry: ${ancestor.stderr || ancestor.stdout}`);
+  }
+
+  return ancestor.code === 0;
+};
+
+const scanFixupCandidates = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  workingDirectory: string,
+  subject: string,
+  signal: AbortSignal | undefined,
+): Promise<{ commitHash: string; subject: string }[]> => {
+  const word = fixupSubjectSearchWord(subject);
+
+  if (word === '') {
+    return [];
+  }
+
+  // History size is unbounded; cancellation replaces a fixed scan deadline.
+  const output = await runGit(
+    pi,
+    workingDirectory,
+    ['log', '--no-show-signature', '--format=%H%x00%s', '-F', `--grep=${word}`, 'HEAD', '--'],
+    { timeout: null, signal },
+  );
+
+  return output
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const separator = line.indexOf('\0');
+
+      if (separator === -1) {
+        throw new Error('Invalid fixup candidate record: missing subject separator.');
+      }
+
+      return { commitHash: line.slice(0, separator), subject: line.slice(separator + 1) };
+    });
+};
+
+export const resolveFixupTarget = async (
+  pi: Pick<ExtensionAPI, 'exec'>,
+  workingDirectory: string,
+  target: string,
+  signal: AbortSignal | undefined,
+): Promise<{ commitHash: string; reference: string }> => {
+  const resolved = await pi.exec(
+    'git',
+    ['rev-parse', '--verify', '--quiet', '--end-of-options', `${target}^{commit}`],
+    { cwd: workingDirectory, timeout: defaultTimeoutMilliseconds },
+  );
+
+  if (resolved.code !== 0 || resolved.killed) {
+    throw new Error(`Fixup target does not resolve to a commit: ${target}`);
+  }
+
+  const commitHash = resolved.stdout.trim();
+
+  if (!(await isCommitAncestor(pi, workingDirectory, commitHash, 'HEAD'))) {
+    throw new Error(`Fixup target is not an ancestor of HEAD: ${target}`);
+  }
+
+  const parents = await runGit(pi, workingDirectory, [
+    'log',
+    '--no-show-signature',
+    '-1',
+    '--format=%P',
+    commitHash,
+  ]);
+
+  if (parents.trim().split(' ').length > 1) {
+    throw new Error(`Fixup target is a merge commit: ${target}`);
+  }
+
+  const subject = await runGit(pi, workingDirectory, [
+    'log',
+    '--no-show-signature',
+    '-1',
+    '--format=%s',
+    commitHash,
+  ]);
+
+  const candidates = await scanFixupCandidates(pi, workingDirectory, subject, signal);
+
+  const reference = selectFixupTargetReference(subject.replace(/\n$/, ''), commitHash, candidates);
+
+  return { commitHash, reference };
 };
 
 export const readIndex = (
