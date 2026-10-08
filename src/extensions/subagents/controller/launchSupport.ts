@@ -3,11 +3,11 @@ import { isDeepStrictEqual } from 'node:util';
 import { requireHandover } from '../continuations.js';
 import { validateNative } from '../native.js';
 import type { Visibility } from '../placement.js';
-import { nativeIdentity } from '../profiles.js';
-import type { NativeIdentity } from '../profiles.js';
 import { findSuccessor, mayFollow, readTask, readTasks } from '../records.js';
 import type { UnreadableTask } from '../records.js';
 import type { Loadout, Task } from '../types.js';
+import { nativeIdentity } from './nativeSession.js';
+import type { NativeIdentity } from './nativeSession.js';
 
 export interface LaunchInput {
   task: string;

@@ -10,8 +10,11 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import askUserQuestionExtension from '../src/extensions/askUserQuestion/askUserQuestion.js';
 import { readWorkerActivity } from '../src/extensions/subagents/activity.js';
+import {
+  nativeIdentity,
+  seedSession,
+} from '../src/extensions/subagents/controller/nativeSession.js';
 import { fixtureLoadout } from '../src/extensions/subagents/fixtures/loadout.js';
-import { nativeIdentity, seedSession } from '../src/extensions/subagents/profiles.js';
 import { readPendingQuestion } from '../src/extensions/subagents/questionRecords.js';
 import {
   publish,

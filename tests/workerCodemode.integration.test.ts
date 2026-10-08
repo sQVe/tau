@@ -18,9 +18,9 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import { nestedChangeCallReason } from '../src/controlTools.js';
 import {
   nativeIdentity,
-  resolveProfile,
   seedSession,
-} from '../src/extensions/subagents/profiles.js';
+} from '../src/extensions/subagents/controller/nativeSession.js';
+import { resolveProfile } from '../src/extensions/subagents/profiles.js';
 import { publish, readEvent, validateTask } from '../src/extensions/subagents/records.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
