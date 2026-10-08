@@ -28,6 +28,7 @@ it.for(['tui', 'rpc'] as const)(
     });
 
     expect(failed.isError).toBe(true);
+    expect(JSON.stringify(failed.result)).not.toContain('Hint:');
     expect(notify).not.toHaveBeenCalled();
 
     const edited = await call('edit', {
@@ -52,27 +53,15 @@ it.for(['tui', 'rpc'] as const)(
     expect(JSON.stringify(written.result)).not.toContain('Hint:');
     expect(notify).toHaveBeenCalledTimes(1);
     expect(await readFile(join(cwd, 'src/value.ts'), 'utf8')).toBe('export const value = 3;');
+
+    const configuration = await call('write', {
+      path: 'package.json',
+      content: '{"type":"module"}',
+    });
+
+    expect(configuration.isError).toBe(false);
   },
 );
-
-it('allows production edits with one advisory hint and no persisted permission state', async ({
-  onTestFinished,
-}) => {
-  const { cwd, call } = await createHarness(onTestFinished);
-  const input = { path: 'src/value.ts', content: 'export const value = 1;' };
-  const written = await call('write', input);
-
-  expect(written.isError).toBe(false);
-  expect(JSON.stringify(written.result)).toContain('Hint:');
-  expect(JSON.stringify(written.result)).toContain('RED');
-  expect(await readFile(join(cwd, input.path), 'utf8')).toBe(input.content);
-
-  const repeated = await call('write', { ...input, content: 'export const value = 2;' });
-
-  expect(repeated.isError).toBe(false);
-  expect(JSON.stringify(repeated.result)).not.toContain('Hint:');
-  await expect(readFile(join(cwd, '.tau/state.json'))).rejects.toThrow(/ENOENT/);
-});
 
 it('keeps generated output quiet and hints stale after a layout edit through Pi', async ({
   onTestFinished,
@@ -133,39 +122,6 @@ it('counts a full pass without RED and resets observations in another Pi session
   expect(result.isError).toBe(false);
   expect(JSON.stringify(result.result)).toContain('RED');
   expect(JSON.stringify(result.result)).not.toContain('stale');
-});
-
-it('preserves edit details and errors and ignores old malformed evidence through Pi', async ({
-  onTestFinished,
-}) => {
-  const { cwd, call } = await createHarness(onTestFinished);
-
-  await mkdir(join(cwd, '.tau'));
-  await writeFile(join(cwd, '.tau/state.json'), 'corrupt');
-  await mkdir(join(cwd, 'src'));
-  await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
-
-  const failed = await call('edit', {
-    path: 'src/value.ts',
-    edits: [{ oldText: 'missing', newText: '2' }],
-  });
-
-  expect(failed.isError).toBe(true);
-  expect(JSON.stringify(failed.result)).not.toContain('Hint:');
-
-  const edited = await call('edit', {
-    path: 'src/value.ts',
-    edits: [{ oldText: '= 1', newText: '= 2' }],
-  });
-
-  expect(edited.isError).toBe(false);
-  expect(edited.result).toHaveProperty('details.diff');
-  expect(JSON.stringify(edited.result)).toContain('Hint:');
-  expect(await readFile(join(cwd, '.tau/state.json'), 'utf8')).toBe('corrupt');
-
-  expect(
-    (await call('write', { path: 'package.json', content: '{"type":"module"}' })).isError,
-  ).toBe(false);
 });
 
 it('appends production hints through a symlinked Pi cwd', async ({ onTestFinished }) => {

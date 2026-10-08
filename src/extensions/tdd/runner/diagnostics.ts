@@ -99,14 +99,14 @@ export const saveDiagnostics = async (
 
     diagnostics.stdout = await retain(() =>
       saveOutput(join(diagnostics.directory, 'stdout.txt'), result.stdout, maximumStdoutBytes, {
-        observedBytes: result.stdoutBytes ?? Buffer.byteLength(result.stdout),
-        truncated: result.stdoutTruncated ?? false,
+        observedBytes: result.stdoutBytes,
+        truncated: result.stdoutTruncated,
       }),
     );
 
     diagnostics.stderr = await retain(() =>
       saveOutput(join(diagnostics.directory, 'stderr.txt'), result.stderr, maximumTotalBytes, {
-        observedBytes: result.stderrBytes ?? Buffer.byteLength(result.stderr),
+        observedBytes: result.stderrBytes,
         truncated: false,
       }),
     );

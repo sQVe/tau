@@ -22,8 +22,25 @@ it('reports decoded byte counts and truncation without splitting UTF-8 character
     const text = decoder.write(raw) + decoder.end();
 
     const result = await saveDiagnostics(
-      { directory, durationMs: 1, timeoutMs: 30_000, exitCode: 0 },
-      { stdout: '', stderr: text, stderrBytes: raw.length, code: 0, timedOut: false },
+      {
+        directory,
+        durationMs: 1,
+        timeoutMs: 30_000,
+        exitCode: 0,
+        command: ['vitest'],
+        started: true,
+      },
+      {
+        stdout: '',
+        stderr: text,
+        stderrBytes: raw.length,
+        code: 0,
+        timedOut: false,
+        command: ['vitest'],
+        started: true,
+        stdoutTruncated: false,
+        stdoutBytes: 0,
+      },
     );
 
     const saved = await readFile(result.stderr!.path);
@@ -46,8 +63,25 @@ it('preserves other artifacts and the excerpt when individual saves fail', async
   await writeFile(join(directory, 'stdout.txt'), 'keep existing file');
 
   const result = await saveDiagnostics(
-    { directory, durationMs: 1, timeoutMs: 30_000, exitCode: 0 },
-    { stdout: 'useful stdout', stderr: 'useful stderr', code: 0, timedOut: false },
+    {
+      directory,
+      durationMs: 1,
+      timeoutMs: 30_000,
+      exitCode: 0,
+      command: ['vitest'],
+      started: true,
+    },
+    {
+      stdout: 'useful stdout',
+      stderr: 'useful stderr',
+      code: 0,
+      timedOut: false,
+      command: ['vitest'],
+      started: true,
+      stdoutTruncated: false,
+      stdoutBytes: 13,
+      stderrBytes: 13,
+    },
   );
 
   expect(result.error).toContain('not a regular file');

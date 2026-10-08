@@ -14,10 +14,14 @@ import { join } from 'node:path';
 
 import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { defaultTddConfig } from '../config.js';
+import { thrownErrorType } from '../observation.js';
 import { defaultSpawn, maximumStdoutBytes, maximumTotalBytes, nodeExecutable } from './process.js';
 import { defaultResolveVitest, extractBinPath } from './resolution.js';
 import type { RunTestsInput, RunnerDeps, SpawnCommand, SpawnResult } from './types.js';
 import { defaultDeps, maximumFailures, runTests as runTestsWithDiagnostics } from './vitest.js';
+
+const verificationArgv = defaultTddConfig.verificationArgv;
 
 const reportLimit = 8 * 1024 * 1024;
 const messageLimit = 300;
@@ -58,6 +62,9 @@ const fakeSpawn =
       timedOut: false,
       command: ['fake-runner', command, ...argumentsList],
       started: true,
+      stdoutTruncated: false,
+      stdoutBytes: Buffer.byteLength(result.stdout ?? ''),
+      stderrBytes: Buffer.byteLength(result.stderr ?? ''),
       ...result,
     };
   };
@@ -86,7 +93,7 @@ describe('runTests', () => {
     onTestFinished(() => chmod(root, 0o700));
 
     const run = runTestsWithDiagnostics(
-      { scope: 'all', cwd: '/repo' },
+      { scope: 'full', verificationArgv, cwd: '/repo' },
       makeDeps({
         spawn: async () => {
           await chmod(root, 0o500);
@@ -152,7 +159,13 @@ describe('runTests', () => {
       );
 
       const result = await runTests(
-        { scope: 'changed', cwd: '/repo', files: ['value.test.ts'], testNames: [fullname] },
+        {
+          scope: 'focused',
+          verificationArgv,
+          cwd: '/repo',
+          files: ['value.test.ts'],
+          testNames: [fullname],
+        },
         makeDeps({ resolveVitest: () => ({ path: '/fake/vitest.js', version }), spawn }),
       );
 
@@ -206,7 +219,8 @@ describe('runTests', () => {
 
       const result = await runTests(
         {
-          scope: 'changed',
+          scope: 'focused',
+          verificationArgv,
           cwd: '/repo',
           files: ['value.test.ts'],
           testNames: ['wrong nested name'],
@@ -301,7 +315,7 @@ describe('runTests', () => {
     ];
 
     const result = await runTests(
-      { scope: 'all', cwd: '/repo' },
+      { scope: 'full', verificationArgv, cwd: '/repo' },
       makeDeps({
         resolveVitest: () => ({ path: '/fake/vitest.js', version: '5.0.1' }),
         spawn: fakeSpawn({
@@ -348,7 +362,8 @@ describe('runTests', () => {
     );
 
     const result = await runTests({
-      scope: 'changed',
+      scope: 'focused',
+      verificationArgv,
       cwd,
       files: ['nested.test.ts'],
       testNames: ['outer suite inner [group] works (exact)'],
@@ -368,7 +383,8 @@ describe('runTests', () => {
     expect('failures' in result && result.failures).toHaveLength(1);
 
     const unmatched = await runTests({
-      scope: 'changed',
+      scope: 'focused',
+      verificationArgv,
       cwd,
       files: ['nested.test.ts'],
       testNames: ['outer suite > inner [group] > works (exact)'],
@@ -430,7 +446,7 @@ describe('runTests', () => {
       });
 
       const result = await runTests(
-        { scope: 'all', cwd: '/repo', signal: controller.signal },
+        { scope: 'full', verificationArgv, cwd: '/repo', signal: controller.signal },
         makeDeps({
           spawn: async (...argumentsList) => {
             const spawned = await spawn(...argumentsList);
@@ -483,7 +499,7 @@ describe('runTests', () => {
 
   it('reports each test duration in whole milliseconds when Vitest gives one', async () => {
     const result = await runTests(
-      { scope: 'all', cwd: '/repo' },
+      { scope: 'full', verificationArgv, cwd: '/repo' },
       makeDeps({
         spawn: fakeSpawn({
           report: {
@@ -527,7 +543,7 @@ describe('runTests', () => {
     };
 
     const result = await runTests(
-      { scope: 'all', cwd: '/repo' },
+      { scope: 'full', verificationArgv, cwd: '/repo' },
       makeDeps({
         spawn: fakeSpawn({
           report: rawReport,
@@ -564,15 +580,18 @@ describe('runTests', () => {
 
   it('keeps the verdict and reports artifact write failures without overwriting files', async () => {
     const result = await runTests(
-      { scope: 'all', cwd: '/repo' },
+      { scope: 'full', verificationArgv, cwd: '/repo' },
       makeDeps({
-        spawn: async (_command, argumentsList) => {
+        spawn: async (command, argumentsList) => {
           const reportPath = outputFileFrom(argumentsList);
 
           await writeFile(reportPath, JSON.stringify({ numTotalTests: 1, numPassedTests: 1 }));
           await writeFile(join(reportPath, '..', 'stdout.txt'), 'keep this content');
 
-          return { stdout: 'new output', stderr: '', code: 0, timedOut: false };
+          return fakeSpawn({ stdout: 'new output' })(command, argumentsList, {
+            cwd: '/repo',
+            timeoutMs: 30_000,
+          });
         },
       }),
     );
@@ -605,7 +624,7 @@ describe('runTests', () => {
       `,
       );
 
-      const result = await runTests({ scope: 'all', cwd });
+      const result = await runTests({ scope: 'full', verificationArgv, cwd });
 
       expect(result.kind).toBe('fail');
       const tests = 'tests' in result ? result.tests : [];
@@ -616,6 +635,102 @@ describe('runTests', () => {
         { file, fullname: 'suite skips', status: 'skipped' },
         { file, fullname: 'suite later', status: 'todo' },
       ]);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  }, 125_000);
+
+  it.for([
+    {
+      scenario: 'assertion failure',
+      body: 'expect(run()).toBe(2)',
+      implementation: 'return 1;',
+      expectedType: null,
+    },
+    {
+      scenario: 'production TypeError',
+      body: 'run()',
+      implementation: 'return null.value;',
+      expectedType: 'TypeError',
+    },
+    {
+      scenario: 'missing dynamic import',
+      body: "await import('./missing.js')",
+      implementation: 'return 1;',
+      expectedType: 'Error',
+    },
+  ])(
+    'classifies real Vitest failure messages for $scenario',
+    { timeout: 125_000 },
+    async (fixture) => {
+      const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-classification-'));
+
+      try {
+        await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
+
+        await writeFile(
+          join(cwd, 'value.js'),
+          `export function run() { ${fixture.implementation} }`,
+        );
+
+        await writeFile(
+          join(cwd, 'behavior.test.ts'),
+          `import { it, expect } from 'vitest'; import { run } from './value.js';
+        it('required behavior', async () => { ${fixture.body}; });`,
+        );
+
+        const result = await runTests({ scope: 'full', verificationArgv, cwd });
+
+        expect(result).toMatchObject({
+          kind: 'fail',
+          failures: [{ fullname: 'required behavior' }],
+        });
+
+        if (result.kind !== 'fail') {
+          throw new Error(`Expected fail, got ${result.kind}`);
+        }
+
+        const message = result.failures[0]!.message;
+
+        expect(thrownErrorType(message), message).toBe(fixture.expectedType);
+      } finally {
+        await rm(cwd, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it('reports a missing static import as a file failure without failing the selected test', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-import-'));
+    const file = join(cwd, 'behavior.test.ts');
+
+    try {
+      await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
+
+      await writeFile(
+        file,
+        "import { it } from 'vitest'; import './missing.js'; it('required behavior', () => {});",
+      );
+
+      const result = await runTests({
+        scope: 'focused',
+        verificationArgv,
+        cwd,
+        files: ['behavior.test.ts'],
+        testNames: ['required behavior'],
+      });
+
+      expect(result).toMatchObject({
+        kind: 'fail',
+        failures: [{ file, fullname: '<file>' }],
+      });
+
+      if (result.kind !== 'fail') {
+        throw new Error(`Expected fail, got ${result.kind}`);
+      }
+
+      expect(result.tests).not.toContainEqual(
+        expect.objectContaining({ fullname: 'required behavior', status: 'failed' }),
+      );
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -638,7 +753,7 @@ describe('runTests', () => {
       }),
     });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
@@ -667,7 +782,16 @@ describe('runTests', () => {
     });
 
     expect(
-      await runTests({ scope: 'all', cwd: '/repo', testNames: ['unmatched'] }, deps),
+      await runTests(
+        {
+          scope: 'focused',
+          verificationArgv,
+          cwd: '/repo',
+          files: ['a.test.ts'],
+          testNames: ['unmatched'],
+        },
+        deps,
+      ),
     ).toMatchObject({
       kind: 'no-tests-collected',
       tests: [],
@@ -683,17 +807,17 @@ describe('runTests', () => {
       }),
     });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     expect(result.kind).toBe('compile-error');
-    expect(result).toHaveProperty('stderr', 'Unhandled rejection');
+    expect(result).not.toHaveProperty('stdout');
+    expect(result).not.toHaveProperty('stderr');
+    expect(await readFile(result.diagnostics!.stderr!.path, 'utf8')).toBe('Unhandled rejection');
   });
 
   it.each<RunTestsInput>([
-    { scope: 'changed', cwd: '/repo' },
-    { scope: 'changed', cwd: '/repo', files: [] },
-    { scope: 'file', cwd: '/repo' },
-    { scope: 'file', cwd: '/repo', path: '' },
+    { scope: 'focused', verificationArgv, cwd: '/repo', files: [], testNames: [] },
+    { scope: 'focused', verificationArgv, cwd: '/repo', files: [''], testNames: [] },
   ])('returns no-tests-collected without spawning for an empty scope: %j', async (input) => {
     const deps = makeDeps({
       spawn: () => {
@@ -736,7 +860,7 @@ describe('runTests', () => {
         spawn: defaultSpawn,
       });
 
-      expect(await runTests({ scope: 'all', cwd }, deps)).toMatchObject({
+      expect(await runTests({ scope: 'full', verificationArgv, cwd }, deps)).toMatchObject({
         kind: 'pass',
         tests: [{ file: 'x'.repeat(maximumTotalBytes * 2), fullname: 'passes', status: 'passed' }],
       });
@@ -757,7 +881,7 @@ describe('runTests', () => {
         `import { it, expect } from 'vitest'; it('noisy test', () => { for (let index = 0; index < 100; index++) console.log('x'.repeat(100 * 1024)); expect(1).toBe(${expected}); });`,
       );
 
-      const result = await runTests({ scope: 'all', cwd });
+      const result = await runTests({ scope: 'full', verificationArgv, cwd });
 
       expect(result.kind).toBe(expected === 1 ? 'pass' : 'fail');
       expect(result.diagnostics?.stdout?.truncated).toBe(true);
@@ -788,7 +912,10 @@ describe('runTests', () => {
 
       const started = Date.now();
 
-      expect(await runTests({ scope: 'all', cwd }, deps)).toMatchObject({ kind: 'timeout' });
+      expect(await runTests({ scope: 'full', verificationArgv, cwd }, deps)).toMatchObject({
+        kind: 'timeout',
+      });
+
       expect(Date.now() - started).toBeLessThan(5_000);
     } finally {
       await rm(cwd, { recursive: true, force: true });
@@ -800,7 +927,7 @@ describe('runTests', () => {
     onTestFinished(() => rm(cwd, { recursive: true, force: true }));
 
     const result = await runTests(
-      { scope: 'all', cwd: join(cwd, 'missing') },
+      { scope: 'full', verificationArgv, cwd: join(cwd, 'missing') },
       makeDeps({ spawn: defaultSpawn }),
     );
 
@@ -814,7 +941,7 @@ describe('runTests', () => {
     const command = ['remote-node', '/remote/vitest.mjs', 'run'];
 
     const result = await runTests(
-      { scope: 'all', cwd: '/repo' },
+      { scope: 'full', verificationArgv, cwd: '/repo' },
       makeDeps({ spawn: fakeSpawn({ command, report: { numTotalTests: 1, numPassedTests: 1 } }) }),
     );
 
@@ -836,7 +963,7 @@ describe('runTests', () => {
       }),
     });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     expect(result.kind).toBe('runner-missing');
   });
@@ -861,7 +988,7 @@ describe('runTests', () => {
 
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 0 }) });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     expect(result).toMatchObject({
       kind: 'pass',
@@ -895,7 +1022,7 @@ describe('runTests', () => {
 
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
@@ -924,7 +1051,7 @@ describe('runTests', () => {
       }),
     });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     expect(result.kind).toBe('compile-error');
   });
@@ -933,7 +1060,7 @@ describe('runTests', () => {
     const report = { numTotalTests: 0, numFailedTests: 0, testResults: [] };
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 0 }) });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     expect(result.kind).toBe('no-tests-collected');
   });
@@ -954,7 +1081,7 @@ describe('runTests', () => {
 
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
@@ -978,7 +1105,7 @@ describe('runTests', () => {
 
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 0 }) });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     expect(result.kind).toBe('no-tests-collected');
   });
@@ -986,7 +1113,7 @@ describe('runTests', () => {
   it('returns timeout when spawn reports timedOut', async () => {
     const deps = makeDeps({ spawn: fakeSpawn({ timedOut: true, code: null }) });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     expect(result.kind).toBe('timeout');
   });
@@ -1007,7 +1134,7 @@ describe('runTests', () => {
 
     const deps = makeDeps({ spawn: fakeSpawn({ stdout: JSON.stringify(forged), code: 0 }) });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     expect(result.kind).toBe('fail');
     expect(result).toHaveProperty('tests', []);
@@ -1029,7 +1156,11 @@ describe('runTests', () => {
       });
 
       const started = Date.now();
-      const pending = runTests({ scope: 'all', cwd, signal: controller.signal }, deps);
+
+      const pending = runTests(
+        { scope: 'full', verificationArgv, cwd, signal: controller.signal },
+        deps,
+      );
 
       setTimeout(() => {
         controller.abort();
@@ -1042,10 +1173,36 @@ describe('runTests', () => {
     }
   });
 
+  it('sends no kill to a finished run when its signal aborts later', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const script = join(cwd, 'finish.cjs');
+
+    await writeFile(script, 'process.stdout.write("done");\n');
+
+    const controller = new AbortController();
+
+    const deps = makeDeps({
+      resolveVitest: () => ({ path: script, version: '4.1.11' }),
+      spawn: defaultSpawn,
+    });
+
+    await runTests({ scope: 'full', verificationArgv, cwd, signal: controller.signal }, deps);
+    const kill = vi.spyOn(process, 'kill').mockReturnValue(true);
+
+    onTestFinished(() => {
+      kill.mockRestore();
+    });
+
+    controller.abort();
+
+    expect(kill).not.toHaveBeenCalled();
+  });
+
   it('returns fail (never pass) when JSON parse fails on exit 0', async () => {
     const deps = makeDeps({ spawn: fakeSpawn({ stdout: '{not valid json', code: 0 }) });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     expect(result.kind).toBe('fail');
   });
@@ -1067,7 +1224,7 @@ describe('runTests', () => {
 
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     expect(result).toMatchObject({
       kind: 'fail',
@@ -1095,7 +1252,7 @@ describe('runTests', () => {
 
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     if (result.kind !== 'fail') {
       throw new Error('expected fail');
@@ -1128,7 +1285,7 @@ describe('runTests', () => {
 
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     if (result.kind !== 'fail') {
       throw new Error('expected fail');
@@ -1146,7 +1303,10 @@ describe('runTests', () => {
     });
 
     expect(
-      await runTests({ scope: 'changed', cwd: '/repo', files: ['', ' '] }, deps),
+      await runTests(
+        { scope: 'focused', verificationArgv, cwd: '/repo', files: ['', ' '], testNames: [] },
+        deps,
+      ),
     ).toMatchObject({
       kind: 'no-tests-collected',
       tests: [],
@@ -1164,23 +1324,32 @@ describe('runTests', () => {
     };
 
     const deps = makeDeps({
-      spawn: async (_command, args) => {
-        captured = args;
-        await writeFile(outputFileFrom(args), JSON.stringify(report));
+      spawn: async (command, argumentsList) => {
+        captured = argumentsList;
+        await writeFile(outputFileFrom(argumentsList), JSON.stringify(report));
 
-        return { stdout: '', stderr: '', code: 0, timedOut: false };
+        return fakeSpawn({})(command, argumentsList, { cwd: '/repo', timeoutMs: 30_000 });
       },
     });
 
     await runTests(
-      { scope: 'changed', cwd: '/repo', files: ['-a.test.ts', 'src/b.test.ts'] },
+      {
+        scope: 'focused',
+        verificationArgv,
+        cwd: '/repo',
+        files: ['-a.test.ts', 'src/b.test.ts'],
+        testNames: [],
+      },
       deps,
     );
 
     expect(captured).toContain('./-a.test.ts');
     expect(captured).toContain('src/b.test.ts');
 
-    await runTests({ scope: 'file', cwd: '/repo', path: '-a.test.ts' }, deps);
+    await runTests(
+      { scope: 'focused', verificationArgv, cwd: '/repo', files: ['-a.test.ts'], testNames: [] },
+      deps,
+    );
 
     expect(captured).toContain('./-a.test.ts');
     expect(captured).not.toContain('-a.test.ts');
@@ -1203,7 +1372,7 @@ describe('runTests', () => {
 
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     if (result.kind !== 'fail') {
       throw new Error('expected fail');
@@ -1247,7 +1416,8 @@ describe('runTests', () => {
 
     const result = await runTests(
       {
-        scope: 'changed',
+        scope: 'focused',
+        verificationArgv,
         cwd: '/repo',
         files: ['a.test.ts'],
         testNames: ['selected', 'also selected'],
@@ -1294,7 +1464,7 @@ describe('runTests', () => {
 
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
@@ -1332,7 +1502,7 @@ describe('runTests', () => {
 
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
@@ -1360,7 +1530,7 @@ describe('runTests', () => {
 
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
@@ -1379,7 +1549,7 @@ describe('runTests', () => {
       }),
     });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
@@ -1411,7 +1581,7 @@ describe('runTests', () => {
 
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo/' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo/' }, deps);
 
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
@@ -1445,7 +1615,7 @@ describe('runTests', () => {
 
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
 
-    const result = await runTests({ scope: 'all', cwd: '/repo' }, deps);
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     if (result.kind !== 'fail') {
       throw new Error(`expected fail, got ${result.kind}`);
@@ -1465,17 +1635,18 @@ describe('runTests', () => {
     };
 
     const deps = makeDeps({
-      spawn: async (_command, args) => {
-        captured = args;
-        await writeFile(outputFileFrom(args), JSON.stringify(report));
+      spawn: async (command, argumentsList) => {
+        captured = argumentsList;
+        await writeFile(outputFileFrom(argumentsList), JSON.stringify(report));
 
-        return { stdout: '', stderr: '', code: 0, timedOut: false };
+        return fakeSpawn({})(command, argumentsList, { cwd: '/repo', timeoutMs: 30_000 });
       },
     });
 
     await runTests(
       {
-        scope: 'changed',
+        scope: 'focused',
+        verificationArgv,
         cwd: '/repo',
         files: ['src/a.test.ts', 'src/b.test.ts'],
         testNames: ['adds item'],
@@ -1500,15 +1671,18 @@ describe('runTests', () => {
     };
 
     const deps = makeDeps({
-      spawn: async (_command, args) => {
-        captured = args;
-        await writeFile(outputFileFrom(args), JSON.stringify(report));
+      spawn: async (command, argumentsList) => {
+        captured = argumentsList;
+        await writeFile(outputFileFrom(argumentsList), JSON.stringify(report));
 
-        return { stdout: '', stderr: '', code: 0, timedOut: false };
+        return fakeSpawn({})(command, argumentsList, { cwd: '/repo', timeoutMs: 30_000 });
       },
     });
 
-    await runTests({ scope: 'file', cwd: '/repo', path: 'src/a.test.ts' }, deps);
+    await runTests(
+      { scope: 'focused', verificationArgv, cwd: '/repo', files: ['src/a.test.ts'], testNames: [] },
+      deps,
+    );
 
     expect(captured.slice(0, 4)).toEqual([
       'run',
@@ -1545,9 +1719,8 @@ describe('extractBinPath', () => {
 });
 
 it('allows two minutes for full verification and thirty seconds for focused runs', () => {
-  expect(defaultDeps('all').timeoutMs).toBe(120_000);
-  expect(defaultDeps('changed').timeoutMs).toBe(30_000);
-  expect(defaultDeps('file').timeoutMs).toBe(30_000);
+  expect(defaultDeps('full').timeoutMs).toBe(120_000);
+  expect(defaultDeps('focused').timeoutMs).toBe(30_000);
 });
 
 describe('nodeExecutable', () => {

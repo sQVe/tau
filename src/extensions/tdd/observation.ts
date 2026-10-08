@@ -320,24 +320,24 @@ const runTestsFor = (
   state: ObservationState,
   behavior: Behavior,
   request: RunRequest,
-): ReturnType<typeof runTests> =>
-  runTests(
-    request.scope === 'full'
-      ? {
-          cwd: state.cwd,
-          scope: 'all',
-          verificationArgv: state.config.verificationArgv,
-          signal: request.signal,
-        }
-      : {
-          cwd: state.cwd,
-          verificationArgv: state.config.verificationArgv,
-          scope: 'changed',
-          files: behavior.files,
-          testNames: testNames(behavior),
-          signal: request.signal,
-        },
-  );
+): ReturnType<typeof runTests> => {
+  const input = {
+    cwd: state.cwd,
+    verificationArgv: state.config.verificationArgv,
+    signal: request.signal,
+  };
+
+  if (request.scope === 'full') {
+    return runTests({ ...input, scope: 'full' });
+  }
+
+  return runTests({
+    ...input,
+    scope: 'focused',
+    files: behavior.files,
+    testNames: testNames(behavior),
+  });
+};
 
 const performRun = async (
   state: ObservationState,

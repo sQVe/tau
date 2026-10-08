@@ -57,7 +57,14 @@ it('saves stale input fingerprints and preserves the outcome when the run record
 
     return {
       ...result('passed'),
-      diagnostics: { directory, durationMs: 10, timeoutMs: 30_000, exitCode: 0 },
+      diagnostics: {
+        command: ['vitest'],
+        started: true,
+        directory,
+        durationMs: 10,
+        timeoutMs: 30_000,
+        exitCode: 0,
+      },
     };
   });
 
@@ -72,7 +79,14 @@ it('saves stale input fingerprints and preserves the outcome when the run record
 
   vi.mocked(runTests).mockResolvedValueOnce({
     ...result('passed'),
-    diagnostics: { directory, durationMs: 10, timeoutMs: 30_000, exitCode: 0 },
+    diagnostics: {
+      command: ['vitest'],
+      started: true,
+      directory,
+      durationMs: 10,
+      timeoutMs: 30_000,
+      exitCode: 0,
+    },
   });
 
   const passed = await observation.run(behavior, 'full');
@@ -83,15 +97,18 @@ it('saves stale input fingerprints and preserves the outcome when the run record
   expect(await readFile(join(directory, 'run.json'), 'utf8')).toBe(existing);
 });
 
-it('rejects nonliteral test selection before running tests', async ({ onTestFinished }) => {
-  const { observation } = await setup(onTestFinished);
+it.each(['src/value.ts', '/absolute.test.ts', '*.test.ts'])(
+  'rejects nonliteral test selection before running tests: %s',
+  async (file) => {
+    const { observation } = await setup(registerCleanup);
 
-  await expect(observation.run({ ...behavior, files: ['*.test.ts'] }, 'focused')).rejects.toThrow(
-    'Expected a test file',
-  );
+    await expect(observation.run({ ...behavior, files: [file] }, 'focused')).rejects.toThrow(
+      'Expected a test file',
+    );
 
-  expect(runTests).not.toHaveBeenCalled();
-});
+    expect(runTests).not.toHaveBeenCalled();
+  },
+);
 
 it('accepts an existing literal path with brackets and rejects a missing one', async ({
   onTestFinished,
@@ -264,8 +281,6 @@ it.each(['duplicate', 'skipped', 'missing', 'load error'])(
       'load error': {
         kind: 'compile-error',
         message: 'load failed',
-        stdout: '',
-        stderr: '',
         tests: [],
       },
     };
@@ -463,8 +478,6 @@ it.each(['timeout', 'cancelled', 'compile-error', 'runner-missing', 'runner-reso
       kind,
       message: 'diagnostic',
       tests: [],
-      stdout: '',
-      stderr: '',
     } as RunnerResult;
 
     vi.mocked(runTests).mockResolvedValueOnce(report);
@@ -897,8 +910,6 @@ it.each([
     kind,
     message: 'diagnostic',
     tests: [],
-    stdout: '',
-    stderr: '',
   } as RunnerResult;
 
   vi.mocked(runTests).mockResolvedValue(report);

@@ -217,7 +217,7 @@ const executionLines = (
   report: RunnerResult,
   diagnostics: NonNullable<RunnerResult['diagnostics']>,
 ): string[] => {
-  if (diagnostics.started === false || report.kind === 'runner-missing') {
+  if (!diagnostics.started || report.kind === 'runner-missing') {
     return ['Execution did not start.'];
   }
 

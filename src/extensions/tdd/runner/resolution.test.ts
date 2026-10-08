@@ -4,11 +4,14 @@ import { join } from 'node:path';
 
 import { beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { defaultTddConfig } from '../config.js';
 import { createTestObservation } from '../observation.js';
 import { runContext, summarize } from '../render.js';
 import { defaultResolveVitest } from './resolution.js';
 import type { SpawnCommand } from './types.js';
 import { runTests } from './vitest.js';
+
+const verificationArgv = defaultTddConfig.verificationArgv;
 
 let cwd: string;
 let manifestPath: string;
@@ -62,7 +65,7 @@ it('names the package root when requested files belong to another package, such 
 
   const run = (files: string[]) =>
     runTests(
-      { scope: 'changed', cwd, files },
+      { scope: 'focused', verificationArgv, cwd, files, testNames: [] },
       { resolveVitest: defaultResolveVitest, spawn: vi.fn<SpawnCommand>(), timeoutMs: 30_000 },
     );
 
@@ -149,7 +152,7 @@ it('rejects invalid manifest versions and unsafe bin entries without echoing the
 
 it('does not classify a throwing resolver dependency error as an absent Vitest package', async () => {
   const result = await runTests(
-    { scope: 'all', cwd },
+    { scope: 'full', verificationArgv, cwd },
     {
       resolveVitest: () => {
         throw Object.assign(new Error('private dependency'), { code: 'MODULE_NOT_FOUND' });
@@ -181,7 +184,7 @@ it('retains safe diagnostics when an injected resolver throws without starting e
   });
 
   const result = await runTests(
-    { scope: 'all', cwd },
+    { scope: 'full', verificationArgv, cwd },
     {
       resolveVitest: () => {
         throw error;
@@ -205,7 +208,7 @@ it('retains safe diagnostics when an injected resolver throws without starting e
 
 it('bounds and sanitizes resolution paths without copying error messages', async () => {
   const result = await runTests(
-    { scope: 'all', cwd: `${cwd}/\u001b[31m\n${'x'.repeat(1000)}` },
+    { scope: 'full', verificationArgv, cwd: `${cwd}/\u001b[31m\n${'x'.repeat(1000)}` },
     {
       resolveVitest: () => {
         throw new Error('private-message');
@@ -233,7 +236,7 @@ it('does not echo arbitrary resolver error names codes or thrown values', async 
     'private-thrown-value',
   ]) {
     const result = await runTests(
-      { scope: 'all', cwd },
+      { scope: 'full', verificationArgv, cwd },
       {
         resolveVitest: () => {
           // oxlint-disable-next-line typescript/only-throw-error -- A resolver can throw a non-Error value; its text must stay private.
