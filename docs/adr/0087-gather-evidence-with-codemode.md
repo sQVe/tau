@@ -2,7 +2,9 @@
 
 **Date**: 2026-10-05\
 **Status**: Accepted; script scope and the tools a script may call superseded by
-[ADR 0092 (Use codemode only to batch or filter evidence)](./0092-use-codemode-only-to-batch-or-filter-evidence.md)\
+[ADR 0092 (Use codemode only to batch or filter evidence)](./0092-use-codemode-only-to-batch-or-filter-evidence.md);
+history tool references superseded by
+[ADR 0097 (Track only the current session's workers)](./0097-track-only-the-current-sessions-workers.md)\
 **Supersedes**:
 [ADR 0014 (Delegate model for bulk reads)](./0014-delegate-model-for-bulk-reads.md),
 [ADR 0022 (Gate the clamped read hint on the remainder)](./0022-gate-the-clamped-read-hint-on-the-remainder.md),

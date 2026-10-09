@@ -89,7 +89,7 @@ const parseRole = (fields: Map<string, string>): Profile['role'] => {
   return role;
 };
 
-export const roleTools: Record<Profile['role'], string[]> = {
+const roleTools: Record<Profile['role'], string[]> = {
   investigation: ['read', 'bash'],
   editing: ['read', 'bash', 'edit', 'write'],
 };

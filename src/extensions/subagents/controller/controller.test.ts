@@ -17,7 +17,6 @@ import * as cancellationModule from '../cancellation.js';
 import { herdrFake } from '../fixtures/herdrFake.js';
 import { fixtureLoadout } from '../fixtures/loadout.js';
 import { placementFixture } from '../fixtures/placement.js';
-import { searchHistory } from '../history.js';
 import * as loadoutModule from '../loadout.js';
 import * as names from '../names.js';
 import type { WorkerNotice } from '../presentation.js';
@@ -28,7 +27,6 @@ import * as terminalModule from '../terminal.js';
 import { taskVersion } from '../types.js';
 import type { Loadout } from '../types.js';
 import { renderWorkerWidget } from '../widget.js';
-import { WorkerHistoryView } from '../widgetOverlay.js';
 import { WorkerCapacityFullError, WorkerController } from './controller.js';
 import { RequestNotSentError, workerArguments } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
@@ -502,6 +500,42 @@ it('resumes the remaining workers when one saved task has no ownership record', 
   expect(recovered.status(owned.taskId, 'parent-id').state).toBe('starting');
 });
 
+it('reattaches a healthy worker after a task with corrupt cleanup without changing corrupt records', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers();
+  const fixture = setup(onTestFinished);
+  vi.spyOn(process, 'kill').mockReturnValue(true);
+  const corrupt = await fixture.controller.launch(fixture.input);
+  const healthy = await fixture.controller.launch(fixture.input);
+  fixture.controller.close();
+  writeFileSync(join(corrupt.directory, 'cleanup.json'), '{');
+
+  const snapshot = () =>
+    readdirSync(corrupt.directory)
+      .toSorted()
+      .map((name) => [name, readFileSync(join(corrupt.directory, name))]);
+
+  const before = snapshot();
+
+  vi.spyOn(records, 'readTasks').mockReturnValueOnce([
+    { directory: corrupt.directory, task: readTask(corrupt.directory) },
+    { directory: healthy.directory, task: readTask(healthy.directory) },
+  ]);
+
+  const recovered = new WorkerController(fixture.directory, fixture.client);
+
+  onTestFinished(() => {
+    recovered.close();
+  });
+
+  await expect(recovered.resume(fixture.input.parentSessionId)).resolves.toBeUndefined();
+
+  expect(recovered.owns(healthy.taskId)).toBe(true);
+  expect(recovered.owns(corrupt.taskId)).toBe(false);
+  expect(snapshot()).toEqual(before);
+});
+
 it('confirms an exited worker once after the saved deadline has expired', async ({
   onTestFinished,
 }) => {
@@ -821,9 +855,6 @@ it('skips unpublished preparation debris while published attempts remain exclusi
     id: fixture.input.parentSessionId,
   };
 
-  const history = await searchHistory(fixture.directory, current);
-  expect(history.candidates.some((candidate) => candidate.taskId === launched.taskId)).toBe(true);
-  expect(history.diagnostics.join(' ')).toContain(abandoned.name);
   expect(readFileSync(join(abandonedDirectory, receiptFiles[0] ?? ''))).toEqual(receipt);
 
   records.acceptReport(launched.directory, launched.taskId, {
@@ -967,6 +998,38 @@ const completed = async (
   };
 };
 
+it.each(['fork', 'unrelated'] as const)(
+  'refuses follow-up from another parent session (%s) without changing records',
+  async (relationship) => {
+    const fixture = await completed();
+    const parentSession = join(fixture.directory, 'other-parent.jsonl');
+
+    writeFileSync(
+      parentSession,
+      JSON.stringify({
+        type: 'session',
+        version: 3,
+        id: 'other-parent',
+        cwd: fixture.directory,
+        ...(relationship === 'fork' ? { parentSession: fixture.input.parentSession } : {}),
+      }) + '\n',
+    );
+
+    const saved = savedFiles(fixture.directory);
+    fixture.calls.length = 0;
+
+    await expect(
+      fixture.controller.followUp(
+        { ...fixture.input, parentSession, parentSessionId: 'other-parent' },
+        fixture.context,
+      ),
+    ).rejects.toThrow('Task belongs to another parent session.');
+
+    expect(savedFiles(fixture.directory)).toEqual(saved);
+    expect(fixture.calls).toEqual([]);
+  },
+);
+
 it.each(['pending', 'uncertain cleanup', 'dispatch', 'accepted', 'report'] as const)(
   'refuses follow-up without writes when a successor has %s evidence',
   async (evidence) => {
@@ -1020,12 +1083,12 @@ it('admits follow-up with retired records and an unpublished directory', async (
   const fixture = await completed();
 
   const retiredRecords = [
-    { ...fixture.source, taskId: 'retired-tree', tree: {} },
-    { ...fixture.source, taskId: 'retired-owner', ownerId: 'old-controller' },
+    { ...fixture.source, version: 1, taskId: 'retired-first' },
     {
       ...fixture.source,
-      taskId: 'retired-fingerprint',
-      loadout: { ...fixture.source.loadout, modelFingerprint: '0'.repeat(64) },
+      version: taskVersion - 1,
+      taskId: 'retired-previous',
+      predecessorTaskId: fixture.source.taskId,
     },
   ];
 
@@ -1075,20 +1138,11 @@ const newerTauRecord = (source: ReturnType<typeof readTask>, predecessorTaskId: 
   futureField: 'written by a newer Tau',
 });
 
-it('lists a newer Tau record as unreadable and still follows up an unrelated task', async () => {
+it('follows up an unrelated task despite a newer Tau record', async () => {
   const fixture = await completed();
   const directory = join(fixture.directory, 'newer');
   mkdirSync(directory);
   records.publish(directory, 'task.json', newerTauRecord(fixture.source, 'unrelated'));
-
-  const history = await searchHistory(fixture.directory, {
-    file: fixture.input.parentSession,
-    id: fixture.input.parentSessionId,
-  });
-
-  expect(history.diagnostics).toContain(
-    'Skipped task newer saved by a newer Tau; restart this session to read it.',
-  );
 
   await expect(fixture.controller.followUp(fixture.input, fixture.context)).resolves.toMatchObject({
     state: 'starting',
@@ -1135,7 +1189,7 @@ it('refuses follow-up without writes when a current task that looks retired name
   expect(fixture.calls).toEqual([['agent', 'list']]);
 });
 
-it.each([3, 4, 5, 6, 7])(
+it.each([taskVersion])(
   'refuses follow-up without writes when a malformed version %i task names the same predecessor',
   async (version) => {
     const fixture = await completed();
@@ -1165,67 +1219,6 @@ it.each([3, 4, 5, 6, 7])(
   },
 );
 
-const saveNonPiTask = (root: string): void => {
-  const directory = join(root, 'previous-generic');
-  mkdirSync(directory);
-
-  for (const [name, fixture] of [
-    ['task.json', 'taskRecords/previous-generic.json'],
-    ['submission-assignment-intent.json', 'submissionRecords/submission-assignment-intent.json'],
-    [
-      'submission-assignment-observation.json',
-      'submissionRecords/submission-assignment-observation.json',
-    ],
-  ] as const) {
-    const source = new URL(`../fixtures/${fixture}`, import.meta.url);
-
-    writeFileSync(join(directory, name), readFileSync(source, 'utf8'));
-  }
-};
-
-it('refuses a saved non-Pi task by name and still serves Pi tasks', async () => {
-  const fixture = await completed();
-  saveNonPiTask(fixture.directory);
-  const unsupported = 'Tau no longer supports non-Pi workers.';
-  const saved = savedFiles(fixture.directory);
-
-  const history = await searchHistory(fixture.directory, {
-    file: fixture.input.parentSession,
-    id: fixture.input.parentSessionId,
-  });
-
-  expect(history.diagnostics).toContain(
-    `Skipped task previous-generic run by a non-Pi worker; ${unsupported}`,
-  );
-
-  const status = () => fixture.controller.status('previous-generic', 'parent-one');
-
-  expect(status).toThrow(EvidenceUnavailableError);
-  expect(status).toThrow(unsupported);
-
-  await expect(fixture.controller.cancel('previous-generic', 'parent-one')).rejects.toThrow(
-    unsupported,
-  );
-
-  await expect(
-    fixture.controller.followUp(
-      { ...fixture.input, sourceTaskId: 'previous-generic' },
-      fixture.context,
-    ),
-  ).rejects.toThrow(unsupported);
-
-  expect(savedFiles(fixture.directory)).toEqual(saved);
-
-  expect(fixture.controller.widgetRows('parent-id').map(({ taskId }) => taskId)).toEqual([
-    fixture.source.taskId,
-  ]);
-
-  await expect(fixture.controller.followUp(fixture.input, fixture.context)).resolves.toMatchObject({
-    state: 'starting',
-    predecessorTaskId: fixture.source.taskId,
-  });
-});
-
 it('refuses follow-up of a malformed source task ID without writes', async () => {
   const fixture = await completed();
   const saved = savedFiles(fixture.directory);
@@ -1233,7 +1226,7 @@ it('refuses follow-up of a malformed source task ID without writes', async () =>
 
   await expect(
     fixture.controller.followUp({ ...fixture.input, sourceTaskId: '../escape' }, fixture.context),
-  ).rejects.toThrow('Follow-up requires an exact saved task ID.');
+  ).rejects.toThrow('Invalid task identity.');
 
   expect(savedFiles(fixture.directory)).toEqual(saved);
   expect(fixture.calls).toEqual([]);
@@ -1316,6 +1309,47 @@ it('allows follow-up retry after the worker exits before readiness', async () =>
   expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBe(retried.taskId);
 });
 
+it('follows up a current-session task whose native header names another parent session', async () => {
+  const fixture = await completed();
+  const parentSession = join(fixture.directory, 'forked-parent.jsonl');
+  const parentSessionId = 'forked-parent';
+
+  writeFileSync(
+    parentSession,
+    JSON.stringify({
+      type: 'session',
+      version: 3,
+      id: parentSessionId,
+      cwd: fixture.directory,
+      parentSession: fixture.source.parentSession,
+    }) + '\n',
+  );
+
+  const source = { ...fixture.source, parentSession, parentSessionId };
+  const sourcePath = join(fixture.sourceDirectory, 'task.json');
+  writeFileSync(sourcePath, JSON.stringify(source));
+  const sourceBytes = readFileSync(sourcePath);
+  const nativeBytes = readFileSync(source.nativeSessionFile);
+
+  const next = await fixture.controller.followUp(
+    { ...fixture.input, parentSession, parentSessionId },
+    fixture.context,
+  );
+
+  expect(next).toMatchObject({ state: 'starting', predecessorTaskId: source.taskId });
+
+  expect(readTask(next.directory)).toMatchObject({
+    version: taskVersion,
+    parentSession,
+    parentSessionId,
+    nativeSessionId: source.nativeSessionId,
+    nativeSessionFile: source.nativeSessionFile,
+  });
+
+  expect(readFileSync(sourcePath)).toEqual(sourceBytes);
+  expect(readFileSync(source.nativeSessionFile)).toEqual(nativeBytes);
+});
+
 it('follows up a completed native task with new identity and unchanged saved evidence', async () => {
   const fixture = await completed();
   const taskBytes = readFileSync(join(fixture.sourceDirectory, 'task.json'));
@@ -1353,17 +1387,6 @@ it('follows up a completed native task with new identity and unchanged saved evi
     successorTaskId: next.taskId,
   });
 
-  const history = await searchHistory(fixture.directory, {
-    file: fixture.input.parentSession,
-    id: fixture.input.parentSessionId,
-  });
-
-  expect(
-    history.candidates.find((candidate) => candidate.taskId === fixture.source.taskId),
-  ).toMatchObject({
-    successorTaskId: next.taskId,
-  });
-
   expect(readFileSync(join(fixture.sourceDirectory, 'task.json'))).toEqual(taskBytes);
   expect(readFileSync(join(fixture.sourceDirectory, 'report.json'))).toEqual(reportBytes);
   expect(readFileSync(fixture.source.nativeSessionFile)).toEqual(nativeBytes);
@@ -1376,7 +1399,7 @@ it('follows up a completed native task with new identity and unchanged saved evi
   expect(savedFiles(fixture.directory)).toEqual(saved);
 });
 
-it.each(['cleanup', 'uncertain cleanup', 'handover', 'missing native', 'out of tree'] as const)(
+it.each(['cleanup', 'uncertain cleanup', 'handover', 'missing native', 'other parent'] as const)(
   'refuses native follow-up with %s',
   async (failure) => {
     const fixture = await completed();
@@ -1408,7 +1431,7 @@ it.each(['cleanup', 'uncertain cleanup', 'handover', 'missing native', 'out of t
     const saved = savedFiles(fixture.directory);
 
     await expect(fixture.controller.followUp(fixture.input, fixture.context)).rejects.toThrow(
-      /cleanup|handover|native|tree/i,
+      /cleanup|handover|native|another parent/i,
     );
 
     expect(savedFiles(fixture.directory)).toEqual(saved);
@@ -1453,23 +1476,10 @@ it('classifies follow-up readiness deadline expiry as timeout rather than caller
   expect(task.deadline - task.createdAt).toBe(10_000);
 });
 
-it('allows only one competing follow-up and preserves lineage across parents and successive tasks', async () => {
+it('allows only one competing follow-up and preserves the native session across successive tasks', async () => {
   const fixture = await completed();
-  const sibling = join(fixture.directory, 'sibling.jsonl');
-
-  writeFileSync(
-    sibling,
-    JSON.stringify({
-      type: 'session',
-      version: 3,
-      id: 'sibling',
-      cwd: fixture.directory,
-      parentSession: fixture.input.parentSession,
-    }) + '\n',
-  );
-
   fixture.calls.length = 0;
-  const request = { ...fixture.input, parentSession: sibling, parentSessionId: 'sibling' };
+  const request = fixture.input;
 
   const attempts = await Promise.allSettled([
     fixture.controller.followUp(request, fixture.context),
@@ -1515,19 +1525,6 @@ it('allows only one competing follow-up and preserves lineage across parents and
     fixture.context,
   );
 
-  const history = await searchHistory(
-    fixture.directory,
-    { file: sibling, id: 'sibling' },
-    fixture.source.nativeSessionId,
-  );
-
-  expect(history.outcome).toBe('clarification');
-
-  expect(history.candidates.map((candidate) => candidate.taskId)).toEqual(
-    expect.arrayContaining([fixture.source.taskId, next.taskId, latest.taskId]),
-  );
-
-  expect(history.candidates).toHaveLength(3);
   expect(readTask(latest.directory).nativeSessionFile).toBe(fixture.source.nativeSessionFile);
 
   expect(JSON.parse(readFileSync(fixture.source.nativeSessionFile, 'utf8'))).toMatchObject({
@@ -2828,10 +2825,10 @@ it('reads the worker directory once per widget refresh', async ({ onTestFinished
   expect(vi.mocked(readdirSync).mock.calls.filter(([path]) => path === root)).toHaveLength(1);
 });
 
-it('reads status, history, and widget rows without writing records or stopping workers', async ({
+it('reads status and widget rows without writing records or stopping workers', async ({
   onTestFinished,
 }) => {
-  const { controller, input, calls, directory } = setup(onTestFinished);
+  const { controller, input, calls } = setup(onTestFinished);
   const launched = await controller.launch(input);
 
   const snapshot = () =>
@@ -2844,13 +2841,6 @@ it('reads status, history, and widget rows without writing records or stopping w
 
   controller.status(launched.taskId, 'parent-id');
   controller.widgetRows('parent-id');
-
-  await searchHistory(
-    directory,
-    { file: join(directory, 'parent.jsonl'), id: 'parent-id' },
-    '',
-    (taskId) => controller.owns(taskId),
-  );
 
   expect(snapshot()).toEqual(before);
 
@@ -3801,7 +3791,6 @@ it('exposes read-only widget rows without inferring success from worker readines
   expect(starting).toMatchObject({
     state: 'starting',
     requestedModel: 'faux/test',
-    usage: { available: false, reason: 'Pi session usage was not recorded' },
   });
 
   expect(starting).not.toHaveProperty('outcome');
@@ -3862,7 +3851,6 @@ it('exposes read-only widget rows without inferring success from worker readines
   expect(stoppedRow).toMatchObject({
     state: 'stopped',
     outcome: 'success',
-    terminal: 'success',
     cleanupConfirmed: true,
   });
 
@@ -3871,14 +3859,13 @@ it('exposes read-only widget rows without inferring success from worker readines
   }
 
   expect(stoppedRow.stoppedAt).toBeGreaterThan(0);
-  expect(stoppedRow.detailPath).toBe(join(launched.directory, 'report.json'));
 });
 
 it.each([
-  { observation: 'fresh', age: 0, label: 'other/observed', observed: 'Pi-selected other/observed' },
-  { observation: 'stale', age: 60_001, label: 'requested faux/test', observed: 'unavailable' },
-  { observation: 'missing', age: undefined, label: 'requested faux/test', observed: 'unavailable' },
-])('renders models from a $observation observation', async ({ age, label, observed }) => {
+  { observation: 'fresh', age: 0, label: 'other/observed' },
+  { observation: 'stale', age: 60_001, label: 'requested faux/test' },
+  { observation: 'missing', age: undefined, label: 'requested faux/test' },
+])('renders models from a $observation observation', async ({ age, label }) => {
   const fixture = setup(afterTest);
   const launched = await fixture.controller.launch(fixture.input);
   const now = Date.now();
@@ -3904,25 +3891,9 @@ it.each([
     // eslint-disable-next-line vitest/no-conditional-expect -- Only stale and missing observations must hide the observed model.
     expect(widget).not.toContain('other/observed');
   }
-
-  const view = new WorkerHistoryView(
-    { terminal: { rows: 40 }, requestRender: () => undefined } as never,
-    { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never,
-    {
-      matches: (data: string, action: string) => data === '\r' && action === 'tui.select.confirm',
-    } as never,
-    rows,
-    () => undefined,
-  );
-
-  view.handleInput('\r');
-  const details = view.render(200).join('\n');
-
-  expect(details).toMatch(/Model\s+requested faux\/test/u);
-  expect(details).toContain(`observed ${observed}`);
 });
 
-it('refreshes worker history after cleanup', async ({ onTestFinished }) => {
+it('refreshes current-session worker rows after cleanup', async ({ onTestFinished }) => {
   const fixture = setup(onTestFinished);
   const launched = await fixture.controller.launch(fixture.input);
   const task = readTask(launched.directory);
@@ -3990,8 +3961,6 @@ it('shows the latest worker-reported phase without waking the parent', async ({
   const [fresh] = fixture.controller.widgetRows(fixture.input.parentSessionId);
 
   expect(fresh?.activity).toBe('Fixing status counts');
-  expect(fresh?.phaseDescription).toBe('Fixing status counts');
-  expect(fresh?.phaseDescriptionAt).toBe(now - 1000);
   expect(fixture.notifications).toHaveLength(notificationsAfterLaunch);
 
   writeWorkerActivity(launched.directory, {
@@ -4043,10 +4012,9 @@ it('does not present a retained phase as current work after the worker stops', a
 
   expect(stopped?.state).toBe('stopped');
   expect(stopped?.activity).not.toBe('Running focused tests');
-  expect(stopped?.phaseDescription).toBe('Running focused tests');
 });
 
-it('keeps historical tasks without saved names in the worker history', async ({
+it('keeps current-session tasks without saved names in the worker rows', async ({
   onTestFinished,
 }) => {
   const fixture = setup(onTestFinished);
@@ -4078,8 +4046,6 @@ it('keeps cleanup failure unconfirmed even when its detail omits that wording', 
   const failedRow = fixture.controller.widgetRows(fixture.input.parentSessionId)[0];
   expect(failedRow?.state).toBe('cleanupUnconfirmed');
   expect(failedRow?.cleanupConfirmed).toBe(false);
-  expect(failedRow?.details).toBe('Pi trusted tools + verified safety');
-  expect(failedRow?.recovery).toContain('manual cleanup');
 });
 
 it('renames the owned worker pane with its name and model', async ({ onTestFinished }) => {

@@ -1,5 +1,3 @@
-import { join } from 'node:path';
-
 import { readWorkerActivity } from '../activity.js';
 import { namePrefix } from '../records.js';
 import type { Task } from '../types.js';
@@ -72,20 +70,6 @@ const widgetModel = (
   return { requestedModel: task.loadout.model };
 };
 
-const widgetUsage = (activity: ReturnType<typeof readWorkerActivity>): WorkerWidgetRow['usage'] => {
-  if (activity?.usage) {
-    return {
-      available: true,
-      label: `Pi active branch: ${activity.usage.input} input · cache read ${activity.usage.cacheRead} · cache write ${activity.usage.cacheWrite} · ${activity.usage.output} output`,
-    };
-  }
-
-  return {
-    available: false,
-    reason: 'Pi session usage was not recorded',
-  };
-};
-
 const widgetQuestion = (
   status: ReturnType<typeof readWidgetStatus>,
 ): Pick<WorkerWidgetRow, 'question' | 'questionId'> => {
@@ -106,38 +90,18 @@ const widgetRecordFields = (
   status: ReturnType<typeof readWidgetStatus>,
 ): Pick<
   WorkerWidgetRow,
-  | 'outcome'
-  | 'question'
-  | 'questionId'
-  | 'terminal'
-  | 'cleanup'
-  | 'cleanupConfirmed'
-  | 'stoppedAt'
-  | 'report'
+  'outcome' | 'question' | 'questionId' | 'cleanupConfirmed' | 'stoppedAt'
 > => {
   const fields: Pick<
     WorkerWidgetRow,
-    | 'outcome'
-    | 'question'
-    | 'questionId'
-    | 'terminal'
-    | 'cleanup'
-    | 'cleanupConfirmed'
-    | 'stoppedAt'
-    | 'report'
+    'outcome' | 'question' | 'questionId' | 'cleanupConfirmed' | 'stoppedAt'
   > = { ...widgetQuestion(status) };
 
   if (status?.report) {
     fields.outcome = status.report.outcome;
-    fields.report = { summary: status.report.summary, evidence: status.report.evidence };
-  }
-
-  if (status?.outcome != null) {
-    fields.terminal = status.outcome;
   }
 
   if (status?.cleanup !== undefined) {
-    fields.cleanup = status.cleanup;
     fields.cleanupConfirmed = status.cleanupConfirmed;
   }
 
@@ -148,101 +112,7 @@ const widgetRecordFields = (
   return fields;
 };
 
-const widgetManualCleanup = (status: ReturnType<typeof readWidgetStatus>): string => {
-  const needsManualCleanup = status?.state === 'cleanupUnconfirmed' || status?.state === 'notOwned';
-
-  if (!needsManualCleanup) {
-    return '';
-  }
-
-  return `manual cleanup ${status.recovery?.paneId ?? status.recovery?.directory ?? 'inspect status'}`;
-};
-
-const widgetEvidencePath = (
-  status: ReturnType<typeof readWidgetStatus>,
-  directory: string,
-): string => {
-  if (status?.report) {
-    return join(status.directory, 'report.json');
-  }
-
-  return join(status?.recovery?.directory ?? directory, 'task.json');
-};
-
-const widgetDetailFields = (
-  status: ReturnType<typeof readWidgetStatus>,
-  directory: string,
-): Pick<WorkerWidgetRow, 'details' | 'recovery' | 'workerType' | 'detailPath' | 'issue'> => {
-  const fields: Pick<
-    WorkerWidgetRow,
-    'details' | 'recovery' | 'workerType' | 'detailPath' | 'issue'
-  > = {
-    details: 'Pi trusted tools + verified safety',
-    workerType: 'Pi worker',
-    detailPath: widgetEvidencePath(status, directory),
-  };
-
-  const recovery = widgetManualCleanup(status);
-
-  if (recovery) {
-    fields.recovery = recovery;
-  }
-
-  if (!status) {
-    fields.issue = 'saved status unavailable; inspect subagent_status';
-  }
-
-  return fields;
-};
-
-const widgetStatusFields = (
-  status: ReturnType<typeof readWidgetStatus>,
-  directory: string,
-): Pick<
-  WorkerWidgetRow,
-  | 'outcome'
-  | 'question'
-  | 'questionId'
-  | 'terminal'
-  | 'cleanup'
-  | 'cleanupConfirmed'
-  | 'stoppedAt'
-  | 'details'
-  | 'recovery'
-  | 'workerType'
-  | 'detailPath'
-  | 'issue'
-  | 'report'
-> => ({
-  ...widgetRecordFields(status),
-  ...widgetDetailFields(status, directory),
-});
-
-const widgetActivityTime = (
-  activity: ReturnType<typeof readWorkerActivity>,
-  isCurrent: boolean,
-): Pick<WorkerWidgetRow, 'activityAt'> =>
-  isCurrent && activity ? { activityAt: activity.updatedAt } : {};
-
-const widgetPhase = (
-  activity: ReturnType<typeof readWorkerActivity>,
-): Pick<WorkerWidgetRow, 'phaseDescription' | 'phaseDescriptionAt'> => {
-  if (activity?.description === undefined) {
-    return {};
-  }
-
-  if (activity.descriptionAt === undefined) {
-    return { phaseDescription: activity.description };
-  }
-
-  return {
-    phaseDescription: activity.description,
-    phaseDescriptionAt: activity.descriptionAt,
-  };
-};
-
 const buildWidgetRow = (
-  directory: string,
   task: Task,
   status: ReturnType<typeof readWidgetStatus>,
   activity: ReturnType<typeof readWorkerActivity>,
@@ -257,14 +127,10 @@ const buildWidgetRow = (
     taskId: task.taskId,
     task: task.task,
     state,
-    deadline: task.deadline,
     createdAt: task.createdAt,
     activity: widgetActivity(activity, isCurrent, showPhase),
     ...widgetModel(task, activity, isCurrent),
-    usage: widgetUsage(activity),
-    ...widgetActivityTime(activity, isCurrent),
-    ...widgetPhase(activity),
-    ...widgetStatusFields(status, directory),
+    ...widgetRecordFields(status),
   };
 };
 
@@ -275,7 +141,6 @@ export const widgetRow = (
   entries: { directory: string; task: Task }[],
 ): WorkerWidgetRow =>
   buildWidgetRow(
-    directory,
     task,
     readWidgetStatus(directory, task, controlled, entries),
     readWorkerActivity(directory, task.taskId),

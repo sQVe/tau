@@ -24,7 +24,6 @@ export interface LaunchInput {
 export interface FollowUpPreparation {
   directory: string;
   task: Task;
-  origin: Task;
   native: ReturnType<typeof validateNative>;
 }
 
@@ -73,7 +72,7 @@ export const checkHandover = (source: FollowUpPreparation): void => {
     throw new Error('Source task changed during follow-up validation.');
   }
 
-  if (!isDeepStrictEqual(validateNative(source.task, source.origin), source.native)) {
+  if (!isDeepStrictEqual(validateNative(source.task), source.native)) {
     throw new Error('Native file changed during follow-up validation.');
   }
 };

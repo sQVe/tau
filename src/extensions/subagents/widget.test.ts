@@ -1,7 +1,7 @@
 import { stripTerminalSequences, visibleWidth } from '@earendil-works/pi-tui';
 import { describe, expect, it } from 'vitest';
 
-import { renderWorkerWidget, workerElapsed, workerRightTime } from './widget.js';
+import { renderWorkerWidget, workerElapsed } from './widget.js';
 import type { WorkerWidgetRow } from './widget.js';
 
 const now = 120_000;
@@ -12,11 +12,8 @@ const row: WorkerWidgetRow = {
   taskId: 'task-full-id',
   task: 'Inspect a worker.',
   state: 'running',
-  deadline: 210_000,
   createdAt: 60_000,
   activity: 'tool: read',
-  activityAt: 100_000,
-  usage: { available: false, reason: 'Pi session usage was not recorded' },
 };
 
 describe('worker widget', () => {
@@ -74,7 +71,6 @@ describe('worker widget', () => {
     expect(text).toContain('Reading the subagent controller source');
     expect(text).toContain('openai-codex/gpt-5.6-luna');
     expect(text).not.toContain('…');
-    expect(text).not.toContain('/subagents');
   });
 
   it('keeps the column order name, status, task, model with slack after the last column', () => {
@@ -119,9 +115,7 @@ describe('worker widget', () => {
         taskId: 'recovery',
         label: 'Inspect recovery',
         state: 'cleanupUnconfirmed',
-        activityAt: 110_000,
         createdAt: 110_000,
-        issue: 'Inspect recovery evidence',
       },
       ...Array.from({ length: 6 }, (_value, index) => ({
         ...row,
@@ -138,7 +132,6 @@ describe('worker widget', () => {
 
     expect(wide[0]).toContain('2 live · 1 cleanup unconfirmed · 1 waiting for reply');
     expect(wide.at(-1)).toContain('6 stopped');
-    expect(wide.at(-1)).not.toContain('/subagents');
     expect(wide).toHaveLength(5);
     expect(narrow.every((line) => visibleWidth(line) <= 45)).toBe(true);
     expect(wide.every((line) => visibleWidth(line) === 72)).toBe(true);
@@ -175,7 +168,6 @@ describe('worker widget', () => {
         taskId: 'stopped-issue',
         state: 'stopped',
         stoppedAt: 90_000,
-        issue: 'Parent exited',
       },
       { ...row, name: 'scout-cc', taskId: 'active-1' },
       { ...row, name: 'worker-dd', taskId: 'recovery', state: 'notOwned' },
@@ -276,7 +268,7 @@ describe('worker widget', () => {
     expect(text).toContain('3 stopped');
   });
 
-  it('counts reported and issue-bearing workers as live instead of dropping them', () => {
+  it('counts reported and running workers as live instead of dropping them', () => {
     const active: WorkerWidgetRow[] = [
       { ...row, name: 'worker-aa', taskId: 'reported-1', state: 'reported' },
       {
@@ -284,7 +276,6 @@ describe('worker widget', () => {
         name: 'worker-bb',
         taskId: 'issue-1',
         state: 'running',
-        issue: 'parent needs a decision',
       },
     ];
 
@@ -394,7 +385,7 @@ describe('worker widget', () => {
     expect(content.trimEnd()).toBe('worker-ab running 01:00 Inspect a worker. —');
   });
 
-  it('does not claim run time or a live countdown for uncertain states', () => {
+  it('does not claim run time for uncertain states', () => {
     const uncertain = { ...row, state: 'cleanupUnconfirmed' as const };
     const unknown = { ...row, state: 'unknown' as const };
 
@@ -406,12 +397,7 @@ describe('worker widget', () => {
     };
 
     expect(workerElapsed(uncertain, now)).toBe('--:--');
-    expect(workerRightTime(uncertain, now)).toMatch(/^@\d{2}:\d{2}$/u);
     expect(workerElapsed(unknown, now)).toBe('--:--');
-    expect(workerRightTime(unknown, now)).toMatch(/^@\d{2}:\d{2}$/u);
-    expect(workerRightTime(unknown, now)).not.toContain('left');
-    expect(workerRightTime({ ...row, deadline: now - 1 }, now)).toBe('overdue');
     expect(workerElapsed(stopped, now)).toBe('00:30');
-    expect(workerRightTime(stopped, now)).toMatch(/^@\d{2}:\d{2}$/u);
   });
 });

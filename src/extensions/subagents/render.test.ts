@@ -12,12 +12,9 @@ import { getThemeByName } from '../../../node_modules/@earendil-works/pi-coding-
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import {
   DefaultRenderingRequiredError,
-  collapsedHistoryLines,
   collapsedReplyLines,
   collapsedStatusLines,
-  expandedHistoryLines,
   expandedStatusLines,
-  renderHistoryResult,
   renderReplyResult,
   renderStatusResult,
 } from './render.js';
@@ -99,23 +96,6 @@ const replyFixture = (workerAcknowledged?: boolean) => ({
   questionId: 'question-abcdef01',
   replyAccepted: true,
   ...(workerAcknowledged === undefined ? {} : { workerAcknowledged }),
-});
-
-const candidate = (index: number, state: WorkerState) => ({
-  taskId: `task-abcdef012345678${index}`,
-  name: `worker-${String.fromCharCode(97 + index)}${index}`,
-  description: `Fix loader part ${index}`,
-  state,
-  nativeEvidence: 'available',
-  report: { outcome: 'success', summary: `Part ${index} finished.`, evidence: [] },
-});
-
-const historyFixture = (count: number) => ({
-  outcome: 'clarification',
-  totalMatches: count,
-  candidates: Array.from({ length: Math.min(count, 10) }, (_, index) =>
-    candidate(index, index % 2 === 0 ? 'stopped' : 'running'),
-  ),
 });
 
 const renderers = () => {
@@ -279,50 +259,6 @@ it('claims an acknowledgement only when the worker saved one', () => {
   expect(/(?<!not )\backnowledged\b/.test(acknowledged)).toBe(true);
 });
 
-it('renders at most five history rows and an expansion hint', () => {
-  const subject = theme();
-  const collapsed = collapsedHistoryLines(historyFixture(8), subject);
-  expect(collapsed).toHaveLength(1 + 5 + 1);
-  expect(collapsed.join('\n')).toMatch(/\b3\b/);
-  expect(collapsed.join('\n')).toMatch(/\b8\b/);
-
-  const small = collapsedHistoryLines(historyFixture(2), subject);
-  expect(small).toHaveLength(1 + 2);
-  expect(small.join('\n')).not.toContain('ctrl+o');
-});
-
-it('distinguishes unloaded history pages from rows hidden by collapse', () => {
-  const subject = theme();
-
-  for (const loaded of [5, 8]) {
-    const details = { ...historyFixture(loaded), totalMatches: 12, nextOffset: loaded };
-    const collapsed = collapsedHistoryLines(details, subject);
-    const expansionHints = collapsed.filter((line) => line.includes('ctrl+o'));
-    const expanded = expandedHistoryLines(details, subject).join('\n');
-    const expectedHint = loaded > 5 ? /\b3\b/ : /^$/;
-
-    expect(collapsed.join('\n')).toMatch(/next page/i);
-    expect(expansionHints.join('\n')).toMatch(expectedHint);
-    expect(expanded).toContain(`nextOffset: ${loaded}`);
-  }
-
-  const lastPage = { ...historyFixture(2), totalMatches: 12 };
-  const collapsed = collapsedHistoryLines(lastPage, subject).join('\n');
-  const expanded = expandedHistoryLines(lastPage, subject).join('\n');
-
-  expect(collapsed).not.toContain('ctrl+o');
-  expect(collapsed).not.toMatch(/next page/i);
-  expect(expanded).not.toContain('nextOffset');
-});
-
-it('renders every history candidate in the expanded view', () => {
-  const subject = theme();
-  const expanded = expandedHistoryLines(historyFixture(3), subject).join('\n');
-  expect(expanded).toContain('task-abcdef0123456780');
-  expect(expanded).toContain('worker-a0');
-  expect(expanded).toContain('Fix loader part 0');
-});
-
 it('renders the evidence notice line with the pane ID', () => {
   const subject = theme();
 
@@ -352,10 +288,6 @@ it('rejects results without a worker state so Pi renders its default', () => {
   expect(() => renderReplyResult({ taskId }, false, subject)).toThrow(
     DefaultRenderingRequiredError,
   );
-
-  expect(() => renderHistoryResult({ outcome: 'list' }, false, subject)).toThrow(
-    DefaultRenderingRequiredError,
-  );
 });
 
 it('renders through the registered tool definitions and the message renderer', () => {
@@ -363,9 +295,8 @@ it('renders through the registered tool definitions and the message renderer', (
   const { tools, messageRenderers } = renderers();
   const status = tools.get('subagent_status');
   const reply = tools.get('subagent_reply');
-  const history = tools.get('subagent_history');
 
-  if (!status?.renderResult || !reply?.renderResult || !history?.renderResult) {
+  if (!status?.renderResult || !reply?.renderResult) {
     throw new Error('Missing renderers.');
   }
 
@@ -391,17 +322,6 @@ it('renders through the registered tool definitions and the message renderer', (
 
   expect(replyOutput).toContain('reply saved');
 
-  const historyOutput = plain(
-    history.renderResult(
-      { content: [{ type: 'text', text: '{}' }], details: historyFixture(3) },
-      options,
-      subject,
-      context,
-    ),
-  );
-
-  expect(historyOutput).toContain('3 matches');
-
   const renderer = messageRenderers.get('tau-worker');
   expect(renderer, 'tau-worker renderer must be registered').toBeTypeOf('function');
 
@@ -422,19 +342,12 @@ it('renders through the registered tool definitions and the message renderer', (
   expect(plain(notice as Component)).toContain('asks');
 });
 
-it('keeps generated paths, JSON, and full task IDs out of collapsed reply and history lines', () => {
+it('keeps generated paths, JSON, and full task IDs out of collapsed reply lines', () => {
   const subject = theme();
   const reply = collapsedReplyLines(replyFixture(), subject).join('\n');
   expect(reply).not.toContain('{');
   expect(reply).not.toMatch(/(^|\s)\/\S|~\//);
   expect(reply).not.toContain(taskId);
-
-  for (const total of [1, 8]) {
-    const history = collapsedHistoryLines(historyFixture(total), subject).join('\n');
-    expect(history, `${total} history lines`).not.toContain('{');
-    expect(history, `${total} history paths`).not.toMatch(/(^|\s)\/\S|~\//);
-    expect(history, `${total} history full IDs`).not.toContain(taskId);
-  }
 });
 
 it('wires a call and a result renderer into every subagent tool', () => {
@@ -447,7 +360,6 @@ it('wires a call and a result renderer into every subagent tool', () => {
     'subagent_status',
     'subagent_reply',
     'subagent_cancel',
-    'subagent_history',
   ]) {
     expect(tools.get(name)?.renderCall, `${name} call renderer`).toBeTypeOf('function');
     expect(tools.get(name)?.renderResult, `${name} result renderer`).toBeTypeOf('function');

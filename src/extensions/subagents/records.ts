@@ -21,19 +21,8 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { errorMessage, isMissingFile } from '../../errors.js';
-import { roleTools } from './profiles.js';
-import {
-  eventSchema,
-  reportSchema,
-  previousTaskSchema,
-  taskSchema,
-  taskVersion,
-  isTaskId,
-  version4TaskSchema,
-  version5TaskSchema,
-  version6TaskSchema,
-  version6InstructionSetNames,
-} from './types.js';
+import { taskFormat } from './taskFormat.js';
+import { eventSchema, reportSchema, taskSchema, taskVersion, isTaskId } from './types.js';
 import type { Loadout, Report, Task, TaskEvent } from './types.js';
 import { taskEndedEventKinds } from './workerState.js';
 
@@ -64,7 +53,6 @@ export interface EventDetails {
   processId?: number;
 }
 
-const retiredTaskVersionCutoff = 3;
 const recordByteLimit = 128_000;
 const reportByteLimit = 64_000;
 const checkoutHashLength = 8;
@@ -223,85 +211,25 @@ const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
 const savedVersion = (value: unknown): unknown =>
   isObjectRecord(value) ? value.version : undefined;
 
-const isNewerTask = (value: unknown): boolean => {
-  const version = savedVersion(value);
-
-  return typeof version === 'number' && version > taskVersion;
-};
-
 const newerTaskNotice = 'saved by a newer Tau; restart this session to read it.';
 
-const nonPiTaskNotice = 'run by a non-Pi worker; Tau no longer supports non-Pi workers.';
-
-const hasGenericLoadout = (value: unknown): boolean =>
-  isObjectRecord(value) && isObjectRecord(value.loadout) && value.loadout.harness === 'generic';
-
-// Non-Pi tasks were saved only at versions 2 and 3. Any other version with a generic loadout is
-// malformed.
-const isNonPiTask = (value: unknown): boolean => {
-  const version = savedVersion(value);
-  // eslint-disable-next-line eslint/no-magic-numbers -- Saved record versions are fixed values.
-  const retiredVersion = version === 2 || version === 3;
-
-  return retiredVersion && hasGenericLoadout(value);
-};
-
-// Version 6 lacks the browser instruction set, version 5 also the profile packages, version 4 also
-// the instruction sets, and earlier formats also the tool and skill loadout. Workers of versions 4
-// and earlier loaded the writing, coding, and workflow sets, and workers of version 5 and earlier no
-// profile packages.
-const upgradeTask = (value: unknown): unknown => {
-  if (Value.Check(version6TaskSchema, value)) {
-    return { ...value, version: taskVersion };
-  }
-
-  if (Value.Check(version5TaskSchema, value)) {
-    return { ...value, version: taskVersion, loadout: { ...value.loadout, packages: [] } };
-  }
-
-  if (Value.Check(version4TaskSchema, value)) {
-    return {
-      ...value,
-      version: taskVersion,
-      loadout: {
-        ...value.loadout,
-        instructionSets: [...version6InstructionSetNames],
-        packages: [],
-      },
-    };
-  }
-
-  if (Value.Check(previousTaskSchema, value)) {
-    return {
-      ...value,
-      version: taskVersion,
-      loadout: {
-        ...value.loadout,
-        tools: roleTools[value.loadout.role],
-        skills: [],
-        instructionSets: [...version6InstructionSetNames],
-        packages: [],
-      },
-    };
-  }
-
-  return value;
-};
+const retiredTaskNotice = 'saved in a retired format; start a fresh task instead.';
 
 // Callers treat a missing task as unpublished, so only other failures name the task.
 export const readTask = (directory: string): Task => {
   try {
     const value = readRecord(directory, 'task.json');
+    const format = taskFormat(savedVersion(value), taskVersion);
 
-    if (isNewerTask(value)) {
+    if (format === 'newer') {
       throw new Error(`Task ${newerTaskNotice}`);
     }
 
-    if (isNonPiTask(value)) {
-      throw new Error(`Task was ${nonPiTaskNotice}`);
+    if (format === 'retired') {
+      throw new Error(`Task ${retiredTaskNotice}`);
     }
 
-    return validateTask(upgradeTask(value));
+    return validateTask(value);
   } catch (error) {
     if (isMissingFile(error)) {
       throw error;
@@ -318,56 +246,6 @@ const isUnpublishedDirectory = (directory: string): boolean =>
     (entry) => entry.isFile() && /^\.receipt-[a-f0-9-]+$/.test(entry.name),
   );
 
-// Earlier Pi formats lacked a task-level monotonic deadline or saved replay fingerprints.
-const isRetiredPiTask = (
-  value: Record<string, unknown>,
-  loadout: Record<string, unknown>,
-): boolean => !('monotonicDeadline' in value) || 'modelFingerprint' in loadout;
-
-const isRetiredHarness = (
-  harness: unknown,
-  value: Record<string, unknown>,
-  loadout: Record<string, unknown>,
-): boolean => {
-  if (harness === undefined || harness === 'claude') {
-    return true;
-  }
-
-  if (harness !== 'pi') {
-    return false;
-  }
-
-  return isRetiredPiTask(value, loadout);
-};
-
-// Records from before the current saved format are never read, but they must not block unrelated tasks.
-// Every retired format predates version 3, so a current or newer record is never retired.
-const isRetiredTask = (value: unknown): boolean => {
-  const version = savedVersion(value);
-
-  if (typeof version === 'number' && version >= retiredTaskVersionCutoff) {
-    return false;
-  }
-
-  if (!isObjectRecord(value) || !('loadout' in value)) {
-    return false;
-  }
-
-  if ('tree' in value || 'parentTaskId' in value || 'ownerId' in value) {
-    return true;
-  }
-
-  const loadout = value.loadout;
-
-  if (!isObjectRecord(loadout)) {
-    return false;
-  }
-
-  const harness = 'harness' in loadout ? loadout.harness : undefined;
-
-  return isRetiredHarness(harness, value, loadout);
-};
-
 const readSkippedTask = (directory: string): unknown => {
   try {
     return readRecord(directory, 'task.json');
@@ -379,21 +257,15 @@ const readSkippedTask = (directory: string): unknown => {
 const diagnoseSkippedTask = (directory: string, error: unknown, notices: ScanNotices): void => {
   const saved = readSkippedTask(directory);
 
-  if (isNonPiTask(saved)) {
-    notices.skipped.push(`Skipped task ${basename(directory)} ${nonPiTaskNotice}`);
+  const format = taskFormat(savedVersion(saved), taskVersion);
+
+  if (format === 'retired') {
+    notices.skipped.push(`Skipped task ${basename(directory)} ${retiredTaskNotice}`);
 
     return;
   }
 
-  if (isRetiredTask(saved)) {
-    notices.skipped.push(
-      `Skipped task ${basename(directory)} saved in a retired format; start a fresh task instead.`,
-    );
-
-    return;
-  }
-
-  const newer = isNewerTask(saved);
+  const newer = format === 'newer';
 
   const diagnostic = newer
     ? `Skipped task ${basename(directory)} ${newerTaskNotice}`

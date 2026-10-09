@@ -19,11 +19,10 @@ const headerSchema = Type.Object({
   type: Type.Literal('session'),
   version: Type.Union([Type.Literal(1), Type.Literal(2), Type.Literal(latestSessionVersion)]),
   id: Type.String({ minLength: 1 }),
-  parentSession: Type.Optional(Type.String({ minLength: 1 })),
   cwd: Type.Optional(Type.String()),
 });
 
-export type NativeHeader = Static<typeof headerSchema>;
+type NativeHeader = Static<typeof headerSchema>;
 
 const readNative = (path: string): NativeSession => {
   // Nonblocking open prevents a substituted FIFO from hanging prevalidation. Do not follow replacement symlinks.
@@ -56,13 +55,13 @@ const readNative = (path: string): NativeSession => {
     const end = newline === -1 ? length : newline;
 
     if (end > headerByteLimit) {
-      throw new Error('Session lineage header exceeds 64 KB.');
+      throw new Error('Native session header exceeds 64 KB.');
     }
 
     const header: unknown = JSON.parse(buffer.subarray(0, end).toString('utf8'));
 
     if (!Value.Check(headerSchema, header)) {
-      throw new Error('Invalid or unsupported native session lineage header.');
+      throw new Error('Invalid or unsupported native session header.');
     }
 
     return {
@@ -79,18 +78,12 @@ const readNative = (path: string): NativeSession => {
   }
 };
 
-export const nativeHeader = (file: string): NativeHeader => readNative(file).header;
-
-export const validateNative = (task: Task, origin: Task): NativeSession => {
+export const validateNative = (task: Task): NativeSession => {
   try {
     const native = readNative(task.nativeSessionFile);
 
-    if (
-      native.header.id !== task.nativeSessionId ||
-      native.header.cwd !== task.loadout.cwd ||
-      native.header.parentSession !== origin.parentSession
-    ) {
-      throw new Error('Native identity, cwd, or original lineage changed.');
+    if (native.header.id !== task.nativeSessionId || native.header.cwd !== task.loadout.cwd) {
+      throw new Error('Native identity or cwd changed.');
     }
 
     return native;

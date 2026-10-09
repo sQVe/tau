@@ -247,7 +247,6 @@ const workerControlTools = new Set([
 const managerTools = [
   'subagent',
   'subagent_follow_up',
-  'subagent_history',
   'subagent_status',
   'subagent_reply',
   'subagent_cancel',
@@ -346,12 +345,11 @@ it('returns ordinary results beside a refused control call in one script', async
   expect(readReport(taskDirectory, taskId)).toBeUndefined();
 });
 
-it('lets manager scripts read worker status and history but not control workers', async () => {
+it('lets manager scripts read worker status but not control workers', async () => {
   const script = [
     discovery,
     settle([
       `tools.subagent_status({ taskId: '${savedTaskId}' }).then((result) => result.includes('${savedTaskId}'))`,
-      `tools.subagent_history({}).then((result) => result.includes('${savedTaskId}'))`,
       `tools.subagent_cancel({ taskId: '${savedTaskId}' })`,
     ]),
     'return { listed, found, outcomes };',
@@ -360,8 +358,8 @@ it('lets manager scripts read worker status and history but not control workers'
   const outcomes = await runManager([codemodeCall(script), fauxAssistantMessage('Done.')]);
   const value = scriptValue(outcomes) as { listed: string[]; found: string[]; outcomes: unknown[] };
 
-  expect(value.listed).toEqual(expect.arrayContaining(['subagent_status', 'subagent_history']));
+  expect(value.listed).toContain('subagent_status');
   expect(value.listed.filter((name) => managerControlTools.has(name))).toEqual([]);
   expect(value.found.filter((name) => managerControlTools.has(name))).toEqual([]);
-  expect(value.outcomes).toEqual([true, true, 'rejected']);
+  expect(value.outcomes).toEqual([true, 'rejected']);
 });

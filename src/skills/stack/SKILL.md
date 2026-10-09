@@ -33,9 +33,10 @@ Use this skill when a branch belongs to a stack, or when another skill sends you
   tracking.
 - Switch, create, restack, or sync only on a clean working tree and when every one of your workers
   in the worktree is `stopped`. Workers share its files, so a branch change moves them under a live
-  worker. Find your workers with `subagent_history`, following `nextOffset` through every page, and
-  read each state with `subagent_status`. Any other state, or a state you cannot read, blocks the
-  change: wait for the worker, or ask the user before you cancel it.
+  worker. Find task IDs in this session's worker launch results and notices, then read each state
+  with `subagent_status`. If the worker list is incomplete, or any state is unreadable or not
+  `stopped`, do not change the branch. Recover the task IDs, wait for the worker, or ask the user
+  before you cancel it.
 - Follow the rebase, abort, and push rules in the [update-branch skill](../update-branch/SKILL.md).
 
 ## Procedure

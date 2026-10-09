@@ -1,8 +1,10 @@
 # ADR 0058: Run subagents only as Pi workers
 
 **Date**: 2026-09-28\
-**Status**: Accepted\
-**Supersedes**: [ADR 0032 (Run Claude workers through a parent-owned channel)](./0032-run-claude-workers-through-a-parent-owned-channel.md),
+**Status**: Accepted; task record retirement policy superseded by
+[ADR 0097 (Track only the current session's workers)](./0097-track-only-the-current-sessions-workers.md)\
+**Supersedes**:
+[ADR 0032 (Run Claude workers through a parent-owned channel)](./0032-run-claude-workers-through-a-parent-owned-channel.md),
 [ADR 0033 (Use one generic native worker workflow)](./0033-use-one-generic-native-worker-workflow.md),
 [ADR 0037 (Launch native workers without parent approval)](./0037-launch-native-workers-without-parent-approval.md),
 the generic workflow rule in

@@ -54,7 +54,7 @@ const fixture = () => {
 it('inspects native headers without newline repair or transcript mutation', () => {
   const { task } = fixture();
   const before = readFileSync(task.nativeSessionFile);
-  const native = validateNative(task, task);
+  const native = validateNative(task);
 
   expect(native.header.id).toBe(task.nativeSessionId);
   expect(readFileSync(task.nativeSessionFile)).toEqual(before);
@@ -69,7 +69,6 @@ it.each([
   'version',
   'identity',
   'cwd',
-  'lineage',
 ] as const)('refuses %s native files without creating fresh work', (failure) => {
   const { directory, task, header } = fixture();
 
@@ -77,7 +76,6 @@ it.each([
     version: { version: 99 },
     identity: { id: 'wrong' },
     cwd: { cwd: '/' },
-    lineage: { parentSession: join(directory, 'wrong.jsonl') },
   };
 
   if (failure === 'missing' || failure === 'directory' || failure === 'symlink') {
@@ -99,6 +97,6 @@ it.each([
     );
   }
 
-  expect(() => validateNative(task, task)).toThrow('Native follow-up prevalidation refused');
+  expect(() => validateNative(task)).toThrow('Native follow-up prevalidation refused');
   expect(existsSync(task.nativeSessionFile)).toBe(failure !== 'missing');
 });

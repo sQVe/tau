@@ -1,8 +1,10 @@
 # ADR 0078: Remind managers to compact and restore the worker ledger after each compaction
 
 **Date**: 2026-10-01\
-**Status**: Accepted\
-**Extends**: [ADR 0073 (Leave manager compaction to Pi)](./0073-leave-manager-compaction-to-pi.md)\
+**Status**: Accepted; history tool references superseded by
+[ADR 0097 (Track only the current session's workers)](./0097-track-only-the-current-sessions-workers.md)\
+**Extends**:
+[ADR 0073 (Leave manager compaction to Pi)](./0073-leave-manager-compaction-to-pi.md)\
 **Related**: [ADR 0070 (Compact manager sessions at Pi turn boundaries)](./0070-compact-manager-sessions-at-pi-turn-boundaries.md)
 
 ## Context

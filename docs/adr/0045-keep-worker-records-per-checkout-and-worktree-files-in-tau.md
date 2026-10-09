@@ -2,8 +2,11 @@
 
 **Date**: 2026-09-24\
 **Status**: Accepted; non-Pi report area superseded by
-[ADR 0058 (Run subagents only as Pi workers)](./0058-run-subagents-only-as-pi-workers.md)\
-**Supersedes**: the report area rules in
+[ADR 0058 (Run subagents only as Pi workers)](./0058-run-subagents-only-as-pi-workers.md); worker
+history scope superseded by
+[ADR 0097 (Track only the current session's workers)](./0097-track-only-the-current-sessions-workers.md)\
+**Supersedes**:
+the report area rules in
 [ADR 0033 (Use one generic native worker workflow)](./0033-use-one-generic-native-worker-workflow.md)
 and
 [ADR 0037 (Launch native workers without parent approval)](./0037-launch-native-workers-without-parent-approval.md)\
