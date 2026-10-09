@@ -500,6 +500,42 @@ it('resumes the remaining workers when one saved task has no ownership record', 
   expect(recovered.status(owned.taskId, 'parent-id').state).toBe('starting');
 });
 
+it('reattaches a healthy worker after a task with corrupt cleanup without changing corrupt records', async ({
+  onTestFinished,
+}) => {
+  vi.useFakeTimers();
+  const fixture = setup(onTestFinished);
+  vi.spyOn(process, 'kill').mockReturnValue(true);
+  const corrupt = await fixture.controller.launch(fixture.input);
+  const healthy = await fixture.controller.launch(fixture.input);
+  fixture.controller.close();
+  writeFileSync(join(corrupt.directory, 'cleanup.json'), '{');
+
+  const snapshot = () =>
+    readdirSync(corrupt.directory)
+      .toSorted()
+      .map((name) => [name, readFileSync(join(corrupt.directory, name))]);
+
+  const before = snapshot();
+
+  vi.spyOn(records, 'readTasks').mockReturnValueOnce([
+    { directory: corrupt.directory, task: readTask(corrupt.directory) },
+    { directory: healthy.directory, task: readTask(healthy.directory) },
+  ]);
+
+  const recovered = new WorkerController(fixture.directory, fixture.client);
+
+  onTestFinished(() => {
+    recovered.close();
+  });
+
+  await expect(recovered.resume(fixture.input.parentSessionId)).resolves.toBeUndefined();
+
+  expect(recovered.owns(healthy.taskId)).toBe(true);
+  expect(recovered.owns(corrupt.taskId)).toBe(false);
+  expect(snapshot()).toEqual(before);
+});
+
 it('confirms an exited worker once after the saved deadline has expired', async ({
   onTestFinished,
 }) => {

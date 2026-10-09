@@ -215,11 +215,15 @@ export class WorkerController {
       const foreign = task.parentSessionId !== parentSessionId || this.workers.has(task.taskId);
       const unavailable = this.closed || this.live.size >= this.capacity;
 
-      if (foreign || unavailable || readEvent(directory, task.taskId, 'cleanup')) {
+      if (foreign || unavailable) {
         continue;
       }
 
       try {
+        if (readEvent(directory, task.taskId, 'cleanup')) {
+          continue;
+        }
+
         // oxlint-disable-next-line eslint/no-await-in-loop -- Reattach or stop one saved worker at a time so capacity stays exact.
         await this.resumeSaved(directory, task);
       } catch {
