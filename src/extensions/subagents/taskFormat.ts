@@ -2,7 +2,11 @@ export const taskFormat = (
   version: unknown,
   currentVersion: number,
 ): 'current' | 'retired' | 'newer' | 'invalid' => {
-  if (typeof version !== 'number') {
+  if (typeof version !== 'number' || !Number.isInteger(version)) {
+    return 'invalid';
+  }
+
+  if (version < 1) {
     return 'invalid';
   }
 
@@ -14,5 +18,5 @@ export const taskFormat = (
     return 'newer';
   }
 
-  return version === currentVersion ? 'current' : 'invalid';
+  return 'current';
 };
