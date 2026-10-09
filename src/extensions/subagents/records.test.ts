@@ -130,7 +130,7 @@ it.each([
 
 it.for([
   ['malformed', '{'],
-  ['invalid', '{"version":1}'],
+  ['invalid', '{"version":7}'],
 ] as const)('names the task whose saved record is %s', ([, content]) => {
   const { directory, task } = questionFixture();
   const root = join(directory, 'registry');
@@ -167,53 +167,42 @@ it('skips an unknown task format without hiding a valid task', () => {
   expect(readFileSync(join(unknown, 'task.json'), 'utf8')).toBe(saved);
 });
 
-it('skips tasks saved in a retired format without blocking current tasks', () => {
-  const { directory, task } = questionFixture();
-  const root = join(directory, 'registry');
-  const current = join(root, task.taskId);
-  mkdirSync(current, { recursive: true });
-  records.publish(current, 'task.json', task);
-  const { harness: _harness, ...unversioned } = task.loadout;
+it.each([1, 2, 3, 4, 5, 6])(
+  'skips retired task version %i without blocking current tasks or changing records',
+  (version) => {
+    const { directory, task } = questionFixture();
+    const root = join(directory, 'registry');
+    const current = join(root, task.taskId);
+    const retired = join(root, 'retired');
+    mkdirSync(current, { recursive: true });
+    mkdirSync(retired);
+    records.publish(current, 'task.json', task);
 
-  const retired = {
-    unversioned: { ...task, taskId: 'unversioned', loadout: unversioned },
-    tree: {
+    records.publish(retired, 'task.json', {
       ...task,
-      taskId: 'tree',
-      tree: {
-        rootSession: task.parentSession,
-        rootSessionId: task.parentSessionId,
-        monotonicDeadline: task.monotonicDeadline,
-      },
-    },
-    parent: { ...task, taskId: 'parent', parentTaskId: 'ancestor' },
-    owned: { ...task, taskId: 'owned', ownerId: 'old-controller' },
-    claude: { ...task, taskId: 'claude', loadout: { ...task.loadout, harness: 'claude' } },
-    fingerprinted: {
-      ...task,
-      taskId: 'fingerprinted',
-      loadout: { ...task.loadout, modelFingerprint: '0'.repeat(64) },
-    },
-  };
+      version,
+      taskId: 'retired',
+      predecessorTaskId: task.taskId,
+    });
 
-  // Every retired format predates version 3.
-  for (const [taskId, saved] of Object.entries(retired)) {
-    mkdirSync(join(root, taskId));
-    writeFileSync(join(root, taskId, 'task.json'), JSON.stringify({ ...saved, version: 1 }));
-  }
+    const saved = readFileSync(join(retired, 'task.json'));
+    const diagnostics: string[] = [];
+    const skipped: string[] = [];
+    const unreadable: records.UnreadableTask[] = [];
 
-  const diagnostics: string[] = [];
+    expect(records.readTasks(root, diagnostics, skipped, unreadable)).toEqual([
+      { directory: current, task },
+    ]);
 
-  const scanned = records.readTasks(root, diagnostics);
-
-  expect(scanned).toEqual([{ directory: current, task }]);
-
-  expect(diagnostics.toSorted()).toEqual(
-    ['claude', 'fingerprinted', 'owned', 'parent', 'tree', 'unversioned'].map(
-      (taskId) => `Skipped task ${taskId} saved in a retired format; start a fresh task instead.`,
-    ),
-  );
-});
+    expect(diagnostics).toEqual([]);
+    expect(unreadable).toEqual([]);
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]).toContain('retired format');
+    expect(() => records.readTask(retired)).toThrow('retired format');
+    expect(readFileSync(join(retired, 'task.json'))).toEqual(saved);
+    expect(records.readTask(current)).toEqual(task);
+  },
+);
 
 it('refuses a saved task whose skill path is relative', () => {
   const { task } = questionFixture();
@@ -248,75 +237,14 @@ const saveTaskRecordFixtures = (names: string[]) => {
   return root;
 };
 
-it('reads task records saved in the previous and current formats', () => {
-  const previous = ['previous-pi', 'version-3-pi'];
-  const earlier = [...previous, 'version-4-pi', 'version-5-pi', 'version-6-pi'];
-  const root = saveTaskRecordFixtures([...earlier, 'current-pi']);
+it('reads task records saved in the current format', () => {
+  const root = saveTaskRecordFixtures(['current-pi']);
   const diagnostics: string[] = [];
-  const earlierInstructionSets = ['writing', 'coding', 'workflow'];
 
   const scanned = records.readTasks(root, diagnostics);
 
   expect(diagnostics).toEqual([]);
-
-  const upgraded = previous.map((name) => {
-    const saved = parsedTaskRecordFixture(name);
-
-    return Object.assign(saved, {
-      version: 7,
-      loadout: {
-        ...(saved.loadout as object),
-        tools: ['read', 'bash'],
-        skills: [],
-        instructionSets: earlierInstructionSets,
-        packages: [],
-      },
-    });
-  });
-
-  const version4 = parsedTaskRecordFixture('version-4-pi');
-
-  const upgradedVersion4 = Object.assign(version4, {
-    version: 7,
-    loadout: {
-      ...(version4.loadout as object),
-      instructionSets: earlierInstructionSets,
-      packages: [],
-    },
-  });
-
-  const version5 = parsedTaskRecordFixture('version-5-pi');
-
-  const upgradedVersion5 = Object.assign(version5, {
-    version: 7,
-    loadout: { ...(version5.loadout as object), packages: [] },
-  });
-
-  const upgradedVersion6 = Object.assign(parsedTaskRecordFixture('version-6-pi'), { version: 7 });
-
-  expect(
-    scanned.map(({ task }) => task).toSorted((a, b) => a.taskId.localeCompare(b.taskId)),
-  ).toEqual([
-    parsedTaskRecordFixture('current-pi'),
-    ...upgraded,
-    upgradedVersion4,
-    upgradedVersion5,
-    upgradedVersion6,
-  ]);
-});
-
-it('diagnoses a format 6 task that lists the browser instruction set', () => {
-  const root = saveTaskRecordFixtures(['version-6-pi']);
-  const saved = parsedTaskRecordFixture('version-6-pi');
-  const loadout = { ...(saved.loadout as object), instructionSets: ['writing', 'browser'] };
-
-  writeFileSync(join(root, 'version-6-pi', 'task.json'), JSON.stringify({ ...saved, loadout }));
-
-  const diagnostics: string[] = [];
-
-  expect(records.readTasks(root, diagnostics, [])).toEqual([]);
-  expect(diagnostics).toHaveLength(1);
-  expect(diagnostics[0]).toContain(join(root, 'version-6-pi'));
+  expect(scanned.map(({ task }) => task)).toEqual([parsedTaskRecordFixture('current-pi')]);
 });
 
 it('diagnoses a current-format task whose profile packages are missing or malformed', () => {
@@ -343,76 +271,6 @@ it('diagnoses a current-format task whose profile packages are missing or malfor
   expect(diagnostics).toHaveLength(3);
 
   for (const taskId of ['empty-package', 'missing-packages', 'text-packages']) {
-    expect(diagnostics.some((diagnostic) => diagnostic.includes(join(root, taskId)))).toBe(true);
-  }
-});
-
-const saveSubmissionRecordFixtures = (directory: string) => {
-  for (const suffix of ['intent', 'observation']) {
-    const name = `submission-assignment-${suffix}.json`;
-    const fixture = new URL(`./fixtures/submissionRecords/${name}`, import.meta.url);
-
-    writeFileSync(join(directory, name), readFileSync(fixture, 'utf8'));
-  }
-};
-
-it('skips non-Pi tasks and their submissions without hiding Pi tasks', () => {
-  const root = saveTaskRecordFixtures([
-    'previous-pi',
-    'previous-generic',
-    'current-pi',
-    'current-generic',
-  ]);
-
-  saveSubmissionRecordFixtures(join(root, 'previous-generic'));
-  const diagnostics: string[] = [];
-  const skipped: string[] = [];
-
-  const scanned = records.readTasks(root, diagnostics, skipped);
-
-  expect(scanned.map(({ task }) => task.taskId).toSorted()).toEqual(['current-pi', 'previous-pi']);
-  expect(diagnostics).toEqual([]);
-
-  expect(skipped.toSorted()).toEqual(
-    ['current-generic', 'previous-generic'].map(
-      (taskId) =>
-        `Skipped task ${taskId} run by a non-Pi worker; Tau no longer supports non-Pi workers.`,
-    ),
-  );
-
-  for (const taskId of ['previous-generic', 'current-generic']) {
-    expect(() => records.readTask(join(root, taskId))).toThrow(
-      'Tau no longer supports non-Pi workers.',
-    );
-  }
-});
-
-it('diagnoses a malformed record that only looks like a non-Pi task', () => {
-  const root = saveTaskRecordFixtures(['previous-generic']);
-  const { version: _version, ...unversioned } = parsedTaskRecordFixture('previous-generic');
-
-  for (const [taskId, version] of [
-    ['unversioned', undefined],
-    ['text-version', '2'],
-    ['first-version', 1],
-  ] as const) {
-    const saved = { ...unversioned, taskId, ...(version === undefined ? {} : { version }) };
-    mkdirSync(join(root, taskId));
-    writeFileSync(join(root, taskId, 'task.json'), JSON.stringify(saved));
-  }
-
-  const diagnostics: string[] = [];
-  const skipped: string[] = [];
-
-  expect(records.readTasks(root, diagnostics, skipped)).toEqual([]);
-
-  expect(skipped).toEqual([
-    'Skipped task previous-generic run by a non-Pi worker; Tau no longer supports non-Pi workers.',
-  ]);
-
-  expect(diagnostics).toHaveLength(3);
-
-  for (const taskId of ['first-version', 'text-version', 'unversioned']) {
     expect(diagnostics.some((diagnostic) => diagnostic.includes(join(root, taskId)))).toBe(true);
   }
 });

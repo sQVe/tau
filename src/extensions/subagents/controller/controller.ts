@@ -7,7 +7,6 @@ import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-
 import { isMissingFile } from '../../../errors.js';
 import { processAbsent } from '../cancellation.js';
 import { refuseLiveNativeWriter } from '../continuations.js';
-import { authorizeHistoryTask } from '../history.js';
 import { validateSavedLoadout } from '../loadout.js';
 import { allocateName, nameSuffix } from '../names.js';
 import { validateNative } from '../native.js';
@@ -393,20 +392,17 @@ export class WorkerController {
       throw new Error('Follow-up requires an active parent.');
     }
 
-    const source = authorizeHistoryTask(
-      this.root,
-      { file: input.parentSession, id: input.parentSessionId },
-      input.sourceTaskId,
-    );
-
-    const native = validateNative(source.task, source.origin);
-    const loadout = validateSavedLoadout(source.task.loadout, context);
+    const directory = this.directory(input.sourceTaskId, input.parentSessionId);
+    const task = readTask(directory);
+    const native = validateNative(task);
+    const loadout = validateSavedLoadout(task.loadout, context);
 
     validationSignal.throwIfAborted();
 
     // Validation expiry must not masquerade as caller cancellation during launch/readiness.
     return this.launchTask({ ...input, loadout, startedAt }, signal, {
-      ...source,
+      directory,
+      task,
       native,
     });
   }

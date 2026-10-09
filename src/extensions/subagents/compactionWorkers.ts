@@ -38,6 +38,6 @@ export const compactionWorkerList = (rows: readonly CompactionRow[]): string | u
   return [
     'Workers from this session that have not stopped or have a pending question:',
     ...tracked.map((row) => workerLine(row)),
-    'Use subagent_status for reports and subagent_history for finished workers.',
+    'Use subagent_status for worker reports.',
   ].join('\n');
 };

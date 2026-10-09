@@ -1,6 +1,5 @@
 import { realpathSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
 
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
@@ -8,16 +7,6 @@ import { Value } from 'typebox/value';
 import { isMissingFile } from '../../errors.js';
 import { readEvent, readReport } from './records.js';
 import type { Task } from './types.js';
-
-interface Entry {
-  directory: string;
-  task: Task;
-}
-
-interface ContinuationOrigins {
-  origins: Map<string, Task>;
-  diagnostics: string[];
-}
 
 export const requireHandover = (directory: string, task: Task): void => {
   if (!readReport(directory, task.taskId)) {
@@ -29,55 +18,6 @@ export const requireHandover = (directory: string, task: Task): void => {
       `Task ${task.taskId} has no confirmed parent cleanup. Worker settled or parent exit is insufficient.`,
     );
   }
-};
-
-const sharesNativeSession = (entry: Entry, predecessor: Entry): boolean =>
-  entry.task.nativeSessionId === predecessor.task.nativeSessionId &&
-  entry.task.nativeSessionFile === predecessor.task.nativeSessionFile;
-
-const hasMatchingChain = (entry: Entry, predecessor: Entry): boolean =>
-  sharesNativeSession(entry, predecessor) &&
-  isDeepStrictEqual(entry.task.loadout, predecessor.task.loadout);
-
-const maximumChainLength = 1024;
-
-const walkToOrigin = (entry: Entry, byId: Map<string, Entry>): Task => {
-  let current = entry;
-  const seen = new Set<string>();
-
-  while (current.task.predecessorTaskId != null) {
-    if (seen.has(current.task.taskId) || seen.size >= maximumChainLength) {
-      throw new Error('Cyclic or excessive continuation chain.');
-    }
-
-    seen.add(current.task.taskId);
-    const predecessor = byId.get(current.task.predecessorTaskId);
-
-    if (!predecessor || !hasMatchingChain(current, predecessor)) {
-      throw new Error('Missing or mismatched continuation chain.');
-    }
-
-    requireHandover(predecessor.directory, predecessor.task);
-    current = predecessor;
-  }
-
-  return current.task;
-};
-
-export const continuationOrigins = (entries: Entry[]): ContinuationOrigins => {
-  const byId = new Map(entries.map((entry) => [entry.task.taskId, entry]));
-  const origins = new Map<string, Task>();
-  const diagnostics: string[] = [];
-
-  for (const entry of entries) {
-    try {
-      origins.set(entry.task.taskId, walkToOrigin(entry, byId));
-    } catch (error) {
-      diagnostics.push(`Task ${entry.task.taskId}: ${String(error)}`);
-    }
-  }
-
-  return { origins, diagnostics };
 };
 
 const liveSessionsSchema = Type.Array(

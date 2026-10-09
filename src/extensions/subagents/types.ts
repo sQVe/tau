@@ -1,6 +1,6 @@
 import { StringEnum } from '@earendil-works/pi-ai';
 import { Type } from 'typebox';
-import type { Static, TSchema } from 'typebox';
+import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { instructionSetNames } from '../../instructionSets.js';
@@ -69,13 +69,6 @@ const toolAndSkillProperties = {
   skills: Type.Array(text, { maxItems: 100 }),
 };
 
-// Formats 5 and 6 saved only these sets, and workers of earlier formats loaded all of them.
-export const version6InstructionSetNames = ['writing', 'coding', 'workflow'] as const;
-
-const version6InstructionSetProperties = {
-  instructionSets: Type.Array(StringEnum(version6InstructionSetNames), { maxItems: 3 }),
-};
-
 // Pi package sources as the profile names them, before settings duplicates are skipped.
 const packageProperties = { packages: Type.Array(text, { maxItems: 100 }) };
 
@@ -88,28 +81,6 @@ export const loadoutSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-
-const version6LoadoutSchema = Type.Object(
-  {
-    ...loadoutProperties,
-    ...toolAndSkillProperties,
-    ...version6InstructionSetProperties,
-    ...packageProperties,
-  },
-  { additionalProperties: false },
-);
-
-const version5LoadoutSchema = Type.Object(
-  { ...loadoutProperties, ...toolAndSkillProperties, ...version6InstructionSetProperties },
-  { additionalProperties: false },
-);
-
-const version4LoadoutSchema = Type.Object(
-  { ...loadoutProperties, ...toolAndSkillProperties },
-  { additionalProperties: false },
-);
-
-const previousLoadoutSchema = Type.Object(loadoutProperties, { additionalProperties: false });
 
 const taskProperties = {
   taskId: taskIdSchema,
@@ -127,47 +98,19 @@ const taskProperties = {
   monotonicDeadline: Type.Number({ minimum: 1 }),
 };
 
-const versionedTaskSchema = <
-  Version extends TSchema,
-  SavedLoadout extends
-    | typeof loadoutSchema
-    | typeof version6LoadoutSchema
-    | typeof version5LoadoutSchema
-    | typeof version4LoadoutSchema
-    | typeof previousLoadoutSchema,
->(
-  version: Version,
-  loadout: SavedLoadout,
-) =>
-  Type.Object(
-    {
-      ...taskProperties,
-      version,
-      nativeSessionId: text,
-      nativeSessionFile: text,
-      loadout,
-    },
-    { additionalProperties: false },
-  );
-
 // Bump for any change to the saved fields, including a new optional field.
 export const taskVersion = 7;
 
-export const taskSchema = versionedTaskSchema(Type.Literal(taskVersion), loadoutSchema);
-
-/* eslint-disable eslint/no-magic-numbers -- Saved record versions are fixed values. */
-export const version6TaskSchema = versionedTaskSchema(Type.Literal(6), version6LoadoutSchema);
-
-export const version5TaskSchema = versionedTaskSchema(Type.Literal(5), version5LoadoutSchema);
-
-export const version4TaskSchema = versionedTaskSchema(Type.Literal(4), version4LoadoutSchema);
-
-// Versions 2 and 3 also saved non-Pi tasks, which are no longer read.
-export const previousTaskSchema = versionedTaskSchema(
-  Type.Union([Type.Literal(1), Type.Literal(3)]),
-  previousLoadoutSchema,
+export const taskSchema = Type.Object(
+  {
+    ...taskProperties,
+    version: Type.Literal(taskVersion),
+    nativeSessionId: text,
+    nativeSessionFile: text,
+    loadout: loadoutSchema,
+  },
+  { additionalProperties: false },
 );
-/* eslint-enable eslint/no-magic-numbers */
 
 // Version 2: the Pi worker is its pane's own process, so shellPid equals processId.
 export const ownedWorkerSchema = Type.Object(

@@ -12,7 +12,6 @@ import { expect, onTestFinished, vi } from 'vitest';
 
 import { runClient } from '../cancellation.js';
 import { WorkerController } from '../controller/controller.js';
-import { searchHistory } from '../history.js';
 import { resolveLoadout, validateSavedLoadout } from '../loadout.js';
 import { readAcknowledgement, readReply } from '../questionRecords.js';
 import * as records from '../records.js';
@@ -482,11 +481,6 @@ export default function (pi) {
     const final = controller.status(next.taskId, 'parent');
     const nextTask = readTask(next.directory);
 
-    const history = await searchHistory(join(root, 'records'), {
-      file: savedTask.parentSession,
-      id: 'parent',
-    });
-
     followUpObservations.push(
       nextTask.taskId !== savedTask.taskId,
       nextTask.deadline !== savedTask.deadline,
@@ -502,9 +496,6 @@ export default function (pi) {
       readFileSync(join(launched.directory, 'task.json')).equals(taskBytes),
       readFileSync(join(launched.directory, 'report.json')).equals(reportBytes),
       readFileSync(savedTask.nativeSessionFile, 'utf8').startsWith(transcript),
-      [savedTask.taskId, nextTask.taskId].every((id) =>
-        history.candidates.some((candidate) => candidate.taskId === id),
-      ),
       readFileSync(join(root, 'delete-fixture', '.git', 'keep'), 'utf8'),
       replayed,
     );
@@ -524,7 +515,6 @@ export default function (pi) {
           'success',
           'stopped',
           ['prior context: true', 'Safety Net block: true', 'saved instructions: true'],
-          true,
           true,
           true,
           true,

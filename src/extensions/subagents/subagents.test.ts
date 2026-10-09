@@ -112,7 +112,6 @@ const emptyConfigContext = () => {
 
 const busyParent = { isIdle: () => false, signal: undefined };
 const testTheme = { fg: (_color: string, text: string) => text };
-const noOperation = (): void => undefined;
 
 const fullWorkerStatus = {
   taskId: 'task-1',
@@ -636,9 +635,7 @@ it('updates the parent widget from live worker rows without a model turn', () =>
       taskId: 'task-a',
       state: 'running',
       createdAt: 1,
-      deadline: Date.now() + 10_000,
       activity: 'tool: read',
-      usage: { available: false, reason: 'Pi session usage was not recorded' },
     },
   ]);
 
@@ -669,132 +666,12 @@ it('updates the parent widget from live worker rows without a model turn', () =>
   const component = widgetFactory({} as never, testTheme as never);
 
   expect(component.render(80).join('\n')).toContain('scout-ab');
-  expect(component.render(80).join('\n')).not.toContain('/subagents');
   expect(component.handleMouse).toBeUndefined();
   expect(component.handleInput).toBeUndefined();
   vi.advanceTimersByTime(1000);
   expect(sendMessage).not.toHaveBeenCalled();
   expect(sendUserMessage).not.toHaveBeenCalled();
   expect(WorkerController.prototype.widgetRows).toHaveBeenCalledWith('parent-session');
-});
-
-it('refreshes history while open, then stops polling after close without a model turn', async () => {
-  vi.useFakeTimers();
-  const handlers = new Map<string, (event: unknown, context: ExtensionContext) => void>();
-  const commands = new Map<string, Parameters<ExtensionAPI['registerCommand']>[1]>();
-  const setWidget = vi.fn<ExtensionContext['ui']['setWidget']>();
-  const sendMessage = vi.fn<ExtensionAPI['sendMessage']>();
-  const sendUserMessage = vi.fn<ExtensionAPI['sendUserMessage']>();
-  let finishOverlay: () => void = noOperation;
-
-  const custom = vi.fn<(factory: unknown, options: unknown) => Promise<void>>(
-    () =>
-      new Promise((resolve) => {
-        finishOverlay = resolve;
-      }),
-  );
-
-  const extension = {
-    events: createEventBus(),
-    on: (name: string, handler: (event: unknown, context: ExtensionContext) => void) =>
-      handlers.set(name, handler),
-    registerTool: () => undefined,
-    registerMessageRenderer: () => undefined,
-    registerCommand: (
-      name: Parameters<ExtensionAPI['registerCommand']>[0],
-      command: Parameters<ExtensionAPI['registerCommand']>[1],
-    ) => commands.set(name, command),
-    sendMessage,
-    sendUserMessage,
-  } as unknown as ExtensionAPI;
-
-  let historyRows: WorkerWidgetRow[] = [
-    {
-      name: 'worker-c2',
-      taskId: 'task-full-id',
-      state: 'cleanupUnconfirmed',
-      createdAt: 1,
-      deadline: 10_000,
-      details: 'Pi trusted tools + verified safety · manual cleanup pane-7',
-      detailPath: '/records/task-full-id/task.json',
-      issue: 'inspect recovery',
-      requestedModel: 'faux/test',
-      usage: { available: false, reason: 'Pi session usage was not recorded' },
-      report: { summary: 'Partial handover', evidence: ['output.log'] },
-    },
-  ];
-
-  const readHistoryRows = vi
-    .spyOn(WorkerController.prototype, 'widgetRows')
-    .mockImplementation(() => historyRows);
-
-  subagentsExtension(extension, inertCapacityRefusal);
-
-  const context = {
-    ...emptyConfigContext(),
-    mode: 'tui',
-    hasUI: true,
-    ui: { setWidget, custom },
-    sessionManager: { getSessionId: () => 'parent-session' },
-  } as unknown as ExtensionContext;
-
-  handlers.get('session_start')?.({}, context);
-
-  finishTest(() => {
-    handlers.get('session_shutdown')?.({}, context);
-    finishOverlay();
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-  });
-
-  const command = commands.get('subagents');
-  expect(command).toBeDefined();
-
-  if (!command) {
-    return;
-  }
-
-  const commandPromise = command.handler('', context as never);
-
-  expect(custom).toHaveBeenCalledOnce();
-  expect(custom.mock.calls[0]?.[1]).toBeUndefined();
-  expect(setWidget).toHaveBeenLastCalledWith('tau-subagents', undefined);
-  expect(readHistoryRows).toHaveBeenCalledWith('parent-session');
-  const pollsBeforeRefresh = readHistoryRows.mock.calls.length;
-
-  historyRows = [
-    { ...historyRows[0]!, state: 'stopped', stoppedAt: Date.now(), cleanupConfirmed: true },
-  ];
-
-  vi.advanceTimersByTime(1000);
-
-  expect(readHistoryRows.mock.calls.length).toBeGreaterThan(pollsBeforeRefresh);
-  expect(setWidget).toHaveBeenLastCalledWith('tau-subagents', undefined);
-  expect(sendMessage).not.toHaveBeenCalled();
-  expect(sendUserMessage).not.toHaveBeenCalled();
-
-  finishOverlay();
-  await commandPromise;
-  const restoredWidget = setWidget.mock.calls.at(-1)?.[1];
-
-  if (typeof restoredWidget !== 'function') {
-    throw new TypeError('Parent worker widget was not restored.');
-  }
-
-  expect(
-    restoredWidget({} as never, testTheme as never)
-      .render(160)
-      .join('\n'),
-  ).toContain('1 stopped');
-
-  const pollsAfterClose = readHistoryRows.mock.calls.length;
-  vi.advanceTimersByTime(1000);
-
-  expect(readHistoryRows.mock.calls.length).toBe(pollsAfterClose);
-
-  custom.mockRejectedValueOnce(new Error('overlay failed'));
-  await expect(command.handler('', context as never)).rejects.toThrow('overlay failed');
-  expect(typeof setWidget.mock.calls.at(-1)?.[1]).toBe('function');
 });
 
 it('keeps editor focus and typing after a click on the passive fullscreen widget', () => {
@@ -844,8 +721,6 @@ it('keeps editor focus and typing after a click on the passive fullscreen widget
       taskId: 'task-ab',
       state: 'running',
       createdAt: 1,
-      deadline: Date.now() + 60_000,
-      usage: { available: false, reason: 'Pi session usage was not recorded' },
     },
   ]);
 

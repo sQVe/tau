@@ -121,3 +121,4 @@ line that links to the replacement.
 - [0094: Compose PR publication evidence](./0094-compose-pr-publication-evidence.md)
 - [0095: Keep repository routing in tracker config](./0095-keep-repository-routing-in-tracker-config.md)
 - [0096: Create and keep linear stacks with gh stack](./0096-create-and-keep-linear-stacks-with-gh-stack.md)
+- [0097: Track only the current session's workers](./0097-track-only-the-current-sessions-workers.md)

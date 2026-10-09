@@ -17,7 +17,6 @@ import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.j
 import { hasParentTrackedWorkers, compactionWorkerList } from './compactionWorkers.js';
 import { WorkerCapacityFullError, WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
-import { historyPage, searchHistory } from './history.js';
 import { launchModels, resolveLoadout } from './loadout.js';
 import { delegationGuidelines } from './managerPrompt.js';
 import { decideNoticeDelivery } from './noticeDelivery.js';
@@ -30,7 +29,6 @@ import { workerRecordsDirectory } from './records.js';
 import {
   callText,
   firstLine,
-  renderHistoryResult,
   renderNotice,
   renderReplyResult,
   renderStatusResult,
@@ -40,9 +38,6 @@ import { readTrackerSetup } from './trackerConfig.js';
 import { trackerLines } from './trackerRouting.js';
 import { taskIdSchema } from './types.js';
 import { renderWorkerWidget } from './widget.js';
-import type { WorkerWidgetRow } from './widget.js';
-import { openWorkerHistory } from './widgetOverlay.js';
-import type { WorkerHistoryView } from './widgetOverlay.js';
 import { workerModelLine } from './workerModels.js';
 
 interface CapacityRefusal {
@@ -52,7 +47,6 @@ interface CapacityRefusal {
 interface SubagentRuntime {
   pi: ExtensionAPI;
   getController: () => WorkerController;
-  peekController: () => WorkerController | undefined;
   refuseCapacity: () => void;
 }
 
@@ -116,15 +110,6 @@ const followUpParameters = Type.Object(
   { additionalProperties: false },
 );
 
-const historyParameters = Type.Object(
-  {
-    query: Type.Optional(Type.String({ minLength: 1, maxLength: 1000 })),
-    offset: Type.Optional(Type.Integer({ minimum: 0 })),
-    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
-  },
-  { additionalProperties: false },
-);
-
 const statusParameters = Type.Object(
   { taskId: Type.String(), questionId: Type.Optional(Type.String()) },
   { additionalProperties: false },
@@ -144,7 +129,6 @@ const cancelParameters = Type.Object({ taskId: Type.String() });
 
 type LaunchParameters = Static<typeof launchParameters>;
 type FollowUpParameters = Static<typeof followUpParameters>;
-type HistoryParameters = Static<typeof historyParameters>;
 type StatusParameters = Static<typeof statusParameters>;
 type ReplyParameters = Static<typeof replyParameters>;
 type CancelParameters = Static<typeof cancelParameters>;
@@ -347,36 +331,6 @@ const followUpWorker = async (
   };
 };
 
-const searchWorkerHistory = async (
-  parameters: HistoryParameters,
-  signal: AbortSignal | undefined,
-  context: ExtensionContext,
-  controller: WorkerController | undefined,
-) => {
-  signal?.throwIfAborted();
-  const file = context.sessionManager.getSessionFile();
-
-  if (file == null || file === '') {
-    throw new Error('History requires a saved current session.');
-  }
-
-  const history = await searchHistory(
-    workerRecordsDirectory(),
-    {
-      file,
-      id: context.sessionManager.getSessionId(),
-    },
-    parameters.query,
-    (taskId) => controller?.owns(taskId) ?? false,
-  );
-
-  signal?.throwIfAborted();
-
-  const page = historyPage(history, parameters.offset, parameters.limit);
-
-  return { content: [{ type: 'text' as const, text: JSON.stringify(page) }], details: page };
-};
-
 const readWorkerStatus = (
   runtime: SubagentRuntime,
   parameters: StatusParameters,
@@ -546,7 +500,7 @@ const registerFollowUpTool = (runtime: SubagentRuntime): void => {
     exposure: 'model-only',
     label: 'Follow up completed worker',
     description: [
-      'Give a stopped worker a new task in its saved session and settings.',
+      'Give a stopped worker from this parent session a new task in its saved session and settings.',
       'The source must have a report, no successorTaskId, and no live session.',
     ].join(' '),
     parameters: followUpParameters,
@@ -562,27 +516,6 @@ const registerFollowUpTool = (runtime: SubagentRuntime): void => {
     },
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       return followUpWorker(runtime, parameters, signal, context);
-    },
-  });
-};
-
-const registerHistoryTool = (runtime: SubagentRuntime): void => {
-  runtime.pi.registerTool({
-    name: 'subagent_history',
-    label: 'Search session history',
-    description: [
-      'Search earlier workers in this session history by name, task or session ID, or description.',
-      'Page with nextOffset and the same query. truncatedFields marks previews; use full IDs, and reportFile for a truncated report.',
-    ].join(' '),
-    parameters: historyParameters,
-    renderCall(parameters, theme) {
-      return callText('Search session history', parameters.query, theme);
-    },
-    renderResult(result, options, theme) {
-      return renderHistoryResult(result.details, options.expanded, theme);
-    },
-    async execute(_toolCallId, parameters, signal, _onUpdate, context) {
-      return searchWorkerHistory(parameters, signal, context, runtime.peekController());
     },
   });
 };
@@ -658,7 +591,6 @@ const registerSubagentTools = (runtime: SubagentRuntime): void => {
   );
 
   registerFollowUpTool(runtime);
-  registerHistoryTool(runtime);
   registerStatusTool(runtime);
   registerReplyTool(runtime);
   registerCancelTool(runtime);
@@ -732,8 +664,6 @@ export default function subagentsExtension(
   let sessionContext: ExtensionContext | undefined;
   const deliverNotice = createNoticeDelivery(pi);
   let widgetTimer: ReturnType<typeof setInterval> | undefined;
-  let historyView: WorkerHistoryView | undefined;
-  let historyOpen = false;
   let shuttingDown = false;
 
   const runtime: SubagentRuntime = {
@@ -743,7 +673,6 @@ export default function subagentsExtension(
 
       return controller;
     },
-    peekController: () => controller,
     refuseCapacity: capacityRefusal.refuse,
   };
 
@@ -766,17 +695,14 @@ export default function subagentsExtension(
     }
   });
 
-  const refreshWidget = (context: ExtensionContext, currentRows?: WorkerWidgetRow[]): void => {
+  const refreshWidget = (context: ExtensionContext): void => {
     if (shuttingDown || !context.hasUI || context.mode !== 'tui') {
       return;
     }
 
-    const rows =
-      currentRows ?? runtime.getController().widgetRows(context.sessionManager.getSessionId());
+    const rows = runtime.getController().widgetRows(context.sessionManager.getSessionId());
 
-    historyView?.setRows(rows);
-
-    if (rows.length === 0 || historyOpen) {
+    if (rows.length === 0) {
       context.ui.setWidget('tau-subagents', undefined);
     } else {
       context.ui.setWidget(
@@ -792,7 +718,7 @@ export default function subagentsExtension(
       );
     }
 
-    const refreshIsNeeded = hasParentTrackedWorkers(rows) || historyOpen;
+    const refreshIsNeeded = hasParentTrackedWorkers(rows);
 
     if (refreshIsNeeded) {
       widgetTimer ??= setInterval(() => {
@@ -803,31 +729,6 @@ export default function subagentsExtension(
       widgetTimer = undefined;
     }
   };
-
-  pi.registerCommand('subagents', {
-    description: 'Browse worker history, reports, usage, and recovery details.',
-    handler: async (_arguments, context) => {
-      if (!context.hasUI || context.mode !== 'tui') {
-        return;
-      }
-
-      historyOpen = true;
-
-      try {
-        const rows = runtime.getController().widgetRows(context.sessionManager.getSessionId());
-
-        refreshWidget(context, rows);
-
-        await openWorkerHistory(context, rows, (view) => {
-          historyView = view;
-        });
-      } finally {
-        historyView = undefined;
-        historyOpen = false;
-        refreshWidget(context);
-      }
-    },
-  });
 
   pi.on('session_start', async (_event, context) => {
     shuttingDown = false;
@@ -921,9 +822,6 @@ export default function subagentsExtension(
   pi.on('session_shutdown', async (event) => {
     shuttingDown = true;
     sessionContext = undefined;
-    historyOpen = false;
-    historyView?.dismiss();
-    historyView = undefined;
 
     if (widgetTimer) {
       clearInterval(widgetTimer);

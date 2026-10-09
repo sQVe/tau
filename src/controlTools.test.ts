@@ -20,7 +20,6 @@ it.each([
   ]),
   { toolName: 'read', parentToolCallId: 'codemode-call', nested: false },
   { toolName: 'subagent_status', parentToolCallId: 'codemode-call', nested: false },
-  { toolName: 'subagent_history', parentToolCallId: 'codemode-call', nested: false },
 ])(
   'decides $toolName with parent $parentToolCallId is nested control: $nested',
   ({ toolName, parentToolCallId, nested }) => {

@@ -11,47 +11,24 @@ export interface WorkerWidgetRow {
   taskId: string;
   task?: string | undefined;
   label?: string | undefined;
-  workerType?: string | undefined;
   state: WorkerState | 'unknown';
-  deadline: number;
   createdAt: number;
   activity?: string | undefined;
-  activityAt?: number | undefined;
-  phaseDescription?: string | undefined;
-  phaseDescriptionAt?: number | undefined;
   outcome?: string | undefined;
-  terminal?: string | undefined;
-  cleanup?: string | undefined;
   cleanupConfirmed?: boolean | undefined;
   stoppedAt?: number | undefined;
-  details?: string | undefined;
-  recovery?: string | undefined;
-  detailPath?: string | undefined;
   question?: string | undefined;
   questionId?: string | undefined;
-  issue?: string | undefined;
-  usage: { available: false; reason: string } | { available: true; label: string };
   requestedModel?: string | undefined;
   observedModel?: string | undefined;
-  report?: { summary: string; evidence: string[] } | undefined;
 }
 
-export type WorkerGroup = 'stopped' | 'unresolved' | 'waiting' | 'active';
+type WorkerGroup = 'stopped' | 'unresolved' | 'waiting' | 'active';
 
-export const safeText = (value: string): string =>
-  stripTerminalSequences(value).replace(/\p{Cc}/gu, ' ');
-
-// Paragraph breaks are content in a full task prompt, so keep newlines and only drop other
-// control characters that could move the cursor or corrupt the terminal.
-export const safeMultilineText = (value: string): string =>
-  stripTerminalSequences(value)
-    .replace(/\r\n?/gu, '\n')
-    .replace(/\t/gu, '  ')
-    .replace(/[^\n\P{Cc}]/gu, ' ');
+const safeText = (value: string): string => stripTerminalSequences(value).replace(/\p{Cc}/gu, ' ');
 
 const millisecondsPerSecond = 1000;
 const secondsPerMinute = 60;
-const millisecondsPerMinute = 60_000;
 
 const duration = (milliseconds: number): string => {
   const seconds = Math.max(0, Math.floor(milliseconds / millisecondsPerSecond));
@@ -67,10 +44,10 @@ const unresolvedStates = new Set<WorkerWidgetRow['state']>([
   'unknown',
 ]);
 
-// One classification drives the compact header and the expanded groups. Precedence:
+// One classification drives the header and row order. Precedence:
 // stopped, then an unresolved state, then a real pending question, then remaining active work.
 // A question retained by an unresolved record cannot change its state or add a second category.
-export const workerGroup = (row: WorkerWidgetRow): WorkerGroup => {
+const workerGroup = (row: WorkerWidgetRow): WorkerGroup => {
   if (row.state === 'stopped') {
     return 'stopped';
   }
@@ -111,7 +88,7 @@ const stateText = (row: WorkerWidgetRow): string =>
 // A worker name ends with a dash and two suffix characters.
 const workerNameSuffixLength = 3;
 
-export const truncateWorkerName = (name: string, width: number): string => {
+const truncateWorkerName = (name: string, width: number): string => {
   const suffix = new RegExp(workerNamePattern).test(name)
     ? name.slice(-workerNameSuffixLength)
     : undefined;
@@ -131,12 +108,6 @@ export const truncateWorkerName = (name: string, width: number): string => {
   return `${truncatedPrefix}${suffix}`;
 };
 
-const formatClockTime = (timestamp: number): string => {
-  const date = new Date(timestamp);
-
-  return `@${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-};
-
 export const workerElapsed = (row: WorkerWidgetRow, now: number): string => {
   const clockDoesNotProveRunTime =
     row.state === 'unknown' || row.state === 'cleanupUnconfirmed' || row.state === 'notOwned';
@@ -153,39 +124,6 @@ export const workerElapsed = (row: WorkerWidgetRow, now: number): string => {
   }
 
   return duration((endedAt ?? now) - row.createdAt);
-};
-
-export const compactDuration = (milliseconds: number): string => {
-  const minutes = Math.floor(Math.max(0, milliseconds) / millisecondsPerMinute);
-  const seconds = Math.ceil(Math.max(0, milliseconds) / millisecondsPerSecond);
-
-  return minutes > 0 ? `${minutes}m` : `${seconds}s`;
-};
-
-export const workerRightTime = (row: WorkerWidgetRow, now: number): string => {
-  if (row.state === 'stopped') {
-    return row.stoppedAt === undefined ? '—' : formatClockTime(row.stoppedAt);
-  }
-
-  const timerIsNotLive =
-    row.state === 'unknown' || row.state === 'cleanupUnconfirmed' || row.state === 'notOwned';
-
-  if (timerIsNotLive) {
-    return row.activityAt === undefined ? '—' : formatClockTime(row.activityAt);
-  }
-
-  if (row.deadline <= now) {
-    return 'overdue';
-  }
-
-  const remainingMilliseconds = row.deadline - now;
-
-  const remainingTime =
-    remainingMilliseconds < millisecondsPerMinute
-      ? compactDuration(remainingMilliseconds)
-      : `${Math.ceil(remainingMilliseconds / millisecondsPerMinute)}m`;
-
-  return `${remainingTime} left`;
 };
 
 const maxTaskLabelLength = 80;
@@ -213,7 +151,7 @@ const shortTaskLabelFromText = (text: string): string => {
 };
 
 // The compact widget shows a parent-provided label when present, otherwise the saved task text.
-export const shortTaskLabel = (row: WorkerWidgetRow): string => {
+const shortTaskLabel = (row: WorkerWidgetRow): string => {
   const provided = row.label?.trim();
 
   if (provided !== undefined && provided.length > 0) {
@@ -226,7 +164,7 @@ export const shortTaskLabel = (row: WorkerWidgetRow): string => {
 };
 
 // Show an observed model as observed, keep a requested-only value labelled, and never invent one.
-export const workerModelLabel = (row: WorkerWidgetRow): string => {
+const workerModelLabel = (row: WorkerWidgetRow): string => {
   if (row.observedModel !== undefined) {
     return row.observedModel;
   }
@@ -252,11 +190,9 @@ const statusText = (row: WorkerWidgetRow, now: number): string => {
 const minimumColumnWidths = { name: 4, status: 6, task: 4 };
 const readableColumnWidths = { name: 4, status: 14, task: 12 };
 
-// Column removal and shrinking must use the same total-width calculation. The model column is
-// dropped first because the full model stays reachable in the details view.
+// Column removal and shrinking must use the same total-width calculation.
 const alignedColumns = (rows: WorkerWidgetRow[], availableWidth: number, now: number) => {
-  // Name and status stay adjacent so the row reads as one fact. The model is last because the
-  // full value stays reachable in the details view.
+  // Name and status stay adjacent so the row reads as one fact.
   const columns = [
     {
       name: 'name',
@@ -415,8 +351,8 @@ export const renderWorkerWidget = (
   const waitingCount = rows.filter((row) => workerGroup(row) === 'waiting').length;
   const stoppedCount = rows.filter((row) => workerGroup(row) === 'stopped').length;
 
-  // Only work that can still change gets a row. Unresolved records from earlier processes stay in
-  // history and remain visible as counts, so capacity-held records never disappear from the view.
+  // Only work that can still change gets a row. Unresolved records from earlier processes remain
+  // visible as counts, so capacity-held records never disappear from the view.
   const eligibleRows = rows
     .filter((row) => {
       const group = workerGroup(row);

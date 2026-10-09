@@ -50,28 +50,6 @@ interface EvidenceView {
   directory?: string | undefined;
 }
 
-interface HistoryCandidate {
-  taskId?: string | undefined;
-  name?: string | undefined;
-  description?: string | undefined;
-  state?: WorkerState | undefined;
-  predecessorTaskId?: string | undefined;
-  successorTaskId?: string | undefined;
-  nativeSessionId?: string | undefined;
-  nativeSessionFile?: string | undefined;
-  nativeEvidence?: string | undefined;
-  report?: ReportView | undefined;
-  reportFile?: string | undefined;
-  truncatedFields?: string[] | undefined;
-}
-
-interface HistoryView {
-  totalMatches?: number | undefined;
-  nextOffset?: number | undefined;
-  candidates: HistoryCandidate[];
-  diagnostics?: string[] | undefined;
-}
-
 // Pi renders its default result only when a tool renderer throws. This sentinel makes the fallback
 // for results saved before the state field deliberate instead of an accident.
 export class DefaultRenderingRequiredError extends Error {
@@ -90,9 +68,6 @@ export const callText = (title: string, detail: string | undefined, theme: Theme
 
   return new Text(body, 0, 0);
 };
-
-const historyCollapsedRows = 5;
-const historyRowWidth = 60;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -237,44 +212,6 @@ const replyView = (details: unknown): ReplyView | undefined => {
   };
 };
 
-const historyCandidateView = (value: unknown): HistoryCandidate | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  return {
-    taskId: stringField(value, 'taskId'),
-    name: stringField(value, 'name'),
-    description: stringField(value, 'description'),
-    state: stateField(value),
-    predecessorTaskId: stringField(value, 'predecessorTaskId'),
-    successorTaskId: stringField(value, 'successorTaskId'),
-    nativeSessionId: stringField(value, 'nativeSessionId'),
-    nativeSessionFile: stringField(value, 'nativeSessionFile'),
-    nativeEvidence: stringField(value, 'nativeEvidence'),
-    report: reportView(value.report),
-    reportFile: stringField(value, 'reportFile'),
-    truncatedFields: stringArrayField(value, 'truncatedFields'),
-  };
-};
-
-const historyView = (details: unknown): HistoryView | undefined => {
-  if (!isRecord(details) || !Array.isArray(details.candidates)) {
-    return undefined;
-  }
-
-  return {
-    totalMatches: numberField(details, 'totalMatches'),
-    nextOffset: numberField(details, 'nextOffset'),
-    candidates: details.candidates.flatMap((entry) => {
-      const candidate = historyCandidateView(entry);
-
-      return candidate ? [candidate] : [];
-    }),
-    diagnostics: stringArrayField(details, 'diagnostics'),
-  };
-};
-
 const shortIdLength = 8;
 
 export const shortId = (taskId: string | undefined): string =>
@@ -340,7 +277,7 @@ const basePart = (details: StatusView): string => {
 // with a fixed phrase; ctrl+o shows the full text.
 const reasonHint = 'ctrl+o for the reason';
 
-export const deadlineStates = new Set<WorkerState>(['starting', 'running', 'awaitingReply']);
+const deadlineStates = new Set<WorkerState>(['starting', 'running', 'awaitingReply']);
 
 const lifecycleParts = (details: StatusView, state: WorkerState): string[] => {
   const parts: string[] = [];
@@ -514,99 +451,6 @@ export const expandedStatusLines = (details: StatusView, theme: Theme): string[]
   ];
 };
 
-const matchCount = (count: number): string => {
-  if (count === 0) {
-    return 'no matches';
-  }
-
-  return count === 1 ? '1 match' : `${count} matches`;
-};
-
-const historyRow = (candidate: HistoryCandidate, theme: Theme): string => {
-  const name = displayName(candidate);
-
-  const label = candidate.state
-    ? stateLabel(candidate.state, candidate.report?.outcome)
-    : undefined;
-
-  const state = label
-    ? `${theme.fg(label.color, label.icon)} ${label.text}`
-    : theme.fg('muted', 'state unknown');
-
-  const description = firstLine(candidate.description ?? '').slice(0, historyRowWidth);
-
-  return `${theme.bold(name)}  ${state}  ${description}`;
-};
-
-const historyTotal = (details: HistoryView): number =>
-  typeof details.totalMatches === 'number' ? details.totalMatches : details.candidates.length;
-
-export const collapsedHistoryLines = (details: HistoryView, theme: Theme): string[] => {
-  const total = historyTotal(details);
-  const shown = details.candidates.slice(0, historyCollapsedRows);
-  const hidden = details.candidates.length - shown.length;
-
-  const lines = [
-    `${theme.fg('toolTitle', theme.bold('History'))} · ${matchCount(total)}`,
-    ...shown.map((entry) => historyRow(entry, theme)),
-  ];
-
-  if (hidden > 0) {
-    lines.push(theme.fg('dim', `… ${hidden} more (ctrl+o)`));
-  }
-
-  if (details.nextOffset !== undefined) {
-    lines.push(theme.fg('dim', 'More matches on the next page'));
-  }
-
-  return lines;
-};
-
-const candidateRows = (candidate: HistoryCandidate, theme: Theme): string[] => {
-  const fields: [string, string | undefined][] = [
-    ['Task', candidate.taskId],
-    ['Name', candidate.name],
-    ['State', candidate.state],
-    ['Description', candidate.description],
-    ['Follows', candidate.predecessorTaskId],
-    ['Followed up by', candidate.successorTaskId],
-    ['Report outcome', candidate.report?.outcome],
-    ['Report summary', candidate.report?.summary],
-    ['Native evidence', candidate.nativeEvidence],
-    ['Native session ID', candidate.nativeSessionId],
-    ['Native session file', candidate.nativeSessionFile],
-    ['Report file', candidate.reportFile],
-    ['Truncated fields', candidate.truncatedFields?.join(', ')],
-  ];
-
-  return [
-    ...fields
-      .filter((entry): entry is [string, string] => Boolean(entry[1]))
-      .map(([label, value]) => row(label, value, theme)),
-    ...(candidate.report?.evidence ?? []).map((entry) => row('Report evidence', entry, theme)),
-  ];
-};
-
-export const expandedHistoryLines = (details: HistoryView, theme: Theme): string[] => {
-  const lines = [
-    `${theme.fg('toolTitle', theme.bold('History'))} · ${matchCount(historyTotal(details))}`,
-    ...details.candidates.flatMap((candidate) => [
-      '',
-      theme.bold(displayName(candidate)),
-      ...candidateRows(candidate, theme),
-    ]),
-    ...(details.diagnostics ?? []).map((entry) => row('Diagnostic', entry, theme)),
-  ];
-
-  if (details.nextOffset !== undefined) {
-    const instruction = `Repeat the same query with nextOffset: ${details.nextOffset}.`;
-
-    lines.push(row('Next page', instruction, theme));
-  }
-
-  return lines;
-};
-
 const replyStatement = (details: ReplyView, name: string, theme: Theme): string => {
   const saved = `${theme.fg('accent', '↳')} ${theme.bold(name)} reply saved`;
 
@@ -709,20 +553,6 @@ export const renderReplyResult = (details: unknown, expanded: boolean, theme: Th
   }
 
   const text = expanded ? expandedReplyLines(reply, theme) : collapsedReplyLines(reply, theme);
-
-  return new Text(text.join('\n'), 0, 0);
-};
-
-export const renderHistoryResult = (details: unknown, expanded: boolean, theme: Theme): Text => {
-  const history = historyView(details);
-
-  if (!history) {
-    throw new DefaultRenderingRequiredError();
-  }
-
-  const text = expanded
-    ? expandedHistoryLines(history, theme)
-    : collapsedHistoryLines(history, theme);
 
   return new Text(text.join('\n'), 0, 0);
 };
