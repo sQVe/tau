@@ -58,8 +58,8 @@ cannot read a newer file, and the user writes this file by hand, unlike the save
 
 ### Model routes
 
-- `profiles.<name>.route` holds one route: a `question`, exactly two `labels`, and a `classifier`
-  model. `routes` is a renamed key.
+- `profiles.<name>.route` holds one route: a `question`, exactly two `labels`, a `classifier` model,
+  and an optional `canary` share. `routes` is a renamed key.
 - The route names its own classifier, so Tau's code again names no model. Without `classifier`, the
   route is invalid and only routing for that profile stops. The classifier must pass
   `allowedModels`, because the brief leaves the machine.
@@ -107,5 +107,5 @@ to a model the user never chose.
 
 ### Keep the `routes` name
 
-Keep `routes` to avoid editing existing user files. Rejected because routing runs in shadow mode
-today, so renaming now costs one edit, and the plural name misleads every later reader.
+Keep `routes` to avoid editing existing user files. Rejected because the key is new and used in few
+files, so renaming now costs one edit, and the plural name misleads every later reader.
