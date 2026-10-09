@@ -95,6 +95,10 @@ const parseRoute = (source: string, field: string, entry: unknown): ModelRoute =
     throw invalid(source, `${field}.labels must have exactly two labels, not ${names.length}.`);
   }
 
+  if (names.some((name) => name.trim() === '')) {
+    throw invalid(source, `${field}.labels must not have an empty label name.`);
+  }
+
   const labels = new Map(
     names.map((name) => [name, parseLabel(source, `${field}.labels.${name}`, labelEntries[name])]),
   );

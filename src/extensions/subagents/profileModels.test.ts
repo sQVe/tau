@@ -155,6 +155,16 @@ it.for<[string, unknown, string]>([
     'profiles.scout.routes.labels.wide.model',
   ],
   ['a missing question', { labels: scoutRoutes.labels }, 'profiles.scout.routes.question'],
+  [
+    'an empty label name',
+    { ...scoutRoutes, labels: { narrow: scoutRoutes.labels.narrow, '': scoutRoutes.labels.wide } },
+    'profiles.scout.routes.labels',
+  ],
+  [
+    'a blank label name',
+    { ...scoutRoutes, labels: { narrow: scoutRoutes.labels.narrow, ' ': scoutRoutes.labels.wide } },
+    'profiles.scout.routes.labels',
+  ],
 ])('refuses %s and names the file and field', ([, routes, field], { onTestFinished }) => {
   const { location, userFile } = configFixture(onTestFinished);
 
