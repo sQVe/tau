@@ -237,14 +237,52 @@ const saveTaskRecordFixtures = (names: string[]) => {
   return root;
 };
 
-it('reads task records saved in the current format', () => {
-  const root = saveTaskRecordFixtures(['current-pi']);
+it('reads task records saved in the current and the previous format', () => {
+  const root = saveTaskRecordFixtures(['current-pi', 'routed-pi']);
   const diagnostics: string[] = [];
 
   const scanned = records.readTasks(root, diagnostics);
 
   expect(diagnostics).toEqual([]);
-  expect(scanned.map(({ task }) => task)).toEqual([parsedTaskRecordFixture('current-pi')]);
+
+  expect(
+    scanned.map(({ task }) => task).toSorted((a, b) => a.taskId.localeCompare(b.taskId)),
+  ).toEqual([parsedTaskRecordFixture('current-pi'), parsedTaskRecordFixture('routed-pi')]);
+
+  expect(records.readTask(join(root, 'routed-pi')).routing).toEqual({
+    shadowPick: 'faux/small',
+    label: 'narrow',
+    confidence: 0.9,
+  });
+});
+
+it('refuses routing on a previous-format task', () => {
+  const root = saveTaskRecordFixtures(['routed-pi']);
+  const routed = parsedTaskRecordFixture('routed-pi');
+  writeFileSync(join(root, 'routed-pi', 'task.json'), JSON.stringify({ ...routed, version: 7 }));
+
+  expect(() => records.readTask(join(root, 'routed-pi'))).toThrow('Invalid saved worker task');
+});
+
+it('diagnoses routing with an unknown fallback reason or an unknown field', () => {
+  const root = saveTaskRecordFixtures(['current-pi']);
+  const routed = parsedTaskRecordFixture('routed-pi');
+
+  for (const [taskId, routing] of [
+    ['bad-reason', { shadowPick: 'faux/small', fallbackReason: 'tired' }],
+    ['bad-field', { shadowPick: 'faux/small', extra: true }],
+  ] as const) {
+    mkdirSync(join(root, taskId));
+    writeFileSync(join(root, taskId, 'task.json'), JSON.stringify({ ...routed, taskId, routing }));
+  }
+
+  const diagnostics: string[] = [];
+
+  expect(records.readTasks(root, diagnostics, []).map(({ task }) => task.taskId)).toEqual([
+    'current-pi',
+  ]);
+
+  expect(diagnostics).toHaveLength(2);
 });
 
 it('diagnoses a current-format task whose profile packages are missing or malformed', () => {

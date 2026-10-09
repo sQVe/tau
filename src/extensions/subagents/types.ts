@@ -99,18 +99,44 @@ const taskProperties = {
 };
 
 // Bump for any change to the saved fields, including a new optional field.
-export const taskVersion = 7;
+export const taskVersion = 8;
 
-export const taskSchema = Type.Object(
+// Version 7 tasks stay readable. They never carry routing.
+export const oldestReadableTaskVersion = 7;
+
+const routingSchema = Type.Object(
   {
-    ...taskProperties,
-    version: Type.Literal(taskVersion),
-    nativeSessionId: text,
-    nativeSessionFile: text,
-    loadout: loadoutSchema,
+    shadowPick: text,
+    label: Type.Optional(text),
+    confidence: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+    fallbackReason: Type.Optional(
+      StringEnum(['lowConfidence', 'error', 'timeout', 'noRoute', 'unknownLabel']),
+    ),
   },
   { additionalProperties: false },
 );
+
+const taskFields = {
+  ...taskProperties,
+  nativeSessionId: text,
+  nativeSessionFile: text,
+  loadout: loadoutSchema,
+};
+
+export const taskSchema = Type.Union([
+  Type.Object(
+    {
+      ...taskFields,
+      version: Type.Literal(oldestReadableTaskVersion),
+      routing: Type.Optional(Type.Never()),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    { ...taskFields, version: Type.Literal(taskVersion), routing: Type.Optional(routingSchema) },
+    { additionalProperties: false },
+  ),
+]);
 
 // Version 2: the Pi worker is its pane's own process, so shellPid equals processId.
 export const ownedWorkerSchema = Type.Object(

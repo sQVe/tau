@@ -6,7 +6,8 @@ it.each([
   { version: 1, format: 'retired' },
   { version: 6, format: 'retired' },
   { version: 7, format: 'current' },
-  { version: 8, format: 'newer' },
+  { version: 8, format: 'current' },
+  { version: 9, format: 'newer' },
   { version: undefined, format: 'invalid' },
   { version: '7', format: 'invalid' },
   { version: null, format: 'invalid' },
@@ -15,5 +16,5 @@ it.each([
   { version: -1, format: 'invalid' },
   { version: 6.5, format: 'invalid' },
 ])('classifies task version $version as $format', ({ version, format }) => {
-  expect(taskFormat(version, 7)).toBe(format);
+  expect(taskFormat(version, 8, 7)).toBe(format);
 });

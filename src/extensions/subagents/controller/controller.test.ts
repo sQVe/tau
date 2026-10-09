@@ -24,7 +24,7 @@ import * as questions from '../questionRecords.js';
 import { acceptReport, readEvent, readTask, recordEvent } from '../records.js';
 import * as records from '../records.js';
 import * as terminalModule from '../terminal.js';
-import { taskVersion } from '../types.js';
+import { oldestReadableTaskVersion, taskVersion } from '../types.js';
 import type { Loadout } from '../types.js';
 import { renderWorkerWidget } from '../widget.js';
 import { WorkerCapacityFullError, WorkerController } from './controller.js';
@@ -211,7 +211,7 @@ it('saves a launched Pi task in the current record format', async ({ onTestFinis
   const launched = await fixture.controller.launch(fixture.input);
 
   expect(JSON.parse(readFileSync(join(launched.directory, 'task.json'), 'utf8'))).toMatchObject({
-    version: 7,
+    version: 8,
   });
 });
 
@@ -1086,7 +1086,7 @@ it('admits follow-up with retired records and an unpublished directory', async (
     { ...fixture.source, version: 1, taskId: 'retired-first' },
     {
       ...fixture.source,
-      version: taskVersion - 1,
+      version: oldestReadableTaskVersion - 1,
       taskId: 'retired-previous',
       predecessorTaskId: fixture.source.taskId,
     },

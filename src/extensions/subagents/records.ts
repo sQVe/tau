@@ -22,7 +22,14 @@ import { Value } from 'typebox/value';
 
 import { errorMessage, isMissingFile } from '../../errors.js';
 import { taskFormat } from './taskFormat.js';
-import { eventSchema, reportSchema, taskSchema, taskVersion, isTaskId } from './types.js';
+import {
+  eventSchema,
+  oldestReadableTaskVersion,
+  reportSchema,
+  taskSchema,
+  taskVersion,
+  isTaskId,
+} from './types.js';
 import type { Loadout, Report, Task, TaskEvent } from './types.js';
 import { taskEndedEventKinds } from './workerState.js';
 
@@ -219,7 +226,7 @@ const retiredTaskNotice = 'saved in a retired format; start a fresh task instead
 export const readTask = (directory: string): Task => {
   try {
     const value = readRecord(directory, 'task.json');
-    const format = taskFormat(savedVersion(value), taskVersion);
+    const format = taskFormat(savedVersion(value), taskVersion, oldestReadableTaskVersion);
 
     if (format === 'newer') {
       throw new Error(`Task ${newerTaskNotice}`);
@@ -257,7 +264,7 @@ const readSkippedTask = (directory: string): unknown => {
 const diagnoseSkippedTask = (directory: string, error: unknown, notices: ScanNotices): void => {
   const saved = readSkippedTask(directory);
 
-  const format = taskFormat(savedVersion(saved), taskVersion);
+  const format = taskFormat(savedVersion(saved), taskVersion, oldestReadableTaskVersion);
 
   if (format === 'retired') {
     notices.skipped.push(`Skipped task ${basename(directory)} ${retiredTaskNotice}`);
