@@ -597,6 +597,7 @@ it('blocks long parent sleeps only while this session has an active worker', asy
     emitToolCall(fake.handlers, { toolName: 'bash', input: { command } }, context);
 
   expect(await bash('sleep 900; git status --short')).toBeUndefined();
+  expect(await bash('gh run watch')).toMatchObject({ block: true });
 
   await fake.tools
     .get('subagent_status')!

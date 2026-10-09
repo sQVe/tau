@@ -20,6 +20,7 @@ import { EvidenceUnavailableError } from './controller/record.js';
 import { launchModels, resolveRoutedLoadout } from './loadout.js';
 import { delegationGuidelines } from './managerPrompt.js';
 import { decideNoticeDelivery } from './noticeDelivery.js';
+import { passiveWaitRefusal } from './passiveWait.js';
 import { modelEvidenceNotice, modelReply, modelStatus } from './presentation.js';
 import type { WorkerNotice } from './presentation.js';
 import { readProfileModels } from './profileModels.js';
@@ -90,8 +91,6 @@ const launchParameters = Type.Object(
 const defaultTimeoutSeconds = { investigation: 1800, editing: 3600 };
 const millisecondsPerSecond = 1000;
 const widgetRefreshInterval = 1000;
-// A sleep this long while workers run waits on them, so the call is blocked.
-const blockedSleepSeconds = 30;
 
 const followUpParameters = Type.Object(
   {
@@ -617,22 +616,6 @@ const trackerGuidelines = async (location: ConfigLocation) => {
   return trackerLines({ setup, originUrl });
 };
 
-const unitSeconds: Record<string, number> = { '': 1, s: 1, m: 60, h: 3600, d: 86_400 };
-
-// A running tool call holds worker notices back, so a long sleep delays the notice it waits for.
-// Sleep sums its operands, and chained sleeps add up, so count every operand in the command.
-const totalSleepSeconds = (command: string): number => {
-  let total = 0;
-
-  for (const [, operands] of command.matchAll(/\bsleep((?:\s+\d+(?:\.\d+)?[smhd]?\b)+)/g)) {
-    for (const [, amount, unit] of (operands ?? '').matchAll(/(\d+(?:\.\d+)?)([smhd]?)/g)) {
-      total += Number(amount) * (unitSeconds[unit ?? ''] ?? 1);
-    }
-  }
-
-  return total;
-};
-
 export const registerCapacityRefusal = (pi: ExtensionAPI): CapacityRefusal => {
   if (isWorkerProcess()) {
     return { refuse: () => undefined };
@@ -788,23 +771,22 @@ export default function subagentsExtension(
 
     const command = event.toolName === 'bash' ? event.input.command : undefined;
 
-    if (typeof command !== 'string' || totalSleepSeconds(command) < blockedSleepSeconds) {
+    if (typeof command !== 'string') {
       return undefined;
     }
 
     const rows = controller?.widgetRows(context.sessionManager.getSessionId()) ?? [];
 
-    if (!hasParentTrackedWorkers(rows)) {
+    const reason = passiveWaitRefusal(command, {
+      hasActiveWorkers: hasParentTrackedWorkers(rows),
+      delegating,
+    });
+
+    if (reason === undefined) {
       return undefined;
     }
 
-    return {
-      block: true,
-      reason: [
-        'A worker is active. Worker notices wait until the current tool call finishes, so a sleep delays them.',
-        'End your turn to wait; a notice starts a new turn when the worker asks, reports, or stops.',
-      ].join(' '),
-    };
+    return { block: true, reason };
   });
 
   pi.registerMessageRenderer('tau-worker', (message, options, theme) =>
