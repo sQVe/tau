@@ -125,10 +125,42 @@ it('reads a profile route and keeps the profile model', ({ onTestFinished }) => 
         {
           question: scoutRoutes.question,
           labels: new Map(Object.entries(scoutRoutes.labels)),
+          canary: 0,
         },
       ],
     ]),
   );
+});
+
+it.for<[number, number]>([
+  [0, 0],
+  [0.25, 0.25],
+  [1, 1],
+])('reads a route canary of %s', ([canary, expected], { onTestFinished }) => {
+  const { location, userFile } = configFixture(onTestFinished);
+
+  writeConfig(userFile, {
+    profiles: { scout: { model: 'a/scout', routes: { ...scoutRoutes, canary } } },
+  });
+
+  expect(readProfileRoutes(location).get('scout')?.canary).toBe(expected);
+});
+
+it.for<[string, unknown, string]>([
+  ['a text canary', { ...scoutRoutes, canary: '0.5' }, 'must be a number from 0 to 1'],
+  ['a null canary', { ...scoutRoutes, canary: null }, 'must be a number from 0 to 1'],
+  ['a canary above 1', { ...scoutRoutes, canary: 1.5 }, 'outside the range 0 to 1'],
+  ['a negative canary', { ...scoutRoutes, canary: -0.1 }, 'outside the range 0 to 1'],
+])('refuses %s with its own message', ([, routes, message], { onTestFinished }) => {
+  const { location, userFile } = configFixture(onTestFinished);
+
+  writeConfig(userFile, { profiles: { scout: { model: 'a/scout', routes } } });
+
+  const read = () => readProfileRoutes(location);
+
+  expect(read).toThrow(userFile);
+  expect(read).toThrow('profiles.scout.routes.canary');
+  expect(read).toThrow(message);
 });
 
 it.for<[string, unknown, string]>([

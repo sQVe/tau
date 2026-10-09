@@ -256,6 +256,29 @@ it('reads task records saved in the current and the previous format', () => {
   });
 });
 
+it('reads a canary routing from a version 9 task and refuses one without the flag', () => {
+  const root = saveTaskRecordFixtures(['routed-canary-pi']);
+  const canary = parsedTaskRecordFixture('routed-canary-pi');
+
+  expect(records.readTask(join(root, 'routed-canary-pi')).routing).toEqual({
+    shadowPick: 'faux/small',
+    label: 'narrow',
+    confidence: 0.9,
+    canary: true,
+  });
+
+  const { canary: _dropped, ...unflagged } = canary.routing as Record<string, unknown>;
+
+  writeFileSync(
+    join(root, 'routed-canary-pi', 'task.json'),
+    JSON.stringify({ ...canary, routing: unflagged }),
+  );
+
+  expect(() => records.readTask(join(root, 'routed-canary-pi'))).toThrow(
+    'Invalid saved worker task',
+  );
+});
+
 it('refuses routing on a previous-format task', () => {
   const root = saveTaskRecordFixtures(['routed-pi']);
   const routed = parsedTaskRecordFixture('routed-pi');
