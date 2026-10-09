@@ -44,7 +44,6 @@ export interface RoutePick {
   fallbackReason?: FallbackReason;
 }
 
-// A pick plus whether the launch ran on it.
 export type RoutedLaunch = RoutePick & { canary: boolean };
 
 const minimumRouteConfidence = 0.7;
@@ -84,7 +83,6 @@ export const pickRoutedModel = (facts: RouteFacts): RoutePick | undefined => {
   return { shadowPick: routed.model, label, confidence };
 };
 
-// Only a confident pick that differs from the profile model can run as a canary.
 export const decideCanary = (facts: CanaryFacts): boolean => {
   const { pick, profileModel, share, draw } = facts;
 
