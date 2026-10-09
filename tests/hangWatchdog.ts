@@ -88,6 +88,22 @@ const beat = () => {
 
 const testPath = () => expect.getState().testPath ?? 'unknown file';
 
+const readCollectionMilliseconds = (value: string | undefined) => {
+  if (value === undefined || value === '') {
+    return defaultCollectionMilliseconds;
+  }
+
+  const milliseconds = Number(value);
+
+  if (!Number.isInteger(milliseconds) || milliseconds <= 0 || milliseconds > maxMilliseconds) {
+    throw new Error(
+      `TAU_COLLECTION_TIMEOUT_MS must be a whole number of milliseconds from 1 to ${maxMilliseconds}, got "${value}".`,
+    );
+  }
+
+  return milliseconds;
+};
+
 if (!isInspecting()) {
   const watchdog = new Worker(watchdogSource, {
     eval: true,
@@ -96,8 +112,7 @@ if (!isInspecting()) {
 
   watchdog.unref();
 
-  const collectionMilliseconds =
-    Number(process.env.TAU_COLLECTION_TIMEOUT_MS) || defaultCollectionMilliseconds;
+  const collectionMilliseconds = readCollectionMilliseconds(process.env.TAU_COLLECTION_TIMEOUT_MS);
 
   Atomics.store(state, 2, collectionMilliseconds);
   setLabel(`${testPath()} (collecting)`);

@@ -24,6 +24,7 @@ const runNested = async (
   cleanup: (callback: () => Promise<void>) => void,
   testSource: string,
   hookTimeout = 1000,
+  collectionTimeout = '3000',
 ): Promise<NestedRun> => {
   const directory = await mkdtemp(join(tmpdir(), 'tau-hang-'));
   cleanup(() => rm(directory, { recursive: true, force: true }));
@@ -49,7 +50,7 @@ const runNested = async (
         String(hookTimeout),
       ],
       {
-        env: { ...process.env, TAU_COLLECTION_TIMEOUT_MS: '3000' },
+        env: { ...process.env, TAU_COLLECTION_TIMEOUT_MS: collectionTimeout },
         timeout: 25_000,
       },
       (error, stdout, stderr) => {
@@ -95,6 +96,21 @@ describe.concurrent('hang watchdog', () => {
     );
 
     hangs(run, 'hanging.test.ts (collecting)');
+  });
+
+  it('refuses a collection timeout that is not a positive whole number', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      "import { it } from 'vitest'; it('runs', () => {});",
+      1000,
+      '-1',
+    );
+
+    expect(run.failed).toBe(true);
+    expect(run.output).toContain('TAU_COLLECTION_TIMEOUT_MS must be a whole number');
+    expect(run.output).not.toContain('Hang in');
   });
 
   it('fails a test that blocks the worker and names the test', async ({ onTestFinished }) => {
