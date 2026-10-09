@@ -123,3 +123,4 @@ line that links to the replacement.
 - [0096: Create and keep linear stacks with gh stack](./0096-create-and-keep-linear-stacks-with-gh-stack.md)
 - [0097: Track only the current session's workers](./0097-track-only-the-current-sessions-workers.md)
 - [0098: Bound codemode output by whole items](./0098-bound-codemode-output-by-whole-items.md)
+- [0098: Warn on unknown config keys and fail only the entry in use](./0098-warn-on-unknown-config-keys-and-fail-only-the-entry-in-use.md)

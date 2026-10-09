@@ -1,8 +1,10 @@
 # ADR 0095: Keep repository routing in tracker config
 
 **Date**: 2026-10-06\
-**Status**: Accepted\
-**Supersedes**: [ADR 0085 (Group per-repository settings in the user config)](./0085-group-per-repository-settings-in-the-user-config.md),
+**Status**: Accepted; unknown key handling superseded by
+[ADR 0098 (Warn on unknown config keys and fail only the entry in use)](./0098-warn-on-unknown-config-keys-and-fail-only-the-entry-in-use.md)\
+**Supersedes**:
+[ADR 0085 (Group per-repository settings in the user config)](./0085-group-per-repository-settings-in-the-user-config.md),
 except its `bulkRead` key handling, already superseded by
 [ADR 0087 (Gather evidence with codemode)](./0087-gather-evidence-with-codemode.md)\
 **Related**: [ADR 0061 (Layer Tau config from user and repository files)](./0061-layer-tau-config-from-user-and-repository-files.md),
