@@ -24,6 +24,7 @@ const isFixture = (path: string) => path.split(/[/\\]/).includes('fixtures');
 const pureModules = [
   'scripts/piVersionDrift.ts',
   'scripts/tokenUsageReport.ts',
+  'src/codemodeBudget.ts',
   'src/confirmationEligibility.ts',
   'src/controlTools.ts',
   'src/isRecord.ts',
