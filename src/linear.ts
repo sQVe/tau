@@ -1,3 +1,4 @@
+import { runCommand } from './command.js';
 import type { Exec } from './exec.js';
 
 export interface ApiResponse {
@@ -30,21 +31,10 @@ const graphqlErrors = (value: unknown): string[] => {
 const describe = (command: string, commandArguments: readonly string[]) =>
   [command, ...commandArguments.slice(0, 2)].join(' ');
 
-export const run = async (
-  exec: Exec,
-  cwd: string,
-  command: string,
-  commandArguments: string[],
-): Promise<string> => {
-  const result = await exec(command, commandArguments, { cwd });
+export const run = (exec: Exec, cwd: string, commandArguments: string[]): Promise<string> => {
+  const label = describe('linear', commandArguments);
 
-  if (result.code !== 0 || result.killed) {
-    const output = (result.stderr || result.stdout).trim();
-
-    throw new Error(`${describe(command, commandArguments)} failed: ${output}`);
-  }
-
-  return result.stdout;
+  return runCommand({ exec, cwd }, 'linear', commandArguments, label);
 };
 
 export const unexpectedOutput = ({ label, stdout }: ApiResponse): Error =>
@@ -60,7 +50,7 @@ export const api = async (
 
   // `--variable` turns values such as `123`, `true`, and `null` into other JSON types, so every
   // value goes through `--variables-json`.
-  const stdout = await run(exec, cwd, 'linear', [
+  const stdout = await run(exec, cwd, [
     'api',
     query,
     '--variables-json',

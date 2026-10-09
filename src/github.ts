@@ -1,7 +1,9 @@
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { runCommand } from './command.js';
 import type { Exec } from './exec.js';
+import { describeSchemaProblem } from './schemaProblem.js';
 
 export interface Repository {
   host: string;
@@ -48,25 +50,10 @@ export const label = (commandArguments: readonly string[]): string =>
 
 const preview = (stdout: string) => stdout.slice(0, outputPreviewLength);
 
-export const run = async (runtime: Runtime, commandArguments: string[]): Promise<string> => {
-  const result = await runtime.exec('gh', commandArguments, {
-    cwd: runtime.cwd,
-    ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
-  });
+export const run = (runtime: Runtime, commandArguments: string[]): Promise<string> => {
+  const commandLabel = label(commandArguments);
 
-  if (result.code !== 0 || result.killed) {
-    const output = (result.stderr || result.stdout).trim();
-
-    throw new Error(`${label(commandArguments)} failed: ${output}`);
-  }
-
-  return result.stdout;
-};
-
-export const describeProblem = (schema: TSchema, value: unknown): string => {
-  const [error] = Value.Errors(schema, value);
-
-  return error === undefined ? 'unknown problem' : `${error.instancePath || '/'} ${error.message}`;
+  return runCommand(runtime, 'gh', commandArguments, commandLabel);
 };
 
 export const parseJson = (commandArguments: readonly string[], stdout: string): unknown => {
@@ -87,7 +74,7 @@ export const readJson = async (runtime: Runtime, commandArguments: string[]): Pr
 export const checkOutput: CheckOutput = (commandArguments, schema, value) => {
   if (!Value.Check(schema, value)) {
     throw new Error(
-      `${label(commandArguments)} printed unexpected output: ${describeProblem(schema, value)}`,
+      `${label(commandArguments)} printed unexpected output: ${describeSchemaProblem(schema, value)}`,
     );
   }
 };

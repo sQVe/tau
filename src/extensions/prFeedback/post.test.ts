@@ -170,8 +170,7 @@ const recordedWrite = (
 const postFailure = (promise: Promise<unknown>) =>
   promise.then(
     () => undefined,
-    (error: unknown) =>
-      error as { message: string; posted: unknown[]; notPosted: unknown[]; uncertain: unknown[] },
+    (error: unknown) => error as Error,
   );
 
 describe('post refusals', () => {
@@ -674,18 +673,11 @@ describe('post', () => {
 
     fake.failWrite(2);
 
-    const failure = await post(details, recordingConfirm(root, true).context).then(
-      () => undefined,
-      (error: unknown) => error as { message: string; posted: unknown[]; notPosted: unknown[] },
-    );
+    const failure = await postFailure(post(details, recordingConfirm(root, true).context));
 
     expect(failure?.message).toContain('HTTP 502');
-    expect(failure?.posted).toMatchObject([{ kind: 'reply', thread: 'thread-person' }]);
 
-    expect(failure?.notPosted).toMatchObject([
-      { kind: 'resolve', thread: 'thread-bot' },
-      { kind: 'comment', thread: null, text: 'Thanks.' },
-    ]);
+    expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 101, body: 'Renamed.' }]);
 
     expect(await readPosted(details.directory)).toMatchObject({
       writes: [
@@ -740,10 +732,7 @@ describe('post save failure', () => {
       onTestFinished(() => chmod(details.directory, 0o700));
     });
 
-    const failure = await post(details, context).then(
-      () => undefined,
-      (error: unknown) => error as { message: string; posted: unknown[]; notPosted: unknown[] },
-    );
+    const failure = await postFailure(post(details, context));
 
     expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 101, body: 'Renamed.' }]);
 
@@ -752,8 +741,31 @@ describe('post save failure', () => {
     );
 
     expect(failure?.message).not.toContain('posted.json records the posted writes');
-    expect(failure?.posted).toMatchObject([{ kind: 'reply', thread: 'thread-person' }]);
-    expect(failure?.notPosted).toMatchObject([{ kind: 'resolve', thread: 'thread-person' }]);
+
+    expect(await readPosted(details.directory)).toBeUndefined();
+    expect(fake.threads[0]?.isResolved).toBe(false);
+
+    await chmod(details.directory, 0o700);
+
+    await writeFile(
+      join(details.directory, 'posted.json'),
+      JSON.stringify({
+        version: 2,
+        writes: [recordedWrite('reply', 'thread-person', 'Renamed.', 1000)],
+      }),
+    );
+
+    const retry = await post(details, recordingConfirm(root, true).context);
+
+    expect(retry).toMatchObject({
+      posted: [{ kind: 'resolve', thread: 'thread-person' }],
+      skipped: [{ kind: 'reply', thread: 'thread-person' }],
+    });
+
+    expect(fake.writes).toEqual([
+      { kind: 'reply', replyTo: 101, body: 'Renamed.' },
+      { kind: 'resolve', threadId: 'thread-person' },
+    ]);
   });
 });
 
@@ -778,17 +790,16 @@ describe('post uncertain save failure', () => {
       onTestFinished(() => chmod(details.directory, 0o700));
     });
 
-    const failure = await post(details, context).then(
-      () => undefined,
-      (error: unknown) => error as { message: string; uncertain: unknown[]; notPosted: unknown[] },
-    );
+    const failure = await postFailure(post(details, context));
 
     expect(failure?.message).toContain(
       'Reply to https://github.com/sQVe/tau/pull/7#discussion_r101:\nRenamed.\nCheck the pull request for it before a retry',
     );
 
-    expect(failure?.uncertain).toMatchObject([{ kind: 'reply', thread: 'thread-person' }]);
-    expect(failure?.notPosted).toMatchObject([{ kind: 'resolve', thread: 'thread-person' }]);
+    expect(failure?.message).toMatch(/uncertain/u);
+    expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 101, body: 'Renamed.' }]);
+    expect(fake.threads[0]?.isResolved).toBe(false);
+
     expect(await readPosted(details.directory)).toBeUndefined();
   });
 });
@@ -819,6 +830,26 @@ describe('post write output', () => {
 
   const writeKinds = ['reply', 'resolve', 'comment'];
 
+  const expectedWrites = [
+    { kind: 'reply', replyTo: 201, body: 'Added.' },
+    { kind: 'resolve', threadId: 'thread-bot' },
+    { kind: 'comment', body: 'Done.' },
+  ];
+
+  const expectedRecords = [
+    recordedWrite('reply', 'thread-bot', 'Added.', 1000),
+    recordedWrite('resolve', 'thread-bot', null, null),
+    {
+      kind: 'comment',
+      thread: null,
+      url: 'https://github.com/sQVe/tau/pull/7',
+      text: 'Done.',
+      state: 'posted',
+      commentId: 1001,
+      earlierCommentIds: [],
+    },
+  ];
+
   it.each(
     kinds.flatMap((kind) => [
       { ...kind, output: 'Bad credentials', problem: 'printed output that is not JSON' },
@@ -828,25 +859,32 @@ describe('post write output', () => {
   )(
     'records a $key whose output gh printed as "$output" as posted, then stops',
     async ({ key, index, output, problem }) => {
-      const { fake, details, post } = await writeFixture();
+      const { root, fake, details, post } = await writeFixture();
 
       fake.overrideOutput(key, output);
 
-      const failure = await post(details).then(
-        () => undefined,
-        (error: unknown) => error as { message: string; posted: unknown[]; notPosted: unknown[] },
-      );
+      const failure = await postFailure(post(details));
+      const saved = (await readPosted(details.directory)) as { version: number; writes: unknown[] };
+
+      const posted = structuredClone(expectedRecords.slice(0, index + 1));
+
+      posted[index]!.commentId = null;
 
       expect(failure?.message).toContain(problem);
-      expect(failure?.posted).toHaveLength(index + 1);
-      expect(failure?.posted.at(-1)).toMatchObject({ kind: writeKinds[index], commentId: null });
-      expect(failure?.notPosted).toHaveLength(2 - index);
+      expect(saved.writes).toHaveLength(index + 1);
+      expect(saved.writes.at(-1)).toMatchObject({ kind: writeKinds[index], commentId: null });
+
+      expect(fake.writes).toEqual(expectedWrites.slice(0, index + 1));
+
       expect(fake.writes).toHaveLength(index + 1);
 
-      expect(await readPosted(details.directory)).toEqual({
-        version: 2,
-        writes: failure?.posted,
-      });
+      expect(saved.version).toBe(2);
+
+      expect(saved.writes).toEqual(posted);
+
+      await post(details, recordingConfirm(root, true).context);
+
+      expect(fake.writes).toEqual(expectedWrites);
     },
   );
 
@@ -855,16 +893,18 @@ describe('post write output', () => {
 
     fake.failCommand(key);
 
-    const failure = await post(details).then(
-      () => undefined,
-      (error: unknown) =>
-        error as { message: string; posted: unknown[]; notPosted: unknown[]; uncertain: unknown[] },
-    );
+    const failure = await postFailure(post(details));
 
     expect(failure?.message).toContain('HTTP 502');
-    expect(failure?.posted).toHaveLength(index);
-    expect(failure?.uncertain).toMatchObject([{ kind: writeKinds[index] }]);
-    expect(failure?.notPosted).toHaveLength(2 - index);
+    expect(fake.writes).toEqual(expectedWrites.slice(0, index));
+
+    expect(await readPosted(details.directory)).toMatchObject({
+      writes: [
+        ...expectedRecords.slice(0, index),
+        { kind: writeKinds[index], state: 'uncertain', commentId: null },
+      ],
+    });
+
     expect(fake.writes).toHaveLength(index);
   });
 });
@@ -902,14 +942,25 @@ describe('post uncertain writes', () => {
       const failure = await postFailure(post(details));
 
       expect(failure?.message).toMatch(/outcome is uncertain.*A retry checks GitHub/su);
-      expect(failure?.uncertain).toMatchObject([{ kind }]);
-      expect(failure?.posted).toHaveLength(attempt - 1);
-      expect(failure?.notPosted).toHaveLength(2 - attempt);
+      const saved = (await readPosted(details.directory)) as { writes: { state: string }[] };
+      const posted = saved.writes.filter((write) => write.state === 'posted');
+
+      const expectedWrites = [
+        { kind: 'reply', replyTo: 201, body: 'Added.' },
+        { kind: 'comment', body: 'Done.' },
+      ];
+
+      const expectedPosted = [recordedWrite('reply', 'thread-bot', 'Added.', 1000)];
+
+      expect(posted).toHaveLength(attempt - 1);
+
+      expect(posted).toEqual(expectedPosted.slice(0, attempt - 1));
+      expect(fake.writes).toEqual(expectedWrites.slice(0, attempt));
 
       expect(await readPosted(details.directory)).toMatchObject({
         version: 2,
         writes: [
-          ...failure!.posted,
+          ...posted,
           {
             kind,
             text: kind === 'reply' ? 'Added.' : 'Done.',

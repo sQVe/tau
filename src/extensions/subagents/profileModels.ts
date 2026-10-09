@@ -1,5 +1,6 @@
+import { isRecord } from '../../isRecord.js';
 import { parseModelEntry } from '../../models/models.js';
-import { isRecord, readUserOnlyKey } from '../../tauConfig.js';
+import { readUserOnlyKey } from '../../tauConfig.js';
 import type { ConfigLocation } from '../../tauConfig.js';
 import type { ProfileModels } from './workerModels.js';
 

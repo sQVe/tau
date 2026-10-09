@@ -46,30 +46,6 @@ interface ApplyProgress {
   urls: Map<string, string>;
 }
 
-interface FailedApply {
-  directory: string;
-  created: CreatedIssue | undefined;
-  applied: StepSummary[];
-  notApplied: StepSummary[];
-}
-
-// Carries the steps a failed apply made and did not make, so the caller can report both.
-class SliceApplyError extends Error {
-  readonly directory: string;
-  readonly created: CreatedIssue | undefined;
-  readonly applied: StepSummary[];
-  readonly notApplied: StepSummary[];
-
-  constructor(message: string, failure: FailedApply, options: ErrorOptions) {
-    super(message, options);
-    this.name = 'SliceApplyError';
-    this.directory = failure.directory;
-    this.created = failure.created;
-    this.applied = failure.applied;
-    this.notApplied = failure.notApplied;
-  }
-}
-
 // Linear created the ticket, but the draft does not record its identifier yet.
 class IdentifierSaveError extends Error {
   readonly created: CreatedIssue;
@@ -243,7 +219,6 @@ const buildSteps = (runtime: Runtime, progress: ApplyProgress, writes: readonly 
 const splitSteps = (summaries: readonly StepSummary[], index: number, error: unknown) => {
   if (!(error instanceof IdentifierSaveError)) {
     return {
-      created: undefined,
       applied: summaries.slice(0, index),
       notApplied: summaries.slice(index),
     };
@@ -262,7 +237,6 @@ const splitSteps = (summaries: readonly StepSummary[], index: number, error: unk
   };
 
   return {
-    created,
     applied: [...summaries.slice(0, index), ...createStep],
     notApplied: [saveStep, ...summaries.slice(index + 1)],
   };
@@ -274,12 +248,11 @@ const failedApply = (
   index: number,
   error: unknown,
 ) => {
-  const { created, applied, notApplied } = splitSteps(summaries, index, error);
+  const { applied, notApplied } = splitSteps(summaries, index, error);
   const texts = (steps: readonly StepSummary[]) => bulletList(steps.map((step) => step.text));
 
-  return new SliceApplyError(
+  return new Error(
     `A slice step failed: ${errorMessage(error)}\nApplied:\n${texts(applied)}\nNot applied:\n${texts(notApplied)}\nThe draft is in ${progress.directory}. Read it again before a retry.`,
-    { directory: progress.directory, created, applied, notApplied },
     { cause: error },
   );
 };

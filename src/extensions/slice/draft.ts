@@ -7,6 +7,7 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { isMissingFile } from '../../errors.js';
+import { describeSchemaProblem } from '../../schemaProblem.js';
 import { blockerProblem } from './blockers.js';
 
 export interface Draft {
@@ -57,12 +58,6 @@ const planSchema = Type.Object(
 );
 
 export type Plan = Static<typeof planSchema>;
-
-const schemaProblem = (value: unknown) => {
-  const [error] = Value.Errors(planSchema, value);
-
-  return error === undefined ? 'unknown problem' : `${error.instancePath || '/'} ${error.message}`;
-};
 
 const savedVersion = (value: unknown) =>
   typeof value === 'object' && value !== null && 'version' in value ? value.version : undefined;
@@ -129,7 +124,7 @@ const parsePlan = (path: string, text: string): Plan => {
   }
 
   if (!Value.Check(planSchema, value)) {
-    throw new Error(`Malformed slice draft ${path}: ${schemaProblem(value)}.`);
+    throw new Error(`Malformed slice draft ${path}: ${describeSchemaProblem(planSchema, value)}.`);
   }
 
   rejectBadReferences(path, value);

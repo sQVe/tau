@@ -6,6 +6,7 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { isMissingFile } from '../errors.js';
+import { describeSchemaProblem } from '../schemaProblem.js';
 import { objectNameSchema, pinnedTargetSchema, pinnedTargetSchemas } from './reviewCapture.js';
 
 export const recordFileName = 'capture.json';
@@ -54,9 +55,7 @@ const schemaProblem = (value: unknown) => {
     return problem;
   }
 
-  const [error] = Value.Errors(captureRecordSchema, value);
-
-  return error === undefined ? 'unknown problem' : `${error.instancePath || '/'} ${error.message}`;
+  return describeSchemaProblem(captureRecordSchema, value);
 };
 
 const isNewerVersion = (value: unknown) => {

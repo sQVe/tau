@@ -4,7 +4,8 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { isRecord, readTauConfig } from '../tauConfig.js';
+import { isRecord } from '../isRecord.js';
+import { readTauConfig } from '../tauConfig.js';
 import type { ConfigFile, ConfigLocation } from '../tauConfig.js';
 import { effectiveAllowedModels } from './allowedModels.js';
 import type { AllowedModels } from './allowedModels.js';
