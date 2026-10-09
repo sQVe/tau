@@ -1005,6 +1005,36 @@ it('launches on the profile model when the classifier never answers within 5 sec
   expect(options.signal.aborted).toBe(true);
 });
 
+it('stops a pending classification when the launch is cancelled', async ({ onTestFinished }) => {
+  const { context, classify } = await routedFixture(onTestFinished);
+  vi.useFakeTimers();
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  classify.mockImplementation(() => new Promise(() => {}));
+  const launch = new AbortController();
+
+  const pending = resolveRoutedLoadout(
+    { profile: 'scout', task: 'Find it.' },
+    context,
+    [],
+    launch.signal,
+  );
+
+  const settled = vi.fn<() => void>();
+  const finished = pending.then(settled);
+
+  launch.abort();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(settled).toHaveBeenCalledOnce();
+  await finished;
+
+  const options = classify.mock.calls[0]?.[2] as { signal: AbortSignal };
+  expect(options.signal.aborted).toBe(true);
+});
+
 it('classifies nothing when allowedModels excludes the classifier', async ({ onTestFinished }) => {
   const { directory, context, classify, profileModel } = await routedFixture(onTestFinished);
   const configPath = join(directory, 'tau.json');

@@ -262,6 +262,7 @@ const launchWorker = async (
     parameters,
     context,
     runtime.pi.getCommands(),
+    signal,
   );
 
   const timeout =

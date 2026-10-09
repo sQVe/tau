@@ -190,12 +190,8 @@ const classifyRoute = async (
   context: Pick<ExtensionContext, 'modelRegistry'>,
   route: ModelRoute,
   state: { brief: string; profile: string },
-  location: ConfigLocation,
+  launchSignal: AbortSignal | undefined,
 ): Promise<ClassifierOutcome> => {
-  if (!classifierAllowed(location)) {
-    return { kind: 'skipped' };
-  }
-
   const classifier = context.modelRegistry.findOfType('classifier', 'typesafe', 'jev-latest');
 
   if (classifier === undefined) {
@@ -203,12 +199,22 @@ const classifyRoute = async (
   }
 
   const controller = new AbortController();
-  const timedOut = Promise.withResolvers<ClassifierOutcome>();
+  const stopped = Promise.withResolvers<ClassifierOutcome>();
+
+  const stop = (outcome: ClassifierOutcome) => {
+    controller.abort();
+    stopped.resolve(outcome);
+  };
 
   const timer = setTimeout(() => {
-    controller.abort();
-    timedOut.resolve({ kind: 'timeout' });
+    stop({ kind: 'timeout' });
   }, classifierTimeoutMilliseconds);
+
+  const cancel = () => {
+    stop({ kind: 'error' });
+  };
+
+  launchSignal?.addEventListener('abort', cancel, { once: true });
 
   const answer = context.modelRegistry
     .classify(
@@ -239,9 +245,10 @@ const classifyRoute = async (
     .catch((): ClassifierOutcome => ({ kind: 'error' }));
 
   try {
-    return await Promise.race([answer, timedOut.promise]);
+    return await Promise.race([answer, stopped.promise]);
   } finally {
     clearTimeout(timer);
+    launchSignal?.removeEventListener('abort', cancel);
   }
 };
 
@@ -250,6 +257,7 @@ export const resolveRoutedLoadout = async (
   input: LaunchRequest & { task: string },
   context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'scopedModels' | 'isProjectTrusted'>,
   commands: SlashCommandInfo[] = [],
+  signal?: AbortSignal,
 ): Promise<RoutedLoadout> => {
   const loadout = resolveLoadout(input, context, commands);
 
@@ -269,12 +277,9 @@ export const resolveRoutedLoadout = async (
     return { loadout, routing: undefined };
   }
 
-  const outcome = await classifyRoute(
-    context,
-    route,
-    { brief: input.task, profile: loadout.profile },
-    location,
-  );
+  const outcome: ClassifierOutcome = classifierAllowed(location)
+    ? await classifyRoute(context, route, { brief: input.task, profile: loadout.profile }, signal)
+    : { kind: 'skipped' };
 
   const routing = pickRoutedModel({
     launchModel: input.model,
