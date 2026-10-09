@@ -20,7 +20,9 @@ import {
 import { skillTools } from '../../skillTools.js';
 import { userConfigPath } from '../../tauConfig.js';
 import type { ConfigLocation } from '../../tauConfig.js';
-import { readProfileModels } from './profileModels.js';
+import { pickRoutedModel } from './modelRoutes.js';
+import type { ClassifierOutcome, ModelRoute, RoutePick } from './modelRoutes.js';
+import { readProfileModels, readProfileRoutes } from './profileModels.js';
 import { resolveProfile } from './profiles.js';
 import { loadoutSchema } from './types.js';
 import type { Loadout, Profile } from './types.js';
@@ -33,6 +35,11 @@ interface LaunchRequest {
   profile: string;
   cwd?: string;
   model?: string;
+}
+
+export interface RoutedLoadout {
+  loadout: Loadout;
+  routing: RoutePick | undefined;
 }
 
 const nodeRequire = createRequire(import.meta.url);
@@ -165,6 +172,101 @@ export const resolveLoadout = (
     instructionSets: profile.instructionSets,
     packages: profile.packages,
   };
+};
+
+const classifierTimeoutMilliseconds = 5000;
+
+const classifyRoute = async (
+  context: Pick<ExtensionContext, 'modelRegistry'>,
+  route: ModelRoute,
+  state: { brief: string; profile: string },
+): Promise<ClassifierOutcome> => {
+  const classifier = context.modelRegistry.findOfType('classifier', 'typesafe', 'jev-latest');
+
+  if (classifier === undefined) {
+    return { kind: 'skipped' };
+  }
+
+  const controller = new AbortController();
+  const timedOut = Promise.withResolvers<ClassifierOutcome>();
+
+  const timer = setTimeout(() => {
+    controller.abort();
+    timedOut.resolve({ kind: 'timeout' });
+  }, classifierTimeoutMilliseconds);
+
+  const answer = context.modelRegistry
+    .classify(
+      classifier,
+      {
+        state,
+        questions: {
+          route: {
+            type: 'choice',
+            instructions: route.question,
+            criteria: Object.fromEntries(
+              [...route.labels].map(([label, { criterion }]) => [label, criterion]),
+            ),
+          },
+        },
+      },
+      { signal: controller.signal },
+    )
+    .then((result): ClassifierOutcome => {
+      const choice = result.answers.route;
+
+      if (result.stopReason !== 'stop' || choice?.type !== 'choice') {
+        return { kind: 'error' };
+      }
+
+      return { kind: 'answered', label: choice.choice, confidence: choice.confidence };
+    })
+    .catch((): ClassifierOutcome => ({ kind: 'error' }));
+
+  try {
+    return await Promise.race([answer, timedOut.promise]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+// Classifies the brief for the shadow pick only. The loadout keeps the model resolveLoadout chose.
+export const resolveRoutedLoadout = async (
+  input: LaunchRequest & { task: string },
+  context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'scopedModels' | 'isProjectTrusted'>,
+  commands: SlashCommandInfo[] = [],
+): Promise<RoutedLoadout> => {
+  const loadout = resolveLoadout(input, context, commands);
+
+  if (input.model !== undefined) {
+    return { loadout, routing: undefined };
+  }
+
+  const location = {
+    cwd: loadout.cwd,
+    agentDirectory: loadout.agentDirectory,
+    projectTrusted: true,
+  };
+
+  const route = readProfileRoutes(location).get(loadout.profile);
+
+  if (route === undefined) {
+    return { loadout, routing: undefined };
+  }
+
+  const outcome = await classifyRoute(context, route, {
+    brief: input.task,
+    profile: loadout.profile,
+  });
+
+  const routing = pickRoutedModel({
+    launchModel: input.model,
+    profileModel: loadout.model,
+    route,
+    outcome,
+  });
+
+  return { loadout, routing };
 };
 
 const requireSavedWorkerDirectory = (loadout: Loadout, context: { cwd: string }): void => {

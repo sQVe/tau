@@ -17,7 +17,7 @@ import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.j
 import { hasParentTrackedWorkers, compactionWorkerList } from './compactionWorkers.js';
 import { WorkerCapacityFullError, WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
-import { launchModels, resolveLoadout } from './loadout.js';
+import { launchModels, resolveRoutedLoadout } from './loadout.js';
 import { delegationGuidelines } from './managerPrompt.js';
 import { decideNoticeDelivery } from './noticeDelivery.js';
 import { modelEvidenceNotice, modelReply, modelStatus } from './presentation.js';
@@ -257,7 +257,12 @@ const launchWorker = async (
   }
 
   const controller = runtime.getController();
-  const loadout = resolveLoadout(parameters, context, runtime.pi.getCommands());
+
+  const { loadout, routing } = await resolveRoutedLoadout(
+    parameters,
+    context,
+    runtime.pi.getCommands(),
+  );
 
   const timeout =
     (parameters.timeoutSeconds ?? defaultTimeoutSeconds[loadout.role]) * millisecondsPerSecond;
@@ -272,6 +277,7 @@ const launchWorker = async (
         task: parameters.task,
         ...(parameters.label === undefined ? {} : { label: parameters.label }),
         loadout,
+        ...(routing === undefined ? {} : { routing }),
         timeout,
         startedAt,
         parentSession,
