@@ -63,6 +63,12 @@ it('raises the cap on the options line and keeps the other fields and lines', ()
   expect(readOutputBudget(raised)).toBe(100_000_000);
 });
 
+it('raises the cap of a script that is only an options line', () => {
+  const raised = raiseOutputCap('// @options: {"max_output_tokens": 1500}');
+
+  expect(raised).toBe('// @options: {"max_output_tokens":100000000}');
+});
+
 it('adds an options line when the script has none', () => {
   const raised = raiseOutputCap(body);
 

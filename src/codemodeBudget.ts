@@ -96,7 +96,8 @@ export const raiseOutputCap = (source: string): string => {
   }
 
   const fields = { ...options.fields, max_output_tokens: raisedOutputTokens };
-  const rest = source.slice(source.indexOf('\n'));
+  const newline = source.indexOf('\n');
+  const rest = newline === -1 ? '' : source.slice(newline);
 
   return `${optionsPrefix} ${JSON.stringify(fields)}${rest}`;
 };
