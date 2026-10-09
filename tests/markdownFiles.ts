@@ -355,6 +355,7 @@ const listRepositoryFiles = (root: string) =>
   execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
     cwd: root,
     encoding: 'utf8',
+    timeout: 20_000,
   })
     .split('\0')
     .filter((file) => file !== '' && existsSync(join(root, file)));
