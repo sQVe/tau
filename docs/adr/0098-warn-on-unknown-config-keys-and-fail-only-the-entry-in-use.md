@@ -14,16 +14,17 @@ and
 ## Context
 
 Every Tau checkout reads the same user file, `<agentDir>/tau.json`, including older checkouts in
-other worktrees. ADR 0061 ignores unknown top-level keys for that reason, but each feature rejects
-unknown keys inside its own block. When a newer Tau added `routes` under `profiles.<name>`, an older
-checkout refused the whole `profiles` block.
+other worktrees. [ADR 0061](./0061-layer-tau-config-from-user-and-repository-files.md) ignores
+unknown top-level keys for that reason, but each feature rejects unknown keys inside its own block.
+When a newer Tau added `routes` under `profiles.<name>`, an older checkout refused the whole
+`profiles` block.
 
 Tau also parses every profile entry on each launch, so one bad entry blocks every profile. A
 profile's model and its route sit in one entry, so a bad route also blocks the model.
 
-The worker route sends the brief to a classifier model that Tau names in code. That breaks ADR 0072,
-which says every model Tau uses comes from an argument or the user's config. The route key is named
-`routes` but holds one route.
+The worker route sends the brief to a classifier model that Tau names in code. That breaks
+[ADR 0072](./0072-keep-model-defaults-out-of-code.md), which says every model Tau uses comes from an
+argument or the user's config. The route key is named `routes` but holds one route.
 
 ## Decision
 
@@ -53,7 +54,7 @@ blocks unrelated work.
 The config has no version number. Changes add keys by default. Removing or renaming a key is allowed
 and goes through the error above. A version does not help here, because an older checkout still
 cannot read a newer file, and the user writes this file by hand, unlike the saved records in
-ADR 0053.
+[ADR 0053](./0053-version-each-saved-record-format.md).
 
 ### Model routes
 
@@ -100,8 +101,9 @@ version, and every user file would carry a field the user must maintain.
 
 ### Keep the classifier in code as an exception
 
-Keep `typesafe/jev-latest` in code and record it as the only exception to ADR 0072. Rejected because
-Tau would send worker briefs to a model the user never chose.
+Keep `typesafe/jev-latest` in code and record it as the only exception to
+[ADR 0072](./0072-keep-model-defaults-out-of-code.md). Rejected because Tau would send worker briefs
+to a model the user never chose.
 
 ### Keep the `routes` name
 
