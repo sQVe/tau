@@ -55,6 +55,22 @@ const parseText = (source: string, field: string, value: unknown): string => {
   return value;
 };
 
+const parseCanary = (source: string, field: string, value: unknown): number => {
+  if (value === undefined) {
+    return 0;
+  }
+
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    throw invalid(source, `${field} must be a number from 0 to 1.`);
+  }
+
+  if (value < 0 || value > 1) {
+    throw invalid(source, `${field} ${value} is outside the range 0 to 1.`);
+  }
+
+  return value;
+};
+
 const parseLabel = (source: string, field: string, entry: unknown): RouteLabel => {
   if (!isRecord(entry)) {
     throw invalid(
@@ -76,7 +92,7 @@ const parseRoute = (source: string, field: string, entry: unknown): ModelRoute =
     throw invalid(source, `${field} must be an object with question and labels.`);
   }
 
-  rejectUnknownKeys(source, field, entry, ['question', 'labels']);
+  rejectUnknownKeys(source, field, entry, ['question', 'labels', 'canary']);
   const question = parseText(source, `${field}.question`, entry.question);
 
   const labelEntries = entry.labels;
@@ -103,7 +119,9 @@ const parseRoute = (source: string, field: string, entry: unknown): ModelRoute =
     names.map((name) => [name, parseLabel(source, `${field}.labels.${name}`, labelEntries[name])]),
   );
 
-  return { question, labels };
+  const canary = parseCanary(source, `${field}.canary`, entry.canary);
+
+  return { question, labels, canary };
 };
 
 const parseProfileEntry = (source: string, field: string, entry: unknown): ProfileEntry => {
