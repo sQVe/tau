@@ -22,10 +22,12 @@ and the task record policy in
 ## Context
 
 Tau-owned subagents had two lifecycles: Pi workers with structured controls, and a generic herdr
-workflow for every other kind (ADR 0033). Every lifecycle change had to carry both, such as the
-controller split (ADR 0050) and the pure decision modules. The generic path added Pi and non-Pi
-branches across many files. Its parameters filled the tool descriptions that every parent session
-loads, and the two reply rules confused agents.
+workflow for every other kind ([ADR 0033](./0033-use-one-generic-native-worker-workflow.md)). Every
+lifecycle change had to carry both, such as the controller split
+([ADR 0050](./0050-split-worker-control-into-a-coordinator-and-one-controller-per-worker.md)) and
+the pure decision modules. The generic path added Pi and non-Pi branches across many files. Its
+parameters filled the tool descriptions that every parent session loads, and the two reply rules
+confused agents.
 
 Almost all worker runs in the 30 days before 2026-09-28 were Pi. The few non-Pi runs match the proof
 runs for the generic workflow. Pi already runs Claude and GPT models through its providers, so a Pi

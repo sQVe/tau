@@ -16,11 +16,12 @@ removal of a confirmation that people were not present to answer
 
 ## Context
 
-Non-Pi workers launch with native-controls, which Tau does not certify. ADR 0033 required the parent
-user to approve the native argument list and the report area before each launch. In practice, every
-launch asked twice for the same configuration: once from the model and once in a Tau dialog. People
-approved without reading, so the dialog no longer carried a decision. The native harness runs its
-own approval dialogs for the actions the worker takes, and Tau never answers or bypasses them.
+Non-Pi workers launch with native-controls, which Tau does not certify.
+[ADR 0033](./0033-use-one-generic-native-worker-workflow.md) required the parent user to approve the
+native argument list and the report area before each launch. In practice, every launch asked twice
+for the same configuration: once from the model and once in a Tau dialog. People approved without
+reading, so the dialog no longer carried a decision. The native harness runs its own approval
+dialogs for the actions the worker takes, and Tau never answers or bypasses them.
 
 ## Decision
 
@@ -43,8 +44,8 @@ flags that skip them.
 
 This replaces the parent-user approval sentences in
 [ADR 0033](./0033-use-one-generic-native-worker-workflow.md): the approval requirement for native
-launch arguments in its Decision section, and the user-approved report area. The rest of ADR 0033
-stands.
+launch arguments in its Decision section, and the user-approved report area. The rest of
+[ADR 0033](./0033-use-one-generic-native-worker-workflow.md) stands.
 
 ## Consequences
 

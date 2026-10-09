@@ -23,8 +23,9 @@ each new key picks its own place, its own repository map, and its own handling o
 removed keys.
 
 Every Tau session reads the same user file, including older Tau checkouts in other worktrees. A
-trusted repository's `.pi/tau.json` already sets `tdd` and may narrow `allowedModels` (ADR 0061, ADR
-0063).
+trusted repository's `.pi/tau.json` already sets `tdd` and may narrow `allowedModels`
+([ADR 0061](./0061-layer-tau-config-from-user-and-repository-files.md),
+[ADR 0063](./0063-narrow-allowed-models-from-user-to-repository.md)).
 
 ## Decision
 

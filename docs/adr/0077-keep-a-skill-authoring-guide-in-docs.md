@@ -16,9 +16,9 @@ vision, the development guide, and the ADRs.
 ## Decision
 
 `docs/` also holds `skill-authoring.md`, a guide with a checklist for skill authors, and
-`skill-template.md`, a fill-in `SKILL.md`. This amends the list of what `docs/` holds in ADR 0010.
-Keeping the guide and template next to the development guide lets authors and reviewers find them
-where contributor guides live.
+`skill-template.md`, a fill-in `SKILL.md`. This amends the list of what `docs/` holds in
+[ADR 0010](./0010-documentation-scope.md). Keeping the guide and template next to the development
+guide lets authors and reviewers find them where contributor guides live.
 
 ### Guide rules
 
@@ -44,8 +44,8 @@ where contributor guides live.
 
 ### Checklist in ADR 0004
 
-Add the checklist to ADR 0004. Rejected because an ADR records a decision and does not change in
-place, but the checklist will change as reviews find new problems.
+Add the checklist to [ADR 0004](./0004-skill-authoring-style.md). Rejected because an ADR records a
+decision and does not change in place, but the checklist will change as reviews find new problems.
 
 ### Guide as a skill
 

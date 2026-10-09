@@ -14,8 +14,9 @@ Blocking findings returned tool errors, and a group was refused after two return
 The gate blocked checked, passing commits over comment wording, not over code. Each fix to a flagged
 comment could draw a new objection, and the user had to step in. Pi session logs show 180 refusals
 after two returns against about 93 successful commit groups. The gate was already patched four
-times, including ADR 0038's advisory policy findings. It still blocked on judgment calls, because a
-model can always find a new objection to a comment.
+times, including [ADR 0038](./0038-block-commits-only-on-comment-inaccuracies.md)'s advisory policy
+findings. It still blocked on judgment calls, because a model can always find a new objection to a
+comment.
 
 ## Decision
 
@@ -24,9 +25,10 @@ left to code and pull request review. Moving comment review to pull request revi
 step, because code and PR review can already catch wrong comments. Removing comment review leaves
 Git hooks as the only commit gate.
 
-The tool keeps its staging, path, HEAD, and hook-failure rules from ADR 0026. It no longer accepts
-`commentDispute` or reports a review. The shared delegate from ADR 0027 remains for bulk reads and
-web answers.
+The tool keeps its staging, path, HEAD, and hook-failure rules from
+[ADR 0026](./0026-let-git-hooks-own-commit-checks.md). It no longer accepts `commentDispute` or
+reports a review. The shared delegate from [ADR 0027](./0027-share-one-delegate-model.md) remains
+for bulk reads and web answers.
 
 ## Consequences
 

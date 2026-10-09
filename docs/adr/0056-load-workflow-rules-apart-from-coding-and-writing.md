@@ -21,8 +21,8 @@ review against its stated scope.
 
 Add `src/extensions/workflow/`. It loads [`instructions.md`](../../src/instructions/workflow.md)
 into the system prompt before each ordinary agent run, the same way the coding and writing
-extensions load theirs. Loading a third instruction file through its own extension matches ADR 0006
-and ADR 0008.
+extensions load theirs. Loading a third instruction file through its own extension matches
+[ADR 0006](./0006-default-writing-policy.md) and [ADR 0008](./0008-coding-instructions.md).
 
 ### Boundary
 
@@ -47,14 +47,14 @@ space the rule needs to explain CC Safety Net.
 ### Negative
 
 - A third policy uses more space in the prompt on every run.
-- A third duplicate loader, for the reason ADR 0008 gives.
+- A third duplicate loader, for the reason [ADR 0008](./0008-coding-instructions.md) gives.
 
 ## Alternatives considered
 
 ### Keep the rules where they are
 
-Keep the rules where they are. Rejected because, although it needs no change, the boundary ADR 0008
-draws keeps eroding.
+Keep the rules where they are. Rejected because, although it needs no change, the boundary
+[ADR 0008](./0008-coding-instructions.md) draws keeps eroding.
 
 ### Add the rules to the bare root prompt
 

@@ -26,8 +26,9 @@ Use one configurable delegate for bulk reads, web answer mode, and commit commen
 delegate is shared after a labeled comparison, and the existing delegate passed the agreed review
 gate at lower measured catalog cost.
 
-Replace ADR 0014's environment setting and its requirement to keep comment review on the session
-model. Keep its other bulk-read decisions unchanged.
+Replace [ADR 0014](./0014-delegate-model-for-bulk-reads.md)'s environment setting and its
+requirement to keep comment review on the session model. Keep its other bulk-read decisions
+unchanged.
 
 Use `TAU_DELEGATE_MODEL=provider/model-id`, defaulting to `openai-codex/gpt-5.6-luna` when unset or
 empty. Resolve references exactly through Pi's registry and credentials. Remove the old setting

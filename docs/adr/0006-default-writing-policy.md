@@ -14,8 +14,8 @@ moves the rules about which comments to keep,
 Tau needs clear, consistent writing in replies and documents. Pi loads a skill when needed, so its
 full rules may be missing from an ordinary reply.
 
-ADR 0004 puts rules in ADRs or code, and task instructions in skills. Writing defaults must respect
-the task and repository rules.
+[ADR 0004](./0004-skill-authoring-style.md) puts rules in ADRs or code, and task instructions in
+skills. Writing defaults must respect the task and repository rules.
 
 ## Decision
 
@@ -48,7 +48,8 @@ Reject missing, unreadable, or blank guidance when loading Tau. Accept a visible
 instead of silently running without the writing rules. In Pi 0.66.1, this prevents CLI startup and
 discards all Tau features; reload and SDK callers may handle the error differently.
 
-This extension defines no types of its own and may omit `types.ts`, an exception to ADR 0001.
+This extension defines no types of its own and may omit `types.ts`, an exception to
+[ADR 0001](./0001-application-structure.md).
 
 ### Editing skill
 

@@ -15,8 +15,9 @@ key. When every caller is in the repository, these paths serve no one, and nobod
 later.
 
 Some surfaces have users the agent cannot see. Published packages have npm users, and users type CLI
-commands and write config files. Records written by one Tau version are read by another (ADR 0045).
-Deleting the old path on these surfaces breaks something outside the checkout.
+commands and write config files. Records written by one Tau version are read by another
+([ADR 0045](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md)). Deleting the old
+path on these surfaces breaks something outside the checkout.
 
 ## Decision
 
@@ -36,8 +37,9 @@ users still counts as published.
 ### Repository decisions win
 
 A repository convention that already decides compatibility applies without asking, through the
-preamble of the coding instructions. ADR 0003 keeps externally observable names stable, and
-[ADR 0053](./0053-version-each-saved-record-format.md) governs saved records.
+preamble of the coding instructions. [ADR 0003](./0003-externally-observable-identifiers.md) keeps
+externally observable names stable, and [ADR 0053](./0053-version-each-saved-record-format.md)
+governs saved records.
 
 ### Stay within the task
 

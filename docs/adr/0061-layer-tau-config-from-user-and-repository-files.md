@@ -11,9 +11,10 @@
 
 ## Context
 
-Advisory TDD uses globs hardcoded for TypeScript and JavaScript under a few root folders (ADR 0023).
-In a Go repository such as Grove, hints and `run_tests` freshness see no code. Other repositories
-want to exclude part of `src/`, such as `src/components/**`.
+Advisory TDD uses globs hardcoded for TypeScript and JavaScript under a few root folders
+([ADR 0023](./0023-advisory-tdd-observations.md)). In a Go repository such as Grove, hints and
+`run_tests` freshness see no code. Other repositories want to exclude part of `src/`, such as
+`src/components/**`.
 
 Tau needs settings a user sets once for every repository, and settings a repository checks in that
 override them. TDD is the first consumer. The formatter table, a bash allowlist, and model settings
@@ -67,10 +68,10 @@ Each `run_tests` result shows every effective value and the file, or built-in de
 ### Future consumer: model selection
 
 When model settings join this config, the precedence is: an explicit per-call override, then a
-task-specific setting, then the shared delegate setting (ADR 0027), then the built-in default. The
-user and repository layers decide the task and shared settings. An invalid setting or unavailable
-model is an error and never falls through to another model. Model settings are not part of this
-decision.
+task-specific setting, then the shared delegate setting
+([ADR 0027](./0027-share-one-delegate-model.md)), then the built-in default. The user and repository
+layers decide the task and shared settings. An invalid setting or unavailable model is an error and
+never falls through to another model. Model settings are not part of this decision.
 
 ## Consequences
 
@@ -96,8 +97,9 @@ decision.
 ### XDG config folder for the user file
 
 Use `$XDG_CONFIG_HOME/tau/` for the user file. Rejected because it ignores `PI_CODING_AGENT_DIR`, so
-separate Pi setups and the integration tests would share one file, the reason ADR 0045 rejected XDG
-for records. XDG suits tools that run under several agents, and Tau runs only in Pi.
+separate Pi setups and the integration tests would share one file, the reason
+[ADR 0045](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md) rejected XDG for
+records. XDG suits tools that run under several agents, and Tau runs only in Pi.
 
 ### Root `tau.json` or `.tau/tdd.json`
 

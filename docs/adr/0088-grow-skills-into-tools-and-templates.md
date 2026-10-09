@@ -9,9 +9,9 @@
 
 ## Context
 
-ADR 0004 allowed a `## Principles` section and let a large skill grow into scripts.
-`tests/skillFiles.test.ts` rejects body headings outside five sections and new shell blocks with
-more than one command. It lists the existing exceptions by name.
+[ADR 0004](./0004-skill-authoring-style.md) allowed a `## Principles` section and let a large skill
+grow into scripts. `tests/skillFiles.test.ts` rejects body headings outside five sections and new
+shell blocks with more than one command. It lists the existing exceptions by name.
 
 Shell in a skill has no tests, and each copy drifts on its own. A body or preview shape written
 inline in a skill mixes the shape the user sees with the steps that produce it.
@@ -54,6 +54,6 @@ the skill keeps only judgment and order.
 
 ### Keep ADR 0004's structure
 
-Keep ADR 0004's body structure and growth path. Rejected because the checks and the
-[skill authoring guide](../skill-authoring.md) already reject both, so the ADR would contradict
-them.
+Keep [ADR 0004](./0004-skill-authoring-style.md)'s body structure and growth path. Rejected because
+the checks and the [skill authoring guide](../skill-authoring.md) already reject both, so the ADR
+would contradict them.

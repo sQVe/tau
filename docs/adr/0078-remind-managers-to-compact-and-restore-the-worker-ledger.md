@@ -9,9 +9,9 @@
 
 ## Context
 
-ADR 0073 left compaction to Pi and the user. `pi-claude-bridge` registers a 1,000,000-token window
-for its `[1m]` models, so Pi's own compaction almost never runs for a bridge manager. The user needs
-a prompt to run `/compact`.
+[ADR 0073](./0073-leave-manager-compaction-to-pi.md) left compaction to Pi and the user.
+`pi-claude-bridge` registers a 1,000,000-token window for its `[1m]` models, so Pi's own compaction
+almost never runs for a bridge manager. The user needs a prompt to run `/compact`.
 
 Pi's summary drops exact task IDs and question IDs. The manager needs them to reply to a worker or
 read its report.
@@ -95,8 +95,8 @@ Rejected because it needs its own record reader, an evidence budget, and contrac
 
 ### Keep ADR 0073 unchanged
 
-Keep ADR 0073 unchanged. Rejected because bridge managers grow without bound, and worker notices
-still race the summary.
+Keep [ADR 0073](./0073-leave-manager-compaction-to-pi.md) unchanged. Rejected because bridge
+managers grow without bound, and worker notices still race the summary.
 
 ### Hold notices until Pi is idle
 

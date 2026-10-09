@@ -6,8 +6,8 @@
 
 ## Context
 
-ADR 0001 set the directory layout but left file names and contents undecided. Files use different
-naming rules with no shared reference.
+[ADR 0001](./0001-application-structure.md) set the directory layout but left file names and
+contents undecided. Files use different naming rules with no shared reference.
 
 ## Decision
 
