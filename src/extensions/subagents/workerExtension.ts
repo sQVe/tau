@@ -24,6 +24,7 @@ import {
   nestedControlCallReason,
 } from '../../controlTools.js';
 import { instructionSetNames, readInstructionSet } from '../../instructionSets.js';
+import { registerCodemodeBudget } from '../../registerCodemodeBudget.js';
 import { appendSystemPrompt } from '../../systemPrompt.js';
 import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
 import type { WorkerActivity } from './activity.js';
@@ -743,7 +744,13 @@ const registerInputHandler = (pi: ExtensionAPI, state: WorkerExtensionState): vo
 };
 
 const registerToolCallHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
-  pi.on('tool_call', (event, context) => handleToolCall(state, event, context));
+  const checkCodemodeBudget = registerCodemodeBudget(pi);
+
+  pi.on('tool_call', (event, context) => {
+    const refusal = checkCodemodeBudget(event);
+
+    return refusal ?? handleToolCall(state, event, context);
+  });
 };
 
 const registerSessionStartHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {

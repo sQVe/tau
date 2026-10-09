@@ -410,3 +410,135 @@ it('runs change tools a manager calls directly', async () => {
   expect(readFileSync(join(directory, 'source.txt'), 'utf8')).toBe('edited-source');
   expect(manager.executed.toSorted()).toEqual(['commit', 'run_tests']);
 });
+
+const raisedWithoutReason = `// @options: {"max_output_tokens": 8000}
+await tools.read({ path: 'source.txt' });
+text('budget-script-ran');
+`;
+
+// Prints three items of about 3,000 characters. With a budget of 2,000 tokens, only the first fits
+// beside the room Tau keeps for the list of cut items.
+const overBudgetScript = `
+text('first-item-start ' + 'a'.repeat(3000));
+text('second-item-start ' + 'b'.repeat(3000));
+text('third-item-start ' + 'c'.repeat(3000));
+`;
+
+const withinBudgetScript = `
+text('small one');
+text('small two');
+`;
+
+it('blocks a worker script that raises the budget without a reason and runs nothing', async () => {
+  const directory = temporaryDirectory('tau-worker-budget-refusal-');
+  const worker = await startProfileWorker(directory, 'scout');
+
+  const outcomes = await runTask(worker, [
+    fauxAssistantMessage([fauxToolCall('codemode', { code: raisedWithoutReason })]),
+    ...stopWithoutReport,
+  ]);
+
+  const result = outcomes.find((outcome) => outcome.toolName === 'codemode');
+
+  expect(result?.isError).toBe(true);
+  expect(result?.text).toContain('// @budget: <reason>');
+  expect(result?.text).not.toContain('budget-script-ran');
+  expect(readFileSync(join(directory, 'source.txt'), 'utf8')).toBe('fixture-source');
+  expect(worker.executed).toEqual([]);
+});
+
+it('returns the items that fit and names each cut item with the full-output path', async () => {
+  const directory = temporaryDirectory('tau-worker-budget-cut-');
+  const worker = await startProfileWorker(directory, 'scout');
+
+  const outcomes = await runTask(worker, [
+    fauxAssistantMessage([
+      fauxToolCall('codemode', {
+        code: `// @options: {"max_output_tokens": 2000}\n${overBudgetScript}`,
+      }),
+    ]),
+    ...stopWithoutReport,
+  ]);
+
+  const result = outcomes.find((outcome) => outcome.toolName === 'codemode');
+  const path = /Full output: ([^\s\]\\]+)/.exec(result?.text ?? '')?.[1];
+
+  expect(result?.isError).toBe(false);
+  expect(result?.text).toContain('a'.repeat(3000));
+  expect(result?.text).not.toContain('item 1:');
+  expect(result?.text).not.toContain('b'.repeat(200));
+  expect(result?.text).toContain('item 2: \\"second-item-start');
+  expect(result?.text).toContain('item 3: \\"third-item-start');
+  expect(path).toBeDefined();
+  expect(readFileSync(path ?? '', 'utf8')).toContain('third-item-start');
+});
+
+it('returns a script within its budget as Pi does without the budget handlers', async () => {
+  const directory = temporaryDirectory('tau-worker-budget-within-');
+  const worker = await startProfileWorker(directory, 'scout');
+
+  const outcomes = await runTask(worker, [
+    fauxAssistantMessage([fauxToolCall('codemode', { code: withinBudgetScript })]),
+    ...stopWithoutReport,
+  ]);
+
+  const result = outcomes.find((outcome) => outcome.toolName === 'codemode');
+
+  expect(result?.isError).toBe(false);
+  expect(result?.text).toContain('small one');
+  expect(result?.text).toContain('small two');
+  expect(result?.text).not.toContain('Output over the budget');
+  expect(result?.text).not.toContain('Warning: truncated output');
+});
+
+it('blocks a manager script that raises the budget without a reason', async () => {
+  const directory = temporaryDirectory('tau-manager-budget-refusal-');
+  const manager = await startManager(directory);
+
+  const outcomes = await manager.run([
+    fauxAssistantMessage([fauxToolCall('codemode', { code: raisedWithoutReason })]),
+    fauxAssistantMessage('Done.'),
+  ]);
+
+  const result = outcomes.find((outcome) => outcome.toolName === 'codemode');
+
+  expect(result?.isError).toBe(true);
+  expect(result?.text).toContain('// @budget: <reason>');
+  expect(result?.text).not.toContain('budget-script-ran');
+});
+
+it('keeps a script with 1,000 short rows within the default budget', async () => {
+  const directory = temporaryDirectory('tau-worker-budget-rows-');
+  const worker = await startProfileWorker(directory, 'scout');
+  const script = "for (let row = 1; row <= 1000; row++) text('row ' + row + ' ' + 'x'.repeat(40));";
+
+  const outcomes = await runTask(worker, [
+    fauxAssistantMessage([fauxToolCall('codemode', { code: script })]),
+    ...stopWithoutReport,
+  ]);
+
+  const result = outcomes.find((outcome) => outcome.toolName === 'codemode');
+  const content = (JSON.parse(result?.text ?? '{}') as { content: { text: string }[] }).content;
+  const bodyLength = content.slice(1).reduce((sum, item) => sum + item.text.length, 0);
+
+  expect(result?.isError).toBe(false);
+  expect(bodyLength).toBeLessThanOrEqual(16_000);
+  expect(content.at(-1)?.text).toContain('-1000');
+});
+
+it('lets Pi reject an invalid max_output_tokens and runs no nested call', async () => {
+  const directory = temporaryDirectory('tau-worker-budget-invalid-');
+  const worker = await startProfileWorker(directory, 'scout');
+  const script = `// @options: {"max_output_tokens": -1}\nawait tools.read({ path: 'source.txt' });\ntext('invalid-ran');`;
+
+  const outcomes = await runTask(worker, [
+    fauxAssistantMessage([fauxToolCall('codemode', { code: script })]),
+    ...stopWithoutReport,
+  ]);
+
+  const result = outcomes.find((outcome) => outcome.toolName === 'codemode');
+
+  expect(result?.isError).toBe(true);
+  expect(result?.text).toContain('max_output_tokens');
+  expect(result?.text).not.toContain('invalid-ran');
+});

@@ -6,7 +6,16 @@ import { DefaultResourceLoader, SettingsManager } from '@earendil-works/pi-codin
 import { expect, it } from 'vitest';
 
 const instructionExtensions = ['writing', 'coding', 'workflow'] as const;
-const sharedModules = ['controlTools', 'instructionSets', 'systemPrompt', 'workerProcess'];
+
+const sharedModules = [
+  'codemodeBudget',
+  'controlTools',
+  'instructionSets',
+  'registerCodemodeBudget',
+  'saveFullOutput',
+  'systemPrompt',
+  'workerProcess',
+];
 
 for (const extension of instructionExtensions) {
   it(`rejects invalid ${extension} instructions and reads them again on reload`, async ({
