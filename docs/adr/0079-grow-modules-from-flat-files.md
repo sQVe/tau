@@ -23,8 +23,8 @@ Instruction files lived in extension folders, which kept three one-file extensio
 [ADR 0001](./0001-application-structure.md) kept skills at the package root for Pi's discovery. Pi
 reads the skills path from `package.json`, so any folder works.
 
-Gremlin's [ADR 0004](./0004-skill-authoring-style.md), "Capability modules with an enforced import
-table", adopted the same flat-first rule.
+Gremlin's ADR 0004, "Capability modules with an enforced import table", adopted the same flat-first
+rule.
 
 ## Decision
 
