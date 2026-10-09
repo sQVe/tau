@@ -1005,6 +1005,24 @@ it('launches on the profile model when the classifier never answers within 5 sec
   expect(options.signal.aborted).toBe(true);
 });
 
+it('classifies nothing when allowedModels excludes the classifier', async ({ onTestFinished }) => {
+  const { directory, context, classify, profileModel } = await routedFixture(onTestFinished);
+  const configPath = join(directory, 'tau.json');
+  const config = JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>;
+
+  writeFileSync(configPath, JSON.stringify({ ...config, allowedModels: [profileModel, haiku] }));
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  const { loadout, routing } = await resolveRoutedLoadout(
+    { profile: 'scout', task: 'Find it.' },
+    context,
+  );
+
+  expect(loadout.model).toBe(profileModel);
+  expect(routing).toEqual({ shadowPick: profileModel, fallbackReason: 'noRoute' });
+  expect(classify).not.toHaveBeenCalled();
+});
+
 it('records a low confidence answer and a missing classifier model as fallbacks', async ({
   onTestFinished,
 }) => {

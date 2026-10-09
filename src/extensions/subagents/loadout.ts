@@ -176,11 +176,26 @@ export const resolveLoadout = (
 
 const classifierTimeoutMilliseconds = 5000;
 
+const classifierReference = 'typesafe/jev-latest';
+
+// The brief leaves the machine, so the classifier obeys allowedModels like every model Tau selects.
+// A shadow pick never blocks a launch, so an excluded classifier skips instead of refusing.
+const classifierAllowed = (location: ConfigLocation): boolean => {
+  const allowed = readAllowedModels(location);
+
+  return allowed === undefined || allowed.models.includes(classifierReference);
+};
+
 const classifyRoute = async (
   context: Pick<ExtensionContext, 'modelRegistry'>,
   route: ModelRoute,
   state: { brief: string; profile: string },
+  location: ConfigLocation,
 ): Promise<ClassifierOutcome> => {
+  if (!classifierAllowed(location)) {
+    return { kind: 'skipped' };
+  }
+
   const classifier = context.modelRegistry.findOfType('classifier', 'typesafe', 'jev-latest');
 
   if (classifier === undefined) {
@@ -254,10 +269,12 @@ export const resolveRoutedLoadout = async (
     return { loadout, routing: undefined };
   }
 
-  const outcome = await classifyRoute(context, route, {
-    brief: input.task,
-    profile: loadout.profile,
-  });
+  const outcome = await classifyRoute(
+    context,
+    route,
+    { brief: input.task, profile: loadout.profile },
+    location,
+  );
 
   const routing = pickRoutedModel({
     launchModel: input.model,
