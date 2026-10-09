@@ -4,7 +4,6 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { isRecord } from '../isRecord.js';
 import { readTauConfig } from '../tauConfig.js';
 import type { ConfigFile, ConfigLocation } from '../tauConfig.js';
 import { effectiveAllowedModels } from './allowedModels.js';
@@ -28,34 +27,6 @@ export const parseModelReference = (reference: string): ModelReference | undefin
   const separator = reference.indexOf('/');
 
   return { provider: reference.slice(0, separator), id: reference.slice(separator + 1) };
-};
-
-export const parseModelEntry = (source: string, field: string, entry: unknown): string => {
-  if (!isRecord(entry)) {
-    throw new Error(
-      `Invalid Tau config ${source}: ${field} must be an object such as {"model": "provider/model-id"}.`,
-    );
-  }
-
-  const unknownKey = Object.keys(entry).find((key) => key !== 'model');
-
-  if (unknownKey !== undefined) {
-    throw new Error(
-      `Invalid Tau config ${source}: ${field}.${unknownKey} is not a known key. Set only model.`,
-    );
-  }
-
-  if (entry.model === undefined) {
-    throw new Error(`Invalid Tau config ${source}: ${field}.model is missing.`);
-  }
-
-  if (typeof entry.model !== 'string' || !parseModelReference(entry.model)) {
-    throw new Error(
-      `Invalid Tau config ${source}: ${field}.model ${JSON.stringify(entry.model)} is not provider/model-id.`,
-    );
-  }
-
-  return entry.model;
 };
 
 const allowedModelsFileSchema = Type.Object({
