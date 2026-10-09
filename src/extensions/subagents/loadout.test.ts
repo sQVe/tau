@@ -17,7 +17,12 @@ import type { ExtensionAPI, SlashCommandInfo } from '@earendil-works/pi-coding-a
 import { expect, it, vi } from 'vitest';
 
 import { fixtureLoadout } from './fixtures/loadout.js';
-import { checkWorkerRuntime, resolveLoadout, validateSavedLoadout } from './loadout.js';
+import {
+  checkWorkerRuntime,
+  resolveLoadout,
+  resolveRoutedLoadout,
+  validateSavedLoadout,
+} from './loadout.js';
 import { listProfiles, resolveProfile, parseProfile } from './profiles.js';
 
 const profile = (body: string) => `---\nname: worker\nrole: editing\nthinking: off\n---\n${body}`;
@@ -858,4 +863,218 @@ it('rejects an empty profile package', () => {
   expect(() => parseSettings('packages: npm:pi-codex-image-gen, \n')).toThrow(
     'comma-separated list',
   );
+});
+
+const haiku = 'tau-worker-fixture/haiku';
+
+const answered = (label: string, confidence: number) => ({
+  stopReason: 'stop',
+  answers: { route: { type: 'choice', choice: label, probabilities: {}, confidence } },
+});
+
+const routedFixture = async (onTestFinished: (callback: () => void) => void) => {
+  const fixture = await workerFixture(onTestFinished);
+  const { directory, model } = fixture;
+  const profileModel = `${model.provider}/${model.id}`;
+
+  const routes = {
+    question: 'How wide is this brief?',
+    labels: {
+      narrow: { criterion: 'A lookup about known code.', model: haiku },
+      wide: { criterion: 'An investigation across many files.', model: profileModel },
+    },
+  };
+
+  writeFileSync(
+    join(directory, 'tau.json'),
+    JSON.stringify({
+      profiles: {
+        scout: { model: profileModel, routes },
+        worker: { model: profileModel, routes },
+        reviewer: { model: profileModel },
+      },
+    }),
+  );
+
+  const classify = vi.fn<(...parameters: unknown[]) => Promise<unknown>>();
+  const hasClassifier = { value: true };
+
+  const registry = Object.assign(Object.create(fixture.context.modelRegistry) as ModelRegistry, {
+    findOfType: () => (hasClassifier.value ? { id: 'jev-latest' } : undefined),
+    classify,
+  });
+
+  const context = { ...fixture.context, modelRegistry: registry };
+
+  return { ...fixture, context, classify, hasClassifier, profileModel };
+};
+
+it('records the shadow pick of a scout launch and keeps the profile model', async ({
+  onTestFinished,
+}) => {
+  const { context, classify, profileModel } = await routedFixture(onTestFinished);
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  const { loadout, routing } = await resolveRoutedLoadout(
+    { profile: 'scout', task: 'Find the parser.' },
+    context,
+  );
+
+  expect(loadout.model).toBe(profileModel);
+  expect(routing).toEqual({ shadowPick: haiku, label: 'narrow', confidence: 0.9 });
+  expect(classify).toHaveBeenCalledOnce();
+
+  expect(classify.mock.calls[0]?.[1]).toMatchObject({
+    state: { brief: 'Find the parser.', profile: 'scout' },
+    questions: {
+      route: {
+        type: 'choice',
+        instructions: 'How wide is this brief?',
+        criteria: {
+          narrow: 'A lookup about known code.',
+          wide: 'An investigation across many files.',
+        },
+      },
+    },
+  });
+});
+
+it('classifies nothing and records no routing when the launch names a model', async ({
+  onTestFinished,
+}) => {
+  const { context, classify, request } = await routedFixture(onTestFinished);
+
+  const result = await resolveRoutedLoadout({ ...request, task: 'Edit the parser.' }, context);
+
+  expect(result.routing).toBeUndefined();
+  expect(classify).not.toHaveBeenCalled();
+});
+
+it('classifies nothing for a profile without routes', async ({ onTestFinished }) => {
+  const { context, classify } = await routedFixture(onTestFinished);
+
+  const result = await resolveRoutedLoadout({ profile: 'reviewer', task: 'Review.' }, context);
+
+  expect(result.routing).toBeUndefined();
+  expect(classify).not.toHaveBeenCalled();
+});
+
+it.for([
+  ['an error result', () => Promise.resolve({ stopReason: 'error', answers: {} })],
+  ['a rejection', () => Promise.reject(new Error('offline'))],
+] as const)('launches on the profile model after %s', async ([, outcome], { onTestFinished }) => {
+  const { context, classify, profileModel } = await routedFixture(onTestFinished);
+  classify.mockImplementation(outcome);
+
+  const { loadout, routing } = await resolveRoutedLoadout(
+    { profile: 'worker', task: 'Fix it.' },
+    context,
+  );
+
+  expect(loadout.model).toBe(profileModel);
+  expect(routing).toEqual({ shadowPick: profileModel, fallbackReason: 'error' });
+});
+
+it('launches on the profile model when the classifier never answers within 5 seconds', async ({
+  onTestFinished,
+}) => {
+  const { context, classify, profileModel } = await routedFixture(onTestFinished);
+  vi.useFakeTimers();
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  classify.mockImplementation(() => new Promise(() => {}));
+
+  const pending = resolveRoutedLoadout({ profile: 'scout', task: 'Find it.' }, context);
+  const settled = vi.fn<() => void>();
+  const finished = pending.then(settled);
+
+  await vi.advanceTimersByTimeAsync(4999);
+  expect(settled).not.toHaveBeenCalled();
+
+  await vi.advanceTimersByTimeAsync(1);
+  await finished;
+  const { loadout, routing } = await pending;
+
+  expect(loadout.model).toBe(profileModel);
+  expect(routing).toEqual({ shadowPick: profileModel, fallbackReason: 'timeout' });
+
+  const options = classify.mock.calls[0]?.[2] as { signal: AbortSignal };
+  expect(options.signal.aborted).toBe(true);
+});
+
+it('stops a pending classification when the launch is cancelled', async ({ onTestFinished }) => {
+  const { context, classify } = await routedFixture(onTestFinished);
+  vi.useFakeTimers();
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  classify.mockImplementation(() => new Promise(() => {}));
+  const launch = new AbortController();
+
+  const pending = resolveRoutedLoadout(
+    { profile: 'scout', task: 'Find it.' },
+    context,
+    [],
+    launch.signal,
+  );
+
+  const settled = vi.fn<() => void>();
+  const finished = pending.then(settled);
+
+  launch.abort();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(settled).toHaveBeenCalledOnce();
+  await finished;
+
+  const options = classify.mock.calls[0]?.[2] as { signal: AbortSignal };
+  expect(options.signal.aborted).toBe(true);
+});
+
+it('classifies nothing when allowedModels excludes the classifier', async ({ onTestFinished }) => {
+  const { directory, context, classify, profileModel } = await routedFixture(onTestFinished);
+  const configPath = join(directory, 'tau.json');
+  const config = JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>;
+
+  writeFileSync(configPath, JSON.stringify({ ...config, allowedModels: [profileModel, haiku] }));
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  const { loadout, routing } = await resolveRoutedLoadout(
+    { profile: 'scout', task: 'Find it.' },
+    context,
+  );
+
+  expect(loadout.model).toBe(profileModel);
+  expect(routing).toEqual({ shadowPick: profileModel, fallbackReason: 'noRoute' });
+  expect(classify).not.toHaveBeenCalled();
+});
+
+it('records a low confidence answer and a missing classifier model as fallbacks', async ({
+  onTestFinished,
+}) => {
+  const { context, classify, hasClassifier, profileModel } = await routedFixture(onTestFinished);
+
+  classify.mockResolvedValue(answered('narrow', 0.5));
+  const brief = { profile: 'scout', task: 'Find it.' };
+
+  expect((await resolveRoutedLoadout(brief, context)).routing).toEqual({
+    shadowPick: profileModel,
+    label: 'narrow',
+    confidence: 0.5,
+    fallbackReason: 'lowConfidence',
+  });
+
+  classify.mockClear();
+  hasClassifier.value = false;
+
+  expect((await resolveRoutedLoadout(brief, context)).routing).toEqual({
+    shadowPick: profileModel,
+    fallbackReason: 'noRoute',
+  });
+
+  expect(classify).not.toHaveBeenCalled();
 });

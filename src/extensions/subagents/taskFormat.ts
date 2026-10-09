@@ -1,6 +1,7 @@
 export const taskFormat = (
   version: unknown,
   currentVersion: number,
+  oldestReadableVersion: number,
 ): 'current' | 'retired' | 'newer' | 'invalid' => {
   if (typeof version !== 'number' || !Number.isInteger(version)) {
     return 'invalid';
@@ -10,7 +11,7 @@ export const taskFormat = (
     return 'invalid';
   }
 
-  if (version < currentVersion) {
+  if (version < oldestReadableVersion) {
     return 'retired';
   }
 

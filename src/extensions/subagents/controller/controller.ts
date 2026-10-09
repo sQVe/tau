@@ -667,6 +667,7 @@ export class WorkerController {
       ...nativeReference(plan.directory, plan.source),
       ...savedTiming,
       loadout: input.loadout,
+      ...(input.routing === undefined ? {} : { routing: input.routing }),
     });
   }
 
