@@ -101,12 +101,13 @@ export const raiseOutputCap = (source: string): string => {
   return `${optionsPrefix} ${JSON.stringify(fields)}${rest}`;
 };
 
-// Pi joins text items with a newline when it counts characters.
+// Pi joins text items with a newline when it counts characters. A budget below the gap reserve
+// counts as the reserve, so the list of cut items never outgrows the output it replaces.
 export const cutOverBudget = (
   texts: readonly string[],
   tokens: number,
 ): BudgetChoice | undefined => {
-  const budget = tokens * charactersPerToken;
+  const budget = Math.max(tokens * charactersPerToken, gapReserve);
   const total = texts.reduce((sum, text) => sum + text.length, 0) + Math.max(texts.length - 1, 0);
 
   if (total <= budget) {

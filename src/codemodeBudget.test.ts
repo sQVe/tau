@@ -121,5 +121,14 @@ it('bounds the gap for many cut items and names the remaining range', () => {
 });
 
 it('keeps nothing when the budget is smaller than the gap reserve', () => {
-  expect(cutOverBudget(['a'.repeat(100), 'b'], 10)?.kept).toBe(0);
+  expect(cutOverBudget(['a'.repeat(3000), 'b'], 10)?.kept).toBe(0);
+});
+
+it('cuts nothing from output shorter than the gap reserve under a smaller budget', () => {
+  expect(
+    cutOverBudget(
+      Array.from({ length: 10 }, () => 'x'.repeat(107)),
+      100,
+    ),
+  ).toBeUndefined();
 });

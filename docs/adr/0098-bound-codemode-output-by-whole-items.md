@@ -28,7 +28,8 @@ because Pi rejects unknown fields on the options line.
 - After the script, Tau keeps whole items in order while they fit, with room for a gap item. The gap
   item names each cut item by number and first line, up to a fixed count, and names the rest as a
   range. Tau saves the full output to a private file and names its path.
-- A result within the budget is returned as Pi made it.
+- A result within the budget is returned as Pi made it. A budget smaller than the room for the gap
+  item counts as that room, so the gap item never outgrows the output it replaces.
 - The workflow extension applies the budget in the manager, and the worker extension in workers.
 
 ## Consequences
