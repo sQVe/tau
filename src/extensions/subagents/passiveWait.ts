@@ -8,8 +8,9 @@ const blockedSleepSeconds = 30;
 
 const unitSeconds: Record<string, number> = { '': 1, s: 1, m: 60, h: 3600, d: 86_400 };
 
+// A while loop that reads input ends with the input, so only other conditions count as waiting.
 const loopWithSleep =
-  /\b(?:while|until)\b(?:(?!\bdone\b)[\s\S])*?\bdo\b(?:(?!\bdone\b)[\s\S])*?\bsleep\b/;
+  /\b(?:until|while(?!\s+(?:\w+=\S*\s+)*read\b))(?:(?!\bdone\b)[\s\S])*?\bdo\b(?:(?!\bdone\b)[\s\S])*?\bsleep\b/;
 
 const passiveWaitPatterns = [
   /\bgh\s+run\s+watch\b/,
@@ -18,8 +19,13 @@ const passiveWaitPatterns = [
   /(?:^|[;&|(\n])\s*watch\s/,
 ];
 
+const shellScriptPrefix = /\b(?:sh|bash|zsh)(?:\s+-[a-z]+)*\s+-[a-z]*c\s+$/;
+
+// Quoted text is prose unless it is the script a shell runs.
 const withoutQuotedText = (command: string): string =>
-  command.replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, "''");
+  command.replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, (span, offset: number) =>
+    shellScriptPrefix.test(command.slice(0, offset)) ? span : "''",
+  );
 
 // A running tool call holds worker notices back, so a long sleep delays the notice it waits for.
 // Sleep sums its operands, and chained sleeps add up, so count every operand in the command.
@@ -56,7 +62,7 @@ export const passiveWaitRefusal = (
   facts: PassiveWaitFacts,
 ): string | undefined => {
   const unquoted = withoutQuotedText(command);
-  const waitsInLoop = loopWithSleep.test(command);
+  const waitsInLoop = loopWithSleep.test(unquoted);
   const waitsOnWatcher = passiveWaitPatterns.some((pattern) => pattern.test(unquoted));
   const waitsPassively = waitsInLoop || waitsOnWatcher;
   const sleepsLong = totalSleepSeconds(command) >= blockedSleepSeconds;

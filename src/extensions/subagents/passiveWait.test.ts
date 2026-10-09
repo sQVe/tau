@@ -22,6 +22,28 @@ it.each([
   { command: 'sleep 900', workers: false, refused: false },
   { command: 'sleep 900', workers: true, refused: true },
   { command: 'sleep 20; sleep 20', workers: true, refused: true },
+  {
+    command: "git commit -m 'avoid while true; do sleep 60; done'",
+    workers: false,
+    refused: false,
+  },
+  { command: "bash -c 'gh run watch'", workers: false, refused: true },
+  {
+    command: "bash -lc 'while true; do gh pr checks; sleep 5; done'",
+    workers: false,
+    refused: true,
+  },
+  {
+    command: 'while read -r item; do upload "$item"; sleep 1; done < items.txt',
+    workers: false,
+    refused: false,
+  },
+  {
+    command: 'cat items | while IFS= read -r item; do echo "$item"; sleep 1; done',
+    workers: false,
+    refused: false,
+  },
+  { command: 'until read -r item; do sleep 1; done', workers: false, refused: true },
   { command: "bash -c 'sleep 900'", workers: true, refused: true },
   { command: "bash -c 'sleep 900'", workers: false, refused: false },
   {
