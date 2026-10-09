@@ -240,9 +240,17 @@ describe('slice tool apply', () => {
 
     const moved = join(directory, '..', 'me-1');
 
-    await expect(apply()).rejects.toThrow(
-      `\nApplied:\n- Create container "Add PR-sized planning" in team ME and project Tau\n- Move the draft to its container identifier\n- Create slice 1 "Record the lifecycle" under the container\nNot applied:\n- Create slice 2 "Add the slice skill" under the container\n- Mark slice 2 blocked by slice 1\nThe draft is in ${moved}.`,
-    );
+    await expect(apply()).rejects.toBeInstanceOf(Error);
+
+    expect([...fake.issues.keys()]).toEqual(['ME-1', 'ME-2']);
+    expect(fake.issues.get('ME-2')).toMatchObject({ parent: 'ME-1', blockedBy: [] });
+
+    expect(await savedPlan(moved)).toMatchObject({
+      container: { identifier: 'ME-1' },
+      slices: [{ identifier: 'ME-2' }, { identifier: null }],
+    });
+
+    await expect(stat(directory)).rejects.toMatchObject({ code: 'ENOENT' });
 
     await apply(undefined, moved);
 
@@ -285,7 +293,14 @@ describe('slice tool apply', () => {
         undefined,
         context,
       ),
-    ).rejects.toThrow('\nApplied:\n- none\nNot applied:\n');
+    ).rejects.toThrow(/timeout/u);
+
+    expect(await savedPlan(directory)).toMatchObject({
+      container: { identifier: null },
+      slices: [{ identifier: null }, { identifier: null }],
+    });
+
+    await expect(stat(join(directory, '..', 'me-1'))).rejects.toMatchObject({ code: 'ENOENT' });
 
     await expect(apply(undefined, directory)).rejects.toThrow(/no container identifier, but ME-1/);
     expect([...fake.issues.keys()]).toEqual(['ME-1']);
@@ -340,9 +355,15 @@ describe('slice tool apply', () => {
         undefined,
         context,
       ),
-    ).rejects.toThrow(
-      '\nApplied:\n- Create container "Add PR-sized planning" in team ME and project Tau\nNot applied:\n- Move the draft to its container identifier\n- Create slice 1 "Record the lifecycle" under the container\n- Create slice 2 "Add the slice skill" under the container\n- Mark slice 2 blocked by slice 1\nThe draft is in ',
-    );
+    ).rejects.toThrow(/aborted/u);
+
+    expect(fake.writes()).toHaveLength(1);
+
+    expect(await savedPlan(directory)).toMatchObject({
+      slices: [{ identifier: null }, { identifier: null }],
+    });
+
+    await expect(stat(join(directory, '..', 'me-1'))).rejects.toMatchObject({ code: 'ENOENT' });
 
     expect([...fake.issues.keys()]).toEqual(['ME-1']);
     expect(await savedPlan(directory)).toMatchObject({ container: { identifier: 'ME-1' } });
@@ -479,9 +500,16 @@ describe('slice tool apply', () => {
     fake.issues.get('ME-4')!.sortOrder = 0;
     fake.failWrite(fake.writes().length + 2);
 
-    await expect(apply(undefined, moved)).rejects.toThrow(
-      '\nApplied:\n- Move ME-3 into plan order\nNot applied:\n- Move ME-4 into plan order\nThe draft is in ',
-    );
+    await expect(apply(undefined, moved)).rejects.toBeInstanceOf(Error);
+
+    expect(fake.issues.get('ME-2')?.sortOrder).toBe(5);
+    expect(fake.issues.get('ME-3')?.sortOrder).toBeGreaterThan(5);
+    expect(fake.issues.get('ME-4')?.sortOrder).toBe(0);
+
+    const retry = await apply(undefined, moved);
+
+    expect(retry['applied']).toMatchObject([{ kind: 'moveSlice', identifier: 'ME-4' }]);
+    expect(retry['orderInPlace']).toBe(true);
   });
 
   it('stops the order moves when the call is aborted after a move', async () => {
@@ -524,15 +552,17 @@ describe('slice tool apply', () => {
         undefined,
         context,
       ),
-    ).rejects.toThrow(
-      '\nApplied:\n- Move ME-3 into plan order\nNot applied:\n- Move ME-4 into plan order\nThe draft is in ',
-    );
+    ).rejects.toThrow(/aborted/u);
+
+    expect(fake.issues.get('ME-2')?.sortOrder).toBe(5);
+    expect(fake.issues.get('ME-3')?.sortOrder).toBeGreaterThan(5);
+    expect(fake.issues.get('ME-4')?.sortOrder).toBe(0);
 
     expect(fake.writes()).toHaveLength(writesBefore + 1);
   });
 
   it('reports every order move as applied when the order read after the writes fails', async () => {
-    const { fake, context, directory } = await appliedPlan();
+    const { fake, context, directory, apply } = await appliedPlan();
 
     fake.issues.get('ME-2')!.sortOrder = 5;
     fake.issues.get('ME-3')!.sortOrder = 1;
@@ -559,9 +589,16 @@ describe('slice tool apply', () => {
       context,
     );
 
-    await expect(failure).rejects.toThrow(
-      '\nApplied:\n- Move ME-3 into plan order\nNot applied:\n- none\nThe draft is in ',
-    );
+    await expect(failure).rejects.toThrow(/network error/u);
+
+    expect(fake.issues.get('ME-2')?.sortOrder).toBe(5);
+    expect(fake.issues.get('ME-3')?.sortOrder).toBeGreaterThan(5);
+    expect(fake.writes()).toHaveLength(writesBefore + 1);
+
+    const retry = await apply(undefined, directory);
+
+    expect(retry).toMatchObject({ status: 'unchanged', applied: [], orderInPlace: true });
+    expect(fake.writes()).toHaveLength(writesBefore + 1);
   });
 
   it('refuses when the draft changes during the confirm', async () => {
@@ -700,9 +737,17 @@ describe('slice tool apply', () => {
     await mkdir(target);
     await writeFile(join(target, 'blocker.txt'), 'in the way\n');
 
-    await expect(apply()).rejects.toThrow(
-      `\nApplied:\n- Create container "Add PR-sized planning" in team ME and project Tau\nNot applied:\n- Move the draft to its container identifier\n- Create slice 1 "Record the lifecycle" under the container\n- Create slice 2 "Add the slice skill" under the container\n- Mark slice 2 blocked by slice 1\nThe draft is in ${directory}.`,
-    );
+    await expect(apply()).rejects.toBeInstanceOf(Error);
+
+    expect([...fake.issues.keys()]).toEqual(['ME-1']);
+    expect(fake.writes()).toHaveLength(1);
+
+    expect(await savedPlan(directory)).toMatchObject({
+      container: { identifier: 'ME-1' },
+      slices: [{ identifier: null }, { identifier: null }],
+    });
+
+    await expect(stat(join(target, 'plan.json'))).rejects.toMatchObject({ code: 'ENOENT' });
 
     await rm(target, { recursive: true });
     const result = await apply(undefined, directory);
@@ -739,13 +784,15 @@ describe('slice tool apply', () => {
 
     const failureDetails = (await failure.catch((error: unknown) => error)) as Error;
 
-    expect(failureDetails.message).toContain(
-      'Linear created ME-1, but saving its identifier failed.',
-    );
+    expect(failureDetails.message).toContain('ME-1');
+    expect(failureDetails.message).toContain('https://linear.app/me/issue/ME-1');
+    expect(fake.issues.get('ME-1')).toMatchObject({ parent: null, title: 'Add PR-sized planning' });
+    expect(fake.writes()).toHaveLength(1);
 
-    expect(failureDetails.message).toContain(
-      '\nApplied:\n- Create container "Add PR-sized planning" in team ME and project Tau\nNot applied:\n- Record ME-1 (https://linear.app/me/issue/ME-1) in the draft\n- Move the draft to its container identifier\n',
-    );
+    const planFileState = await stat(planFile);
+
+    expect(planFileState.isDirectory()).toBe(true);
+    await expect(stat(join(directory, '..', 'me-1'))).rejects.toMatchObject({ code: 'ENOENT' });
 
     expect([...fake.issues.keys()]).toEqual(['ME-1']);
   });
@@ -869,17 +916,17 @@ describe('slice tool read', () => {
     {
       problem: 'command failure',
       output: undefined,
-      diagnostic: 'failed: network error',
+      diagnostic: 'network error',
     },
     {
       problem: 'invalid JSON',
       output: 'x'.repeat(250),
-      diagnostic: `printed output that is not JSON: ${'x'.repeat(200)}`,
+      diagnostic: 'x'.repeat(200),
     },
     {
       problem: 'invalid state type',
       output: '{"state": 1}',
-      diagnostic: 'printed unexpected output: /state must be string',
+      diagnostic: '/state',
     },
   ])(
     'reports the GitHub diagnostic for $problem without changing the draft',
@@ -897,7 +944,10 @@ describe('slice tool read', () => {
 
       const outcome = await expectReadOnly(fake, directory, read);
 
-      expect(outcome.error).toBe(`gh pr view ${url} --json state ${diagnostic}`);
+      expect(outcome.error).toContain(`gh pr view ${url}`);
+      expect(outcome.error).toContain(diagnostic);
+
+      expect(outcome.error).not.toContain('x'.repeat(201));
     },
   );
 

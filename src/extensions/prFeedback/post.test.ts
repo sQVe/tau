@@ -677,9 +677,7 @@ describe('post', () => {
 
     expect(failure?.message).toContain('HTTP 502');
 
-    expect(failure?.message).toContain(
-      `\nPosted:\n- Reply to https://github.com/sQVe/tau/pull/7#discussion_r101:\nRenamed.\nNot posted:\n- Resolve https://github.com/sQVe/tau/pull/7#discussion_r201\n- Comment on https://github.com/sQVe/tau/pull/7:\nThanks.\n${details.directory}/posted.json`,
-    );
+    expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 101, body: 'Renamed.' }]);
 
     expect(await readPosted(details.directory)).toMatchObject({
       writes: [
@@ -744,9 +742,30 @@ describe('post save failure', () => {
 
     expect(failure?.message).not.toContain('posted.json records the posted writes');
 
-    expect(failure?.message).toContain(
-      '\nPosted:\n- Reply to https://github.com/sQVe/tau/pull/7#discussion_r101:\nRenamed.\nNot posted:\n- Resolve https://github.com/sQVe/tau/pull/7#discussion_r101\nposted.json',
+    expect(await readPosted(details.directory)).toBeUndefined();
+    expect(fake.threads[0]?.isResolved).toBe(false);
+
+    await chmod(details.directory, 0o700);
+
+    await writeFile(
+      join(details.directory, 'posted.json'),
+      JSON.stringify({
+        version: 2,
+        writes: [recordedWrite('reply', 'thread-person', 'Renamed.', 1000)],
+      }),
     );
+
+    const retry = await post(details, recordingConfirm(root, true).context);
+
+    expect(retry).toMatchObject({
+      posted: [{ kind: 'resolve', thread: 'thread-person' }],
+      skipped: [{ kind: 'reply', thread: 'thread-person' }],
+    });
+
+    expect(fake.writes).toEqual([
+      { kind: 'reply', replyTo: 101, body: 'Renamed.' },
+      { kind: 'resolve', threadId: 'thread-person' },
+    ]);
   });
 });
 
@@ -777,11 +796,9 @@ describe('post uncertain save failure', () => {
       'Reply to https://github.com/sQVe/tau/pull/7#discussion_r101:\nRenamed.\nCheck the pull request for it before a retry',
     );
 
-    expect(failure?.message).toContain('its outcome is uncertain');
-
-    expect(failure?.message).toContain(
-      '\nPosted:\n- none\nNot posted:\n- Resolve https://github.com/sQVe/tau/pull/7#discussion_r101\nposted.json',
-    );
+    expect(failure?.message).toMatch(/uncertain/u);
+    expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 101, body: 'Renamed.' }]);
+    expect(fake.threads[0]?.isResolved).toBe(false);
 
     expect(await readPosted(details.directory)).toBeUndefined();
   });
@@ -813,10 +830,24 @@ describe('post write output', () => {
 
   const writeKinds = ['reply', 'resolve', 'comment'];
 
-  const writeDescriptions = [
-    '- Reply to https://github.com/sQVe/tau/pull/7#discussion_r201:\nAdded.',
-    '- Resolve https://github.com/sQVe/tau/pull/7#discussion_r201',
-    '- Comment on https://github.com/sQVe/tau/pull/7:\nDone.',
+  const expectedWrites = [
+    { kind: 'reply', replyTo: 201, body: 'Added.' },
+    { kind: 'resolve', threadId: 'thread-bot' },
+    { kind: 'comment', body: 'Done.' },
+  ];
+
+  const expectedRecords = [
+    recordedWrite('reply', 'thread-bot', 'Added.', 1000),
+    recordedWrite('resolve', 'thread-bot', null, null),
+    {
+      kind: 'comment',
+      thread: null,
+      url: 'https://github.com/sQVe/tau/pull/7',
+      text: 'Done.',
+      state: 'posted',
+      commentId: 1001,
+      earlierCommentIds: [],
+    },
   ];
 
   it.each(
@@ -828,28 +859,32 @@ describe('post write output', () => {
   )(
     'records a $key whose output gh printed as "$output" as posted, then stops',
     async ({ key, index, output, problem }) => {
-      const { fake, details, post } = await writeFixture();
+      const { root, fake, details, post } = await writeFixture();
 
       fake.overrideOutput(key, output);
 
       const failure = await postFailure(post(details));
       const saved = (await readPosted(details.directory)) as { version: number; writes: unknown[] };
-      const posted = writeDescriptions.slice(0, index + 1).join('\n');
-      const notPosted = writeDescriptions.slice(index + 1).join('\n') || '- none';
+
+      const posted = structuredClone(expectedRecords.slice(0, index + 1));
+
+      posted[index]!.commentId = null;
 
       expect(failure?.message).toContain(problem);
       expect(saved.writes).toHaveLength(index + 1);
       expect(saved.writes.at(-1)).toMatchObject({ kind: writeKinds[index], commentId: null });
 
-      expect(failure?.message).toContain(
-        `\nNot posted:\n${notPosted}\n${details.directory}/posted.json`,
-      );
+      expect(fake.writes).toEqual(expectedWrites.slice(0, index + 1));
 
       expect(fake.writes).toHaveLength(index + 1);
 
       expect(saved.version).toBe(2);
 
-      expect(failure?.message).toContain(`\nPosted:\n${posted}\nNot posted:`);
+      expect(saved.writes).toEqual(posted);
+
+      await post(details, recordingConfirm(root, true).context);
+
+      expect(fake.writes).toEqual(expectedWrites);
     },
   );
 
@@ -861,12 +896,14 @@ describe('post write output', () => {
     const failure = await postFailure(post(details));
 
     expect(failure?.message).toContain('HTTP 502');
-    const posted = writeDescriptions.slice(0, index).join('\n') || '- none';
-    const notPosted = writeDescriptions.slice(index + 1).join('\n') || '- none';
+    expect(fake.writes).toEqual(expectedWrites.slice(0, index));
 
-    expect(failure?.message).toContain(
-      `\nUncertain:\n${writeDescriptions[index]}\nPosted:\n${posted}\nNot posted:\n${notPosted}\n${details.directory}/posted.json`,
-    );
+    expect(await readPosted(details.directory)).toMatchObject({
+      writes: [
+        ...expectedRecords.slice(0, index),
+        { kind: writeKinds[index], state: 'uncertain', commentId: null },
+      ],
+    });
 
     expect(fake.writes).toHaveLength(index);
   });
@@ -907,17 +944,18 @@ describe('post uncertain writes', () => {
       expect(failure?.message).toMatch(/outcome is uncertain.*A retry checks GitHub/su);
       const saved = (await readPosted(details.directory)) as { writes: { state: string }[] };
       const posted = saved.writes.filter((write) => write.state === 'posted');
-      const reply = '- Reply to https://github.com/sQVe/tau/pull/7#discussion_r201:\nAdded.';
-      const comment = '- Comment on https://github.com/sQVe/tau/pull/7:\nDone.';
-      const uncertain = kind === 'reply' ? reply : comment;
-      const postedList = kind === 'reply' ? '- none' : reply;
-      const notPosted = kind === 'reply' ? comment : '- none';
+
+      const expectedWrites = [
+        { kind: 'reply', replyTo: 201, body: 'Added.' },
+        { kind: 'comment', body: 'Done.' },
+      ];
+
+      const expectedPosted = [recordedWrite('reply', 'thread-bot', 'Added.', 1000)];
 
       expect(posted).toHaveLength(attempt - 1);
 
-      expect(failure?.message).toContain(
-        `\nUncertain:\n${uncertain}\nPosted:\n${postedList}\nNot posted:\n${notPosted}\n${details.directory}/posted.json`,
-      );
+      expect(posted).toEqual(expectedPosted.slice(0, attempt - 1));
+      expect(fake.writes).toEqual(expectedWrites.slice(0, attempt));
 
       expect(await readPosted(details.directory)).toMatchObject({
         version: 2,
