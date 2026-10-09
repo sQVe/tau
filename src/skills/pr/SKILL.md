@@ -212,6 +212,8 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
 
 11. Request a Codex review without asking. If this run created the PR, run
     `gh pr comment <number> --repo <repo> --body '@codex review'`. When a retry follows a partial
-    failure, count a PR the earlier attempt created as created by this run. Post only if the PR has
-    no `@codex review` comment yet. On an update to an existing PR, post nothing. Report the
-    request, then stop. Posting a request does not prove a review started.
+    failure, count a PR the earlier attempt created as created by this run. Post only if
+    `gh pr view <number> --repo <repo> --json comments --jq '[.comments[] | select(.body == "@codex review")] | length'`
+    prints 0. Read it again before a retry, since a failed post may still have landed. On an update
+    to an existing PR, post nothing. Report the request, then stop. Posting a request does not prove
+    a review started.
