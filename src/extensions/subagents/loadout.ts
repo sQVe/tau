@@ -20,8 +20,8 @@ import {
 import { skillTools } from '../../skillTools.js';
 import { userConfigPath } from '../../tauConfig.js';
 import type { ConfigLocation } from '../../tauConfig.js';
-import { pickRoutedModel } from './modelRoutes.js';
-import type { ClassifierOutcome, ModelRoute, RoutePick } from './modelRoutes.js';
+import { decideCanary, pickRoutedModel } from './modelRoutes.js';
+import type { ClassifierOutcome, ModelRoute, RoutedLaunch } from './modelRoutes.js';
 import { readProfileModels, readProfileRoutes } from './profileModels.js';
 import { resolveProfile } from './profiles.js';
 import { loadoutSchema } from './types.js';
@@ -39,7 +39,7 @@ interface LaunchRequest {
 
 export interface RoutedLoadout {
   loadout: Loadout;
-  routing: RoutePick | undefined;
+  routing: RoutedLaunch | undefined;
 }
 
 const nodeRequire = createRequire(import.meta.url);
@@ -281,14 +281,32 @@ export const resolveRoutedLoadout = async (
     ? await classifyRoute(context, route, { brief: input.task, profile: loadout.profile }, signal)
     : { kind: 'skipped' };
 
-  const routing = pickRoutedModel({
+  const pick = pickRoutedModel({
     launchModel: input.model,
     profileModel: loadout.model,
     route,
     outcome,
   });
 
-  return { loadout, routing };
+  const canary = decideCanary({
+    pick,
+    profileModel: loadout.model,
+    share: route.canary,
+    draw: Math.random(),
+  });
+
+  if (pick === undefined) {
+    return { loadout, routing: undefined };
+  }
+
+  if (!canary) {
+    return { loadout, routing: { ...pick, canary } };
+  }
+
+  // The routed model passes the same checks as an explicit launch model.
+  const canaryLoadout = resolveLoadout({ ...input, model: pick.shadowPick }, context, commands);
+
+  return { loadout: canaryLoadout, routing: { ...pick, canary } };
 };
 
 const requireSavedWorkerDirectory = (loadout: Loadout, context: { cwd: string }): void => {

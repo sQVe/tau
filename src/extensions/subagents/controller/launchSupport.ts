@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 
 import { requireHandover } from '../continuations.js';
-import type { RoutePick } from '../modelRoutes.js';
+import type { RoutedLaunch } from '../modelRoutes.js';
 import { validateNative } from '../native.js';
 import type { Visibility } from '../placement.js';
 import { findSuccessor, mayFollow, readTask, readTasks } from '../records.js';
@@ -14,7 +14,7 @@ export interface LaunchInput {
   task: string;
   label?: string;
   loadout: Loadout;
-  routing?: RoutePick;
+  routing?: RoutedLaunch;
   timeout: number;
   parentSession: string;
   parentSessionId: string;

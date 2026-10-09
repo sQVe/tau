@@ -45,7 +45,11 @@ const workerFixture = async (onTestFinished: (callback: () => void) => void) => 
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
-  const provider = fauxProvider({ provider: 'tau-worker-fixture' });
+
+  const provider = fauxProvider({
+    provider: 'tau-worker-fixture',
+    models: [{ id: 'faux-1' }, { id: 'haiku' }],
+  });
 
   const runtime = await ModelRuntime.create({
     credentials: new InMemoryCredentialStore(),
@@ -872,13 +876,14 @@ const answered = (label: string, confidence: number) => ({
   answers: { route: { type: 'choice', choice: label, probabilities: {}, confidence } },
 });
 
-const routedFixture = async (onTestFinished: (callback: () => void) => void) => {
+const routedFixture = async (onTestFinished: (callback: () => void) => void, canary?: number) => {
   const fixture = await workerFixture(onTestFinished);
   const { directory, model } = fixture;
   const profileModel = `${model.provider}/${model.id}`;
 
   const routes = {
     question: 'How wide is this brief?',
+    ...(canary === undefined ? {} : { canary }),
     labels: {
       narrow: { criterion: 'A lookup about known code.', model: haiku },
       wide: { criterion: 'An investigation across many files.', model: profileModel },
@@ -921,7 +926,7 @@ it('records the shadow pick of a scout launch and keeps the profile model', asyn
   );
 
   expect(loadout.model).toBe(profileModel);
-  expect(routing).toEqual({ shadowPick: haiku, label: 'narrow', confidence: 0.9 });
+  expect(routing).toEqual({ shadowPick: haiku, label: 'narrow', confidence: 0.9, canary: false });
   expect(classify).toHaveBeenCalledOnce();
 
   expect(classify.mock.calls[0]?.[1]).toMatchObject({
@@ -937,6 +942,21 @@ it('records the shadow pick of a scout launch and keeps the profile model', asyn
       },
     },
   });
+});
+
+it('launches a confident pick on the routed model when the canary share is 1', async ({
+  onTestFinished,
+}) => {
+  const { context, classify } = await routedFixture(onTestFinished, 1);
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  const { loadout, routing } = await resolveRoutedLoadout(
+    { profile: 'scout', task: 'Find the parser.' },
+    context,
+  );
+
+  expect(loadout.model).toBe(haiku);
+  expect(routing).toEqual({ shadowPick: haiku, label: 'narrow', confidence: 0.9, canary: true });
 });
 
 it('classifies nothing and records no routing when the launch names a model', async ({
@@ -972,7 +992,7 @@ it.for([
   );
 
   expect(loadout.model).toBe(profileModel);
-  expect(routing).toEqual({ shadowPick: profileModel, fallbackReason: 'error' });
+  expect(routing).toEqual({ shadowPick: profileModel, fallbackReason: 'error', canary: false });
 });
 
 it('launches on the profile model when the classifier never answers within 5 seconds', async ({
@@ -999,7 +1019,7 @@ it('launches on the profile model when the classifier never answers within 5 sec
   const { loadout, routing } = await pending;
 
   expect(loadout.model).toBe(profileModel);
-  expect(routing).toEqual({ shadowPick: profileModel, fallbackReason: 'timeout' });
+  expect(routing).toEqual({ shadowPick: profileModel, fallbackReason: 'timeout', canary: false });
 
   const options = classify.mock.calls[0]?.[2] as { signal: AbortSignal };
   expect(options.signal.aborted).toBe(true);
@@ -1049,7 +1069,7 @@ it('classifies nothing when allowedModels excludes the classifier', async ({ onT
   );
 
   expect(loadout.model).toBe(profileModel);
-  expect(routing).toEqual({ shadowPick: profileModel, fallbackReason: 'noRoute' });
+  expect(routing).toEqual({ shadowPick: profileModel, fallbackReason: 'noRoute', canary: false });
   expect(classify).not.toHaveBeenCalled();
 });
 
@@ -1066,6 +1086,7 @@ it('records a low confidence answer and a missing classifier model as fallbacks'
     label: 'narrow',
     confidence: 0.5,
     fallbackReason: 'lowConfidence',
+    canary: false,
   });
 
   classify.mockClear();
@@ -1074,7 +1095,120 @@ it('records a low confidence answer and a missing classifier model as fallbacks'
   expect((await resolveRoutedLoadout(brief, context)).routing).toEqual({
     shadowPick: profileModel,
     fallbackReason: 'noRoute',
+    canary: false,
   });
 
   expect(classify).not.toHaveBeenCalled();
+});
+
+it.for([
+  ['a low confidence answer', () => Promise.resolve(answered('narrow', 0.5))],
+  ['an unknown label', () => Promise.resolve(answered('medium', 0.95))],
+  ['an error result', () => Promise.resolve({ stopReason: 'error', answers: {} })],
+  ['a rejection', () => Promise.reject(new Error('offline'))],
+] as const)(
+  'keeps the profile model after %s even when the canary share is 1',
+  async ([, outcome], { onTestFinished }) => {
+    const { context, classify, profileModel } = await routedFixture(onTestFinished, 1);
+    classify.mockImplementation(outcome);
+
+    const { loadout, routing } = await resolveRoutedLoadout(
+      { profile: 'scout', task: 'Find it.' },
+      context,
+    );
+
+    expect(loadout.model).toBe(profileModel);
+    expect(routing?.canary).toBe(false);
+  },
+);
+
+it('keeps the profile model when no route applies even with a canary share of 1', async ({
+  onTestFinished,
+}) => {
+  const { context, classify, hasClassifier, profileModel } = await routedFixture(onTestFinished, 1);
+
+  hasClassifier.value = false;
+
+  const { loadout, routing } = await resolveRoutedLoadout(
+    { profile: 'scout', task: 'Find it.' },
+    context,
+  );
+
+  expect(loadout.model).toBe(profileModel);
+  expect(routing).toEqual({ shadowPick: profileModel, fallbackReason: 'noRoute', canary: false });
+  expect(classify).not.toHaveBeenCalled();
+});
+
+it('never runs an explicit launch model as a canary', async ({ onTestFinished }) => {
+  const { context, classify, request } = await routedFixture(onTestFinished, 1);
+
+  const { loadout, routing } = await resolveRoutedLoadout(
+    { ...request, profile: 'scout', task: 'Find it.' },
+    context,
+  );
+
+  expect(loadout.model).toBe(request.model);
+  expect(routing).toBeUndefined();
+  expect(classify).not.toHaveBeenCalled();
+});
+
+it('draws once and keeps the profile model when the draw reaches the share', async ({
+  onTestFinished,
+}) => {
+  const { context, classify, profileModel } = await routedFixture(onTestFinished, 0.5);
+  classify.mockResolvedValue(answered('narrow', 0.9));
+  const random = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+
+  onTestFinished(() => {
+    random.mockRestore();
+  });
+
+  const brief = { profile: 'scout', task: 'Find it.' };
+  const missed = await resolveRoutedLoadout(brief, context);
+
+  expect(missed.loadout.model).toBe(profileModel);
+
+  expect(missed.routing).toEqual({
+    shadowPick: haiku,
+    label: 'narrow',
+    confidence: 0.9,
+    canary: false,
+  });
+
+  random.mockReturnValue(0.49);
+  const hit = await resolveRoutedLoadout(brief, context);
+
+  expect(hit.loadout.model).toBe(haiku);
+  expect(hit.routing?.canary).toBe(true);
+});
+
+it('refuses a canary model outside allowedModels or missing from the registry', async ({
+  onTestFinished,
+}) => {
+  const { directory, context, classify, profileModel } = await routedFixture(onTestFinished, 1);
+  classify.mockResolvedValue(answered('narrow', 0.9));
+  const configPath = join(directory, 'tau.json');
+
+  const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
+    profiles: { scout: { routes: { labels: { narrow: { model: string } } } } };
+  };
+
+  const brief = { profile: 'scout', task: 'Find it.' };
+
+  writeFileSync(
+    configPath,
+    JSON.stringify({
+      ...config,
+      allowedModels: [profileModel, 'typesafe/jev-latest'],
+    }),
+  );
+
+  await expect(resolveRoutedLoadout(brief, context)).rejects.toThrow(haiku);
+
+  config.profiles.scout.routes.labels.narrow.model = 'tau-worker-fixture/missing';
+  writeFileSync(configPath, JSON.stringify(config));
+
+  await expect(resolveRoutedLoadout(brief, context)).rejects.toThrow(
+    'Worker model unavailable: tau-worker-fixture/missing',
+  );
 });
