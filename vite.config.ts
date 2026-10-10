@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import { format, lint, vitest } from '@sqve/seam';
 import { defineConfig } from 'vite-plus';
 
@@ -13,6 +15,7 @@ export default defineConfig({
   test: {
     // Integration tests launch Git, Node, and nested Vitest processes. Limit competing workers.
     maxWorkers: 6,
+    setupFiles: [join(import.meta.dirname, 'tests', 'hangWatchdog.ts')],
     // Git in tests, and in the code under test, must ignore the developer's configuration.
     env: {
       // Tests must choose the worker environment themselves.
@@ -108,7 +111,7 @@ export default defineConfig({
           // Shared scenario runners assert inside the helper.
           'vitest/expect-expect': [
             'error',
-            { assertFunctionNames: ['expect', 'runPiWorkerScenario'] },
+            { assertFunctionNames: ['expect', 'runPiWorkerScenario', 'hangs', 'passes'] },
           ],
         },
       },
