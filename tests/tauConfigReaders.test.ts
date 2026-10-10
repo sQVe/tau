@@ -45,7 +45,11 @@ it('leaves TDD config, profiles, and allowed models readable when bulkRead is br
   writeConfig(repositoryFile, { bulkRead: {}, tdd: { productionGlobs: ['lib/**'] } });
 
   expect(readAllowedModels(location)?.models).toEqual(['a/one']);
-  expect(readProfileModels(location)).toEqual(new Map([['scout', 'a/one']]));
+
+  expect(readProfileModels(location, { notify: () => undefined })).toEqual(
+    new Map([['scout', 'a/one']]),
+  );
+
   expect(loadTddConfig(location).config.productionGlobs).toEqual(['lib/**']);
 });
 
@@ -63,6 +67,10 @@ it('leaves TDD config, profiles, and allowed models readable next to a bulkRead 
   writeConfig(repositoryFile, { tdd: { productionGlobs: ['lib/**'] } });
 
   expect(readAllowedModels(location)?.models).toEqual(['a/one']);
-  expect(readProfileModels(location)).toEqual(new Map([['scout', 'a/one']]));
+
+  expect(readProfileModels(location, { notify: () => undefined })).toEqual(
+    new Map([['scout', 'a/one']]),
+  );
+
   expect(loadTddConfig(location).config.productionGlobs).toEqual(['lib/**']);
 });

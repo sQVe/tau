@@ -61,16 +61,19 @@ const workerFixture = async (onTestFinished: (callback: () => void) => void) => 
   runtime.registerNativeProvider(provider.provider);
   const model = provider.getModel();
 
+  const notify = vi.fn<(message: string, level?: string) => void>();
+
   const context = {
     cwd: directory,
     modelRegistry: new ModelRegistry(runtime),
     scopedModels: [{ model }],
     isProjectTrusted: () => true,
+    ui: { notify },
   };
 
   const request = { profile: 'worker', model: `${model.provider}/${model.id}` };
 
-  return { directory, model, context, request };
+  return { directory, model, context, request, notify };
 };
 
 it('resolves an explicit worker model and names the configured models when none resolves', async ({
@@ -1211,4 +1214,48 @@ it('refuses a canary model outside allowedModels or missing from the registry', 
   await expect(resolveRoutedLoadout(brief, context)).rejects.toThrow(
     'Worker model unavailable: tau-worker-fixture/missing',
   );
+});
+
+it('fails only the launch whose own profile entry is bad', async ({ onTestFinished }) => {
+  const { directory, context, model, notify } = await workerFixture(onTestFinished);
+  const reference = `${model.provider}/${model.id}`;
+
+  writeFileSync(
+    join(directory, 'tau.json'),
+    JSON.stringify({
+      profiles: { scout: { model: 5 }, worker: { model: reference, futureKey: true } },
+    }),
+  );
+
+  const scout = () => resolveLoadout({ profile: 'scout' }, context);
+  expect(scout).toThrow(join(directory, 'tau.json'));
+  expect(scout).toThrow('profiles.scout.model');
+
+  expect(resolveLoadout({ profile: 'worker' }, context).model).toBe(reference);
+
+  expect(notify).toHaveBeenCalledWith(
+    expect.stringContaining('profiles.worker.futureKey'),
+    'warning',
+  );
+});
+
+it('launches on the profile model with no routing when its routes are broken', async ({
+  onTestFinished,
+}) => {
+  const { directory, context, model, notify } = await workerFixture(onTestFinished);
+  const reference = `${model.provider}/${model.id}`;
+
+  writeFileSync(
+    join(directory, 'tau.json'),
+    JSON.stringify({ profiles: { worker: { model: reference, routes: { question: 5 } } } }),
+  );
+
+  const { loadout, routing } = await resolveRoutedLoadout(
+    { profile: 'worker', task: 'Fix it.' },
+    context,
+  );
+
+  expect(loadout.model).toBe(reference);
+  expect(routing).toBeUndefined();
+  expect(notify).toHaveBeenCalledWith(expect.stringContaining('profiles.worker.routes'), 'error');
 });

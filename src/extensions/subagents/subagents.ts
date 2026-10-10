@@ -425,7 +425,7 @@ const profileText = (profiles: ProfileSummary[]): string =>
 
 // A config that cannot be read leaves the line out, and each launch reports the error.
 const launchModelLine = (
-  context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted' | 'scopedModels'>,
+  context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted' | 'scopedModels' | 'ui'>,
   profiles: ProfileSummary[],
 ): string[] => {
   try {
@@ -440,7 +440,7 @@ const launchModelLine = (
     const line = workerModelLine(
       launchModels(context, location),
       names,
-      readProfileModels(location),
+      readProfileModels(location, context.ui),
     );
 
     return line === undefined ? [] : [line];
