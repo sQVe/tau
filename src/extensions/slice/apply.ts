@@ -373,6 +373,10 @@ const checkOrder = async (
   const all = [...applied, ...repairs.map((step) => step.summary)];
 
   for (const [index, step] of repairs.entries()) {
+    if (runtime.signal?.aborted === true) {
+      throw failedApply(progress, all, applied.length + index, new Error('The call was aborted.'));
+    }
+
     try {
       // oxlint-disable-next-line no-await-in-loop -- Moves run in plan order.
       await step.run();

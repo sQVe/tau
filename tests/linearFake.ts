@@ -94,8 +94,30 @@ const readVariables = (commandArguments: readonly string[]) => {
   return variables;
 };
 
-// Linear saves a "- " list item as "* ".
-const savedDescription = (description: string) => description.replaceAll(/^(\s*)- /gm, '$1* ');
+// Linear saves a "- " list item as "* ", except inside a fenced code block.
+const savedDescription = (description: string) => {
+  let fence: string | undefined;
+
+  const lines = description.split('\n').map((line) => {
+    const opener = /^\s*(```|~~~)/u.exec(line)?.[1];
+
+    if (fence !== undefined) {
+      fence = opener === fence ? undefined : fence;
+
+      return line;
+    }
+
+    if (opener !== undefined) {
+      fence = opener;
+
+      return line;
+    }
+
+    return line.replace(/^(\s*)- /u, '$1* ');
+  });
+
+  return lines.join('\n');
+};
 
 const writeKinds = ['issueCreate', 'issueUpdate'];
 
