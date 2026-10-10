@@ -10,6 +10,7 @@ import { isNestedControlCall, nestedControlCallReason } from '../../controlTools
 import { errorMessage } from '../../errors.js';
 import { readGitOutput } from '../../gitOutput.js';
 import { appendSystemPrompt } from '../../systemPrompt.js';
+import { forgetReportedWarnings } from '../../tauConfig.js';
 import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
 import { isWorkerProcess } from '../../workerProcess.js';
 import { readBrowserLoginCommand } from './browserLogin.js';
@@ -727,6 +728,7 @@ export default function subagentsExtension(
   pi.on('session_start', async (_event, context) => {
     shuttingDown = false;
     sessionContext = context;
+    forgetReportedWarnings(context.ui);
 
     // Project profiles and scoped models load only once the session's cwd and trust are known.
     // The description stays fixed for the session, so the prompt cache holds.

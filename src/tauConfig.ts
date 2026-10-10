@@ -105,6 +105,11 @@ const reportedFor = (ui: ConfigWarnings): Set<string> => {
   return reported;
 };
 
+// Forgets what was reported for `ui`, so a new session reports its config problems again.
+export const forgetReportedWarnings = (ui: ConfigWarnings): void => {
+  reportedBySession.delete(ui);
+};
+
 // Notifies once per session for each file and `key`. A changed message under the same key is not
 // reported again, so put what makes a problem new into the key.
 export const notifyOnce = (
