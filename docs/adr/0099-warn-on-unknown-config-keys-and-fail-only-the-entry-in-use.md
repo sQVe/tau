@@ -5,10 +5,10 @@
 **Supersedes**: the unknown key handling in
 [ADR 0061 (Layer Tau config from user and repository files)](./0061-layer-tau-config-from-user-and-repository-files.md)
 and
-[ADR 0095 (Keep repository routing in tracker config)](./0095-keep-repository-routing-in-tracker-config.md)\
-**Related**:
-[ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
-[ADR 0071 (Set worker models in the user config)](./0071-set-worker-models-in-the-user-config.md),
+[ADR 0095 (Keep repository routing in tracker config)](./0095-keep-repository-routing-in-tracker-config.md),
+and the rule that Tau never routes in
+[ADR 0071 (Set worker models in the user config)](./0071-set-worker-models-in-the-user-config.md)\
+**Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
 [ADR 0072 (Keep model defaults out of code)](./0072-keep-model-defaults-out-of-code.md)
 
 ## Context

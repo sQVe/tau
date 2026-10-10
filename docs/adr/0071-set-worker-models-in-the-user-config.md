@@ -2,8 +2,11 @@
 
 **Date**: 2026-09-30\
 **Status**: Accepted; built-in worker model superseded by
-[ADR 0072 (Keep model defaults out of code)](./0072-keep-model-defaults-out-of-code.md)\
-**Supersedes**: [ADR 0047 (Default bundled worker profiles to Opus 5.5)](./0047-default-bundled-worker-profiles-to-opus-5-5.md)\
+[ADR 0072 (Keep model defaults out of code)](./0072-keep-model-defaults-out-of-code.md); the rule
+that Tau never routes superseded by
+[ADR 0099 (Warn on unknown config keys and fail only the entry in use)](./0099-warn-on-unknown-config-keys-and-fail-only-the-entry-in-use.md)\
+**Supersedes**:
+[ADR 0047 (Default bundled worker profiles to Opus 5.5)](./0047-default-bundled-worker-profiles-to-opus-5-5.md)\
 **Related**:
 [ADR 0043 (Own only the worker guarantees herdr lacks)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
 [ADR 0061 (Layer Tau config from user and repository files)](./0061-layer-tau-config-from-user-and-repository-files.md),
