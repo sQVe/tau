@@ -21,6 +21,8 @@ commit another worktree from your session, even over bash.
 
 - Requires `HERDR_ENV=1`. Otherwise tell the user you cannot reach the other workspace and stop.
 - The message is one-way. Do not ask for a reply, poll, or wait for the receiver to finish.
+- A handover links to records, such as tickets or `.tau/` working copies, and is not a record
+  itself.
 - Work is ready to implement when the ticket or a task the user approved states the goal, the scope
   and what it excludes, the acceptance criteria, and every choice that changes the result. Its
   blockers must be merged. A choice you made that changes the result and that the user has not seen

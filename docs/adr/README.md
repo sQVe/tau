@@ -124,3 +124,4 @@ line that links to the replacement.
 - [0097: Track only the current session's workers](./0097-track-only-the-current-sessions-workers.md)
 - [0098: Bound codemode output by whole items](./0098-bound-codemode-output-by-whole-items.md)
 - [0099: Warn on unknown config keys and fail only the entry in use](./0099-warn-on-unknown-config-keys-and-fail-only-the-entry-in-use.md)
+- [0100: Treat `.tau/` files as the working copy and trackers as the saved copy](./0100-treat-tau-files-as-the-working-copy-and-trackers-as-the-saved-copy.md)

@@ -10,8 +10,11 @@ the report area rules in
 [ADR 0033 (Use one generic native worker workflow)](./0033-use-one-generic-native-worker-workflow.md)
 and
 [ADR 0037 (Launch native workers without parent approval)](./0037-launch-native-workers-without-parent-approval.md)\
-**Related**:
-[ADR 0033 (Use one generic native worker workflow)](./0033-use-one-generic-native-worker-workflow.md),
+**Extended
+by**:
+[ADR 0100 (Treat `.tau/` files as the working copy and trackers as the saved copy)](./0100-treat-tau-files-as-the-working-copy-and-trackers-as-the-saved-copy.md),
+updates the worktree files part\
+**Related**: [ADR 0033 (Use one generic native worker workflow)](./0033-use-one-generic-native-worker-workflow.md),
 [ADR 0037 (Launch native workers without parent approval)](./0037-launch-native-workers-without-parent-approval.md),
 [ADR 0043 (Own only the worker guarantees herdr lacks)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
 [Codex sandbox](https://github.com/openai/codex/blob/13c42a077c88a0d04ae7680a9891d2daf4558577/docs/sandbox.md)
