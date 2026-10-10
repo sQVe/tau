@@ -7,6 +7,7 @@ export interface LinearChild {
   url: string;
   sortOrder: number;
   completed: boolean;
+  canceled: boolean;
   merged: boolean;
   blockedBy: string[];
 }
@@ -312,7 +313,7 @@ export const planWrites = (
 
   const dropped =
     container?.children
-      .filter((child) => !planned.has(child.identifier))
+      .filter((child) => !planned.has(child.identifier) && !child.canceled)
       .map((child) => child.identifier) ?? [];
 
   const fixedProblems =
