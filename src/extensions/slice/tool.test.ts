@@ -844,6 +844,22 @@ describe('slice tool read', () => {
     });
   });
 
+  it('lists no write when Linear saved list items with other markers', async () => {
+    const { fake, directory, apply, read } = await setUp();
+    const body = '- one\n  - nested\n- two\n';
+
+    await writeFile(join(directory, 'container.md'), body);
+    await writeFile(join(directory, 'slice-1.md'), body);
+    await writeFile(join(directory, 'slice-2.md'), body);
+    await apply();
+
+    expect(fake.issues.get('ME-2')!.description).toBe('* one\n  * nested\n* two\n');
+
+    const result = await read();
+
+    expect(result).toMatchObject({ writes: [], problems: [] });
+  });
+
   it('reads a container before the draft has a plan', async () => {
     const root = await temporaryRepository();
     const fake = createLinearFake();
