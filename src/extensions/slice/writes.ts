@@ -53,7 +53,30 @@ export interface WritePlan {
 }
 
 // Linear rewrites a "- " list item as "* ", so compare descriptions without the marker.
-const withoutListMarkers = (description: string) => description.replaceAll(/^(\s*)[*-] /gm, '$1- ');
+// Lines inside a fenced code block stay as they are.
+const withoutListMarkers = (description: string) => {
+  let fence: string | undefined;
+
+  const lines = description.split('\n').map((line) => {
+    const opener = /^\s*(```|~~~)/u.exec(line)?.[1];
+
+    if (fence !== undefined) {
+      fence = opener === fence ? undefined : fence;
+
+      return line;
+    }
+
+    if (opener !== undefined) {
+      fence = opener;
+
+      return line;
+    }
+
+    return line.replace(/^(\s*)[*-] /u, '$1- ');
+  });
+
+  return lines.join('\n');
+};
 
 const sameDescription = (saved: string, body: string | undefined) =>
   body !== undefined && withoutListMarkers(saved) === withoutListMarkers(body);

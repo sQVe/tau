@@ -441,6 +441,49 @@ describe('slice tool apply', () => {
     expect(confirm.mock.calls[0]?.[1]).toContain('move it back into plan order');
   });
 
+  it('stops before a repair move when the call is aborted', async () => {
+    const { root, fake, directory } = await appliedPlan();
+
+    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
+    fake.moveOnUpdate('ME-2', 1000);
+    const controller = new AbortController();
+
+    const exec: typeof fake.exec = async (command, commandArguments, options) => {
+      const result = await fake.exec(command, commandArguments, options);
+
+      if (fake.writes().length > 0 && commandArguments.join(' ').includes('issueUpdate')) {
+        controller.abort();
+      }
+
+      return result;
+    };
+
+    const tool = createSliceTool(exec);
+    const context = confirmContext(root, async () => true);
+    const input = { action: 'read', directory } as const;
+    const read = await tool.execute('call', input, undefined, undefined, context);
+    const { stateToken } = read.details as { stateToken: string };
+    const writesBefore = fake.writes().length;
+
+    const outcome = await tool
+      .execute(
+        'call',
+        { action: 'apply', directory, stateToken },
+        controller.signal,
+        undefined,
+        context,
+      )
+      .then(
+        () => 'applied',
+        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+      );
+
+    expect(outcome).toContain('aborted');
+    expect(outcome).toContain('Not applied:\n- Move ME-3 into plan order');
+    expect(fake.writes()).toHaveLength(writesBefore + 1);
+    expect(fake.issues.get('ME-3')!.sortOrder).toBeLessThan(1000);
+  });
+
   it('makes no extra write when the updates leave the order in place', async () => {
     const { fake, directory, apply } = await appliedPlan();
 
