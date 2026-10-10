@@ -30,6 +30,7 @@ const redHint =
 const setup = (hasUI = false, trusted = true) => {
   const notify = vi.fn<ExtensionContext['ui']['notify']>();
   const fake = fakeExtensionApi();
+  const ui = { notify };
 
   // Keep the developer's own user config out of the tests.
   vi.stubEnv('PI_CODING_AGENT_DIR', join(tmpdir(), 'tau-no-agent-directory'));
@@ -41,7 +42,7 @@ const setup = (hasUI = false, trusted = true) => {
     ({
       cwd,
       hasUI,
-      ui: { notify },
+      ui,
       isProjectTrusted: () => trusted,
     }) as unknown as ExtensionToolContext;
 
@@ -277,7 +278,12 @@ it.for(['ordinary', 'long'] as const)(
         { type: 'text', text: runContext(parameters, details) },
         {
           type: 'text',
-          text: configSummary(loadTddConfig({ cwd, agentDirectory: cwd, projectTrusted: true })),
+          text: configSummary(
+            loadTddConfig(
+              { cwd, agentDirectory: cwd, projectTrusted: true },
+              { notify: () => undefined },
+            ),
+          ),
         },
       ]),
     );
@@ -633,4 +639,25 @@ it('reports malformed config without falling back to defaults or blocking edits'
   expect(await application.emit('tool_result', cwd, event)).toBeUndefined();
   await expect(application.run(cwd)).rejects.toThrow(path);
   expect(runTests).not.toHaveBeenCalled();
+});
+
+it('reports an unknown config key again for the same ui after session_start', async ({
+  onTestFinished,
+}) => {
+  const { cwd, writeProject } = await configFixture(onTestFinished);
+  await writeProject({ bogusKey: true });
+  const application = setup(true);
+
+  const warnings = () =>
+    application.notify.mock.calls.filter(([message]) => message.includes('bogusKey')).length;
+
+  await application.emit('tool_result', cwd, writeEvent('src/value.ts'));
+  await application.emit('tool_result', cwd, writeEvent('src/value.ts'));
+
+  expect(warnings()).toBe(1);
+
+  await application.emit('session_start', cwd, { reason: 'new' });
+  await application.emit('tool_result', cwd, writeEvent('src/value.ts'));
+
+  expect(warnings()).toBe(2);
 });

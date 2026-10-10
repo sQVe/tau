@@ -223,6 +223,7 @@ export default function (pi) {
       modelRegistry: new ModelRegistry(runtime),
       scopedModels: [],
       isProjectTrusted: () => true,
+      ui: { notify: () => undefined },
     },
   );
 

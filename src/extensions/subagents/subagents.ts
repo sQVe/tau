@@ -10,7 +10,8 @@ import { isNestedControlCall, nestedControlCallReason } from '../../controlTools
 import { errorMessage } from '../../errors.js';
 import { readGitOutput } from '../../gitOutput.js';
 import { appendSystemPrompt } from '../../systemPrompt.js';
-import type { ConfigLocation } from '../../tauConfig.js';
+import { forgetReportedWarnings } from '../../tauConfig.js';
+import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
 import { isWorkerProcess } from '../../workerProcess.js';
 import { readBrowserLoginCommand } from './browserLogin.js';
 import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.js';
@@ -36,7 +37,7 @@ import {
   shortId,
 } from './render.js';
 import { readTrackerSetup } from './trackerConfig.js';
-import { trackerLines } from './trackerRouting.js';
+import { repositoryFromRemote, trackerLines } from './trackerRouting.js';
 import { taskIdSchema } from './types.js';
 import { renderWorkerWidget } from './widget.js';
 import { workerModelLine } from './workerModels.js';
@@ -425,7 +426,7 @@ const profileText = (profiles: ProfileSummary[]): string =>
 
 // A config that cannot be read leaves the line out, and each launch reports the error.
 const launchModelLine = (
-  context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted' | 'scopedModels'>,
+  context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted' | 'scopedModels' | 'ui'>,
   profiles: ProfileSummary[],
 ): string[] => {
   try {
@@ -440,7 +441,7 @@ const launchModelLine = (
     const line = workerModelLine(
       launchModels(context, location),
       names,
-      readProfileModels(location),
+      readProfileModels(location, context.ui),
     );
 
     return line === undefined ? [] : [line];
@@ -454,11 +455,14 @@ const browserLoginCommand = (
   context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted' | 'ui'>,
 ): string | undefined => {
   try {
-    return readBrowserLoginCommand({
-      cwd: context.cwd,
-      agentDirectory: getAgentDir(),
-      projectTrusted: context.isProjectTrusted(),
-    });
+    return readBrowserLoginCommand(
+      {
+        cwd: context.cwd,
+        agentDirectory: getAgentDir(),
+        projectTrusted: context.isProjectTrusted(),
+      },
+      context.ui,
+    );
   } catch (error) {
     context.ui.notify(errorMessage(error), 'error');
 
@@ -609,9 +613,10 @@ const readOriginUrl = async (cwd: string): Promise<string | undefined> => {
   return output?.trim();
 };
 
-const trackerGuidelines = async (location: ConfigLocation) => {
-  const setup = readTrackerSetup(location);
-  const originUrl = setup.status === 'read' ? await readOriginUrl(location.cwd) : undefined;
+const trackerGuidelines = async (location: ConfigLocation, ui: ConfigWarnings) => {
+  const originUrl = await readOriginUrl(location.cwd);
+  const repository = originUrl === undefined ? undefined : repositoryFromRemote(originUrl);
+  const setup = readTrackerSetup(location, ui, repository);
 
   return trackerLines({ setup, originUrl });
 };
@@ -723,6 +728,7 @@ export default function subagentsExtension(
   pi.on('session_start', async (_event, context) => {
     shuttingDown = false;
     sessionContext = context;
+    forgetReportedWarnings(context.ui);
 
     // Project profiles and scoped models load only once the session's cwd and trust are known.
     // The description stays fixed for the session, so the prompt cache holds.
@@ -757,7 +763,7 @@ export default function subagentsExtension(
       projectTrusted: context.isProjectTrusted(),
     };
 
-    tracker = await trackerGuidelines(location);
+    tracker = await trackerGuidelines(location, context.ui);
   });
 
   pi.on('tool_result', (_event, context) => {

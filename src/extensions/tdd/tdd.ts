@@ -9,6 +9,7 @@ import { defineTool, getAgentDir } from '@earendil-works/pi-coding-agent';
 import { Text } from '@earendil-works/pi-tui';
 import { Type } from 'typebox';
 
+import { forgetReportedWarnings } from '../../tauConfig.js';
 import { classifyPath, loadTddConfig } from './config.js';
 import type { LoadedTddConfig } from './config.js';
 import { createTestObservation, observationDirectory } from './observation.js';
@@ -53,11 +54,13 @@ const runTestsParameters = Type.Object({
 const observationFor = async (tracker: ObservationTracker, context: ExtensionContext) => {
   const cwd = await observationDirectory(context.cwd);
 
-  const loaded = loadTddConfig({
+  const location = {
     cwd,
     agentDirectory: getAgentDir(),
     projectTrusted: context.isProjectTrusted(),
-  });
+  };
+
+  const loaded = loadTddConfig(location, context.ui);
 
   const key = JSON.stringify(loaded);
 
@@ -181,7 +184,8 @@ const registerRunTestsTool = (pi: ExtensionAPI, tracker: ObservationTracker): vo
 export default function tddExtension(pi: ExtensionAPI): void {
   const tracker: ObservationTracker = { current: undefined, reportedConfigError: undefined };
 
-  pi.on('session_start', () => {
+  pi.on('session_start', (_event, context) => {
+    forgetReportedWarnings(context.ui);
     tracker.current = undefined;
     tracker.reportedConfigError = undefined;
   });

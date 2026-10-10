@@ -399,6 +399,7 @@ const launchDescription = async (
       return { model: { provider, id: id.join('/') } };
     }),
     sessionManager: { getSessionId: () => 'parent' },
+    ui: { notify: vi.fn<() => void>() },
   } as unknown as ExtensionContext;
 
   onTestFinished(async () => {
@@ -450,13 +451,30 @@ it('lists allowed scoped models and each profile default in the launch descripti
   expect(description).not.toContain('a/hidden');
 });
 
+it('keeps the model line for other profiles when one profile entry is broken', async ({
+  onTestFinished,
+}) => {
+  const description = await launchDescription(
+    onTestFinished,
+    (directory) => {
+      writeFileSync(
+        join(directory, 'tau.json'),
+        JSON.stringify({ profiles: { scout: 'a/two', worker: { model: 'a/one' } } }),
+      );
+    },
+    ['a/one', 'a/two'],
+  );
+
+  expect(description).toContain('a/one (worker), a/two.');
+});
+
 it('leaves the model line out of the launch description when the config is broken', async ({
   onTestFinished,
 }) => {
   const description = await launchDescription(
     onTestFinished,
     (directory) => {
-      writeFileSync(join(directory, 'tau.json'), JSON.stringify({ profiles: { scout: 'a/two' } }));
+      writeFileSync(join(directory, 'tau.json'), JSON.stringify({ profiles: ['a/two'] }));
     },
     ['a/one'],
   );

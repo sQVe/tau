@@ -1,9 +1,15 @@
 import { isRecord } from '../../isRecord.js';
-import { readUserOnlyKey } from '../../tauConfig.js';
-import type { ConfigLocation } from '../../tauConfig.js';
+import { readUserOnlyKey, warnUnknownKeys } from '../../tauConfig.js';
+import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
+import type { KnownKeys } from '../../unknownKeys.js';
+
+const knownBrowserKeys: KnownKeys = { loginCommand: true };
 
 // The manager asks the user to run this command, so only the user file may set it.
-export const readBrowserLoginCommand = (location: ConfigLocation): string | undefined => {
+export const readBrowserLoginCommand = (
+  location: ConfigLocation,
+  ui: ConfigWarnings,
+): string | undefined => {
   const user = readUserOnlyKey(location, 'browser');
 
   if (user === undefined) {
@@ -18,13 +24,7 @@ export const readBrowserLoginCommand = (location: ConfigLocation): string | unde
     );
   }
 
-  const unknownKey = Object.keys(browser).find((key) => key !== 'loginCommand');
-
-  if (unknownKey !== undefined) {
-    throw new Error(
-      `Invalid Tau config ${source}: browser.${unknownKey} is not a known key. Set only loginCommand.`,
-    );
-  }
+  warnUnknownKeys(ui, source, browser, knownBrowserKeys, 'browser');
 
   const command = browser.loginCommand;
 

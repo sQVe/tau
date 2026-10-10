@@ -1,7 +1,9 @@
 import { errorMessage } from '../../errors.js';
 import { isRecord } from '../../isRecord.js';
-import { readTauConfig, readUserOnlyKey } from '../../tauConfig.js';
-import type { ConfigLocation } from '../../tauConfig.js';
+import { readTauConfig, readUserOnlyKey, warnUnknownKeys } from '../../tauConfig.js';
+import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
+import { anyKey } from '../../unknownKeys.js';
+import type { KnownKeys } from '../../unknownKeys.js';
 
 export interface TrackerRepository {
   team: string;
@@ -24,6 +26,11 @@ const teamKeyPattern = /^\S+$/u;
 // Control characters and the Unicode line and paragraph separators all break a line.
 const projectPattern = /^[^\p{Cc}\p{Zl}\p{Zp}]+$/u;
 const repositoryKeyPattern = /^[^\s/]+\/[^\s/]+$/u;
+
+const knownTrackerKeys: KnownKeys = {
+  agentTeam: true,
+  repositories: { [anyKey]: { team: true, project: true } },
+};
 
 const rejectSliceKey = (location: ConfigLocation): void => {
   const file = readTauConfig(location).files.find(
@@ -89,21 +96,21 @@ const readRepository = (source: string, key: string, value: unknown): TrackerRep
     );
   }
 
-  const unknownKey = Object.keys(value).find((name) => name !== 'team' && name !== 'project');
-
-  if (unknownKey !== undefined) {
-    throw new Error(
-      `Invalid Tau config ${source}: ${field}.${unknownKey} is not a known key. Set only team and project.`,
-    );
-  }
-
   return {
     team: readTeamKey(source, `${field}.team`, value.team),
     project: readProject(source, `${field}.project`, value.project),
   };
 };
 
-const readRepositories = (source: string, value: unknown): Map<string, TrackerRepository> => {
+const sameRepository = (key: string, repository: string | undefined): boolean =>
+  repository !== undefined && key.toLowerCase() === repository.toLowerCase();
+
+// A bad entry fails only when it names `repository`, the checkout's own repository.
+const readRepositories = (
+  source: string,
+  value: unknown,
+  repository: string | undefined,
+): Map<string, TrackerRepository> => {
   if (value === undefined) {
     return new Map();
   }
@@ -116,10 +123,11 @@ const readRepositories = (source: string, value: unknown): Map<string, TrackerRe
 
   const repositories = new Map<string, TrackerRepository>();
 
-  for (const [key, repository] of Object.entries(value)) {
-    const duplicate = [...repositories.keys()].find(
-      (earlier) => earlier.toLowerCase() === key.toLowerCase(),
-    );
+  // Every key counts, parsed or not, so the duplicate error does not depend on entry order.
+  const seenKeys: string[] = [];
+
+  for (const [key, entry] of Object.entries(value)) {
+    const duplicate = seenKeys.find((earlier) => earlier.toLowerCase() === key.toLowerCase());
 
     // GitHub names ignore case, so two keys that differ only in case would name one repository.
     if (duplicate !== undefined) {
@@ -128,14 +136,26 @@ const readRepositories = (source: string, value: unknown): Map<string, TrackerRe
       );
     }
 
-    repositories.set(key, readRepository(source, key, repository));
+    seenKeys.push(key);
+
+    try {
+      repositories.set(key, readRepository(source, key, entry));
+    } catch (error) {
+      if (sameRepository(key, repository)) {
+        throw error;
+      }
+    }
   }
 
   return repositories;
 };
 
 // The tracker names Linear teams the manager writes to, so only the user file may set it.
-export const readTrackerConfig = (location: ConfigLocation): TrackerConfig | undefined => {
+export const readTrackerConfig = (
+  location: ConfigLocation,
+  ui: ConfigWarnings,
+  repository: string | undefined,
+): TrackerConfig | undefined => {
   rejectSliceKey(location);
 
   const user = readUserOnlyKey(location, 'tracker');
@@ -152,28 +172,24 @@ export const readTrackerConfig = (location: ConfigLocation): TrackerConfig | und
     );
   }
 
-  const unknownKey = Object.keys(tracker).find(
-    (key) => key !== 'agentTeam' && key !== 'repositories',
-  );
-
-  if (unknownKey !== undefined) {
-    throw new Error(
-      `Invalid Tau config ${source}: tracker.${unknownKey} is not a known key. Set only agentTeam and repositories.`,
-    );
-  }
+  warnUnknownKeys(ui, source, tracker, knownTrackerKeys, 'tracker');
 
   const agentTeam =
     tracker.agentTeam === undefined
       ? undefined
       : readTeamKey(source, 'tracker.agentTeam', tracker.agentTeam);
 
-  return { agentTeam, repositories: readRepositories(source, tracker.repositories) };
+  return { agentTeam, repositories: readRepositories(source, tracker.repositories, repository) };
 };
 
 // Prompt building cannot report an error, so an invalid config becomes a fact the prompt states.
-export const readTrackerSetup = (location: ConfigLocation): TrackerSetup => {
+export const readTrackerSetup = (
+  location: ConfigLocation,
+  ui: ConfigWarnings,
+  repository: string | undefined,
+): TrackerSetup => {
   try {
-    const config = readTrackerConfig(location);
+    const config = readTrackerConfig(location, ui, repository);
 
     return config === undefined ? { status: 'unset' } : { status: 'read', config };
   } catch (error) {

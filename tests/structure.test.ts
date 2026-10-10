@@ -29,6 +29,7 @@ const pureModules = [
   'src/controlTools.ts',
   'src/isRecord.ts',
   'src/models/allowedModels.ts',
+  'src/unknownKeys.ts',
   'src/reviewCapture/evidenceDecisions.ts',
   'src/reviewCapture/freshness.ts',
   'src/extensions/askUserQuestion/questionnaire.ts',

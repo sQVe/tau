@@ -2,9 +2,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { CONFIG_DIR_NAME } from '@earendil-works/pi-coding-agent';
+import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 
 import { isMissingFile } from './errors.js';
 import { isRecord } from './isRecord.js';
+import { findUnknownKeys, reportedId, unreportedKeys } from './unknownKeys.js';
+import type { KnownKeys } from './unknownKeys.js';
+
+export type ConfigWarnings = Pick<ExtensionUIContext, 'notify'>;
 
 export interface ConfigLocation {
   cwd: string;
@@ -88,4 +93,57 @@ export const readUserOnlyKey = (location: ConfigLocation, key: string): ConfigFi
   }
 
   return { source: userPath, value: user[key] };
+};
+
+const reportedBySession = new WeakMap<object, Set<string>>();
+
+const reportedFor = (ui: ConfigWarnings): Set<string> => {
+  const reported = reportedBySession.get(ui) ?? new Set<string>();
+
+  reportedBySession.set(ui, reported);
+
+  return reported;
+};
+
+// Forgets what was reported for `ui`, so a new session reports its config problems again.
+export const forgetReportedWarnings = (ui: ConfigWarnings): void => {
+  reportedBySession.delete(ui);
+};
+
+// Notifies once per session for each file and `key`. A changed message under the same key is not
+// reported again, so put what makes a problem new into the key.
+export const notifyOnce = (
+  ui: ConfigWarnings,
+  source: string,
+  key: string,
+  message: string,
+  level: 'warning' | 'error',
+): void => {
+  const reported = reportedFor(ui);
+  const [fresh] = unreportedKeys(reported, source, [key]);
+
+  if (fresh === undefined) {
+    return;
+  }
+
+  reported.add(reportedId(source, fresh));
+  ui.notify(message, level);
+};
+
+// Warns once per session for each file and unknown key path in `value`. `known` lists the keys the
+// reader understands and `path` names where `value` sits in the file, such as `profiles.worker`.
+export const warnUnknownKeys = (
+  ui: ConfigWarnings,
+  source: string,
+  value: unknown,
+  known: KnownKeys,
+  path: string,
+): void => {
+  const reported = reportedFor(ui);
+  const fresh = unreportedKeys(reported, source, findUnknownKeys(value, known, path));
+
+  for (const keyPath of fresh) {
+    reported.add(reportedId(source, keyPath));
+    ui.notify(`Tau config ${source}: ${keyPath} is not a known key and was ignored.`, 'warning');
+  }
 };

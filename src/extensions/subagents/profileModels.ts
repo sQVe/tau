@@ -1,35 +1,26 @@
+import { errorMessage } from '../../errors.js';
 import { isRecord } from '../../isRecord.js';
 import { parseModelReference } from '../../models/models.js';
-import { readUserOnlyKey } from '../../tauConfig.js';
-import type { ConfigLocation } from '../../tauConfig.js';
+import { notifyOnce, readUserOnlyKey, userConfigPath, warnUnknownKeys } from '../../tauConfig.js';
+import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
+import { anyKey } from '../../unknownKeys.js';
+import type { KnownKeys } from '../../unknownKeys.js';
 import type { ModelRoute, RouteLabel } from './modelRoutes.js';
 import type { ProfileModels } from './workerModels.js';
 
-export type ProfileRoutes = ReadonlyMap<string, ModelRoute>;
+interface ProfileEntries {
+  source: string;
+  entries: Record<string, unknown>;
+}
 
-interface ProfileEntry {
-  model: string;
-  route: ModelRoute | undefined;
+interface ProfileRecord {
+  source: string;
+  field: string;
+  entry: Record<string, unknown>;
 }
 
 const invalid = (source: string, message: string): Error =>
   new Error(`Invalid Tau config ${source}: ${message}`);
-
-const rejectUnknownKeys = (
-  source: string,
-  field: string,
-  entry: Record<string, unknown>,
-  known: readonly string[],
-) => {
-  const unknownKey = Object.keys(entry).find((key) => !known.includes(key));
-
-  if (unknownKey !== undefined) {
-    throw invalid(
-      source,
-      `${field}.${unknownKey} is not a known key. Set only ${known.join(', ')}.`,
-    );
-  }
-};
 
 const parseModel = (source: string, field: string, value: unknown): string => {
   if (value === undefined) {
@@ -79,8 +70,6 @@ const parseLabel = (source: string, field: string, entry: unknown): RouteLabel =
     );
   }
 
-  rejectUnknownKeys(source, field, entry, ['criterion', 'model']);
-
   return {
     criterion: parseText(source, `${field}.criterion`, entry.criterion),
     model: parseModel(source, `${field}.model`, entry.model),
@@ -92,7 +81,6 @@ const parseRoute = (source: string, field: string, entry: unknown): ModelRoute =
     throw invalid(source, `${field} must be an object with question and labels.`);
   }
 
-  rejectUnknownKeys(source, field, entry, ['question', 'labels', 'canary']);
   const question = parseText(source, `${field}.question`, entry.question);
 
   const labelEntries = entry.labels;
@@ -124,52 +112,113 @@ const parseRoute = (source: string, field: string, entry: unknown): ModelRoute =
   return { question, labels, canary };
 };
 
-const parseProfileEntry = (source: string, field: string, entry: unknown): ProfileEntry => {
-  if (!isRecord(entry)) {
-    throw invalid(source, `${field} must be an object such as {"model": "provider/model-id"}.`);
-  }
-
-  rejectUnknownKeys(source, field, entry, ['model', 'routes']);
-  const model = parseModel(source, `${field}.model`, entry.model);
-
-  if (entry.routes === undefined) {
-    return { model, route: undefined };
-  }
-
-  return { model, route: parseRoute(source, `${field}.routes`, entry.routes) };
+const knownProfileKeys: KnownKeys = {
+  model: true,
+  routes: {
+    question: true,
+    canary: true,
+    labels: { [anyKey]: { criterion: true, model: true } },
+  },
 };
 
 // Entries for profiles that do not exist are kept, since a profile may exist only in one repository.
-const readProfileEntries = (location: ConfigLocation): Map<string, ProfileEntry> => {
+const readProfileEntries = (location: ConfigLocation): ProfileEntries | undefined => {
   const user = readUserOnlyKey(location, 'profiles');
 
   if (user === undefined) {
-    return new Map();
+    return undefined;
   }
 
-  const { source, value: profiles } = user;
+  const { source, value } = user;
 
-  if (!isRecord(profiles)) {
+  if (!isRecord(value)) {
     throw invalid(
       source,
       'profiles must be an object that maps profile names to {"model": "provider/model-id"}.',
     );
   }
 
-  return new Map(
-    Object.entries(profiles).map(([name, entry]) => [
-      name,
-      parseProfileEntry(source, `profiles.${name}`, entry),
-    ]),
-  );
+  return { source, entries: value };
 };
 
-export const readProfileModels = (location: ConfigLocation): ProfileModels =>
-  new Map([...readProfileEntries(location)].map(([name, { model }]) => [name, model]));
+// Reads one entry and warns about its unknown keys. Only a bad entry of this name fails.
+const readProfileRecord = (
+  location: ConfigLocation,
+  name: string,
+  ui: ConfigWarnings,
+): ProfileRecord | undefined => {
+  const profiles = readProfileEntries(location);
 
-export const readProfileRoutes = (location: ConfigLocation): ProfileRoutes =>
-  new Map(
-    [...readProfileEntries(location)].flatMap(([name, { route }]) =>
-      route === undefined ? [] : [[name, route] as const],
-    ),
-  );
+  if (profiles === undefined || !Object.hasOwn(profiles.entries, name)) {
+    return undefined;
+  }
+
+  const { source, entries } = profiles;
+  const field = `profiles.${name}`;
+  const entry = entries[name];
+
+  if (!isRecord(entry)) {
+    throw invalid(source, `${field} must be an object such as {"model": "provider/model-id"}.`);
+  }
+
+  warnUnknownKeys(ui, source, entry, knownProfileKeys, field);
+
+  return { source, field, entry };
+};
+
+export const readProfileModel = (
+  location: ConfigLocation,
+  name: string,
+  ui: ConfigWarnings,
+): string | undefined => {
+  const record = readProfileRecord(location, name, ui);
+
+  if (record === undefined) {
+    return undefined;
+  }
+
+  return parseModel(record.source, `${record.field}.model`, record.entry.model);
+};
+
+// A bad entry is left out here and fails only the launch of that profile.
+export const readProfileModels = (location: ConfigLocation, ui: ConfigWarnings): ProfileModels => {
+  const names = Object.keys(readProfileEntries(location)?.entries ?? {});
+  const models = new Map<string, string>();
+
+  for (const name of names) {
+    try {
+      const model = readProfileModel(location, name, ui);
+
+      if (model !== undefined) {
+        models.set(name, model);
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return models;
+};
+
+// A bad route turns routing off for the profile and leaves its model usable.
+export const readProfileRoute = (
+  location: ConfigLocation,
+  name: string,
+  ui: ConfigWarnings,
+): ModelRoute | undefined => {
+  try {
+    const record = readProfileRecord(location, name, ui);
+
+    if (record === undefined || record.entry.routes === undefined) {
+      return undefined;
+    }
+
+    return parseRoute(record.source, `${record.field}.routes`, record.entry.routes);
+  } catch (error) {
+    const message = `${errorMessage(error)} Routing is off for ${name}.`;
+
+    notifyOnce(ui, userConfigPath(location.agentDirectory), message, message, 'error');
+
+    return undefined;
+  }
+};

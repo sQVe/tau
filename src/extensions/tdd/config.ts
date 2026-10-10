@@ -5,8 +5,9 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { configFileName, readTauConfig } from '../../tauConfig.js';
-import type { ConfigFile, ConfigLocation } from '../../tauConfig.js';
+import { configFileName, readTauConfig, warnUnknownKeys } from '../../tauConfig.js';
+import type { ConfigFile, ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
+import type { KnownKeys } from '../../unknownKeys.js';
 import { mergeConfigLayers } from './configLayers.js';
 import type { ConfigLayer, MergedTddConfig } from './configLayers.js';
 
@@ -19,20 +20,25 @@ export interface LoadedTddConfig extends MergedTddConfig {
 
 const globs = Type.Array(Type.String({ minLength: 1 }));
 
-const tddConfigSchema = Type.Object(
-  {
-    productionGlobs: globs,
-    testGlobs: globs,
-    testSupportGlobs: globs,
-    excludedGlobs: globs,
-    verificationArgv: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
-  },
-  { additionalProperties: false },
-);
+const tddConfigSchema = Type.Object({
+  productionGlobs: globs,
+  testGlobs: globs,
+  testSupportGlobs: globs,
+  excludedGlobs: globs,
+  verificationArgv: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
+});
+
+const knownTddKeys: KnownKeys = {
+  productionGlobs: true,
+  testGlobs: true,
+  testSupportGlobs: true,
+  excludedGlobs: true,
+  verificationArgv: true,
+};
 
 // Other top-level keys belong to other consumers, possibly from a newer Tau sharing the user file.
 const configFileSchema = Type.Object({
-  tdd: Type.Optional(Type.Partial(tddConfigSchema, { additionalProperties: false })),
+  tdd: Type.Optional(Type.Partial(tddConfigSchema)),
 });
 
 const defaultSource = 'built-in default';
@@ -69,13 +75,10 @@ const problem = (value: unknown): string => {
     return `the top level ${error.message}`;
   }
 
-  // Unknown keys fail as a `false` schema for that key.
-  return error.keyword === 'boolean'
-    ? `${error.instancePath} is not a known key`
-    : `${error.instancePath} ${error.message}`;
+  return `${error.instancePath} ${error.message}`;
 };
 
-const tddLayer = ({ source, value }: ConfigFile): ConfigLayer => {
+const tddLayer = ({ source, value }: ConfigFile, ui: ConfigWarnings): ConfigLayer => {
   if (!Value.Check(configFileSchema, value)) {
     throw new Error(
       `Invalid TDD config ${source}: ${problem(value)}. Expected {"tdd": {...}} with productionGlobs, testGlobs, testSupportGlobs, and excludedGlobs as string arrays, and verificationArgv starting with "vitest". Fix the file; Tau does not fall back to another config.`,
@@ -83,6 +86,8 @@ const tddLayer = ({ source, value }: ConfigFile): ConfigLayer => {
   }
 
   const values = value.tdd ?? {};
+
+  warnUnknownKeys(ui, source, values, knownTddKeys, 'tdd');
 
   // Only the Vitest runner exists, so the command must start with vitest.
   if (values.verificationArgv !== undefined && values.verificationArgv[0] !== 'vitest') {
@@ -95,10 +100,11 @@ const tddLayer = ({ source, value }: ConfigFile): ConfigLayer => {
 };
 
 // Repository config overrides user config, which overrides the defaults.
-export const loadTddConfig = (location: ConfigLocation): LoadedTddConfig => {
+export const loadTddConfig = (location: ConfigLocation, ui: ConfigWarnings): LoadedTddConfig => {
   const { files, ignored } = readTauConfig(location);
+  const layers = files.map((file) => tddLayer(file, ui));
 
-  return { ...mergeConfigLayers(defaultTddConfig, defaultSource, files.map(tddLayer)), ignored };
+  return { ...mergeConfigLayers(defaultTddConfig, defaultSource, layers), ignored };
 };
 
 export const classifyPath = (config: TddConfig, path: string): 'test' | 'production' | 'other' => {

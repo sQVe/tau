@@ -19,17 +19,19 @@ import {
 } from '../../models/models.js';
 import { skillTools } from '../../skillTools.js';
 import { userConfigPath } from '../../tauConfig.js';
-import type { ConfigLocation } from '../../tauConfig.js';
+import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
 import { decideCanary, pickRoutedModel } from './modelRoutes.js';
 import type { ClassifierOutcome, ModelRoute, RoutedLaunch } from './modelRoutes.js';
-import { readProfileModels, readProfileRoutes } from './profileModels.js';
+import { readProfileModel, readProfileRoute } from './profileModels.js';
 import { resolveProfile } from './profiles.js';
 import { loadoutSchema } from './types.js';
 import type { Loadout, Profile } from './types.js';
-import { availableModels, selectWorkerModel } from './workerModels.js';
+import { availableModels, defaultProfileName } from './workerModels.js';
 import { workerTools } from './workerTools.js';
 
-type ModelContext = Pick<ExtensionContext, 'modelRegistry' | 'scopedModels'>;
+type ModelContext = Pick<ExtensionContext, 'modelRegistry' | 'scopedModels'> & {
+  ui: ConfigWarnings;
+};
 
 interface LaunchRequest {
   profile: string;
@@ -82,7 +84,10 @@ const resolveModel = (
   context: ModelContext,
   location: ConfigLocation,
 ) => {
-  const model = selectWorkerModel(explicit, profile.name, readProfileModels(location));
+  const profileModel = readProfileModel(location, profile.name, context.ui);
+
+  const model =
+    explicit ?? profileModel ?? readProfileModel(location, defaultProfileName, context.ui);
 
   if (model === undefined) {
     throw new Error(
@@ -149,7 +154,9 @@ const resolveLaunchPlan = (
 
 export const resolveLoadout = (
   input: LaunchRequest,
-  context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'scopedModels' | 'isProjectTrusted'>,
+  context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'scopedModels' | 'isProjectTrusted'> & {
+    ui: ConfigWarnings;
+  },
   commands: SlashCommandInfo[] = [],
 ): Loadout => {
   const { cwd, agentDirectory, profile } = resolveLaunchPlan(input, context);
@@ -255,7 +262,9 @@ const classifyRoute = async (
 // Classifies the brief for the shadow pick only. The loadout keeps the model resolveLoadout chose.
 export const resolveRoutedLoadout = async (
   input: LaunchRequest & { task: string },
-  context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'scopedModels' | 'isProjectTrusted'>,
+  context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'scopedModels' | 'isProjectTrusted'> & {
+    ui: ConfigWarnings;
+  },
   commands: SlashCommandInfo[] = [],
   signal?: AbortSignal,
 ): Promise<RoutedLoadout> => {
@@ -271,7 +280,7 @@ export const resolveRoutedLoadout = async (
     projectTrusted: true,
   };
 
-  const route = readProfileRoutes(location).get(loadout.profile);
+  const route = readProfileRoute(location, loadout.profile, context.ui);
 
   if (route === undefined) {
     return { loadout, routing: undefined };
