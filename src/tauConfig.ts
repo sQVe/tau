@@ -97,6 +97,34 @@ export const readUserOnlyKey = (location: ConfigLocation, key: string): ConfigFi
 
 const reportedBySession = new WeakMap<object, Set<string>>();
 
+const reportedFor = (ui: ConfigWarnings): Set<string> => {
+  const reported = reportedBySession.get(ui) ?? new Set<string>();
+
+  reportedBySession.set(ui, reported);
+
+  return reported;
+};
+
+// Notifies once per session for each file and `key`. A changed message under the same key is not
+// reported again, so put what makes a problem new into the key.
+export const notifyOnce = (
+  ui: ConfigWarnings,
+  source: string,
+  key: string,
+  message: string,
+  level: 'warning' | 'error',
+): void => {
+  const reported = reportedFor(ui);
+  const [fresh] = unreportedKeys(reported, source, [key]);
+
+  if (fresh === undefined) {
+    return;
+  }
+
+  reported.add(reportedId(source, fresh));
+  ui.notify(message, level);
+};
+
 // Warns once per session for each file and unknown key path in `value`. `known` lists the keys the
 // reader understands and `path` names where `value` sits in the file, such as `profiles.worker`.
 export const warnUnknownKeys = (
@@ -106,10 +134,7 @@ export const warnUnknownKeys = (
   known: KnownKeys,
   path: string,
 ): void => {
-  const reported = reportedBySession.get(ui) ?? new Set<string>();
-
-  reportedBySession.set(ui, reported);
-
+  const reported = reportedFor(ui);
   const fresh = unreportedKeys(reported, source, findUnknownKeys(value, known, path));
 
   for (const keyPath of fresh) {

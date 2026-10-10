@@ -1,7 +1,7 @@
 import { errorMessage } from '../../errors.js';
 import { isRecord } from '../../isRecord.js';
 import { parseModelReference } from '../../models/models.js';
-import { readUserOnlyKey, warnUnknownKeys } from '../../tauConfig.js';
+import { notifyOnce, readUserOnlyKey, userConfigPath, warnUnknownKeys } from '../../tauConfig.js';
 import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
 import { anyKey } from '../../unknownKeys.js';
 import type { KnownKeys } from '../../unknownKeys.js';
@@ -216,7 +216,9 @@ export const readProfileRoute = (
 
     return parseRoute(record.source, `${record.field}.routes`, record.entry.routes);
   } catch (error) {
-    ui.notify(`${errorMessage(error)} Routing is off for ${name}.`, 'error');
+    const message = `${errorMessage(error)} Routing is off for ${name}.`;
+
+    notifyOnce(ui, userConfigPath(location.agentDirectory), message, message, 'error');
 
     return undefined;
   }

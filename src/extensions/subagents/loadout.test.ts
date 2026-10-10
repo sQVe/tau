@@ -1259,3 +1259,25 @@ it('launches on the profile model with no routing when its routes are broken', a
   expect(routing).toBeUndefined();
   expect(notify).toHaveBeenCalledWith(expect.stringContaining('profiles.worker.routes'), 'error');
 });
+
+it('reports an unchanged broken route once per session and still launches on the profile model', async ({
+  onTestFinished,
+}) => {
+  const { directory, context, profileModel } = await routedFixture(onTestFinished);
+  const notify = vi.fn<(message: string, level?: string) => void>();
+
+  writeFileSync(
+    join(directory, 'tau.json'),
+    JSON.stringify({ profiles: { scout: { model: profileModel, routes: { canary: 5 } } } }),
+  );
+
+  const sessionContext = { ...context, ui: { notify } };
+  const request = { profile: 'scout', task: 'Find the parser.' };
+  const first = await resolveRoutedLoadout(request, sessionContext);
+  const second = await resolveRoutedLoadout(request, sessionContext);
+
+  expect(first.loadout.model).toBe(profileModel);
+  expect(second.loadout.model).toBe(profileModel);
+  expect(notify).toHaveBeenCalledTimes(1);
+  expect(notify).toHaveBeenCalledWith(expect.stringContaining('profiles.scout.routes'), 'error');
+});
