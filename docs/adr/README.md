@@ -124,3 +124,4 @@ line that links to the replacement.
 - [0097: Track only the current session's workers](./0097-track-only-the-current-sessions-workers.md)
 - [0098: Bound codemode output by whole items](./0098-bound-codemode-output-by-whole-items.md)
 - [0099: Warn on unknown config keys and fail only the entry in use](./0099-warn-on-unknown-config-keys-and-fail-only-the-entry-in-use.md)
+- [0100: Let agents cancel Linear tickets after approval](./0100-let-agents-cancel-linear-tickets-after-approval.md)

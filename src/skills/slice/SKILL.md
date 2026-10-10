@@ -31,11 +31,12 @@ before anything was written to Linear.
 ## Hard rules
 
 - Follow the [tracker skill](../tracker/SKILL.md)'s hard rules on preview approval and on questions.
-- Do not create agent tickets, start a slice, create branches, stack PRs, or change any ticket's
-  status. Never change or reorder a merged slice.
+- Do not create agent tickets, start a slice, create branches, or stack PRs. Change no ticket's
+  status, except cancelling a dropped slice after the user approves it in step 7. Never change or
+  reorder a merged slice.
 - Use the `slice` tool for the draft directory, for reading the container and its slices, and for
-  every write to them. Save drafts only in the directory the tool returned last, since `apply` moves
-  the draft after it creates the container.
+  every write to them other than a cancellation. Save drafts only in the directory the tool returned
+  last, since `apply` moves the draft after it creates the container.
 - If `apply` fails, stop and report the steps it applied and the steps it did not. Before any retry,
   follow the tool's recovery steps for that error, including a ticket whose identifier was not
   saved.
@@ -94,10 +95,10 @@ before anything was written to Linear.
      that the text outside that section stays unchanged.
    - The number of `writes` from `read`. Say that step 6 shows each write for a last confirm, and
      that the confirm lists each move of an existing slice into plan order. Say that created tickets
-     stay in Linear until the user cancels them by hand.
+     stay in Linear, and that removing one later means cancelling it.
    - On a later run, what the draft changes compared with Linear now, including `blocked-by`
-     relations to add and remove. List each slice in `dropped` for the user to cancel by hand: it
-     stays in Linear.
+     relations to add and remove. List each slice in `dropped`: it stays in Linear, and step 7
+     offers to cancel it.
 
    Approve the plan with `ask_user_question`: approve, change the plan, or stop. After any change,
    write the draft again, call `read` again, and show a new preview.
@@ -109,5 +110,7 @@ before anything was written to Linear.
    - When it returns `unchanged`, report that Linear already matches the plan.
    - When `orderInPlace` is false, report that the slice order is still wrong.
 
-7. Report the container and each slice with its identifier and URL, in order, and any slice the user
-   should cancel by hand. For a design with one slice, report that ticket alone.
+7. Report the container and each slice with its identifier and URL, in order, or the one ticket of a
+   one-slice design. Then ask with `ask_user_question` which `dropped` slices that are not merged or
+   completed to cancel, by identifier and title. Cancel the chosen ones with the
+   [tracker skill](../tracker/SKILL.md), and report which were cancelled and which were kept.
