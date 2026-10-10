@@ -2,8 +2,9 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import type { ConfigWarnings } from '../../tauConfig.js';
 import { classifyPath, defaultTddConfig, loadTddConfig } from './config.js';
 
 const classify = (path: string) => classifyPath(defaultTddConfig, path);
@@ -95,20 +96,42 @@ describe('TDD config', () => {
       }),
     );
 
-    const { config } = loadTddConfig({
-      cwd,
-      agentDirectory: join(cwd, 'agent'),
-      projectTrusted: true,
-    });
+    const { config } = loadTddConfig(
+      { cwd, agentDirectory: join(cwd, 'agent'), projectTrusted: true },
+      { notify: () => undefined },
+    );
 
     expect(classifyPath(config, 'internal/git/status.go')).toBe('production');
     expect(classifyPath(config, 'src/value.ts')).toBe('other');
   });
 
+  it('reads known fields past unknown tdd keys and warns about each', async ({
+    onTestFinished,
+  }) => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-config-unknown-'));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    await mkdir(join(cwd, '.pi'));
+    const notify = vi.fn<ConfigWarnings['notify']>();
+
+    await writeFile(
+      join(cwd, '.pi', 'tau.json'),
+      JSON.stringify({ tdd: { productionGlobs: ['lib/**'], futureKey: true } }),
+    );
+
+    const { config } = loadTddConfig(
+      { cwd, agentDirectory: join(cwd, 'agent'), projectTrusted: true },
+      { notify },
+    );
+
+    expect(config.productionGlobs).toEqual(['lib/**']);
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith(expect.stringContaining('tdd.futureKey'), 'warning');
+  });
+
   it.for<[string, string, string]>([
     ['.pi/tau.json', '{', '.pi/tau.json'],
     ['.pi/tau.json', '[]', '.pi/tau.json'],
-    ['.pi/tau.json', '{"tdd": {"productionGlob": []}}', 'productionGlob'],
+    ['.pi/tau.json', '{"tdd": {"productionGlobs": "src"}}', 'productionGlobs'],
     ['.pi/tau.json', '{"tdd": {"testGlobs": ["", "**/*.test.ts"]}}', 'testGlobs'],
     ['.pi/tau.json', '{"tdd": {"verificationArgv": ["jest"]}}', 'verificationArgv'],
     ['.pi/tau.json', '{"tdd": {"verificationArgv": []}}', 'verificationArgv'],
@@ -121,11 +144,10 @@ describe('TDD config', () => {
     await writeFile(join(cwd, file), content);
 
     const loading = () =>
-      loadTddConfig({
-        cwd,
-        agentDirectory: join(cwd, 'agent'),
-        projectTrusted: true,
-      });
+      loadTddConfig(
+        { cwd, agentDirectory: join(cwd, 'agent'), projectTrusted: true },
+        { notify: () => undefined },
+      );
 
     expect(loading).toThrow(join(cwd, file));
     expect(loading).toThrow(problem);

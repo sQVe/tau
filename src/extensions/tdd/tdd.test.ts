@@ -277,7 +277,12 @@ it.for(['ordinary', 'long'] as const)(
         { type: 'text', text: runContext(parameters, details) },
         {
           type: 'text',
-          text: configSummary(loadTddConfig({ cwd, agentDirectory: cwd, projectTrusted: true })),
+          text: configSummary(
+            loadTddConfig(
+              { cwd, agentDirectory: cwd, projectTrusted: true },
+              { notify: () => undefined },
+            ),
+          ),
         },
       ]),
     );

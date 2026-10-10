@@ -53,11 +53,13 @@ const runTestsParameters = Type.Object({
 const observationFor = async (tracker: ObservationTracker, context: ExtensionContext) => {
   const cwd = await observationDirectory(context.cwd);
 
-  const loaded = loadTddConfig({
+  const location = {
     cwd,
     agentDirectory: getAgentDir(),
     projectTrusted: context.isProjectTrusted(),
-  });
+  };
+
+  const loaded = loadTddConfig(location, context.ui);
 
   const key = JSON.stringify(loaded);
 

@@ -21,6 +21,11 @@ The block accepts `productionGlobs`, `testGlobs`, `testSupportGlobs`, `excludedG
 `verificationArgv`. Each key you set replaces its default. The repository file overrides the user
 file, and Tau reads it only in a trusted project. `run_tests` output shows the config in use.
 
+Tau warns once per session about a key it does not know in `tdd`, `tracker`, `browser`, and
+`profiles`, and ignores it. Wrong types and missing required fields still fail with the file and
+field. A bad `tracker.repositories` entry fails only when it names the repository of the current
+checkout.
+
 To limit the models Tau picks for workers, add `allowedModels` to either file:
 
 ```json
