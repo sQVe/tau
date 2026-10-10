@@ -2,7 +2,7 @@
 
 **Date**: 2026-09-28\
 **Status**: Accepted; unknown key handling superseded by
-[ADR 0098 (Warn on unknown config keys and fail only the entry in use)](./0098-warn-on-unknown-config-keys-and-fail-only-the-entry-in-use.md)\
+[ADR 0099 (Warn on unknown config keys and fail only the entry in use)](./0099-warn-on-unknown-config-keys-and-fail-only-the-entry-in-use.md)\
 **Related**:
 [ADR 0023 (Use advisory TDD observations instead of edit permissions)](./0023-advisory-tdd-observations.md),
 [ADR 0027 (Share one delegate model across bounded tool tasks)](./0027-share-one-delegate-model.md),

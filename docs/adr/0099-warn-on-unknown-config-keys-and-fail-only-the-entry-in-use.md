@@ -1,4 +1,4 @@
-# ADR 0098: Warn on unknown config keys and fail only the entry in use
+# ADR 0099: Warn on unknown config keys and fail only the entry in use
 
 **Date**: 2026-10-09\
 **Status**: Accepted\

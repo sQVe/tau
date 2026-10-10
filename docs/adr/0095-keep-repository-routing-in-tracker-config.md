@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-06\
 **Status**: Accepted; unknown key handling superseded by
-[ADR 0098 (Warn on unknown config keys and fail only the entry in use)](./0098-warn-on-unknown-config-keys-and-fail-only-the-entry-in-use.md)\
+[ADR 0099 (Warn on unknown config keys and fail only the entry in use)](./0099-warn-on-unknown-config-keys-and-fail-only-the-entry-in-use.md)\
 **Supersedes**:
 [ADR 0085 (Group per-repository settings in the user config)](./0085-group-per-repository-settings-in-the-user-config.md),
 except its `bulkRead` key handling, already superseded by
