@@ -33,8 +33,8 @@ Workers then carry out the agent tickets.
   `git fetch`, but create or switch no branch and write nothing to Linear. Any change to the
   approved plan needs a new preview, an added agent ticket included.
 - Route, write, and create agent tickets with the [tracker skill](../tracker/SKILL.md), and follow
-  its hard rules on questions and status. The one status change is moving the slice to In Progress
-  in step 8.
+  its hard rules on questions and status. This skill's only status change is moving the slice to In
+  Progress in step 8.
 - Before you write the draft, check that the prompt names both the repository route and the agent
   team as the tracker skill describes. If either is missing, stop with the tracker skill's setup
   message.

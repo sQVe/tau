@@ -129,6 +129,7 @@ const toChild = async (exec: Exec, cwd: string, node: ChildNode): Promise<Linear
   url: node.url,
   sortOrder: node.subIssueSortOrder,
   completed: node.state.type === 'completed',
+  canceled: node.state.type === 'canceled',
   merged: await readMerged(
     exec,
     cwd,

@@ -3,7 +3,7 @@ name: tracker
 description:
   Write Linear tickets by Tau's rules. Picks the ticket type and its template, routes it to the
   right team and project, searches for an open duplicate, and runs the `linear` commands for tickets
-  and the one allowed status change. Use it for "file a bug", "create a ticket", "write this up in
+  and the two allowed status changes. Use it for "file a bug", "create a ticket", "write this up in
   Linear", or "add a follow-up ticket". It does not split a design into slices or start a slice.
 metadata:
   required-for:
@@ -24,9 +24,10 @@ preview. It needs the `linear` CLI authenticated for the workspace.
 - Write to Linear only after the user approves a preview that shows the write. Any change after
   approval needs a new preview.
 - Ask every question with the `ask_user_question` tool. Never end a turn with a question in prose.
-- Make one status change only: move a slice to In Progress when it starts. Linear's GitHub
-  integration moves a ticket to Done once the PR that fixes it merges. Never close, cancel, reopen,
-  or move a ticket to any other status.
+- Make only two status changes: move a slice to In Progress when it starts, and cancel a ticket
+  after the user approves a preview that shows the cancellation, such as a duplicate or a slice
+  dropped from a plan. Linear's GitHub integration moves a ticket to Done once the PR that fixes it
+  merges. Never close, reopen, or move a ticket to any other status.
 - Take teams and projects only from the tracker lines in the prompt. Never guess a team, a project,
   or a label.
 
@@ -130,6 +131,13 @@ preview. It needs the `linear` CLI authenticated for the workspace.
      If the name is `In Progress`, skip the move; any other state, `In Review` included, moves. Move
      it with `linear issue update <slice> --state 'In Progress'`. If the team has no state with that
      name, stop and ask the user.
+   - Cancel an approved ticket. Read its state and links with
+     `linear api 'query($id: String!) { issue(id: $id) { state { type } attachments { nodes { url } } } }' --variable id=<ticket>`.
+     Skip it if its state type is `canceled`. Stop and ask the user if the type is `completed`, or
+     if `gh pr view <url> --json state` returns `MERGED` for a linked pull request. If any of these
+     reads fails, stop and report it. Otherwise cancel it with
+     `linear issue update <ticket> --state canceled --no-input`. If the command fails, stop and
+     report the error.
 
 7. Link the ticket from the PR. Write `Fixes <id>` in the PR body only for the ticket the PR
    completes, such as the slice, and `Related to <id>` for every other ticket it touches. Never list

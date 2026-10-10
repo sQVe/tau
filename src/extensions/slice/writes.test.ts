@@ -27,6 +27,7 @@ const child = (number: number, change: Partial<LinearChild> = {}): LinearChild =
   url: '',
   sortOrder: number,
   completed: false,
+  canceled: false,
   merged: false,
   blockedBy: [],
   ...change,
@@ -195,6 +196,13 @@ describe('planWrites', () => {
     const plan = planWrites(draft(['ME-2']), container([child(1), child(5)]), []);
 
     expect(plan.dropped).toEqual(['ME-6']);
+  });
+
+  it('leaves canceled children out of dropped', () => {
+    const children = [child(1), child(5, { canceled: true }), child(6)];
+    const plan = planWrites(draft(['ME-2']), container(children), []);
+
+    expect(plan.dropped).toEqual(['ME-7']);
   });
 });
 
