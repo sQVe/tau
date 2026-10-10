@@ -1,14 +1,17 @@
 # Slice
 
 Use this shape for a human sub-ticket of a container that one branch and one PR deliver. For a
-design with one slice, the ticket is the slice: put the container's `## Design` section first, then
-these sections. Name results, not files or functions: the agent tickets choose those when the slice
-starts.
+design with one slice, the ticket is the slice, and its `## Design` holds the design. Name results,
+not files or functions: the agent tickets choose those when the slice starts.
 
 ```markdown
 ## Goal
 
 One or two sentences on what the slice makes true when it merges.
+
+## Design
+
+Optional. The rules and decisions the slice follows.
 
 ## Delivers
 

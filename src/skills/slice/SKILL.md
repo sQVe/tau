@@ -24,9 +24,10 @@ Do not use it to guide the design conversation, or to split commits or a branch 
 
 ## Goal
 
-The container ticket holds the agreed design in its Design section. It has one sub-ticket per slice,
-in order, with `blocked-by` relations only for real dependencies. The user approved the layout
-before anything was written to Linear.
+The container ticket holds a short summary and one line per key decision. Each slice holds the
+design it follows in its Design section. The container has one sub-ticket per slice, in order, with
+`blocked-by` relations only for real dependencies. The user approved the layout before anything was
+written to Linear.
 
 ## Hard rules
 
@@ -43,11 +44,14 @@ before anything was written to Linear.
 ## Procedure
 
 1. Read the design from the Linear ticket, file, or conversation the user names. For a ticket, run
-   `linear issue view <id> --json --no-pager`. Route the container and its slices with the
-   [tracker skill](../tracker/SKILL.md), which stops when an existing container is in another team
-   or project. Ask no separate question about whether the design is agreed. When the conversation or
-   ticket does not show the user's agreement, say so in the step 5 preview, so that its approval
-   also agrees to the design.
+   `linear issue view <id> --json --no-pager`. When the user names no source and no container
+   exists, read `design.md` in the draft directory that step 2 returns, such as one the
+   [brainstorm skill](../brainstorm/SKILL.md) wrote. Once `plan.json` records a container
+   identifier, read the design from Linear and ignore later edits to `design.md`. Route the
+   container and its slices with the [tracker skill](../tracker/SKILL.md), which stops when an
+   existing container is in another team or project. Ask no separate question about whether the
+   design is agreed. When the conversation or ticket does not show the user's agreement, say so in
+   the step 5 preview, so that its approval also agrees to the design.
 
 2. Read the current state. Call `slice` with `prepare`, then with `read`.
    - Use the draft it returns as the last plan, and the container's description and children as
@@ -70,9 +74,11 @@ before anything was written to Linear.
    container and every new slice, search for an open duplicate with the
    [tracker skill](../tracker/SKILL.md).
    - `container.md`: the container's full description in the
-     [container template](../tracker/templates/container.md), with the agreed design in its
-     `## Design` section. For an existing container, keep all text outside that section unchanged.
-   - `slice-<n>.md`, numbered in plan order, in the [slice template](../tracker/templates/slice.md).
+     [container template](../tracker/templates/container.md): a short summary and one line per key
+     decision in `## Decisions`, not the full design. For an existing container, keep all text
+     outside the changed sections unchanged.
+   - `slice-<n>.md`, numbered in plan order, in the [slice template](../tracker/templates/slice.md),
+     with the rules the slice follows in its `## Design`.
    - `plan.json`: the route from the tracker skill, the container, and the slices in plan order.
      Keep the identifier of each ticket that exists, even when the plan renames or renumbers it.
 
@@ -89,9 +95,9 @@ before anything was written to Linear.
      holds the status, size, and scope a flowchart cannot.
    - One line of reason for each dependency, or missing dependency, that is not obvious.
    - Each acceptance criterion of the design, with the slice numbers that cover it.
-   - Each choice in the `## Design` section that the agreed design did not already state, one line
-     each, and the path of the draft that holds the full section. For an existing container, say
-     that the text outside that section stays unchanged.
+   - Each choice in the decisions or slice designs that the agreed design did not already state, one
+     line each, and the path of the draft that holds it. For an existing container, say that the
+     text outside the changed sections stays unchanged.
    - The number of `writes` from `read`. Say that step 6 shows each write for a last confirm, and
      that the confirm lists each move of an existing slice into plan order. Say that created tickets
      stay in Linear until the user cancels them by hand.
