@@ -17,7 +17,7 @@ export const findUnknownKeys = (value: unknown, known: KnownKeys, path: string):
 
   return Object.entries(value).flatMap(([key, child]) => {
     const keyPath = `${path}.${key}`;
-    const expected = known[key] ?? known[anyKey];
+    const expected = Object.hasOwn(known, key) ? known[key] : known[anyKey];
 
     if (expected === undefined) {
       return [keyPath];

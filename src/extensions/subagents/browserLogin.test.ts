@@ -85,3 +85,14 @@ it('reads the browser login command past an unknown key and warns about it', () 
   expect(readBrowserLoginCommand(location, { notify })).toBe(command);
   expect(notify).toHaveBeenCalledWith(expect.stringContaining('browser.profile'), 'warning');
 });
+
+it('warns about browser keys named like Object.prototype members', () => {
+  const { location, writeUser } = configFixture();
+  const notify = vi.fn<ConfigWarnings['notify']>();
+
+  writeUser({ browser: { loginCommand: command, constructor: 1, toString: 2 } });
+
+  expect(readBrowserLoginCommand(location, { notify })).toBe(command);
+  expect(notify).toHaveBeenCalledWith(expect.stringContaining('browser.constructor'), 'warning');
+  expect(notify).toHaveBeenCalledWith(expect.stringContaining('browser.toString'), 'warning');
+});
