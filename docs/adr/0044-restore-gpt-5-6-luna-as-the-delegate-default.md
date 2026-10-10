@@ -23,13 +23,14 @@ comparison, returns the default to the last model with measured evidence. Bulk r
 use it unless the setting names another model. A web call's `answerModel` override still takes
 precedence.
 
-This replaces ADR 0041. Keep ADR 0027's other decisions.
+This replaces [ADR 0041](./0041-default-the-delegate-to-gpt-6-luna.md). Keep
+[ADR 0027](./0027-share-one-delegate-model.md)'s other decisions.
 
 ## Consequences
 
 ### Positive
 
-- The default returns to the model that ADR 0027 measured.
+- The default returns to the model that [ADR 0027](./0027-share-one-delegate-model.md) measured.
 
 ### Negative
 

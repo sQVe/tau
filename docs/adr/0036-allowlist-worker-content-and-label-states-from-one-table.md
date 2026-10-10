@@ -12,9 +12,10 @@ Subagent tools return one result object for two readers: the parent model and th
 The parent model needs a small, stable set of fields to choose its next call. Worker records keep
 gaining fields, and many are paths or audit data the model should not read.
 
-The pilot needs a short line per step and details on demand. ADR 0028 keeps worker control in the
-parent, so only parent records prove a stop or an acknowledgement. A label that says "stopped" or
-shows a check mark without that record misleads the pilot.
+The pilot needs a short line per step and details on demand.
+[ADR 0028](./0028-keep-worker-control-in-the-parent.md) keeps worker control in the parent, so only
+parent records prove a stop or an acknowledgement. A label that says "stopped" or shows a check mark
+without that record misleads the pilot.
 
 Nothing enforces a size target for worker reports, and each notice and status result repeats the
 report. Across 356 saved reports, summary and evidence together have a median of about 5,000

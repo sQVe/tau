@@ -25,10 +25,12 @@ A shared map links skill names to registered tools. Workers derive skill names f
 SKILL.md paths and use the same tool list for launch and runtime checks. The saved loadout format
 stays unchanged.
 
-This replaces only ADR 0083's activation policy. Its confirm rule still holds, with the existing
-exception for GitHub bot writes. A step that needs the user's confirmation refuses in a worker, even
-though a worker's pane has UI, before any remote write or local record change. The user does not
-watch a worker's pane, so a confirm there could approve a write that nobody saw.
+This replaces only
+[ADR 0083](./0083-turn-on-skill-tools-when-the-skill-runs-and-confirm-outside-writes.md)'s
+activation policy. Its confirm rule still holds, with the existing exception for GitHub bot writes.
+A step that needs the user's confirmation refuses in a worker, even though a worker's pane has UI,
+before any remote write or local record change. The user does not watch a worker's pane, so a
+confirm there could approve a write that nobody saw.
 
 ## Consequences
 

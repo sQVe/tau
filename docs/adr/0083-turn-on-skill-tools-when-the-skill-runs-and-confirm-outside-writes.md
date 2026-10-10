@@ -48,7 +48,8 @@ approval holds on every path that reaches the tool.
 ### Documentation
 
 `docs/` also holds `tool-authoring.md`, a guide with a checklist for tool authors. This amends the
-list of what `docs/` holds in ADR 0010. The skill guide links it and states no tool rules.
+list of what `docs/` holds in [ADR 0010](./0010-documentation-scope.md). The skill guide links it
+and states no tool rules.
 
 ## Consequences
 

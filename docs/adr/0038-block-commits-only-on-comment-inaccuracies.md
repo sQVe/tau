@@ -23,7 +23,7 @@ change back to the user.
 Only inaccurate findings block a commit, unless the verifier rejects them. Reporting policy findings
 as advisory lets commits proceed, and the agent still sees the findings. Policy, missing, and
 unverified findings are advisory and appear in the commit report. The return limit and refusal rules
-from ADR 0026 still apply to blocking findings.
+from [ADR 0026](./0026-let-git-hooks-own-commit-checks.md) still apply to blocking findings.
 
 ## Consequences
 

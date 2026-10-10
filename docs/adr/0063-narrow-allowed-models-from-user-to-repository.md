@@ -13,9 +13,10 @@ Tau selects models in subagent profiles, the `subagent` tool's `model` parameter
 worker replays. Nothing stopped any of them from using a model the user does not want to pay for or
 trust. Every selection passes through `resolveDelegate` or the subagent loadout's `findModel`.
 
-ADR 0061 layers Tau config from `<agentDir>/tau.json` and a trusted repository's `.pi/tau.json`,
-where the repository file overrides the user file per field. A repository is trusted to run code,
-but its checked-in config is written by other people for every user of the repository.
+[ADR 0061](./0061-layer-tau-config-from-user-and-repository-files.md) layers Tau config from
+`<agentDir>/tau.json` and a trusted repository's `.pi/tau.json`, where the repository file overrides
+the user file per field. A repository is trusted to run code, but its checked-in config is written
+by other people for every user of the repository.
 
 Pi's `enabledModels` setting lists the models Pi cycles through. It is not a limit, and Tau leaves
 it alone.
@@ -39,9 +40,9 @@ can still narrow it.
   launch, an environment or profile model, and a saved worker replay all pass through `findModel`.
 - Entries use the same parser as other model references. An invalid entry or a non-array value is an
   error that names the file, like the rest of Tau config.
-- The shared file reading from ADR 0061 moves to `src/tauConfig/`. Each consumer validates its own
-  top-level key, so a broken `tdd` block never blocks model selection and a broken `allowedModels`
-  never pauses TDD hints.
+- The shared file reading from [ADR 0061](./0061-layer-tau-config-from-user-and-repository-files.md)
+  moves to `src/tauConfig/`. Each consumer validates its own top-level key, so a broken `tdd` block
+  never blocks model selection and a broken `allowedModels` never pauses TDD hints.
 
 ## Consequences
 
@@ -63,8 +64,9 @@ can still narrow it.
 
 ### Per-field override
 
-Reuse ADR 0061's per-field override. Rejected because a repository could then replace the user's
-list with models the user never allowed, which defeats the reason for the list.
+Reuse [ADR 0061](./0061-layer-tau-config-from-user-and-repository-files.md)'s per-field override.
+Rejected because a repository could then replace the user's list with models the user never allowed,
+which defeats the reason for the list.
 
 ### Ignore the repository list
 

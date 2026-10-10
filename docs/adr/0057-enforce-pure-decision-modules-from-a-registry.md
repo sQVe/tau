@@ -12,9 +12,10 @@ decision table. Later lifecycle rules, such as queues, retries, and capacity, sh
 shape.
 
 Agents copy nearby code. When a module mixes reads and decisions, copies mix them too. Agents
-satisfy proxy checks without meeting the rule behind them (ADR 0035). A `node:fs` import ban misses
+satisfy proxy checks without meeting the rule behind them
+([ADR 0035](./0035-use-size-thresholds-as-review-guidance.md)). A `node:fs` import ban misses
 modules that reach the disk through `records.ts`, and a `*Decision.ts` name rule misses a renamed
-file (ADR 0055).
+file ([ADR 0055](./0055-record-tau-coding-conventions-in-agents-md.md)).
 
 The clock, randomness, and the environment are effects as well as disk reads.
 
@@ -30,7 +31,8 @@ fact. Callers read first and then decide. Effect callbacks are not facts.
 
 `src/extensions/subagents/workerState.ts` is the first registered module, and its decision table in
 `workerState.test.ts` is the example to copy. Register other modules when they are split for their
-own reasons. `AGENTS.md` states the rule beside the conventions from ADR 0055.
+own reasons. `AGENTS.md` states the rule beside the conventions from
+[ADR 0055](./0055-record-tau-coding-conventions-in-agents-md.md).
 
 ### Checked effects
 

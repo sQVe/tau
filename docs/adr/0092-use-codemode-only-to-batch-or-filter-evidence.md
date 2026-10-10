@@ -7,11 +7,12 @@
 
 ## Context
 
-ADR 0087 made codemode Tau's way to gather evidence and let a script call any tool except the
-control tools. The first measurement of worker sessions found that codemode did not lower context
-use. One model sent most of its tool calls through scripts, including file writes and edits, and its
-tool output per session did not drop. Many scripts made a single call, few filtered their output,
-and many printed whole result objects, so panes showed escaped JSON.
+[ADR 0087](./0087-gather-evidence-with-codemode.md) made codemode Tau's way to gather evidence and
+let a script call any tool except the control tools. The first measurement of worker sessions found
+that codemode did not lower context use. One model sent most of its tool calls through scripts,
+including file writes and edits, and its tool output per session did not drop. Many scripts made a
+single call, few filtered their output, and many printed whole result objects, so panes showed
+escaped JSON.
 
 The instruction to gather evidence with codemode scripts caused this. Agents read it as "use
 codemode for every call", including calls that change files.

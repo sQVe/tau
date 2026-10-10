@@ -9,7 +9,7 @@
 ## Context
 
 Worker records outlive the Tau that wrote them. An open session and a newer session can share one
-records folder (ADR 0045).
+records folder ([ADR 0045](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md)).
 
 Every record schema rejects unknown fields, so an older reader fails on any new field. An older
 session once refused every follow-up because a newer Tau had saved a name it rejected.

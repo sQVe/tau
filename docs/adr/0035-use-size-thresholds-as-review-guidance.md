@@ -22,7 +22,7 @@ review a boundary.
 
 Extract code when the new boundary makes a behavior easier to understand. Do not introduce
 inheritance or parameter objects only to satisfy those thresholds. Keep the other house-style checks
-from ADR 0034, including condition checks.
+from [ADR 0034](./0034-check-house-style-outside-the-editor.md), including condition checks.
 
 ## Consequences
 

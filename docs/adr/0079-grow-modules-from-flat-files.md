@@ -12,16 +12,16 @@
 
 ## Context
 
-ADR 0001 gave every module a folder with `index.ts`. 13 of the 24 module folders under `src/` held
-one source file, so the folder added a path segment and nothing else. Many files named `index.ts`
-look the same in editor tabs, search results, and stack traces.
+[ADR 0001](./0001-application-structure.md) gave every module a folder with `index.ts`. 13 of the 24
+module folders under `src/` held one source file, so the folder added a path segment and nothing
+else. Many files named `index.ts` look the same in editor tabs, search results, and stack traces.
 
 Pi loads a package folder through its `index.ts`. A folder without one loads every `.ts` file in it,
 tests included. The package entry must therefore be a named file.
 
-Instruction files lived in extension folders, which kept three one-file extensions as folders. ADR
-0001 kept skills at the package root for Pi's discovery. Pi reads the skills path from
-`package.json`, so any folder works.
+Instruction files lived in extension folders, which kept three one-file extensions as folders.
+[ADR 0001](./0001-application-structure.md) kept skills at the package root for Pi's discovery. Pi
+reads the skills path from `package.json`, so any folder works.
 
 Gremlin's ADR 0004, "Capability modules with an enforced import table", adopted the same flat-first
 rule.

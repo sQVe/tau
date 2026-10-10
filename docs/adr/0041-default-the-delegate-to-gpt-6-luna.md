@@ -23,8 +23,9 @@ Default `TAU_DELEGATE_MODEL` to `openai-codex/gpt-6-luna` when it is unset or em
 newer, cheaper model. Bulk reads, web answers, and commit comment review use it unless the setting
 names another model. A web call's `answerModel` override still takes precedence.
 
-This replaces the default and the repeat-the-comparison rule in ADR 0027. Keep its other decisions.
-No comparison was run for this change.
+This replaces the default and the repeat-the-comparison rule in
+[ADR 0027](./0027-share-one-delegate-model.md). Keep its other decisions. No comparison was run for
+this change.
 
 ## Consequences
 
@@ -34,16 +35,18 @@ No comparison was run for this change.
 
 ### Negative
 
-- No labeled comparison shows that `gpt-6-luna` meets ADR 0027's review gate. A weaker model could
-  miss inaccurate comments or block commits falsely.
+- No labeled comparison shows that `gpt-6-luna` meets
+  [ADR 0027](./0027-share-one-delegate-model.md)'s review gate. A weaker model could miss inaccurate
+  comments or block commits falsely.
 - The cost claim is the owner's statement, not a measurement recorded here.
 
 ## Alternatives considered
 
 ### Keep gpt-5.6-luna until a comparison passes
 
-Keep `gpt-5.6-luna` until a repeated comparison passes ADR 0027's review gate. Rejected because,
-although this keeps measured evidence behind the default, it keeps the older model.
+Keep `gpt-5.6-luna` until a repeated comparison passes
+[ADR 0027](./0027-share-one-delegate-model.md)'s review gate. Rejected because, although this keeps
+measured evidence behind the default, it keeps the older model.
 
 ### Compare first, then switch
 

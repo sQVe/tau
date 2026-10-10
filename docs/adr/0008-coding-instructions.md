@@ -13,8 +13,8 @@ layout checks. The remaining decisions below still apply.
 
 ## Context
 
-ADR 0006 loads one writing policy into every ordinary agent run. It covers replies, commit and PR
-text, tickets, docs, and code comments.
+[ADR 0006](./0006-default-writing-policy.md) loads one writing policy into every ordinary agent run.
+It covers replies, commit and PR text, tickets, docs, and code comments.
 
 Nothing tells the agent how to shape code. Rules such as separating the logical steps inside a
 function with a blank line have no home in Tau. Tools cannot enforce these rules. Oxlint ships no
@@ -26,24 +26,27 @@ comment should exist at all.
 ## Decision
 
 Add `src/extensions/coding/`. It loads [`instructions.md`](../../src/instructions/coding.md) into
-the system prompt before each ordinary agent run, following the runtime integration ADR 0006
-describes for writing. Reject missing, unreadable, or blank guidance when loading Tau, for the
-reasons ADR 0006 gives.
+the system prompt before each ordinary agent run, following the runtime integration
+[ADR 0006](./0006-default-writing-policy.md) describes for writing. Reject missing, unreadable, or
+blank guidance when loading Tau, for the reasons [ADR 0006](./0006-default-writing-policy.md) gives.
 
-Loading a second policy through its own extension matches ADR 0006 and keeps one concern per file.
+Loading a second policy through its own extension matches
+[ADR 0006](./0006-default-writing-policy.md) and keeps one concern per file.
 
 ### Boundary with the writing policy
 
 - `writing/instructions.md` governs text. This includes the wording of code comments.
 - `coding/instructions.md` governs code. This includes whether a comment should exist.
 
-This amends the scope ADR 0006 records. The writing policy still covers code comments as prose. The
-judgment about which comments to keep or remove moves to the coding instructions.
+This amends the scope [ADR 0006](./0006-default-writing-policy.md) records. The writing policy still
+covers code comments as prose. The judgment about which comments to keep or remove moves to the
+coding instructions.
 
 ### Each extension loads its own file
 
 Both extensions read a markdown file and append it to the system prompt. The shared code is about
-ten lines, and ADR 0001 allows a primitive once two extensions could share one.
+ten lines, and [ADR 0001](./0001-application-structure.md) allows a primitive once two extensions
+could share one.
 
 Keep the duplicate loaders anyway. The tests copy `index.ts` into a temporary directory and load it
 through `DefaultResourceLoader`, so a relative import outside the extension directory cannot
@@ -57,7 +60,8 @@ are the only statement.
 
 ### Types
 
-This extension defines no types of its own and may omit `types.ts`, an exception to ADR 0001.
+This extension defines no types of its own and may omit `types.ts`, an exception to
+[ADR 0001](./0001-application-structure.md).
 
 ## Consequences
 

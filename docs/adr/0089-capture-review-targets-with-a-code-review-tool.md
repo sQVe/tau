@@ -11,9 +11,10 @@ the rule "Add no review tools or review state" in
 
 ## Context
 
-ADR 0060 kept code review in the `code-review` skill and allowed no review tools or review state.
-The skill then captured the target and checked freshness with shell blocks. Shell in a skill has no
-tests, and the capture had to handle revisions, untracked files, submodules, and symlinks.
+[ADR 0060](./0060-keep-local-code-review-in-a-skill.md) kept code review in the `code-review` skill
+and allowed no review tools or review state. The skill then captured the target and checked
+freshness with shell blocks. Shell in a skill has no tests, and the capture had to handle revisions,
+untracked files, submodules, and symlinks.
 
 Reviewers must read the same bytes the parent captured. The parent must know whether the target
 changed before it reports.
@@ -56,4 +57,5 @@ and every edit to it risks a wrong capture.
 
 ### Bring back the review engine
 
-Bring back the review engine. Rejected because of the reasons in ADR 0060.
+Bring back the review engine. Rejected because of the reasons in
+[ADR 0060](./0060-keep-local-code-review-in-a-skill.md).

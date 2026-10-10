@@ -52,4 +52,5 @@ Keep refusing a launch without a model. Rejected because every launch then repea
 
 ### Fall back to the parent's model
 
-Fall back to the parent's model. Rejected because ADR 0043 forbids this.
+Fall back to the parent's model. Rejected because
+[ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md) forbids this.

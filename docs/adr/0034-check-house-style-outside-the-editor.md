@@ -17,9 +17,9 @@ linter. Its plugin interface remains alpha.
 
 Enforce house style through explicit commands, project checks, and staged-file hooks, not live
 editor diagnostics. Enabling house-style rules only in explicit commands and required checks keeps
-the existing runner and separates style enforcement from live diagnostics. This replaces ADR 0008's
-decision against mechanical layout checks. Its coding instructions still cover judgments that lint
-cannot make, including where logical steps begin.
+the existing runner and separates style enforcement from live diagnostics. This replaces
+[ADR 0008](./0008-coding-instructions.md)'s decision against mechanical layout checks. Its coding
+instructions still cover judgments that lint cannot make, including where logical steps begin.
 
 Prefer native Oxlint rules, then compatible plugins, then local rules. Local rules are needed for
 naming because the typescript-eslint naming rule requires parser services this integration lacks.

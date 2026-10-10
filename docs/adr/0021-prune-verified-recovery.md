@@ -30,8 +30,8 @@ Write the path list before removing anything, so an interrupted prune never leav
 failed prune is not a failed restoration: leftovers are harmless, so a locked ref or a busy file
 must not turn a verified restoration into an error.
 
-This replaces the retention sentence in ADR 0019. Restoration conditions, pending-recovery blocking,
-and manual inspection for uncertain states are unchanged.
+This replaces the retention sentence in [ADR 0019](./0019-verified-raw-recovery.md). Restoration
+conditions, pending-recovery blocking, and manual inspection for uncertain states are unchanged.
 
 ## Consequences
 
@@ -46,8 +46,8 @@ and manual inspection for uncertain states are unchanged.
 
 ### Retain everything
 
-Retain everything, as ADR 0019 requires. Rejected because growth is unbounded, and the refs block
-garbage collection.
+Retain everything, as [ADR 0019](./0019-verified-raw-recovery.md) requires. Rejected because growth
+is unbounded, and the refs block garbage collection.
 
 ### Delete the whole archive
 

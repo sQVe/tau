@@ -93,4 +93,5 @@ consumer that owns them.
 ### User-named aliases
 
 Use user-named aliases. Rejected because they move settings away from the consumer that owns them,
-and they add a lookup close to the tiers ADR 0071 deferred.
+and they add a lookup close to the tiers [ADR 0071](./0071-set-worker-models-in-the-user-config.md)
+deferred.
