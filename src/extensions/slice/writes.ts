@@ -52,6 +52,12 @@ export interface WritePlan {
   dropped: string[];
 }
 
+// Linear rewrites a "- " list item as "* ", so compare descriptions without the marker.
+const withoutListMarkers = (description: string) => description.replaceAll(/^(\s*)[*-] /gm, '$1- ');
+
+const sameDescription = (saved: string, body: string | undefined) =>
+  body !== undefined && withoutListMarkers(saved) === withoutListMarkers(body);
+
 const routeProblems = (draft: Draft, container: LinearContainer) => {
   const { route } = draft.plan;
   const project = container.project?.name ?? null;
@@ -216,7 +222,7 @@ const sliceWrites = (draft: Draft, container: LinearContainer | undefined) => {
     }
 
     const changedTitle = child.title !== slice.title;
-    const changedDescription = child.description !== draft.sliceBodies[index];
+    const changedDescription = !sameDescription(child.description, draft.sliceBodies[index]);
 
     const added = slice.blockedBy.filter((blocker) => {
       const identifier = blockerIdentifier(draft, blocker);
@@ -274,7 +280,7 @@ const containerWrites = (draft: Draft, container: LinearContainer | undefined) =
   }
 
   const title = container.title !== draft.plan.container.title;
-  const description = container.description !== draft.containerBody;
+  const description = !sameDescription(container.description, draft.containerBody);
   const changed = title || description;
 
   if (container.merged || !changed) {

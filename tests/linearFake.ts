@@ -93,6 +93,9 @@ const readVariables = (commandArguments: readonly string[]) => {
   return variables;
 };
 
+// Linear saves a "- " list item as "* ".
+const savedDescription = (description: string) => description.replaceAll(/^(\s*)- /gm, '$1* ');
+
 const writeKinds = ['issueCreate', 'issueUpdate'];
 
 const childNode = (issue: FakeIssue) => ({
@@ -146,6 +149,8 @@ export const createLinearFake = (): LinearFake => {
       blockedBy: [],
       ...issue,
     };
+
+    created.description = savedDescription(created.description);
 
     nextNumber = Math.max(nextNumber, Number(identifier.split('-')[1]) + 1);
     issues.set(identifier, created);
@@ -347,7 +352,7 @@ export const createLinearFake = (): LinearFake => {
       }>;
 
       issue.title = input.title ?? issue.title;
-      issue.description = input.description ?? issue.description;
+      issue.description = savedDescription(input.description ?? issue.description);
       issue.sortOrder = input.subIssueSortOrder ?? issue.sortOrder;
 
       return { issueUpdate: { success: true } };
@@ -399,7 +404,9 @@ export const createLinearFake = (): LinearFake => {
       }
 
       if (descriptionFile !== -1) {
-        issue.description = readFileSync(commandArguments[descriptionFile + 1]!, 'utf8');
+        issue.description = savedDescription(
+          readFileSync(commandArguments[descriptionFile + 1]!, 'utf8'),
+        );
       }
 
       return;

@@ -127,6 +127,36 @@ describe('planWrites', () => {
       problems: [],
     },
     {
+      case: 'slice body that differs only in list markers',
+      draft: { ...draft(['ME-2']), sliceBodies: ['- one\n  - two\nkeep - dash'] },
+      container: container([child(1, { description: '* one\n  * two\nkeep - dash' })]),
+      writes: [],
+      problems: [],
+    },
+    {
+      case: 'slice body with changed text and list markers',
+      draft: { ...draft(['ME-2']), sliceBodies: ['- one\n- two'] },
+      container: container([child(1, { description: '* one\n* three' })]),
+      writes: [
+        { kind: 'updateSlice', number: 1, identifier: 'ME-2', title: false, description: true },
+      ],
+      problems: [],
+    },
+    {
+      case: 'container body that differs only in list markers',
+      draft: { ...draft([]), containerBody: '- one\n- two' },
+      container: container([], { description: '* one\n* two' }),
+      writes: [],
+      problems: [],
+    },
+    {
+      case: 'container body with changed text and list markers',
+      draft: { ...draft([]), containerBody: '- one\n- two' },
+      container: container([], { description: '* one\n* three' }),
+      writes: [{ kind: 'updateContainer', identifier: 'ME-1', title: false, description: true }],
+      problems: [],
+    },
+    {
       case: 'changed container title',
       draft: draft([]),
       container: container([], { title: 'Old' }),
