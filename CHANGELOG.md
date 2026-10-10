@@ -1,5 +1,537 @@
 # tau
 
+## 1.1.0
+
+### Minor Changes
+
+- [#273](https://github.com/sQVe/tau/pull/273)
+  [`7b0b47c`](https://github.com/sQVe/tau/commit/7b0b47ce9aec23ca77bc340ac0ce387703c674f8) Thanks
+  [@sQVe](https://github.com/sQVe)! - `ask_user_question` questions now need a `context` of 1-3
+  sentences. It says what is being decided, why now, and what the answer changes. The dialog shows
+  it below the question. Option descriptions are limited to 220 characters and stay visible for
+  every option. Mark a recommended option with `recommended: true`; the dialog shows a
+  `★ Recommended` badge, and labels with "(Recommended)" are rejected. The preview has a title and
+  keeps its rows on short terminals, unless the focused description needs them. Ctrl+O shows a
+  clipped preview in full, and Esc returns to the options. The guidance asks for one question by
+  default and for questions that make sense to a user who has not read the discussion.
+
+- [#332](https://github.com/sQVe/tau/pull/332)
+  [`67464d2`](https://github.com/sQVe/tau/commit/67464d265b01b75c4a1a6237ebf658ff4cb9a4e6) Thanks
+  [@sQVe](https://github.com/sQVe)! - Agents can now cancel a Linear ticket after you approve a
+  preview that shows the cancellation. The tracker skill uses the team's state of type `canceled`.
+  It refuses a completed ticket and a ticket whose pull request merged. After a plan run, the slice
+  skill asks which dropped slices to cancel, instead of telling you to cancel them by hand. The
+  `slice` tool's `dropped` list leaves out slices that are already canceled.
+
+- [#271](https://github.com/sQVe/tau/pull/271)
+  [`9e09256`](https://github.com/sQVe/tau/commit/9e09256529eed44f971dbbd6b708d46f010cee24) Thanks
+  [@sQVe](https://github.com/sQVe)! - `code-review` captures its input and checks freshness through
+  a new `code_review` tool instead of shell blocks. The tool creates the review directory, captures
+  the target with its hash, and reports the review as fresh, stale, or unknown. It lists binary,
+  excluded, and unmatched files, unreadable files and directories, and submodules, as gaps, and
+  never writes to the Git index or object store. The review input, the reviewer and checker
+  assignments, and the report shape are now templates next to the skill. Tau now refuses to write
+  through a hard-linked `.tau/.gitignore`.
+
+- [#280](https://github.com/sQVe/tau/pull/280)
+  [`a9bad16`](https://github.com/sQVe/tau/commit/a9bad165ca8ab78f5b968f1dd5fceae6563256c1) Thanks
+  [@sQVe](https://github.com/sQVe)! - `code-review` gathers its evidence with one read-only
+  `codemode` script after the capture. The script calls `code_review` with `evidence`, adds bounded
+  rule excerpts, and the manager saves the result as `evidence.md` in the review directory.
+  Reviewers read it with the full `input.md`. They and the checker cite only source, lines, and
+  results that the capture, the evidence, or their own script returned. The report lists every
+  evidence gap with the capture gaps.
+
+- [#280](https://github.com/sQVe/tau/pull/280)
+  [`a9bad16`](https://github.com/sQVe/tau/commit/a9bad165ca8ab78f5b968f1dd5fceae6563256c1) Thanks
+  [@sQVe](https://github.com/sQVe)! - `code_review` has a read-only `evidence` action. It returns
+  the evidence for a saved capture as one JSON result: the pinned capture, its freshness, the
+  changed paths, the bodies of related test files, the lines that import each changed module, and
+  the rule and check paths that `input.md` names. A range or root commit target is read at its
+  pinned commit, never from the working tree. Stale captures, evidence read from a capture that no
+  longer matches the saved one, cut lists, bodies, and caller lines, unreadable files, test files
+  that are symlinks, and missing named paths show up as gaps.
+
+- [#316](https://github.com/sQVe/tau/pull/316)
+  [`2f29e6f`](https://github.com/sQVe/tau/commit/2f29e6f9b16eb20c7f91eedd71a6b751a5f12735) Thanks
+  [@sQVe](https://github.com/sQVe)! - The `commit` tool now accepts a `fixup` field with a target
+  commit and kind `fixup`, `squash`, or `amend`. It checks all targets before staging and builds
+  messages for autosquash rebases. The commit skill and bash guard describe this path for fixing
+  older commits.
+
+- [#314](https://github.com/sQVe/tau/pull/314)
+  [`641e681`](https://github.com/sQVe/tau/commit/641e681a43f53e0751988b69b7e73b7e7b4dd3fe) Thanks
+  [@sQVe](https://github.com/sQVe)! - Skills now create and keep stacks with `gh stack`. The stack
+  skill has one stack check that `start-slice`, `update-branch`, and `pr` run before they create,
+  rebase, or push a branch. A failed check stops the skill instead of counting as no stack.
+  `start-slice` can start a slice on a blocker with an open PR, and `update-branch` never runs a
+  plain `git rebase` on a stacked branch. The `pr` tool's `base` now wins over an open PR's base, so
+  `pr` moves an existing PR onto its stack parent.
+
+- [#323](https://github.com/sQVe/tau/pull/323)
+  [`9be2bd6`](https://github.com/sQVe/tau/commit/9be2bd696f0cfd3ae2aea6a051921a8d78f17482) Thanks
+  [@sQVe](https://github.com/sQVe)! - A route in `tau.json` can set `canary`, a share from 0 to 1.
+  When Jev picks a model that differs from the profile model with enough confidence, the worker runs
+  on the picked model with that probability. Without `canary`, workers still run on the profile
+  model. A launch that names a `model`, or a fallback pick, never runs as a canary. The picked model
+  must pass `allowedModels` and exist in the registry, or the launch fails. Task records move to
+  version 9 and save whether the launch ran as a canary. Version 8 and 7 records stay readable.
+
+  ```json
+  "scout": {
+    "model": "claude-bridge/claude-opus-5-5",
+    "routes": {
+      "canary": 0.1,
+      "question": "How wide is this scout brief?",
+      "labels": {
+        "narrow": { "criterion": "A lookup about known code.", "model": "claude-bridge/claude-haiku-5-5" },
+        "wide": { "criterion": "An investigation across many files.", "model": "claude-bridge/claude-opus-5-5" }
+      }
+    }
+  }
+  ```
+
+- [#322](https://github.com/sQVe/tau/pull/322)
+  [`6c3cd33`](https://github.com/sQVe/tau/commit/6c3cd33c49e28e8c7b5b38bcd24706adbf70ebd3) Thanks
+  [@sQVe](https://github.com/sQVe)! - Worker profiles in `tau.json` can set `routes`: a question and
+  two labels, each with a criterion and a model. When a launch names no `model`, Tau asks the Jev
+  classifier which label fits the brief, with a 5-second limit, and saves the model it would pick in
+  the task record. The worker still runs on the profile model. A pick needs a confidence of 0.7; a
+  low confidence, an error, a timeout, or a Jev model outside `allowedModels` records the profile
+  model and the reason. Task records move to version 8; version 7 records stay readable.
+
+  ```json
+  "scout": {
+    "model": "claude-bridge/claude-opus-5-5",
+    "routes": {
+      "question": "How wide is this scout brief?",
+      "labels": {
+        "narrow": { "criterion": "A lookup about known code.", "model": "claude-bridge/claude-haiku-5-5" },
+        "wide": { "criterion": "An investigation across many files.", "model": "claude-bridge/claude-opus-5-5" }
+      }
+    }
+  }
+  ```
+
+- [#282](https://github.com/sQVe/tau/pull/282)
+  [`3f16965`](https://github.com/sQVe/tau/commit/3f169654a9a9ae3e64de5cd79e75e4ceb088c0b4) Thanks
+  [@sQVe](https://github.com/sQVe)! - `pr_feedback` gets a read-only `checks` action. It returns
+  each check of a pull request with its name, workflow, bucket, state, and link. It takes the
+  expected head and refuses when the pull request head differs before or after it reads the checks.
+  For each failing or cancelled GitHub Actions job, it adds the end of the failed-step log. It
+  returns a gap for each piece of evidence it could not read, such as a failed `gh` command, a link
+  that is not a GitHub Actions job, or an empty log. A gap never counts as a passing check.
+
+- [#269](https://github.com/sQVe/tau/pull/269)
+  [`49415cc`](https://github.com/sQVe/tau/commit/49415cc8bb7eeb8ea8e9eddf8debad510486e95c) Thanks
+  [@sQVe](https://github.com/sQVe)! - `pr-feedback` reads review threads and comments, and posts
+  replies, through a new `pr_feedback` tool. The tool returns unresolved threads, review summaries,
+  and conversation comments as data. It posts replies, resolves threads, and posts one PR comment
+  from a reply file. It posts nothing when a person commented since the read, or when the PR head is
+  not the one the round expects. Replies to a person post only after you confirm the exact text in
+  Pi. When a round has a reply to a person, it posts nothing if you decline or there is no UI.
+  Replies to bots post without a confirm. A retry posts only the missing writes.
+
+- [#297](https://github.com/sQVe/tau/pull/297)
+  [`33e07b0`](https://github.com/sQVe/tau/commit/33e07b0297766e832f9a43ab086df594f4ea529a) Thanks
+  [@sQVe](https://github.com/sQVe)! - The `pr` skill gathers publication evidence and linked ticket
+  intent in one bounded, read-only `codemode` script. It uses the returned review reuse status and
+  matches saved check logs against HEAD, worktree status, and the branch diff before reading their
+  results. Target questions, reviews, rebases, and publication approval stay outside the script.
+
+- [#297](https://github.com/sQVe/tau/pull/297)
+  [`33e07b0`](https://github.com/sQVe/tau/commit/33e07b0297766e832f9a43ab086df594f4ea529a) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add a `pr` evidence action that gathers the publication
+  target, saved review reuse and freshness, and local check logs in one result. Report stale reviews
+  and missing, malformed, or truncated evidence as gaps. Use only the newest log per check file
+  name. Match its saved HEAD, status, and diff hashes; an identity mismatch prevents reuse but is
+  not a gap. Use the read-only `checkHeader` action to generate matching log headers, including for
+  large branch diffs. Header reads leave the Git index unchanged and ignore diff color, external
+  helpers, and text conversion.
+
+- [#285](https://github.com/sQVe/tau/pull/285)
+  [`066ea15`](https://github.com/sQVe/tau/commit/066ea1547b1b938bf5dbbb92e935aea8bf01750a) Thanks
+  [@sQVe](https://github.com/sQVe)! - `pr` resolves its target, reuses reviews, and checks the
+  published pull request through a new `pr` tool instead of shell commands. `target` returns the
+  host, head, base repository and branch, existing pull request, and merge base. `reuse` tells
+  whether a saved code review still covers the branch by comparing its diff with the branch diff per
+  path, so a rebase with the same content keeps the review. `verify` compares the published pull
+  request with the approved title, body, base, draft status, and local HEAD. Review captures now use
+  fixed `a/` and `b/` diff prefixes, so settings such as `diff.mnemonicPrefix` no longer change
+  them.
+
+- [#324](https://github.com/sQVe/tau/pull/324)
+  [`59a7f2e`](https://github.com/sQVe/tau/commit/59a7f2e5f7368d8e517dbe2d2c3928cf41b4006f) Thanks
+  [@sQVe](https://github.com/sQVe)! - Main sessions now refuse passive wait commands even when no
+  worker is active. The refused commands are `while` or `until` loops that run `sleep`,
+  `gh run watch`, `gh pr checks` with `--watch`, `aws logs tail` with `--follow` or `-f`, and
+  `watch`. A `while` loop that reads input is allowed. The refusal tells the manager to check the
+  state once, report it and what it waits for, and end its turn. Worker sessions are unchanged.
+
+- [#283](https://github.com/sQVe/tau/pull/283)
+  [`2bb33aa`](https://github.com/sQVe/tau/commit/2bb33aaa5fdca09f17a73cb448d2d410d2ee4a8b) Thanks
+  [@sQVe](https://github.com/sQVe)! - Rename the `handoff` skill to `handover`. It now writes
+  messages to `.tau/handovers` and no longer reads `.tau/handoffs`. Worker reports use the same
+  word: the status row reads "Handover sections missing".
+
+- [#267](https://github.com/sQVe/tau/pull/267)
+  [`b2e500a`](https://github.com/sQVe/tau/commit/b2e500a173ae047610f415015d9c7340cf43514a) Thanks
+  [@sQVe](https://github.com/sQVe)! - `slice` writes to Linear through a new `slice` tool. The tool
+  reads the draft and Linear, lists the exact writes, and applies them only after you confirm them
+  in Pi. It writes nothing when you decline or when there is no UI. A retry creates only the missing
+  tickets, and merged slices are never changed. The slice draft is now `plan.json`. A skill's tool
+  stays off until the skill runs, through `/<name>` or a read of its `SKILL.md`.
+  `docs/tool-authoring.md` holds the rules for writing such a tool.
+
+- [#281](https://github.com/sQVe/tau/pull/281)
+  [`f0c5fdd`](https://github.com/sQVe/tau/commit/f0c5fdd21987ccba5d518833ccc19c98ea581c59) Thanks
+  [@sQVe](https://github.com/sQVe)! - `tracker` gathers duplicate candidates, parent routing, and
+  label IDs with one read-only `codemode` script that calls the new `tracker_evidence` tool once per
+  planned ticket. It offers reuse only for a candidate that fits, and it shows a failed search in
+  the preview instead of reporting no duplicate.
+
+  Tracker team keys in `tau.json` are read in upper case, so a lowercase key such as `me` finds the
+  tickets of team `ME`.
+
+### Patch Changes
+
+- [#289](https://github.com/sQVe/tau/pull/289)
+  [`c73fbbc`](https://github.com/sQVe/tau/commit/c73fbbccd1fd1786d9120f3a9a43ebb0868acc78) Thanks
+  [@sQVe](https://github.com/sQVe)! - `subagent_report` takes an optional `onlyParentCanClear` flag.
+  An early incomplete report that sets it, such as for a server the worker may not restart or an
+  expired login, is accepted on the first call instead of being refused once. Reports without the
+  flag are still refused once, and time blockers keep their rule.
+
+- [#291](https://github.com/sQVe/tau/pull/291)
+  [`8c4db61`](https://github.com/sQVe/tau/commit/8c4db6188f5be8b3746a6b3b834741ff8badb10b) Thanks
+  [@sQVe](https://github.com/sQVe)! - `ask_user_question` accepts a preview on only some options of
+  a question. An option with nothing to show, such as "Cancel", no longer needs a preview, and the
+  call no longer fails validation.
+
+- [#288](https://github.com/sQVe/tau/pull/288)
+  [`1a365bf`](https://github.com/sQVe/tau/commit/1a365bfed2d07c3e0e1936670d163cc66888be62) Thanks
+  [@sQVe](https://github.com/sQVe)! - The codemode guidelines now say that `searchTools()`,
+  `describeTool()`, and `describeNamespace()` return promises, so scripts `await` them instead of
+  failing with `searchTools(...).map is not a function`.
+
+- [#299](https://github.com/sQVe/tau/pull/299)
+  [`fa1ff02`](https://github.com/sQVe/tau/commit/fa1ff0240bf64dc3819e2d5f9a71a69530a1edd2) Thanks
+  [@sQVe](https://github.com/sQVe)! - A malformed saved task in a supported format now blocks a
+  follow-up of the same task instead of being skipped as retired.
+
+- [#325](https://github.com/sQVe/tau/pull/325)
+  [`3907fb4`](https://github.com/sQVe/tau/commit/3907fb40ea2f1693551547bd011e970096aebc66) Thanks
+  [@sQVe](https://github.com/sQVe)! - Bound codemode output to 4,000 tokens per script in the
+  manager and in workers. A script that sets `max_output_tokens` higher must give its reason on a
+  second line, `// @budget: <reason>`, or it is refused before it runs. Over the budget, Tau keeps
+  whole `text()` items, names each cut item, and saves the full output to a file, instead of Pi's
+  cut that drops the middle without a name. The codemode guidelines add rules for read batches, for
+  not parsing `read` text as JSON, and for launching independent workers together.
+
+- [#293](https://github.com/sQVe/tau/pull/293)
+  [`221bb46`](https://github.com/sQVe/tau/commit/221bb464b99636d836ab63e43e3ac9dce227e6da) Thanks
+  [@sQVe](https://github.com/sQVe)! - Bound `pr_feedback` read results and report cut bodies and
+  lists as gaps. Save the full feedback in `feedback.json` so omitted evidence can be read without
+  fetching the pull request again. Saved bodies use chunk arrays that join back to the exact text
+  and keep long bodies readable in ranges. Share a log excerpt budget across failing checks, cap
+  error text, and return commands for logs cut by the shared budget. Bound the complete serialized
+  checks result too, including JSON escaping, metadata, and gaps. Report omitted checks with kept
+  and total counts and commands to read check-runs and commit statuses at the validated head, even
+  if the pull request moves.
+
+- [#295](https://github.com/sQVe/tau/pull/295)
+  [`0035b23`](https://github.com/sQVe/tau/commit/0035b23748b3b8614d6a1f555ba6f7db7cf6fe6e) Thanks
+  [@sQVe](https://github.com/sQVe)! - The `qa` and `browser` worker profiles now load
+  `pi-agent-browser-native` 0.9.3. With the earlier cached version, every `agent_browser_code` call
+  timed out before it reached the browser when Pi runs as the compiled binary. The tool now needs
+  Node on `PATH`. If your Pi settings load `pi-agent-browser-native`, workers use that version
+  instead, so update it to 0.9.1 or later. The browser instructions now say to run `get url` after
+  `eval`, `back`, `forward`, `reload`, `state load`, or a tab switch. When a call fails because the
+  page is unverified, they say to run `get url` and retry.
+
+- [#303](https://github.com/sQVe/tau/pull/303)
+  [`c7d5b8b`](https://github.com/sQVe/tau/commit/c7d5b8be272096af0193f743953c738e9763443f) Thanks
+  [@sQVe](https://github.com/sQVe)! - The commit guard no longer decodes escapes in `$'...'`
+  strings. It still blocks plain `git commit` commands in bash.
+
+- [#294](https://github.com/sQVe/tau/pull/294)
+  [`8c259e6`](https://github.com/sQVe/tau/commit/8c259e6cc39b2be519b6487fe7020278a66ecf02) Thanks
+  [@sQVe](https://github.com/sQVe)! - Allow bash commands that inspect commit data or use shell
+  substitutions without creating a commit. Keep blocking commit aliases and commit commands in Git's
+  shell options. Explain how to amend or fix up a commit with the `commit` tool when the guard
+  blocks bash.
+
+- [#294](https://github.com/sQVe/tau/pull/294)
+  [`8c259e6`](https://github.com/sQVe/tau/commit/8c259e6cc39b2be519b6487fe7020278a66ecf02) Thanks
+  [@sQVe](https://github.com/sQVe)! - Commit staged renames when a group lists both the old and new
+  paths. Reject all unknown paths before staging and list them in one error. Continue to accept
+  deleted files that Git tracks.
+
+- [#320](https://github.com/sQVe/tau/pull/320)
+  [`8acb650`](https://github.com/sQVe/tau/commit/8acb65068ae0b6d4b7db8c8a5ccbb4b6096af0bd) Thanks
+  [@sQVe](https://github.com/sQVe)! - Remove the `subagent_history` tool and the `/subagents`
+  command. Subagents now tracks only workers launched by the current session, live or stopped.
+  Follow-ups refuse workers from other sessions, including forks. The worker widget, status,
+  replies, cancellation, and reattachment after the same session restarts remain available. Task
+  records older than the current format are skipped without upgrades or changes to their saved
+  files.
+
+- [#317](https://github.com/sQVe/tau/pull/317)
+  [`d182b29`](https://github.com/sQVe/tau/commit/d182b29bd2ebc1da35a14552175a58325390df6f) Thanks
+  [@sQVe](https://github.com/sQVe)! - Remove duplicate subagents worker rules and move native
+  session setup into the controller without changing worker behavior.
+
+- [#261](https://github.com/sQVe/tau/pull/261)
+  [`be4fa0b`](https://github.com/sQVe/tau/commit/be4fa0b006b4f88acd7ff5804e729cfa5de36427) Thanks
+  [@sQVe](https://github.com/sQVe)! - `slice` adds a Mermaid flowchart of the `blocked-by` edges to
+  its preview when the slices branch or join. The `pr` fallback body allows one diagram under
+  Decisions when the PR changes how parts connect. The `explain` snippet asks for a diagram when the
+  change alters how parts connect, and the `simplify` snippet asks for diagrams of the current and
+  the proposed design when it finds a simpler one. `diagram` can draw records, such as planned slice
+  tickets, as well as code.
+
+- [#292](https://github.com/sQVe/tau/pull/292)
+  [`196d0aa`](https://github.com/sQVe/tau/commit/196d0aa324e09945dea7af5f6ce40f787753c818) Thanks
+  [@sQVe](https://github.com/sQVe)! - End the manager's turn when a worker launch or follow-up
+  refuses because worker capacity is full. If other tool results keep the turn running, block the
+  next tool calls and end the turn. Allow tools again when a worker notice or user message arrives.
+  Check capacity refusal before other tool guards so blocked calls also end the turn.
+
+- [#278](https://github.com/sQVe/tau/pull/278)
+  [`188b6f0`](https://github.com/sQVe/tau/commit/188b6f072dc98b477f2145d196c8bcdc1c5a8a43) Thanks
+  [@sQVe](https://github.com/sQVe)! - `bulk_read` is removed, and stock `read` results are no longer
+  trimmed. The bundled `scout`, `reviewer`, and `worker` profiles get `codemode` and gather evidence
+  with scripts. The `qa` and `browser` profiles do not. A custom profile that still lists
+  `bulk_read` fails at startup with the missing-tool error.
+
+- [#272](https://github.com/sQVe/tau/pull/272)
+  [`47fae6b`](https://github.com/sQVe/tau/commit/47fae6bc4f8f4ad0667bda41ae169a3ada1ace19) Thanks
+  [@sQVe](https://github.com/sQVe)! - Codemode scripts can no longer see or call the worker controls
+  `subagent_report`, `subagent_question`, and `subagent_progress`, the questionnaire
+  `ask_user_question`, or the orchestration tools `subagent`, `subagent_follow_up`,
+  `subagent_reply`, and `subagent_cancel`. The model still calls them directly. Scripts can still
+  call `subagent_status`.
+
+- [#275](https://github.com/sQVe/tau/pull/275)
+  [`2e56652`](https://github.com/sQVe/tau/commit/2e566525e41a2472c5f52abe4a32186f1a5eddf7) Thanks
+  [@sQVe](https://github.com/sQVe)! - The worker bash guard keeps a `bash` result's
+  `structuredContent` when it caps the output. A codemode script in a worker session now gets the
+  full structured result, with `output`, `truncated`, `full_output_path`, and `exit_code`, instead
+  of the capped text. The model still sees the capped text, and the guard still saves the full text
+  privately.
+
+- [#270](https://github.com/sQVe/tau/pull/270)
+  [`910508d`](https://github.com/sQVe/tau/commit/910508ddfdc27a01aec4e730474acbf457f0c172) Thanks
+  [@sQVe](https://github.com/sQVe)! - The `tdd` hint keeps a tool result's `structuredContent` when
+  it changes its text. A codemode script that calls `bash` now gets the structured result after a
+  `tdd` hint instead of a plain string. The worker bash guard still returns a plain string when it
+  caps `bash` output.
+
+- [#286](https://github.com/sQVe/tau/pull/286)
+  [`d602d11`](https://github.com/sQVe/tau/commit/d602d11c00b493794078e464d2f401b4b23ea759) Thanks
+  [@sQVe](https://github.com/sQVe)! - Codemode scripts can no longer call `write`, `edit`, `commit`,
+  or `run_tests`, in the manager or in workers. The model still calls them directly. The codemode
+  guidelines and the scout, reviewer, and worker profiles now say to call `read` and `bash` directly
+  for a single lookup, and to use codemode only to batch several calls or filter output. Scripts
+  print strings instead of result objects and start with a 4000-token output limit.
+
+- [#306](https://github.com/sQVe/tau/pull/306)
+  [`43135cf`](https://github.com/sQVe/tau/commit/43135cfb63b121201d1db51ff23cda0a2be706ac) Thanks
+  [@sQVe](https://github.com/sQVe)! - Fix PR target and evidence actions so a named remote works
+  when the branch's push config names a removed remote.
+
+- [#318](https://github.com/sQVe/tau/pull/318)
+  [`0a5409a`](https://github.com/sQVe/tau/commit/0a5409acc689ad74124ddb1b28dcb9645ca7dd3f) Thanks
+  [@sQVe](https://github.com/sQVe)! - Use plain errors for failed PR feedback posts and slice
+  applies. Keep failure messages and causes unchanged, including the writes to check before a retry.
+
+- [#321](https://github.com/sQVe/tau/pull/321)
+  [`52c04e1`](https://github.com/sQVe/tau/commit/52c04e174174ee1ed7e5e096295af0d2de6195df) Thanks
+  [@sQVe](https://github.com/sQVe)! - `pr` asks Codex for a review on each new PR it opens. Updates
+  to an existing PR post no review request.
+
+- [#274](https://github.com/sQVe/tau/pull/274)
+  [`69a5358`](https://github.com/sQVe/tau/commit/69a535825f0a03290dda9a8ea345518684246307) Thanks
+  [@sQVe](https://github.com/sQVe)! - `pr_feedback` no longer posts a reply or PR comment twice in
+  two cases. First, when `gh` fails or Pi stops it during a write, `posted.json` records the write
+  as uncertain. A retry checks GitHub for a new comment with the same text, and posts the write only
+  when GitHub does not have it. Second, `post` reads `posted.json` again after the confirm. When
+  another session finished the same round during the confirm, `post` posts nothing and asks you to
+  read again. Two sessions that post at the same moment can still both post.
+
+- [#282](https://github.com/sQVe/tau/pull/282)
+  [`3f16965`](https://github.com/sQVe/tau/commit/3f169654a9a9ae3e64de5cd79e75e4ceb088c0b4) Thanks
+  [@sQVe](https://github.com/sQVe)! - `pr-feedback` gathers each round's threads, comments, viewer,
+  author, head, checks, and failed-log excerpts with one read-only `codemode` script that calls the
+  `pr_feedback` tool's `read` and `checks`. A read that fails or comes back incomplete is reported
+  as a gap, never as "no comments" or as a passing check. The skill no longer reads the viewer, the
+  checks, or check logs with separate `gh` commands.
+
+- [#301](https://github.com/sQVe/tau/pull/301)
+  [`51748ab`](https://github.com/sQVe/tau/commit/51748abc24ebdafab35881c7ba16eb828a701f3e) Thanks
+  [@sQVe](https://github.com/sQVe)! - `pr_feedback` checks the feedback directory again after the
+  user confirms a post. If the directory became a symlink during confirmation, post refuses without
+  GitHub writes or a `posted.json` file outside the checkout.
+
+- [#287](https://github.com/sQVe/tau/pull/287)
+  [`bc91fd3`](https://github.com/sQVe/tau/commit/bc91fd3ab610987fc78b5efcc400297d356bc00c) Thanks
+  [@sQVe](https://github.com/sQVe)! - Show confirmation messages in normal text color while keeping
+  titles highlighted. This makes GitHub reply and Linear write confirmations easier to read in the
+  terminal.
+
+- [#320](https://github.com/sQVe/tau/pull/320)
+  [`8acb650`](https://github.com/sQVe/tau/commit/8acb65068ae0b6d4b7db8c8a5ccbb4b6096af0bd) Thanks
+  [@sQVe](https://github.com/sQVe)! - After a session restarts, a worker with a corrupt cleanup
+  record no longer stops the other workers from being reattached.
+
+- [#268](https://github.com/sQVe/tau/pull/268)
+  [`b1c62d1`](https://github.com/sQVe/tau/commit/b1c62d11299127af05d6180419797a5f9c5a5d5e) Thanks
+  [@sQVe](https://github.com/sQVe)! - After a review of your own branch or PR, `code-review`, `pr`,
+  and `start-slice` fix the supported, in-scope findings with `triage-findings` without asking. They
+  still ask about findings that change scope, product behavior, or policy. Someone else's PR and a
+  read-only review stay review-only. `pr` fixes the in-scope causes of failing checks, accepts
+  checked fixes without asking for another review, and rebases a branch locally with a notice. A
+  force-push still needs preview approval. `code-review` retries a worker once after a launch that
+  failed before any model call. Worktree, handover, slice, and start-slice ask fewer questions when
+  an approved task, ticket, or earlier agreement already answers them.
+
+- [#305](https://github.com/sQVe/tau/pull/305)
+  [`c48589a`](https://github.com/sQVe/tau/commit/c48589afd8835882713908caaca55194f8ad8da3) Thanks
+  [@sQVe](https://github.com/sQVe)! - Remove unused internal modules and a duplicate nested
+  `ask_user_question` guard. The subagents and worker hooks still refuse nested control calls.
+  Behavior is unchanged.
+
+- [#309](https://github.com/sQVe/tau/pull/309)
+  [`c628b6c`](https://github.com/sQVe/tau/commit/c628b6c1e17f630a6e569f1c67590ef92261cd1a) Thanks
+  [@sQVe](https://github.com/sQVe)! - Remove unused launch, identity, and test setup paths from the
+  subagents lifecycle without changing behavior.
+
+- [#308](https://github.com/sQVe/tau/pull/308)
+  [`b2af76b`](https://github.com/sQVe/tau/commit/b2af76b04197dcb7ff4b0c3c952f4952338f80f4) Thanks
+  [@sQVe](https://github.com/sQVe)! - Simplify subagents widget rendering while keeping stopped
+  counts, model labels, and narrow layouts unchanged.
+
+- [#290](https://github.com/sQVe/tau/pull/290)
+  [`94033f1`](https://github.com/sQVe/tau/commit/94033f12f0fe5e4deb970bb0c1c3d2c22b936b0c) Thanks
+  [@sQVe](https://github.com/sQVe)! - The `subagent_report` tool now names the required summary
+  headings in its schema: `## Changes`, `## Evidence`, `## Decisions`, and `## Concerns`. Workers
+  see them before their first report, so fewer reports are refused for missing headings.
+
+- [#298](https://github.com/sQVe/tau/pull/298)
+  [`39289c4`](https://github.com/sQVe/tau/commit/39289c449a4581603e23e888ec493a32d1106fe5) Thanks
+  [@sQVe](https://github.com/sQVe)! - Fix `run_tests` reporting input freshness as `unknown` on
+  every run in Pi. Input hashing used a `glob` option that the Bun runtime in Pi rejects. Results
+  now report `fresh` or `stale` again. When hashing fails, the result keeps the reason in
+  `inputs.error`.
+
+- [#306](https://github.com/sQVe/tau/pull/306)
+  [`43135cf`](https://github.com/sQVe/tau/commit/43135cfb63b121201d1db51ff23cda0a2be706ac) Thanks
+  [@sQVe](https://github.com/sQVe)! - Hash the review bytes that PR reuse compares, so a concurrent
+  replacement of `recheck.diff` cannot approve unreviewed changes.
+
+- [#307](https://github.com/sQVe/tau/pull/307)
+  [`79c46aa`](https://github.com/sQVe/tau/commit/79c46aa7f519fb6b9ec87b15e81ae6121068b763) Thanks
+  [@sQVe](https://github.com/sQVe)! - Start-slice and handover prepare their scratch directories
+  through tested tools instead of shell instructions. They refuse linked paths that could change
+  files outside the checkout. Handover also supports preparation from a bare repository root.
+
+- [#318](https://github.com/sQVe/tau/pull/318)
+  [`0a5409a`](https://github.com/sQVe/tau/commit/0a5409acc689ad74124ddb1b28dcb9645ca7dd3f) Thanks
+  [@sQVe](https://github.com/sQVe)! - Share command execution for GitHub and Linear while keeping
+  their existing failure messages. Slice pull request reads now include the full GitHub command in
+  errors, limit invalid JSON previews to 200 characters, and name invalid schema fields instead of
+  printing the full output.
+
+- [#318](https://github.com/sQVe/tau/pull/318)
+  [`0a5409a`](https://github.com/sQVe/tau/commit/0a5409acc689ad74124ddb1b28dcb9645ca7dd3f) Thanks
+  [@sQVe](https://github.com/sQVe)! - Share the record guard across config readers and snippet
+  previews without changing validation.
+
+- [#318](https://github.com/sQVe/tau/pull/318)
+  [`0a5409a`](https://github.com/sQVe/tau/commit/0a5409acc689ad74124ddb1b28dcb9645ca7dd3f) Thanks
+  [@sQVe](https://github.com/sQVe)! - Share schema diagnostics across GitHub output and saved
+  records without changing error messages.
+
+- [#304](https://github.com/sQVe/tau/pull/304)
+  [`1e9d96d`](https://github.com/sQVe/tau/commit/1e9d96dd1cc5c00218037a8fb821038aba0b1f3b) Thanks
+  [@sQVe](https://github.com/sQVe)! - Simplify `pr_feedback` internal types and helpers without
+  changing tool output.
+
+- [#319](https://github.com/sQVe/tau/pull/319)
+  [`712a9ba`](https://github.com/sQVe/tau/commit/712a9bac121814b63c03a19e64d79d63d6f41f90) Thanks
+  [@sQVe](https://github.com/sQVe)! - `run_tests` details for a compile error no longer include the
+  full stdout and stderr. The output stays in the saved diagnostics files.
+
+- [#307](https://github.com/sQVe/tau/pull/307)
+  [`79c46aa`](https://github.com/sQVe/tau/commit/79c46aa7f519fb6b9ec87b15e81ae6121068b763) Thanks
+  [@sQVe](https://github.com/sQVe)! - `update-branch` requires all of your workers in the worktree
+  to be stopped before starting or continuing a standalone rebase. `pr-feedback` leaves approval of
+  writes to people to the tool's confirmation. It asks about all drafts separately only in author
+  mode on a PR the viewer did not write.
+
+- [#296](https://github.com/sQVe/tau/pull/296)
+  [`e7f621d`](https://github.com/sQVe/tau/commit/e7f621d59b275fea8f8fae7683c4a7a2279612b0) Thanks
+  [@sQVe](https://github.com/sQVe)! - Managers can call every skill tool directly or from codemode
+  on their first request, without a skill command or read. Workers get the tools for their loaded
+  skills from startup. Steps that need the user's confirmation refuse worker sessions without
+  changing remote state or local records.
+
+- [#276](https://github.com/sQVe/tau/pull/276)
+  [`d7f1195`](https://github.com/sQVe/tau/commit/d7f1195af5eff90ae02815f6014217ac9b6b4bea) Thanks
+  [@sQVe](https://github.com/sQVe)! - The `slice` tool's confirm now lists each slice order move,
+  such as `Move ME-123 into plan order`, instead of one "Fix the slice order" step. The tool creates
+  each new slice at its plan position and makes only the moves it listed. The step that creates a
+  container names its project. The slice skill links a preview template for the layout tree.
+
+- [#302](https://github.com/sQVe/tau/pull/302)
+  [`491b5b9`](https://github.com/sQVe/tau/commit/491b5b9dd064ebf716ed7d46a0a1a0e8fe4ffade) Thanks
+  [@sQVe](https://github.com/sQVe)! - The slice tool no longer lists agent tickets or other-team
+  children as dropped slices.
+
+- [#301](https://github.com/sQVe/tau/pull/301)
+  [`51748ab`](https://github.com/sQVe/tau/commit/51748abc24ebdafab35881c7ba16eb828a701f3e) Thanks
+  [@sQVe](https://github.com/sQVe)! - `slice` checks draft directory and file links again after
+  confirmation. Apply refuses a draft swapped for a symlink while the user answers, before writing
+  to Linear or saving identifiers.
+
+- [#279](https://github.com/sQVe/tau/pull/279)
+  [`83f23f6`](https://github.com/sQVe/tau/commit/83f23f657efeb0dc2b1b12d92be4d29d59b9097e) Thanks
+  [@sQVe](https://github.com/sQVe)! - The `stack` skill now switches branches, restacks, or syncs
+  only when every one of the manager's workers in the worktree has stopped, as well as on a clean
+  tree. `start-slice` checks the same before it switches to the slice branch. A branch change under
+  a live worker moved the files it was editing.
+
+- [#300](https://github.com/sQVe/tau/pull/300)
+  [`463e5c2`](https://github.com/sQVe/tau/commit/463e5c2f8c747cd07f4d950d0d70d6d2a4e2aa7a) Thanks
+  [@sQVe](https://github.com/sQVe)! - Show the statusbar dirty marker for the session's repository
+  when Pi inherits `GIT_DIR` or `GIT_INDEX_FILE`.
+
+- [#319](https://github.com/sQVe/tau/pull/319)
+  [`712a9ba`](https://github.com/sQVe/tau/commit/712a9bac121814b63c03a19e64d79d63d6f41f90) Thanks
+  [@sQVe](https://github.com/sQVe)! - A finished `run_tests` run no longer reacts when its abort
+  signal fires later. Before, it sent `SIGKILL` to the run's old process group.
+
+- [#302](https://github.com/sQVe/tau/pull/302)
+  [`491b5b9`](https://github.com/sQVe/tau/commit/491b5b9dd064ebf716ed7d46a0a1a0e8fe4ffade) Thanks
+  [@sQVe](https://github.com/sQVe)! - The tracker skill creates agent tickets whose title is only
+  digits.
+
+- [#277](https://github.com/sQVe/tau/pull/277)
+  [`27ba010`](https://github.com/sQVe/tau/commit/27ba0107debdf2332209b1270fcf52c8fe6be83b) Thanks
+  [@sQVe](https://github.com/sQVe)! - `tracker` no longer gives manual commands to create slices,
+  add or remove their dependencies, or reorder them. It sends those writes to the `slice` tool, and
+  containers and slices get no labels. It keeps its commands for bugs, human tickets, agent tickets,
+  dependencies outside the container, and the In Progress move.
+
+- [#328](https://github.com/sQVe/tau/pull/328)
+  [`e63cb23`](https://github.com/sQVe/tau/commit/e63cb23176385831045941659d8f5afd6fcc9590) Thanks
+  [@sQVe](https://github.com/sQVe)! - Warn once per session about unknown keys in `tau.json` and
+  `.pi/tau.json`, at any depth under `profiles`, `tracker`, `browser`, and `tdd`, instead of
+  failing. A newer Tau can then add a key without breaking older checkouts that read the same user
+  file. Wrong types and missing fields still fail, but only the entry they are in: a bad
+  `profiles.scout` blocks only `scout` launches, a bad route turns routing off for its profile and
+  keeps its `model`, and a bad `tracker.repositories` entry fails only the repository it names.
+
 ## 1.0.0
 
 ### Major Changes
