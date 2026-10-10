@@ -94,7 +94,7 @@ const readVariables = (commandArguments: readonly string[]) => {
   return variables;
 };
 
-// Linear saves a "- " list item as "* ", except inside a fenced code block.
+// Saves a "- " list item as "* ", as Linear does, and leaves fenced code unchanged.
 const savedDescription = (description: string) => {
   let fence: string | undefined;
 
@@ -507,7 +507,7 @@ export const createLinearFake = (): LinearFake => {
       projects.push(added);
     },
     mergedPullRequests,
-    // Gives the issue this sort order when an update without a sort order reaches it, as Linear did.
+    // Gives the issue this sort order when an update without a sort order reaches it.
     moveOnUpdate: (identifier: string, sortOrder: number): void => {
       movedOnUpdate.set(identifier, sortOrder);
     },
