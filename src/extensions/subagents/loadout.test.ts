@@ -17,18 +17,31 @@ import type { ExtensionAPI, SlashCommandInfo } from '@earendil-works/pi-coding-a
 import { expect, it, vi } from 'vitest';
 
 import { fixtureLoadout } from './fixtures/loadout.js';
-import {
-  checkWorkerRuntime,
-  resolveLoadout,
-  resolveRoutedLoadout,
-  validateSavedLoadout,
-} from './loadout.js';
+import * as loadoutModule from './loadout.js';
+import { checkWorkerRuntime, validateSavedLoadout } from './loadout.js';
 import { listProfiles, resolveProfile, parseProfile } from './profiles.js';
 
 const profile = (body: string) => `---\nname: worker\nrole: editing\nthinking: off\n---\n${body}`;
 
 const skillCommand = (name: string, path: string) =>
   ({ name: `skill:${name}`, source: 'skill', sourceInfo: { path } }) as SlashCommandInfo;
+
+const tddPath = fileURLToPath(new URL('../../skills/tdd/SKILL.md', import.meta.url));
+
+const tddCommand = skillCommand('tdd', tddPath);
+
+const resolveLoadout = (
+  input: Parameters<typeof loadoutModule.resolveLoadout>[0],
+  context: Parameters<typeof loadoutModule.resolveLoadout>[1],
+  commands: SlashCommandInfo[] = [tddCommand],
+) => loadoutModule.resolveLoadout(input, context, commands);
+
+const resolveRoutedLoadout = (
+  input: Parameters<typeof loadoutModule.resolveRoutedLoadout>[0],
+  context: Parameters<typeof loadoutModule.resolveRoutedLoadout>[1],
+  commands: SlashCommandInfo[] = [tddCommand],
+  signal?: AbortSignal,
+) => loadoutModule.resolveRoutedLoadout(input, context, commands, signal);
 
 const startup =
   (...startupArguments: Parameters<typeof checkWorkerRuntime>) =>
@@ -91,7 +104,7 @@ it('resolves an explicit worker model and names the configured models when none 
     permissions: 'trusted-full-tools',
     instructions: resolved.instructions,
     tools: resolved.tools,
-    skills: [],
+    skills: [tddPath],
     instructionSets: ['writing', 'coding', 'workflow'],
     packages: [],
   });
@@ -548,6 +561,16 @@ it('saves the profile tools, or the role defaults, and the paths of its skills',
 
   expect(resolve('plain')).toMatchObject({ tools: ['read', 'bash'], skills: [] });
   expect(() => resolve('unknown')).toThrow('Worker profile skill not found: missing-skill');
+});
+
+it('loads the tdd skill in the bundled worker profile', async ({ onTestFinished }) => {
+  const { context, request } = await workerFixture(onTestFinished);
+
+  expect(resolveLoadout(request, context, [skillCommand('tdd', tddPath)]).skills).toEqual([
+    tddPath,
+  ]);
+
+  expect(() => resolveLoadout(request, context, [])).toThrow('Worker profile skill not found: tdd');
 });
 
 const parseSettings = (settings: string) =>
