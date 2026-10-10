@@ -415,6 +415,45 @@ describe('slice tool apply', () => {
     expect(applied.map((step) => step.kind)).toEqual(['updateSlice']);
   });
 
+  it('moves a slice back into plan order after Linear moves it during an update', async () => {
+    const { fake, directory, apply } = await appliedPlan();
+
+    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
+    await writeFile(join(directory, 'slice-2.md'), 'Slice two, revised.\n');
+    fake.moveOnUpdate('ME-2', 1000);
+
+    const result = await apply(undefined, directory);
+    const applied = result['applied'] as { kind: string }[];
+
+    expect(applied.map((step) => step.kind)).toEqual(['updateSlice', 'updateSlice', 'moveSlice']);
+    expect(fake.issues.get('ME-2')!.sortOrder).toBeLessThan(fake.issues.get('ME-3')!.sortOrder);
+    expect(result['orderInPlace']).toBe(true);
+  });
+
+  it('lists the possible order repair in the confirm', async () => {
+    const { root, directory, apply } = await appliedPlan();
+
+    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
+    const confirm = vi.fn<(title: string, message: string) => Promise<boolean>>(async () => true);
+
+    await apply(confirmContext(root, confirm), directory);
+
+    expect(confirm.mock.calls[0]?.[1]).toContain('move it back into plan order');
+  });
+
+  it('makes no extra write when the updates leave the order in place', async () => {
+    const { fake, directory, apply } = await appliedPlan();
+
+    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
+    await writeFile(join(directory, 'slice-2.md'), 'Slice two, revised.\n');
+    const writesBefore = fake.writes().length;
+
+    const result = await apply(undefined, directory);
+
+    expect(fake.writes()).toHaveLength(writesBefore + 2);
+    expect(result['orderInPlace']).toBe(true);
+  });
+
   it('creates new slices at their plan position without an order move', async () => {
     const { fake, apply } = await setUp();
 
@@ -476,7 +515,7 @@ describe('slice tool apply', () => {
     const message = confirm.mock.calls[0]?.[1] ?? '';
     const moves = fake.writes().slice(writesBefore);
 
-    expect(message).toBe('1. Move ME-3 into plan order');
+    expect(message).toContain('1. Move ME-3 into plan order');
     expect(moves).toHaveLength(1);
     expect(moves[0]?.commandArguments.at(-1)).toContain('"id":"ME-3"');
     expect(result['orderInPlace']).toBe(true);

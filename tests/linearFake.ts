@@ -47,6 +47,7 @@ export interface LinearFake {
   addProject: (project: FakeProject) => void;
   mergedPullRequests: Set<string>;
   failWrite: (count: number) => void;
+  moveOnUpdate: (identifier: string, sortOrder: number) => void;
   overrideOutput: (key: string, stdout: string) => void;
   failCall: (key: string, stderr: string) => void;
   writes: () => FakeCall[];
@@ -130,6 +131,7 @@ export const createLinearFake = (): LinearFake => {
   const calls: FakeCall[] = [];
   const overrides = new Map<string, string>();
   const callFailures = new Map<string, string>();
+  const movedOnUpdate = new Map<string, number>();
   const failures = new Set<number>();
   const projects: FakeProject[] = [{ id: 'project-tau', name: 'Tau', teamId: 'team-me' }];
   let nextNumber = 1;
@@ -353,7 +355,9 @@ export const createLinearFake = (): LinearFake => {
 
       issue.title = input.title ?? issue.title;
       issue.description = savedDescription(input.description ?? issue.description);
-      issue.sortOrder = input.subIssueSortOrder ?? issue.sortOrder;
+
+      issue.sortOrder =
+        input.subIssueSortOrder ?? movedOnUpdate.get(issue.identifier) ?? issue.sortOrder;
 
       return { issueUpdate: { success: true } };
     }
@@ -481,6 +485,10 @@ export const createLinearFake = (): LinearFake => {
       projects.push(added);
     },
     mergedPullRequests,
+    // Gives the issue this sort order when an update without a sort order reaches it, as Linear did.
+    moveOnUpdate: (identifier: string, sortOrder: number): void => {
+      movedOnUpdate.set(identifier, sortOrder);
+    },
     // Fails the nth write call, counted from the first write the fake sees.
     failWrite: (count: number): void => {
       failures.add(count);
