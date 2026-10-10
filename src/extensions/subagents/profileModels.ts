@@ -166,7 +166,6 @@ const readProfileRecord = (
   return { source, field, entry };
 };
 
-// The model of one profile, or undefined when the profile has no entry.
 export const readProfileModel = (
   location: ConfigLocation,
   name: string,
