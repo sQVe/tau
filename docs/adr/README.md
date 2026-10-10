@@ -125,3 +125,4 @@ line that links to the replacement.
 - [0098: Bound codemode output by whole items](./0098-bound-codemode-output-by-whole-items.md)
 - [0099: Warn on unknown config keys and fail only the entry in use](./0099-warn-on-unknown-config-keys-and-fail-only-the-entry-in-use.md)
 - [0100: Let agents cancel Linear tickets after approval](./0100-let-agents-cancel-linear-tickets-after-approval.md)
+- [0101: Treat `.tau/` files as the working copy and trackers as the saved copy](./0101-treat-tau-files-as-the-working-copy-and-trackers-as-the-saved-copy.md)
