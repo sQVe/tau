@@ -17,10 +17,10 @@ import {
   updateIssue,
 } from './linear.js';
 import type { CreatedIssue } from './linear.js';
-import { orderedSlices, readState, slicesPath } from './state.js';
+import { readState, slicesPath } from './state.js';
 import type { Runtime, SliceState } from './state.js';
-import { describeWrite, isInPlanOrder } from './writes.js';
-import type { LinearContainer, SliceWrite } from './writes.js';
+import { describeWrite, isInPlanOrder, plannedSortOrders } from './writes.js';
+import type { LinearContainer, OrderedSlice, SliceWrite } from './writes.js';
 
 type StepSummary = (
   | SliceWrite
@@ -300,7 +300,7 @@ const rejectChangedState = (state: SliceState, stateToken: string | undefined) =
   return state.draft;
 };
 
-const readOrderInPlace = async (runtime: Runtime, progress: ApplyProgress) => {
+const readSlots = async (runtime: Runtime, progress: ApplyProgress) => {
   const identifier = requireValue(progress.plan.container.identifier, 'The container identifier');
   const container = await readContainer(runtime.exec, runtime.root, identifier);
 
@@ -308,24 +308,97 @@ const readOrderInPlace = async (runtime: Runtime, progress: ApplyProgress) => {
     throw new Error(`Could not read ${identifier} again to check the slice order.`);
   }
 
-  return isInPlanOrder(orderedSlices({ ...progress.draft, plan: progress.plan }, container));
+  const children = new Map(container.children.map((child) => [child.identifier, child]));
+
+  return progress.plan.slices.map((slice) =>
+    slice.identifier === null ? undefined : children.get(slice.identifier),
+  );
 };
 
-// Every step has reached Linear, so a failed order check reports them all as applied.
-const checkOrder = async (
+const isSlotsInPlanOrder = (slots: readonly (OrderedSlice | undefined)[]) =>
+  isInPlanOrder(slots.filter((slot) => slot !== undefined));
+
+// Linear can change a sort order during an update that sent none, so the planned writes can leave
+// an open slice out of plan order.
+const repairSteps = (
+  runtime: Runtime,
+  progress: ApplyProgress,
+  slots: readonly (OrderedSlice | undefined)[],
+) => {
+  const steps: Step[] = [];
+
+  for (const [index, sortOrder] of plannedSortOrders(slots).entries()) {
+    const slot = slots[index];
+
+    if (slot === undefined || sortOrder === undefined) {
+      continue;
+    }
+
+    const write: SliceWrite = { kind: 'moveSlice', identifier: slot.identifier, sortOrder };
+
+    steps.push({
+      summary: { ...write, text: describeWrite(progress.plan, write) },
+      run: () => applyWrite(runtime, progress, write),
+    });
+  }
+
+  return steps;
+};
+
+// Every earlier step has reached Linear, so a failed read reports them all as applied.
+const readSlotsAfter = async (
   runtime: Runtime,
   progress: ApplyProgress,
   applied: readonly StepSummary[],
 ) => {
   try {
-    return await readOrderInPlace(runtime, progress);
+    return await readSlots(runtime, progress);
   } catch (error) {
     throw failedApply(progress, applied, applied.length, error);
   }
 };
 
-const confirmMessage = (steps: readonly Step[]) =>
-  steps.map((step, index) => `${index + 1}. ${step.summary.text}`).join('\n');
+const checkOrder = async (
+  runtime: Runtime,
+  progress: ApplyProgress,
+  applied: readonly StepSummary[],
+) => {
+  const slots = await readSlotsAfter(runtime, progress, applied);
+
+  if (isSlotsInPlanOrder(slots)) {
+    return { applied, orderInPlace: true };
+  }
+
+  const repairs = repairSteps(runtime, progress, slots);
+  const all = [...applied, ...repairs.map((step) => step.summary)];
+
+  for (const [index, step] of repairs.entries()) {
+    if (runtime.signal?.aborted === true) {
+      throw failedApply(progress, all, applied.length + index, new Error('The call was aborted.'));
+    }
+
+    try {
+      // oxlint-disable-next-line no-await-in-loop -- Moves run in plan order.
+      await step.run();
+    } catch (error) {
+      throw failedApply(progress, all, applied.length + index, error);
+    }
+  }
+
+  const repaired = await readSlotsAfter(runtime, progress, all);
+
+  return { applied: all, orderInPlace: isSlotsInPlanOrder(repaired) };
+};
+
+const confirmMessage = (steps: readonly Step[]) => {
+  const lines = steps.map((step, index) => `${index + 1}. ${step.summary.text}`);
+
+  lines.push(
+    'Afterwards, if Linear left an open slice out of plan order, move it back into plan order.',
+  );
+
+  return lines.join('\n');
+};
 
 const summary = (progress: ApplyProgress, container: LinearContainer | undefined) => {
   const urls = new Map(progress.urls);
@@ -403,12 +476,12 @@ export const applySlicePlan = async (
   rejectChangedState(await readState(runtime, directory, undefined), state.stateToken);
 
   const applied = await runSteps(progress, steps, runtime.signal);
-  const orderInPlace = await checkOrder(runtime, progress, applied);
+  const checked = await checkOrder(runtime, progress, applied);
 
   return {
     status: 'applied',
     ...summary(progress, state.container),
-    applied,
-    orderInPlace,
+    applied: checked.applied,
+    orderInPlace: checked.orderInPlace,
   };
 };

@@ -415,6 +415,88 @@ describe('slice tool apply', () => {
     expect(applied.map((step) => step.kind)).toEqual(['updateSlice']);
   });
 
+  it('moves a slice back into plan order after Linear moves it during an update', async () => {
+    const { fake, directory, apply } = await appliedPlan();
+
+    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
+    await writeFile(join(directory, 'slice-2.md'), 'Slice two, revised.\n');
+    fake.moveOnUpdate('ME-2', 1000);
+
+    const result = await apply(undefined, directory);
+    const applied = result['applied'] as { kind: string }[];
+
+    expect(applied.map((step) => step.kind)).toEqual(['updateSlice', 'updateSlice', 'moveSlice']);
+    expect(fake.issues.get('ME-2')!.sortOrder).toBeLessThan(fake.issues.get('ME-3')!.sortOrder);
+    expect(result['orderInPlace']).toBe(true);
+  });
+
+  it('lists the possible order repair in the confirm', async () => {
+    const { root, directory, apply } = await appliedPlan();
+
+    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
+    const confirm = vi.fn<(title: string, message: string) => Promise<boolean>>(async () => true);
+
+    await apply(confirmContext(root, confirm), directory);
+
+    expect(confirm.mock.calls[0]?.[1]).toContain('move it back into plan order');
+  });
+
+  it('stops before a repair move when the call is aborted', async () => {
+    const { root, fake, directory } = await appliedPlan();
+
+    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
+    fake.moveOnUpdate('ME-2', 1000);
+    const controller = new AbortController();
+
+    const exec: typeof fake.exec = async (command, commandArguments, options) => {
+      const result = await fake.exec(command, commandArguments, options);
+
+      if (fake.writes().length > 0 && commandArguments.join(' ').includes('issueUpdate')) {
+        controller.abort();
+      }
+
+      return result;
+    };
+
+    const tool = createSliceTool(exec);
+    const context = confirmContext(root, async () => true);
+    const input = { action: 'read', directory } as const;
+    const read = await tool.execute('call', input, undefined, undefined, context);
+    const { stateToken } = read.details as { stateToken: string };
+    const writesBefore = fake.writes().length;
+
+    const outcome = await tool
+      .execute(
+        'call',
+        { action: 'apply', directory, stateToken },
+        controller.signal,
+        undefined,
+        context,
+      )
+      .then(
+        () => 'applied',
+        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+      );
+
+    expect(outcome).toContain('aborted');
+    expect(outcome).toContain('Not applied:\n- Move ME-3 into plan order');
+    expect(fake.writes()).toHaveLength(writesBefore + 1);
+    expect(fake.issues.get('ME-3')!.sortOrder).toBeLessThan(1000);
+  });
+
+  it('makes no extra write when the updates leave the order in place', async () => {
+    const { fake, directory, apply } = await appliedPlan();
+
+    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
+    await writeFile(join(directory, 'slice-2.md'), 'Slice two, revised.\n');
+    const writesBefore = fake.writes().length;
+
+    const result = await apply(undefined, directory);
+
+    expect(fake.writes()).toHaveLength(writesBefore + 2);
+    expect(result['orderInPlace']).toBe(true);
+  });
+
   it('creates new slices at their plan position without an order move', async () => {
     const { fake, apply } = await setUp();
 
@@ -476,7 +558,7 @@ describe('slice tool apply', () => {
     const message = confirm.mock.calls[0]?.[1] ?? '';
     const moves = fake.writes().slice(writesBefore);
 
-    expect(message).toBe('1. Move ME-3 into plan order');
+    expect(message).toContain('1. Move ME-3 into plan order');
     expect(moves).toHaveLength(1);
     expect(moves[0]?.commandArguments.at(-1)).toContain('"id":"ME-3"');
     expect(result['orderInPlace']).toBe(true);
@@ -842,6 +924,22 @@ describe('slice tool read', () => {
       problems: [],
       dropped: ['ME-9'],
     });
+  });
+
+  it('lists no write when Linear saved list items with other markers', async () => {
+    const { fake, directory, apply, read } = await setUp();
+    const body = '- one\n  - nested\n- two\n';
+
+    await writeFile(join(directory, 'container.md'), body);
+    await writeFile(join(directory, 'slice-1.md'), body);
+    await writeFile(join(directory, 'slice-2.md'), body);
+    await apply();
+
+    expect(fake.issues.get('ME-2')!.description).toBe('* one\n  * nested\n* two\n');
+
+    const result = await read();
+
+    expect(result).toMatchObject({ writes: [], problems: [] });
   });
 
   it('reads a container before the draft has a plan', async () => {

@@ -47,6 +47,7 @@ export interface LinearFake {
   addProject: (project: FakeProject) => void;
   mergedPullRequests: Set<string>;
   failWrite: (count: number) => void;
+  moveOnUpdate: (identifier: string, sortOrder: number) => void;
   overrideOutput: (key: string, stdout: string) => void;
   failCall: (key: string, stderr: string) => void;
   writes: () => FakeCall[];
@@ -93,6 +94,31 @@ const readVariables = (commandArguments: readonly string[]) => {
   return variables;
 };
 
+// Saves a "- " list item as "* ", as Linear does, and leaves fenced code unchanged.
+const savedDescription = (description: string) => {
+  let fence: string | undefined;
+
+  const lines = description.split('\n').map((line) => {
+    const opener = /^\s*(```|~~~)/u.exec(line)?.[1];
+
+    if (fence !== undefined) {
+      fence = opener === fence ? undefined : fence;
+
+      return line;
+    }
+
+    if (opener !== undefined) {
+      fence = opener;
+
+      return line;
+    }
+
+    return line.replace(/^(\s*)- /u, '$1* ');
+  });
+
+  return lines.join('\n');
+};
+
 const writeKinds = ['issueCreate', 'issueUpdate'];
 
 const childNode = (issue: FakeIssue) => ({
@@ -127,6 +153,7 @@ export const createLinearFake = (): LinearFake => {
   const calls: FakeCall[] = [];
   const overrides = new Map<string, string>();
   const callFailures = new Map<string, string>();
+  const movedOnUpdate = new Map<string, number>();
   const failures = new Set<number>();
   const projects: FakeProject[] = [{ id: 'project-tau', name: 'Tau', teamId: 'team-me' }];
   let nextNumber = 1;
@@ -146,6 +173,8 @@ export const createLinearFake = (): LinearFake => {
       blockedBy: [],
       ...issue,
     };
+
+    created.description = savedDescription(created.description);
 
     nextNumber = Math.max(nextNumber, Number(identifier.split('-')[1]) + 1);
     issues.set(identifier, created);
@@ -347,8 +376,10 @@ export const createLinearFake = (): LinearFake => {
       }>;
 
       issue.title = input.title ?? issue.title;
-      issue.description = input.description ?? issue.description;
-      issue.sortOrder = input.subIssueSortOrder ?? issue.sortOrder;
+      issue.description = savedDescription(input.description ?? issue.description);
+
+      issue.sortOrder =
+        input.subIssueSortOrder ?? movedOnUpdate.get(issue.identifier) ?? issue.sortOrder;
 
       return { issueUpdate: { success: true } };
     }
@@ -399,7 +430,9 @@ export const createLinearFake = (): LinearFake => {
       }
 
       if (descriptionFile !== -1) {
-        issue.description = readFileSync(commandArguments[descriptionFile + 1]!, 'utf8');
+        issue.description = savedDescription(
+          readFileSync(commandArguments[descriptionFile + 1]!, 'utf8'),
+        );
       }
 
       return;
@@ -474,6 +507,10 @@ export const createLinearFake = (): LinearFake => {
       projects.push(added);
     },
     mergedPullRequests,
+    // Gives the issue this sort order when an update without a sort order reaches it.
+    moveOnUpdate: (identifier: string, sortOrder: number): void => {
+      movedOnUpdate.set(identifier, sortOrder);
+    },
     // Fails the nth write call, counted from the first write the fake sees.
     failWrite: (count: number): void => {
       failures.add(count);
