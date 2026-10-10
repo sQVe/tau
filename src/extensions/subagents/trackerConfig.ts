@@ -123,10 +123,11 @@ const readRepositories = (
 
   const repositories = new Map<string, TrackerRepository>();
 
+  // Every key counts, parsed or not, so the duplicate error does not depend on entry order.
+  const seenKeys: string[] = [];
+
   for (const [key, entry] of Object.entries(value)) {
-    const duplicate = [...repositories.keys()].find(
-      (earlier) => earlier.toLowerCase() === key.toLowerCase(),
-    );
+    const duplicate = seenKeys.find((earlier) => earlier.toLowerCase() === key.toLowerCase());
 
     // GitHub names ignore case, so two keys that differ only in case would name one repository.
     if (duplicate !== undefined) {
@@ -134,6 +135,8 @@ const readRepositories = (
         `Invalid Tau config ${source}: tracker.repositories has both ${JSON.stringify(duplicate)} and ${JSON.stringify(key)}, which name the same repository. Keep one.`,
       );
     }
+
+    seenKeys.push(key);
 
     try {
       repositories.set(key, readRepository(source, key, entry));

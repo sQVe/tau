@@ -106,6 +106,31 @@ it.for<[string, unknown]>([
   },
 );
 
+it.for<[string, [string, unknown][]]>([
+  [
+    'the malformed entry first',
+    [
+      ['sQVe/cape', 'AB'],
+      ['sqve/Cape', { team: 'AB' }],
+    ],
+  ],
+  [
+    'the valid entry first',
+    [
+      ['sqve/Cape', { team: 'AB' }],
+      ['sQVe/cape', 'AB'],
+    ],
+  ],
+])('refuses case-duplicate repositories with %s', ([, entries], { onTestFinished }) => {
+  const { location, userFile } = configFixture(onTestFinished);
+
+  writeConfig(userFile, { tracker: { repositories: Object.fromEntries(entries) } });
+
+  const setup = readTrackerSetup(location, ui, 'sQVe/tau');
+
+  expect(setup.status === 'invalid' ? setup.message : undefined).toContain('same repository');
+});
+
 it('fails the setup for a bad entry of the current repository, naming the file and field', ({
   onTestFinished,
 }) => {
