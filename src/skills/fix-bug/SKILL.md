@@ -15,6 +15,9 @@ metadata:
 Use this skill for a defect, a regression, or broken behavior. Use a bug ticket the user named.
 Create one with the `tracker` skill only when the user asks. Do not file a ticket for every fix.
 
+The procedure delegates to subagent workers, which need herdr. Without the `subagent` tools, carry
+out each step yourself in the same order.
+
 ## Hard rules
 
 - Write the regression test before the fix. It must fail for the diagnosed reason.
