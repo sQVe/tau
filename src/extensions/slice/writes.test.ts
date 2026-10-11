@@ -128,6 +128,93 @@ describe('planWrites', () => {
       problems: [],
     },
     {
+      case: 'slice body that differs only in list markers',
+      draft: { ...draft(['ME-2']), sliceBodies: ['- one\n  - two\nkeep - dash'] },
+      container: container([child(1, { description: '* one\n  * two\nkeep - dash' })]),
+      writes: [],
+      problems: [],
+    },
+    {
+      case: 'slice body with changed text and list markers',
+      draft: { ...draft(['ME-2']), sliceBodies: ['- one\n- two'] },
+      container: container([child(1, { description: '* one\n* three' })]),
+      writes: [
+        { kind: 'updateSlice', number: 1, identifier: 'ME-2', title: false, description: true },
+      ],
+      problems: [],
+    },
+    {
+      case: 'fenced marker change',
+      draft: { ...draft(['ME-2']), sliceBodies: ['```\n* literal\n```'] },
+      container: container([child(1, { description: '```\n- literal\n```' })]),
+      writes: [
+        { kind: 'updateSlice', number: 1, identifier: 'ME-2', title: false, description: true },
+      ],
+      problems: [],
+    },
+    {
+      case: 'tilde fenced marker change',
+      draft: { ...draft(['ME-2']), sliceBodies: ['~~~\n* literal\n~~~'] },
+      container: container([child(1, { description: '~~~\n- literal\n~~~' })]),
+      writes: [
+        { kind: 'updateSlice', number: 1, identifier: 'ME-2', title: false, description: true },
+      ],
+      problems: [],
+    },
+    {
+      case: 'markers differ outside a fence',
+      draft: { ...draft(['ME-2']), sliceBodies: ['- one\n```\n- literal\n```\n- two'] },
+      container: container([child(1, { description: '* one\n```\n- literal\n```\n* two' })]),
+      writes: [],
+      problems: [],
+    },
+    {
+      case: 'four-backtick fence marker change',
+      draft: { ...draft(['ME-2']), sliceBodies: ['````\n```\n* literal\n````'] },
+      container: container([child(1, { description: '````\n```\n- literal\n````' })]),
+      writes: [
+        { kind: 'updateSlice', number: 1, identifier: 'ME-2', title: false, description: true },
+      ],
+      problems: [],
+    },
+    {
+      case: 'trailing text fence line marker change',
+      draft: { ...draft(['ME-2']), sliceBodies: ['```\n``` text\n* literal\n```'] },
+      container: container([child(1, { description: '```\n``` text\n- literal\n```' })]),
+      writes: [
+        { kind: 'updateSlice', number: 1, identifier: 'ME-2', title: false, description: true },
+      ],
+      problems: [],
+    },
+    {
+      case: 'indented fence marker change',
+      draft: {
+        ...draft(['ME-2']),
+        sliceBodies: ['- Example\n\n    ```\n    * literal\n    ```'],
+      },
+      container: container([
+        child(1, { description: '* Example\n\n    ```\n    - literal\n    ```' }),
+      ]),
+      writes: [
+        { kind: 'updateSlice', number: 1, identifier: 'ME-2', title: false, description: true },
+      ],
+      problems: [],
+    },
+    {
+      case: 'container body that differs only in list markers',
+      draft: { ...draft([]), containerBody: '- one\n- two' },
+      container: container([], { description: '* one\n* two' }),
+      writes: [],
+      problems: [],
+    },
+    {
+      case: 'container body with changed text and list markers',
+      draft: { ...draft([]), containerBody: '- one\n- two' },
+      container: container([], { description: '* one\n* three' }),
+      writes: [{ kind: 'updateContainer', identifier: 'ME-1', title: false, description: true }],
+      problems: [],
+    },
+    {
       case: 'changed container title',
       draft: draft([]),
       container: container([], { title: 'Old' }),

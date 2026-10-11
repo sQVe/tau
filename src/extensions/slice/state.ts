@@ -24,7 +24,7 @@ export interface SliceState {
 
 export const slicesPath = 'slices';
 
-export const orderedSlices = (draft: Draft, container: LinearContainer): OrderedSlice[] => {
+const orderedSlices = (draft: Draft, container: LinearContainer): OrderedSlice[] => {
   const children = new Map(container.children.map((child) => [child.identifier, child]));
 
   return draft.plan.slices.flatMap((slice) => {
