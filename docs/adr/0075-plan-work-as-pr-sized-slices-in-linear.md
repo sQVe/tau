@@ -29,10 +29,13 @@ branch or one worker task, and each detailed plan meets the current code.
 
 ### Tickets
 
-- Container: the human ticket. Its description holds the agreed design. A design with one slice gets
-  no container; the ticket is the slice.
-- Slice: a human sub-ticket of the container in the same team. It is the smallest piece worth its
-  own PR, leaves `main` working, and fits one review sitting. The PR says `Fixes <slice>`.
+- Container: the human ticket. Its description holds a short summary and the key decisions. A design
+  with one slice gets no container; the ticket is the slice.
+- Slice: a human sub-ticket of the container in the same team. It holds the design it follows. It is
+  the smallest piece worth its own PR, leaves `main` working, and fits one review sitting. The PR
+  says `Fixes <slice>`.
+- Until the container exists, the design stays in `design.md` in the draft directory. Once the
+  container exists, Linear holds it.
 - Agent ticket: a sub-ticket of its slice in the agent team, with an outcome, files, a first test,
   and acceptance checks. It is written against the code when its slice starts. The branch always
   comes from the slice, never from an agent ticket.

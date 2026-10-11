@@ -1,7 +1,9 @@
 # Container
 
-Use this shape for a human ticket that holds an agreed design. Its slices are its children. Leave
-out optional sections that have nothing to say.
+Use this shape for a human ticket that groups slices. Its slices are its children. The container
+holds no full design: it holds a short summary and one line per key decision. Each slice's
+`## Design` holds the rules that slice follows. Leave out optional sections that have nothing to
+say.
 
 ```markdown
 One to three sentences on what the design delivers and why.
@@ -10,9 +12,9 @@ One to three sentences on what the design delivers and why.
 
 Optional. What is wrong or missing today, and who it affects.
 
-## Design
+## Decisions
 
-The agreed design: the decisions, rules, and boundaries every slice follows.
+- One line for each key decision of the design.
 
 ## Out of scope
 
