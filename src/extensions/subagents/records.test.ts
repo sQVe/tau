@@ -279,6 +279,30 @@ it('reads a canary routing from a version 9 task and refuses one without the fla
   );
 });
 
+it('reads whether ticket text was sent from a version 10 task and refuses a routing without it', () => {
+  const root = saveTaskRecordFixtures(['routed-ticket-pi']);
+  const ticket = parsedTaskRecordFixture('routed-ticket-pi');
+
+  expect(records.readTask(join(root, 'routed-ticket-pi')).routing).toEqual({
+    shadowPick: 'faux/small',
+    label: 'narrow',
+    confidence: 0.9,
+    canary: true,
+    ticketSent: true,
+  });
+
+  const { ticketSent: _dropped, ...unflagged } = ticket.routing as Record<string, unknown>;
+
+  writeFileSync(
+    join(root, 'routed-ticket-pi', 'task.json'),
+    JSON.stringify({ ...ticket, routing: unflagged }),
+  );
+
+  expect(() => records.readTask(join(root, 'routed-ticket-pi'))).toThrow(
+    'Invalid saved worker task',
+  );
+});
+
 it('refuses routing on a previous-format task', () => {
   const root = saveTaskRecordFixtures(['routed-pi']);
   const routed = parsedTaskRecordFixture('routed-pi');

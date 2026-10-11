@@ -929,7 +929,15 @@ it('records the shadow pick of a scout launch and keeps the profile model', asyn
   );
 
   expect(loadout.model).toBe(profileModel);
-  expect(routing).toEqual({ shadowPick: haiku, label: 'narrow', confidence: 0.9, canary: false });
+
+  expect(routing).toEqual({
+    shadowPick: haiku,
+    label: 'narrow',
+    confidence: 0.9,
+    canary: false,
+    ticketSent: false,
+  });
+
   expect(classify).toHaveBeenCalledOnce();
 
   expect(classify.mock.calls[0]?.[1]).toMatchObject({
@@ -959,7 +967,14 @@ it('launches a confident pick on the routed model when the canary share is 1', a
   );
 
   expect(loadout.model).toBe(haiku);
-  expect(routing).toEqual({ shadowPick: haiku, label: 'narrow', confidence: 0.9, canary: true });
+
+  expect(routing).toEqual({
+    shadowPick: haiku,
+    label: 'narrow',
+    confidence: 0.9,
+    canary: true,
+    ticketSent: false,
+  });
 });
 
 it('classifies nothing and records no routing when the launch names a model', async ({
@@ -995,7 +1010,13 @@ it.for([
   );
 
   expect(loadout.model).toBe(profileModel);
-  expect(routing).toEqual({ shadowPick: profileModel, fallbackReason: 'error', canary: false });
+
+  expect(routing).toEqual({
+    shadowPick: profileModel,
+    fallbackReason: 'error',
+    canary: false,
+    ticketSent: false,
+  });
 });
 
 it('launches on the profile model when the classifier never answers within 5 seconds', async ({
@@ -1022,7 +1043,13 @@ it('launches on the profile model when the classifier never answers within 5 sec
   const { loadout, routing } = await pending;
 
   expect(loadout.model).toBe(profileModel);
-  expect(routing).toEqual({ shadowPick: profileModel, fallbackReason: 'timeout', canary: false });
+
+  expect(routing).toEqual({
+    shadowPick: profileModel,
+    fallbackReason: 'timeout',
+    canary: false,
+    ticketSent: false,
+  });
 
   const options = classify.mock.calls[0]?.[2] as { signal: AbortSignal };
   expect(options.signal.aborted).toBe(true);
@@ -1058,6 +1085,148 @@ it('stops a pending classification when the launch is cancelled', async ({ onTes
   expect(options.signal.aborted).toBe(true);
 });
 
+const classifiedState = (classify: { mock: { calls: unknown[][] } }) => {
+  const request = classify.mock.calls[0]?.[1] as { state: unknown };
+
+  return request.state;
+};
+
+const saveTicket = (directory: string, text: string) => {
+  mkdirSync(join(directory, '.tau', 'slices', 'ME-1'), { recursive: true });
+  writeFileSync(join(directory, '.tau', 'slices', 'ME-1', 'agent-1.md'), text);
+};
+
+it('sends the ticket a relative path names and records that it was sent', async ({
+  onTestFinished,
+}) => {
+  const { context, classify, directory } = await routedFixture(onTestFinished);
+  saveTicket(directory, 'Change the parser.');
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  const brief = 'Carry out the task in `.tau/slices/ME-1/agent-1.md`.';
+  const { routing } = await resolveRoutedLoadout({ profile: 'scout', task: brief }, context);
+
+  expect(classifiedState(classify)).toEqual({
+    brief,
+    ticket: 'Change the parser.',
+    profile: 'scout',
+  });
+
+  expect(routing).toEqual({
+    shadowPick: haiku,
+    label: 'narrow',
+    confidence: 0.9,
+    canary: false,
+    ticketSent: true,
+  });
+});
+
+it('sends no file that a ticket path leaves the slices directory for', async ({
+  onTestFinished,
+}) => {
+  const { context, classify, directory } = await routedFixture(onTestFinished);
+  writeFileSync(join(directory, 'notes.md'), 'Private notes.');
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  const brief = 'Carry out the task in .tau/slices/../../notes.md';
+  const { routing } = await resolveRoutedLoadout({ profile: 'scout', task: brief }, context);
+
+  expect(classifiedState(classify)).toEqual({ brief, profile: 'scout' });
+  expect(routing).toMatchObject({ ticketSent: false });
+});
+
+it('sends the ticket an absolute path names', async ({ onTestFinished }) => {
+  const { context, classify, directory } = await routedFixture(onTestFinished);
+  saveTicket(directory, 'Absolute ticket.');
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  const brief = `Read ${join(directory, '.tau', 'slices', 'ME-1', 'agent-1.md')} first.`;
+  const { routing } = await resolveRoutedLoadout({ profile: 'scout', task: brief }, context);
+
+  expect(classifiedState(classify)).toEqual({
+    brief,
+    ticket: 'Absolute ticket.',
+    profile: 'scout',
+  });
+
+  expect(routing?.ticketSent).toBe(true);
+});
+
+it('caps the ticket text at 12000 characters', async ({ onTestFinished }) => {
+  const { context, classify, directory } = await routedFixture(onTestFinished);
+  saveTicket(directory, `${'a'.repeat(11_999)}${'é'.repeat(50_000)}`);
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  await resolveRoutedLoadout(
+    { profile: 'scout', task: 'Task in .tau/slices/ME-1/agent-1.md' },
+    context,
+  );
+
+  const { ticket } = classifiedState(classify) as { ticket: string };
+  expect(ticket).toBe(`${'a'.repeat(11_999)}é`);
+});
+
+it.for<[string, string]>([
+  ['a missing file', 'Task in .tau/slices/ME-1/missing.md'],
+  ['a directory', 'Task in .tau/slices/ME-1/folder.md'],
+  ['no path', 'Find the parser.'],
+])('classifies on the brief alone for %s', async ([, brief], { onTestFinished }) => {
+  const { context, classify, directory } = await routedFixture(onTestFinished);
+  mkdirSync(join(directory, '.tau', 'slices', 'ME-1', 'folder.md'), { recursive: true });
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  const { routing } = await resolveRoutedLoadout({ profile: 'scout', task: brief }, context);
+
+  expect(classifiedState(classify)).toEqual({ brief, profile: 'scout' });
+  expect(routing?.ticketSent).toBe(false);
+});
+
+it('records the ticket as sent when the classifier then times out', async ({ onTestFinished }) => {
+  const { context, classify, directory } = await routedFixture(onTestFinished);
+  saveTicket(directory, 'Slow.');
+  classify.mockImplementation(() => new Promise(() => {}));
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  const pending = resolveRoutedLoadout(
+    { profile: 'scout', task: 'Task in .tau/slices/ME-1/agent-1.md' },
+    context,
+  );
+
+  await vi.waitFor(() => {
+    expect(classify).toHaveBeenCalled();
+  });
+
+  await vi.advanceTimersByTimeAsync(5000);
+  const { routing } = await pending;
+
+  expect(routing).toMatchObject({ fallbackReason: 'timeout', ticketSent: true });
+});
+
+it('cancels the classification when the launch aborts during the ticket read', async ({
+  onTestFinished,
+}) => {
+  const { context, classify, directory } = await routedFixture(onTestFinished);
+  saveTicket(directory, 'Aborted.');
+  const launch = new AbortController();
+
+  const pending = resolveRoutedLoadout(
+    { profile: 'scout', task: 'Task in .tau/slices/ME-1/agent-1.md' },
+    context,
+    [],
+    launch.signal,
+  );
+
+  launch.abort();
+  const { routing } = await pending;
+
+  expect(routing).toMatchObject({ fallbackReason: 'error', ticketSent: false });
+  expect(classify).not.toHaveBeenCalled();
+});
+
 it('classifies nothing when allowedModels excludes the classifier', async ({ onTestFinished }) => {
   const { directory, context, classify, profileModel } = await routedFixture(onTestFinished);
   const configPath = join(directory, 'tau.json');
@@ -1072,7 +1241,14 @@ it('classifies nothing when allowedModels excludes the classifier', async ({ onT
   );
 
   expect(loadout.model).toBe(profileModel);
-  expect(routing).toEqual({ shadowPick: profileModel, fallbackReason: 'noRoute', canary: false });
+
+  expect(routing).toEqual({
+    shadowPick: profileModel,
+    fallbackReason: 'noRoute',
+    canary: false,
+    ticketSent: false,
+  });
+
   expect(classify).not.toHaveBeenCalled();
 });
 
@@ -1090,6 +1266,7 @@ it('records a low confidence answer and a missing classifier model as fallbacks'
     confidence: 0.5,
     fallbackReason: 'lowConfidence',
     canary: false,
+    ticketSent: false,
   });
 
   classify.mockClear();
@@ -1099,6 +1276,7 @@ it('records a low confidence answer and a missing classifier model as fallbacks'
     shadowPick: profileModel,
     fallbackReason: 'noRoute',
     canary: false,
+    ticketSent: false,
   });
 
   expect(classify).not.toHaveBeenCalled();
@@ -1138,7 +1316,14 @@ it('keeps the profile model when no route applies even with a canary share of 1'
   );
 
   expect(loadout.model).toBe(profileModel);
-  expect(routing).toEqual({ shadowPick: profileModel, fallbackReason: 'noRoute', canary: false });
+
+  expect(routing).toEqual({
+    shadowPick: profileModel,
+    fallbackReason: 'noRoute',
+    canary: false,
+    ticketSent: false,
+  });
+
   expect(classify).not.toHaveBeenCalled();
 });
 
@@ -1176,6 +1361,7 @@ it('draws once and keeps the profile model when the draw reaches the share', asy
     label: 'narrow',
     confidence: 0.9,
     canary: false,
+    ticketSent: false,
   });
 
   random.mockReturnValue(0.49);

@@ -63,6 +63,7 @@ const pureModules = [
   'src/extensions/subagents/piStop.ts',
   'src/extensions/subagents/reportCap.ts',
   'src/extensions/subagents/taskFormat.ts',
+  'src/extensions/subagents/ticketPath.ts',
   'src/extensions/subagents/trackerRouting.ts',
   'src/extensions/subagents/workerModels.ts',
   'src/extensions/subagents/workerPackages.ts',
