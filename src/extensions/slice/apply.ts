@@ -345,6 +345,12 @@ const repairSteps = (
   return steps;
 };
 
+const confirmMessage = (steps: readonly Step[]) => {
+  const lines = steps.map((step, index) => `${index + 1}. ${step.summary.text}`);
+
+  return lines.join('\n');
+};
+
 // Every earlier step has reached Linear, so a failed read reports them all as applied.
 const readSlotsAfter = async (
   runtime: Runtime,
@@ -358,8 +364,11 @@ const readSlotsAfter = async (
   }
 };
 
+const stepSummary = (step: Step) => step.summary;
+
 const checkOrder = async (
   runtime: Runtime,
+  context: ExtensionContext,
   progress: ApplyProgress,
   applied: readonly StepSummary[],
 ) => {
@@ -371,6 +380,29 @@ const checkOrder = async (
 
   const repairs = repairSteps(runtime, progress, slots);
   const all = [...applied, ...repairs.map((step) => step.summary)];
+
+  const confirmed = await confirmWithUser(context, {
+    action: 'Writing to Linear',
+    title: 'Move slices back into plan order?',
+    message: confirmMessage(repairs),
+  });
+
+  if (!confirmed) {
+    return { applied, orderInPlace: false };
+  }
+
+  const slotsNow = await readSlotsAfter(runtime, progress, applied);
+  const summariesNow = JSON.stringify(repairSteps(runtime, progress, slotsNow).map(stepSummary));
+  const summariesApproved = JSON.stringify(repairs.map(stepSummary));
+
+  if (summariesNow !== summariesApproved) {
+    throw failedApply(
+      progress,
+      all,
+      applied.length,
+      new Error('Linear changed during the confirm. Read again.'),
+    );
+  }
 
   for (const [index, step] of repairs.entries()) {
     if (runtime.signal?.aborted === true) {
@@ -388,16 +420,6 @@ const checkOrder = async (
   const repaired = await readSlotsAfter(runtime, progress, all);
 
   return { applied: all, orderInPlace: isSlotsInPlanOrder(repaired) };
-};
-
-const confirmMessage = (steps: readonly Step[]) => {
-  const lines = steps.map((step, index) => `${index + 1}. ${step.summary.text}`);
-
-  lines.push(
-    'Afterwards, if Linear left an open slice out of plan order, move it back into plan order.',
-  );
-
-  return lines.join('\n');
 };
 
 const summary = (progress: ApplyProgress, container: LinearContainer | undefined) => {
@@ -476,7 +498,7 @@ export const applySlicePlan = async (
   rejectChangedState(await readState(runtime, directory, undefined), state.stateToken);
 
   const applied = await runSteps(progress, steps, runtime.signal);
-  const checked = await checkOrder(runtime, progress, applied);
+  const checked = await checkOrder(runtime, context, progress, applied);
 
   return {
     status: 'applied',

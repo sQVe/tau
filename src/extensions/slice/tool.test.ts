@@ -430,7 +430,46 @@ describe('slice tool apply', () => {
     expect(result['orderInPlace']).toBe(true);
   });
 
-  it('lists the possible order repair in the confirm', async () => {
+  it('asks again and names the moved slice before it repairs the order', async () => {
+    const { root, fake, directory, apply } = await appliedPlan();
+
+    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
+    fake.moveOnUpdate('ME-2', 1000);
+    const confirm = vi.fn<(title: string, message: string) => Promise<boolean>>(async () => true);
+
+    const result = await apply(confirmContext(root, confirm), directory);
+
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(confirm.mock.calls[0]?.[1]).not.toContain('ME-3');
+    expect(confirm.mock.calls[1]?.[1]).toContain('ME-3');
+    expect(fake.issues.get('ME-2')!.sortOrder).toBeLessThan(fake.issues.get('ME-3')!.sortOrder);
+    expect(result['orderInPlace']).toBe(true);
+  });
+
+  it('makes no repair move when the user declines the second confirm', async () => {
+    const { root, fake, directory, apply } = await appliedPlan();
+
+    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
+    fake.moveOnUpdate('ME-2', 1000);
+    const writesBefore = fake.writes().length;
+    let calls = 0;
+
+    const confirm = vi.fn<(title: string, message: string) => Promise<boolean>>(async () => {
+      calls += 1;
+
+      return calls === 1;
+    });
+
+    const result = await apply(confirmContext(root, confirm), directory);
+    const applied = result['applied'] as { kind: string }[];
+
+    expect(result).toMatchObject({ status: 'applied', orderInPlace: false });
+    expect(applied.map((step) => step.kind)).toEqual(['updateSlice']);
+    expect(fake.writes()).toHaveLength(writesBefore + 1);
+    expect(fake.issues.get('ME-2')!.sortOrder).toBe(1000);
+  });
+
+  it('asks only once when the updates leave the order in place', async () => {
     const { root, directory, apply } = await appliedPlan();
 
     await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
@@ -438,7 +477,38 @@ describe('slice tool apply', () => {
 
     await apply(confirmContext(root, confirm), directory);
 
-    expect(confirm.mock.calls[0]?.[1]).toContain('move it back into plan order');
+    expect(confirm).toHaveBeenCalledOnce();
+  });
+
+  it('makes no repair move when Linear changes during the second confirm', async () => {
+    const { root, fake, directory, apply } = await appliedPlan();
+
+    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
+    fake.moveOnUpdate('ME-2', 1000);
+    const writesBefore = fake.writes().length;
+    let calls = 0;
+
+    const confirm = vi.fn<(title: string, message: string) => Promise<boolean>>(async () => {
+      calls += 1;
+
+      if (calls === 2) {
+        const url = 'https://github.com/sQVe/tau/pull/9';
+
+        fake.issues.get('ME-3')!.pullRequests = [url];
+        fake.mergedPullRequests.add(url);
+      }
+
+      return true;
+    });
+
+    const outcome = await apply(confirmContext(root, confirm), directory).then(
+      () => 'applied',
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    );
+
+    expect(outcome).toContain('changed during the confirm');
+    expect(outcome).toContain('Not applied:\n- Move ME-3 into plan order');
+    expect(fake.writes()).toHaveLength(writesBefore + 1);
   });
 
   it('stops before a repair move when the call is aborted', async () => {
