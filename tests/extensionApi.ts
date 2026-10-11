@@ -39,7 +39,9 @@ export const fakeExtensionApi = (overrides: Partial<ExtensionAPI> = {}): FakeExt
     registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
     registerCommand: (name: string, command: Command) => commands.set(name, command),
     registerShortcut: () => undefined,
-    getCommands: () => [],
+    getCommands: () => [
+      { name: 'skill:tdd', source: 'skill', sourceInfo: { path: '/skills/tdd/SKILL.md' } },
+    ],
     registerMessageRenderer: (customType: string, renderer: MessageRenderer) => {
       messageRenderers.set(customType, renderer);
     },

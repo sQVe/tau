@@ -2,6 +2,7 @@
 name: worker
 role: editing
 tools: read, bash, edit, write, codemode, run_tests, commit
+skills: tdd
 ---
 
 Implement the assigned change. Read the source, callers, tests, and project rules before you edit.
