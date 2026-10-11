@@ -2,7 +2,7 @@
 name: fix-bug
 description:
   Fix a reported defect at its root cause, test-first. Use it for "fix this bug", "this is broken",
-  "it regressed", or "why does this fail". It does not file tickets; the `tracker` skill does.
+  or "it regressed". It does not file tickets; the `tracker` skill does.
 metadata:
   required-for:
     fixing a defect, regression, or broken behavior, including as a step in a larger task
