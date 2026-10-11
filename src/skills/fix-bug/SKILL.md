@@ -27,8 +27,8 @@ out each step yourself in the same order.
 
 ## Procedure
 
-1. Reproduce. Find one command that fails on the bug the same way every run. If none exists, say so
-   and name the closest check.
+1. Reproduce. Find one command that fails on the bug the same way every run. If none exists, name
+   the closest check and stop for the user.
 2. Diagnose. Rank falsifiable hypotheses and test them in order. Name the root cause with file and
    line evidence. The manager sends a `scout` to do steps 1 and 2.
 3. Fix test-first. Send a `worker` with the reproduction command and the root cause in its brief.
