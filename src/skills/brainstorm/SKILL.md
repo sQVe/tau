@@ -28,23 +28,32 @@ unclear. Do not use it for a design the user already agreed on. Use the
 ## Procedure
 
 1. Pick a short slug for the design. Call `slice` with `prepare` and that slug. If `design.md`
-   exists in the returned directory, read it and resume from its open questions.
+   exists in the returned directory, read it and resume from its open questions. Do not repeat a
+   dead end or a rejected approach it lists unless the condition to revisit it holds.
 
 2. Research first. Read the code the request touches. Send wide reading to a `scout` when the
-   `subagent` tools can launch one, and otherwise read it yourself. Ask the user only what needs
-   human judgment, never what the code can answer.
+   `subagent` tools can launch one, and otherwise read it yourself. When an answer is observable,
+   probe for it: run the command, read the output, or check the actual data. Ask the user only about
+   priorities, preferences, and constraints that need human judgment.
 
-3. Ask a few frontier questions in each round: the open questions that block the most other
-   decisions. Keep a decisions table with the decision, the choice, and the reason.
+3. Ask a few frontier questions in each round. A frontier question is one whose prerequisites are
+   settled. A question that depends on an open question waits for a later round. Research still
+   running holds back only the questions of fact it will settle. The round never waits for it, and
+   the research folds in next round. Keep a decisions table with the decision, the choice, and the
+   reason.
 
 4. Present the research findings. Stop for the user.
 
-5. Derive criteria from the decisions. Propose two or three approaches and grade each against the
-   criteria. Recommend one and say why. Stop for the user.
+5. Derive three to six criteria, each traced to a research finding or a decision. Each criterion
+   names what this idea turns on, such as "migrates the existing rows without a backfill window". A
+   criterion that fits any project, such as maintainability, means you skipped this step. Propose
+   two or three approaches and grade each against the criteria. Recommend one and say why. Stop for
+   the user.
 
 6. Write the design summary, using the [design template](templates/design.md): the problem, the
-   decisions table, the chosen approach, the acceptance criteria, the non-goals with reasons, and
-   the open risks.
+   decisions table, the chosen approach, the architecture, the rejected approaches with the
+   condition to revisit each, the dead ends, the acceptance criteria, the non-goals with reasons,
+   and the open risks.
 
 7. When the user agrees to the design, run the [slice skill](../slice/SKILL.md) on the draft
    directory. Do this also when the work fits one PR.

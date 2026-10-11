@@ -30,11 +30,21 @@ questions current. Start with a title line.
 | -------- | ------------- | ------------- | ----------- |
 | <Name>   | <Grade>       | <Grade>       | <One line.> |
 
+Rejected approaches:
+
+- <Name>: <why rejected>. Revisit only if <condition>.
+
 Recommendation: <The approach, and why.>
 
 ## Chosen approach
 
 <The approach the user agreed to, in a few sentences.>
+
+## Architecture
+
+- Components: <The parts and what each does.>
+- Data flow: <How data moves between the parts.>
+- Integration points: <Where the design meets existing code, with file paths.>
 
 ## Acceptance criteria
 
@@ -43,6 +53,10 @@ Recommendation: <The approach, and why.>
 ## Non-goals
 
 - <What the design leaves out, and why.>
+
+## Dead ends
+
+- <What was explored>: <what was found>. Dropped because <reason>.
 
 ## Open risks
 
