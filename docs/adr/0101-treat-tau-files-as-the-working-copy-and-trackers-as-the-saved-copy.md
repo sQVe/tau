@@ -20,8 +20,9 @@ no longer matches these folders.
 Files in `.tau/` are the working copy, and Linear and GitHub hold the saved copy.
 
 A tool saves the working copy to a tracker only after the user approves a preview of what it will
-save. Once a saved copy exists, it wins over the working copy. This keeps one source of truth after
-the first save, and it keeps edits made in the tracker by other people.
+save. A tool reads the saved copy before it plans a write. Once a saved copy exists, it wins over a
+working copy the user has not approved. An approved preview may change it, and the preview names
+each field it changes, so edits made in the tracker are never lost unseen.
 
 Run state is never the only copy of a decision. A decision goes into a working copy or a tracker. A
 handover links to working copies or tickets and is not a record itself.
