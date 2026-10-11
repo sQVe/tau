@@ -28,6 +28,11 @@ interface FakeIssue {
   blockedBy: string[];
 }
 
+interface Fence {
+  character: string;
+  length: number;
+}
+
 interface FakeProject {
   id: string;
   name: string;
@@ -95,21 +100,31 @@ const readVariables = (commandArguments: readonly string[]) => {
 };
 
 // Saves a "- " list item as "* ", as Linear does, and leaves fenced code unchanged.
+const openingFence = (line: string): Fence | undefined => {
+  const marker = /^\s*(`{3,}|~{3,})/u.exec(line)?.[1];
+
+  return marker === undefined ? undefined : { character: marker.charAt(0), length: marker.length };
+};
+
+const closesFence = (line: string, fence: Fence) => {
+  const marker = /^\s*(`{3,}|~{3,})\s*$/u.exec(line)?.[1];
+
+  return marker?.[0] === fence.character && marker.length >= fence.length;
+};
+
 const savedDescription = (description: string) => {
-  let fence: string | undefined;
+  let fence: Fence | undefined;
 
   const lines = description.split('\n').map((line) => {
-    const opener = /^\s*(```|~~~)/u.exec(line)?.[1];
-
     if (fence !== undefined) {
-      fence = opener === fence ? undefined : fence;
+      fence = closesFence(line, fence) ? undefined : fence;
 
       return line;
     }
 
-    if (opener !== undefined) {
-      fence = opener;
+    fence = openingFence(line);
 
+    if (fence !== undefined) {
       return line;
     }
 
