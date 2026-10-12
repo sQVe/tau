@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import { defineTool, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionToolContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
@@ -6,16 +8,29 @@ import { readGitOutput } from '../../gitOutput.js';
 import { repositoryFromRemote } from '../../repositoryRemote.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import { readFullCheckArgv } from './config.js';
+import { readCheckIdentity } from './identity.js';
 import { defaultLockPath, withFullCheckLock } from './queue.js';
-import { runCheck } from './run.js';
+import { listSavedLogs, saveCheckRecord } from './record.js';
+import { decideReuse } from './reuseDecision.js';
+import type { CheckIdentity } from './reuseDecision.js';
+import { readTail, runCheck } from './run.js';
 import type { CheckResult } from './run.js';
+
+export type FullCheckDetails = CheckResult & { reused: boolean };
 
 export interface FullCheckToolOptions {
   agentDirectory?: string;
   pollMilliseconds?: number;
 }
 
-const parameters = Type.Object({});
+const parameters = Type.Object({
+  base: Type.Optional(
+    Type.String({
+      description:
+        "Ref or commit the change is based on. Defaults to the origin remote's default branch.",
+    }),
+  ),
+});
 
 const defaultPollMilliseconds = 500;
 
@@ -32,19 +47,75 @@ const readRepository = async (root: string): Promise<string | undefined> => {
   return output === undefined ? undefined : repositoryFromRemote(output);
 };
 
-const describeResult = (result: CheckResult): string => {
+const describeResult = (result: FullCheckDetails): string => {
   const status =
     result.exitCode === null
       ? `signal ${result.signal ?? 'unknown'}`
       : `exit status ${result.exitCode}`;
 
-  const headline = `Full check ${result.passed ? 'passed' : 'failed'} (${status}). Log: ${result.logPath}`;
+  const outcome = `Full check ${result.passed ? 'passed' : 'failed'} (${status}).`;
+  const reuse = result.reused ? ' Reused the saved passing log for this unchanged state.' : '';
+  const headline = `${outcome}${reuse} Log: ${result.logPath}`;
 
   return result.tail === '' ? headline : `${headline}\n\nLast lines:\n${result.tail}`;
 };
 
+const checksDirectory = (root: string): string => join(root, '.tau', 'checks');
+
+const findReusedLog = async (
+  root: string,
+  identity: CheckIdentity,
+): Promise<FullCheckDetails | undefined> => {
+  const decision = decideReuse(identity, await listSavedLogs(checksDirectory(root)));
+
+  if (decision.status === 'run') {
+    return undefined;
+  }
+
+  const tail = await readTail(decision.logPath);
+
+  return {
+    passed: true,
+    exitCode: 0,
+    signal: null,
+    logPath: decision.logPath,
+    tail,
+    reused: true,
+  };
+};
+
+const sameState = (before: CheckIdentity, after: CheckIdentity): boolean =>
+  before.head === after.head &&
+  before.base === after.base &&
+  before.fingerprint === after.fingerprint;
+
+// Runs the check and saves a reusable record only when it passed and its inputs did not change.
+const runAndRecord = async (
+  root: string,
+  identity: CheckIdentity,
+  signal: AbortSignal | undefined,
+): Promise<FullCheckDetails> => {
+  const result = await runCheck(root, identity.argv, signal);
+
+  if (result.passed) {
+    const after = await readCheckIdentity(root, identity.argv, identity.base ?? undefined);
+
+    if (sameState(identity, after)) {
+      await saveCheckRecord(result.logPath, identity);
+    }
+  }
+
+  return { ...result, reused: false };
+};
+
+const toToolResult = (result: FullCheckDetails) => ({
+  content: [{ type: 'text' as const, text: describeResult(result) }],
+  details: result,
+});
+
 const execute = async (
   options: FullCheckToolOptions,
+  base: string | undefined,
   signal: AbortSignal | undefined,
   notifyWaiting: (message: string) => void,
   context: Pick<ExtensionToolContext, 'cwd' | 'isProjectTrusted' | 'ui'>,
@@ -65,6 +136,13 @@ const execute = async (
     throw new Error(notConfiguredMessage(repository));
   }
 
+  const waiting = await readCheckIdentity(root, argv, base);
+  const reusedBeforeWaiting = await findReusedLog(root, waiting);
+
+  if (reusedBeforeWaiting !== undefined) {
+    return toToolResult(reusedBeforeWaiting);
+  }
+
   const result = await withFullCheckLock(
     {
       lockPath: defaultLockPath(agentDirectory),
@@ -77,32 +155,39 @@ const execute = async (
         notifyWaiting(`Waiting for the full check running in ${holderName} to finish.`);
       },
     },
-    () => runCheck(root, argv, signal),
+    async () => {
+      const identity = await readCheckIdentity(root, argv, base);
+      const reused = await findReusedLog(root, identity);
+
+      return reused ?? runAndRecord(root, identity, signal);
+    },
   );
 
-  return { content: [{ type: 'text' as const, text: describeResult(result) }], details: result };
+  return toToolResult(result);
 };
 
 export const createFullCheckTool = (
   options: FullCheckToolOptions = {},
-): ToolDefinition<typeof parameters, CheckResult | undefined> =>
+): ToolDefinition<typeof parameters, FullCheckDetails | undefined> =>
   defineTool({
     name: 'full_check',
     label: 'Full check',
     description: `Run the repository's configured full check and save its output.
-- No parameters. The command is fullCheck.repositories.<owner/name>.argv from the user tau.json, run without a shell in the checkout root.
+- Optional base: the ref or commit the change is based on. Without it, the origin remote's default branch.
+- The command is fullCheck.repositories.<owner/name>.argv from the user tau.json, run without a shell in the checkout root.
 - Only one full check runs at a time on the machine. When another checkout holds the lock, the tool sends an update that names it and waits. Cancelling stops the wait.
+- A passing log is saved with the head, base, argv, and a fingerprint of the uncommitted changes. A later call for the same state returns that log without running the command, and says so. Any change to those inputs runs the check again. A failing run, or a run during which the inputs changed, saves nothing for reuse.
 - Saves stdout and stderr together as a log under .tau/checks in the checkout.
 - Returns pass or fail, the exit status, the log path, and the last lines of the output. A failed check is a result, not an error.
 - Errors: no Git checkout, an invalid fullCheck entry for this repository, a command that cannot start, or no configured entry. With no entry, run your check as before.`,
     promptSnippet: 'Run the repository full check, queued across checkouts, with a saved log.',
     parameters,
     executionMode: 'sequential',
-    async execute(_toolCallId, _parameters, signal, onUpdate, context) {
+    async execute(_toolCallId, toolParameters, signal, onUpdate, context) {
       const notifyWaiting = (message: string) => {
         onUpdate?.({ content: [{ type: 'text', text: message }], details: undefined });
       };
 
-      return execute(options, signal, notifyWaiting, context);
+      return execute(options, toolParameters.base, signal, notifyWaiting, context);
     },
   });

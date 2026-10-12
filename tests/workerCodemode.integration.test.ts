@@ -16,6 +16,7 @@ import { Type } from 'typebox';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { nestedChangeCallReason } from '../src/controlTools.js';
+import fullCheckExtension from '../src/extensions/fullCheck/fullCheck.js';
 import {
   nativeIdentity,
   seedSession,
@@ -136,6 +137,7 @@ const startProfileWorker = async (
   const extensionFactories = [
     createCodemodeExtension({ mode: 'on' }),
     packageToolFixtures(executed),
+    fullCheckExtension,
   ];
 
   if (workflow) {

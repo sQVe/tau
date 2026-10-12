@@ -44,6 +44,22 @@ const repositoryNamed = async (name: string) => {
     },
   );
 
+  await promisify(execFile)(
+    'git',
+    [
+      '-c',
+      'user.name=Tau',
+      '-c',
+      'user.email=tau@example.com',
+      'commit',
+      '--quiet',
+      '--allow-empty',
+      '-m',
+      'first',
+    ],
+    { cwd: root },
+  );
+
   return root;
 };
 

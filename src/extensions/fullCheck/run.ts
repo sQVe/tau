@@ -14,7 +14,7 @@ export interface CheckResult {
 
 const tailLineCount = 40;
 
-const readTail = async (logPath: string): Promise<string> => {
+export const readTail = async (logPath: string): Promise<string> => {
   const text = await readFile(logPath, 'utf8');
 
   return text.trimEnd().split('\n').slice(-tailLineCount).join('\n');
