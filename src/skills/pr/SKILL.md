@@ -143,8 +143,9 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      imply different requirements. Without one, use the [fallback template](fallback-template.md).
      Show any restructuring it needs in the preview.
    - Title: match the repository's convention.
-   - Length: aim for 100 to 150 words and never pass 200. Do not repeat the diff or commit messages
-     anywhere in the body, such as "Every production caller passes `context.ui`".
+   - Length: aim for 100 to 150 words of text you write this session, and never pass 200. Kept text
+     and the template's own headings and checklist items do not count. Do not repeat the diff or
+     commit messages anywhere in the body, such as "Every production caller passes `context.ui`".
    - Lead: one bold sentence on what the PR changes. Then one or two sentences on the cause or
      constraint the diff cannot show. Give each unrelated change one line.
    - Decisions: optional. List only consequential choices, each with the option you rejected and
