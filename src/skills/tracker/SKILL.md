@@ -16,13 +16,21 @@ metadata:
 ## When to use
 
 Use this skill for every Linear write: a new ticket, an edit, a relation, or a status change. Other
-skills follow it at the step that writes to Linear, and their preview counts as this skill's
-preview. It needs the `linear` CLI authenticated for the workspace.
+skills follow it at the step that writes to Linear, and their preview, when they have one, counts as
+this skill's preview. It needs the `linear` CLI authenticated for the workspace.
 
 ## Hard rules
 
-- Write to Linear only after the user approves a preview that shows the write. Any change after
-  approval needs a new preview.
+- Make these writes without asking, and report each one with its identifier or link afterwards:
+  - The finish-slice audit comment, added or updated.
+  - A slice start by the start-slice skill: moving the slice to In Progress, creating its agent
+    tickets, and adding an agent ticket later inside the slice's outcome.
+  - A slice plan by the slice skill: creating or updating the container and slices, their relations,
+    and moving existing slices back into plan order.
+- Make every other Linear write only after the user approves a preview that shows it. This covers
+  new tickets outside a slice start or plan, such as bugs, follow-ups, and human tickets, relations
+  you add by hand, cancellations, and other comments and edits. Any change after approval needs a
+  new preview.
 - Ask every question with the `ask_user_question` tool. Never end a turn with a question in prose.
 - Make only two status changes: move a slice to In Progress when it starts, and cancel a ticket
   after the user approves a preview that shows the cancellation, such as a duplicate or a slice
@@ -82,7 +90,7 @@ preview. It needs the `linear` CLI authenticated for the workspace.
      the ticket anyway. Never call it "no duplicate".
    - If the parent read left a gap, stop and report the gap. Never guess a parent's route.
    - If the label read left a gap, create the ticket without labels and show the label gap in the
-     preview. Never guess a label.
+     preview, or in the report for a write made without asking. Never guess a label.
 
 4. Write the title and body.
    - Write the title as an imperative in sentence case, about 70 characters at most, with no prefix.
@@ -94,14 +102,15 @@ preview. It needs the `linear` CLI authenticated for the workspace.
      tool creates them without any.
    - Save the body in the calling skill's draft directory, or in a file from `mktemp`.
 
-5. Preview the writes, unless the calling skill's preview already shows them: each ticket with its
-   type, title, team, project, labels, and parent, and each relation and status change. Approve with
-   `ask_user_question`.
+5. Preview the writes that need approval, unless the calling skill's preview already shows them:
+   each ticket with its type, title, team, project, labels, and parent, and each relation and status
+   change. Approve with `ask_user_question`. Skip this step for the writes the hard rules make
+   without asking.
 
-6. Write with these commands, in the previewed order. Write each `'` in every single-quoted value,
-   such as a title, search term, project, or label, as `'\''`, so the shell expands nothing in it.
-   After each create, note the identifier the output shows. If it shows none, stop and search the
-   parent's children or the team before any retry.
+6. Write with these commands, in the previewed or planned order. Write each `'` in every
+   single-quoted value, such as a title, search term, project, or label, as `'\''`, so the shell
+   expands nothing in it. After each create, note the identifier the output shows. If it shows none,
+   stop and search the parent's children or the team before any retry.
    - Create containers and slices, edit their titles and bodies, and write the `blocked-by`
      relations between slices and their order with the `slice` tool, through the
      [slice skill](../slice/SKILL.md). Move a slice to In Progress with the command below.
@@ -118,16 +127,17 @@ preview. It needs the `linear` CLI authenticated for the workspace.
      linear api 'mutation($team: String!, $parent: String!, $title: String!, $description: String!, $labels: [String!]) { issueCreate(input: { teamId: $team, parentId: $parent, title: $title, description: $description, labelIds: $labels }) { issue { identifier url } } }' --variable team=<team id> --variable parent=<slice> --variable description=@<file> --variables-json '{"title": "<title>", "labels": ["<label id>"]}'
      ```
 
-     Write the title as a JSON string, escaping `"` and `\`. Pass the IDs of the approved labels
-     from the agent team's label list, or `[]` when there are none.
+     Write the title as a JSON string, escaping `"` and `\`. Pass the IDs of the chosen labels from
+     the agent team's label list, or `[]` when there are none.
 
    - Update the title or body of a bug, human ticket, or agent ticket. Leave out the flag for the
      part that stays: `linear issue update <ticket> --title '<title>' --description-file <file>`.
-   - Add, list, or update a comment on a ticket. A comment is a write and needs an approved preview
-     like any other. Add one with `linear issue comment add <ticket> --body-file <file> --yes`, and
-     read the new comment's ID from `linear issue comment list <ticket> --json --no-pager`, since
-     the add command prints a success message and the comment URL, not the ID. The list's JSON has
-     `id`, `body`, and `url` for each comment. Replace a comment's text with
+   - Add, list, or update a comment on a ticket. A comment needs an approved preview, except the
+     finish-slice audit comment. Add one with
+     `linear issue comment add <ticket> --body-file <file> --yes`, and read the new comment's ID
+     from `linear issue comment list <ticket> --json --no-pager`, since the add command prints a
+     success message and the comment URL, not the ID. The list's JSON has `id`, `body`, and `url`
+     for each comment. Replace a comment's text with
      `linear issue comment update <comment> --body-file <file> --yes`.
    - Add a dependency that the `slice` tool does not write, such as one on a ticket outside the
      container: `linear issue relation add <ticket> blocked-by <other>`. Remove one with
