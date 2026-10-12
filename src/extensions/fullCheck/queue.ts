@@ -136,9 +136,12 @@ const listGenerations = async (lockPath: string): Promise<number[]> => {
     .toSorted((left, right) => left - right);
 };
 
-export const groupIsAlive = (groupId: number): boolean => {
+// POSIX probes the command's process group. Windows has no groups, so it probes the command itself.
+export const commandIsAlive = (commandId: number): boolean => {
+  const target = process.platform === 'win32' ? commandId : -commandId;
+
   try {
-    process.kill(-groupId, 0);
+    process.kill(target, 0);
 
     return true;
   } catch (error) {
@@ -151,7 +154,7 @@ const holderIsGone = (holder: LockOwner | undefined): boolean => {
     return true;
   }
 
-  const groupIsGone = holder.commandGroup === undefined || !groupIsAlive(holder.commandGroup);
+  const groupIsGone = holder.commandGroup === undefined || !commandIsAlive(holder.commandGroup);
 
   return !processIsAlive(holder.pid) && groupIsGone;
 };

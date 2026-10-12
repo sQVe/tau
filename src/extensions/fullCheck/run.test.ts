@@ -1,11 +1,24 @@
+import { spawn } from 'node:child_process';
+import type { ChildProcess, SpawnOptions } from 'node:child_process';
+
 import { onTestFinished, expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
-import { groupIsAlive } from './queue.js';
+import { commandIsAlive } from './queue.js';
 import { runCheck } from './run.js';
 
+vi.mock(import('node:child_process'), async (importOriginal) => {
+  const original = await importOriginal();
+
+  const spawnRecorded = vi.fn<
+    (command: string, commandArguments: readonly string[], options: SpawnOptions) => ChildProcess
+  >((command, commandArguments, options) => original.spawn(command, commandArguments, options));
+
+  return { ...original, spawn: spawnRecorded as unknown as typeof original.spawn };
+});
+
 const waitForGroupExit = async (groupId: number): Promise<void> => {
-  while (groupIsAlive(groupId)) {
+  while (commandIsAlive(groupId)) {
     await new Promise((resolve) => {
       setTimeout(resolve, 10);
     });
@@ -59,4 +72,49 @@ it('settles a cancelled run of a command that cannot spawn without signalling pr
   });
 
   expect(killed.filter(([processId]) => processId === 0)).toEqual([]);
+});
+
+it('stops the direct child and probes it by pid on win32, without a process group', async () => {
+  const root = await createTemporaryRepository(onTestFinished, 'tau-full-check-run-');
+  const killed: unknown[][] = [];
+  const realKill = process.kill.bind(process);
+
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+
+  vi.spyOn(process, 'kill').mockImplementation((...killArguments) => {
+    killed.push(killArguments);
+
+    return realKill(...killArguments);
+  });
+
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+  });
+
+  const controller = new AbortController();
+
+  const outcome = runCheck(
+    root,
+    [process.execPath, '-e', 'setInterval(() => {}, 1000)'],
+    controller.signal,
+    async () => {
+      controller.abort();
+    },
+  );
+
+  await expect(outcome).rejects.toThrow('its command has stopped');
+
+  const options = vi.mocked(spawn).mock.lastCall?.[2];
+
+  expect(options).toMatchObject({ detached: false });
+
+  expect(killed.filter(([processId]) => typeof processId === 'number' && processId < 0)).toEqual(
+    [],
+  );
+
+  expect(
+    killed.some(
+      ([processId, signal]) => typeof processId === 'number' && processId > 0 && signal === 0,
+    ),
+  ).toBe(true);
 });

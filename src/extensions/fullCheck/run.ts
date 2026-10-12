@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { open, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { ensureTauDirectory } from '../../tauDirectory.js';
-import { groupIsAlive } from './queue.js';
+import { commandIsAlive } from './queue.js';
 
 export interface CheckResult {
   passed: boolean;
@@ -30,42 +31,55 @@ const newLogPath = async (root: string): Promise<string> => {
 
 const killGraceMilliseconds = 5000;
 
-// Asks the command's process group to stop, and kills it if it ignores the request.
-const stopGroup = (processId: number | undefined): NodeJS.Timeout | undefined => {
-  if (processId === undefined) {
+// Windows has no process groups, so only the direct child can be signalled there.
+const signalCommand = (child: ChildProcess, signal: 'SIGTERM' | 'SIGKILL'): void => {
+  if (process.platform === 'win32') {
+    child.kill(signal);
+
+    return;
+  }
+
+  if (child.pid !== undefined) {
+    process.kill(-child.pid, signal);
+  }
+};
+
+// Asks the command to stop, and kills it if it ignores the request.
+const stopCommand = (child: ChildProcess): NodeJS.Timeout | undefined => {
+  if (child.pid === undefined) {
     return undefined;
   }
 
   try {
-    process.kill(-processId, 'SIGTERM');
+    signalCommand(child, 'SIGTERM');
   } catch {
     return undefined;
   }
 
   return setTimeout(() => {
     try {
-      process.kill(-processId, 'SIGKILL');
+      signalCommand(child, 'SIGKILL');
     } catch {
-      // The group already exited.
+      // The command already exited.
     }
   }, killGraceMilliseconds);
 };
 
 const groupPollMilliseconds = 20;
 
-// Escalates to SIGKILL after the grace period, and resolves when no process of the group is left.
-const waitForGroupToExit = async (processId: number): Promise<void> => {
+// Escalates to SIGKILL after the grace period, and resolves when the command is gone.
+const waitForCommandToExit = async (child: ChildProcess, processId: number): Promise<void> => {
   const deadline = Date.now() + killGraceMilliseconds;
   let killed = false;
 
-  while (groupIsAlive(processId)) {
+  while (commandIsAlive(processId)) {
     if (!killed && Date.now() >= deadline) {
       killed = true;
 
       try {
-        process.kill(-processId, 'SIGKILL');
+        signalCommand(child, 'SIGKILL');
       } catch {
-        // The group already exited.
+        // The command already exited.
       }
     }
 
@@ -96,10 +110,11 @@ export const runCheck = async (
     const status = await new Promise<{ exitCode: number | null; signal: string | null }>(
       (resolve, reject) => {
         // A process group leader, so a cancel reaches the processes the command starts.
+        // Windows has no groups; a detached child there would only open a new console.
         const child = spawn(command, commandArguments, {
           cwd: root,
           stdio: ['ignore', log.fd, log.fd],
-          detached: true,
+          detached: process.platform !== 'win32',
         });
 
         if (child.pid !== undefined) {
@@ -115,7 +130,7 @@ export const runCheck = async (
         let killTimer: NodeJS.Timeout | undefined;
 
         const stop = () => {
-          killTimer = stopGroup(child.pid);
+          killTimer = stopCommand(child);
         };
 
         child.once('error', reject);
@@ -138,7 +153,7 @@ export const runCheck = async (
 
           // The launcher may exit on SIGTERM while a descendant in its group keeps running.
           const finishCancel = async () => {
-            await waitForGroupToExit(processId);
+            await waitForCommandToExit(child, processId);
             clearTimeout(killTimer);
             reject(new Error('The full check was cancelled and its command has stopped.'));
           };
