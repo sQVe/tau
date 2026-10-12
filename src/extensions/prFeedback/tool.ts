@@ -16,6 +16,7 @@ import { boundFeedback, chunkFeedbackBodies } from './feedbackBounds.js';
 import { postReplies } from './post.js';
 import { readFeedback } from './read.js';
 import { writePullRequestRecord } from './replies.js';
+import { threadsToShow } from './threads.js';
 
 const feedbackPath = 'pr-feedback';
 
@@ -42,7 +43,7 @@ export type PrFeedbackInput = Static<typeof prFeedbackToolParameters>;
 
 const description = `Read a pull request's review feedback and checks on GitHub and post replies to it. Call it as the pr-feedback skill directs.
 - read {repository, pr}: repository is <host>/<owner>/<name>, such as github.com/sQVe/tau. Reads the viewer, the pull request, its review threads, reviews, and conversation comments with gh, and creates a fresh ignored directory .tau/pr-feedback/<pr>-XXXXXX for this round. Saves the full result in <directory>/feedback.json. In that file only, each comment or review body is an array of chunks of at most 4000 UTF-16 code units. Join the chunks with no separator to restore the exact body. Each chunk is on its own JSON line for reading in ranges. Returns {directory, feedback (the feedback.json path), viewer, pr {number, url, author, headRefOid}, threads, reviews, comments, stateToken, gaps} within 40000 serialized characters, including formatting and gaps.
-  - threads: unresolved threads only, each {id, path, line, isOutdated, viewerCanReply, viewerCanResolve, replyTo (the first comment's ID, to reply to), fromPerson (any comment not by a bot), startedByViewer, comments [{id, author, isBot, body, url, createdAt, updatedAt}]}.
+  - threads: unresolved threads only, each {id, path, line, isOutdated, viewerCanReply, viewerCanResolve, replyTo (the first comment's ID, to reply to), fromPerson (any comment not by a bot), startedByViewer, comments [{id, author, isBot, body, url, createdAt, updatedAt}]}. A thread the viewer started is left out while every comment in it is by the viewer, and appears once anyone else replies.
   - reviews: review summaries with a body, each {id, author, isBot, state, body, url}.
   - comments: conversation comments, each {id, author, isBot, body, url}.
   - Bodies keep their first 4000 characters. Lists keep a prefix, budgeted in order: threads, reviews, comments. gaps contains {kind: truncatedBody, list, id, kept, total} for cut bodies (character counts), and {kind: truncatedList, list, kept, total} for omitted list items (item counts). Read feedback.json with the read tool for omitted evidence. stateToken always comes from the full feedback.
@@ -116,7 +117,8 @@ const read = async (runtime: Runtime, parameters: PrFeedbackInput) => {
   const repository = parseRepository(parameters.repository);
   const pr = parsePullRequestNumber('read', parameters.pr);
   const root = await findCheckoutRoot(runtime.cwd, 'pr_feedback');
-  const feedback = await readFeedback(runtime, repository, pr);
+  const full = await readFeedback(runtime, repository, pr);
+  const feedback = { ...full, threads: threadsToShow(full.threads) };
   const directory = await createFreshTauDirectory(root, feedbackPath, `${pr}-`);
 
   await writePullRequestRecord(directory, { repository, pr });

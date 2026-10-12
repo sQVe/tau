@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
 import type { GraphqlAuthor, RestUser, ThreadCommentNode, ThreadNode } from './github.js';
-import { stateEntries, stateText } from './threads.js';
+import { stateEntries, stateText, threadsToShow, unresolvedThreads } from './threads.js';
 import type { Feedback } from './threads.js';
 
 const viewer = 'sqve';
@@ -177,4 +177,36 @@ it.each([
   const changed = stateText(other, base) !== stateText('github.com/sQVe/tau#7', base);
 
   expect(changed).toBe(differs);
+});
+
+it.each([
+  {
+    case: 'the viewer is the only commenter',
+    comments: [threadComment(101, graphqlViewer), threadComment(102, graphqlViewer)],
+    shown: false,
+  },
+  {
+    case: 'a person replies to the viewer',
+    comments: [threadComment(101, graphqlViewer), threadComment(102, graphqlPerson)],
+    shown: true,
+  },
+  {
+    case: 'a bot replies to the viewer',
+    comments: [threadComment(101, graphqlViewer), threadComment(102, graphqlBot)],
+    shown: true,
+  },
+  {
+    case: 'a deleted account replies to the viewer',
+    comments: [threadComment(101, graphqlViewer), threadComment(102, null)],
+    shown: true,
+  },
+  {
+    case: 'a person started the thread and the viewer replied',
+    comments: [threadComment(101, graphqlPerson), threadComment(102, graphqlViewer)],
+    shown: true,
+  },
+])('an unresolved thread is listed when $case: $shown', ({ comments, shown }) => {
+  const threads = threadsToShow(unresolvedThreads(withThreadComments(comments)));
+
+  expect(threads).toHaveLength(shown ? 1 : 0);
 });

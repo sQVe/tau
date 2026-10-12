@@ -66,6 +66,8 @@ see for themselves.
      `directory`, the `feedback` path, the checks with their failed-log excerpts, and one list of
      gaps: every gap from `read` and `checks`, and the error of a call that failed or did not run.
      The script never calls `post`, and writes nothing beyond the directory `read` creates.
+   - `read` omits a thread the viewer started while every comment in it is by the viewer, such as a
+     self-review comment. It lists the thread once anyone else replies. This holds in both modes.
    - When gaps show omitted feedback, use the read tool on the returned `feedback.json` path before
      judging it. Saved comment and review bodies are arrays of chunks. Join each body's chunks with
      no separator to restore its text. Read further ranges when the read tool cuts the file. When a

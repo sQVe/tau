@@ -123,6 +123,15 @@ export const unresolvedThreads = (feedback: Feedback): Thread[] =>
     .filter((thread) => !thread.isResolved)
     .map((thread) => toThread(feedback.viewer, thread));
 
+const isViewerMonologue = (thread: Thread) =>
+  thread.startedByViewer &&
+  thread.comments.every((comment) => comment.author === thread.comments[0]?.author);
+
+// What the agent reads. A thread the viewer started and alone wrote in needs nothing until someone
+// replies. Write reconciliation must keep using every unresolved thread.
+export const threadsToShow = (threads: readonly Thread[]): Thread[] =>
+  threads.filter((thread) => !isViewerMonologue(thread));
+
 export const reviewsWithBody = (feedback: Feedback): Review[] =>
   feedback.reviews
     .filter((review) => review.body.trim() !== '')
