@@ -1,8 +1,10 @@
 # ADR 0101: Treat `.tau/` files as the working copy and trackers as the saved copy
 
 **Date**: 2026-10-10\
-**Status**: Accepted\
-**Extends**: [ADR 0045 (Keep worker records per Tau checkout and worktree files in `.tau/`)](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md),
+**Status**: Accepted; approval before slice flow saves superseded by
+[ADR 0103 (Write slice flow Linear changes without approval)](./0103-write-slice-flow-linear-changes-without-approval.md)\
+**Extends**:
+[ADR 0045 (Keep worker records per Tau checkout and worktree files in `.tau/`)](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md),
 the worktree files part
 
 ## Context

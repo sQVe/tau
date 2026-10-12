@@ -1,7 +1,8 @@
 # ADR 0075: Plan work as PR-sized slices in Linear
 
 **Date**: 2026-09-30\
-**Status**: Accepted
+**Status**: Accepted; approval of the split and of each slice start superseded by
+[ADR 0103 (Write slice flow Linear changes without approval)](./0103-write-slice-flow-linear-changes-without-approval.md)
 
 ## Context
 

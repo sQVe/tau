@@ -31,7 +31,8 @@ Writes:
       such as a Linear ticket, a GitHub change, or a file outside the checkout. It refuses in a
       worker, even one with UI, because the user does not watch the worker's pane. A write to a
       GitHub bot needs no confirm; see
-      [ADR 0086](./adr/0086-post-to-github-bots-without-a-confirm.md).
+      [ADR 0086](./adr/0086-post-to-github-bots-without-a-confirm.md). Nor does a slice plan write;
+      see [ADR 0103](./adr/0103-write-slice-flow-linear-changes-without-approval.md).
 - [ ] The confirm shows the exact writes the tool will make, so the user sees what they approve.
 - [ ] When a call has a write that needs a confirm, the tool writes nothing if the user declines or
       the session is a worker or has no UI.

@@ -127,3 +127,4 @@ line that links to the replacement.
 - [0100: Let agents cancel Linear tickets after approval](./0100-let-agents-cancel-linear-tickets-after-approval.md)
 - [0101: Treat `.tau/` files as the working copy and trackers as the saved copy](./0101-treat-tau-files-as-the-working-copy-and-trackers-as-the-saved-copy.md)
 - [0102: Require acceptance criteria on editing worker launches](./0102-require-acceptance-criteria-on-editing-worker-launches.md)
+- [0103: Write slice flow Linear changes without approval](./0103-write-slice-flow-linear-changes-without-approval.md)
