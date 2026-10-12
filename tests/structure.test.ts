@@ -39,6 +39,7 @@ const pureModules = [
   'src/extensions/commit/autosquash.ts',
   'src/extensions/commit/fileRequests.ts',
   'src/extensions/fullCheck/lockHolderDecision.ts',
+  'src/extensions/fullCheck/groupMembers.ts',
   'src/extensions/fullCheck/reuseDecision.ts',
   'src/extensions/compaction/reminder.ts',
   'src/extensions/pr/evidenceDecisions.ts',

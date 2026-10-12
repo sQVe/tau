@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
 import type { ChildProcess, SpawnOptions } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import { onTestFinished, expect, it, vi } from 'vitest';
 
@@ -117,4 +119,32 @@ it('stops the direct child and probes it by pid on win32, without a process grou
       ([processId, signal]) => typeof processId === 'number' && processId > 0 && signal === 0,
     ),
   ).toBe(true);
+});
+
+const processIsAlive = (processId: number): boolean => {
+  try {
+    process.kill(processId, 0);
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+it('returns only after a background process in the command group has gone', async () => {
+  const root = await createTemporaryRepository(onTestFinished, 'tau-full-check-run-');
+  const pidFile = join(root, 'background.pid');
+
+  const script = `
+    const { spawn } = require('node:child_process');
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });
+    require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
+    child.unref();
+  `;
+
+  const result = await runCheck(root, [process.execPath, '-e', script], undefined, async () => {});
+  const backgroundPid = Number(await readFile(pidFile, 'utf8'));
+
+  expect(result).toMatchObject({ passed: true, exitCode: 0 });
+  expect(processIsAlive(backgroundPid)).toBe(false);
 });

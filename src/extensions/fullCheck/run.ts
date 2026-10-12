@@ -1,9 +1,11 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { open, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 import { ensureTauDirectory } from '../../tauDirectory.js';
+import { groupHasRunningMember } from './groupMembers.js';
 import { commandIsAlive } from './queue.js';
 
 export interface CheckResult {
@@ -67,12 +69,30 @@ const stopCommand = (child: ChildProcess): NodeJS.Timeout | undefined => {
 
 const groupPollMilliseconds = 20;
 
+// A zombie keeps the group visible to kill(-group, 0) and SIGKILL cannot remove it, so after the
+// SIGKILL only a running member counts. When ps fails the group counts as gone: the SIGKILL was
+// sent, and waiting on an unreadable process table could hold the lock forever.
+const groupHasRunningProcess = async (groupId: number): Promise<boolean> => {
+  try {
+    const { stdout } = await promisify(execFile)('ps', ['-A', '-o', 'pgid=,stat=']);
+
+    return groupHasRunningMember(stdout, groupId);
+  } catch {
+    return false;
+  }
+};
+
 // Escalates to SIGKILL after the grace period, and resolves when the command is gone.
 const waitForCommandToExit = async (child: ChildProcess, processId: number): Promise<void> => {
   const deadline = Date.now() + killGraceMilliseconds;
   let killed = false;
 
   while (commandIsAlive(processId)) {
+    // oxlint-disable-next-line no-await-in-loop -- Each poll depends on the previous one.
+    if (killed && !(await groupHasRunningProcess(processId))) {
+      return;
+    }
+
     if (!killed && Date.now() >= deadline) {
       killed = true;
 
@@ -138,16 +158,36 @@ export const runCheck = async (
         child.once('close', (exitCode, exitSignal) => {
           signal?.removeEventListener('abort', stop);
 
-          if (signal?.aborted !== true) {
-            resolve({ exitCode, signal: exitSignal });
-
-            return;
-          }
-
           // A command that never spawned has no group, and the error event already settled the run.
           const { pid: processId } = child;
 
           if (processId === undefined) {
+            return;
+          }
+
+          if (signal?.aborted !== true) {
+            // Background processes may outlive the direct child, and the lock must not be released
+            // while they run. Windows has no group to probe.
+            const groupRemains = process.platform !== 'win32' && commandIsAlive(processId);
+
+            if (!groupRemains) {
+              resolve({ exitCode, signal: exitSignal });
+
+              return;
+            }
+
+            killTimer = stopCommand(child);
+
+            const finishExit = async () => {
+              await waitForCommandToExit(child, processId);
+              clearTimeout(killTimer);
+              resolve({ exitCode, signal: exitSignal });
+            };
+
+            finishExit().catch((error: unknown) => {
+              reject(error instanceof Error ? error : new Error(String(error)));
+            });
+
             return;
           }
 
