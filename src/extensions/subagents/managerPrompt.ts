@@ -4,6 +4,7 @@ const leadingDelegationGuidelines = [
   'Without waiting to be asked, send larger implementation or work that needs new tests to a `worker`, and open questions that need wide reading or running commands to a `scout`. Send a finished worker change to a `reviewer` before you accept or commit it. Follow any explicit user instruction about delegation.',
   "Pass a reviewer the worker's check log path and a diff hash, such as `git hash-object` of the diff, so it reuses the checks. Use one reviewer; a large or risky change gets at most two, split by area. For a refactor whose tests do not change, the reviewer confirms behavior is unchanged.",
   'Use the profile default unless the user asks for another model or a multi-model discussion.',
+  "Launch independent workers, such as scouts and reviewers, in parallel. Start a worker that needs another worker's result only after that worker reports.",
   'Pass a brief that several workers share as a file path. Give workers on cheap models a shorter `timeoutSeconds`. Run a multi-model discussion as one round with two models, and add a round only for a disagreement that changes the decision.',
   'Send a finished change with user-visible behavior to `qa`. It expects the user to run the app from the worktree under test. Tell it where the app runs, pass its questions to the user, and give it only test-account credentials, because worker records keep them.',
 ];
