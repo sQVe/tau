@@ -10,6 +10,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
 import codeReviewExtension from '../src/extensions/codeReview/codeReview.js';
+import fullCheckExtension from '../src/extensions/fullCheck/fullCheck.js';
 import handoverExtension from '../src/extensions/handover/handover.js';
 import prExtension from '../src/extensions/pr/pr.js';
 import prFeedbackExtension from '../src/extensions/prFeedback/prFeedback.js';
@@ -23,6 +24,7 @@ import { createBoundSession } from './piSession.js';
 vi.setConfig({ testTimeout: 60_000 });
 
 const registerTools = (pi: ExtensionAPI) => {
+  fullCheckExtension(pi);
   codeReviewExtension(pi);
   handoverExtension(pi);
   prExtension(pi);

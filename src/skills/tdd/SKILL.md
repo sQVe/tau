@@ -33,8 +33,9 @@ make it pass, then verify the whole suite once.
 3. Read the failure summary and the runner report in `details`. Implement the change, then rerun
    focused with the same files and names. You can change the label; keep the selection.
 4. Refactor and format as needed. Before handing off, verify the full suite once:
-   - Run the repository's full check, such as `pnpm check`, or reuse a current reported full check
-     on the same inputs.
+   - Run the repository's full check with the `full_check` tool when the repository has a configured
+     command. Otherwise run it as before, such as `pnpm check`, or reuse a current reported full
+     check on the same inputs.
    - A full `run_tests` pass also counts when no repository check will run.
    - One pass on the current inputs is enough. Do not rerun an equivalent full suite for bookkeeping
      or because you are about to hand off. Required hooks and CI still run on their own.

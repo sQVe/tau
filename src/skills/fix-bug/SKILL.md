@@ -35,5 +35,6 @@ out each step yourself in the same order.
    Its acceptance criteria include "the reproduction command now passes" and the regression test
    name. The worker adds a regression test that fails for the diagnosed reason, then makes the
    smallest fix at the root cause.
-4. Verify. Rerun the reproduction, then the full check. Report the root cause, the regression test,
-   and the check results.
+4. Verify. Rerun the reproduction, then the full check with the `full_check` tool when the
+   repository has a configured command, otherwise as before. Report the root cause, the regression
+   test, and the check results.

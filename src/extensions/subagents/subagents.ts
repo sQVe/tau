@@ -9,6 +9,7 @@ import type { Static } from 'typebox';
 import { isNestedControlCall, nestedControlCallReason } from '../../controlTools.js';
 import { errorMessage } from '../../errors.js';
 import { readGitOutput } from '../../gitOutput.js';
+import { repositoryFromRemote } from '../../repositoryRemote.js';
 import { appendSystemPrompt } from '../../systemPrompt.js';
 import { forgetReportedWarnings } from '../../tauConfig.js';
 import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
@@ -37,7 +38,7 @@ import {
   shortId,
 } from './render.js';
 import { readTrackerSetup } from './trackerConfig.js';
-import { repositoryFromRemote, trackerLines } from './trackerRouting.js';
+import { trackerLines } from './trackerRouting.js';
 import { taskIdSchema } from './types.js';
 import { renderWorkerWidget } from './widget.js';
 import { workerModelLine } from './workerModels.js';

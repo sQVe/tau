@@ -5,7 +5,9 @@ export const skillTools: Readonly<Record<string, readonly string[]>> = {
   'finish-slice': ['slice'],
   'start-slice': ['slice'],
   handover: ['handover'],
-  pr: ['pr'],
+  pr: ['pr', 'full_check'],
+  tdd: ['full_check'],
+  'fix-bug': ['full_check'],
   'pr-feedback': ['pr_feedback'],
   tracker: ['tracker_evidence', 'tracker_draft'],
 };
