@@ -422,7 +422,7 @@ it('puts every test file in exactly one Vitest project', () => {
   const testFiles = readdirSync(root, { recursive: true, encoding: 'utf8' })
     .filter((path) => path.split(/[/\\]/).every((part) => !ignoredDirectories.has(part)))
     .map((path) => path.replaceAll('\\', '/'))
-    .filter((path) => path.endsWith('.test.ts'));
+    .filter((path) => path.endsWith('.test.ts') && !isLintProbe(path));
 
   const projects = (config.test?.projects ?? []) as {
     test: { name: string; include: string[]; exclude: string[] };
@@ -457,7 +457,7 @@ it('handles every environment variable that test code reads in the cached test t
   const testCode = readdirSync(root, { recursive: true, encoding: 'utf8' })
     .map((path) => path.replaceAll('\\', '/'))
     .filter((path) => path.split('/').every((part) => !ignoredDirectories.has(part)))
-    .filter((path) => path.endsWith('.ts') && isTestCode(path));
+    .filter((path) => path.endsWith('.ts') && isTestCode(path) && !isLintProbe(path));
 
   const handled = new Set([...testEnvironment, ...testManagedEnvironment]);
 
