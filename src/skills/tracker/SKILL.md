@@ -93,12 +93,15 @@ preview. It needs the `linear` CLI authenticated for the workspace.
      labels by ID. Never create a label. Containers and slices take no labels, since the `slice`
      tool creates them without any.
    - Save the body in the calling skill's draft directory. Otherwise call `tracker_draft` with
-     action `prepare` and the ticket identifier in lower case when the ticket exists, or a slug of
-     the title. Save the body there as `ticket.md`.
-   - Keep a `draft.md` next to the body with the type, title, route, parent, labels, and the Linear
-     identifier once it exists. Record the identifier at once after each create, before any other
-     step.
-   - When `draft.md` records an identifier, read the ticket with
+     action `prepare` and the ticket identifier in lower case when the ticket exists, which finds
+     the draft even when it was made under a slug, or a slug of the title. Save the body there as
+     `ticket.md`.
+   - Keep a `draft.json` next to the body with the Linear identifier once it exists. Write it at
+     once after each create, before any other step. When `prepare` returned no `draft`, create it as
+     `{"version": 1, "identifier": "ME-600", "reviewCommentId": null}`. Otherwise keep every field
+     of the returned `draft` and change only `identifier`, so a saved `reviewCommentId` stays. Keep
+     the type, title, route, parent, and labels in the preview, not in a saved file.
+   - When the returned `draft` records an identifier, read the ticket with
      `linear issue view <id> --json --no-pager`. The write is then an update of that ticket, never a
      new create. The preview names each field that changes from the saved copy, including edits made
      in Linear that the draft would drop.

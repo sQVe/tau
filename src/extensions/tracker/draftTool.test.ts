@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -49,6 +49,101 @@ it.each(repositories)('prepares and reuses a ticket draft in a $kind', async ({ 
   expect(await readFile(join(prepared.directory, 'draft.md'), 'utf8')).toBe('saved\n');
 });
 
+const fixtures = join(import.meta.dirname, 'fixtures', 'drafts');
+
+const saveDraft = async (root: string, name: string, fixture: string) => {
+  const directory = join(root, '.tau', 'tickets', name);
+
+  await mkdir(directory, { recursive: true });
+  await copyFile(join(fixtures, fixture), join(directory, 'draft.json'));
+
+  return directory;
+};
+
+it('returns the directory whose draft.json records the identifier', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const saved = await saveDraft(root, 'fix-login', 'version-1.json');
+
+  const prepared = await prepare(root, { action: 'prepare', id: 'me-600' });
+
+  expect(prepared).toEqual({
+    directory: saved,
+    draft: { version: 1, identifier: 'ME-600', reviewCommentId: 'c1' },
+    malformed: [],
+  });
+
+  expect(await readdir(join(root, '.tau', 'tickets'))).toEqual(['fix-login']);
+});
+
+it('refuses a directory named for the id that records another identifier', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const directory = await saveDraft(root, 'me-700', 'version-1.json');
+  const path = join(directory, 'draft.json');
+  const before = await readFile(path, 'utf8');
+
+  await expect(prepare(root, { action: 'prepare', id: 'me-700' })).rejects.toThrow(
+    new RegExp(`${path}.*ME-600.*me-700`),
+  );
+
+  expect(await readFile(path, 'utf8')).toBe(before);
+  expect(await readdir(join(root, '.tau', 'tickets'))).toEqual(['me-700']);
+});
+
+it('returns a directory named for the id whose draft records no identifier', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const directory = join(root, '.tau', 'tickets', 'me-600');
+
+  await mkdir(directory, { recursive: true });
+
+  await writeFile(
+    join(directory, 'draft.json'),
+    '{"version":1,"identifier":null,"reviewCommentId":null}',
+  );
+
+  expect(await prepare(root, { action: 'prepare', id: 'me-600' })).toEqual({
+    directory,
+    draft: { version: 1, identifier: null, reviewCommentId: null },
+    malformed: [],
+  });
+});
+
+it('lists a malformed draft.json in another directory and still prepares', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const other = await saveDraft(root, 'other', 'malformed.json');
+
+  const prepared = await prepare(root, { action: 'prepare', id: 'me-600' });
+
+  expect(prepared).toEqual({
+    directory: join(root, '.tau', 'tickets', 'me-600'),
+    draft: null,
+    malformed: [join(other, 'draft.json')],
+  });
+});
+
+it('refuses a malformed draft.json in the returned directory and creates nothing', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await saveDraft(root, 'me-600', 'malformed.json');
+
+  await expect(prepare(root, { action: 'prepare', id: 'me-600' })).rejects.toThrow(
+    /Malformed ticket draft .*me-600.draft\.json/,
+  );
+
+  expect(await readdir(join(root, '.tau', 'tickets'))).toEqual(['me-600']);
+  expect(await readdir(join(root, '.tau'))).toEqual(['tickets']);
+});
+
+it('refuses two directories that record the same identifier', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await saveDraft(root, 'first', 'version-1.json');
+  await saveDraft(root, 'second', 'version-1.json');
+
+  await expect(prepare(root, { action: 'prepare', id: 'me-600' })).rejects.toThrow(
+    /first.* and .*second/,
+  );
+});
+
 it('ignores the draft directory in Git', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const { directory } = await prepare(root, { action: 'prepare', id: 'me-600' });
@@ -70,6 +165,8 @@ it.each(repositories)(
 
     expect(await prepare(nested, { action: 'prepare', id: 'a-slug' })).toEqual({
       directory: join(root, '.tau', 'tickets', 'a-slug'),
+      draft: null,
+      malformed: [],
     });
 
     expect(await readdir(nested)).toEqual([]);

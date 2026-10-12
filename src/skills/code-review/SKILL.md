@@ -130,15 +130,17 @@ target. Give each finding a status that says how it was checked.
 9. Post the report of this run to the ticket from step 1, before any fixing. Skip this step when the
    review has no ticket.
    - Each run has a fresh `$dir`, so keep the comment ID where every run reads it. Call
-     `tracker_draft` with action `prepare` and the ticket identifier in lower case, and read
-     `review.md` in the returned directory when it exists.
+     `tracker_draft` with action `prepare` and the ticket identifier in lower case. It returns the
+     directory and its parsed `draft`.
    - Find an earlier report comment with the tracker skill's comment list command. Pick the comment
-     with the ID `review.md` records, or with none recorded, the comment whose first line is
+     with the ID in `draft.reviewCommentId`, or with none recorded, the comment whose first line is
      `# Code review: <ticket>`. Read its saved text from that list.
    - Post the content of `$dir/report.md` with the tracker skill's comment commands, without asking.
      Update the earlier comment when one exists, and never add a second one. Record the comment's ID
-     at once in `review.md` and in `$dir/report.md`, both after adding a new comment and after
-     updating one found by its first line.
+     at once as `reviewCommentId` in the returned directory's `draft.json`, with `identifier` set to
+     the ticket, and in `$dir/report.md`. Keep the other fields of the returned `draft`. When
+     `prepare` returned no `draft`, create the record with version 1. Do this both after adding a
+     new comment and after updating one found by its first line.
    - If the post fails, keep the local report, and report the failure in the reply.
 
 10. Reply to the user with the [report template](report.md). Name the comment URL, or say that the
