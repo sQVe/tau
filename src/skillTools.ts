@@ -7,5 +7,5 @@ export const skillTools: Readonly<Record<string, readonly string[]>> = {
   handover: ['handover'],
   pr: ['pr'],
   'pr-feedback': ['pr_feedback'],
-  tracker: ['tracker_evidence'],
+  tracker: ['tracker_evidence', 'tracker_draft'],
 };

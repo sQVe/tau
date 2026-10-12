@@ -2642,7 +2642,7 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
 
   expect(workerArguments(narrowed, []).slice(9, 14)).toEqual([
     '--tools',
-    'read,subagent_progress,subagent_report,subagent_question,tracker_evidence',
+    'read,subagent_progress,subagent_report,subagent_question,tracker_evidence,tracker_draft',
     '--no-skills',
     '--skill',
     '/skills/tracker/SKILL.md',
