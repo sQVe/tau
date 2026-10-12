@@ -720,6 +720,7 @@ it('keeps editor focus and typing after a click on the passive fullscreen widget
     clearScreen: () => undefined,
     setTitle: () => undefined,
     setProgress: () => undefined,
+    setProgramStatus: () => undefined,
   } as Terminal;
 
   const handlers = new Map<string, (event: unknown, context: ExtensionContext) => void>();
