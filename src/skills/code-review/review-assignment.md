@@ -13,6 +13,8 @@ Add the line for the mode that the skill names.
 - Review by risk across the whole target: the changed hunks and enclosing code, affected callers and
   contracts, the bodies of relevant tests, and material project rules and design. Follow real risk
   beyond the target. Do not audit unrelated code.
+- Map each acceptance criterion in `## Intent` to the evidence that shows it is met. Report a
+  criterion with no evidence, or one you cannot check, as a finding.
 - Report only material findings: a concrete failure or cost, `file:line` evidence, and a fix
   direction. For a rule violation, also cite the rule's file and supporting lines. No quotas or
   nits. Mark pre-existing issues separately.

@@ -24,7 +24,8 @@ Any existing check result with its saved output path, or "none".
 
 ## Intent
 
-The known task intent, acceptance criteria, and intentional behavior changes.
+The known task intent, and intentional behavior changes. Then list the acceptance criteria, one per
+line, word for word, or "none".
 
 ## Capture
 ```
