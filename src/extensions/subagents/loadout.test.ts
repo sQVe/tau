@@ -505,7 +505,11 @@ it('refuses worker startup without the saved model, cwd, CC Safety Net, or profi
     withSkill,
     {
       ...pi,
-      getAllTools: () => [...pi.getAllTools(), { name: 'tracker_evidence' }],
+      getAllTools: () => [
+        ...pi.getAllTools(),
+        { name: 'tracker_evidence' },
+        { name: 'tracker_draft' },
+      ],
     } as typeof pi,
     worker,
   );
@@ -519,6 +523,7 @@ it('refuses worker startup without the saved model, cwd, CC Safety Net, or profi
     'subagent_report',
     'subagent_question',
     'tracker_evidence',
+    'tracker_draft',
   ]);
 });
 

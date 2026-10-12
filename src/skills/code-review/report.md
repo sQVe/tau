@@ -5,8 +5,10 @@ Use this shape for the files in the review directory and for the reply to the us
 ## Saved files
 
 - Save each worker report in `$dir`: `reviewer.md`, or `finder.md` and `checker.md`.
-- Write `$dir/report.md` with the base and HEAD SHAs, the capture `hash`, the source of any check
-  result, every finding in full, and refuted candidates with the checker's reason.
+- Write `$dir/report.md` as the comment body. When the review has a ticket, start it with
+  `# Code review: <ticket>`, and keep a `Comment ID:` line once the comment exists. Include the base
+  and HEAD SHAs, the capture `hash`, the source of any check result, every finding in full, and
+  refuted candidates with the checker's reason.
 
 ## Reply
 
