@@ -3,6 +3,8 @@ import { basename, dirname, join } from 'node:path';
 
 import { hasErrorCode, isMissingFile } from '../../errors.js';
 import { isRecord } from '../../isRecord.js';
+import { holderIsGone } from './lockHolderDecision.js';
+import type { LockHolderFacts } from './lockHolderDecision.js';
 
 interface LockOwner {
   pid: number;
@@ -149,15 +151,12 @@ export const commandIsAlive = (commandId: number): boolean => {
   }
 };
 
-const holderIsGone = (holder: LockOwner | undefined): boolean => {
-  if (holder === undefined || holder.released === true) {
-    return true;
-  }
-
-  const groupIsGone = holder.commandGroup === undefined || !commandIsAlive(holder.commandGroup);
-
-  return !processIsAlive(holder.pid) && groupIsGone;
-};
+const readHolderFacts = (holder: LockOwner | undefined): LockHolderFacts => ({
+  recorded: holder !== undefined,
+  released: holder?.released === true,
+  sessionAlive: holder !== undefined && processIsAlive(holder.pid),
+  commandAlive: holder?.commandGroup !== undefined && commandIsAlive(holder.commandGroup),
+});
 
 // The lock is the file of the highest generation. A new owner takes the next generation with an
 // atomic link, so two sessions that both see a dead holder cannot both win, and no one ever
@@ -244,7 +243,7 @@ const acquireLock = async (options: QueueOptions, owner: LockOwner): Promise<str
     // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
     const { highest, holder } = await findHolder(lockPath);
 
-    if (highest === undefined || holderIsGone(holder)) {
+    if (highest === undefined || holderIsGone(readHolderFacts(holder))) {
       const next = (highest ?? 0) + 1;
       const path = generationPath(lockPath, next);
 
