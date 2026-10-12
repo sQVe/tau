@@ -86,6 +86,10 @@ export const runCheck = async (
   const logPath = await newLogPath(root);
   const log = await open(logPath, 'wx');
 
+  // Settles with the record's error, or undefined. The caller releases the lock only after this
+  // settles, so the release never races the record's rewrite of the same lock file.
+  let recorded: Promise<Error | undefined> = Promise.resolve(undefined);
+
   try {
     const [command = '', ...commandArguments] = argv;
 
@@ -99,7 +103,13 @@ export const runCheck = async (
         });
 
         if (child.pid !== undefined) {
-          onStarted(child.pid).catch(reject);
+          recorded = onStarted(child.pid).then(
+            () => undefined,
+            (error: unknown) =>
+              error instanceof Error
+                ? error
+                : new Error('Could not record the command group in the lock.', { cause: error }),
+          );
         }
 
         let killTimer: NodeJS.Timeout | undefined;
@@ -139,10 +149,17 @@ export const runCheck = async (
       },
     );
 
+    const recordError = await recorded;
+
+    if (recordError !== undefined) {
+      throw recordError;
+    }
+
     const tail = await readTail(logPath);
 
     return { passed: status.exitCode === 0, ...status, logPath, tail };
   } finally {
+    await recorded;
     await log.close();
   }
 };
