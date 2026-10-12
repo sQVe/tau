@@ -128,6 +128,9 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      tool's `checkHeader` action with the pinned merge base as `mergeBase`. Write its returned lines
      at the top of the log, then append the check's output and exit status. Stop if the action
      fails.
+   - When the repository has a configured full check, run it with the `full_check` tool, passing the
+     pinned merge base as `base`. Append the log it returns after the header lines. The tool returns
+     a saved passing log without a run when the head, base, command, and changes are unchanged.
 
 6. Choose draft status. Any gap means draft. A gap is one of:
    - A required check that failed or did not run. Only checks that can run solely after deployment

@@ -26,6 +26,16 @@ Tau warns once per session about a key it does not know in `tdd`, `tracker`, `br
 field. A bad `tracker.repositories` entry fails only when it names the repository of the current
 checkout.
 
+To run the full check of a repository with the `full_check` tool, add its command to
+`~/.pi/agent/tau.json`. Tau reads this key only from the user file:
+
+```json
+{ "fullCheck": { "repositories": { "sQVe/tau": { "argv": ["pnpm", "check"] } } } }
+```
+
+Only one full check runs at a time on the machine. A passing log is saved under `.tau/checks` and
+reused while the head, base, command, and uncommitted changes stay the same.
+
 To limit the models Tau picks for workers, add `allowedModels` to either file:
 
 ```json
