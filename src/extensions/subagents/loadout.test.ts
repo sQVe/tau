@@ -909,12 +909,19 @@ const answered = (label: string, confidence: number) => ({
   answers: { route: { type: 'choice', choice: label, probabilities: {}, confidence } },
 });
 
+const classifierProvider = 'tau-classifier-fixture';
+
+const classifierId = 'router';
+
+const classifierReference = `${classifierProvider}/${classifierId}`;
+
 const routedFixture = async (onTestFinished: (callback: () => void) => void, canary?: number) => {
   const fixture = await workerFixture(onTestFinished);
   const { directory, model } = fixture;
   const profileModel = `${model.provider}/${model.id}`;
 
-  const routes = {
+  const route = {
+    classifier: classifierReference,
     question: 'How wide is this brief?',
     ...(canary === undefined ? {} : { canary }),
     labels: {
@@ -927,24 +934,29 @@ const routedFixture = async (onTestFinished: (callback: () => void) => void, can
     join(directory, 'tau.json'),
     JSON.stringify({
       profiles: {
-        scout: { model: profileModel, routes },
-        worker: { model: profileModel, routes },
+        scout: { model: profileModel, route },
+        worker: { model: profileModel, route },
         reviewer: { model: profileModel },
       },
     }),
   );
 
   const classify = vi.fn<(...parameters: unknown[]) => Promise<unknown>>();
+  const findOfType = vi.fn<(...parameters: unknown[]) => void>();
   const hasClassifier = { value: true };
 
   const registry = Object.assign(Object.create(fixture.context.modelRegistry) as ModelRegistry, {
-    findOfType: () => (hasClassifier.value ? { id: 'jev-latest' } : undefined),
+    findOfType: (...parameters: unknown[]) => {
+      findOfType(...parameters);
+
+      return hasClassifier.value ? { id: classifierId } : undefined;
+    },
     classify,
   });
 
   const context = { ...fixture.context, modelRegistry: registry };
 
-  return { ...fixture, context, classify, hasClassifier, profileModel };
+  return { ...fixture, context, classify, findOfType, hasClassifier, profileModel };
 };
 
 it('records the shadow pick of a scout launch and keeps the profile model', async ({
@@ -1059,7 +1071,39 @@ it.for(['scout', 'reviewer', 'qa', 'browser'])(
   },
 );
 
-it('classifies nothing for a profile without routes', async ({ onTestFinished }) => {
+it('looks up the route classifier and sends the brief to it', async ({ onTestFinished }) => {
+  const { context, classify, findOfType } = await routedFixture(onTestFinished);
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  await resolveRoutedLoadout({ profile: 'scout', task: 'Find the parser.' }, context);
+
+  expect(findOfType).toHaveBeenCalledWith('classifier', classifierProvider, classifierId);
+  expect(classify).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify(classify.mock.calls[0])).toContain('Find the parser.');
+});
+
+it('skips classification when the classifier is outside allowedModels', async ({
+  onTestFinished,
+}) => {
+  const { directory, context, classify, findOfType, profileModel } =
+    await routedFixture(onTestFinished);
+
+  const configPath = join(directory, 'tau.json');
+  const config = JSON.parse(readFileSync(configPath, 'utf8')) as object;
+
+  writeFileSync(configPath, JSON.stringify({ ...config, allowedModels: [profileModel, haiku] }));
+
+  const { loadout } = await resolveRoutedLoadout(
+    { profile: 'scout', task: 'Find the parser.' },
+    context,
+  );
+
+  expect(loadout.model).toBe(profileModel);
+  expect(classify).not.toHaveBeenCalled();
+  expect(findOfType).not.toHaveBeenCalled();
+});
+
+it('classifies nothing for a profile without a route', async ({ onTestFinished }) => {
   const { context, classify } = await routedFixture(onTestFinished);
 
   const result = await resolveRoutedLoadout({ profile: 'reviewer', task: 'Review.' }, context);
@@ -1490,7 +1534,7 @@ it('refuses a canary model outside allowedModels or missing from the registry', 
   const configPath = join(directory, 'tau.json');
 
   const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
-    profiles: { scout: { routes: { labels: { narrow: { model: string } } } } };
+    profiles: { scout: { route: { labels: { narrow: { model: string } } } } };
   };
 
   const brief = { profile: 'scout', task: 'Find it.' };
@@ -1499,13 +1543,13 @@ it('refuses a canary model outside allowedModels or missing from the registry', 
     configPath,
     JSON.stringify({
       ...config,
-      allowedModels: [profileModel, 'typesafe/jev-latest'],
+      allowedModels: [profileModel, 'tau-classifier-fixture/router'],
     }),
   );
 
   await expect(resolveRoutedLoadout(brief, context)).rejects.toThrow(haiku);
 
-  config.profiles.scout.routes.labels.narrow.model = 'tau-worker-fixture/missing';
+  config.profiles.scout.route.labels.narrow.model = 'tau-worker-fixture/missing';
   writeFileSync(configPath, JSON.stringify(config));
 
   await expect(resolveRoutedLoadout(brief, context)).rejects.toThrow(
@@ -1536,7 +1580,7 @@ it('fails only the launch whose own profile entry is bad', async ({ onTestFinish
   );
 });
 
-it('launches on the profile model with no routing when its routes are broken', async ({
+it('launches on the profile model with no routing when its route is broken', async ({
   onTestFinished,
 }) => {
   const { directory, context, model, notify } = await workerFixture(onTestFinished);
@@ -1544,7 +1588,7 @@ it('launches on the profile model with no routing when its routes are broken', a
 
   writeFileSync(
     join(directory, 'tau.json'),
-    JSON.stringify({ profiles: { worker: { model: reference, routes: { question: 5 } } } }),
+    JSON.stringify({ profiles: { worker: { model: reference, route: { question: 5 } } } }),
   );
 
   const { loadout, routing } = await resolveRoutedLoadout(
@@ -1554,7 +1598,7 @@ it('launches on the profile model with no routing when its routes are broken', a
 
   expect(loadout.model).toBe(reference);
   expect(routing).toBeUndefined();
-  expect(notify).toHaveBeenCalledWith(expect.stringContaining('profiles.worker.routes'), 'error');
+  expect(notify).toHaveBeenCalledWith(expect.stringContaining('profiles.worker.route'), 'error');
 });
 
 it('reports an unchanged broken route once per session and still launches on the profile model', async ({
@@ -1565,7 +1609,7 @@ it('reports an unchanged broken route once per session and still launches on the
 
   writeFileSync(
     join(directory, 'tau.json'),
-    JSON.stringify({ profiles: { scout: { model: profileModel, routes: { canary: 5 } } } }),
+    JSON.stringify({ profiles: { scout: { model: profileModel, route: { canary: 5 } } } }),
   );
 
   const sessionContext = { ...context, ui: { notify } };
@@ -1576,5 +1620,5 @@ it('reports an unchanged broken route once per session and still launches on the
   expect(first.loadout.model).toBe(profileModel);
   expect(second.loadout.model).toBe(profileModel);
   expect(notify).toHaveBeenCalledTimes(1);
-  expect(notify).toHaveBeenCalledWith(expect.stringContaining('profiles.scout.routes'), 'error');
+  expect(notify).toHaveBeenCalledWith(expect.stringContaining('profiles.scout.route'), 'error');
 });

@@ -7,6 +7,7 @@ const profileModel = 'claude-bridge/claude-opus-5-5';
 const haiku = 'claude-bridge/claude-haiku-5-5';
 
 const route: ModelRoute = {
+  classifier: 'tau-classifier-fixture/router',
   question: 'How wide is this scout brief?',
   labels: new Map([
     ['narrow', { criterion: 'A lookup about known code.', model: haiku }],

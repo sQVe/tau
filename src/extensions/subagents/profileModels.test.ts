@@ -99,7 +99,8 @@ it('leaves allowed models readable when profiles are broken', ({ onTestFinished 
   expect(readAllowedModels(location)?.models).toEqual(['a/one']);
 });
 
-const scoutRoutes = {
+const scoutRoute = {
+  classifier: 'a/router',
   question: 'How wide is this scout brief?',
   labels: {
     narrow: { criterion: 'A lookup about known code.', model: 'a/small' },
@@ -111,7 +112,7 @@ it('reads a profile route and keeps the profile model', ({ onTestFinished }) => 
   const { location, userFile } = configFixture(onTestFinished);
 
   writeConfig(userFile, {
-    profiles: { scout: { model: 'a/scout', routes: scoutRoutes }, plain: { model: 'a/plain' } },
+    profiles: { scout: { model: 'a/scout', route: scoutRoute }, plain: { model: 'a/plain' } },
   });
 
   expect(readProfileModels(location, uiFixture())).toEqual(
@@ -122,8 +123,9 @@ it('reads a profile route and keeps the profile model', ({ onTestFinished }) => 
   );
 
   expect(readProfileRoute(location, 'scout', uiFixture())).toEqual({
-    question: scoutRoutes.question,
-    labels: new Map(Object.entries(scoutRoutes.labels)),
+    classifier: scoutRoute.classifier,
+    question: scoutRoute.question,
+    labels: new Map(Object.entries(scoutRoute.labels)),
     canary: 0,
   });
 
@@ -138,21 +140,21 @@ it.for<[number, number]>([
   const { location, userFile } = configFixture(onTestFinished);
 
   writeConfig(userFile, {
-    profiles: { scout: { model: 'a/scout', routes: { ...scoutRoutes, canary } } },
+    profiles: { scout: { model: 'a/scout', route: { ...scoutRoute, canary } } },
   });
 
   expect(readProfileRoute(location, 'scout', uiFixture())?.canary).toBe(expected);
 });
 
 it.for<[string, unknown, string]>([
-  ['a text canary', { ...scoutRoutes, canary: '0.5' }, 'must be a number from 0 to 1'],
-  ['a null canary', { ...scoutRoutes, canary: null }, 'must be a number from 0 to 1'],
-  ['a canary above 1', { ...scoutRoutes, canary: 1.5 }, 'outside the range 0 to 1'],
-  ['a negative canary', { ...scoutRoutes, canary: -0.1 }, 'outside the range 0 to 1'],
+  ['a text canary', { ...scoutRoute, canary: '0.5' }, 'must be a number from 0 to 1'],
+  ['a null canary', { ...scoutRoute, canary: null }, 'must be a number from 0 to 1'],
+  ['a canary above 1', { ...scoutRoute, canary: 1.5 }, 'outside the range 0 to 1'],
+  ['a negative canary', { ...scoutRoute, canary: -0.1 }, 'outside the range 0 to 1'],
 ])('turns routing off for %s with its own message', ([, routes, message], { onTestFinished }) => {
   const { location, userFile } = configFixture(onTestFinished);
 
-  writeConfig(userFile, { profiles: { scout: { model: 'a/scout', routes } } });
+  writeConfig(userFile, { profiles: { scout: { model: 'a/scout', route: routes } } });
 
   const ui = uiFixture();
 
@@ -160,7 +162,7 @@ it.for<[string, unknown, string]>([
   expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining(userFile), 'error');
 
   expect(ui.notify).toHaveBeenCalledWith(
-    expect.stringContaining('profiles.scout.routes.canary'),
+    expect.stringContaining('profiles.scout.route.canary'),
     'error',
   );
 
@@ -170,34 +172,38 @@ it.for<[string, unknown, string]>([
 it.for<[string, unknown, string]>([
   [
     'a route with one label',
-    { ...scoutRoutes, labels: { narrow: scoutRoutes.labels.narrow } },
-    'profiles.scout.routes.labels',
+    { ...scoutRoute, labels: { narrow: scoutRoute.labels.narrow } },
+    'profiles.scout.route.labels',
   ],
   [
     'a bad label model',
     {
-      ...scoutRoutes,
-      labels: { ...scoutRoutes.labels, wide: { criterion: 'c', model: 'no-provider' } },
+      ...scoutRoute,
+      labels: { ...scoutRoute.labels, wide: { criterion: 'c', model: 'no-provider' } },
     },
-    'profiles.scout.routes.labels.wide.model',
+    'profiles.scout.route.labels.wide.model',
   ],
-  ['a missing question', { labels: scoutRoutes.labels }, 'profiles.scout.routes.question'],
+  [
+    'a missing question',
+    { classifier: scoutRoute.classifier, labels: scoutRoute.labels },
+    'profiles.scout.route.question',
+  ],
   [
     'an empty label name',
-    { ...scoutRoutes, labels: { narrow: scoutRoutes.labels.narrow, '': scoutRoutes.labels.wide } },
-    'profiles.scout.routes.labels',
+    { ...scoutRoute, labels: { narrow: scoutRoute.labels.narrow, '': scoutRoute.labels.wide } },
+    'profiles.scout.route.labels',
   ],
   [
     'a blank label name',
-    { ...scoutRoutes, labels: { narrow: scoutRoutes.labels.narrow, ' ': scoutRoutes.labels.wide } },
-    'profiles.scout.routes.labels',
+    { ...scoutRoute, labels: { narrow: scoutRoute.labels.narrow, ' ': scoutRoute.labels.wide } },
+    'profiles.scout.route.labels',
   ],
 ])(
   'turns routing off for %s and names the file and field',
   ([, routes, field], { onTestFinished }) => {
     const { location, userFile } = configFixture(onTestFinished);
 
-    writeConfig(userFile, { profiles: { scout: { model: 'a/scout', routes } } });
+    writeConfig(userFile, { profiles: { scout: { model: 'a/scout', route: routes } } });
 
     const ui = uiFixture();
 
@@ -207,6 +213,42 @@ it.for<[string, unknown, string]>([
     expect(readProfileModel(location, 'scout', ui)).toBe('a/scout');
   },
 );
+
+it.for<[string, unknown, string]>([
+  ['a route without classifier', { ...scoutRoute, classifier: undefined }, 'route.classifier'],
+  ['a malformed classifier', { ...scoutRoute, classifier: 'router' }, 'route.classifier'],
+])('turns routing off for %s and names the field', ([, route, field], { onTestFinished }) => {
+  const { location, userFile } = configFixture(onTestFinished);
+
+  writeConfig(userFile, { profiles: { scout: { model: 'a/scout', route } } });
+
+  const ui = uiFixture();
+
+  expect(readProfileRoute(location, 'scout', ui)).toBeUndefined();
+  expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining(field), 'error');
+  expect(readProfileModel(location, 'scout', ui)).toBe('a/scout');
+});
+
+it('turns routing off for a profile that still sets routes and names the edit', ({
+  onTestFinished,
+}) => {
+  const { location, userFile } = configFixture(onTestFinished);
+
+  writeConfig(userFile, { profiles: { scout: { model: 'a/scout', routes: scoutRoute } } });
+
+  const ui = uiFixture();
+
+  expect(readProfileRoute(location, 'scout', ui)).toBeUndefined();
+
+  const messages = ui.notify.mock.calls.map(([message]) => message);
+
+  expect(messages).toHaveLength(1);
+  expect(messages[0]).toContain('profiles.scout.routes');
+  expect(messages[0]).toContain('profiles.scout.route');
+  expect(messages[0]).toContain('route.classifier');
+  expect(ui.notify).toHaveBeenCalledWith(expect.any(String), 'error');
+  expect(readProfileModel(location, 'scout', ui)).toBe('a/scout');
+});
 
 it('reads a profile with unknown keys at any depth and reports each key path once per session', ({
   onTestFinished,
@@ -218,10 +260,10 @@ it('reads a profile with unknown keys at any depth and reports each key path onc
       worker: {
         model: 'a/worker',
         futureKey: true,
-        routes: {
-          ...scoutRoutes,
+        route: {
+          ...scoutRoute,
           later: 1,
-          labels: { ...scoutRoutes.labels, wide: { ...scoutRoutes.labels.wide, speed: 2 } },
+          labels: { ...scoutRoute.labels, wide: { ...scoutRoute.labels.wide, speed: 2 } },
         },
       },
     },
@@ -240,8 +282,8 @@ it('reads a profile with unknown keys at any depth and reports each key path onc
 
   for (const keyPath of [
     'profiles.worker.futureKey',
-    'profiles.worker.routes.later',
-    'profiles.worker.routes.labels.wide.speed',
+    'profiles.worker.route.later',
+    'profiles.worker.route.labels.wide.speed',
   ]) {
     expect(
       warnings.filter(({ message }) => message.includes(`${userFile}: ${keyPath} `)),

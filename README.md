@@ -48,6 +48,34 @@ needs a model passed on the launch, `profiles.<name>.model` for its profile, or
 }
 ```
 
+A profile can set `route`: a question, a `classifier` model, and two labels. Tau asks the classifier
+which label fits the brief and saves the model it would pick. `classifier` is a `provider/model-id`
+and must pass `allowedModels`. A route without `classifier` is off, and the worker runs on `model`:
+
+```json
+{
+  "profiles": {
+    "scout": {
+      "model": "claude-bridge/claude-opus-5-5",
+      "route": {
+        "classifier": "my-provider/my-classifier",
+        "question": "How wide is this scout brief?",
+        "labels": {
+          "narrow": {
+            "criterion": "A lookup about known code.",
+            "model": "claude-bridge/claude-haiku-5-5"
+          },
+          "wide": {
+            "criterion": "An investigation across many files.",
+            "model": "claude-bridge/claude-opus-5-5"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
 The bundled `scout`, `reviewer`, and `worker` profiles gather evidence with `codemode` scripts and
 cite only what a script returned. The `qa` and `browser` profiles do not get `codemode`.
 
