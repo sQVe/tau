@@ -28,6 +28,7 @@ const pureModules = [
   'src/confirmationEligibility.ts',
   'src/controlTools.ts',
   'src/isRecord.ts',
+  'src/repositoryRemote.ts',
   'src/models/allowedModels.ts',
   'src/unknownKeys.ts',
   'src/reviewCapture/evidenceDecisions.ts',
