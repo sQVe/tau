@@ -7,6 +7,7 @@ import type { MemberExpression, ModuleDeclaration } from 'oxc-parser';
 import { expect, it } from 'vitest';
 
 import { versionedRecords } from '../src/extensions/subagents/records.js';
+import config from '../vite.config.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -371,4 +372,36 @@ it('refuses index files, one-file folders, and missing entries but allows flat f
     'src/extensions/bareRoot/: one production source file',
     'src/extensions/tdd/: no entry file tdd.ts',
   ]);
+});
+
+it('puts every test file in exactly one Vitest project', () => {
+  const ignoredDirectories = new Set(['node_modules', '.git', '.tau', 'dist', 'coverage']);
+
+  const testFiles = readdirSync(root, { recursive: true, encoding: 'utf8' })
+    .filter((path) => path.split(/[/\\]/).every((part) => !ignoredDirectories.has(part)))
+    .map((path) => path.replaceAll('\\', '/'))
+    .filter((path) => path.endsWith('.test.ts'));
+
+  const projects = (config.test?.projects ?? []) as {
+    test: { name: string; include: string[]; exclude: string[] };
+  }[];
+
+  const projectsOf = (file: string) =>
+    projects
+      .map(({ test }) => test)
+      .filter(({ include, exclude }) => {
+        const included = include.some((pattern) => posix.matchesGlob(file, pattern));
+        const excluded = exclude.some((pattern) => posix.matchesGlob(file, pattern));
+
+        return included && !excluded;
+      })
+      .map(({ name }) => name);
+
+  const misplaced = testFiles
+    .map((file) => ({ file, owners: projectsOf(file) }))
+    .filter(({ owners }) => owners.length !== 1);
+
+  expect(projects).toHaveLength(10);
+  expect(testFiles.length).toBeGreaterThan(100);
+  expect(misplaced).toEqual([]);
 });

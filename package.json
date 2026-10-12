@@ -11,7 +11,7 @@
     "changeset": "changeset",
     "changeset:check": "changeset status --since=origin/main",
     "changeset:version": "changeset version && vp fmt",
-    "check": "pnpm pi-version:check && pnpm run \"/^check:static:/\" && pnpm test",
+    "check": "pnpm pi-version:check && pnpm run \"/^check:static:/\" && vp run --concurrency-limit 2 vitest:all",
     "check:static:format": "pnpm format:check",
     "check:static:knip": "pnpm knip",
     "check:static:style": "pnpm style:check",
@@ -28,7 +28,7 @@
     "test": "vp test",
     "test:changed": "vp test --changed",
     "test:coverage": "vp test --coverage",
-    "test:unit": "vp test --exclude '**/*.integration.test.ts'",
+    "test:unit": "vp test --project '!integration*'",
     "token-usage": "node scripts/tokenUsage.ts",
     "typecheck": "pnpm exec tsc --noEmit",
     "release:github": "pnpm changeset git-tag"
