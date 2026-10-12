@@ -45,6 +45,8 @@ set receive them, and a follow-up keeps them.
 - Workers keep the configured profile: automatic sessions, no explicit profile or browser path
   unless the task names another account or the user approved a persistent profile, and no new
   profile folders without the user's approval.
+- The manager starts browser and qa workers as if the profile is signed in. It never asks the user
+  for a login before a worker reports a login wall. Workers open the page before they ask.
 - On a login wall, a worker signs in only with credentials the task gives it, such as a test
   account. Otherwise it stops and asks.
 - The manager then asks the user to sign in once in Chrome on the agent profile and close it. It
