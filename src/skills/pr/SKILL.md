@@ -186,6 +186,7 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      findings with their reasons, and gaps.
    - For a self-review, show the review's top-level body and each comment's text, file, line, and
      the head SHA it anchors to. Any change to the body, a text, or an anchor needs a new preview.
+     The anchor's side is `LEFT` for a deleted line and `RIGHT` otherwise; show it with the line.
 
 9. Publish.
    - Compare HEAD, local status, and commits to push with the preview; read the PR again. In a
@@ -230,10 +231,10 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
 12. Post the approved self-review as one GitHub review, if the preview showed one.
     - Read the pushed head with
       `gh pr view <number> --repo <repo> --json headRefOid --jq .headRefOid`. Stop if it differs
-      from the previewed anchor SHA, and preview again. Check that each file and line exists in the
-      PR diff at that head.
+      from the previewed anchor SHA, and preview again. Check that each file and line exists on its
+      side of the PR diff at that head.
     - Save the previewed review as `$prdir/review.json`, with the previewed body and comments:
-      `{"commit_id": "<head SHA>", "event": "COMMENT", "body": "<previewed body>", "comments": [{"path": "<file>", "line": <line>, "side": "RIGHT", "body": "<text>"}]}`.
+      `{"commit_id": "<head SHA>", "event": "COMMENT", "body": "<previewed body>", "comments": [{"path": "<file>", "line": <line>, "side": "<side>", "body": "<text>"}]}`.
       `event` must be set, or GitHub leaves the review pending. `body` is required for `COMMENT`.
     - Post with
       `gh api --hostname <host> --method POST repos/<owner>/<name>/pulls/<number>/reviews --input $prdir/review.json`.
