@@ -129,9 +129,16 @@ export const runCheck = async (
             return;
           }
 
+          // A command that never spawned has no group, and the error event already settled the run.
+          const { pid: processId } = child;
+
+          if (processId === undefined) {
+            return;
+          }
+
           // The launcher may exit on SIGTERM while a descendant in its group keeps running.
           const finishCancel = async () => {
-            await waitForGroupToExit(child.pid ?? 0);
+            await waitForGroupToExit(processId);
             clearTimeout(killTimer);
             reject(new Error('The full check was cancelled and its command has stopped.'));
           };
