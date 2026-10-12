@@ -1,5 +1,5 @@
-import { link, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { link, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 
 import { hasErrorCode, isMissingFile } from '../../errors.js';
 import { isRecord } from '../../isRecord.js';
@@ -9,6 +9,7 @@ interface LockOwner {
   checkout: string;
   startedAt: string;
   token: string;
+  released?: true;
 }
 
 export interface QueueOptions {
@@ -40,7 +41,9 @@ const parseOwner = (text: string): LockOwner | undefined => {
       return undefined;
     }
 
-    return { pid, checkout, startedAt, token: typeof token === 'string' ? token : '' };
+    const released = value['released'] === true ? { released: true as const } : {};
+
+    return { pid, checkout, startedAt, token: typeof token === 'string' ? token : '', ...released };
   } catch {
     return undefined;
   }
@@ -69,14 +72,17 @@ const processIsAlive = (pid: number): boolean => {
   }
 };
 
+const generationPath = (lockPath: string, generation: number): string =>
+  `${lockPath}.${generation}`;
+
 // Links a fully written file into place, so no reader ever sees a partly written lock.
-const tryCreate = async (lockPath: string, owner: LockOwner): Promise<boolean> => {
-  const staging = `${lockPath}.${owner.token}`;
+const tryCreate = async (path: string, owner: LockOwner): Promise<boolean> => {
+  const staging = `${path}.${owner.token}.staging`;
 
   await writeFile(staging, JSON.stringify(owner), { flag: 'wx' });
 
   try {
-    await link(staging, lockPath);
+    await link(staging, path);
 
     return true;
   } catch (error) {
@@ -105,32 +111,64 @@ const sleep = (milliseconds: number, signal: AbortSignal | undefined): Promise<v
 
 const abortedError = (): Error => new Error('The full check was cancelled while it waited.');
 
-const takeOverIfDead = async (lockPath: string, holder: LockOwner): Promise<void> => {
-  if (processIsAlive(holder.pid)) {
+const listGenerations = async (lockPath: string): Promise<number[]> => {
+  const prefix = `${basename(lockPath)}.`;
+  const names = await readdir(dirname(lockPath));
+
+  return names
+    .filter((name) => name.startsWith(prefix) && /^\d+$/u.test(name.slice(prefix.length)))
+    .map((name) => Number(name.slice(prefix.length)))
+    .toSorted((left, right) => left - right);
+};
+
+const holderIsGone = (holder: LockOwner | undefined): boolean =>
+  holder === undefined || holder.released === true || !processIsAlive(holder.pid);
+
+// The lock is the file of the highest generation. A new owner takes the next generation with an
+// atomic link, so two sessions that both see a dead holder cannot both win, and no one ever
+// removes the file of an owner that is still live. Files of older generations are garbage.
+const removeOlderGenerations = async (lockPath: string, generation: number): Promise<void> => {
+  const generations = await listGenerations(lockPath);
+  const older = generations.filter((candidate) => candidate < generation);
+
+  await Promise.all(
+    older.map((candidate) => rm(generationPath(lockPath, candidate), { force: true })),
+  );
+};
+
+// Marks the owner's own file as released. Only the owner rewrites a live file.
+const releaseLock = async (path: string, owner: LockOwner): Promise<void> => {
+  const current = await readOwner(path);
+
+  if (current?.token !== owner.token) {
     return;
   }
 
-  // Remove the lock only if the dead owner still holds it, not a new owner.
-  const current = await readOwner(lockPath);
+  const staging = `${path}.${owner.token}.released`;
 
-  if (current?.token === holder.token && current.pid === holder.pid) {
-    await rm(lockPath, { force: true });
-  }
-};
-
-const releaseLock = async (lockPath: string, token: string): Promise<void> => {
-  const current = await readOwner(lockPath);
-
-  if (current?.token === token) {
-    await rm(lockPath, { force: true });
-  }
+  await writeFile(staging, JSON.stringify({ ...owner, released: true }));
+  await rename(staging, path);
 };
 
 const newToken = (): string =>
   `${process.pid}-${Date.now()}-${Math.random().toString(tokenRadix).slice(2)}`;
 
-// Polls until this process owns the lock. Each poll depends on the one before, so the loop awaits.
-const acquireLock = async (options: QueueOptions, owner: LockOwner): Promise<void> => {
+const findHolder = async (
+  lockPath: string,
+): Promise<{ highest: number | undefined; holder: LockOwner | undefined }> => {
+  const generations = await listGenerations(lockPath);
+  const highest = generations.at(-1);
+
+  if (highest === undefined) {
+    return { highest, holder: undefined };
+  }
+
+  return { highest, holder: await readOwner(generationPath(lockPath, highest)) };
+};
+
+// Polls until this process owns the lock and returns the path of its file. Each poll depends on
+// the one before, so the loop awaits.
+const acquireLock = async (options: QueueOptions, owner: LockOwner): Promise<string> => {
   const { lockPath, signal, pollMilliseconds, onWaiting } = options;
   let reportedHolder: string | undefined;
 
@@ -140,25 +178,26 @@ const acquireLock = async (options: QueueOptions, owner: LockOwner): Promise<voi
     }
 
     // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
-    if (await tryCreate(lockPath, owner)) {
-      return;
-    }
+    const { highest, holder } = await findHolder(lockPath);
 
-    // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
-    const holder = await readOwner(lockPath);
-    const holderKey = holder === undefined ? '' : `${holder.pid}:${holder.token}`;
+    if (highest === undefined || holderIsGone(holder)) {
+      const next = (highest ?? 0) + 1;
+      const path = generationPath(lockPath, next);
 
-    if (holder !== undefined) {
       // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
-      await takeOverIfDead(lockPath, holder);
-    }
+      if (await tryCreate(path, owner)) {
+        // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
+        await removeOlderGenerations(lockPath, next);
 
-    const holderIsAlive = holder === undefined || processIsAlive(holder.pid);
-    const isNewHolder = holderKey !== reportedHolder;
+        return path;
+      }
+    } else {
+      const holderKey = `${holder?.pid}:${holder?.token}`;
 
-    if (isNewHolder && holderIsAlive) {
-      reportedHolder = holderKey;
-      onWaiting(holder);
+      if (holderKey !== reportedHolder) {
+        reportedHolder = holderKey;
+        onWaiting(holder);
+      }
     }
 
     // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
@@ -183,12 +222,12 @@ export const withFullCheckLock = async <T>(
   };
 
   await mkdir(dirname(lockPath), { recursive: true });
-  await acquireLock(options, owner);
+  const path = await acquireLock(options, owner);
 
   try {
     return await run();
   } finally {
-    await releaseLock(lockPath, token);
+    await releaseLock(path, owner);
   }
 };
 
