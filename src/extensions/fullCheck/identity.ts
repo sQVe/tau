@@ -38,15 +38,23 @@ const readBase = async (root: string, base: string | undefined): Promise<string 
   return commit;
 };
 
+const executableBits = 0o111;
+
 const hashUntrackedFile = async (root: string, path: string): Promise<string> => {
   try {
     const stats = await lstat(join(root, path));
 
     if (stats.isSymbolicLink()) {
-      return hashText(await readlink(join(root, path)));
+      return `link:${hashText(await readlink(join(root, path)))}`;
     }
 
-    return stats.isFile() ? hashText(await readFile(join(root, path))) : 'not-a-file';
+    if (!stats.isFile()) {
+      return 'not-a-file';
+    }
+
+    const executable = (stats.mode & executableBits) === 0 ? 'plain' : 'executable';
+
+    return `file:${executable}:${hashText(await readFile(join(root, path)))}`;
   } catch (error) {
     if (isMissingFile(error)) {
       return 'missing';

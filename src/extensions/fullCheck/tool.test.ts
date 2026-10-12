@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -174,4 +174,17 @@ it('returns a passing log saved by another session while this check waited in th
   expect(waiting.details).toMatchObject({ passed: true, reused: true });
   expect(waiting.details?.logPath).toBe(started.details?.logPath);
   expect(await runCount()).toBe(1);
+});
+
+it('runs the command again after the executable mode of an untracked file changes', async () => {
+  const state = await fixture();
+  const script = join(state.root, 'script.sh');
+
+  await writeFile(script, 'echo hi\n', { mode: 0o644 });
+  await state.run();
+  await chmod(script, 0o755);
+  const second = await state.run();
+
+  expect(second.details?.reused).toBe(false);
+  expect(await state.runCount()).toBe(2);
 });
