@@ -1,27 +1,28 @@
 # Fallback pull request body
 
-Use this shape when the repository has no pull request template. Leave out optional sections that
-have nothing to say.
+Use this shape when the repository has no pull request template. Keep the body to about 100 to 150
+words and never past 200. Leave out optional sections that have nothing to say. Keep review history,
+SHAs, and test counts out of the body.
 
 ```markdown
 **One sentence that states what the PR changes.**
 
-At most three sentences of context: why the change is needed and what the diff cannot show.
+One or two sentences of cause or constraint that the diff cannot show.
 
 #### Decisions
 
-Optional. Consequential choices, each with its reason and trade-off. When the PR changes how parts
-connect, add at most one diagram here as a top-level `mermaid` block, drawn with the diagram skill.
+Optional. Only consequential choices, each with the rejected option and why. Do not narrate the
+diff. When the PR changes how parts connect, add at most one diagram here as a top-level `mermaid`
+block, drawn with the diagram skill.
 
 #### Verification
 
-- [x] A check that passed, such as `pnpm check`.
-- [x] A complete review of the pushed content with no open findings.
-- [x] Fixes accepted without a new review, when there are any, with what they fix.
-- [ ] Failed: a required check that ran and failed, with what failed.
-- [ ] Not run: a required check or review that is still missing, with why.
-- [ ] Untested: an area the checks and review did not cover, with why.
+- [x] A check or scenario that ran, and the behavior it exercised.
+- [x] The review result, in one line.
+- [ ] Untested: a behavior the checks and review did not cover, with why.
+- [ ] Failed or not run: a required check, with what failed or why it is missing.
 - [ ] Open finding: a review finding that is not closed, with what it is.
+- [ ] Fixes after the review were not reviewed, only when this changes confidence.
 
 ##### Deferred verification
 

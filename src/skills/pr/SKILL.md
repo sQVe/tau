@@ -153,18 +153,32 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      imply different requirements. Without one, use the [fallback template](fallback-template.md).
      Keep text you did not write this session. Show any restructuring it needs in the preview.
    - Title: match the repository's convention.
-   - Summary: lead with one sentence on what changes, then at most three on why and what the diff
-     cannot show: external causes, constraints, or rejected approaches. Do not repeat the diff or
-     commit messages. Give each unrelated change one line.
-   - Verification: put the review result, open findings, fixes accepted without review, checks that
-     ran, untested areas, and known gaps in the template's verification section, such as Validation,
-     Testing, or How to test. Keep that section even if optional for low-risk changes. Keep this
-     evidence out of the summary. Only if no verification section exists, put it after the summary.
-     Give each check one line, and describe its setup only when a reviewer must repeat it.
+   - Length: aim for 100 to 150 words and never pass 200. The squash commit message, not the body,
+     reaches Git history, so the body serves review time only.
+   - Lead: one bold sentence on what the PR changes. Then one or two sentences on the cause or
+     constraint the diff cannot show. Give each unrelated change one line.
+   - Decisions: optional. List only consequential choices, each with the option you rejected and
+     why. Do not narrate the diff, such as "Every production caller passes `context.ui`". Put a
+     reason that belongs to one place in the code into a code comment, within the coding rules, or
+     into a commit message. Leave draft upstream issues and similar attachments out of the body.
+   - Verification: outcomes and gaps only, in the template's verification section, such as
+     Validation, Testing, or How to test. Keep that section even if optional for low-risk changes.
+     Give one line to each check or scenario that ran, naming the behavior it exercised, and one
+     line to the review result. Add a `[ ]` line for each untested behavior, failed or missing
+     required check, and open finding. Add a `[ ]` line for fixes that no review covered only when
+     that changes confidence. Drop test counts.
    - Issues: link Linear tickets as the [tracker skill](../tracker/SKILL.md) says. For other issues,
      use `Fixes <issue>` only for issues this PR completes; use `Related to <issue>` for others.
-   - Format: write full commit SHAs as plain text, never in backticks. Keep reviewer notes, worker
-     names, and local paths in the session report.
+   - Repository template: apply the same rules inside it. Map the lead, context, decisions, and
+     verification to the template's matching sections. Leave out an optional section with nothing to
+     say. Keep a required heading and write the shortest true content under it, such as "None". For
+     a template with Summary, Changes, Screenshots, Testing, and Checklist: the lead and context go
+     in Summary, Changes holds only decisions and unrelated changes, Screenshots says "None" unless
+     the UI changed, Testing holds the verification lines, and Checklist keeps the template's items.
+     Never state one fact in two sections.
+   - Keep out of the body, and put in the session report: review history, SHAs, fix-by-fix
+     acceptance notes, rebase notes, reviewer notes, worker names, local paths, and machine-local
+     failures that do not block relevant coverage.
 
 8. Preview and ask for approval. Show title, full body, base repository and branch, head, draft
    status, commits to push, and push command. For a new PR, show the `@codex review` comment that
@@ -174,8 +188,12 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
    - For an existing PR whose base changes, show the current base and the new one.
    - In a stack, list each branch to push with its local SHA and explain that each is force-pushed
      with a lease. Show the `gh stack link` command, or why step 9 cannot link.
-   - Include the session report: commits made, comment removals, review and check sources, reviewer
-     notes, dismissed findings with their reasons, and gaps.
+   - Include the session report: commits made, comment removals, review and check sources, review
+     history, reviewed commits, fixes accepted without a new review, rebase notes, machine-local
+     failures, reviewer notes, dismissed findings with their reasons, and gaps.
+   - When step 12 may post a self-review, show the review's top-level body and each comment's text,
+     file, line, and the head SHA it anchors to. Any change to the body, a text, or an anchor needs
+     a new preview. Most PRs post none.
 
 9. Publish.
    - Compare HEAD, local status, and commits to push with the preview; read the PR again. In a
@@ -215,5 +233,23 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
     failure, count a PR the earlier attempt created as created by this run. Post only if
     `gh pr view <number> --repo <repo> --json comments --jq '[.comments[] | select(.body == "@codex review")] | length'`
     prints 0. Read it again before a retry, since a failed post may still have landed. On an update
-    to an existing PR, post nothing. Report the request, then stop. Posting a request does not prove
-    a review started.
+    to an existing PR, post nothing. Posting a request does not prove a review started.
+
+12. Post the approved self-review, if the preview showed one. Most PRs have none. Post one GitHub
+    review with inline comments only for a hunk that looks wrong but is deliberate, or where a
+    reviewer would likely suggest an alternative that was rejected for a reason the diff cannot
+    show. Never post a routine explanation, a narration of the diff, or a fix receipt. There is no
+    fixed limit, but a need for many comments means the reasons belong in code comments or the PR is
+    too large.
+    - Read the pushed head with
+      `gh pr view <number> --repo <repo> --json headRefOid --jq .headRefOid`. Stop if it differs
+      from the previewed anchor SHA, and preview again. Check that each file and line exists in the
+      PR diff at that head.
+    - Save the previewed review as `$prdir/review.json`, with the previewed body and comments:
+      `{"commit_id": "<head SHA>", "event": "COMMENT", "body": "<previewed body>", "comments": [{"path": "<file>", "line": <line>, "side": "RIGHT", "body": "<text>"}]}`.
+      `event` must be set, or GitHub leaves the review pending. `body` is required for `COMMENT`.
+    - Post with
+      `gh api --hostname <host> --method POST repos/<owner>/<name>/pulls/<number>/reviews --input $prdir/review.json`.
+      The command takes no input from the terminal. If it fails, read the PR's reviews before any
+      retry, since a failed post may still have landed.
+    - Report the posted review, then stop.
