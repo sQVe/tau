@@ -39,8 +39,9 @@ target. Give each finding a status that says how it was checked.
   absorb unrelated changes.
 - Mode: fast unless the user asks for deep. A request for the "full diff" names the scope, not the
   mode. Fast launches one reviewer. Deep launches two: a finder, then a fresh checker.
-- Review the whole target on every run. Do not shrink a repeated review to a delta or reuse earlier
-  findings or verdicts.
+- A first review covers the whole target. A fix review after a first review captures only the fix,
+  its callers, and the findings it closes (step 1). A full review the user asks for covers the whole
+  target. Never reuse earlier findings or verdicts.
 - Launch workers with the `reviewer` profile. Omit `model` to use the configured reviewer model,
   unless the user names a model. Omit `timeoutSeconds`, unless the user names a cheap model; then
   set a shorter one than the default.
@@ -65,6 +66,11 @@ target. Give each finding a status that says how it was checked.
      `rootCommit` target. Range: a `range` target for `A..B` as given.
    - Named files: a `files` target, which captures their full contents plus their diff from `HEAD`.
      A named file without changes is still reviewed.
+   - Fix review: when an earlier review of the same target in this session had findings that were
+     fixed, capture a `fix` target with that review's directory as `review` and the paths the closed
+     findings cite as `findingPaths`. Do not capture the whole target.
+   - Whole target: when the user asks for a full review, or when the earlier review left no usable
+     snapshot, capture the whole target fresh.
    - Record exclusions the user declares, and pass them as `exclude`. Ask when the target, base, or
      ownership is unclear. When the work is the user's own, workers also list worthwhile
      pre-existing issues in touched code.
@@ -85,6 +91,8 @@ target. Give each finding a status that says how it was checked.
    - If the call fails, stop and tell the user what it reports.
    - Before anything else, ask the user about each `unmatched` gap. If the user corrects a path,
      start again from step 1 with the corrected target. List every gap in the report.
+   - If a `fix` capture returns `scope: "wholeTarget"`, the fix widened the change, even when
+     `empty` is true. Capture the whole target fresh and run a whole-target review.
    - If `empty` is true and `gaps` is empty, there is nothing to review. Say so and stop. If `empty`
      is true with gaps, nothing readable was captured: report the gaps and stop.
    - If `head` differs from the repository HEAD in `input.md`, or `base` from its base SHA, the
