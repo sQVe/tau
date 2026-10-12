@@ -19,6 +19,8 @@ export interface QueueOptions {
   pollMilliseconds: number;
   // Called when another checkout holds the lock, once for each holder.
   onWaiting: (holder: LockOwner | undefined) => void;
+  // Runs between reading the holder and linking the next generation. Tests use it to stall a session.
+  beforeLink?: () => Promise<void>;
 }
 
 const tokenRadix = 36;
@@ -166,6 +168,35 @@ const findHolder = async (
   return { highest, holder: await readOwner(generationPath(lockPath, highest)) };
 };
 
+// Links generation `next`, and keeps it only if no higher generation exists. A stalled session can
+// link a number that was deleted while a higher generation is live.
+const claimGeneration = async (
+  options: QueueOptions,
+  owner: LockOwner,
+  next: number,
+): Promise<boolean> => {
+  const { lockPath } = options;
+  const path = generationPath(lockPath, next);
+
+  await options.beforeLink?.();
+
+  if (!(await tryCreate(path, owner))) {
+    return false;
+  }
+
+  const current = await listGenerations(lockPath);
+
+  if (current.some((generation) => generation > next)) {
+    await rm(path, { force: true });
+
+    return false;
+  }
+
+  await removeOlderGenerations(lockPath, next);
+
+  return true;
+};
+
 // Polls until this process owns the lock and returns the path of its file. Each poll depends on
 // the one before, so the loop awaits.
 const acquireLock = async (options: QueueOptions, owner: LockOwner): Promise<string> => {
@@ -185,10 +216,7 @@ const acquireLock = async (options: QueueOptions, owner: LockOwner): Promise<str
       const path = generationPath(lockPath, next);
 
       // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
-      if (await tryCreate(path, owner)) {
-        // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
-        await removeOlderGenerations(lockPath, next);
-
+      if (await claimGeneration(options, owner, next)) {
         return path;
       }
     } else {

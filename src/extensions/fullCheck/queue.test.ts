@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
-import { defaultLockPath } from './queue.js';
+import { defaultLockPath, withFullCheckLock } from './queue.js';
 import { createFullCheckTool } from './tool.js';
 
 const recorderSource = `
@@ -305,5 +305,58 @@ it('lets only one of two sessions that recover the same stale lock run at a time
   const other = name === 'first' ? 'second' : 'first';
 
   expect(lines).toEqual([`start ${name}`, `end ${name}`, `start ${other}`, `end ${other}`]);
+  expect(await heldLocks(agentDirectory)).toEqual([]);
+});
+
+const ownerJson = (token: string, released = false) =>
+  JSON.stringify({
+    pid: process.pid,
+    checkout: '/other',
+    startedAt: new Date().toISOString(),
+    token,
+    ...(released ? { released: true } : {}),
+  });
+
+it('does not run while a higher generation is live after linking a lower one', async () => {
+  const { agentDirectory } = await fixture();
+  const lockPath = defaultLockPath(agentDirectory);
+  const live = `${lockPath}.3`;
+
+  await mkdir(join(agentDirectory, 'tau'));
+  await writeFile(`${lockPath}.1`, ownerJson('first', true));
+
+  let stalled = false;
+  let ranWhileLive = false;
+
+  await withFullCheckLock(
+    {
+      lockPath,
+      checkout: '/stalled',
+      signal: undefined,
+      pollMilliseconds: 10,
+      onWaiting: () => undefined,
+      beforeLink: async () => {
+        if (stalled) {
+          return;
+        }
+
+        stalled = true;
+        await writeFile(live, ownerJson('third'));
+        await rm(`${lockPath}.1`);
+
+        setTimeout(() => {
+          writeFile(live, ownerJson('third', true)).catch(() => undefined);
+        }, 150);
+      },
+    },
+    async () => {
+      const text = await readFile(live, 'utf8').catch(() => undefined);
+
+      // A removed file means the higher holder released and was replaced.
+      ranWhileLive = text !== undefined && !text.includes('"released":true');
+    },
+  );
+
+  expect(ranWhileLive).toBe(false);
   expect(await heldLocks(agentDirectory)).toEqual([]);
 });
