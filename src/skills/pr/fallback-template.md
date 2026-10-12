@@ -1,8 +1,7 @@
 # Fallback pull request body
 
-Use this shape when the repository has no pull request template. Keep the body to about 100 to 150
-words and never past 200. Leave out optional sections that have nothing to say. Keep review history,
-SHAs, and test counts out of the body.
+Use this shape when the repository has no pull request template. Leave out optional sections that
+have nothing to say.
 
 ```markdown
 **One sentence that states what the PR changes.**
@@ -11,9 +10,9 @@ One or two sentences of cause or constraint that the diff cannot show.
 
 #### Decisions
 
-Optional. Only consequential choices, each with the rejected option and why. Do not narrate the
-diff. When the PR changes how parts connect, add at most one diagram here as a top-level `mermaid`
-block, drawn with the diagram skill.
+Optional. Only consequential choices, each with the rejected option and why. When the PR changes how
+parts connect, add at most one diagram here as a top-level `mermaid` block, drawn with the diagram
+skill.
 
 #### Verification
 

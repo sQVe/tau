@@ -13,8 +13,7 @@ metadata:
 
 ## When to use
 
-Use this skill for the branch in this session's worktree. It needs `gh` authenticated for the target
-host's active account.
+Use this skill for the branch in this session's worktree.
 
 ## Goal
 
@@ -43,8 +42,7 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
   retrying.
 - Do not watch CI, wait for reviews, request human reviewers, or merge.
 - Before saving any file, call the `pr` tool's `prepare` action. Stop if it fails. Use the returned
-  directory as `$prdir` for every saved file. Never use `/tmp` or another shared path: other
-  sessions run at the same time.
+  directory as `$prdir` for every saved file. Never use `/tmp` or another shared path.
 
 ## Procedure
 
@@ -54,28 +52,24 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
    which the stack skill must do first.
 
    Then gather publication evidence with one read-only `codemode` script for both creates and
-   updates. Start it with `// @options: {"max_output_tokens": 4000}`. Filter before printing, print
-   strings as plain lines rather than result objects, and keep the output within that limit.
+   updates. Start it with `// @options: {"max_output_tokens": 4000}`.
    - Call the `pr` tool's `evidence` action. Pass the user-named remote as `remote`, when given.
      Pass the stack parent for a tracked branch, otherwise the user-named base, as `base`. It wins
      over an open PR's base, so the target and merge base follow the stack. Pass the newest
-     `.tau/workers/review-*` directory saved for this branch as `review`, when one exists. Use saved
-     review input or session evidence to check its branch; report unclear ownership as a gap rather
-     than guessing.
-   - The result has `target`, `branch`, `subjects`, `reuse`, `review`, `checks`, and `gaps`.
-     Unavailable objects are null. In the same script, find ticket IDs in the user's links,
-     `branch`, commit `subjects`, and `target.pr.body`. Read each distinct ticket with its service's
-     CLI, such as `linear issue view <id> --json --no-pager --no-download`. Use returned issue IDs,
-     not branch aliases. Keep only each ticket's title and `## Acceptance` section as intent.
+     `.tau/workers/review-*` directory saved for this branch as `review`, when one exists. Check
+     that the review directory belongs to this branch, from its saved input or session evidence.
+     Report unclear ownership as a gap.
+   - In the same script, find ticket IDs in the user's links, `branch`, commit `subjects`, and
+     `target.pr.body`. Read each distinct ticket with its service's CLI, such as
+     `linear issue view <id> --json --no-pager --no-download`. Use returned issue IDs, not branch
+     aliases. Keep only each ticket's title and `## Acceptance` section as intent.
    - Print the target's head, base, merge base, repository, open PR fields, and closed PRs; ticket
      intent; reuse status, reasons, and available reports; review freshness and evidence gaps; and
      matching check-log paths with their bounded excerpts. Print one combined list of gaps from the
-     tool, failed or skipped reads, missing ticket intent, and anything omitted to fit the limit. A
-     check with `matches: true` has matching inputs, not a passing result. Read the log's result
-     before judging it; read omitted evidence through its returned path when needed.
+     tool, failed or skipped reads, missing ticket intent, and anything omitted to fit the limit.
+     Read omitted evidence through its returned path when needed.
    - The script gathers evidence only. It never calls `prepare` or `verify`, and writes nothing
-     itself. The evidence action fetches the base and may write the review reader's freshness
-     recapture. Target questions, rebases, review runs, previews, and approvals stay outside it.
+     itself. Target questions, rebases, review runs, previews, and approvals stay outside it.
    - If `target` is null because no head remote or several were found, ask which remote to use and
      rerun the script. On any other target error or a failed evidence call, tell the user and stop.
    - Use `target.repository` as `--repo <repo>` for repository-scoped `gh` commands, `target.head`
@@ -104,32 +98,28 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
 4. Review `<merge base>..HEAD`, with both ends pinned. Rerun step 1's evidence script if the branch
    or saved evidence changed since collection. Reuse an earlier review only if:
    - The session or saved `.tau/workers/review-*/` files show every worker reported (`reviewer.md`,
-     or `finder.md` and `checker.md`), freshness passed, and no gaps remain besides areas a worker
-     read shallowly. Unstated status is unknown; do not reuse it.
-   - It covered the whole branch, not only some of its commits.
+     or `finder.md` and `checker.md`), and no gaps remain besides areas a worker read shallowly.
+     Unstated status is unknown; do not reuse it.
    - The script's `reuse.status` is `match` for that review and the current merge base.
    - The script's review freshness passed. A changed head or stale capture blocks reuse, even when
      the branch diff matches. A missing or unknown result is not a pass.
    - Callers and rules outside the capture have no relevant changes.
 
    Otherwise run the [code-review skill](../code-review/SKILL.md) in fast mode on the range. If the
-   skill or worker tools are missing, report a gap; do not review in their place. On the user's own
-   PR or branch, let it continue into the [triage-findings skill](../triage-findings/SKILL.md),
-   which commits its fixes with the commit skill. On anyone else's, ask its approval question.
+   skill or worker tools are missing, report a gap; do not review in their place. Follow that
+   skill's ownership, fix, and approval flow.
 
-5. Run checks. Reuse a required pre-merge check only when the evidence script lists its log as
-   matching and reading its result shows it passed. Otherwise run it once on the committed tree.
+5. Run checks. Rerun the evidence script first. Reuse a required pre-merge check only when the
+   script lists its log as matching and reading its result shows it passed. A match does not detect
+   every edit to an already dirty file. Otherwise run it once on the committed tree. Rerun affected
+   checks after relevant changes, even if their headers still match.
    - In a stack, first restack branches above with the stack skill. Check the PR's branch and every
      branch above changed by restacking, because step 9 pushes them all. After later commits,
      restack and rerun affected checks before previewing.
-   - Save real output, never a summary, as `$prdir/checks/<name>.log`. Create `checks` under the
-     prepared directory. Before the run, call the `pr` tool's `checkHeader` action with the pinned
-     merge base as `mergeBase`. Write its returned lines at the top of the log, then append the
-     check's output and exit status. Stop if the action fails.
-
-   - Rerun the evidence script before reusing saved checks. A match only binds the recorded inputs;
-     it does not prove success or detect every edit to an already dirty file. Rerun affected checks
-     after relevant changes, even if their headers still match.
+   - Save real output, never a summary, as `$prdir/checks/<name>.log`. Before the run, call the `pr`
+     tool's `checkHeader` action with the pinned merge base as `mergeBase`. Write its returned lines
+     at the top of the log, then append the check's output and exit status. Stop if the action
+     fails.
 
 6. Choose draft status. Any gap means draft. A gap is one of:
    - A required check that failed or did not run. Only checks that can run solely after deployment
@@ -151,34 +141,36 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      case-insensitively in the root, `.github/`, `docs/`, or a `PULL_REQUEST_TEMPLATE/` directory.
      When several fit, use the repository's clear default and name it in the preview; ask when they
      imply different requirements. Without one, use the [fallback template](fallback-template.md).
-     Keep text you did not write this session. Show any restructuring it needs in the preview.
+     Show any restructuring it needs in the preview.
    - Title: match the repository's convention.
-   - Length: aim for 100 to 150 words and never pass 200. The squash commit message, not the body,
-     reaches Git history, so the body serves review time only.
+   - Length: aim for 100 to 150 words and never pass 200. Do not repeat the diff or commit messages
+     anywhere in the body, such as "Every production caller passes `context.ui`".
    - Lead: one bold sentence on what the PR changes. Then one or two sentences on the cause or
      constraint the diff cannot show. Give each unrelated change one line.
    - Decisions: optional. List only consequential choices, each with the option you rejected and
-     why. Do not narrate the diff, such as "Every production caller passes `context.ui`". Put a
-     reason that belongs to one place in the code into a code comment, within the coding rules, or
-     into a commit message. Leave draft upstream issues and similar attachments out of the body.
+     why. Put code-local reasons in a code comment allowed by the coding rules, or in a commit
+     message. Leave draft upstream issues and similar attachments out of the body.
    - Verification: outcomes and gaps only, in the template's verification section, such as
      Validation, Testing, or How to test. Keep that section even if optional for low-risk changes.
-     Give one line to each check or scenario that ran, naming the behavior it exercised, and one
-     line to the review result. Add a `[ ]` line for each untested behavior, failed or missing
-     required check, and open finding. Add a `[ ]` line for fixes that no review covered only when
-     that changes confidence. Drop test counts.
+     If the template has no such section, put Verification after the summary. Give one line to each
+     check or scenario that ran, naming the behavior it exercised, and its setup only when a
+     reviewer must repeat it. Give one line to the review result. Add a `[ ]` line for each untested
+     behavior, failed or missing required check, and open finding. Add a `[ ]` line for fixes that
+     no review covered only when that changes confidence. Drop test counts.
    - Issues: link Linear tickets as the [tracker skill](../tracker/SKILL.md) says. For other issues,
      use `Fixes <issue>` only for issues this PR completes; use `Related to <issue>` for others.
    - Repository template: apply the same rules inside it. Map the lead, context, decisions, and
      verification to the template's matching sections. Leave out an optional section with nothing to
-     say. Keep a required heading and write the shortest true content under it, such as "None". For
-     a template with Summary, Changes, Screenshots, Testing, and Checklist: the lead and context go
-     in Summary, Changes holds only decisions and unrelated changes, Screenshots says "None" unless
-     the UI changed, Testing holds the verification lines, and Checklist keeps the template's items.
-     Never state one fact in two sections.
-   - Keep out of the body, and put in the session report: review history, SHAs, fix-by-fix
-     acceptance notes, rebase notes, reviewer notes, worker names, local paths, and machine-local
-     failures that do not block relevant coverage.
+     say. Keep a required heading and write the shortest true content under it, such as "None". A
+     Changes section holds only decisions and unrelated changes, never a list of the diff. Keep the
+     template's checklist items. Never state one fact in two sections.
+   - Keep SHAs, worker names, local paths, and everything step 8 lists for the session report out of
+     the body, except the verification outcomes and gaps above.
+   - Self-review comments: optional, and most PRs have none. Draft an inline comment only for a hunk
+     that looks wrong but is deliberate, or where a reviewer would likely suggest an alternative
+     that was rejected for a reason the diff cannot show. Never draft a routine explanation, a
+     narration of the diff, or a fix receipt. There is no fixed limit, but a need for many comments
+     means the reasons belong in code comments or the PR is too large.
 
 8. Preview and ask for approval. Show title, full body, base repository and branch, head, draft
    status, commits to push, and push command. For a new PR, show the `@codex review` comment that
@@ -189,11 +181,11 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
    - In a stack, list each branch to push with its local SHA and explain that each is force-pushed
      with a lease. Show the `gh stack link` command, or why step 9 cannot link.
    - Include the session report: commits made, comment removals, review and check sources, review
-     history, reviewed commits, fixes accepted without a new review, rebase notes, machine-local
-     failures, reviewer notes, dismissed findings with their reasons, and gaps.
-   - When step 12 may post a self-review, show the review's top-level body and each comment's text,
-     file, line, and the head SHA it anchors to. Any change to the body, a text, or an anchor needs
-     a new preview. Most PRs post none.
+     history, reviewed commits, fixes accepted without a new review and what each fixes, rebase
+     notes, machine-local failures that do not block relevant coverage, reviewer notes, dismissed
+     findings with their reasons, and gaps.
+   - For a self-review, show the review's top-level body and each comment's text, file, line, and
+     the head SHA it anchors to. Any change to the body, a text, or an anchor needs a new preview.
 
 9. Publish.
    - Compare HEAD, local status, and commits to push with the preview; read the PR again. In a
@@ -235,12 +227,7 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
     prints 0. Read it again before a retry, since a failed post may still have landed. On an update
     to an existing PR, post nothing. Posting a request does not prove a review started.
 
-12. Post the approved self-review, if the preview showed one. Most PRs have none. Post one GitHub
-    review with inline comments only for a hunk that looks wrong but is deliberate, or where a
-    reviewer would likely suggest an alternative that was rejected for a reason the diff cannot
-    show. Never post a routine explanation, a narration of the diff, or a fix receipt. There is no
-    fixed limit, but a need for many comments means the reasons belong in code comments or the PR is
-    too large.
+12. Post the approved self-review as one GitHub review, if the preview showed one.
     - Read the pushed head with
       `gh pr view <number> --repo <repo> --json headRefOid --jq .headRefOid`. Stop if it differs
       from the previewed anchor SHA, and preview again. Check that each file and line exists in the
@@ -250,6 +237,6 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
       `event` must be set, or GitHub leaves the review pending. `body` is required for `COMMENT`.
     - Post with
       `gh api --hostname <host> --method POST repos/<owner>/<name>/pulls/<number>/reviews --input $prdir/review.json`.
-      The command takes no input from the terminal. If it fails, read the PR's reviews before any
-      retry, since a failed post may still have landed.
+      If it fails, read the PR's reviews before any retry, since a failed post may still have
+      landed.
     - Report the posted review, then stop.
