@@ -1054,6 +1054,44 @@ describe('post uncertain writes', () => {
   });
 });
 
+describe('post uncertain resolve of a viewer-started thread', () => {
+  it('posts the resolve again when the only reply was deleted and the thread stays unresolved', async () => {
+    const { root, fake, read, post } = await setUp();
+    const confirmed = confirmContext(root, async () => true);
+    const viewer = { login: 'sqve', bot: false };
+
+    fake.threads = [
+      thread({
+        id: 'thread-self',
+        comments: [
+          { id: 101, author: viewer, body: 'Why this way?' },
+          { id: 102, author: bot, body: 'Agreed.' },
+        ],
+      }),
+    ];
+
+    const details = await read();
+
+    await writeReplies(details.directory, {
+      version: 1,
+      threads: [replyTo('thread-self', null)],
+      comment: null,
+    });
+
+    fake.failWrite(1);
+    await postFailure(post(details, confirmed));
+
+    fake.threads = [
+      thread({ id: 'thread-self', comments: [{ id: 101, author: viewer, body: 'Why this way?' }] }),
+    ];
+
+    const retry = await post(details, confirmed);
+
+    expect(retry).toMatchObject({ status: 'posted' });
+    expect(fake.writes).toEqual([{ kind: 'resolve', threadId: 'thread-self' }]);
+  });
+});
+
 describe('post settled writes', () => {
   it('posts an uncertain reply again when only an earlier comment has its text', async () => {
     const { root, fake, read, post } = await setUp();
