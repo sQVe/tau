@@ -167,10 +167,10 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      If the template has no such section, put Verification after the summary. Give one line to each
      check or scenario that ran, naming the behavior it exercised, and its setup only when a
      reviewer must repeat it. Give one line to the review result. Add a `[ ]` line for each untested
-     behavior, failed or missing required check, open finding, and audit item with the verdict not
-     run. Add a `[ ]` line for fixes that no review covered only when that changes confidence. Drop
-     test counts. List deferred audit items under the template's deferred verification section, such
-     as `##### Deferred verification`.
+     behavior, failed or missing required check, open finding, and not-run audit item that step 6
+     did not close. Add a `[ ]` line for fixes that no review covered only when that changes
+     confidence. Drop test counts. List deferred audit items under the template's deferred
+     verification section, such as `##### Deferred verification`.
    - Issues: link Linear tickets as the [tracker skill](../tracker/SKILL.md) says. For other issues,
      use `Fixes <issue>` only for issues this PR completes; use `Related to <issue>` for others.
    - Repository template: apply the same rules inside it. Map the lead, context, decisions, and
