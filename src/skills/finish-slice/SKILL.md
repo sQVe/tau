@@ -62,9 +62,10 @@ for the workspace.
    outcome, as "Changes after the start" in the start-slice skill says. Create it only after the
    user approves a preview, as the tracker skill says.
 
-6. Find an earlier audit comment before you write a new one. Use the comment ID recorded in
-   `finish.md`. If none is recorded, run the tracker skill's comment list command and pick the
-   comment whose first line is the template's first line. Read its saved text.
+6. Find an earlier audit comment before you write a new one. Run the tracker skill's comment list
+   command on the slice, even when `finish.md` records a comment ID. Pick the comment with the
+   recorded ID, or with none recorded, the comment whose first line is the template's first line.
+   Read its saved text from that list.
 
 7. Write `$slicedir/finish.md` from the [audit template](audit.md). Name the audited commit with the
    full SHA from `git rev-parse HEAD`, and keep the earlier comment's ID.
