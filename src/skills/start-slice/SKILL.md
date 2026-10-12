@@ -171,7 +171,8 @@ Workers then carry out the agent tickets.
 9. Report the branch and each agent ticket with its identifier and URL.
 
 10. Delegate each agent ticket to a worker, and pass the path of its body file, such as
-    `$slicedir/agent-1.md`, in the task. Review the change with the
+    `$slicedir/agent-1.md`, in the task. Copy each item of its `## Acceptance` word for word, in
+    order, into the launch's `acceptance` array. Review the change with the
     [code-review skill](../code-review/SKILL.md). When the code-review skill's ownership rule finds
     the slice branch the user's own, let the review continue into fixing its findings without
     asking. This applies to a reused branch too. Then open the PR with the

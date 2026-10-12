@@ -37,6 +37,7 @@ export interface TaskStatus {
   taskId: string;
   name: string | undefined;
   state: WorkerState;
+  acceptance?: string[];
   outcome?: string;
   predecessorTaskId: string | undefined;
   predecessorName: string | undefined;
@@ -246,6 +247,7 @@ export const taskRecordStatus = (
     taskId: task.taskId,
     name: task.name,
     state,
+    ...(task.acceptance === undefined ? {} : { acceptance: task.acceptance }),
     ...(outcome === undefined ? {} : { outcome }),
     predecessorTaskId: task.predecessorTaskId,
     predecessorName: predecessorName(dirname(directory), task),

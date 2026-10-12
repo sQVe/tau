@@ -53,6 +53,7 @@ const pureModules = [
   'src/extensions/tauSkills/requiredFor.ts',
   'src/extensions/tdd/configLayers.ts',
   'src/extensions/tracker/candidateFit.ts',
+  'src/extensions/subagents/acceptanceRefusal.ts',
   'src/extensions/subagents/bashOutputCap.ts',
   'src/extensions/subagents/capacityRefusal.ts',
   'src/extensions/subagents/compactionWorkers.ts',

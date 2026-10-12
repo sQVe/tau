@@ -32,6 +32,7 @@ export interface StatusInput {
   taskId: string;
   state: WorkerState;
   deadline: number;
+  acceptance?: string[] | undefined;
   directory?: string | undefined;
   activity?: WorkerActivity | undefined;
   name?: string | undefined;
@@ -231,6 +232,7 @@ export const modelStatus = (status: StatusInput): Record<string, unknown> => {
 
   addField(result, 'name', status.name);
   addField(result, 'placement', status.placement);
+  addField(result, 'acceptance', status.acceptance);
   addField(result, 'outcome', status.outcome);
   addField(result, 'activity', modelActivity(status));
   addField(result, 'predecessorTaskId', status.predecessorTaskId);

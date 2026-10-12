@@ -74,6 +74,13 @@ const launchParameters = Type.Object(
         description: 'Short widget label, such as "Fix status counts".',
       }),
     ),
+    acceptance: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 2000 }), {
+        maxItems: 50,
+        description:
+          'Acceptance criteria, one per item. Required for editing profiles and follow-ups of editing workers.',
+      }),
+    ),
     profile: Type.String({ minLength: 1 }),
     cwd: Type.Optional(Type.String()),
     model: Type.Optional(Type.String()),
@@ -97,6 +104,13 @@ const followUpParameters = Type.Object(
   {
     sourceTaskId: taskIdSchema,
     task: Type.String({ minLength: 1, maxLength: 32000 }),
+    acceptance: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 2000 }), {
+        maxItems: 50,
+        description:
+          'Acceptance criteria, one per item. Required for editing profiles and follow-ups of editing workers.',
+      }),
+    ),
     label: Type.Optional(
       Type.String({
         minLength: 1,
@@ -276,6 +290,7 @@ const launchWorker = async (
     status = await controller.launch(
       {
         task: parameters.task,
+        ...(parameters.acceptance === undefined ? {} : { acceptance: parameters.acceptance }),
         ...(parameters.label === undefined ? {} : { label: parameters.label }),
         loadout,
         ...(routing === undefined ? {} : { routing }),
@@ -483,7 +498,7 @@ const registerLaunchTool = (
       'Launch a Pi worker in a herdr pane. cwd must match this session.',
       `Profiles: ${profileText(profiles)}. model overrides the profile default as provider/id.`,
       ...modelLine,
-      'Give the task acceptance criteria, baseline, and worktree; one editor per worktree. The deadline includes waits and cleanup.',
+      'Editing workers require acceptance criteria. Brief them with, when it applies: outcome, scope and non-goals, entry files, decisions already made, baseline, and checks to run. Give the worktree; one editor per worktree. The deadline includes waits and cleanup.',
       'A notice starts a new turn when a worker asks, reports, or stops. End your turn to wait; never sleep or poll.',
     ].join(' '),
     promptSnippet: 'Launch Tau workers to scout, implement, or review work',

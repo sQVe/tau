@@ -12,6 +12,7 @@ import type { NativeIdentity } from './nativeSession.js';
 
 export interface LaunchInput {
   task: string;
+  acceptance?: string[];
   label?: string;
   loadout: Loadout;
   routing?: RoutedLaunch;

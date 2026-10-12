@@ -164,6 +164,24 @@ const setup = (
   return { directory, controller, client, fake, calls, notifications, input };
 };
 
+it('saves acceptance criteria and reports them in the status', async ({ onTestFinished }) => {
+  const fixture = setup(onTestFinished);
+  const acceptance = ['First.', 'Second.'];
+
+  const launched = await fixture.controller.launch({ ...fixture.input, acceptance });
+
+  expect(readTask(launched.directory).acceptance).toEqual(acceptance);
+  expect(fixture.controller.status(launched.taskId, 'parent-id').acceptance).toEqual(acceptance);
+});
+
+it('launches an empty acceptance list as a task without criteria', async ({ onTestFinished }) => {
+  const fixture = setup(onTestFinished);
+
+  const launched = await fixture.controller.launch({ ...fixture.input, acceptance: [] });
+
+  expect(readTask(launched.directory).acceptance).toBeUndefined();
+});
+
 it('reattaches accepted work and cancels it without replacing saved records', async ({
   onTestFinished,
 }) => {
@@ -211,7 +229,7 @@ it('saves a launched Pi task in the current record format', async ({ onTestFinis
   const launched = await fixture.controller.launch(fixture.input);
 
   expect(JSON.parse(readFileSync(join(launched.directory, 'task.json'), 'utf8'))).toMatchObject({
-    version: 10,
+    version: 11,
   });
 });
 
@@ -891,6 +909,7 @@ it('skips unpublished preparation debris while published attempts remain exclusi
   const input = {
     task: 'Follow up.',
     sourceTaskId: launched.taskId,
+    acceptance: ['Follow-up is done.'],
     timeout: 10000,
     parentSession: current.file,
     parentSessionId: current.id,
@@ -981,6 +1000,7 @@ const completed = async (
   const input = {
     task: 'Follow up within saved settings.',
     sourceTaskId: status.taskId,
+    acceptance: ['Follow-up is done.'],
     timeout: 12000,
     parentSession: fixture.input.parentSession,
     parentSessionId: fixture.input.parentSessionId,
@@ -1111,6 +1131,31 @@ it('admits follow-up with retired records and an unpublished directory', async (
   expect(savedFiles(fixture.directory)).toEqual(expect.arrayContaining(saved));
   expect(readdirSync(unpublished)).toEqual([]);
 });
+
+it.for([
+  ['no criteria', undefined],
+  ['a blank item', ['Done.', ' ']],
+] as const)(
+  'refuses a follow-up of an editing worker with %s without writes',
+  async ([, acceptance]) => {
+    const fixture = await completed();
+    const saved = savedFiles(fixture.directory);
+    fixture.calls.length = 0;
+    const { acceptance: _dropped, ...withoutCriteria } = fixture.input;
+
+    const input =
+      acceptance === undefined
+        ? withoutCriteria
+        : { ...withoutCriteria, acceptance: [...acceptance] };
+
+    await expect(fixture.controller.followUp(input, fixture.context)).rejects.toThrow(
+      /acceptance/i,
+    );
+
+    expect(fixture.calls).toEqual([]);
+    expect(savedFiles(fixture.directory)).toEqual(saved);
+  },
+);
 
 it('reports unreadable successor records and refuses follow-up without writes', async () => {
   const fixture = await completed();

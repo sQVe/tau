@@ -79,7 +79,7 @@ const runWorker = async (responses: FauxResponseStep[]) => {
   const model = provider.getModel();
 
   const task = validateTask({
-    version: 7,
+    version: 11,
     taskId: 'codemode-task',
     task: 'Inspect source.txt.',
     parentSession: join(directory, 'parent.jsonl'),
@@ -156,7 +156,7 @@ const seedStoppedChild = (directory: string, sessionManager: SessionManager): vo
   mkdirSync(taskDirectory, { recursive: true });
 
   const task = validateTask({
-    version: 7,
+    version: 11,
     taskId: savedTaskId,
     task: 'Inspect source.txt.',
     parentSession: sessionManager.getSessionFile(),

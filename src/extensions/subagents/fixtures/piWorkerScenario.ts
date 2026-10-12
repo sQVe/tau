@@ -469,6 +469,7 @@ export default function (pi) {
     const next = await controller.followUp(
       {
         sourceTaskId: savedTask.taskId,
+        acceptance: ['Follow-up is done.'],
         task: 'Follow up and verify prior context.',
         timeout: 10000,
         parentSession: savedTask.parentSession,

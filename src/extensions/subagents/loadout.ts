@@ -22,6 +22,7 @@ import {
 import { skillTools } from '../../skillTools.js';
 import { userConfigPath } from '../../tauConfig.js';
 import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
+import { acceptanceRefusal } from './acceptanceRefusal.js';
 import { decideCanary, pickRoutedModel } from './modelRoutes.js';
 import type { ClassifierOutcome, ModelRoute, RoutedLaunch } from './modelRoutes.js';
 import { readProfileModel, readProfileRoute } from './profileModels.js';
@@ -40,6 +41,7 @@ interface LaunchRequest {
   profile: string;
   cwd?: string;
   model?: string;
+  acceptance?: string[];
 }
 
 interface ClassifierState {
@@ -359,6 +361,11 @@ export const resolveRoutedLoadout = async (
   signal?: AbortSignal,
 ): Promise<RoutedLoadout> => {
   const loadout = resolveLoadout(input, context, commands);
+  const refusal = acceptanceRefusal(loadout.role, input.acceptance);
+
+  if (refusal !== undefined) {
+    throw new Error(refusal);
+  }
 
   if (input.model !== undefined) {
     return { loadout, routing: undefined };

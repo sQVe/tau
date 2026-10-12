@@ -857,7 +857,7 @@ it('refuses launch and status arguments that only non-Pi workers used', () => {
     throw new Error('Worker tools missing.');
   }
 
-  const input = { profile: 'worker', task: 'Inspect fixture.' };
+  const input = { profile: 'worker', task: 'Inspect fixture.', acceptance: ['Done.'] };
 
   expect(Value.Check(launch.parameters, input)).toBe(true);
 
@@ -903,6 +903,7 @@ it('launches a Pi worker through the tool and refuses a launch outside herdr', a
   const input = {
     profile: 'worker',
     model: fixtureModelReference,
+    acceptance: ['Done.'],
     task: 'Inspect fixture.',
     timeoutSeconds: 10,
   };
@@ -975,8 +976,8 @@ it('defaults the launch timeout by profile role and keeps an explicit timeout', 
     { ...input, profile: 'scout' },
     { ...input, profile: 'reviewer' },
     { ...input, profile: 'qa' },
-    { ...input, profile: 'worker' },
-    { ...input, profile: 'worker', timeoutSeconds: 10 },
+    { ...input, profile: 'worker', acceptance: ['Done.'] },
+    { ...input, profile: 'worker', acceptance: ['Done.'], timeoutSeconds: 10 },
   ]) {
     await tool.execute('call', launchInput, undefined, undefined, context);
   }
@@ -1342,6 +1343,7 @@ it.each([
   const input = {
     profile: 'worker',
     model: fixtureModelReference,
+    acceptance: ['Done.'],
     sourceTaskId: 'source',
     task: 'Inspect fixture.',
     timeoutSeconds: 10,
@@ -1553,6 +1555,7 @@ it('returns the unreadable-evidence object when launch records fail', async ({
     {
       profile: 'worker',
       model: fixtureModelReference,
+      acceptance: ['Done.'],
       task: 'Inspect fixture.',
       timeoutSeconds: 10,
     },
