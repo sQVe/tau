@@ -360,3 +360,117 @@ it('does not run while a higher generation is live after linking a lower one', a
   expect(ranWhileLive).toBe(false);
   expect(await heldLocks(agentDirectory)).toEqual([]);
 });
+
+const descendantSource = `
+const { appendFileSync } = require('node:fs');
+const [record] = process.argv.slice(2);
+process.on('SIGTERM', () => {
+  setTimeout(() => {
+    appendFileSync(record, 'end descendant\\n');
+    process.exit(0);
+  }, 500);
+});
+appendFileSync(record, 'start descendant\\n');
+setInterval(() => {}, 1000);
+`;
+
+const launcherSource = `
+const { spawn } = require('node:child_process');
+const [descendant, record] = process.argv.slice(2);
+spawn(process.execPath, [descendant, record], { stdio: 'ignore' });
+process.on('SIGTERM', () => process.exit(0));
+setInterval(() => {}, 1000);
+`;
+
+it('starts the next check only after a descendant of a cancelled command is gone', async () => {
+  const { agentDirectory, record, script } = await fixture();
+  const descendant = join(agentDirectory, '..', 'descendant.cjs');
+  const launcher = join(agentDirectory, '..', 'launcher.cjs');
+  const first = await repositoryNamed('first');
+  const second = await repositoryNamed('second');
+
+  await writeFile(descendant, descendantSource);
+  await writeFile(launcher, launcherSource);
+
+  await configure(agentDirectory, {
+    'owner/first': { argv: [process.execPath, launcher, descendant, record] },
+    'owner/second': { argv: [process.execPath, script, record, 'second'] },
+  });
+
+  const controller = new AbortController();
+
+  const cancelled = runTool(agentDirectory, first, controller.signal).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+
+  await vi.waitFor(async () => {
+    expect(await readFile(record, 'utf8').catch(() => '')).toContain('start descendant');
+  });
+
+  const queued = runTool(agentDirectory, second);
+
+  // Lets the queued check start waiting for the lock.
+  await new Promise((resolve) => {
+    setTimeout(resolve, 100);
+  });
+
+  controller.abort();
+
+  expect(await cancelled).toBeInstanceOf(Error);
+  await queued;
+
+  expect((await readFile(record, 'utf8')).trim().split('\n')).toEqual([
+    'start descendant',
+    'end descendant',
+    'start second',
+    'end second',
+  ]);
+});
+
+it('waits for the command group of a dead session before running a new check', async () => {
+  const { agentDirectory, record, script } = await fixture();
+  const root = await repositoryNamed('first');
+
+  await configure(agentDirectory, {
+    'owner/first': { argv: [process.execPath, script, record, 'first'] },
+  });
+
+  const session = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
+  const deadPid = session.pid ?? 0;
+
+  await new Promise((resolve) => {
+    session.once('close', resolve);
+  });
+
+  const command = spawn(
+    process.execPath,
+    [
+      '-e',
+      "setTimeout(() => require('node:fs').appendFileSync(process.argv[1], 'end holder\\n'), 500)",
+      record,
+    ],
+    { stdio: 'ignore', detached: true },
+  );
+
+  await mkdir(join(agentDirectory, 'tau'));
+
+  await writeFile(
+    `${defaultLockPath(agentDirectory)}.1`,
+    JSON.stringify({
+      pid: deadPid,
+      checkout: '/gone',
+      startedAt: new Date().toISOString(),
+      token: 'dead',
+      commandGroup: command.pid,
+    }),
+  );
+
+  await runTool(agentDirectory, root);
+
+  expect((await readFile(record, 'utf8')).trim().split('\n')).toEqual([
+    'end holder',
+    'start first',
+    'end first',
+  ]);
+});

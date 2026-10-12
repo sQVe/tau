@@ -94,8 +94,9 @@ const runAndRecord = async (
   root: string,
   identity: CheckIdentity,
   signal: AbortSignal | undefined,
+  recordCommandGroup: (groupId: number) => Promise<void>,
 ): Promise<FullCheckDetails> => {
-  const result = await runCheck(root, identity.argv, signal);
+  const result = await runCheck(root, identity.argv, signal, recordCommandGroup);
 
   if (result.passed) {
     const after = await readCheckIdentity(root, identity.argv, identity.base ?? undefined);
@@ -155,11 +156,11 @@ const execute = async (
         notifyWaiting(`Waiting for the full check running in ${holderName} to finish.`);
       },
     },
-    async () => {
+    async (recordCommandGroup) => {
       const identity = await readCheckIdentity(root, argv, base);
       const reused = await findReusedLog(root, identity);
 
-      return reused ?? runAndRecord(root, identity, signal);
+      return reused ?? runAndRecord(root, identity, signal, recordCommandGroup);
     },
   );
 

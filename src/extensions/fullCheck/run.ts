@@ -3,6 +3,7 @@ import { open, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { ensureTauDirectory } from '../../tauDirectory.js';
+import { groupIsAlive } from './queue.js';
 
 export interface CheckResult {
   passed: boolean;
@@ -50,11 +51,37 @@ const stopGroup = (processId: number | undefined): NodeJS.Timeout | undefined =>
   }, killGraceMilliseconds);
 };
 
+const groupPollMilliseconds = 20;
+
+// Escalates to SIGKILL after the grace period, and resolves when no process of the group is left.
+const waitForGroupToExit = async (processId: number): Promise<void> => {
+  const deadline = Date.now() + killGraceMilliseconds;
+  let killed = false;
+
+  while (groupIsAlive(processId)) {
+    if (!killed && Date.now() >= deadline) {
+      killed = true;
+
+      try {
+        process.kill(-processId, 'SIGKILL');
+      } catch {
+        // The group already exited.
+      }
+    }
+
+    // oxlint-disable-next-line no-await-in-loop -- Each poll depends on the previous one.
+    await new Promise((resolve) => {
+      setTimeout(resolve, groupPollMilliseconds);
+    });
+  }
+};
+
 // Runs argv without a shell in `root`, with stdout and stderr together in a new log file.
 export const runCheck = async (
   root: string,
   argv: string[],
   signal: AbortSignal | undefined,
+  onStarted: (groupId: number) => Promise<void>,
 ): Promise<CheckResult> => {
   const logPath = await newLogPath(root);
   const log = await open(logPath, 'wx');
@@ -71,6 +98,10 @@ export const runCheck = async (
           detached: true,
         });
 
+        if (child.pid !== undefined) {
+          onStarted(child.pid).catch(reject);
+        }
+
         let killTimer: NodeJS.Timeout | undefined;
 
         const stop = () => {
@@ -81,15 +112,23 @@ export const runCheck = async (
 
         child.once('close', (exitCode, exitSignal) => {
           signal?.removeEventListener('abort', stop);
-          clearTimeout(killTimer);
 
-          if (signal?.aborted === true) {
-            reject(new Error('The full check was cancelled and its command has stopped.'));
+          if (signal?.aborted !== true) {
+            resolve({ exitCode, signal: exitSignal });
 
             return;
           }
 
-          resolve({ exitCode, signal: exitSignal });
+          // The launcher may exit on SIGTERM while a descendant in its group keeps running.
+          const finishCancel = async () => {
+            await waitForGroupToExit(child.pid ?? 0);
+            clearTimeout(killTimer);
+            reject(new Error('The full check was cancelled and its command has stopped.'));
+          };
+
+          finishCancel().catch((error: unknown) => {
+            reject(error instanceof Error ? error : new Error(String(error)));
+          });
         });
 
         if (signal?.aborted === true) {

@@ -10,6 +10,8 @@ interface LockOwner {
   startedAt: string;
   token: string;
   released?: true;
+  // Process group of the running command, which outlives its session.
+  commandGroup?: number;
 }
 
 export interface QueueOptions {
@@ -24,6 +26,9 @@ export interface QueueOptions {
 }
 
 const tokenRadix = 36;
+
+const parseCommandGroup = (group: unknown): { commandGroup?: number } =>
+  typeof group === 'number' && Number.isInteger(group) && group > 1 ? { commandGroup: group } : {};
 
 const parseOwner = (text: string): LockOwner | undefined => {
   try {
@@ -44,8 +49,16 @@ const parseOwner = (text: string): LockOwner | undefined => {
     }
 
     const released = value['released'] === true ? { released: true as const } : {};
+    const commandGroup = parseCommandGroup(value['commandGroup']);
 
-    return { pid, checkout, startedAt, token: typeof token === 'string' ? token : '', ...released };
+    return {
+      pid,
+      checkout,
+      startedAt,
+      token: typeof token === 'string' ? token : '',
+      ...released,
+      ...commandGroup,
+    };
   } catch {
     return undefined;
   }
@@ -123,8 +136,25 @@ const listGenerations = async (lockPath: string): Promise<number[]> => {
     .toSorted((left, right) => left - right);
 };
 
-const holderIsGone = (holder: LockOwner | undefined): boolean =>
-  holder === undefined || holder.released === true || !processIsAlive(holder.pid);
+export const groupIsAlive = (groupId: number): boolean => {
+  try {
+    process.kill(-groupId, 0);
+
+    return true;
+  } catch (error) {
+    return hasErrorCode(error, 'EPERM');
+  }
+};
+
+const holderIsGone = (holder: LockOwner | undefined): boolean => {
+  if (holder === undefined || holder.released === true) {
+    return true;
+  }
+
+  const groupIsGone = holder.commandGroup === undefined || !groupIsAlive(holder.commandGroup);
+
+  return !processIsAlive(holder.pid) && groupIsGone;
+};
 
 // The lock is the file of the highest generation. A new owner takes the next generation with an
 // atomic link, so two sessions that both see a dead holder cannot both win, and no one ever
@@ -138,17 +168,17 @@ const removeOlderGenerations = async (lockPath: string, generation: number): Pro
   );
 };
 
-// Marks the owner's own file as released. Only the owner rewrites a live file.
-const releaseLock = async (path: string, owner: LockOwner): Promise<void> => {
+// Rewrites the owner's own file. Only the owner rewrites a live file.
+const rewriteOwnFile = async (path: string, owner: LockOwner, next: LockOwner): Promise<void> => {
   const current = await readOwner(path);
 
   if (current?.token !== owner.token) {
     return;
   }
 
-  const staging = `${path}.${owner.token}.released`;
+  const staging = `${path}.${owner.token}.rewrite`;
 
-  await writeFile(staging, JSON.stringify({ ...owner, released: true }));
+  await writeFile(staging, JSON.stringify(next));
   await rename(staging, path);
 };
 
@@ -237,7 +267,7 @@ const acquireLock = async (options: QueueOptions, owner: LockOwner): Promise<str
 // takes over a lock whose process is gone, and releases the lock on every exit path.
 export const withFullCheckLock = async <T>(
   options: QueueOptions,
-  run: () => Promise<T>,
+  run: (recordCommandGroup: (groupId: number) => Promise<void>) => Promise<T>,
 ): Promise<T> => {
   const { lockPath, checkout } = options;
   const token = newToken();
@@ -253,9 +283,9 @@ export const withFullCheckLock = async <T>(
   const path = await acquireLock(options, owner);
 
   try {
-    return await run();
+    return await run((groupId) => rewriteOwnFile(path, owner, { ...owner, commandGroup: groupId }));
   } finally {
-    await releaseLock(path, owner);
+    await rewriteOwnFile(path, owner, { ...owner, released: true });
   }
 };
 
