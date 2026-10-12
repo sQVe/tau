@@ -65,8 +65,8 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      aliases. Keep only each ticket's title and `## Acceptance` section as intent.
    - For a slice ticket found this way, also read its audit comment with
      `linear issue comment list <slice> --json --no-pager`. The audit is the comment whose first
-     line matches the first line of the [audit template](../finish-slice/audit.md). Print its
-     audited commit and rows.
+     line is `# Slice audit: <slice>`, the filled first line of the
+     [audit template](../finish-slice/audit.md). Print its audited commit and rows.
    - After the script, when a slice ticket has no audit comment, or its audited commit differs from
      `HEAD`, ask with `ask_user_question`: run a new audit with the
      [finish-slice skill](../finish-slice/SKILL.md), recommended, or continue with the missing or

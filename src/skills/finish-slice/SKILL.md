@@ -64,7 +64,7 @@ for the workspace.
 
 6. Find an earlier audit comment before you write a new one. Run the tracker skill's comment list
    command on the slice, even when `finish.md` records a comment ID. Pick the comment with the
-   recorded ID, or with none recorded, the comment whose first line is the template's first line.
+   recorded ID, or with none recorded, the comment whose first line is `# Slice audit: <slice>`.
    Read its saved text from that list.
 
 7. Write `$slicedir/finish.md` from the [audit template](audit.md). Name the audited commit with the
