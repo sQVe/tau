@@ -58,17 +58,18 @@ for the workspace.
    outcome, as "Changes after the start" in the start-slice skill says. Create it only after the
    user approves a preview, as the tracker skill says.
 
-6. Write `$slicedir/finish.md` from the [audit template](audit.md). Name the audited commit with the
-   full SHA from `git rev-parse HEAD`.
+6. Find an earlier audit comment before you write a new one. Use the comment ID recorded in
+   `finish.md`. If none is recorded, run the tracker skill's comment list command and pick the
+   comment whose first line is the template's first line. Read its saved text.
 
-7. Preview the comment, which is the content of `finish.md`, and ask the user to approve it.
+7. Write `$slicedir/finish.md` from the [audit template](audit.md). Name the audited commit with the
+   full SHA from `git rev-parse HEAD`, and keep the earlier comment's ID.
 
-8. Post it on the slice ticket with the tracker skill's comment commands, and record the comment ID
-   in `finish.md` at once.
-   - On a rerun, update the earlier comment instead of adding one. Use the recorded ID. If none is
-     recorded, run the comment list command and pick the comment whose first line is the template's
-     first line.
-   - Before you overwrite, read the saved comment. The tracker copy wins over a working copy the
-     user has not approved.
+8. Preview the comment, which is the content of `finish.md`, and ask the user to approve it. When an
+   earlier comment exists, show what changes from its saved text, including edits made in Linear
+   that the new audit drops.
 
-9. Report the verdict counts, the comment link, and whether the PR is ready, a draft, or blocked.
+9. Post it with the tracker skill's comment commands. Update the earlier comment when one exists,
+   and never add a second one. After adding a new comment, record its ID in `finish.md` at once.
+
+10. Report the verdict counts, the comment link, and whether the PR is ready, a draft, or blocked.

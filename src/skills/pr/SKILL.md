@@ -67,9 +67,10 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      `linear issue comment list <slice> --json --no-pager`. The audit is the comment whose first
      line matches the first line of the [audit template](../finish-slice/audit.md). Print its
      audited commit and rows.
-   - After the script, when the audited commit differs from `HEAD`, ask with `ask_user_question`:
-     run a new audit with the [finish-slice skill](../finish-slice/SKILL.md), recommended, or
-     continue with the old audit as a gap.
+   - After the script, when a slice ticket has no audit comment, or its audited commit differs from
+     `HEAD`, ask with `ask_user_question`: run a new audit with the
+     [finish-slice skill](../finish-slice/SKILL.md), recommended, or continue with the missing or
+     old audit as a gap.
    - Print the target's head, base, merge base, repository, open PR fields, and closed PRs; ticket
      intent; reuse status, reasons, and available reports; review freshness and evidence gaps; and
      matching check-log paths with their bounded excerpts. Print one combined list of gaps from the
