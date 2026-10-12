@@ -198,9 +198,10 @@ const runAction = async (
     return read(runtime, directory, parameters.container);
   }
 
-  const directory = await checkDraftDirectory(root, name, 'apply');
+  const checkDirectory = () => checkDraftDirectory(root, name, 'apply');
+  const directory = await checkDirectory();
 
-  return applySlicePlan(runtime, directory, parameters.stateToken);
+  return applySlicePlan(runtime, directory, parameters.stateToken, checkDirectory);
 };
 
 export const createSliceTool = (

@@ -776,6 +776,64 @@ describe('slice tool apply', () => {
     expect(await savedPlan(target)).toMatchObject({ container: { identifier: 'ME-1' } });
   });
 
+  const applyWithChangeDuringRead = async (
+    change: (directory: string) => Promise<void>,
+    setup: Awaited<ReturnType<typeof setUp>>,
+  ) => {
+    const { fake, context, directory } = setup;
+    const { stateToken } = await run(fake, context, { action: 'read', directory });
+    let changed = false;
+
+    const tool = createSliceTool(async (command, commandArguments, options) => {
+      const result = await fake.exec(command, commandArguments, options);
+
+      if (!changed) {
+        changed = true;
+        await change(directory);
+      }
+
+      return result;
+    });
+
+    return tool.execute(
+      'call',
+      { action: 'apply', directory, stateToken: String(stateToken) },
+      undefined,
+      undefined,
+      context,
+    );
+  };
+
+  it('refuses when the draft changes while apply reads Linear', async () => {
+    const setup = await setUp();
+
+    const failure = applyWithChangeDuringRead(
+      (directory) => writeFile(join(directory, 'slice-1.md'), 'Changed during the read.\n'),
+      setup,
+    );
+
+    await expect(failure).rejects.toThrow(/changed since the read/u);
+
+    expect(setup.fake.writes()).toEqual([]);
+  });
+
+  it('refuses when the draft directory becomes a symlink while apply reads Linear', async () => {
+    const setup = await setUp();
+    const outside = await outsideDirectory();
+    const originalPlan = await savedPlan(setup.directory);
+
+    const failure = applyWithChangeDuringRead(async (directory) => {
+      await cp(directory, outside, { recursive: true });
+      await rm(directory, { recursive: true });
+      await symlink(outside, directory);
+    }, setup);
+
+    await expect(failure).rejects.toThrow(/symlink/u);
+
+    expect(setup.fake.writes()).toEqual([]);
+    expect(await savedPlan(outside)).toEqual(originalPlan);
+  });
+
   it('reports a created ticket whose identifier could not be saved', async () => {
     const { fake, context, directory } = await setUp();
     const planFile = join(directory, 'plan.json');
