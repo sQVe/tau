@@ -47,11 +47,11 @@ const readEntry = (source: string, key: string, value: unknown): string[] => {
 const sameRepository = (key: string, repository: string): boolean =>
   key.toLowerCase() === repository.toLowerCase();
 
-const rejectDuplicateKeys = (source: string, keys: string[]): void => {
+const rejectDuplicateKeys = (source: string, keys: string[], repository: string): void => {
   const seenKeys: string[] = [];
 
-  // Every key counts, parsed or not, so the duplicate error does not depend on entry order.
-  for (const key of keys) {
+  // Every key naming the repository counts, parsed or not, so the error does not depend on entry order.
+  for (const key of keys.filter((candidate) => sameRepository(candidate, repository))) {
     const duplicate = seenKeys.find((earlier) => earlier.toLowerCase() === key.toLowerCase());
 
     // GitHub names ignore case, so two keys that differ only in case would name one repository.
@@ -101,11 +101,11 @@ export const readFullCheckArgv = (
     );
   }
 
-  rejectDuplicateKeys(source, Object.keys(repositories));
-
   if (repository === undefined) {
     return undefined;
   }
+
+  rejectDuplicateKeys(source, Object.keys(repositories), repository);
 
   const match = Object.entries(repositories).find(([key]) => sameRepository(key, repository));
 

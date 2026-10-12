@@ -89,7 +89,7 @@ it.each([
   );
 });
 
-it('fails two keys that name one repository', () => {
+it('fails two keys that name the current repository', () => {
   const { location, write } = fixture();
 
   write({
@@ -98,5 +98,21 @@ it('fails two keys that name one repository', () => {
     },
   });
 
-  expect(() => readFullCheckArgv(location, ui, 'sQVe/other')).toThrow('Keep one');
+  expect(() => readFullCheckArgv(location, ui, 'sqve/tau')).toThrow('Keep one');
+});
+
+it('ignores two keys that name another repository', () => {
+  const { location, write } = fixture();
+
+  write({
+    fullCheck: {
+      repositories: {
+        'sQVe/other': { argv: ['a'] },
+        'sqve/OTHER': { argv: ['b'] },
+        'sQVe/tau': { argv: ['pnpm', 'check'] },
+      },
+    },
+  });
+
+  expect(readFullCheckArgv(location, ui, 'sQVe/tau')).toEqual(['pnpm', 'check']);
 });
