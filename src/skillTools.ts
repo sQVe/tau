@@ -1,5 +1,5 @@
 export const skillTools: Readonly<Record<string, readonly string[]>> = {
-  'code-review': ['code_review'],
+  'code-review': ['code_review', 'tracker_draft'],
   brainstorm: ['slice'],
   slice: ['slice'],
   'finish-slice': ['slice'],

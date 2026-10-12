@@ -4,7 +4,8 @@ description:
   Review local code changes with fresh subagent workers. Fast by default with one self-checking
   reviewer; deep adds a fresh checker. Use it for "/code-review", "/code-review fast", "/code-review
   deep", "review my branch", "review these changes", or a review of a commit, range, or files. The
-  review never edits, fixes, commits, or publishes. On the user's own work, it then fixes the
+  review never edits, fixes, commits, or pushes. Its only outside write is the report comment on the
+  reviewed ticket, which it posts without asking. On the user's own work, it then fixes the
   supported findings with triage-findings, unless the user asked for a read-only review.
 ---
 
@@ -24,8 +25,9 @@ target. Give each finding a status that says how it was checked.
 ## Hard rules
 
 - The review is read-only. Until the report is written, do not edit source, fix findings, stage,
-  commit, push, or publish. Do not check out, reset, or stash to reach a target. Stop when the user
-  says stop.
+  commit, push, or publish. The one outside write is the report comment of step 9, which needs no
+  approval and uses the [tracker skill](../tracker/SKILL.md)'s comment commands. Do not check out,
+  reset, or stash to reach a target. Stop when the user says stop.
 - Decide ownership from the branch, never from the checkout alone: the user often checks out other
   people's PRs. The branch is the user's own when its PR author is the
   `gh api user --hostname <host> --jq .login` login, using the PR's host, or, with no PR, when each
@@ -33,7 +35,7 @@ target. Give each finding a status that says how it was checked.
   counts when nothing points to another author. Uncommitted work is the user's own only on a branch
   these rules find to be the user's own. Anything else, or anything unclear, is not the user's own.
 - After the report, fix findings automatically only on the user's own work, and never after a
-  request for a read-only review or "no changes". Fixing is never approval to publish, post, or
+  request for a read-only review or "no changes". Fixing is never approval to publish to GitHub or
   absorb unrelated changes.
 - Mode: fast unless the user asks for deep. A request for the "full diff" names the scope, not the
   mode. Fast launches one reviewer. Deep launches two: a finder, then a fresh checker.
@@ -66,6 +68,13 @@ target. Give each finding a status that says how it was checked.
    - Record exclusions the user declares, and pass them as `exclude`. Ask when the target, base, or
      ownership is unclear. When the work is the user's own, workers also list worthwhile
      pre-existing issues in touched code.
+   - Find the ticket under review: the ticket the user or a calling skill names, such as the slice
+     from the start-slice skill. Otherwise, only when the target is the current branch's own work,
+     use the branch's issue from `linear issue view --json --no-pager`. That work is a target from
+     the branch's merge base with the default branch to `HEAD` or the working tree, or uncommitted
+     work. Any other commit, range, or files target may hold other work, so it takes no branch
+     ticket. When nothing gives a ticket, or the read fails, the review has no ticket: keep the
+     local report only and say so in the reply.
 
 2. Call `code_review` with `prepare`. If it fails, stop and tell the user. Use the returned
    directory as `$dir` from here on.
@@ -115,14 +124,34 @@ target. Give each finding a status that says how it was checked.
      Still save and report the finished results.
    - The check is not atomic. It covers only the captured target, not callers or rules outside it.
 
-8. Save the files and reply to the user with the [report template](report.md).
-   - With findings on the user's own work, unless the user asked for a read-only review or "no
-     changes", continue without asking: act on them with the
-     [triage-findings](../triage-findings/SKILL.md) skill. Ask afterward about findings it leaves
-     Blocked and about a gap, failure, or stale result that needs a decision.
-   - Otherwise end with one question. With findings, ask for approval of the proposed actions, such
-     as "Fix 1 and 2, and investigate 3?" When a gap, failure, or stale result needs a decision,
-     include it in the question. Act on the approved findings with the triage-findings skill.
-   - With no findings from a complete, fresh run, ask no fix question.
-   - Never call an incomplete or stale review clean: a worker failed, stopped early, or left a claim
-     uncertain, or the input changed during the review.
+8. Save the files in `$dir` with the [report template](report.md). Write `$dir/report.md` as the
+   comment body.
+
+9. Post the report of this run to the ticket from step 1, before any fixing. Skip this step when the
+   review has no ticket.
+   - Each run has a fresh `$dir`, so keep the comment ID where every run reads it. Call
+     `tracker_draft` with action `prepare` and the ticket identifier in lower case, and read
+     `review.md` in the returned directory when it exists.
+   - Find an earlier report comment with the tracker skill's comment list command. Pick the comment
+     with the ID `review.md` records, or with none recorded, the comment whose first line is
+     `# Code review: <ticket>`. Read its saved text from that list.
+   - Post the content of `$dir/report.md` with the tracker skill's comment commands, without asking.
+     Update the earlier comment when one exists, and never add a second one. Record the comment's ID
+     at once in `review.md` and in `$dir/report.md`, both after adding a new comment and after
+     updating one found by its first line.
+   - If the post fails, keep the local report, and report the failure in the reply.
+
+10. Reply to the user with the [report template](report.md). Name the comment URL, or say that the
+    report stays local because the review has no ticket. When the update replaced edits made in
+    Linear, name what it dropped.
+
+- With findings on the user's own work, unless the user asked for a read-only review or "no
+  changes", continue without asking: act on them with the
+  [triage-findings](../triage-findings/SKILL.md) skill. Ask afterward about findings it leaves
+  Blocked and about a gap, failure, or stale result that needs a decision.
+- Otherwise end with one question. With findings, ask for approval of the proposed actions, such as
+  "Fix 1 and 2, and investigate 3?" When a gap, failure, or stale result needs a decision, include
+  it in the question. Act on the approved findings with the triage-findings skill.
+- With no findings from a complete, fresh run, ask no fix question.
+- Never call an incomplete or stale review clean: a worker failed, stopped early, or left a claim
+  uncertain, or the input changed during the review.

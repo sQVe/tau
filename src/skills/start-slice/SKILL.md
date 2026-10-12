@@ -173,12 +173,12 @@ Workers then carry out the agent tickets.
 10. Delegate each agent ticket to a worker, and pass the path of its body file, such as
     `$slicedir/agent-1.md`, in the task. Copy each item of its `## Acceptance` word for word, in
     order, into the launch's `acceptance` array. Review the change with the
-    [code-review skill](../code-review/SKILL.md). When the code-review skill's ownership rule finds
-    the slice branch the user's own, let the review continue into fixing its findings without
-    asking. This applies to a reused branch too. Then audit the slice with the
-    [finish-slice skill](../finish-slice/SKILL.md). Stop there if it reports a not-met item. Then
-    open the PR with the [pr skill](../pr/SKILL.md). Link the slice from the PR as the tracker skill
-    says.
+    [code-review skill](../code-review/SKILL.md), and pass it the slice as the ticket under review.
+    When the code-review skill's ownership rule finds the slice branch the user's own, let the
+    review continue into fixing its findings without asking. This applies to a reused branch too.
+    Then audit the slice with the [finish-slice skill](../finish-slice/SKILL.md). Stop there if it
+    reports a not-met item. Then open the PR with the [pr skill](../pr/SKILL.md). Link the slice
+    from the PR as the tracker skill says.
 
 ## Changes after the start
 
