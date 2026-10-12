@@ -188,3 +188,67 @@ it('runs the command again after the executable mode of an untracked file change
   expect(second.details?.reused).toBe(false);
   expect(await state.runCount()).toBe(2);
 });
+
+it('runs the command again after an edit to a file with a lossy textconv driver', async () => {
+  const state = await fixture();
+
+  await writeFile(join(state.root, '.gitattributes'), '*.txt diff=lossy\n');
+  await git(state.root, 'config', 'diff.lossy.textconv', 'true');
+  await git(state.root, 'add', '.');
+  await git(state.root, 'commit', '--quiet', '-m', 'driver');
+
+  await state.run();
+  await writeFile(join(state.root, 'tracked.txt'), 'two\n');
+  const second = await state.run();
+
+  expect(second.details?.reused).toBe(false);
+  expect(await state.runCount()).toBe(2);
+});
+
+it('runs the command for each different dirty edit inside a submodule', async () => {
+  const state = await fixture();
+  const source = await createTemporaryRepository(onTestFinished, 'tau-full-check-submodule-');
+
+  await writeFile(join(source, 'inner.txt'), 'one\n');
+  await git(source, 'add', '.');
+  await git(source, 'commit', '--quiet', '-m', 'inner');
+  await git(state.root, '-c', 'protocol.file.allow=always', 'submodule', 'add', source, 'inner');
+  await git(state.root, 'commit', '--quiet', '-m', 'submodule');
+
+  await writeFile(join(state.root, 'inner', 'inner.txt'), 'edit a\n');
+  await state.run();
+  await writeFile(join(state.root, 'inner', 'inner.txt'), 'edit b\n');
+  const second = await state.run();
+
+  expect(second.details?.reused).toBe(false);
+  expect(await state.runCount()).toBe(2);
+
+  await writeFile(join(state.root, 'inner', 'untracked.txt'), 'new\n');
+  await state.run();
+
+  expect(await state.runCount()).toBe(3);
+
+  const saved = await readdir(join(state.root, '.tau', 'checks'));
+
+  expect(saved.filter((name) => name.endsWith('.json'))).toEqual([]);
+});
+
+it('saves no reusable record when the base ref moves during the run', async () => {
+  const { configure, counter, run, runCount, root } = await fixture();
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+  await git(root, 'commit', '--quiet', '-am', 'second');
+  await git(root, 'branch', 'moving');
+
+  const move = `require('node:child_process').execFileSync('git', ['update-ref', 'refs/heads/moving', 'HEAD~1']);`;
+  await configure(countingArgv(counter, move));
+
+  const first = await run('moving');
+
+  expect(first.details).toMatchObject({ passed: true, reused: false });
+  expect(await runCount()).toBe(1);
+
+  const saved = await readdir(join(root, '.tau', 'checks'));
+
+  expect(saved.filter((name) => name.endsWith('.json'))).toEqual([]);
+});

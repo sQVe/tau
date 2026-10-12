@@ -2,7 +2,8 @@ export interface CheckIdentity {
   head: string;
   base: string | null;
   argv: string[];
-  fingerprint: string;
+  // null when a submodule has changes the fingerprint cannot see, so the state is never reusable.
+  fingerprint: string | null;
 }
 
 export interface SavedLog {
@@ -23,8 +24,16 @@ const sameState = (left: CheckIdentity, right: CheckIdentity): boolean =>
 const sameIdentity = (left: CheckIdentity, right: CheckIdentity): boolean =>
   sameState(left, right) && sameArgv(left.argv, right.argv);
 
+// A result may be reused or saved for reuse only when the state has a fingerprint.
+export const sameReusableState = (before: CheckIdentity, after: CheckIdentity): boolean =>
+  before.fingerprint !== null && sameState(before, after);
+
 // Reuses the first saved log, newest first, whose record matches the current identity.
 export const decideReuse = (current: CheckIdentity, saved: SavedLog[]): ReuseDecision => {
+  if (current.fingerprint === null) {
+    return { status: 'run' };
+  }
+
   const match = saved.find(
     (log) => log.logExists && log.record !== undefined && sameIdentity(current, log.record),
   );

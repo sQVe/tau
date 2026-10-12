@@ -11,7 +11,7 @@ import { readFullCheckArgv } from './config.js';
 import { readCheckIdentity } from './identity.js';
 import { defaultLockPath, withFullCheckLock } from './queue.js';
 import { listSavedLogs, saveCheckRecord } from './record.js';
-import { decideReuse } from './reuseDecision.js';
+import { decideReuse, sameReusableState } from './reuseDecision.js';
 import type { CheckIdentity } from './reuseDecision.js';
 import { readTail, runCheck } from './run.js';
 import type { CheckResult } from './run.js';
@@ -84,24 +84,20 @@ const findReusedLog = async (
   };
 };
 
-const sameState = (before: CheckIdentity, after: CheckIdentity): boolean =>
-  before.head === after.head &&
-  before.base === after.base &&
-  before.fingerprint === after.fingerprint;
-
 // Runs the check and saves a reusable record only when it passed and its inputs did not change.
 const runAndRecord = async (
   root: string,
   identity: CheckIdentity,
+  base: string | undefined,
   signal: AbortSignal | undefined,
   recordCommandGroup: (groupId: number) => Promise<void>,
 ): Promise<FullCheckDetails> => {
   const result = await runCheck(root, identity.argv, signal, recordCommandGroup);
 
   if (result.passed) {
-    const after = await readCheckIdentity(root, identity.argv, identity.base ?? undefined);
+    const after = await readCheckIdentity(root, identity.argv, base);
 
-    if (sameState(identity, after)) {
+    if (sameReusableState(identity, after)) {
       await saveCheckRecord(result.logPath, identity);
     }
   }
@@ -160,7 +156,7 @@ const execute = async (
       const identity = await readCheckIdentity(root, argv, base);
       const reused = await findReusedLog(root, identity);
 
-      return reused ?? runAndRecord(root, identity, signal, recordCommandGroup);
+      return reused ?? runAndRecord(root, identity, base, signal, recordCommandGroup);
     },
   );
 

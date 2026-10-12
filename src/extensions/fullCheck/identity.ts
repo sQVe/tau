@@ -64,10 +64,36 @@ const hashUntrackedFile = async (root: string, path: string): Promise<string> =>
   }
 };
 
+// A submodule with modified content, new commits, or untracked files shows only as "dirty" in
+// the diff, so two different edits would hash alike.
+const hasDirtySubmodule = async (root: string): Promise<boolean> => {
+  const status = await runGit(root, ['status', '--porcelain=v2', '-z', '--ignore-submodules=none']);
+
+  if (status.exitCode !== 0) {
+    throw new Error(`git status failed in ${root}: ${status.stderr.trim()}`);
+  }
+
+  return status.stdout
+    .toString('utf8')
+    .split('\0')
+    .some((entry) => /^[12] \S+ S(?!\.\.\.)[C.][M.][U.] /u.test(entry));
+};
+
 // Hashes the tracked changes against HEAD, staged or not, and the path and content of each
 // untracked file that Git does not ignore.
-const readFingerprint = async (root: string): Promise<string> => {
-  const diff = await runGit(root, ['diff', '--binary', 'HEAD']);
+const readFingerprint = async (root: string): Promise<string | null> => {
+  if (await hasDirtySubmodule(root)) {
+    return null;
+  }
+
+  const diff = await runGit(root, [
+    'diff',
+    '--binary',
+    '--no-textconv',
+    '--no-ext-diff',
+    '--no-color',
+    'HEAD',
+  ]);
 
   if (diff.exitCode !== 0) {
     throw new Error(`git diff failed in ${root}: ${diff.stderr.trim()}`);

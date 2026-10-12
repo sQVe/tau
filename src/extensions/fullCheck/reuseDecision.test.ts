@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { decideReuse } from './reuseDecision.js';
+import { decideReuse, sameReusableState } from './reuseDecision.js';
 import type { CheckIdentity, SavedLog } from './reuseDecision.js';
 
 const current: CheckIdentity = {
@@ -52,4 +52,12 @@ it.each([
   },
 ])('decides $expected.status for $name', ({ logs, expected }) => {
   expect(decideReuse(current, logs)).toEqual(expected);
+});
+
+it('never reuses a state without a fingerprint', () => {
+  const dirty = { ...current, fingerprint: null };
+
+  expect(decideReuse(dirty, [saved({})])).toEqual({ status: 'run' });
+  expect(sameReusableState(dirty, dirty)).toBe(false);
+  expect(sameReusableState(current, current)).toBe(true);
 });

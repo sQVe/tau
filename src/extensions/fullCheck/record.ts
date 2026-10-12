@@ -10,7 +10,7 @@ import { isMissingFile } from '../../errors.js';
 import type { CheckIdentity, SavedLog } from './reuseDecision.js';
 
 export type RecordRead =
-  | { status: 'valid'; record: CheckIdentity & { version: 1 } }
+  | { status: 'valid'; record: CheckIdentity & { version: 1; fingerprint: string } }
   | { status: 'missing' }
   | { status: 'malformed' };
 
@@ -59,7 +59,13 @@ export const readCheckRecord = async (recordPath: string): Promise<RecordRead> =
 
 // Writes next to the log through a rename, so a reader never sees half a record.
 export const saveCheckRecord = async (logPath: string, identity: CheckIdentity): Promise<void> => {
-  const record: CheckRecord = { version: checkRecordVersion, ...identity };
+  const { fingerprint } = identity;
+
+  if (fingerprint === null) {
+    throw new Error('A state with changes inside a submodule cannot be saved for reuse.');
+  }
+
+  const record: CheckRecord = { version: checkRecordVersion, ...identity, fingerprint };
   const recordPath = recordPathFor(logPath);
   const temporaryPath = `${recordPath}.${randomUUID()}.tmp`;
 
