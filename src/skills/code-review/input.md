@@ -25,7 +25,8 @@ Any existing check result with its saved output path, or "none".
 ## Intent
 
 The known task intent, and intentional behavior changes. Then list the acceptance criteria, one per
-line, word for word, or "none".
+line, word for word, or "none". For a fix review, list the findings the fix closes, each with its
+file and line.
 
 ## Capture
 ```

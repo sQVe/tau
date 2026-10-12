@@ -55,11 +55,27 @@ it('reads a version 1 record', async () => {
   expect(await readUnchanged(directory)).toEqual(saved);
 });
 
+it.each(['version-2.json', 'version-2-fix.json'])('reads the %s record', async (fixture) => {
+  const directory = await reviewDirectory(fixture);
+  const saved = JSON.parse(await readFile(join(fixtures, fixture), 'utf8')) as unknown;
+
+  expect(await readUnchanged(directory)).toEqual(saved);
+});
+
+it('refuses a version 1 record that holds a fix target', async () => {
+  const directory = await reviewDirectory();
+  const fix = JSON.parse(await readFile(join(fixtures, 'version-2-fix.json'), 'utf8')) as object;
+
+  await writeFile(join(directory, recordFileName), JSON.stringify({ ...fix, version: 1 }));
+
+  await expect(readCaptureRecord(directory)).rejects.toThrow('/target');
+});
+
 it('reads back the record it writes', async () => {
   const directory = await reviewDirectory();
 
   const record = {
-    version: 1 as const,
+    version: 2 as const,
     target: { kind: 'range' as const, from: 'a'.repeat(40), to: 'b'.repeat(40) },
     base: 'a'.repeat(40),
     head: 'c'.repeat(40),

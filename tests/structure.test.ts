@@ -32,6 +32,7 @@ const pureModules = [
   'src/unknownKeys.ts',
   'src/reviewCapture/evidenceDecisions.ts',
   'src/reviewCapture/freshness.ts',
+  'src/reviewCapture/fixScope.ts',
   'src/extensions/askUserQuestion/questionnaire.ts',
   'src/extensions/askUserQuestion/validation.ts',
   'src/extensions/commit/autosquash.ts',
