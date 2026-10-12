@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createFullCheckTool } from './tool.js';
@@ -154,4 +154,24 @@ it('saves no reusable record when the inputs change during the run', async () =>
   const saved = await readdir(join(root, '.tau', 'checks'));
 
   expect(saved.filter((name) => name.endsWith('.json'))).toEqual([]);
+});
+
+it('returns a passing log saved by another session while this check waited in the queue', async () => {
+  const { configure, counter, run, runCount } = await fixture();
+
+  await configure(countingArgv(counter, 'setTimeout(() => {}, 400);'));
+
+  const running = run();
+
+  await vi.waitFor(async () => {
+    expect(await runCount()).toBe(1);
+  });
+
+  const waiting = await run();
+  const started = await running;
+
+  expect(started.details?.reused).toBe(false);
+  expect(waiting.details).toMatchObject({ passed: true, reused: true });
+  expect(waiting.details?.logPath).toBe(started.details?.logPath);
+  expect(await runCount()).toBe(1);
 });

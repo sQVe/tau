@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 
+import { skillTools as bundledSkillTools } from '../../skillTools.js';
 import { workerTools } from './workerTools.js';
 
 it.each([
@@ -30,3 +31,12 @@ it.each([
     ...expected,
   ]);
 });
+
+it.each(['tdd', 'fix-bug', 'pr'])(
+  'gives a worker that loads the %s skill the full_check tool',
+  (skill) => {
+    const loadout = { tools: ['read'], skills: [`/skills/${skill}/SKILL.md`] };
+
+    expect(workerTools(loadout, bundledSkillTools)).toContain('full_check');
+  },
+);
