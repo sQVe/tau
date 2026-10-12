@@ -1,5 +1,6 @@
 import { constants, existsSync, realpathSync } from 'node:fs';
 import { open } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 
@@ -212,6 +213,22 @@ const maximumBytesPerCharacter = 4;
 
 const ticketByteLimit = ticketCharacterLimit * maximumBytesPerCharacter;
 
+// A read may return fewer bytes than asked before the end of the file, so read until it is full or
+// a read returns nothing.
+const fillBuffer = async (file: FileHandle, buffer: Buffer, filled: number): Promise<number> => {
+  if (filled === buffer.length) {
+    return filled;
+  }
+
+  const { bytesRead } = await file.read(buffer, filled, buffer.length - filled, filled);
+
+  if (bytesRead === 0) {
+    return filled;
+  }
+
+  return fillBuffer(file, buffer, filled + bytesRead);
+};
+
 // O_NONBLOCK keeps a named pipe from blocking the open.
 const readTicket = async (path: string): Promise<string | undefined> => {
   try {
@@ -225,9 +242,9 @@ const readTicket = async (path: string): Promise<string | undefined> => {
       }
 
       const buffer = Buffer.alloc(ticketByteLimit);
-      const { bytesRead } = await file.read(buffer, 0, ticketByteLimit, 0);
+      const filled = await fillBuffer(file, buffer, 0);
 
-      return buffer.toString('utf8', 0, bytesRead).slice(0, ticketCharacterLimit);
+      return buffer.toString('utf8', 0, filled).slice(0, ticketCharacterLimit);
     } finally {
       await file.close();
     }

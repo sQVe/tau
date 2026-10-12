@@ -7,6 +7,8 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { open } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1164,6 +1166,46 @@ it('caps the ticket text at 12000 characters', async ({ onTestFinished }) => {
 
   const { ticket } = classifiedState(classify) as { ticket: string };
   expect(ticket).toBe(`${'a'.repeat(11_999)}é`);
+});
+
+it('sends the whole ticket when the file returns short reads', async ({ onTestFinished }) => {
+  const { context, classify, directory } = await routedFixture(onTestFinished);
+  saveTicket(directory, 'a'.repeat(5000));
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  const probe = await open(join(directory, '.tau', 'slices', 'ME-1', 'agent-1.md'));
+  const fileHandle = Object.getPrototypeOf(probe) as FileHandle;
+  await probe.close();
+
+  type PositionalRead = (
+    this: FileHandle,
+    buffer: Buffer,
+    offset: number,
+    length: number,
+    position: number,
+  ) => ReturnType<FileHandle['read']>;
+
+  const read = fileHandle.read as PositionalRead;
+
+  const returnShortRead: PositionalRead = function (buffer, offset, length, position) {
+    return read.call(this, buffer, offset, Math.min(length, 1000), position);
+  };
+
+  const shortRead = vi
+    .spyOn(fileHandle, 'read')
+    .mockImplementation(returnShortRead as FileHandle['read']);
+
+  onTestFinished(() => {
+    shortRead.mockRestore();
+  });
+
+  await resolveRoutedLoadout(
+    { profile: 'scout', task: 'Task in .tau/slices/ME-1/agent-1.md' },
+    context,
+  );
+
+  const { ticket } = classifiedState(classify) as { ticket: string };
+  expect(ticket).toBe('a'.repeat(5000));
 });
 
 it.for<[string, string]>([
