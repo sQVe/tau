@@ -112,6 +112,7 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
       'code-review',
       'commit',
       'diagram',
+      'finish-slice',
       'fix-bug',
       'handover',
       'pr',

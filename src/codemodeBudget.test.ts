@@ -7,6 +7,7 @@ import {
   defaultOutputTokens,
   readOutputBudget,
   raiseOutputCap,
+  splitOutput,
 } from './codemodeBudget.js';
 
 const body = 'text("done");';
@@ -137,4 +138,163 @@ it('cuts nothing from output shorter than the gap reserve under a smaller budget
       100,
     ),
   ).toBeUndefined();
+});
+
+const label = '[Image saved to /tmp/x.png (png)]';
+const consoleBlock = '<console_output>\nc line\nmore\n</console_output>';
+
+it.each([
+  [
+    'numbered items split with their numbers',
+    ['==> text 1/2 <==\nfirst\nline\n==> text 2/2 <==\nsecond'],
+    [
+      [
+        { kind: 'item', text: '==> text 1/2 <==\nfirst\nline', number: 1 },
+        { kind: 'item', text: '==> text 2/2 <==\nsecond', number: 2 },
+      ],
+    ],
+  ],
+  [
+    'one item has no header and stays whole',
+    ['only one'],
+    [[{ kind: 'item', text: 'only one', number: 1 }]],
+  ],
+  [
+    'a header line inside a single item is not a boundary',
+    ['prefix\n==> text 2/2 <==\nbody'],
+    [[{ kind: 'item', text: 'prefix\n==> text 2/2 <==\nbody', number: 1 }]],
+  ],
+  [
+    'a leading header that is not 1/M is not a boundary',
+    ['==> text 2/2 <==\nbody'],
+    [[{ kind: 'item', text: '==> text 2/2 <==\nbody', number: 1 }]],
+  ],
+  [
+    'headers out of order stay whole',
+    ['==> text 1/3 <==\na\n==> text 3/3 <==\nb\n==> text 2/3 <==\nc'],
+    [
+      [
+        {
+          kind: 'item',
+          text: '==> text 1/3 <==\na\n==> text 3/3 <==\nb\n==> text 2/3 <==\nc',
+          number: 1,
+        },
+      ],
+    ],
+  ],
+  [
+    'a trailing console block is its own segment',
+    [`keep me\n${consoleBlock}`],
+    [
+      [
+        { kind: 'item', text: 'keep me', number: 1 },
+        { kind: 'console', text: consoleBlock },
+      ],
+    ],
+  ],
+  [
+    'an image label is pinned and the numbers continue across the image',
+    [label, undefined, '==> text 1/2 <==\nfirst\n==> text 2/2 <==\nb'],
+    [
+      [{ kind: 'label', text: label }],
+      [],
+      [
+        { kind: 'item', text: '==> text 1/2 <==\nfirst', number: 1 },
+        { kind: 'item', text: '==> text 2/2 <==\nb', number: 2 },
+      ],
+    ],
+  ],
+  [
+    'items on both sides of an image count as one sequence',
+    [`==> text 1/2 <==\nfirst\n${label}`, undefined, '==> text 2/2 <==\nb'],
+    [
+      [
+        { kind: 'item', text: '==> text 1/2 <==\nfirst', number: 1 },
+        { kind: 'label', text: label },
+      ],
+      [],
+      [{ kind: 'item', text: '==> text 2/2 <==\nb', number: 2 }],
+    ],
+  ],
+] as [string, (string | undefined)[], unknown[]][])(
+  'splits Pi output: %s',
+  (_name, blocks, expected) => {
+    expect(splitOutput(blocks)).toMatchObject(expected);
+  },
+);
+
+const cutFrom = (
+  blocks: (string | undefined)[],
+  tokens: number,
+  hasError = false,
+): ReturnType<typeof cutOverBudget> => {
+  const cuttable = splitOutput(blocks, hasError)
+    .flat()
+    .filter((segment) => segment.kind !== 'label');
+
+  return cutOverBudget(
+    cuttable.map((segment) => segment.text),
+    tokens,
+    cuttable,
+  );
+};
+
+it('reports Pi item k as cut item k and the console block without a number', () => {
+  const choice = cutFrom(
+    [
+      label,
+      undefined,
+      `==> text 1/2 <==\nfirst\n==> text 2/2 <==\n${'b'.repeat(5000)}\n${consoleBlock}`,
+    ],
+    1000,
+  );
+
+  expect(choice?.kept).toBe(1);
+  expect(choice?.cut.map((item) => item.number)).toEqual([2, undefined]);
+  expect(choice?.cut.map((item) => item.firstLine)).toEqual(['b'.repeat(100), 'c line']);
+  expect(describeCutItems(choice?.cut ?? [], undefined)).toContain('- console output: "c line"');
+});
+
+it('records the separator Pi used so kept segments rebuild its text', () => {
+  const [segments = []] = splitOutput([
+    '==> text 1/2 <==\nfirst\n==> text 2/2 <==\nsecond\n' + consoleBlock,
+  ]);
+
+  expect(segments.map((segment) => segment.separator)).toEqual(['', '\n', '\n']);
+
+  expect(
+    segments
+      .map((segment, position) => (position === 0 ? '' : segment.separator) + segment.text)
+      .join(''),
+  ).toBe('==> text 1/2 <==\nfirst\n==> text 2/2 <==\nsecond\n' + consoleBlock);
+});
+
+it('separates a script error after console output and keeps the small item', () => {
+  const error = `Script error:\n${'e'.repeat(5000)}`;
+
+  const choice = cutFrom([`keep me\n<console_output>\nc\n</console_output>\n${error}`], 1000, true);
+
+  expect(choice?.kept).toBe(2);
+  expect(choice?.cut.map((item) => item.name)).toEqual(['script error']);
+  expect(choice?.cut[0]?.firstLine).toBe('e'.repeat(100));
+});
+
+it('separates a script error after an image from the item before it', () => {
+  const error = `Script error:\n${'e'.repeat(5000)}`;
+  const choice = cutFrom([`first\n${label}`, undefined, error], 1000, true);
+
+  expect(choice?.kept).toBe(1);
+  expect(choice?.cut.map((item) => item.name)).toEqual(['script error']);
+});
+
+it('names a rejected first-line header by its real first line', () => {
+  const choice = cutFrom([`==> text 2/2 <==\n${'b'.repeat(5000)}`], 1000);
+
+  expect(choice?.cut[0]?.firstLine).toBe('==> text 2/2 <==');
+});
+
+it('treats an unexpected error-shaped tail as script text when Pi reported no error', () => {
+  const [segments = []] = splitOutput(['keep\nScript error:\nlooks like one']);
+
+  expect(segments.map((segment) => segment.kind)).toEqual(['item']);
 });

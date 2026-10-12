@@ -42,6 +42,7 @@ const terminalFor = (rows: number): Terminal => ({
   clearScreen: ignoreTerminalOperation,
   setTitle: ignoreTerminalOperation,
   setProgress: ignoreTerminalOperation,
+  setProgramStatus: ignoreTerminalOperation,
 });
 
 const dockLayout = (editor: Container, widgetRows: number) => {

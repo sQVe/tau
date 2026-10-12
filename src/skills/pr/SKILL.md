@@ -63,6 +63,14 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      `target.pr.body`. Read each distinct ticket with its service's CLI, such as
      `linear issue view <id> --json --no-pager --no-download`. Use returned issue IDs, not branch
      aliases. Keep only each ticket's title and `## Acceptance` section as intent.
+   - For a slice ticket found this way, also read its audit comment with
+     `linear issue comment list <slice> --json --no-pager`. The audit is the comment whose first
+     line is `# Slice audit: <slice>`, the filled first line of the
+     [audit template](../finish-slice/audit.md). Print its audited commit and rows.
+   - After the script, when a slice ticket has no audit comment, or its audited commit differs from
+     `HEAD`, ask with `ask_user_question`: run a new audit with the
+     [finish-slice skill](../finish-slice/SKILL.md), recommended, or continue with the missing or
+     old audit as a gap.
    - Print the target's head, base, merge base, repository, open PR fields, and closed PRs; ticket
      intent; reuse status, reasons, and available reports; review freshness and evidence gaps; and
      matching check-log paths with their bounded excerpts. Print one combined list of gaps from the
@@ -124,6 +132,9 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
 6. Choose draft status. Any gap means draft. A gap is one of:
    - A required check that failed or did not run. Only checks that can run solely after deployment
      are deferred instead of gaps.
+   - An audit item with the verdict not run. It closes when it names a check that step 5 ran and
+     that check passed. A not-met item stops the flow before publication. A deferred item is not a
+     gap.
    - A review that does not cover the pushed content. A checked fix counts as covered: it changes
      only what its finding or failing check needs, and the checks that cover it passed after it.
    - An open finding. A finding closes when its fix is checked as above or reviewed again, or when
@@ -156,8 +167,10 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      If the template has no such section, put Verification after the summary. Give one line to each
      check or scenario that ran, naming the behavior it exercised, and its setup only when a
      reviewer must repeat it. Give one line to the review result. Add a `[ ]` line for each untested
-     behavior, failed or missing required check, and open finding. Add a `[ ]` line for fixes that
-     no review covered only when that changes confidence. Drop test counts.
+     behavior, failed or missing required check, open finding, and not-run audit item that step 6
+     did not close. Add a `[ ]` line for fixes that no review covered only when that changes
+     confidence. Drop test counts. List deferred audit items under the template's deferred
+     verification section, such as `##### Deferred verification`.
    - Issues: link Linear tickets as the [tracker skill](../tracker/SKILL.md) says. For other issues,
      use `Fixes <issue>` only for issues this PR completes; use `Related to <issue>` for others.
    - Repository template: apply the same rules inside it. Map the lead, context, decisions, and
