@@ -16,14 +16,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 
 import {
   createTemporaryBareRoot,
   createTemporaryRepository,
 } from '../../../tests/gitRepository.js';
 import { createLinearFake } from '../../../tests/linearFake.js';
-import { confirmContext, noUiContext } from '../../../tests/toolContext.js';
+import { noUiContext } from '../../../tests/toolContext.js';
 import { createSliceTool } from './tool.js';
 import type { SliceInput } from './tool.js';
 
@@ -73,8 +73,9 @@ const expectReadOnly = async (fake: Fake, directory: string, read: () => Promise
 const setUp = async (fixture = 'version-1.json', createRoot = temporaryRepository) => {
   const root = await createRoot();
   const fake = createLinearFake();
-  const approve = vi.fn<() => Promise<boolean>>(async () => true);
-  const context = confirmContext(root, approve);
+  // Without a UI, any confirm prompt would throw, so every apply here also shows that apply
+  // never asks the user.
+  const context = noUiContext(root);
   const { directory } = await run(fake, context, { action: 'prepare', id: 'planning' });
 
   await copyFile(join(fixtures, fixture), join(directory, 'plan.json'));
@@ -106,7 +107,7 @@ const setUp = async (fixture = 'version-1.json', createRoot = temporaryRepositor
     return result;
   };
 
-  return { root, fake, context, approve, directory, read, apply };
+  return { root, fake, context, directory, read, apply };
 };
 
 const outsideDirectory = async () => {
@@ -132,55 +133,9 @@ const appliedPlan = async () => {
 };
 
 describe('slice tool apply', () => {
-  it('makes no Linear write when the user declines', async () => {
-    const { root, fake, directory, apply } = await setUp();
-    const decline = vi.fn<() => Promise<boolean>>(async () => false);
-
-    const result = await apply(confirmContext(root, decline), directory);
-
-    expect(result['status']).toBe('declined');
-    expect(decline).toHaveBeenCalledOnce();
-    expect(fake.writes()).toEqual([]);
-    expect(await savedPlan(directory)).toMatchObject({ container: { identifier: null } });
-  });
-
-  it('makes no Linear write in a session without UI', async () => {
-    const { root, fake, directory, apply } = await setUp();
-
-    const before = await snapshotDraft(directory);
-
-    await expect(apply(noUiContext(root), directory)).rejects.toThrow(
-      /needs the user's confirmation.*session without UI cannot give.*Nothing was written/u,
-    );
-
-    expect(fake.writes()).toEqual([]);
-    expect(await snapshotDraft(directory)).toEqual(before);
-  });
-
-  it('makes no Linear write and asks nothing in a worker with UI', async () => {
-    vi.stubEnv('TAU_WORKER_RECORD', '/records/task-one');
-
-    onTestFinished(() => {
-      vi.unstubAllEnvs();
-    });
-
-    const { root, fake, directory, apply } = await setUp();
-    const approve = vi.fn<() => Promise<boolean>>(async () => true);
-    const before = await snapshotDraft(directory);
-
-    await expect(apply(confirmContext(root, approve), directory)).rejects.toThrow(
-      /needs the user's confirmation.*worker cannot give.*Nothing was written/u,
-    );
-
-    expect(approve).not.toHaveBeenCalled();
-    expect(fake.writes()).toEqual([]);
-    expect(await snapshotDraft(directory)).toEqual(before);
-  });
-
   it('creates the container and slices in order and records each identifier', async () => {
-    const { root, fake, approve, directory } = await appliedPlan();
+    const { root, fake, directory } = await appliedPlan();
 
-    expect(approve).toHaveBeenCalledOnce();
     expect(directory).toBe(join(root, '.tau', 'slices', 'me-1'));
 
     expect(await savedPlan(directory)).toMatchObject({
@@ -233,6 +188,37 @@ describe('slice tool apply', () => {
     ).rejects.toThrow(/changed since the read/);
 
     expect(fake.writes()).toHaveLength(writesBefore);
+  });
+
+  it('refuses when the draft changed since the read', async () => {
+    const { fake, context, directory } = await setUp();
+    const { stateToken } = await run(fake, context, { action: 'read', directory });
+
+    await writeFile(join(directory, 'slice-1.md'), 'Changed after the read.\n');
+
+    await expect(
+      run(fake, context, { action: 'apply', directory, stateToken: String(stateToken) }),
+    ).rejects.toThrow(/changed since the read/);
+
+    expect(fake.writes()).toEqual([]);
+  });
+
+  it('refuses when the draft directory became a symlink since the read', async () => {
+    const { fake, context, directory } = await setUp();
+    const { stateToken } = await run(fake, context, { action: 'read', directory });
+    const outside = await outsideDirectory();
+    const originalPlan = await savedPlan(directory);
+
+    await cp(directory, outside, { recursive: true });
+    await rm(directory, { recursive: true });
+    await symlink(outside, directory);
+
+    await expect(
+      run(fake, context, { action: 'apply', directory, stateToken: String(stateToken) }),
+    ).rejects.toThrow(/symlink/u);
+
+    expect(fake.writes()).toEqual([]);
+    expect(await savedPlan(outside)).toEqual(originalPlan);
   });
 
   it('retries after a partial failure by creating only the missing slices', async () => {
@@ -310,8 +296,8 @@ describe('slice tool apply', () => {
     expect(await savedPlan(directory)).toMatchObject({ container: { identifier: null } });
   });
 
-  it('shows the new title and the body file of an update in the confirm', async () => {
-    const { root, fake, directory, apply } = await appliedPlan();
+  it('reports the new title and the body file of an applied update', async () => {
+    const { fake, directory, apply } = await appliedPlan();
 
     const plan = JSON.parse(await readFile(join(directory, 'plan.json'), 'utf8')) as {
       slices: { title: string }[];
@@ -321,17 +307,14 @@ describe('slice tool apply', () => {
     await writeFile(join(directory, 'plan.json'), JSON.stringify(plan));
     await writeFile(join(directory, 'slice-2.md'), 'Slice two, revised.\n');
 
-    const confirm = vi.fn<(title: string, message: string) => Promise<boolean>>(async () => false);
+    const result = await apply(undefined, directory);
+    const applied = result['applied'] as { text: string }[];
+    const texts = applied.map((step) => step.text).join('\n');
 
-    await apply(confirmContext(root, confirm), directory);
-    const title = confirm.mock.calls[0]?.[0];
-    const message = confirm.mock.calls[0]?.[1] ?? '';
-
-    expect(title).toBe('Write the slice plan to Linear?');
-    expect(message).toContain('Record the renamed lifecycle');
-    expect(message).toContain('slice-2.md');
-    expect(message).not.toContain('Slice two, revised.');
-    expect(fake.issues.get('ME-2')?.title).toBe('Record the lifecycle');
+    expect(texts).toContain('Record the renamed lifecycle');
+    expect(texts).toContain('slice-2.md');
+    expect(texts).not.toContain('Slice two, revised.');
+    expect(fake.issues.get('ME-2')?.title).toBe('Record the renamed lifecycle');
   });
 
   it('stops before the next step when the call is aborted', async () => {
@@ -433,87 +416,6 @@ describe('slice tool apply', () => {
     expect(result['orderInPlace']).toBe(true);
   });
 
-  it('asks again and names the moved slice before it repairs the order', async () => {
-    const { root, fake, directory, apply } = await appliedPlan();
-
-    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
-    fake.moveOnUpdate('ME-2', 1000);
-    const confirm = vi.fn<(title: string, message: string) => Promise<boolean>>(async () => true);
-
-    const result = await apply(confirmContext(root, confirm), directory);
-
-    expect(confirm).toHaveBeenCalledTimes(2);
-    expect(confirm.mock.calls[0]?.[1]).not.toContain('ME-3');
-    expect(confirm.mock.calls[1]?.[1]).toContain('ME-3');
-    expect(fake.issues.get('ME-2')!.sortOrder).toBeLessThan(fake.issues.get('ME-3')!.sortOrder);
-    expect(result['orderInPlace']).toBe(true);
-  });
-
-  it('makes no repair move when the user declines the second confirm', async () => {
-    const { root, fake, directory, apply } = await appliedPlan();
-
-    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
-    fake.moveOnUpdate('ME-2', 1000);
-    const writesBefore = fake.writes().length;
-    let calls = 0;
-
-    const confirm = vi.fn<(title: string, message: string) => Promise<boolean>>(async () => {
-      calls += 1;
-
-      return calls === 1;
-    });
-
-    const result = await apply(confirmContext(root, confirm), directory);
-    const applied = result['applied'] as { kind: string }[];
-
-    expect(result).toMatchObject({ status: 'applied', orderInPlace: false });
-    expect(applied.map((step) => step.kind)).toEqual(['updateSlice']);
-    expect(fake.writes()).toHaveLength(writesBefore + 1);
-    expect(fake.issues.get('ME-2')!.sortOrder).toBe(1000);
-  });
-
-  it('asks only once when the updates leave the order in place', async () => {
-    const { root, directory, apply } = await appliedPlan();
-
-    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
-    const confirm = vi.fn<(title: string, message: string) => Promise<boolean>>(async () => true);
-
-    await apply(confirmContext(root, confirm), directory);
-
-    expect(confirm).toHaveBeenCalledOnce();
-  });
-
-  it('makes no repair move when Linear changes during the second confirm', async () => {
-    const { root, fake, directory, apply } = await appliedPlan();
-
-    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
-    fake.moveOnUpdate('ME-2', 1000);
-    const writesBefore = fake.writes().length;
-    let calls = 0;
-
-    const confirm = vi.fn<(title: string, message: string) => Promise<boolean>>(async () => {
-      calls += 1;
-
-      if (calls === 2) {
-        const url = 'https://github.com/sQVe/tau/pull/9';
-
-        fake.issues.get('ME-3')!.pullRequests = [url];
-        fake.mergedPullRequests.add(url);
-      }
-
-      return true;
-    });
-
-    const outcome = await apply(confirmContext(root, confirm), directory).then(
-      () => 'applied',
-      (error: unknown) => (error instanceof Error ? error.message : String(error)),
-    );
-
-    expect(outcome).toContain('changed during the confirm');
-    expect(outcome).toContain('Not applied:\n- Move ME-3 into plan order');
-    expect(fake.writes()).toHaveLength(writesBefore + 1);
-  });
-
   it('stops before a repair move when the call is aborted', async () => {
     const { root, fake, directory } = await appliedPlan();
 
@@ -532,7 +434,7 @@ describe('slice tool apply', () => {
     };
 
     const tool = createSliceTool(exec);
-    const context = confirmContext(root, async () => true);
+    const context = noUiContext(root);
     const input = { action: 'read', directory } as const;
     const read = await tool.execute('call', input, undefined, undefined, context);
     const { stateToken } = read.details as { stateToken: string };
@@ -611,27 +513,26 @@ describe('slice tool apply', () => {
     expect(orders).toEqual(orders.toSorted((left, right) => left - right));
   });
 
-  it('names the route project of a new container in the confirm', async () => {
-    const { root, apply } = await setUp();
-    const confirm = vi.fn<(title: string, message: string) => Promise<boolean>>(async () => false);
+  it('names the route project of a new container in the applied steps', async () => {
+    const { apply } = await setUp();
 
-    await apply(confirmContext(root, confirm));
+    const result = await apply();
+    const applied = result['applied'] as { text: string }[];
 
-    expect(confirm.mock.calls[0]?.[1]).toContain('in team ME and project Tau');
+    expect(applied[0]?.text).toContain('in team ME and project Tau');
   });
 
-  it('lists each order move in the confirm and makes only those moves', async () => {
-    const { root, fake, directory, apply } = await appliedPlan();
+  it('reports each order move and makes only those moves', async () => {
+    const { fake, directory, apply } = await appliedPlan();
 
     fake.issues.get('ME-2')!.sortOrder = 5;
     const writesBefore = fake.writes().length;
-    const confirm = vi.fn<(title: string, message: string) => Promise<boolean>>(async () => true);
 
-    const result = await apply(confirmContext(root, confirm), directory);
-    const message = confirm.mock.calls[0]?.[1] ?? '';
+    const result = await apply(undefined, directory);
+    const applied = result['applied'] as { text: string }[];
     const moves = fake.writes().slice(writesBefore);
 
-    expect(message).toContain('1. Move ME-3 into plan order');
+    expect(applied.map((step) => step.text)).toEqual(['Move ME-3 into plan order']);
     expect(moves).toHaveLength(1);
     expect(moves[0]?.commandArguments.at(-1)).toContain('"id":"ME-3"');
     expect(result['orderInPlace']).toBe(true);
@@ -754,43 +655,6 @@ describe('slice tool apply', () => {
 
     expect(retry).toMatchObject({ status: 'unchanged', applied: [], orderInPlace: true });
     expect(fake.writes()).toHaveLength(writesBefore + 1);
-  });
-
-  it('refuses when the draft changes during the confirm', async () => {
-    const { root, fake, directory, apply } = await setUp();
-
-    const changeDuringConfirm = vi.fn<() => Promise<boolean>>(async () => {
-      await writeFile(join(directory, 'slice-1.md'), 'Changed during the confirm.\n');
-
-      return true;
-    });
-
-    await expect(apply(confirmContext(root, changeDuringConfirm), directory)).rejects.toThrow(
-      /changed since the read/,
-    );
-
-    expect(fake.writes()).toEqual([]);
-  });
-
-  it('refuses when the draft directory becomes a symlink during the confirm', async () => {
-    const { root, fake, directory, apply } = await setUp();
-    const outside = await outsideDirectory();
-    const originalPlan = await savedPlan(directory);
-
-    const swapDuringConfirm = vi.fn<() => Promise<boolean>>(async () => {
-      await cp(directory, outside, { recursive: true });
-      await rm(directory, { recursive: true });
-      await symlink(outside, directory);
-
-      return true;
-    });
-
-    await expect(apply(confirmContext(root, swapDuringConfirm), directory)).rejects.toThrow(
-      /symlink/u,
-    );
-
-    expect(fake.writes()).toEqual([]);
-    expect(await savedPlan(outside)).toEqual(originalPlan);
   });
 
   it('never changes a merged one-slice ticket', async () => {
@@ -1018,7 +882,7 @@ describe('slice tool read', () => {
   it('reads a container before the draft has a plan', async () => {
     const root = await temporaryRepository();
     const fake = createLinearFake();
-    const context = confirmContext(root, async () => true);
+    const context = noUiContext(root);
 
     fake.addIssue({ identifier: 'ME-4', title: 'Existing' });
     const { directory } = await run(fake, context, { action: 'prepare', id: 'me-4' });
@@ -1031,7 +895,7 @@ describe('slice tool read', () => {
   it('reports a container that Linear does not have', async () => {
     const root = await temporaryRepository();
     const fake = createLinearFake();
-    const context = confirmContext(root, async () => true);
+    const context = noUiContext(root);
     const { directory } = await run(fake, context, { action: 'prepare', id: 'me-77' });
 
     const outcome = await expectReadOnly(fake, directory, () =>
@@ -1299,7 +1163,7 @@ describe('slice tool draft directory', () => {
   it('reads a missing draft without creating anything', async () => {
     const root = await temporaryRepository();
     const fake = createLinearFake();
-    const context = confirmContext(root, async () => true);
+    const context = noUiContext(root);
 
     await mkdir(join(root, '.tau'));
     await writeFile(join(root, '.tau', 'note.md'), 'Not ignored.\n');
@@ -1317,7 +1181,7 @@ describe('slice tool draft directory', () => {
   it('refuses a draft directory nested with a backslash without creating anything', async () => {
     const root = await temporaryRepository();
     const fake = createLinearFake();
-    const context = confirmContext(root, async () => true);
+    const context = noUiContext(root);
 
     await expect(
       run(fake, context, { action: 'read', directory: String.raw`.tau/slices/parent\child` }),
@@ -1329,7 +1193,7 @@ describe('slice tool draft directory', () => {
   it('refuses to apply a missing draft without creating anything', async () => {
     const root = await temporaryRepository();
     const fake = createLinearFake();
-    const context = confirmContext(root, async () => true);
+    const context = noUiContext(root);
 
     await expect(
       run(fake, context, { action: 'apply', directory: '.tau/slices/missing', stateToken: 'any' }),

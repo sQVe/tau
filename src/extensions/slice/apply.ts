@@ -1,9 +1,6 @@
 import { rename } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
-import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
-
-import { confirmWithUser } from '../../confirm.js';
 import { errorMessage } from '../../errors.js';
 import { ensureTauDirectory } from '../../tauDirectory.js';
 import type { Draft, Plan } from './draft.js';
@@ -345,12 +342,6 @@ const repairSteps = (
   return steps;
 };
 
-const confirmMessage = (steps: readonly Step[]) => {
-  const lines = steps.map((step, index) => `${index + 1}. ${step.summary.text}`);
-
-  return lines.join('\n');
-};
-
 // Every earlier step has reached Linear, so a failed read reports them all as applied.
 const readSlotsAfter = async (
   runtime: Runtime,
@@ -364,11 +355,8 @@ const readSlotsAfter = async (
   }
 };
 
-const stepSummary = (step: Step) => step.summary;
-
 const checkOrder = async (
   runtime: Runtime,
-  context: ExtensionContext,
   progress: ApplyProgress,
   applied: readonly StepSummary[],
 ) => {
@@ -380,29 +368,6 @@ const checkOrder = async (
 
   const repairs = repairSteps(runtime, progress, slots);
   const all = [...applied, ...repairs.map((step) => step.summary)];
-
-  const confirmed = await confirmWithUser(context, {
-    action: 'Writing to Linear',
-    title: 'Move slices back into plan order?',
-    message: confirmMessage(repairs),
-  });
-
-  if (!confirmed) {
-    return { applied, orderInPlace: false };
-  }
-
-  const slotsNow = await readSlotsAfter(runtime, progress, applied);
-  const summariesNow = JSON.stringify(repairSteps(runtime, progress, slotsNow).map(stepSummary));
-  const summariesApproved = JSON.stringify(repairs.map(stepSummary));
-
-  if (summariesNow !== summariesApproved) {
-    throw failedApply(
-      progress,
-      all,
-      applied.length,
-      new Error('Linear changed during the confirm. Read again.'),
-    );
-  }
 
   for (const [index, step] of repairs.entries()) {
     if (runtime.signal?.aborted === true) {
@@ -456,15 +421,12 @@ const startProgress = (state: SliceState, draft: Draft): ApplyProgress => ({
   urls: new Map(),
 });
 
-// Writes only the draft contents and Linear state that the read checked. The state is read again
-// after the confirm, since the user can take any time to answer.
+// Writes only the draft contents and Linear state that the read checked.
 export const applySlicePlan = async (
   runtime: Runtime,
-  context: ExtensionContext,
-  checkDirectory: () => Promise<string>,
+  directory: string,
   stateToken: string | undefined,
 ): Promise<Record<string, unknown>> => {
-  const directory = await checkDirectory();
   const state = await readState(runtime, directory, undefined);
   const draft = rejectChangedState(state, stateToken);
   const progress = startProgress(state, draft);
@@ -479,26 +441,8 @@ export const applySlicePlan = async (
     };
   }
 
-  const confirmed = await confirmWithUser(context, {
-    action: 'Writing to Linear',
-    title: 'Write the slice plan to Linear?',
-    message: confirmMessage(steps),
-  });
-
-  if (!confirmed) {
-    return {
-      status: 'declined',
-      ...summary(progress, state.container),
-      applied: [],
-      orderInPlace: state.orderInPlace,
-    };
-  }
-
-  await checkDirectory();
-  rejectChangedState(await readState(runtime, directory, undefined), state.stateToken);
-
   const applied = await runSteps(progress, steps, runtime.signal);
-  const checked = await checkOrder(runtime, context, progress, applied);
+  const checked = await checkOrder(runtime, progress, applied);
 
   return {
     status: 'applied',
