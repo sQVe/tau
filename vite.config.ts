@@ -63,7 +63,7 @@ const workersPerProject = 3;
 // see a directory removed from PATH or a different home directory that has no earlier reads.
 // Leave out herdr, Pi, Tau worker, and Git variables. Tests set those themselves, and they
 // differ per pane or Git hook, so passing them would leak the shell and miss the cache.
-const testEnvironment = [
+export const testEnvironment = [
   'CI',
   'TAU_COLLECTION_TIMEOUT_MS',
   'TMPDIR',
@@ -77,6 +77,14 @@ const testEnvironment = [
   'PATH',
   'HOME',
   'NODE_OPTIONS',
+];
+
+// Variables that test code reads but sets itself, so they stay out of the fingerprint. Tests stub
+// them before reading, or this file sets or deletes them before the workers start.
+export const testManagedEnvironment = [
+  'PI_CODING_AGENT_DIR',
+  'TAU_SUBAGENT_CAP',
+  'TAU_WORKER_RECORD',
 ];
 
 const projectTasks = Object.fromEntries(
