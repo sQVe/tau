@@ -233,6 +233,24 @@ it('runs the command for each different dirty edit inside a submodule', async ()
   expect(saved.filter((name) => name.endsWith('.json'))).toEqual([]);
 });
 
+it('returns a passing result when its record cannot be saved', async () => {
+  const { configure, counter, run, root } = await fixture();
+
+  await git(root, 'branch', 'vanishing');
+
+  const remove = `require('node:child_process').execFileSync('git', ['update-ref', '-d', 'refs/heads/vanishing']);`;
+  await configure(countingArgv(counter, remove));
+
+  const result = await run('vanishing');
+
+  expect(result.details).toMatchObject({ passed: true, reused: false });
+  expect(result.details?.recordError).toContain('vanishing');
+
+  const saved = await readdir(join(root, '.tau', 'checks'));
+
+  expect(saved.filter((name) => name.endsWith('.json'))).toEqual([]);
+});
+
 it('saves no reusable record when the base ref moves during the run', async () => {
   const { configure, counter, run, runCount, root } = await fixture();
 

@@ -4,6 +4,7 @@ import { defineTool, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionToolContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
+import { errorMessage } from '../../errors.js';
 import { readGitOutput } from '../../gitOutput.js';
 import { repositoryFromRemote } from '../../repositoryRemote.js';
 import { findTauRoot } from '../../tauDirectory.js';
@@ -16,7 +17,7 @@ import type { CheckIdentity } from './reuseDecision.js';
 import { readTail, runCheck } from './run.js';
 import type { CheckResult } from './run.js';
 
-export type FullCheckDetails = CheckResult & { reused: boolean };
+export type FullCheckDetails = CheckResult & { reused: boolean; recordError?: string };
 
 export interface FullCheckToolOptions {
   agentDirectory?: string;
@@ -55,7 +56,11 @@ const describeResult = (result: FullCheckDetails): string => {
 
   const outcome = `Full check ${result.passed ? 'passed' : 'failed'} (${status}).`;
   const reuse = result.reused ? ' Reused the saved passing log for this unchanged state.' : '';
-  const headline = `${outcome}${reuse} Log: ${result.logPath}`;
+
+  const recordProblem =
+    result.recordError === undefined ? '' : ` No reusable record was saved: ${result.recordError}`;
+
+  const headline = `${outcome}${reuse}${recordProblem} Log: ${result.logPath}`;
 
   return result.tail === '' ? headline : `${headline}\n\nLast lines:\n${result.tail}`;
 };
@@ -94,12 +99,19 @@ const runAndRecord = async (
 ): Promise<FullCheckDetails> => {
   const result = await runCheck(root, identity.argv, signal, recordCommandGroup);
 
-  if (result.passed) {
+  if (!result.passed) {
+    return { ...result, reused: false };
+  }
+
+  // A missing record only disables reuse, so a failure to save it never fails a passing check.
+  try {
     const after = await readCheckIdentity(root, identity.argv, base);
 
     if (sameReusableState(identity, after)) {
       await saveCheckRecord(result.logPath, identity);
     }
+  } catch (error) {
+    return { ...result, reused: false, recordError: errorMessage(error) };
   }
 
   return { ...result, reused: false };
