@@ -8,6 +8,8 @@ export interface RouteLabel {
 
 // Exactly two labels, in config order.
 export interface ModelRoute {
+  // A provider/model-id that answers the question.
+  classifier: string;
   question: string;
   labels: ReadonlyMap<string, RouteLabel>;
   // Share of confident picks that differ from the profile model and launch on the routed model.

@@ -78,9 +78,10 @@ const parseLabel = (source: string, field: string, entry: unknown): RouteLabel =
 
 const parseRoute = (source: string, field: string, entry: unknown): ModelRoute => {
   if (!isRecord(entry)) {
-    throw invalid(source, `${field} must be an object with question and labels.`);
+    throw invalid(source, `${field} must be an object with classifier, question, and labels.`);
   }
 
+  const classifier = parseModel(source, `${field}.classifier`, entry.classifier);
   const question = parseText(source, `${field}.question`, entry.question);
 
   const labelEntries = entry.labels;
@@ -109,12 +110,14 @@ const parseRoute = (source: string, field: string, entry: unknown): ModelRoute =
 
   const canary = parseCanary(source, `${field}.canary`, entry.canary);
 
-  return { question, labels, canary };
+  return { classifier, question, labels, canary };
 };
 
 const knownProfileKeys: KnownKeys = {
   model: true,
-  routes: {
+  routes: true,
+  route: {
+    classifier: true,
     question: true,
     canary: true,
     labels: { [anyKey]: { criterion: true, model: true } },
@@ -209,11 +212,22 @@ export const readProfileRoute = (
   try {
     const record = readProfileRecord(location, name, ui);
 
-    if (record === undefined || record.entry.routes === undefined) {
+    if (record === undefined) {
       return undefined;
     }
 
-    return parseRoute(record.source, `${record.field}.routes`, record.entry.routes);
+    if (record.entry.routes !== undefined) {
+      throw invalid(
+        record.source,
+        `${record.field}.routes is no longer read. Rename it to ${record.field}.route and add ${record.field}.route.classifier as provider/model-id.`,
+      );
+    }
+
+    if (record.entry.route === undefined) {
+      return undefined;
+    }
+
+    return parseRoute(record.source, `${record.field}.route`, record.entry.route);
   } catch (error) {
     const message = `${errorMessage(error)} Routing is off for ${name}.`;
 
