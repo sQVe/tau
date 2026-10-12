@@ -11,6 +11,8 @@ the user's agent Chrome profile, so it starts with the logins saved there.
   the site needs state that the browser cannot restore.
 - Check that the page shows you are signed in before you act as the user. A copied profile does not
   prove that the login is still valid.
+- Open the page before you ask about a login. Do not ask the parent to sign in before you have seen
+  a login page.
 - On a login wall, sign in only with credentials the task gives you, such as a test account.
   Otherwise, stop and ask the parent. A login inside the agent browser never reaches the Chrome
   profile it copied, so other and later workers do not get it.

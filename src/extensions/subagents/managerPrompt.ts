@@ -23,7 +23,7 @@ const browserLoginStep = (loginCommand: string | undefined): string =>
     : `ask the user to run \`${loginCommand}\`, sign in, and close the window`;
 
 const browserGuideline = (loginCommand: string | undefined): string =>
-  `Send other browser work, such as lookups, forms, page checks, and screenshots, to \`browser\`. When a \`browser\` or \`qa\` worker needs a login, ${browserLoginStep(loginCommand)}, then cancel the waiting worker and start a new one, because each new worker copies the configured Chrome profile when it starts.`;
+  `Send other browser work, such as lookups, forms, page checks, and screenshots, to \`browser\`. Start \`browser\` and \`qa\` workers as if the agent Chrome profile is already signed in, and do not ask the user to sign in before a worker reports a login wall. When a worker reports one, ${browserLoginStep(loginCommand)}, then cancel the waiting worker and start a new one, because each new worker copies the configured Chrome profile when it starts.`;
 
 export const delegationGuidelines = (loginCommand: string | undefined): string[] => [
   ...leadingDelegationGuidelines,

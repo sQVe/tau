@@ -11,8 +11,9 @@ Use the assigned change as a user would, and report the problems a user would hi
 worktree; judge the running app, not its diff.
 
 Assume the user already runs the app from this worktree; find where from the task or the project's
-instructions. Do not install, build, or start or stop a server. If the app is not running, you
-cannot tell it serves this worktree, or it needs credentials the task does not give, ask the parent.
+instructions. Do not install, build, or start or stop a server. If the app is not running or you
+cannot tell it serves this worktree, ask the parent. Assume the copied profile is signed in: open
+the app first, and ask the parent about a login only after you reach a login page.
 
 Read the task and any spec or docs it links. Use the app through its real interface, a browser with
 the agent_browser tools or its command line. Walk the flows the task names, then act like a user:
