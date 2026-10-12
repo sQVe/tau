@@ -1,5 +1,15 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -607,6 +617,7 @@ it('keeps a binary file out of the snapshot and reports it in the fix capture', 
         kind: 'binary',
         path: 'logo.bin',
         identity: expect.stringMatching(/^[0-9a-f]{40}$/) as string,
+        existed: true,
       },
     ],
   });
@@ -769,3 +780,39 @@ it('counts a skipped binary restored to its base value as an outside change', as
 
   expect(result).toMatchObject({ scope: 'wholeTarget', outsidePaths: ['logo.bin'] });
 });
+
+it('counts the deletion of a reviewed symlink as an outside change', async () => {
+  const root = await fixRepository();
+
+  await symlink('src/math.ts', join(root, 'linked.ts'));
+
+  const review = await reviewOf(root, {}, workingTreeTarget);
+
+  await rm(join(root, 'linked.ts'));
+
+  const directory = await prepareDirectory(root);
+  const result = await captureFix(root, directory, review, ['src/math.ts']);
+
+  expect(result).toMatchObject({ scope: 'wholeTarget', outsidePaths: ['linked.ts'] });
+});
+
+it.skipIf(process.getuid?.() === 0)(
+  'captures a changed file under an unreadable directory as an unreadable gap',
+  async () => {
+    const root = await fixRepository();
+
+    await mkdir(join(root, 'locked'));
+    await writeFile(join(root, 'locked', 'a.ts'), 'export const a = 1;\n');
+    await git(root, ['add', '--all']);
+    await git(root, ['commit', '--quiet', '-m', 'locked']);
+    await writeFile(join(root, 'locked', 'a.ts'), 'export const a = 2;\n');
+    await writeFile(join(root, 'src', 'math.ts'), 'export const add = 9;\n');
+    await chmod(join(root, 'locked'), 0o000);
+    onTestFinished(() => chmod(join(root, 'locked'), 0o755));
+
+    const review = await prepareDirectory(root);
+    const result = await captureWorkingTree(root, review);
+
+    expect(result['gaps']).toContainEqual({ kind: 'unreadable', path: 'locked/a.ts' });
+  },
+);

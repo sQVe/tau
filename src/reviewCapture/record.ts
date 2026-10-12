@@ -32,6 +32,8 @@ const snapshotSchema = Type.Object(
           path: Type.String({ minLength: 1 }),
           // The blob of the file at capture time, or null when it could not be read.
           identity: Type.Union([objectNameSchema, Type.Null()]),
+          // Whether the path existed at capture time, so its later deletion counts as a change.
+          existed: Type.Boolean(),
         },
         { additionalProperties: false },
       ),

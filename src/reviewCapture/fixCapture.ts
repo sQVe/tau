@@ -106,6 +106,10 @@ const readWorkingFile = async (root: string, path: string): Promise<WorkingFile>
       return 'absent';
     }
 
+    if (hasErrorCode(error, 'EACCES')) {
+      return 'other';
+    }
+
     throw error;
   }
 };
@@ -136,8 +140,9 @@ const skippedPaths = (root: string, gaps: Gap[]): Promise<Snapshot['skipped']> =
       .flatMap((gap) => (isSnapshotGapKind(gap.kind) ? [{ kind: gap.kind, path: gap.path }] : []))
       .map(async (entry) => {
         const identity = await workingIdentity(root, entry.path);
+        const existed = (await readWorkingFile(root, entry.path)) !== 'absent';
 
-        return { kind: entry.kind, path: entry.path, identity };
+        return { kind: entry.kind, path: entry.path, identity, existed };
       }),
   );
 
@@ -163,7 +168,7 @@ const saveSnapshot = async (
       if (state === 'absent') {
         snapshot.absent.push(path);
       } else if (state === 'other') {
-        snapshot.skipped.push({ kind: 'unreadable', path, identity: null });
+        snapshot.skipped.push({ kind: 'unreadable', path, identity: null, existed: true });
       } else {
         // oxlint-disable-next-line no-await-in-loop -- see above.
         await mkdir(dirname(join(folder, path)), { recursive: true });
@@ -685,7 +690,7 @@ const skippedChanged = async (root: string, entry: Snapshot['skipped'][number]) 
   const state = await readWorkingFile(root, entry.path);
 
   if (state === 'absent') {
-    return entry.identity !== null;
+    return entry.existed;
   }
 
   const identity = await workingIdentity(root, entry.path);
