@@ -139,9 +139,11 @@ export const widgetRow = (
   task: Task,
   controlled: boolean,
   entries: { directory: string; task: Task }[],
-): WorkerWidgetRow =>
-  buildWidgetRow(
-    task,
-    readWidgetStatus(directory, task, controlled, entries),
-    readWorkerActivity(directory, task.taskId),
-  );
+): WorkerWidgetRow => {
+  const status = readWidgetStatus(directory, task, controlled, entries);
+
+  const activity =
+    status === undefined ? readWorkerActivity(directory, task.taskId) : status.activity;
+
+  return buildWidgetRow(task, status, activity);
+};
