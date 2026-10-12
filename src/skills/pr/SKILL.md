@@ -132,8 +132,9 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
 6. Choose draft status. Any gap means draft. A gap is one of:
    - A required check that failed or did not run. Only checks that can run solely after deployment
      are deferred instead of gaps.
-   - An audit item with the verdict not run. A not-met item stops the flow before publication. A
-     deferred item is not a gap.
+   - An audit item with the verdict not run. It closes when it names a check that step 5 ran and
+     that check passed. A not-met item stops the flow before publication. A deferred item is not a
+     gap.
    - A review that does not cover the pushed content. A checked fix counts as covered: it changes
      only what its finding or failing check needs, and the checks that cover it passed after it.
    - An open finding. A finding closes when its fix is checked as above or reviewed again, or when
