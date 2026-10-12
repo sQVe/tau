@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { access, constants, rm, writeFile } from 'node:fs/promises';
+import { access, constants } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { Static } from 'typebox';
@@ -7,8 +7,6 @@ import { Type } from 'typebox';
 
 import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
 import { runGit } from '../gitOutput.js';
-import { decideFreshness } from './freshness.js';
-import type { CaptureState, Freshness } from './freshness.js';
 
 export interface Gap {
   kind: 'binary' | 'unreadable' | 'excluded' | 'unmatched' | 'submodule';
@@ -19,12 +17,14 @@ export interface Capture {
   bytes: Buffer;
   hash: string;
   paths: string[];
+  // Every path that changed, gap paths included. A fix capture sets it; others change nothing here.
+  changed?: string[];
   gaps: Gap[];
   // A capture with errors is incomplete, so its bytes and hash must not stand for the target.
   errors: string[];
 }
 
-interface Part {
+export interface Part {
   bytes: Buffer;
   paths: string[];
   gaps: Gap[];
@@ -46,7 +46,11 @@ interface DiffSummary {
 // deletion from a file that went missing during the capture.
 type DiffPart = Part & { deleted: string[] };
 
-type FileList =
+export type DirectReviewTarget = Exclude<ReviewTarget, { kind: 'fix' }>;
+
+export type DirectTarget = Exclude<PinnedTarget, { kind: 'fix' }>;
+
+export type FileList =
   | { files: string[]; unreadable: string[]; error?: undefined }
   | { files?: undefined; unreadable?: undefined; error: string };
 
@@ -80,6 +84,20 @@ export const reviewTargetSchema = Type.Union([
       kind: Type.Literal('files'),
       paths: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
       base: Type.Optional(revisionSchema),
+      exclude,
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      kind: Type.Literal('fix'),
+      review: Type.String({
+        minLength: 1,
+        description: 'The .tau/workers/review-* directory of the earlier capture.',
+      }),
+      findingPaths: Type.Array(Type.String({ minLength: 1 }), {
+        description: 'The repository paths the closed findings cite.',
+      }),
       exclude,
     },
     { additionalProperties: false },
@@ -121,6 +139,16 @@ export const pinnedTargetSchemas = {
     },
     { additionalProperties: false },
   ),
+  fix: Type.Object(
+    {
+      kind: Type.Literal('fix'),
+      review: Type.String({ minLength: 1 }),
+      findingPaths: Type.Array(Type.String({ minLength: 1 })),
+      base: Type.Union([objectNameSchema, Type.Null()]),
+      exclude: excludeSchema,
+    },
+    { additionalProperties: false },
+  ),
 };
 
 export const pinnedTargetSchema = Type.Union([
@@ -128,21 +156,25 @@ export const pinnedTargetSchema = Type.Union([
   pinnedTargetSchemas.range,
   pinnedTargetSchemas.rootCommit,
   pinnedTargetSchemas.files,
+  pinnedTargetSchemas.fix,
 ]);
 
 export type PinnedTarget = Static<typeof pinnedTargetSchema>;
 
-const emptyPart: Part = { bytes: Buffer.alloc(0), paths: [], gaps: [], errors: [] };
+export const emptyPart: Part = { bytes: Buffer.alloc(0), paths: [], gaps: [], errors: [] };
 
 const describeCommand = (commandArguments: string[]) => `git ${commandArguments.join(' ')}`;
 
-const failure = (commandArguments: string[], detail: string): Part => ({
+export const failure = (commandArguments: string[], detail: string): Part => ({
   ...emptyPart,
   errors: [`${describeCommand(commandArguments)} failed: ${detail}`],
 });
 
 // Runs a Git command that must exit 0 and print nothing to stderr, as a capture command must.
-const runCaptureCommand = async (root: string, commandArguments: string[]) => {
+export const runCaptureCommand = async (
+  root: string,
+  commandArguments: string[],
+): Promise<{ stdout: Buffer; error?: undefined } | { stdout?: undefined; error: string }> => {
   try {
     const result = await runGit(root, commandArguments);
 
@@ -193,7 +225,10 @@ const rejectParent = async (root: string, commit: string) => {
 
 // Replaces each revision in the target with its commit SHA, so a later capture reads the same
 // commits even after a branch moves.
-export const pinTarget = async (root: string, target: ReviewTarget): Promise<PinnedTarget> => {
+export const pinTarget = async (
+  root: string,
+  target: DirectReviewTarget,
+): Promise<DirectTarget> => {
   if (target.kind === 'workingTree') {
     return { ...target, base: await resolveCommit(root, target.base) };
   }
@@ -219,11 +254,11 @@ export const pinTarget = async (root: string, target: ReviewTarget): Promise<Pin
   return { ...target, base: await resolveCommit(root, target.base ?? 'HEAD') };
 };
 
-const exclusions = (target: ReviewTarget) =>
+const exclusions = (target: { exclude?: string[] | undefined }) =>
   (target.exclude ?? []).map((path) => `:(exclude)${path}`);
 
 // `skipped` names unreadable files to leave out, matched literally.
-const pathspec = (target: ReviewTarget, skipped: string[] = []) => {
+const pathspec = (target: DirectTarget, skipped: string[] = []) => {
   const named = target.kind === 'files' ? target.paths : [];
   const skippedSpec = skipped.map((path) => `:(exclude,literal)${path}`);
   const spec = [...named, ...exclusions(target), ...skippedSpec];
@@ -238,7 +273,11 @@ export const fixedPrefixes = ['--src-prefix=a/', '--dst-prefix=b/'];
 // The diff command for the target. `extra` adds options such as --numstat after the subcommand.
 // diff.autoRefreshIndex=false stops git diff from rewriting cached file metadata in .git/index,
 // and --no-textconv stops a cachetextconv driver from writing objects and notes refs.
-const diffArguments = (target: PinnedTarget, extra: string[], skipped: string[] = []) => {
+export const diffArguments = (
+  target: DirectTarget,
+  extra: string[],
+  skipped: string[] = [],
+): string[] => {
   const options = ['--no-ext-diff', '--no-textconv', '--no-color', ...fixedPrefixes, ...extra];
   const spec = pathspec(target, skipped);
 
@@ -357,7 +396,7 @@ const splitDiffOutput = (output: Buffer) => {
 // captured bytes, even when the working tree changes during the capture.
 const captureDiffOnce = async (
   root: string,
-  target: PinnedTarget,
+  target: DirectTarget,
   skipped: string[],
 ): Promise<DiffPart> => {
   const diffCommand = diffArguments(target, ['--raw', '--numstat', '-p', '-z'], skipped);
@@ -400,7 +439,7 @@ const isRefused = (path: string) =>
   );
 
 // Changed working tree files the user cannot read. A range or root commit reads no working tree.
-const unreadableChangedPaths = async (root: string, target: PinnedTarget) => {
+const unreadableChangedPaths = async (root: string, target: DirectTarget) => {
   if (target.kind === 'range' || target.kind === 'rootCommit') {
     return [];
   }
@@ -416,7 +455,7 @@ const unreadableChangedPaths = async (root: string, target: PinnedTarget) => {
 
 // Git fails the whole diff on one unreadable file, so a failed diff runs again without the files
 // the user cannot read, and reports them as gaps. Any other failure stays a failure.
-const captureDiff = async (root: string, target: PinnedTarget): Promise<DiffPart> => {
+const captureDiff = async (root: string, target: DirectTarget): Promise<DiffPart> => {
   const first = await captureDiffOnce(root, target, []);
 
   if (first.errors.length === 0) {
@@ -435,7 +474,7 @@ const captureDiff = async (root: string, target: PinnedTarget): Promise<DiffPart
   return { ...retried, gaps: [...retried.gaps, ...gaps] };
 };
 
-const isBinaryDiff = (output: Buffer) =>
+export const isBinaryDiff = (output: Buffer): boolean =>
   output
     .toString('utf8')
     .split('\n')
@@ -444,7 +483,7 @@ const isBinaryDiff = (output: Buffer) =>
 // Shows a file in full as an added file. Exit 1 is normal: it means the file differs from empty.
 // A missing file adds nothing only when the diff shows it as deleted; otherwise it went missing
 // during the capture, and the capture fails.
-const captureWholeFile = async (
+export const captureWholeFile = async (
   root: string,
   path: string,
   deleted: ReadonlySet<string>,
@@ -540,7 +579,7 @@ const listFiles = async (root: string, options: string[], spec: string[]): Promi
 
 // Untracked files for a working tree; every file a named pathspec lists for a files target, so
 // unchanged named files appear in full.
-const wholeFileList = (target: PinnedTarget, root: string): Promise<FileList> => {
+export const wholeFileList = (target: DirectTarget, root: string): Promise<FileList> => {
   if (target.kind === 'workingTree') {
     return listFiles(root, ['-o'], pathspec(target));
   }
@@ -552,7 +591,7 @@ const wholeFileList = (target: PinnedTarget, root: string): Promise<FileList> =>
   return Promise.resolve({ files: [], unreadable: [] });
 };
 
-const unmatchedPaths = async (root: string, target: PinnedTarget): Promise<Part> => {
+const unmatchedPaths = async (root: string, target: DirectTarget): Promise<Part> => {
   if (target.kind !== 'files') {
     return emptyPart;
   }
@@ -570,7 +609,7 @@ const unmatchedPaths = async (root: string, target: PinnedTarget): Promise<Part>
 
 // Cached Git links, such as submodules, in a files target. `ls-files -s -z` prints
 // `<mode> <object> <stage>\t<path>` for each entry.
-const cachedGitLinks = async (root: string, target: PinnedTarget) => {
+const cachedGitLinks = async (root: string, target: DirectTarget) => {
   if (target.kind !== 'files') {
     return { links: new Set<string>() };
   }
@@ -600,7 +639,7 @@ const submoduleGap = (file: string): Part => {
 
 const captureWholeFiles = async (
   root: string,
-  target: PinnedTarget,
+  target: DirectTarget,
   deleted: ReadonlySet<string>,
 ): Promise<Part[]> => {
   const listed = await wholeFileList(target, root);
@@ -646,17 +685,17 @@ export const hashBytes = async (root: string, bytes: Buffer): Promise<HashedByte
   return { hash: createHash(format).update(header).update(bytes).digest('hex') };
 };
 
-const excludedGaps = (target: ReviewTarget): Gap[] =>
+export const excludedGaps = (target: { exclude?: string[] | undefined }): Gap[] =>
   (target.exclude ?? []).map((path) => ({ kind: 'excluded', path }));
 
 // A named file can show in the diff and in full, so one gap can come from both.
-const uniqueGaps = (gaps: Gap[]) => [
+export const uniqueGaps = (gaps: Gap[]): Gap[] => [
   ...new Map(gaps.map((gap) => [`${gap.kind}\0${gap.path}`, gap])).values(),
 ];
 
 // Captures the target as Git prints it. Changes no staged contents, .git/index, or Git objects.
 // The hash equals `git hash-object --no-filters` of the bytes, so .gitattributes cannot change it.
-export const captureTarget = async (root: string, target: PinnedTarget): Promise<Capture> => {
+export const captureTarget = async (root: string, target: DirectTarget): Promise<Capture> => {
   const diff = await captureDiff(root, target);
 
   const parts = [
@@ -688,35 +727,4 @@ export const readHead = async (root: string): Promise<HeadRead> => {
   }
 
   return { head };
-};
-
-// Captures the recorded target again into recheckFile and compares it, and HEAD, with the record.
-// A failed recapture removes recheckFile, so no stale file stands for the current target.
-export const checkFreshness = async (
-  root: string,
-  recorded: CaptureState & { target: PinnedTarget },
-  recheckFile: string,
-): Promise<Freshness> => {
-  const capture = await captureTarget(root, recorded.target);
-  const current = await readHead(root);
-
-  if (current.head === undefined) {
-    await rm(recheckFile, { force: true });
-
-    const captureErrors = [...capture.errors, current.error];
-
-    return decideFreshness({ recorded, current: undefined, captureErrors });
-  }
-
-  if (capture.errors.length > 0) {
-    await rm(recheckFile, { force: true });
-
-    return decideFreshness({ recorded, current: undefined, captureErrors: capture.errors });
-  }
-
-  await writeFile(recheckFile, capture.bytes);
-
-  const currentState = { hash: capture.hash, head: current.head };
-
-  return decideFreshness({ recorded, current: currentState, captureErrors: [] });
 };

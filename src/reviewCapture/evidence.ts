@@ -3,6 +3,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.js';
 import { runGit } from '../gitOutput.js';
+import { captureReview, checkFreshness } from './captureReview.js';
 import {
   boundList,
   callerText,
@@ -28,7 +29,6 @@ import type {
 } from './evidenceDecisions.js';
 import type { Freshness } from './freshness.js';
 import { inputFileName, readCaptureRecord, recheckFileName } from './record.js';
-import { captureTarget, checkFreshness } from './reviewCapture.js';
 import type { PinnedTarget } from './reviewCapture.js';
 
 interface FileBody {
@@ -379,7 +379,7 @@ export const readReviewEvidence = async (
 ): Promise<ReviewEvidence> => {
   const record = await readCaptureRecord(directory);
   const freshness = await checkFreshness(root, record, join(directory, recheckFileName));
-  const captured = await captureTarget(root, record.target);
+  const captured = await captureReview(root, record.target);
   const paths = boundList(captured.paths, limits.paths, { list: 'paths' });
   const revision = sourceRevision(record.target);
   const tests = await readTests(root, revision, paths.items, limits);

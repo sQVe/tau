@@ -10,7 +10,7 @@ import { createTemporaryRepository } from '../../tests/gitRepository.js';
 import { readReviewEvidence } from './evidence.js';
 import { writeCaptureRecord } from './record.js';
 import { captureTarget, pinTarget, readHead } from './reviewCapture.js';
-import type { ReviewTarget } from './reviewCapture.js';
+import type { DirectReviewTarget } from './reviewCapture.js';
 
 const isRoot = process.getuid?.() === 0;
 
@@ -40,7 +40,7 @@ const inputText = (rules: string, checks: string) =>
 
 const savedCapture = async (
   root: string,
-  target: ReviewTarget,
+  target: DirectReviewTarget,
   input = inputText('None.', 'none'),
 ) => {
   const directory = await mkdtemp(join(tmpdir(), 'tau-review-evidence-'));
@@ -54,7 +54,7 @@ const savedCapture = async (
   await writeFile(join(directory, 'input.md'), `${input}\n${captured.bytes.toString('utf8')}`);
 
   await writeCaptureRecord(directory, {
-    version: 1,
+    version: 2,
     target: pinned,
     base,
     head: head ?? '',

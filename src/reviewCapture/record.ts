@@ -13,7 +13,34 @@ export const recordFileName = 'capture.json';
 export const inputFileName = 'input.md';
 export const recheckFileName = 'recheck.diff';
 
-const currentVersion = 1;
+const currentVersion = 2;
+
+// What a fix review compares against: the working tree files an earlier capture saved in the
+// review directory's snapshot folder, and the paths it could not save.
+const snapshotSchema = Type.Object(
+  {
+    present: Type.Array(Type.String({ minLength: 1 })),
+    absent: Type.Array(Type.String({ minLength: 1 })),
+    skipped: Type.Array(
+      Type.Object(
+        {
+          kind: Type.Union([
+            Type.Literal('binary'),
+            Type.Literal('unreadable'),
+            Type.Literal('submodule'),
+          ]),
+          path: Type.String({ minLength: 1 }),
+          // The blob of the file at capture time, or null when it could not be read.
+          identity: Type.Union([objectNameSchema, Type.Null()]),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+
+export type Snapshot = Static<typeof snapshotSchema>;
 
 const captureRecordSchema = Type.Object(
   {
@@ -22,11 +49,33 @@ const captureRecordSchema = Type.Object(
     base: Type.Union([objectNameSchema, Type.Null()]),
     head: objectNameSchema,
     hash: objectNameSchema,
+    snapshot: Type.Optional(snapshotSchema),
   },
   { additionalProperties: false },
 );
 
-export type CaptureRecord = Static<typeof captureRecordSchema>;
+// Version 1 had no fix target and saved no snapshot. It is read only so a fix review can refuse it.
+const versionOneRecordSchema = Type.Object(
+  {
+    version: Type.Literal(1),
+    target: Type.Union([
+      pinnedTargetSchemas.workingTree,
+      pinnedTargetSchemas.range,
+      pinnedTargetSchemas.rootCommit,
+      pinnedTargetSchemas.files,
+    ]),
+    base: Type.Union([objectNameSchema, Type.Null()]),
+    head: objectNameSchema,
+    hash: objectNameSchema,
+  },
+  { additionalProperties: false },
+);
+
+export type CaptureRecord =
+  | Static<typeof captureRecordSchema>
+  | Static<typeof versionOneRecordSchema>;
+
+export type CurrentCaptureRecord = Static<typeof captureRecordSchema>;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -48,6 +97,11 @@ const targetProblem = (value: unknown) => {
   return error === undefined ? undefined : `/target${error.instancePath} ${error.message}`;
 };
 
+const isVersionOne = (value: unknown) => isObject(value) && value['version'] === 1;
+
+const recordSchema = (value: unknown) =>
+  isVersionOne(value) ? versionOneRecordSchema : captureRecordSchema;
+
 const schemaProblem = (value: unknown) => {
   const problem = targetProblem(value);
 
@@ -55,7 +109,7 @@ const schemaProblem = (value: unknown) => {
     return problem;
   }
 
-  return describeSchemaProblem(captureRecordSchema, value);
+  return describeSchemaProblem(recordSchema(value), value);
 };
 
 const isNewerVersion = (value: unknown) => {
@@ -80,7 +134,9 @@ const parseRecord = (path: string, text: string): CaptureRecord => {
     );
   }
 
-  if (!Value.Check(captureRecordSchema, value)) {
+  const schema = recordSchema(value);
+
+  if (!Value.Check(schema, value)) {
     throw new Error(`Malformed capture record ${path}: ${schemaProblem(value)}.`);
   }
 
@@ -106,7 +162,7 @@ export const readCaptureRecord = async (directory: string): Promise<CaptureRecor
 
 export const writeCaptureRecord = async (
   directory: string,
-  record: CaptureRecord,
+  record: CurrentCaptureRecord,
 ): Promise<void> => {
   await writeFile(join(directory, recordFileName), `${JSON.stringify(record, null, 2)}\n`);
 };
