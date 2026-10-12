@@ -123,6 +123,12 @@ preview. It needs the `linear` CLI authenticated for the workspace.
 
    - Update the title or body of a bug, human ticket, or agent ticket. Leave out the flag for the
      part that stays: `linear issue update <ticket> --title '<title>' --description-file <file>`.
+   - Add, list, or update a comment on a ticket. A comment is a write and needs an approved preview
+     like any other. Add one with `linear issue comment add <ticket> --body-file <file> --yes`, and
+     read the new comment's ID from `linear issue comment list <ticket> --json --no-pager`, since
+     the add command prints a success message and the comment URL, not the ID. The list's JSON has
+     `id`, `body`, and `url` for each comment. Replace a comment's text with
+     `linear issue comment update <comment> --body-file <file> --yes`.
    - Add a dependency that the `slice` tool does not write, such as one on a ticket outside the
      container: `linear issue relation add <ticket> blocked-by <other>`. Remove one with
      `linear issue relation delete <ticket> blocked-by <other>`.
