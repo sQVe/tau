@@ -1,5 +1,5 @@
 {
-  "version": 9,
+  "version": 11,
   "taskId": "routed-canary-pi",
   "name": "scout-ab",
   "task": "Inspect source.",
@@ -15,7 +15,8 @@
     "shadowPick": "faux/small",
     "label": "narrow",
     "confidence": 0.9,
-    "canary": true
+    "canary": true,
+    "ticketSent": false
   },
   "loadout": {
     "harness": "pi",

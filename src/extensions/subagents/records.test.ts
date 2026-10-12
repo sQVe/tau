@@ -33,7 +33,7 @@ const questionFixture = () => {
   });
 
   const task = {
-    version: 7,
+    version: 11,
     taskId: 'task-one',
     task: 'Inspect source.',
     parentSession: join(directory, 'parent.jsonl'),
@@ -130,7 +130,7 @@ it.each([
 
 it.for([
   ['malformed', '{'],
-  ['invalid', '{"version":7}'],
+  ['invalid', '{"version":11}'],
 ] as const)('names the task whose saved record is %s', ([, content]) => {
   const { directory, task } = questionFixture();
   const root = join(directory, 'registry');
@@ -167,7 +167,7 @@ it('skips an unknown task format without hiding a valid task', () => {
   expect(readFileSync(join(unknown, 'task.json'), 'utf8')).toBe(saved);
 });
 
-it.each([1, 2, 3, 4, 5, 6])(
+it.each([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])(
   'skips retired task version %i without blocking current tasks or changing records',
   (version) => {
     const { directory, task } = questionFixture();
@@ -237,7 +237,7 @@ const saveTaskRecordFixtures = (names: string[]) => {
   return root;
 };
 
-it('reads task records saved in the current and the previous format', () => {
+it('reads task records with and without routing', () => {
   const root = saveTaskRecordFixtures(['current-pi', 'routed-pi']);
   const diagnostics: string[] = [];
 
@@ -253,10 +253,12 @@ it('reads task records saved in the current and the previous format', () => {
     shadowPick: 'faux/small',
     label: 'narrow',
     confidence: 0.9,
+    canary: false,
+    ticketSent: false,
   });
 });
 
-it('reads a canary routing from a version 9 task and refuses one without the flag', () => {
+it('reads a canary routing and refuses one without the flag', () => {
   const root = saveTaskRecordFixtures(['routed-canary-pi']);
   const canary = parsedTaskRecordFixture('routed-canary-pi');
 
@@ -265,6 +267,7 @@ it('reads a canary routing from a version 9 task and refuses one without the fla
     label: 'narrow',
     confidence: 0.9,
     canary: true,
+    ticketSent: false,
   });
 
   const { canary: _dropped, ...unflagged } = canary.routing as Record<string, unknown>;
@@ -279,7 +282,7 @@ it('reads a canary routing from a version 9 task and refuses one without the fla
   );
 });
 
-it('reads whether ticket text was sent from a version 10 task and refuses a routing without it', () => {
+it('reads whether ticket text was sent and refuses a routing without it', () => {
   const root = saveTaskRecordFixtures(['routed-ticket-pi']);
   const ticket = parsedTaskRecordFixture('routed-ticket-pi');
 
@@ -301,14 +304,6 @@ it('reads whether ticket text was sent from a version 10 task and refuses a rout
   expect(() => records.readTask(join(root, 'routed-ticket-pi'))).toThrow(
     'Invalid saved worker task',
   );
-});
-
-it('refuses routing on a previous-format task', () => {
-  const root = saveTaskRecordFixtures(['routed-pi']);
-  const routed = parsedTaskRecordFixture('routed-pi');
-  writeFileSync(join(root, 'routed-pi', 'task.json'), JSON.stringify({ ...routed, version: 7 }));
-
-  expect(() => records.readTask(join(root, 'routed-pi'))).toThrow('Invalid saved worker task');
 });
 
 it('diagnoses routing with an unknown fallback reason or an unknown field', () => {

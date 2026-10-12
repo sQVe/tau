@@ -1007,11 +1007,52 @@ it('classifies nothing and records no routing when the launch names a model', as
 }) => {
   const { context, classify, request } = await routedFixture(onTestFinished);
 
-  const result = await resolveRoutedLoadout({ ...request, task: 'Edit the parser.' }, context);
+  const result = await resolveRoutedLoadout(
+    { ...request, task: 'Edit the parser.', acceptance: ['Parser is fixed.'] },
+    context,
+  );
 
   expect(result.routing).toBeUndefined();
   expect(classify).not.toHaveBeenCalled();
 });
+
+it.for([
+  ['no criteria', undefined],
+  ['an empty list', []],
+  ['a blank item', ['Done.', ' ']],
+] as const)(
+  'refuses an editing launch with %s before classifying',
+  async ([, acceptance], { onTestFinished }) => {
+    const { context, classify } = await routedFixture(onTestFinished);
+
+    await expect(
+      resolveRoutedLoadout(
+        {
+          profile: 'worker',
+          task: 'Fix it.',
+          ...(acceptance === undefined ? {} : { acceptance: [...acceptance] }),
+        },
+        context,
+      ),
+    ).rejects.toThrow(/acceptance/i);
+
+    expect(classify).not.toHaveBeenCalled();
+  },
+);
+
+it.for(['scout', 'reviewer', 'qa', 'browser'])(
+  'launches the bundled %s without acceptance criteria',
+  async (name, { onTestFinished }) => {
+    const { context, request } = await workerFixture(onTestFinished);
+
+    const result = await resolveRoutedLoadout(
+      { ...request, profile: name, task: 'Look.' },
+      context,
+    );
+
+    expect(result.loadout.profile).toBe(name);
+  },
+);
 
 it('classifies nothing for a profile without routes', async ({ onTestFinished }) => {
   const { context, classify } = await routedFixture(onTestFinished);
@@ -1030,7 +1071,7 @@ it.for([
   classify.mockImplementation(outcome);
 
   const { loadout, routing } = await resolveRoutedLoadout(
-    { profile: 'worker', task: 'Fix it.' },
+    { profile: 'worker', task: 'Fix it.', acceptance: ['It is fixed.'] },
     context,
   );
 
@@ -1502,7 +1543,7 @@ it('launches on the profile model with no routing when its routes are broken', a
   );
 
   const { loadout, routing } = await resolveRoutedLoadout(
-    { profile: 'worker', task: 'Fix it.' },
+    { profile: 'worker', task: 'Fix it.', acceptance: ['It is fixed.'] },
     context,
   );
 

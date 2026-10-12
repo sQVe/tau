@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 
 import { isMissingFile } from '../../../errors.js';
+import { acceptanceRefusal } from '../acceptanceRefusal.js';
 import { processAbsent } from '../cancellation.js';
 import { refuseLiveNativeWriter } from '../continuations.js';
 import { validateSavedLoadout } from '../loadout.js';
@@ -398,6 +399,12 @@ export class WorkerController {
 
     const directory = this.directory(input.sourceTaskId, input.parentSessionId);
     const task = readTask(directory);
+    const refusal = acceptanceRefusal(task.loadout.role, input.acceptance);
+
+    if (refusal !== undefined) {
+      throw new Error(refusal);
+    }
+
     const native = validateNative(task);
     const loadout = validateSavedLoadout(task.loadout, context);
 
@@ -655,6 +662,7 @@ export class WorkerController {
     timing: ReturnType<typeof launchTiming>,
   ): Task {
     const { expires: _expires, ...savedTiming } = timing;
+    const acceptance = input.acceptance ?? [];
 
     return validateTask({
       version: taskVersion,
@@ -662,6 +670,7 @@ export class WorkerController {
       ...(input.label === undefined ? {} : { label: input.label }),
       taskId: plan.taskId,
       task: input.task,
+      ...(acceptance.length === 0 ? {} : { acceptance }),
       parentSession: input.parentSession,
       parentSessionId: input.parentSessionId,
       ...nativeReference(plan.directory, plan.source),

@@ -272,10 +272,21 @@ export const workerInstructions = (loadout: Loadout): string =>
     ].join(' '),
   ].join('\n\n');
 
+const acceptanceList = (task: Task): string[] => {
+  if (task.acceptance === undefined) {
+    return [];
+  }
+
+  const items = task.acceptance.map((item, index) => `${index + 1}. ${item}`);
+
+  return ['', 'Acceptance criteria:', ...items];
+};
+
 export const workerPrompt = (task: Task): string =>
   [
     `Task ${task.taskId}:`,
     task.task,
+    ...acceptanceList(task),
     '',
     `Deadline: ${new Date(task.deadline).toISOString()}.`,
   ].join('\n');

@@ -101,7 +101,7 @@ const startProfileWorker = async (
   }
 
   const task = validateTask({
-    version: 7,
+    version: 11,
     taskId: `${profileName}-task`,
     task: 'Inspect source.txt.',
     parentSession: join(directory, 'parent.jsonl'),

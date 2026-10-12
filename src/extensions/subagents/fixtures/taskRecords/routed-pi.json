@@ -1,5 +1,5 @@
 {
-  "version": 8,
+  "version": 11,
   "taskId": "routed-pi",
   "name": "scout-ab",
   "task": "Inspect source.",
@@ -14,7 +14,9 @@
   "routing": {
     "shadowPick": "faux/small",
     "label": "narrow",
-    "confidence": 0.9
+    "confidence": 0.9,
+    "canary": false,
+    "ticketSent": false
   },
   "loadout": {
     "harness": "pi",

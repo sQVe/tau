@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 11,
   "taskId": "current-pi",
   "name": "scout-ab",
   "task": "Inspect source.",

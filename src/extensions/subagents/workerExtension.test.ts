@@ -51,7 +51,7 @@ const setup = (
   const createdAt = Date.now();
 
   publish(directory, 'task.json', {
-    version: 7,
+    version: 11,
     taskId: 'task',
     task: 'Read the assigned file.',
     parentSession: join(directory, 'parent.jsonl'),

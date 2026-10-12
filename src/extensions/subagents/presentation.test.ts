@@ -392,3 +392,14 @@ it('labels a stopped worker with an inherited-key outcome as plain stopped', () 
   expect(stateLabel('stopped', 'constructor')).toEqual(stateLabel('stopped'));
   expect(stateLabel('stopped', 'success').icon).toBe('✓');
 });
+
+it('shows acceptance criteria to the model in order', () => {
+  const content = modelStatus({
+    taskId: 'task-1',
+    state: 'running',
+    deadline: 10,
+    acceptance: ['First.', 'Second.'],
+  });
+
+  expect(content.acceptance).toEqual(['First.', 'Second.']);
+});
