@@ -1,4 +1,6 @@
-import { existsSync, realpathSync } from 'node:fs';
+import { constants, existsSync, realpathSync } from 'node:fs';
+import { open } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 
@@ -24,6 +26,7 @@ import { decideCanary, pickRoutedModel } from './modelRoutes.js';
 import type { ClassifierOutcome, ModelRoute, RoutedLaunch } from './modelRoutes.js';
 import { readProfileModel, readProfileRoute } from './profileModels.js';
 import { resolveProfile } from './profiles.js';
+import { findTicketPath } from './ticketPath.js';
 import { loadoutSchema } from './types.js';
 import type { Loadout, Profile } from './types.js';
 import { availableModels, defaultProfileName } from './workerModels.js';
@@ -37,6 +40,17 @@ interface LaunchRequest {
   profile: string;
   cwd?: string;
   model?: string;
+}
+
+interface ClassifierState {
+  brief: string;
+  profile: string;
+  cwd: string;
+}
+
+interface Classification {
+  outcome: ClassifierOutcome;
+  ticketSent: boolean;
 }
 
 export interface RoutedLoadout {
@@ -193,16 +207,80 @@ const classifierAllowed = (location: ConfigLocation): boolean => {
   return allowed === undefined || allowed.models.includes(classifierReference);
 };
 
+const ticketCharacterLimit = 12_000;
+
+const maximumBytesPerCharacter = 4;
+
+const ticketByteLimit = ticketCharacterLimit * maximumBytesPerCharacter;
+
+// A read may return fewer bytes than asked before the end of the file, so read until it is full or
+// a read returns nothing.
+const fillBuffer = async (file: FileHandle, buffer: Buffer, filled: number): Promise<number> => {
+  if (filled === buffer.length) {
+    return filled;
+  }
+
+  const { bytesRead } = await file.read(buffer, filled, buffer.length - filled, filled);
+
+  if (bytesRead === 0) {
+    return filled;
+  }
+
+  return fillBuffer(file, buffer, filled + bytesRead);
+};
+
+// O_NONBLOCK keeps a named pipe from blocking the open.
+const readTicket = async (path: string): Promise<string | undefined> => {
+  try {
+    const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
+
+    try {
+      const stats = await file.stat();
+
+      if (!stats.isFile()) {
+        return undefined;
+      }
+
+      const buffer = Buffer.alloc(ticketByteLimit);
+      const filled = await fillBuffer(file, buffer, 0);
+
+      return buffer.toString('utf8', 0, filled).slice(0, ticketCharacterLimit);
+    } finally {
+      await file.close();
+    }
+  } catch {
+    return undefined;
+  }
+};
+
+// The file text leaves the machine, so `..` must not lead out of the slices directory. This also
+// rejects a lookalike directory such as `x.tau/slices`.
+const resolveTicketPath = (brief: string, cwd: string): string | undefined => {
+  const written = findTicketPath(brief);
+
+  if (written === undefined) {
+    return undefined;
+  }
+
+  const path = resolve(cwd, written);
+
+  if (!path.includes('/.tau/slices/')) {
+    return undefined;
+  }
+
+  return path;
+};
+
 const classifyRoute = async (
   context: Pick<ExtensionContext, 'modelRegistry'>,
   route: ModelRoute,
-  state: { brief: string; profile: string },
+  { brief, profile, cwd }: ClassifierState,
   launchSignal: AbortSignal | undefined,
-): Promise<ClassifierOutcome> => {
+): Promise<Classification> => {
   const classifier = context.modelRegistry.findOfType('classifier', 'typesafe', 'jev-latest');
 
   if (classifier === undefined) {
-    return { kind: 'skipped' };
+    return { outcome: { kind: 'skipped' }, ticketSent: false };
   }
 
   const controller = new AbortController();
@@ -223,36 +301,48 @@ const classifyRoute = async (
 
   launchSignal?.addEventListener('abort', cancel, { once: true });
 
-  const answer = context.modelRegistry
-    .classify(
-      classifier,
-      {
-        state,
-        questions: {
-          route: {
-            type: 'choice',
-            instructions: route.question,
-            criteria: Object.fromEntries(
-              [...route.labels].map(([label, { criterion }]) => [label, criterion]),
-            ),
+  try {
+    const ticketPath = resolveTicketPath(brief, cwd);
+    const reading = ticketPath === undefined ? undefined : readTicket(ticketPath);
+    const read = await Promise.race([reading, stopped.promise]);
+
+    if (typeof read === 'object') {
+      return { outcome: read, ticketSent: false };
+    }
+
+    const state = read === undefined ? { brief, profile } : { brief, ticket: read, profile };
+
+    const answer = context.modelRegistry
+      .classify(
+        classifier,
+        {
+          state,
+          questions: {
+            route: {
+              type: 'choice',
+              instructions: route.question,
+              criteria: Object.fromEntries(
+                [...route.labels].map(([label, { criterion }]) => [label, criterion]),
+              ),
+            },
           },
         },
-      },
-      { signal: controller.signal },
-    )
-    .then((result): ClassifierOutcome => {
-      const choice = result.answers.route;
+        { signal: controller.signal },
+      )
+      .then((result): ClassifierOutcome => {
+        const choice = result.answers.route;
 
-      if (result.stopReason !== 'stop' || choice?.type !== 'choice') {
-        return { kind: 'error' };
-      }
+        if (result.stopReason !== 'stop' || choice?.type !== 'choice') {
+          return { kind: 'error' };
+        }
 
-      return { kind: 'answered', label: choice.choice, confidence: choice.confidence };
-    })
-    .catch((): ClassifierOutcome => ({ kind: 'error' }));
+        return { kind: 'answered', label: choice.choice, confidence: choice.confidence };
+      })
+      .catch((): ClassifierOutcome => ({ kind: 'error' }));
 
-  try {
-    return await Promise.race([answer, stopped.promise]);
+    const outcome = await Promise.race([answer, stopped.promise]);
+
+    return { outcome, ticketSent: read !== undefined };
   } finally {
     clearTimeout(timer);
     launchSignal?.removeEventListener('abort', cancel);
@@ -286,9 +376,14 @@ export const resolveRoutedLoadout = async (
     return { loadout, routing: undefined };
   }
 
-  const outcome: ClassifierOutcome = classifierAllowed(location)
-    ? await classifyRoute(context, route, { brief: input.task, profile: loadout.profile }, signal)
-    : { kind: 'skipped' };
+  const { outcome, ticketSent }: Classification = classifierAllowed(location)
+    ? await classifyRoute(
+        context,
+        route,
+        { brief: input.task, profile: loadout.profile, cwd: loadout.cwd },
+        signal,
+      )
+    : { outcome: { kind: 'skipped' }, ticketSent: false };
 
   const pick = pickRoutedModel({
     launchModel: input.model,
@@ -309,13 +404,13 @@ export const resolveRoutedLoadout = async (
   }
 
   if (!canary) {
-    return { loadout, routing: { ...pick, canary } };
+    return { loadout, routing: { ...pick, canary, ticketSent } };
   }
 
   // The routed model passes the same checks as an explicit launch model.
   const canaryLoadout = resolveLoadout({ ...input, model: pick.shadowPick }, context, commands);
 
-  return { loadout: canaryLoadout, routing: { ...pick, canary } };
+  return { loadout: canaryLoadout, routing: { ...pick, canary, ticketSent } };
 };
 
 const requireSavedWorkerDirectory = (loadout: Loadout, context: { cwd: string }): void => {

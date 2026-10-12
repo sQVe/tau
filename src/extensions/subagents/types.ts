@@ -99,12 +99,15 @@ const taskProperties = {
 };
 
 // Bump for any change to the saved fields, including a new optional field.
-export const taskVersion = 9;
+export const taskVersion = 10;
 
-// Version 7 tasks stay readable. They never carry routing. Version 8 routing has no canary.
+// Version 7 tasks stay readable. They never carry routing. Version 8 routing has no canary. Version 9 routing
+// has no ticketSent.
 export const oldestReadableTaskVersion = 7;
 
-const previousRoutingTaskVersion = 8;
+const routingWithoutCanaryTaskVersion = 8;
+
+const routingWithoutTicketTaskVersion = 9;
 
 const routingFields = {
   shadowPick: text,
@@ -115,10 +118,15 @@ const routingFields = {
   ),
 };
 
-const previousRoutingSchema = Type.Object(routingFields, { additionalProperties: false });
+const routingWithoutCanarySchema = Type.Object(routingFields, { additionalProperties: false });
+
+const routingWithoutTicketSchema = Type.Object(
+  { ...routingFields, canary: Type.Boolean() },
+  { additionalProperties: false },
+);
 
 const routingSchema = Type.Object(
-  { ...routingFields, canary: Type.Boolean() },
+  { ...routingFields, canary: Type.Boolean(), ticketSent: Type.Boolean() },
   { additionalProperties: false },
 );
 
@@ -141,8 +149,16 @@ export const taskSchema = Type.Union([
   Type.Object(
     {
       ...taskFields,
-      version: Type.Literal(previousRoutingTaskVersion),
-      routing: Type.Optional(previousRoutingSchema),
+      version: Type.Literal(routingWithoutCanaryTaskVersion),
+      routing: Type.Optional(routingWithoutCanarySchema),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      ...taskFields,
+      version: Type.Literal(routingWithoutTicketTaskVersion),
+      routing: Type.Optional(routingWithoutTicketSchema),
     },
     { additionalProperties: false },
   ),

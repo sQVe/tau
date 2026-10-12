@@ -44,7 +44,7 @@ export interface RoutePick {
   fallbackReason?: FallbackReason;
 }
 
-export type RoutedLaunch = RoutePick & { canary: boolean };
+export type RoutedLaunch = RoutePick & { canary: boolean; ticketSent: boolean };
 
 const minimumRouteConfidence = 0.7;
 
