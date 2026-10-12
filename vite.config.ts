@@ -95,7 +95,8 @@ const projectTasks = Object.fromEntries(
       // Nothing needs restoring, and Vitest rewrites its own result cache on every run.
       output: [],
       env: testEnvironment,
-      input: [{ auto: true }, '!node_modules/.vite/**'],
+      // Tests ignore .tau/, but full_check writes a new log there on every run.
+      input: [{ auto: true }, '!node_modules/.vite/**', '!.tau/**'],
     },
   ]),
 );
