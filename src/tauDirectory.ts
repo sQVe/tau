@@ -1,8 +1,8 @@
-import { appendFile, lstat, mkdir, mkdtemp, readFile } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { appendFile, lstat, mkdir, mkdtemp, readFile, realpath, stat } from 'node:fs/promises';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { isMissingFile } from './errors.js';
-import { readGitOutput } from './gitOutput.js';
+import { findCheckoutRoot, readGitOutput } from './gitOutput.js';
 
 export type TauChild =
   | { kind: 'outside' }
@@ -155,6 +155,52 @@ const isBareRoot = async (root: string) => {
   const output = await readGitOutput(root, ['rev-parse', '--is-bare-repository']);
 
   return output?.trim() === 'true';
+};
+
+const findBareRoot = async (cwd: string, toolName: string) => {
+  const output = await readGitOutput(cwd, ['rev-parse', '--absolute-git-dir']);
+  const path = output?.trim();
+
+  if (path === undefined || path === '') {
+    throw new Error(`The ${toolName} tool could not resolve the bare Git directory from ${cwd}.`);
+  }
+
+  const gitDirectory = await realpath(path);
+  const parent = dirname(gitDirectory);
+  const gitFile = join(parent, '.git');
+
+  try {
+    const stats = await stat(gitFile);
+
+    if (!stats.isFile()) {
+      return gitDirectory;
+    }
+
+    const content = await readFile(gitFile, 'utf8');
+    const target = /^gitdir: (.+)\r?\n?$/.exec(content)?.[1];
+
+    if (target !== undefined) {
+      const targetDirectory = await realpath(resolve(parent, target.trim()));
+
+      if (targetDirectory === gitDirectory) {
+        return parent;
+      }
+    }
+  } catch (error) {
+    if (!isMissingFile(error)) {
+      throw error;
+    }
+  }
+
+  return gitDirectory;
+};
+
+// Resolves the root that holds `.tau` for cwd: the bare repository root in a bare repository,
+// otherwise the checkout root. toolName names the caller in errors.
+export const findTauRoot = async (cwd: string, toolName: string): Promise<string> => {
+  const bare = await isBareRoot(cwd);
+
+  return bare ? findBareRoot(cwd, toolName) : findCheckoutRoot(cwd, toolName);
 };
 
 // Refuses `<root>/.tau/<path>` when a path a write would go through is a symlink, or

@@ -1,59 +1,13 @@
-import { readFile, realpath, stat } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
-
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
-import { isMissingFile } from '../../errors.js';
-import { findCheckoutRoot, readGitOutput } from '../../gitOutput.js';
-import { ensureTauDirectory } from '../../tauDirectory.js';
+import { ensureTauDirectory, findTauRoot } from '../../tauDirectory.js';
 
 const parameters = Type.Object({ action: Type.Literal('prepare') });
 
-const findBareRoot = async (cwd: string) => {
-  const output = await readGitOutput(cwd, ['rev-parse', '--absolute-git-dir']);
-  const path = output?.trim();
-
-  if (path === undefined || path === '') {
-    throw new Error(`The handover tool could not resolve the bare Git directory from ${cwd}.`);
-  }
-
-  const gitDirectory = await realpath(path);
-  const parent = dirname(gitDirectory);
-  const gitFile = join(parent, '.git');
-
-  try {
-    const stats = await stat(gitFile);
-
-    if (!stats.isFile()) {
-      return gitDirectory;
-    }
-
-    const content = await readFile(gitFile, 'utf8');
-    const target = /^gitdir: (.+)\r?\n?$/.exec(content)?.[1];
-
-    if (target !== undefined) {
-      const targetDirectory = await realpath(resolve(parent, target.trim()));
-
-      if (targetDirectory === gitDirectory) {
-        return parent;
-      }
-    }
-  } catch (error) {
-    if (!isMissingFile(error)) {
-      throw error;
-    }
-  }
-
-  return gitDirectory;
-};
-
 const prepare = async (cwd: string) => {
-  const bare = await readGitOutput(cwd, ['rev-parse', '--is-bare-repository']);
-
-  const root =
-    bare?.trim() === 'true' ? await findBareRoot(cwd) : await findCheckoutRoot(cwd, 'handover');
+  const root = await findTauRoot(cwd, 'handover');
 
   return { directory: await ensureTauDirectory(root, 'handovers') };
 };
