@@ -2,8 +2,8 @@
 name: start-slice
 description:
   Start one slice of a planned design. Creates its branch and its agent tickets in Linear, then
-  delegates the work. Picks the next slice from order, dependencies, and merge state, and previews
-  the branch, base, and agent tickets for one approval. Use it for "start the next slice", "start
+  delegates the work. Picks the next slice from order, dependencies, and merge state, and reports
+  the branch, base, and agent tickets it created. Use it for "start the next slice", "start
   ENG-123", or "begin this ticket as a slice". It does not split a design into slices.
 metadata:
   required-for:
@@ -24,17 +24,17 @@ Do not use it to split or re-plan a design. Use the [slice skill](../slice/SKILL
 ## Goal
 
 The slice has a branch named after it, checked out in this worktree, and agent tickets under it in
-the agent team. The user approved the start once, before anything was written to Linear or Git.
-Workers then carry out the agent tickets.
+the agent team. The draft covered every acceptance criterion before anything was written to Linear
+or Git. Workers then carry out the agent tickets.
 
 ## Hard rules
 
-- Before the user approves the preview, write only the draft in `$slicedir`. You may run
-  `git fetch`, but create or switch no branch and write nothing to Linear. Any change to the
-  approved plan needs a new preview, an added agent ticket included.
-- Route, write, and create agent tickets with the [tracker skill](../tracker/SKILL.md), and follow
-  its hard rules on questions and status. This skill's only status change is moving the slice to In
-  Progress in step 8.
+- Before step 8, write only the draft in `$slicedir`. You may run `git fetch`, but create or switch
+  no branch and write nothing to Linear.
+- Start the slice and create its agent tickets without asking the user to approve them. Route,
+  write, and create agent tickets with the [tracker skill](../tracker/SKILL.md), and follow its hard
+  rules on questions and status. This skill's only status change is moving the slice to In Progress
+  in step 8.
 - Before you write the draft, check that the prompt names both the repository route and the agent
   team as the tracker skill describes. If either is missing, stop with the tracker skill's setup
   message.
@@ -49,7 +49,7 @@ Workers then carry out the agent tickets.
 ## Procedure
 
 1. Pick the slice. If the user names no ticket, use the one ticket the conversation already names as
-   the slice or container, and name it in the step 7 preview. Ask when none or several fit.
+   the slice or container, and name it in the step 9 report. Ask when none or several fit.
    - A container is a ticket with children in its own team. Those children are its slices.
    - Any other ticket the user names is the slice itself, including a one-slice design with no
      container.
@@ -134,22 +134,10 @@ Workers then carry out the agent tickets.
 
    Together the agent tickets must cover every acceptance criterion of the slice.
 
-7. Preview and ask. Keep it to about 30 lines, without raw commands:
-   - The slice, with the reason you picked it.
-   - The branch, its base, and whether the branch exists already. For a stacked start, name the
-     parent's slice and PR, the trunk, and that the PR will target the parent branch. Name any
-     dependency that stacking on the top of the parent's stack adds.
-   - Each agent ticket as `new` or `unchanged`, with its title and one line from its `## Outcome`.
-   - Each acceptance criterion of the slice, with the agent ticket numbers that cover it.
-   - The writes step 8 makes, numbered, one line each, such as
-     `Create branch eng-123-add-x from origin/<default branch>`,
-     `Create branch eng-124-add-y on eng-123-add-x with gh stack`, `Move ENG-123 to In Progress`, or
-     `Create agent tickets 1-3 under ENG-123 in AI`.
+7. Check the draft. Map each acceptance criterion of the slice to the agent ticket numbers that
+   cover it. When a criterion has none, change the draft until every criterion is covered.
 
-   Approve with `ask_user_question`: approve, change the plan, or stop. After any change, write the
-   draft again and show a new preview.
-
-8. Start the slice in the previewed order.
+8. Start the slice in this order, without asking.
    - Check that `git status --porcelain` prints nothing. If it prints anything, stop and report it.
    - Check that every one of your workers in the worktree is `stopped`, as the
      [stack skill](../stack/SKILL.md) checks before a switch. If one is not, stop and report it.
@@ -168,7 +156,14 @@ Workers then carry out the agent tickets.
      that child's identifier. A child fits when it is in the agent team with no project, as the
      tracker skill routes agent tickets. Report a same-title child that does not fit, and stop.
 
-9. Report the branch and each agent ticket with its identifier and URL.
+9. Report the start in about 30 lines, without raw commands:
+   - The slice, with the reason you picked it.
+   - The branch, its base, and whether the branch existed already. For a stacked start, name the
+     parent's slice and PR, the trunk, and that the PR will target the parent branch. Name any
+     dependency that stacking on the top of the parent's stack added.
+   - Each agent ticket as `new` or `unchanged`, with its identifier, URL, title, and one line from
+     its `## Outcome`.
+   - Each acceptance criterion of the slice, with the agent ticket numbers that cover it.
 
 10. Delegate each agent ticket to a worker, and pass the path of its body file, such as
     `$slicedir/agent-1.md`, in the task. Copy each item of its `## Acceptance` word for word, in
@@ -182,8 +177,8 @@ Workers then carry out the agent tickets.
 
 ## Changes after the start
 
-- You may add an agent ticket inside the slice's approved outcome. Write its body file and its row
-  in `start.md`. Preview it as the tracker skill says, with one line of reason, and create it as in
-  step 8 only after the user approves.
+- You may add an agent ticket inside the slice's outcome. Write its body file and its row in
+  `start.md`, and create it as in step 8 without asking. Report it with its identifier, URL, and one
+  line of reason.
 - Work beyond the slice's outcome is a new slice. Re-plan it with the
   [slice skill](../slice/SKILL.md).

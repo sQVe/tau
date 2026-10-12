@@ -2,9 +2,9 @@
 name: slice
 description:
   Split an agreed design into ordered, PR-sized slice tickets under a container ticket in Linear.
-  Drafts the tickets, previews the layout and every Linear write for approval, then creates them in
-  order. Use it for "slice this design", "plan the slices", "break this into sub-tickets", or "plan
-  this as PR-sized pieces". It does not split existing commits or a finished branch.
+  Drafts the tickets, checks them, creates them in order, and reports the layout. Use it for "slice
+  this design", "plan the slices", "break this into sub-tickets", or "plan this as PR-sized pieces".
+  It does not split existing commits or a finished branch.
 metadata:
   required-for:
     creating or re-planning slice sub-tickets for a design in Linear, including as a step in a
@@ -15,10 +15,9 @@ metadata:
 
 ## When to use
 
-Use this skill to plan an agreed design as slices in Linear. When the user has not agreed to the
-design yet, the step 5 preview asks for that agreement. Each slice becomes one branch and one PR.
-Run it again on the same design to change the plan. It needs the `linear` CLI authenticated for the
-workspace.
+Use this skill to plan an agreed design as slices in Linear. Each slice becomes one branch and one
+PR. Run it again on the same design to change the plan. It needs the `linear` CLI authenticated for
+the workspace.
 
 Do not use it to guide the design conversation, or to split commits or a branch that already exist.
 
@@ -26,14 +25,14 @@ Do not use it to guide the design conversation, or to split commits or a branch 
 
 The container ticket holds a short summary and one line per key decision. Each slice holds the
 design it follows in its Design section. The container has one sub-ticket per slice, in order, with
-`blocked-by` relations only for real dependencies. The user approved the layout before anything was
-written to Linear.
+`blocked-by` relations only for real dependencies.
 
 ## Hard rules
 
-- Follow the [tracker skill](../tracker/SKILL.md)'s hard rules on preview approval and on questions.
+- Follow the [tracker skill](../tracker/SKILL.md)'s hard rules on writes and on questions. Write the
+  plan to Linear without asking the user to approve it.
 - Do not create agent tickets, start a slice, create branches, or stack PRs. Change no ticket's
-  status, except cancelling a dropped slice after the user approves it in step 7. Never change or
+  status, except cancelling a dropped slice after the user approves it in step 8. Never change or
   reorder a merged slice.
 - Use the `slice` tool for the draft directory, for reading the container and its slices, and for
   every write to them other than a cancellation. Save drafts only in the directory the tool returned
@@ -50,9 +49,8 @@ written to Linear.
    [brainstorm skill](../brainstorm/SKILL.md) wrote. Once `plan.json` records a container
    identifier, read the design from Linear and ignore later edits to `design.md`. Route the
    container and its slices with the [tracker skill](../tracker/SKILL.md), which stops when an
-   existing container is in another team or project. Ask no separate question about whether the
-   design is agreed. When the conversation or ticket does not show the user's agreement, say so in
-   the step 5 preview, so that its approval also agrees to the design.
+   existing container is in another team or project. Ask no question about whether the design is
+   agreed.
 
 2. Read the current state. Call `slice` with `prepare`, then with `read`.
    - Use the draft it returns as the last plan, and the container's description and children as
@@ -86,11 +84,21 @@ written to Linear.
    For a design with one slice, write `ticket.md` as the container's file, as the slice template
    describes, and list no slices.
 
-   Then call `read` again. Resolve its `problems` as in step 2, and use its result for the preview.
+   Then call `read` again. Resolve its `problems` as in step 2.
 
-5. Preview and ask. Show what the user decides on, not how step 6 runs it. Keep it to about 40
-   lines, and leave out raw commands and details of the local environment.
-   - The Linear layout in the [preview template](templates/preview.md).
+5. Check the plan. Map each acceptance criterion of the design to the slice numbers that cover it.
+   When a criterion has none, change the draft and call `read` again.
+
+6. Call `slice` with `apply` for the last read, without asking the user.
+   - When it says the state changed, call `read` again, resolve its `problems` as in step 2, and
+     apply again.
+   - When it returns `unchanged`, report that Linear already matches the plan.
+   - When `orderInPlace` is false, report that the slice order is still wrong.
+
+7. Report what you wrote. Keep it to about 40 lines, and leave out raw commands and details of the
+   local environment.
+   - The Linear layout in the [report template](templates/report.md), with each ticket's identifier
+     and URL, or the one ticket of a one-slice design.
    - When the slices branch or join, a `flowchart TD` of the `blocked-by` edges, drawn with the
      [diagram skill](../diagram/SKILL.md) as a top-level block after the tree. Keep the tree; it
      holds the status, size, and scope a flowchart cannot.
@@ -98,25 +106,13 @@ written to Linear.
    - Each acceptance criterion of the design, with the slice numbers that cover it.
    - Each choice in the decisions or slice designs that the agreed design did not already state, one
      line each, and the path of the draft that holds it. For an existing container, say that the
-     text outside the changed sections stays unchanged.
-   - The number of `writes` from `read`. Say that step 6 shows each write for a last confirm, and
-     that the confirm lists each move of an existing slice into plan order. Say that created tickets
-     stay in Linear, and that removing one later means cancelling it.
-   - On a later run, what the draft changes compared with Linear now, including `blocked-by`
-     relations to add and remove. List each slice in `dropped`: it stays in Linear, and step 7
-     offers to cancel it.
+     text outside the changed sections stayed unchanged.
+   - On a later run, each write from the `applied` list that `apply` returned, including
+     `blocked-by` relations added and removed and each move of an existing slice into plan order.
+     `apply` finds some of those moves only after its updates, so the `writes` of the last `read` do
+     not list them.
 
-   Approve the plan with `ask_user_question`: approve, change the plan, or stop. After any change,
-   write the draft again, call `read` again, and show a new preview.
-
-6. Call `slice` with `apply` for the read you previewed. Its confirm lists the exact writes and is
-   their approval, so do not ask about the writes yourself.
-   - When the user declines, ask with `ask_user_question` whether to change the plan or stop.
-   - When it says the state changed, call `read` again and preview again.
-   - When it returns `unchanged`, report that Linear already matches the plan.
-   - When `orderInPlace` is false, report that the slice order is still wrong.
-
-7. Report the container and each slice with its identifier and URL, in order, or the one ticket of a
-   one-slice design. Then ask with `ask_user_question` which `dropped` slices that are not merged or
-   completed to cancel, by identifier and title. Cancel the chosen ones with the
-   [tracker skill](../tracker/SKILL.md), and report which were cancelled and which were kept.
+8. Ask with `ask_user_question` which `dropped` slices that are not merged or completed to cancel,
+   by identifier and title. A dropped slice stays in Linear until it is cancelled. Cancel the chosen
+   ones with the [tracker skill](../tracker/SKILL.md), and report which were cancelled and which
+   were kept.

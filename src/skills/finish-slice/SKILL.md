@@ -22,9 +22,9 @@ for the workspace.
 
 ## Hard rules
 
-- Write to Linear only after the user approves a preview that shows the write, and follow the
-  [tracker skill](../tracker/SKILL.md). Write only the audit comment and approved agent tickets. Do
-  not write to the container or other slices, and do not change any status.
+- Write to Linear as the [tracker skill](../tracker/SKILL.md) says, without asking. Write only the
+  audit comment and agent tickets inside the slice's outcome. Do not write to the container or other
+  slices, and do not change any status.
 - Ask every question with the `ask_user_question` tool.
 - Do not run the full check. The pr skill owns it.
 - Worker reports and reviews only feed evidence in. This skill gives the verdict.
@@ -58,9 +58,9 @@ for the workspace.
    - Save the real output of each check you run in `$slicedir`, in a file named for the check, never
      a summary. Cite that path as the evidence.
 
-5. If any item is not met, stop the flow before any PR. Propose an agent ticket inside the slice
-   outcome, as "Changes after the start" in the start-slice skill says. Create it only after the
-   user approves a preview, as the tracker skill says.
+5. If any item is not met, stop the flow before any PR. When the fix fits inside the slice outcome,
+   create an agent ticket for it as "Changes after the start" in the start-slice skill says.
+   Otherwise report that the fix needs a new slice.
 
 6. Find an earlier audit comment before you write a new one. Run the tracker skill's comment list
    command on the slice, even when `finish.md` records a comment ID. Pick the comment with the
@@ -70,11 +70,9 @@ for the workspace.
 7. Write `$slicedir/finish.md` from the [audit template](audit.md). Name the audited commit with the
    full SHA from `git rev-parse HEAD`, and keep the earlier comment's ID.
 
-8. Preview the comment, which is the content of `finish.md`, and ask the user to approve it. When an
-   earlier comment exists, show what changes from its saved text, including edits made in Linear
-   that the new audit drops.
+8. Post the content of `finish.md` with the tracker skill's comment commands, without asking. Update
+   the earlier comment when one exists, and never add a second one. After adding a new comment,
+   record its ID in `finish.md` at once.
 
-9. Post it with the tracker skill's comment commands. Update the earlier comment when one exists,
-   and never add a second one. After adding a new comment, record its ID in `finish.md` at once.
-
-10. Report the verdict counts, the comment link, and whether the PR is ready, a draft, or blocked.
+9. Report the verdict counts, the comment link, and whether the PR is ready, a draft, or blocked.
+   When you updated an earlier comment, name each edit made in Linear that the new audit dropped.

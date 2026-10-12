@@ -1,6 +1,6 @@
-# Preview
+# Report
 
-Use this shape for the Linear layout in the step 5 preview. Draw it as an ASCII tree with aligned
+Use this shape for the Linear layout in the step 7 report. Draw it as an ASCII tree with aligned
 columns. Mark each ticket as `new`, `update`, or `unchanged`, and give each slice its `blocked-by`
 numbers and rough size in changed lines. Under each slice, add one line on what it delivers and one
 line from its `## Out of scope`.

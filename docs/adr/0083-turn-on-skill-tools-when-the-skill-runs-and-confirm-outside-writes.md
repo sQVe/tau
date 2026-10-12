@@ -2,8 +2,11 @@
 
 **Date**: 2026-10-03\
 **Status**: Accepted; activation superseded by
-[ADR 0093 (Enable skill tools from session start)](./0093-enable-skill-tools-from-session-start.md)\
-**Related**: [ADR 0004 (Skill authoring style)](./0004-skill-authoring-style.md),
+[ADR 0093 (Enable skill tools from session start)](./0093-enable-skill-tools-from-session-start.md),
+and the confirm for slice plan writes superseded by
+[ADR 0103 (Write slice flow Linear changes without approval)](./0103-write-slice-flow-linear-changes-without-approval.md)\
+**Related**:
+[ADR 0004 (Skill authoring style)](./0004-skill-authoring-style.md),
 [ADR 0010 (Documentation scope)](./0010-documentation-scope.md),
 [ADR 0077 (Keep a skill authoring guide in docs)](./0077-keep-a-skill-authoring-guide-in-docs.md),
 [ADR 0086 (Post to GitHub bots without a confirm)](./0086-post-to-github-bots-without-a-confirm.md)
