@@ -33,22 +33,22 @@ const runNested = async (
   await writeFile(join(directory, 'package.json'), '{"type":"module"}');
   await writeFile(join(directory, 'hanging.test.ts'), testSource);
 
+  // Vitest projects ignore a --hookTimeout flag, so set the timeouts in a config they extend.
+  await writeFile(
+    join(directory, 'vite.config.ts'),
+    [
+      "import { mergeConfig } from 'vite-plus';",
+      `import repository from ${JSON.stringify(join(repositoryRoot, 'vite.config.ts'))};`,
+      `export default mergeConfig(repository, { test: { testTimeout: 1000, hookTimeout: ${hookTimeout} } });`,
+    ].join('\n'),
+  );
+
   const started = performance.now();
 
   return new Promise((resolve) => {
     execFile(
       join(repositoryRoot, 'node_modules', '.bin', 'vp'),
-      [
-        'test',
-        '--root',
-        directory,
-        '--config',
-        join(repositoryRoot, 'vite.config.ts'),
-        '--testTimeout',
-        '1000',
-        '--hookTimeout',
-        String(hookTimeout),
-      ],
+      ['test', '--root', directory, '--config', join(directory, 'vite.config.ts')],
       {
         env: { ...process.env, TAU_COLLECTION_TIMEOUT_MS: collectionTimeout },
         timeout: 25_000,
