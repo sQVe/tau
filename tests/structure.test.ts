@@ -416,13 +416,17 @@ it('refuses index files, one-file folders, and missing entries but allows flat f
   ]);
 });
 
-it('puts every test file in exactly one Vitest project', () => {
-  const ignoredDirectories = new Set(['node_modules', '.git', '.tau', 'dist', 'coverage']);
+// Local state, such as review captures under .pi/, can hold test files that no project runs.
+const ignoredDirectories = new Set(['node_modules', '.git', '.tau', '.pi', 'dist', 'coverage']);
 
-  const testFiles = readdirSync(root, { recursive: true, encoding: 'utf8' })
-    .filter((path) => path.split(/[/\\]/).every((part) => !ignoredDirectories.has(part)))
+const repositoryFiles = () =>
+  readdirSync(root, { recursive: true, encoding: 'utf8' })
     .map((path) => path.replaceAll('\\', '/'))
-    .filter((path) => path.endsWith('.test.ts') && !isLintProbe(path));
+    .filter((path) => path.split('/').every((part) => !ignoredDirectories.has(part)))
+    .filter((path) => !isLintProbe(path));
+
+it('puts every test file in exactly one Vitest project', () => {
+  const testFiles = repositoryFiles().filter((path) => path.endsWith('.test.ts'));
 
   const projects = (config.test?.projects ?? []) as {
     test: { name: string; include: string[]; exclude: string[] };
@@ -449,15 +453,10 @@ it('puts every test file in exactly one Vitest project', () => {
 });
 
 it('handles every environment variable that test code reads in the cached test tasks', () => {
-  const ignoredDirectories = new Set(['node_modules', '.git', '.tau', 'dist', 'coverage']);
-
   const isTestCode = (path: string) =>
     isTest(path) || isFixture(path) || /^tests\/[^/]+\.ts$/.test(path);
 
-  const testCode = readdirSync(root, { recursive: true, encoding: 'utf8' })
-    .map((path) => path.replaceAll('\\', '/'))
-    .filter((path) => path.split('/').every((part) => !ignoredDirectories.has(part)))
-    .filter((path) => path.endsWith('.ts') && isTestCode(path) && !isLintProbe(path));
+  const testCode = repositoryFiles().filter((path) => path.endsWith('.ts') && isTestCode(path));
 
   const handled = new Set([...testEnvironment, ...testManagedEnvironment]);
 
