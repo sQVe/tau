@@ -2,9 +2,10 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
 import { appendToolGuidelines } from '../../systemPrompt.js';
+import { parseWorkerNoticeEvent, workerNoticeChannel } from '../../workerNoticeEvent.js';
 import { questionDialog } from './dialog.js';
-import type { DialogResult } from './dialog.js';
-import type { Answer } from './questionnaire.js';
+import type { DialogResult, DialogSession } from './dialog.js';
+import type { Answer, QuestionnaireState } from './questionnaire.js';
 import { validateQuestions } from './validation.js';
 
 const optionSchema = Type.Object({
@@ -109,6 +110,7 @@ const promptGuidelines = [
   'Never name who proposed an option, and never use option letters, internal codes, or unexplained ADR or ticket numbers. Say what the thing is.',
   'Ask one question by default. Group only questions that do not depend on each other. Ask a question that depends on an earlier answer after you have that answer.',
   'If the user closes the dialog without an answer, state the blocked decision and stop. Closing the dialog is not approval, and do not ask the same question again in prose.',
+  'If the result says the user chose to handle a worker notice first, nothing was answered or approved. Handle the notice, then call ask_user_question again with the same questions. The dialog restores the earlier selections.',
 ];
 
 const answerSegment = (answer: Answer) => {
@@ -117,9 +119,13 @@ const answerSegment = (answer: Answer) => {
   return `"${answer.question}"="${answer.selected.join(', ')}".${preview}`;
 };
 
-const responseText = (result: DialogResult | undefined) => {
-  if (result === undefined || result.cancelled) {
+const responseText = (result: DialogResult) => {
+  if (result.kind === 'declined') {
     return 'User declined to answer questions';
+  }
+
+  if (result.kind === 'deferred') {
+    return "User chose to handle a waiting worker notice first. No question was answered and nothing is approved. Handle the waiting notice, then call ask_user_question again with the same questions. The dialog restores the user's selections.";
   }
 
   const segments = result.answers.map(answerSegment).join(' ');
@@ -129,6 +135,18 @@ const responseText = (result: DialogResult | undefined) => {
 
 export default function askUserQuestionExtension(pi: ExtensionAPI): void {
   appendToolGuidelines(pi, 'ask_user_question', promptGuidelines);
+
+  // A deferred dialog leaves its state here until the same questions are asked again.
+  const savedStates = new Map<string, QuestionnaireState>();
+
+  const subscribe: DialogSession['subscribe'] = (listener) =>
+    pi.events.on(workerNoticeChannel, (data) => {
+      const notice = parseWorkerNoticeEvent(data);
+
+      if (notice !== undefined) {
+        listener(notice);
+      }
+    });
 
   pi.registerTool({
     name: 'ask_user_question',
@@ -152,10 +170,24 @@ export default function askUserQuestionExtension(pi: ExtensionAPI): void {
         multiSelect: question.multiSelect === true,
       }));
 
-      const result = await context.ui.custom<DialogResult | undefined>(questionDialog(questions));
-      const details: DialogResult = result ?? { cancelled: true, answers: [] };
+      const key = JSON.stringify(questions);
+      const saved = savedStates.get(key);
 
-      return { content: [{ type: 'text', text: responseText(result) }], details };
+      const session = {
+        saved,
+        subscribe,
+        save: (state: QuestionnaireState) => savedStates.set(key, state),
+      };
+
+      savedStates.delete(key);
+
+      const opened = await context.ui.custom<DialogResult | undefined>(
+        questionDialog(questions, session),
+      );
+
+      const result: DialogResult = opened ?? { kind: 'declined' };
+
+      return { content: [{ type: 'text', text: responseText(result) }], details: result };
     },
   });
 }

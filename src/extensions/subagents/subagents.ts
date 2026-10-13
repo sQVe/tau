@@ -9,10 +9,13 @@ import type { Static } from 'typebox';
 import { isNestedControlCall, nestedControlCallReason } from '../../controlTools.js';
 import { errorMessage } from '../../errors.js';
 import { readGitOutput } from '../../gitOutput.js';
+import { isRecord } from '../../isRecord.js';
 import { repositoryFromRemote } from '../../repositoryRemote.js';
 import { appendSystemPrompt } from '../../systemPrompt.js';
 import { forgetReportedWarnings } from '../../tauConfig.js';
 import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
+import { workerNoticeChannel } from '../../workerNoticeEvent.js';
+import type { WorkerNoticeEvent } from '../../workerNoticeEvent.js';
 import { isWorkerProcess } from '../../workerProcess.js';
 import { readBrowserLoginCommand } from './browserLogin.js';
 import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.js';
@@ -23,7 +26,13 @@ import { launchModels, resolveRoutedLoadout } from './loadout.js';
 import { delegationGuidelines } from './managerPrompt.js';
 import { decideNoticeDelivery } from './noticeDelivery.js';
 import { passiveWaitRefusal } from './passiveWait.js';
-import { modelEvidenceNotice, modelReply, modelStatus } from './presentation.js';
+import {
+  modelEvidenceNotice,
+  modelReply,
+  modelStatus,
+  stateLabel,
+  stateLabels,
+} from './presentation.js';
 import type { WorkerNotice } from './presentation.js';
 import { readProfileModels } from './profileModels.js';
 import { listProfiles } from './profiles.js';
@@ -40,6 +49,7 @@ import {
 import { readTrackerSetup } from './trackerConfig.js';
 import { trackerLines } from './trackerRouting.js';
 import { taskIdSchema } from './types.js';
+import type { WorkerState } from './types.js';
 import { renderWorkerWidget } from './widget.js';
 import { workerModelLine } from './workerModels.js';
 
@@ -148,6 +158,24 @@ type StatusParameters = Static<typeof statusParameters>;
 type ReplyParameters = Static<typeof replyParameters>;
 type CancelParameters = Static<typeof cancelParameters>;
 
+const isWorkerState = (value: unknown): value is WorkerState =>
+  typeof value === 'string' && Object.hasOwn(stateLabels, value);
+
+const noticeEvent = (notice: WorkerNotice): WorkerNoticeEvent => {
+  const details = isRecord(notice.details) ? notice.details : {};
+  const { name, taskId, state, outcome } = details;
+  const fallback = typeof taskId === 'string' && taskId !== '' ? shortId(taskId) : 'worker';
+  const worker = typeof name === 'string' && name !== '' ? name : fallback;
+
+  if (!isWorkerState(state)) {
+    return { worker, label: 'evidence unreadable' };
+  }
+
+  const label = stateLabel(state, typeof outcome === 'string' ? outcome : undefined);
+
+  return { worker, label: label.text };
+};
+
 export const createNoticeDelivery = (pi: ExtensionAPI): NoticeDelivery => {
   // Pi is busy during a run and during a manual compaction. Only a run takes a steered notice. The
   // extension context exposes no run state that also covers Pi's compaction after the agent loop.
@@ -162,6 +190,8 @@ export const createNoticeDelivery = (pi: ExtensionAPI): NoticeDelivery => {
   });
 
   return (context, notice) => {
+    pi.events.emit(workerNoticeChannel, noticeEvent(notice));
+
     const message = {
       customType: 'tau-worker',
       content: JSON.stringify(notice.content),

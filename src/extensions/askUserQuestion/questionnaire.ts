@@ -47,13 +47,28 @@ export type KeyOutcome =
   | { kind: 'update'; state: QuestionnaireState }
   | { kind: 'type' }
   | { kind: 'submit'; answers: Answer[] }
-  | { kind: 'cancel' };
+  | { kind: 'cancel' }
+  | { kind: 'defer' };
 
 export const initialState = (count: number): QuestionnaireState => ({
   tab: 0,
   questions: Array.from({ length: count }, () => ({ cursor: 0, checked: [], customText: '' })),
   answers: Array.from({ length: count }, () => undefined),
   fullPreview: undefined,
+});
+
+// Saved state comes from a dialog that had notices. The new dialog has none, so a cursor on the
+// action row moves back to the custom row, and a full preview closes.
+export const restoredState = (
+  saved: QuestionnaireState,
+  questions: readonly QuestionFacts[],
+): QuestionnaireState => ({
+  ...saved,
+  fullPreview: undefined,
+  questions: saved.questions.map((question, index) => ({
+    ...question,
+    cursor: Math.min(question.cursor, questions[index]?.options.length ?? 0),
+  })),
 });
 
 export const isCustomChecked = (text: string): boolean => text.trim() !== '';
@@ -160,8 +175,10 @@ const handleOptionKey = (
   key: KeyPress,
   facts: QuestionFacts,
   question: QuestionState,
+  deferAvailable: boolean,
 ): KeyOutcome => {
-  const lastRow = facts.options.length;
+  const customRow = facts.options.length;
+  const lastRow = deferAvailable ? customRow + 1 : customRow;
 
   const cursors: Partial<Record<KeyPress['kind'], number>> = {
     up: Math.max(0, question.cursor - 1),
@@ -172,15 +189,16 @@ const handleOptionKey = (
 
   const cursor = cursors[key.kind];
 
-  // The cursor picks the answer only in single-select.
+  // The cursor picks the answer only in single-select. The action row is never an answer.
   if (cursor !== undefined) {
     const moved = withQuestion(state, { cursor });
-    const keepsAnswer = facts.multiSelect || cursor === question.cursor;
+    const touchesAction = cursor > customRow || question.cursor > customRow;
+    const keepsAnswer = facts.multiSelect || cursor === question.cursor || touchesAction;
 
     return { kind: 'update', state: keepsAnswer ? moved : reopened(moved) };
   }
 
-  if (key.kind === 'space' && facts.multiSelect) {
+  if (key.kind === 'space' && facts.multiSelect && question.cursor <= customRow) {
     const checked = toggle(question.checked, question.cursor);
 
     return { kind: 'update', state: reopened(withQuestion(state, { checked })) };
@@ -241,9 +259,14 @@ const handleListKey = (
   key: KeyPress,
   facts: QuestionFacts,
   question: QuestionState,
+  deferAvailable: boolean,
 ): KeyOutcome => {
   if (key.kind === 'cancel') {
     return { kind: 'cancel' };
+  }
+
+  if (key.kind === 'enter' && deferAvailable && question.cursor > facts.options.length) {
+    return { kind: 'defer' };
   }
 
   if (question.cursor === facts.options.length && typesText(key)) {
@@ -258,18 +281,20 @@ const handleListKey = (
     return switchQuestion(state, key.kind === 'nextQuestion' ? 1 : -1);
   }
 
-  return handleOptionKey(state, key, facts, question);
+  return handleOptionKey(state, key, facts, question, deferAvailable);
 };
 
 /**
  * The last row of each question is the custom text row, which returns `type` for keys the caller
- * should pass to its text input. `viewport` describes the focused option's full preview.
+ * should pass to its text input. `viewport` describes the focused option's full preview. While
+ * `deferAvailable`, one more row below the custom row defers instead of answering.
  */
 export const handleKey = (
   state: QuestionnaireState,
   key: KeyPress,
   questions: readonly QuestionFacts[],
   viewport: PreviewViewport,
+  deferAvailable: boolean,
 ): KeyOutcome => {
   const facts = questions[state.tab];
   const question = state.questions[state.tab];
@@ -288,5 +313,5 @@ export const handleKey = (
     return openPreview(state, preview);
   }
 
-  return handleListKey(state, key, facts, question);
+  return handleListKey(state, key, facts, question, deferAvailable);
 };
