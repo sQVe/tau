@@ -1054,6 +1054,16 @@ const noticeMessage = (taskId: string) => ({
   details: { taskId },
 });
 
+it('starts a turn for a notice when Pi is idle', async () => {
+  const fake = fakeExtensionApi();
+  const deliver = createNoticeDelivery(fake.pi);
+
+  deliver({ isIdle: () => true, signal: undefined }, stoppedNotice('task-1'));
+
+  expect(fake.sendMessage.mock.calls).toEqual([[noticeMessage('task-1'), { triggerTurn: true }]]);
+  expect(fake.sendUserMessage).not.toHaveBeenCalled();
+});
+
 // Pi is busy without a run while it compacts manually. A triggerTurn notice would start a turn beside
 // the summary.
 it('queues a notice for the next prompt while Pi is busy without a run', async () => {

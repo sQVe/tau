@@ -148,17 +148,12 @@ type StatusParameters = Static<typeof statusParameters>;
 type ReplyParameters = Static<typeof replyParameters>;
 type CancelParameters = Static<typeof cancelParameters>;
 
-// A notice turn whose prompt fails before agent_start leaves later idle notices queued
-// for the next user prompt instead of starting a turn.
 export const createNoticeDelivery = (pi: ExtensionAPI): NoticeDelivery => {
-  // The prompt a notice starts consumes every nextTurn message queued before its run begins.
-  let turnStarting = false;
   // Pi is busy during a run and during a manual compaction. Only a run takes a steered notice. The
   // extension context exposes no run state that also covers Pi's compaction after the agent loop.
   let runActive = false;
 
   pi.on('agent_start', () => {
-    turnStarting = false;
     runActive = true;
   });
 
@@ -186,14 +181,13 @@ export const createNoticeDelivery = (pi: ExtensionAPI): NoticeDelivery => {
       return;
     }
 
-    pi.sendMessage(message, { deliverAs: 'nextTurn' });
+    if (step === 'wake') {
+      pi.sendMessage(message, { triggerTurn: true });
 
-    // An idle triggerTurn skips the prompt hook and Tau's additions, which pi-claude-bridge
-    // rejects. A user message starts the turn through that hook.
-    if (step === 'wake' && !turnStarting) {
-      turnStarting = true;
-      pi.sendUserMessage('A worker notice arrived.', { deliverAs: 'steer' });
+      return;
     }
+
+    pi.sendMessage(message, { deliverAs: 'nextTurn' });
   };
 };
 

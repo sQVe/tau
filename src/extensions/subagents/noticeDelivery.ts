@@ -11,8 +11,8 @@ export interface NoticeDeliveryFacts {
   agentRunning: boolean;
 }
 
-// wake: a nextTurn message and a prompt that starts a turn. steer: Pi queues the notice into the
-// run. queue: a nextTurn message that waits for the next prompt.
+// wake: a triggerTurn message that starts a turn. steer: Pi queues the notice into the run. queue: a
+// nextTurn message that waits for the next prompt.
 export type NoticeDeliveryStep = 'wake' | 'steer' | 'queue';
 
 export const decideNoticeDelivery = (facts: NoticeDeliveryFacts): NoticeDeliveryStep => {
