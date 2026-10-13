@@ -45,9 +45,7 @@ export type DialogResult =
 export interface DialogSession {
   // The state a deferred dialog saved for the same questions.
   saved: QuestionnaireState | undefined;
-  // Keeps the state of a dialog that defers, so the same questions can restore it.
   save: (state: QuestionnaireState) => void;
-  // Subscribes to worker notices and returns the function that stops the subscription.
   subscribe: (listener: (notice: WorkerNoticeEvent) => void) => () => void;
 }
 
