@@ -1,54 +1,12 @@
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 
 import { format, lint, vitest } from '@sqve/seam';
 import { defineConfig } from 'vite-plus';
-import { BaseSequencer } from 'vitest/node';
-import type { TestSpecification } from 'vitest/node';
 
 interface TestProject {
   name: string;
   include: string[];
   exclude: string[];
-}
-
-// Vitest runs projects one after another, so a full run would start every integration file in one
-// window, and the timed hang-watchdog runs would miss their bound. Sort all files as one list, by
-// the rules Vitest uses inside a project: failed first, then longest, then unknown or largest.
-class OneListSequencer extends BaseSequencer {
-  override sort(files: TestSpecification[]) {
-    const { cache, config } = this.ctx;
-
-    const key = (file: TestSpecification) =>
-      `${file.project.name}:${relative(config.root, file.moduleId)}`;
-
-    const compareBySize = (a: TestSpecification, b: TestSpecification) => {
-      const aStats = cache.getFileStats(key(a));
-      const bStats = cache.getFileStats(key(b));
-
-      if (aStats === undefined || bStats === undefined) {
-        return Number(aStats !== undefined) - Number(bStats !== undefined);
-      }
-
-      return bStats.size - aStats.size;
-    };
-
-    const sorted = files.toSorted((a, b) => {
-      const aResult = cache.getFileTestResults(key(a));
-      const bResult = cache.getFileTestResults(key(b));
-
-      if (aResult === undefined || bResult === undefined) {
-        return compareBySize(a, b);
-      }
-
-      if (aResult.failed !== bResult.failed) {
-        return aResult.failed ? -1 : 1;
-      }
-
-      return bResult.duration - aResult.duration;
-    });
-
-    return Promise.resolve(sorted);
-  }
 }
 
 // oxlint-disable-next-line node/no-process-env -- Remove the shell capacity before test workers inherit it.
@@ -156,7 +114,6 @@ export default defineConfig({
   test: {
     // Integration tests launch Git, Node, and nested Vitest processes. Limit competing workers.
     maxWorkers: 6,
-    sequence: { sequencer: OneListSequencer },
     setupFiles: [join(import.meta.dirname, 'tests', 'hangWatchdog.ts')],
     // Git in tests, and in the code under test, must ignore the developer's configuration.
     env: {
