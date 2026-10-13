@@ -30,10 +30,10 @@ Tau appends every system prompt addition to `systemPromptOptions.appendSystemPro
 - Tools do not declare `promptGuidelines`. Tau appends a tool's guidelines while the tool is active.
 - A worker reads its instructions from its saved task and appends them the same way as a parent, so
   a follow-up gets them without resending.
-- A turn that Tau starts while Pi is idle starts with a user message, not `triggerTurn`. An idle
-  `triggerTurn` skips `before_agent_start`
-  ([pi#5581](https://github.com/earendil-works/pi/issues/5581)), so the turn's prompt lacks the
-  append section and the bridge fails the turn.
+- A turn that Tau starts while Pi is idle may use `triggerTurn`. Since Pi 1.2.0, an idle
+  `triggerTurn` runs `before_agent_start`, so the turn's prompt has the append section. Earlier Pi
+  versions skipped the hook ([pi#5581](https://github.com/earendil-works/pi/issues/5581)), and the
+  bridge failed the turn, so Tau started such turns with a user message.
 - Test the append section as the bridge reads it: the options object at `agent_start`.
 
 ## Consequences
