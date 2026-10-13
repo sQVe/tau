@@ -1,33 +1,39 @@
 import { validateToolArguments } from '@earendil-works/pi-ai';
 import type { ToolCall } from '@earendil-works/pi-ai';
-import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
+import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
+import type { Mock } from 'vitest';
 
+import { fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { workerNoticeChannel } from '../../workerNoticeEvent.js';
 import askUserQuestionExtension from './askUserQuestion.js';
+import { actionLabel } from './dialog.js';
 import type { DialogResult } from './dialog.js';
 
+interface OpenDialog {
+  handleInput: (data: string) => void;
+  render: (width: number) => string[];
+}
+
 const registeredTool = () => {
-  const tools: ToolDefinition[] = [];
-  const pi = { on: () => undefined, registerTool: (tool: ToolDefinition) => tools.push(tool) };
+  const fake = fakeExtensionApi();
 
-  askUserQuestionExtension(pi as unknown as ExtensionAPI);
+  askUserQuestionExtension(fake.pi);
 
-  const [tool] = tools;
+  const tool = fake.tools.get('ask_user_question');
 
   if (tool === undefined) {
     throw new Error('The extension registered no tool.');
   }
 
-  return tool;
+  return { tool, events: fake.pi.events };
 };
 
 // Pi checks the schema before it runs the tool, so the call goes through the same check.
 const ask = (question: Record<string, unknown>) => {
-  const tool = registeredTool();
+  const { tool } = registeredTool();
 
-  const custom = vi
-    .fn<() => Promise<DialogResult>>()
-    .mockResolvedValue({ cancelled: true, answers: [] });
+  const custom = vi.fn<() => Promise<DialogResult>>().mockResolvedValue({ kind: 'declined' });
 
   const context = { mode: 'tui', ui: { custom } } as unknown as Parameters<
     ToolDefinition['execute']
@@ -80,4 +86,240 @@ it.each([
 
   await expect(call()).rejects.toThrow(error);
   expect(custom).not.toHaveBeenCalled();
+});
+
+const theme = {
+  fg: (_color: string, text: string) => text,
+  bg: (_color: string, text: string) => text,
+  bold: (text: string) => text,
+};
+
+// Builds the component the way Pi does and hands the test the dialog and its result.
+const driver = () => {
+  const { tool, events } = registeredTool();
+  const dialogs: OpenDialog[] = [];
+  const terminal = { terminal: { rows: 24, columns: 60 }, requestRender: () => undefined };
+
+  const custom = (factory: unknown) =>
+    new Promise<DialogResult>((resolve) => {
+      const build = factory as (...args: unknown[]) => OpenDialog;
+
+      dialogs.push(build(terminal, theme, undefined, resolve));
+    });
+
+  const run = (questions: unknown[]) => {
+    const params: Parameters<ToolDefinition['execute']>[1] = validateToolArguments(tool, {
+      type: 'toolCall',
+      id: 'call',
+      name: tool.name,
+      arguments: { questions } as unknown as ToolCall['arguments'],
+    });
+
+    const context = { mode: 'tui', ui: { custom } } as unknown as Parameters<
+      ToolDefinition['execute']
+    >[4];
+
+    return tool.execute('call', params, undefined, undefined, context);
+  };
+
+  const latest = () => {
+    const dialog = dialogs.at(-1);
+
+    if (dialog === undefined) {
+      throw new Error('No dialog is open.');
+    }
+
+    return dialog;
+  };
+
+  return { events, run, latest };
+};
+
+const notice = { worker: 'scout-ov', label: 'asks' };
+const down = '\u001B[B';
+const escape = '\u001B';
+
+const features = {
+  question: 'Which features?',
+  context: 'Decides what ships first. Changing it later needs a migration.',
+  header: 'Features',
+  multiSelect: true,
+  options: [
+    { label: 'Lint', description: 'Checks style.' },
+    { label: 'Format', description: 'Fixes style.' },
+  ],
+};
+
+it('subscribes to worker notices only while the dialog is open', async () => {
+  const { events, run, latest } = driver();
+  const original = events.on.bind(events);
+  const stops: Mock<() => void>[] = [];
+
+  const on = vi.spyOn(events, 'on').mockImplementation((channel, handler) => {
+    const stop = vi.fn<() => void>(original(channel, handler));
+
+    stops.push(stop);
+
+    return stop;
+  });
+
+  expect(on).not.toHaveBeenCalled();
+
+  const pending = run([layout]);
+
+  expect(on).toHaveBeenCalledTimes(1);
+  expect(stops[0]).not.toHaveBeenCalled();
+
+  latest().handleInput(escape);
+  await pending;
+
+  expect(stops[0]).toHaveBeenCalledOnce();
+});
+
+it('ignores a malformed worker notice event', async () => {
+  const { events, run, latest } = driver();
+  const pending = run([layout]);
+  const before = latest().render(80);
+
+  events.emit(workerNoticeChannel, { worker: 3 });
+
+  const after = latest().render(80);
+
+  latest().handleInput(escape);
+  await pending;
+
+  expect(after).toEqual(before);
+});
+
+it('returns a deferred result that says nothing was answered', async () => {
+  const { events, run, latest } = driver();
+  const pending = run([layout]);
+
+  events.emit(workerNoticeChannel, notice);
+
+  for (const key of [down, down, down, '\r']) {
+    latest().handleInput(key);
+  }
+
+  const result = await pending;
+
+  expect(result.details).toMatchObject({ kind: 'deferred', notices: [notice] });
+});
+
+it('restores selections and typed text when the same questions are asked again', async () => {
+  const { events, run, latest } = driver();
+  const first = run([features]);
+
+  events.emit(workerNoticeChannel, notice);
+
+  for (const key of [' ', down, down, 'h', 'i', down, '\r']) {
+    latest().handleInput(key);
+  }
+
+  await first;
+
+  const second = run([features]);
+  const lines = latest().render(80).join('\n');
+
+  latest().handleInput('\r');
+
+  const result = await second;
+
+  expect(lines).not.toContain(actionLabel([notice]));
+
+  expect(result.details).toEqual({
+    kind: 'answered',
+    answers: [{ question: 'Which features?', selected: ['Lint', 'hi'] }],
+  });
+});
+
+it('restores selections when the same questions come back with reordered properties', async () => {
+  const { events, run, latest } = driver();
+  const first = run([features]);
+
+  events.emit(workerNoticeChannel, notice);
+
+  for (const key of [' ', down, down, down, '\r']) {
+    latest().handleInput(key);
+  }
+
+  await first;
+
+  const reordered = {
+    options: features.options.map(({ description, label }) => ({ description, label })),
+    multiSelect: features.multiSelect,
+    header: features.header,
+    context: features.context,
+    question: features.question,
+  };
+
+  const second = run([reordered]);
+  const lines = latest().render(80).join('\n');
+
+  latest().handleInput(escape);
+  await second;
+
+  expect(lines).toContain('[x] Lint');
+});
+
+it('keeps the deferred selections while other questions are asked in between', async () => {
+  const { events, run, latest } = driver();
+  const first = run([features]);
+
+  events.emit(workerNoticeChannel, notice);
+
+  for (const key of [' ', down, down, down, '\r']) {
+    latest().handleInput(key);
+  }
+
+  await first;
+
+  const between = run([layout]);
+
+  latest().handleInput(escape);
+  await between;
+
+  const again = run([features]);
+  const lines = latest().render(80).join('\n');
+
+  latest().handleInput(escape);
+  await again;
+
+  expect(lines).toContain('[x] Lint');
+});
+
+it('starts fresh for different questions', async () => {
+  const { events, run, latest } = driver();
+  const first = run([features]);
+
+  events.emit(workerNoticeChannel, notice);
+
+  for (const key of [' ', down, down, down, '\r']) {
+    latest().handleInput(key);
+  }
+
+  expect(await first).toMatchObject({ details: { kind: 'deferred' } });
+
+  const other = run([{ ...features, question: 'Which checks?' }]);
+
+  // A restored Lint check would let Enter submit.
+  latest().handleInput('\r');
+  latest().handleInput(escape);
+
+  expect(await other).toMatchObject({ details: { kind: 'declined' } });
+});
+
+it('keeps the questionnaire state out of the deferred result', async () => {
+  const { events, run, latest } = driver();
+  const pending = run([features]);
+
+  events.emit(workerNoticeChannel, notice);
+
+  for (const key of [' ', down, down, 'h', down, '\r']) {
+    latest().handleInput(key);
+  }
+
+  const result = await pending;
+
+  expect(result.details).toEqual({ kind: 'deferred', notices: [notice] });
 });

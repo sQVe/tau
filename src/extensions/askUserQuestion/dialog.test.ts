@@ -1,10 +1,12 @@
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import { visibleWidth } from '@earendil-works/pi-tui';
 import type { TUI } from '@earendil-works/pi-tui';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
-import { questionDialog } from './dialog.js';
+import type { WorkerNoticeEvent } from '../../workerNoticeEvent.js';
+import { actionLabel, questionDialog } from './dialog.js';
 import type { DialogQuestion, DialogResult } from './dialog.js';
+import type { QuestionnaireState } from './questionnaire.js';
 
 const theme = {
   fg: (_color: string, text: string) => text,
@@ -27,18 +29,42 @@ const layoutQuestion = (options: DialogQuestion['options']): DialogQuestion => (
   options,
 });
 
-const open = (questions: DialogQuestion[], rows = 24, columns = 60) => {
+const open = (questions: DialogQuestion[], rows = 24, columns = 60, saved?: QuestionnaireState) => {
   const results: DialogResult[] = [];
-  const terminal = { terminal: { rows, columns }, requestRender: () => undefined };
+  const listeners = new Set<(notice: WorkerNoticeEvent) => void>();
+  const terminal = { terminal: { rows, columns }, requestRender: vi.fn<() => void>() };
 
-  const dialog = questionDialog(questions)(
+  const saves: QuestionnaireState[] = [];
+  const save = (state: QuestionnaireState) => saves.push(state);
+
+  const subscribe = (listener: (notice: WorkerNoticeEvent) => void) => {
+    listeners.add(listener);
+
+    return () => listeners.delete(listener);
+  };
+
+  const dialog = questionDialog(questions, { saved, subscribe, save })(
     terminal as unknown as TUI,
     theme as unknown as Theme,
     undefined,
     (result) => results.push(result),
   );
 
-  return { dialog, results, terminal: terminal.terminal };
+  const notify = (notice: WorkerNoticeEvent) => {
+    for (const listener of listeners) {
+      listener(notice);
+    }
+  };
+
+  return {
+    dialog,
+    results,
+    saves,
+    terminal: terminal.terminal,
+    requestRender: terminal.requestRender,
+    listeners,
+    notify,
+  };
 };
 
 const tallPreview = (rows = 24, question: Partial<DialogQuestion> = {}) =>
@@ -175,7 +201,7 @@ it('shows every description and a badge that stays out of the answer', () => {
   expect(lines.some((line) => line.includes('Two columns.'))).toBe(true);
 
   expect(results).toEqual([
-    { cancelled: false, answers: [{ question: 'Which layout?', selected: ['Stacked'] }] },
+    { kind: 'answered', answers: [{ question: 'Which layout?', selected: ['Stacked'] }] },
   ]);
 });
 
@@ -215,7 +241,7 @@ it('closes the full preview with Ctrl+O and cancels with a later Esc', () => {
   dialog.handleInput(escape);
 
   expect(back.some((line) => line.includes('2. Split'))).toBe(true);
-  expect(results).toEqual([{ cancelled: true, answers: [] }]);
+  expect(results).toEqual([{ kind: 'declined' }]);
 });
 
 it('does not type Ctrl+O into the custom row', () => {
@@ -228,7 +254,7 @@ it('does not type Ctrl+O into the custom row', () => {
   }
 
   expect(results).toEqual([
-    { cancelled: false, answers: [{ question: 'Which layout?', selected: ['abc'] }] },
+    { kind: 'answered', answers: [{ question: 'Which layout?', selected: ['abc'] }] },
   ]);
 });
 
@@ -533,4 +559,215 @@ it('keeps a context row when a long focused description fills a short terminal',
   expect(lines.length).toBeLessThanOrEqual(12);
   expect(lines.some((line) => line.includes('Which layout?'))).toBe(true);
   expect(lines.some((line) => line.includes('Decides how'))).toBe(true);
+});
+
+const scout: WorkerNoticeEvent = { worker: 'scout-ov', label: 'reported success · stopped' };
+
+const twoOptions = (multiSelect = false) => ({
+  ...layoutQuestion([
+    { label: 'Stacked', description: 'One column.' },
+    { label: 'Split', description: 'Two columns.' },
+  ]),
+  multiSelect,
+});
+
+const actionText = actionLabel([scout]);
+
+it('shows a notice line and the action row only after a notice arrives', () => {
+  const { dialog, notify, requestRender } = open([twoOptions()]);
+
+  const before = dialog.render(80).join('\n');
+
+  notify(scout);
+
+  const after = dialog.render(80).join('\n');
+
+  expect(before).not.toContain('scout-ov');
+  expect(after).toContain('scout-ov · reported success · stopped');
+  expect(after).toContain(actionText);
+  expect(requestRender).toHaveBeenCalled();
+});
+
+it('puts the action row below the custom row after a blank line', () => {
+  const { dialog, notify } = open([twoOptions()]);
+
+  notify(scout);
+
+  const lines = dialog.render(80);
+  const custom = lines.findIndex((line) => line.includes('3. '));
+  const action = lines.findIndex((line) => line.includes(actionText));
+
+  expect(action).toBeGreaterThan(custom);
+  expect(lines[action - 1]?.trim()).toBe('');
+});
+
+it('defers with the notices and the state when Enter hits the action row', () => {
+  const { dialog, notify, results } = open([twoOptions()]);
+
+  notify(scout);
+
+  for (const key of [down, down, down, '\r']) {
+    dialog.handleInput(key);
+  }
+
+  expect(results).toHaveLength(1);
+  expect(results[0]).toMatchObject({ kind: 'deferred', notices: [scout] });
+});
+
+it('does not reach the action row before a notice arrives', () => {
+  const { dialog, results } = open([twoOptions()]);
+
+  for (const key of [down, down, down, down]) {
+    dialog.handleInput(key);
+  }
+
+  dialog.handleInput('x');
+  dialog.handleInput('\r');
+
+  expect(results).toEqual([
+    { kind: 'answered', answers: [{ question: 'Which layout?', selected: ['x'] }] },
+  ]);
+});
+
+it('keeps checked options unchanged when Space hits the action row in multi-select', () => {
+  const { dialog, notify, results, saves } = open([twoOptions(true)]);
+
+  notify(scout);
+  dialog.handleInput(' ');
+
+  for (const key of [down, down, down, ' ', '\r']) {
+    dialog.handleInput(key);
+  }
+
+  expect(results).toMatchObject([{ kind: 'deferred' }]);
+  expect(saves).toMatchObject([{ questions: [{ checked: [0] }] }]);
+});
+
+it('declines with Esc after a notice arrived', () => {
+  const { dialog, notify, results } = open([twoOptions()]);
+
+  notify(scout);
+  dialog.handleInput(escape);
+
+  expect(results).toEqual([{ kind: 'declined' }]);
+});
+
+it('stops listening once the dialog closes', () => {
+  const { dialog, listeners, results } = open([twoOptions()]);
+
+  expect(listeners.size).toBe(1);
+
+  dialog.handleInput(escape);
+
+  expect(results).toHaveLength(1);
+  expect(listeners.size).toBe(0);
+});
+
+it('starts from the saved state with the typed text in the custom row', () => {
+  const first = open([twoOptions()]);
+
+  first.notify(scout);
+
+  for (const key of [down, down, 'a', 'b', down, '\r']) {
+    first.dialog.handleInput(key);
+  }
+
+  const [saved] = first.saves;
+
+  const second = open([twoOptions()], 24, 60, saved);
+  const focused = second.dialog.render(80).join('\n');
+
+  second.dialog.handleInput('\u001B[A');
+
+  const lines = second.dialog.render(80).join('\n');
+
+  second.dialog.handleInput(down);
+  second.dialog.handleInput('\r');
+
+  expect(lines).toContain('3. ab');
+  expect(focused).not.toContain(actionText);
+
+  expect(second.results).toEqual([
+    { kind: 'answered', answers: [{ question: 'Which layout?', selected: ['ab'] }] },
+  ]);
+});
+
+const workers = (count: number) =>
+  Array.from({ length: count }, (_item, index) => ({
+    worker: `worker-${index + 1}`,
+    label: 'asks',
+  }));
+
+it.each([10, 12, 14, 24])('keeps three notices within the row budget at %i rows', (rows) => {
+  const { dialog, notify } = open([twoOptions()], rows);
+
+  for (const notice of workers(3)) {
+    notify(notice);
+  }
+
+  const budget = rows - 6;
+  const onOption = dialog.render(80);
+
+  for (const key of [down, down, down]) {
+    dialog.handleInput(key);
+  }
+
+  const onAction = dialog.render(80);
+
+  expect(onOption.length).toBeLessThanOrEqual(budget);
+  expect(onAction.length).toBeLessThanOrEqual(budget);
+  expect(onAction.some((line) => line.includes(`> ${actionLabel(workers(3))}`))).toBe(true);
+});
+
+it('shows waiting notices when no notice line fits', () => {
+  const { dialog, notify } = open([twoOptions()], 10);
+
+  const before = dialog.render(80);
+
+  for (const notice of workers(4)) {
+    notify(notice);
+  }
+
+  const after = dialog.render(80);
+
+  expect(after).not.toEqual(before);
+  expect(after.length).toBeLessThanOrEqual(4);
+});
+
+it('shows a notice during the full preview within its row budget', () => {
+  const { dialog, notify } = tallPreview();
+
+  dialog.handleInput(ctrlO);
+  notify(scout);
+
+  const lines = dialog.render(60);
+
+  expect(lines.some((line) => line.includes('scout-ov'))).toBe(true);
+  expect(lines.length).toBeLessThanOrEqual(18);
+});
+
+it('replaces the line of a worker that notifies again', () => {
+  const { dialog, notify } = open([twoOptions()]);
+
+  notify({ worker: 'scout-ov', label: 'asks' });
+  notify({ worker: 'scout-ov', label: 'reported success · stopped' });
+
+  const text = dialog.render(80).join('\n');
+
+  expect(text).toContain('scout-ov · reported success · stopped');
+  expect(text).not.toContain('scout-ov · asks');
+});
+
+it('counts the workers whose lines do not fit', () => {
+  const { dialog, notify } = open([twoOptions()], 14);
+
+  for (const notice of workers(6)) {
+    notify(notice);
+  }
+
+  const text = dialog.render(80).join('\n');
+  const shown = workers(6).filter((notice) => text.includes(`${notice.worker} ·`));
+
+  expect(shown.length).toBeGreaterThan(0);
+  expect(text).toContain(`+${6 - shown.length} more`);
 });

@@ -18,6 +18,7 @@ import { expect, it, vi, onTestFinished as finishTest } from 'vitest';
 
 import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createTemporaryRepository, initializeRepository } from '../../../tests/gitRepository.js';
+import { workerNoticeChannel } from '../../workerNoticeEvent.js';
 import { WorkerCapacityFullError, WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { fixtureModel } from './fixtures/controlledProvider.js';
@@ -1079,6 +1080,44 @@ it('queues a notice for the next prompt while Pi is busy without a run', async (
   ]);
 
   expect(fake.sendUserMessage).not.toHaveBeenCalled();
+});
+
+it('emits each notice on the event bus with the worker name and state label', () => {
+  const fake = fakeExtensionApi();
+  const events: unknown[] = [];
+
+  fake.pi.events.on(workerNoticeChannel, (data) => events.push(data));
+
+  const deliver = createNoticeDelivery(fake.pi);
+
+  deliver(
+    { isIdle: () => true, signal: undefined },
+    {
+      content: {},
+      details: { taskId: 'task-12345678-abc', state: 'stopped', outcome: 'success' },
+      question: false,
+    },
+  );
+
+  deliver(
+    { isIdle: () => true, signal: undefined },
+    {
+      content: {},
+      details: { taskId: 'task-1', name: 'scout-ov', state: 'awaitingReply' },
+      question: true,
+    },
+  );
+
+  deliver(
+    { isIdle: () => true, signal: undefined },
+    { content: {}, details: { taskId: 'task-1', evidenceError: 'gone' }, question: false },
+  );
+
+  expect(events).toEqual([
+    { worker: 'task-123', label: 'reported success · stopped' },
+    { worker: 'scout-ov', label: 'asks' },
+    { worker: 'task-1', label: 'evidence unreadable' },
+  ]);
 });
 
 const compactionRow = (taskId: string, state: WorkerWidgetRow['state'], questionId?: string) =>

@@ -10,7 +10,14 @@ import {
 import type { Component, TUI } from '@earendil-works/pi-tui';
 
 import { isBottom, isDown, isTop, isUp } from '../../keys.js';
-import { handleKey, initialState, isCustomChecked, withCustomText } from './questionnaire.js';
+import type { WorkerNoticeEvent } from '../../workerNoticeEvent.js';
+import {
+  handleKey,
+  initialState,
+  isCustomChecked,
+  restoredState,
+  withCustomText,
+} from './questionnaire.js';
 import type {
   Answer,
   KeyPress,
@@ -30,9 +37,16 @@ export interface DialogQuestion extends QuestionFacts {
   }[];
 }
 
-export interface DialogResult {
-  cancelled: boolean;
-  answers: Answer[];
+export type DialogResult =
+  | { kind: 'answered'; answers: Answer[] }
+  | { kind: 'declined' }
+  | { kind: 'deferred'; notices: WorkerNoticeEvent[] };
+
+export interface DialogSession {
+  // The state a deferred dialog saved for the same questions.
+  saved: QuestionnaireState | undefined;
+  save: (state: QuestionnaireState) => void;
+  subscribe: (listener: (notice: WorkerNoticeEvent) => void) => () => void;
 }
 
 type DialogFactory = (
@@ -50,6 +64,8 @@ interface PreviewSpace {
 }
 
 const customLabel = 'Type something.';
+// The question and the context.
+const minimumHeaderRows = 2;
 const previewBar = ' │ ';
 // Pi renders its widgets and a footer of two or more lines below the dialog.
 const piChromeRows = 6;
@@ -63,6 +79,19 @@ const footerRows = 3;
 const fullPreviewChromeRows = 7;
 // The compact full preview keeps the title, the hidden-line count, and the key hints.
 const compactFullPreviewChromeRows = 3;
+
+const workerNoticeCount = (count: number) =>
+  count === 1 ? '1 worker notice' : `${count} worker notices`;
+
+export const actionLabel = (notices: readonly WorkerNoticeEvent[]): string => {
+  const [first] = notices;
+
+  if (notices.length === 1 && first !== undefined) {
+    return `Handle the notice from ${first.worker} first`;
+  }
+
+  return `Handle the ${workerNoticeCount(notices.length)} first`;
+};
 
 const fullPreviewChrome = (compact: boolean) =>
   compact ? compactFullPreviewChromeRows : fullPreviewChromeRows;
@@ -175,18 +204,32 @@ class QuestionDialog implements Component {
   private readonly done: (result: DialogResult) => void;
   private state: QuestionnaireState;
   private readonly inputs: Input[];
+  // One entry per worker. A later notice replaces that worker's label.
+  private readonly notices = new Map<string, WorkerNoticeEvent>();
+  private readonly save: (state: QuestionnaireState) => void;
+  private readonly unsubscribe: () => void;
 
   constructor(
     questions: DialogQuestion[],
     theme: Theme,
     terminal: TUI,
     done: (result: DialogResult) => void,
+    session: DialogSession,
   ) {
     this.questions = questions;
     this.theme = theme;
     this.terminal = terminal;
-    this.done = done;
-    this.state = initialState(questions.length);
+    this.save = session.save;
+
+    this.done = (result) => {
+      this.unsubscribe();
+      done(result);
+    };
+
+    this.state =
+      session.saved === undefined
+        ? initialState(questions.length)
+        : restoredState(session.saved, questions);
 
     this.inputs = questions.map(
       () =>
@@ -196,19 +239,48 @@ class QuestionDialog implements Component {
           placeholderStyle: (text) => theme.fg('dim', text),
         }),
     );
+
+    this.inputs.forEach((input, index) => {
+      input.setValue(this.state.questions[index]?.customText ?? '');
+    });
+
+    this.unsubscribe = session.subscribe((notice) => {
+      this.notices.set(notice.worker, notice);
+      this.terminal.requestRender();
+    });
+  }
+
+  dispose(): void {
+    this.unsubscribe();
   }
 
   handleInput(data: string): void {
-    const outcome = handleKey(this.state, readKey(data), this.questions, this.previewViewport());
+    const deferAvailable = this.notices.size > 0;
+    const key = readKey(data);
+
+    const outcome = handleKey(
+      this.state,
+      key,
+      this.questions,
+      this.previewViewport(),
+      deferAvailable,
+    );
 
     if (outcome.kind === 'cancel') {
-      this.done({ cancelled: true, answers: [] });
+      this.done({ kind: 'declined' });
 
       return;
     }
 
     if (outcome.kind === 'submit') {
-      this.done({ cancelled: false, answers: outcome.answers });
+      this.done({ kind: 'answered', answers: outcome.answers });
+
+      return;
+    }
+
+    if (outcome.kind === 'defer') {
+      this.save(this.state);
+      this.done({ kind: 'deferred', notices: [...this.notices.values()] });
 
       return;
     }
@@ -273,7 +345,9 @@ class QuestionDialog implements Component {
   }
 
   private fullPreviewRows(): number {
-    return Math.max(1, this.availableRows() - fullPreviewChrome(this.compact()));
+    const indicatorRows = this.notices.size > 0 ? 1 : 0;
+
+    return Math.max(1, this.availableRows() - fullPreviewChrome(this.compact()) - indicatorRows);
   }
 
   private previewViewport(): PreviewViewport {
@@ -316,37 +390,71 @@ class QuestionDialog implements Component {
   }
 
   // The footer, the focused option, and the smallest preview come before the header.
-  private fitHeader(facts: DialogQuestion, width: number, focusedRows: number, minimum: number) {
-    const headerRows = this.availableRows() - this.footerRows() - focusedRows - minimum;
+  private fitHeader(
+    facts: DialogQuestion,
+    width: number,
+    space: { focusedRows: number; minimum: number; noticeRows: number },
+  ) {
+    const { focusedRows, minimum, noticeRows } = space;
+
+    const headerRows =
+      this.availableRows() - this.footerRows() - focusedRows - minimum - noticeRows;
+
     const header = this.header(facts, width, headerRows);
-    const room = this.availableRows() - header.length - this.footerRows();
+    const room = this.availableRows() - header.length - this.footerRows() - noticeRows;
 
     return { header, room };
+  }
+
+  // The blank separator goes first when the action row has no room for both rows.
+  private dropSeparator(blocks: string[][], facts: DialogQuestion, width: number, room: number) {
+    if (room < 2 && blocks.length > facts.options.length + 1) {
+      blocks.splice(-1, 1, ...this.actionBlocks(width, false));
+    }
+  }
+
+  private hidesPart(previewLines: string[], shown: string[], width: number): boolean {
+    const tooTall = shown.length < previewLines.length + this.previewTitleRows();
+    const tooWide = previewLines.some((line) => visibleWidth(line) > previewWidth(width));
+
+    return tooTall || tooWide;
   }
 
   private renderOptions(facts: DialogQuestion, width: number): string[] {
     const previewLines = this.focusedOption(facts)?.preview?.split('\n') ?? [];
     const minimum = previewLines.length === 0 ? 0 : this.minimumPreviewRows();
-    const blocks = [...this.optionBlocks(facts, width), [this.customRow(facts, width)]];
+
+    const blocks = [
+      ...this.optionBlocks(facts, width),
+      [this.customRow(facts, width)],
+      ...this.actionBlocks(width),
+    ];
+
+    const noticeLines = this.noticeLines(width);
     const cursor = this.state.questions[this.state.tab]?.cursor ?? 0;
     const focusedRows = blocks[cursor]?.length ?? 1;
     const previewHeight = previewLines.length + this.previewTitleRows();
 
-    const { header, room } = this.fitHeader(facts, width, focusedRows, minimum);
+    const { header, room } = this.fitHeader(facts, width, {
+      focusedRows,
+      minimum,
+      noticeRows: noticeLines.length,
+    });
+
+    this.dropSeparator(blocks, facts, width, room);
+
     const space = { room, optionRows: blocks.flat().length, focusedRows, minimum };
     const preview = this.preview(facts, width, previewRoom(space, previewHeight));
     const options = visibleOptions(blocks, cursor, room - preview.length);
 
-    const tooTall = preview.length < previewHeight;
-    const tooWide = previewLines.some((line) => visibleWidth(line) > previewWidth(width));
-    const hidesPart = tooTall || tooWide;
-    const clipped = previewLines.length > 0 && hidesPart;
+    const clipped = previewLines.length > 0 && this.hidesPart(previewLines, preview, width);
 
     return [
       ...header,
       ...options,
+      ...noticeLines,
       ...preview,
-      ...this.footer(this.hintKeys(facts, clipped), width),
+      ...this.footer(this.hintKeys(facts, clipped, noticeLines.length === 0), width),
     ];
   }
 
@@ -361,7 +469,10 @@ class QuestionDialog implements Component {
     const hidden = all.length - offset - shown.length;
 
     // The smallest compact view has no row left for the hidden-line count.
-    const countFits = lines.length + fullPreviewChrome(this.compact()) <= this.availableRows();
+    const noticeRows = this.notices.size > 0 ? 1 : 0;
+
+    const countFits =
+      lines.length + fullPreviewChrome(this.compact()) + noticeRows <= this.availableRows();
 
     if (hidden > 0 && countFits) {
       lines.push(truncateToWidth(bar + theme.fg('dim', `… ${hidden} more lines`), width));
@@ -370,7 +481,8 @@ class QuestionDialog implements Component {
     const label = this.focusedOption(facts)?.label ?? '';
     const title = truncateToWidth(theme.bold(` Preview: ${label}`), width);
     const keys = all.length > rows ? ['↑↓ scroll', 'Ctrl+O or Esc back'] : ['Ctrl+O or Esc back'];
-    const footer = this.footer(keys, width);
+    const indicator = this.notices.size > 0 ? [this.noticeIndicator(width)] : [];
+    const footer = [...indicator, ...this.footer(keys, width)];
 
     if (this.compact()) {
       return [title, ...lines, ...footer];
@@ -447,6 +559,58 @@ class QuestionDialog implements Component {
     return truncateToWidth(prefix + text, width);
   }
 
+  // The header keeps two rows and the options keep one, so the notices get what is left. Workers
+  // that do not fit are counted in a last line.
+  private noticeLines(width: number): string[] {
+    const workers = [...this.notices.values()];
+    const free = this.availableRows() - this.footerRows() - minimumHeaderRows - 1;
+
+    if (workers.length <= free) {
+      return workers.map((notice) => this.noticeLine(notice, width));
+    }
+
+    if (free < 1) {
+      return [];
+    }
+
+    const shown = workers.slice(0, free - 1).map((notice) => this.noticeLine(notice, width));
+    const more = this.theme.fg('warning', ` +${workers.length - shown.length} more`);
+
+    return [...shown, truncateToWidth(more, width)];
+  }
+
+  private noticeLine(notice: WorkerNoticeEvent, width: number): string {
+    return truncateToWidth(this.theme.fg('warning', ` ${notice.worker} · ${notice.label}`), width);
+  }
+
+  private noticeIndicator(width: number): string {
+    const names = [...this.notices.keys()].join(', ');
+    const text = ` ${workerNoticeCount(this.notices.size)} waiting: ${names}`;
+
+    return truncateToWidth(this.theme.fg('warning', text), width);
+  }
+
+  // The action row sits below the custom row, apart from the answer rows by a blank line.
+  private actionBlocks(width: number, separated = true): string[][] {
+    if (this.notices.size === 0) {
+      return [];
+    }
+
+    const text = actionLabel([...this.notices.values()]);
+    const focused = this.state.questions[this.state.tab]?.cursor === this.actionRow();
+    const pointer = focused ? this.theme.fg('accent', '> ') : '  ';
+    const label = this.theme.fg(focused ? 'accent' : 'text', text);
+
+    const row = truncateToWidth(pointer + label, width);
+    const block = separated ? ['', row] : [row];
+
+    return [block];
+  }
+
+  private actionRow(): number {
+    return (this.questions[this.state.tab]?.options.length ?? 0) + 1;
+  }
+
   private preview(facts: DialogQuestion, width: number, rows: number): string[] {
     const option = this.focusedOption(facts);
 
@@ -469,14 +633,32 @@ class QuestionDialog implements Component {
     return this.compact() ? [title, ...lines] : ['', title, ...lines];
   }
 
-  private hintKeys(facts: DialogQuestion, previewClipped: boolean): string[] {
-    const keys = facts.multiSelect
+  private selectionKeys(facts: DialogQuestion, onAction: boolean): string[] {
+    if (onAction) {
+      return ['↑↓ move', 'Enter handle notice first'];
+    }
+
+    return facts.multiSelect
       ? ['↑↓ move', 'Space check', 'Enter submit']
       : ['↑↓ move', 'Enter select'];
+  }
+
+  private hintKeys(
+    facts: DialogQuestion,
+    previewClipped: boolean,
+    noticeLinesHidden: boolean,
+  ): string[] {
+    const onAction = this.state.questions[this.state.tab]?.cursor === this.actionRow();
+    const keys = this.selectionKeys(facts, onAction);
 
     // The footer truncates to one row, so the only way to read a clipped preview comes first.
     if (previewClipped) {
       keys.unshift('Ctrl+O full preview');
+    }
+
+    // The waiting notices come before every key when the dialog has no row for their lines.
+    if (noticeLinesHidden && this.notices.size > 0) {
+      keys.unshift(`${workerNoticeCount(this.notices.size)} waiting below`);
     }
 
     if (this.questions.length > 1) {
@@ -490,6 +672,6 @@ class QuestionDialog implements Component {
 }
 
 export const questionDialog =
-  (questions: DialogQuestion[]): DialogFactory =>
+  (questions: DialogQuestion[], session: DialogSession): DialogFactory =>
   (terminal, theme, _keybindings, done) =>
-    new QuestionDialog(questions, theme, terminal, done);
+    new QuestionDialog(questions, theme, terminal, done, session);
