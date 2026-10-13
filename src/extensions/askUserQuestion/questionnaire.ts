@@ -59,16 +59,40 @@ export const initialState = (count: number): QuestionnaireState => ({
 
 // Saved state comes from a dialog that had notices. The new dialog has none, so a cursor on the
 // action row moves back to the custom row, and a full preview closes.
+// The cursor row of a saved single-select answer. A typed answer sits on the custom row.
+const answeredRow = (facts: QuestionFacts, answer: Answer | undefined): number | undefined => {
+  if (facts.multiSelect || answer === undefined) {
+    return undefined;
+  }
+
+  const index = facts.options.findIndex((option) => option.label === answer.selected[0]);
+
+  return index === -1 ? facts.options.length : index;
+};
+
+const restoredCursor = (facts: QuestionFacts, cursor: number, answer: Answer | undefined) => {
+  const customRow = facts.options.length;
+
+  if (cursor <= customRow) {
+    return cursor;
+  }
+
+  return answeredRow(facts, answer) ?? customRow;
+};
+
 export const restoredState = (
   saved: QuestionnaireState,
   questions: readonly QuestionFacts[],
 ): QuestionnaireState => ({
   ...saved,
   fullPreview: undefined,
-  questions: saved.questions.map((question, index) => ({
-    ...question,
-    cursor: Math.min(question.cursor, questions[index]?.options.length ?? 0),
-  })),
+  questions: saved.questions.map((question, index) => {
+    const facts = questions[index];
+    const answer = saved.answers[index];
+    const cursor = facts === undefined ? 0 : restoredCursor(facts, question.cursor, answer);
+
+    return { ...question, cursor };
+  }),
 });
 
 export const isCustomChecked = (text: string): boolean => text.trim() !== '';
@@ -189,11 +213,12 @@ const handleOptionKey = (
 
   const cursor = cursors[key.kind];
 
-  // The cursor picks the answer only in single-select. The action row is never an answer.
+  // The cursor picks the answer only in single-select. The action row is never an answer, so a
+  // saved answer stays while the cursor is on it and when the cursor returns to the answered row.
   if (cursor !== undefined) {
     const moved = withQuestion(state, { cursor });
-    const touchesAction = cursor > customRow || question.cursor > customRow;
-    const keepsAnswer = facts.multiSelect || cursor === question.cursor || touchesAction;
+    const staysOnAnswer = cursor === answeredRow(facts, state.answers[state.tab]);
+    const keepsAnswer = facts.multiSelect || cursor > customRow || staysOnAnswer;
 
     return { kind: 'update', state: keepsAnswer ? moved : reopened(moved) };
   }

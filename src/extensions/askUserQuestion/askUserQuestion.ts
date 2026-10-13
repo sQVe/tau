@@ -4,7 +4,7 @@ import { Type } from 'typebox';
 import { appendToolGuidelines } from '../../systemPrompt.js';
 import { parseWorkerNoticeEvent, workerNoticeChannel } from '../../workerNoticeEvent.js';
 import { questionDialog } from './dialog.js';
-import type { DialogResult, DialogSession } from './dialog.js';
+import type { DialogQuestion, DialogResult, DialogSession } from './dialog.js';
 import type { Answer, QuestionnaireState } from './questionnaire.js';
 import { validateQuestions } from './validation.js';
 
@@ -133,6 +133,23 @@ const responseText = (result: DialogResult) => {
   return `User has answered your questions: ${segments} You can now continue with the user's answers in mind.`;
 };
 
+// The model can repeat the same questions with their properties in another order.
+const questionsKey = (questions: DialogQuestion[]): string =>
+  JSON.stringify(
+    questions.map((question) => [
+      question.question,
+      question.context,
+      question.header,
+      question.multiSelect,
+      question.options.map((option) => [
+        option.label,
+        option.description,
+        option.recommended === true,
+        option.preview ?? null,
+      ]),
+    ]),
+  );
+
 export default function askUserQuestionExtension(pi: ExtensionAPI): void {
   appendToolGuidelines(pi, 'ask_user_question', promptGuidelines);
 
@@ -170,7 +187,7 @@ export default function askUserQuestionExtension(pi: ExtensionAPI): void {
         multiSelect: question.multiSelect === true,
       }));
 
-      const key = JSON.stringify(questions);
+      const key = questionsKey(questions);
       const saved = savedStates.get(key);
 
       const session = {

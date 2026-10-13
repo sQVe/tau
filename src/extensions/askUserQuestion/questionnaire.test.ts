@@ -449,22 +449,29 @@ it('keeps the checked options when Space hits the action row', () => {
   expect(withAction(multi, state, press('space'))).toEqual({ kind: 'update', state });
 });
 
-it('keeps a saved single-select answer when the cursor moves onto the action row and back', () => {
-  const answer = { question: single.question, selected: ['Luxon'] };
-  const state = { ...at([single], 2), answers: [answer] };
-
-  const onAction = withAction(single, state, press('down', false));
-
-  expect(onAction).toMatchObject({ kind: 'update', state: { answers: [answer] } });
+const answeredThenAction = (label: string, cursor: number, back: KeyPress) => {
+  const answer = { question: single.question, selected: [label] };
+  const state = { ...at([single], cursor), answers: [answer] };
+  const onAction = withAction(single, state, press('bottom'));
 
   if (onAction.kind !== 'update') {
     throw new Error('The cursor move did not update.');
   }
 
-  expect(withAction(single, onAction.state, press('up', false))).toMatchObject({
-    kind: 'update',
-    state: { answers: [answer] },
-  });
+  return { answer, onAction, back: withAction(single, onAction.state, back) };
+};
+
+it('keeps a saved single-select answer when the cursor moves onto the action row and back', () => {
+  const { answer, onAction, back } = answeredThenAction('Luxon', 0, press('top'));
+
+  expect(onAction.state.answers).toEqual([answer]);
+  expect(back).toMatchObject({ kind: 'update', state: { answers: [answer] } });
+});
+
+it('reopens a single-select answer when the cursor leaves the action row for another option', () => {
+  const { back } = answeredThenAction('Temporal', 1, press('top'));
+
+  expect(back).toMatchObject({ kind: 'update', state: { answers: [undefined] } });
 });
 
 it('does not type into the custom field on the action row', () => {
@@ -483,4 +490,11 @@ it('moves a restored cursor off the action row and closes the full preview', () 
 
   expect(restored.questions[0]?.cursor).toBe(2);
   expect(restored.fullPreview).toBeUndefined();
+});
+
+it('moves a restored cursor off the action row to the saved single-select answer', () => {
+  const answer = { question: single.question, selected: ['Temporal'] };
+  const saved = { ...at([single], 3), answers: [answer] };
+
+  expect(restoredState(saved, [single]).questions[0]?.cursor).toBe(1);
 });

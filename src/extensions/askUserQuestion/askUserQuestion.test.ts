@@ -231,6 +231,35 @@ it('restores selections and typed text when the same questions are asked again',
   });
 });
 
+it('restores selections when the same questions come back with reordered properties', async () => {
+  const { events, run, latest } = driver();
+  const first = run([features]);
+
+  events.emit(workerNoticeChannel, notice);
+
+  for (const key of [' ', down, down, down, '\r']) {
+    latest().handleInput(key);
+  }
+
+  await first;
+
+  const reordered = {
+    options: features.options.map(({ description, label }) => ({ description, label })),
+    multiSelect: features.multiSelect,
+    header: features.header,
+    context: features.context,
+    question: features.question,
+  };
+
+  const second = run([reordered]);
+  const lines = latest().render(80).join('\n');
+
+  latest().handleInput(escape);
+  await second;
+
+  expect(lines).toContain('[x] Lint');
+});
+
 it('starts fresh for different questions', async () => {
   const { events, run, latest } = driver();
   const first = run([features]);
