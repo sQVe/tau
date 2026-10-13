@@ -80,6 +80,19 @@ const fullPreviewChromeRows = 7;
 // The compact full preview keeps the title, the hidden-line count, and the key hints.
 const compactFullPreviewChromeRows = 3;
 
+const workerNoticeCount = (count: number) =>
+  count === 1 ? '1 worker notice' : `${count} worker notices`;
+
+export const actionLabel = (notices: readonly WorkerNoticeEvent[]): string => {
+  const [first] = notices;
+
+  if (notices.length === 1 && first !== undefined) {
+    return `Handle the notice from ${first.worker} first`;
+  }
+
+  return `Handle the ${workerNoticeCount(notices.length)} first`;
+};
+
 const fullPreviewChrome = (compact: boolean) =>
   compact ? compactFullPreviewChromeRows : fullPreviewChromeRows;
 
@@ -572,24 +585,18 @@ class QuestionDialog implements Component {
 
   private noticeIndicator(width: number): string {
     const names = [...this.notices.keys()].join(', ');
-    const text = ` ${this.notices.size} worker notices waiting: ${names}`;
+    const text = ` ${workerNoticeCount(this.notices.size)} waiting: ${names}`;
 
     return truncateToWidth(this.theme.fg('warning', text), width);
   }
 
   // The action row sits below the custom row, apart from the answer rows by a blank line.
   private actionBlocks(width: number, separated = true): string[][] {
-    const [first] = this.notices.values();
-
-    if (first === undefined) {
+    if (this.notices.size === 0) {
       return [];
     }
 
-    const text =
-      this.notices.size === 1
-        ? `Handle the notice from ${first.worker} first`
-        : `Handle the ${this.notices.size} worker notices first`;
-
+    const text = actionLabel([...this.notices.values()]);
     const focused = this.state.questions[this.state.tab]?.cursor === this.actionRow();
     const pointer = focused ? this.theme.fg('accent', '> ') : '  ';
     const label = this.theme.fg(focused ? 'accent' : 'text', text);
@@ -651,7 +658,7 @@ class QuestionDialog implements Component {
 
     // The waiting notices come before every key when the dialog has no row for their lines.
     if (noticeLinesHidden && this.notices.size > 0) {
-      keys.unshift(`${this.notices.size} worker notices waiting below`);
+      keys.unshift(`${workerNoticeCount(this.notices.size)} waiting below`);
     }
 
     if (this.questions.length > 1) {

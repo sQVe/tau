@@ -7,6 +7,7 @@ import type { Mock } from 'vitest';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { workerNoticeChannel } from '../../workerNoticeEvent.js';
 import askUserQuestionExtension from './askUserQuestion.js';
+import { actionLabel } from './dialog.js';
 import type { DialogResult } from './dialog.js';
 
 interface OpenDialog {
@@ -178,15 +179,16 @@ it('subscribes to worker notices only while the dialog is open', async () => {
 it('ignores a malformed worker notice event', async () => {
   const { events, run, latest } = driver();
   const pending = run([layout]);
+  const before = latest().render(80);
 
   events.emit(workerNoticeChannel, { worker: 3 });
 
-  const lines = latest().render(80).join('\n');
+  const after = latest().render(80);
 
   latest().handleInput(escape);
   await pending;
 
-  expect(lines).not.toContain('Handle the');
+  expect(after).toEqual(before);
 });
 
 it('returns a deferred result that says nothing was answered', async () => {
@@ -223,7 +225,7 @@ it('restores selections and typed text when the same questions are asked again',
 
   const result = await second;
 
-  expect(lines).not.toContain('Handle the');
+  expect(lines).not.toContain(actionLabel([notice]));
 
   expect(result.details).toEqual({
     kind: 'answered',
@@ -256,6 +258,32 @@ it('restores selections when the same questions come back with reordered propert
 
   latest().handleInput(escape);
   await second;
+
+  expect(lines).toContain('[x] Lint');
+});
+
+it('keeps the deferred selections while other questions are asked in between', async () => {
+  const { events, run, latest } = driver();
+  const first = run([features]);
+
+  events.emit(workerNoticeChannel, notice);
+
+  for (const key of [' ', down, down, down, '\r']) {
+    latest().handleInput(key);
+  }
+
+  await first;
+
+  const between = run([layout]);
+
+  latest().handleInput(escape);
+  await between;
+
+  const again = run([features]);
+  const lines = latest().render(80).join('\n');
+
+  latest().handleInput(escape);
+  await again;
 
   expect(lines).toContain('[x] Lint');
 });

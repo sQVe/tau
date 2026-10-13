@@ -4,7 +4,7 @@ import type { TUI } from '@earendil-works/pi-tui';
 import { expect, it, vi } from 'vitest';
 
 import type { WorkerNoticeEvent } from '../../workerNoticeEvent.js';
-import { questionDialog } from './dialog.js';
+import { actionLabel, questionDialog } from './dialog.js';
 import type { DialogQuestion, DialogResult } from './dialog.js';
 import type { QuestionnaireState } from './questionnaire.js';
 
@@ -571,7 +571,7 @@ const twoOptions = (multiSelect = false) => ({
   multiSelect,
 });
 
-const actionText = 'Handle the notice from scout-ov first';
+const actionText = actionLabel([scout]);
 
 it('shows a notice line and the action row only after a notice arrives', () => {
   const { dialog, notify, requestRender } = open([twoOptions()]);
@@ -716,7 +716,7 @@ it.each([10, 12, 14, 24])('keeps three notices within the row budget at %i rows'
 
   expect(onOption.length).toBeLessThanOrEqual(budget);
   expect(onAction.length).toBeLessThanOrEqual(budget);
-  expect(onAction.some((line) => line.includes('> Handle the 3 worker notices first'))).toBe(true);
+  expect(onAction.some((line) => line.includes(`> ${actionLabel(workers(3))}`))).toBe(true);
 });
 
 it('shows waiting notices when no notice line fits', () => {
