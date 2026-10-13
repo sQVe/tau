@@ -153,8 +153,8 @@ const questionsKey = (questions: DialogQuestion[]): string =>
 export default function askUserQuestionExtension(pi: ExtensionAPI): void {
   appendToolGuidelines(pi, 'ask_user_question', promptGuidelines);
 
-  // A deferred dialog leaves its state here until the same questions are asked again.
-  const savedStates = new Map<string, QuestionnaireState>();
+  // Only the latest deferred dialog is kept. Other questions asked in between leave it in place.
+  let deferred: { key: string; state: QuestionnaireState } | undefined;
 
   const subscribe: DialogSession['subscribe'] = (listener) =>
     pi.events.on(workerNoticeChannel, (data) => {
@@ -188,15 +188,19 @@ export default function askUserQuestionExtension(pi: ExtensionAPI): void {
       }));
 
       const key = questionsKey(questions);
-      const saved = savedStates.get(key);
+      const saved = deferred?.key === key ? deferred.state : undefined;
 
       const session = {
         saved,
         subscribe,
-        save: (state: QuestionnaireState) => savedStates.set(key, state),
+        save: (state: QuestionnaireState) => {
+          deferred = { key, state };
+        },
       };
 
-      savedStates.delete(key);
+      if (saved !== undefined) {
+        deferred = undefined;
+      }
 
       const opened = await context.ui.custom<DialogResult | undefined>(
         questionDialog(questions, session),
