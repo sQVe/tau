@@ -3,6 +3,12 @@ import { join } from 'node:path';
 import { format, lint, vitest } from '@sqve/seam';
 import { defineConfig } from 'vite-plus';
 
+interface TestProject {
+  name: string;
+  include: string[];
+  exclude: string[];
+}
+
 // oxlint-disable-next-line node/no-process-env -- Remove the shell capacity before test workers inherit it.
 delete process.env.TAU_SUBAGENT_CAP;
 
@@ -11,7 +17,100 @@ const testHelperImports = {
   message: 'Production code must not import test helpers.',
 };
 
+// Each test file belongs to exactly one project; tests/structure.test.ts enforces it.
+const subagentIntegrationTests = [
+  'tests/subagent*.integration.test.ts',
+  'tests/tauCapacity.integration.test.ts',
+];
+
+const dedicatedExtensions = ['subagents', 'pr', 'prFeedback', 'tdd', 'slice', 'commit'];
+
+const testProjects: TestProject[] = [
+  { name: 'core', include: ['src/**/*.test.ts'], exclude: ['src/extensions/**'] },
+  { name: 'subagents', include: ['src/extensions/subagents/**/*.test.ts'], exclude: [] },
+  {
+    name: 'pr',
+    include: ['src/extensions/pr/**/*.test.ts', 'src/extensions/prFeedback/**/*.test.ts'],
+    exclude: [],
+  },
+  { name: 'tdd', include: ['src/extensions/tdd/**/*.test.ts'], exclude: [] },
+  { name: 'slice', include: ['src/extensions/slice/**/*.test.ts'], exclude: [] },
+  { name: 'commit', include: ['src/extensions/commit/**/*.test.ts'], exclude: [] },
+  {
+    name: 'extensions',
+    include: ['src/extensions/**/*.test.ts'],
+    exclude: dedicatedExtensions.map((directory) => `src/extensions/${directory}/**`),
+  },
+  {
+    name: 'repository',
+    include: ['*.test.ts', 'tests/*.test.ts', 'scripts/**/*.test.ts', 'lint/**/*.test.ts'],
+    exclude: ['tests/*.integration.test.ts'],
+  },
+  { name: 'integration-subagents', include: subagentIntegrationTests, exclude: [] },
+  {
+    name: 'integration',
+    include: ['tests/*.integration.test.ts'],
+    exclude: subagentIntegrationTests,
+  },
+];
+
+// Two projects run at once, so the machine runs at most six Vitest workers, as in a full run.
+const workersPerProject = 3;
+
+// Variables that tests, fixtures, the watchdog, or the code under test read to decide a result.
+// Tasks run in a clean environment that keeps only these and the Vite+ defaults. Only a change to
+// these misses the cache. PATH, HOME, and NODE_OPTIONS are listed because file tracking cannot
+// see a directory removed from PATH or a different home directory that has no earlier reads.
+// Leave out herdr, Pi, Tau worker, and Git variables. Tests set those themselves, and they
+// differ per pane or Git hook, so passing them would leak the shell and miss the cache.
+export const testEnvironment = [
+  'CI',
+  'TAU_COLLECTION_TIMEOUT_MS',
+  'TMPDIR',
+  'TMP',
+  'TEMP',
+  'XDG_CONFIG_HOME',
+  'LANG',
+  'LANGUAGE',
+  'LC_ALL',
+  'TZ',
+  'PATH',
+  'HOME',
+  'NODE_OPTIONS',
+];
+
+// Variables that test code reads but sets itself, so they stay out of the fingerprint. Tests stub
+// them before reading, or this file sets or deletes them before the workers start.
+export const testManagedEnvironment = [
+  'PI_CODING_AGENT_DIR',
+  'TAU_SUBAGENT_CAP',
+  'TAU_WORKER_RECORD',
+];
+
+const projectTasks = Object.fromEntries(
+  testProjects.map(({ name }) => [
+    `vitest:${name}`,
+    {
+      command: `vp test run --project ${name} --maxWorkers ${workersPerProject}`,
+      // Nothing needs restoring, and Vitest rewrites its own result cache on every run.
+      output: [],
+      env: testEnvironment,
+      // Tests ignore .tau/, but full_check writes a new log there on every run.
+      input: [{ auto: true }, '!node_modules/.vite/**', '!.tau/**'],
+    },
+  ]),
+);
+
 export default defineConfig({
+  run: {
+    tasks: {
+      ...projectTasks,
+      'vitest:all': {
+        command: 'true',
+        dependsOn: testProjects.map(({ name }) => `vitest:${name}`),
+      },
+    },
+  },
   test: {
     // Integration tests launch Git, Node, and nested Vitest processes. Limit competing workers.
     maxWorkers: 6,
@@ -31,6 +130,11 @@ export default defineConfig({
       GIT_COMMITTER_DATE: '2005-04-07T22:13:13Z',
       TZ: 'UTC',
     },
+    // tests/lint.test.ts writes probe folders under src/ while other projects collect their tests.
+    projects: testProjects.map(({ name, include, exclude }) => ({
+      extends: true,
+      test: { name, include, exclude: [...exclude, '**/tau-lint-*/**'] },
+    })),
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],

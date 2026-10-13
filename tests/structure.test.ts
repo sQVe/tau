@@ -3,10 +3,11 @@ import { basename, dirname, join, posix, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseSync, Visitor } from 'oxc-parser';
-import type { MemberExpression, ModuleDeclaration } from 'oxc-parser';
+import type { Expression, MemberExpression, ModuleDeclaration } from 'oxc-parser';
 import { expect, it } from 'vitest';
 
 import { versionedRecords } from '../src/extensions/subagents/records.js';
+import config, { testEnvironment, testManagedEnvironment } from '../vite.config.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -88,6 +89,10 @@ const propertyKey = ({ computed, property }: MemberExpression) => {
     return property.name;
   }
 
+  if (property.type === 'TemplateLiteral' && property.expressions.length === 0) {
+    return property.quasis[0]?.value.cooked ?? undefined;
+  }
+
   return property.type === 'Literal' && typeof property.value === 'string'
     ? property.value
     : undefined;
@@ -158,6 +163,44 @@ const impurities = (path: string, source: string, registry: readonly string[]) =
 
       if (name !== undefined && effectMembers.has(name)) {
         at(node.start, name);
+      }
+    },
+  }).visit(parseSync(path, source).program);
+
+  return found;
+};
+
+const environmentAccess = (node: Expression) =>
+  node.type === 'MemberExpression' && memberName(node) === 'process.env';
+
+// Lists the variables a source reads from process.env. Writes, deletes, and text are not reads.
+const environmentReads = (path: string, source: string) => {
+  const found: string[] = [];
+  const notReads = new Set<unknown>();
+
+  new Visitor({
+    AssignmentExpression: (node) => {
+      if (node.operator === '=') {
+        notReads.add(node.left);
+      }
+    },
+    UnaryExpression: (node) => {
+      if (node.operator === 'delete') {
+        notReads.add(node.argument);
+      }
+    },
+    MemberExpression: (node) => {
+      const name = propertyKey(node);
+
+      if (environmentAccess(node.object) && name !== undefined && !notReads.has(node)) {
+        found.push(name);
+      }
+    },
+    BinaryExpression: (node) => {
+      const { left } = node;
+
+      if (node.operator === 'in' && left.type === 'Literal' && environmentAccess(node.right)) {
+        found.push(String(left.value));
       }
     },
   }).visit(parseSync(path, source).program);
@@ -371,4 +414,97 @@ it('refuses index files, one-file folders, and missing entries but allows flat f
     'src/extensions/bareRoot/: one production source file',
     'src/extensions/tdd/: no entry file tdd.ts',
   ]);
+});
+
+// Local state, such as review captures under .pi/, can hold test files that no project runs.
+const ignoredDirectories = new Set(['node_modules', '.git', '.tau', '.pi', 'dist', 'coverage']);
+
+const repositoryFiles = () =>
+  readdirSync(root, { recursive: true, encoding: 'utf8' })
+    .map((path) => path.replaceAll('\\', '/'))
+    .filter((path) => path.split('/').every((part) => !ignoredDirectories.has(part)))
+    .filter((path) => !isLintProbe(path));
+
+it('puts every test file in exactly one Vitest project', () => {
+  const testFiles = repositoryFiles().filter((path) => path.endsWith('.test.ts'));
+
+  const projects = (config.test?.projects ?? []) as {
+    test: { name: string; include: string[]; exclude: string[] };
+  }[];
+
+  const projectsOf = (file: string) =>
+    projects
+      .map(({ test }) => test)
+      .filter(({ include, exclude }) => {
+        const included = include.some((pattern) => posix.matchesGlob(file, pattern));
+        const excluded = exclude.some((pattern) => posix.matchesGlob(file, pattern));
+
+        return included && !excluded;
+      })
+      .map(({ name }) => name);
+
+  const misplaced = testFiles
+    .map((file) => ({ file, owners: projectsOf(file) }))
+    .filter(({ owners }) => owners.length !== 1);
+
+  expect(projects).toHaveLength(10);
+  expect(testFiles.length).toBeGreaterThan(100);
+  expect(misplaced).toEqual([]);
+});
+
+it('handles every environment variable that test code reads in the cached test tasks', () => {
+  const isTestCode = (path: string) =>
+    isTest(path) || isFixture(path) || /^tests\/[^/]+\.ts$/.test(path);
+
+  const testCode = repositoryFiles().filter((path) => path.endsWith('.ts') && isTestCode(path));
+
+  const handled = new Set([...testEnvironment, ...testManagedEnvironment]);
+
+  const unhandled = testCode.flatMap((file) =>
+    environmentReads(file, readFileSync(join(root, file), 'utf8'))
+      .filter((name) => !handled.has(name))
+      .map(
+        (name) =>
+          `${file}: reads ${name}, which is not in testEnvironment or testManagedEnvironment`,
+      ),
+  );
+
+  expect(testCode.length).toBeGreaterThan(100);
+  expect(unhandled).toEqual([]);
+});
+
+it('counts reads of process.env and ignores writes, deletes, comments, and strings', () => {
+  const reads = [
+    'export const a = process.env.ONE;',
+    "export const b = process.env['TWO'];",
+    'export const c = process.env[`THREE`];',
+    'export const d = process.env?.FOUR;',
+    "export const e = 'FIVE' in process.env;",
+    "export const f = process['env'].SIX;",
+    'process.env.SEVEN += 1;',
+  ].join('\n');
+
+  const ignored = [
+    'process.env.EIGHT = "x";',
+    "process.env['NINE'] = 'x';",
+    'delete process.env.TEN;',
+    '// process.env.ELEVEN',
+    '/* process.env.TWELVE */',
+    "export const text = 'process.env.THIRTEEN';",
+    'export const template = `process.env.FOURTEEN`;',
+    // oxlint-disable-next-line no-template-curly-in-string -- The probe source holds the placeholder.
+    'export const dynamic = process.env[`A${name}`];',
+  ].join('\n');
+
+  expect(environmentReads('tests/probe.ts', reads)).toEqual([
+    'ONE',
+    'TWO',
+    'THREE',
+    'FOUR',
+    'FIVE',
+    'SIX',
+    'SEVEN',
+  ]);
+
+  expect(environmentReads('tests/probe.ts', ignored)).toEqual([]);
 });
