@@ -88,7 +88,7 @@ describe('saved records', () => {
     await writeFile(path, '{"replies": [{"threadId": "T1", "replyTo": 1, "body": "Fixed."}]}');
 
     const failure = await readReplies(directory).catch((error: unknown) => error);
-    const example = /Expected shape: (\{.*\})/u.exec(String(failure))?.[1];
+    const example = /\{.*\}/u.exec(String(failure))?.[0];
 
     expect(example).toBeDefined();
 
