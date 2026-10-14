@@ -3,7 +3,6 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.js';
 import { runGit } from '../gitOutput.js';
-import { captureReview, checkFreshness } from './captureReview.js';
 import {
   boundList,
   callerText,
@@ -28,6 +27,7 @@ import type {
   NumberedLine,
 } from './evidenceDecisions.js';
 import type { Freshness } from './freshness.js';
+import { captureReview, checkFreshness } from './pinnedCapture.js';
 import { inputFileName, readCaptureRecord, recheckFileName } from './record.js';
 import type { PinnedTarget } from './reviewCapture.js';
 

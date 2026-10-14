@@ -6,6 +6,7 @@ import { parseSync, Visitor } from 'oxc-parser';
 import type { Expression, MemberExpression, ModuleDeclaration } from 'oxc-parser';
 import { expect, it } from 'vitest';
 
+import { publicFiles } from '../lint/rules/extensionBoundary.ts';
 import { versionedRecords } from '../src/extensions/subagents/records.js';
 import config, { testEnvironment, testManagedEnvironment } from '../vite.config.ts';
 
@@ -23,27 +24,19 @@ const isFixture = (path: string) => path.split(/[/\\]/).includes('fixtures');
 // Pure decision modules take every read, clock, and environment value as a fact from the caller.
 // Register a module here once its decisions are split from its reads.
 const pureModules = [
-  'tests/approvalRule.ts',
   'scripts/piVersionDrift.ts',
   'scripts/tokenUsageReport.ts',
   'src/codemodeBudget.ts',
   'src/confirmationEligibility.ts',
   'src/controlTools.ts',
-  'src/isRecord.ts',
-  'src/repositoryRemote.ts',
-  'src/models/allowedModels.ts',
-  'src/unknownKeys.ts',
-  'src/reviewCapture/evidenceDecisions.ts',
-  'src/reviewCapture/freshness.ts',
-  'src/reviewCapture/fixScope.ts',
   'src/extensions/askUserQuestion/questionnaire.ts',
   'src/extensions/askUserQuestion/validation.ts',
   'src/extensions/commit/autosquash.ts',
   'src/extensions/commit/fileRequests.ts',
-  'src/extensions/fullCheck/lockHolderDecision.ts',
-  'src/extensions/fullCheck/groupMembers.ts',
-  'src/extensions/fullCheck/reuseDecision.ts',
   'src/extensions/compaction/reminder.ts',
+  'src/extensions/fullCheck/groupMembers.ts',
+  'src/extensions/fullCheck/lockHolderDecision.ts',
+  'src/extensions/fullCheck/reuseDecision.ts',
   'src/extensions/pr/evidenceDecisions.ts',
   'src/extensions/pr/reuseDecisions.ts',
   'src/extensions/pr/targetDecisions.ts',
@@ -57,9 +50,6 @@ const pureModules = [
   'src/extensions/snippets/history.ts',
   'src/extensions/snippets/insertion.ts',
   'src/extensions/snippets/query.ts',
-  'src/extensions/tauSkills/requiredFor.ts',
-  'src/extensions/tdd/configLayers.ts',
-  'src/extensions/tracker/candidateFit.ts',
   'src/extensions/subagents/acceptanceRefusal.ts',
   'src/extensions/subagents/bashOutputCap.ts',
   'src/extensions/subagents/capacityRefusal.ts',
@@ -79,6 +69,17 @@ const pureModules = [
   'src/extensions/subagents/workerPackages.ts',
   'src/extensions/subagents/workerState.ts',
   'src/extensions/subagents/workerTools.ts',
+  'src/extensions/tauSkills/requiredFor.ts',
+  'src/extensions/tdd/configLayers.ts',
+  'src/extensions/tracker/candidateFit.ts',
+  'src/isRecord.ts',
+  'src/models/allowedModels.ts',
+  'src/repositoryRemote.ts',
+  'src/reviewCapture/evidenceDecisions.ts',
+  'src/reviewCapture/fixScope.ts',
+  'src/reviewCapture/freshness.ts',
+  'src/unknownKeys.ts',
+  'tests/approvalRule.ts',
 ];
 
 const pureAdvice =
@@ -318,6 +319,35 @@ it('keeps registered pure modules free of reads and effects', () => {
   );
 
   expect(found, pureAdvice).toEqual([]);
+});
+
+// Lists each entry that sorts before the one above it or repeats it.
+const registryOrderProblems = (entries: readonly string[]) =>
+  entries.flatMap((entry, index) => {
+    const previous = entries[index - 1];
+
+    if (previous === undefined) {
+      return [];
+    }
+
+    if (entry === previous) {
+      return [`duplicate ${entry}`];
+    }
+
+    return entry < previous ? [`${entry} sorts before ${previous}`] : [];
+  });
+
+it('keeps the pure module and public file registries sorted and free of duplicates', () => {
+  expect(registryOrderProblems(pureModules)).toEqual([]);
+  expect(registryOrderProblems(publicFiles)).toEqual([]);
+});
+
+it.each([
+  { entries: ['a', 'b', 'c'], problems: [] },
+  { entries: ['a', 'c', 'b'], problems: ['b sorts before c'] },
+  { entries: ['a', 'b', 'b'], problems: ['duplicate b'] },
+])('reports $problems for registry $entries', ({ entries, problems }) => {
+  expect(registryOrderProblems(entries)).toEqual(problems);
 });
 
 it('refuses reads and effects in a pure module but allows types and other pure modules', () => {

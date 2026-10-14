@@ -13,17 +13,17 @@ interface FolderModule {
 const groupingFolders = new Set(['extensions', 'skills', 'instructions']);
 
 // Files a folder module exposes besides its entry, named without the extension.
-const publicFiles = new Set([
+export const publicFiles = [
+  'extensions/subagents/controller/budget',
   'extensions/subagents/controller/controller',
   'extensions/subagents/controller/record',
-  'extensions/subagents/controller/budget',
-  'reviewCapture/captureReview',
   'reviewCapture/evidence',
   'reviewCapture/fixCapture',
   'reviewCapture/fixScope',
+  'reviewCapture/pinnedCapture',
   'reviewCapture/record',
   'reviewCapture/reviewDirectory',
-]);
+];
 
 const withoutExtension = (name: string): string => name.replace(/\.[jt]s$/, '');
 
@@ -64,7 +64,7 @@ const folderModuleOf = (segments: string[]): FolderModule | undefined => {
 };
 
 const isPublicFile = ({ folder, file }: FolderModule): boolean =>
-  file === posix.basename(folder) || publicFiles.has(`${folder}/${file}`);
+  file === posix.basename(folder) || publicFiles.includes(`${folder}/${file}`);
 
 const mayImportPrivateFiles = (segments: string[]): boolean =>
   (segments.at(-1) ?? '').endsWith('.test.ts') || segments.includes('fixtures');

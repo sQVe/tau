@@ -2,11 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { StringEnum } from '@earendil-works/pi-ai';
 import type {
   AgentEndEvent,
   AgentToolResult,
-  CustomMessageEntryDraft,
   ExtensionAPI,
   ExtensionContext,
   InputEvent,
@@ -15,7 +13,6 @@ import type {
   ToolCallEventResult,
 } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
-import type { Static } from 'typebox';
 
 import {
   isNestedChangeCall,
@@ -29,9 +26,8 @@ import { appendSystemPrompt } from '../../systemPrompt.js';
 import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
 import type { WorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
-import { blockerKinds, decideIncompleteReport, timeBlockerReserve } from './incompleteReport.js';
+import { timeBlockerReserve } from './incompleteReport.js';
 import { checkWorkerRuntime } from './loadout.js';
-import { handoverSectionNames, handoverSections } from './presentation.js';
 import { workerInstructions, workerPrompt } from './profiles.js';
 import {
   acceptAcknowledgement,
@@ -39,86 +35,18 @@ import {
   readReply,
   validateQuestion,
 } from './questionRecords.js';
-import {
-  acceptReport,
-  publish,
-  readEvent,
-  readRecord,
-  readTask,
-  recordEvent,
-  taskEnded,
-} from './records.js';
-import { decideSummaryLength, summaryLengthLimit } from './summaryLength.js';
-import type { Acknowledgement, Loadout, Question, Report, Task } from './types.js';
-
-type WorkerPhase = 'starting' | 'active' | 'waiting' | 'done';
-
-interface WorkerExtensionState {
-  directory: string;
-  task: Task | undefined;
-  monotonicDeadline: number;
-  accepted: boolean;
-  reported: boolean;
-  incompleteRefused: boolean;
-  remindAfterRefusal: boolean;
-  settled: boolean;
-  runError: string | undefined;
-  deadlineWarning: ReturnType<typeof setTimeout> | undefined;
-  kickoff: ReturnType<typeof setInterval> | undefined;
-  pendingQuestion: Question | undefined;
-  parentWatch: ReturnType<typeof setInterval> | undefined;
-  questionSettled: boolean;
-  replyDelivery: { text: string; acknowledgement: Acknowledgement } | undefined;
-  activitySequence: number;
-  activityTimer: ReturnType<typeof setTimeout> | undefined;
-  phase: WorkerPhase;
-  phaseLabel: string | undefined;
-  phaseDescription: { text: string; at: number } | undefined;
-  usageBaseline:
-    | { input: number; output: number; cacheRead: number; cacheWrite: number }
-    | undefined;
-}
+import { readEvent, readRecord, readTask, recordEvent } from './records.js';
+import { reportParameters, reportToParent } from './report.js';
+import { remindToReport } from './reportReminder.js';
+import type { Loadout, Question, Task } from './types.js';
+import { hasRunningTask, isTaskActive, remainingWork } from './workerExtensionState.js';
+import type { WorkerExtensionState, WorkerPhase } from './workerExtensionState.js';
 
 const millisecondsPerSecond = 1000;
-const millisecondsPerMinute = 60_000;
 const parentWatchInterval = 1000;
 const dispatchWatchInterval = 50;
 // Streaming updates record activity at most this often.
 const streamingActivityInterval = 500;
-const summaryLengthLimitText = summaryLengthLimit.toLocaleString('en-US');
-
-const summaryHeadings = handoverSectionNames.map((name) => `## ${name}`).join(', ');
-
-const reportParameters = Type.Object({
-  outcome: StringEnum(['success', 'failure', 'incomplete']),
-  summary: Type.String({
-    minLength: 1,
-    maxLength: 32_000,
-    description: `A short lead, then exactly these headings: ${summaryHeadings}. Write None under an empty one. A report without them is refused. At most ${summaryLengthLimitText} characters; save longer details to a file and name it in evidence.`,
-  }),
-  evidence: Type.Array(Type.String({ minLength: 1, maxLength: 32_000 }), { maxItems: 100 }),
-  blocker: Type.Optional(
-    Type.String({
-      minLength: 1,
-      maxLength: 4000,
-      description: 'Required for incomplete: what stops you.',
-    }),
-  ),
-  blockerKind: Type.Optional(
-    StringEnum(blockerKinds, {
-      description:
-        'Required for incomplete. time: the deadline is nearly reached; dependency: an external dependency; decision: a parent decision; limit: another exhausted limit.',
-    }),
-  ),
-  onlyParentCanClear: Type.Optional(
-    Type.Boolean({
-      description:
-        'For incomplete: true when only the parent or user can clear the blocker, such as a server you may not restart or an expired login. Such a report is accepted on the first call.',
-    }),
-  ),
-});
-
-type ReportInput = Static<typeof reportParameters>;
 
 const readPiSessionUsage = (
   context: ExtensionContext,
@@ -209,15 +137,6 @@ const recordWorkerActivity = (
     // Activity is optional UI evidence and cannot affect worker execution.
   }
 };
-
-const hasRunningTask = (
-  state: WorkerExtensionState,
-): state is WorkerExtensionState & { task: Task } =>
-  state.task !== undefined && state.accepted && !state.settled;
-
-const isTaskActive = (
-  state: WorkerExtensionState,
-): state is WorkerExtensionState & { task: Task } => hasRunningTask(state) && !state.reported;
 
 // A worker-authored phase keeps its own timestamp and does not change lifecycle truth or the
 // automatic activity label, so unrelated Pi events cannot make an old phase look freshly reported.
@@ -409,127 +328,6 @@ const handleInput = (
   clearInterval(state.parentWatch);
 
   return { action: 'continue' };
-};
-
-const remainingWork = (state: WorkerExtensionState, task: Task): number =>
-  state.monotonicDeadline - task.cancellationBudget - monotonicNow();
-
-const refuseEarlyIncomplete = (
-  state: WorkerExtensionState,
-  task: Task,
-  {
-    blocker,
-    blockerKind,
-    onlyParentCanClear = false,
-  }: Pick<ReportInput, 'blocker' | 'blockerKind' | 'onlyParentCanClear'>,
-) => {
-  if (blocker === undefined || blocker.trim() === '' || blockerKind === undefined) {
-    throw new Error(
-      'An incomplete report needs a blocker and blockerKind: the external dependency, exhausted limit, or parent decision that stops you. Without one, finish the work or report failure.',
-    );
-  }
-
-  const remaining = remainingWork(state, task);
-
-  const step = decideIncompleteReport({
-    blockerKind,
-    remaining,
-    window: task.deadline - task.createdAt,
-    refusedBefore: state.incompleteRefused,
-    onlyParentCanClear,
-  });
-
-  if (step === 'accept') {
-    return;
-  }
-
-  if (step === 'refuseTime') {
-    throw new Error(
-      `Report refused: ${Math.floor(remaining / millisecondsPerSecond)} seconds remain. Continue the remaining assigned work now. Do not sleep, poll, or retry the report only to wait out the time. Report incomplete only when a concrete blocker stops you.`,
-    );
-  }
-
-  state.incompleteRefused = true;
-  throw new Error(
-    `Report refused: ${Math.floor(remaining / millisecondsPerMinute)} minutes remain. Finish the remaining assigned work. Report incomplete only when a concrete blocker stops you. Set onlyParentCanClear when only the parent or user can clear it.`,
-  );
-};
-
-const refuseMissingSections = (summary: string) => {
-  const missing = handoverSections({ summary })?.missing ?? [];
-
-  if (missing.length === 0) {
-    return;
-  }
-
-  throw new Error(
-    `Report refused: summary is missing the ${missing.join(', ')} section headings. Resend a compact summary with all four sections, writing None under any that is empty.`,
-  );
-};
-
-const refuseLongSummary = (summary: string) => {
-  if (decideSummaryLength({ length: summary.length }) === 'accept') {
-    return;
-  }
-
-  const length = summary.length.toLocaleString('en-US');
-
-  throw new Error(
-    `Report refused: the summary has ${length} characters, over the limit of ${summaryLengthLimitText} characters. Save the details to a file, name it in evidence, and resend a shorter summary.`,
-  );
-};
-
-const withBlocker = (summary: string, blocker: string | undefined): string =>
-  blocker === undefined ? summary : `Blocker: ${blocker}\n\n${summary}`;
-
-const reportToParent = (
-  state: WorkerExtensionState,
-  parameters: ReportInput,
-): Promise<AgentToolResult<Report>> => {
-  if (!isTaskActive(state)) {
-    throw new Error('This worker has no accepted active task.');
-  }
-
-  const task = state.task;
-
-  const {
-    blocker,
-    blockerKind: _blockerKind,
-    onlyParentCanClear: _onlyParentCanClear,
-    ...handover
-  } = parameters;
-
-  const summary = withBlocker(
-    handover.summary,
-    handover.outcome === 'incomplete' ? blocker : undefined,
-  );
-
-  try {
-    refuseLongSummary(handover.summary);
-    refuseMissingSections(summary);
-
-    if (handover.outcome === 'incomplete') {
-      refuseEarlyIncomplete(state, task, parameters);
-    }
-  } catch (error) {
-    state.remindAfterRefusal = true;
-    throw error;
-  }
-
-  const report = acceptReport(state.directory, task.taskId, {
-    ...handover,
-    summary,
-    taskId: task.taskId,
-  });
-
-  state.reported = true;
-  clearTimeout(state.deadlineWarning);
-
-  return Promise.resolve({
-    content: [{ type: 'text' as const, text: 'Handover durably accepted. Stop working.' }],
-    details: report,
-    terminate: true,
-  });
 };
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
@@ -886,45 +684,8 @@ const registerRunErrorHandler = (pi: ExtensionAPI, state: WorkerExtensionState):
   });
 };
 
-const reportReminder: CustomMessageEntryDraft = {
-  type: 'custom_message',
-  customType: 'tau-worker-report-request',
-  content: [
-    'Your turn ended without subagent_report. Finish the assigned work, then call subagent_report.',
-    'Report incomplete only with a concrete blocker. Do not expand the original scope; the deadline is unchanged.',
-  ].join(' '),
-  display: true,
-};
-
 const registerReportReminder = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
-  pi.on('agent_before_settle', (event) => {
-    // A reminder after an errored or aborted run repeats the same error; the error explains the stop.
-    if (!isTaskActive(state) || state.pendingQuestion || state.runError !== undefined) {
-      return undefined;
-    }
-
-    const task = state.task;
-
-    if (remainingWork(state, task) <= 0 || taskEnded(state.directory, task)) {
-      return undefined;
-    }
-
-    const requested = existsSync(join(state.directory, 'reportRequest.json'));
-    // A refused report earns one more reminder; otherwise the worker could settle with no report.
-    const alreadyReminded = requested && !state.remindAfterRefusal;
-
-    if (alreadyReminded) {
-      return undefined;
-    }
-
-    state.remindAfterRefusal = false;
-
-    if (!requested) {
-      publish(state.directory, 'reportRequest.json', { taskId: task.taskId, at: Date.now() });
-    }
-
-    return { entries: [...event.entries, reportReminder], continue: true };
-  });
+  pi.on('agent_before_settle', (event) => remindToReport(state, event));
 };
 
 const registerAgentSettledHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
