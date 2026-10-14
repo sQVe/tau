@@ -101,6 +101,12 @@ const repliesFileName = 'replies.json';
 const postedFileName = 'posted.json';
 const pullRequestFileName = 'pull-request.json';
 
+const repliesExample = JSON.stringify({
+  version: 1,
+  threads: [{ id: '<thread id>', reply: '<text>', resolve: true }],
+  comment: { body: '<text>', answers: ['<review or comment id>'] },
+});
+
 const savedVersion = (value: unknown) =>
   typeof value === 'object' && value !== null && 'version' in value ? value.version : undefined;
 
@@ -169,7 +175,11 @@ export const readReplies = async (directory: string): Promise<Replies> => {
   const text = await readRequiredFile(path, `post needs ${path}. Nothing was posted.`);
   const replies = parseRecordJson(path, text);
 
-  checkRecord(path, repliesSchema, replies);
+  if (!Value.Check(repliesSchema, replies)) {
+    throw new Error(
+      `Malformed ${path}: ${describeSchemaProblem(repliesSchema, replies)}. Expected shape: ${repliesExample}, where reply and comment may be null.`,
+    );
+  }
 
   return replies;
 };
