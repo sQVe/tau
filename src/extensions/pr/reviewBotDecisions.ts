@@ -14,7 +14,12 @@ export interface ReviewBotDecision extends ReviewBot {
   status: ReviewBotStatus;
 }
 
-const sameLogin = (first: string, second: string) => first.toLowerCase() === second.toLowerCase();
+// gh prints a bot's login without the `[bot]` suffix that the GitHub UI shows.
+export const normalizeLogin = (login: string): string =>
+  login.toLowerCase().replace(/\[bot\]$/u, '');
+
+const sameLogin = (first: string, second: string) =>
+  normalizeLogin(first) === normalizeLogin(second);
 
 // A comment from before the head commit was made asked for a review of older code.
 const requestedForHead = (facts: ReviewBotFacts, bot: ReviewBot) => {

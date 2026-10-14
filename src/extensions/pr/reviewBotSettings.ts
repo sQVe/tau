@@ -4,6 +4,7 @@ import { readUserOnlyKey, warnUnknownKeys } from '../../tauConfig.js';
 import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
 import { anyKey } from '../../unknownKeys.js';
 import type { KnownKeys } from '../../unknownKeys.js';
+import { normalizeLogin } from './reviewBotDecisions.js';
 
 export interface ReviewBot {
   // The bot's GitHub login, used to find its reviews.
@@ -28,10 +29,14 @@ const readText = (source: string, field: string, value: unknown): string => {
   return value;
 };
 
-const readBot = (source: string, field: string, value: unknown): ReviewBot => {
+const knownBotKeys: KnownKeys = { login: true, comment: true };
+
+const readBot = (source: string, ui: ConfigWarnings, field: string, value: unknown): ReviewBot => {
+  warnUnknownKeys(ui, source, value, knownBotKeys, field);
+
   if (!isRecord(value)) {
     throw new Error(
-      `Invalid Tau config ${source}: ${field} must be an object such as {"login": "chatgpt-codex-connector[bot]", "comment": "@codex review"}.`,
+      `Invalid Tau config ${source}: ${field} must be an object such as {"login": "chatgpt-codex-connector", "comment": "@codex review"}.`,
     );
   }
 
@@ -45,9 +50,9 @@ const rejectDuplicateLogins = (source: string, field: string, bots: ReviewBot[])
   const seen = new Set<string>();
 
   for (const { login } of bots) {
-    const key = login.toLowerCase();
+    const key = normalizeLogin(login);
 
-    // GitHub logins ignore case, so two bots that differ only in case would be one account.
+    // GitHub logins ignore case, and gh omits `[bot]`, so these spellings name one account.
     if (seen.has(key)) {
       throw new Error(`Invalid Tau config ${source}: ${field} lists ${login} twice. Keep one.`);
     }
@@ -56,12 +61,17 @@ const rejectDuplicateLogins = (source: string, field: string, bots: ReviewBot[])
   }
 };
 
-const readEntry = (source: string, key: string, value: unknown): ReviewBot[] => {
+const readEntry = (
+  source: string,
+  ui: ConfigWarnings,
+  key: string,
+  value: unknown,
+): ReviewBot[] => {
   const field = `reviews.repositories.${key}`;
 
   if (!isRecord(value)) {
     throw new Error(
-      `Invalid Tau config ${source}: ${field} must be an object such as {"bots": [{"login": "chatgpt-codex-connector[bot]", "comment": "@codex review"}]}.`,
+      `Invalid Tau config ${source}: ${field} must be an object such as {"bots": [{"login": "chatgpt-codex-connector", "comment": "@codex review"}]}.`,
     );
   }
 
@@ -69,7 +79,7 @@ const readEntry = (source: string, key: string, value: unknown): ReviewBot[] => 
     throw new TypeError(`Invalid Tau config ${source}: ${field}.bots must be a list of bots.`);
   }
 
-  const bots = value.bots.map((bot, index) => readBot(source, `${field}.bots[${index}]`, bot));
+  const bots = value.bots.map((bot, index) => readBot(source, ui, `${field}.bots[${index}]`, bot));
 
   rejectDuplicateLogins(source, `${field}.bots`, bots);
 
@@ -114,5 +124,5 @@ export const readReviewBots = (
 
   const match = findRepositoryEntry(source, 'reviews.repositories', repositories, repository);
 
-  return match === undefined ? undefined : readEntry(source, match[0], match[1]);
+  return match === undefined ? undefined : readEntry(source, ui, match[0], match[1]);
 };

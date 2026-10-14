@@ -19,8 +19,9 @@ a line saying X". The user then approved the same text twice.
 Read the review bots from `reviews.repositories` in the user config, keyed by the base repository's
 `owner/name`, and let `pr` request them without asking.
 
-Each entry holds `bots`, a list of `{login, comment}`. `login` is the bot's GitHub login, which
-finds its reviews. `comment` is the exact body of the request. Only the user file may set `reviews`,
+Each entry holds `bots`, a list of `{login, comment}`. `login` is the bot's GitHub login as `gh`
+prints it, such as `chatgpt-codex-connector`, which finds its reviews. Matching ignores case and a
+trailing `[bot]`. `comment` is the exact body of the request. Only the user file may set `reviews`,
 and the other rules follow ADR 0110 and ADR 0099. A repository with no entry gets no request,
 because Tau cannot know which bots the user trusts.
 
@@ -28,7 +29,8 @@ A read-only `reviewBots` action of the `pr` tool gives each bot one status, from
 function: `reviewed` when the bot's login reviewed the current head, `requested` when a comment with
 the request text came at or after the head commit's committer date, and `request` otherwise. The
 skill posts each `request` and reads the action again before any retry, so a retry never posts
-twice. The committer date stands in for the push time, which `gh` does not report.
+twice. The tool reads the head commit's committer date with `gh api`, since the commit list of
+`gh pr view` stops at 100 commits. The date stands in for the push time, which `gh` does not report.
 
 A change after approval needs a new preview, unless the approved option or the user's answer named
 that exact change and the skill applies it as stated.

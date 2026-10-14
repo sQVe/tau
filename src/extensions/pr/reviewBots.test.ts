@@ -12,7 +12,7 @@ import { createPrTool } from './tool.js';
 import type { PrInput } from './tool.js';
 
 const repository = 'github.com/sQVe/tau';
-const bot = { login: 'chatgpt-codex-connector[bot]', comment: '@codex review' };
+const bot = { login: 'chatgpt-codex-connector', comment: '@codex review' };
 const config = { reviews: { repositories: { 'sQVe/tau': { bots: [bot] } } } };
 const requestedAt = '2026-10-14T10:05:00Z';
 
@@ -67,6 +67,7 @@ it('asks for the bot that has not reviewed or been asked', async () => {
 
   expect(fake.calls.map(({ commandArguments }) => commandArguments.slice(0, 3))).toEqual([
     ['pr', 'view', '7'],
+    ['api', '--hostname', 'github.com'],
   ]);
 });
 
@@ -242,13 +243,41 @@ it.each([
   await expect(run()).rejects.toThrow(/^gh pr view 7 /u);
 });
 
-it('fails when gh does not list the head commit', async () => {
+it('reads the head date when the commit list does not hold the head', async () => {
   const { run, fake } = await setUp(config);
 
-  fake.overrideOutput(
-    'pr view',
-    JSON.stringify({ headRefOid: 'abc123', commits: [], reviews: [], comments: [] }),
-  );
+  fake.pullRequests[repository] = [
+    pullRequest({ comments: [{ body: bot.comment, createdAt: requestedAt }] }),
+  ];
 
-  await expect(run()).rejects.toThrow('did not list the head commit abc123');
+  await expect(run()).resolves.toEqual({ bots: [{ ...bot, status: 'requested' }] });
+  expect(fake.calls.map(({ commandArguments }) => commandArguments[0])).toEqual(['pr', 'api']);
+});
+
+it('fails when gh api cannot read the head commit', async () => {
+  const { run, fake } = await setUp(config);
+
+  fake.failCommand('api');
+
+  await expect(run()).rejects.toThrow('gh api');
+});
+
+it('fails when gh api prints no date for the head commit', async () => {
+  const { run, fake } = await setUp(config);
+
+  fake.overrideOutput('api', '\n');
+
+  await expect(run()).rejects.toThrow('printed no committer date');
+});
+
+it('warns once for an unknown field inside a bot entry', async () => {
+  const { run, notices } = await setUp({
+    reviews: { repositories: { 'sQVe/tau': { bots: [{ ...bot, extra: 1 }] } } },
+  });
+
+  await run();
+  await run();
+
+  expect(notices).toHaveLength(1);
+  expect(notices[0]).toContain('reviews.repositories.sQVe/tau.bots[0].extra');
 });

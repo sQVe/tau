@@ -29,7 +29,7 @@ export interface FakePullRequest {
   comments?: { body: string; createdAt: string }[];
 }
 
-type CommandKey = 'auth status' | 'repo view' | 'pr list' | 'pr view';
+type CommandKey = 'auth status' | 'repo view' | 'pr list' | 'pr view' | 'api';
 
 export interface GhFake {
   exec: Exec;
@@ -59,6 +59,7 @@ const commandKeys: Record<string, CommandKey> = {
   'repo view': 'repo view',
   'pr list': 'pr list',
   'pr view': 'pr view',
+  'api --hostname': 'api',
 };
 
 const parentOutput = (parent: string | undefined) => {
@@ -142,9 +143,8 @@ export const createGhFake = (): GhFake => {
       baseRefName: pr.baseRefName,
       isDraft: pr.isDraft,
       headRefOid: pr.headRefOid,
-      commits: [
-        { oid: pr.headRefOid, committedDate: pr.headCommittedAt ?? '2026-10-14T10:00:00Z' },
-      ],
+      // gh lists at most 100 commits, so a long pull request has no head among them.
+      commits: [],
       reviews: (pr.reviews ?? []).map((review) => ({
         author: { login: review.login },
         commit: { oid: review.commit },
@@ -153,7 +153,10 @@ export const createGhFake = (): GhFake => {
     };
   };
 
-  const view = (key: Exclude<CommandKey, 'auth status'>, commandArguments: readonly string[]) => {
+  const view = (
+    key: Exclude<CommandKey, 'auth status' | 'api'>,
+    commandArguments: readonly string[],
+  ) => {
     if (key === 'repo view') {
       return repositoryView(commandArguments);
     }
@@ -165,9 +168,24 @@ export const createGhFake = (): GhFake => {
     return pullRequestView(commandArguments);
   };
 
+  // gh api --jq prints the raw date, not JSON.
+  const commitDate = (commandArguments: readonly string[]) => {
+    const host = commandArguments[2];
+    const path = commandArguments[3] ?? '';
+    const parts = path.split('/');
+    const [owner, name, sha] = [parts[1], parts[2], parts[4]];
+    const prs = fake.pullRequests[`${host}/${owner}/${name}`] ?? [];
+
+    return prs.find((pr) => pr.headRefOid === sha)?.headCommittedAt ?? '2026-10-14T10:00:00Z';
+  };
+
   const output = (key: CommandKey, commandArguments: readonly string[]) => {
     if (key === 'auth status') {
       return '';
+    }
+
+    if (key === 'api') {
+      return commitDate(commandArguments);
     }
 
     const value = view(key, commandArguments);

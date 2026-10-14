@@ -31,6 +31,30 @@ it.each([
     status: 'reviewed',
   },
   {
+    name: 'gh prints the login without [bot] and the config has it',
+    overrides: {
+      bots: [{ login: 'chatgpt-codex-connector[bot]', comment: '@codex review' }],
+      reviews: [{ login: 'chatgpt-codex-connector', commit: 'new' }],
+    },
+    status: 'reviewed',
+  },
+  {
+    name: 'gh prints the login without [bot] and the config has none',
+    overrides: {
+      bots: [{ login: 'chatgpt-codex-connector', comment: '@codex review' }],
+      reviews: [{ login: 'chatgpt-codex-connector', commit: 'new' }],
+    },
+    status: 'reviewed',
+  },
+  {
+    name: 'the review login has [bot] and the config has none',
+    overrides: {
+      bots: [{ login: 'chatgpt-codex-connector', comment: '@codex review' }],
+      reviews: [{ login: 'chatgpt-codex-connector[bot]', commit: 'new' }],
+    },
+    status: 'reviewed',
+  },
+  {
     name: 'the bot reviewed an older commit',
     overrides: { reviews: [{ login: 'codex[bot]', commit: 'old' }] },
     status: 'request',

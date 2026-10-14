@@ -1,7 +1,7 @@
 import { Type } from 'typebox';
 
-import { checkOutput, parseRepository, readJson } from '../../github.js';
-import type { Runtime } from '../../github.js';
+import { checkOutput, parseRepository, label, readJson, run } from '../../github.js';
+import type { Repository, Runtime } from '../../github.js';
 import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
 import { decideReviewBots } from './reviewBotDecisions.js';
 import type { ReviewBotDecision } from './reviewBotDecisions.js';
@@ -19,7 +19,6 @@ export interface ReviewBotsResult {
 
 const pullRequestSchema = Type.Object({
   headRefOid: Type.String(),
-  commits: Type.Array(Type.Object({ oid: Type.String(), committedDate: Type.String() })),
   reviews: Type.Array(
     Type.Object({
       author: Type.Union([Type.Object({ login: Type.String() }), Type.Null()]),
@@ -49,7 +48,7 @@ const readPublished = async (runtime: Runtime, repository: string, pr: number) =
     '--repo',
     repository,
     '--json',
-    'headRefOid,commits,reviews,comments',
+    'headRefOid,reviews,comments',
   ];
 
   const view = await readJson(runtime, commandArguments);
@@ -57,6 +56,26 @@ const readPublished = async (runtime: Runtime, repository: string, pr: number) =
   checkOutput(commandArguments, pullRequestSchema, view);
 
   return view;
+};
+
+const readHeadDate = async (runtime: Runtime, repository: Repository, head: string) => {
+  const commandArguments = [
+    'api',
+    '--hostname',
+    repository.host,
+    `repos/${repository.owner}/${repository.name}/commits/${head}`,
+    '--jq',
+    '.commit.committer.date',
+  ];
+
+  const stdout = await run(runtime, commandArguments);
+  const date = stdout.trim();
+
+  if (!date) {
+    throw new Error(`${label(commandArguments)} printed no committer date.`);
+  }
+
+  return date;
 };
 
 // Reads the configured review bots of the base repository and what each did on the pull request's
@@ -81,18 +100,12 @@ export const readReviewBotStatuses = async (
   }
 
   const view = await readPublished(runtime, request.repository, pr);
-  const headCommit = view.commits.find((commit) => commit.oid === view.headRefOid);
-
-  if (headCommit === undefined) {
-    throw new Error(
-      `gh pr view ${pr} did not list the head commit ${view.headRefOid}, so reviewBots cannot date the head.`,
-    );
-  }
+  const headCommittedAt = await readHeadDate(runtime, repository, view.headRefOid);
 
   const decisions = decideReviewBots({
     bots,
     head: view.headRefOid,
-    headCommittedAt: headCommit.committedDate,
+    headCommittedAt,
     reviews: view.reviews.map((review) => ({
       login: review.author?.login ?? '',
       commit: review.commit?.oid,
