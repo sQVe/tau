@@ -5,7 +5,8 @@ import type { QuestionInput } from './validation.js';
 
 const layout: QuestionInput = {
   question: 'Which layout should the dashboard use?',
-  context: 'The dashboard ships next week. Changing the layout later moves every panel.',
+  problem: 'The dashboard ships next week.',
+  impact: 'Changing the layout later moves every panel.',
   options: [{ label: 'Stacked' }, { label: 'Split' }],
 };
 
@@ -20,6 +21,11 @@ it.each([
     rule: 'a recommended first option and a preview on every option',
     questions: [withOptions([{ recommended: true, preview: 'one' }, { preview: 'two' }])],
   },
+  {
+    rule: 'a recommended option that is not first',
+    questions: [withOptions([{}, { recommended: true }])],
+  },
+  { rule: 'a question preview', questions: [{ ...layout, preview: 'draft' }] },
   { rule: 'a preview on only some options', questions: [withOptions([{ preview: 'one' }])] },
 ])('accepts $rule', ({ questions }) => {
   expect(() => {
@@ -28,12 +34,23 @@ it.each([
 });
 
 it.each([
-  { rule: 'a blank context', questions: [{ ...layout, context: ' \n ' }], error: /context/u },
   {
-    rule: 'a context that repeats the question',
-    questions: [{ ...layout, context: ` ${layout.question} ` }],
-    error: /context/u,
+    rule: 'a blank problem',
+    questions: [{ ...layout, problem: ' \n ' }],
+    error: /needs a problem/u,
   },
+  { rule: 'a blank impact', questions: [{ ...layout, impact: ' ' }], error: /needs an impact/u },
+  {
+    rule: 'a problem that repeats the question',
+    questions: [{ ...layout, problem: ` ${layout.question} ` }],
+    error: /repeats the question/u,
+  },
+  {
+    rule: 'a problem equal to the impact',
+    questions: [{ ...layout, impact: ` ${layout.problem} ` }],
+    error: /equals its impact/u,
+  },
+  { rule: 'a blank question preview', questions: [{ ...layout, preview: ' ' }], error: /blank/u },
   { rule: 'a repeated question', questions: [layout, layout], error: /unique/u },
   {
     rule: 'a reserved label',
@@ -49,11 +66,6 @@ it.each([
     rule: 'more than one recommended option',
     questions: [withOptions([{ recommended: true }, { recommended: true }])],
     error: /at most one/u,
-  },
-  {
-    rule: 'a recommended option that is not first',
-    questions: [withOptions([{}, { recommended: true }])],
-    error: /first/u,
   },
   {
     rule: 'a "(Recommended)" label',

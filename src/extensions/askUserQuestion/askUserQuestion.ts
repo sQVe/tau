@@ -22,7 +22,7 @@ const optionSchema = Type.Object({
   recommended: Type.Optional(
     Type.Boolean({
       description:
-        'Set on at most one option per question when you recommend it. Put that option first and say why in its description. The dialog shows a badge; do not add "(Recommended)" to the label.',
+        'Set on at most one option per question when you recommend it. Say why in its description. The dialog shows a badge; do not add "(Recommended)" to the label.',
     }),
   ),
   preview: Type.Optional(
@@ -38,11 +38,22 @@ const questionSchema = Type.Object({
     description:
       'The complete question to ask the user. Should be clear, specific, and end with a question mark. Example: "Which library should we use for date formatting?" If multiSelect is true, phrase it accordingly, e.g. "Which features do you want to enable?"',
   }),
-  context: Type.String({
-    maxLength: 400,
+  problem: Type.String({
+    maxLength: 300,
     description:
-      'MAX 400 CHARACTERS. 1-3 sentences for a user who has not read your discussion: what is being decided, why it needs deciding now, and what the answer changes or blocks. Do not repeat the question.',
+      'MAX 300 CHARACTERS. What is going on, in plain words, for a user who has not read your discussion. State the situation or issue behind the decision, not the decision itself. Do not repeat the question.',
   }),
+  impact: Type.String({
+    maxLength: 200,
+    description:
+      'MAX 200 CHARACTERS. What the answer changes or blocks. Do not repeat the problem.',
+  }),
+  preview: Type.Optional(
+    Type.String({
+      description:
+        'Optional preformatted content that every option acts on, such as a draft to approve. Shown for each option without its own preview. See the tool description.',
+    }),
+  ),
   header: Type.String({
     maxLength: 16,
     description:
@@ -79,24 +90,28 @@ const toolDescription = `Ask the user one or more structured questions during ex
 4. Offer choices to the user about what direction to take
 
 Write for a user who returns cold. They have not read your discussion, so every question must stand alone:
-- \`context\` says what is being decided, why now, and what the answer changes or blocks.
+- \`problem\` says what is going on, in plain words.
+- \`impact\` says what the answer changes or blocks.
 - Each option \`description\` says what happens if chosen, then the main benefit and cost.
 - Say what a thing is. Never name who proposed an option (models, agents, reviewers). Never use option letters, internal codes, or unexplained ADR or ticket numbers.
 
 Usage notes:
 - Users can type a custom answer via the automatically appended "Type something." row on every question or press Esc to abandon the questionnaire. Do NOT author "Other" or "Type something." labels yourself — reserved labels are rejected at runtime.
 - Use multiSelect: true when multiple answers are valid. A typed answer is returned together with the checked options.
-- If you recommend an option, put it first and set \`recommended: true\` on it. At most one option per question may be recommended. The answer returns the plain label.
+- Keep options in a natural, stable order, such as the same order every time you ask the same kind of question. Set \`recommended: true\` on the option you recommend, wherever it sits. The dialog opens on it. At most one option per question may be recommended. The answer returns the plain label.
 
 Preview feature:
 Add a \`preview\` to an option when it changes something you can show: a layout, a config file, a command, a code shape, output, or a draft. Show the unchanged state for an option such as "Keep as is" when a comparison helps. An option with nothing to show, such as "Cancel", needs no preview. Use the same example scenario in every preview and keep each one short, about 10 lines. Skip previews for plain preferences where the labels and descriptions suffice.
+
+Add a \`preview\` to the question for content every option acts on, such as a draft the user approves, publishes, or changes. Every option shows it, and an option's own \`preview\` replaces it while that option is focused.
 
 Preview content renders as preformatted text below the option list while its option is focused. The user can press Ctrl+O to see a long preview in full.
 
 Example question:
 {
   "question": "Where should the cache live?",
-  "context": "Startup reads every config file, which takes 2 seconds. A cache removes that wait, and its location decides who can clear it.",
+  "problem": "Startup reads every config file, which takes 2 seconds. A cache would remove that wait.",
+  "impact": "The cache location decides who can find and clear it.",
   "header": "Cache",
   "options": [
     { "label": "Project folder", "description": "Writes .cache/ next to the code. Easy to find and delete; each clone builds its own cache.", "recommended": true, "preview": "repo/\\n  .cache/config.json" },
@@ -106,7 +121,7 @@ Example question:
 
 const promptGuidelines = [
   "Use ask_user_question whenever the user's request is underspecified and you cannot proceed without concrete decisions — you can ask up to 4 questions per invocation.",
-  'Each question MUST have 2-4 options and a context that lets a user who has not read your discussion understand it on its own. Every option requires a concise label (1-5 words) and a description of what happens if chosen and its trade-off. Do NOT author "Other" or "Type something." labels yourself.',
+  'Each question MUST have 2-4 options and a problem and an impact that let a user who has not read your discussion understand it on their own. Every option requires a concise label (1-5 words) and a description of what happens if chosen and its trade-off. Do NOT author "Other" or "Type something." labels yourself.',
   'Never name who proposed an option, and never use option letters, internal codes, or unexplained ADR or ticket numbers. Say what the thing is.',
   'Ask one question by default. Group only questions that do not depend on each other. Ask a question that depends on an earlier answer after you have that answer.',
   'If the user closes the dialog without an answer, state the blocked decision and stop. Closing the dialog is not approval, and do not ask the same question again in prose.',
@@ -138,7 +153,9 @@ const questionsKey = (questions: DialogQuestion[]): string =>
   JSON.stringify(
     questions.map((question) => [
       question.question,
-      question.context,
+      question.problem,
+      question.impact,
+      question.preview ?? null,
       question.header,
       question.multiSelect,
       question.options.map((option) => [

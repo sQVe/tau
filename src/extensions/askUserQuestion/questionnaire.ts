@@ -1,7 +1,9 @@
 export interface QuestionFacts {
   question: string;
   multiSelect: boolean;
-  options: { label: string; preview?: string }[];
+  // Shown for every option without a preview of its own.
+  preview?: string;
+  options: { label: string; recommended?: boolean; preview?: string }[];
 }
 
 export type KeyPress =
@@ -50,10 +52,28 @@ export type KeyOutcome =
   | { kind: 'cancel' }
   | { kind: 'defer' };
 
-export const initialState = (count: number): QuestionnaireState => ({
+// The preview shown while the cursor is on an option row. The custom and action rows show none.
+export const shownPreview = (facts: QuestionFacts, row: number): string | undefined => {
+  const option = facts.options[row];
+
+  return option === undefined ? undefined : (option.preview ?? facts.preview);
+};
+
+// The cursor opens on the recommended option, or on the first option when none is recommended.
+const openingCursor = (facts: QuestionFacts): number =>
+  Math.max(
+    0,
+    facts.options.findIndex((option) => option.recommended === true),
+  );
+
+export const initialState = (questions: readonly QuestionFacts[]): QuestionnaireState => ({
   tab: 0,
-  questions: Array.from({ length: count }, () => ({ cursor: 0, checked: [], customText: '' })),
-  answers: Array.from({ length: count }, () => undefined),
+  questions: questions.map((facts) => ({
+    cursor: openingCursor(facts),
+    checked: [],
+    customText: '',
+  })),
+  answers: questions.map(() => undefined),
   fullPreview: undefined,
 });
 
@@ -147,7 +167,8 @@ const answerFor = (facts: QuestionFacts, question: QuestionState): Answer | unde
     return customText === '' ? undefined : { question: facts.question, selected: [customText] };
   }
 
-  const preview = option.preview === undefined ? {} : { preview: option.preview };
+  const shown = shownPreview(facts, question.cursor);
+  const preview = shown === undefined ? {} : { preview: shown };
 
   return { question: facts.question, selected: [option.label], ...preview };
 };
@@ -328,7 +349,7 @@ export const handleKey = (
     return key.kind === 'cancel' ? { kind: 'cancel' } : { kind: 'update', state };
   }
 
-  const preview = facts.options[question.cursor]?.preview;
+  const preview = shownPreview(facts, question.cursor);
 
   if (state.fullPreview !== undefined && preview !== undefined) {
     return handlePreviewKey(state, key, viewport);

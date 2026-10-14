@@ -1,6 +1,8 @@
 export interface QuestionInput {
   question: string;
-  context: string;
+  problem: string;
+  impact: string;
+  preview?: string;
   options: readonly { label: string; recommended?: boolean; preview?: string }[];
 }
 
@@ -8,20 +10,30 @@ const reservedLabels = new Set(['Other', 'Type something.']);
 
 const isBlank = (text: string) => text.trim() === '';
 
-const validateContext = (question: QuestionInput) => {
-  if (isBlank(question.context)) {
-    throw new Error(`Question "${question.question}" needs a context.`);
+const validateProblem = (question: QuestionInput) => {
+  if (isBlank(question.problem)) {
+    throw new Error(`Question "${question.question}" needs a problem.`);
   }
 
-  if (question.context.trim() === question.question.trim()) {
+  if (isBlank(question.impact)) {
+    throw new Error(`Question "${question.question}" needs an impact.`);
+  }
+
+  if (question.problem.trim() === question.question.trim()) {
     throw new Error(
-      `The context of "${question.question}" repeats the question. Say what is being decided and what the answer changes.`,
+      `The problem of "${question.question}" repeats the question. Say what is going on.`,
+    );
+  }
+
+  if (question.problem.trim() === question.impact.trim()) {
+    throw new Error(
+      `The problem of "${question.question}" equals its impact. Say what the answer changes or blocks in the impact.`,
     );
   }
 };
 
 const validatePreviews = (question: QuestionInput) => {
-  const previews = question.options.map((option) => option.preview);
+  const previews = [question.preview, ...question.options.map((option) => option.preview)];
 
   if (previews.some((preview) => preview !== undefined && isBlank(preview))) {
     throw new Error(`A preview of "${question.question}" is blank. Remove it or show content.`);
@@ -33,11 +45,6 @@ const validateRecommendation = (question: QuestionInput) => {
 
   if (recommended.length > 1) {
     throw new Error(`Set recommended: true on at most one option of "${question.question}".`);
-  }
-
-  // The dialog focuses the first option, and short terminals can hide the others.
-  if (recommended.length === 1 && question.options[0]?.recommended !== true) {
-    throw new Error(`Put the recommended option of "${question.question}" first.`);
   }
 };
 
@@ -67,7 +74,7 @@ export const validateQuestions = (questions: readonly QuestionInput[]): void => 
   }
 
   for (const question of questions) {
-    validateContext(question);
+    validateProblem(question);
     validateOptions(question);
     validateRecommendation(question);
     validatePreviews(question);

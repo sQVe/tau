@@ -31,7 +31,7 @@ const at = (
   cursor: number,
   change: { checked?: number[]; customText?: string; tab?: number } = {},
 ): QuestionnaireState => {
-  const state = initialState(questions.length);
+  const state = initialState(questions);
   const tab = change.tab ?? 0;
 
   return {
@@ -196,14 +196,14 @@ it('checks the custom row exactly when it has text', () => {
 });
 
 it('keeps typed text per question', () => {
-  const state = withCustomText({ ...initialState(2), tab: 1 }, 'Docs');
+  const state = withCustomText({ ...initialState([single, multi]), tab: 1 }, 'Docs');
 
   expect(state.questions.map((question) => question.customText)).toEqual(['', 'Docs']);
 });
 
 it('answers questions in turn and submits after the last one', () => {
   const questions = [single, multi];
-  const first = run(questions, initialState(2), [press('enter')]);
+  const first = run(questions, initialState(questions), [press('enter')]);
 
   expect(first).toMatchObject({ kind: 'update', state: { tab: 1 } });
 
@@ -223,7 +223,7 @@ it('answers questions in turn and submits after the last one', () => {
 
 it('returns to an unanswered question before submitting', () => {
   const questions = [single, multi];
-  const skipped = run(questions, initialState(2), [press('nextQuestion'), press('space')]);
+  const skipped = run(questions, initialState(questions), [press('nextQuestion'), press('space')]);
   const state = (skipped as { state: QuestionnaireState }).state;
 
   expect(run(questions, state, [press('enter')])).toMatchObject({
@@ -237,7 +237,7 @@ it.each([
   { key: press('nextQuestion'), from: 1, tab: 0 },
   { key: press('previousQuestion'), from: 0, tab: 1 },
 ])('switches questions with $key.kind from $from', ({ key, from, tab }) => {
-  const state = { ...initialState(2), tab: from };
+  const state = { ...initialState([single, multi]), tab: from };
 
   expect(handleKey(state, key, [single, multi], viewport, false)).toMatchObject({
     kind: 'update',
@@ -255,7 +255,7 @@ it.each([
 it('submits a changed answer after returning to an answered question', () => {
   const questions = [multi, single];
 
-  const outcome = run(questions, initialState(2), [
+  const outcome = run(questions, initialState(questions), [
     press('space'),
     press('enter'),
     press('previousQuestion'),
@@ -278,7 +278,7 @@ it('submits a changed answer after returning to an answered question', () => {
 it('keeps an answer when the user only moves through a multi-select question', () => {
   const questions = [multi, single];
 
-  const outcome = run(questions, initialState(2), [
+  const outcome = run(questions, initialState(questions), [
     press('space'),
     press('enter'),
     press('previousQuestion'),
@@ -299,7 +299,7 @@ it('keeps an answer when the user only moves through a multi-select question', (
 it('keeps a single-select answer when a key does not move the cursor', () => {
   const questions = [single, multi];
 
-  const outcome = run(questions, initialState(2), [
+  const outcome = run(questions, initialState(questions), [
     press('enter'),
     press('previousQuestion'),
     press('up'),
@@ -497,4 +497,56 @@ it('moves a restored cursor off the action row to the saved single-select answer
   const saved = { ...at([single], 3), answers: [answer] };
 
   expect(restoredState(saved, [single]).questions[0]?.cursor).toBe(1);
+});
+
+const recommendedSecond: QuestionFacts = {
+  question: 'Which layout?',
+  multiSelect: false,
+  preview: 'draft',
+  options: [
+    { label: 'Stacked' },
+    { label: 'Split', recommended: true },
+    { label: 'Tabs', preview: 'tabs' },
+  ],
+};
+
+it.each([
+  { rule: 'the recommended option', questions: [recommendedSecond], cursor: 1 },
+  { rule: 'the first option without a recommendation', questions: [single, multi], cursor: 0 },
+])('opens the cursor on $rule', ({ questions, cursor }) => {
+  expect(initialState(questions).questions[0]?.cursor).toBe(cursor);
+});
+
+it('keeps the saved cursor of a restored state', () => {
+  const saved = at([recommendedSecond], 2);
+
+  expect(restoredState(saved, [recommendedSecond]).questions[0]?.cursor).toBe(2);
+});
+
+it.each([
+  { rule: 'the question preview', cursor: 0, preview: 'draft' },
+  { rule: 'the question preview of a recommended option', cursor: 1, preview: 'draft' },
+  { rule: 'the own preview of an option', cursor: 2, preview: 'tabs' },
+])('returns $rule in the answer', ({ cursor, preview }) => {
+  const outcome = handleKey(
+    at([recommendedSecond], cursor),
+    press('enter'),
+    [recommendedSecond],
+    viewport,
+    false,
+  );
+
+  expect(outcome).toMatchObject({ kind: 'submit', answers: [{ preview }] });
+});
+
+it('opens the full preview of the question on an option without one', () => {
+  const outcome = handleKey(
+    at([recommendedSecond], 0),
+    press('preview'),
+    [recommendedSecond],
+    viewport,
+    false,
+  );
+
+  expect(outcome).toMatchObject({ kind: 'update', state: { fullPreview: { offset: 0 } } });
 });
