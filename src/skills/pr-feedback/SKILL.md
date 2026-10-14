@@ -156,10 +156,11 @@ see for themselves.
 8. Draft the replies with the rules in Replies below.
    - Author mode, review summaries and conversation comments: post one PR comment only for what a
      person raised there. Answer a person's question. Give the reason for a person's finding you
-     judged Not worth changing or Incorrect. Link each source comment.
-   - Post nothing outside a thread for a bot's finding, whether you fixed or declined it. A bot's
-     comment has `isBot` true. Post nothing for a person's finding you fixed, because the pushed
-     commit shows the fix. List these findings in step 10's report.
+     judged Not worth changing or Incorrect. Cite the issue for a person's finding you tracked. Link
+     each source comment.
+   - Post nothing outside a thread for a bot's finding, whether you fixed, declined, or tracked it.
+     A bot's comment has `isBot` true. Post nothing for a person's finding you fixed, because the
+     pushed commit shows the fix. List these findings in step 10's report.
    - Only in author mode on a PR the viewer did not write, show every draft, including bot drafts,
      in one `ask_user_question` question. Offer post all or skip all; the user can type which drafts
      to edit or skip.
