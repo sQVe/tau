@@ -81,6 +81,22 @@ describe('saved records', () => {
     });
   });
 
+  it('shows a replies.json shape that reads back when the shape is wrong', async () => {
+    const directory = await roundDirectory();
+    const path = join(directory, 'replies.json');
+
+    await writeFile(path, '{"replies": [{"threadId": "T1", "replyTo": 1, "body": "Fixed."}]}');
+
+    const failure = await readReplies(directory).catch((error: unknown) => error);
+    const example = /\{.*\}/u.exec(String(failure))?.[0];
+
+    expect(example).toBeDefined();
+
+    await writeFile(path, example ?? '');
+
+    await expect(readReplies(directory)).resolves.toBeDefined();
+  });
+
   it('rejects text that is not JSON', async () => {
     const directory = await roundDirectory();
 

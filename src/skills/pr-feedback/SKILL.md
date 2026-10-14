@@ -167,6 +167,16 @@ see for themselves.
    - Apply any requested edits or skips before the post call. A skipped thread stays open. Write the
      remaining drafts and the resolves from step 9 to `replies.json` in the `directory` that the
      script returned. The tool previews writes to people and asks for confirmation.
+   - Write `replies.json` in exactly this shape. `reply` and `comment` may be null, and `answers`
+     lists the review or comment IDs the PR comment answers.
+
+     ```json
+     {
+       "version": 1,
+       "threads": [{ "id": "<thread id>", "reply": "<text or null>", "resolve": true }],
+       "comment": { "body": "<text>", "answers": ["<review or comment id>"] }
+     }
+     ```
 
 9. Post and resolve with the `pr_feedback` tool's `post`. Pass the PR's head after step 7's push as
    `head`, or the script's `headRefOid` when the round did not push.
