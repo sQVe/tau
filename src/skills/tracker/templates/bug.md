@@ -2,6 +2,7 @@
 
 Use this shape for a defect a person should see. Start the title with `Fix <symptom>`. Describe the
 symptom only. The cause, files, and tests belong in the agent tickets written when the work starts.
+Aim for about 250 words, and put longer output, such as logs, in linked files.
 
 ```markdown
 One sentence on the symptom and who sees it.

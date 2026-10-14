@@ -3,7 +3,7 @@
 Use this shape for a human ticket that groups slices. Its slices are its children. The container
 holds no full design: it holds a short summary and one line per key decision. Each slice's
 `## Design` holds the rules that slice follows. Leave out optional sections that have nothing to
-say.
+say. Aim for about 250 words, and put longer details in linked files.
 
 ```markdown
 One to three sentences on what the design delivers and why.
