@@ -166,7 +166,7 @@ writes a tool makes, such as `slice` `apply`.
      `linear issue comment update <comment> --body-file <file> --yes`.
    - Add a dependency that the `slice` tool does not write, such as one on a ticket outside the
      container: `linear issue relation add <ticket> blocked-by <other>`. Remove one with
-     `linear issue relation delete <ticket> blocked-by <other>`.
+     `linear issue relation delete <ticket> blocked-by <other> --yes`.
    - Move a slice to In Progress when it starts. Read its state name with
      `linear api 'query($id: String!) { issue(id: $id) { state { name } } }' --variable id=<slice>`.
      If the name is `In Progress`, skip the move; any other state, `In Review` included, moves. Move
