@@ -2,10 +2,10 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { isMissingFile } from '../../errors.js';
+import { readGit, readGitBytes, readOptionalGit } from '../../gitOutput.js';
 import { readCaptureRecord, recheckFileName } from '../../reviewCapture/record.js';
 import { fixedPrefixes, hashBytes } from '../../reviewCapture/reviewCapture.js';
 import { checkReviewDirectory, existingEntry } from '../../reviewCapture/reviewDirectory.js';
-import { readGit, readGitBytes, readOptionalGit } from './git.js';
 import { compareDiffs, decideReuse } from './reuseDecisions.js';
 import type { DiffComparison, Reuse } from './reuseDecisions.js';
 

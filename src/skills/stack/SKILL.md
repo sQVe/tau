@@ -41,44 +41,22 @@ Use this skill when a branch belongs to a stack, or when another skill sends you
 
 ## Procedure
 
-1. Stack check. Run it on the current branch before you create, rebase, or push it. It ends in one
-   of four results: tracked, untracked, standalone, or unknown.
-   - Run `gh stack view --json`. It prints
-     `{trunk, currentBranch, branches: [{name, head, base, isCurrent, isMerged, isQueued, needsRebase, pr: {number, url, state}}]}`,
-     with branches ordered bottom to top. `head` and `base` are commit SHAs, and `base` can be
-     stale. Exit code 0 means tracked.
-   - The branch's parent is the nearest branch below it whose `isMerged` is false, or `trunk` when
-     none is. Its PR's base must be that parent.
-   - Exit code 6 means the branch belongs to several stacks. Check out a non-trunk branch first, or
-     ask.
-   - Exit code 2 does not prove the branch is outside a stack. Stack state lives per worktree in
-     `$(git rev-parse --git-dir)/gh-stack`, so a stack tracked in another worktree, or only on
-     GitHub, does not show here. Read GitHub next:
-     - The branch's open PR:
-       `gh pr list --repo <repo> --head <branch> --state open --json number,url,baseRefName,headRepositoryOwner,headRepository`.
-       `--head` matches the branch name in any fork. Keep only PRs whose head owner and repository
-       name are those of the repository the branch pushes to. More than one left means unknown.
-     - Open PRs based on the branch:
-       `gh pr list --repo <repo> --base <branch> --state open --json number,headRefName`.
-     - For an open PR, the GitHub stack that holds it:
-       `gh api --hostname <host> "repos/<owner>/<name>/stacks?pull_request=<number>" --jq '(.[0].pull_requests // []) | map(.number)'`.
-       It prints `[]` when no stack holds the PR. A 404 means the repository has no stacked PRs.
-     - When the PR's base is not the default branch, the open PR of that base:
-       `gh pr list --repo <repo> --head <baseRefName> --state open --json number,url,headRepositoryOwner,headRepository`.
-       Keep only PRs from the base repository, since a PR's base branch lives there.
-   - The result is untracked when a GitHub stack holds the PR, the PR's base has an open PR, or an
-     open PR is based on the branch. When a GitHub stack holds it, import it with step 3 and run the
-     check again. Otherwise stop and report the chain of PRs. Suggest
-     `gh stack init --base <trunk> <branches, bottom to top>`, and run it only after the user
-     approves.
-   - The result is standalone when none of those hold.
-   - Any other exit code, or a read that fails, means unknown. Stop and report it. Never treat
-     unknown as standalone.
+1. Stack check. Run it on the current branch before you create, rebase, or push it. Call the `stack`
+   tool's `check` action, with `remote` when the branch has no push target. It ends in one of four
+   results.
+   - Tracked: the PR's base must be the returned `parent`.
+   - Untracked: when the result has a `githubStack`, import it with step 3 and run the check again.
+     Otherwise stop and report the `chain`. Suggest
+     `gh stack init --base <trunk> <branches, bottom to top>`, with `chainBase` as the trunk or the
+     repository's default branch when it is null, and run it only after the user approves.
+   - Standalone: the branch is in no stack.
+   - Unknown: stop and report the `reason`. Never treat unknown as standalone.
 
-2. Create a branch on top of a parent branch, after the calling skill's approval. Run step 1's
-   GitHub reads on the parent first. Stop when an open PR other than the new branch's is based on
-   the parent: `gh stack add` adds only to the top of a stack, so a stack cannot fork. The calling
-   skill decides what happens next.
+2. Create a branch on top of a parent branch, after the calling skill's approval. Run the `check`
+   action on the parent first, with `branch: <parent>`. Stop on an unknown result, or when its
+   `basedOn` (returned for a tracked parent too) lists an open PR from a branch other than the new
+   branch: `gh stack add` adds only to the top of a stack, so a stack cannot fork. The calling skill
+   decides what happens next.
    - When `git rev-parse --verify --quiet refs/heads/<branch>` finds the branch, an earlier run may
      have created it. Run `gh stack checkout <branch>`. When it exits 0 and `gh stack view --json`
      lists the parent directly below the branch, the branch is in place. Skip to the last check of
@@ -118,24 +96,17 @@ Use this skill when a branch belongs to a stack, or when another skill sends you
    - When a PR below the branch merged on GitHub, check that `gh stack view --json` shows its
      `isMerged` as true. Stop if it does not. The rebase reads merge state from GitHub and ignores a
      failed read, and it would then replay the commits of a squash-merged branch.
-   - Run the remote-history check on each active branch, one that is not merged or queued. Note its
-     remote tip with `git rev-parse --verify --quiet <remote>/<branch>`. When that prints nothing,
-     note the branch as unpublished and skip the check for it. Otherwise check that
-     `git log --oneline <branch>..<remote>/<branch>` lists nothing.
-     - For a branch you rebased since its last push, with plain `git rebase` or an earlier restack,
-       use its tip from before the first of those rebases in place of `<branch>`.
-     - When it lists commits for a branch you have not rebased since its last push, and
-       `git merge-base --is-ancestor <branch> <remote>/<branch>` succeeds, the branch is only behind
-       its remote. Go on: `gh stack rebase` and `gh stack sync` fast-forward it.
-     - After a lower PR in the stack merged on GitHub, GitHub rebases the branches above it on the
-       remote. Such a branch has only been rewritten when both
-       `git cherry <branch> <remote>/<branch> <remote>/<new parent>` and
-       `git cherry <remote>/<branch> <branch> <old parent>` print only lines that start with `-`.
-       `<new parent>` is the first unmerged branch below, or the trunk. `<old parent>` is the local
-       branch directly below, merged or not, as it was before the restack. Go on: the restack drops
-       the merged commits and the push replaces the rewritten tip with the same changes.
-     - Stop and report each other branch it lists commits for. The rebase skips a branch that has
-       diverged from its remote, and the push would then overwrite those remote commits.
+   - Run the remote-history check: call the `stack` tool's `history` action with `remote`. Pass
+     `startTips` with the tip from before the first rebase for each branch you rebased since its
+     last push, with plain `git rebase` or an earlier restack.
+     - Stop and report when it returns `stop`, or a layer that is `diverged` or `unknown`. The
+       rebase skips a branch that has diverged from its remote, and the push would then overwrite
+       those remote commits.
+     - Go on for a layer that is `unpublished`, `current`, `behind`, or `rewritten`.
+       `gh stack rebase` and `gh stack sync` fast-forward a behind branch. For a rewritten branch
+       the restack drops the merged commits, and the push replaces the rewritten tip with the same
+       changes.
+     - Note each layer's `remoteTip` for step 5, and note an `unpublished` layer as such.
    - From the branch you changed, run `gh stack rebase --upstack --remote <remote>`. It rebases that
      branch onto its parent and each branch above onto the one below it. To bring the whole stack up
      to date with the trunk, run `gh stack rebase --remote <remote>` instead. Both fetch the stack's
@@ -144,18 +115,18 @@ Use this skill when a branch belongs to a stack, or when another skill sends you
      trunk, so the merged commits drop out, squash merges included.
    - Exit code 3 means a conflict. Resolve it as in step 4 of the update-branch skill, but stage the
      files and run `gh stack rebase --continue` instead of `git rebase --continue`.
-   - A stack rebase is paused when `$(git rev-parse --git-dir)/gh-stack-rebase-state` exists, and
-     exit code 7 also means one is in progress. HEAD is detached then, so step 1 cannot detect the
-     stack. Resolve its conflicts the same way and finish it with `gh stack rebase --continue`,
-     never `git rebase --continue`.
+   - A stack rebase is paused when the check in step 1 reports it, and exit code 7 also means one is
+     in progress. HEAD is detached then, so the check cannot name the stack. Resolve its conflicts
+     the same way and finish it with `gh stack rebase --continue`, never `git rebase --continue`.
    - Abort a stack rebase with `gh stack rebase --abort` only with the user's permission. It
      restores every branch.
 
 5. Push.
    - After any commit made since the last restack, restack again with step 4 and rerun the affected
      checks. The push does not restack, so the branches above would miss that commit.
-   - Immediately before the push, run `git fetch --prune <remote>` again. Stop if any noted remote
-     tip moved or is gone, or if a branch you noted as unpublished now has a remote tip.
+   - Immediately before the push, run `git fetch --prune <remote>` again. Stop if any remote tip
+     noted from `history` moved or is gone, or if a branch you noted as unpublished now has a remote
+     tip.
    - Run `gh stack push --remote <remote>`. It force-pushes every active branch with a per-branch
      `--force-with-lease` and skips merged and queued branches. It takes its leases from its own
      fetch, so they protect only against changes pushed after that fetch, not the tips you noted.

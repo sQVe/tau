@@ -15,6 +15,7 @@ import handoverExtension from '../src/extensions/handover/handover.js';
 import prExtension from '../src/extensions/pr/pr.js';
 import prFeedbackExtension from '../src/extensions/prFeedback/prFeedback.js';
 import sliceExtension from '../src/extensions/slice/slice.js';
+import stackExtension from '../src/extensions/stack/stack.js';
 import trackerExtension from '../src/extensions/tracker/tracker.js';
 import { skillTools } from '../src/skillTools.js';
 import { createTemporaryRepository } from './gitRepository.js';
@@ -30,6 +31,7 @@ const registerTools = (pi: ExtensionAPI) => {
   prExtension(pi);
   prFeedbackExtension(pi);
   sliceExtension(pi);
+  stackExtension(pi);
   trackerExtension(pi);
 };
 

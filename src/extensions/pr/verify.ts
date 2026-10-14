@@ -5,9 +5,9 @@ import { Type } from 'typebox';
 
 import { checkOutput, parseRepository, readJson } from '../../github.js';
 import type { Runtime } from '../../github.js';
+import { readGit } from '../../gitOutput.js';
 import { existingEntry } from '../../reviewCapture/reviewDirectory.js';
 import { checkTauDirectory, locateTauChild } from '../../tauDirectory.js';
-import { readGit } from './git.js';
 import { comparePullRequest } from './verifyDecisions.js';
 import type { Difference, PullRequestFields } from './verifyDecisions.js';
 

@@ -81,17 +81,15 @@ or Git. Workers then carry out the agent tickets.
      linked PR is merged, stop and ask the user. If it is not ready for another reason, stop and
      report what blocks it.
    - An unmerged blocker counts only when one of its attachment URLs is a pull request that
-     `gh pr view <url> --json state,headRefName,baseRefName` returns as `OPEN`. Run the GitHub reads
-     of the [stack skill](../stack/SKILL.md)'s stack check on each such PR's branch.
-   - Open blockers are in one chain when one GitHub stack holds them all, or when only one blocker
-     is open. The parent is the open blocker highest in that stack. Stop and report when open
-     blockers sit in different stacks, or when several are open and no stack holds them.
-   - When an open PR other than this slice's is based on the parent, or the parent's GitHub stack
-     lists a PR above it, the parent already has a branch above it. A stack cannot fork. When no
-     GitHub stack holds that PR, stop and report the chain. Otherwise ask with `ask_user_question`:
-     wait until the parent merges, recommended, or stack on the top of that stack instead. Stacking
-     there makes this slice depend on the slices above the parent too. On wait, the slice is not
-     ready. Otherwise that top branch becomes the parent.
+     `gh pr view <url> --json state,headRefName,baseRefName` returns as `OPEN`.
+   - With no open blocker there is no parent, and the slice starts unstacked. Otherwise call the
+     `stack` tool's `chain` action with the URLs of the open blockers as `pullRequests`, and this
+     slice's PR as `slicePullRequest` when it has one. On `stop`, stop and report its `reason`.
+     Otherwise its `parent` is the parent for step 4.
+   - When `branchAbove` is true, ask with `ask_user_question`: wait until the parent merges,
+     recommended, or stack on the top of that stack instead. Stacking there makes this slice depend
+     on the slices above the parent too. On wait, the slice is not ready. Otherwise the stack's
+     `topBranch` becomes the parent.
    - When `git worktree list --porcelain` shows the parent branch checked out in another worktree,
      that worktree owns the stack. Stop, and offer to start the slice there with the
      [handover skill](../handover/SKILL.md).
@@ -117,8 +115,7 @@ or Git. Workers then carry out the agent tickets.
      `origin/<default branch>`.
    - With a parent from step 2, the slice starts stacked. Fetch the parent with
      `git fetch origin refs/heads/<parent>:refs/remotes/origin/<parent>`. Its base is
-     `origin/<parent>`. Its trunk is the base of the bottom PR in the parent's GitHub stack, or the
-     default branch when no stack holds the parent.
+     `origin/<parent>`. Its trunk is the `trunk` the `chain` action returned in step 2.
 
 5. Read the code the slice touches in the tree the workers will use: the branch when
    `git rev-parse --verify --quiet refs/heads/<branchName>` finds it, otherwise the base. The

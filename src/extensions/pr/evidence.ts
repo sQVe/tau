@@ -4,6 +4,7 @@ import { basename, join } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../../errors.js';
 import type { Runtime } from '../../github.js';
+import { readGit, readGitBytes } from '../../gitOutput.js';
 import { readReviewEvidence } from '../../reviewCapture/evidence.js';
 import type { ReviewEvidence } from '../../reviewCapture/evidence.js';
 import { checkReviewDirectory } from '../../reviewCapture/reviewDirectory.js';
@@ -14,7 +15,6 @@ import type {
   ModifiedCheckLog,
   PublicationGap,
 } from './evidenceDecisions.js';
-import { readGit, readGitBytes } from './git.js';
 import { readReuse } from './reuse.js';
 import type { ReuseResult } from './reuse.js';
 import { readTarget } from './target.js';
