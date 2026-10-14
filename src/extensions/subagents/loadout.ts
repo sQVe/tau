@@ -149,20 +149,29 @@ export const requireTrustedProject = (
   }
 };
 
+// A different project needs its own trust decision, not the parent's inherited approval.
+export const requireSessionCwd = (
+  context: Pick<ExtensionContext, 'cwd'>,
+  requested?: string,
+): string => {
+  const cwd = realpathSync(resolve(context.cwd, requested ?? '.'));
+
+  if (cwd !== realpathSync(context.cwd)) {
+    throw new Error(
+      `Workers launch only in this session's cwd (${context.cwd}). For ${cwd}, send the task to the agent already running there (herdr agent list, herdr agent prompt) or start a session there.`,
+    );
+  }
+
+  return cwd;
+};
+
 const resolveLaunchPlan = (
   input: LaunchRequest,
   context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>,
 ) => {
   requireTrustedProject(context);
 
-  const cwd = realpathSync(resolve(context.cwd, input.cwd ?? '.'));
-
-  // A different project needs its own trust decision, not the parent's inherited approval.
-  if (cwd !== realpathSync(context.cwd)) {
-    throw new Error(
-      `Workers launch only in this session's cwd (${context.cwd}). For ${cwd}, send the task to the agent already running there (herdr agent list, herdr agent prompt) or start a session there.`,
-    );
-  }
+  const cwd = requireSessionCwd(context, input.cwd);
 
   const agentDirectory = realpathSync(getAgentDir());
   const profile = resolveProfile(cwd, agentDirectory, true, input.profile);

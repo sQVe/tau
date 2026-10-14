@@ -169,3 +169,15 @@ it('fails a qa launch for a repository with a bad entry only', async () => {
   await expect(apply(launch(worktree), worktree)).rejects.toThrow('dataWrites');
   await expect(apply(launch(worktree, { profile: 'browser' }), worktree)).resolves.toBeDefined();
 });
+
+it('refuses a cwd outside the session before it reads settings or runs a command', async () => {
+  const { worktree, writeUser } = await fixture('git@github.com:sQVe/cape.git');
+  const other = join(worktree, 'other');
+  const marker = join(worktree, 'ran');
+
+  mkdirSync(other);
+  writeUser(settingsFor(`touch ${marker}`));
+
+  await expect(apply(launch(other), worktree)).rejects.toThrow("only in this session's cwd");
+  expect(existsSync(marker)).toBe(false);
+});

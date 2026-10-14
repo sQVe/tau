@@ -9,6 +9,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { readGitOutput } from '../../gitOutput.js';
 import { repositoryFromRemote } from '../../repositoryRemote.js';
 import type { LaunchParameters } from './launchParameters.js';
+import { requireSessionCwd } from './loadout.js';
 import { briefWithQaLines, qaBriefLines, urlCommandResult } from './qaBrief.js';
 import { readQaSettings } from './qaSettings.js';
 
@@ -48,6 +49,9 @@ export const applyQaSettings = async (
   if (parameters.profile !== 'qa' || !existsSync(worktree)) {
     return parameters;
   }
+
+  // The command runs checkout code, so only the session's own cwd may reach it.
+  requireSessionCwd(context, parameters.cwd);
 
   const originOutput = await readGitOutput(worktree, ['remote', 'get-url', 'origin']);
   const originUrl = originOutput?.trim();
