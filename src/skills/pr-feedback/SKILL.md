@@ -153,8 +153,14 @@ see for themselves.
    - Otherwise push with `git push <remote> HEAD:refs/heads/<headRefName>`.
    - If the push or the lease is rejected, stop and report.
 
-8. Draft the replies with the rules in Replies below. In author mode, answer findings from review
-   summaries and conversation comments in one PR comment that links each source comment.
+8. Draft the replies with the rules in Replies below.
+   - Author mode, review summaries and conversation comments: post one PR comment only for what a
+     person raised there. Answer a person's question. Give the reason for a person's finding you
+     judged Not worth changing or Incorrect. Cite the issue for a person's finding you tracked. Link
+     each source comment.
+   - Post nothing outside a thread for a bot's finding, whether you fixed, declined, or tracked it.
+     A bot's comment has `isBot` true. Post nothing for a person's finding you fixed, because the
+     pushed commit shows the fix. List these findings in step 10's report.
    - Only in author mode on a PR the viewer did not write, show every draft, including bot drafts,
      in one `ask_user_question` question. Offer post all or skip all; the user can type which drafts
      to edit or skip.
@@ -178,8 +184,8 @@ see for themselves.
     - Author mode: use the headings Fixed, Not worth changing, Incorrect, and Blocked from the
       triage rules, then Answered or left open for questions and threads that wait on the reviewer.
     - Reviewer mode: use the headings Resolved, Follow-up drafted, and Open for other reviewers.
-    - Give each bullet the thread link and what you did: replied, resolved, or left open. List what
-      you judged as needing nothing, so the user can overrule it.
+    - Give each bullet the thread link and what you did: replied, resolved, left open, or no reply.
+      List what you judged as needing nothing, so the user can overrule it.
     - In both modes, add a CI section with each failing or pending check, its link, and its outcome.
       List each gap there as unread, never as passing. Add a Conflicts section with what the rebase
       resolved or why it did not run. End with the checks you ran.
