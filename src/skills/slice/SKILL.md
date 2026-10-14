@@ -90,6 +90,9 @@ design it follows in its Design section. The container has one sub-ticket per sl
    When a criterion has none, change the draft and call `read` again.
 
 6. Call `slice` with `apply` for the last read.
+   - First read the ownership of the existing container and of each existing slice that the read's
+     `writes` change, as the tracker skill's [Hard rules](../tracker/SKILL.md#hard-rules) say. When
+     another person owns one, show those writes and ask with `ask_user_question` before you apply.
    - When it says the state changed, call `read` again, resolve its `problems` as in step 2, and
      apply again.
    - When it returns `unchanged`, report that Linear already matches the plan.
