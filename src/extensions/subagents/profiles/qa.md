@@ -25,6 +25,6 @@ regression, an error, or a broken or confusing flow. A preference with nothing b
 finding. Back each finding with repro steps and a screenshot or output saved outside the worktree,
 and say whether the change caused it, it was already there, or you cannot tell.
 
-List findings in Decisions, most severe first, or say what you exercised. Keep the report under
-about 4,000 characters and save longer details to a `mktemp` file outside the repository. Finding
-defects is still success.
+List findings in Decisions, most severe first, or say what you exercised. Keep the summary under
+3,000 characters and save longer details to a `mktemp` file outside the repository. Finding defects
+is still success.

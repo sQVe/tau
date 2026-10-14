@@ -48,7 +48,6 @@ import {
   recordEvent,
   taskEnded,
 } from './records.js';
-import { textLimit } from './types.js';
 import type { Acknowledgement, Loadout, Question, Report, Task } from './types.js';
 
 type WorkerPhase = 'starting' | 'active' | 'waiting' | 'done';
@@ -85,7 +84,8 @@ const parentWatchInterval = 1000;
 const dispatchWatchInterval = 50;
 // Streaming updates record activity at most this often.
 const streamingActivityInterval = 500;
-const minimumBlockerLength = 200;
+const summaryLengthLimit = 3000;
+const summaryLengthLimitText = summaryLengthLimit.toLocaleString('en-US');
 
 const summaryHeadings = handoverSectionNames.map((name) => `## ${name}`).join(', ');
 
@@ -94,7 +94,7 @@ const reportParameters = Type.Object({
   summary: Type.String({
     minLength: 1,
     maxLength: 32_000,
-    description: `A short lead, then exactly these headings: ${summaryHeadings}. Write None under an empty one. A report without them is refused.`,
+    description: `A short lead, then exactly these headings: ${summaryHeadings}. Write None under an empty one. A report without them is refused. At most ${summaryLengthLimitText} characters; save longer details to a file and name it in evidence.`,
   }),
   evidence: Type.Array(Type.String({ minLength: 1, maxLength: 32_000 }), { maxItems: 100 }),
   blocker: Type.Optional(
@@ -467,16 +467,20 @@ const refuseMissingSections = (summary: string) => {
   );
 };
 
-// Concerns come last and matter most, so trim the blocker first and cut the summary only to fit a short one.
-const withBlocker = (summary: string, blocker: string | undefined): string => {
-  if (blocker === undefined) {
-    return summary;
+const refuseLongSummary = (summary: string) => {
+  if (summary.length <= summaryLengthLimit) {
+    return;
   }
 
-  const room = Math.max(minimumBlockerLength, textLimit - summary.length - 'Blocker: \n\n'.length);
+  const length = summary.length.toLocaleString('en-US');
 
-  return `Blocker: ${blocker.slice(0, room)}\n\n${summary}`.slice(0, textLimit);
+  throw new Error(
+    `Report refused: the summary has ${length} characters, over the limit of ${summaryLengthLimitText} characters. Save the details to a file, name it in evidence, and resend a shorter summary.`,
+  );
 };
+
+const withBlocker = (summary: string, blocker: string | undefined): string =>
+  blocker === undefined ? summary : `Blocker: ${blocker}\n\n${summary}`;
 
 const reportToParent = (
   state: WorkerExtensionState,
@@ -495,13 +499,13 @@ const reportToParent = (
     ...handover
   } = parameters;
 
-  // Check what will be saved: a blocker can push the last section past the size limit.
   const summary = withBlocker(
     handover.summary,
     handover.outcome === 'incomplete' ? blocker : undefined,
   );
 
   try {
+    refuseLongSummary(handover.summary);
     refuseMissingSections(summary);
 
     if (handover.outcome === 'incomplete') {

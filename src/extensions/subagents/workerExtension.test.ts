@@ -20,7 +20,6 @@ import { assignmentContract, handoverContract } from './handover.js';
 import { checkWorkerRuntime } from './loadout.js';
 import * as questions from './questionRecords.js';
 import { publish, readEvent, readReport, readTask, recordEvent } from './records.js';
-import { textLimit } from './types.js';
 import workerExtension from './workerExtension.js';
 
 vi.mock(import('./loadout.js'), () => ({
@@ -960,7 +959,9 @@ it('reminds a worker refused for a missing blocker even after an earlier reminde
   expect(reportReminders(afterRefusal)).toHaveLength(1);
 });
 
-it('keeps the blocker when the summary is at the size limit', async () => {
+const summaryLimit = 3000;
+
+it('refuses a summary over the length limit and accepts one at the limit unchanged', async () => {
   const worker = await waitingWorker('editing');
   const report = worker.tools.get('subagent_report');
 
@@ -968,51 +969,45 @@ it('keeps the blocker when the summary is at the size limit', async () => {
     throw new Error('Missing report tool.');
   }
 
+  const send = (summary: string) =>
+    report.execute(
+      'report',
+      { outcome: 'success', summary, evidence: [] },
+      undefined,
+      undefined,
+      worker.context,
+    );
+
+  const atLimit = `Done.${sections}`.padEnd(summaryLimit, '.');
+
+  expect(() => send(`${atLimit}.`)).toThrow('3,000 characters');
+  expect(readReport(worker.directory, 'task')).toBeUndefined();
+
+  await send(atLimit);
+
+  expect(readReport(worker.directory, 'task')?.summary).toBe(atLimit);
+});
+
+it('keeps the whole blocker and summary when the summary is at the length limit', async () => {
+  const worker = await waitingWorker('editing');
+  const report = worker.tools.get('subagent_report');
+
+  if (!report) {
+    throw new Error('Missing report tool.');
+  }
+
+  const summary = `Task ended.${sections}`.padEnd(summaryLimit, '.');
+  const blocker = 'b'.repeat(4000);
+
   await report.execute(
     'report',
-    {
-      outcome: 'incomplete',
-      summary: `Task ended.${sections}`.padEnd(textLimit, '.'),
-      evidence: [],
-      blocker: 'The parent must choose the storage format.',
-      blockerKind: 'decision',
-    },
+    { outcome: 'incomplete', summary, evidence: [], blocker, blockerKind: 'decision' },
     undefined,
     undefined,
     worker.context,
   );
 
-  const summary = readReport(worker.directory, 'task')?.summary;
-  expect(summary).toHaveLength(textLimit);
-  expect(summary).toContain('Blocker: The parent must choose the storage format.\n\nTask ended.');
-});
-
-it('refuses a full-size report whose blocker would push out a section', async () => {
-  const worker = await waitingWorker('editing');
-  const report = worker.tools.get('subagent_report');
-
-  if (!report) {
-    throw new Error('Missing report tool.');
-  }
-
-  const body = 'Changes: None\nEvidence: None\nDecisions: None\n';
-
-  expect(() =>
-    report.execute(
-      'report',
-      {
-        outcome: 'incomplete',
-        summary: `${body.padEnd(textLimit - '\nConcerns: None'.length, '.')}\nConcerns: None`,
-        evidence: [],
-        blocker: 'The parent must choose the storage format.',
-      },
-      undefined,
-      undefined,
-      worker.context,
-    ),
-  ).toThrow('Concerns');
-
-  expect(readReport(worker.directory, 'task')).toBeUndefined();
+  expect(readReport(worker.directory, 'task')?.summary).toBe(`Blocker: ${blocker}\n\n${summary}`);
 });
 
 it('accepts a success report after refusing an incomplete one', async () => {
