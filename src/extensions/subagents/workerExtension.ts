@@ -48,6 +48,7 @@ import {
   recordEvent,
   taskEnded,
 } from './records.js';
+import { decideSummaryLength, summaryLengthLimit } from './summaryLength.js';
 import type { Acknowledgement, Loadout, Question, Report, Task } from './types.js';
 
 type WorkerPhase = 'starting' | 'active' | 'waiting' | 'done';
@@ -84,7 +85,6 @@ const parentWatchInterval = 1000;
 const dispatchWatchInterval = 50;
 // Streaming updates record activity at most this often.
 const streamingActivityInterval = 500;
-const summaryLengthLimit = 3000;
 const summaryLengthLimitText = summaryLengthLimit.toLocaleString('en-US');
 
 const summaryHeadings = handoverSectionNames.map((name) => `## ${name}`).join(', ');
@@ -468,7 +468,7 @@ const refuseMissingSections = (summary: string) => {
 };
 
 const refuseLongSummary = (summary: string) => {
-  if (summary.length <= summaryLengthLimit) {
+  if (decideSummaryLength({ length: summary.length }) === 'accept') {
     return;
   }
 
