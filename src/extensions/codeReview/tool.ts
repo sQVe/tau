@@ -7,10 +7,10 @@ import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
 import { findCheckoutRoot } from '../../gitOutput.js';
-import { captureReview, checkFreshness } from '../../reviewCapture/captureReview.js';
 import { readReviewEvidence } from '../../reviewCapture/evidence.js';
 import { pinFixTarget, saveVerifiedSnapshot } from '../../reviewCapture/fixCapture.js';
 import { decideFixScope } from '../../reviewCapture/fixScope.js';
+import { captureReview, checkFreshness } from '../../reviewCapture/pinnedCapture.js';
 import {
   inputFileName,
   readCaptureRecord,

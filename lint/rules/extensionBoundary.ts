@@ -17,10 +17,10 @@ export const publicFiles = [
   'extensions/subagents/controller/budget',
   'extensions/subagents/controller/controller',
   'extensions/subagents/controller/record',
-  'reviewCapture/captureReview',
   'reviewCapture/evidence',
   'reviewCapture/fixCapture',
   'reviewCapture/fixScope',
+  'reviewCapture/pinnedCapture',
   'reviewCapture/record',
   'reviewCapture/reviewDirectory',
 ];
