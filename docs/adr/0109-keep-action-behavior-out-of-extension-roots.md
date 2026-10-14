@@ -78,13 +78,17 @@ names one concept one way. Size stays a review signal under ADR 0035.
 
 ### Existing code
 
-- One refactor brings the code in line with this ADR: it moves launch behavior out of `subagents.ts`
-  and report behavior out of `workerExtension.ts`, renames `captureReview.ts`, sorts and checks the
-  two registries, and splits `controller/controller.test.ts` (4,475 lines) by behavior, as ADR 0002
-  already requires. Tests stay at the public boundary they already defend.
-- After it, apply the rules to new files. Rename an existing file only for a real ambiguity, in its
-  own small change, after checking active unlanded work and the file's importers. Squash-merged
-  branch refs are not active work.
+- One refactor moves the measured hotspots: launch behavior out of `subagents.ts` and report
+  behavior out of `workerExtension.ts`. It also renames `captureReview.ts`, sorts and checks the two
+  registries, splits each multi-policy item in `managerPrompt.ts`, and splits
+  `controller/controller.test.ts` (4,475 lines) by behavior, as ADR 0002 already requires. Tests
+  stay at the public boundary they already defend.
+- Other actions still live in the roots, such as follow-up, status, reply, and cancel in
+  `subagents.ts`, and worker questions, input, startup, and activity in `workerExtension.ts`. Move
+  such an action into a behavior owner when a feature changes it.
+- After the refactor, apply the rules to new files. Rename an existing file only for a real
+  ambiguity, in its own small change, after checking active unlanded work and the file's importers.
+  Squash-merged branch refs are not active work.
 
 ## Consequences
 
