@@ -38,6 +38,7 @@ import {
 import { readEvent, readRecord, readTask, recordEvent } from './records.js';
 import { reportParameters, reportToParent } from './report.js';
 import { remindToReport } from './reportReminder.js';
+import { recordStartupFailure } from './startupFailure.js';
 import type { Loadout, Question, Task } from './types.js';
 import { hasRunningTask, isTaskActive, remainingWork } from './workerExtensionState.js';
 import type { WorkerExtensionState, WorkerPhase } from './workerExtensionState.js';
@@ -427,6 +428,7 @@ const startWorker = (
       recordEvent(state.directory, task.taskId, 'startupFailure', String(error));
     }
 
+    recordStartupFailure(state.directory, error);
     context.ui.notify(`Worker refused: ${String(error)}`, 'error');
     context.shutdown();
   }

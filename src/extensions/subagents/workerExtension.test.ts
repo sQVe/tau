@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -20,6 +20,7 @@ import { assignmentContract, handoverContract } from './handover.js';
 import { checkWorkerRuntime } from './loadout.js';
 import * as questions from './questionRecords.js';
 import { publish, readEvent, readReport, readTask, recordEvent } from './records.js';
+import { readStartupFailure } from './startupFailure.js';
 import workerExtension from './workerExtension.js';
 
 vi.mock(import('./loadout.js'), () => ({
@@ -151,6 +152,22 @@ it('records a startup failure and shuts down when the worker runtime is refused'
     expect.stringContaining('Worker refused'),
     'error',
   );
+
+  expect(shutdown).toHaveBeenCalledOnce();
+});
+
+it('records the startup failure when the task is retired and cannot be read', async () => {
+  const { directory, emit, shutdown } = setup();
+
+  writeFileSync(join(directory, 'task.json'), JSON.stringify({ version: 9 }));
+
+  await emit('session_start');
+
+  const evidence = readStartupFailure(directory);
+
+  expect(evidence.status).toBe('current');
+  expect(evidence.status === 'current' && evidence.failure.kind).toBe('taskRetired');
+  expect(evidence.status === 'current' && evidence.failure.message).toContain('retired format');
 
   expect(shutdown).toHaveBeenCalledOnce();
 });
