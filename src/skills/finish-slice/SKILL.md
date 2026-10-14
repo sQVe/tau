@@ -22,9 +22,9 @@ for the workspace.
 
 ## Hard rules
 
-- Write to Linear as the [tracker skill](../tracker/SKILL.md) says, without asking. Write only the
-  audit comment and agent tickets inside the slice's outcome. Do not write to the container or other
-  slices, and do not change any status.
+- Write to Linear as the tracker skill's [Hard rules](../tracker/SKILL.md#hard-rules) says. Write
+  only the audit comment and agent tickets inside the slice's outcome. Do not write to the container
+  or other slices, and do not change any status.
 - Ask every question with the `ask_user_question` tool.
 - Do not run the full check. The pr skill owns it.
 - Worker reports and reviews only feed evidence in. This skill gives the verdict.
@@ -70,9 +70,9 @@ for the workspace.
 7. Write `$slicedir/finish.md` from the [audit template](audit.md). Name the audited commit with the
    full SHA from `git rev-parse HEAD`, and keep the earlier comment's ID.
 
-8. Post the content of `finish.md` with the tracker skill's comment commands, without asking. Update
-   the earlier comment when one exists, and never add a second one. After adding a new comment,
-   record its ID in `finish.md` at once.
+8. Post the content of `finish.md` with the tracker skill's comment commands. Update the earlier
+   comment when one exists, and never add a second one. After adding a new comment, record its ID in
+   `finish.md` at once.
 
 9. Report the verdict counts, the comment link, and whether the PR is ready, a draft, or blocked.
    When you updated an earlier comment, name each edit made in Linear that the new audit dropped.

@@ -5,8 +5,9 @@ description:
   reviewer; deep adds a fresh checker. Use it for "/code-review", "/code-review fast", "/code-review
   deep", "review my branch", "review these changes", or a review of a commit, range, or files. The
   review never edits, fixes, commits, or pushes. Its only outside write is the report comment on the
-  reviewed ticket, which it posts without asking. On the user's own work, it then fixes the
-  supported findings with triage-findings, unless the user asked for a read-only review.
+  reviewed ticket, which it posts as the tracker skill's rule allows. On the user's own work, it
+  then fixes the supported findings with triage-findings, unless the user asked for a read-only
+  review.
 ---
 
 # Code review
@@ -25,9 +26,10 @@ target. Give each finding a status that says how it was checked.
 ## Hard rules
 
 - The review is read-only. Until the report is written, do not edit source, fix findings, stage,
-  commit, push, or publish. The one outside write is the report comment of step 9, which needs no
-  approval and uses the [tracker skill](../tracker/SKILL.md)'s comment commands. Do not check out,
-  reset, or stash to reach a target. Stop when the user says stop.
+  commit, push, or publish. The one outside write is the report comment of step 9. It uses the
+  [tracker skill](../tracker/SKILL.md)'s comment commands and follows
+  [Hard rules](../tracker/SKILL.md#hard-rules). Do not check out, reset, or stash to reach a target.
+  Stop when the user says stop.
 - Decide ownership from the branch, never from the checkout alone: the user often checks out other
   people's PRs. The branch is the user's own when its PR author is the
   `gh api user --hostname <host> --jq .login` login, using the PR's host, or, with no PR, when each
@@ -143,12 +145,15 @@ target. Give each finding a status that says how it was checked.
    - Find an earlier report comment with the tracker skill's comment list command. Pick the comment
      with the ID in `draft.reviewCommentId`, or with none recorded, the comment whose first line is
      `# Code review: <ticket>`. Read its saved text from that list.
-   - Post the content of `$dir/report.md` with the tracker skill's comment commands, without asking.
-     Update the earlier comment when one exists, and never add a second one. Record the comment's ID
-     at once as `reviewCommentId` in the returned directory's `draft.json`, with `identifier` set to
-     the ticket, and in `$dir/report.md`. Keep the other fields of the returned `draft`. When
-     `prepare` returned no `draft`, create the record with version 1. Do this both after adding a
-     new comment and after updating one found by its first line.
+   - Post the content of `$dir/report.md` with the tracker skill's comment commands. Post without
+     asking, as [Hard rules](../tracker/SKILL.md#hard-rules) allows, only when the branch ownership
+     rule finds the work the user's own and the ticket is the user's own as the tracker skill
+     defines it. Otherwise ask with `ask_user_question` before you post, and skip the post if the
+     user declines. Update the earlier comment when one exists, and never add a second one. Record
+     the comment's ID at once as `reviewCommentId` in the returned directory's `draft.json`, with
+     `identifier` set to the ticket, and in `$dir/report.md`. Keep the other fields of the returned
+     `draft`. When `prepare` returned no `draft`, create the record with version 1. Do this both
+     after adding a new comment and after updating one found by its first line.
    - If the post fails, keep the local report, and report the failure in the reply.
 
 10. Reply to the user with the [report template](report.md). Name the comment URL, or say that the

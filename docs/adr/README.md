@@ -132,3 +132,4 @@ line that links to the replacement.
 - [0105: Queue full checks machine-wide and reuse passing logs](./0105-queue-full-checks-machine-wide-and-reuse-passing-logs.md)
 - [0106: Replay unchanged test projects in `pnpm check`](./0106-replay-unchanged-test-projects-in-pnpm-check.md)
 - [0107: State the problem and keep option order stable in questions](./0107-state-the-problem-and-keep-option-order-stable-in-questions.md)
+- [0108: Make Linear writes on the user's own work without asking](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)

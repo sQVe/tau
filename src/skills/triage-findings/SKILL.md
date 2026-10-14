@@ -23,8 +23,9 @@ changing and within the requested scope. Explain the rest.
 ## Hard rules
 
 - When the workflow that started this skill commits, such as `pr`, commit the fixes on its feature
-  branch with the [commit skill](../commit/SKILL.md). Otherwise leave them uncommitted. This skill
-  never authorizes pushes, ticket updates, or posted replies.
+  branch with the [commit skill](../commit/SKILL.md). Otherwise leave them uncommitted. Approval to
+  fix never authorizes pushes or posted replies to people. Linear writes follow
+  [Hard rules](../tracker/SKILL.md#hard-rules).
 - Ask before expanding scope. Mark a finding Blocked when its fix needs a decision about scope,
   intended product behavior, or policy, or when you cannot settle a disputed claim against the code.
   Fixing a defect so the code does what the task intends needs no decision. Make the safe fixes

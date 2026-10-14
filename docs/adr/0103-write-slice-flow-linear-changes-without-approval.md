@@ -1,8 +1,11 @@
 # ADR 0103: Write slice flow Linear changes without approval
 
 **Date**: 2026-10-12\
-**Status**: Accepted\
-**Related**: [ADR 0075 (Plan work as PR-sized slices in Linear)](./0075-plan-work-as-pr-sized-slices-in-linear.md),
+**Status**: Superseded\
+**Superseded by**:
+[ADR 0108 (Make Linear writes on the user's own work without asking)](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)\
+**Related**:
+[ADR 0075 (Plan work as PR-sized slices in Linear)](./0075-plan-work-as-pr-sized-slices-in-linear.md),
 [ADR 0083 (Turn on skill tools when the skill runs, and confirm outside writes)](./0083-turn-on-skill-tools-when-the-skill-runs-and-confirm-outside-writes.md),
 [ADR 0101 (Treat `.tau/` files as the working copy and trackers as the saved copy)](./0101-treat-tau-files-as-the-working-copy-and-trackers-as-the-saved-copy.md)
 

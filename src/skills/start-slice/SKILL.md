@@ -31,10 +31,10 @@ or Git. Workers then carry out the agent tickets.
 
 - Before step 8, write only the draft in `$slicedir`. You may run `git fetch`, but create or switch
   no branch and write nothing to Linear.
-- Start the slice and create its agent tickets without asking the user to approve them. Route,
-  write, and create agent tickets with the [tracker skill](../tracker/SKILL.md), and follow its hard
-  rules on questions and status. This skill's only status change is moving the slice to In Progress
-  in step 8.
+- Route, write, and create agent tickets with the [tracker skill](../tracker/SKILL.md), and follow
+  its [rule on which writes need approval](../tracker/SKILL.md#hard-rules) and its hard rules on
+  questions and status. This skill's only status change is moving the slice to In Progress in
+  step 8.
 - Before you write the draft, check that the prompt names both the repository route and the agent
   team as the tracker skill describes. If either is missing, stop with the tracker skill's setup
   message.
@@ -137,7 +137,7 @@ or Git. Workers then carry out the agent tickets.
 7. Check the draft. Map each acceptance criterion of the slice to the agent ticket numbers that
    cover it. When a criterion has none, change the draft until every criterion is covered.
 
-8. Start the slice in this order, without asking.
+8. Start the slice in this order.
    - Check that `git status --porcelain` prints nothing. If it prints anything, stop and report it.
    - Check that every one of your workers in the worktree is `stopped`, as the
      [stack skill](../stack/SKILL.md) checks before a switch. If one is not, stop and report it.
@@ -178,7 +178,7 @@ or Git. Workers then carry out the agent tickets.
 ## Changes after the start
 
 - You may add an agent ticket inside the slice's outcome. Write its body file and its row in
-  `start.md`, and create it as in step 8 without asking. Report it with its identifier, URL, and one
-  line of reason.
+  `start.md`, and create it as in step 8. Report it with its identifier, URL, and one line of
+  reason.
 - Work beyond the slice's outcome is a new slice. Re-plan it with the
   [slice skill](../slice/SKILL.md).
