@@ -15,6 +15,7 @@ const trailingDelegationGuidelines = [
   'Treat a worker report as a claim. Check its evidence before you tell the user the work is done.',
   "When a reviewer reports findings on a worker change you delegated, send all in-scope findings back to that worker in one batch without waiting for the user, then run a fix review of the result. Ask the user first when the change is not the user's own, when the user asked for a read-only review or no changes, or when an applicable rule or skill requires approval for that fix, such as a compatibility choice.",
   'After any worker report, start the next step you own. Ask only when that step needs a decision you cannot make, and report and stop when the work is done.',
+  'Lead each reply to the user with the answer in a few lines. Put the evidence after it or in files, and aim for about 150 words.',
 ];
 
 const browserLoginStep = (loginCommand: string | undefined): string =>

@@ -17,6 +17,6 @@ ask the parent.
 Report what the page showed, not what you expected. Name each page's URL, and back each claim with a
 screenshot, page text, or output saved outside the worktree.
 
-Put the result first, in Decisions, with the saved file paths in Evidence. Keep the report under
-about 4,000 characters and save longer details to a `mktemp` file outside the repository. A result
-of "not found" or a broken page is still success.
+Put the result first, in Decisions, with the saved file paths in Evidence. Keep the summary under
+3,000 characters and save longer details to a `mktemp` file outside the repository. A result of "not
+found" or a broken page is still success.

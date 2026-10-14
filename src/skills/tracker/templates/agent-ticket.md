@@ -1,7 +1,8 @@
 # Agent ticket
 
 Use this shape for a sub-ticket of a slice that one worker carries out. Name files, tests, and
-checks exactly, since a cheap worker model reads only this ticket.
+checks exactly, since a cheap worker model reads only this ticket. Aim for about 250 words, and put
+longer details in linked files.
 
 ```markdown
 ## Outcome
