@@ -23,6 +23,10 @@ export interface FakePullRequest {
   // The head repository's name. The fake owner's repository is named tau unless a test says so.
   headRepository?: string;
   headBranch: string;
+  // The committer date of the head commit. Defaults to a fixed date.
+  headCommittedAt?: string;
+  reviews?: { login: string; commit: string }[];
+  comments?: { body: string; createdAt: string }[];
 }
 
 type CommandKey = 'auth status' | 'repo view' | 'pr list' | 'pr view';
@@ -138,6 +142,14 @@ export const createGhFake = (): GhFake => {
       baseRefName: pr.baseRefName,
       isDraft: pr.isDraft,
       headRefOid: pr.headRefOid,
+      commits: [
+        { oid: pr.headRefOid, committedDate: pr.headCommittedAt ?? '2026-10-14T10:00:00Z' },
+      ],
+      reviews: (pr.reviews ?? []).map((review) => ({
+        author: { login: review.login },
+        commit: { oid: review.commit },
+      })),
+      comments: pr.comments ?? [],
     };
   };
 
