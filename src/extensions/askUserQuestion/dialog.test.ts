@@ -14,7 +14,8 @@ const theme = {
   bold: (text: string) => text,
 };
 
-const context = 'Decides how the first screen looks. Changing it later moves every panel.';
+const problem = 'Decides how the first screen looks. Changing it later moves every panel.';
+const impact = 'The answer blocks the dashboard build.';
 const description = 'A long description that wraps over several lines on a narrow terminal.';
 const preview = Array.from({ length: 35 }, (_line, index) => `line ${index + 1}`).join('\n');
 const ctrlO = '\u000F';
@@ -23,7 +24,8 @@ const down = '\u001B[B';
 
 const layoutQuestion = (options: DialogQuestion['options']): DialogQuestion => ({
   question: 'Which layout?',
-  context,
+  problem,
+  impact,
   header: 'Layout',
   multiSelect: false,
   options,
@@ -82,7 +84,7 @@ const tallPreview = (rows = 24, question: Partial<DialogQuestion> = {}) =>
     rows,
   );
 
-const longContext = `Decides the layout. ${'Every panel moves with it. '.repeat(14)}`.slice(0, 397);
+const longProblem = `Decides the layout. ${'Every panel moves with it. '.repeat(14)}`.slice(0, 397);
 
 it("leaves room for Pi's footer below a tall preview", () => {
   const { dialog } = tallPreview();
@@ -99,7 +101,8 @@ it('keeps the question and the focused option on screen when the options are too
   const { dialog } = open([
     {
       question: 'Which runtime?',
-      context,
+      problem,
+      impact,
       header: 'Runtime',
       multiSelect: false,
       options: ['Node', 'Deno', 'Bun', 'Workers'].map((label) => ({ label, description })),
@@ -116,28 +119,31 @@ it('keeps the question and the focused option on screen when the options are too
   expect(lines.some((line) => line.includes('> 4. Workers'))).toBe(true);
 });
 
-it('shows the context between the question and the options', () => {
+it('shows the problem and the impact between the question and the options', () => {
   const { dialog } = tallPreview();
 
   const lines = dialog.render(80);
   const questionRow = lines.findIndex((line) => line.includes('Which layout?'));
-  const contextRow = lines.findIndex((line) => line.includes('Decides how the first screen'));
+  const problemRow = lines.findIndex((line) => line.includes('Decides how the first screen'));
+  const impactRow = lines.findIndex((line) => line.includes('blocks the dashboard build'));
   const optionRow = lines.findIndex((line) => line.includes('1. Stacked'));
 
   expect(questionRow).not.toBe(-1);
-  expect(contextRow).not.toBe(-1);
+  expect(problemRow).not.toBe(-1);
+  expect(impactRow).not.toBe(-1);
   expect(optionRow).not.toBe(-1);
-  expect(questionRow).toBeLessThan(contextRow);
-  expect(contextRow).toBeLessThan(optionRow);
+  expect(questionRow).toBeLessThan(problemRow);
+  expect(problemRow).toBeLessThan(impactRow);
+  expect(impactRow).toBeLessThan(optionRow);
 });
 
-it('wraps a long context within the height budget', () => {
+it('wraps a long problem within the height budget', () => {
   const { dialog } = open([
     {
       ...layoutQuestion(
         ['Stacked', 'Split', 'Tabs', 'Grid'].map((label) => ({ label, description })),
       ),
-      context: `Decides the layout. ${'Every panel moves with it. '.repeat(14)}`,
+      problem: `Decides the layout. ${'Every panel moves with it. '.repeat(14)}`,
     },
   ]);
 
@@ -157,7 +163,7 @@ it('reserves rows for a tall preview and counts the clipped lines', () => {
 
   expect(lines.length).toBeLessThanOrEqual(18);
   expect(lines.some((line) => line.includes('Preview: Stacked'))).toBe(true);
-  expect(shown).toBeGreaterThan(1);
+  expect(shown).toBeGreaterThan(0);
   expect(lines.some((line) => line.includes(`… ${35 - shown} more lines`))).toBe(true);
   expect(lines.some((line) => line.includes('Ctrl+O full preview'))).toBe(true);
 });
@@ -260,7 +266,7 @@ it('does not type Ctrl+O into the custom row', () => {
 
 it.each([
   { rule: 'a short terminal', rows: 16, width: 60, question: {} },
-  { rule: 'a long context', rows: 24, width: 40, question: { context: longContext } },
+  { rule: 'a long problem', rows: 24, width: 40, question: { problem: longProblem } },
 ])('keeps the clipped preview and its hint on $rule', ({ rows, width, question }) => {
   const { dialog } = tallPreview(rows, question);
 
@@ -303,7 +309,7 @@ it('fits both views into a terminal under 14 rows', () => {
   expect(full.some((line) => line.includes('Esc back'))).toBe(true);
 });
 
-it('keeps the question and context over wrapped tabs', () => {
+it('keeps the question, problem, and impact over wrapped tabs', () => {
   const storage = {
     ...layoutQuestion([
       { label: 'Project', description },
@@ -355,14 +361,14 @@ const cache = (label: string, cost: string) => ({
   preview: `${label}/config.json`,
 });
 
-it('clips the context instead of the focused description', () => {
+it('clips the problem instead of the focused description', () => {
   const { dialog } = open([
     {
       ...layoutQuestion([
         cache('Project folder', 'The cost is that secrets can be committed.'),
         cache('Home folder', 'The cost is that other programs can read secrets.'),
       ]),
-      context: `Startup reads configuration before it shows the dashboard. ${'This choice decides who can clear cached files and who can read them. '.repeat(4)}`,
+      problem: `Startup reads configuration before it shows the dashboard. ${'This choice decides who can clear cached files and who can read them. '.repeat(4)}`,
     },
   ]);
 
@@ -487,7 +493,7 @@ it.each([
   expect(lines.some((line) => line.includes('more lines'))).toBe(false);
 });
 
-it('drops the header border before the context, description, or preview', () => {
+it('drops the header border before the problem, description, or preview', () => {
   const { dialog } = open(
     [
       layoutQuestion([
@@ -536,7 +542,7 @@ it.each([
   expect(lines.every((line) => visibleWidth(line) <= 12)).toBe(true);
 });
 
-it('keeps a context row when a long focused description fills a short terminal', () => {
+it('keeps a problem row when a long focused description fills a short terminal', () => {
   const { dialog } = open(
     [
       layoutQuestion([
@@ -770,4 +776,110 @@ it('counts the workers whose lines do not fit', () => {
 
   expect(shown.length).toBeGreaterThan(0);
   expect(text).toContain(`+${6 - shown.length} more`);
+});
+
+const draft = 'Subject: Release notes\nBody: Ship it.';
+
+const withDraft = (options: DialogQuestion['options']): DialogQuestion => ({
+  ...layoutQuestion(options),
+  preview: draft,
+});
+
+it('shows the question preview on options without one and lets an own preview replace it', () => {
+  const { dialog } = open([
+    withDraft([
+      { label: 'Stacked', description },
+      { label: 'Split', description, preview: 'split' },
+    ]),
+  ]);
+
+  const shared = dialog.render(60).join('\n');
+
+  dialog.handleInput(down);
+
+  const own = dialog.render(60).join('\n');
+
+  expect(shared).toContain('Body: Ship it.');
+  expect(own).toContain('split');
+  expect(own).not.toContain('Body: Ship it.');
+});
+
+it('opens the full preview of the question and of the focused option', () => {
+  const { dialog } = open([
+    withDraft([
+      { label: 'Stacked', description },
+      { label: 'Split', description, preview: 'split' },
+    ]),
+  ]);
+
+  dialog.handleInput(ctrlO);
+
+  const shared = dialog.render(60).join('\n');
+
+  dialog.handleInput(ctrlO);
+  dialog.handleInput(down);
+  dialog.handleInput(ctrlO);
+
+  const own = dialog.render(60).join('\n');
+
+  expect(shared).toContain('Body: Ship it.');
+  expect(shared).not.toContain('Preview: Stacked');
+  expect(own).toContain('Preview: Split');
+  expect(own).not.toContain('Body: Ship it.');
+});
+
+it('shows no question preview on the custom row', () => {
+  const { dialog } = open([withDraft([{ label: 'Stacked', description }])]);
+
+  dialog.handleInput(down);
+
+  expect(dialog.render(60).join('\n')).not.toContain('Body: Ship it.');
+});
+
+it('opens on the recommended option and answers it with Enter', () => {
+  const { dialog, results } = open([
+    layoutQuestion([
+      { label: 'Stacked', description },
+      { label: 'Split', description, recommended: true },
+    ]),
+  ]);
+
+  const lines = dialog.render(60);
+
+  expect(lines.some((line) => line.includes('> 2. Split'))).toBe(true);
+  expect(results).toEqual([]);
+
+  dialog.handleInput('\r');
+
+  expect(results).toEqual([
+    { kind: 'answered', answers: [{ question: 'Which layout?', selected: ['Split'] }] },
+  ]);
+});
+
+it.each([9, 10])('keeps the question within the available rows at %i rows', (rows) => {
+  const { dialog } = open(
+    [
+      layoutQuestion([
+        { label: 'Stacked', description: 'One.', preview: 'one' },
+        { label: 'Split', description: 'Two.', recommended: true, preview: 'two' },
+      ]),
+    ],
+    rows,
+  );
+
+  const lines = dialog.render(60);
+
+  expect(lines.length).toBeLessThanOrEqual(rows - 6);
+  expect(lines.some((line) => line.includes('Which layout?'))).toBe(true);
+  expect(lines.some((line) => line.includes('> 2. Split'))).toBe(true);
+});
+
+it('drops the impact before the problem when rows run short', () => {
+  const { dialog } = open([twoOptions()], 11);
+
+  const lines = dialog.render(60).join('\n');
+
+  expect(lines).toContain('Which layout?');
+  expect(lines).toContain('Decides how the first screen');
+  expect(lines).not.toContain('blocks the dashboard build');
 });

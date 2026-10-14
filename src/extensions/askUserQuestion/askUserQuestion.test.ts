@@ -55,7 +55,8 @@ const ask = (question: Record<string, unknown>) => {
 
 const layout = {
   question: 'Which layout should the dashboard use?',
-  context: 'The dashboard ships next week. Changing the layout later moves every panel.',
+  problem: 'The dashboard ships next week.',
+  impact: 'Changing the layout later moves every panel.',
   header: 'Layout',
   options: [
     { label: 'Stacked', description: 'One column. Simple, but wide screens waste space.' },
@@ -79,8 +80,10 @@ it('opens the dialog for a valid question', async () => {
 });
 
 it.each([
-  { rule: 'a missing context', question: { ...layout, context: undefined }, error: /context/u },
-  { rule: 'a blank context', question: { ...layout, context: ' \n ' }, error: /context/u },
+  { rule: 'a missing problem', question: { ...layout, problem: undefined }, error: /problem/u },
+  { rule: 'a missing impact', question: { ...layout, impact: undefined }, error: /impact/u },
+  { rule: 'a blank problem', question: { ...layout, problem: ' \n ' }, error: /needs a problem/u },
+  { rule: 'a blank impact', question: { ...layout, impact: ' ' }, error: /needs an impact/u },
 ])('rejects $rule without opening the dialog', async ({ question, error }) => {
   const { call, custom } = ask(question);
 
@@ -141,7 +144,8 @@ const escape = '\u001B';
 
 const features = {
   question: 'Which features?',
-  context: 'Decides what ships first. Changing it later needs a migration.',
+  problem: 'Decides what ships first.',
+  impact: 'Changing it later needs a migration.',
   header: 'Features',
   multiSelect: true,
   options: [
@@ -249,7 +253,8 @@ it('restores selections when the same questions come back with reordered propert
     options: features.options.map(({ description, label }) => ({ description, label })),
     multiSelect: features.multiSelect,
     header: features.header,
-    context: features.context,
+    impact: features.impact,
+    problem: features.problem,
     question: features.question,
   };
 

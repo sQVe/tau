@@ -16,6 +16,7 @@ import {
   initialState,
   isCustomChecked,
   restoredState,
+  shownPreview,
   withCustomText,
 } from './questionnaire.js';
 import type {
@@ -28,7 +29,8 @@ import type {
 
 export interface DialogQuestion extends QuestionFacts {
   header: string;
-  context: string;
+  problem: string;
+  impact: string;
   options: {
     label: string;
     description: string;
@@ -64,15 +66,15 @@ interface PreviewSpace {
 }
 
 const customLabel = 'Type something.';
-// The question and the context.
+// The question and the problem. The impact is the first row dropped when rows run short.
 const minimumHeaderRows = 2;
 const previewBar = ' │ ';
 // Pi renders its widgets and a footer of two or more lines below the dialog.
 const piChromeRows = 6;
 // Below this many rows the dialog drops its borders and blank rows.
 const compactRows = 12;
-// The border, the question, the context, and the blank row below them.
-const decoratedHeaderRows = 4;
+// The border, the question, the problem, the impact, and the blank row below them.
+const decoratedHeaderRows = 5;
 // A blank row, the key hints, and the border close the dialog.
 const footerRows = 3;
 // The full preview adds a border, a title, a blank row, and the hidden-line count to the footer.
@@ -228,7 +230,7 @@ class QuestionDialog implements Component {
 
     this.state =
       session.saved === undefined
-        ? initialState(questions.length)
+        ? initialState(questions)
         : restoredState(session.saved, questions);
 
     this.inputs = questions.map(
@@ -311,10 +313,10 @@ class QuestionDialog implements Component {
       return [border, border];
     }
 
-    const preview = this.focusedOption(facts)?.preview;
+    const preview = this.focusedPreview(facts);
 
     if (this.state.fullPreview !== undefined && preview !== undefined) {
-      return this.renderFullPreview(facts, preview, width);
+      return this.renderFullPreview(preview, width);
     }
 
     return this.renderOptions(facts, width);
@@ -352,15 +354,27 @@ class QuestionDialog implements Component {
 
   private previewViewport(): PreviewViewport {
     const facts = this.questions[this.state.tab];
-    const preview = facts === undefined ? undefined : this.focusedOption(facts)?.preview;
+    const preview = facts === undefined ? undefined : this.focusedPreview(facts)?.text;
     // Pi renders the dialog at the terminal width, which can change before the next render.
     const lineCount = wrapPreview(preview ?? '', this.terminal.terminal.columns).length;
 
     return { rows: this.fullPreviewRows(), lineCount };
   }
 
-  private focusedOption(facts: DialogQuestion): DialogQuestion['options'][number] | undefined {
-    return facts.options[this.state.questions[this.state.tab]?.cursor ?? 0];
+  // An option's own preview replaces the question's preview. Only the question's preview has a
+  // title that does not name an option.
+  private focusedPreview(facts: DialogQuestion): { text: string; title: string } | undefined {
+    const cursor = this.state.questions[this.state.tab]?.cursor ?? 0;
+    const text = shownPreview(facts, cursor);
+
+    if (text === undefined) {
+      return undefined;
+    }
+
+    const option = facts.options[cursor];
+    const title = option?.preview === undefined ? ' Preview' : ` Preview: ${option.label}`;
+
+    return { text, title };
   }
 
   private footer(keys: string[], width: number): string[] {
@@ -369,18 +383,25 @@ class QuestionDialog implements Component {
     return this.compact() ? [hint] : ['', hint, this.theme.fg('accent', '─'.repeat(width))];
   }
 
-  // Fits the header into `rows`. The question and the context keep a row each before the border,
-  // the blank row, or the tabs get any, and the tabs are dropped when they do not fit whole.
+  // Fits the header into `rows`. The question, the problem, and the impact keep a row each before
+  // the border, the blank row, or the tabs get any. When rows run short, the impact goes first,
+  // then the problem, and the question stays. The tabs are dropped when they do not fit whole.
   private header(facts: DialogQuestion, width: number, rows: number): string[] {
     const decorated = !this.compact() && rows >= decoratedHeaderRows;
-    const textRows = Math.max(2, decorated ? rows - 2 : rows);
+    const textRows = Math.max(1, decorated ? rows - 2 : rows);
     const question = wrapWithPrefix(' ', this.theme.bold(facts.question), width);
-    const context = wrapWithPrefix(' ', this.theme.fg('muted', facts.context), width);
-    const shownQuestion = clipLines(question, Math.max(1, textRows - 1), width);
-    const shownContext = clipLines(context, textRows - shownQuestion.length, width);
+    const problem = wrapWithPrefix(' ', this.theme.fg('muted', facts.problem), width);
+    const impact = wrapWithPrefix(' ', this.theme.fg('dim', `Impact: ${facts.impact}`), width);
+    const shownQuestion = clipLines(question, Math.max(1, textRows - 2), width);
+    const remainingRows = textRows - shownQuestion.length;
+    const problemRows = remainingRows <= 0 ? 0 : Math.max(1, remainingRows - 1);
+    const shownProblem = clipLines(problem, problemRows, width);
+    const impactRows = textRows - shownQuestion.length - shownProblem.length;
+    const shownImpact = clipLines(impact, impactRows, width);
     const tabs = this.tabBar(width);
-    const tabRows = textRows - shownQuestion.length - shownContext.length;
-    const text = [...(tabs.length <= tabRows ? tabs : []), ...shownQuestion, ...shownContext];
+    const tabRows = impactRows - shownImpact.length;
+    const shownText = [...shownQuestion, ...shownProblem, ...shownImpact];
+    const text = [...(tabs.length <= tabRows ? tabs : []), ...shownText];
 
     if (!decorated) {
       return text;
@@ -389,7 +410,8 @@ class QuestionDialog implements Component {
     return [this.theme.fg('accent', '─'.repeat(width)), ...text, ''];
   }
 
-  // The footer, the focused option, and the smallest preview come before the header.
+  // The footer and the focused option come before the header. The smallest preview comes before
+  // all of the header except the question and the problem.
   private fitHeader(
     facts: DialogQuestion,
     width: number,
@@ -397,8 +419,10 @@ class QuestionDialog implements Component {
   ) {
     const { focusedRows, minimum, noticeRows } = space;
 
-    const headerRows =
-      this.availableRows() - this.footerRows() - focusedRows - minimum - noticeRows;
+    const free = this.availableRows() - this.footerRows() - noticeRows;
+    // A long focused option is clipped to one row before the question and the problem lose theirs.
+    const guaranteed = Math.min(minimumHeaderRows, free - 1);
+    const headerRows = Math.max(guaranteed, free - focusedRows - minimum);
 
     const header = this.header(facts, width, headerRows);
     const room = this.availableRows() - header.length - this.footerRows() - noticeRows;
@@ -421,7 +445,7 @@ class QuestionDialog implements Component {
   }
 
   private renderOptions(facts: DialogQuestion, width: number): string[] {
-    const previewLines = this.focusedOption(facts)?.preview?.split('\n') ?? [];
+    const previewLines = this.focusedPreview(facts)?.text.split('\n') ?? [];
     const minimum = previewLines.length === 0 ? 0 : this.minimumPreviewRows();
 
     const blocks = [
@@ -458,9 +482,9 @@ class QuestionDialog implements Component {
     ];
   }
 
-  private renderFullPreview(facts: DialogQuestion, preview: string, width: number): string[] {
+  private renderFullPreview(preview: { text: string; title: string }, width: number): string[] {
     const { theme } = this;
-    const all = wrapPreview(preview, width);
+    const all = wrapPreview(preview.text, width);
     const rows = this.fullPreviewRows();
     const offset = Math.min(this.state.fullPreview?.offset ?? 0, Math.max(0, all.length - rows));
     const bar = theme.fg('muted', previewBar);
@@ -478,8 +502,7 @@ class QuestionDialog implements Component {
       lines.push(truncateToWidth(bar + theme.fg('dim', `… ${hidden} more lines`), width));
     }
 
-    const label = this.focusedOption(facts)?.label ?? '';
-    const title = truncateToWidth(theme.bold(` Preview: ${label}`), width);
+    const title = truncateToWidth(theme.bold(preview.title), width);
     const keys = all.length > rows ? ['↑↓ scroll', 'Ctrl+O or Esc back'] : ['Ctrl+O or Esc back'];
     const indicator = this.notices.size > 0 ? [this.noticeIndicator(width)] : [];
     const footer = [...indicator, ...this.footer(keys, width)];
@@ -612,18 +635,18 @@ class QuestionDialog implements Component {
   }
 
   private preview(facts: DialogQuestion, width: number, rows: number): string[] {
-    const option = this.focusedOption(facts);
+    const focused = this.focusedPreview(facts);
 
-    if (option?.preview === undefined || rows < this.minimumPreviewRows()) {
+    if (focused === undefined || rows < this.minimumPreviewRows()) {
       return [];
     }
 
-    const all = option.preview.split('\n');
+    const all = focused.text.split('\n');
     const fits = all.length + this.previewTitleRows() <= rows;
     const shown = fits ? all : all.slice(0, rows - this.minimumPreviewRows());
     const hidden = all.length - shown.length;
     const bar = this.theme.fg('muted', previewBar);
-    const title = truncateToWidth(this.theme.fg('muted', ` Preview: ${option.label}`), width);
+    const title = truncateToWidth(this.theme.fg('muted', focused.title), width);
     const lines = shown.map((line) => truncateToWidth(`${bar}${line}`, width));
 
     if (hidden > 0) {
