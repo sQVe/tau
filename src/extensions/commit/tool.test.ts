@@ -26,6 +26,12 @@ describe('validateSubject', () => {
     }).toThrow(new RegExp(`subject.*${subject.replace('.', '\\.')}`, 'i'));
   });
 
+  it('names the allowed types and scope characters when the scope is not lowercase', () => {
+    expect(() => {
+      validateSubject('feat(prFeedback): x');
+    }).toThrow(/feat\b.*\brevert\b.*lowercase letters, digits, and -/);
+  });
+
   it('returns without throwing when the subject is a conventional commit', () => {
     expect(() => {
       validateSubject('feat: add thing');
@@ -58,6 +64,12 @@ describe('validatePaths', () => {
     expect(() => {
       validatePaths(['.ssh/config']);
     }).toThrow(/\.ssh\/config/);
+  });
+
+  it('names the sensitive pattern that matched the path', () => {
+    expect(() => {
+      validatePaths(['docs/secrets_management.md']);
+    }).toThrow(/docs\/secrets_management\.md.*sensitive.*\/secret\/i/);
   });
 
   it('rejects paths with leading dot-slash that would bypass anchored patterns', () => {

@@ -3,8 +3,23 @@ import { posix } from 'node:path';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
-const conventionalCommitSubjectPattern =
-  /^(feat|fix|chore|refactor|docs|test|style|perf|build|ci|revert)(\([a-z0-9-]+\))?!?: [^\r\n]+$/;
+const conventionalCommitTypes = [
+  'feat',
+  'fix',
+  'chore',
+  'refactor',
+  'docs',
+  'test',
+  'style',
+  'perf',
+  'build',
+  'ci',
+  'revert',
+] as const;
+
+const conventionalCommitSubjectPattern = new RegExp(
+  `^(${conventionalCommitTypes.join('|')})(\\([a-z0-9-]+\\))?!?: [^\\r\\n]+$`,
+);
 
 const sensitivePathDenylist = [
   /(^|\/)\.env$/i,
@@ -21,8 +36,10 @@ const sensitivePathDenylist = [
   /(^|\/)\.ssh($|\/)/i,
 ] as const;
 
-export const isSensitivePath = (file: string): boolean =>
-  sensitivePathDenylist.some((pattern) => pattern.test(file.replaceAll('\\', '/')));
+const findSensitivePattern = (file: string): RegExp | undefined =>
+  sensitivePathDenylist.find((pattern) => pattern.test(file.replaceAll('\\', '/')));
+
+export const isSensitivePath = (file: string): boolean => findSensitivePattern(file) !== undefined;
 
 export const commitToolParameters = Type.Object({
   groups: Type.Array(
@@ -41,7 +58,10 @@ export const commitToolParameters = Type.Object({
               Type.Literal('amend'),
             ]),
           },
-          { description: 'Autosquash target and kind; use instead of subject.' },
+          {
+            description:
+              'Autosquash target and kind; use instead of subject. Kind amend needs a non-empty body with the replacement message.',
+          },
         ),
       ),
       body: Type.Optional(Type.String()),
@@ -62,7 +82,9 @@ export const validateSubject = (subject: string): void => {
   }
 
   if (!conventionalCommitSubjectPattern.test(subject)) {
-    throw new Error(`Invalid subject: ${subject}`);
+    throw new Error(
+      `Invalid subject: ${subject}. Use "type(scope): description" or "type: description", with type one of ${conventionalCommitTypes.join(', ')}, and a scope of lowercase letters, digits, and -.`,
+    );
   }
 };
 
@@ -96,8 +118,12 @@ export const validatePaths = (files: string[]): void => {
       );
     }
 
-    if (isSensitivePath(file)) {
-      throw new Error(`Invalid path: ${rawFile}`);
+    const sensitivePattern = findSensitivePattern(file);
+
+    if (sensitivePattern !== undefined) {
+      throw new Error(
+        `Invalid path: ${rawFile}. It matches the sensitive-path pattern ${String(sensitivePattern)}.`,
+      );
     }
   }
 };

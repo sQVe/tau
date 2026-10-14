@@ -247,6 +247,7 @@ export const createCommitTool = (
       'Stage and commit each group sequentially with Git hooks. Hook failures return errors.',
     promptSnippet: 'Create git commits for an ordered groups array in one call.',
     parameters: commitToolParameters,
+    executionMode: 'sequential',
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       return executeCommitTool({ pi, context, signal }, parameters);
     },
