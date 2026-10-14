@@ -75,6 +75,7 @@ const pureModules = [
   'src/extensions/tracker/candidateFit.ts',
   'src/isRecord.ts',
   'src/models/allowedModels.ts',
+  'src/repositoryEntry.ts',
   'src/repositoryRemote.ts',
   'src/reviewCapture/evidenceDecisions.ts',
   'src/reviewCapture/fixScope.ts',
