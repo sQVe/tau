@@ -22,8 +22,9 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
 
 ## Hard rules
 
-- Push, create or edit a PR, or change its draft status only after the user approves the preview.
-  Any change after approval needs a new preview.
+- Push, create or edit a PR, or change its draft status only after the user approves the preview. A
+  change after approval needs a new preview, unless the approved option or the user's answer already
+  named that exact change and you apply it as stated.
 - Ask every question with `ask_user_question`, including review approval and preview approval. Never
   ask in prose.
 - Follow the push rules in the [update-branch skill](../update-branch/SKILL.md). Never force-push
@@ -198,8 +199,7 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      means the reasons belong in code comments or the PR is too large.
 
 8. Preview and ask for approval. Show title, full body, base repository and branch, head, draft
-   status, commits to push, and push command. For a new PR, the `@codex review` comment of step 11
-   needs no preview.
+   status, commits to push, and push command. The review requests of step 11 need no preview.
    - After a rebase in step 1 of a branch with a remote tip, say that the push is a force-push and
      show it with `--force-with-lease=refs/heads/<branch>:<old-tip>`.
    - For an existing PR whose base changes, show the current base and the new one.
@@ -210,8 +210,9 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      notes, machine-local failures that do not block relevant coverage, reviewer notes, dismissed
      findings with their reasons, and gaps.
    - For a self-review, show the review's top-level body and each comment's text, file, line, and
-     the head SHA it anchors to. Any change to the body, a text, or an anchor needs a new preview.
-     The anchor's side is `LEFT` for a deleted line and `RIGHT` otherwise; show it with the line.
+     the head SHA it anchors to. A change to the body, a text, or an anchor needs a new preview,
+     unless the user's answer named that exact change and you apply it as stated. The anchor's side
+     is `LEFT` for a deleted line and `RIGHT` otherwise; show it with the line.
    - Ask for approval with these options in this order: Publish as ready, Publish as draft, Change
      something, Don't publish. Recommend Publish as draft when step 6 found a gap, and Publish as
      ready otherwise. Put the title and full body in the question-level `preview`.
@@ -249,13 +250,14 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
     repository, PR number, title, base, and draft status. Report each difference and the PR URL.
     Stop if the call fails or shows a difference.
 
-11. Request a Codex review, a reply to a GitHub bot that follows
-    [Hard rules](../tracker/SKILL.md#hard-rules). If this run created the PR, run
-    `gh pr comment <number> --repo <repo> --body '@codex review'`. When a retry follows a partial
-    failure, count a PR the earlier attempt created as created by this run. Post only if
-    `gh pr view <number> --repo <repo> --json comments --jq '[.comments[] | select(.body == "@codex review")] | length'`
-    prints 0. Read it again before a retry, since a failed post may still have landed. On an update
-    to an existing PR, post nothing. Posting a request does not prove a review started.
+11. Request the review bots from the user's config. A request is a reply to a GitHub bot that
+    follows [Hard rules](../tracker/SKILL.md#hard-rules). Run this on a new PR and on an update.
+    Call the `pr` tool's `reviewBots` action with the approved repository and PR number. For each
+    bot with status `request`, run `gh pr comment <number> --repo <repo> --body '<comment>'` with
+    its `comment`. Skip `reviewed` and `requested`. When the action returns no bots, the config has
+    no entry for the repository: request no bot and say so in the report. Read the action again
+    before a retry, since a failed post may still have landed. Posting a request does not prove a
+    review started.
 
 12. Post the approved self-review as one GitHub review, if the preview showed one.
     - Read the pushed head with
