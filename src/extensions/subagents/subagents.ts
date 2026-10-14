@@ -1,8 +1,4 @@
 /* oxlint-disable node/no-process-env -- The herdr connection comes from the active Pi process. */
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-
-import { StringEnum } from '@earendil-works/pi-ai';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
@@ -19,30 +15,20 @@ import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
 import { workerNoticeChannel } from '../../workerNoticeEvent.js';
 import type { WorkerNoticeEvent } from '../../workerNoticeEvent.js';
 import { isWorkerProcess } from '../../workerProcess.js';
-import { appAnswers } from './appProbe.js';
 import { readBrowserLoginCommand } from './browserLogin.js';
 import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.js';
 import { hasParentTrackedWorkers, compactionWorkerList } from './compactionWorkers.js';
-import { WorkerCapacityFullError, WorkerController } from './controller/controller.js';
-import { EvidenceUnavailableError } from './controller/record.js';
-import {
-  appUrlRefusal,
-  briefLimitRefusal,
-  briefWithAppUrl,
-  checksLaunchEnvironment,
-  launchEnvironmentRefusal,
-} from './launchEnvironment.js';
-import { launchModels, requireTrustedProject, resolveRoutedLoadout } from './loadout.js';
+import { WorkerController } from './controller/controller.js';
+import { evidenceResult, launchErrorResult } from './errorResult.js';
+import { executeLaunch, millisecondsPerSecond } from './launch.js';
+import { checkLaunchEnvironment } from './launchCheck.js';
+import { launchParameters, visibility } from './launchParameters.js';
+import type { LaunchParameters } from './launchParameters.js';
+import { launchModels, requireTrustedProject } from './loadout.js';
 import { delegationGuidelines } from './managerPrompt.js';
 import { decideNoticeDelivery } from './noticeDelivery.js';
 import { passiveWaitRefusal } from './passiveWait.js';
-import {
-  modelEvidenceNotice,
-  modelReply,
-  modelStatus,
-  stateLabel,
-  stateLabels,
-} from './presentation.js';
+import { modelReply, modelStatus, stateLabel, stateLabels } from './presentation.js';
 import type { WorkerNotice } from './presentation.js';
 import { readProfileModels } from './profileModels.js';
 import { listProfiles } from './profiles.js';
@@ -58,7 +44,7 @@ import {
 } from './render.js';
 import { readTrackerSetup } from './trackerConfig.js';
 import { trackerLines } from './trackerRouting.js';
-import { taskIdSchema, textLimit } from './types.js';
+import { taskIdSchema } from './types.js';
 import type { WorkerState } from './types.js';
 import { renderWorkerWidget } from './widget.js';
 import { workerModelLine } from './workerModels.js';
@@ -78,54 +64,6 @@ type NoticeDelivery = (
   notice: WorkerNotice,
 ) => void;
 
-const visibility = Type.Optional(
-  StringEnum(['foreground', 'background'] as const, {
-    description:
-      'Foreground opens beside the parent, background in a separate tab. Defaults to foreground for editing profiles. The result reports the actual placement.',
-  }),
-);
-
-const launchParameters = Type.Object(
-  {
-    task: Type.String({ minLength: 1, maxLength: 32_000 }),
-    label: Type.Optional(
-      Type.String({
-        minLength: 1,
-        maxLength: 120,
-        description: 'Short widget label, such as "Fix status counts".',
-      }),
-    ),
-    acceptance: Type.Optional(
-      Type.Array(Type.String({ minLength: 1, maxLength: 2000 }), {
-        maxItems: 50,
-        description:
-          'Acceptance criteria, one per item. Required for editing profiles and follow-ups of editing workers.',
-      }),
-    ),
-    profile: Type.String({ minLength: 1 }),
-    cwd: Type.Optional(Type.String()),
-    url: Type.Optional(
-      Type.String({
-        minLength: 1,
-        description:
-          'qa and browser only: the http or https URL of the app under test. Tau refuses the launch when it does not answer, and adds it to the task.',
-      }),
-    ),
-    model: Type.Optional(Type.String()),
-    visibility,
-    timeoutSeconds: Type.Optional(
-      Type.Integer({
-        minimum: 10,
-        maximum: 86_400,
-        description: 'Defaults to 1800 for investigation profiles and 3600 for editing profiles.',
-      }),
-    ),
-  },
-  { additionalProperties: false },
-);
-
-const defaultTimeoutSeconds = { investigation: 1800, editing: 3600 };
-const millisecondsPerSecond = 1000;
 const widgetRefreshInterval = 1000;
 
 const followUpParameters = Type.Object(
@@ -169,7 +107,6 @@ const replyParameters = Type.Object(
 
 const cancelParameters = Type.Object({ taskId: Type.String() });
 
-type LaunchParameters = Static<typeof launchParameters>;
 type FollowUpParameters = Static<typeof followUpParameters>;
 type StatusParameters = Static<typeof statusParameters>;
 type ReplyParameters = Static<typeof replyParameters>;
@@ -259,84 +196,6 @@ const callDetail = (parts: (string | undefined)[]): string | undefined => {
   return joined.length > 0 ? joined : undefined;
 };
 
-// The model reads the same unreadable-evidence shape here as in notices.
-const evidenceResult = (error: unknown) => {
-  if (!(error instanceof EvidenceUnavailableError)) {
-    throw error;
-  }
-
-  const details = {
-    taskId: error.taskId,
-    ...(error.taskName === undefined ? {} : { name: error.taskName }),
-    evidenceError: error.evidenceError,
-    recovery: error.recovery,
-  };
-
-  return {
-    content: [{ type: 'text' as const, text: JSON.stringify(modelEvidenceNotice(details)) }],
-    details,
-  };
-};
-
-const launchErrorResult = (runtime: SubagentRuntime, error: unknown) => {
-  if (error instanceof WorkerCapacityFullError) {
-    runtime.refuseCapacity();
-
-    return {
-      content: [{ type: 'text' as const, text: error.message }],
-      details: undefined,
-      isError: true,
-      terminate: true,
-    };
-  }
-
-  return evidenceResult(error);
-};
-
-const checkLaunchEnvironment = async (
-  parameters: LaunchParameters,
-  signal: AbortSignal | undefined,
-  sessionCwd: string,
-): Promise<void> => {
-  const urlRefusal = appUrlRefusal(parameters.profile, parameters.url);
-
-  if (urlRefusal !== undefined) {
-    throw new Error(urlRefusal);
-  }
-
-  const limitRefusal = briefLimitRefusal(
-    briefWithAppUrl(parameters.task, parameters.url),
-    textLimit,
-  );
-
-  if (limitRefusal !== undefined) {
-    throw new Error(limitRefusal);
-  }
-
-  if (!checksLaunchEnvironment(parameters.profile)) {
-    return;
-  }
-
-  const worktree = resolve(sessionCwd, parameters.cwd ?? '.');
-  const worktreeExists = existsSync(worktree);
-
-  const url =
-    parameters.url === undefined || !worktreeExists
-      ? undefined
-      : { address: parameters.url, answers: await appAnswers(parameters.url, signal) };
-
-  const refusal = launchEnvironmentRefusal({
-    profile: parameters.profile,
-    worktree,
-    worktreeExists,
-    url,
-  });
-
-  if (refusal !== undefined) {
-    throw new Error(refusal);
-  }
-};
-
 const launchWorker = async (
   runtime: SubagentRuntime,
   parameters: LaunchParameters,
@@ -359,46 +218,7 @@ const launchWorker = async (
   requireTrustedProject(context);
   await checkLaunchEnvironment(parameters, signal, context.cwd);
 
-  const controller = runtime.getController();
-
-  const { loadout, routing } = await resolveRoutedLoadout(
-    parameters,
-    context,
-    runtime.pi.getCommands(),
-    signal,
-  );
-
-  const timeout =
-    (parameters.timeoutSeconds ?? defaultTimeoutSeconds[loadout.role]) * millisecondsPerSecond;
-
-  signal?.throwIfAborted();
-
-  let status: Awaited<ReturnType<WorkerController['launch']>>;
-
-  try {
-    status = await controller.launch(
-      {
-        task: briefWithAppUrl(parameters.task, parameters.url),
-        ...(parameters.acceptance === undefined ? {} : { acceptance: parameters.acceptance }),
-        ...(parameters.label === undefined ? {} : { label: parameters.label }),
-        loadout,
-        ...(routing === undefined ? {} : { routing }),
-        timeout,
-        startedAt,
-        parentSession,
-        parentSessionId: context.sessionManager.getSessionId(),
-        ...(parameters.visibility ? { visibility: parameters.visibility } : {}),
-      },
-      signal,
-    );
-  } catch (error) {
-    return launchErrorResult(runtime, error);
-  }
-
-  return {
-    content: [{ type: 'text' as const, text: JSON.stringify(modelStatus(status)) }],
-    details: status,
-  };
+  return executeLaunch(runtime, { parameters, startedAt, parentSession }, signal, context);
 };
 
 const followUpWorker = async (
@@ -433,7 +253,7 @@ const followUpWorker = async (
       signal,
     );
   } catch (error) {
-    return launchErrorResult(runtime, error);
+    return launchErrorResult(runtime.refuseCapacity, error);
   }
 
   return {
