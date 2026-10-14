@@ -127,7 +127,7 @@ it('refuses a conflicting reply to an answered question', async ({ onTestFinishe
 
   expect(() =>
     controller.reply(launched.taskId, 'parent-id', { ...answer, reply: 'changed' }),
-  ).toThrow('Conflicting');
+  ).toThrow('already has a different answer');
 });
 
 it('saves a reply through a restarted parent that reattached the worker', async ({

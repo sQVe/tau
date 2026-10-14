@@ -37,6 +37,7 @@ const publishQuestionRecord = (
   directory: string,
   name: string,
   value: Question | Reply | Acknowledgement,
+  conflict = 'Conflicting saved question record.',
 ): void => {
   if (Buffer.byteLength(JSON.stringify(value)) > questionByteLimit) {
     throw new Error('Question record exceeds 64 KB.');
@@ -51,7 +52,7 @@ const publishQuestionRecord = (
 
     // Recovery may repeat the same identity, but cannot replace any accepted content.
     if (!isDeepStrictEqual(readRecord(directory, name), value)) {
-      throw new Error('Conflicting saved question record.', { cause: error });
+      throw new Error(conflict, { cause: error });
     }
 
     // A prior publication may have linked the record but failed to sync the directory.
@@ -171,7 +172,13 @@ export const acceptReply = (directory: string, taskId: string, value: unknown): 
     throw new Error('Reply has no accepted question.');
   }
 
-  publishQuestionRecord(directory, name, value);
+  // One answer per question: the worker may already have read the saved reply.
+  publishQuestionRecord(
+    directory,
+    name,
+    value,
+    'This question already has a different answer. Use subagent_follow_up after the worker stops.',
+  );
 
   return value;
 };
