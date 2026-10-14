@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -987,6 +989,162 @@ it('defaults the launch timeout by profile role and keeps an explicit timeout', 
   expect(launch.mock.calls.map(([launchInput]) => launchInput.timeout)).toEqual([
     1_800_000, 1_800_000, 1_800_000, 3_600_000, 10_000,
   ]);
+});
+
+const listeningServer = async () => {
+  const requests: string[] = [];
+
+  const server = createServer((request, response) => {
+    requests.push(request.url ?? '');
+    response.writeHead(404).end();
+  });
+
+  await new Promise<void>((resolve) => {
+    server.listen(0, '127.0.0.1', resolve);
+  });
+
+  const { port } = server.address() as AddressInfo;
+
+  return {
+    address: `http://127.0.0.1:${port}/`,
+    requests,
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.close(() => {
+          resolve();
+        });
+      }),
+  };
+};
+
+const environmentLaunch = (onTestFinished: (cleanup: () => void) => void) => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-environment-tool-'));
+
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('HERDR_ENV', '1');
+  vi.stubEnv('HERDR_PANE_ID', 'parent');
+  vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
+  const tool = registerTools().get('subagent');
+
+  if (!tool) {
+    throw new Error('Missing launch tool.');
+  }
+
+  const launch = vi
+    .spyOn(WorkerController.prototype, 'launch')
+    .mockResolvedValue({} as Awaited<ReturnType<WorkerController['launch']>>);
+
+  const execute = (input: Record<string, unknown>, context: Record<string, unknown> = {}) =>
+    tool.execute(
+      'call',
+      { model: fixtureModelReference, task: 'Test the form.', ...input },
+      undefined,
+      undefined,
+      { ...launchContext(directory), ...context },
+    );
+
+  return { directory, launch, execute, parameters: tool.parameters };
+};
+
+it('starts a QA launch with a reachable app and gives the worker its URL', async ({
+  onTestFinished,
+}) => {
+  const { launch, execute, parameters } = environmentLaunch(onTestFinished);
+  const server = await listeningServer();
+
+  onTestFinished(server.close);
+
+  expect(Value.Check(parameters, { profile: 'qa', task: 'Test.', url: server.address })).toBe(true);
+
+  await execute({ profile: 'qa', url: server.address });
+  await execute({ profile: 'browser', url: server.address });
+  await execute({ profile: 'qa' });
+
+  expect(launch.mock.calls.map(([input]) => input.task)).toEqual([
+    `Test the form.\n\nApp URL: ${server.address}`,
+    `Test the form.\n\nApp URL: ${server.address}`,
+    'Test the form.',
+  ]);
+});
+
+it('refuses a QA launch whose URL does not answer before a worker starts', async ({
+  onTestFinished,
+}) => {
+  const { launch, execute } = environmentLaunch(onTestFinished);
+  const server = await listeningServer();
+
+  await server.close();
+
+  await expect(execute({ profile: 'qa', url: server.address })).rejects.toThrow(
+    `no server at ${server.address}`,
+  );
+
+  expect(launch).not.toHaveBeenCalled();
+});
+
+it('refuses a browser or QA launch whose worktree is gone', async ({ onTestFinished }) => {
+  const { directory, launch, execute } = environmentLaunch(onTestFinished);
+  const missing = join(directory, 'removed-worktree');
+
+  for (const profile of ['qa', 'browser']) {
+    await expect(execute({ profile }, { cwd: missing })).rejects.toThrow(
+      `no worktree at ${missing}`,
+    );
+  }
+
+  expect(launch).not.toHaveBeenCalled();
+});
+
+it('refuses a url on other profiles and a url that is not http', async ({ onTestFinished }) => {
+  const { launch, execute } = environmentLaunch(onTestFinished);
+
+  await expect(execute({ profile: 'scout', url: 'http://localhost:3000' })).rejects.toThrow(
+    'qa and browser',
+  );
+
+  await expect(execute({ profile: 'qa', url: 'localhost:3000' })).rejects.toThrow('http');
+
+  expect(launch).not.toHaveBeenCalled();
+});
+
+it('refuses an untrusted launch before it sends a request to the url', async ({
+  onTestFinished,
+}) => {
+  const { launch, execute } = environmentLaunch(onTestFinished);
+  const server = await listeningServer();
+
+  onTestFinished(server.close);
+
+  await expect(
+    execute({ profile: 'qa', url: server.address }, { isProjectTrusted: () => false }),
+  ).rejects.toThrow('trusted project');
+
+  expect(server.requests).toEqual([]);
+  expect(launch).not.toHaveBeenCalled();
+});
+
+it('refuses a task that the App URL line pushes past the task limit', async ({
+  onTestFinished,
+}) => {
+  const { launch, execute, parameters } = environmentLaunch(onTestFinished);
+  const server = await listeningServer();
+
+  onTestFinished(server.close);
+  const task = 'x'.repeat(32_000);
+
+  expect(Value.Check(parameters, { profile: 'qa', task, url: server.address })).toBe(true);
+
+  await expect(execute({ profile: 'qa', task, url: server.address })).rejects.toThrow('32000');
+
+  expect(server.requests).toEqual([]);
+  expect(launch).not.toHaveBeenCalled();
 });
 
 // A parent with a running turn: Pi is busy and a run has started.

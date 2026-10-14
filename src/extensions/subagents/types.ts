@@ -35,7 +35,7 @@ export const taskIdSchema = Type.String({ pattern: '^[a-zA-Z0-9-]+$' });
 
 export const isTaskId = (value: string): boolean => Value.Check(taskIdSchema, value);
 
-const textLimit = 32_000;
+export const textLimit = 32_000;
 const text = Type.String({ minLength: 1, maxLength: textLimit });
 
 export const thinkingSchema = StringEnum([

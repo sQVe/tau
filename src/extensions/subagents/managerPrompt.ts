@@ -7,7 +7,7 @@ const leadingDelegationGuidelines = [
   'Use the profile default unless the user asks for another model or a multi-model discussion.',
   "Launch independent workers, such as scouts and reviewers, in parallel. Start a worker that needs another worker's result only after that worker reports.",
   'Pass a brief that several workers share as a file path. Give workers on cheap models a shorter `timeoutSeconds`. Run a multi-model discussion as one round with two models, and add a round only for a disagreement that changes the decision.',
-  'Send a finished change with user-visible behavior to `qa`. It expects the user to run the app from the worktree under test. Tell it where the app runs, pass its questions to the user, and give it only test-account credentials, because worker records keep them.',
+  'Send a finished change with user-visible behavior to `qa`. It expects the user to run the app from the worktree under test. Pass a web app address as `url`, which Tau checks and adds to the brief. Pass its questions to the user, and give it only test-account credentials, because worker records keep them.',
 ];
 
 const trailingDelegationGuidelines = [
@@ -24,7 +24,7 @@ const browserLoginStep = (loginCommand: string | undefined): string =>
     : `ask the user to run \`${loginCommand}\`, sign in, and close the window`;
 
 const browserGuideline = (loginCommand: string | undefined): string =>
-  `Send other browser work, such as lookups, forms, page checks, and screenshots, to \`browser\`. Start \`browser\` and \`qa\` workers as if the agent Chrome profile is already signed in, and do not ask the user to sign in before a worker reports a login wall. When a worker reports one, ${browserLoginStep(loginCommand)}, then cancel the waiting worker and start a new one, because each new worker copies the configured Chrome profile when it starts.`;
+  `Send other browser work, such as lookups, forms, page checks, and screenshots, to \`browser\`, and pass \`url\` when it works on a local app. Start \`browser\` and \`qa\` workers as if the agent Chrome profile is already signed in, and do not ask the user to sign in before a worker reports a login wall. When a worker reports one, ${browserLoginStep(loginCommand)}, then cancel the waiting worker and start a new one, because each new worker copies the configured Chrome profile when it starts.`;
 
 export const delegationGuidelines = (loginCommand: string | undefined): string[] => [
   ...leadingDelegationGuidelines,

@@ -141,13 +141,19 @@ const resolveSkills = (profile: Profile, commands: SlashCommandInfo[]): string[]
     return skill.sourceInfo.path;
   });
 
+export const requireTrustedProject = (
+  context: Pick<ExtensionContext, 'isProjectTrusted'>,
+): void => {
+  if (!context.isProjectTrusted()) {
+    throw new Error('Worker launch requires a trusted project.');
+  }
+};
+
 const resolveLaunchPlan = (
   input: LaunchRequest,
   context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>,
 ) => {
-  if (!context.isProjectTrusted()) {
-    throw new Error('Worker launch requires a trusted project.');
-  }
+  requireTrustedProject(context);
 
   const cwd = realpathSync(resolve(context.cwd, input.cwd ?? '.'));
 

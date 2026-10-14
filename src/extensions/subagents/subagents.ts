@@ -1,4 +1,6 @@
 /* oxlint-disable node/no-process-env -- The herdr connection comes from the active Pi process. */
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import { StringEnum } from '@earendil-works/pi-ai';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
@@ -17,12 +19,20 @@ import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
 import { workerNoticeChannel } from '../../workerNoticeEvent.js';
 import type { WorkerNoticeEvent } from '../../workerNoticeEvent.js';
 import { isWorkerProcess } from '../../workerProcess.js';
+import { appAnswers } from './appProbe.js';
 import { readBrowserLoginCommand } from './browserLogin.js';
 import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.js';
 import { hasParentTrackedWorkers, compactionWorkerList } from './compactionWorkers.js';
 import { WorkerCapacityFullError, WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
-import { launchModels, resolveRoutedLoadout } from './loadout.js';
+import {
+  appUrlRefusal,
+  briefLimitRefusal,
+  briefWithAppUrl,
+  checksLaunchEnvironment,
+  launchEnvironmentRefusal,
+} from './launchEnvironment.js';
+import { launchModels, requireTrustedProject, resolveRoutedLoadout } from './loadout.js';
 import { delegationGuidelines } from './managerPrompt.js';
 import { decideNoticeDelivery } from './noticeDelivery.js';
 import { passiveWaitRefusal } from './passiveWait.js';
@@ -48,7 +58,7 @@ import {
 } from './render.js';
 import { readTrackerSetup } from './trackerConfig.js';
 import { trackerLines } from './trackerRouting.js';
-import { taskIdSchema } from './types.js';
+import { taskIdSchema, textLimit } from './types.js';
 import type { WorkerState } from './types.js';
 import { renderWorkerWidget } from './widget.js';
 import { workerModelLine } from './workerModels.js';
@@ -94,6 +104,13 @@ const launchParameters = Type.Object(
     ),
     profile: Type.String({ minLength: 1 }),
     cwd: Type.Optional(Type.String()),
+    url: Type.Optional(
+      Type.String({
+        minLength: 1,
+        description:
+          'qa and browser only: the http or https URL of the app under test. Tau refuses the launch when it does not answer, and adds it to the task.',
+      }),
+    ),
     model: Type.Optional(Type.String()),
     visibility,
     timeoutSeconds: Type.Optional(
@@ -276,6 +293,50 @@ const launchErrorResult = (runtime: SubagentRuntime, error: unknown) => {
   return evidenceResult(error);
 };
 
+const checkLaunchEnvironment = async (
+  parameters: LaunchParameters,
+  signal: AbortSignal | undefined,
+  sessionCwd: string,
+): Promise<void> => {
+  const urlRefusal = appUrlRefusal(parameters.profile, parameters.url);
+
+  if (urlRefusal !== undefined) {
+    throw new Error(urlRefusal);
+  }
+
+  const limitRefusal = briefLimitRefusal(
+    briefWithAppUrl(parameters.task, parameters.url),
+    textLimit,
+  );
+
+  if (limitRefusal !== undefined) {
+    throw new Error(limitRefusal);
+  }
+
+  if (!checksLaunchEnvironment(parameters.profile)) {
+    return;
+  }
+
+  const worktree = resolve(sessionCwd, parameters.cwd ?? '.');
+  const worktreeExists = existsSync(worktree);
+
+  const url =
+    parameters.url === undefined || !worktreeExists
+      ? undefined
+      : { address: parameters.url, answers: await appAnswers(parameters.url, signal) };
+
+  const refusal = launchEnvironmentRefusal({
+    profile: parameters.profile,
+    worktree,
+    worktreeExists,
+    url,
+  });
+
+  if (refusal !== undefined) {
+    throw new Error(refusal);
+  }
+};
+
 const launchWorker = async (
   runtime: SubagentRuntime,
   parameters: LaunchParameters,
@@ -294,6 +355,9 @@ const launchWorker = async (
   if (parentSession == null || parentSession === '') {
     throw new Error('Worker launch requires a saved parent Pi session inside local herdr.');
   }
+
+  requireTrustedProject(context);
+  await checkLaunchEnvironment(parameters, signal, context.cwd);
 
   const controller = runtime.getController();
 
@@ -314,7 +378,7 @@ const launchWorker = async (
   try {
     status = await controller.launch(
       {
-        task: parameters.task,
+        task: briefWithAppUrl(parameters.task, parameters.url),
         ...(parameters.acceptance === undefined ? {} : { acceptance: parameters.acceptance }),
         ...(parameters.label === undefined ? {} : { label: parameters.label }),
         loadout,

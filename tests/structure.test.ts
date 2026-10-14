@@ -64,6 +64,7 @@ const pureModules = [
   'src/extensions/subagents/capacityRefusal.ts',
   'src/extensions/subagents/compactionWorkers.ts',
   'src/extensions/subagents/incompleteReport.ts',
+  'src/extensions/subagents/launchEnvironment.ts',
   'src/extensions/subagents/modelRoutes.ts',
   'src/extensions/subagents/noticeDelivery.ts',
   'src/extensions/subagents/passiveWait.ts',
