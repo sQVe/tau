@@ -28,7 +28,7 @@ const optionSchema = Type.Object({
   preview: Type.Optional(
     Type.String({
       description:
-        'Optional preformatted example of what this option produces, shown when the option is focused. Options without one show no preview. See the tool description.',
+        'Optional preformatted example of what this option produces, shown when the option is focused. It replaces the question-level preview for this option. Without either, the option shows no preview. See the tool description.',
     }),
   ),
 });
