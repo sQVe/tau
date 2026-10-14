@@ -6,7 +6,9 @@ const leadingDelegationGuidelines = [
   'Every `worker` launch and follow-up needs `acceptance` criteria. Brief with, when it applies: outcome, scope and non-goals, entry files, decisions already made, baseline, and checks to run. If you cannot write the criteria, ask the user or brainstorm first.',
   'Use the profile default unless the user asks for another model or a multi-model discussion.',
   "Launch independent workers, such as scouts and reviewers, in parallel. Start a worker that needs another worker's result only after that worker reports.",
-  'Pass a brief that several workers share as a file path. Give workers on cheap models a shorter `timeoutSeconds`. Run a multi-model discussion as one round with two models, and add a round only for a disagreement that changes the decision.',
+  'Pass a brief that several workers share as a file path.',
+  'Give workers on cheap models a shorter `timeoutSeconds`.',
+  'Run a multi-model discussion as one round with two models, and add a round only for a disagreement that changes the decision.',
   'Send a finished change with user-visible behavior to `qa`. It expects the user to run the app from the worktree under test. Pass a web app address as `url`, which Tau checks and adds to the brief. Pass its questions to the user, and give it only test-account credentials, because worker records keep them.',
 ];
 
