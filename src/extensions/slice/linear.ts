@@ -321,14 +321,21 @@ export const changeBlockedBy = async (
   cwd: string,
   change: { action: 'add' | 'delete'; identifier: string; blocker: string },
 ): Promise<void> => {
-  await run(exec, cwd, [
+  const commandArguments = [
     'issue',
     'relation',
     change.action,
     change.identifier,
     'blocked-by',
     change.blocker,
-  ]);
+  ];
+
+  // Without --yes, `relation delete` asks for confirmation and fails without a terminal.
+  if (change.action === 'delete') {
+    commandArguments.push('--yes');
+  }
+
+  await run(exec, cwd, commandArguments);
 };
 
 export const moveIssue = async (

@@ -458,6 +458,10 @@ export const createLinearFake = (): LinearFake => {
     const blocker = commandArguments[5]!;
     const issue = issues.get(identifier)!;
 
+    if (action === 'delete' && !commandArguments.includes('--yes')) {
+      throw new Error('This command needs to ask for confirmation. Pass --yes to confirm.');
+    }
+
     issue.blockedBy =
       action === 'add'
         ? [...issue.blockedBy, blocker]
