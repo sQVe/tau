@@ -991,8 +991,11 @@ it('defaults the launch timeout by profile role and keeps an explicit timeout', 
   ]);
 });
 
-const listeningServer = async (): Promise<{ address: string; close: () => Promise<void> }> => {
-  const server = createServer((_request, response) => {
+const listeningServer = async () => {
+  const requests: string[] = [];
+
+  const server = createServer((request, response) => {
+    requests.push(request.url ?? '');
     response.writeHead(404).end();
   });
 
@@ -1004,8 +1007,9 @@ const listeningServer = async (): Promise<{ address: string; close: () => Promis
 
   return {
     address: `http://127.0.0.1:${port}/`,
+    requests,
     close: () =>
-      new Promise((resolve) => {
+      new Promise<void>((resolve) => {
         server.close(() => {
           resolve();
         });
@@ -1037,13 +1041,13 @@ const environmentLaunch = (onTestFinished: (cleanup: () => void) => void) => {
     .spyOn(WorkerController.prototype, 'launch')
     .mockResolvedValue({} as Awaited<ReturnType<WorkerController['launch']>>);
 
-  const execute = (input: Record<string, unknown>, cwd = directory) =>
+  const execute = (input: Record<string, unknown>, context: Record<string, unknown> = {}) =>
     tool.execute(
       'call',
       { model: fixtureModelReference, task: 'Test the form.', ...input },
       undefined,
       undefined,
-      { ...launchContext(directory), cwd },
+      { ...launchContext(directory), ...context },
     );
 
   return { directory, launch, execute, parameters: tool.parameters };
@@ -1090,7 +1094,9 @@ it('refuses a browser or QA launch whose worktree is gone', async ({ onTestFinis
   const missing = join(directory, 'removed-worktree');
 
   for (const profile of ['qa', 'browser']) {
-    await expect(execute({ profile }, missing)).rejects.toThrow(`no worktree at ${missing}`);
+    await expect(execute({ profile }, { cwd: missing })).rejects.toThrow(
+      `no worktree at ${missing}`,
+    );
   }
 
   expect(launch).not.toHaveBeenCalled();
@@ -1105,6 +1111,39 @@ it('refuses a url on other profiles and a url that is not http', async ({ onTest
 
   await expect(execute({ profile: 'qa', url: 'localhost:3000' })).rejects.toThrow('http');
 
+  expect(launch).not.toHaveBeenCalled();
+});
+
+it('refuses an untrusted launch before it sends a request to the url', async ({
+  onTestFinished,
+}) => {
+  const { launch, execute } = environmentLaunch(onTestFinished);
+  const server = await listeningServer();
+
+  onTestFinished(server.close);
+
+  await expect(
+    execute({ profile: 'qa', url: server.address }, { isProjectTrusted: () => false }),
+  ).rejects.toThrow('trusted project');
+
+  expect(server.requests).toEqual([]);
+  expect(launch).not.toHaveBeenCalled();
+});
+
+it('refuses a task that the App URL line pushes past the task limit', async ({
+  onTestFinished,
+}) => {
+  const { launch, execute, parameters } = environmentLaunch(onTestFinished);
+  const server = await listeningServer();
+
+  onTestFinished(server.close);
+  const task = 'x'.repeat(32_000);
+
+  expect(Value.Check(parameters, { profile: 'qa', task, url: server.address })).toBe(true);
+
+  await expect(execute({ profile: 'qa', task, url: server.address })).rejects.toThrow('32000');
+
+  expect(server.requests).toEqual([]);
   expect(launch).not.toHaveBeenCalled();
 });
 

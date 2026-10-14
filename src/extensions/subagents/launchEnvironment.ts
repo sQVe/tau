@@ -58,3 +58,9 @@ export const launchEnvironmentRefusal = ({
 
 export const briefWithAppUrl = (brief: string, url: string | undefined): string =>
   url === undefined ? brief : `${brief}\n\nApp URL: ${url}`;
+
+// Counts code points, as the saved task schema does.
+export const briefLimitRefusal = (brief: string, limit: number): string | undefined =>
+  Array.from(brief).length > limit
+    ? `The task with its App URL line exceeds ${limit} characters. Shorten the task.`
+    : undefined;

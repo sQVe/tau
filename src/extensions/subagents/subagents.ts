@@ -27,11 +27,12 @@ import { WorkerCapacityFullError, WorkerController } from './controller/controll
 import { EvidenceUnavailableError } from './controller/record.js';
 import {
   appUrlRefusal,
+  briefLimitRefusal,
   briefWithAppUrl,
   checksLaunchEnvironment,
   launchEnvironmentRefusal,
 } from './launchEnvironment.js';
-import { launchModels, resolveRoutedLoadout } from './loadout.js';
+import { launchModels, requireTrustedProject, resolveRoutedLoadout } from './loadout.js';
 import { delegationGuidelines } from './managerPrompt.js';
 import { decideNoticeDelivery } from './noticeDelivery.js';
 import { passiveWaitRefusal } from './passiveWait.js';
@@ -57,7 +58,7 @@ import {
 } from './render.js';
 import { readTrackerSetup } from './trackerConfig.js';
 import { trackerLines } from './trackerRouting.js';
-import { taskIdSchema } from './types.js';
+import { taskIdSchema, textLimit } from './types.js';
 import type { WorkerState } from './types.js';
 import { renderWorkerWidget } from './widget.js';
 import { workerModelLine } from './workerModels.js';
@@ -303,6 +304,15 @@ const checkLaunchEnvironment = async (
     throw new Error(urlRefusal);
   }
 
+  const limitRefusal = briefLimitRefusal(
+    briefWithAppUrl(parameters.task, parameters.url),
+    textLimit,
+  );
+
+  if (limitRefusal !== undefined) {
+    throw new Error(limitRefusal);
+  }
+
   if (!checksLaunchEnvironment(parameters.profile)) {
     return;
   }
@@ -346,6 +356,7 @@ const launchWorker = async (
     throw new Error('Worker launch requires a saved parent Pi session inside local herdr.');
   }
 
+  requireTrustedProject(context);
   await checkLaunchEnvironment(parameters, signal, context.cwd);
 
   const controller = runtime.getController();

@@ -1,6 +1,11 @@
 import { expect, it } from 'vitest';
 
-import { appUrlRefusal, briefWithAppUrl, launchEnvironmentRefusal } from './launchEnvironment.js';
+import {
+  appUrlRefusal,
+  briefLimitRefusal,
+  briefWithAppUrl,
+  launchEnvironmentRefusal,
+} from './launchEnvironment.js';
 
 it.each([
   { profile: 'qa', url: undefined, refused: false },
@@ -42,4 +47,13 @@ it.each([
 it('appends the app URL to the brief only when one is given', () => {
   expect(briefWithAppUrl('Test the form.', undefined)).toBe('Test the form.');
   expect(briefWithAppUrl('Test the form.', address)).toBe(`Test the form.\n\nApp URL: ${address}`);
+});
+
+it.each([
+  { brief: 'ab', limit: 2, refused: false },
+  { brief: 'abc', limit: 2, refused: true },
+  { brief: '😀😀', limit: 2, refused: false },
+  { brief: '😀😀😀', limit: 2, refused: true },
+])('brief $brief with limit $limit refused: $refused', ({ brief, limit, refused }) => {
+  expect(briefLimitRefusal(brief, limit) !== undefined).toBe(refused);
 });
