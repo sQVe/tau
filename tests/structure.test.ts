@@ -60,6 +60,7 @@ const pureModules = [
   'src/extensions/subagents/noticeDelivery.ts',
   'src/extensions/subagents/passiveWait.ts',
   'src/extensions/subagents/piStop.ts',
+  'src/extensions/subagents/qaBrief.ts',
   'src/extensions/subagents/reportCap.ts',
   'src/extensions/subagents/summaryLength.ts',
   'src/extensions/subagents/taskFormat.ts',

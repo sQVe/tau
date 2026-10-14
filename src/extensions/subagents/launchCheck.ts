@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
+
 import { appAnswers } from './appProbe.js';
 import {
   appUrlRefusal,
@@ -10,13 +12,16 @@ import {
   launchEnvironmentRefusal,
 } from './launchEnvironment.js';
 import type { LaunchParameters } from './launchParameters.js';
+import { applyQaSettings } from './qaLaunch.js';
 import { textLimit } from './types.js';
 
+// Resolves the launch with the QA settings applied, and refuses it when the environment fails.
 export const checkLaunchEnvironment = async (
-  parameters: LaunchParameters,
+  requested: LaunchParameters,
   signal: AbortSignal | undefined,
-  sessionCwd: string,
-): Promise<void> => {
+  context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted' | 'ui'>,
+): Promise<LaunchParameters> => {
+  const parameters = await applyQaSettings(requested, signal, context);
   const urlRefusal = appUrlRefusal(parameters.profile, parameters.url);
 
   if (urlRefusal !== undefined) {
@@ -33,10 +38,10 @@ export const checkLaunchEnvironment = async (
   }
 
   if (!checksLaunchEnvironment(parameters.profile)) {
-    return;
+    return parameters;
   }
 
-  const worktree = resolve(sessionCwd, parameters.cwd ?? '.');
+  const worktree = resolve(context.cwd, parameters.cwd ?? '.');
   const worktreeExists = existsSync(worktree);
 
   const url =
@@ -54,4 +59,6 @@ export const checkLaunchEnvironment = async (
   if (refusal !== undefined) {
     throw new Error(refusal);
   }
+
+  return parameters;
 };

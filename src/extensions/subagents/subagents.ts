@@ -216,9 +216,14 @@ const launchWorker = async (
   }
 
   requireTrustedProject(context);
-  await checkLaunchEnvironment(parameters, signal, context.cwd);
+  const resolved = await checkLaunchEnvironment(parameters, signal, context);
 
-  return executeLaunch(runtime, { parameters, startedAt, parentSession }, signal, context);
+  return executeLaunch(
+    runtime,
+    { parameters: resolved, startedAt, parentSession },
+    signal,
+    context,
+  );
 };
 
 const followUpWorker = async (

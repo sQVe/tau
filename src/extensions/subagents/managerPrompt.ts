@@ -17,7 +17,7 @@ const leadingDelegationGuidelines = [
   'Pass a brief that several workers share as a file path.',
   'Give workers on cheap models a shorter `timeoutSeconds`.',
   'Run a multi-model discussion as one round with two models, and add a round only for a disagreement that changes the decision.',
-  'Send a finished change with user-visible behavior to `qa`. It expects the user to run the app from the worktree under test. Pass a web app address as `url`, which Tau checks and adds to the brief. Pass its questions to the user, and give it only test-account credentials, because worker records keep them.',
+  'Send a finished change with user-visible behavior to `qa`. It expects the user to run the app from the worktree under test. Pass a web app address as `url`, which Tau checks and adds to the brief. When the user config has a `qa.repositories` entry for the repository of the worktree, Tau finds the address and adds the test-account command and the data-write rule to the brief, so do not ask the user for them. Without an entry, pass its questions to the user, and give it only test-account credentials, because worker records keep them.',
 ];
 
 const trailingDelegationGuidelines = [
