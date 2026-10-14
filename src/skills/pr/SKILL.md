@@ -131,6 +131,10 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
    - When the repository has a configured full check, run it with the `full_check` tool, passing the
      pinned merge base as `base`. Append the log it returns after the header lines. The tool returns
      a saved passing log without a run when the head, base, command, and changes are unchanged.
+   - When the change has user-visible behavior, also send it to a `qa` worker on the committed tree
+     before the preview. Tau fills the app URL and test account from the user's config, so do not
+     ask the user for them. Ask the user only when the launch is refused. Record what QA tested and
+     found for step 6 and the preview.
 
 6. Choose draft status. Any gap means draft. A gap is one of:
    - A required check that failed or did not run. Only checks that can run solely after deployment
@@ -140,6 +144,8 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      gap.
    - A review that does not cover the pushed content. A checked fix counts as covered: it changes
      only what its finding or failing check needs, and the checks that cover it passed after it.
+   - User-visible behavior that QA did not test, or that QA found failing. Untested behavior gets a
+     `[ ]` verification line in the body.
    - An open finding. A finding closes when its fix is checked as above or reviewed again, or when
      the user dismisses it as not a defect. Record the dismissal reason in the session report.
      Deferred, Blocked, or unfixed findings stay open.
