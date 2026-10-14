@@ -204,6 +204,9 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
    - For a self-review, show the review's top-level body and each comment's text, file, line, and
      the head SHA it anchors to. Any change to the body, a text, or an anchor needs a new preview.
      The anchor's side is `LEFT` for a deleted line and `RIGHT` otherwise; show it with the line.
+   - Ask for approval with these options in this order: Publish as ready, Publish as draft, Change
+     something, Don't publish. Recommend Publish as draft when step 6 found a gap, and Publish as
+     ready otherwise. Put the title and full body in the question-level `preview`.
 
 9. Publish.
    - Compare HEAD, local status, and commits to push with the preview; read the PR again. In a

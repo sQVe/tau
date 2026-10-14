@@ -37,12 +37,13 @@ A skill's own reply or question format takes precedence over this section.
 - Give each decision a number and one question. Make it readable without earlier messages. Do not
   refer to labels such as "the scope question."
 - Say in one sentence what the decision changes or blocks.
-- Give options as letters. Put your recommendation first and mark it. Say in one line what happens
-  with each option.
+- Give options as letters in a natural, stable order. Mark your recommendation. Say in one line what
+  happens with each option.
 - For yes or no questions, state the default you will use if the user does not answer.
 - Questions in `ask_user_question` follow the same rules, but its options are labels, not letters.
-  Give each question a context, make it readable without earlier messages, and ask one decision per
-  question. Mark the recommendation with `recommended: true`, not with text in its label.
+  Give each question the problem behind it and the impact of the answer, make it readable without
+  earlier messages, and ask one decision per question. Mark the recommendation with
+  `recommended: true`, not with text in its label.
 
 ## Cut what adds nothing
 

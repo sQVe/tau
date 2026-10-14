@@ -1,8 +1,10 @@
 # ADR 0065: Put user decisions first in replies
 
 **Date**: 2026-09-29\
-**Status**: Accepted\
-**Related**: [ADR 0006 (Default writing policy)](./0006-default-writing-policy.md),
+**Status**: Accepted; option order superseded by
+[ADR 0107 (State the problem and keep option order stable in questions)](./0107-state-the-problem-and-keep-option-order-stable-in-questions.md)\
+**Related**:
+[ADR 0006 (Default writing policy)](./0006-default-writing-policy.md),
 [ADR 0056 (Load workflow rules apart from coding and writing)](./0056-load-workflow-rules-apart-from-coding-and-writing.md)
 
 ## Context
