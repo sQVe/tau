@@ -1,5 +1,5 @@
-import { access, constants, lstat, readFile, realpath } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { access, constants, lstat, readFile } from 'node:fs/promises';
+import { join, relative, resolve } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.js';
 import { runGit } from '../gitOutput.js';
@@ -29,6 +29,7 @@ import type {
 import type { Freshness } from './freshness.js';
 import { captureReview, checkFreshness } from './pinnedCapture.js';
 import { inputFileName, readCaptureRecord, recheckFileName } from './record.js';
+import { isInsideRoot, leavesRoot } from './reviewCapture.js';
 import type { PinnedTarget } from './reviewCapture.js';
 
 interface FileBody {
@@ -83,18 +84,6 @@ const isBinary = (bytes: Buffer) => bytes.includes(0);
 
 const textRead = (bytes: Buffer): FileRead =>
   isBinary(bytes) ? { kind: 'binary' } : { kind: 'text', text: bytes.toString('utf8') };
-
-// Only a whole `..` segment leaves the root; `..rules.md` is a name inside it.
-const leavesRoot = (fromRoot: string) =>
-  fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot);
-
-// A linked directory can lead outside the checkout.
-const isInsideRoot = async (root: string, file: string) => {
-  const realRoot = await realpath(root);
-  const realParent = await realpath(dirname(file));
-
-  return !leavesRoot(relative(realRoot, realParent));
-};
 
 // A link can point outside the checkout, and a FIFO would block the read, so only a regular file
 // is read, and the read refuses a link put in its place after the check.

@@ -1,6 +1,6 @@
-import { copyFile, lstat, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 
 import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
 import { runGit } from '../gitOutput.js';
@@ -16,6 +16,7 @@ import {
   fixedPrefixes,
   hashBytes,
   isBinaryDiff,
+  isInsideRoot,
   runCaptureCommand,
   uniqueGaps,
   wholeFileList,
@@ -77,17 +78,6 @@ const isRepositoryPath = (path: string) => {
   const segments = path.split('/');
 
   return !isAbsolute(path) && !segments.includes('..') && !segments.includes('');
-};
-
-const leavesRoot = (fromRoot: string) =>
-  fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot);
-
-// A linked directory in the path could lead outside the checkout.
-const isInsideRoot = async (root: string, file: string) => {
-  const realRoot = await realpath(root);
-  const realParent = await realpath(dirname(file));
-
-  return !leavesRoot(relative(realRoot, realParent));
 };
 
 const readWorkingFile = async (root: string, path: string): Promise<WorkingFile> => {

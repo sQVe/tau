@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { access, constants } from 'node:fs/promises';
-import { join } from 'node:path';
+import { access, constants, lstat, realpath, stat } from 'node:fs/promises';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
@@ -425,6 +425,42 @@ const captureDiffOnce = async (
   }
 };
 
+// Only a whole `..` segment leaves the root; `..rules.md` is a name inside it.
+export const leavesRoot = (fromRoot: string): boolean =>
+  fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot);
+
+// A linked directory in the path can lead outside the checkout.
+export const isInsideRoot = async (root: string, file: string): Promise<boolean> => {
+  const realRoot = await realpath(root);
+  const realParent = await realpath(dirname(file));
+
+  return !leavesRoot(relative(realRoot, realParent));
+};
+
+// A path whose parent cannot be resolved is left to the read, which reports why it failed.
+const leadsOutsideRoot = (root: string, path: string) =>
+  isInsideRoot(root, join(root, path)).then(
+    (inside) => !inside,
+    () => false,
+  );
+
+// Git diffs a link to a directory as the directory, which fails the diff or prints nothing.
+const isLinkToDirectory = async (file: string) => {
+  try {
+    const entry = await lstat(file);
+
+    if (!entry.isSymbolicLink()) {
+      return false;
+    }
+
+    const target = await stat(file);
+
+    return target.isDirectory();
+  } catch {
+    return false;
+  }
+};
+
 const accessError = (path: string) =>
   access(path, constants.R_OK).then(
     () => undefined,
@@ -488,6 +524,13 @@ export const captureWholeFile = async (
   path: string,
   deleted: ReadonlySet<string>,
 ): Promise<Part> => {
+  // Git reads through a linked parent directory, which could show a file outside the checkout.
+  const outside = await leadsOutsideRoot(root, path);
+
+  if (outside || (await isLinkToDirectory(join(root, path)))) {
+    return { ...emptyPart, gaps: [{ kind: 'unreadable', path }] };
+  }
+
   const options = ['--no-ext-diff', '--no-textconv', '--no-color', ...fixedPrefixes, '--no-index'];
   const command = ['diff', ...options, '--', '/dev/null', path];
 
