@@ -371,6 +371,45 @@ it('returns the evidence for a saved capture', async () => {
   });
 });
 
+// Commits src/a.test.ts, then replaces src with a link to an outside folder with its own a.test.ts.
+const linkedDirectoryReview = async () => {
+  const { root, directory } = await preparedReview();
+  const outside = await mkdtemp(join(tmpdir(), 'tau-review-outside-'));
+  onTestFinished(() => rm(outside, { recursive: true, force: true }));
+
+  await mkdir(join(root, 'src'));
+  await writeFile(join(root, 'src', 'a.test.ts'), 'tracked\n');
+  await git(root, ['add', '--all']);
+  await git(root, ['commit', '--quiet', '-m', 'src']);
+  await writeFile(join(outside, 'a.test.ts'), 'outside secret\n');
+  await rm(join(root, 'src'), { recursive: true });
+  await symlink(outside, join(root, 'src'));
+
+  return { root, directory };
+};
+
+it('reports a named file under a directory that links outside the repository as unreadable', async () => {
+  const { root, directory } = await linkedDirectoryReview();
+
+  const result = await run(root, {
+    action: 'capture',
+    directory,
+    target: { kind: 'files', paths: ['src/a.test.ts'] },
+  });
+
+  expect(result['gaps']).toContainEqual({ kind: 'unreadable', path: 'src/a.test.ts' });
+  expect(await readFile(join(directory, 'input.md'), 'utf8')).not.toContain('outside secret');
+});
+
+it('reports an untracked link to a directory as unreadable', async () => {
+  const { root, directory } = await linkedDirectoryReview();
+
+  const result = await captureWorkingTree(root, directory);
+
+  expect(result['gaps']).toContainEqual({ kind: 'unreadable', path: 'src' });
+  expect(await readFile(join(directory, 'input.md'), 'utf8')).not.toContain('outside secret');
+});
+
 const fixRepository = async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
