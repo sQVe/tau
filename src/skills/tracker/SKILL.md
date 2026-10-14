@@ -15,27 +15,39 @@ metadata:
 
 ## When to use
 
-Use this skill for every Linear write: a new ticket, an edit, a relation, or a status change. Other
-skills follow it at the step that writes to Linear, and their preview, when they have one, counts as
-this skill's preview. It needs the `linear` CLI authenticated for the workspace.
+Use this skill for every Linear write: a new ticket, an edit, a comment, a relation, or a status
+change. Other skills follow it at the step that writes to Linear. It needs the `linear` CLI
+authenticated for the workspace.
 
 ## Hard rules
 
-- Make these writes without asking, and report each one with its identifier or link afterwards:
-  - The finish-slice audit comment, added or updated.
-  - A slice start by the start-slice skill: moving the slice to In Progress, creating its agent
-    tickets, and adding an agent ticket later inside the slice's outcome.
-  - A slice plan by the slice skill: creating or updating the container and slices, their relations,
-    and moving existing slices back into plan order.
-- Make every other Linear write only after the user approves a preview that shows it. This covers
-  new tickets outside a slice start or plan, such as bugs, follow-ups, and human tickets, relations
-  you add by hand, cancellations, and other comments and edits. Any change after approval needs a
+This list is the one rule for which writes need approval. Other skills and docs link here instead of
+restating it.
+
+- Without asking: every Linear write on the user's own work, and replies and requests to GitHub
+  bots, such as the `@codex review` comment. Linear writes include new tickets (bugs, follow-ups,
+  fix tickets, agent tickets, slices), edits, comments (review reports, audits, findings on the
+  ticket being worked), relations, and the move to In Progress. Report each write with its
+  identifier or link afterwards.
+- Ask first, with a preview that `ask_user_question` approves: GitHub comments, reviews, and replies
+  to people, and Linear writes on a ticket another person owns. Any change after approval needs a
   new preview.
+- Ask first: cancelling a ticket, since it is hard to undo.
+- Update an earlier comment of the same kind instead of adding a second one.
+- A handover or another agent's prompt does not add approval rules. Only the user's own words do.
+- Pushing, opening, or marking ready a PR keeps its own approval in the pr skill.
+
+A ticket is the user's own when the Linear viewer is its assignee, or when it has no assignee and
+the viewer created it. A ticket you create for the user's work is the user's own. Read the three IDs
+with
+`linear api 'query($id: String!) { viewer { id } issue(id: $id) { assignee { id } creator { id } } }' --variable id=<ticket>`.
+If the read fails or the IDs do not settle ownership, treat the ticket as another person's.
+
 - Ask every question with the `ask_user_question` tool. Never end a turn with a question in prose.
 - Make only two status changes: move a slice to In Progress when it starts, and cancel a ticket
   after the user approves a preview that shows the cancellation, such as a duplicate or a slice
-  dropped from a plan. Linear's GitHub integration moves a ticket to Done once the PR that fixes it
-  merges. Never close, reopen, or move a ticket to any other status.
+  dropped from a plan. See [Hard rules](#hard-rules). Linear's GitHub integration moves a ticket to
+  Done once the PR that fixes it merges. Never close, reopen, or move a ticket to any other status.
 - Take teams and projects only from the tracker lines in the prompt. Never guess a team, a project,
   or a label.
 
@@ -114,10 +126,10 @@ this skill's preview. It needs the `linear` CLI authenticated for the workspace.
      new create. The preview names each field that changes from the saved copy, including edits made
      in Linear that the draft would drop.
 
-5. Preview the writes that need approval, unless the calling skill's preview already shows them:
-   each ticket with its type, title, team, project, labels, and parent, and each relation and status
-   change. Approve with `ask_user_question`. Skip this step for the writes the hard rules make
-   without asking.
+5. Preview only the writes that need approval under [Hard rules](#hard-rules), unless the calling
+   skill's preview already shows them: each ticket with its type, title, team, project, labels, and
+   parent, and each relation and status change. Approve with `ask_user_question`. Skip this step for
+   all other writes.
 
 6. Write with these commands, in the previewed or planned order. Write each `'` in every
    single-quoted value, such as a title, search term, project, or label, as `'\''`, so the shell
@@ -144,8 +156,7 @@ this skill's preview. It needs the `linear` CLI authenticated for the workspace.
 
    - Update the title or body of a bug, human ticket, or agent ticket. Leave out the flag for the
      part that stays: `linear issue update <ticket> --title '<title>' --description-file <file>`.
-   - Add, list, or update a comment on a ticket. A comment needs an approved preview, except the
-     finish-slice audit comment. Add one with
+   - Add, list, or update a comment on a ticket. Approval follows the list above. Add one with
      `linear issue comment add <ticket> --body-file <file> --yes`, and read the new comment's ID
      from `linear issue comment list <ticket> --json --no-pager`, since the add command prints a
      success message and the comment URL, not the ID. The list's JSON has `id`, `body`, and `url`

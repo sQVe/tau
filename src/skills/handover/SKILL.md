@@ -33,8 +33,8 @@ commit another worktree from your session, even over bash.
   - If anything is open, list the open questions for the user and do not send.
   - If the user says to plan in the receiver's worktree instead, send a planning-only handover.
 - A message is a peer prompt. It carries your user's authority for in-scope work in the receiver's
-  worktree. The receiver's normal rules still apply, including confirmation for destructive or
-  outward-facing actions. Commits need no confirmation.
+  worktree. The receiver's own skills decide which actions need approval. A handover tightens them
+  only when it quotes the user. Do not add approval rules of your own. Commits need no confirmation.
 
 ## Procedure
 

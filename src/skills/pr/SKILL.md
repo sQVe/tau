@@ -190,8 +190,8 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      means the reasons belong in code comments or the PR is too large.
 
 8. Preview and ask for approval. Show title, full body, base repository and branch, head, draft
-   status, commits to push, and push command. For a new PR, show the `@codex review` comment that
-   step 11 posts.
+   status, commits to push, and push command. For a new PR, the `@codex review` comment of step 11
+   needs no preview.
    - After a rebase in step 1 of a branch with a remote tip, say that the push is a force-push and
      show it with `--force-with-lease=refs/heads/<branch>:<old-tip>`.
    - For an existing PR whose base changes, show the current base and the new one.
@@ -241,7 +241,8 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
     repository, PR number, title, base, and draft status. Report each difference and the PR URL.
     Stop if the call fails or shows a difference.
 
-11. Request a Codex review without asking. If this run created the PR, run
+11. Request a Codex review, a reply to a GitHub bot that follows
+    [Hard rules](../tracker/SKILL.md#hard-rules). If this run created the PR, run
     `gh pr comment <number> --repo <repo> --body '@codex review'`. When a retry follows a partial
     failure, count a PR the earlier attempt created as created by this run. Post only if
     `gh pr view <number> --repo <repo> --json comments --jq '[.comments[] | select(.body == "@codex review")] | length'`
