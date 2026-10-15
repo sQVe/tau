@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
@@ -723,4 +723,65 @@ it('strips only a leading @ from a tool path', async ({ onTestFinished }) => {
 
   expect(await write('src@/value.ts')).toBeUndefined();
   expect(await write('@src/value.ts')).toMatchObject({ content: [{ type: 'text' }] });
+});
+
+const staleHint = 'Hint: Test results are stale; rerun run_tests on the current inputs.';
+
+const passAndEditThrough = async (
+  application: ReturnType<typeof setup>,
+  projectPath: string,
+  sessionCwd: string,
+  outsideFile: string,
+) => {
+  vi.mocked(runTests).mockResolvedValueOnce({
+    kind: 'pass',
+    tests: [{ file: 'value.test.ts', fullname: 'works', status: 'passed' }],
+  });
+
+  await application.run(sessionCwd);
+  await writeFile(outsideFile, 'after');
+
+  return application.emit('tool_result', sessionCwd, writeEvent(projectPath));
+};
+
+it('hints after an edit through a symlinked folder that points outside the project', async ({
+  onTestFinished,
+}) => {
+  const root = temporaryDirectory(onTestFinished, 'tau-link-edit-');
+  const cwd = join(root, 'project');
+  await mkdir(join(cwd, 'src'), { recursive: true });
+  await mkdir(join(root, 'outside'));
+  await writeFile(join(cwd, 'value.test.ts'), 'test');
+  await writeFile(join(root, 'outside/value.ts'), 'before');
+  await symlink(join(root, 'outside'), join(cwd, 'src/shared'));
+
+  const patch = await passAndEditThrough(
+    setup(),
+    'src/shared/value.ts',
+    cwd,
+    join(root, 'outside/value.ts'),
+  );
+
+  expect(patch).toMatchObject({ content: [{ text: 'Written' }, { text: staleHint }] });
+});
+
+it('hints after a production edit when the session directory is a symlinked path', async ({
+  onTestFinished,
+}) => {
+  const root = temporaryDirectory(onTestFinished, 'tau-link-cwd-');
+  const real = join(root, 'real');
+  const linked = join(root, 'linked');
+  await mkdir(join(real, 'src'), { recursive: true });
+  await writeFile(join(real, 'value.test.ts'), 'test');
+  await writeFile(join(real, 'src/value.ts'), 'before');
+  await symlink(real, linked);
+
+  const patch = await passAndEditThrough(
+    setup(),
+    'src/value.ts',
+    linked,
+    join(real, 'src/value.ts'),
+  );
+
+  expect(patch).toMatchObject({ content: [{ text: 'Written' }, { text: staleHint }] });
 });

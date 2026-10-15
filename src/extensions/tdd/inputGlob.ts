@@ -352,7 +352,11 @@ export const createInputRules = (
       namesDirectory(name) && !excludesDirectory(excludes, path.split('/')),
     isInput: (path) => {
       const segments = path.split('/');
-      const isExcluded = excludes.some((pattern) => matchesSegments(pattern, segments, true));
+      const directories = segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1));
+
+      const isExcluded =
+        excludes.some((pattern) => matchesSegments(pattern, segments, true)) ||
+        directories.some((directory) => excludesDirectory(excludes, directory));
 
       return (
         !isExcluded && patterns.some((pattern) => matchesSegments(pattern, segments, matchesDots))

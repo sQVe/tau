@@ -89,6 +89,14 @@ const withNotice = (
   };
 };
 
+// Keeps the path as it sits in the worktree, so a symlinked folder is not followed out of it.
+// An absolute path may name the worktree by either its session or its canonical directory.
+const worktreePath = (sessionDirectory: string, canonicalDirectory: string, target: string) => {
+  const fromSession = relative(sessionDirectory, target);
+
+  return fromSession.startsWith('..') ? relative(canonicalDirectory, target) : fromSession;
+};
+
 const handleToolResult = async (
   tracker: ObservationTracker,
   event: ToolResultEvent,
@@ -117,13 +125,13 @@ const handleToolResult = async (
   tracker.reportedConfigError = undefined;
   const { cwd, loaded, observation } = current;
   const path = typeof event.input.path === 'string' ? event.input.path.replace(/^@/, '') : '';
-  const target = await observationDirectory(resolve(context.cwd, path));
+  const target = resolve(context.cwd, path);
   const editablePath = event.toolName !== 'bash' && path.length > 0;
 
   const productionEdit =
     !event.isError &&
     editablePath &&
-    classifyPath(loaded.config, relative(cwd, target)) === 'production';
+    classifyPath(loaded.config, worktreePath(context.cwd, cwd, target)) === 'production';
 
   const hint = await observation.checkpoint(productionEdit);
 

@@ -146,6 +146,23 @@ it('rejects excluded test selections instead of hashing generated or dependency 
   expect(runTests).not.toHaveBeenCalled();
 });
 
+it('rejects a test selection under an excluded directory', async ({ onTestFinished }) => {
+  const { cwd } = await setup(onTestFinished);
+  await mkdir(join(cwd, 'generated'));
+  await writeFile(join(cwd, 'generated/value.test.ts'), 'test');
+
+  const observation = createTestObservation(cwd, {
+    ...defaultTddConfig,
+    excludedGlobs: ['generated'],
+  });
+
+  await expect(
+    observation.run({ ...behavior, files: ['generated/value.test.ts'] }, 'focused'),
+  ).rejects.toThrow('Expected a test file');
+
+  expect(runTests).not.toHaveBeenCalled();
+});
+
 it('accepts a hidden test file selection', async ({ onTestFinished }) => {
   const { cwd, observation } = await setup(onTestFinished);
   await mkdir(join(cwd, '.hidden'));
