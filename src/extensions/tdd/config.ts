@@ -1,5 +1,3 @@
-import { matchesGlob } from 'node:path';
-
 import { CONFIG_DIR_NAME } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
@@ -10,6 +8,7 @@ import type { ConfigFile, ConfigLocation, ConfigWarnings } from '../../tauConfig
 import type { KnownKeys } from '../../unknownKeys.js';
 import { mergeConfigLayers } from './configLayers.js';
 import type { ConfigLayer, MergedTddConfig } from './configLayers.js';
+import { createInputRules, unsupportedGlobReason } from './inputGlob.js';
 
 export type TddConfig = Static<typeof tddConfigSchema>;
 
@@ -78,6 +77,27 @@ const problem = (value: unknown): string => {
   return `${error.instancePath} ${error.message}`;
 };
 
+const globListNames = [
+  'productionGlobs',
+  'testGlobs',
+  'testSupportGlobs',
+  'excludedGlobs',
+] as const;
+
+const rejectUnsupportedGlobs = (source: string, values: Partial<TddConfig>) => {
+  for (const name of globListNames) {
+    for (const glob of values[name] ?? []) {
+      const reason = unsupportedGlobReason(glob);
+
+      if (reason !== null) {
+        throw new Error(
+          `Invalid TDD config ${source}: ${name} entry "${glob}" is not supported: ${reason}. Use literal segments, *, **, ?, comma brace groups, a leading ./, and numeric ranges such as {1..3} of at most 1000 values. Fix the file; Tau does not fall back to another config.`,
+        );
+      }
+    }
+  }
+};
+
 const tddLayer = ({ source, value }: ConfigFile, ui: ConfigWarnings): ConfigLayer => {
   if (!Value.Check(configFileSchema, value)) {
     throw new Error(
@@ -96,6 +116,8 @@ const tddLayer = ({ source, value }: ConfigFile, ui: ConfigWarnings): ConfigLaye
     );
   }
 
+  rejectUnsupportedGlobs(source, values);
+
   return { source, values };
 };
 
@@ -109,18 +131,14 @@ export const loadTddConfig = (location: ConfigLocation, ui: ConfigWarnings): Loa
 
 export const classifyPath = (config: TddConfig, path: string): 'test' | 'production' | 'other' => {
   const normalizedPath = path.replaceAll('\\', '/');
-
-  if (config.excludedGlobs.some((glob) => matchesGlob(normalizedPath, glob))) {
-    return 'other';
-  }
-
-  const isTest = config.testGlobs.some((glob) => matchesGlob(normalizedPath, glob));
+  const testRules = createInputRules(config.testGlobs, config.excludedGlobs, true);
+  const isTest = testRules.isInput(normalizedPath);
 
   if (isTest) {
     return 'test';
   }
 
-  return config.productionGlobs.some((glob) => matchesGlob(normalizedPath, glob))
-    ? 'production'
-    : 'other';
+  const production = createInputRules(config.productionGlobs, config.excludedGlobs, true);
+
+  return production.isInput(normalizedPath) ? 'production' : 'other';
 };

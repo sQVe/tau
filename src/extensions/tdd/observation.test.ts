@@ -147,6 +147,18 @@ it('rejects excluded test selections instead of hashing generated or dependency 
   expect(runTests).not.toHaveBeenCalled();
 });
 
+it('accepts a hidden test file selection', async ({ onTestFinished }) => {
+  const { cwd, observation } = await setup(onTestFinished);
+  await mkdir(join(cwd, '.hidden'));
+  await writeFile(join(cwd, '.hidden/a.test.ts'), 'test');
+
+  await observation.run({ ...behavior, files: ['.hidden/a.test.ts'] }, 'focused');
+
+  expect(runTests).toHaveBeenCalledWith(
+    expect.objectContaining({ files: ['.hidden/a.test.ts'], scope: 'focused' }),
+  );
+});
+
 it.skipIf(process.platform === 'win32')(
   'does not reinterpret POSIX literal backslashes as separators',
   async ({ onTestFinished }) => {
