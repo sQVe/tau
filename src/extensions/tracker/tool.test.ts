@@ -99,7 +99,7 @@ it('reports an empty search that also carries a GraphQL error as a gap', async (
   fake.overrideOutput(
     'searchIssues',
     JSON.stringify({
-      data: { searchIssues: { nodes: [], pageInfo: { hasNextPage: false } } },
+      data: { searchIssues: { nodes: [] } },
       errors: [{ message: 'Rate limit exceeded' }],
     }),
   );
@@ -126,7 +126,7 @@ it('reports a candidate whose project failed to load as a gap', async () => {
   fake.overrideOutput(
     'searchIssues',
     JSON.stringify({
-      data: { searchIssues: { nodes: [node], pageInfo: { hasNextPage: false } } },
+      data: { searchIssues: { nodes: [node] } },
       errors: [
         { message: 'Could not load project', path: ['searchIssues', 'nodes', 0, 'project'] },
       ],
@@ -251,28 +251,37 @@ it('reports a failed label read as a gap and leaves the labels unknown', async (
   expectOneGap(evidence, 'labels', 'network error');
 });
 
-it('keeps the candidates of a search with more pages and reports the list as incomplete', async () => {
+it('leaves matches in other teams out of the candidates', async () => {
   const fake = createLinearFake();
 
-  const node = {
-    identifier: 'ME-4',
+  fake.addIssue({ identifier: 'ME-4', title: 'Gather evidence' });
+
+  fake.addIssue({
+    identifier: 'AI-5',
     title: 'Gather evidence',
-    url: 'https://linear.app/me/issue/ME-4',
-    state: { type: 'started' },
-    team: { key: 'ME' },
-    project: { name: 'Tau' },
-    parent: null,
-  };
+    teamId: 'team-ai',
+    projectId: null,
+  });
 
-  fake.overrideOutput(
-    'searchIssues',
-    JSON.stringify({ data: { searchIssues: { nodes: [node], pageInfo: { hasNextPage: true } } } }),
-  );
+  const evidence = await gather(fake, { project: null });
 
-  const evidence = await gather(fake);
+  expect(evidence.candidates).toMatchObject([{ identifier: 'ME-4' }]);
+  expect(evidence.gaps).toEqual([]);
+});
 
-  expect(evidence.candidates).toMatchObject([{ identifier: 'ME-4', fits: true }]);
-  expectOneGap(evidence, 'searchIssues', 'incomplete');
+it('reports an unknown team as a gap with no candidate list', async () => {
+  const fake = createLinearFake();
+
+  fake.addIssue({ identifier: 'ME-4', title: 'Gather evidence' });
+
+  const evidence = await gather(fake, { team: 'XX', project: null });
+
+  expect(evidence).not.toHaveProperty('candidates');
+
+  expect(evidence.gaps).toContainEqual({
+    command: 'linear api searchIssues',
+    error: 'Linear has no team XX.',
+  });
 });
 
 it.each([

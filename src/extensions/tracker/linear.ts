@@ -13,11 +13,6 @@ export interface FoundIssue {
   parent: string | null;
 }
 
-export interface IssueSearch {
-  issues: FoundIssue[];
-  hasNextPage: boolean;
-}
-
 export interface ParentRouting {
   team: string;
   project: string | null;
@@ -37,8 +32,10 @@ export interface LabelList {
 const searchPageSize = 50;
 const labelPageSize = 250;
 
+const teamQuery = 'query($key: String!) { team(id: $key) { id } }';
+
 const searchQuery =
-  'query($term: String!, $first: Int!, $filter: IssueFilter!) { searchIssues(term: $term, first: $first, filter: $filter) { nodes { identifier title url state { type } team { key } project { name } parent { identifier } } pageInfo { hasNextPage } } }';
+  'query($term: String!, $first: Int!, $teamId: String!, $filter: IssueFilter!) { searchIssues(term: $term, first: $first, teamId: $teamId, filter: $filter) { nodes { identifier title url state { type } team { key } project { name } parent { identifier } } } }';
 
 const parentQuery =
   'query($id: String!) { issue(id: $id) { team { key } project { name } state { name } } }';
@@ -48,6 +45,10 @@ const labelsQuery =
 
 const nameSchema = Type.Union([Type.Object({ name: Type.String() }), Type.Null()]);
 const pageInfoSchema = Type.Object({ hasNextPage: Type.Boolean() });
+
+const teamSchema = Type.Object({
+  team: Type.Union([Type.Object({ id: Type.String() }), Type.Null()]),
+});
 
 const searchSchema = Type.Object({
   searchIssues: Type.Object({
@@ -62,7 +63,6 @@ const searchSchema = Type.Object({
         parent: Type.Union([Type.Object({ identifier: Type.String() }), Type.Null()]),
       }),
     ),
-    pageInfo: pageInfoSchema,
   }),
 });
 
@@ -89,16 +89,32 @@ const labelsSchema = Type.Object({
   ]),
 });
 
-// Searches the open issues in the route's team, and its project when the route names one.
+// Throws when Linear has no team with that key.
+const readTeamId = async (exec: Exec, cwd: string, team: string): Promise<string> => {
+  const response = await api(exec, cwd, teamQuery, { key: team });
+
+  if (!Value.Check(teamSchema, response.data)) {
+    throw unexpectedOutput(response);
+  }
+
+  const found = response.data.team;
+
+  if (found === null) {
+    throw new Error(`Linear has no team ${team}.`);
+  }
+
+  return found.id;
+};
+
+// Searches the open issues in the route's team, and its project when the route names one. The team
+// goes in teamId, not in the filter: with a team filter, Linear leaves out real matches.
 export const searchIssues = async (
   exec: Exec,
   cwd: string,
   search: { team: string; project: string | null; keywords: string },
-): Promise<IssueSearch> => {
-  const filter: Record<string, unknown> = {
-    team: { key: { eq: search.team } },
-    state: { type: { in: openStateTypes } },
-  };
+): Promise<FoundIssue[]> => {
+  const teamId = await readTeamId(exec, cwd, search.team);
+  const filter: Record<string, unknown> = { state: { type: { in: openStateTypes } } };
 
   if (search.project !== null) {
     filter['project'] = { name: { eq: search.project } };
@@ -107,6 +123,7 @@ export const searchIssues = async (
   const response = await api(exec, cwd, searchQuery, {
     term: search.keywords,
     first: searchPageSize,
+    teamId,
     filter,
   });
 
@@ -114,9 +131,7 @@ export const searchIssues = async (
     throw unexpectedOutput(response);
   }
 
-  const { nodes, pageInfo } = response.data.searchIssues;
-
-  const issues = nodes.map((node) => ({
+  return response.data.searchIssues.nodes.map((node) => ({
     identifier: node.identifier,
     title: node.title,
     url: node.url,
@@ -124,8 +139,6 @@ export const searchIssues = async (
     project: node.project?.name ?? null,
     parent: node.parent?.identifier ?? null,
   }));
-
-  return { issues, hasNextPage: pageInfo.hasNextPage };
 };
 
 // Throws when Linear has no issue with that identifier.
