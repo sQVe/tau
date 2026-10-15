@@ -14,7 +14,6 @@ const sha = 'c'.repeat(40);
 
 const layer = (name: string) => ({
   name,
-  head: 'a'.repeat(40),
   base: 'b'.repeat(40),
   isCurrent: false,
   isMerged: false,

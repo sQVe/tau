@@ -26,7 +26,6 @@ const baseRepository: Repository = { host: 'github.com', owner: 'sQVe', name: 't
 
 const layer = (name: string, flags: Partial<StackLayer> = {}): StackLayer => ({
   name,
-  head: 'a'.repeat(40),
   base: 'b'.repeat(40),
   isCurrent: false,
   isMerged: false,
