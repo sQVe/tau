@@ -15,6 +15,7 @@ import prExtension from './extensions/pr/pr.js';
 import prFeedbackExtension from './extensions/prFeedback/prFeedback.js';
 import sliceExtension from './extensions/slice/slice.js';
 import snippetsExtension from './extensions/snippets/snippets.js';
+import stackExtension from './extensions/stack/stack.js';
 import statusbarExtension from './extensions/statusbar/statusbar.js';
 import subagentsExtension, { registerCapacityRefusal } from './extensions/subagents/subagents.js';
 import tauSkillsExtension from './extensions/tauSkills/tauSkills.js';
@@ -46,6 +47,7 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   trackerExtension(pi);
   prExtension(pi);
   prFeedbackExtension(pi);
+  stackExtension(pi);
   codeReviewExtension(pi);
   statusbarExtension(pi);
   subagentsExtension(pi, capacityRefusal);

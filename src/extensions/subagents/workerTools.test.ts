@@ -7,6 +7,7 @@ it.each([
   { skills: [], expected: [] },
   { skills: ['/skills/tracker/SKILL.md'], expected: ['tracker_evidence'] },
   { skills: ['/skills/tdd/SKILL.md'], expected: [] },
+  { skills: ['/skills/constructor/SKILL.md'], expected: [] },
   {
     skills: ['/skills/tracker/SKILL.md', '/skills/review/SKILL.md'],
     expected: ['tracker_evidence', 'review_evidence'],

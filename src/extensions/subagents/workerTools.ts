@@ -10,7 +10,8 @@ export const workerTools = (
     segments.pop();
     const skillName = segments.at(-1) ?? '.';
 
-    return skillTools[skillName] ?? [];
+    // A skill named like an Object property, such as constructor, must not read the prototype.
+    return Object.hasOwn(skillTools, skillName) ? (skillTools[skillName] ?? []) : [];
   });
 
   return [

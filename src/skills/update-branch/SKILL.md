@@ -34,8 +34,8 @@ the [handover skill](../handover/SKILL.md).
 ## Procedure
 
 1. Check the branch, `git status`, and whether a rebase or merge is in progress.
-   - When `$(git rev-parse --git-dir)/gh-stack-rebase-state` exists, a stack rebase is paused.
-     Continue it with the [stack skill](../stack/SKILL.md), never with `git rebase --continue`.
+   - When the `stack` tool's `check` result reports a paused stack rebase, continue it with the
+     [stack skill](../stack/SKILL.md), never with `git rebase --continue`.
    - When a standalone rebase is in progress, run the worker check in Hard rules before continuing.
      Then note the tip it started from. Read `orig-head` in
      `$(git rev-parse --git-path rebase-merge)` or, for the apply backend,
@@ -43,12 +43,12 @@ the [handover skill](../handover/SKILL.md).
      the rebase's target is unclear. Then run the fetch and tip check of step 2 with the noted tip
      in place of `HEAD`, and go to step 4. Ask before you push the result unless you noted the
      branch's remote tip before the rebase started.
-   - HEAD is detached until that rebase finishes, so the stack skill can check for a stack only
-     then. If it finds the branch in a stack, restack the branches above with it before step 5. In
-     its remote-history check for this branch, use the start tip you noted.
+   - HEAD is detached until that rebase finishes, so the stack check can name the branch only then.
+     If it finds the branch in a stack, restack the branches above with it before step 5. In its
+     remote-history check for this branch, use the start tip you noted.
    - When a merge is in progress, resolve its conflicts as in step 4. Then finish it with the
      [commit skill](../commit/SKILL.md) instead of `rebase --continue`.
-2. Run the stack skill's stack check before any other check or rebase.
+2. Run the stack skill's stack check before any other check or rebase. Its `check` result decides:
    - Tracked: restack with the stack skill instead of `git rebase`, then go to step 5. Its
      remote-history check covers each branch, including branches GitHub rewrote after a lower PR
      merged.

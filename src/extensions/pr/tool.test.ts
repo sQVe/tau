@@ -19,9 +19,9 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { noUiContext } from '../../../tests/toolContext.js';
+import { readGitBytes } from '../../gitOutput.js';
 import { createGhFake } from './fixtures/ghFake.js';
 import type { FakePullRequest, GhFake } from './fixtures/ghFake.js';
-import { readGitBytes } from './git.js';
 import { createPrTool } from './tool.js';
 import type { PrInput } from './tool.js';
 
