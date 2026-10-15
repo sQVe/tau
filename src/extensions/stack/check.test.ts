@@ -270,6 +270,23 @@ it('decides unknown when the stacks API prints something that is not a list of n
   expect(await run({ action: 'check' })).toMatchObject({ result: 'unknown' });
 });
 
+it.each([
+  { name: 'a stack without pull_requests', stdout: '[{"number":17}]' },
+  { name: 'a stack without a number', stdout: '[{"pull_requests":[]}]' },
+  { name: 'null', stdout: 'null' },
+  { name: 'a null stack', stdout: '[null]' },
+])('decides unknown when the stacks API prints $name', async ({ stdout }) => {
+  const { fake, run } = await setUp();
+
+  fake.pulls = [pull()];
+  fake.override('api', { stdout });
+
+  expect(await run({ action: 'check' })).toMatchObject({
+    result: 'unknown',
+    reason: containing('cannot be read'),
+  });
+});
+
 it('decides unknown when no remote has the branch to push to', async () => {
   const { root, run } = await setUp();
 
@@ -394,5 +411,30 @@ it('decides unknown for a tracked branch when the based-on read fails', async ()
   expect(await run({ action: 'check' })).toMatchObject({
     result: 'unknown',
     reason: containing('HTTP 500'),
+  });
+});
+
+it('reads GitHub for the named branch, not for a local branch below it', async () => {
+  const { root, fake, run } = await setUp();
+
+  await git(root, 'push', '--quiet', 'origin', 'feature:refs/heads/parent');
+  await git(root, 'branch', 'parent/child', 'feature');
+  await git(root, 'config', 'branch.parent/child.remote', 'origin');
+  await git(root, 'config', 'branch.parent/child.merge', 'refs/heads/parent/child');
+  fake.pulls = [pull({ number: 6, headBranch: 'sibling', baseRefName: 'parent' })];
+
+  const details = await run({ action: 'check', branch: 'parent' });
+
+  expect(details).toMatchObject({ branch: 'parent', result: 'untracked' });
+  expect(fake.calls.some((call) => call.includes('--head parent/child'))).toBe(false);
+  expect(fake.calls.some((call) => call.includes('--head parent '))).toBe(true);
+});
+
+it('refuses an empty remote name', async () => {
+  const { run } = await setUp();
+
+  expect(await run({ action: 'check', remote: '' })).toMatchObject({
+    result: 'unknown',
+    reason: containing('remote must not be empty'),
   });
 });

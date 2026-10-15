@@ -157,32 +157,40 @@ const output = (stdout: string, exitCode: number | null = 0, stderr = ''): Comma
 });
 
 const stacksOutput = (number: unknown, pullRequests: unknown) =>
-  output(JSON.stringify({ number, pullRequests }));
+  output(JSON.stringify([{ number, pull_requests: pullRequests }]));
+
+const numbered = (...numbers: number[]) => numbers.map((number) => ({ number }));
 
 it.each([
-  { out: stacksOutput(null, []), kind: 'none' },
-  { out: stacksOutput(40, [11, 12, 13]), kind: 'stack' },
+  { out: output('[]'), kind: 'none' },
+  { out: stacksOutput(40, numbered(11, 12, 13)), kind: 'stack' },
   { out: output('', 1, 'gh: Not Found (HTTP 404)'), kind: 'off' },
 ])('reads the stacks API output as $kind', ({ out, kind }) => {
   expect(readStacksResponse('gh api', out)).toMatchObject({ ok: true, value: { kind } });
 });
 
 it('keeps the stack number and the pull request numbers of a stack in order', () => {
-  expect(readStacksResponse('gh api', stacksOutput(40, [3, 1, 2]))).toEqual(
+  expect(readStacksResponse('gh api', stacksOutput(40, numbered(3, 1, 2)))).toEqual(
     readOk({ kind: 'stack', number: 40, pullRequests: [3, 1, 2] }),
   );
 });
 
 it.each([
   { out: output('', 0), why: 'empty output' },
-  { out: output('[]'), why: 'a list' },
   { out: output('null'), why: 'null' },
-  { out: output('{}'), why: 'an object without fields' },
-  { out: stacksOutput(40, ['1']), why: 'string numbers' },
-  { out: stacksOutput(40, [1.5]), why: 'a fraction' },
-  { out: stacksOutput('forty', [1]), why: 'a stack number that is not a number' },
-  { out: stacksOutput(null, [1]), why: 'pull requests without a stack number' },
-  { out: output('{"number":1,'), why: 'cut off JSON' },
+  { out: output('[null]'), why: 'a list with null' },
+  { out: output('{}'), why: 'an object' },
+  { out: output('[{"pull_requests":[]}]'), why: 'a stack without a number' },
+  { out: output('[{"number":17}]'), why: 'a stack without pull_requests' },
+  { out: stacksOutput(17, null), why: 'pull_requests that is null' },
+  { out: stacksOutput(17, { number: 1 }), why: 'pull_requests that is not a list' },
+  { out: stacksOutput(40, [null]), why: 'a pull request entry that is null' },
+  { out: stacksOutput(40, [{}]), why: 'a pull request entry without a number' },
+  { out: stacksOutput(40, [{ number: '1' }]), why: 'string numbers' },
+  { out: stacksOutput(40, [{ number: 1.5 }]), why: 'a fraction' },
+  { out: stacksOutput('forty', numbered(1)), why: 'a stack number that is not a number' },
+  { out: stacksOutput(null, numbered(1)), why: 'a null stack number' },
+  { out: output('[{"number":1,'), why: 'cut off JSON' },
   { out: output('', 1, 'gh: Server Error (HTTP 500)'), why: 'an HTTP 500' },
   { out: output('', 4, 'authentication required'), why: 'no authentication' },
   { out: output('', null), why: 'a command that did not finish' },

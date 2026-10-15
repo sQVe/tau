@@ -226,6 +226,12 @@ it.each([
   expect(details.stop).toEqual(containing('gh stack view --json'));
 });
 
+it('refuses an empty remote name with its own error', async () => {
+  const { run } = await setUp();
+
+  await expect(run({ remote: '' })).rejects.toThrow('remote must not be empty');
+});
+
 it('refuses a remote that is not a Git remote', async () => {
   const { run } = await setUp();
 

@@ -216,8 +216,6 @@ export const readStacks = async (
     '--hostname',
     repository.host,
     `repos/${repository.owner}/${repository.name}/stacks?pull_request=${number}`,
-    '--jq',
-    '.[0] // {} | {number, pullRequests: ((.pull_requests // []) | map(.number))}',
   ];
 
   return readStacksResponse(label(commandArguments), await runGh(runtime, commandArguments));

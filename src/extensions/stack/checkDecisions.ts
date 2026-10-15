@@ -1,4 +1,5 @@
 import type { Repository } from '../../github.js';
+import { isRecord } from '../../isRecord.js';
 import { fromHeadRepository } from '../../repositoryTargetDecisions.js';
 import type { ListedHead } from '../../repositoryTargetDecisions.js';
 import { describeFailures, failedExit, failures, malformedOutput, readOk } from './readResult.js';
@@ -86,11 +87,6 @@ export interface ChainLink {
   branch: string;
   number: number;
   url: string;
-}
-
-interface StacksResponse {
-  number: number | null;
-  pullRequests: number[];
 }
 
 export type GithubDecision =
@@ -181,24 +177,19 @@ export const decideStackView = (
   return exitCode === 0 ? decideTracked(branch, view) : unknownResult(exitReason(exitCode));
 };
 
-const isStacksResponse = (value: unknown): value is StacksResponse => {
-  if (typeof value !== 'object' || value === null) {
-    return false;
+const readNumbered = (value: unknown): number | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
   }
 
-  if (!('number' in value) || !('pullRequests' in value)) {
-    return false;
-  }
+  const { number } = value;
 
-  const { number, pullRequests } = value;
-  const numbered = number === null || Number.isInteger(number);
-
-  return numbered && Array.isArray(pullRequests) && pullRequests.every(Number.isInteger);
+  return typeof number === 'number' && Number.isInteger(number) ? number : undefined;
 };
 
-// The stacks API read prints {number, pullRequests}: the stack number and its pull request numbers,
-// bottom to top. pullRequests is empty when no stack holds the pull request. The API answers 404
-// when the repository has no stacked pull requests.
+// The stacks API read prints the raw reply: an empty list when no stack holds the pull request, or
+// a list that starts with the stack, {number, pull_requests: [{number}]}, its pull requests bottom
+// to top. The API answers 404 when the repository has no stacked pull requests.
 export const readStacksResponse = (
   command: string,
   output: CommandOutput,
@@ -221,19 +212,31 @@ export const readStacksResponse = (
     return malformedOutput(command, output);
   }
 
-  if (!isStacksResponse(parsed)) {
+  if (!Array.isArray(parsed)) {
     return malformedOutput(command, output);
   }
 
-  if (parsed.pullRequests.length === 0) {
+  if (parsed.length === 0) {
     return readOk({ kind: 'none' });
   }
 
-  if (parsed.number === null) {
+  const stack: unknown = parsed[0];
+  const number = readNumbered(stack);
+  const listed = isRecord(stack) ? stack.pull_requests : undefined;
+
+  if (number === undefined || !Array.isArray(listed)) {
     return malformedOutput(command, output);
   }
 
-  return readOk({ kind: 'stack', number: parsed.number, pullRequests: parsed.pullRequests });
+  const pullRequests = listed.map(readNumbered);
+
+  if (!pullRequests.every((entry) => entry !== undefined)) {
+    return malformedOutput(command, output);
+  }
+
+  return readOk(
+    pullRequests.length === 0 ? { kind: 'none' } : { kind: 'stack', number, pullRequests },
+  );
 };
 
 // `gh pr list --head` matches the branch name in any fork, so keep the pull requests from the

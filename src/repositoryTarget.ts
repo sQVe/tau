@@ -69,17 +69,21 @@ const repositoryViewSchema = Type.Object({
   defaultBranchRef: Type.Object({ name: Type.String() }),
 });
 
+const lines = (text: string | undefined) => (text ?? '').split('\n').filter((line) => line !== '');
+
 // Git prints the push remote only when branch.<name>.pushRemote, branch.<name>.remote, or
 // remote.pushDefault names one, so an empty remote means the branch has no push target. With a
 // push remote but no push ref, such as for a removed remote, the setting is broken.
 const readPushTarget = async (cwd: string, branch: string): Promise<PushTarget | undefined> => {
   const output = await readGit(cwd, [
     'for-each-ref',
-    '--format=%(push)%00%(push:remotename)%00%(push:remoteref)',
+    '--format=%(refname)%00%(push)%00%(push:remotename)%00%(push:remoteref)',
     `refs/heads/${branch}`,
   ]);
 
-  const [trackingRef = '', remote = '', remoteRef = ''] = output.split('\0');
+  // for-each-ref also lists the branches below refs/heads/<branch>/, so keep the exact ref.
+  const exact = lines(output).find((line) => line.startsWith(`refs/heads/${branch}\0`)) ?? '';
+  const [, trackingRef = '', remote = '', remoteRef = ''] = exact.split('\0');
 
   if (remote === '') {
     return undefined;
@@ -94,8 +98,6 @@ const readPushTarget = async (cwd: string, branch: string): Promise<PushTarget |
 
   throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
 };
-
-const lines = (text: string | undefined) => (text ?? '').split('\n').filter((line) => line !== '');
 
 // Reads https://host/owner/name.git, ssh://git@host:port/owner/name.git, and
 // git@host:owner/name.git. The port of an ssh:// URL is the SSH port, not part of the web host.

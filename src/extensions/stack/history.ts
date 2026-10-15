@@ -88,7 +88,15 @@ const readLayerFacts = async (
 
 const rejectInvalidRequest = async (cwd: string, request: HistoryRequest) => {
   const remotes = await gather(cwd, ['remote']);
-  const names = remotes.output.stdout.split('\n').map((name) => name.trim());
+
+  const names = remotes.output.stdout
+    .split('\n')
+    .map((name) => name.trim())
+    .filter((name) => name !== '');
+
+  if (request.remote === '') {
+    throw new Error('remote must not be empty.');
+  }
 
   if (remotes.output.exitCode !== 0 || !names.includes(request.remote)) {
     throw new Error(`remote ${request.remote} is not a Git remote of this checkout.`);

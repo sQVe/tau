@@ -160,6 +160,10 @@ const pushHead = (branch: string, target: PushTarget, remotes: readonly Remote[]
 export const pickHead = (facts: HeadFacts): Head => {
   const { branch, requestedRemote, remotes } = facts;
 
+  if (requestedRemote === '') {
+    throw new Error('remote must not be empty.');
+  }
+
   if (requestedRemote !== undefined) {
     if (!remoteNames(remotes).includes(requestedRemote)) {
       throw new Error(`remote ${requestedRemote} is not a Git remote of this checkout.`);

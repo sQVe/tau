@@ -112,9 +112,17 @@ export const createStackFake = (): StackFake => {
     const number = Number(/pull_request=(\d+)/u.exec(commandArguments[3] ?? '')?.[1]);
 
     const pullRequests = fake.stacks[number] ?? [];
-    const stackNumber = pullRequests.length === 0 ? null : 100 + (pullRequests[0] ?? 0);
 
-    return ok(JSON.stringify({ number: stackNumber, pullRequests }));
+    if (pullRequests.length === 0) {
+      return ok('[]');
+    }
+
+    const stack = {
+      number: 100 + (pullRequests[0] ?? 0),
+      pull_requests: pullRequests.map((pullRequest) => ({ number: pullRequest })),
+    };
+
+    return ok(JSON.stringify([stack]));
   };
 
   const answer = (commandArguments: readonly string[]): ExecResult => {

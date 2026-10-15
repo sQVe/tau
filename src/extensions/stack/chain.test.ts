@@ -172,6 +172,18 @@ it.each([
   },
   { name: 'a stacks API failure', prefix: 'api', result: { code: 1, stderr: 'HTTP 500' } },
   { name: 'empty stacks API output', prefix: 'api', result: { stdout: '' } },
+  { name: 'a null stacks reply', prefix: 'api', result: { stdout: 'null' } },
+  { name: 'a null stack', prefix: 'api', result: { stdout: '[null]' } },
+  {
+    name: 'a stack without a number',
+    prefix: 'api',
+    result: { stdout: '[{"pull_requests":[]}]' },
+  },
+  {
+    name: 'a stack without a pull request list',
+    prefix: 'api',
+    result: { stdout: '[{"number":17}]' },
+  },
   { name: 'malformed stacks API output', prefix: 'api', result: { stdout: '{"a":1}' } },
 ])('stops on $name, with the failed read as evidence', async ({ prefix, result }) => {
   const { fake, run } = setUp();
