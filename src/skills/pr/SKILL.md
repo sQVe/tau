@@ -253,11 +253,13 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
 11. Request the review bots from the user's config. A request is a reply to a GitHub bot that
     follows [Hard rules](../tracker/SKILL.md#hard-rules). Run this on a new PR and on an update.
     Call the `pr` tool's `reviewBots` action with the approved repository and PR number. For each
-    bot with status `request`, run `gh pr comment <number> --repo <repo> --body '<comment>'` with
-    its `comment`. Skip `reviewed` and `requested`. When the action returns no bots, the config has
-    no entry for the repository: request no bot and say so in the report. Read the action again
-    before a retry, since a failed post may still have landed. Posting a request does not prove a
-    review started.
+    bot with status `request`, save its `comment` exactly, with no trailing newline, as
+    `$prdir/bots/<index>.md` with the `write` tool, and run
+    `gh pr comment <number> --repo <repo> --body-file $prdir/bots/<index>.md`. Never put the comment
+    in the command line, where the shell would change it. Skip `reviewed` and `requested`. When the
+    action returns no bots, the config has no entry for the repository: request no bot and say so in
+    the report. Read the action again before a retry, since a failed post may still have landed.
+    Posting a request does not prove a review started.
 
 12. Post the approved self-review as one GitHub review, if the preview showed one.
     - Read the pushed head with
