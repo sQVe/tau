@@ -138,6 +138,51 @@ it('refuses at the deadline a urlCommand that ignores SIGTERM and kills its chil
   expect(existsSync(marker)).toBe(false);
 });
 
+it('does not kill a background child of a successful urlCommand after the deadline', async () => {
+  const { worktree, writeUser } = await fixture('git@github.com:sQVe/cape.git');
+  const marker = join(worktree, 'survived');
+
+  writeUser(
+    settingsFor(`(sleep 0.6; touch survived) >/dev/null 2>&1 & echo http://localhost:4100`),
+  );
+
+  const resolved = await applyQaSettings(
+    launch(worktree),
+    undefined,
+    context(worktree) as never,
+    200,
+  );
+
+  expect(resolved.url).toBe('http://localhost:4100');
+
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 900);
+  });
+
+  expect(existsSync(marker)).toBe(true);
+});
+
+it('refuses a urlCommand whose output is over 1 MiB and kills its group', async () => {
+  const { worktree, writeUser } = await fixture('git@github.com:sQVe/cape.git');
+  const marker = join(worktree, 'survived');
+
+  writeUser(
+    settingsFor(
+      `echo http://localhost:4100; head -c 2000000 /dev/zero | tr '\\0' ' '; sleep 0.5; touch survived`,
+    ),
+  );
+
+  const refusal = apply(launch(worktree), worktree);
+
+  await expect(refusal).rejects.toThrow('qa.repositories');
+
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 800);
+  });
+
+  expect(existsSync(marker)).toBe(false);
+});
+
 it('never runs testAccountCommand', async () => {
   const { worktree, writeUser } = await fixture('git@github.com:sQVe/cape.git');
   const marker = join(worktree, 'ran');

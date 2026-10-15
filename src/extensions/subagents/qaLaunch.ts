@@ -15,6 +15,7 @@ import { readQaSettings } from './qaSettings.js';
 type QaContext = Pick<ExtensionContext, 'cwd' | 'isProjectTrusted' | 'ui'>;
 
 const urlCommandTimeoutMilliseconds = 15_000;
+const urlCommandOutputLimitBytes = 1_048_576;
 
 // The command runs without input, so a prompt fails it instead of waiting. It runs in its own
 // process group, and the deadline or an abort kills the whole group and settles the result at once,
@@ -36,17 +37,29 @@ const runUrlCommand = (
     });
 
     const chunks: Buffer[] = [];
+    let outputBytes = 0;
 
-    const stop = (): void => {
-      if (child.pid !== undefined) {
-        try {
-          process.kill(-child.pid, 'SIGKILL');
-        } catch {
-          // The group already exited.
-        }
+    const kill = (): void => {
+      if (child.pid === undefined) {
+        return;
       }
 
+      try {
+        process.kill(-child.pid, 'SIGKILL');
+      } catch {
+        // The group already exited.
+      }
+    };
+
+    const stop = (): void => {
+      kill();
+      stopSignal.removeEventListener('abort', stop);
       resolve(undefined);
+    };
+
+    const finish = (stdout: string | undefined): void => {
+      stopSignal.removeEventListener('abort', stop);
+      resolve(stdout);
     };
 
     if (stopSignal.aborted) {
@@ -58,15 +71,23 @@ const runUrlCommand = (
     stopSignal.addEventListener('abort', stop, { once: true });
 
     child.stdout.on('data', (chunk: Buffer) => {
+      outputBytes += chunk.length;
+
+      if (outputBytes > urlCommandOutputLimitBytes) {
+        stop();
+
+        return;
+      }
+
       chunks.push(chunk);
     });
 
     child.on('error', () => {
-      resolve(undefined);
+      finish(undefined);
     });
 
     child.on('close', (code) => {
-      resolve(code === 0 ? Buffer.concat(chunks).toString() : undefined);
+      finish(code === 0 ? Buffer.concat(chunks).toString() : undefined);
     });
   });
 
