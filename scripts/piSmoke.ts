@@ -35,7 +35,7 @@ const git = (cwd: string, args: string[]) => {
   return result.stdout;
 };
 
-const createScratchRepository = (): string => {
+const createScratchRepository = (tau: string): string => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-pi-smoke-repo-'));
 
   mkdirSync(join(directory, 'src'));
@@ -57,7 +57,7 @@ const createScratchRepository = (): string => {
     ].join('\n'),
   );
 
-  symlinkSync(join(checkoutRoot, 'node_modules'), join(directory, 'node_modules'));
+  symlinkSync(join(tau, 'node_modules'), join(directory, 'node_modules'));
   git(directory, ['init', '--quiet', '--initial-branch', 'main']);
   git(directory, ['config', 'user.name', 'Smoke']);
   git(directory, ['config', 'user.email', 'smoke@example.com']);
@@ -100,7 +100,7 @@ const run = (): number => {
   }
 
   const tau = resolve(values.tau ?? checkoutRoot);
-  const repository = createScratchRepository();
+  const repository = createScratchRepository(tau);
   const eventLog = join(mkdtempSync(join(tmpdir(), 'tau-pi-smoke-log-')), 'events.jsonl');
 
   const piArguments = [

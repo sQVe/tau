@@ -3,10 +3,18 @@ export interface GitFacts {
 }
 
 interface ToolCall {
+  id: string;
+  parentId: string | undefined;
   toolName: string;
   isError: boolean;
   text: string;
+  structuredOutput: string;
   details: unknown;
+}
+
+interface ToolEvents {
+  calls: ToolCall[];
+  scripts: Map<string, string>;
 }
 
 const excerptLength = 300;
@@ -42,6 +50,13 @@ const resultText = (result: unknown): string => {
     .join('\n');
 };
 
+const structuredOutputOf = (result: unknown): string => {
+  const structured = isRecord(result) ? result.structuredContent : undefined;
+  const output = isRecord(structured) ? structured.output : undefined;
+
+  return typeof output === 'string' ? output : '';
+};
+
 const toolCall = (event: unknown): ToolCall | undefined => {
   if (!isRecord(event) || event.type !== 'tool_execution_end') {
     return undefined;
@@ -52,25 +67,59 @@ const toolCall = (event: unknown): ToolCall | undefined => {
   }
 
   return {
+    id: typeof event.toolCallId === 'string' ? event.toolCallId : '',
+    parentId: typeof event.parentToolCallId === 'string' ? event.parentToolCallId : undefined,
     toolName: event.toolName,
     isError: event.isError === true,
     text: resultText(event.result),
+    structuredOutput: structuredOutputOf(event.result),
     details: isRecord(event.result) ? event.result.details : undefined,
   };
 };
 
-const toolCalls = (lines: readonly string[]): ToolCall[] =>
-  lines.flatMap((line) => {
-    const call = toolCall(parseEvent(line));
+const startedScript = (event: unknown): [string, string] | undefined => {
+  if (!isRecord(event) || event.type !== 'tool_execution_start') {
+    return undefined;
+  }
 
-    return call === undefined ? [] : [call];
-  });
+  const code = isRecord(event.args) ? event.args.code : undefined;
+
+  if (typeof event.toolCallId !== 'string' || typeof code !== 'string') {
+    return undefined;
+  }
+
+  return [event.toolCallId, code];
+};
+
+const toolEvents = (lines: readonly string[]): ToolEvents => {
+  const calls: ToolCall[] = [];
+  const scripts = new Map<string, string>();
+
+  for (const line of lines) {
+    const event = parseEvent(line);
+    const call = toolCall(event);
+    const script = startedScript(event);
+
+    if (call !== undefined) {
+      calls.push(call);
+    }
+
+    if (script !== undefined) {
+      scripts.set(script[0], script[1]);
+    }
+  }
+
+  return { calls, scripts };
+};
 
 const describeTools = (calls: readonly ToolCall[]) =>
   calls.length === 0 ? 'none' : calls.map((call) => call.toolName).join(', ');
 
-const freshnessOf = (text: string): string =>
-  /·\s*(fresh|stale|unknown)\b/.exec(text)?.[1] ?? 'none';
+const freshnessOf = (details: unknown): string => {
+  const freshness = isRecord(details) ? details.freshness : undefined;
+
+  return typeof freshness === 'string' ? freshness : 'missing';
+};
 
 const toolFailures = (calls: readonly ToolCall[]): string[] => {
   const failures: string[] = [];
@@ -131,7 +180,7 @@ const runFailures = (calls: readonly ToolCall[]): string[] => {
     );
   }
 
-  const freshness = freshnessOf(run.text);
+  const freshness = freshnessOf(run.details);
 
   if (freshness !== 'fresh') {
     failures.push(`run_tests freshness after a run: expected fresh, got ${freshness}`);
@@ -170,39 +219,65 @@ const commitFailures = (git: GitFacts): string[] => {
   return [];
 };
 
-const nestedBashRan = (details: unknown): boolean => {
-  const nested = isRecord(details) && Array.isArray(details.calls) ? details.calls : [];
-
-  return nested.some((call) => isRecord(call) && call.name === 'bash' && call.status === 'ok');
-};
-
-const codemodeFailures = (calls: readonly ToolCall[]): string[] => {
-  const codemode = calls.find((call) => call.toolName === 'codemode' && !call.isError);
+const codemodeFailures = (events: ToolEvents): string[] => {
+  const codemode = events.calls.find((call) => call.toolName === 'codemode' && !call.isError);
 
   if (codemode === undefined) {
     return [];
   }
 
-  if (!nestedBashRan(codemode.details)) {
-    return ['codemode nested bash call: expected one bash call with status ok, got none'];
+  const failures: string[] = [];
+
+  const nestedBash = events.calls.filter(
+    (call) => call.toolName === 'bash' && call.parentId === codemode.id,
+  );
+
+  const nestedOutputs = nestedBash.filter(
+    (call) =>
+      !call.isError && `${call.structuredOutput}\n${call.text}`.includes(smokeCodemodeMarker),
+  );
+
+  if (nestedBash.length === 0) {
+    failures.push(
+      `codemode nested bash call: expected a bash end event with parent ${codemode.id}, got none`,
+    );
+  } else if (nestedOutputs.length === 0) {
+    const actual = nestedBash.map((call) => call.structuredOutput || call.text).join(' | ');
+
+    failures.push(
+      `codemode nested bash output: expected ${smokeCodemodeMarker} without error, got ${JSON.stringify(actual.slice(0, excerptLength))}`,
+    );
   }
 
-  if (codemode.text.includes(smokeCodemodeMarker)) {
-    return [];
+  if (!codemode.text.includes(smokeCodemodeMarker)) {
+    failures.push(
+      `codemode bash marker: expected ${smokeCodemodeMarker} in the result, got ${JSON.stringify(codemode.text.slice(0, excerptLength))}`,
+    );
   }
 
-  return [
-    `codemode bash marker: expected ${smokeCodemodeMarker} in the result, got ${JSON.stringify(codemode.text.slice(0, excerptLength))}`,
-  ];
+  const script = events.scripts.get(codemode.id);
+
+  if (script === undefined) {
+    failures.push(
+      `codemode script: expected a start event for ${codemode.id} with args.code, got none`,
+    );
+  } else if (script.includes(smokeCodemodeMarker)) {
+    failures.push(
+      `codemode script: expected no literal ${smokeCodemodeMarker}, got ${JSON.stringify(script.slice(0, excerptLength))}`,
+    );
+  }
+
+  return failures;
 };
 
 export const smokeFailures = (lines: readonly string[], git: GitFacts): string[] => {
-  const calls = toolCalls(lines);
+  const events = toolEvents(lines);
+  const { calls } = events;
 
   return [
     ...toolFailures(calls),
     ...runFailures(calls),
     ...commitFailures(git),
-    ...codemodeFailures(calls),
+    ...codemodeFailures(events),
   ];
 };
