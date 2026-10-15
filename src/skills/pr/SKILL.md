@@ -132,9 +132,11 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      pinned merge base as `base`. Append the log it returns after the header lines. The tool returns
      a saved passing log without a run when the head, base, command, and changes are unchanged.
    - When the change has user-visible behavior, also send it to a `qa` worker on the committed tree
-     before the preview. Tau fills the app URL and test account from the user's config. Ask the user
-     nothing in advance about the URL, account, or data writes. When the QA worker asks a blocking
-     question, pass it to the user. Record what QA tested and found for step 6 and the preview.
+     before the preview.
+   - Leave the app URL, test account, and data writes to Tau, which fills them from the user's
+     config. Ask the user nothing about them in advance.
+   - When the QA worker asks a blocking question, pass it to the user.
+   - Record what QA tested and found for step 6 and the preview.
 
 6. Choose draft status. Any gap means draft. A gap is one of:
    - A required check that failed or did not run. Only checks that can run solely after deployment
