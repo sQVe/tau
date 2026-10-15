@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { hasErrorCode, isMissingFile } from '../../errors.js';
 import { configurationGlobs } from './config.js';
 import type { TddConfig } from './config.js';
-import { createInputRules } from './inputGlob.js';
+import { closesLoop, createInputRules } from './inputGlob.js';
 
 const unreadableDirectoryCodes = ['EACCES', 'EPERM', 'ENOTDIR', 'ELOOP'];
 
@@ -25,7 +25,7 @@ const readDirectory = async (directory: string) => {
   }
 };
 
-const listInputs = async (cwd: string, config: TddConfig): Promise<string[]> => {
+export const listInputs = async (cwd: string, config: TddConfig): Promise<string[]> => {
   const includeGlobs = [
     ...config.productionGlobs,
     ...config.testGlobs,
@@ -68,7 +68,7 @@ const listInputs = async (cwd: string, config: TddConfig): Promise<string[]> => 
           if (rules.isInput(path)) {
             inputs.push(path);
           }
-        } else if (rules.entersDirectory(entry.name, path) && !ancestors.has(childReal)) {
+        } else if (rules.entersDirectory(entry.name, path) && !closesLoop(childReal, ancestors)) {
           await visit(path, new Set([...ancestors, childReal]), childReal);
         }
       }),

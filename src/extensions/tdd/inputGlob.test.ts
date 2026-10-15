@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { createInputRules, unsupportedGlobReason } from './inputGlob.js';
+import { closesLoop, createInputRules, unsupportedGlobReason } from './inputGlob.js';
 
 it.each([
   { glob: 'src/**/*.{ts,tsx}', supported: true },
@@ -45,6 +45,14 @@ it.each([
   { globs: ['src/**/*.ts'], excludes: ['**/x'], path: 'src/a.ts', input: true },
   { globs: ['src/**/*.ts'], excludes: ['src'], path: 'src/a.ts', input: true },
   { globs: ['**/*.ts'], excludes: ['**/a.ts'], path: 'src/a.ts', input: false },
+  { globs: ['.hidden/**/*.ts'], excludes: [], path: '.hidden/value.ts', input: true },
+  { globs: ['.hidden/**/*.ts'], excludes: ['**/*.ts'], path: '.hidden/value.ts', input: false },
+  {
+    globs: ['.hidden/**/*.ts'],
+    excludes: ['**/.hidden/**'],
+    path: '.hidden/value.ts',
+    input: false,
+  },
 ])('decides input for $path with $globs excluding $excludes: $input', (fact) => {
   expect(rules(fact.globs, fact.excludes).isInput(fact.path)).toBe(fact.input);
 });
@@ -59,4 +67,14 @@ it.each([
   const walk = rules(['.pi/tau.json', '**/*.ts'], fact.excludes);
 
   expect(walk.entersDirectory(fact.name, fact.path)).toBe(fact.enters);
+});
+
+it.each([
+  { realPath: '/repo/a', ancestors: ['/repo'], loop: false },
+  { realPath: '/repo', ancestors: ['/repo', '/repo/a'], loop: true },
+  { realPath: '/repo/a', ancestors: ['/repo', '/repo/a'], loop: true },
+  { realPath: '/repo/ab', ancestors: ['/repo', '/repo/a'], loop: false },
+  { realPath: '/elsewhere', ancestors: ['/repo'], loop: false },
+])('decides loop for $realPath under $ancestors: $loop', (fact) => {
+  expect(closesLoop(fact.realPath, new Set(fact.ancestors))).toBe(fact.loop);
 });

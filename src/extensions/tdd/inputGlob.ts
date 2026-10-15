@@ -325,6 +325,10 @@ const excludesDirectory = (excludes: Pattern[], segments: string[]) =>
     return matchesSegments(pattern, segments, true) || matchesTree;
   });
 
+// A directory whose real path is one of its own ancestors would repeat the walk forever.
+export const closesLoop = (realPath: string, ancestorRealPaths: ReadonlySet<string>): boolean =>
+  ancestorRealPaths.has(realPath);
+
 // Builds the decisions of one directory walk. Assumes every glob passed `unsupportedGlobReason`.
 // With `matchesDots`, a dot path matches like `node:path` `matchesGlob`; the walk leaves it off.
 export const createInputRules = (
