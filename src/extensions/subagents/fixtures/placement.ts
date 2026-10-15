@@ -1,6 +1,6 @@
+import { requireObject } from '../../../terminal.js';
 import { WorkerPlacement } from '../placement.js';
 import type { Visibility } from '../placement.js';
-import { requireObject } from '../terminal.js';
 
 interface FixturePane {
   pane_id: string;

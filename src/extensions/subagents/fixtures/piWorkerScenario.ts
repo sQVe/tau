@@ -10,13 +10,13 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { expect, onTestFinished, vi } from 'vitest';
 
+import { listTerminals, requireObject, result, terminalLocation } from '../../../terminal.js';
 import { runClient } from '../cancellation.js';
 import { WorkerController } from '../controller/controller.js';
 import { resolveLoadout, validateSavedLoadout } from '../loadout.js';
 import { readAcknowledgement, readReply } from '../questionRecords.js';
 import * as records from '../records.js';
 import { readTask } from '../records.js';
-import { listTerminals, requireObject, result, terminalLocation } from '../terminal.js';
 import { fixtureModel } from './controlledProvider.js';
 import { isolatedHerdr } from './isolatedHerdr.js';
 import { toolAvailable } from './toolAvailable.js';

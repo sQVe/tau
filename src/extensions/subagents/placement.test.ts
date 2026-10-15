@@ -1,8 +1,8 @@
 import { expect, it, vi, onTestFinished } from 'vitest';
 
+import { requireObject, result } from '../../terminal.js';
 import { placementFixture as fixture } from './fixtures/placement.js';
 import { splitDirection } from './placement.js';
-import { requireObject, result } from './terminal.js';
 
 const minimumPane = { width: 82, height: 24 };
 

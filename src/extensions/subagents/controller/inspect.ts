@@ -11,11 +11,11 @@ import { Value } from 'typebox/value';
 
 import { parseModelReference } from '../../../models/models.js';
 import { skillTools } from '../../../skillTools.js';
+import { listTerminals, requireObject, result } from '../../../terminal.js';
+import type { TerminalLocation } from '../../../terminal.js';
 import { matchesWorker, runClient } from '../cancellation.js';
 import type { OwnedWorker } from '../cancellation.js';
 import { publishRecord, readEvent } from '../records.js';
-import { listTerminals, requireObject, result } from '../terminal.js';
-import type { TerminalLocation } from '../terminal.js';
 import type { Task, TaskEvent } from '../types.js';
 import { workerTools } from '../workerTools.js';
 import { workBudget } from './budget.js';
