@@ -29,6 +29,11 @@ it.each<{ name: string; facts: Partial<FileFacts>; decision: string }>([
   { name: 'the user removed the staged file', facts: { staged: undefined }, decision: 'unchanged' },
   { name: 'the real file still matches', facts: { staged: 'two' }, decision: 'apply' },
   {
+    name: 'the real file already holds the staged text',
+    facts: { staged: 'two', current: 'two' },
+    decision: 'apply',
+  },
+  {
     name: 'the real file changed during the review',
     facts: { staged: 'two', current: 'three' },
     decision: 'conflict',

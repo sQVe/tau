@@ -27,10 +27,13 @@ export const selectReviewedComments = (
   comments.filter((comment) => comment.path !== null && reviewedPaths.includes(comment.path));
 
 // A changed file is written back only while the real file still matches what the review began with.
+// A real file that already holds the staged text is a retry of an earlier write, so it applies.
 export const decideEdit = (facts: FileFacts): EditDecision => {
   if (facts.staged === undefined || facts.staged === facts.original) {
     return 'unchanged';
   }
 
-  return facts.current === facts.original ? 'apply' : 'conflict';
+  const writable = facts.current === facts.original || facts.current === facts.staged;
+
+  return writable ? 'apply' : 'conflict';
 };
