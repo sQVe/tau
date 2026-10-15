@@ -25,11 +25,13 @@ export interface FakePullRequest {
   headBranch: string;
   // The committer date of the head commit. Defaults to a fixed date.
   headCommittedAt?: string;
+  // The creation times of the head commit's check suites. Defaults to none.
+  headCheckSuites?: string[];
   reviews?: { login: string; commit: string }[];
   comments?: { body: string; createdAt: string }[];
 }
 
-type CommandKey = 'auth status' | 'repo view' | 'pr list' | 'pr view' | 'api';
+type CommandKey = 'auth status' | 'repo view' | 'pr list' | 'pr view' | 'api' | 'check-suites';
 
 export interface GhFake {
   exec: Exec;
@@ -154,7 +156,7 @@ export const createGhFake = (): GhFake => {
   };
 
   const view = (
-    key: Exclude<CommandKey, 'auth status' | 'api'>,
+    key: Exclude<CommandKey, 'auth status' | 'api' | 'check-suites'>,
     commandArguments: readonly string[],
   ) => {
     if (key === 'repo view') {
@@ -168,15 +170,20 @@ export const createGhFake = (): GhFake => {
     return pullRequestView(commandArguments);
   };
 
-  // gh api --jq prints the raw date, not JSON.
-  const commitDate = (commandArguments: readonly string[]) => {
+  // gh api --jq prints raw lines, not JSON.
+  const commitApi = (commandArguments: readonly string[]) => {
     const host = commandArguments[2];
     const path = commandArguments[3] ?? '';
     const parts = path.split('/');
     const [owner, name, sha] = [parts[1], parts[2], parts[4]];
     const prs = fake.pullRequests[`${host}/${owner}/${name}`] ?? [];
+    const head = prs.find((pr) => pr.headRefOid === sha);
 
-    return prs.find((pr) => pr.headRefOid === sha)?.headCommittedAt ?? '2026-10-14T10:00:00Z';
+    if (parts[5] === 'check-suites') {
+      return (head?.headCheckSuites ?? []).map((createdAt) => `${createdAt}\n`).join('');
+    }
+
+    return head?.headCommittedAt ?? '2026-10-14T10:00:00Z';
   };
 
   const output = (key: CommandKey, commandArguments: readonly string[]) => {
@@ -184,8 +191,8 @@ export const createGhFake = (): GhFake => {
       return '';
     }
 
-    if (key === 'api') {
-      return commitDate(commandArguments);
+    if (key === 'api' || key === 'check-suites') {
+      return commitApi(commandArguments);
     }
 
     const value = view(key, commandArguments);
@@ -208,7 +215,9 @@ export const createGhFake = (): GhFake => {
 
     calls.push({ command, commandArguments });
 
-    const key = commandKeys[commandArguments.slice(0, 2).join(' ')];
+    const baseKey = commandKeys[commandArguments.slice(0, 2).join(' ')];
+    const readsCheckSuites = commandArguments[3]?.endsWith('/check-suites') === true;
+    const key = baseKey === 'api' && readsCheckSuites ? 'check-suites' : baseKey;
 
     if (command !== 'gh' || key === undefined) {
       return { code: 1, killed: false, stdout: '', stderr: `unexpected ${command} call` };

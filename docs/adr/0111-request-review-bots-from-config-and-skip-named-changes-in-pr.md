@@ -27,10 +27,13 @@ because Tau cannot know which bots the user trusts.
 
 A read-only `reviewBots` action of the `pr` tool gives each bot one status, from a pure decision
 function: `reviewed` when the bot's login reviewed the current head, `requested` when a comment with
-the request text came at or after the head commit's committer date, and `request` otherwise. The
-skill posts each `request` and reads the action again before any retry, so a retry never posts
-twice. The tool reads the head commit's committer date with `gh api`, since the commit list of
-`gh pr view` stops at 100 commits. The date stands in for the push time, which `gh` does not report.
+the request text came at or after the later of the head commit's committer date and the earliest
+check suite of the head, and `request` otherwise. The skill posts each `request` and reads the
+action again before any retry, so a retry never posts twice. The tool reads the head commit's
+committer date and its check suites with `gh api`, since the commit list of `gh pr view` stops at
+100 commits. `gh` does not report the push time. GitHub creates check suites when it receives a
+push, so the earliest suite stands in for the push time. With no check suite, the committer date
+alone applies.
 
 A change after approval needs a new preview, unless the approved option or the user's answer named
 that exact change and the skill applies it as stated.
@@ -46,8 +49,9 @@ that exact change and the skill applies it as stated.
 ### Negative
 
 - A user must write one entry per repository and bot.
-- A rebase with an old committer date can make an earlier request count for the new head, so no new
-  request is posted.
+- A repository with no check apps has no check suite. There, a request made after the commit but
+  before the push, or after a rebase with an old committer date, can count for the new head, so no
+  new request is posted.
 - The skill decides whether a change was named exactly, so a loose reading skips a needed preview.
 
 ## Alternatives considered

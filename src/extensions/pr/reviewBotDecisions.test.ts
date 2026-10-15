@@ -85,6 +85,38 @@ it.each([
     status: 'request',
   },
   {
+    name: 'the request predates the check suite',
+    overrides: {
+      headCheckSuiteAt: '2026-10-14T10:10:00Z',
+      comments: [{ body: '@codex review', createdAt: '2026-10-14T10:05:00Z' }],
+    },
+    status: 'request',
+  },
+  {
+    name: 'the request came after the check suite',
+    overrides: {
+      headCheckSuiteAt: '2026-10-14T10:10:00Z',
+      comments: [{ body: '@codex review', createdAt: '2026-10-14T10:11:00Z' }],
+    },
+    status: 'requested',
+  },
+  {
+    name: 'the request came at the check suite time',
+    overrides: {
+      headCheckSuiteAt: '2026-10-14T10:10:00Z',
+      comments: [{ body: '@codex review', createdAt: '2026-10-14T10:10:00Z' }],
+    },
+    status: 'requested',
+  },
+  {
+    name: 'the check suite is older than the head commit',
+    overrides: {
+      headCheckSuiteAt: '2026-10-14T09:00:00Z',
+      comments: [{ body: '@codex review', createdAt: '2026-10-14T10:05:00Z' }],
+    },
+    status: 'requested',
+  },
+  {
     name: 'a comment has other text',
     overrides: { comments: [{ body: '@codex review please', createdAt: '2026-10-14T10:05:00Z' }] },
     status: 'request',

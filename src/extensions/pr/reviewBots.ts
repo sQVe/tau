@@ -78,9 +78,34 @@ const readHeadDate = async (runtime: Runtime, repository: Repository, head: stri
   return date;
 };
 
+// The earliest check suite approximates the push time, since gh does not report it. It is
+// undefined when the head has no check suites. --paginate prints one line per suite across pages.
+const readHeadCheckSuiteDate = async (runtime: Runtime, repository: Repository, head: string) => {
+  const commandArguments = [
+    'api',
+    '--hostname',
+    repository.host,
+    `repos/${repository.owner}/${repository.name}/commits/${head}/check-suites`,
+    '--paginate',
+    '--jq',
+    '.check_suites[].created_at',
+  ];
+
+  const stdout = await run(runtime, commandArguments);
+  const lines = stdout.split('\n').map((line) => line.trim());
+  const times = lines.filter((line) => line !== '');
+
+  if (times.some((time) => Number.isNaN(Date.parse(time)))) {
+    throw new Error(`${label(commandArguments)} printed a check suite time that is not a date.`);
+  }
+
+  return times.toSorted((first, second) => Date.parse(first) - Date.parse(second))[0];
+};
+
 // Reads the configured review bots of the base repository and what each did on the pull request's
-// head. It never posts. The head commit's committer date marks when a request counts for the head,
-// since gh does not report when the head was pushed.
+// head. It never posts. A request counts for the head from the later of the head commit's
+// committer date and its earliest check suite. With no check suite, the committer date alone
+// applies.
 export const readReviewBotStatuses = async (
   runtime: Runtime,
   location: ConfigLocation,
@@ -102,10 +127,13 @@ export const readReviewBotStatuses = async (
   const view = await readPublished(runtime, request.repository, pr);
   const headCommittedAt = await readHeadDate(runtime, repository, view.headRefOid);
 
+  const headCheckSuiteAt = await readHeadCheckSuiteDate(runtime, repository, view.headRefOid);
+
   const decisions = decideReviewBots({
     bots,
     head: view.headRefOid,
     headCommittedAt,
+    headCheckSuiteAt,
     reviews: view.reviews.map((review) => ({
       login: review.author?.login ?? '',
       commit: review.commit?.oid,

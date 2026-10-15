@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
-import { expect, it, onTestFinished } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createGhFake } from './fixtures/ghFake.js';
@@ -67,6 +67,7 @@ it('asks for the bot that has not reviewed or been asked', async () => {
 
   expect(fake.calls.map(({ commandArguments }) => commandArguments.slice(0, 3))).toEqual([
     ['pr', 'view', '7'],
+    ['api', '--hostname', 'github.com'],
     ['api', '--hostname', 'github.com'],
   ]);
 });
@@ -251,7 +252,12 @@ it('reads the head date when the commit list does not hold the head', async () =
   ];
 
   await expect(run()).resolves.toEqual({ bots: [{ ...bot, status: 'requested' }] });
-  expect(fake.calls.map(({ commandArguments }) => commandArguments[0])).toEqual(['pr', 'api']);
+
+  expect(fake.calls.map(({ commandArguments }) => commandArguments[0])).toEqual([
+    'pr',
+    'api',
+    'api',
+  ]);
 });
 
 it('fails when gh api cannot read the head commit', async () => {
@@ -268,6 +274,80 @@ it('fails when gh api prints no date for the head commit', async () => {
   fake.overrideOutput('api', '\n');
 
   await expect(run()).rejects.toThrow('printed no committer date');
+});
+
+describe('check suites', () => {
+  const requestBetween = [{ body: bot.comment, createdAt: '2026-10-14T10:05:00Z' }];
+
+  it('counts a request only from the earliest check suite of the head', async () => {
+    const { run, fake } = await setUp(config);
+
+    fake.pullRequests[repository] = [
+      pullRequest({
+        comments: requestBetween,
+        headCheckSuites: ['2026-10-14T10:20:00Z', '2026-10-14T10:10:00Z'],
+      }),
+    ];
+
+    await expect(run()).resolves.toEqual({ bots: [{ ...bot, status: 'request' }] });
+
+    expect(fake.calls.at(-1)?.commandArguments).toEqual([
+      'api',
+      '--hostname',
+      'github.com',
+      'repos/sQVe/tau/commits/abc123/check-suites',
+      '--paginate',
+      '--jq',
+      '.check_suites[].created_at',
+    ]);
+  });
+
+  it('counts a request after the check suite', async () => {
+    const { run, fake } = await setUp(config);
+
+    fake.pullRequests[repository] = [
+      pullRequest({ comments: requestBetween, headCheckSuites: ['2026-10-14T10:02:00Z'] }),
+    ];
+
+    await expect(run()).resolves.toEqual({ bots: [{ ...bot, status: 'requested' }] });
+  });
+
+  it('falls back to the committer date when the head has no check suites', async () => {
+    const { run, fake } = await setUp(config);
+
+    fake.pullRequests[repository] = [pullRequest({ comments: requestBetween })];
+    fake.overrideOutput('check-suites', '');
+
+    await expect(run()).resolves.toEqual({ bots: [{ ...bot, status: 'requested' }] });
+  });
+
+  it('reads the earliest time across pages', async () => {
+    const { run, fake } = await setUp(config);
+
+    fake.pullRequests[repository] = [pullRequest({ comments: requestBetween })];
+    fake.overrideOutput('check-suites', '2026-10-14T10:30:00Z\n2026-10-14T10:10:00Z\n');
+
+    await expect(run()).resolves.toEqual({ bots: [{ ...bot, status: 'request' }] });
+  });
+
+  it.each(['not a date\n', '2026-10-14T10:30:00Z\n{"oops":1}\n'])(
+    'fails when gh api prints malformed check suites %j',
+    async (output) => {
+      const { run, fake } = await setUp(config);
+
+      fake.overrideOutput('check-suites', output);
+
+      await expect(run()).rejects.toThrow('printed a check suite time that is not a date');
+    },
+  );
+
+  it('fails when gh api cannot read the check suites', async () => {
+    const { run, fake } = await setUp(config);
+
+    fake.failCommand('check-suites');
+
+    await expect(run()).rejects.toThrow('gh api');
+  });
 });
 
 it('warns once for an unknown field inside a bot entry', async () => {
