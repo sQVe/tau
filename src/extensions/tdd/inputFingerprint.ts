@@ -36,7 +36,6 @@ const listInputs = async (cwd: string, config: TddConfig): Promise<string[]> => 
   const rules = createInputRules(includeGlobs, config.excludedGlobs);
   const inputs: string[] = [];
 
-  // Returns the scope inside a followed symlinked directory, or null when it is not followed.
   const linkedScope = async (directory: string, path: string, scope?: PatternScope) => {
     const naming = rules.followsLink(path, scope);
 

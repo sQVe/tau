@@ -97,7 +97,6 @@ const rangeProblem = (inner: string): string | null => {
     : null;
 };
 
-// Returns the problem with the brace group that opens at `open`, or null when it is supported.
 const braceGroupProblem = (glob: string, open: number): string | null => {
   const group = findBraceGroup(glob, open);
 
