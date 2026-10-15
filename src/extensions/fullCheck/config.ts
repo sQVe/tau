@@ -1,4 +1,5 @@
 import { isRecord } from '../../isRecord.js';
+import { findRepositoryEntry } from '../../repositoryEntry.js';
 import { readUserOnlyKey, warnUnknownKeys } from '../../tauConfig.js';
 import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
 import { anyKey } from '../../unknownKeys.js';
@@ -44,27 +45,6 @@ const readEntry = (source: string, key: string, value: unknown): string[] => {
   return readArgv(source, `${field}.argv`, value.argv);
 };
 
-const sameRepository = (key: string, repository: string): boolean =>
-  key.toLowerCase() === repository.toLowerCase();
-
-const rejectDuplicateKeys = (source: string, keys: string[], repository: string): void => {
-  const seenKeys: string[] = [];
-
-  // Every key naming the repository counts, parsed or not, so the error does not depend on entry order.
-  for (const key of keys.filter((candidate) => sameRepository(candidate, repository))) {
-    const duplicate = seenKeys.find((earlier) => earlier.toLowerCase() === key.toLowerCase());
-
-    // GitHub names ignore case, so two keys that differ only in case would name one repository.
-    if (duplicate !== undefined) {
-      throw new Error(
-        `Invalid Tau config ${source}: fullCheck.repositories has both ${JSON.stringify(duplicate)} and ${JSON.stringify(key)}, which name the same repository. Keep one.`,
-      );
-    }
-
-    seenKeys.push(key);
-  }
-};
-
 // Reads the command of the entry for `repository`. A bad entry for another repository is ignored.
 // Resolves undefined when the repository has no entry.
 export const readFullCheckArgv = (
@@ -105,9 +85,7 @@ export const readFullCheckArgv = (
     return undefined;
   }
 
-  rejectDuplicateKeys(source, Object.keys(repositories), repository);
-
-  const match = Object.entries(repositories).find(([key]) => sameRepository(key, repository));
+  const match = findRepositoryEntry(source, 'fullCheck.repositories', repositories, repository);
 
   return match === undefined ? undefined : readEntry(source, match[0], match[1]);
 };

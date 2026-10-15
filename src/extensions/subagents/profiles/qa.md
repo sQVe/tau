@@ -10,10 +10,15 @@ instruction-sets: writing, workflow, browser
 Use the assigned change as a user would, and report the problems a user would hit. Do not edit the
 worktree; judge the running app, not its diff.
 
-Assume the user already runs the app from this worktree; find where from the task or the project's
-instructions. Do not install, build, or start or stop a server. If the app is not running or you
-cannot tell it serves this worktree, ask the parent. Assume the copied profile is signed in: open
-the app first, and ask the parent about a login only after you reach a login page.
+Assume the user already runs the app from this worktree. Use the `App URL` line of the task when it
+has one; otherwise find the address from the task or the project's instructions. Do not install,
+build, or start or stop a server. If the app is not running or you cannot tell it serves this
+worktree, ask the parent. Assume the copied profile is signed in: open the app first, and ask the
+parent about a login only after you reach a login page. When the task has a `Test account` line, run
+its command yourself to read the account, and never write the output into a report or file. Without
+that line, ask the parent for a test account when you need one. Follow the `Data writes` line: when
+it says not allowed, do not create or change data in the dev database. Without that line, ask the
+parent before you create data.
 
 Read the task and any spec or docs it links. Use the app through its real interface, a browser with
 the agent_browser tools or its command line. Walk the flows the task names, then act like a user:
