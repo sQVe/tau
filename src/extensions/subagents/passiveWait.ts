@@ -1,3 +1,5 @@
+type HeredocReplacement = (span: string, quote: string, rest: string) => string;
+
 export interface PassiveWaitFacts {
   hasActiveWorkers: boolean;
   delegating: boolean;
@@ -39,16 +41,34 @@ const withoutSingleQuotedText = (command: string): string =>
   command.replace(quotedText, (span: string) => (span.startsWith("'") ? "''" : span));
 
 // A heredoc body is text up to its delimiter line. With a quoted delimiter, nothing in it expands.
-const heredoc =
-  /(?<!<)<<-?[ \t]*(['"]?)([A-Za-z_][\w.-]*)\1([^\n]*)(?:\n(?:[\s\S]*?\n)??\t*\2(?=\n|$)|[\s\S]*$)/g;
+const heredocSource = String.raw`(?<!<)<<-?[ \t]*(['"]?)([A-Za-z_][\w.-]*)\1([^\n]*)(?:\n(?:[\s\S]*?\n)??\t*\2(?=\n|$)|[\s\S]*$)`;
+
+const heredoc = new RegExp(heredocSource, 'g');
+
+// One left-to-right scan, so a heredoc marker inside a single-quoted span is text and a heredoc body
+// is consumed before its contents are scanned. Each alternative matches a text in one way.
+const quotedOrHeredoc = new RegExp(
+  String.raw`\\[\s\S]|'[^']*'|"(?:\\[\s\S]|[^"\\])*"|${heredocSource}`,
+  'g',
+);
+
+// A double-quoted span may hold a heredoc in a command substitution.
+const replaceHeredocs = (command: string, replacement: HeredocReplacement): string =>
+  command.replace(quotedOrHeredoc, (span: string) => {
+    if (span.startsWith('\\') || span.startsWith("'")) {
+      return span;
+    }
+
+    return span.replace(heredoc, (inner, quote: string, _delimiter, rest: string) =>
+      replacement(inner, quote, rest),
+    );
+  });
 
 const withoutHeredocText = (command: string): string =>
-  command.replace(heredoc, (_span, _quote, _delimiter, rest: string) => `<<EOF${rest}`);
+  replaceHeredocs(command, (_span, _quote, rest) => `<<EOF${rest}`);
 
 const withoutLiteralHeredocText = (command: string): string =>
-  command.replace(heredoc, (span: string, quote: string, _delimiter, rest: string) =>
-    quote === '' ? span : `<<EOF${rest}`,
-  );
+  replaceHeredocs(command, (span, quote, rest) => (quote === '' ? span : `<<EOF${rest}`));
 
 const shellNames = String.raw`(?:sh|bash|zsh|dash|ksh|fish|eval|source|\$\{?SHELL\}?)`;
 
@@ -101,11 +121,13 @@ export const passiveWaitRefusal = (
   const expandable = withoutLiteralHeredocText(command);
   const shellRuns = runsShell.test(prose) || quotedShellName.test(expandable);
   // A substitution can run text whose quotes this guard does not parse, so its sleeps count.
-  const substitutes = hasCommandSubstitution(withoutSingleQuotedText(expandable));
+  const substitutedText = withoutSingleQuotedText(expandable);
+  const substitutes = hasCommandSubstitution(substitutedText);
 
   const runnable = substitutes ? expandable : prose;
   const sleepText = shellRuns ? command : runnable;
-  const waitText = shellRuns ? withoutQuotedText(command) : prose;
+  const loopText = substitutes ? substitutedText : prose;
+  const waitText = shellRuns ? withoutQuotedText(command) : loopText;
 
   const waitsInLoop = loopWithSleep.test(waitText);
   const waitsOnWatcher = passiveWaitPatterns.some((pattern) => pattern.test(waitText));

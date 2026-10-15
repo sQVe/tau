@@ -96,6 +96,14 @@ it.each([
     refused: false,
   },
   { command: "git commit -m 'drop the sleep 600 retry'", workers: true, refused: false },
+  { command: "echo '<<EOF'\nsleep 600", workers: true, refused: true },
+  { command: "echo '<<EOF'\ngh run watch", workers: false, refused: true },
+  { command: 'echo "$(gh run watch)"', workers: false, refused: true },
+  {
+    command: 'git commit -m "$(cat <<\'EOF\'\nadd gh run watch\nEOF\n)"',
+    workers: false,
+    refused: false,
+  },
 ])('returns refusal $refused for "$command" with workers $workers', (row) => {
   const reason = passiveWaitRefusal(row.command, {
     hasActiveWorkers: row.workers,
@@ -113,4 +121,15 @@ it('offers a worker for a requested wait only when delegating', () => {
   expect(delegating).toContain('worker');
   expect(alone).not.toContain('worker');
   expect(alone).toContain('resumes');
+});
+
+it.each([
+  { name: 'a stray quote before 20 heredocs', command: `"${'cat <<EOF\nx\nEOF\n'.repeat(20)}` },
+  { name: 'an unclosed quote before 1000 markers', command: `"${'<<'.repeat(1000)}` },
+])('answers $name quickly', ({ command }) => {
+  const start = performance.now();
+
+  passiveWaitRefusal(command, { hasActiveWorkers: true, delegating: false });
+
+  expect(performance.now() - start).toBeLessThan(100);
 });
