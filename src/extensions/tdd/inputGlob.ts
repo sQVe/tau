@@ -5,7 +5,6 @@ interface BraceGroup {
 
 interface Segment {
   text: string;
-  isWildcard: boolean;
   test: (name: string) => boolean;
 }
 
@@ -249,12 +248,12 @@ const compileSegment = (text: string): Segment => {
   const isWildcard = /[*?]/u.test(text);
 
   if (!isWildcard) {
-    return { text, isWildcard, test: (name) => name === text };
+    return { text, test: (name) => name === text };
   }
 
   const expression = toRegularExpression(text);
 
-  return { text, isWildcard, test: (name) => expression.test(name) };
+  return { text, test: (name) => expression.test(name) };
 };
 
 const compileGlobs = (globs: string[]): Pattern[] =>
