@@ -232,6 +232,24 @@ it.each(['before readiness', 'before dispatch', 'before tool call'])(
   },
 );
 
+it('blocks draft_review and tells the worker to report the draft path to the parent', async () => {
+  const { directory, emit, sendUserMessage } = setup();
+
+  await emit('session_start');
+  publish(directory, 'dispatch.json', { taskId: 'task' });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(sendUserMessage).toHaveBeenCalledOnce();
+  await emit('agent_start');
+
+  const result = (await emit('tool_call', { toolName: 'draft_review' })) as
+    | ToolCallEventResult
+    | undefined;
+
+  expect(result?.block).toBe(true);
+  expect(result?.reason).toContain('report the draft path to the parent');
+  await emit('session_shutdown');
+});
+
 const assistantUsageEntry = (id: string, input: number, output: number): SessionEntry => ({
   type: 'message',
   id,
