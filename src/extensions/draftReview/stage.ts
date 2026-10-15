@@ -9,7 +9,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
@@ -77,7 +77,39 @@ export const parseReviewManifest = (
   return value;
 };
 
-const climbsOut = (path: string) => path === '..' || path.startsWith('../') || isAbsolute(path);
+// On POSIX a backslash is a name character, so `a\b/../..` climbs one level natively while the
+// cross-platform walk counts two names. Both checks must pass.
+const climbsOutNatively = (path: string) => {
+  const normalized = normalize(path);
+
+  return normalized === '..' || normalized.startsWith(`..${sep}`);
+};
+
+const climbsOutOnAnyPlatform = (path: string) => {
+  let depth = 0;
+
+  for (const segment of path.split(/[/\\]/)) {
+    if (segment === '..') {
+      depth -= 1;
+    } else if (segment !== '' && segment !== '.') {
+      depth += 1;
+    }
+
+    if (depth < 0) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const climbsOut = (path: string) => {
+  if (isAbsolute(path) || path.startsWith('\\')) {
+    return true;
+  }
+
+  return climbsOutNatively(path) || climbsOutOnAnyPlatform(path);
+};
 
 const realFile = async (tauDirectory: string, requested: string, cwd: string): Promise<string> => {
   const absolute = resolve(cwd, requested);

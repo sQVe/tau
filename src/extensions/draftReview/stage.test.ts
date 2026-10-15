@@ -1,9 +1,11 @@
-import { readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { expect, it } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { parseReviewManifest } from './stage.js';
+import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { parseReviewManifest, readReview, stageReview } from './stage.js';
 
 const fixtures = join(import.meta.dirname, 'fixtures', 'review');
 const path = '/record/review.json';
@@ -42,3 +44,36 @@ it('refuses an unknown field', () => {
 
   expect(() => parseReviewManifest(path, text)).toThrow(/Malformed review record/);
 });
+
+const stagedFixture = async () => {
+  const repository = await createTemporaryRepository(onTestFinished, 'tau-stage-repo-');
+  const data = await mkdtemp(join(tmpdir(), 'tau-stage-data-'));
+  onTestFinished(() => rm(data, { recursive: true, force: true }));
+  vi.stubEnv('TMPDIR', data);
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  await mkdir(join(repository, '.tau/slices'), { recursive: true });
+  await writeFile(join(repository, '.tau/slices/a.md'), 'one\n');
+
+  return { repository, data };
+};
+
+it.each(['slices/../../outside.md', '..\\outside.md', 'a\\b/../../outside.md'])(
+  'refuses a saved manifest path that climbs out of .tau: %s',
+  async (climbing) => {
+    const { repository } = await stagedFixture();
+    const review = await stageReview(repository, ['.tau/slices/a.md']);
+    const manifestPath = join(review.recordDirectory, 'review.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { paths: string[] };
+
+    manifest.paths = [climbing];
+    await writeFile(manifestPath, JSON.stringify(manifest));
+
+    await expect(readReview(repository, review.recordDirectory)).rejects.toThrow(
+      /names a path outside \.tau/,
+    );
+  },
+);
