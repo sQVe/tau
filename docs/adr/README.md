@@ -136,3 +136,4 @@ line that links to the replacement.
 - [0109: Keep action behavior out of extension roots and name one concept one way](./0109-keep-action-behavior-out-of-extension-roots.md)
 - [0110: Keep QA settings in a per-feature repository map](./0110-keep-qa-settings-in-a-per-feature-repository-map.md)
 - [0111: Request review bots from config and skip the preview for a named change](./0111-request-review-bots-from-config-and-skip-named-changes-in-pr.md)
+- [0112: Review collaborative drafts as files in tuicr](./0112-review-collaborative-drafts-as-files-in-tuicr.md)
