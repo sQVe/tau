@@ -16,6 +16,8 @@ export interface HistoryRequest {
   startTips: Readonly<Record<string, string>> | undefined;
 }
 
+type StartTips = ReadonlyMap<string, string>;
+
 interface LayerHistory extends LayerDecision {
   branch: string;
   // The tip the checks used in place of the local branch, or null when they used the branch.
@@ -37,8 +39,7 @@ const branchRef = (name: string) => `refs/heads/${name}`;
 
 const remoteRef = (remote: string, name: string) => `refs/remotes/${remote}/${name}`;
 
-const tipRef = (tips: Readonly<Record<string, string>>, name: string) =>
-  tips[name] ?? branchRef(name);
+const tipRef = (tips: StartTips, name: string) => tips.get(name) ?? branchRef(name);
 
 const gather = async (cwd: string, commandArguments: string[]) => {
   const output = await runGitRead(cwd, commandArguments);
@@ -49,7 +50,7 @@ const gather = async (cwd: string, commandArguments: string[]) => {
 const readLayerFacts = async (
   cwd: string,
   remote: string,
-  tips: Readonly<Record<string, string>>,
+  tips: StartTips,
   parents: LayerParents,
 ): Promise<LayerFacts> => {
   const { branch, newParent, oldParent } = parents;
@@ -63,7 +64,7 @@ const readLayerFacts = async (
     return { remoteTip, published: null };
   }
 
-  const rebasedSincePush = tips[branch] !== undefined;
+  const rebasedSincePush = tips.has(branch);
 
   const [unseen, ancestor, newCherry, oldCherry] = await Promise.all([
     gather(cwd, ['log', '--oneline', `${tip}..${remoteBranch}`]),
@@ -109,7 +110,8 @@ export const readHistory = async (
 
   await rejectInvalidRequest(cwd, request);
 
-  const tips = request.startTips ?? {};
+  // A Map, so a branch named like an Object property, such as constructor, has no inherited tip.
+  const tips: StartTips = new Map(Object.entries(request.startTips ?? {}));
   const view = requireStackView(await readStackViewFacts(runtime));
 
   if (!view.ok) {
@@ -134,7 +136,7 @@ export const readHistory = async (
 
   const layers = checked.map(({ branch, facts }) => ({
     branch,
-    startTip: tips[branch] ?? null,
+    startTip: tips.get(branch) ?? null,
     ...decideLayer(facts),
   }));
 

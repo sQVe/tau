@@ -86,6 +86,19 @@ it('reports current for branches level with their remote, with the noted remote 
   expect(details.stop).toBeNull();
 });
 
+it('reports behind for a branch named like an object property without a start tip', async () => {
+  const { root, setStack, statuses } = await setUp();
+
+  await git(root, 'checkout', '--quiet', '-b', 'constructor');
+  await commit(root, 'constructor.txt');
+  await commit(root, 'more.txt');
+  await git(root, 'push', '--quiet', 'origin', 'constructor');
+  await git(root, 'reset', '--quiet', '--hard', 'HEAD~1');
+  setStack(layer('lower'), layer('upper'), layer('constructor'));
+
+  expect(await statuses()).toEqual({ lower: 'current', upper: 'current', constructor: 'behind' });
+});
+
 it('reports unpublished for a branch without a remote branch', async () => {
   const { root, statuses } = await setUp();
 
