@@ -8,6 +8,7 @@ import codeReviewExtension from './extensions/codeReview/codeReview.js';
 import codingExtension from './extensions/coding.js';
 import commitExtension from './extensions/commit/commit.js';
 import compactionExtension from './extensions/compaction/compaction.js';
+import draftReviewExtension from './extensions/draftReview/draftReview.js';
 import fullCheckExtension from './extensions/fullCheck/fullCheck.js';
 import handoverExtension from './extensions/handover/handover.js';
 import herdrBlockedExtension from './extensions/herdrBlocked.js';
@@ -44,6 +45,7 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   sliceExtension(pi);
   fullCheckExtension(pi);
   handoverExtension(pi);
+  draftReviewExtension(pi);
   trackerExtension(pi);
   prExtension(pi);
   prFeedbackExtension(pi);
