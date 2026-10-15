@@ -171,15 +171,11 @@ const copyInto = async (from: string, to: string) => {
   await copyFile(from, to);
 };
 
-export const stageReview = async (cwd: string, requested: readonly string[]): Promise<Review> => {
-  const root = await findTauRoot(cwd, 'draft_review');
-  const tauDirectory = await realpath(join(root, '.tau'));
-  const paths = await reviewablePaths(tauDirectory, requested, cwd);
-  const recordDirectory = await createFreshTauDirectory(root, recordParent, recordPrefix);
-  const stagingDirectory = await mkdtemp(join(tmpdir(), stagingPrefix));
+const populateReview = async (review: Review) => {
+  const { tauDirectory, recordDirectory, stagingDirectory, paths } = review;
 
   // Staging copies the saved original, not the live file, so both start from one snapshot.
-  await Promise.all(
+  const copies = await Promise.allSettled(
     paths.map(async (path) => {
       const original = join(recordDirectory, 'originals', path);
 
@@ -188,11 +184,41 @@ export const stageReview = async (cwd: string, requested: readonly string[]): Pr
     }),
   );
 
+  const failed = copies.find((copy) => copy.status === 'rejected');
+
+  if (failed) {
+    throw failed.reason;
+  }
+
   const manifest = { version: manifestVersion, stagingDirectory, paths };
 
   await writeFile(join(recordDirectory, manifestName), JSON.stringify(manifest, null, 2));
+};
 
-  return { tauDirectory, recordDirectory, stagingDirectory, paths };
+export const stageReview = async (cwd: string, requested: readonly string[]): Promise<Review> => {
+  const root = await findTauRoot(cwd, 'draft_review');
+  const tauDirectory = await realpath(join(root, '.tau'));
+  const paths = await reviewablePaths(tauDirectory, requested, cwd);
+  const recordDirectory = await createFreshTauDirectory(root, recordParent, recordPrefix);
+  let stagingDirectory = '';
+
+  try {
+    stagingDirectory = await mkdtemp(join(tmpdir(), stagingPrefix));
+
+    const review = { tauDirectory, recordDirectory, stagingDirectory, paths };
+
+    await populateReview(review);
+
+    return review;
+  } catch (error) {
+    await rm(recordDirectory, { recursive: true, force: true });
+
+    if (stagingDirectory !== '') {
+      await rm(stagingDirectory, { recursive: true, force: true });
+    }
+
+    throw error;
+  }
 };
 
 const isOwnStagingDirectory = (directory: string) =>
