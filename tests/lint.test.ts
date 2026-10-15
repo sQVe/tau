@@ -119,7 +119,7 @@ it('keeps test helpers out of production code and extensions out of shared modul
     `${helper}\nexport const value = initializeRepository;\n`,
   );
 
-  const result = spawnSync('pnpm', ['lint', directory], {
+  const result = spawnSync('pnpm', ['lint', '--format', 'agent', directory], {
     cwd: root,
     encoding: 'utf8',
     timeout: 20_000,
@@ -146,11 +146,15 @@ it('keeps extensions out of flat shared modules but lets the package entry load 
     "import { commitToolGuidelines } from './extensions/commit/tool.js';\n\nexport const value = commitToolGuidelines;\n",
   );
 
-  const result = spawnSync('pnpm', ['lint', probe, join(root, 'src', 'tau.ts')], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: 20_000,
-  });
+  const result = spawnSync(
+    'pnpm',
+    ['lint', '--format', 'agent', probe, join(root, 'src', 'tau.ts')],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 20_000,
+    },
+  );
 
   const diagnostics = result.stdout
     .split('\n')

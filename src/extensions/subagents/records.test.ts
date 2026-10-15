@@ -730,6 +730,9 @@ it('recovers immutable questions and replies separately from worker acknowledgem
 });
 
 it('rejects wrong-task malformed mismatched and conflicting question records', () => {
+  const answeredQuestion =
+    'This question already has a different answer. Use subagent_follow_up after the worker stops.';
+
   const { directory, task, question, reply, acknowledgement } = questionFixture();
 
   expect(questions).toHaveProperty('acceptQuestion');
@@ -786,11 +789,11 @@ it('rejects wrong-task malformed mismatched and conflicting question records', (
 
   expect(() =>
     questions.acceptReply(directory, task.taskId, { ...reply, replyId: 'reply-two' }),
-  ).toThrow('Conflicting saved question record.');
+  ).toThrow(answeredQuestion);
 
   expect(() =>
     questions.acceptReply(directory, task.taskId, { ...reply, reply: 'Changed.' }),
-  ).toThrow('Conflicting saved question record.');
+  ).toThrow(answeredQuestion);
 
   for (const invalid of [
     { ...acknowledgement, replyId: 'reply-two' },

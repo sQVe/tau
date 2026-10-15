@@ -38,6 +38,7 @@ import {
 import { readEvent, readRecord, readTask, recordEvent } from './records.js';
 import { reportParameters, reportToParent } from './report.js';
 import { remindToReport } from './reportReminder.js';
+import { recordStartupFailure } from './startupFailure.js';
 import type { Loadout, Question, Task } from './types.js';
 import { hasRunningTask, isTaskActive, remainingWork } from './workerExtensionState.js';
 import type { WorkerExtensionState, WorkerPhase } from './workerExtensionState.js';
@@ -422,6 +423,8 @@ const startWorker = (
     startDispatchWatch(pi, state, task, context);
   } catch (error) {
     const task = state.task;
+
+    recordStartupFailure(state.directory, error);
 
     if (task && !readEvent(state.directory, task.taskId, 'startupFailure')) {
       recordEvent(state.directory, task.taskId, 'startupFailure', String(error));

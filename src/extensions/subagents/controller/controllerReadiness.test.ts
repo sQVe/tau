@@ -4,8 +4,11 @@ import { join } from 'node:path';
 import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 
 import * as cancellationModule from '../cancellation.js';
-import { acceptReport, readEvent, readTask, recordEvent } from '../records.js';
+import { acceptReport, readEvent, readTask, recordEvent, TaskFormatError } from '../records.js';
 import * as records from '../records.js';
+import { recordStartupFailure } from '../startupFailure.js';
+import { renderStartupFailure } from '../startupFailureDecision.js';
+import type { StartupFailureOutcome } from '../startupFailureDecision.js';
 import { WorkerController } from './controller.js';
 import { captureError, setup } from './fixtures/controllerFixture.js';
 import { EvidenceUnavailableError } from './record.js';
@@ -116,6 +119,91 @@ it('reports a worker that exits while Tau establishes its identity as exited', a
 
   expect(status).toMatchObject({ outcome: 'failure', state: 'stopped' });
   expect(status.failure).toContain('exited before readiness');
+});
+
+const launchWithWorkerFailure = async (
+  onTestFinished: Parameters<typeof setup>[0],
+  record: (taskDirectory: string) => void,
+) => {
+  let inspections = 0;
+
+  const fixture = setup(onTestFinished, -1, async (argumentsList) => {
+    if (argumentsList[1] === 'process-info' && ++inspections > 1) {
+      const layout = fixture.calls.find((call) => call[0] === 'layout');
+      const { root } = JSON.parse(layout?.[2] ?? '') as { root: { env: Record<string, string> } };
+
+      record(root.env.TAU_WORKER_RECORD ?? '');
+      fixture.fake.state.stopped = true;
+    }
+
+    return '';
+  });
+
+  return fixture.controller.launch(fixture.input);
+};
+
+const noOutcome: StartupFailureOutcome = { notice: undefined, workerError: undefined };
+
+it('adds the recorded worker error to the startup failure detail', async ({ onTestFinished }) => {
+  const status = await launchWithWorkerFailure(onTestFinished, (taskDirectory) => {
+    recordStartupFailure(taskDirectory, new Error('Saved model changed.'));
+  });
+
+  expect(status.failure).toContain('exited before readiness');
+  expect(status.failure).toContain('Saved model changed.');
+  expect(status.failure).not.toContain(renderStartupFailure({ ...noOutcome, notice: 'restart' }));
+});
+
+it('tells the manager to restart when the worker refused a retired task', async ({
+  onTestFinished,
+}) => {
+  const status = await launchWithWorkerFailure(onTestFinished, (taskDirectory) => {
+    const retired = new Error('Saved task is unreadable', {
+      cause: new TaskFormatError('retired', 'retired format'),
+    });
+
+    recordStartupFailure(taskDirectory, retired);
+  });
+
+  expect(status.failure).toContain('exited before readiness');
+
+  expect(status.failure).toContain(
+    renderStartupFailure({ notice: 'restart', workerError: undefined }),
+  );
+});
+
+it.each([
+  { fixture: 'newer', notice: 'newerRecord' as const },
+  { fixture: 'malformed', notice: 'unreadableRecord' as const },
+])(
+  'keeps the original startup error and notes a $fixture worker record',
+  async ({ fixture, notice }) => {
+    const saved = readFileSync(
+      new URL(`../fixtures/startupErrors/${fixture}.json`, import.meta.url),
+      'utf8',
+    );
+
+    const status = await launchWithWorkerFailure(afterTest, (taskDirectory) => {
+      writeFileSync(join(taskDirectory, 'startupError.json'), saved);
+    });
+
+    expect(status.failure).toContain('exited before readiness');
+    expect(status.failure).toContain(renderStartupFailure({ notice, workerError: undefined }));
+    expect(status.failure).not.toContain(renderStartupFailure({ ...noOutcome, workerError: '' }));
+  },
+);
+
+it('adds nothing to the startup error when the worker saved no record', async ({
+  onTestFinished,
+}) => {
+  const status = await launchWithWorkerFailure(onTestFinished, () => undefined);
+
+  expect(status.failure).toContain('exited before readiness');
+  expect(status.failure).not.toContain(renderStartupFailure({ ...noOutcome, workerError: '' }));
+
+  for (const notice of ['restart', 'newerRecord', 'unreadableRecord'] as const) {
+    expect(status.failure).not.toContain(renderStartupFailure({ ...noOutcome, notice }));
+  }
 });
 
 it('detects an owned worker exiting before readiness without waiting for the task deadline', async ({

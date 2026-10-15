@@ -26,6 +26,7 @@ import {
   eventSchema,
   oldestReadableTaskVersion,
   reportSchema,
+  startupFailureSchema,
   taskSchema,
   taskVersion,
   isTaskId,
@@ -112,7 +113,10 @@ export const publish = (directory: string, name: string, value: unknown): void =
   }
 };
 
-export const versionedRecords = { 'task.json': taskSchema };
+export const versionedRecords = {
+  'startupError.json': startupFailureSchema,
+  'task.json': taskSchema,
+};
 
 export const publishRecord = <Name extends keyof typeof versionedRecords>(
   directory: string,
@@ -218,6 +222,17 @@ const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
 const savedVersion = (value: unknown): unknown =>
   isObjectRecord(value) ? value.version : undefined;
 
+export class TaskFormatError extends Error {
+  override name = 'TaskFormatError';
+
+  format: 'retired' | 'newer';
+
+  constructor(format: 'retired' | 'newer', message: string) {
+    super(message);
+    this.format = format;
+  }
+}
+
 const newerTaskNotice = 'saved by a newer Tau; restart this session to read it.';
 
 const retiredTaskNotice = 'saved in a retired format; start a fresh task instead.';
@@ -229,11 +244,11 @@ export const readTask = (directory: string): Task => {
     const format = taskFormat(savedVersion(value), taskVersion, oldestReadableTaskVersion);
 
     if (format === 'newer') {
-      throw new Error(`Task ${newerTaskNotice}`);
+      throw new TaskFormatError('newer', `Task ${newerTaskNotice}`);
     }
 
     if (format === 'retired') {
-      throw new Error(`Task ${retiredTaskNotice}`);
+      throw new TaskFormatError('retired', `Task ${retiredTaskNotice}`);
     }
 
     return validateTask(value);

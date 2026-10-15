@@ -1,3 +1,5 @@
+type HeredocReplacement = (span: string, quote: string, rest: string) => string;
+
 export interface PassiveWaitFacts {
   hasActiveWorkers: boolean;
   delegating: boolean;
@@ -21,11 +23,65 @@ const passiveWaitPatterns = [
 
 const shellScriptPrefix = /\b(?:sh|bash|zsh)(?:\s+-[a-z]+)*\s+-[a-z]*c\s+$/;
 
+// An escaped character is matched first, so an escaped quote never opens a quoted span.
+const quotedText = /\\[\s\S]|'[^']*'|"(?:[^"\\]|\\[\s\S])*"/g;
+
+const escapedCharacter = /\\[\s\S]/g;
+
 // Quoted text is prose unless it is the script a shell runs.
 const withoutQuotedText = (command: string): string =>
-  command.replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, (span, offset: number) =>
-    shellScriptPrefix.test(command.slice(0, offset)) ? span : "''",
-  );
+  command.replace(quotedText, (span: string, offset: number) => {
+    const isEscape = span.startsWith('\\');
+    const isScript = shellScriptPrefix.test(command.slice(0, offset));
+
+    return isEscape || isScript ? span : "''";
+  });
+
+const withoutSingleQuotedText = (command: string): string =>
+  command.replace(quotedText, (span: string) => (span.startsWith("'") ? "''" : span));
+
+// A heredoc body is text up to its delimiter line. With a quoted delimiter, nothing in it expands.
+const heredocSource = String.raw`(?<!<)<<-?[ \t]*(['"]?)([A-Za-z_][\w.-]*)\1([^\n]*)(?:\n(?:[\s\S]*?\n)??\t*\2(?=\n|$)|[\s\S]*$)`;
+
+const heredoc = new RegExp(heredocSource, 'g');
+
+// One left-to-right scan, so a heredoc marker inside a single-quoted span is text and a heredoc body
+// is consumed before its contents are scanned. Each alternative matches a text in one way.
+const quotedOrHeredoc = new RegExp(
+  String.raw`\\[\s\S]|'[^']*'|"(?:\\[\s\S]|[^"\\])*"|${heredocSource}`,
+  'g',
+);
+
+// A double-quoted span may hold a heredoc in a command substitution.
+const replaceHeredocs = (command: string, replacement: HeredocReplacement): string =>
+  command.replace(quotedOrHeredoc, (span: string) => {
+    if (span.startsWith('\\') || span.startsWith("'")) {
+      return span;
+    }
+
+    return span.replace(heredoc, (inner, quote: string, _delimiter, rest: string) =>
+      replacement(inner, quote, rest),
+    );
+  });
+
+const withoutHeredocText = (command: string): string =>
+  replaceHeredocs(command, (_span, _quote, rest) => `<<EOF${rest}`);
+
+const withoutLiteralHeredocText = (command: string): string =>
+  replaceHeredocs(command, (span, quote, rest) => (quote === '' ? span : `<<EOF${rest}`));
+
+const shellNames = String.raw`(?:sh|bash|zsh|dash|ksh|fish|eval|source|\$\{?SHELL\}?)`;
+
+// A shell can run any text it reads, through a pipe, a heredoc, a here-string, or a script file.
+const runsShell = new RegExp(String.raw`(?:^|[\s;&|(/])${shellNames}(?=[\s<>;&|)]|$)`);
+
+const quotedShellName = new RegExp(String.raw`(['"])(?:[^'"\s]*/)?${shellNames}\1`);
+
+const commandSubstitution = /\$\(|`/;
+
+// Escapes are removed in order, so a backslash pair never hides the substitution after it.
+const hasCommandSubstitution = (text: string): boolean =>
+  commandSubstitution.test(text.replace(escapedCharacter, ''));
 
 // A running tool call holds worker notices back, so a long sleep delays the notice it waits for.
 // Sleep sums its operands, and chained sleeps add up, so count every operand in the command.
@@ -61,11 +117,23 @@ export const passiveWaitRefusal = (
   command: string,
   facts: PassiveWaitFacts,
 ): string | undefined => {
-  const unquoted = withoutQuotedText(command);
-  const waitsInLoop = loopWithSleep.test(unquoted);
-  const waitsOnWatcher = passiveWaitPatterns.some((pattern) => pattern.test(unquoted));
+  const prose = withoutQuotedText(withoutHeredocText(command));
+  const expandable = withoutLiteralHeredocText(command);
+  const shellRuns = runsShell.test(prose) || quotedShellName.test(expandable);
+  // A substitution can run text whose quotes this guard does not parse, so its sleeps count.
+  const substitutedText = withoutSingleQuotedText(expandable);
+  const substitutes = hasCommandSubstitution(substitutedText);
+
+  const runnable = substitutes ? expandable : prose;
+  const sleepText = shellRuns ? command : runnable;
+  const loopText = substitutes ? substitutedText : prose;
+  const waitText = shellRuns ? withoutQuotedText(command) : loopText;
+
+  const waitsInLoop = loopWithSleep.test(waitText);
+  const waitsOnWatcher = passiveWaitPatterns.some((pattern) => pattern.test(waitText));
   const waitsPassively = waitsInLoop || waitsOnWatcher;
-  const sleepsLong = totalSleepSeconds(command) >= blockedSleepSeconds;
+
+  const sleepsLong = totalSleepSeconds(sleepText) >= blockedSleepSeconds;
   const delaysWorkers = facts.hasActiveWorkers && sleepsLong;
 
   if (!waitsPassively && !delaysWorkers) {

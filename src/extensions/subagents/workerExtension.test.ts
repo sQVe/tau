@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -19,7 +19,9 @@ import { taskRecordStatus } from './controller/record.js';
 import { assignmentContract, handoverContract } from './handover.js';
 import { checkWorkerRuntime } from './loadout.js';
 import * as questions from './questionRecords.js';
+import * as records from './records.js';
 import { publish, readEvent, readReport, readTask, recordEvent } from './records.js';
+import { readStartupFailure } from './startupFailure.js';
 import workerExtension from './workerExtension.js';
 
 vi.mock(import('./loadout.js'), () => ({
@@ -151,6 +153,44 @@ it('records a startup failure and shuts down when the worker runtime is refused'
     expect.stringContaining('Worker refused'),
     'error',
   );
+
+  expect(shutdown).toHaveBeenCalledOnce();
+});
+
+it('saves the startup failure record before it publishes the startup failure event', async () => {
+  const { directory, emit } = setup();
+  const recordExistedAtEvent: boolean[] = [];
+  const recordEventOriginal = records.recordEvent;
+
+  vi.spyOn(records, 'recordEvent').mockImplementation((...parameters) => {
+    if (parameters[2] === 'startupFailure') {
+      recordExistedAtEvent.push(existsSync(join(directory, 'startupError.json')));
+    }
+
+    recordEventOriginal(...parameters);
+  });
+
+  vi.mocked(checkWorkerRuntime).mockImplementationOnce(() => {
+    throw new Error('Saved model changed.');
+  });
+
+  await emit('session_start');
+
+  expect(recordExistedAtEvent).toEqual([true]);
+});
+
+it('records the startup failure when the task is retired and cannot be read', async () => {
+  const { directory, emit, shutdown } = setup();
+
+  writeFileSync(join(directory, 'task.json'), JSON.stringify({ version: 9 }));
+
+  await emit('session_start');
+
+  const evidence = readStartupFailure(directory);
+
+  expect(evidence.status).toBe('current');
+  expect(evidence.status === 'current' && evidence.failure.kind).toBe('taskRetired');
+  expect(evidence.status === 'current' && evidence.failure.message).toContain('retired format');
 
   expect(shutdown).toHaveBeenCalledOnce();
 });

@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve as resolvePath } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -57,7 +58,8 @@ const runNested = async (
         resolve({
           failed: error !== null,
           seconds: (performance.now() - started) / 1000,
-          output: stdout + stderr,
+          // Vitest colors its output unless it detects an agent, which splits the names asserted below.
+          output: stripVTControlCharacters(stdout + stderr),
         });
       },
     );

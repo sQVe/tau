@@ -57,6 +57,53 @@ it.each([
     refused: false,
   },
   { command: 'sleep 5 && ls', workers: true, refused: false },
+  {
+    command: "cat <<'EOF' > demo.sh\necho \"don't wait\"\nsleep 600\nEOF\nchmod +x demo.sh",
+    workers: true,
+    refused: false,
+  },
+  { command: 'cat <<-EOF > demo.sh\n\tsleep 600\n\tEOF', workers: true, refused: false },
+  { command: 'cat << "EOF" > demo.sh\nsleep 600', workers: true, refused: false },
+  { command: 'cat <<EOF > demo.sh\nwait\nEOF\nsleep 600', workers: true, refused: true },
+  { command: "bash <<'EOF'\nsleep 600\nEOF", workers: true, refused: true },
+  { command: 'echo "sleep 600"', workers: true, refused: false },
+  { command: 'echo "$(sleep 600)"', workers: true, refused: true },
+  { command: 'echo "`sleep 600`"', workers: true, refused: true },
+  { command: 'cat <<EOF > out.txt\n$(sleep 600)\nEOF', workers: true, refused: true },
+  { command: "cat <<'EOF' > demo.sh\n$(sleep 600)\nEOF", workers: true, refused: false },
+  { command: "bash >/dev/null <<'EOF'\nsleep 600\nEOF", workers: true, refused: true },
+  { command: 'cat <<EOF > out.txt; echo $(sleep 20)\nok\nEOF', workers: true, refused: false },
+  { command: 'cat <<EOF | bash\nsleep 600\nEOF', workers: true, refused: true },
+  { command: "bash <<<'sleep 600'", workers: true, refused: true },
+  { command: "/bin/bash <<'EOF'\nsleep 600\nEOF", workers: true, refused: true },
+  { command: "dash <<'EOF'\nsleep 600\nEOF", workers: true, refused: true },
+  { command: "echo 'sleep 600' | bash", workers: true, refused: true },
+  { command: "cat <<'EOF' > demo.sh\nsleep 600\nEOF\nbash demo.sh", workers: true, refused: true },
+  { command: 'echo "\\$(sleep 600)"', workers: true, refused: false },
+  { command: 'echo "$(echo \')\' ; sleep 600)"', workers: true, refused: true },
+  { command: 'echo "$(echo "x"; sleep 600)"', workers: true, refused: true },
+  { command: '"bash" <<\'EOF\'\nsleep 600\nEOF', workers: true, refused: true },
+  { command: "'/bin/sh' <<<'sleep 600'", workers: true, refused: true },
+  { command: 'echo "\\\\$(sleep 600)"', workers: true, refused: true },
+  { command: "echo \\'$(sleep 600)\\'", workers: true, refused: true },
+  { command: "eval 'sleep 600'", workers: true, refused: true },
+  { command: 'cat <<EOF | source /dev/stdin\nsleep 600\nEOF', workers: true, refused: true },
+  { command: "fish -c 'sleep 600'", workers: true, refused: true },
+  { command: '"$SHELL" <<\'EOF\'\nsleep 600\nEOF', workers: true, refused: true },
+  {
+    command: 'git commit -m "$(cat <<\'EOF\'\nfix: drop the sleep 600 retry\nEOF\n)"',
+    workers: true,
+    refused: false,
+  },
+  { command: "git commit -m 'drop the sleep 600 retry'", workers: true, refused: false },
+  { command: "echo '<<EOF'\nsleep 600", workers: true, refused: true },
+  { command: "echo '<<EOF'\ngh run watch", workers: false, refused: true },
+  { command: 'echo "$(gh run watch)"', workers: false, refused: true },
+  {
+    command: 'git commit -m "$(cat <<\'EOF\'\nadd gh run watch\nEOF\n)"',
+    workers: false,
+    refused: false,
+  },
 ])('returns refusal $refused for "$command" with workers $workers', (row) => {
   const reason = passiveWaitRefusal(row.command, {
     hasActiveWorkers: row.workers,
@@ -74,4 +121,15 @@ it('offers a worker for a requested wait only when delegating', () => {
   expect(delegating).toContain('worker');
   expect(alone).not.toContain('worker');
   expect(alone).toContain('resumes');
+});
+
+it.each([
+  { name: 'a stray quote before 20 heredocs', command: `"${'cat <<EOF\nx\nEOF\n'.repeat(20)}` },
+  { name: 'an unclosed quote before 1000 markers', command: `"${'<<'.repeat(1000)}` },
+])('answers $name quickly', ({ command }) => {
+  const start = performance.now();
+
+  passiveWaitRefusal(command, { hasActiveWorkers: true, delegating: false });
+
+  expect(performance.now() - start).toBeLessThan(100);
 });

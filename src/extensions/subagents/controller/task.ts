@@ -10,6 +10,8 @@ import {
   readReply,
 } from '../questionRecords.js';
 import { publish, readEvent, recordEvent } from '../records.js';
+import { readStartupFailure } from '../startupFailure.js';
+import { decideStartupFailure, renderStartupFailure } from '../startupFailureDecision.js';
 import { resolveTerminal, text } from '../terminal.js';
 import type { TerminalCall } from '../terminal.js';
 import type { Task } from '../types.js';
@@ -177,7 +179,9 @@ export class TaskController {
       return `No worker was started; no automatic retry. ${String(error)}`;
     }
 
-    const detail = `Worker startup failed; no automatic retry. ${String(error)}`;
+    const advice = renderStartupFailure(decideStartupFailure(readStartupFailure(handle.directory)));
+    const failed = `Worker startup failed; no automatic retry. ${String(error)}`;
+    const detail = advice === '' ? failed : `${failed} ${advice}`;
     const packages = handle.startup.extensionPackages;
 
     // Pi exits before Tau's worker extension runs when a -e package fails to load.

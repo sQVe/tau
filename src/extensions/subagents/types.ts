@@ -159,6 +159,16 @@ export const reportSchema = Type.Object(
   { additionalProperties: false },
 );
 
+// Saved where no trusted task id exists, so it carries none.
+export const startupFailureSchema = Type.Object(
+  {
+    version: Type.Literal(1),
+    kind: StringEnum(['taskRetired', 'taskNewer', 'failed']),
+    message: text,
+  },
+  { additionalProperties: false },
+);
+
 export const eventSchema = Type.Object(
   {
     taskId: text,
@@ -211,6 +221,7 @@ export type Reply = Static<typeof replySchema>;
 export type Acknowledgement = Static<typeof acknowledgementSchema>;
 export type Loadout = Static<typeof loadoutSchema>;
 export type Task = Static<typeof taskSchema>;
+export type StartupFailure = Static<typeof startupFailureSchema>;
 
 export type Report = Static<typeof reportSchema>;
 export type TaskEvent = Static<typeof eventSchema>;
