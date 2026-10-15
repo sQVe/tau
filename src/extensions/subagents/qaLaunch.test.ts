@@ -119,6 +119,25 @@ it.each([
   await expect(refusal).rejects.toThrow('qa.repositories');
 });
 
+it('refuses at the deadline a urlCommand that ignores SIGTERM and kills its children', async () => {
+  const { worktree, writeUser } = await fixture('git@github.com:sQVe/cape.git');
+  const marker = join(worktree, 'survived');
+
+  writeUser(settingsFor(`trap '' TERM; (sleep 0.5; touch survived) & sleep 30`));
+
+  const started = performance.now();
+  const refusal = applyQaSettings(launch(worktree), undefined, context(worktree) as never, 200);
+
+  await expect(refusal).rejects.toThrow('qa.repositories');
+  expect(performance.now() - started).toBeLessThan(900);
+
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 700);
+  });
+
+  expect(existsSync(marker)).toBe(false);
+});
+
 it('never runs testAccountCommand', async () => {
   const { worktree, writeUser } = await fixture('git@github.com:sQVe/cape.git');
   const marker = join(worktree, 'ran');
