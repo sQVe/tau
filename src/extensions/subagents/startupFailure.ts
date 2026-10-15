@@ -21,12 +21,22 @@ const failureKind = (error: unknown): StartupFailure['kind'] => {
   return 'failed';
 };
 
+const failureMessage = (error: unknown): string => {
+  const message = errorMessage(error);
+
+  if (message !== '') {
+    return message;
+  }
+
+  return error instanceof Error && error.name !== '' ? error.name : 'Unknown startup error';
+};
+
 // The task may be unreadable, so this record has no task id. The first failure stays.
 export const recordStartupFailure = (directory: string, error: unknown): void => {
   const failure: StartupFailure = {
     version: 1,
     kind: failureKind(error),
-    message: errorMessage(error).slice(0, messageLimit),
+    message: failureMessage(error).slice(0, messageLimit),
   };
 
   try {

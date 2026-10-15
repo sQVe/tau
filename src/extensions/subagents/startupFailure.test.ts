@@ -90,3 +90,14 @@ it('records kind taskNewer for a newer task format and failed otherwise', () => 
   expect(readStartupFailure(newer)).toMatchObject({ failure: { kind: 'taskNewer' } });
   expect(readStartupFailure(plain)).toMatchObject({ failure: { kind: 'failed' } });
 });
+
+it('saves a nonempty message for an error without one that the manager reads as current', () => {
+  const directory = taskDirectory();
+
+  recordStartupFailure(directory, Object.assign(new Error('placeholder'), { message: '' }));
+
+  const evidence = readStartupFailure(directory);
+
+  expect(evidence.status).toBe('current');
+  expect(evidence.status === 'current' && evidence.failure.message).not.toBe('');
+});
