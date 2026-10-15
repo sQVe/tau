@@ -424,11 +424,12 @@ const startWorker = (
   } catch (error) {
     const task = state.task;
 
+    recordStartupFailure(state.directory, error);
+
     if (task && !readEvent(state.directory, task.taskId, 'startupFailure')) {
       recordEvent(state.directory, task.taskId, 'startupFailure', String(error));
     }
 
-    recordStartupFailure(state.directory, error);
     context.ui.notify(`Worker refused: ${String(error)}`, 'error');
     context.shutdown();
   }
