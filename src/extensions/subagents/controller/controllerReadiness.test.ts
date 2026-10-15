@@ -7,6 +7,8 @@ import * as cancellationModule from '../cancellation.js';
 import { acceptReport, readEvent, readTask, recordEvent, TaskFormatError } from '../records.js';
 import * as records from '../records.js';
 import { recordStartupFailure } from '../startupFailure.js';
+import { renderStartupFailure } from '../startupFailureDecision.js';
+import type { StartupFailureOutcome } from '../startupFailureDecision.js';
 import { WorkerController } from './controller.js';
 import { captureError, setup } from './fixtures/controllerFixture.js';
 import { EvidenceUnavailableError } from './record.js';
@@ -140,14 +142,16 @@ const launchWithWorkerFailure = async (
   return fixture.controller.launch(fixture.input);
 };
 
+const noOutcome: StartupFailureOutcome = { notice: undefined, workerError: undefined };
+
 it('adds the recorded worker error to the startup failure detail', async ({ onTestFinished }) => {
   const status = await launchWithWorkerFailure(onTestFinished, (taskDirectory) => {
     recordStartupFailure(taskDirectory, new Error('Saved model changed.'));
   });
 
   expect(status.failure).toContain('exited before readiness');
-  expect(status.failure).toContain('Worker error: Saved model changed.');
-  expect(status.failure).not.toContain('Restart this session');
+  expect(status.failure).toContain('Saved model changed.');
+  expect(status.failure).not.toContain(renderStartupFailure({ ...noOutcome, notice: 'restart' }));
 });
 
 it('tells the manager to restart when the worker refused a retired task', async ({
@@ -162,16 +166,18 @@ it('tells the manager to restart when the worker refused a retired task', async 
   });
 
   expect(status.failure).toContain('exited before readiness');
-  expect(status.failure).toContain('Tau was updated on disk');
-  expect(status.failure).toContain('Restart this session to launch workers');
+
+  expect(status.failure).toContain(
+    renderStartupFailure({ notice: 'restart', workerError: undefined }),
+  );
 });
 
 it.each([
-  { fixture: 'newer', note: 'saved by a newer Tau' },
-  { fixture: 'malformed', note: 'saved error is unreadable' },
+  { fixture: 'newer', notice: 'newerRecord' as const },
+  { fixture: 'malformed', notice: 'unreadableRecord' as const },
 ])(
   'keeps the original startup error and notes a $fixture worker record',
-  async ({ fixture, note }) => {
+  async ({ fixture, notice }) => {
     const saved = readFileSync(
       new URL(`../fixtures/startupErrors/${fixture}.json`, import.meta.url),
       'utf8',
@@ -182,8 +188,8 @@ it.each([
     });
 
     expect(status.failure).toContain('exited before readiness');
-    expect(status.failure).toContain(note);
-    expect(status.failure).not.toContain('Worker error');
+    expect(status.failure).toContain(renderStartupFailure({ notice, workerError: undefined }));
+    expect(status.failure).not.toContain(renderStartupFailure({ ...noOutcome, workerError: '' }));
   },
 );
 
@@ -193,9 +199,11 @@ it('adds nothing to the startup error when the worker saved no record', async ({
   const status = await launchWithWorkerFailure(onTestFinished, () => undefined);
 
   expect(status.failure).toContain('exited before readiness');
-  expect(status.failure).not.toContain('Worker error');
-  expect(status.failure).not.toContain('newer Tau');
-  expect(status.failure).not.toContain('unreadable');
+  expect(status.failure).not.toContain(renderStartupFailure({ ...noOutcome, workerError: '' }));
+
+  for (const notice of ['restart', 'newerRecord', 'unreadableRecord'] as const) {
+    expect(status.failure).not.toContain(renderStartupFailure({ ...noOutcome, notice }));
+  }
 });
 
 it('detects an owned worker exiting before readiness without waiting for the task deadline', async ({

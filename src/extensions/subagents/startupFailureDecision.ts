@@ -6,27 +6,46 @@ export type StartupEvidence =
   | { status: 'malformed' }
   | { status: 'current'; failure: StartupFailure };
 
-const restartNotice =
-  'Tau was updated on disk after this session loaded it, so the worker refused the task. Restart this session to launch workers.';
+export interface StartupFailureOutcome {
+  notice: 'restart' | 'newerRecord' | 'unreadableRecord' | undefined;
+  workerError: string | undefined;
+}
 
-export const startupFailureAdvice = (evidence: StartupEvidence): string => {
+export const decideStartupFailure = (evidence: StartupEvidence): StartupFailureOutcome => {
   if (evidence.status === 'missing') {
-    return '';
+    return { notice: undefined, workerError: undefined };
   }
 
   if (evidence.status === 'newer') {
-    return "The worker's error was saved by a newer Tau; restart this session to read it.";
+    return { notice: 'newerRecord', workerError: undefined };
   }
 
   if (evidence.status === 'malformed') {
-    return "The worker's saved error is unreadable.";
+    return { notice: 'unreadableRecord', workerError: undefined };
   }
 
-  const cause = `Worker error: ${evidence.failure.message}`;
+  const notice = evidence.failure.kind === 'taskRetired' ? 'restart' : undefined;
 
-  if (evidence.failure.kind === 'taskRetired') {
-    return `${restartNotice} ${cause}`;
+  return { notice, workerError: evidence.failure.message };
+};
+
+const noticeText = {
+  restart:
+    'Tau was updated on disk after this session loaded it, so the worker refused the task. Restart this session to launch workers.',
+  newerRecord: "The worker's error was saved by a newer Tau; restart this session to read it.",
+  unreadableRecord: "The worker's saved error is unreadable.",
+};
+
+export const renderStartupFailure = (outcome: StartupFailureOutcome): string => {
+  const parts: string[] = [];
+
+  if (outcome.notice !== undefined) {
+    parts.push(noticeText[outcome.notice]);
   }
 
-  return cause;
+  if (outcome.workerError !== undefined) {
+    parts.push(`Worker error: ${outcome.workerError}`);
+  }
+
+  return parts.join(' ');
 };

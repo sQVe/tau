@@ -1,43 +1,38 @@
 import { expect, it } from 'vitest';
 
-import { startupFailureAdvice } from './startupFailureDecision.js';
-import type { StartupEvidence } from './startupFailureDecision.js';
+import { decideStartupFailure } from './startupFailureDecision.js';
+import type { StartupEvidence, StartupFailureOutcome } from './startupFailureDecision.js';
 
-const failed = (kind: 'failed' | 'taskRetired'): StartupEvidence => ({
+const failed = (kind: 'failed' | 'taskRetired' | 'taskNewer'): StartupEvidence => ({
   status: 'current',
   failure: { version: 1, kind, message: 'Saved model changed.' },
 });
 
-it.each([
-  { evidence: { status: 'missing' } as const, parts: [], absent: ['Worker error', 'Restart'] },
+it.each<{ evidence: StartupEvidence; outcome: StartupFailureOutcome }>([
+  {
+    evidence: { status: 'missing' },
+    outcome: { notice: undefined, workerError: undefined },
+  },
   {
     evidence: failed('failed'),
-    parts: ['Worker error: Saved model changed.'],
-    absent: ['Restart'],
+    outcome: { notice: undefined, workerError: 'Saved model changed.' },
+  },
+  {
+    evidence: failed('taskNewer'),
+    outcome: { notice: undefined, workerError: 'Saved model changed.' },
   },
   {
     evidence: failed('taskRetired'),
-    parts: [
-      'Worker error: Saved model changed.',
-      'Tau was updated on disk',
-      'Restart this session',
-    ],
-    absent: [],
+    outcome: { notice: 'restart', workerError: 'Saved model changed.' },
   },
   {
-    evidence: { status: 'newer' } as const,
-    parts: ['newer Tau', 'restart this session'],
-    absent: ['Worker error'],
+    evidence: { status: 'newer' },
+    outcome: { notice: 'newerRecord', workerError: undefined },
   },
-  { evidence: { status: 'malformed' } as const, parts: ['unreadable'], absent: ['Worker error'] },
-])('decides the advice for $evidence', ({ evidence, parts, absent }) => {
-  const advice = startupFailureAdvice(evidence);
-
-  for (const part of parts) {
-    expect(advice).toContain(part);
-  }
-
-  for (const part of absent) {
-    expect(advice).not.toContain(part);
-  }
+  {
+    evidence: { status: 'malformed' },
+    outcome: { notice: 'unreadableRecord', workerError: undefined },
+  },
+])('decides the outcome for $evidence', ({ evidence, outcome }) => {
+  expect(decideStartupFailure(evidence)).toEqual(outcome);
 });
