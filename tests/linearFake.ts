@@ -310,11 +310,10 @@ export const createLinearFake = (): LinearFake => {
     return { issues: { nodes } };
   };
 
-  // Supports the filter that the tracker search sends: team key, optional project name, and an
-  // allow-list of state types. An issue matches when its title holds any word of the term.
+  // Supports what the tracker search sends: a team ID, and a filter with an optional project name
+  // and an allow-list of state types. An issue matches when its title holds any word of the term.
   const searchData = (variables: Record<string, unknown>) => {
     const filter = variables['filter'] as {
-      team: { key: { eq: string } };
       project?: { name: { eq: string } };
       state: StateFilter;
     };
@@ -327,7 +326,7 @@ export const createLinearFake = (): LinearFake => {
         : projectIdsNamed(filter.project.name.eq).map((candidate) => candidate.id);
 
     const nodes = [...issues.values()]
-      .filter((issue) => issue.teamId === teams.get(filter.team.key.eq)?.id)
+      .filter((issue) => issue.teamId === variables['teamId'])
       .filter((issue) => filter.state.type.in.includes(issue.stateType))
       .filter((issue) => words.some((word) => issue.title.toLowerCase().includes(word)))
       .filter((issue) => projectIds === undefined || projectIds.includes(issue.projectId ?? ''))
@@ -341,7 +340,7 @@ export const createLinearFake = (): LinearFake => {
         parent: issue.parent === null ? null : { identifier: issue.parent },
       }));
 
-    return { searchIssues: { nodes, pageInfo: { hasNextPage: false } } };
+    return { searchIssues: { nodes } };
   };
 
   const routingData = (identifier: string) => {

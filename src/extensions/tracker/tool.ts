@@ -47,7 +47,7 @@ Returns {candidates, parent, labels, gaps}:
 - candidates: the open issues that match the keywords in the team, and in the project when one is given. Each has identifier, title, url, team, project, parent, fits, and differences. fits is true when team, project, and parent all equal the planned ticket's; differences lists the ones that do not.
 - parent: {identifier, team, project, state, matchesRoute}, or null when parent is null. matchesRoute is whether the parent's team and project equal the given ones, and null for an agent ticket.
 - labels: the team's labels as {id, name}.
-- gaps: {command, error} for each read that failed, was rate limited, or printed malformed output, and for a list with more pages. A failed read leaves its field out, so a missing field means unknown, never empty. A list with more pages keeps the issues it read, but is incomplete.`;
+- gaps: {command, error} for each read that failed, was rate limited, or printed malformed output, and for a label list with more pages. A failed read leaves its field out, so a missing field means unknown, never empty. A label list with more pages keeps the labels it read, but is incomplete.`;
 
 const searchCommand = 'linear api searchIssues';
 
@@ -94,14 +94,11 @@ const gatherCandidates = async (exec: Exec, cwd: string, input: TrackerEvidenceI
 
   const planned: Placement = { team: input.team, project: input.project, parent: input.parent };
 
-  const candidates = search.value.issues.map((issue) => ({
-    ...issue,
-    ...decideCandidateFit(planned, issue),
-  }));
+  const candidates = search.value.map((issue) =>
+    Object.assign({}, issue, decideCandidateFit(planned, issue)),
+  );
 
-  const gaps = search.value.hasNextPage ? [morePagesGap(searchCommand, 'issues')] : [];
-
-  return { candidates, gaps };
+  return { candidates, gaps: [] };
 };
 
 const gatherParent = async (exec: Exec, cwd: string, input: TrackerEvidenceInput) => {
