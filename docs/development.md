@@ -216,6 +216,20 @@ Use a temporary repository.
 2. Install a `pre-commit` hook that exits with an error and call `commit` again. Check that the hook
    output returns as a tool error without a prompt or a new commit, and that the file is unstaged.
 
+## Smoke test in Pi
+
+Run the smoke test before each release and after each Pi upgrade. Tests run under Node, but Pi runs
+Tau under its own Bun runtime. The smoke test needs the installed `pi`, a model, and credentials for
+it.
+
+```sh
+pnpm smoke:pi [--pi <binary>] [--tau <checkout>] [--model <pattern>]
+```
+
+`--pi` defaults to `pi` on `PATH`. `--tau` defaults to this checkout. `--model` is passed to Pi. The
+command prints the path of the saved event log. On failure it prints one line per failed check and
+keeps the scratch repository.
+
 ## Versioning
 
 Add a changeset for user-facing changes:
@@ -231,7 +245,8 @@ The [changeset check](../.github/workflows/changeset.yml) requires a changeset w
 `src/`, but not for changes only to docs, tooling, or dependencies.
 
 The [release workflow](../.github/workflows/release.yml) opens version PRs and creates Git tags and
-GitHub releases; Tau is private and is not published to npm.
+GitHub releases; run the [smoke test in Pi](#smoke-test-in-pi) before you merge a version PR. Tau is
+private and is not published to npm.
 
 ## Measuring token use
 

@@ -29,6 +29,7 @@
     "test:changed": "vp test --changed",
     "test:coverage": "vp test --coverage",
     "test:unit": "vp test --project '!integration*'",
+    "smoke:pi": "node scripts/piSmoke.ts",
     "token-usage": "node scripts/tokenUsage.ts",
     "typecheck": "pnpm exec tsc --noEmit",
     "release:github": "pnpm changeset git-tag"
