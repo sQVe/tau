@@ -11,14 +11,9 @@ interface Segment {
 
 type Pattern = Segment[];
 
-export type PatternScope = readonly Pattern[];
-
 export interface InputRules {
   entersDirectory: (name: string, path: string) => boolean;
-  // The patterns that name the symlinked directory at `path`, or null when none does. Inside the
-  // link, only these patterns apply.
-  followsLink: (path: string, scope?: PatternScope) => PatternScope | null;
-  isInput: (path: string, scope?: PatternScope) => boolean;
+  isInput: (path: string) => boolean;
 }
 
 const maxRangeValues = 1000;
@@ -320,24 +315,6 @@ const matchesSegments = (pattern: Pattern, path: string[], matchesDots: boolean)
   return dotAllowed && head.test(name) && matchesSegments(rest, remaining, matchesDots);
 };
 
-// `glob` follows a symlinked directory only where a literal pattern segment names it and
-// no `**` precedes it.
-const patternsNaming = (patterns: PatternScope, segments: string[]): PatternScope => {
-  const namesLink = (pattern: Pattern) => {
-    const named = pattern.slice(0, segments.length);
-    const isGlobstar = named.some((segment) => segment.text === '**');
-
-    return !isGlobstar && named.at(-1)?.isWildcard === false;
-  };
-
-  return patterns.filter(
-    (pattern) =>
-      segments.length < pattern.length &&
-      namesLink(pattern) &&
-      matchesSegments(pattern.slice(0, segments.length), segments, false),
-  );
-};
-
 // A pattern ending in `/**` also excludes the directory it names, and so every descendant.
 const excludesDirectory = (excludes: Pattern[], segments: string[]) =>
   excludes.some((pattern) => {
@@ -370,17 +347,12 @@ export const createInputRules = (
   return {
     entersDirectory: (name, path) =>
       namesDirectory(name) && !excludesDirectory(excludes, path.split('/')),
-    followsLink: (path, scope = patterns) => {
-      const naming = patternsNaming(scope, path.split('/'));
-
-      return naming.length === 0 ? null : naming;
-    },
-    isInput: (path, scope = patterns) => {
+    isInput: (path) => {
       const segments = path.split('/');
       const isExcluded = excludes.some((pattern) => matchesSegments(pattern, segments, true));
 
       return (
-        !isExcluded && scope.some((pattern) => matchesSegments(pattern, segments, matchesDots))
+        !isExcluded && patterns.some((pattern) => matchesSegments(pattern, segments, matchesDots))
       );
     },
   };

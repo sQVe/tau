@@ -197,18 +197,46 @@ it('skips an unreadable directory and fingerprints the other inputs', async ({
   expect(await rewriteChangesFingerprint(cwd, config, 'src/a.ts')).toBe(true);
 });
 
-it('follows a symlinked directory named by a literal pattern but not through a wildcard', async ({
+it('hashes a file under a symlinked directory reached through a wildcard', async ({
   onTestFinished,
 }) => {
+  const base = await createWorktree(onTestFinished);
+  const cwd = join(base, 'repo');
+  await writeFiles(cwd, { 'src/a.ts': 'one' });
+  await writeFiles(base, { 'outside/value.ts': 'one' });
+  await symlink('../../outside', join(cwd, 'src/shared'));
+  await symlink('../outside', join(cwd, 'alias'));
+
+  const deep = onlyProduction('**/*.ts');
+  const shallow = onlyProduction('*/*.ts');
+
+  expect(await rewriteChangesFingerprint(cwd, deep, '../outside/value.ts')).toBe(true);
+
+  await writeFiles(base, { 'outside/value.ts': 'one' });
+
+  expect(await rewriteChangesFingerprint(cwd, shallow, '../outside/value.ts')).toBe(true);
+});
+
+it('finishes when symlinked directories form a loop', async ({ onTestFinished }) => {
   const cwd = await createWorktree(onTestFinished);
-  await writeFiles(cwd, { 'real/a.ts': 'one' });
-  await symlink('real', join(cwd, 'alias'));
+  await writeFiles(cwd, { 'a/x.ts': 'one' });
+  await symlink('..', join(cwd, 'a/up'));
+  await symlink('../b', join(cwd, 'a/b'));
+  await symlink('../a', join(cwd, 'b'));
 
-  const literal = onlyProduction('alias/**/*.ts');
-  const wildcard = onlyProduction('al*/*.ts');
+  expect(await rewriteChangesFingerprint(cwd, onlyProduction('**/*.ts'), 'a/x.ts')).toBe(true);
+});
 
-  expect(await rewriteChangesFingerprint(cwd, literal, 'real/a.ts')).toBe(true);
-  expect(await rewriteChangesFingerprint(cwd, wildcard, 'real/a.ts')).toBe(false);
+it('does not enter an excluded symlinked directory', async ({ onTestFinished }) => {
+  const base = await createWorktree(onTestFinished);
+  const cwd = join(base, 'repo');
+  await writeFiles(cwd, { 'src/a.ts': 'one' });
+  await writeFiles(base, { 'outside/value.ts': 'one' });
+  await symlink('../../outside', join(cwd, 'src/shared'));
+
+  const config = { ...onlyProduction('**/*.ts'), excludedGlobs: ['**/shared/**'] };
+
+  expect(await rewriteChangesFingerprint(cwd, config, '../outside/value.ts')).toBe(false);
 });
 
 it('lists inputs for patterns with a leading ./ and for numeric brace ranges', async ({
@@ -223,20 +251,4 @@ it('lists inputs for patterns with a leading ./ and for numeric brace ranges', a
   const outOfRange = await rewriteChangesFingerprint(cwd, onlyProduction('f{1..3}.ts'), 'f4.ts');
 
   expect([current, braced, inRange, outOfRange]).toEqual([true, true, true, false]);
-});
-
-it('does not hash another pattern through a symlink that only a text pattern names', async ({
-  onTestFinished,
-}) => {
-  const base = await createWorktree(onTestFinished);
-  const cwd = join(base, 'repo');
-  await writeFiles(cwd, { 'src/a.ts': 'one' });
-  await writeFiles(base, { 'outside/a.ts': 'one', 'outside/a.txt': 'one' });
-  await symlink('../outside', join(cwd, 'alias'));
-
-  const config = onlyProduction('**/*.ts', 'alias/*.txt');
-  const typescript = await rewriteChangesFingerprint(cwd, config, '../outside/a.ts');
-  const text = await rewriteChangesFingerprint(cwd, config, '../outside/a.txt');
-
-  expect([typescript, text]).toEqual([false, true]);
 });

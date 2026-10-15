@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
-import { readdir, readFile, stat } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import type { Dirent } from 'node:fs';
+import { readdir, readFile, realpath, stat } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 
 import { hasErrorCode, isMissingFile } from '../../errors.js';
 import { configurationGlobs } from './config.js';
 import type { TddConfig } from './config.js';
 import { createInputRules } from './inputGlob.js';
-import type { PatternScope } from './inputGlob.js';
 
 const unreadableDirectoryCodes = ['EACCES', 'EPERM', 'ENOTDIR', 'ELOOP'];
 
@@ -36,40 +36,48 @@ const listInputs = async (cwd: string, config: TddConfig): Promise<string[]> => 
   const rules = createInputRules(includeGlobs, config.excludedGlobs);
   const inputs: string[] = [];
 
-  const linkedScope = async (directory: string, path: string, scope?: PatternScope) => {
-    const naming = rules.followsLink(path, scope);
+  // A symlinked directory is entered unless its real path is one of its own ancestors.
+  const realDirectory = async (directory: string, entry: Dirent, parentReal: string) => {
+    if (entry.isDirectory()) {
+      return join(parentReal, entry.name);
+    }
 
-    if (naming === null) {
+    if (!entry.isSymbolicLink()) {
       return null;
     }
 
-    const name = path.slice(path.lastIndexOf('/') + 1);
-    const target = await stat(resolve(cwd, directory, name)).catch(() => null);
+    const target = await realpath(resolve(cwd, directory, entry.name)).catch(() => null);
+    const info = target === null ? null : await stat(target).catch(() => null);
 
-    return target?.isDirectory() === true ? naming : null;
+    return info?.isDirectory() === true ? target : null;
   };
 
-  const visit = async (directory: string, scope?: PatternScope): Promise<void> => {
+  const visit = async (
+    directory: string,
+    ancestors: ReadonlySet<string>,
+    real: string,
+  ): Promise<void> => {
     const entries = await readDirectory(resolve(cwd, directory));
 
     await Promise.all(
       entries.map(async (entry) => {
         const path = directory === '' ? entry.name : `${directory}/${entry.name}`;
-        const linked = entry.isSymbolicLink() ? await linkedScope(directory, path, scope) : null;
-        const isDirectory = entry.isDirectory() || linked !== null;
+        const childReal = await realDirectory(directory, entry, real);
 
-        if (isDirectory) {
-          if (rules.entersDirectory(entry.name, path)) {
-            await visit(path, linked ?? scope);
+        if (childReal === null) {
+          if (rules.isInput(path)) {
+            inputs.push(path);
           }
-        } else if (rules.isInput(path, scope)) {
-          inputs.push(path);
+        } else if (rules.entersDirectory(entry.name, path) && !ancestors.has(childReal)) {
+          await visit(path, new Set([...ancestors, childReal]), childReal);
         }
       }),
     );
   };
 
-  await visit('');
+  const root = await realpath(cwd);
+
+  await visit('', new Set([root]), root);
 
   return inputs;
 };

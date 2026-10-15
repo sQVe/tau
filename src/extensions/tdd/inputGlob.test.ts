@@ -60,23 +60,3 @@ it.each([
 
   expect(walk.entersDirectory(fact.name, fact.path)).toBe(fact.enters);
 });
-
-it.each([
-  { globs: ['alias/**/*.ts'], path: 'alias', follows: true },
-  { globs: ['*/*.ts'], path: 'alias', follows: false },
-  { globs: ['**/alias/*.ts'], path: 'x/alias', follows: false },
-  { globs: ['*/alias/*.ts'], path: 'x/alias', follows: true },
-  { globs: ['al*/*.ts'], path: 'alias', follows: false },
-])('decides following the link $path for $globs: $follows', (fact) => {
-  expect(rules(fact.globs).followsLink(fact.path) !== null).toBe(fact.follows);
-});
-
-it('limits a followed symlink to the patterns that name it', () => {
-  const walk = rules(['**/*.ts', 'alias/*.txt']);
-  const scope = walk.followsLink('alias');
-
-  expect(scope).not.toBeNull();
-  expect(walk.isInput('alias/a.ts', scope ?? undefined)).toBe(false);
-  expect(walk.isInput('alias/a.txt', scope ?? undefined)).toBe(true);
-  expect(walk.isInput('other/a.ts')).toBe(true);
-});
