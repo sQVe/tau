@@ -97,7 +97,7 @@ it.each([
     lines: [runTests('fresh'), edit, commit],
     git: committed,
     failures: [
-      'codemode tool call: expected at least one call, got none (calls: run_tests, edit, commit)',
+      'tool calls: expected run_tests, edit, commit, codemode, got run_tests, edit, commit',
     ],
   },
   {
@@ -238,8 +238,30 @@ it.each([
     lines: [edit, runTests('fresh'), commit, ...codemode],
     git: committed,
     failures: [
+      'tool calls: expected run_tests, edit, commit, codemode, got edit, run_tests, commit, codemode',
       'run_tests freshness after an edit: expected stale hint on an edit result after the fresh run, got none',
     ],
+  },
+  {
+    name: 'extra edit after the commit',
+    lines: [runTests('fresh'), edit, commit, edit, ...codemode],
+    git: committed,
+    failures: [
+      'tool calls: expected run_tests, edit, commit, codemode, got run_tests, edit, commit, edit, codemode',
+    ],
+  },
+  {
+    name: 'other top-level tools between the checked calls',
+    lines: [
+      runTests('fresh'),
+      edit,
+      call('read', 'file'),
+      call('bash', 'clean'),
+      commit,
+      ...codemode,
+    ],
+    git: committed,
+    failures: [],
   },
   {
     name: 'ignores lines that are not tool events',

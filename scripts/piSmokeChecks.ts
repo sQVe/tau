@@ -121,17 +121,24 @@ const freshnessOf = (details: unknown): string => {
   return typeof freshness === 'string' ? freshness : 'missing';
 };
 
+// Models sometimes add a read or a status check, which proves nothing about Tau, so only the
+// checked tools must appear once each, in order. Nested calls, such as bash inside codemode, belong
+// to their parent.
+const sequenceFailures = (calls: readonly ToolCall[]): string[] => {
+  const isCheckedCall = (call: ToolCall) =>
+    call.parentId === undefined && expectedTools.includes(call.toolName);
+
+  const actual = describeTools(calls.filter(isCheckedCall));
+  const expected = expectedTools.join(', ');
+
+  return actual === expected ? [] : [`tool calls: expected ${expected}, got ${actual}`];
+};
+
 const toolFailures = (calls: readonly ToolCall[]): string[] => {
   const failures: string[] = [];
 
   for (const toolName of expectedTools) {
     const named = calls.filter((call) => call.toolName === toolName);
-
-    if (named.length === 0) {
-      failures.push(
-        `${toolName} tool call: expected at least one call, got none (calls: ${describeTools(calls)})`,
-      );
-    }
 
     for (const call of named.filter((candidate) => candidate.isError)) {
       failures.push(
@@ -275,6 +282,7 @@ export const smokeFailures = (lines: readonly string[], git: GitFacts): string[]
   const { calls } = events;
 
   return [
+    ...sequenceFailures(calls),
     ...toolFailures(calls),
     ...runFailures(calls),
     ...commitFailures(git),
