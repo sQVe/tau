@@ -1,5 +1,5 @@
-import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
-import { defineTool } from '@earendil-works/pi-coding-agent';
+import type { ExtensionToolContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { defineTool, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
@@ -9,8 +9,15 @@ import { findCheckoutRoot } from '../../gitOutput.js';
 import { createFreshTauDirectory } from '../../tauDirectory.js';
 import { readCheckHeader, readPublicationEvidence } from './evidence.js';
 import { readReuse } from './reuse.js';
+import { readReviewBotStatuses } from './reviewBots.js';
 import { readTarget } from './target.js';
 import { readVerify, runPath, runPrefix } from './verify.js';
+
+export interface PrToolOptions {
+  agentDirectory?: string;
+}
+
+type PrContext = Pick<ExtensionToolContext, 'cwd' | 'isProjectTrusted' | 'ui'>;
 
 export const prToolParameters = Type.Object({
   action: Type.Union([
@@ -20,6 +27,7 @@ export const prToolParameters = Type.Object({
     Type.Literal('checkHeader'),
     Type.Literal('reuse'),
     Type.Literal('verify'),
+    Type.Literal('reviewBots'),
   ]),
   remote: Type.Optional(
     Type.String({ description: 'target, evidence: the Git remote to push the branch to.' }),
@@ -47,16 +55,18 @@ export const prToolParameters = Type.Object({
     }),
   ),
   repository: Type.Optional(
-    Type.String({ description: 'verify: the base repository as <host>/<owner>/<name>.' }),
+    Type.String({
+      description: 'verify, reviewBots: the base repository as <host>/<owner>/<name>.',
+    }),
   ),
-  pr: Type.Optional(Type.Integer({ description: 'verify: the pull request number.' })),
+  pr: Type.Optional(Type.Integer({ description: 'verify, reviewBots: the pull request number.' })),
   title: Type.Optional(Type.String({ description: 'verify: the approved title.' })),
   draft: Type.Optional(Type.Boolean({ description: 'verify: the approved draft status.' })),
 });
 
 export type PrInput = Static<typeof prToolParameters>;
 
-const description = `Prepare a pull request run, resolve its target, check whether a saved review covers the branch, and verify the published pull request.
+const description = `Prepare a pull request run, resolve its target, check whether a saved review covers the branch, verify the published pull request, and read which review bots to request.
 
 - action prepare: creates a fresh, Git-ignored run directory for the files of one run. Returns {directory}, an absolute path to .tau/pr/run-XXXXXX.
 - action target {remote?, base?}: resolves where the current branch's pull request goes. It does not rebase, push, or write to GitHub.
@@ -83,7 +93,12 @@ const description = `Prepare a pull request run, resolve its target, check wheth
   - Reads the approved body from directory/body.md, reads local HEAD with git rev-parse HEAD, and runs gh pr view <pr> --repo <repository> --json url,title,body,baseRefName,isDraft,headRefOid.
   - Compares title, body, base, and draft with the pull request, and local HEAD with its headRefOid. Bodies match when they differ only by trailing newlines, which GitHub drops.
   - Returns {url, matches, differences}. matches is true when differences is empty. Each difference is {field, expected, actual}, where field is title, body, base, draft, or head.
-  - Errors: a missing parameter; a repository that is not <host>/<owner>/<name>; a pr that is not an integer, or is below 1; a directory outside .tau/pr, nested below a run directory, not named run-*, or that goes through a symlink; a missing body.md, or one that is a symlink or has another hard link; a failing git rev-parse HEAD; a failing gh pr view; gh output the tool cannot read, named with the command.`;
+  - Errors: a missing parameter; a repository that is not <host>/<owner>/<name>; a pr that is not an integer, or is below 1; a directory outside .tau/pr, nested below a run directory, not named run-*, or that goes through a symlink; a missing body.md, or one that is a symlink or has another hard link; a failing git rev-parse HEAD; a failing gh pr view; gh output the tool cannot read, named with the command.
+- action reviewBots {repository, pr}: reads which configured review bots to request on the pull request. It reads only and never posts.
+  - Reads reviews.repositories.<owner>/<name>.bots from the user tau.json, where each bot is {login, comment}, and runs gh pr view <pr> --repo <repository> --json headRefOid,reviews,comments, then gh api --hostname <host> repos/<owner>/<name>/commits/<head> --jq .commit.committer.date for the head commit's committer date, then gh api --hostname <host> repos/<owner>/<name>/commits/<head>/check-suites --paginate --jq .check_suites[].created_at for the earliest check suite.
+  - Returns {bots}, each {login, comment, status}. status is reviewed when a review by login exists on the current head (login matches ignoring case and a trailing [bot], since gh prints bot logins without it), requested when a comment with the exact comment text was made at or after the later of the head commit's committer date and its earliest check suite (the committer date alone when the head has no check suite), and request otherwise. Post comment for each bot whose status is request.
+  - bots is empty when the user config has no entry for the repository. Request no bot then.
+  - Errors: a missing repository or pr; a repository that is not <host>/<owner>/<name>; a pr that is not an integer of 1 or more; a reviews key in a repository .pi/tau.json; a bad entry for the repository, or two keys that differ only in case; a failing gh pr view; gh output the tool cannot read, named with the command; a failing gh api, or one that prints no date.`;
 
 const prepare = async (runtime: Runtime) => {
   const root = await findCheckoutRoot(runtime.cwd, 'pr');
@@ -108,12 +123,31 @@ const verify = async (runtime: Runtime, parameters: PrInput) => {
   return { ...result };
 };
 
+const reviewBots = async (
+  runtime: Runtime,
+  options: PrToolOptions,
+  parameters: PrInput,
+  context: PrContext,
+) => {
+  const root = await findCheckoutRoot(runtime.cwd, 'pr');
+
+  const location = {
+    cwd: root,
+    agentDirectory: options.agentDirectory ?? getAgentDir(),
+    projectTrusted: context.isProjectTrusted(),
+  };
+
+  return { ...(await readReviewBotStatuses(runtime, location, context.ui, parameters)) };
+};
+
 const runAction = async (
   exec: Exec,
-  cwd: string,
+  options: PrToolOptions,
   parameters: PrInput,
   signal: AbortSignal | undefined,
+  context: PrContext,
 ): Promise<Record<string, unknown>> => {
+  const { cwd } = context;
   const runtime = { exec, cwd, signal };
 
   if (parameters.action === 'prepare') {
@@ -126,6 +160,10 @@ const runAction = async (
 
   if (parameters.action === 'verify') {
     return verify(runtime, parameters);
+  }
+
+  if (parameters.action === 'reviewBots') {
+    return reviewBots(runtime, options, parameters, context);
   }
 
   if (parameters.action === 'checkHeader') {
@@ -145,17 +183,18 @@ const runAction = async (
 
 export const createPrTool = (
   exec: Exec,
+  options: PrToolOptions = {},
 ): ToolDefinition<typeof prToolParameters, Record<string, unknown>> =>
   defineTool({
     name: 'pr',
     label: 'PR',
     description,
     promptSnippet:
-      'Gather PR publication evidence, prepare a pull request run, resolve its target, check review reuse, and verify the published pull request.',
+      'Gather PR publication evidence, prepare a pull request run, resolve its target, check review reuse, verify the published pull request, and read which review bots to request.',
     parameters: prToolParameters,
     executionMode: 'sequential',
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
-      const details = await runAction(exec, context.cwd, parameters, signal);
+      const details = await runAction(exec, options, parameters, signal, context);
 
       return {
         content: [{ type: 'text', text: JSON.stringify(details, null, 2) }],

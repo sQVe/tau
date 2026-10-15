@@ -39,6 +39,7 @@ const pureModules = [
   'src/extensions/fullCheck/reuseDecision.ts',
   'src/extensions/pr/evidenceDecisions.ts',
   'src/extensions/pr/reuseDecisions.ts',
+  'src/extensions/pr/reviewBotDecisions.ts',
   'src/extensions/pr/targetDecisions.ts',
   'src/extensions/pr/verifyDecisions.ts',
   'src/extensions/prFeedback/checkEvidence.ts',

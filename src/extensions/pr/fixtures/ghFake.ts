@@ -23,9 +23,15 @@ export interface FakePullRequest {
   // The head repository's name. The fake owner's repository is named tau unless a test says so.
   headRepository?: string;
   headBranch: string;
+  // The committer date of the head commit. Defaults to a fixed date.
+  headCommittedAt?: string;
+  // The creation times of the head commit's check suites. Defaults to none.
+  headCheckSuites?: string[];
+  reviews?: { login: string; commit: string }[];
+  comments?: { body: string; createdAt: string }[];
 }
 
-type CommandKey = 'auth status' | 'repo view' | 'pr list' | 'pr view';
+type CommandKey = 'auth status' | 'repo view' | 'pr list' | 'pr view' | 'api' | 'check-suites';
 
 export interface GhFake {
   exec: Exec;
@@ -55,6 +61,7 @@ const commandKeys: Record<string, CommandKey> = {
   'repo view': 'repo view',
   'pr list': 'pr list',
   'pr view': 'pr view',
+  'api --hostname': 'api',
 };
 
 const parentOutput = (parent: string | undefined) => {
@@ -138,10 +145,20 @@ export const createGhFake = (): GhFake => {
       baseRefName: pr.baseRefName,
       isDraft: pr.isDraft,
       headRefOid: pr.headRefOid,
+      // gh lists at most 100 commits, so a long pull request has no head among them.
+      commits: [],
+      reviews: (pr.reviews ?? []).map((review) => ({
+        author: { login: review.login },
+        commit: { oid: review.commit },
+      })),
+      comments: pr.comments ?? [],
     };
   };
 
-  const view = (key: Exclude<CommandKey, 'auth status'>, commandArguments: readonly string[]) => {
+  const view = (
+    key: Exclude<CommandKey, 'auth status' | 'api' | 'check-suites'>,
+    commandArguments: readonly string[],
+  ) => {
     if (key === 'repo view') {
       return repositoryView(commandArguments);
     }
@@ -153,9 +170,29 @@ export const createGhFake = (): GhFake => {
     return pullRequestView(commandArguments);
   };
 
+  // gh api --jq prints raw lines, not JSON.
+  const commitApi = (commandArguments: readonly string[]) => {
+    const host = commandArguments[2];
+    const path = commandArguments[3] ?? '';
+    const parts = path.split('/');
+    const [owner, name, sha] = [parts[1], parts[2], parts[4]];
+    const prs = fake.pullRequests[`${host}/${owner}/${name}`] ?? [];
+    const head = prs.find((pr) => pr.headRefOid === sha);
+
+    if (parts[5] === 'check-suites') {
+      return (head?.headCheckSuites ?? []).map((createdAt) => `${createdAt}\n`).join('');
+    }
+
+    return head?.headCommittedAt ?? '2026-10-14T10:00:00Z';
+  };
+
   const output = (key: CommandKey, commandArguments: readonly string[]) => {
     if (key === 'auth status') {
       return '';
+    }
+
+    if (key === 'api' || key === 'check-suites') {
+      return commitApi(commandArguments);
     }
 
     const value = view(key, commandArguments);
@@ -178,7 +215,9 @@ export const createGhFake = (): GhFake => {
 
     calls.push({ command, commandArguments });
 
-    const key = commandKeys[commandArguments.slice(0, 2).join(' ')];
+    const baseKey = commandKeys[commandArguments.slice(0, 2).join(' ')];
+    const readsCheckSuites = commandArguments[3]?.endsWith('/check-suites') === true;
+    const key = baseKey === 'api' && readsCheckSuites ? 'check-suites' : baseKey;
 
     if (command !== 'gh' || key === undefined) {
       return { code: 1, killed: false, stdout: '', stderr: `unexpected ${command} call` };
