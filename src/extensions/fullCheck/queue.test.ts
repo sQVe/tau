@@ -1,7 +1,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
@@ -19,6 +19,23 @@ setTimeout(() => {
 }, 300);
 `;
 
+// Records its start, then waits for every file in `gates` to exist. Exits with an error after a
+// bounded wait, so a command that is never released fails the test instead of hanging it.
+const gatedSource = `
+const { appendFileSync, existsSync } = require('node:fs');
+const [record, name, ...gates] = process.argv.slice(2);
+appendFileSync(record, 'start ' + name + '\\n');
+const deadline = Date.now() + 5000;
+const timer = setInterval(() => {
+  if (gates.every((gate) => existsSync(gate))) {
+    clearInterval(timer);
+    appendFileSync(record, 'end ' + name + '\\n');
+  } else if (Date.now() > deadline) {
+    process.exit(1);
+  }
+}, 10);
+`;
+
 const fixture = async () => {
   const directory = await mkdtemp(join(tmpdir(), 'tau-full-check-'));
   onTestFinished(() => rm(directory, { recursive: true, force: true }));
@@ -27,22 +44,25 @@ const fixture = async () => {
   const record = join(directory, 'record.txt');
   const script = join(directory, 'recorder.cjs');
 
+  const gated = join(directory, 'gated.cjs');
+  const release = join(directory, 'release');
+
   await mkdir(agentDirectory);
   await writeFile(script, recorderSource);
+  await writeFile(gated, gatedSource);
 
-  return { agentDirectory, record, script };
+  return { agentDirectory, directory, record, script, gated, release };
 };
 
-const repositoryNamed = async (name: string) => {
+const lockPathFor = (agentDirectory: string, repository = 'owner/first') =>
+  defaultLockPath(agentDirectory, repository);
+
+const repositoryNamed = async (name: string, remote = `git@github.com:owner/${name}.git`) => {
   const root = await createTemporaryRepository(onTestFinished, `tau-full-check-${name}-`);
 
-  await promisify(execFile)(
-    'git',
-    ['remote', 'add', 'origin', `git@github.com:owner/${name}.git`],
-    {
-      cwd: root,
-    },
-  );
+  await promisify(execFile)('git', ['remote', 'add', 'origin', remote], {
+    cwd: root,
+  });
 
   await promisify(execFile)(
     'git',
@@ -75,7 +95,7 @@ const configure = async (
 
 // Lists the lock files whose owner has not released them.
 const heldLocks = async (agentDirectory: string) => {
-  const directory = join(agentDirectory, 'tau');
+  const directory = join(agentDirectory, 'tau', 'full-check');
 
   const names = await readdir(directory).catch(() => []);
   const held: string[] = [];
@@ -96,9 +116,12 @@ const heldLocks = async (agentDirectory: string) => {
 const contextFor = (cwd: string) =>
   ({ cwd, isProjectTrusted: () => true, ui: { notify: () => undefined } }) as never;
 
-const runTool = async (agentDirectory: string, cwd: string, signal?: AbortSignal) => {
-  const updates: string[] = [];
-
+const runTool = async (
+  agentDirectory: string,
+  cwd: string,
+  signal?: AbortSignal,
+  updates: string[] = [],
+) => {
   const result = await createFullCheckTool({ agentDirectory, pollMilliseconds: 10 }).execute(
     'call',
     {},
@@ -113,37 +136,92 @@ const runTool = async (agentDirectory: string, cwd: string, signal?: AbortSignal
   return { result, updates };
 };
 
-it('runs full checks from two repositories one after the other and reports the wait', async () => {
-  const { agentDirectory, record, script } = await fixture();
+const readLines = async (record: string) => (await readFile(record, 'utf8')).trim().split('\n');
+
+const waitForLine = (record: string, line: string) =>
+  vi.waitFor(
+    async () => {
+      expect(await readFile(record, 'utf8').catch(() => '')).toContain(line);
+    },
+    { timeout: 4000 },
+  );
+
+it('runs full checks of different repositories at once without a wait', async () => {
+  const { agentDirectory, directory, record, gated } = await fixture();
   const first = await repositoryNamed('first');
   const second = await repositoryNamed('second');
+  const startedFirst = join(directory, 'started-first');
+  const startedSecond = join(directory, 'started-second');
 
+  // Each command ends only after both have started, so they must overlap.
   await configure(agentDirectory, {
-    'owner/first': { argv: [process.execPath, script, record, 'first'] },
-    'owner/second': { argv: [process.execPath, script, record, 'second'] },
+    'owner/first': {
+      argv: [process.execPath, gated, record, 'first', startedFirst, startedSecond],
+    },
+    'owner/second': {
+      argv: [process.execPath, gated, record, 'second', startedFirst, startedSecond],
+    },
   });
 
-  const [firstRun, secondRun] = await Promise.all([
-    runTool(agentDirectory, first),
-    runTool(agentDirectory, second),
-  ]);
+  const firstRun = runTool(agentDirectory, first);
+  await waitForLine(record, 'start first');
+  const secondRun = runTool(agentDirectory, second);
+  await waitForLine(record, 'start second');
 
-  const lines = (await readFile(record, 'utf8')).trim().split('\n');
-  const [starter = ''] = lines;
-  const name = starter.replace('start ', '');
-  const other = name === 'first' ? 'second' : 'first';
+  await writeFile(startedFirst, '');
+  await writeFile(startedSecond, '');
 
-  expect(lines).toEqual([`start ${name}`, `end ${name}`, `start ${other}`, `end ${other}`]);
+  const [firstDone, secondDone] = await Promise.all([firstRun, secondRun]);
 
-  const waiter = name === 'first' ? secondRun : firstRun;
-  const runner = name === 'first' ? firstRun : secondRun;
-
-  expect(runner.updates).toEqual([]);
-  expect(waiter.updates).toHaveLength(1);
-  expect(waiter.updates[0]).toContain('Waiting');
-  expect(waiter.updates[0]).toContain(name === 'first' ? first : second);
-  expect(waiter.result.details?.passed).toBe(true);
+  expect(firstDone.updates).toEqual([]);
+  expect(secondDone.updates).toEqual([]);
+  expect(firstDone.result.details?.passed).toBe(true);
+  expect(secondDone.result.details?.passed).toBe(true);
   expect(await heldLocks(agentDirectory)).toEqual([]);
+});
+
+it('queues full checks of one repository from two checkouts and reports the wait', async () => {
+  const { agentDirectory, record, gated, release } = await fixture();
+  const first = await repositoryNamed('first');
+  const second = await repositoryNamed('first', 'https://github.com/Owner/First.git');
+
+  await configure(agentDirectory, {
+    'owner/first': { argv: [process.execPath, gated, record, 'first', release] },
+  });
+
+  const firstRun = runTool(agentDirectory, first);
+  await waitForLine(record, 'start first');
+
+  const updates: string[] = [];
+  const secondRun = runTool(agentDirectory, second, undefined, updates);
+
+  await vi.waitFor(
+    () => {
+      expect(updates).toHaveLength(1);
+    },
+    { timeout: 4000 },
+  );
+
+  expect(await readLines(record)).toEqual(['start first']);
+
+  await writeFile(release, '');
+
+  const [firstDone, secondDone] = await Promise.all([firstRun, secondRun]);
+
+  expect(await readLines(record)).toEqual(['start first', 'end first', 'start first', 'end first']);
+  expect(firstDone.updates).toEqual([]);
+  expect(updates[0]).toContain('Waiting');
+  expect(updates[0]).toContain(first);
+  expect(secondDone.result.details?.passed).toBe(true);
+  expect(await heldLocks(agentDirectory)).toEqual([]);
+});
+
+it('keys the lock by repository without case or path separators', () => {
+  const lower = defaultLockPath('/agent', 'owner/name');
+
+  expect(defaultLockPath('/agent', 'Owner/Name')).toBe(lower);
+  expect(dirname(lower)).toBe(join('/agent', 'tau', 'full-check'));
+  expect(defaultLockPath('/agent', 'owner/other')).not.toBe(lower);
 });
 
 it('takes over a lock left by a dead process', async () => {
@@ -161,10 +239,10 @@ it('takes over a lock left by a dead process', async () => {
     child.once('close', resolve);
   });
 
-  await mkdir(join(agentDirectory, 'tau'));
+  await mkdir(dirname(lockPathFor(agentDirectory)), { recursive: true });
 
   await writeFile(
-    `${defaultLockPath(agentDirectory)}.1`,
+    `${lockPathFor(agentDirectory)}.1`,
     JSON.stringify({
       pid: deadPid,
       checkout: '/gone',
@@ -228,13 +306,12 @@ it('starts the next check only after a cancelled command has exited', async () =
   const { agentDirectory, record, script } = await fixture();
   const stubborn = join(agentDirectory, '..', 'stubborn.cjs');
   const first = await repositoryNamed('first');
-  const second = await repositoryNamed('second');
+  const second = await repositoryNamed('second', 'git@github.com:owner/first.git');
 
   await writeFile(stubborn, stubbornSource);
 
   await configure(agentDirectory, {
     'owner/first': { argv: [process.execPath, stubborn, record] },
-    'owner/second': { argv: [process.execPath, script, record, 'second'] },
   });
 
   const controller = new AbortController();
@@ -246,6 +323,10 @@ it('starts the next check only after a cancelled command has exited', async () =
 
   await vi.waitFor(async () => {
     expect(await readFile(record, 'utf8')).toContain('start stubborn');
+  });
+
+  await configure(agentDirectory, {
+    'owner/first': { argv: [process.execPath, script, record, 'second'] },
   });
 
   const queued = runTool(agentDirectory, second);
@@ -271,11 +352,10 @@ it('starts the next check only after a cancelled command has exited', async () =
 it('lets only one of two sessions that recover the same stale lock run at a time', async () => {
   const { agentDirectory, record, script } = await fixture();
   const first = await repositoryNamed('first');
-  const second = await repositoryNamed('second');
+  const second = await repositoryNamed('second', 'git@github.com:owner/first.git');
 
   await configure(agentDirectory, {
     'owner/first': { argv: [process.execPath, script, record, 'first'] },
-    'owner/second': { argv: [process.execPath, script, record, 'second'] },
   });
 
   const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
@@ -285,10 +365,10 @@ it('lets only one of two sessions that recover the same stale lock run at a time
     child.once('close', resolve);
   });
 
-  await mkdir(join(agentDirectory, 'tau'));
+  await mkdir(dirname(lockPathFor(agentDirectory)), { recursive: true });
 
   await writeFile(
-    `${defaultLockPath(agentDirectory)}.1`,
+    `${lockPathFor(agentDirectory)}.1`,
     JSON.stringify({
       pid: deadPid,
       checkout: '/gone',
@@ -300,11 +380,8 @@ it('lets only one of two sessions that recover the same stale lock run at a time
   await Promise.all([runTool(agentDirectory, first), runTool(agentDirectory, second)]);
 
   const lines = (await readFile(record, 'utf8')).trim().split('\n');
-  const [starter = ''] = lines;
-  const name = starter.replace('start ', '');
-  const other = name === 'first' ? 'second' : 'first';
 
-  expect(lines).toEqual([`start ${name}`, `end ${name}`, `start ${other}`, `end ${other}`]);
+  expect(lines).toEqual(['start first', 'end first', 'start first', 'end first']);
   expect(await heldLocks(agentDirectory)).toEqual([]);
 });
 
@@ -319,10 +396,10 @@ const ownerJson = (token: string, released = false) =>
 
 it('does not run while a higher generation is live after linking a lower one', async () => {
   const { agentDirectory } = await fixture();
-  const lockPath = defaultLockPath(agentDirectory);
+  const lockPath = lockPathFor(agentDirectory);
   const live = `${lockPath}.3`;
 
-  await mkdir(join(agentDirectory, 'tau'));
+  await mkdir(dirname(lockPathFor(agentDirectory)), { recursive: true });
   await writeFile(`${lockPath}.1`, ownerJson('first', true));
 
   let stalled = false;
@@ -387,14 +464,13 @@ it('starts the next check only after a descendant of a cancelled command is gone
   const descendant = join(agentDirectory, '..', 'descendant.cjs');
   const launcher = join(agentDirectory, '..', 'launcher.cjs');
   const first = await repositoryNamed('first');
-  const second = await repositoryNamed('second');
+  const second = await repositoryNamed('second', 'git@github.com:owner/first.git');
 
   await writeFile(descendant, descendantSource);
   await writeFile(launcher, launcherSource);
 
   await configure(agentDirectory, {
     'owner/first': { argv: [process.execPath, launcher, descendant, record] },
-    'owner/second': { argv: [process.execPath, script, record, 'second'] },
   });
 
   const controller = new AbortController();
@@ -406,6 +482,10 @@ it('starts the next check only after a descendant of a cancelled command is gone
 
   await vi.waitFor(async () => {
     expect(await readFile(record, 'utf8').catch(() => '')).toContain('start descendant');
+  });
+
+  await configure(agentDirectory, {
+    'owner/first': { argv: [process.execPath, script, record, 'second'] },
   });
 
   const queued = runTool(agentDirectory, second);
@@ -453,10 +533,10 @@ it('waits for the command group of a dead session before running a new check', a
     { stdio: 'ignore', detached: true },
   );
 
-  await mkdir(join(agentDirectory, 'tau'));
+  await mkdir(dirname(lockPathFor(agentDirectory)), { recursive: true });
 
   await writeFile(
-    `${defaultLockPath(agentDirectory)}.1`,
+    `${lockPathFor(agentDirectory)}.1`,
     JSON.stringify({
       pid: deadPid,
       checkout: '/gone',
