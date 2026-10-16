@@ -1120,7 +1120,7 @@ describe('slice tool prepare', () => {
     expect(await readdir(directory)).toEqual([]);
     expect(await run(fake, context, { action: 'prepare', id: 'me-537' })).toEqual({ directory });
 
-    await writeFile(join(directory, 'start.md'), 'Start the slice.\n');
+    await writeFile(join(directory, 'start.json'), 'Start the slice.\n');
     await writeFile(join(directory, 'agent-1.md'), 'First task.\n');
     await writeFile(join(directory, 'agent-2.md'), 'Second task.\n');
     const before = await snapshotDraft(directory);

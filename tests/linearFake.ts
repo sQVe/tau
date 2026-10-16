@@ -22,6 +22,9 @@ interface FakeIssue {
   parent: string | null;
   teamId: string;
   projectId: string | null;
+  labelIds: string[];
+  creatorId: string | null;
+  assigneeId: string | null;
   sortOrder: number;
   stateType: StateType;
   pullRequests: string[];
@@ -52,6 +55,7 @@ export interface LinearFake {
   addProject: (project: FakeProject) => void;
   mergedPullRequests: Set<string>;
   failWrite: (count: number) => void;
+  limitChildren: (count: number) => void;
   moveOnUpdate: (identifier: string, sortOrder: number) => void;
   overrideOutput: (key: string, stdout: string) => void;
   failCall: (key: string, stderr: string) => void;
@@ -136,13 +140,16 @@ const savedDescription = (description: string) => {
 
 const writeKinds = ['issueCreate', 'issueUpdate'];
 
-const childNode = (issue: FakeIssue) => ({
+const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
   identifier: issue.identifier,
   title: issue.title,
   description: issue.description,
   url: `https://linear.app/me/issue/${issue.identifier}`,
   subIssueSortOrder: issue.sortOrder,
   team: [...teams.values()].find((candidate) => candidate.id === issue.teamId)!,
+  project,
+  creator: issue.creatorId === null ? null : { id: issue.creatorId },
+  assignee: issue.assigneeId === null ? null : { id: issue.assigneeId },
   state: { type: issue.stateType },
   attachments: { nodes: issue.pullRequests.map((url) => ({ url })) },
   inverseRelations: {
@@ -172,6 +179,7 @@ export const createLinearFake = (): LinearFake => {
   const failures = new Set<number>();
   const projects: FakeProject[] = [{ id: 'project-tau', name: 'Tau', teamId: 'team-me' }];
   let nextNumber = 1;
+  let childLimit = Number.POSITIVE_INFINITY;
 
   const addIssue = (issue: Partial<FakeIssue> & { title: string }): FakeIssue => {
     const identifier = issue.identifier ?? `ME-${nextNumber}`;
@@ -182,6 +190,9 @@ export const createLinearFake = (): LinearFake => {
       parent: null,
       teamId: 'team-me',
       projectId: 'project-tau',
+      labelIds: [],
+      creatorId: 'user-viewer',
+      assigneeId: null,
       sortOrder: [...issues.values()].filter((other) => other.parent === issue.parent).length,
       stateType: 'started',
       pullRequests: [],
@@ -215,18 +226,23 @@ export const createLinearFake = (): LinearFake => {
     const issue = issues.get(identifier);
 
     if (issue === undefined) {
-      return { issue: null };
+      return { viewer: { id: 'user-viewer' }, issue: null };
     }
 
-    const children = [...issues.values()].filter((child) => child.parent === identifier);
+    const allChildren = [...issues.values()].filter((child) => child.parent === identifier);
+    const children = allChildren.slice(0, childLimit);
 
     return {
+      viewer: { id: 'user-viewer' },
       issue: {
-        ...childNode(issue),
+        ...childNode(issue, project(issue.projectId)),
         id: issueId(identifier),
         team: team(issue.teamId),
         project: project(issue.projectId),
-        children: { nodes: children.map(childNode) },
+        children: {
+          pageInfo: { hasNextPage: children.length < allChildren.length },
+          nodes: children.map((child) => childNode(child, project(child.projectId))),
+        },
       },
     };
   };
@@ -271,6 +287,7 @@ export const createLinearFake = (): LinearFake => {
       parent,
       teamId: String(variables['team']),
       projectId: (variables['project'] as string | null) ?? null,
+      labelIds: (variables['labels'] as string[] | undefined) ?? [],
       sortOrder: typeof sortOrder === 'number' ? sortOrder : Math.min(0, ...siblingOrders) - 1,
     });
 
@@ -528,6 +545,10 @@ export const createLinearFake = (): LinearFake => {
     // Gives the issue this sort order when an update without a sort order reaches it.
     moveOnUpdate: (identifier: string, sortOrder: number): void => {
       movedOnUpdate.set(identifier, sortOrder);
+    },
+    // Returns only this many children of an issue and reports a next page.
+    limitChildren: (count: number): void => {
+      childLimit = count;
     },
     // Fails the nth write call, counted from the first write the fake sees.
     failWrite: (count: number): void => {

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "slice": "ME-700",
+  "branch": "me-700-start-the-slice",
+  "base": "origin/main",
+  "tickets": [
+    { "title": "Record the start", "file": "agent-1.txt", "labels": [], "identifier": null }
+  ]
+}

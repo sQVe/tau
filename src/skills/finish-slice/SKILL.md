@@ -41,7 +41,7 @@ for the workspace.
 
 2. Find the draft. Call the `slice` tool's `prepare` action with the slice identifier in lower case,
    such as `me-537`. Use the returned `directory` as `$slicedir`. `finish.md` goes next to
-   `start.md` there.
+   `start.json` there.
 
 3. Read the slice with `linear issue view <slice> --json --no-pager`, and its agent tickets as
    children, as step 3 of the start-slice skill does. Collect every `## Acceptance` item of the
@@ -49,10 +49,10 @@ for the workspace.
 
 4. Give each item a verdict with its evidence. Run the checks that are cheap and missing, except the
    full check.
-   - First, stop and report when `git branch --show-current` differs from the branch in `start.md`,
-     or from the slice's `branchName` when `start.md` names none. Stop and report too when
-     `git status --porcelain` prints anything. The audit names one commit, so the checks must run on
-     that commit's checkout.
+   - First, stop and report when `git branch --show-current` differs from the branch in
+     `start.json`, or from the slice's `branchName` when `start.json` names none. Stop and report
+     too when `git status --porcelain` prints anything. The audit names one commit, so the checks
+     must run on that commit's checkout.
    - Evidence must cover the audited commit. A check or report from before the last change to what
      it covers does not count. Rerun it, or mark the item not run.
    - Save the real output of each check you run in `$slicedir`, in a file named for the check, never

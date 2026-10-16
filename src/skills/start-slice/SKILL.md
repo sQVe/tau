@@ -31,8 +31,9 @@ or Git. Workers then carry out the agent tickets.
 
 - Before step 9, write only the draft in `$slicedir`. You may run `git fetch`, but create or switch
   no branch and write nothing to Linear.
-- Route, write, and create agent tickets with the [tracker skill](../tracker/SKILL.md), and follow
-  its [rule on which writes need approval](../tracker/SKILL.md#hard-rules) and its hard rules on
+- Route and write tickets with the [tracker skill](../tracker/SKILL.md), except that the
+  `start_slice` tool creates and updates the agent tickets in step 9. Follow its
+  [rule on which writes need approval](../tracker/SKILL.md#hard-rules) and its hard rules on
   questions and status. This skill's only status change is moving the slice to In Progress in
   step 9.
 - Before you write the draft, check that the prompt names both the repository route and the agent
@@ -95,17 +96,16 @@ or Git. Workers then carry out the agent tickets.
      [handover skill](../handover/SKILL.md).
 
 3. Read the slice with `linear issue view <slice> --json --no-pager`. Note its `branchName`, team,
-   and `## Acceptance`. If `$slicedir/start.md` exists, read it and every body file it names. Then
+   and `## Acceptance`. If `$slicedir/start.json` exists, read it and every body file it names. Then
    read the slice's existing agent tickets:
 
    ```sh
    linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title description team { key } project { name } } } } }' --variable id=<slice>
    ```
 
-   Linear holds the body of each agent ticket that exists. Add a row with its identifier to
-   `start.md` for one that has no row, if it fits as step 9 says. Report one that does not fit, and
-   stop. When its body file is missing or differs, save its description as the body file, so the
-   worker gets the same task as the ticket.
+   Linear holds the body of each agent ticket that exists. When the body file of a ticket that
+   `start.json` records is missing or differs, save its description as the body file, so the worker
+   gets the same task as the ticket.
 
 4. Choose the base. Run `git fetch origin`, then find the remote's default branch.
    `git symbolic-ref --short refs/remotes/origin/HEAD` prints it with the remote prefix, such as
@@ -125,9 +125,12 @@ or Git. Workers then carry out the agent tickets.
 6. Write the draft in `$slicedir`, one body file per agent ticket.
    - `agent-<n>.md`, numbered in work order, with the agent ticket template in the
      [tracker skill](../tracker/SKILL.md). Keep each ticket to one worker task.
-   - `start.md`: the slice identifier, the branch, the base, and one row per agent ticket with its
-     number, title, body file, and Linear identifier. Leave the identifier empty until the ticket
-     exists. Keep identifiers that already exist.
+   - `start.json`:
+     `{"version": 1, "slice": "<identifier>", "branch": "<name>", "base": "<ref>", "tickets": [...]}`,
+     with one ticket per agent ticket in work order. Each ticket is
+     `{"title": "<title>", "file": "agent-<n>.md", "labels": ["<label id>"], "identifier": null}`.
+     Take the label IDs from the agent team's label list as the tracker skill says, or use `[]`.
+     Leave the identifier `null` until the ticket exists. Keep identifiers that already exist.
 
    Together the agent tickets must cover every acceptance criterion of the slice.
 
@@ -141,11 +144,11 @@ or Git. Workers then carry out the agent tickets.
      every item passes, say nothing about it. The list never stops step 9 or a worker launch.
 
 8. Check that each new agent ticket is ready for a worker who knows only the ticket. A ticket is new
-   when its row in `start.md` has no identifier. In one turn, launch one fresh `scout` per new
-   ticket with the profile's default model. Brief each scout with the path of its body file and the
-   tree from step 5. Tell it to read only that file, with `read`, and the files the ticket names,
-   with `git show <tree>:<path>`. It lists each question it would ask before starting the work, or
-   says it has none.
+   when its entry in `start.json` has a `null` identifier. In one turn, launch one fresh `scout` per
+   new ticket with the profile's default model. Brief each scout with the path of its body file and
+   the tree from step 5. Tell it to read only that file, with `read`, and the files the ticket
+   names, with `git show <tree>:<path>`. It lists each question it would ask before starting the
+   work, or says it has none.
    - For each question, revise the body file to answer it, or proceed when the ticket or the code
      already answers it. The scout's answer never blocks the start.
    - After a revision, check the draft again as step 7 says.
@@ -163,26 +166,20 @@ or Git. Workers then carry out the agent tickets.
      `git rev-parse --verify --quiet refs/heads/<branchName>` shows it exists already, run
      `git switch <branchName>` instead.
    - Move the slice to In Progress as the tracker skill says.
-   - Create each agent ticket under the slice in the agent team, with the tracker skill's command
-     for agent tickets.
-
-     After each one, record its identifier in `$slicedir/start.md` at once. If the output shows no
-     identifier, stop and read the slice's children before any retry. On a retry, skip each agent
-     ticket that has an identifier in the draft or a child with the same title that fits, and record
-     that child's identifier. A child fits when it is in the agent team with no project, as the
-     tracker skill routes agent tickets. Report a same-title child that does not fit, and stop.
-
-   - Update each skipped agent ticket whose body file differs from the description step 3 read, with
-     the tracker skill's command for a body edit. The worker gets the body file, so Linear must hold
-     the same body before any worker starts.
+   - Call the `start_slice` tool's `read` action with `directory` set to `$slicedir`, and
+     `agentTeam` set to the team in the `Tracker agent team:` line. If `problems` is not empty,
+     report each one and stop. Otherwise call `apply` with the `stateToken` from `read`. On an
+     error, stop and report it with the steps it says completed. When `apply` returns
+     `status: declined`, the user refused the writes: stop, and report that nothing was written and
+     which tickets were left unchanged.
 
 10. Report the start in about 30 lines, without raw commands:
     - The slice, with the reason you picked it.
     - The branch, its base, and whether the branch existed already. For a stacked start, name the
       parent's slice and PR, the trunk, and that the PR will target the parent branch. Name any
       dependency that stacking on the top of the parent's stack added.
-    - Each agent ticket as `new`, `updated`, or `unchanged`, with its identifier, URL, title, and
-      one line from its `## Outcome`.
+    - Each agent ticket with the `status` that `apply` returned (`new`, `updated`, or `unchanged`),
+      its identifier, URL, title, and one line from its `## Outcome`.
     - Each new agent ticket's scout questions from step 8, each with whether you revised the ticket
       or proceeded, and each scout that failed.
     - Each acceptance criterion of the slice, with the agent ticket numbers that cover it.
@@ -199,8 +196,8 @@ or Git. Workers then carry out the agent tickets.
 
 ## Changes after the start
 
-- You may add an agent ticket inside the slice's outcome. Write its body file and its row in
-  `start.md`, judge its acceptance items as step 7 says, and create it as in step 9. Report it with
-  its identifier, URL, and one line of reason.
+- You may add an agent ticket inside the slice's outcome. Write its body file and its entry in
+  `start.json`, judge its acceptance items as step 7 says, and create it as in step 9. Report it
+  with its identifier, URL, and one line of reason.
 - Work beyond the slice's outcome is a new slice. Re-plan it with the
   [slice skill](../slice/SKILL.md).

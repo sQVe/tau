@@ -94,7 +94,7 @@ const withoutListMarkers = (description: string) => {
   return lines.join('\n');
 };
 
-const sameDescription = (saved: string, body: string | undefined) =>
+export const sameDescription = (saved: string, body: string | undefined): boolean =>
   body !== undefined && withoutListMarkers(saved) === withoutListMarkers(body);
 
 const routeProblems = (draft: Draft, container: LinearContainer) => {

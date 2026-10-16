@@ -87,6 +87,7 @@ const pureModules = [
   'src/extensions/prFeedback/threads.ts',
   'src/extensions/prFeedback/writes.ts',
   'src/extensions/slice/blockers.ts',
+  'src/extensions/slice/startDecisions.ts',
   'src/extensions/slice/writes.ts',
   'src/extensions/snippets/history.ts',
   'src/extensions/snippets/insertion.ts',
