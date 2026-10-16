@@ -1,5 +1,6 @@
 // state[0]: heartbeat counter. state[1]: blocking budget, 0 for none. state[2]: collection
-// deadline, 0 once collection has finished.
+// deadline, 0 once collection has finished. workerData.parent is the parent the main thread saw
+// when it created the watchdog, because the parent can die before this thread starts.
 export const watchdogSource = `
 const { workerData } = require('node:worker_threads');
 const { readdirSync, readFileSync, writeSync } = require('node:fs');
@@ -8,7 +9,7 @@ const label = new Uint8Array(workerData.label);
 const startedAt = performance.now();
 let lastBeat = Atomics.load(state, 0);
 let lastChange = startedAt;
-const startParent = process.ppid;
+const startParent = workerData.parent;
 // Reads /proc without spawning, because a spawn can block while the worker is wedged.
 const parentOf = (pid) => {
   try {

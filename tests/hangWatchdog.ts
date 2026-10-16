@@ -74,7 +74,7 @@ const readCollectionMilliseconds = (value: string | undefined) => {
 if (!isInspecting()) {
   const watchdog = new Worker(watchdogSource, {
     eval: true,
-    workerData: { state: state.buffer, label: label.buffer },
+    workerData: { state: state.buffer, label: label.buffer, parent: process.ppid },
   });
 
   watchdog.unref();

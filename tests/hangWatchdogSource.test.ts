@@ -41,18 +41,23 @@ const readProcessIds = async (file: string): Promise<number[]> => {
   }
 };
 
-// The fork runs the watchdog and blocks its own event loop, like a Vitest fork stuck in spawn.
+// The fork starts the watchdog only after its parent died, then blocks its own event loop, like a
+// Vitest fork stuck in spawn.
 const forkScript = `
 const { Worker } = require('node:worker_threads');
 const { spawn } = require('node:child_process');
 const { writeFileSync } = require('node:fs');
+const parent = process.ppid;
 const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+writeFileSync(process.argv[1], process.pid + ',' + grandchild.pid);
+while (process.ppid === parent) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+}
 const watchdog = new Worker(${JSON.stringify(watchdogSource)}, {
   eval: true,
-  workerData: { state: new SharedArrayBuffer(12), label: new SharedArrayBuffer(8) },
+  workerData: { state: new SharedArrayBuffer(12), label: new SharedArrayBuffer(8), parent },
 });
 watchdog.once('online', () => {
-  writeFileSync(process.argv[1], process.pid + ',' + grandchild.pid);
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
 });
 `;
@@ -87,11 +92,6 @@ it.skipIf(process.platform !== 'linux')(
 
     await waitFor(async () => (await readProcessIds(file)).length === 2);
     pids = await readProcessIds(file);
-
-    // The watchdog reads its starting parent just after it comes online.
-    await new Promise((resolve) => {
-      setTimeout(resolve, 300);
-    });
 
     process.kill(parentId, 'SIGKILL');
 
