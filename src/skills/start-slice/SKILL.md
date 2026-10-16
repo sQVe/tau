@@ -172,13 +172,17 @@ or Git. Workers then carry out the agent tickets.
      that child's identifier. A child fits when it is in the agent team with no project, as the
      tracker skill routes agent tickets. Report a same-title child that does not fit, and stop.
 
+   - Update each skipped agent ticket whose body file differs from the description step 3 read, with
+     the tracker skill's command for a body edit. The worker gets the body file, so Linear must hold
+     the same body before any worker starts.
+
 10. Report the start in about 30 lines, without raw commands:
     - The slice, with the reason you picked it.
     - The branch, its base, and whether the branch existed already. For a stacked start, name the
       parent's slice and PR, the trunk, and that the PR will target the parent branch. Name any
       dependency that stacking on the top of the parent's stack added.
-    - Each agent ticket as `new` or `unchanged`, with its identifier, URL, title, and one line from
-      its `## Outcome`.
+    - Each agent ticket as `new`, `updated`, or `unchanged`, with its identifier, URL, title, and
+      one line from its `## Outcome`.
     - Each new agent ticket's scout questions from step 8, each with whether you revised the ticket
       or proceeded, and each scout that failed.
     - Each acceptance criterion of the slice, with the agent ticket numbers that cover it.
