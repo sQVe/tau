@@ -48,8 +48,8 @@ const agentWidth = (layout: PaneLayout, agentPane: string): number => {
 };
 
 // Opens the command in a pane beside the agent, or in a new tab when the agent pane is too narrow
-// to split, and waits until it exits. Returns false when the signal aborted the wait. The pane or
-// tab closes either way.
+// to split, and waits until it exits. Returns false when the signal aborted the open or the wait.
+// A pane or tab that opened closes either way.
 export const runInPane = async (request: PaneRequest): Promise<boolean> => {
   const { exec, cwd, signal } = request;
 
