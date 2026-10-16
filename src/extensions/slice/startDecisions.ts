@@ -138,7 +138,6 @@ export const decideStartPlan = (facts: StartFacts): StartPlan => {
 const isViewersTicket = (viewer: string, child: ChildFact) =>
   child.assignee === null ? child.creator === viewer : child.assignee === viewer;
 
-// Lists the identifiers of existing tickets that the writes change and the viewer does not own.
 export const decideForeignUpdates = (
   viewer: string,
   writes: readonly StartWrite[],
