@@ -30,9 +30,9 @@ const parameters = Type.Object({
 
 const description = `Show draft files under .tau/ to the user in tuicr. Returns the user's tuicr comments on those files and the edits the user made.
 - action review, paths: every path must be a file inside the repository's .tau directory. Paths may be absolute or relative to the working directory. The tool copies the files into a staging directory outside Git, with names relative to .tau/ such as slices/me-328/slice-1.md, and opens that directory in tuicr.
-  - Inside herdr: opens tuicr in a pane beside yours, waits until the user quits tuicr or closes the pane, closes the pane, and collects. Returns {status: "reviewed", comments, edits}.
+  - Inside herdr: opens tuicr in a pane beside yours when your pane is wide enough to split, or in a new focused tab in your workspace when it is narrow or zoomed. Waits until the user quits tuicr or closes the pane or tab, closes it, focuses your tab again after a tab review, and collects. Returns {status: "reviewed", comments, edits}.
   - Outside herdr: opens nothing. Returns {status: "manual", command, directory}. Tell the user to run command, and to tell you when they are done. Then call collect with directory.
-  - If the call is cancelled during the wait, the tool closes the pane, deletes no comments, writes no file, removes the staging directory, and returns {status: "cancelled", comments: [], edits: []}.
+  - If the call is cancelled while tuicr opens or during the wait, the tool closes the pane or tab it opened, deletes no comments, writes no file, removes the staging directory, and returns {status: "cancelled", comments: [], edits: []}.
 - action collect, directory: the directory a manual review returned. Collects as below.
 - Collect: keeps comments on the reviewed files and deletes exactly those from the tuicr session. It never clears other comments. It returns comments as [{path, startLine, endLine, type, content}] with absolute paths in .tau/. Comments for other files and session-level comments stay in tuicr.
 - Edits: each file the user changed gets {path, diff, status}. A file the user did not change gets no entry. Status "applied" means the tool wrote the user's version to the real file. Status "conflict" means the real file changed during the review, so the tool wrote nothing for it. Compare the diff with the file and merge by hand.
