@@ -207,7 +207,10 @@ it('shows every description and a badge that stays out of the answer', () => {
   expect(lines.some((line) => line.includes('Two columns.'))).toBe(true);
 
   expect(results).toEqual([
-    { kind: 'answered', answers: [{ question: 'Which layout?', selected: ['Stacked'] }] },
+    {
+      kind: 'answered',
+      answers: [{ question: 'Which layout?', selected: ['Stacked'], typed: false }],
+    },
   ]);
 });
 
@@ -260,7 +263,7 @@ it('does not type Ctrl+O into the custom row', () => {
   }
 
   expect(results).toEqual([
-    { kind: 'answered', answers: [{ question: 'Which layout?', selected: ['abc'] }] },
+    { kind: 'answered', answers: [{ question: 'Which layout?', selected: ['abc'], typed: true }] },
   ]);
 });
 
@@ -631,7 +634,7 @@ it('does not reach the action row before a notice arrives', () => {
   dialog.handleInput('\r');
 
   expect(results).toEqual([
-    { kind: 'answered', answers: [{ question: 'Which layout?', selected: ['x'] }] },
+    { kind: 'answered', answers: [{ question: 'Which layout?', selected: ['x'], typed: true }] },
   ]);
 });
 
@@ -694,7 +697,7 @@ it('starts from the saved state with the typed text in the custom row', () => {
   expect(focused).not.toContain(actionText);
 
   expect(second.results).toEqual([
-    { kind: 'answered', answers: [{ question: 'Which layout?', selected: ['ab'] }] },
+    { kind: 'answered', answers: [{ question: 'Which layout?', selected: ['ab'], typed: true }] },
   ]);
 });
 
@@ -852,7 +855,10 @@ it('opens on the recommended option and answers it with Enter', () => {
   dialog.handleInput('\r');
 
   expect(results).toEqual([
-    { kind: 'answered', answers: [{ question: 'Which layout?', selected: ['Split'] }] },
+    {
+      kind: 'answered',
+      answers: [{ question: 'Which layout?', selected: ['Split'], typed: false }],
+    },
   ]);
 });
 

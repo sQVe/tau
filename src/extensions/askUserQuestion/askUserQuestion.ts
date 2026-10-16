@@ -3,9 +3,11 @@ import { Type } from 'typebox';
 
 import { appendToolGuidelines } from '../../systemPrompt.js';
 import { parseWorkerNoticeEvent, workerNoticeChannel } from '../../workerNoticeEvent.js';
+import { branchFacts } from './branchFacts.js';
 import { questionDialog } from './dialog.js';
 import type { DialogQuestion, DialogResult, DialogSession } from './dialog.js';
 import type { Answer, QuestionnaireState } from './questionnaire.js';
+import { decideTypedAnswerReply } from './typedAnswerGuard.js';
 import { validateQuestions } from './validation.js';
 
 const optionSchema = Type.Object({
@@ -134,6 +136,9 @@ const answerSegment = (answer: Answer) => {
   return `"${answer.question}"="${answer.selected.join(', ')}".${preview}`;
 };
 
+const typedAnswerEnding =
+  'The user typed a free-text answer. If it asks a question or asks for an explanation, answer it in visible text first, then end your turn. Do not call ask_user_question in the same message.';
+
 const responseText = (result: DialogResult) => {
   if (result.kind === 'declined') {
     return 'User declined to answer questions';
@@ -144,8 +149,13 @@ const responseText = (result: DialogResult) => {
   }
 
   const segments = result.answers.map(answerSegment).join(' ');
+  const typed = result.answers.some((answer) => answer.typed);
 
-  return `User has answered your questions: ${segments} You can now continue with the user's answers in mind.`;
+  const ending = typed
+    ? typedAnswerEnding
+    : "You can now continue with the user's answers in mind.";
+
+  return `User has answered your questions: ${segments} ${ending}`;
 };
 
 // The model can repeat the same questions with their properties in another order.
@@ -195,6 +205,14 @@ export default function askUserQuestionExtension(pi: ExtensionAPI): void {
       // `hasUI` is also true in RPC mode, where `ui.custom` resolves without running a component.
       if (context.mode !== 'tui') {
         throw new Error('The questionnaire needs the terminal UI. Ask in plain text instead.');
+      }
+
+      const decision = decideTypedAnswerReply(branchFacts(context.sessionManager.getBranch()));
+
+      if (decision.kind === 'refuse') {
+        throw new Error(
+          "The user's last answer was typed text, and you have not replied to it in visible text. Write the reply to the typed answer as visible text, then end your turn. Do not call ask_user_question in the same message.",
+        );
       }
 
       validateQuestions(params.questions);

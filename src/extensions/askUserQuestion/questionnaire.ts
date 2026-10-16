@@ -22,6 +22,7 @@ export type KeyPress =
 export interface Answer {
   question: string;
   selected: string[];
+  typed: boolean;
   preview?: string;
 }
 
@@ -158,19 +159,23 @@ const answerFor = (facts: QuestionFacts, question: QuestionState): Answer | unde
       selected.push(customText);
     }
 
-    return selected.length === 0 ? undefined : { question: facts.question, selected };
+    const typed = customText !== '';
+
+    return selected.length === 0 ? undefined : { question: facts.question, selected, typed };
   }
 
   const option = facts.options[question.cursor];
 
   if (option === undefined) {
-    return customText === '' ? undefined : { question: facts.question, selected: [customText] };
+    return customText === ''
+      ? undefined
+      : { question: facts.question, selected: [customText], typed: true };
   }
 
   const shown = shownPreview(facts, question.cursor);
   const preview = shown === undefined ? {} : { preview: shown };
 
-  return { question: facts.question, selected: [option.label], ...preview };
+  return { question: facts.question, selected: [option.label], typed: false, ...preview };
 };
 
 const nextUnanswered = (answers: (Answer | undefined)[], tab: number) => {
