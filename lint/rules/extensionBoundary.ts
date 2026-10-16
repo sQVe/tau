@@ -18,6 +18,7 @@ export const publicFiles = [
   'extensions/subagents/controller/controller',
   'extensions/subagents/controller/record',
   'reviewCapture/evidence',
+  'reviewCapture/evidenceDecisions',
   'reviewCapture/fixCapture',
   'reviewCapture/fixScope',
   'reviewCapture/pinnedCapture',

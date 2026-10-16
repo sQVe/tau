@@ -29,7 +29,10 @@ type TimedCheckLog = ModifiedCheckLog & { modifiedAt: number };
 
 export type PublicationGap =
   | { kind: 'noReview' | 'noChecks' }
-  | { kind: 'target' | 'branch' | 'subjects' | 'reuse' | 'review' | 'checks'; reason: string }
+  | {
+      kind: 'target' | 'branch' | 'subjects' | 'reuse' | 'review' | 'markers' | 'checks';
+      reason: string;
+    }
   | { kind: 'reuseMismatch'; reasons: string[] }
   | { kind: 'reviewEvidence'; gap: ReviewEvidence['gaps'][number] }
   | { kind: 'check'; path: string; reasons: CheckReason[] }

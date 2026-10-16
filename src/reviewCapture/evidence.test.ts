@@ -426,6 +426,7 @@ it('reports a cut list and a cut body as gaps', async () => {
     callers: 5,
     callerLineCharacters: 1000,
     namedPaths: 5,
+    markers: 5,
   };
 
   const evidence = await readReviewEvidence(root, directory, limits);
@@ -456,6 +457,7 @@ it('cuts a test body and a caller line at their character limits', async () => {
     callers: 5,
     callerLineCharacters: 6,
     namedPaths: 5,
+    markers: 5,
   };
 
   const evidence = await readReviewEvidence(root, directory, limits);
@@ -516,6 +518,7 @@ it('finds the callers of each changed module within the per-module and total lim
     callers: 2,
     callerLineCharacters: 1000,
     namedPaths: 5,
+    markers: 5,
   };
 
   const evidence = await readReviewEvidence(root, directory, limits);
@@ -571,4 +574,27 @@ it('reports no gap for the old path of a test file renamed in a range', async ()
   expect(evidence.paths).toEqual(['src/add.test.ts', 'src/math.test.ts']);
   expect(evidence.tests.map((test) => test.path)).toEqual(['src/add.test.ts']);
   expect(evidence.gaps).toEqual([]);
+});
+
+it('lists added skip markers in code files but not in Markdown files', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const from = await commit(root, sourceFiles, 'first');
+  const onlySuffix = '.only';
+  const marked = `it${onlySuffix}('works', () => {});`;
+
+  const to = await commit(
+    root,
+    {
+      'src/math.test.ts': `${sourceFiles['src/math.test.ts']}${marked}\n`,
+      'docs/notes.md': `${marked}\n`,
+    },
+    'second',
+  );
+
+  const directory = await savedCapture(root, { kind: 'range', from, to });
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.markers).toEqual([
+    { path: 'src/math.test.ts', line: 4, marker: '.only(', text: marked },
+  ]);
 });

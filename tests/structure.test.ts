@@ -126,6 +126,7 @@ const pureModules = [
   'src/reviewCapture/evidenceDecisions.ts',
   'src/reviewCapture/fixScope.ts',
   'src/reviewCapture/freshness.ts',
+  'src/reviewCapture/gitQuotedName.ts',
   'src/unknownKeys.ts',
   'tests/approvalRule.ts',
 ];

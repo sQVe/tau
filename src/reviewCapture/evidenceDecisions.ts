@@ -1,7 +1,8 @@
 import type { Freshness } from './freshness.js';
+import { readQuoted } from './gitQuotedName.js';
 import type { Gap, PinnedTarget } from './reviewCapture.js';
 
-export type EvidenceList = 'paths' | 'tests' | 'callers' | 'rules' | 'checks';
+export type EvidenceList = 'paths' | 'tests' | 'callers' | 'markers' | 'rules' | 'checks';
 
 export type NamedSection = 'rules' | 'checks';
 
@@ -32,6 +33,7 @@ export interface EvidenceLimits {
   callers: number;
   callerLineCharacters: number;
   namedPaths: number;
+  markers: number;
 }
 
 export interface BodyLimits {
@@ -42,6 +44,20 @@ export interface BodyLimits {
 export interface NumberedLine {
   line: number;
   text: string;
+}
+
+export interface MarkerLine {
+  path: string;
+  // The line number in the new file.
+  line: number;
+  marker: string;
+  text: string;
+}
+
+interface HunkState {
+  oldRemaining: number;
+  newRemaining: number;
+  newLine: number;
 }
 
 interface Bounded<T> {
@@ -73,6 +89,7 @@ export const defaultEvidenceLimits: EvidenceLimits = {
   callers: 200,
   callerLineCharacters: 500,
   namedPaths: 50,
+  markers: 200,
 };
 
 const scriptExtension = /\.[cm]?[jt]sx?$/;
@@ -380,4 +397,144 @@ export const freshnessGaps = ({
   }
 
   return gaps;
+};
+
+const skipMarkers = [
+  '.skip(',
+  '.only(',
+  '.todo(',
+  '@ts-ignore',
+  '@ts-expect-error',
+  'eslint-disable',
+  'oxlint-disable',
+];
+
+const markdownPath = /\.(?:md|mdx|markdown)$/i;
+
+const hunkHeader = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+
+const fileHeader = '+++ ';
+
+// The new-side path of a `+++ ` header line, without the prefix. Undefined for /dev/null.
+const headerPath = (text: string): string | undefined => {
+  const name = text.startsWith('"') ? readQuoted(text).name : (text.split('\t')[0] ?? '');
+
+  if (name === '/dev/null') {
+    return undefined;
+  }
+
+  return name.startsWith('b/') ? name.slice(2) : name;
+};
+
+const firstMarker = (text: string) => skipMarkers.find((marker) => text.includes(marker));
+
+const resetHunk = (hunk: HunkState) => {
+  hunk.oldRemaining = 0;
+  hunk.newRemaining = 0;
+};
+
+// Moves the hunk past one line. Returns the added line, 'consumed' for any other line of the
+// hunk, or 'outside' when the line is not part of a hunk.
+const consumeHunkLine = (
+  hunk: HunkState,
+  line: string,
+): { line: number; text: string } | 'consumed' | 'outside' => {
+  const kind = line[0] ?? ' ';
+
+  if (hunk.oldRemaining <= 0 && hunk.newRemaining <= 0) {
+    return 'outside';
+  }
+
+  if (kind === '+') {
+    const added = { line: hunk.newLine, text: line.slice(1) };
+
+    hunk.newRemaining -= 1;
+    hunk.newLine += 1;
+
+    return added;
+  }
+
+  if (kind === '-') {
+    hunk.oldRemaining -= 1;
+
+    return 'consumed';
+  }
+
+  if (kind === ' ') {
+    hunk.oldRemaining -= 1;
+    hunk.newRemaining -= 1;
+    hunk.newLine += 1;
+
+    return 'consumed';
+  }
+
+  return kind === '\\' ? 'consumed' : 'outside';
+};
+
+// Reads a line outside a hunk. Returns the new file path, possibly undefined, when the line sets
+// one, and nothing when the line leaves the path unchanged.
+const readHeaderLine = (
+  hunk: HunkState,
+  line: string,
+): { path: string | undefined } | undefined => {
+  const header = hunkHeader.exec(line);
+
+  if (header !== null) {
+    hunk.oldRemaining = Number(header[1] ?? 1);
+    hunk.newRemaining = Number(header[3] ?? 1);
+    hunk.newLine = Number(header[2]);
+
+    return undefined;
+  }
+
+  if (line.startsWith(fileHeader)) {
+    resetHunk(hunk);
+
+    return { path: headerPath(line.slice(fileHeader.length)) };
+  }
+
+  if (line.startsWith('diff --git ')) {
+    resetHunk(hunk);
+
+    return { path: undefined };
+  }
+
+  return undefined;
+};
+
+// Lists the added lines that hold a skip or suppression marker. The hunk header counts decide
+// where a hunk ends, so an added line that starts with `++` is never read as a file header.
+export const scanMarkers = (
+  diff: string,
+  limits: Pick<EvidenceLimits, 'markers' | 'callerLineCharacters'> = defaultEvidenceLimits,
+): Bounded<MarkerLine> => {
+  const found: MarkerLine[] = [];
+  const hunk: HunkState = { oldRemaining: 0, newRemaining: 0, newLine: 0 };
+  let path: string | undefined;
+
+  for (const line of diff.split('\n')) {
+    const consumed = consumeHunkLine(hunk, line);
+
+    if (consumed === 'outside') {
+      const header = readHeaderLine(hunk, line);
+
+      if (header !== undefined) {
+        ({ path } = header);
+      }
+    } else if (consumed !== 'consumed') {
+      const marker = firstMarker(consumed.text);
+
+      if (path !== undefined && marker !== undefined && !markdownPath.test(path)) {
+        found.push({ path, line: consumed.line, marker, text: consumed.text });
+      }
+    }
+  }
+
+  const bounded = boundList(found, limits.markers, { list: 'markers' });
+  const cuts = bounded.items.map((item) => callerText(item, limits.callerLineCharacters));
+
+  return {
+    items: bounded.items.map((item, index) => ({ ...item, text: cuts[index]?.text ?? item.text })),
+    gaps: [...cuts.flatMap((cut) => cut.gaps), ...bounded.gaps],
+  };
 };
