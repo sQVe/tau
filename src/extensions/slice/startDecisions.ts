@@ -63,6 +63,15 @@ const planRecorded = (
     };
   }
 
+  if (!fitsAgentRoute(child, facts.agentTeam)) {
+    return {
+      writes: [],
+      problems: [
+        `Ticket ${number} records ${identifier}, which is in ${describeRoute(child)}, not in team ${facts.agentTeam} with no project. Move it back or record another ticket.`,
+      ],
+    };
+  }
+
   return { writes: bodyWrites(number, child, ticket.body), problems: [] };
 };
 

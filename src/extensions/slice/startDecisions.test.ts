@@ -62,6 +62,24 @@ describe('decideStartPlan', () => {
       problems: ['Ticket 1 records AI-9, which is not a child of ME-700.'],
     },
     {
+      case: 'a recorded identifier whose child left the agent team',
+      tickets: [ticket({ identifier: 'AI-5', body: 'New.\n' })],
+      children: [child({ team: 'ME' })],
+      writes: [],
+      problems: [
+        'Ticket 1 records AI-5, which is in team ME and no project, not in team AI with no project. Move it back or record another ticket.',
+      ],
+    },
+    {
+      case: 'a recorded identifier whose child has a project',
+      tickets: [ticket({ identifier: 'AI-5' })],
+      children: [child({ project: 'Tau' })],
+      writes: [],
+      problems: [
+        'Ticket 1 records AI-5, which is in team AI and project Tau, not in team AI with no project. Move it back or record another ticket.',
+      ],
+    },
+    {
       case: 'a same-title child that fits, with the same body',
       tickets: [ticket()],
       children: [child()],
