@@ -159,7 +159,12 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
    review or open as draft. Run a new review when the user asks for one. After a new review, choose
    status again. For an existing ready PR with a gap, offer conversion to draft.
 
-7. Write the title and body. Save the body as `$prdir/body.md`.
+7. Write the title and body. Save the title as `$prdir/title.md` and the body as `$prdir/body.md`.
+   Publish with the title from `title.md`.
+   - Release notes: when step 2 wrote release notes, such as a `.changeset` file, also save their
+     text as `$prdir/release-notes.md`. `draft_review` reads only files under `.tau/`, so it cannot
+     review the committed file. When a review edits the copy, apply the edit to the committed
+     release notes file in a commit before you publish.
    - Template: for a new PR or a body not following the template, find `pull_request_template.md`
      case-insensitively in the root, `.github/`, `docs/`, or a `PULL_REQUEST_TEMPLATE/` directory.
      When several fit, use the repository's clear default and name it in the preview; ask when they
@@ -213,9 +218,13 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      the head SHA it anchors to. A change to the body, a text, or an anchor needs a new preview,
      unless the user's answer named that exact change and you apply it as stated. The anchor's side
      is `LEFT` for a deleted line and `RIGHT` otherwise; show it with the line.
-   - Ask for approval with these options in this order: Publish as ready, Publish as draft, Change
-     something, Don't publish. Recommend Publish as draft when step 6 found a gap, and Publish as
-     ready otherwise. Put the title and full body in the question-level `preview`.
+   - Ask for approval with these options in this order: Review in tuicr, Publish as ready, Publish
+     as draft, Change something, Don't publish. Recommend only Review in tuicr. Say in the question
+     that, after the review, the default status is draft when step 6 found a gap and ready
+     otherwise. Put the title and full body in the question-level `preview`.
+   - Review in tuicr: follow the review loop in step 5 of the [tracker skill](../tracker/SKILL.md)
+     with `title.md`, `body.md`, and `release-notes.md` when it exists. Apply the changes, preview
+     again, and ask again. A review is never approval, and a reviewed change needs a new preview.
 
 9. Publish.
    - Compare HEAD, local status, and commits to push with the preview; read the PR again. In a
