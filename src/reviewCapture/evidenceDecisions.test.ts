@@ -8,6 +8,7 @@ import {
   importsModule,
   isCaller,
   isSearchable,
+  keepAddedLines,
   namedPaths,
   numberedBody,
   parseGrepOutput,
@@ -467,4 +468,38 @@ it('cuts the list and a long line and reports both', () => {
     { kind: 'truncatedLine', path: 'a.ts', line: 3, kept: 10, total: onlyCall.length },
     { kind: 'truncatedList', list: 'markers', kept: 2, total: 3 },
   ]);
+});
+
+const wholeFileSection = (lines: string[]) =>
+  [
+    'diff --git a/a.ts b/a.ts',
+    'new file mode 100644',
+    '--- /dev/null',
+    '+++ b/a.ts',
+    `@@ -0,0 +1,${lines.length} @@`,
+    ...lines.map((line) => `+${line}`),
+    '',
+  ].join('\n');
+
+it.each([
+  { name: 'same text', base: 'a\nb\n', lines: ['a', 'b'], added: [] },
+  { name: 'one new line', base: 'a\nb\n', lines: ['a', 'x', 'b'], added: [2] },
+  { name: 'repeated line past its base count', base: 'a\n', lines: ['a', 'a'], added: [2] },
+  { name: 'moved line', base: 'a\nb\n', lines: ['b', 'a'], added: [] },
+  { name: 'empty base', base: '', lines: ['a'], added: [1] },
+])('keeps only added lines for $name', ({ base, lines, added }) => {
+  const result = keepAddedLines(wholeFileSection(lines), base);
+  const kept = result.split('\n').filter((line) => line.startsWith('+') && !line.startsWith('+++'));
+
+  expect(kept).toEqual(added.map((number) => `+${lines[number - 1] ?? ''}`));
+
+  expect(scanMarkers(result.replaceAll('x', onlyCall)).items.map((item) => item.line)).toEqual(
+    added.filter((number) => lines[number - 1] === 'x'),
+  );
+});
+
+it('leaves a section without a whole-file hunk as it is', () => {
+  const binary = 'diff --git a/a.bin b/a.bin\nBinary files /dev/null and b/a.bin differ\n';
+
+  expect(keepAddedLines(binary, 'a\n')).toBe(binary);
 });

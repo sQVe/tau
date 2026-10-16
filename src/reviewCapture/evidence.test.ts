@@ -598,3 +598,55 @@ it('lists added skip markers in code files but not in Markdown files', async () 
     { path: 'src/math.test.ts', line: 4, marker: '.only(', text: marked },
   ]);
 });
+
+it('lists a marker a files target adds once, and none from unchanged tracked files', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const onlySuffix = '.only';
+  const marked = `it${onlySuffix}('works', () => {});`;
+
+  const base = await commit(
+    root,
+    {
+      'unchanged.test.ts': `${marked}\n`,
+      'changed.test.ts': 'add(1, 2);\n',
+      'removed.test.ts': `${marked}\n`,
+      'edited.test.ts': `${marked}\nadd(1, 2);\n`,
+      'dir/inner.ts': 'export {};\n',
+    },
+    'first',
+  );
+
+  await writeFiles(root, {
+    'changed.test.ts': `add(1, 2);\n${marked}\n`,
+    'fresh.test.ts': `${marked}\n`,
+    staged: `const a = 1;\nconst b = 2;\nconst c = 3;\n${marked}\n`,
+  });
+
+  await rm(join(root, 'dir'), { recursive: true });
+  await writeFiles(root, { dir: `${marked}\n` });
+  await git(root, ['add', 'staged']);
+
+  await writeFiles(root, { 'edited.test.ts': `${marked}\nadd(1, 2);\n${marked}\n` });
+  await git(root, ['rm', '--cached', '--quiet', 'removed.test.ts', 'edited.test.ts']);
+
+  const paths = [
+    'unchanged.test.ts',
+    'changed.test.ts',
+    'fresh.test.ts',
+    'removed.test.ts',
+    'edited.test.ts',
+    'dir',
+    'staged',
+  ];
+
+  const directory = await savedCapture(root, { kind: 'files', paths, base });
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.markers.map(({ path, line }) => ({ path, line }))).toEqual([
+    { path: 'changed.test.ts', line: 2 },
+    { path: 'staged', line: 4 },
+    { path: 'dir', line: 1 },
+    { path: 'edited.test.ts', line: 3 },
+    { path: 'fresh.test.ts', line: 1 },
+  ]);
+});

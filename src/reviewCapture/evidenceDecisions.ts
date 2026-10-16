@@ -538,3 +538,48 @@ export const scanMarkers = (
     gaps: [...cuts.flatMap((cut) => cut.gaps), ...bounded.gaps],
   };
 };
+
+const wholeFileHunk = /^@@ -0,0 \+1(?:,(\d+))? @@/;
+
+// Rewrites the whole-file diff of a file the base already holds so that only the lines the base
+// text lacks stay added. A line counts as added when it occurs more often than in the base text.
+// The other lines become context lines, so the new-side line numbers stay the same.
+export const keepAddedLines = (section: string, baseText: string): string => {
+  const lines = section.split('\n');
+  const start = lines.findIndex((line) => wholeFileHunk.test(line));
+
+  if (start === -1) {
+    return section;
+  }
+
+  const remaining = new Map<string, number>();
+
+  for (const line of baseText.replace(/\n$/, '').split('\n')) {
+    remaining.set(line, (remaining.get(line) ?? 0) + 1);
+  }
+
+  const count = Number(wholeFileHunk.exec(lines[start] ?? '')?.[1] ?? 1);
+
+  const body = lines.slice(start + 1, start + 1 + count).map((line) => {
+    const text = line.slice(1);
+    const left = remaining.get(text) ?? 0;
+
+    if (left === 0) {
+      return line;
+    }
+
+    remaining.set(text, left - 1);
+
+    return ` ${text}`;
+  });
+
+  const contextCount = body.filter((line) => line.startsWith(' ')).length;
+  const oldStart = contextCount === 0 ? 0 : 1;
+
+  return [
+    ...lines.slice(0, start),
+    `@@ -${oldStart},${contextCount} +1,${count} @@`,
+    ...body,
+    ...lines.slice(start + 1 + count),
+  ].join('\n');
+};

@@ -375,7 +375,7 @@ export const readReviewEvidence = async (
   const paths = boundList(captured.paths, limits.paths, { list: 'paths' });
   const revision = sourceRevision(record.target);
   const tests = await readTests(root, revision, paths.items, limits);
-  const markers = scanMarkers(captured.bytes.toString('utf8'), limits);
+  const markers = scanMarkers((captured.addedBytes ?? captured.bytes).toString('utf8'), limits);
   const callers = await findCallers(root, revision, paths.items, limits);
   const named = await readNamedPaths(root, revision, directory, limits);
 
