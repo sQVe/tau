@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { basename, dirname, join, posix, relative } from 'node:path';
+import type { Dirent } from 'node:fs';
+import { basename, dirname, join, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseSync, Visitor } from 'oxc-parser';
@@ -12,9 +13,43 @@ import config, { testEnvironment, testManagedEnvironment } from '../vite.config.
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
-const sourceFiles = readdirSync(join(root, 'src'), { recursive: true, encoding: 'utf8' })
-  .filter((path) => path.endsWith('.ts'))
-  .map((path) => join('src', path));
+// Local state, such as review captures under .pi/, can hold test files that no project runs.
+const ignoredDirectories = new Set(['node_modules', '.git', '.tau', '.pi', 'dist', 'coverage']);
+
+// tests/lint.test.ts writes these probe folders under src/ while other test files run.
+const isLintProbe = (path: string) =>
+  path.split('/').some((segment) => segment.startsWith('tau-lint-'));
+
+// Skips ignored directories before descending, so state that appears and vanishes there, such as
+// .pi/format-probe-* and the lint probe folders, is never read. A directory removed during the
+// walk counts as empty.
+const walkRepository = (directory: string): string[] => {
+  let entries: Dirent[];
+
+  try {
+    entries = readdirSync(join(root, directory), { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
+    }
+
+    throw error;
+  }
+
+  return entries.flatMap((entry) => {
+    const path = directory === '' ? entry.name : `${directory}/${entry.name}`;
+
+    if (ignoredDirectories.has(entry.name) || isLintProbe(path)) {
+      return [];
+    }
+
+    return entry.isDirectory() ? walkRepository(path) : [path];
+  });
+};
+
+const repositoryFiles = () => walkRepository('');
+
+const sourceFiles = walkRepository('src').filter((path) => path.endsWith('.ts'));
 
 const isTest = (path: string) => path.endsWith('.test.ts');
 // A relative path through fixtures/, or the bare segment passed to join(); globs and prose do not load.
@@ -37,6 +72,7 @@ const pureModules = [
   'src/extensions/compaction/reminder.ts',
   'src/extensions/draftReview/reviewDecisions.ts',
   'src/extensions/fullCheck/groupMembers.ts',
+  'src/extensions/fullCheck/idleDecision.ts',
   'src/extensions/fullCheck/lockHolderDecision.ts',
   'src/extensions/fullCheck/reuseDecision.ts',
   'src/extensions/pr/evidenceDecisions.ts',
@@ -400,15 +436,8 @@ it('refuses reads and effects in a pure module but allows types and other pure m
   );
 });
 
-// tests/lint.test.ts writes these probe folders under src/ while other test files run.
-const isLintProbe = (path: string) =>
-  path.split('/').some((segment) => segment.startsWith('tau-lint-'));
-
 it('keeps src/ free of index files, one-file folders, and folder modules without an entry', () => {
-  const paths = readdirSync(join(root, 'src'), { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile())
-    .map((entry) => posix.join(relative(root, entry.parentPath).replaceAll('\\', '/'), entry.name))
-    .filter((path) => !isLintProbe(path));
+  const paths = walkRepository('src');
 
   expect(layoutProblems(paths), layoutAdvice).toEqual([]);
 });
@@ -460,15 +489,6 @@ it('refuses index files, one-file folders, and missing entries but allows flat f
     'src/extensions/tdd/: no entry file tdd.ts',
   ]);
 });
-
-// Local state, such as review captures under .pi/, can hold test files that no project runs.
-const ignoredDirectories = new Set(['node_modules', '.git', '.tau', '.pi', 'dist', 'coverage']);
-
-const repositoryFiles = () =>
-  readdirSync(root, { recursive: true, encoding: 'utf8' })
-    .map((path) => path.replaceAll('\\', '/'))
-    .filter((path) => path.split('/').every((part) => !ignoredDirectories.has(part)))
-    .filter((path) => !isLintProbe(path));
 
 it('puts every test file in exactly one Vitest project', () => {
   const testFiles = repositoryFiles().filter((path) => path.endsWith('.test.ts'));

@@ -148,3 +148,71 @@ it('returns only after a background process in the command group has gone', asyn
   expect(result).toMatchObject({ passed: true, exitCode: 0 });
   expect(processIsAlive(backgroundPid)).toBe(false);
 });
+
+it('stops a command that prints once and then goes silent, and reports the hang', async () => {
+  const root = await createTemporaryRepository(onTestFinished, 'tau-full-check-run-');
+  const script = "console.log('summary'); setInterval(() => {}, 1000)";
+  const started = Date.now();
+
+  const result = await runCheck(
+    root,
+    [process.execPath, '-e', script],
+    undefined,
+    async () => {},
+    300,
+  );
+
+  expect(result).toMatchObject({ passed: false, idle: true });
+  expect(result.tail).toContain('summary');
+  expect(Date.now() - started).toBeLessThan(4000);
+});
+
+it('does not stop a command that keeps writing output', async () => {
+  const root = await createTemporaryRepository(onTestFinished, 'tau-full-check-run-');
+
+  const script =
+    "let count = 0; const timer = setInterval(() => { console.log('tick'); if (++count === 12) { clearInterval(timer); } }, 50)";
+
+  const result = await runCheck(
+    root,
+    [process.execPath, '-e', script],
+    undefined,
+    async () => {},
+    400,
+  );
+
+  expect(result).toMatchObject({ passed: true, idle: false });
+});
+
+it('sends no signal to the group after an idle stop returns', async () => {
+  const root = await createTemporaryRepository(onTestFinished, 'tau-full-check-run-');
+  const realKill = process.kill.bind(process);
+  const signalled: unknown[][] = [];
+
+  vi.spyOn(process, 'kill').mockImplementation((...killArguments) => {
+    signalled.push(killArguments);
+
+    return realKill(...killArguments);
+  });
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  const result = await runCheck(
+    root,
+    [process.execPath, '-e', 'setInterval(() => {}, 1000)'],
+    undefined,
+    async () => {},
+    300,
+  );
+
+  signalled.length = 0;
+  vi.advanceTimersByTime(60_000);
+
+  expect(result.idle).toBe(true);
+  expect(signalled).toEqual([]);
+});
