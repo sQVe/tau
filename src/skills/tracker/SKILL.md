@@ -117,21 +117,34 @@ writes a tool makes, such as `slice` `apply`.
    - Save the body in the calling skill's draft directory. Otherwise call `tracker_draft` with
      action `prepare` and the ticket identifier in lower case when the ticket exists, which finds
      the draft even when it was made under a slug, or a slug of the title. Save the body there as
-     `ticket.md`.
+     `ticket.md` and the title as `title.md`, and write the title from `title.md`.
    - Keep a `draft.json` next to the body with the Linear identifier once it exists. Write it at
      once after each create, before any other step. When `prepare` returned no `draft`, create it as
      `{"version": 1, "identifier": "ME-600", "reviewCommentId": null}`. Otherwise keep every field
      of the returned `draft` and change only `identifier`, so a saved `reviewCommentId` stays. Keep
-     the type, title, route, parent, and labels in the preview, not in a saved file.
+     the type, route, parent, and labels in the preview, not in a saved file.
    - When the returned `draft` records an identifier, read the ticket with
      `linear issue view <id> --json --no-pager`. The write is then an update of that ticket, never a
      new create. The preview names each field that changes from the saved copy, including edits made
      in Linear that the draft would drop.
 
-5. Preview only the writes that need approval under [Hard rules](#hard-rules), unless the calling
-   skill's preview already shows them: each ticket with its type, title, team, project, labels, and
-   parent, and each relation and status change. Approve with `ask_user_question`. Skip this step for
-   all other writes.
+5. Offer a review of the draft files, then preview.
+   - Review stop: before a new ticket or a title or body edit on any ticket, except an agent ticket,
+     ask with `ask_user_question`: "Review in tuicr" (recommended) or write as drafted. Comments,
+     relations, and status changes get no stop. A write that needs approval under
+     [Hard rules](#hard-rules) gets "Review in tuicr" as the first option of its preview dialog
+     instead, before the approve options. A dialog that already exists in a calling skill gets the
+     same option.
+   - Review loop: when the user picks "Review in tuicr", call `draft_review` with action `review` on
+     the draft files. Apply each comment. An edit with status `applied` is already in the draft;
+     merge an edit with status `conflict` by hand. For status `manual`, tell the user the command it
+     returned, and call `collect` with its directory once they say they are done. Then ask again,
+     showing the revised draft, and review again until the user writes as drafted or approves. A
+     review is never approval: the approval rules in Hard rules do not change.
+   - Preview only the writes that need approval under [Hard rules](#hard-rules), unless the calling
+     skill's preview already shows them: each ticket with its type, title, team, project, labels,
+     and parent, and each relation and status change. Approve with `ask_user_question`. Skip this
+     step for all other writes.
 
 6. Write with these commands, in the previewed or planned order. Write each `'` in every
    single-quoted value, such as a title, search term, project, or label, as `'\''`, so the shell
