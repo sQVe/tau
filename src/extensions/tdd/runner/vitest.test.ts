@@ -10,7 +10,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
@@ -105,6 +105,35 @@ describe('runTests', () => {
 
     await expect(run).rejects.toThrow('spawn exploded');
     expect(await readdir(root)).toEqual([expect.stringMatching(/^run-/)]);
+  });
+
+  it('removes its diagnostics directory when the runner throws', async () => {
+    const root = join(process.env.PI_CODING_AGENT_DIR ?? '', 'test-runs');
+
+    const run = runTestsWithDiagnostics(
+      { scope: 'full', verificationArgv, cwd: '/repo' },
+      makeDeps({
+        spawn: () => {
+          throw new Error('spawn exploded');
+        },
+      }),
+    );
+
+    await expect(run).rejects.toThrow('spawn exploded');
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  it('records a duration no longer than the run took', async () => {
+    const started = performance.now();
+
+    const result = await runTests(
+      { scope: 'full', verificationArgv, cwd: '/repo' },
+      makeDeps({ spawn: fakeSpawn({ report: { numTotalTests: 1, numPassedTests: 1 } }) }),
+    );
+
+    const elapsed = performance.now() - started;
+
+    expect(result.diagnostics?.durationMs).toBeLessThanOrEqual(Math.ceil(elapsed));
   });
 
   it.for(['4.1.11', '5.0.1'])(
@@ -798,6 +827,36 @@ describe('runTests', () => {
     });
   });
 
+  it('returns no-tests-collected when every test in a full run was skipped', async () => {
+    const deps = makeDeps({
+      spawn: fakeSpawn({
+        report: {
+          numTotalTests: 2,
+          numPassedTests: 0,
+          numFailedTests: 0,
+          testResults: [
+            {
+              name: '/repo/a.test.ts',
+              status: 'passed',
+              assertionResults: [
+                { fullName: 'skips', status: 'skipped' },
+                { fullName: 'waits', status: 'todo' },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+
+    expect(await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps)).toMatchObject({
+      kind: 'no-tests-collected',
+      tests: [
+        { fullname: 'skips', status: 'skipped' },
+        { fullname: 'waits', status: 'todo' },
+      ],
+    });
+  });
+
   it('rejects a nonzero exit even when every reported test passed', async () => {
     const deps = makeDeps({
       spawn: fakeSpawn({
@@ -1053,7 +1112,7 @@ describe('runTests', () => {
 
     const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
-    expect(result.kind).toBe('compile-error');
+    expect(result).toMatchObject({ kind: 'compile-error', tests: [] });
   });
 
   it('returns no-tests-collected when the report has zero tests and zero files', async () => {
@@ -1204,8 +1263,19 @@ describe('runTests', () => {
 
     const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
-    expect(result.kind).toBe('fail');
+    expect(result).toMatchObject({ kind: 'fail', tests: [], truncated: false });
   });
+
+  it.for([5, 'report', null])(
+    'returns fail (never pass) when the report file holds the JSON value %j',
+    async (report) => {
+      const deps = makeDeps({ spawn: fakeSpawn({ report, code: 0 }) });
+
+      const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
+
+      expect(result).toMatchObject({ kind: 'fail', tests: [] });
+    },
+  );
 
   it('reports a file-level hook error even when every assertion passed', async () => {
     const report = {
@@ -1232,6 +1302,60 @@ describe('runTests', () => {
       tests: [{ file: '/repo/hook.test.ts', fullname: 'passes', status: 'passed' }],
       truncated: false,
     });
+  });
+
+  it('reports a failed file without a message when none of its assertions failed', async () => {
+    const report = {
+      numTotalTests: 1,
+      numFailedTests: 0,
+      numPassedTests: 1,
+      testResults: [
+        {
+          name: '/repo/teardown.test.ts',
+          status: 'failed',
+          assertionResults: [{ fullName: 'passes', status: 'passed' }],
+        },
+      ],
+    };
+
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
+
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
+
+    expect(result).toMatchObject({
+      kind: 'fail',
+      failures: [{ file: '/repo/teardown.test.ts', fullname: '<file>' }],
+    });
+  });
+
+  it('reports only failed files and assertions in a failing run', async () => {
+    const report = {
+      numTotalTests: 2,
+      numFailedTests: 1,
+      numPassedTests: 1,
+      testResults: [
+        {
+          name: '/repo/passing.test.ts',
+          status: 'passed',
+          assertionResults: [{ fullName: 'passes', status: 'passed' }],
+        },
+        {
+          name: '/repo/failing.test.ts',
+          status: 'failed',
+          assertionResults: [
+            { fullName: 'fails', status: 'failed', failureMessages: ['expected 1 to be 2'] },
+          ],
+        },
+      ],
+    };
+
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
+
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
+
+    expect(result).toHaveProperty('failures', [
+      { file: '/repo/failing.test.ts', fullname: 'fails', message: 'expected 1 to be 2' },
+    ]);
   });
 
   it('reports a file-level hook error alongside a failing assertion in the same file', async () => {
@@ -1475,6 +1599,43 @@ describe('runTests', () => {
         file: '/repo/src/a.test.ts',
         fullname: 'a broken',
         message: 'AssertionError: expected 1 to be 2 (src/a.test.ts:3)',
+      },
+    ]);
+  });
+
+  it('takes the worktree frame from stack lines only, with or without parentheses', async () => {
+    const report = {
+      numTotalTests: 1,
+      numFailedTests: 1,
+      testResults: [
+        {
+          name: '/repo/src/a.test.ts',
+          status: 'failed',
+          assertionResults: [
+            {
+              fullName: 'a broken',
+              status: 'failed',
+              failureMessages: [
+                [
+                  'Error: cannot read /repo/src/config.ts:12:5',
+                  '    at /repo/src/a.test.ts:42:15',
+                ].join('\n'),
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 1 }) });
+
+    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
+
+    expect(result).toHaveProperty('failures', [
+      {
+        file: '/repo/src/a.test.ts',
+        fullname: 'a broken',
+        message: 'Error: cannot read /repo/src/config.ts:12:5 (src/a.test.ts:42)',
       },
     ]);
   });
@@ -1759,6 +1920,54 @@ describe('nodeExecutable', () => {
 
       expect(nodeExecutable('/usr/bin/pi')).toBe(executable);
       expect(nodeExecutable('/opt/pi-coding-agent/pi')).toBe(executable);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'skips a node file on PATH that is not executable',
+    async () => {
+      const directory = await mkdtemp(join(tmpdir(), 'tau-node-'));
+
+      onTestFinished(async () => {
+        vi.unstubAllEnvs();
+
+        await rm(directory, { recursive: true, force: true });
+      });
+
+      const plain = join(directory, 'plain');
+      const runnable = join(directory, 'runnable');
+
+      await mkdir(plain);
+      await mkdir(runnable);
+      await writeFile(join(plain, 'node'), '');
+      await writeFile(join(runnable, 'node'), '');
+      await chmod(join(runnable, 'node'), 0o755);
+
+      vi.stubEnv('PATH', [plain, runnable].join(delimiter));
+
+      expect(nodeExecutable('/usr/bin/pi')).toBe(join(runnable, 'node'));
+    },
+  );
+
+  it.skipIf(process.platform === 'win32').for(['/opt/bin/mynode', '/opt/bin/node-agent'])(
+    'looks up node on PATH for the agent executable %s',
+    async (executablePath) => {
+      const directory = await mkdtemp(join(tmpdir(), 'tau-node-'));
+
+      onTestFinished(async () => {
+        vi.unstubAllEnvs();
+
+        await rm(directory, { recursive: true, force: true });
+      });
+
+      const executable = join(directory, 'node');
+
+      await writeFile(executable, '');
+      await chmod(executable, 0o755);
+
+      vi.stubEnv('PATH', directory);
+
+      expect(nodeExecutable(executablePath)).toBe(executable);
     },
   );
 
