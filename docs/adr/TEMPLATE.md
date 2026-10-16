@@ -23,7 +23,10 @@ so Markdown keeps the line breaks:
 "because" links between facts, so a reader sees why each one matters. Leave out the investigation
 story, the history of the old mechanism, ticket IDs, and implementation steps. Leave out
 measurements the decision does not rest on, and summarize one it does rest on in one sentence.
-Leave out prices and exact versions or byte counts that go stale. -->
+Leave out prices and exact versions or byte counts that go stale.
+
+Before you add a check or gate, name the observed agent failure and its evidence, the smallest
+defense that stops it, and the cost of false alarms. -->
 
 ## Decision
 
