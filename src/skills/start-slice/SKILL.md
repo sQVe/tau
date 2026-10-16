@@ -136,9 +136,9 @@ or Git. Workers then carry out the agent tickets.
      criterion has none, change the draft until every criterion is covered.
    - Judge each `## Acceptance` item in the agent ticket body files. An item passes when it names a
      test, a command, or a manual observation, with its expected result. When the slice or the code
-     from step 5 says what to check, rewrite the item. Before step 8, list each item that still
+     from step 5 says what to check, rewrite the item. Before step 9, list each item that still
      names no check, with its body file, and tell the user the worker gets it as a vague task. When
-     every item passes, say nothing about it. The list never stops step 8 or a worker launch.
+     every item passes, say nothing about it. The list never stops step 9 or a worker launch.
 
 8. Check that each new agent ticket is ready for a worker who knows only the ticket. A ticket is new
    when its row in `start.md` has no identifier. In one turn, launch one fresh `scout` per new
@@ -196,7 +196,7 @@ or Git. Workers then carry out the agent tickets.
 ## Changes after the start
 
 - You may add an agent ticket inside the slice's outcome. Write its body file and its row in
-  `start.md`, and create it as in step 9. Report it with its identifier, URL, and one line of
-  reason.
+  `start.md`, judge its acceptance items as step 7 says, and create it as in step 9. Report it with
+  its identifier, URL, and one line of reason.
 - Work beyond the slice's outcome is a new slice. Re-plan it with the
   [slice skill](../slice/SKILL.md).
