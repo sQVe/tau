@@ -113,11 +113,38 @@ const applyWrite = async (runtime: Runtime, progress: StartProgress, write: Star
   });
 };
 
-const failedApply = (descriptions: readonly string[], index: number, error: unknown) =>
+const failedApply = (
+  applied: readonly string[],
+  notApplied: readonly string[],
+  index: number,
+  error: unknown,
+) =>
   new Error(
-    `Start stopped at step ${index + 1}: ${errorMessage(error)}\nApplied:\n${bulletOrNone(descriptions.slice(0, index))}\nNot applied:\n${bulletList(descriptions.slice(index))}`,
+    `Start stopped at step ${index + 1}: ${errorMessage(error)}\nApplied:\n${bulletOrNone(applied)}\nNot applied:\n${bulletList(notApplied)}`,
     { cause: error },
   );
+
+// A create that reached Linear stays applied even when saving its identifier failed.
+const failedWrite = (
+  progress: StartProgress,
+  descriptions: readonly string[],
+  index: number,
+  write: StartWrite,
+  error: unknown,
+) => {
+  const created = write.kind === 'createTicket' && progress.created.has(write.number);
+
+  if (!created) {
+    return failedApply(descriptions.slice(0, index), descriptions.slice(index), index, error);
+  }
+
+  const notApplied = [
+    `Save the identifier of ticket ${write.number} in start.json`,
+    ...descriptions.slice(index + 1),
+  ];
+
+  return failedApply(descriptions.slice(0, index + 1), notApplied, index, error);
+};
 
 const runWrites = async (
   runtime: Runtime,
@@ -128,14 +155,19 @@ const runWrites = async (
 
   for (const [index, write] of writes.entries()) {
     if (runtime.signal?.aborted === true) {
-      throw failedApply(descriptions, index, new Error('The call was aborted.'));
+      throw failedApply(
+        descriptions.slice(0, index),
+        descriptions.slice(index),
+        index,
+        new Error('The call was aborted.'),
+      );
     }
 
     try {
       // oxlint-disable-next-line no-await-in-loop -- Writes run in work order.
       await applyWrite(runtime, progress, write);
     } catch (error) {
-      throw failedApply(descriptions, index, error);
+      throw failedWrite(progress, descriptions, index, write, error);
     }
   }
 

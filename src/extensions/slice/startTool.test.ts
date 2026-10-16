@@ -1,4 +1,14 @@
-import { copyFile, cp, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  copyFile,
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -278,6 +288,46 @@ describe('start_slice', () => {
 
     expect(fake.writes()).toEqual([]);
     expect(await saved()).toEqual(before);
+  });
+
+  it('lists a created ticket as applied when saving its identifier fails', async () => {
+    const fake = createLinearFake();
+
+    addSlice(fake);
+    addAgentChild(fake, { identifier: 'AI-12', title: 'Report the start', description: 'Two.\n' });
+
+    const { directory, call } = await setUp(fake);
+    const { stateToken } = await call('read');
+    const recordFile = join(directory, 'start.json');
+
+    const failingSave: Fake = {
+      ...fake,
+      exec: async (command, commandArguments, options) => {
+        const result = await fake.exec(command, commandArguments, options);
+
+        if (commandArguments.some((argument) => argument.includes('issueCreate'))) {
+          await rm(recordFile);
+          await mkdir(recordFile);
+        }
+
+        return result;
+      },
+    };
+
+    const failure = await call('apply', stateToken, failingSave).catch(
+      (error: unknown) => error as Error,
+    );
+
+    expect(failure).toBeInstanceOf(Error);
+
+    const [, applied = '', notApplied = ''] = (failure as Error).message.split(
+      /\nApplied:\n|\nNot applied:\n/u,
+    );
+
+    expect(applied).toContain('Create ticket 1');
+    expect(notApplied).not.toContain('Create ticket 1');
+    expect(notApplied).toContain('Save the identifier of ticket 1');
+    expect(children(fake)).toHaveLength(2);
   });
 
   it('keeps the first identifier after a failed second create, and the retry creates only the second', async () => {
