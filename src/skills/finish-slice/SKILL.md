@@ -32,7 +32,7 @@ for the workspace.
   - met: a passing test, a command result, or demonstrated behavior shows it.
   - deferred: the check can run only after deployment, as the pr skill defines it.
   - not met: the evidence shows the item fails.
-  - not run: any other check that did not run. It makes the PR a draft.
+  - not run: any other check that did not run. It makes draft the suggested PR status.
 
 ## Procedure
 
@@ -74,5 +74,6 @@ for the workspace.
    comment when one exists, and never add a second one. After adding a new comment, record its ID in
    `finish.md` at once.
 
-9. Report the verdict counts, the comment link, and whether the PR is ready, a draft, or blocked.
-   When you updated an earlier comment, name each edit made in Linear that the new audit dropped.
+9. Report the verdict counts, the comment link, and whether the suggested PR status is ready or
+   draft, or the PR is blocked. When you updated an earlier comment, name each edit made in Linear
+   that the new audit dropped.

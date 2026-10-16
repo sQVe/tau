@@ -17,8 +17,8 @@ Use this skill for the branch in this session's worktree.
 
 ## Goal
 
-Publish a PR that matches the approved preview and the pushed commits. Mark it ready only when step
-6 finds no gap.
+Publish a PR that matches the approved preview and the pushed commits, with the draft status the
+user chose. Step 6 suggests a status; the user may publish as ready while gaps are open.
 
 ## Hard rules
 
@@ -139,7 +139,8 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
    - When the QA worker asks a blocking question, pass it to the user.
    - Record what QA tested and found for step 6 and the preview.
 
-6. Choose draft status. Any gap means draft. A gap is one of:
+6. Suggest a draft status. Any gap makes draft the suggested status; otherwise suggest ready. A gap
+   is one of:
    - A required check that failed or did not run. Only checks that can run solely after deployment
      are deferred instead of gaps.
    - An audit item with the verdict not run. It closes when it names a check that step 5 ran and
@@ -156,8 +157,8 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
    Areas a worker read shallowly are session-report notes, not gaps. Accept checked fixes without
    asking, and list them in the session report. If other post-review commits make review coverage
    the only gap, such as a fix that changes behavior beyond its finding, ask once: run a new fast
-   review or open as draft. Run a new review when the user asks for one. After a new review, choose
-   status again. For an existing ready PR with a gap, offer conversion to draft.
+   review or continue with the gap. Run a new review when the user asks for one. After a new review,
+   suggest a status again.
 
 7. Write the title and body. Save the title as `$prdir/title.md` and the body as `$prdir/body.md`.
    Publish with the title from `title.md`.
@@ -218,10 +219,15 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      the head SHA it anchors to. A change to the body, a text, or an anchor needs a new preview,
      unless the user's answer named that exact change and you apply it as stated. The anchor's side
      is `LEFT` for a deleted line and `RIGHT` otherwise; show it with the line.
-   - Ask for approval with these options in this order: Review in tuicr, Publish as <status>, Change
-     something, Don't publish. The status is draft when step 6 found a gap and ready otherwise; the
-     user changes it through Change something. Recommend Review in tuicr. Put the title and full
-     body in the question-level `preview`.
+   - Ask for approval with these options in this order: Review in tuicr, Publish as draft, Publish
+     as ready, Change something. Recommend Review in tuicr. Put the title and full body in the
+     question-level `preview`.
+   - In the publish option descriptions, mark the status step 6 suggests. For a draft suggestion,
+     give the number of gaps and point to the session report, which lists them, so the user sees
+     what ready leaves open. For an existing PR, say whether each option keeps or changes its
+     current draft status. Keep each description within the tool's length limit.
+   - Publishing as ready with open gaps keeps their `[ ]` verification lines in the body.
+   - Closing the dialog publishes nothing. Report that and stop.
    - Review in tuicr: follow the review loop in step 5 of the [tracker skill](../tracker/SKILL.md)
      with `title.md`, `body.md`, and `release-notes.md` when it exists. Apply the changes, preview
      again, and ask again. A review is never approval, and a reviewed change needs a new preview.
