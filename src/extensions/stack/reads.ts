@@ -38,7 +38,6 @@ const stackViewSchema = Type.Object({
   branches: Type.Array(
     Type.Object({
       name: Type.String(),
-      head: Type.String(),
       base: Type.String(),
       isCurrent: Type.Boolean(),
       isMerged: Type.Boolean(),

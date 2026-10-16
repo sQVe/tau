@@ -13,7 +13,6 @@ const containing = (text: string): unknown => expect.stringContaining(text);
 
 const layer = (name: string, flags: Record<string, unknown> = {}) => ({
   name,
-  head: 'a'.repeat(40),
   base: 'b'.repeat(40),
   isCurrent: false,
   isMerged: false,

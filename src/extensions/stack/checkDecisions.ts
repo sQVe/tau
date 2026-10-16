@@ -7,7 +7,6 @@ import type { CommandOutput, Read } from './readResult.js';
 
 export interface StackLayer {
   name: string;
-  head: string;
   base: string;
   isCurrent: boolean;
   isMerged: boolean;

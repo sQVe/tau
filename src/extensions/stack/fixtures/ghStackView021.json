@@ -1,0 +1,22 @@
+{
+  "trunk": "main",
+  "currentBranch": "feature",
+  "branches": [
+    {
+      "name": "parent",
+      "base": "2f9d684be04dfe79006aed16ca3a2ba92d701015",
+      "isCurrent": false,
+      "isMerged": false,
+      "isQueued": false,
+      "needsRebase": true
+    },
+    {
+      "name": "feature",
+      "base": "2f9d684be04dfe79006aed16ca3a2ba92d701015",
+      "isCurrent": true,
+      "isMerged": false,
+      "isQueued": false,
+      "needsRebase": false
+    }
+  ]
+}

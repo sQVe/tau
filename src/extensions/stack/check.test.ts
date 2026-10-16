@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -37,7 +37,6 @@ const setUp = async () => {
 
 const layer = (name: string, flags: Record<string, unknown> = {}) => ({
   name,
-  head: 'a'.repeat(40),
   base: 'b'.repeat(40),
   isCurrent: name === 'feature',
   isMerged: false,
@@ -83,6 +82,22 @@ it('decides tracked from gh stack view and reads only the pull requests based on
 
   expect(stackViewCalls(fake.calls)).toHaveLength(1);
   expect(fake.calls.filter((call) => call.startsWith('pr list'))).toHaveLength(1);
+});
+
+it('decides tracked from the gh stack 0.2.1 view output, which has no head and no pr', async () => {
+  const { fake, run } = await setUp();
+  const stdout = await readFile(new URL('./fixtures/ghStackView021.json', import.meta.url), 'utf8');
+
+  fake.stackView = { code: 0, stdout, stderr: '' };
+
+  const details = await run({ action: 'check' });
+
+  expect(details).toMatchObject({
+    result: 'tracked',
+    branch: 'feature',
+    parent: 'parent',
+    layers: [{ name: 'parent' }, { name: 'feature' }],
+  });
 });
 
 it.each([
