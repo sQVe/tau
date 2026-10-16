@@ -62,10 +62,10 @@ export type Plan = Static<typeof planSchema>;
 const savedVersion = (value: unknown) =>
   typeof value === 'object' && value !== null && 'version' in value ? value.version : undefined;
 
-const isNewerVersion = (value: unknown) => {
+export const isNewerVersion = (value: unknown, supported: number): boolean => {
   const version = savedVersion(value);
 
-  return typeof version === 'number' && version > currentVersion;
+  return typeof version === 'number' && version > supported;
 };
 
 // Apply writes one Linear issue per identifier, so a repeated identifier would write one issue twice.
@@ -117,7 +117,7 @@ const parsePlan = (path: string, text: string): Plan => {
     throw new Error(`Malformed slice draft ${path}: not JSON.`, { cause: error });
   }
 
-  if (isNewerVersion(value)) {
+  if (isNewerVersion(value, currentVersion)) {
     throw new Error(
       `Slice draft ${path} has a newer format than this Tau reads. Update Tau, then restart the session.`,
     );
@@ -132,7 +132,7 @@ const parsePlan = (path: string, text: string): Plan => {
   return value;
 };
 
-const readOptionalFile = async (path: string) => {
+export const readOptionalFile = async (path: string): Promise<string | undefined> => {
   try {
     return await readFile(path, 'utf8');
   } catch (error) {
@@ -144,7 +144,7 @@ const readOptionalFile = async (path: string) => {
   }
 };
 
-const readBody = async (directory: string, file: string) => {
+export const readBody = async (directory: string, file: string): Promise<string> => {
   const body = await readOptionalFile(join(directory, file));
 
   if (body === undefined) {
@@ -222,12 +222,16 @@ const isSymlink = async (path: string) => {
   }
 };
 
-// Writes a new file and renames it over plan.json, so a failed save keeps the saved identifiers.
-// The rename replaces a link at plan.json instead of following it.
-export const writePlan = async (directory: string, plan: Plan): Promise<void> => {
-  const path = join(directory, planFileName);
-  const content = `${JSON.stringify(plan, null, 2)}\n`;
-  const temporary = join(directory, `.${planFileName}.${randomUUID()}`);
+// Writes a new file and renames it over the record, so a failed save keeps the saved identifiers.
+// The rename replaces a link at the record instead of following it.
+export const writeRecord = async (
+  directory: string,
+  fileName: string,
+  record: unknown,
+): Promise<void> => {
+  const path = join(directory, fileName);
+  const content = `${JSON.stringify(record, null, 2)}\n`;
+  const temporary = join(directory, `.${fileName}.${randomUUID()}`);
 
   if (await isSymlink(path)) {
     throw new Error(`Refusing to write through a symlink: ${path}`);
@@ -242,3 +246,6 @@ export const writePlan = async (directory: string, plan: Plan): Promise<void> =>
     throw error;
   }
 };
+
+export const writePlan = (directory: string, plan: Plan): Promise<void> =>
+  writeRecord(directory, planFileName, plan);

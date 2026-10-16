@@ -112,6 +112,7 @@ const createContainer = async (runtime: Runtime, progress: ApplyProgress) => {
     title: plan.container.title,
     description: progress.draft.containerBody,
     subIssueSortOrder: undefined,
+    labels: [],
   });
 
   plan.container.identifier = created.identifier;
@@ -135,6 +136,7 @@ const createSlice = async (
     title: slice.title,
     description: progress.draft.sliceBodies[write.number - 1] ?? '',
     subIssueSortOrder: write.sortOrder,
+    labels: [],
   });
 
   slice.identifier = created.identifier;

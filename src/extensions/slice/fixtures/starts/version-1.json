@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "slice": "ME-700",
+  "branch": "me-700-start-the-slice",
+  "base": "origin/main",
+  "tickets": [
+    {
+      "title": "Record the start",
+      "file": "agent-1.md",
+      "labels": ["label-feature"],
+      "identifier": null
+    },
+    { "title": "Report the start", "file": "agent-2.md", "labels": [], "identifier": "AI-12" }
+  ]
+}

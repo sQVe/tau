@@ -1,5 +1,5 @@
-import { lstat, readdir } from 'node:fs/promises';
-import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { readdir } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 
 import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
@@ -8,9 +8,10 @@ import { Type } from 'typebox';
 
 import { isMissingFile } from '../../errors.js';
 import type { Exec } from '../../exec.js';
-import { checkTauDirectory, ensureTauDirectory, findTauRoot } from '../../tauDirectory.js';
+import { ensureTauDirectory, findTauRoot } from '../../tauDirectory.js';
 import { applySlicePlan } from './apply.js';
 import { readPlan, rejectLinkedDraftFiles } from './draft.js';
+import { checkDraftDirectory, draftName } from './draftDirectory.js';
 import { readState, slicesPath } from './state.js';
 import type { Runtime } from './state.js';
 import { describeWrite } from './writes.js';
@@ -42,18 +43,6 @@ const description = `Read and write a slice plan in Linear. Call it as the slice
 - apply {directory, stateToken}: makes the writes in order without asking the user, records each new identifier in plan.json at once, moves the draft to .tau/slices/<container identifier> after creating the container, and, after the writes, when Linear left an open slice out of plan order, moves the slice back. It writes only the contents that read checked. Returns {status: applied|unchanged, directory, container, slices, applied, orderInPlace}; orderInPlace is false when the order is still wrong.
 Errors: a malformed or newer plan.json, a missing body file, a prepare id whose draft records another container, a read container when plan.json records none, bad linear or gh output, a stateToken that no longer matches (read again), or problems. Nothing is written in those cases. A failed step, or an abort before a step, throws with directory, applied, and notApplied, each step with kind and text. When Linear created a ticket but its identifier could not be saved, created holds {identifier, url}, the create is applied, and saveIdentifier is not applied: record that identifier in plan.json before a retry; read again before a retry, which also finishes a failed draft move. Merged tickets are never written.`;
 
-const isMissing = (path: string) =>
-  lstat(path).then(
-    () => false,
-    (error: unknown) => {
-      if (isMissingFile(error)) {
-        return true;
-      }
-
-      throw error;
-    },
-  );
-
 // Creates the draft directory and refuses one that a link could send writes outside the checkout.
 const createDraftDirectory = async (root: string, name: string) => {
   const directory = await ensureTauDirectory(root, `${slicesPath}/${name}`);
@@ -61,42 +50,6 @@ const createDraftDirectory = async (root: string, name: string) => {
   await rejectLinkedDraftFiles(directory);
 
   return directory;
-};
-
-// Runs the same refusals as createDraftDirectory without changing anything. A missing draft has
-// nothing to check: read reports no draft, and apply refuses it.
-const checkDraftDirectory = async (root: string, name: string, action: 'read' | 'apply') => {
-  const directory = join(root, '.tau', slicesPath, name);
-
-  if (await isMissing(directory)) {
-    if (action === 'apply') {
-      throw new Error(`The draft directory ${directory} does not exist. Nothing was written.`);
-    }
-
-    return directory;
-  }
-
-  await checkTauDirectory(root, `${slicesPath}/${name}`);
-  await rejectLinkedDraftFiles(directory);
-
-  return directory;
-};
-
-const draftName = (root: string, directory: string | undefined) => {
-  if (directory === undefined) {
-    throw new Error('read and apply need the directory that prepare returned.');
-  }
-
-  const absolute = resolve(root, directory);
-  const fromSlices = relative(join(root, '.tau', slicesPath), absolute);
-  const outside = fromSlices === '' || fromSlices.startsWith('..') || isAbsolute(fromSlices);
-  const nested = fromSlices.includes('/') || fromSlices.includes('\\');
-
-  if (outside || nested) {
-    throw new Error(`The draft directory must be .tau/slices/<id>, not ${directory}.`);
-  }
-
-  return fromSlices;
 };
 
 const toError = (error: unknown) => (error instanceof Error ? error : new Error(String(error)));
