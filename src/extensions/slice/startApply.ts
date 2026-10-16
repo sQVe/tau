@@ -168,8 +168,10 @@ const rejectChangedState = (state: StartState, stateToken: string | undefined) =
   return { draft, slice };
 };
 
-// The record can change while readStartState awaits Linear.
-const rejectChangedRecord = async (state: StartState) => {
+// The record and its directory can change while readStartState awaits Linear.
+const rejectChangedRecord = async (state: StartState, checkDirectory: () => Promise<unknown>) => {
+  await checkDirectory();
+
   const current = await readStartDraft(state.directory);
 
   if (!isDeepStrictEqual(current, state.draft)) {
@@ -262,8 +264,6 @@ const confirmForeignUpdates = async (
     return 'declined';
   }
 
-  await checkDirectory();
-
   const current = await readStartState(runtime, state.directory, agentTeam);
 
   if (current.stateToken !== state.stateToken) {
@@ -273,7 +273,7 @@ const confirmForeignUpdates = async (
   }
 
   // A file can change while the second Linear read runs, after the token read it.
-  await rejectChangedRecord(state);
+  await rejectChangedRecord(state, checkDirectory);
 
   return 'proceed';
 };
@@ -289,7 +289,7 @@ export const applyStart = async (
   const state = await readStartState(runtime, directory, agentTeam);
   const { draft, slice } = rejectChangedState(state, stateToken);
 
-  await rejectChangedRecord(state);
+  await rejectChangedRecord(state, checkDirectory);
 
   const answer = await confirmForeignUpdates(runtime, context, state, agentTeam, checkDirectory);
 

@@ -1,4 +1,5 @@
-import { copyFile, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { copyFile, cp, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
@@ -141,6 +142,62 @@ describe('start_slice', () => {
     expect(result.tickets.map((ticket) => ticket.status)).toEqual(['new', 'unchanged']);
     expect(await saved()).toEqual([created?.identifier, 'AI-12']);
     expect(result.tickets[0]?.url).toContain(created?.identifier);
+  });
+
+  it('reports applied on the first run and unchanged on a retry with nothing to write', async () => {
+    const fake = createLinearFake();
+
+    addSlice(fake);
+    addAgentChild(fake, { identifier: 'AI-12', title: 'Report the start', description: 'Two.\n' });
+
+    const { apply } = await setUp(fake);
+    const first = await apply();
+    const writesAfterFirst = fake.writes().length;
+    const retry = await apply();
+
+    expect(first.status).toBe('applied');
+    expect(retry.status).toBe('unchanged');
+    expect(fake.writes()).toHaveLength(writesAfterFirst);
+  });
+
+  it('refuses when the draft directory becomes a symlink while apply reads Linear', async () => {
+    const fake = createLinearFake();
+
+    addSlice(fake);
+    addAgentChild(fake, { identifier: 'AI-12', title: 'Report the start', description: 'Two.\n' });
+
+    const { directory, call } = await setUp(fake);
+    const outside = await mkdtemp(join(tmpdir(), 'tau-start-outside-'));
+
+    onTestFinished(() => rm(outside, { recursive: true, force: true }));
+
+    const originalRecord = await readFile(join(directory, 'start.json'), 'utf8');
+    const { stateToken } = await call('read');
+
+    const racing: Fake = {
+      ...fake,
+      exec: async (command, commandArguments, options) => {
+        const result = await fake.exec(command, commandArguments, options);
+
+        const isChildrenRead = commandArguments.some((argument) =>
+          argument.includes('children(first'),
+        );
+
+        if (isChildrenRead) {
+          await rm(outside, { recursive: true, force: true });
+          await cp(directory, outside, { recursive: true });
+          await rm(directory, { recursive: true });
+          await symlink(outside, directory);
+        }
+
+        return result;
+      },
+    };
+
+    await expect(call('apply', stateToken, racing)).rejects.toThrow(/symlink/u);
+
+    expect(fake.writes()).toEqual([]);
+    expect(await readFile(join(outside, 'start.json'), 'utf8')).toBe(originalRecord);
   });
 
   it('reports the planned writes on read and writes nothing', async () => {
