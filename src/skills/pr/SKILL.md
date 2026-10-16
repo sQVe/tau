@@ -218,10 +218,10 @@ Publish a PR that matches the approved preview and the pushed commits. Mark it r
      the head SHA it anchors to. A change to the body, a text, or an anchor needs a new preview,
      unless the user's answer named that exact change and you apply it as stated. The anchor's side
      is `LEFT` for a deleted line and `RIGHT` otherwise; show it with the line.
-   - Ask for approval with these options in this order: Review in tuicr, Publish as ready, Publish
-     as draft, Change something, Don't publish. Recommend only Review in tuicr. Say in the question
-     that, after the review, the default status is draft when step 6 found a gap and ready
-     otherwise. Put the title and full body in the question-level `preview`.
+   - Ask for approval with these options in this order: Review in tuicr, Publish as <status>, Change
+     something, Don't publish. The status is draft when step 6 found a gap and ready otherwise; the
+     user changes it through Change something. Recommend Review in tuicr. Put the title and full
+     body in the question-level `preview`.
    - Review in tuicr: follow the review loop in step 5 of the [tracker skill](../tracker/SKILL.md)
      with `title.md`, `body.md`, and `release-notes.md` when it exists. Apply the changes, preview
      again, and ask again. A review is never approval, and a reviewed change needs a new preview.
