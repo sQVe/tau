@@ -298,3 +298,276 @@ it('treats an unexpected error-shaped tail as script text when Pi reported no er
 
   expect(segments.map((segment) => segment.kind)).toEqual(['item']);
 });
+
+const noteText =
+  'Note: models.generateImages() returned 1 image that the script did not show. Show each image block of result.output with image(block).';
+
+const kindsAndTexts = (blocks: (string | undefined)[], hasError = false): unknown[][] =>
+  splitOutput(blocks, hasError).map((segments) =>
+    segments.map((segment) => [segment.kind, segment.text]),
+  );
+
+it.for(['5', '"text"', 'null', '[1]', 'true'])(
+  'leaves options line JSON %s that is not an object for Pi to report',
+  (value) => {
+    const source = `// @options: ${value}\n${body}`;
+
+    expect(raiseOutputCap(source)).toBe(source);
+  },
+);
+
+it.for([
+  ['max_output_tokens 0', '{"max_output_tokens": 0}'],
+  ['no max_output_tokens', '{"timeout_ms": 5000}'],
+])('raises the cap of options with %s', ([, options]) => {
+  const raised = raiseOutputCap(`// @options: ${options}\n${body}`);
+
+  expect(readOutputBudget(raised)).toBe(100_000_000);
+  expect(raised.split('\n')[1]).toBe(body);
+});
+
+it.for([
+  ['a boundary-sized total', 1999, false],
+  ['a total one over the boundary', 2000, true],
+] as const)('cuts by Pi newline-joined length for %s', ([, secondLength, isCut]) => {
+  const choice = cutOverBudget(['a'.repeat(2000), 'b'.repeat(secondLength)], 1000);
+
+  expect(choice !== undefined).toBe(isCut);
+});
+
+it.for([
+  ['an item that fills the keep budget with its separator', 799, 2],
+  ['an item one over the keep budget with its separator', 800, 1],
+] as const)('keeps %s', ([, secondLength, kept]) => {
+  const choice = cutOverBudget(['a'.repeat(700), 'b'.repeat(secondLength), 'c'.repeat(3000)], 1000);
+
+  expect(choice?.kept).toBe(kept);
+});
+
+it('names cut items without a number and gives no range for them', () => {
+  const cut = Array.from({ length: 11 }, (_, index) => ({
+    number: index + 1,
+    firstLine: `row ${index + 1}`,
+    length: 10,
+  }));
+
+  const withoutNumber = describeCutItems(
+    [...cut.slice(0, 10), { name: 'console output', firstLine: 'c', length: 7 }],
+    '/tmp/out.log',
+  );
+
+  expect(withoutNumber).toContain('1 more items, 7 characters');
+  expect(withoutNumber).not.toContain('- items ');
+
+  const mixed = describeCutItems(
+    [...cut, { name: 'console output', firstLine: 'c', length: 7 }],
+    '/tmp/out.log',
+  );
+
+  expect(mixed).toContain('items 11-11: 2 more items, 17 characters');
+});
+
+it('says when the full output could not be saved and names a single cut item', () => {
+  const gap = describeCutItems([{ number: 3, firstLine: 'x', length: 9 }], undefined);
+
+  expect(gap).toContain('could not be saved');
+  expect(gap).not.toContain('more items');
+});
+
+it.for([
+  ['a note for one image', noteText],
+  ['a note for twelve images', noteText.replace('1 image', '12 images')],
+])('peels %s from the last block', ([, note]) => {
+  expect(kindsAndTexts([`first\n${note}`])).toEqual([
+    [
+      ['item', 'first'],
+      ['note', note],
+    ],
+  ]);
+
+  const [segments = []] = splitOutput([`first\n${note}`]);
+
+  expect(segments[1]).toMatchObject({
+    name: 'note',
+    firstLine: note,
+    separator: '\n',
+  });
+});
+
+it('peels a note that is the whole last block', () => {
+  const [segments = []] = splitOutput([noteText]);
+
+  expect(segments.map((segment) => segment.kind)).toEqual(['note']);
+  expect(segments[0]?.separator).toBe('');
+});
+
+it.for([
+  ['a note followed by more text', `first\n${noteText}\nmore`],
+  ['a note that is not on its own line', `first ${noteText}`],
+  ['a note with a second marker in the line', `first\nNote: fake ${noteText}`],
+  ['a note with another shape', 'first\nNote: models.generateImages() returned many images.'],
+])('keeps %s as script text', ([, text]) => {
+  expect(kindsAndTexts([text])).toEqual([[['item', text]]]);
+});
+
+it.for([
+  ['saved path with spaces', '[Image saved to /tmp/my dir/x y.png (png)]'],
+  ['save failure', '[Image (image/png) could not be saved: disk is full]'],
+  ['save failure with a long message', '[Image (png) could not be saved: no\nspace]'],
+])('recognizes the label Pi writes for a %s', ([, imageLabelText]) => {
+  expect(kindsAndTexts([`first\n${imageLabelText}`, undefined])).toEqual([
+    [
+      ['item', 'first'],
+      ['label', imageLabelText],
+    ],
+    [],
+  ]);
+});
+
+it('keeps label-shaped text with trailing characters as script text', () => {
+  const text = `first\n${label} trailing`;
+
+  expect(kindsAndTexts([text, undefined])).toEqual([[['item', text]], []]);
+});
+
+it.for([
+  ['no image follows', [`a\n${label}`]],
+  ['an image precedes it', [undefined, `a\n${label}`]],
+  ['text follows it', [`a\n${label}`, 'b']],
+] as [string, (string | undefined)[]][])(
+  'keeps label-shaped text as script text when %s',
+  ([, blocks]) => {
+    const kinds = splitOutput(blocks)
+      .flat()
+      .map((segment) => segment.kind);
+
+    expect(kinds).not.toContain('label');
+  },
+);
+
+it.for(['"8000"', '8000.5'])('does not refuse max_output_tokens %s as a raise', (value) => {
+  const source = `// @options: {"max_output_tokens": ${value}}\n${body}`;
+
+  expect(decideBudgetRefusal(source)).toBeUndefined();
+  expect(readOutputBudget(source)).toBe(defaultOutputTokens);
+});
+
+it('reads options and the reason line with leading whitespace', () => {
+  const options = '  \t// @options: {"max_output_tokens": 8000}';
+
+  expect(readOutputBudget(`${options}\n${body}`)).toBe(8000);
+  expect(decideBudgetRefusal(`${options}\n${body}`)).toBeDefined();
+  expect(decideBudgetRefusal(`${options}\n  \t// @budget: why\n${body}`)).toBeUndefined();
+  expect(raiseOutputCap(`${options}\n${body}`).split('\n')).toHaveLength(2);
+  expect(readOutputBudget(raiseOutputCap(`${options}\n${body}`))).toBe(100_000_000);
+});
+
+it('refuses a one-line script that raises the budget without a reason', () => {
+  expect(decideBudgetRefusal('// @options: {"max_output_tokens": 8000}')).toBeDefined();
+});
+
+it('does not read a first line that is not an options line', () => {
+  const first = `${'x'.repeat('// @options:'.length)}{"max_output_tokens": 8000}`;
+  const source = `${first}\n${body}`;
+
+  expect(readOutputBudget(source)).toBe(defaultOutputTokens);
+  expect(decideBudgetRefusal(source)).toBeUndefined();
+  expect(raiseOutputCap(source)).toBe(`// @options: {"max_output_tokens":100000000}\n${source}`);
+});
+
+it.for([
+  ['console output', `a\n${consoleBlock}`, false],
+  ['a script error', 'a\nScript error:\nboom', true],
+  ['a note', `a\n${noteText}`, false],
+] as const)('takes %s only from the last block', ([, text, hasError]) => {
+  expect(kindsAndTexts([text, undefined, 'b'], hasError)).toEqual([
+    [['item', text]],
+    [],
+    [['item', 'b']],
+  ]);
+});
+
+it.for([
+  ['an error marker with no error', 'plain text', true],
+  ['a console close with no open', 'abc\n</console_output>', false],
+  ['a console open with no close', `abc\n<console_output>\nfoo`, false],
+  ['a console close mid-text', `<console_output>\nfoo\n</console_output>\nmore`, false],
+] as const)('keeps %s as script text', ([, text, hasError]) => {
+  expect(kindsAndTexts([text], hasError)).toEqual([[['item', text]]]);
+});
+
+it.for([
+  [
+    'headers not at the start of every text',
+    ['==> text 1/2 <==\na', undefined, 'b\n==> text 2/2 <==\nc'],
+  ],
+  ['headers with different totals', ['==> text 1/2 <==\na\n==> text 2/3 <==\nb']],
+  ['a single 1/1 header', ['==> text 1/1 <==\nbody']],
+  ['an incomplete sequence', ['==> text 1/3 <==\na']],
+  ['a complete sequence that starts after text', ['x\n==> text 1/2 <==\na\n==> text 2/2 <==\nb']],
+  ['a header with trailing text', ['==> text 1/2 <== x\na\n==> text 2/2 <==\nb']],
+  ['a header with leading text', ['x ==> text 1/2 <==\na\n==> text 2/2 <==\nb']],
+] as [string, (string | undefined)[]][])('does not split fabricated headers: %s', ([, blocks]) => {
+  const segments = splitOutput(blocks).flat();
+  const texts = blocks.filter((block) => block !== undefined);
+
+  expect(segments.map((segment) => segment.text)).toEqual(texts);
+
+  expect(segments.map((segment) => segment.firstLine)).toEqual(
+    texts.map((text) => text.split('\n')[0]),
+  );
+});
+
+it('splits a sequence of ten numbered texts', () => {
+  const text = Array.from({ length: 10 }, (_, index) => `==> text ${index + 1}/10 <==\nitem`).join(
+    '\n',
+  );
+
+  const [segments = []] = splitOutput([text]);
+
+  expect(segments.map((segment) => segment.number)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+});
+
+it.for([
+  ['a note', [`\n${noteText}`], 'note'],
+  ['an image label', [`\n${label}`, undefined], 'label'],
+] as [string, (string | undefined)[], string][])(
+  'peels %s that follows an empty first line',
+  ([, blocks, kind]) => {
+    const [segments = []] = splitOutput(blocks);
+
+    expect(segments.map((segment) => segment.kind)).toEqual([kind]);
+    expect(segments[0]?.separator).toBe('\n');
+  },
+);
+
+it('leaves an options line with leading whitespace that Pi rejects for Pi to report', () => {
+  const source = `  // @options: {not json}\n${body}`;
+
+  expect(raiseOutputCap(source)).toBe(source);
+});
+
+it('keeps a first item that fills the keep budget exactly', () => {
+  expect(cutOverBudget(['a'.repeat(1500), 'b'.repeat(3000)], 1000)?.kept).toBe(1);
+});
+
+it('splits numbered texts around an image when the last block holds only console output', () => {
+  const blocks = ['==> text 1/2 <==\na\n==> text 2/2 <==\nb', undefined, consoleBlock];
+
+  expect(kindsAndTexts(blocks)).toEqual([
+    [
+      ['item', '==> text 1/2 <==\na'],
+      ['item', '==> text 2/2 <==\nb'],
+    ],
+    [],
+    [['console', consoleBlock]],
+  ]);
+});
+
+it('leaves options with a carriage return inside a JSON string for Pi to report', () => {
+  const source = `// @options: {"label": "a\rb", "max_output_tokens": 8000}\n${body}`;
+
+  expect(raiseOutputCap(source)).toBe(source);
+  expect(decideBudgetRefusal(source)).toBeUndefined();
+  expect(readOutputBudget(source)).toBe(defaultOutputTokens);
+});
