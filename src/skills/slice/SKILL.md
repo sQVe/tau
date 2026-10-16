@@ -91,8 +91,14 @@ design it follows in its Design section. The container has one sub-ticket per sl
 
    Then call `read` again. Resolve its `problems` as in step 2.
 
-5. Check the plan. Map each acceptance criterion of the design to the slice numbers that cover it.
-   When a criterion has none, change the draft and call `read` again.
+5. Check the plan.
+   - Map each acceptance criterion of the design to the slice numbers that cover it. When a
+     criterion has none, change the draft and call `read` again.
+   - Judge each `## Acceptance` item in the slice body files. An item passes when it names a test, a
+     command, or a manual observation, with its expected result. When the design says what to check,
+     rewrite the item and call `read` again. Before step 6, list each item that still names no
+     check, with its body file, and tell the user it may reach a worker as a vague task. When every
+     item passes, say nothing about it. The list never stops `apply`.
 
 6. Call `slice` with `apply` for the last read.
    - First offer the review stop from the tracker skill's [Procedure](../tracker/SKILL.md#procedure)
