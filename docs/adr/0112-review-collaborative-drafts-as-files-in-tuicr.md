@@ -25,8 +25,9 @@ to the user with the `draft_review` tool, which opens it in tuicr.
 ### The review
 
 - The tool copies the drafts to a staging directory outside Git and opens tuicr on it. In herdr it
-  opens a pane beside the agent and waits. Outside herdr it returns the command, and a second call
-  collects the review after the user says done.
+  opens a right split beside the agent when the agent pane is wide enough for two usable panes, and
+  a new focused tab in the agent's workspace when it is narrow or zoomed. It then waits. Outside
+  herdr it returns the command, and a second call collects the review after the user says done.
 - tuicr exiting, or its pane closing, ends the review. Only cancelling the tool call cancels it.
 - The tool returns the user's comments on the reviewed drafts and a diff of each draft the user
   edited. It deletes only the comments it returned, because other drafts share the session.

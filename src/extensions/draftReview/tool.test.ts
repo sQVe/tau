@@ -56,6 +56,22 @@ const comment = (id: string, path: string | null, content = id) => ({
   content,
 });
 
+const layoutInfo = (width: number, zoomed = false) =>
+  JSON.stringify({
+    result: {
+      layout: {
+        workspace_id: 'w',
+        tab_id: 'w:t1',
+        zoomed,
+        panes: [{ pane_id: 'w:p1', rect: { width, height: 50, x: 0, y: 0 } }],
+      },
+    },
+  });
+
+const tabInfo = JSON.stringify({
+  result: { tab: { tab_id: 'w:t2' }, root_pane: { pane_id: 'w:p3' } },
+});
+
 const fixture = async (herdr?: Herdr) => {
   const repository = await createTemporaryRepository(onTestFinished, 'tau-draft-review-repo-');
   const data = await mkdtemp(join(tmpdir(), 'tau-fake-tuicr-'));
@@ -83,8 +99,11 @@ const fixture = async (herdr?: Herdr) => {
     if (command === 'herdr') {
       herdrCalls.push(argumentsList);
 
+      const answer = (await herdr?.(argumentsList, options?.signal)) ?? '';
+      const wide = argumentsList[1] === 'layout' && answer === '';
+
       return {
-        stdout: (await herdr?.(argumentsList, options?.signal)) ?? '',
+        stdout: wide ? layoutInfo(200) : answer,
         stderr: '',
         code: 0,
         killed: false,
@@ -323,9 +342,16 @@ it('opens tuicr in a pane beside the agent, waits, closes the pane, and collects
 
   const outcome = await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
 
-  expect(herdrCalls.map(([, action]) => action)).toEqual(['split', 'run', 'wait-output', 'close']);
-  expect(herdrCalls[0]).toContain('w:p1');
-  expect(herdrCalls[1]?.[3]).toContain(`tuicr --file '${staging}'`);
+  expect(herdrCalls.map(([, action]) => action)).toEqual([
+    'layout',
+    'split',
+    'run',
+    'wait-output',
+    'close',
+  ]);
+
+  expect(herdrCalls[1]).toContain('w:p1');
+  expect(herdrCalls[2]?.[3]).toContain(`tuicr --file '${staging}'`);
 
   expect(outcome.details).toMatchObject({
     status: 'reviewed',
@@ -517,4 +543,184 @@ it('ignores a pane that is already gone on close but names the record when close
   await expect(run({ action: 'review', paths: ['.tau/slices/b.md'] }, 'w:p1')).rejects.toThrow(
     join(repository, '.tau/draft-review/review-'),
   );
+});
+
+const tabHerdr = (width: number, zoomed: boolean, onAction: Herdr = async () => ''): Herdr => {
+  return async (argumentsList, signal) => {
+    const [group, action] = argumentsList;
+
+    if (action === 'layout') {
+      return layoutInfo(width, zoomed);
+    }
+
+    if (group === 'tab' && action === 'create') {
+      return tabInfo;
+    }
+
+    return onAction(argumentsList, signal);
+  };
+};
+
+const steps = (calls: string[][]) => calls.map(([group, action]) => `${group} ${action}`);
+
+it('opens a right split when the agent pane is 164 columns wide', async () => {
+  const { run, herdrCalls } = await fixture(async (argumentsList) => {
+    if (argumentsList[1] === 'layout') {
+      return layoutInfo(164);
+    }
+
+    return argumentsList[1] === 'split' ? paneInfo : '';
+  });
+
+  await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
+
+  expect(steps(herdrCalls)).toContain('pane split');
+  expect(herdrCalls.some(([group]) => group === 'tab')).toBe(false);
+});
+
+it.each([
+  { width: 163, zoomed: false },
+  { width: 200, zoomed: true },
+])(
+  'opens a focused tab in the agent workspace for a $width column pane, zoomed $zoomed',
+  async ({ width, zoomed }) => {
+    const { run, herdrCalls } = await fixture(tabHerdr(width, zoomed));
+
+    await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
+
+    const create = herdrCalls.find(([group, action]) => group === 'tab' && action === 'create');
+
+    expect(create).toContain('--focus');
+    expect(create?.[create.indexOf('--workspace') + 1]).toBe('w');
+    expect(steps(herdrCalls)).not.toContain('pane split');
+    expect(herdrCalls.find(([, action]) => action === 'run')?.[2]).toBe('w:p3');
+  },
+);
+
+it('closes the review tab, refocuses the agent tab, and collects after tuicr exits', async () => {
+  const hooks: { session?: (comments: unknown) => Promise<void> } = {};
+
+  const { run, setSession, herdrCalls, deleted } = await fixture(
+    tabHerdr(100, false, async (argumentsList) => {
+      if (argumentsList[1] === 'wait-output') {
+        await hooks.session?.([comment('on-a', 'slices/a.md')]);
+      }
+
+      return '';
+    }),
+  );
+
+  hooks.session = setSession;
+
+  const outcome = await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
+
+  expect(herdrCalls.slice(-2)).toEqual([
+    ['tab', 'close', 'w:t2'],
+    ['tab', 'focus', 'w:t1'],
+  ]);
+
+  expect(outcome.details).toMatchObject({ status: 'reviewed', comments: [{ content: 'on-a' }] });
+  expect(await deleted()).toEqual(['on-a']);
+});
+
+it('collects when the user closes the review pane and the tab is already gone', async () => {
+  const { run, herdrCalls } = await fixture(
+    tabHerdr(100, false, async (argumentsList) => {
+      if (argumentsList[1] === 'wait-output') {
+        throw new Error('herdr failed: {"error":{"code":"pane_not_found"}}');
+      }
+
+      if (argumentsList[1] === 'close') {
+        throw new Error('herdr failed: {"error":{"code":"tab_not_found"}}');
+      }
+
+      return '';
+    }),
+  );
+
+  const outcome = await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
+
+  expect(outcome.details).toMatchObject({ status: 'reviewed' });
+  expect(herdrCalls.at(-1)).toEqual(['tab', 'focus', 'w:t1']);
+});
+
+it('closes the review tab and returns cancelled when a tab review is cancelled', async () => {
+  const controller = new AbortController();
+
+  const { run, herdrCalls } = await fixture(
+    tabHerdr(100, false, async (argumentsList, signal) => {
+      if (argumentsList[1] === 'wait-output') {
+        controller.abort();
+        signal?.throwIfAborted();
+      }
+
+      return '';
+    }),
+  );
+
+  const outcome = await run(
+    { action: 'review', paths: ['.tau/slices/a.md'] },
+    'w:p1',
+    controller.signal,
+  );
+
+  expect(outcome.details).toEqual({ status: 'cancelled', comments: [], edits: [] });
+
+  expect(herdrCalls.slice(-2)).toEqual([
+    ['tab', 'close', 'w:t2'],
+    ['tab', 'focus', 'w:t1'],
+  ]);
+});
+
+it('fails with the herdr error and opens nothing when the pane layout cannot be read', async () => {
+  const { run, herdrCalls } = await fixture(async (argumentsList) => {
+    if (argumentsList[1] === 'layout') {
+      throw new Error('herdr failed: socket closed');
+    }
+
+    return '';
+  });
+
+  await expect(run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1')).rejects.toThrow(
+    'herdr failed: socket closed',
+  );
+
+  expect(herdrCalls.map(([, action]) => action)).toEqual(['layout']);
+});
+
+const abortDuringOpen = async (step: string) => {
+  const controller = new AbortController();
+
+  const { run, setSession, deleted, records } = await fixture(async (argumentsList, signal) => {
+    if (argumentsList.slice(0, 2).join(' ') === step) {
+      controller.abort();
+      signal?.throwIfAborted();
+    }
+
+    return argumentsList[1] === 'layout' ? layoutInfo(100) : tabInfo;
+  });
+
+  await setSession([comment('on-a', 'slices/a.md')]);
+
+  const outcome = await run(
+    { action: 'review', paths: ['.tau/slices/a.md'] },
+    'w:p1',
+    controller.signal,
+  );
+
+  return { details: outcome.details, deleted: await deleted(), records: await records() };
+};
+
+const cancelledWithNothingKept = {
+  details: { status: 'cancelled', comments: [], edits: [] },
+  deleted: [],
+  records: [],
+};
+
+it('returns cancelled and keeps no record when aborted during pane layout', async () => {
+  expect(await abortDuringOpen('pane layout')).toEqual(cancelledWithNothingKept);
+});
+
+it('returns cancelled and keeps no record when aborted during tab create', async () => {
+  expect(await abortDuringOpen('tab create')).toEqual(cancelledWithNothingKept);
 });

@@ -1,3 +1,5 @@
+import { minimumPane, readLayout, rectangle } from '../../herdrLayout.js';
+import type { PaneLayout, Rectangle } from '../../herdrLayout.js';
 // Replaces tmux.ts surface placement from pi-interactive-subagents c3e8b53.
 import {
   listTerminals,
@@ -36,30 +38,8 @@ interface TabSearch {
   call: TerminalCall;
 }
 
-type PaneLayout = Record<string, unknown> & { panes: unknown[] };
-
-interface Rectangle {
-  width: number;
-  height: number;
-}
-
-// Leave room for pane borders and status rows around 80 columns and 20 useful rows.
-const minimumPane = { width: 82, height: 24 };
 // A tab label lists this many worker names, then a count of the rest.
 const labelledNameCount = 3;
-
-const isPositiveInteger = (value: unknown): boolean =>
-  Number.isSafeInteger(value) && Number(value) > 0;
-
-const rectangle = (value: unknown): Rectangle => {
-  const bounds = requireObject(value);
-
-  if (!isPositiveInteger(bounds.width) || !isPositiveInteger(bounds.height)) {
-    throw new Error('Invalid herdr pane dimensions.');
-  }
-
-  return { width: Number(bounds.width), height: Number(bounds.height) };
-};
 
 const isUseful = (bounds: Rectangle): boolean =>
   bounds.width >= minimumPane.width && bounds.height >= minimumPane.height;
@@ -79,20 +59,6 @@ export const splitDirection = (bounds: Rectangle, beside = false): 'right' | 'do
   }
 
   return down ? 'down' : undefined;
-};
-
-const readLayout = async (paneId: string, call: TerminalCall): Promise<PaneLayout> => {
-  const layout = requireObject(result(await call(['pane', 'layout', '--pane', paneId])).layout);
-
-  if (typeof layout.zoomed !== 'boolean') {
-    throw new TypeError('Missing herdr zoom state.');
-  }
-
-  if (!Array.isArray(layout.panes)) {
-    throw new TypeError('Missing herdr layout panes.');
-  }
-
-  return { ...layout, panes: layout.panes };
 };
 
 const layoutShape = (layout: PaneLayout): string => {

@@ -17,6 +17,8 @@ export interface FileFacts {
   current: string | undefined;
 }
 
+export type ReviewPlacement = 'right' | 'tab';
+
 export type EditDecision = 'unchanged' | 'apply' | 'conflict';
 
 // Session-level comments have no path and belong to no reviewed file.
@@ -36,4 +38,15 @@ export const decideEdit = (facts: FileFacts): EditDecision => {
   const writable = facts.current === facts.original || facts.current === facts.staged;
 
   return writable ? 'apply' : 'conflict';
+};
+
+// A right split halves the agent pane, so it needs room for two usable panes.
+export const reviewPlacement = (facts: {
+  width: number;
+  zoomed: boolean;
+  minimumWidth: number;
+}): ReviewPlacement => {
+  const roomForSplit = Math.floor(facts.width / 2) >= facts.minimumWidth;
+
+  return !facts.zoomed && roomForSplit ? 'right' : 'tab';
 };
