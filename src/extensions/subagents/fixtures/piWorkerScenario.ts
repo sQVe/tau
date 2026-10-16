@@ -37,6 +37,16 @@ export const canRunPiWorker = toolAvailable('herdr') && toolAvailable('pi');
 
 export const piWorkerTimeout = 40_000;
 
+// The deadline also counts the wait for a reply, and a loaded CI runner takes about 10 s for a
+// question round. Only the timeout scenario needs the short deadline it waits out.
+const workerTimeout = (scenario: PiWorkerScenario) => {
+  if (scenario === 'early exit') {
+    return 60_000;
+  }
+
+  return scenario === 'active timeout' ? 10_000 : 30_000;
+};
+
 export const runPiWorkerScenario = async (scenario: PiWorkerScenario): Promise<void> => {
   const { root, environment, client: isolatedClient } = await isolatedHerdr();
   const answered = ['question completion', 'question restart'].includes(scenario);
@@ -257,7 +267,7 @@ export default function (pi) {
 
   const launched = await controller.launch({
     task: taskText,
-    timeout: scenario === 'early exit' ? 60_000 : 10_000,
+    timeout: workerTimeout(scenario),
     parentSession: join(root, 'parent.jsonl'),
     parentSessionId: 'parent',
     parentPane: paneId,
