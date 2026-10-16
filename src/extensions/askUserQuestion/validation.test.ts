@@ -26,6 +26,10 @@ it.each([
     questions: [withOptions([{}, { recommended: true }])],
   },
   { rule: 'a question preview', questions: [{ ...layout, preview: 'draft' }] },
+  {
+    rule: 'two different questions',
+    questions: [layout, { ...layout, question: 'Which theme should the dashboard use?' }],
+  },
   { rule: 'a preview on only some options', questions: [withOptions([{ preview: 'one' }])] },
 ])('accepts $rule', ({ questions }) => {
   expect(() => {
@@ -48,6 +52,16 @@ it.each([
   {
     rule: 'a problem equal to the impact',
     questions: [{ ...layout, impact: ` ${layout.problem} ` }],
+    error: /equals its impact/u,
+  },
+  {
+    rule: 'a padded question that its problem repeats',
+    questions: [{ ...layout, question: ` ${layout.problem} ` }],
+    error: /repeats the question/u,
+  },
+  {
+    rule: 'a padded problem equal to the impact',
+    questions: [{ ...layout, problem: ` ${layout.impact} ` }],
     error: /equals its impact/u,
   },
   { rule: 'a blank question preview', questions: [{ ...layout, preview: ' ' }], error: /blank/u },
