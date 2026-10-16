@@ -82,8 +82,9 @@ design it follows in its Design section. The container has one sub-ticket per sl
      Keep the identifier of each ticket that exists, even when the plan renames or renumbers it.
    - `plan.md`: a readable summary of the plan: the container title, then each slice with its title,
      its blockers, and its goal. Change it whenever you change `plan.json`. `apply` reads only
-     `plan.json` and the body files, so carry each change the user makes in `plan.md` into
-     `plan.json`, keeping each identifier.
+     `plan.json` and the body files, so carry each change the user makes in `plan.md` there: a title
+     or blocker into `plan.json`, keeping each identifier, and a goal into the `## Goal` of the
+     slice's body file.
 
    For a design with one slice, write `ticket.md` as the container's file, as the slice template
    describes, and list no slices.
@@ -96,8 +97,8 @@ design it follows in its Design section. The container has one sub-ticket per sl
 6. Call `slice` with `apply` for the last read.
    - First offer the review stop from the tracker skill's [Procedure](../tracker/SKILL.md#procedure)
      step 5 over `plan.md` and every body file `plan.json` names, such as `container.md` or
-     `ticket.md` and the `slice-<n>.md` files. After a review, carry `plan.md` changes into
-     `plan.json`, call `read` again, and resolve its `problems`.
+     `ticket.md` and the `slice-<n>.md` files. After a review, carry `plan.md` changes into the
+     draft as step 4 says, call `read` again, and resolve its `problems`.
    - Then read the ownership of the existing container and of each existing slice that the read's
      `writes` change, as the tracker skill's [Hard rules](../tracker/SKILL.md#hard-rules) say. When
      another person owns one, show those writes and ask with `ask_user_question` before you apply,
@@ -128,4 +129,4 @@ design it follows in its Design section. The container has one sub-ticket per sl
    by identifier and title. A dropped slice stays in Linear until it is cancelled. Cancel the chosen
    ones with the [tracker skill](../tracker/SKILL.md), and report which were cancelled and which
    were kept. Offer "Review in tuicr" over `plan.md` in that question, as the recommended first
-   option.
+   option. When a review changes the plan, return to step 6 to apply it before you cancel.
