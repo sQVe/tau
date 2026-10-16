@@ -3,11 +3,11 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { isWorkerProcess } from '../../workerProcess.js';
 import { decideReminder } from './reminder.js';
 
-const thresholdTokens = 200_000;
+const thresholdPercent = 50;
 
-const reminderText = `The context has passed ${thresholdTokens.toLocaleString('en-US')} tokens. Run /compact at a good stopping point.`;
+const reminderText = `The context has passed ${thresholdPercent}% of the model's context window. Finish the current ticket, then start a new session.`;
 
-// Suggests /compact in a manager session. Pi and the user own compaction, so Tau never starts one
+// Suggests a new session in a manager session. Pi and the user own compaction, so Tau never starts one
 // and sends the model nothing.
 export default function compactionExtension(pi: ExtensionAPI): void {
   if (isWorkerProcess()) {
@@ -25,8 +25,8 @@ export default function compactionExtension(pi: ExtensionAPI): void {
   });
 
   pi.on('agent_settled', (_event, context) => {
-    const contextTokens = context.getContextUsage()?.tokens ?? undefined;
-    const step = decideReminder({ contextTokens, thresholdTokens, reminded });
+    const contextPercent = context.getContextUsage()?.percent ?? undefined;
+    const step = decideReminder({ contextPercent, thresholdPercent, reminded });
 
     if (step === 'rearm') {
       reminded = false;

@@ -20,6 +20,8 @@ Add the line for the mode that the skill names.
 - Report only material findings: a concrete failure or cost, `file:line` evidence, and a fix
   direction. For a rule violation, also cite the rule's file and supporting lines. No quotas or
   nits. Mark pre-existing issues separately.
+- For each changed condition or guard, name the test that fails if it is inverted. Report a guard
+  that no test defends as a finding.
 - A behavioral finding needs a production path that reaches the harmful state. A type or fixture
   that can represent the state is not enough.
 - Name the areas you left unread. Separately, name the areas you read only shallowly.

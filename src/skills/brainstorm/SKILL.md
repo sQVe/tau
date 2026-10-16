@@ -58,5 +58,12 @@ unclear. Do not use it for a design the user already agreed on. Use the
    condition to revisit each, the dead ends, the acceptance criteria, the non-goals with reasons,
    and the open risks.
 
-7. When the user agrees to the design, run the [slice skill](../slice/SKILL.md) on the draft
+7. For an architectural or hard-to-reverse design, ask the user with `ask_user_question` whether to
+   run a premortem. When the user accepts, send `design.md` to a fresh `scout`. Ask it to assume the
+   design shipped and failed, and to write how it failed. When the `subagent` tools cannot launch a
+   scout, write the premortem yourself and tell the user it does not come from a fresh reader. Turn
+   each credible failure into a question for the user or an open risk in `design.md`. Skip this step
+   for a design that is easy to undo.
+
+8. When the user agrees to the design, run the [slice skill](../slice/SKILL.md) on the draft
    directory. Do this also when the work fits one PR.
