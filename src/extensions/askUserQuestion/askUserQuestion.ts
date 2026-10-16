@@ -3,11 +3,10 @@ import { Type } from 'typebox';
 
 import { appendToolGuidelines } from '../../systemPrompt.js';
 import { parseWorkerNoticeEvent, workerNoticeChannel } from '../../workerNoticeEvent.js';
-import { branchFacts } from './branchFacts.js';
 import { questionDialog } from './dialog.js';
 import type { DialogQuestion, DialogResult, DialogSession } from './dialog.js';
 import type { Answer, QuestionnaireState } from './questionnaire.js';
-import { decideTypedAnswerReply } from './typedAnswerGuard.js';
+import { refuseUnrepliedTypedAnswer } from './typedAnswerReply.js';
 import { validateQuestions } from './validation.js';
 
 const optionSchema = Type.Object({
@@ -207,13 +206,7 @@ export default function askUserQuestionExtension(pi: ExtensionAPI): void {
         throw new Error('The questionnaire needs the terminal UI. Ask in plain text instead.');
       }
 
-      const decision = decideTypedAnswerReply(branchFacts(context.sessionManager.getBranch()));
-
-      if (decision.kind === 'refuse') {
-        throw new Error(
-          "The user's last answer was typed text, and you have not replied to it in visible text. Write the reply to the typed answer as visible text, then end your turn. Do not call ask_user_question in the same message.",
-        );
-      }
+      refuseUnrepliedTypedAnswer(context.sessionManager);
 
       validateQuestions(params.questions);
 
