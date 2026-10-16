@@ -265,7 +265,7 @@ const acquireLock = async (options: QueueOptions, owner: LockOwner): Promise<str
   }
 };
 
-// Runs `run` while this process holds the machine-wide full check lock. Waits for another holder,
+// Runs `run` while this process holds the full check lock of one repository. Waits for another holder,
 // takes over a lock whose process is gone, and releases the lock on every exit path.
 export const withFullCheckLock = async <T>(
   options: QueueOptions,
@@ -291,5 +291,7 @@ export const withFullCheckLock = async <T>(
   }
 };
 
-export const defaultLockPath = (agentDirectory: string): string =>
-  join(agentDirectory, 'tau', 'full-check.lock');
+// Checks of one repository share a lock, since they share resources such as Docker ports. The names
+// ignore case like GitHub names do, and encoding keeps the path separator out of the file name.
+export const defaultLockPath = (agentDirectory: string, repository: string): string =>
+  join(agentDirectory, 'tau', 'full-check', `${encodeURIComponent(repository.toLowerCase())}.lock`);

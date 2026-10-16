@@ -154,7 +154,7 @@ const execute = async (
 
   const argv = readFullCheckArgv(location, context.ui, repository);
 
-  if (argv === undefined) {
+  if (repository === undefined || argv === undefined) {
     throw new Error(notConfiguredMessage(repository));
   }
 
@@ -167,7 +167,7 @@ const execute = async (
 
   const result = await withFullCheckLock(
     {
-      lockPath: defaultLockPath(agentDirectory),
+      lockPath: defaultLockPath(agentDirectory, repository),
       checkout: root,
       signal,
       pollMilliseconds: options.pollMilliseconds ?? defaultPollMilliseconds,
@@ -207,12 +207,13 @@ export const createFullCheckTool = (
     description: `Run the repository's configured full check and save its output.
 - Optional base: the ref or commit the change is based on. Without it, the origin remote's default branch.
 - The command is fullCheck.repositories.<owner/name>.argv from the user tau.json, run without a shell in the checkout root.
-- Only one full check runs at a time on the machine. When another checkout holds the lock, the tool sends an update that names it and waits. Cancelling stops the wait.
+- Full checks of one repository run one at a time across its checkouts. Checks of other repositories do not wait. When another checkout holds the lock, the tool sends an update that names it and waits. Cancelling stops the wait.
 - A passing log is saved with the head, base, argv, and a fingerprint of the uncommitted changes. A later call for the same state returns that log without running the command, and says so. Any change to those inputs runs the check again. A failing run, or a run during which the inputs changed, saves nothing for reuse.
 - Saves stdout and stderr together as a log under .tau/checks in the checkout.
 - Returns pass or fail, the exit status, the log path, and the last lines of the output. A failed check is a result, not an error.
 - Errors: no Git checkout, an invalid fullCheck entry for this repository, a command that cannot start, or no configured entry. With no entry, run your check as before.`,
-    promptSnippet: 'Run the repository full check, queued across checkouts, with a saved log.',
+    promptSnippet:
+      'Run the repository full check, queued per repository across checkouts, with a saved log.',
     parameters,
     executionMode: 'sequential',
     async execute(_toolCallId, toolParameters, signal, onUpdate, context) {

@@ -129,7 +129,7 @@ line that links to the replacement.
 - [0102: Require acceptance criteria on editing worker launches](./0102-require-acceptance-criteria-on-editing-worker-launches.md)
 - [0103: Write slice flow Linear changes without approval](./0103-write-slice-flow-linear-changes-without-approval.md)
 - [0104: Capture fix reviews from a review snapshot](./0104-capture-fix-reviews-from-a-review-snapshot.md)
-- [0105: Queue full checks machine-wide and reuse passing logs](./0105-queue-full-checks-machine-wide-and-reuse-passing-logs.md)
+- [0105: Queue full checks per repository and reuse passing logs](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md)
 - [0106: Replay unchanged test projects in `pnpm check`](./0106-replay-unchanged-test-projects-in-pnpm-check.md)
 - [0107: State the problem and keep option order stable in questions](./0107-state-the-problem-and-keep-option-order-stable-in-questions.md)
 - [0108: Make Linear writes on the user's own work without asking](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)
