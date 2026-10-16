@@ -6,7 +6,7 @@ import { parseArgs } from 'node:util';
 
 import { formatMutationReport } from './mutationReport.ts';
 import type { MutationReport } from './mutationReport.ts';
-import { mutationScope } from './mutationScope.ts';
+import { changedLinesDiffArguments, mutationScope } from './mutationScope.ts';
 import type { MutationScope } from './mutationScope.ts';
 
 const usage = `Usage: node scripts/mutation.ts <base> [<head>]
@@ -102,23 +102,7 @@ const run = () => {
     return;
   }
 
-  // mutationScope parses plain `+++ b/` headers, and the algorithm decides which lines count as
-  // added, so override the user's diff settings.
-  const diff = git(
-    'diff',
-    '-U0',
-    '--diff-algorithm=histogram',
-    '--no-color',
-    '--no-ext-diff',
-    '--no-relative',
-    '--src-prefix=a/',
-    '--dst-prefix=b/',
-    base,
-    head,
-    '--',
-    'src',
-  );
-
+  const diff = git(...changedLinesDiffArguments(base, head));
   const scope = mutationScope(diff);
 
   if (scope === undefined) {

@@ -77,6 +77,25 @@ const testScope = (paths: string[]) => {
   return { include: [coreTests], exclude: [...alwaysExcluded, 'src/extensions/**'] };
 };
 
+// mutationScope parses plain `+++ b/` headers and reads every line in a hunk as added. The
+// algorithm and inter-hunk context change which lines those are, so these arguments override the
+// user's diff settings.
+export const changedLinesDiffArguments = (base: string, head: string): string[] => [
+  'diff',
+  '-U0',
+  '--inter-hunk-context=0',
+  '--diff-algorithm=histogram',
+  '--no-color',
+  '--no-ext-diff',
+  '--no-relative',
+  '--src-prefix=a/',
+  '--dst-prefix=b/',
+  base,
+  head,
+  '--',
+  'src',
+];
+
 // Turns `git diff -U0` output into the lines to mutate and the tests that cover them.
 // Undefined means the diff holds no production lines.
 export const mutationScope = (diff: string): MutationScope | undefined => {

@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { execFile } from 'node:child_process';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
 
-import { mutationScope } from './mutationScope.js';
+import { describe, expect, it, onTestFinished } from 'vitest';
+
+import { createTemporaryRepository } from '../tests/gitRepository.js';
+import { changedLinesDiffArguments, mutationScope } from './mutationScope.js';
 
 const diffOf = (path: string, hunks: string[]) =>
   [`diff --git a/${path} b/${path}`, `--- a/${path}`, `+++ b/${path}`, ...hunks].join('\n');
@@ -87,5 +93,37 @@ describe('mutationScope', () => {
 
     expect(scope?.include).toEqual(include);
     expect(scope?.exclude).toEqual(exclude);
+  });
+});
+
+describe('changedLinesDiffArguments', () => {
+  it('keeps separate hunks whatever the user diff settings say', async () => {
+    const root = await createTemporaryRepository(onTestFinished);
+
+    const git = async (...args: string[]) =>
+      (await promisify(execFile)('git', args, { cwd: root })).stdout;
+
+    const lines = Array.from({ length: 20 }, (_, index) => `line ${index + 1}`);
+
+    await mkdir(join(root, 'src'));
+    await writeFile(join(root, 'src', 'a.ts'), `${lines.join('\n')}\n`);
+    await git('add', '.');
+    await git('commit', '--quiet', '-m', 'base');
+
+    lines[1] = 'changed 2';
+    lines[9] = 'changed 10';
+    await writeFile(join(root, 'src', 'a.ts'), `${lines.join('\n')}\n`);
+    await git('commit', '--quiet', '-am', 'head');
+
+    const userSettings = [
+      ['diff.interHunkContext', '100'],
+      ['diff.noprefix', 'true'],
+      ['color.ui', 'always'],
+      ['diff.algorithm', 'minimal'],
+    ].flatMap(([key, value]) => ['-c', `${key}=${value}`]);
+
+    const diff = await git(...userSettings, ...changedLinesDiffArguments('HEAD^', 'HEAD'));
+
+    expect(mutationScope(diff)?.mutate).toEqual(['src/a.ts:2-2', 'src/a.ts:10-10']);
   });
 });
