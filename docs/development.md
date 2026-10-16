@@ -42,6 +42,15 @@ Seam provides the shared lint and format settings. Configure Tau's own settings 
 [lint/plugin.ts](../lint/plugin.ts). Keep the installed Vitest version the same as the version
 bundled with Vite+.
 
+## Check test strength
+
+Run `pnpm mutation <base> [<head>]` by hand to mutation-test the production lines changed between
+`base` and `head`. `head` defaults to `HEAD`. The script runs
+[StrykerJS](https://stryker-mutator.io) on an export of the head commit in a temporary directory,
+with the tests of the changed area. It prints each surviving mutant as
+`path:line mutator: original -> replacement`, marks mutants that no test covers, and then prints
+totals. It exits 0 whether or not mutants survive, and it is not part of `pnpm check`.
+
 ## Try Tau
 
 To try this checkout in Pi without changing global settings:
