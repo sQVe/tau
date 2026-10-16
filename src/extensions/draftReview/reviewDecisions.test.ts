@@ -49,14 +49,10 @@ it.each<{ name: string; facts: Partial<FileFacts>; decision: string }>([
   expect(decideEdit({ ...base, ...facts })).toBe(decision);
 });
 
-it('places the review right of a wide pane', () => {
-  expect(reviewPlacement({ width: 164, zoomed: false, minimumWidth: 82 })).toBe('right');
-});
-
-it('places the review in a tab when the pane is one column too narrow', () => {
-  expect(reviewPlacement({ width: 163, zoomed: false, minimumWidth: 82 })).toBe('tab');
-});
-
-it('places the review in a tab when the pane is zoomed', () => {
-  expect(reviewPlacement({ width: 200, zoomed: true, minimumWidth: 82 })).toBe('tab');
+it.each<{ name: string; width: number; zoomed: boolean; placement: string }>([
+  { name: 'the pane has room for two halves', width: 164, zoomed: false, placement: 'right' },
+  { name: 'the pane is one column too narrow', width: 163, zoomed: false, placement: 'tab' },
+  { name: 'the pane is zoomed', width: 200, zoomed: true, placement: 'tab' },
+])('places the review $placement when $name', ({ width, zoomed, placement }) => {
+  expect(reviewPlacement({ width, zoomed, minimumWidth: 82 })).toBe(placement);
 });
