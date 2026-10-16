@@ -290,6 +290,39 @@ describe('start_slice', () => {
     expect(await saved()).toEqual(before);
   });
 
+  it('creates every ticket when the agent team lookup works only once', async () => {
+    const fake = createLinearFake();
+
+    addSlice(fake);
+
+    const { call, saved, recordNoIdentifiers } = await setUp(fake);
+
+    await recordNoIdentifiers();
+
+    const { stateToken } = await call('read');
+    let teamLookups = 0;
+
+    const flakyTeam: Fake = {
+      ...fake,
+      exec: async (command, commandArguments, options) => {
+        if (commandArguments.some((argument) => argument.includes('team(id: $key)'))) {
+          teamLookups += 1;
+
+          if (teamLookups > 1) {
+            throw new Error('Linear is unavailable.');
+          }
+        }
+
+        return fake.exec(command, commandArguments, options);
+      },
+    };
+
+    const result = await call('apply', stateToken, flakyTeam);
+
+    expect(result.tickets.map((ticket) => ticket.status)).toEqual(['new', 'new']);
+    expect(await saved()).toEqual(children(fake).map((issue) => issue.identifier));
+  });
+
   it('lists a created ticket as applied when saving its identifier fails', async () => {
     const fake = createLinearFake();
 

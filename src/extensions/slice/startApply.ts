@@ -22,6 +22,7 @@ interface StartProgress {
   urls: Map<string, string>;
   changed: Set<number>;
   created: Set<number>;
+  teamId: string | undefined;
 }
 
 export const describeStartWrite = (start: Start, write: StartWrite): string => {
@@ -61,11 +62,15 @@ const createTicket = async (runtime: Runtime, progress: StartProgress, number: n
   const ticket = requireTicket(progress, number);
   const body = progress.draft.bodies[number - 1] ?? '';
 
-  const route = { team: progress.agentTeam, project: null };
-  const ids = await readRouteIds(runtime.exec, runtime.root, route);
+  if (progress.teamId === undefined) {
+    const route = { team: progress.agentTeam, project: null };
+    const ids = await readRouteIds(runtime.exec, runtime.root, route);
+
+    progress.teamId = ids.team;
+  }
 
   const created = await createIssue(runtime.exec, runtime.root, {
-    team: ids.team,
+    team: progress.teamId,
     project: null,
     parent: progress.sliceId,
     title: ticket.title,
@@ -338,6 +343,7 @@ export const applyStart = async (
     urls: new Map(),
     changed: new Set(),
     created: new Set(),
+    teamId: undefined,
   };
 
   const applied = await runWrites(runtime, progress, state.plan.writes);
