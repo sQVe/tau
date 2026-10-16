@@ -16,7 +16,8 @@ export interface MutationReport {
 
 const maxSnippetLength = 80;
 
-const unreported = new Set(['Ignored', 'CompileError']);
+// Stryker counts compile and runtime errors as invalid mutants, outside the score.
+const unreported = new Set(['Ignored', 'CompileError', 'RuntimeError']);
 
 const squash = (text: string) => {
   const flat = text.replaceAll(/\s+/g, ' ').trim();

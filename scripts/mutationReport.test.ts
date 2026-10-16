@@ -71,6 +71,7 @@ describe('formatMutationReport', () => {
         }),
         mutant({ status: 'Timeout' }),
         mutant({ status: 'Ignored' }),
+        mutant({ status: 'RuntimeError' }),
         mutant({
           status: 'NoCoverage',
           location: { start: { line: 3, column: 1 }, end: { line: 3, column: 2 } },
