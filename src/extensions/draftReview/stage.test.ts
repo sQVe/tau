@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,6 +7,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { parseReviewManifest, readReview, stageReview } from './stage.js';
+import type { Review } from './stage.js';
 
 const fixtures = join(import.meta.dirname, 'fixtures', 'review');
 const path = '/record/review.json';
@@ -61,19 +63,129 @@ const stagedFixture = async () => {
   return { repository, data };
 };
 
-it.each(['slices/../../outside.md', '..\\outside.md', 'a\\b/../../outside.md'])(
-  'refuses a saved manifest path that climbs out of .tau: %s',
-  async (climbing) => {
-    const { repository } = await stagedFixture();
-    const review = await stageReview(repository, ['.tau/slices/a.md']);
-    const manifestPath = join(review.recordDirectory, 'review.json');
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { paths: string[] };
+it.each([
+  'slices/../../outside.md',
+  '..\\outside.md',
+  'a\\b/../../outside.md',
+  '/etc/passwd',
+  '\\outside.md',
+  '.\\..\\outside.md',
+  'x\\\\..\\..\\outside.md',
+  'a\\b/../..',
+])('refuses a saved manifest path that climbs out of .tau: %s', async (climbing) => {
+  const { repository } = await stagedFixture();
+  const review = await stageReview(repository, ['.tau/slices/a.md']);
+  const manifestPath = join(review.recordDirectory, 'review.json');
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { paths: string[] };
 
-    manifest.paths = [climbing];
-    await writeFile(manifestPath, JSON.stringify(manifest));
+  manifest.paths = [climbing];
+  await writeFile(manifestPath, JSON.stringify(manifest));
+
+  await expect(readReview(repository, review.recordDirectory)).rejects.toThrow(
+    /names a path outside \.tau/,
+  );
+});
+
+const tamperManifest = async (review: Review, changes: Record<string, unknown>) => {
+  const manifestPath = join(review.recordDirectory, 'review.json');
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>;
+
+  await writeFile(manifestPath, JSON.stringify({ ...manifest, ...changes }));
+};
+
+it('refuses a safe path list that holds one path climbing out of .tau', async () => {
+  const { repository } = await stagedFixture();
+  const review = await stageReview(repository, ['.tau/slices/a.md']);
+
+  await tamperManifest(review, { paths: ['slices/a.md', '../outside.md'] });
+
+  await expect(readReview(repository, review.recordDirectory)).rejects.toThrow(
+    /names a path outside \.tau/,
+  );
+});
+
+it('reads a manifest whose paths wander but stay inside .tau', async () => {
+  const { repository } = await stagedFixture();
+  const review = await stageReview(repository, ['.tau/slices/a.md']);
+  const paths = ['slices/a.md', 'a/b/../../c.md', 'a//./b.md'];
+
+  await tamperManifest(review, { paths });
+
+  expect((await readReview(repository, review.recordDirectory)).paths).toEqual(paths);
+});
+
+it.each(['outside the temporary directory', 'without the prefix', 'inside a staging directory'])(
+  'refuses a manifest naming a staging directory Tau did not create (%s) and keeps it',
+  async (kind) => {
+    const { repository, data } = await stagedFixture();
+    const review = await stageReview(repository, ['.tau/slices/a.md']);
+
+    const directories: Record<string, () => Promise<string>> = {
+      'outside the temporary directory': () => mkdtemp(join(repository, 'tau-draft-review-')),
+      'without the prefix': () => mkdtemp(join(data, 'precious-')),
+      'inside a staging directory': async () => {
+        const nested = join(review.stagingDirectory, 'tau-draft-review-nested');
+
+        await mkdir(nested);
+
+        return nested;
+      },
+    };
+
+    const stagingDirectory = (await directories[kind]?.()) ?? '';
+
+    await tamperManifest(review, { stagingDirectory });
 
     await expect(readReview(repository, review.recordDirectory)).rejects.toThrow(
-      /names a path outside \.tau/,
+      /staging directory it did not create/,
     );
+
+    expect(existsSync(stagingDirectory)).toBe(true);
   },
 );
+
+it('refuses to review a file inside the draft_review record directory', async () => {
+  const { repository } = await stagedFixture();
+  const review = await stageReview(repository, ['.tau/slices/a.md']);
+  const own = join(review.recordDirectory, 'review.json');
+
+  await expect(stageReview(repository, [own])).rejects.toThrow(/cannot review its own records/);
+});
+
+it('names a missing review record, and rethrows other read errors as they are', async () => {
+  const { repository } = await stagedFixture();
+  const review = await stageReview(repository, ['.tau/slices/a.md']);
+  const manifestPath = join(review.recordDirectory, 'review.json');
+
+  await rm(manifestPath);
+
+  await expect(readReview(repository, review.recordDirectory)).rejects.toThrow(
+    /found no review record/,
+  );
+
+  await mkdir(manifestPath);
+
+  await expect(readReview(repository, review.recordDirectory)).rejects.toThrow(/EISDIR/);
+});
+
+it('rethrows a path error that is not a missing file', async () => {
+  const { repository } = await stagedFixture();
+
+  await expect(stageReview(repository, ['.tau/slices/a.md/inside'])).rejects.toThrow(/ENOTDIR/);
+});
+
+it.each(['null', '5', '"text"', '{"version":"2","stagingDirectory":"/tmp/x","paths":["a.md"]}'])(
+  'reads a manifest of %s as malformed, not newer',
+  (text) => {
+    expect(() => parseReviewManifest(path, text)).toThrow(/Malformed review record/);
+  },
+);
+
+it.each([
+  { label: 'an empty staging directory', stagingDirectory: '', paths: ['a.md'] },
+  { label: 'an empty path', stagingDirectory: '/tmp/x', paths: [''] },
+])('refuses a manifest with $label', ({ stagingDirectory, paths }) => {
+  const text = JSON.stringify({ version: 1, stagingDirectory, paths });
+
+  expect(() => parseReviewManifest(path, text)).toThrow(/Malformed review record/);
+});

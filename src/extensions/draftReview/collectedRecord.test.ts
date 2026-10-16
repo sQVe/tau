@@ -1,4 +1,4 @@
-import { cp, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -54,5 +54,54 @@ it.each([
   const directory = await directoryWith(undefined);
 
   await writeFile(join(directory, 'collected.json'), text);
+  await expect(loadCollectedRecord(directory)).rejects.toThrow(/Malformed collected review/);
+});
+
+it('rethrows a read error that is not a missing record', async () => {
+  const directory = await directoryWith(undefined);
+
+  await mkdir(join(directory, 'collected.json'));
+
+  await expect(loadCollectedRecord(directory)).rejects.toThrow(/EISDIR/);
+});
+
+it.each(['null', '5', '"text"', '{"version":"2","comments":[],"edits":[]}'])(
+  'reads a record of %s as malformed, not newer',
+  async (text) => {
+    const directory = await directoryWith(undefined);
+
+    await writeFile(join(directory, 'collected.json'), text);
+
+    await expect(loadCollectedRecord(directory)).rejects.toThrow(/Malformed collected review/);
+  },
+);
+
+const comment = {
+  sessionPath: 's',
+  id: 'i',
+  deleted: false,
+  path: 'p',
+  startLine: null,
+  endLine: null,
+  type: 't',
+  content: 'c',
+};
+
+const edit = { path: 'p', diff: 'd', staged: 's', status: 'pending' };
+
+it.each([
+  { label: 'an empty session path', comments: [{ ...comment, sessionPath: '' }], edits: [] },
+  { label: 'an empty comment id', comments: [{ ...comment, id: '' }], edits: [] },
+  { label: 'an empty comment path', comments: [{ ...comment, path: '' }], edits: [] },
+  { label: 'an empty edit path', comments: [], edits: [{ ...edit, path: '' }] },
+  { label: 'an unknown field in an edit', comments: [], edits: [{ ...edit, x: 1 }] },
+])('refuses $label', async ({ comments, edits }) => {
+  const directory = await directoryWith(undefined);
+
+  await writeFile(
+    join(directory, 'collected.json'),
+    JSON.stringify({ version: 1, comments, edits }),
+  );
+
   await expect(loadCollectedRecord(directory)).rejects.toThrow(/Malformed collected review/);
 });
