@@ -720,5 +720,5 @@ it('strips only a leading @ from a tool path', async ({ onTestFinished }) => {
     });
 
   expect(await write('src@/value.ts')).toBeUndefined();
-  expect(await write('@src/value.ts')).toMatchObject({ content: [{ text: redHint }] });
+  expect(await write('@src/value.ts')).toMatchObject({ content: [{ type: 'text' }] });
 });

@@ -88,24 +88,28 @@ describe('runTests', () => {
     });
   });
 
-  it('keeps the runner error when removing its diagnostics directory also fails', async () => {
-    const root = join(process.env.PI_CODING_AGENT_DIR ?? '', 'test-runs');
-    onTestFinished(() => chmod(root, 0o700));
+  // Root removes a directory whatever its permissions, so chmod cannot make the removal fail.
+  it.skipIf(process.getuid?.() === 0)(
+    'keeps the runner error when removing its diagnostics directory also fails',
+    async () => {
+      const root = join(process.env.PI_CODING_AGENT_DIR ?? '', 'test-runs');
+      onTestFinished(() => chmod(root, 0o700));
 
-    const run = runTestsWithDiagnostics(
-      { scope: 'full', verificationArgv, cwd: '/repo' },
-      makeDeps({
-        spawn: async () => {
-          await chmod(root, 0o500);
+      const run = runTestsWithDiagnostics(
+        { scope: 'full', verificationArgv, cwd: '/repo' },
+        makeDeps({
+          spawn: async () => {
+            await chmod(root, 0o500);
 
-          throw new Error('spawn exploded');
-        },
-      }),
-    );
+            throw new Error('spawn exploded');
+          },
+        }),
+      );
 
-    await expect(run).rejects.toThrow('spawn exploded');
-    expect(await readdir(root)).toEqual([expect.stringMatching(/^run-/)]);
-  });
+      await expect(run).rejects.toThrow('spawn exploded');
+      expect(await readdir(root)).toEqual([expect.stringMatching(/^run-/)]);
+    },
+  );
 
   it('removes its diagnostics directory when the runner throws', async () => {
     const root = join(process.env.PI_CODING_AGENT_DIR ?? '', 'test-runs');
