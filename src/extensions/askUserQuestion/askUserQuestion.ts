@@ -6,6 +6,7 @@ import { parseWorkerNoticeEvent, workerNoticeChannel } from '../../workerNoticeE
 import { questionDialog } from './dialog.js';
 import type { DialogQuestion, DialogResult, DialogSession } from './dialog.js';
 import type { Answer, QuestionnaireState } from './questionnaire.js';
+import { refuseUnrepliedTypedAnswer } from './typedAnswerReply.js';
 import { validateQuestions } from './validation.js';
 
 const optionSchema = Type.Object({
@@ -134,6 +135,9 @@ const answerSegment = (answer: Answer) => {
   return `"${answer.question}"="${answer.selected.join(', ')}".${preview}`;
 };
 
+const typedAnswerEnding =
+  'The user typed a free-text answer. If it asks a question or asks for an explanation, answer it in visible text first, then end your turn. Do not call ask_user_question in the same message.';
+
 const responseText = (result: DialogResult) => {
   if (result.kind === 'declined') {
     return 'User declined to answer questions';
@@ -144,8 +148,13 @@ const responseText = (result: DialogResult) => {
   }
 
   const segments = result.answers.map(answerSegment).join(' ');
+  const typed = result.answers.some((answer) => answer.typed);
 
-  return `User has answered your questions: ${segments} You can now continue with the user's answers in mind.`;
+  const ending = typed
+    ? typedAnswerEnding
+    : "You can now continue with the user's answers in mind.";
+
+  return `User has answered your questions: ${segments} ${ending}`;
 };
 
 // The model can repeat the same questions with their properties in another order.
@@ -196,6 +205,8 @@ export default function askUserQuestionExtension(pi: ExtensionAPI): void {
       if (context.mode !== 'tui') {
         throw new Error('The questionnaire needs the terminal UI. Ask in plain text instead.');
       }
+
+      refuseUnrepliedTypedAnswer(context.sessionManager);
 
       validateQuestions(params.questions);
 

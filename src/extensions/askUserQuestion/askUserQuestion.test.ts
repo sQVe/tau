@@ -30,14 +30,16 @@ const registeredTool = () => {
 };
 
 // Pi checks the schema before it runs the tool, so the call goes through the same check.
-const ask = (question: Record<string, unknown>) => {
+const ask = (question: Record<string, unknown>, branch: unknown[] = []) => {
   const { tool } = registeredTool();
 
   const custom = vi.fn<() => Promise<DialogResult>>().mockResolvedValue({ kind: 'declined' });
 
-  const context = { mode: 'tui', ui: { custom } } as unknown as Parameters<
-    ToolDefinition['execute']
-  >[4];
+  const context = {
+    mode: 'tui',
+    ui: { custom },
+    sessionManager: { getBranch: () => branch },
+  } as unknown as Parameters<ToolDefinition['execute']>[4];
 
   const call = async () => {
     const params: Parameters<ToolDefinition['execute']>[1] = validateToolArguments(tool, {
@@ -118,9 +120,11 @@ const driver = () => {
       arguments: { questions } as unknown as ToolCall['arguments'],
     });
 
-    const context = { mode: 'tui', ui: { custom } } as unknown as Parameters<
-      ToolDefinition['execute']
-    >[4];
+    const context = {
+      mode: 'tui',
+      ui: { custom },
+      sessionManager: { getBranch: () => [] },
+    } as unknown as Parameters<ToolDefinition['execute']>[4];
 
     return tool.execute('call', params, undefined, undefined, context);
   };
@@ -233,7 +237,7 @@ it('restores selections and typed text when the same questions are asked again',
 
   expect(result.details).toEqual({
     kind: 'answered',
-    answers: [{ question: 'Which features?', selected: ['Lint', 'hi'] }],
+    answers: [{ question: 'Which features?', selected: ['Lint', 'hi'], typed: true }],
   });
 });
 
@@ -327,4 +331,186 @@ it('keeps the questionnaire state out of the deferred result', async () => {
   const result = await pending;
 
   expect(result.details).toEqual({ kind: 'deferred', notices: [notice] });
+});
+
+const askResult = (typed: boolean) => ({
+  type: 'message',
+  message: {
+    role: 'toolResult',
+    toolName: 'ask_user_question',
+    details: { kind: 'answered', answers: [{ question: 'Q?', selected: ['x'], typed }] },
+  },
+});
+
+const assistant = (...content: Record<string, unknown>[]) => ({
+  type: 'message',
+  message: { role: 'assistant', content },
+});
+
+it('refuses a new question after a typed answer with no visible reply', async () => {
+  const branch = [askResult(true), assistant({ type: 'thinking', thinking: 'Explaining.' })];
+  const { call, custom } = ask(layout, branch);
+
+  await expect(call()).rejects.toThrow('visible text');
+
+  expect(custom).not.toHaveBeenCalled();
+});
+
+it('allows a new question after a typed answer when the assistant wrote visible text', async () => {
+  const branch = [askResult(true), assistant({ type: 'text', text: 'Here are the trade-offs.' })];
+  const { call, custom } = ask(layout, branch);
+
+  await call();
+
+  expect(custom).toHaveBeenCalledOnce();
+});
+
+it('allows a new question when the last result has no typed answer', async () => {
+  const { call, custom } = ask(layout, [askResult(true), askResult(false)]);
+
+  await call();
+
+  expect(custom).toHaveBeenCalledOnce();
+});
+
+const toolResult = (details: unknown, toolName = 'ask_user_question') => ({
+  type: 'message',
+  message: { role: 'toolResult', toolName, details },
+});
+
+const answered = (answer: unknown) => toolResult({ kind: 'answered', answers: [answer] });
+const typedAnswer = answered({ question: 'Q?', selected: ['x'], typed: true });
+const visible = assistant({ type: 'text', text: 'Reply.' });
+
+it.each([
+  { name: 'typed result alone', branch: [typedAnswer], refused: true },
+  {
+    name: 'blank text',
+    branch: [typedAnswer, assistant({ type: 'text', text: '  \n' })],
+    refused: true,
+  },
+  {
+    name: 'text block without text',
+    branch: [typedAnswer, assistant({ type: 'text' })],
+    refused: true,
+  },
+  {
+    name: 'tool call only',
+    branch: [typedAnswer, assistant({ type: 'toolCall', name: 'ask_user_question' })],
+    refused: true,
+  },
+  {
+    name: 'unrelated entry types',
+    branch: [typedAnswer, { type: 'label' }, { type: 'custom' }],
+    refused: true,
+  },
+  {
+    name: 'unrelated tool result',
+    branch: [typedAnswer, toolResult({ typed: false }, 'bash')],
+    refused: true,
+  },
+  {
+    name: 'user message',
+    branch: [typedAnswer, { type: 'message', message: { role: 'user', content: 'hi' } }],
+    refused: true,
+  },
+  {
+    name: 'malformed assistant content',
+    branch: [typedAnswer, { type: 'message', message: { role: 'assistant', content: 'text' } }],
+    refused: true,
+  },
+  {
+    name: 'refused call after typed result',
+    branch: [
+      typedAnswer,
+      { type: 'message', message: { ...toolResult({}).message, isError: true } },
+    ],
+    refused: true,
+  },
+  { name: 'visible text after result', branch: [typedAnswer, visible], refused: false },
+  {
+    name: 'text beside a tool call',
+    branch: [typedAnswer, assistant({ type: 'text', text: 'Reply.' }, { type: 'toolCall' })],
+    refused: false,
+  },
+  {
+    name: 'options-only result',
+    branch: [answered({ question: 'Q?', selected: ['x'], typed: false })],
+    refused: false,
+  },
+  {
+    name: 'typed result superseded by options-only',
+    branch: [typedAnswer, answered({ question: 'Q?', selected: ['x'], typed: false })],
+    refused: false,
+  },
+  {
+    name: 'declined result',
+    branch: [typedAnswer, toolResult({ kind: 'declined' })],
+    refused: false,
+  },
+  {
+    name: 'deferred result',
+    branch: [typedAnswer, toolResult({ kind: 'deferred', notices: [] })],
+    refused: false,
+  },
+  { name: 'absent details', branch: [toolResult(undefined)], refused: false },
+  {
+    name: 'details without typed',
+    branch: [answered({ question: 'Q?', selected: ['x'] })],
+    refused: false,
+  },
+  {
+    name: 'non-boolean typed',
+    branch: [answered({ question: 'Q?', selected: ['x'], typed: 'true' })],
+    refused: false,
+  },
+  { name: 'null details', branch: [toolResult(null)], refused: false },
+  { name: 'string details', branch: [toolResult('answered')], refused: false },
+  {
+    name: 'answers not a list',
+    branch: [toolResult({ kind: 'answered', answers: 'typed' })],
+    refused: false,
+  },
+  {
+    name: 'null answer',
+    branch: [toolResult({ kind: 'answered', answers: [null] })],
+    refused: false,
+  },
+  { name: 'no earlier result', branch: [], refused: false },
+])('branch with $name', async ({ branch, refused }) => {
+  const { call, custom } = ask(layout, branch);
+
+  const outcome = await call().then(
+    () => 'allowed',
+    (error: unknown) => (error instanceof Error ? error.message : 'unknown'),
+  );
+
+  expect(outcome === 'allowed').toBe(!refused);
+  expect(custom).toHaveBeenCalledTimes(refused ? 0 : 1);
+});
+
+const answers = (result: { details?: unknown }) =>
+  (result.details as { answers: { selected: string[]; typed: boolean }[] }).answers;
+
+const answerWith = async (keys: string[]) => {
+  const { run, latest } = driver();
+  const pending = run([layout]);
+
+  for (const key of keys) {
+    latest().handleInput(key);
+  }
+
+  return pending;
+};
+
+it('answers a typed answer differently from an options-only answer with the same text', async () => {
+  const optionsOnly = await answerWith(['\r']);
+  const typed = await answerWith([down, down, ...'Stacked'.split(''), '\r']);
+
+  expect(answers(optionsOnly)).toEqual([
+    expect.objectContaining({ selected: ['Stacked'], typed: false }),
+  ]);
+
+  expect(answers(typed)).toEqual([expect.objectContaining({ selected: ['Stacked'], typed: true })]);
+  expect(typed.content).not.toEqual(optionsOnly.content);
 });

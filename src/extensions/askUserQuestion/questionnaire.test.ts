@@ -132,48 +132,63 @@ it.each([
     questions: [multi],
     state: at([multi], 1, { checked: [2, 0] }),
     selected: ['Lint', 'Test'],
+    typed: false,
   },
   {
     rule: 'Enter submits from the custom row while typing',
     questions: [multi],
     state: at([multi], 3, { checked: [1], customText: 'Docs' }),
     selected: ['Format', 'Docs'],
+    typed: true,
   },
   {
     rule: 'Enter submits typed text together with checked options',
     questions: [multi],
     state: at([multi], 0, { checked: [0], customText: ' Docs ' }),
     selected: ['Lint', 'Docs'],
+    typed: true,
   },
   {
     rule: 'Enter leaves out an empty custom row',
     questions: [multi],
     state: at([multi], 0, { checked: [0], customText: '  ' }),
     selected: ['Lint'],
+    typed: false,
   },
   {
     rule: 'Enter picks the focused single-select option',
     questions: [single],
     state: at([single], 1, { customText: 'ignored' }),
     selected: ['Temporal'],
+    typed: false,
   },
   {
     rule: 'Enter picks the typed single-select answer',
     questions: [single],
     state: at([single], 2, { customText: 'date-fns' }),
     selected: ['date-fns'],
+    typed: true,
   },
-])('$rule', ({ questions, state, selected }) => {
+  {
+    rule: 'Enter records typed text equal to an option label as typed',
+    questions: [single],
+    state: at([single], 2, { customText: 'Luxon' }),
+    selected: ['Luxon'],
+    typed: true,
+  },
+])('$rule', ({ questions, state, selected, typed }) => {
   expect(handleKey(state, press('enter'), questions, viewport, false)).toEqual({
     kind: 'submit',
-    answers: [{ question: questions[0]?.question, selected }],
+    answers: [{ question: questions[0]?.question, selected, typed }],
   });
 });
 
 it('returns the preview of a picked single-select option', () => {
   expect(handleKey(at([single], 0), press('enter'), [single], viewport, false)).toEqual({
     kind: 'submit',
-    answers: [{ question: 'Which library?', selected: ['Luxon'], preview: 'luxon()' }],
+    answers: [
+      { question: 'Which library?', selected: ['Luxon'], typed: false, preview: 'luxon()' },
+    ],
   });
 });
 
@@ -215,8 +230,8 @@ it('answers questions in turn and submits after the last one', () => {
   expect(second).toEqual({
     kind: 'submit',
     answers: [
-      { question: 'Which library?', selected: ['Luxon'], preview: 'luxon()' },
-      { question: 'Which features?', selected: ['Lint'] },
+      { question: 'Which library?', selected: ['Luxon'], typed: false, preview: 'luxon()' },
+      { question: 'Which features?', selected: ['Lint'], typed: false },
     ],
   });
 });
@@ -269,8 +284,8 @@ it('submits a changed answer after returning to an answered question', () => {
   expect(outcome).toEqual({
     kind: 'submit',
     answers: [
-      { question: 'Which features?', selected: ['Lint', 'Format'] },
-      { question: 'Which library?', selected: ['Luxon'], preview: 'luxon()' },
+      { question: 'Which features?', selected: ['Lint', 'Format'], typed: false },
+      { question: 'Which library?', selected: ['Luxon'], typed: false, preview: 'luxon()' },
     ],
   });
 });
@@ -290,8 +305,8 @@ it('keeps an answer when the user only moves through a multi-select question', (
   expect(outcome).toEqual({
     kind: 'submit',
     answers: [
-      { question: 'Which features?', selected: ['Lint'] },
-      { question: 'Which library?', selected: ['Luxon'], preview: 'luxon()' },
+      { question: 'Which features?', selected: ['Lint'], typed: false },
+      { question: 'Which library?', selected: ['Luxon'], typed: false, preview: 'luxon()' },
     ],
   });
 });
@@ -311,8 +326,8 @@ it('keeps a single-select answer when a key does not move the cursor', () => {
   expect(outcome).toEqual({
     kind: 'submit',
     answers: [
-      { question: 'Which library?', selected: ['Luxon'], preview: 'luxon()' },
-      { question: 'Which features?', selected: ['Lint'] },
+      { question: 'Which library?', selected: ['Luxon'], typed: false, preview: 'luxon()' },
+      { question: 'Which features?', selected: ['Lint'], typed: false },
     ],
   });
 });
@@ -391,8 +406,8 @@ it('keeps the answers when the full preview closes', () => {
   expect(outcome).toEqual({
     kind: 'submit',
     answers: [
-      { question: 'Which layout?', selected: ['Stacked'], preview: 'a\nb\nc\nd\ne' },
-      { question: 'Which library?', selected: ['Luxon'], preview: 'luxon()' },
+      { question: 'Which layout?', selected: ['Stacked'], typed: false, preview: 'a\nb\nc\nd\ne' },
+      { question: 'Which library?', selected: ['Luxon'], typed: false, preview: 'luxon()' },
     ],
   });
 });
@@ -450,7 +465,7 @@ it('keeps the checked options when Space hits the action row', () => {
 });
 
 const answeredThenAction = (label: string, cursor: number, back: KeyPress) => {
-  const answer = { question: single.question, selected: [label] };
+  const answer = { question: single.question, selected: [label], typed: false };
   const state = { ...at([single], cursor), answers: [answer] };
   const onAction = withAction(single, state, press('bottom'));
 
@@ -493,7 +508,7 @@ it('moves a restored cursor off the action row and closes the full preview', () 
 });
 
 it('moves a restored cursor off the action row to the saved single-select answer', () => {
-  const answer = { question: single.question, selected: ['Temporal'] };
+  const answer = { question: single.question, selected: ['Temporal'], typed: false };
   const saved = { ...at([single], 3), answers: [answer] };
 
   expect(restoredState(saved, [single]).questions[0]?.cursor).toBe(1);
