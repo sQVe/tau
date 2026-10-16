@@ -144,6 +144,8 @@ or Git. Workers then carry out the agent tickets.
      already answers it. The scout's answer never blocks the start.
    - After a revision, check the draft again as step 7 says.
    - A ticket with no questions goes on to step 9 unchanged.
+   - A scout that fails to launch or stops without a report does not stop the start. Its ticket goes
+     on to step 9 unchanged, and the step 10 report names the failure.
 
 9. Start the slice in this order.
    - Check that `git status --porcelain` prints nothing. If it prints anything, stop and report it.
@@ -172,7 +174,7 @@ or Git. Workers then carry out the agent tickets.
     - Each agent ticket as `new` or `unchanged`, with its identifier, URL, title, and one line from
       its `## Outcome`.
     - Each new agent ticket's scout questions from step 8, each with whether you revised the ticket
-      or proceeded.
+      or proceeded, and each scout that failed.
     - Each acceptance criterion of the slice, with the agent ticket numbers that cover it.
 
 11. Delegate each agent ticket to a worker, and pass the path of its body file, such as
