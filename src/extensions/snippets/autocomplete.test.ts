@@ -1,5 +1,5 @@
 import type { AutocompleteItem, AutocompleteProvider } from '@earendil-works/pi-tui';
-import { expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { snippetAutocomplete } from './autocomplete.js';
 import type { Snippet } from './snippet.js';
@@ -164,4 +164,65 @@ it('leaves completions of other suggestions to the wrapped provider', () => {
 
   expect(result).toEqual({ lines: ['wrapped'], cursorLine: 0, cursorCol: 7 });
   expect(wrapped.applyCompletion).toHaveBeenCalledWith(['Read @sr'], 0, 8, wrappedItem, '@sr');
+});
+
+it('finds a query on a line that has lines after it', async () => {
+  const { result } = suggest(['First line.', '#simp', 'Last line.'], 1, 5);
+
+  expect((await result)?.items.map((item) => item.value)).toEqual(['#simplify']);
+});
+
+it.each([
+  { case: 'punctuation ends the query', lines: ['Review #si. '], col: 11 },
+  { case: 'the line has no query', lines: ['Read @sr '], col: 9 },
+])('passes to the wrapped provider when $case before a space', async ({ lines, col }) => {
+  const { wrapped, result } = suggest(lines, 0, col);
+
+  expect(await result).toEqual({ items: [wrappedItem], prefix: '@sr' });
+  expect(wrapped.getSuggestions).toHaveBeenCalledOnce();
+});
+
+it('passes the file completion trigger of the wrapped provider through', () => {
+  const shouldTriggerFileCompletion = vi.fn<() => boolean>(() => true);
+  const wrapped = { ...createWrapped(), shouldTriggerFileCompletion };
+  const provider = snippetAutocomplete(() => snippets)(wrapped);
+
+  const triggers = provider.shouldTriggerFileCompletion?.(['@'], 0, 1);
+
+  expect(triggers).toBe(true);
+  expect(shouldTriggerFileCompletion).toHaveBeenCalledWith(['@'], 0, 1);
+});
+
+it('has no file completion trigger when the wrapped provider has none', () => {
+  const provider = snippetAutocomplete(() => snippets)(createWrapped());
+
+  expect(provider.shouldTriggerFileCompletion).toBeUndefined();
+});
+
+describe('completing a snippet item that does not belong to the query', () => {
+  const simplifyItem: AutocompleteItem = { value: '#simplify', label: '#simplify' };
+
+  it.each([
+    { case: 'the prefix no longer matches the query', lines: ['#sim'], prefix: '#si' },
+    { case: 'the cursor is not in a query', lines: ['hello'], prefix: '#sim' },
+    {
+      case: 'the cursor is not in a query and the prefix is the word undefined',
+      lines: ['hello'],
+      prefix: '#undefined',
+    },
+    {
+      case: 'the snippet is gone',
+      lines: ['#sim'],
+      prefix: '#sim',
+      item: { value: '#gone', label: '#gone' },
+    },
+  ])('passes to the wrapped provider when $case', ({ lines, prefix, item }) => {
+    const { wrapped, provider } = suggest(lines, 0, lines[0]?.length ?? 0);
+    const column = lines[0]?.length ?? 0;
+
+    const result = provider.applyCompletion(lines, 0, column, item ?? simplifyItem, prefix);
+
+    expect(result).toEqual({ lines: ['wrapped'], cursorLine: 0, cursorCol: 7 });
+    expect(wrapped.applyCompletion).toHaveBeenCalledOnce();
+  });
 });
