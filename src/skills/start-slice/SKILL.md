@@ -137,9 +137,9 @@ or Git. Workers then carry out the agent tickets.
 8. Check that each new agent ticket is ready for a worker who knows only the ticket. A ticket is new
    when its row in `start.md` has no identifier. In one turn, launch one fresh `scout` per new
    ticket with the profile's default model. Brief each scout with the path of its body file and the
-   tree from step 5. Tell it to read only that file and the files the ticket names, with
-   `git show <tree>:<path>`. It lists each question it would ask before starting the work, or says
-   it has none.
+   tree from step 5. Tell it to read only that file, with `read`, and the files the ticket names,
+   with `git show <tree>:<path>`. It lists each question it would ask before starting the work, or
+   says it has none.
    - For each question, revise the body file to answer it, or proceed when the ticket or the code
      already answers it. The scout's answer never blocks the start.
    - After a revision, check the draft again as step 7 says.
