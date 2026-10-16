@@ -15,13 +15,18 @@ const createHarness = (onTestFinished: TestContext['onTestFinished']) => {
   const fake = fakeExtensionApi();
   const notify = vi.fn<(message: string, level?: string) => void>();
   const compact = vi.fn<() => void>();
+  const contextWindow = 300_000;
   let tokens: number | null = 0;
 
   const context = {
     hasUI: true,
     ui: { notify },
     compact,
-    getContextUsage: () => ({ tokens, contextWindow: 1_000_000, percent: null }),
+    getContextUsage: () => ({
+      tokens,
+      contextWindow,
+      percent: tokens === null ? null : (tokens / contextWindow) * 100,
+    }),
   } as unknown as ExtensionContext;
 
   compactionExtension(fake.pi);
@@ -38,24 +43,24 @@ const createHarness = (onTestFinished: TestContext['onTestFinished']) => {
   return { fake, notify, compact, emit, settleAt };
 };
 
-it('reminds once when the context passes the threshold and again after a compaction', async ({
+it('reminds once when the context passes half the window and again after a compaction', async ({
   onTestFinished,
 }) => {
   const harness = createHarness(onTestFinished);
 
   await harness.emit('session_start');
-  await harness.settleAt(190_000);
+  await harness.settleAt(140_000);
 
   expect(harness.notify).not.toHaveBeenCalled();
 
-  await harness.settleAt(220_000);
-  await harness.settleAt(230_000);
+  await harness.settleAt(160_000);
+  await harness.settleAt(170_000);
 
   expect(harness.notify).toHaveBeenCalledTimes(1);
 
   await harness.emit('session_compact');
   await harness.settleAt(null);
-  await harness.settleAt(210_000);
+  await harness.settleAt(155_000);
 
   expect(harness.notify).toHaveBeenCalledTimes(2);
   expect(harness.compact).not.toHaveBeenCalled();

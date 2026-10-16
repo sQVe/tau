@@ -2,7 +2,9 @@
 
 **Date**: 2026-10-01\
 **Status**: Accepted; history tool references superseded by
-[ADR 0097 (Track only the current session's workers)](./0097-track-only-the-current-sessions-workers.md)\
+[ADR 0097 (Track only the current session's workers)](./0097-track-only-the-current-sessions-workers.md);
+reminder superseded by
+[ADR 0114 (Remind managers at half the context window to start a new session)](./0114-remind-managers-at-half-the-context-window-to-start-a-new-session.md)\
 **Extends**:
 [ADR 0073 (Leave manager compaction to Pi)](./0073-leave-manager-compaction-to-pi.md)\
 **Related**: [ADR 0070 (Compact manager sessions at Pi turn boundaries)](./0070-compact-manager-sessions-at-pi-turn-boundaries.md)
