@@ -1,10 +1,86 @@
 import { createHash } from 'node:crypto';
-import { glob, readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import type { Dirent } from 'node:fs';
+import { readdir, readFile, realpath, stat } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 
 import { hasErrorCode, isMissingFile } from '../../errors.js';
 import { configurationGlobs } from './config.js';
 import type { TddConfig } from './config.js';
+import { closesLoop, createInputRules } from './inputGlob.js';
+
+const unreadableDirectoryCodes = ['EACCES', 'EPERM', 'ENOTDIR', 'ELOOP'];
+
+const isUnreadableDirectory = (error: unknown) =>
+  isMissingFile(error) || unreadableDirectoryCodes.some((code) => hasErrorCode(error, code));
+
+const readDirectory = async (directory: string) => {
+  try {
+    return await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if (isUnreadableDirectory(error)) {
+      return [];
+    }
+
+    throw error;
+  }
+};
+
+export const listInputs = async (cwd: string, config: TddConfig): Promise<string[]> => {
+  const includeGlobs = [
+    ...config.productionGlobs,
+    ...config.testGlobs,
+    ...config.testSupportGlobs,
+    ...configurationGlobs,
+  ];
+
+  const rules = createInputRules(includeGlobs, config.excludedGlobs);
+  const inputs: string[] = [];
+
+  // A symlinked directory is entered unless its real path is one of its own ancestors.
+  const realDirectory = async (directory: string, entry: Dirent, parentReal: string) => {
+    if (entry.isDirectory()) {
+      return join(parentReal, entry.name);
+    }
+
+    if (!entry.isSymbolicLink()) {
+      return null;
+    }
+
+    const target = await realpath(resolve(cwd, directory, entry.name)).catch(() => null);
+    const info = target === null ? null : await stat(target).catch(() => null);
+
+    return info?.isDirectory() === true ? target : null;
+  };
+
+  const visit = async (
+    directory: string,
+    ancestors: ReadonlySet<string>,
+    real: string,
+  ): Promise<void> => {
+    const entries = await readDirectory(resolve(cwd, directory));
+
+    await Promise.all(
+      entries.map(async (entry) => {
+        const path = directory === '' ? entry.name : `${directory}/${entry.name}`;
+        const childReal = await realDirectory(directory, entry, real);
+
+        if (childReal === null) {
+          if (rules.isInput(path)) {
+            inputs.push(path);
+          }
+        } else if (rules.entersDirectory(entry.name, path) && !closesLoop(childReal, ancestors)) {
+          await visit(path, new Set([...ancestors, childReal]), childReal);
+        }
+      }),
+    );
+  };
+
+  const root = await realpath(cwd);
+
+  await visit('', new Set([root]), root);
+
+  return inputs;
+};
 
 // Content is checked at bounded checkpoints, not as an atomic snapshot.
 export const fingerprintInputs = async (
@@ -12,20 +88,7 @@ export const fingerprintInputs = async (
   config: TddConfig,
   files: string[],
 ): Promise<string> => {
-  const paths = [...files];
-
-  // Bun, which runs Pi, rejects the `withFileTypes` option of `glob`.
-  for await (const file of glob(
-    [
-      ...config.productionGlobs,
-      ...config.testGlobs,
-      ...config.testSupportGlobs,
-      ...configurationGlobs,
-    ],
-    { cwd, exclude: config.excludedGlobs },
-  )) {
-    paths.push(file);
-  }
+  const paths = [...files, ...(await listInputs(cwd, config))];
 
   const digest = createHash('sha256');
 
@@ -36,7 +99,7 @@ export const fingerprintInputs = async (
 
         return [file, createHash('sha256').update(content).digest('hex')];
       } catch (error) {
-        // A glob such as `src/**` also matches directories, which cannot be hashed.
+        // A symlink to a directory is listed as a file but cannot be hashed.
         if (hasErrorCode(error, 'EISDIR')) {
           return null;
         }

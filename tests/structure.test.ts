@@ -80,6 +80,7 @@ const pureModules = [
   'src/extensions/subagents/workerTools.ts',
   'src/extensions/tauSkills/requiredFor.ts',
   'src/extensions/tdd/configLayers.ts',
+  'src/extensions/tdd/inputGlob.ts',
   'src/extensions/tracker/candidateFit.ts',
   'src/isRecord.ts',
   'src/models/allowedModels.ts',

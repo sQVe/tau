@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ConfigWarnings } from '../../tauConfig.js';
-import { classifyPath, defaultTddConfig, loadTddConfig } from './config.js';
+import { classifyPath, configurationGlobs, defaultTddConfig, loadTddConfig } from './config.js';
+import { unsupportedGlobReason } from './inputGlob.js';
 
 const classify = (path: string) => classifyPath(defaultTddConfig, path);
 
@@ -151,5 +152,63 @@ describe('TDD config', () => {
 
     expect(loading).toThrow(join(cwd, file));
     expect(loading).toThrow(problem);
+  });
+
+  it.for<[string, string]>([
+    ['testGlobs', 'src/\\\\*.ts'],
+    ['productionGlobs', 'f{a..c}.ts'],
+    ['productionGlobs', 'f{-1..1}.ts'],
+    ['testSupportGlobs', 'f{01..03}.ts'],
+    ['excludedGlobs', 'f{}.ts'],
+    ['excludedGlobs', 'f{1..3.ts'],
+    ['productionGlobs', 'f1}.ts'],
+    ['productionGlobs', 'f{1..2000000000}.ts'],
+    ['productionGlobs', 'f{1..1000}{1..2}.ts'],
+    ['productionGlobs', 'f{x}.ts'],
+    ['productionGlobs', 'src/[a.ts'],
+    ['productionGlobs', 'src/[ab][.ts'],
+    ['productionGlobs', 'src/[{}].ts'],
+    ['excludedGlobs', 'src/a].ts'],
+    ['productionGlobs', 'src/+(a|b).ts'],
+    ['productionGlobs', '{src,}/**'],
+  ])('rejects %s entry %s and names the glob', async ([list, glob], { onTestFinished }) => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-config-glob-'));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    await mkdir(join(cwd, '.pi'));
+    await writeFile(join(cwd, '.pi/tau.json'), JSON.stringify({ tdd: { [list]: [glob] } }));
+
+    const loading = () =>
+      loadTddConfig(
+        { cwd, agentDirectory: join(cwd, 'agent'), projectTrusted: true },
+        { notify: () => undefined },
+      );
+
+    expect(loading).toThrow(glob);
+  });
+
+  it('classifies a leading ./ test glob and a dot file as the fingerprint walk lists them', () => {
+    const config = {
+      ...defaultTddConfig,
+      testGlobs: ['./src/**/*.test.ts'],
+      productionGlobs: ['./lib/**/*.ts'],
+    };
+
+    expect(classifyPath(config, 'src/a.test.ts')).toBe('test');
+    expect(classifyPath(config, 'lib/a.ts')).toBe('production');
+    expect(classifyPath(defaultTddConfig, 'src/.hidden.test.ts')).toBe('test');
+    expect(classifyPath(defaultTddConfig, '.hidden/a.test.ts')).toBe('test');
+    expect(classifyPath(defaultTddConfig, 'src/.hidden.ts')).toBe('production');
+  });
+
+  it('supports every built-in glob', () => {
+    const builtIn = [
+      ...defaultTddConfig.productionGlobs,
+      ...defaultTddConfig.testGlobs,
+      ...defaultTddConfig.testSupportGlobs,
+      ...defaultTddConfig.excludedGlobs,
+      ...configurationGlobs,
+    ];
+
+    expect(builtIn.map(unsupportedGlobReason)).toEqual(builtIn.map(() => null));
   });
 });
