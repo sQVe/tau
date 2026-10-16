@@ -54,7 +54,15 @@ export const isolatedHerdr = async (configuration = ''): Promise<IsolatedHerdr> 
 
   const exited = once(server, 'exit');
 
+  // A fork that ends through process.exit skips onTestFinished and would leak the server.
+  const stopServerOnExit = () => {
+    server.kill('SIGKILL');
+  };
+
+  process.once('exit', stopServerOnExit);
+
   onTestFinished(async () => {
+    process.removeListener('exit', stopServerOnExit);
     server.kill('SIGTERM');
     await exited;
     rmSync(root, { recursive: true, force: true });
