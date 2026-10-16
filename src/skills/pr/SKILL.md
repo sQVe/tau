@@ -222,9 +222,10 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
    - Ask for approval with these options in this order: Review in tuicr, Publish as draft, Publish
      as ready, Change something. Recommend Review in tuicr. Put the title and full body in the
      question-level `preview`.
-   - In the publish option descriptions, mark the status step 6 suggests. In the draft option, list
-     the gaps behind a draft suggestion, so the user sees what ready leaves open. For an existing
-     PR, say whether each option keeps or changes its current draft status.
+   - In the publish option descriptions, mark the status step 6 suggests. For a draft suggestion,
+     give the number of gaps and point to the session report, which lists them, so the user sees
+     what ready leaves open. For an existing PR, say whether each option keeps or changes its
+     current draft status. Keep each description within the tool's length limit.
    - Publishing as ready with open gaps keeps their `[ ]` verification lines in the body.
    - Closing the dialog publishes nothing. Report that and stop.
    - Review in tuicr: follow the review loop in step 5 of the [tracker skill](../tracker/SKILL.md)
