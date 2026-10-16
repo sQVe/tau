@@ -8,9 +8,11 @@ import {
   importsModule,
   isCaller,
   isSearchable,
+  keepAddedLines,
   namedPaths,
   numberedBody,
   parseGrepOutput,
+  scanMarkers,
   sourceRevision,
   testPaths,
 } from './evidenceDecisions.js';
@@ -342,4 +344,162 @@ it.each([
   },
 ])('parses git grep output $output', ({ output, revision, result }) => {
   expect(parseGrepOutput(output, revision)).toEqual(result);
+});
+
+const onlySuffix = '.only';
+const onlyCall = `it${onlySuffix}('works', () => {});`;
+
+const addedDiff = (path: string, added: string[], context = ''): string =>
+  [
+    `diff --git a/${path} b/${path}`,
+    `--- a/${path}`,
+    `+++ b/${path}`,
+    `@@ -1,1 +1,${added.length + 1} @@`,
+    ` ${context}`,
+    ...added.map((line) => `+${line}`),
+    '',
+  ].join('\n');
+
+it('lists an added marker line with its path and new-side line number', () => {
+  const diff = addedDiff('src/a.test.ts', ['plain', `  ${onlyCall}`]);
+
+  expect(scanMarkers(diff)).toEqual({
+    items: [{ path: 'src/a.test.ts', line: 3, marker: '.only(', text: `  ${onlyCall}` }],
+    gaps: [],
+  });
+});
+
+it('picks the first marker in list order for a line', () => {
+  const diff = addedDiff('a.ts', [`// @ts-ignore ${onlyCall}`]);
+
+  expect(scanMarkers(diff).items.map((item) => item.marker)).toEqual(['.only(']);
+});
+
+it.each(['a.md', 'docs/a.MDX', 'b.markdown'])('does not list a marker in %s', (path) => {
+  expect(scanMarkers(addedDiff(path, [onlyCall]))).toEqual({ items: [], gaps: [] });
+});
+
+it('ignores removed and context lines', () => {
+  const diff = [
+    'diff --git a/a.ts b/a.ts',
+    '--- a/a.ts',
+    '+++ b/a.ts',
+    '@@ -1,2 +1,2 @@',
+    ` ${onlyCall}`,
+    `-${onlyCall}`,
+    '+clean',
+    '',
+  ].join('\n');
+
+  expect(scanMarkers(diff)).toEqual({ items: [], gaps: [] });
+});
+
+it('keeps the file when an added line inside a hunk starts with ++', () => {
+  const diff = [
+    'diff --git a/a.ts b/a.ts',
+    '--- a/a.ts',
+    '+++ b/a.ts',
+    '@@ -0,0 +1,2 @@',
+    '+++ b/other.ts',
+    `+${onlyCall}`,
+    '\\ No newline at end of file',
+    '',
+  ].join('\n');
+
+  expect(scanMarkers(diff).items).toMatchObject([{ path: 'a.ts', line: 2 }]);
+});
+
+it('reads a second hunk and a second file with their own line numbers', () => {
+  const diff = [
+    'diff --git a/a.ts b/a.ts',
+    '--- a/a.ts',
+    '+++ b/a.ts',
+    '@@ -1,1 +1,2 @@',
+    ' keep',
+    `+${onlyCall}`,
+    '@@ -10,2 +11,3 @@',
+    ' keep',
+    ' keep',
+    `+${onlyCall}`,
+    'diff --git a/b.ts b/b.ts',
+    'new file mode 100644',
+    '--- /dev/null',
+    '+++ b/b.ts',
+    '@@ -0,0 +1,1 @@',
+    `+${onlyCall}`,
+    '',
+  ].join('\n');
+
+  expect(scanMarkers(diff).items).toMatchObject([
+    { path: 'a.ts', line: 2 },
+    { path: 'a.ts', line: 13 },
+    { path: 'b.ts', line: 1 },
+  ]);
+});
+
+it.each([
+  { header: '+++ "b/a\\tb.ts"', path: 'a\tb.ts' },
+  { header: '+++ "b/emoji😀\\t.ts"', path: 'emoji😀\t.ts' },
+  { header: '+++ b/with space.ts\t', path: 'with space.ts' },
+])('reads the file name from $header', ({ header, path }) => {
+  const diff = ['--- a/x', header, '@@ -0,0 +1,1 @@', `+${onlyCall}`, ''].join('\n');
+
+  expect(scanMarkers(diff).items).toMatchObject([{ path }]);
+});
+
+it('lists no marker for a deleted file', () => {
+  const diff = ['--- a/a.ts', '+++ /dev/null', '@@ -1,1 +0,0 @@', `-${onlyCall}`, ''].join('\n');
+
+  expect(scanMarkers(diff)).toEqual({ items: [], gaps: [] });
+});
+
+it('lists no items and no gaps for a diff without markers', () => {
+  expect(scanMarkers(addedDiff('a.ts', ['const a = 1;']))).toEqual({ items: [], gaps: [] });
+});
+
+it('cuts the list and a long line and reports both', () => {
+  const diff = addedDiff('a.ts', [onlyCall, onlyCall, `${onlyCall}${'x'.repeat(50)}`]);
+  const result = scanMarkers(diff, { markers: 2, callerLineCharacters: 10 });
+
+  expect(result.items.map((item) => item.text.length)).toEqual([10, 10]);
+
+  expect(result.gaps).toEqual([
+    { kind: 'truncatedLine', path: 'a.ts', line: 2, kept: 10, total: onlyCall.length },
+    { kind: 'truncatedLine', path: 'a.ts', line: 3, kept: 10, total: onlyCall.length },
+    { kind: 'truncatedList', list: 'markers', kept: 2, total: 3 },
+  ]);
+});
+
+const wholeFileSection = (lines: string[]) =>
+  [
+    'diff --git a/a.ts b/a.ts',
+    'new file mode 100644',
+    '--- /dev/null',
+    '+++ b/a.ts',
+    `@@ -0,0 +1,${lines.length} @@`,
+    ...lines.map((line) => `+${line}`),
+    '',
+  ].join('\n');
+
+it.each([
+  { name: 'same text', base: 'a\nb\n', lines: ['a', 'b'], added: [] },
+  { name: 'one new line', base: 'a\nb\n', lines: ['a', 'x', 'b'], added: [2] },
+  { name: 'repeated line past its base count', base: 'a\n', lines: ['a', 'a'], added: [2] },
+  { name: 'moved line', base: 'a\nb\n', lines: ['b', 'a'], added: [] },
+  { name: 'empty base', base: '', lines: ['a'], added: [1] },
+])('keeps only added lines for $name', ({ base, lines, added }) => {
+  const result = keepAddedLines(wholeFileSection(lines), base);
+  const kept = result.split('\n').filter((line) => line.startsWith('+') && !line.startsWith('+++'));
+
+  expect(kept).toEqual(added.map((number) => `+${lines[number - 1] ?? ''}`));
+
+  expect(scanMarkers(result.replaceAll('x', onlyCall)).items.map((item) => item.line)).toEqual(
+    added.filter((number) => lines[number - 1] === 'x'),
+  );
+});
+
+it('leaves a section without a whole-file hunk as it is', () => {
+  const binary = 'diff --git a/a.bin b/a.bin\nBinary files /dev/null and b/a.bin differ\n';
+
+  expect(keepAddedLines(binary, 'a\n')).toBe(binary);
 });

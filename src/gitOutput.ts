@@ -67,6 +67,7 @@ export const runGit = (
   cwd: string,
   commandArguments: string[],
   timeoutMilliseconds = 60_000,
+  input?: string,
 ): Promise<GitResult> =>
   new Promise((resolve, reject) => {
     const { LANGUAGE: _language, ...env } = gitEnvironment();
@@ -79,7 +80,7 @@ export const runGit = (
       maxBuffer: maxOutputBytes,
     };
 
-    execFile('git', commandArguments, options, (error, stdout, stderr) => {
+    const child = execFile('git', commandArguments, options, (error, stdout, stderr) => {
       const exitCode = error === null ? 0 : error.code;
 
       if (typeof exitCode !== 'number') {
@@ -90,6 +91,15 @@ export const runGit = (
 
       resolve({ exitCode, stdout, stderr: stderr.toString('utf8') });
     });
+
+    // Git can exit before it reads its input. The exit code and stderr then decide the outcome.
+
+    // Git can exit before it reads its input. The exit code and stderr then decide the outcome.
+    child.stdin?.on('error', () => undefined);
+
+    if (input !== undefined) {
+      child.stdin?.end(input);
+    }
   });
 
 // Resolves the trimmed output, or undefined when Git exits with 1.

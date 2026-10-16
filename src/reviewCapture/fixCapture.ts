@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join } from 'node:path';
 
 import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
 import { runGit } from '../gitOutput.js';
+import { readQuoted } from './gitQuotedName.js';
 import { readCaptureRecord, recordFileName } from './record.js';
 import type { Snapshot } from './record.js';
 import {
@@ -187,48 +188,6 @@ const blobAt = async (root: string, base: string, path: string) => {
   }
 
   return { sha, mode };
-};
-
-const quotedEscapes: Record<string, number> = {
-  a: 7,
-  b: 8,
-  t: 9,
-  n: 10,
-  v: 11,
-  f: 12,
-  r: 13,
-  '"': 34,
-  '\\': 92,
-};
-
-const octalLength = 3;
-
-const octalEscape = /^[0-7]{3}/;
-
-// Reads a Git C-style quoted name that starts at text[0], a double quote. Returns the name and the
-// text after the closing quote.
-const readQuoted = (text: string) => {
-  const bytes: number[] = [];
-  let index = 1;
-
-  while (index < text.length && text[index] !== '"') {
-    const character = text[index] ?? '';
-    const octal = octalEscape.exec(text.slice(index + 1))?.[0];
-    const escaped = quotedEscapes[text[index + 1] ?? ''];
-
-    if (character !== '\\') {
-      bytes.push(...Buffer.from(character));
-      index += 1;
-    } else if (octal === undefined) {
-      bytes.push(escaped ?? 0);
-      index += 2;
-    } else {
-      bytes.push(Number.parseInt(octal, 8));
-      index += octalLength + 1;
-    }
-  }
-
-  return { name: Buffer.from(bytes).toString('utf8'), rest: text.slice(index + 1) };
 };
 
 // `a/`, ` b/` and the two slashes around the repeated path.

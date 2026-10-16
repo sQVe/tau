@@ -459,3 +459,19 @@ it('does not follow linked check logs', async () => {
     reasons: evidence.checks[0]?.reasons,
   });
 });
+
+it('lists added markers from the branch diff since the merge base', async () => {
+  const { root, run } = await setUp();
+  const onlySuffix = '.only';
+  const marked = `it${onlySuffix}('works', () => {});`;
+
+  await writeFile(join(root, 'feature.test.ts'), `${marked}\n`);
+  await git(root, 'add', 'feature.test.ts');
+  await git(root, 'commit', '--quiet', '-m', 'add test');
+
+  const evidence = await run();
+
+  expect(evidence.markers).toEqual([
+    { path: 'feature.test.ts', line: 1, marker: '.only(', text: marked },
+  ]);
+});

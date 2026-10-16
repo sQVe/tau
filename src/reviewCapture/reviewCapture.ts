@@ -7,6 +7,7 @@ import { Type } from 'typebox';
 
 import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
 import { runGit } from '../gitOutput.js';
+import { keepAddedLines } from './evidenceDecisions.js';
 
 export interface Gap {
   kind: 'binary' | 'unreadable' | 'excluded' | 'unmatched' | 'submodule';
@@ -15,6 +16,10 @@ export interface Gap {
 
 export interface Capture {
   bytes: Buffer;
+  // The bytes that show the lines the target adds. A whole-file section of a file in the index
+  // adds nothing. One of an unindexed file that the base tree holds adds only the lines its base
+  // version lacks. Every other section is kept as it is. A fix capture leaves this out.
+  addedBytes?: Buffer;
   hash: string;
   paths: string[];
   // Every path that changed, gap paths included. A fix capture sets it; others change nothing here.
@@ -29,6 +34,20 @@ export interface Part {
   paths: string[];
   gaps: Gap[];
   errors: string[];
+}
+
+interface CachedEntries {
+  links: Set<string>;
+  // Every path in the index, whatever its mode or stage.
+  indexed: Set<string>;
+  error?: string;
+}
+
+interface WholeFiles {
+  parts: Part[];
+  // The added bytes of each part that shows a file the index or the base tree holds. A part it
+  // leaves out is added as it is.
+  addedByPart: Map<Part, Buffer>;
 }
 
 interface DiffEntry {
@@ -650,24 +669,32 @@ const unmatchedPaths = async (root: string, target: DirectTarget): Promise<Part>
   return { ...emptyPart, gaps, errors };
 };
 
-// Cached Git links, such as submodules, in a files target. `ls-files -s -z` prints
-// `<mode> <object> <stage>\t<path>` for each entry.
-const cachedGitLinks = async (root: string, target: DirectTarget) => {
+const pathOf = (entry: string) => entry.slice(entry.indexOf('\t') + 1);
+
+// Cached entries in a files target. `ls-files -s -z` prints `<mode> <object> <stage>\t<path>`
+// for each entry; a mode of a Git link marks a submodule.
+const cachedEntries = async (root: string, target: DirectTarget): Promise<CachedEntries> => {
+  const none = { links: new Set<string>(), indexed: new Set<string>() };
+
   if (target.kind !== 'files') {
-    return { links: new Set<string>() };
+    return none;
   }
 
   const commandArguments = ['ls-files', '-z', '-s', ...pathspec(target)];
   const listed = await runCaptureCommand(root, commandArguments);
 
   if (listed.stdout === undefined) {
-    return { error: `${describeCommand(commandArguments)} failed: ${listed.error}` };
+    return { ...none, error: `${describeCommand(commandArguments)} failed: ${listed.error}` };
   }
 
-  const entries = listed.stdout.toString('utf8').split('\0');
+  const entries = listed.stdout
+    .toString('utf8')
+    .split('\0')
+    .filter((entry) => entry !== '');
+
   const links = entries.filter((entry) => entry.startsWith(`${gitLinkMode} `));
 
-  return { links: new Set(links.map((entry) => entry.slice(entry.indexOf('\t') + 1))) };
+  return { links: new Set(links.map(pathOf)), indexed: new Set(entries.map(pathOf)) };
 };
 
 // `ls-files -o` lists an untracked nested repository as its directory with a trailing slash.
@@ -680,38 +707,160 @@ const submoduleGap = (file: string): Part => {
   return { ...emptyPart, gaps: [{ kind: 'submodule', path }] };
 };
 
+const readBatchOutput = (
+  output: Buffer,
+  count: number,
+  commandArguments: string[],
+): { texts: string[]; error?: string } => {
+  const texts: string[] = [];
+  let offset = 0;
+
+  while (texts.length < count) {
+    const lineEnd = output.indexOf('\n', offset);
+    const size = Number(output.toString('utf8', offset, lineEnd).split(' ')[2]);
+
+    if (lineEnd === -1 || !Number.isInteger(size)) {
+      return {
+        texts: [],
+        error: `${describeCommand(commandArguments)} printed unexpected output.`,
+      };
+    }
+
+    texts.push(output.toString('utf8', lineEnd + 1, lineEnd + 1 + size));
+    offset = lineEnd + size + 2;
+  }
+
+  return { texts };
+};
+
+// Reads blobs with one `cat-file --batch`. It prints `<object> <type> <size>\n<bytes>\n` for each
+// object name, in order.
+const readBlobs = async (
+  root: string,
+  objects: readonly string[],
+): Promise<{ texts: string[]; error?: string }> => {
+  const commandArguments = ['cat-file', '--batch'];
+
+  try {
+    const result = await runGit(root, commandArguments, undefined, `${objects.join('\n')}\n`);
+
+    if (result.exitCode !== 0 || result.stderr.trim() !== '') {
+      const detail = `exit ${result.exitCode}: ${result.stderr.trim()}`;
+
+      return { texts: [], error: `${describeCommand(commandArguments)} failed: ${detail}` };
+    }
+
+    return readBatchOutput(result.stdout, objects.length, commandArguments);
+  } catch (error) {
+    return {
+      texts: [],
+      error: `${describeCommand(commandArguments)} failed: ${errorMessage(error)}`,
+    };
+  }
+};
+
+// Reads the base version of each candidate the base tree holds as a file. The listing and the
+// blob reader take no path arguments, so their size cannot hit the argument limit and no pathspec
+// rule changes a name.
+const readBaseTexts = async (
+  root: string,
+  target: DirectTarget,
+  candidates: ReadonlySet<string>,
+): Promise<{ texts: Map<string, string>; error?: string }> => {
+  const texts = new Map<string, string>();
+
+  if (target.kind !== 'files' || candidates.size === 0) {
+    return { texts };
+  }
+
+  const listArguments = ['ls-tree', '-r', '-z', '--end-of-options', target.base];
+  const listed = await runCaptureCommand(root, listArguments);
+
+  if (listed.stdout === undefined) {
+    return { texts, error: `${describeCommand(listArguments)} failed: ${listed.error}` };
+  }
+
+  // `<mode> <type> <object>\t<path>` for each entry.
+  const entries = listed.stdout
+    .toString('utf8')
+    .split('\0')
+    .map((entry) => ({ meta: entry.slice(0, entry.indexOf('\t')).split(' '), path: pathOf(entry) }))
+    .filter(({ meta, path }) => meta[1] === 'blob' && candidates.has(path));
+
+  if (entries.length === 0) {
+    return { texts };
+  }
+
+  const objects = entries.map(({ meta }) => meta[2] ?? '');
+  const blobs = await readBlobs(root, objects);
+
+  if (blobs.error !== undefined) {
+    return { texts, error: blobs.error };
+  }
+
+  for (const [index, entry] of entries.entries()) {
+    texts.set(entry.path, blobs.texts[index] ?? '');
+  }
+
+  return { texts };
+};
+
+const wholeFileFailure = (error: string): WholeFiles => ({
+  parts: [{ ...emptyPart, errors: [error] }],
+  addedByPart: new Map(),
+});
+
 const captureWholeFiles = async (
   root: string,
   target: DirectTarget,
   deleted: ReadonlySet<string>,
-): Promise<Part[]> => {
+): Promise<WholeFiles> => {
   const listed = await wholeFileList(target, root);
-  const gitLinks = await cachedGitLinks(root, target);
+  const cached = await cachedEntries(root, target);
 
   if (listed.error !== undefined) {
-    return [{ ...emptyPart, errors: [listed.error] }];
+    return wholeFileFailure(listed.error);
   }
 
-  if (gitLinks.error !== undefined) {
-    return [{ ...emptyPart, errors: [gitLinks.error] }];
+  if (cached.error !== undefined) {
+    return wholeFileFailure(cached.error);
+  }
+
+  const unindexed = listed.files.filter((file) => !cached.indexed.has(file));
+  const inBase = await readBaseTexts(root, target, new Set(unindexed));
+
+  if (inBase.error !== undefined) {
+    return wholeFileFailure(inBase.error);
   }
 
   const unreadable = listed.unreadable.map((path) => ({ kind: 'unreadable' as const, path }));
   const parts: Part[] = [{ ...emptyPart, gaps: unreadable }];
+  const addedByPart = new Map<Part, Buffer>();
 
   // One Git process at a time keeps a large untracked tree from starting thousands at once.
   for (const file of listed.files) {
-    if (gitLinks.links.has(file) || isNestedRepository(file)) {
+    if (cached.links.has(file) || isNestedRepository(file)) {
       parts.push(submoduleGap(file));
 
       continue;
     }
 
     // oxlint-disable-next-line no-await-in-loop -- the files run one at a time on purpose.
-    parts.push(await captureWholeFile(root, file, deleted));
+    const part = await captureWholeFile(root, file, deleted);
+    const baseText = inBase.texts.get(file);
+
+    parts.push(part);
+
+    if (cached.indexed.has(file)) {
+      addedByPart.set(part, Buffer.alloc(0));
+    } else if (baseText !== undefined) {
+      const kept = keepAddedLines(part.bytes.toString('utf8'), baseText);
+
+      addedByPart.set(part, Buffer.from(kept));
+    }
   }
 
-  return parts;
+  return { parts, addedByPart };
 };
 
 export const hashBytes = async (root: string, bytes: Buffer): Promise<HashedBytes> => {
@@ -741,13 +890,11 @@ export const uniqueGaps = (gaps: Gap[]): Gap[] => [
 export const captureTarget = async (root: string, target: DirectTarget): Promise<Capture> => {
   const diff = await captureDiff(root, target);
 
-  const parts = [
-    diff,
-    ...(await captureWholeFiles(root, target, new Set(diff.deleted))),
-    await unmatchedPaths(root, target),
-  ];
+  const whole = await captureWholeFiles(root, target, new Set(diff.deleted));
+  const parts = [diff, ...whole.parts, await unmatchedPaths(root, target)];
 
   const bytes = Buffer.concat(parts.map((part) => part.bytes));
+  const addedBytes = Buffer.concat(parts.map((part) => whole.addedByPart.get(part) ?? part.bytes));
   const hashed = await hashBytes(root, bytes);
   const paths = [...new Set(parts.flatMap((part) => part.paths))].toSorted();
   const gaps = uniqueGaps([...parts.flatMap((part) => part.gaps), ...excludedGaps(target)]);
@@ -757,7 +904,7 @@ export const captureTarget = async (root: string, target: DirectTarget): Promise
     errors.push(hashed.error);
   }
 
-  return { bytes, hash: hashed.hash ?? '', paths, gaps, errors };
+  return { bytes, addedBytes, hash: hashed.hash ?? '', paths, gaps, errors };
 };
 
 export const readHead = async (root: string): Promise<HeadRead> => {

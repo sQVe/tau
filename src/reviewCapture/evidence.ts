@@ -16,6 +16,7 @@ import {
   namedPaths,
   numberedBody,
   parseGrepOutput,
+  scanMarkers,
   sourceRevision,
   testPaths,
 } from './evidenceDecisions.js';
@@ -23,6 +24,7 @@ import type {
   EvidenceGap,
   EvidenceLimits,
   GrepMatch,
+  MarkerLine,
   NamedSection,
   NumberedLine,
 } from './evidenceDecisions.js';
@@ -58,6 +60,7 @@ export interface ReviewEvidence {
   freshness: Freshness;
   paths: string[];
   tests: FileBody[];
+  markers: MarkerLine[];
   callers: CallerLine[];
   rules: NamedPath[];
   checks: NamedPath[];
@@ -372,6 +375,7 @@ export const readReviewEvidence = async (
   const paths = boundList(captured.paths, limits.paths, { list: 'paths' });
   const revision = sourceRevision(record.target);
   const tests = await readTests(root, revision, paths.items, limits);
+  const markers = scanMarkers((captured.addedBytes ?? captured.bytes).toString('utf8'), limits);
   const callers = await findCallers(root, revision, paths.items, limits);
   const named = await readNamedPaths(root, revision, directory, limits);
 
@@ -384,6 +388,7 @@ export const readReviewEvidence = async (
     ...captured.gaps,
     ...paths.gaps,
     ...tests.gaps,
+    ...markers.gaps,
     ...callers.gaps,
     ...named.gaps,
     ...named.rules.gaps,
@@ -398,6 +403,7 @@ export const readReviewEvidence = async (
     freshness,
     paths: paths.items,
     tests: tests.items,
+    markers: markers.items,
     callers: callers.items,
     rules: named.rules.items,
     checks: named.checks.items,

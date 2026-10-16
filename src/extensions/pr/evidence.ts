@@ -7,6 +7,8 @@ import type { Runtime } from '../../github.js';
 import { readGit, readGitBytes } from '../../gitOutput.js';
 import { readReviewEvidence } from '../../reviewCapture/evidence.js';
 import type { ReviewEvidence } from '../../reviewCapture/evidence.js';
+import { scanMarkers } from '../../reviewCapture/evidenceDecisions.js';
+import type { MarkerLine } from '../../reviewCapture/evidenceDecisions.js';
 import { checkReviewDirectory } from '../../reviewCapture/reviewDirectory.js';
 import { checkLogGaps, matchCheckLog, selectLatestChecks } from './evidenceDecisions.js';
 import type {
@@ -32,12 +34,13 @@ export interface PublicationEvidence {
   subjects: string[];
   reuse: ReuseResult | null;
   review: ReviewEvidence | null;
+  markers: MarkerLine[];
   checks: CheckLog[];
   gaps: PublicationGap[];
 }
 
 const readFailure = (
-  kind: 'target' | 'branch' | 'subjects' | 'reuse' | 'review' | 'checks',
+  kind: 'target' | 'branch' | 'subjects' | 'reuse' | 'review' | 'markers' | 'checks',
   error: unknown,
 ): PublicationGap => ({
   kind,
@@ -86,6 +89,31 @@ const readReview = async (
     );
   } catch (error) {
     evidence.gaps.push(readFailure('review', error));
+  }
+};
+
+const readMarkers = async (root: string, evidence: PublicationEvidence, mergeBase: string) => {
+  try {
+    const bytes = await readGitBytes(root, [
+      'diff',
+      '--no-ext-diff',
+      '--no-textconv',
+      '--no-color',
+      '--src-prefix=a/',
+      '--dst-prefix=b/',
+      mergeBase,
+      'HEAD',
+    ]);
+
+    const scan = scanMarkers(bytes.toString('utf8'));
+
+    evidence.markers = scan.items;
+
+    evidence.gaps.push(
+      ...scan.gaps.map((gap): PublicationGap => ({ kind: 'reviewEvidence', gap })),
+    );
+  } catch (error) {
+    evidence.gaps.push(readFailure('markers', error));
   }
 };
 
@@ -248,6 +276,7 @@ export const readPublicationEvidence = async (
     subjects: [],
     reuse: null,
     review: null,
+    markers: [],
     checks: [],
     gaps: [],
   };
@@ -279,6 +308,10 @@ export const readPublicationEvidence = async (
     } catch (error) {
       evidence.gaps.push(readFailure('subjects', error));
     }
+  }
+
+  if (evidence.target !== null) {
+    await readMarkers(root, evidence, evidence.target.mergeBase);
   }
 
   await readReview(root, request, evidence);

@@ -73,10 +73,10 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
      [finish-slice skill](../finish-slice/SKILL.md), recommended, or continue with the missing or
      old audit as a gap.
    - Print the target's head, base, merge base, repository, open PR fields, and closed PRs; ticket
-     intent; reuse status, reasons, and available reports; review freshness and evidence gaps; and
-     matching check-log paths with their bounded excerpts. Print one combined list of gaps from the
-     tool, failed or skipped reads, missing ticket intent, and anything omitted to fit the limit.
-     Read omitted evidence through its returned path when needed.
+     intent; reuse status, reasons, and available reports; review freshness and evidence gaps; added
+     skip or suppression markers; and matching check-log paths with their bounded excerpts. Print
+     one combined list of gaps from the tool, failed or skipped reads, missing ticket intent, and
+     anything omitted to fit the limit. Read omitted evidence through its returned path when needed.
    - The script gathers evidence only. It never calls `prepare` or `verify`, and writes nothing
      itself. Target questions, rebases, review runs, previews, and approvals stay outside it.
    - If `target` is null because no head remote or several were found, ask which remote to use and

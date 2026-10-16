@@ -5,7 +5,7 @@ import { delimiter, join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../tests/gitRepository.js';
-import { findCheckoutRoot, readGitOutput } from './gitOutput.js';
+import { findCheckoutRoot, readGitOutput, runGit } from './gitOutput.js';
 
 it('resolves no output when Git runs past the timeout', async ({ onTestFinished }) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-git-shim-'));
@@ -44,4 +44,24 @@ it('names the tool when the directory is not in a Git checkout', async ({ onTest
   await expect(findCheckoutRoot(directory, 'pr')).rejects.toThrow(
     `The pr tool needs a Git checkout, and ${directory} is not in one.`,
   );
+});
+
+it('resolves the exit code when Git exits before it reads its input', async ({
+  onTestFinished,
+}) => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-git-shim-'));
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  writeFileSync(join(directory, 'git'), '#!/bin/sh\nexit 3\n');
+  chmodSync(join(directory, 'git'), 0o755);
+  vi.stubEnv('PATH', `${directory}${delimiter}${process.env['PATH'] ?? ''}`);
+
+  const input = 'x'.repeat(4_000_000);
+  const result = await runGit(directory, ['cat-file', '--batch'], undefined, input);
+
+  expect(result.exitCode).toBe(3);
 });
