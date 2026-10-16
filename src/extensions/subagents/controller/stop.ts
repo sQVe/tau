@@ -1,16 +1,16 @@
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { processAbsent } from '../cancellation.js';
-import { decidePiStop } from '../piStop.js';
-import type { WorkerPlacement } from '../placement.js';
 import {
   listTerminals,
   requireObject,
   resolveTerminal,
   result,
   terminalLocation,
-} from '../terminal.js';
-import type { TerminalLocation } from '../terminal.js';
+} from '../../../terminal.js';
+import type { TerminalLocation } from '../../../terminal.js';
+import { processAbsent } from '../cancellation.js';
+import { decidePiStop } from '../piStop.js';
+import type { WorkerPlacement } from '../placement.js';
 import { inspectWorker, isHerdrError } from './inspect.js';
 import type { Handle } from './types.js';
 

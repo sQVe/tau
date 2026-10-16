@@ -13,7 +13,7 @@ import {
   resolveTerminal,
   result,
   terminalLocation,
-} from '../src/extensions/subagents/terminal.js';
+} from '../src/terminal.js';
 
 const minimumPane = { width: 82, height: 24 };
 

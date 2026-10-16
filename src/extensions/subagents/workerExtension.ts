@@ -472,6 +472,15 @@ const handleToolCall = (
     };
   }
 
+  // A worker pane has no user to review a draft, so the call would wait until the deadline.
+  if (event.toolName === 'draft_review') {
+    return {
+      block: true,
+      reason:
+        'Direct worker reviews are unavailable. Finish the draft and report the draft path to the parent.',
+    };
+  }
+
   if (event.toolName !== 'subagent_report' && event.toolName !== 'subagent_question') {
     return undefined;
   }

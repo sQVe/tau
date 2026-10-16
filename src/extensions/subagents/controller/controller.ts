@@ -5,6 +5,8 @@ import { isDeepStrictEqual } from 'node:util';
 import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 
 import { isMissingFile } from '../../../errors.js';
+import { listTerminals, result } from '../../../terminal.js';
+import type { TerminalCall } from '../../../terminal.js';
 import { acceptanceRefusal } from '../acceptanceRefusal.js';
 import { processAbsent } from '../cancellation.js';
 import { refuseLiveNativeWriter } from '../continuations.js';
@@ -16,8 +18,6 @@ import type { Visibility } from '../placement.js';
 import type { WorkerNotice } from '../presentation.js';
 import { readAcknowledgement, readQuestion, readReply } from '../questionRecords.js';
 import { readEvent, readTask, readTasks, namePrefix, publish, validateTask } from '../records.js';
-import { listTerminals, result } from '../terminal.js';
-import type { TerminalCall } from '../terminal.js';
 import { isTaskId, taskVersion } from '../types.js';
 import type { Acknowledgement, Loadout, Question, Reply, Task } from '../types.js';
 import type { WorkerWidgetRow } from '../widget.js';

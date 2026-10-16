@@ -1,5 +1,5 @@
+import { requireObject, result, text } from '../../../terminal.js';
 import type { HerdrClient } from '../controller/inspect.js';
-import { requireObject, result, text } from '../terminal.js';
 import { placementFixture } from './placement.js';
 import type { PlacementFixture } from './placement.js';
 

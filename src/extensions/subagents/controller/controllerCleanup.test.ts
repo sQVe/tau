@@ -3,9 +3,9 @@ import { dirname, join } from 'node:path';
 
 import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 
+import * as terminalModule from '../../../terminal.js';
 import { placementFixture } from '../fixtures/placement.js';
 import { readEvent, readTask, recordEvent } from '../records.js';
-import * as terminalModule from '../terminal.js';
 import { captureError, setup } from './fixtures/controllerFixture.js';
 import { EvidenceUnavailableError } from './record.js';
 

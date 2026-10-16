@@ -1,4 +1,6 @@
 import { parseModelReference } from '../../../models/models.js';
+import { resolveTerminal, text } from '../../../terminal.js';
+import type { TerminalCall } from '../../../terminal.js';
 import { processAbsent } from '../cancellation.js';
 import type { WorkerPlacement } from '../placement.js';
 import { modelEvidenceNotice, modelStatus } from '../presentation.js';
@@ -12,8 +14,6 @@ import {
 import { publish, readEvent, recordEvent } from '../records.js';
 import { readStartupFailure } from '../startupFailure.js';
 import { decideStartupFailure, renderStartupFailure } from '../startupFailureDecision.js';
-import { resolveTerminal, text } from '../terminal.js';
-import type { TerminalCall } from '../terminal.js';
 import type { Task } from '../types.js';
 import { remainingCleanupBudget, remainingWorkBudget, renameBudget, workBudget } from './budget.js';
 import { inspectWorker, waitForPiIdentity, waitForWorkerReadiness } from './inspect.js';

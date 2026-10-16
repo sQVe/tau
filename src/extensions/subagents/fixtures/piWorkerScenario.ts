@@ -10,13 +10,13 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { expect, onTestFinished, vi } from 'vitest';
 
+import { listTerminals, requireObject, result, terminalLocation } from '../../../terminal.js';
 import { runClient } from '../cancellation.js';
 import { WorkerController } from '../controller/controller.js';
 import { resolveLoadout, validateSavedLoadout } from '../loadout.js';
 import { readAcknowledgement, readReply } from '../questionRecords.js';
 import * as records from '../records.js';
 import { readTask } from '../records.js';
-import { listTerminals, requireObject, result, terminalLocation } from '../terminal.js';
 import { fixtureModel } from './controlledProvider.js';
 import { isolatedHerdr } from './isolatedHerdr.js';
 import { toolAvailable } from './toolAvailable.js';
@@ -36,6 +36,16 @@ export type PiWorkerScenario =
 export const canRunPiWorker = toolAvailable('herdr') && toolAvailable('pi');
 
 export const piWorkerTimeout = 40_000;
+
+// The deadline also counts the wait for a reply, and a loaded CI runner takes about 10 s for a
+// question round. Only the timeout scenario needs the short deadline it waits out.
+const workerTimeout = (scenario: PiWorkerScenario) => {
+  if (scenario === 'early exit') {
+    return 60_000;
+  }
+
+  return scenario === 'active timeout' ? 10_000 : 30_000;
+};
 
 export const runPiWorkerScenario = async (scenario: PiWorkerScenario): Promise<void> => {
   const { root, environment, client: isolatedClient } = await isolatedHerdr();
@@ -257,7 +267,7 @@ export default function (pi) {
 
   const launched = await controller.launch({
     task: taskText,
-    timeout: scenario === 'early exit' ? 60_000 : 10_000,
+    timeout: workerTimeout(scenario),
     parentSession: join(root, 'parent.jsonl'),
     parentSessionId: 'parent',
     parentPane: paneId,

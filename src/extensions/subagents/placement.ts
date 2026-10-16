@@ -6,8 +6,8 @@ import {
   result,
   terminalLocation,
   text,
-} from './terminal.js';
-import type { TerminalCall, TerminalLocation } from './terminal.js';
+} from '../../terminal.js';
+import type { TerminalCall, TerminalLocation } from '../../terminal.js';
 
 export type Visibility = 'foreground' | 'background';
 

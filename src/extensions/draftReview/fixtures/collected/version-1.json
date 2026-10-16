@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "comments": [
+    {
+      "sessionPath": "/data/session.json",
+      "id": "one",
+      "deleted": true,
+      "path": "slices/a.md",
+      "startLine": 2,
+      "endLine": 3,
+      "type": "issue",
+      "content": "fix this"
+    }
+  ],
+  "edits": [
+    {
+      "path": "slices/a.md",
+      "diff": "--- a/slices/a.md\n+++ b/slices/a.md\n@@ -1 +1 @@\n-one\n+ONE\n",
+      "staged": "ONE\n",
+      "status": "pending"
+    }
+  ]
+}
