@@ -95,6 +95,7 @@ describe('read', () => {
     expect(result.directory.startsWith(join(root, '.tau', 'pr-feedback', '7-'))).toBe(true);
 
     expect(result).toEqual({
+      bodies: expect.any(String) as unknown,
       directory: result.directory,
       feedback: join(result.directory, 'feedback.json'),
       gaps: [],
