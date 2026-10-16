@@ -1,17 +1,20 @@
 import { execFile, spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
+import { fstatSync } from 'node:fs';
 import { open, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { ensureTauDirectory } from '../../tauDirectory.js';
 import { groupHasRunningMember } from './groupMembers.js';
+import { commandIsIdle } from './idleDecision.js';
 import { commandIsAlive } from './queue.js';
 
 export interface CheckResult {
   passed: boolean;
   exitCode: number | null;
   signal: string | null;
+  idle: boolean;
   logPath: string;
   tail: string;
 }
@@ -32,6 +35,12 @@ const newLogPath = async (root: string): Promise<string> => {
 };
 
 const killGraceMilliseconds = 5000;
+
+const millisecondsPerMinute = 60_000;
+const idleLimitMinutes = 2;
+const defaultIdleLimitMilliseconds = idleLimitMinutes * millisecondsPerMinute;
+const idlePollCeilingMilliseconds = 1000;
+const idlePollsPerLimit = 4;
 
 // Windows has no process groups, so only the direct child can be signalled there.
 const signalCommand = (child: ChildProcess, signal: 'SIGTERM' | 'SIGKILL'): void => {
@@ -116,6 +125,7 @@ export const runCheck = async (
   argv: string[],
   signal: AbortSignal | undefined,
   onStarted: (groupId: number) => Promise<void>,
+  idleLimitMilliseconds = defaultIdleLimitMilliseconds,
 ): Promise<CheckResult> => {
   const logPath = await newLogPath(root);
   const log = await open(logPath, 'wx');
@@ -123,6 +133,9 @@ export const runCheck = async (
   // Settles with the record's error, or undefined. The caller releases the lock only after this
   // settles, so the release never races the record's rewrite of the same lock file.
   let recorded: Promise<Error | undefined> = Promise.resolve(undefined);
+
+  const hang = { idle: false };
+  let idleMonitor: NodeJS.Timeout | undefined;
 
   try {
     const [command = '', ...commandArguments] = argv;
@@ -149,13 +162,49 @@ export const runCheck = async (
 
         let killTimer: NodeJS.Timeout | undefined;
 
+        let stopped = false;
+
         const stop = () => {
+          if (stopped) {
+            return;
+          }
+
+          stopped = true;
           killTimer = stopCommand(child);
         };
 
-        child.once('error', reject);
+        let lastSize = 0;
+        let lastOutputAt = Date.now();
+
+        // A command that writes nothing for the idle limit is hung. Stopping it releases the lock.
+        idleMonitor = setInterval(
+          () => {
+            const { size } = fstatSync(log.fd);
+            const now = Date.now();
+
+            if (size !== lastSize) {
+              lastSize = size;
+              lastOutputAt = now;
+
+              return;
+            }
+
+            if (commandIsIdle({ now, lastOutputAt, idleLimitMilliseconds })) {
+              clearInterval(idleMonitor);
+              hang.idle = true;
+              stop();
+            }
+          },
+          Math.min(idlePollCeilingMilliseconds, idleLimitMilliseconds / idlePollsPerLimit),
+        );
+
+        child.once('error', (error) => {
+          clearTimeout(killTimer);
+          reject(error);
+        });
 
         child.once('close', (exitCode, exitSignal) => {
+          clearInterval(idleMonitor);
           signal?.removeEventListener('abort', stop);
 
           // A command that never spawned has no group, and the error event already settled the run.
@@ -171,12 +220,13 @@ export const runCheck = async (
             const groupRemains = process.platform !== 'win32' && commandIsAlive(processId);
 
             if (!groupRemains) {
+              clearTimeout(killTimer);
               resolve({ exitCode, signal: exitSignal });
 
               return;
             }
 
-            killTimer = stopCommand(child);
+            stop();
 
             const finishExit = async () => {
               await waitForCommandToExit(child, processId);
@@ -219,8 +269,15 @@ export const runCheck = async (
 
     const tail = await readTail(logPath);
 
-    return { passed: status.exitCode === 0, ...status, logPath, tail };
+    return {
+      passed: !hang.idle && status.exitCode === 0,
+      ...status,
+      idle: hang.idle,
+      logPath,
+      tail,
+    };
   } finally {
+    clearInterval(idleMonitor);
     await recorded;
     await log.close();
   }

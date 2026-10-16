@@ -43,14 +43,16 @@ const fixture = async () => {
 
   await configure(countingArgv(counter));
 
-  const run = (base?: string) =>
-    createFullCheckTool({ agentDirectory: directory, pollMilliseconds: 10 }).execute(
-      'call',
-      base === undefined ? {} : { base },
-      undefined,
-      undefined,
-      { cwd: root, isProjectTrusted: () => true, ui: { notify: () => undefined } } as never,
-    );
+  const run = (base?: string, idleLimitMilliseconds?: number) =>
+    createFullCheckTool({
+      agentDirectory: directory,
+      pollMilliseconds: 10,
+      ...(idleLimitMilliseconds === undefined ? {} : { idleLimitMilliseconds }),
+    }).execute('call', base === undefined ? {} : { base }, undefined, undefined, {
+      cwd: root,
+      isProjectTrusted: () => true,
+      ui: { notify: () => undefined },
+    } as never);
 
   const runCount = async () => (await readFile(counter, 'utf8')).length;
 
@@ -269,4 +271,21 @@ it('saves no reusable record when the base ref moves during the run', async () =
   const saved = await readdir(join(root, '.tau', 'checks'));
 
   expect(saved.filter((name) => name.endsWith('.json'))).toEqual([]);
+});
+
+it('reports a silent command as stopped after the idle limit and saves no record', async () => {
+  const { configure, counter, run, runCount } = await fixture();
+
+  await configure(countingArgv(counter, 'setInterval(() => {}, 1000)'));
+
+  const first = await run(undefined, 300);
+  const second = await run(undefined, 300);
+
+  const text = first.content[0]?.type === 'text' ? first.content[0].text : '';
+
+  expect(first.details).toMatchObject({ passed: false, idle: true, reused: false });
+  expect(text).toContain('no output');
+  expect(text).toContain(first.details?.logPath);
+  expect(second.details?.reused).toBe(false);
+  expect(await runCount()).toBe(2);
 });

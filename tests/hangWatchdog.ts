@@ -4,6 +4,8 @@ import { Worker } from 'node:worker_threads';
 
 import { afterAll, beforeAll, beforeEach, expect, onTestFinished } from 'vitest';
 
+import { watchdogSource } from './hangWatchdogSource.js';
+
 interface WorkerState {
   config: { testTimeout: number; hookTimeout: number };
 }
@@ -16,41 +18,6 @@ const defaultCollectionMilliseconds = 30_000;
 const slackMilliseconds = 1000;
 const heartbeatMilliseconds = 100;
 const maxMilliseconds = 2 ** 31 - 1;
-
-// state[0]: heartbeat counter. state[1]: blocking budget, 0 for none. state[2]: collection
-// deadline, 0 once collection has finished.
-const watchdogSource = `
-const { workerData } = require('node:worker_threads');
-const { writeSync } = require('node:fs');
-const state = new Int32Array(workerData.state);
-const label = new Uint8Array(workerData.label);
-const startedAt = performance.now();
-let lastBeat = Atomics.load(state, 0);
-let lastChange = startedAt;
-const kill = (reason) => {
-  const length = label.indexOf(0);
-  const name = Buffer.from(label.slice(0, length < 0 ? label.length : length)).toString();
-  writeSync(2, 'Hang in ' + name + ' ' + reason + '. Killing the worker.\\n');
-  process.kill(process.pid, 'SIGKILL');
-};
-setInterval(() => {
-  const now = performance.now();
-  const collection = Atomics.load(state, 2);
-  if (collection !== 0 && now - startedAt >= collection) {
-    kill('did not finish collecting before its deadline');
-  }
-  const beat = Atomics.load(state, 0);
-  const budget = Atomics.load(state, 1);
-  if (beat !== lastBeat || budget === 0) {
-    lastBeat = beat;
-    lastChange = now;
-    return;
-  }
-  if (now - lastChange >= budget) {
-    kill('blocked the event loop past its timeout');
-  }
-}, 50);
-`;
 
 const state = new Int32Array(new SharedArrayBuffer(12));
 const label = new Uint8Array(new SharedArrayBuffer(1024));
@@ -107,7 +74,7 @@ const readCollectionMilliseconds = (value: string | undefined) => {
 if (!isInspecting()) {
   const watchdog = new Worker(watchdogSource, {
     eval: true,
-    workerData: { state: state.buffer, label: label.buffer },
+    workerData: { state: state.buffer, label: label.buffer, parent: process.ppid },
   });
 
   watchdog.unref();

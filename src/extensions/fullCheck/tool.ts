@@ -22,6 +22,7 @@ export type FullCheckDetails = CheckResult & { reused: boolean; recordError?: st
 export interface FullCheckToolOptions {
   agentDirectory?: string;
   pollMilliseconds?: number;
+  idleLimitMilliseconds?: number;
 }
 
 const parameters = Type.Object({
@@ -54,7 +55,11 @@ const describeResult = (result: FullCheckDetails): string => {
       ? `signal ${result.signal ?? 'unknown'}`
       : `exit status ${result.exitCode}`;
 
-  const outcome = `Full check ${result.passed ? 'passed' : 'failed'} (${status}).`;
+  const stopped = result.idle
+    ? ' The command was stopped because it wrote no output to its log for the idle limit; it was hung.'
+    : '';
+
+  const outcome = `Full check ${result.passed ? 'passed' : 'failed'} (${status}).${stopped}`;
   const reuse = result.reused ? ' Reused the saved passing log for this unchanged state.' : '';
 
   const recordProblem =
@@ -83,6 +88,7 @@ const findReusedLog = async (
     passed: true,
     exitCode: 0,
     signal: null,
+    idle: false,
     logPath: decision.logPath,
     tail,
     reused: true,
@@ -96,8 +102,15 @@ const runAndRecord = async (
   base: string | undefined,
   signal: AbortSignal | undefined,
   recordCommandGroup: (groupId: number) => Promise<void>,
+  idleLimitMilliseconds: number | undefined,
 ): Promise<FullCheckDetails> => {
-  const result = await runCheck(root, identity.argv, signal, recordCommandGroup);
+  const result = await runCheck(
+    root,
+    identity.argv,
+    signal,
+    recordCommandGroup,
+    idleLimitMilliseconds,
+  );
 
   if (!result.passed) {
     return { ...result, reused: false };
@@ -168,7 +181,17 @@ const execute = async (
       const identity = await readCheckIdentity(root, argv, base);
       const reused = await findReusedLog(root, identity);
 
-      return reused ?? runAndRecord(root, identity, base, signal, recordCommandGroup);
+      return (
+        reused ??
+        runAndRecord(
+          root,
+          identity,
+          base,
+          signal,
+          recordCommandGroup,
+          options.idleLimitMilliseconds,
+        )
+      );
     },
   );
 
