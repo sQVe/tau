@@ -30,6 +30,7 @@
     "test:coverage": "vp test --coverage",
     "test:unit": "vp test --project '!integration*'",
     "smoke:pi": "node scripts/piSmoke.ts",
+    "mutation": "node scripts/mutation.ts",
     "token-usage": "node scripts/tokenUsage.ts",
     "typecheck": "pnpm exec tsc --noEmit",
     "release:github": "pnpm changeset git-tag"
@@ -47,6 +48,8 @@
     "@earendil-works/pi-tui": "1.2.0",
     "@oxlint/plugins": "1.79.0",
     "@sqve/seam": "0.1.0",
+    "@stryker-mutator/core": "10.0.0",
+    "@stryker-mutator/vitest-runner": "10.0.0",
     "@types/node": "24.13.3",
     "@vitest/coverage-v8": "4.1.11",
     "jiti": "2.7.0",
