@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 
-import { runContext, selectionSummary, summarize } from './render.js';
+import { defaultTddConfig } from './config.js';
+import { configSummary, runContext, selectionSummary, summarize } from './render.js';
 import type { RunnerResult } from './runner/types.js';
 
 const behavior = { behavior: 'value', files: ['value.test.ts'], testFullName: 'value works' };
@@ -254,4 +255,181 @@ it('shows failure messages before durations when both do not fit', () => {
 
   expect(summary).toContain('expected 0 to be 1');
   expect(summary.length).toBeLessThanOrEqual(2000);
+});
+
+const failureOf = (index: number, fullname = `value fails ${index}`) => ({
+  file: '/repo/value.test.ts',
+  fullname,
+  message: `expected ${index} to be 1`,
+});
+
+const testOf = (fullname: string, status: 'passed' | 'failed' | 'skipped' | 'todo') => ({
+  file: '/repo/value.test.ts',
+  fullname,
+  status,
+});
+
+it('counts passed, failed, and skipped tests separately and counts todo as skipped', () => {
+  const tests = [
+    testOf('a', 'passed'),
+    testOf('b', 'passed'),
+    testOf('c', 'failed'),
+    testOf('d', 'skipped'),
+    testOf('e', 'todo'),
+  ];
+
+  const summary = summarize(
+    '/repo',
+    observation({ kind: 'fail', tests, failures: [failureOf(1)], truncated: false }),
+  );
+
+  expect(summary).toContain('2 passed, 1 failed, 2 skipped');
+});
+
+it('says no tests ran only when the runner collected none', () => {
+  const passed = summarize(
+    '/repo',
+    observation({ kind: 'pass', tests: [testOf('a', 'passed'), testOf('b', 'skipped')] }),
+  );
+
+  const empty = summarize('/repo', observation({ kind: 'pass', tests: [] }));
+
+  for (const summary of [passed, empty]) {
+    expect(summary).not.toContain('No tests ran');
+    expect(summary).not.toContain('No matching tests');
+  }
+});
+
+it('counts only file failures as file/setup failures', () => {
+  const fileFailure = { ...failureOf(0), fullname: '<file>' };
+
+  const mixed = summarize(
+    '/repo',
+    observation({
+      kind: 'fail',
+      tests: [],
+      failures: [fileFailure, failureOf(1), failureOf(2)],
+      truncated: false,
+    }),
+  );
+
+  const onlyTests = summarize(
+    '/repo',
+    observation({ kind: 'fail', tests: [], failures: [failureOf(1)], truncated: false }),
+  );
+
+  expect(mixed).toContain('1 file/setup failures');
+  expect(onlyTests).not.toContain('file/setup failures');
+});
+
+it('counts the failures it does not show', () => {
+  const failures = Array.from({ length: 15 }, (_, index) => failureOf(index));
+
+  const summary = summarize(
+    '/repo',
+    observation({ kind: 'fail', tests: [], failures, truncated: false }),
+  );
+
+  const shown = summary.match(/^✗ /gm)?.length ?? 0;
+
+  expect(shown).toBeGreaterThan(0);
+  expect(shown).toBeLessThan(15);
+  expect(summary).toContain(`+${15 - shown} more`);
+
+  const all = summarize(
+    '/repo',
+    observation({ kind: 'fail', tests: [], failures: failures.slice(0, 2), truncated: false }),
+  );
+
+  expect(all.match(/^✗ /gm)).toHaveLength(2);
+  expect(all).not.toMatch(/\+\d+ more/);
+});
+
+it('reports failures the runner did not collect only when the report is truncated', () => {
+  const fileFailure = { ...failureOf(0), fullname: '<file>' };
+
+  const truncated = summarize(
+    '/repo',
+    observation({ kind: 'fail', tests: [], failures: [fileFailure], truncated: true }),
+  );
+
+  const complete = summarize(
+    '/repo',
+    observation({ kind: 'fail', tests: [], failures: [fileFailure], truncated: false }),
+  );
+
+  const passed = summarize('/repo', observation({ kind: 'pass', tests: [] }));
+
+  expect(truncated).toContain('At least 1 file/setup failures');
+  expect(truncated).toContain('further failures were not collected');
+  expect(complete).toContain('1 file/setup failures');
+  expect(complete).not.toContain('At least');
+  expect(complete).not.toContain('further failures were not collected');
+  expect(passed).not.toContain('further failures were not collected');
+});
+
+it('labels the scope of the run', () => {
+  const passed = { kind: 'pass' as const, tests: [] };
+  const focused = summarize('/repo', observation(passed));
+  const full = summarize('/repo', observation(passed, { scope: 'full' }));
+
+  expect(focused).toContain('focused');
+  expect(focused).not.toContain('full suite');
+  expect(full).toContain('full suite');
+  expect(runContext(behavior, observation(passed))).toContain('Focused selection passed');
+  expect(runContext(behavior, observation(passed))).not.toContain('Full suite');
+});
+
+it('reports a missing JSON report and a diagnostics error only when they exist', () => {
+  const diagnostics = {
+    directory: '/tmp/run',
+    started: true,
+    command: ['vitest'],
+    durationMs: 5,
+    timeoutMs: 1000,
+    exitCode: 0,
+  };
+
+  const saved = { path: '/tmp/run/report.json', bytes: 10, savedBytes: 10, truncated: false };
+
+  const withReport = runContext(
+    behavior,
+    observation({ kind: 'pass', tests: [], diagnostics: { ...diagnostics, report: saved } }),
+  );
+
+  const withError = runContext(
+    behavior,
+    observation({
+      kind: 'pass',
+      tests: [],
+      diagnostics: { ...diagnostics, error: 'Could not save run.json: EACCES' },
+    }),
+  );
+
+  expect(withReport).toContain('/tmp/run/report.json');
+  expect(withReport).not.toContain('No JSON report was saved');
+  expect(withReport).not.toContain('Could not save');
+  expect(withError).toContain('No JSON report was saved');
+  expect(withError).toContain('Could not save run.json: EACCES');
+});
+
+it('mentions an ignored config file only when one was skipped', () => {
+  const sources = {
+    productionGlobs: 'built-in default',
+    testGlobs: 'built-in default',
+    testSupportGlobs: 'built-in default',
+    excludedGlobs: 'built-in default',
+    verificationArgv: 'built-in default',
+  };
+
+  const trusted = configSummary({ config: defaultTddConfig, sources, ignored: undefined });
+
+  const untrusted = configSummary({
+    config: defaultTddConfig,
+    sources,
+    ignored: '/repo/.pi/tau.json',
+  });
+
+  expect(trusted).not.toContain('Ignored');
+  expect(untrusted).toContain('Ignored /repo/.pi/tau.json');
 });

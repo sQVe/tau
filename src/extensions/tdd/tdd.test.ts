@@ -6,6 +6,7 @@ import { stripVTControlCharacters } from 'node:util';
 import type { ExtensionContext, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { initTheme } from '@earendil-works/pi-coding-agent';
 import type { TUI } from '@earendil-works/pi-tui';
+import { Value } from 'typebox/value';
 import { expect, it, vi } from 'vitest';
 
 // Pi does not export these renderers through the public package API.
@@ -660,4 +661,64 @@ it('reports an unknown config key again for the same ui after session_start', as
   await application.emit('tool_result', cwd, writeEvent('src/value.ts'));
 
   expect(warnings()).toBe(2);
+});
+
+it.for<[string, Record<string, unknown>, boolean]>([
+  ['a named test in one file', {}, true],
+  ['several names', { testFullName: ['works', 'also works'] }, true],
+  ['an empty name', { testFullName: '' }, false],
+  ['an empty name list', { testFullName: [] }, false],
+  ['an empty name in a list', { testFullName: ['works', ''] }, false],
+  ['an empty file list', { files: [] }, false],
+  ['an empty file path', { files: [''] }, false],
+  ['an empty behavior label', { behavior: '' }, false],
+])('validates the run_tests selection: %s', ([, change, valid]) => {
+  const { tool } = setup();
+
+  const selection = {
+    behavior: 'value',
+    testFullName: 'works',
+    files: ['value.test.ts'],
+    scope: 'focused',
+    ...change,
+  };
+
+  expect(Value.Check(tool?.parameters ?? {}, selection)).toBe(valid);
+});
+
+it('ignores a tool result that has no path to a file', async ({ onTestFinished }) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tau-no-path-'));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const application = setup();
+
+  for (const event of [
+    { toolName: 'bash', input: { command: 'ls' } },
+    { toolName: 'write', input: {} },
+    { toolName: 'edit', input: { path: 5 } },
+  ]) {
+    const result = await application.emit('tool_result', cwd, {
+      ...event,
+      isError: false,
+      content: [],
+    });
+
+    expect(result).toBeUndefined();
+  }
+});
+
+it('strips only a leading @ from a tool path', async ({ onTestFinished }) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tau-at-path-'));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const application = setup();
+
+  const write = (path: string) =>
+    application.emit('tool_result', cwd, {
+      toolName: 'write',
+      input: { path },
+      isError: false,
+      content: [],
+    });
+
+  expect(await write('src@/value.ts')).toBeUndefined();
+  expect(await write('@src/value.ts')).toMatchObject({ content: [{ text: redHint }] });
 });

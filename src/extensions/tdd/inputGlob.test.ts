@@ -22,6 +22,17 @@ it.each([
   { glob: 'src/[ab][.ts', supported: false },
   { glob: 'src/[{}].ts', supported: false },
   { glob: 'src/../a.ts', supported: false },
+  { glob: 'src/./a.ts', supported: false },
+  { glob: './././src/a.ts', supported: true },
+  { glob: 'f{0..3}.ts', supported: true },
+  { glob: 'f{10..20}.ts', supported: true },
+  { glob: 'f{a1..3}.ts', supported: false },
+  { glob: 'f{1..3x}.ts', supported: false },
+  { glob: 'f{1..-1}.ts', supported: false },
+  { glob: 'f{01..3}.ts', supported: false },
+  { glob: 'f{1..03}.ts', supported: false },
+  { glob: 'f{9007199254740991..9007199254740993}.ts', supported: false },
+  { glob: 'f{9007199254740992..9007199254740993}.ts', supported: false },
 ])('classifies $glob as supported: $supported', ({ glob, supported }) => {
   expect(unsupportedGlobReason(glob) === null).toBe(supported);
 });
@@ -37,6 +48,13 @@ it.each([
   { globs: ['**/.env*'], excludes: [], path: 'src/.env.local', input: true },
   { globs: ['**/*.ts'], excludes: [], path: '.hidden/a.ts', input: false },
   { globs: ['./src/**/*.ts'], excludes: [], path: 'src/a.ts', input: true },
+  { globs: ['././src/**/*.ts'], excludes: [], path: 'src/a.ts', input: true },
+  { globs: ['{a,{b,c}}/x.ts'], excludes: [], path: 'a/x.ts', input: true },
+  { globs: ['{a,{b,c}}/x.ts'], excludes: [], path: 'c/x.ts', input: true },
+  { globs: ['{a,{b,c}}/x.ts'], excludes: [], path: 'b/x.ts', input: true },
+  { globs: ['f{10..12}.ts'], excludes: [], path: 'f11.ts', input: true },
+  { globs: ['src/**'], excludes: [], path: 'src', input: false },
+  { globs: ['src/**'], excludes: [], path: 'src/a', input: true },
   { globs: ['f{1..3}.ts'], excludes: [], path: 'f2.ts', input: true },
   { globs: ['f{1..3}.ts'], excludes: [], path: 'f4.ts', input: false },
   { globs: ['src/*.ts'], excludes: [], path: 'src/a\nb.ts', input: true },
@@ -63,6 +81,13 @@ it.each([
   { excludes: ['**/node_modules/**'], name: 'node_modules', path: 'a/node_modules', enters: false },
   { excludes: [], name: '.git', path: '.git', enters: false },
   { excludes: [], name: '.pi', path: '.pi', enters: true },
+  {
+    excludes: ['**/node_modules/**'],
+    name: 'node_modules',
+    path: '.cache/node_modules',
+    enters: false,
+  },
+  { excludes: ['**/vendor'], name: 'vendor', path: '.cache/vendor', enters: false },
 ])('decides entering $path with excludes $excludes: $enters', (fact) => {
   const walk = rules(['.pi/tau.json', '**/*.ts'], fact.excludes);
 

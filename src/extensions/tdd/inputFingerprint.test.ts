@@ -9,7 +9,7 @@ import { expect, it } from 'vitest';
 import { installedPiPath } from '../../../scripts/piVersionDrift.js';
 import { defaultTddConfig } from './config.js';
 import type { TddConfig } from './config.js';
-import { fingerprintInputs } from './inputFingerprint.js';
+import { fingerprintInputs, listInputs } from './inputFingerprint.js';
 
 interface ParityResult {
   include: string;
@@ -462,3 +462,61 @@ it.runIf(canRunInstalledPi)(
     );
   },
 );
+
+it('lists a symlink to a file as an input and walks a symlink loop once', async ({
+  onTestFinished,
+}) => {
+  const cwd = await createWorktree(onTestFinished);
+  await writeFiles(cwd, { 'top.ts': 'one', 'a/x.ts': 'one', 'a/real.ts': 'one' });
+  await symlink('real.ts', join(cwd, 'a/link.ts'));
+  await symlink('..', join(cwd, 'a/up'));
+  await symlink('../b', join(cwd, 'a/b'));
+  await symlink('a', join(cwd, 'b'));
+
+  const inputs = await listInputs(cwd, onlyProduction('**/*.ts'));
+
+  expect(inputs.toSorted()).toEqual([
+    'a/link.ts',
+    'a/real.ts',
+    'a/x.ts',
+    'b/link.ts',
+    'b/real.ts',
+    'b/x.ts',
+    'top.ts',
+  ]);
+});
+
+it('does not enter an excluded directory, even when it is a symlink to a directory elsewhere', async ({
+  onTestFinished,
+}) => {
+  const cwd = await createWorktree(onTestFinished);
+  await writeFiles(cwd, { 'src/a.ts': 'one', 'skipped/b.ts': 'one', 'other/c.ts': 'one' });
+  await symlink('../other', join(cwd, 'skipped/link'));
+
+  const config = { ...onlyProduction('**/*.ts'), excludedGlobs: ['skipped'] };
+
+  expect((await listInputs(cwd, config)).toSorted()).toEqual(['other/c.ts', 'src/a.ts']);
+});
+
+it('hashes without failing when a listed test file is missing or is a directory', async ({
+  onTestFinished,
+}) => {
+  const cwd = await createWorktree(onTestFinished);
+  await writeFiles(cwd, { 'src/a.ts': 'one' });
+  await mkdir(join(cwd, 'dir.test.ts'));
+
+  const config = onlyProduction('src/**');
+  const base = await fingerprintInputs(cwd, config, []);
+
+  expect(await fingerprintInputs(cwd, config, ['missing.test.ts'])).not.toBe(base);
+  expect(await fingerprintInputs(cwd, config, ['dir.test.ts'])).toBe(base);
+});
+
+it('fails to hash a test file that cannot be read for another reason', async ({
+  onTestFinished,
+}) => {
+  const cwd = await createWorktree(onTestFinished);
+  await symlink('loop.test.ts', join(cwd, 'loop.test.ts'));
+
+  await expect(fingerprintInputs(cwd, onlyProduction(), ['loop.test.ts'])).rejects.toThrow('ELOOP');
+});
