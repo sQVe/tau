@@ -5,7 +5,7 @@ import { delimiter, join } from 'node:path';
 import { expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../tests/gitRepository.js';
-import { findCheckoutRoot, readGitOutput, runGit } from './gitOutput.js';
+import { findCheckoutRoot, readGitOutput, readOptionalGit, runGit } from './gitOutput.js';
 
 it('resolves no output when Git runs past the timeout', async ({ onTestFinished }) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-git-shim-'));
@@ -65,3 +65,60 @@ it('resolves the exit code when Git exits before it reads its input', async ({
 
   expect(result.exitCode).toBe(3);
 });
+
+it('passes the user environment to Git', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  vi.stubEnv('GIT_CONFIG_COUNT', '1');
+  vi.stubEnv('GIT_CONFIG_KEY_0', 'tau.probe');
+  vi.stubEnv('GIT_CONFIG_VALUE_0', 'from-environment');
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const result = await runGit(root, ['config', '--get', 'tau.probe']);
+
+  expect(result.stdout.toString('utf8').trim()).toBe('from-environment');
+});
+
+it('rejects when Git does not exit with a number', async ({ onTestFinished }) => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-git-missing-'));
+  const missing = join(directory, 'absent');
+
+  onTestFinished(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  await expect(runGit(missing, ['status'])).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('resolves the trimmed output of a Git command that exits 0', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await expect(readOptionalGit(root, ['rev-parse', '--is-inside-work-tree'])).resolves.toBe('true');
+});
+
+it('resolves undefined when Git exits with 1', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await expect(readOptionalGit(root, ['config', '--get', 'tau.missing'])).resolves.toBeUndefined();
+});
+
+it.for([2, 128])(
+  'throws with the Git message when Git exits with %s',
+  async (exitCode, { onTestFinished }) => {
+    const directory = mkdtempSync(join(tmpdir(), 'tau-git-shim-'));
+
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+      rmSync(directory, { recursive: true, force: true });
+    });
+
+    writeFileSync(join(directory, 'git'), `#!/bin/sh\necho "boom" >&2\nexit ${exitCode}\n`);
+    chmodSync(join(directory, 'git'), 0o755);
+    vi.stubEnv('PATH', `${directory}${delimiter}${process.env['PATH'] ?? ''}`);
+
+    await expect(readOptionalGit(directory, ['fsck'])).rejects.toThrow('git fsck failed: boom');
+  },
+);

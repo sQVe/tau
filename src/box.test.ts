@@ -34,3 +34,10 @@ it('keeps the frame within widths too narrow for a box', () => {
 
   expect(lines.map((line) => visibleWidth(line))).toEqual([1, 1, 2]);
 });
+
+it('keeps the right label when the left label is too long for the border', () => {
+  const line = stripTerminalSequences(topBorder('─'.repeat(40), ' 2 live ', 20, theme));
+
+  expect(visibleWidth(line)).toBe(20);
+  expect(line).toContain(' 2 live ╮');
+});

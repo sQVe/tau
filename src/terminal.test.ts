@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 
-import { resolveTerminal } from './terminal.js';
+import { requireObject, resolveTerminal, result, terminalLocation } from './terminal.js';
 import type { TerminalCall } from './terminal.js';
 
 const pane = { pane_id: 'new:pane', terminal_id: 'owned', workspace_id: 'new', tab_id: 'new:tab' };
@@ -33,5 +33,28 @@ it.each([
 
     await expect(resolveTerminal('owned', call)).rejects.toThrow(/identity|ownership|absent/);
     expect(call).toHaveBeenCalledTimes(1);
+  },
+);
+
+it.each([null, [], 'text', 5, undefined])(
+  'refuses %j where herdr must return an object',
+  (value) => {
+    expect(() => requireObject(value)).toThrow('Malformed herdr response.');
+    expect(() => result(JSON.stringify({ result: value }))).toThrow('Malformed herdr response.');
+  },
+);
+
+it('reads an object response', () => {
+  expect(requireObject({ panes: [] })).toEqual({ panes: [] });
+});
+
+it.each(['pane_id', 'terminal_id', 'workspace_id', 'tab_id'])(
+  'refuses a pane whose %s is empty, not a string, or missing',
+  (field) => {
+    for (const value of ['', 5, null, undefined]) {
+      expect(() => terminalLocation({ ...pane, [field]: value })).toThrow(
+        'Missing herdr identity.',
+      );
+    }
   },
 );

@@ -23,6 +23,7 @@ it.for<[string, unknown, string[]]>([
   ],
   ['a value that is not an object', 'text', []],
   ['a known key with a wrong type', { routes: 5 }, []],
+  ['a known leaf key that holds an object', { model: { name: 'a/b' } }, []],
 ])('finds unknown keys for %s', ([, value, expected]) => {
   expect(findUnknownKeys(value, known, 'profiles.worker')).toEqual(expected);
 });

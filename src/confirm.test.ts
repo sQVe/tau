@@ -1,5 +1,6 @@
 import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
 import { KeybindingsManager, TUI_KEYBINDINGS as tuiKeybindings } from '@earendil-works/pi-tui';
+import type { Component } from '@earendil-works/pi-tui';
 import { expect, it, vi } from 'vitest';
 
 import { customContext } from '../tests/toolContext.js';
@@ -228,4 +229,125 @@ it.each([true, false])('returns the non-TUI confirm answer %s', async (answer) =
   expect(await confirm(context, 'Title', 'Message')).toBe(answer);
   expect(fallback).toHaveBeenCalledWith('Title', 'Message');
   expect(custom).not.toHaveBeenCalled();
+});
+
+// Unlike customContext, this records every close, so "closed with No" differs from "never closed".
+const observedDialog = async (
+  keys: string[],
+  options: { keybindings?: KeybindingsManager; rows?: number; message?: string } = {},
+) => {
+  const closed: boolean[] = [];
+  const redraws: number[] = [];
+  const pages: string[][] = [];
+  let requests = 0;
+
+  const ui = {
+    custom: async (
+      factory: (...factoryArguments: never[]) => Promise<Component> | Component,
+    ): Promise<unknown> => {
+      const terminal = {
+        requestRender: () => {
+          requests += 1;
+        },
+        terminal: { rows: options.rows ?? 40, columns: 100 },
+      };
+
+      const keybindings = options.keybindings ?? new KeybindingsManager(tuiKeybindings);
+      const done = (value: boolean) => closed.push(value);
+
+      const component = await (factory as (...factoryArguments: unknown[]) => Promise<Component>)(
+        terminal,
+        plainTheme,
+        keybindings,
+        done,
+      );
+
+      pages.push(component.render(100));
+
+      for (const key of keys) {
+        component.handleInput?.(key);
+        redraws.push(requests);
+        pages.push(component.render(100));
+      }
+
+      return closed[0];
+    },
+  };
+
+  const context = { mode: 'tui', hasUI: true, ui } as unknown as ExtensionContext;
+  const answer = await confirm(context, 'Title', options.message ?? 'Message');
+
+  return { answer, closed, redraws, pages };
+};
+
+const markedRow = (page: string[]) =>
+  page.filter((row) => row.includes('→')).map((row) => row.trim());
+
+it('closes with No once on Escape', async () => {
+  const { closed } = await observedDialog(['\u001B']);
+
+  expect(closed).toEqual([false]);
+});
+
+it('ignores an unbound key', async () => {
+  const { closed, pages } = await observedDialog(['z']);
+
+  expect(closed).toEqual([]);
+  expect(markedRow(pages.at(-1) ?? [])).toEqual(['→ Yes']);
+});
+
+it('keeps No selected when Down is pressed past the last option', async () => {
+  const { pages } = await observedDialog(['\u001B[B', '\u001B[B']);
+
+  expect(markedRow(pages.at(-1) ?? [])).toEqual(['→ No']);
+});
+
+it('confirms on line feed when the confirm key is rebound', async () => {
+  const keybindings = new KeybindingsManager(tuiKeybindings, { 'tui.select.confirm': 'x' });
+  const { closed } = await observedDialog(['\n'], { keybindings });
+
+  expect(closed).toEqual([true]);
+});
+
+it('marks only the selected option and shows each option once', async () => {
+  const { pages } = await observedDialog(['j', 'k', 'j']);
+  const rows = (index: number) => pages[index]?.map((row) => row.trim()) ?? [];
+
+  expect(markedRow(pages[0] ?? [])).toEqual(['→ Yes']);
+  expect(rows(0)).toContain('No');
+  expect(markedRow(pages[1] ?? [])).toEqual(['→ No']);
+  expect(rows(1)).toContain('Yes');
+
+  for (const page of pages) {
+    const options = page.filter((row) => /^\s*(→ )?(Yes|No)\s*$/u.test(row));
+
+    expect(options).toHaveLength(2);
+  }
+});
+
+it('asks for a redraw after each key that moves the selection or scrolls', async () => {
+  const { redraws } = await observedDialog(['j', 'k', '\u001B[6~', '\u001B[5~']);
+
+  expect(redraws).toEqual([1, 2, 3, 4]);
+});
+
+it('frames the full dialog with colored borders around the options', async () => {
+  let page: string[] = [];
+
+  const context = customContext((component) => {
+    page = component.render(40);
+  }, theme);
+
+  await confirm(context, 'Title', 'Message');
+
+  expect(page[0]).toContain('<border>');
+  expect(page.at(-1)).toContain('<border>');
+  expect(page.map((row) => row.trim())).toEqual(expect.arrayContaining(['<text>No</text>']));
+});
+
+it.each([12, 24])('fills the free rows of a %s-row terminal with message lines', async (rows) => {
+  const message = Array.from({ length: 40 }, (_, index) => `Write ${index + 1}`).join('\n');
+  const { pages } = await observedDialog([], { rows, message });
+
+  expect(pages[0]).toHaveLength(rows - 6);
 });

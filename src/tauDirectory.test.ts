@@ -1,11 +1,13 @@
 import { execFile } from 'node:child_process';
 import {
+  chmod,
   link as hardLink,
   lstat,
   mkdir,
   mkdtemp,
   readdir,
   readFile,
+  realpath,
   rm,
   symlink,
   writeFile,
@@ -21,6 +23,7 @@ import {
   checkTauDirectory,
   createFreshTauDirectory,
   ensureTauDirectory,
+  findTauRoot,
   locateTauChild,
 } from './tauDirectory.js';
 
@@ -340,3 +343,125 @@ it.each([
 ])('places $directory with prefix $prefix as $place.kind', ({ directory, prefix, place }) => {
   expect(locateTauChild('/repository', 'pr', prefix, directory)).toEqual(place);
 });
+
+it.for(['', '.', '..', 'a/..', '../x', 'a//b', 'a/./b'])(
+  'refuses the Tau directory path %j in a Git repository before it writes',
+  async (path, { onTestFinished }) => {
+    const repository = await createTemporaryRepository(onTestFinished);
+    const before = await listTree(repository);
+
+    await expect(ensureTauDirectory(repository, path)).rejects.toThrow('below .tau');
+    await expect(checkTauDirectory(repository, path)).rejects.toThrow('below .tau');
+
+    expect(await listTree(repository)).toEqual(before);
+  },
+);
+
+it.for(['', '.', '..'])(
+  'refuses the fresh directory prefix %j in a Git repository before it writes',
+  async (prefix, { onTestFinished }) => {
+    const repository = await createTemporaryRepository(onTestFinished);
+    const before = await listTree(repository);
+
+    await expect(createFreshTauDirectory(repository, 'workers', prefix)).rejects.toThrow(
+      'must be a name',
+    );
+
+    expect(await listTree(repository)).toEqual(before);
+  },
+);
+
+it('check refuses a target that Git does not ignore', async ({ onTestFinished }) => {
+  const repository = await createTemporaryRepository(onTestFinished);
+
+  await mkdir(join(repository, '.tau/slices'), { recursive: true });
+
+  await expect(checkTauDirectory(repository, 'slices')).rejects.toThrow(
+    'Git does not ignore files in .tau/slices',
+  );
+});
+
+const bareRootWithGitFile = async (
+  registerCleanup: (cleanup: () => Promise<void>) => void,
+  content: string | undefined,
+) => {
+  const root = await createTemporaryBareRoot(registerCleanup);
+
+  if (content === undefined) {
+    await rm(join(root, '.git'));
+  } else {
+    await writeFile(join(root, '.git'), content);
+  }
+
+  return { root, bare: join(root, '.bare') };
+};
+
+it.for([
+  { name: 'a final newline', content: 'gitdir: .bare\n' },
+  { name: 'CRLF line ends', content: 'gitdir: .bare\r\n' },
+  { name: 'no final newline', content: 'gitdir: .bare' },
+  { name: 'trailing spaces', content: 'gitdir: .bare  \n' },
+])('finds the bare root from a .git file with $name', async ({ content }, { onTestFinished }) => {
+  const { root, bare } = await bareRootWithGitFile(onTestFinished, content);
+
+  await expect(findTauRoot(bare, 'handover')).resolves.toBe(await realpath(root));
+});
+
+it.for([
+  { name: 'extra lines', content: 'gitdir: .bare\nextra\n' },
+  { name: 'text before gitdir', content: 'see gitdir: .bare\n' },
+  { name: 'a gitdir that points elsewhere', content: 'gitdir: .other\n' },
+  { name: 'a gitdir that does not exist', content: 'gitdir: .missing\n' },
+  { name: 'no .git file', content: undefined },
+])(
+  'falls back to the bare Git directory for a .git file with $name',
+  async ({ content }, { onTestFinished }) => {
+    const { root, bare } = await bareRootWithGitFile(onTestFinished, content);
+
+    if (content === 'gitdir: .other\n') {
+      await mkdir(join(root, '.other'));
+    }
+
+    await expect(findTauRoot(bare, 'handover')).resolves.toBe(await realpath(bare));
+  },
+);
+
+it('throws when the .git file points through a file', async ({ onTestFinished }) => {
+  const { bare } = await bareRootWithGitFile(onTestFinished, 'gitdir: .bare/HEAD/x\n');
+
+  await expect(findTauRoot(bare, 'handover')).rejects.toMatchObject({ code: 'ENOTDIR' });
+});
+
+it.for([
+  { name: 'a comment line', content: '*\n# keep this\n' },
+  { name: 'a whitespace-only line', content: '*\n   \n' },
+])('adds no second ignore rule after $name', async ({ content }, { onTestFinished }) => {
+  const repository = await createTemporaryRepository(onTestFinished);
+
+  await mkdir(join(repository, '.tau'));
+  await writeFile(join(repository, '.tau/.gitignore'), content);
+  await ensureTauDirectory(repository, 'slices');
+
+  expect(await readFile(join(repository, '.tau/.gitignore'), 'utf8')).toBe(content);
+});
+
+it.skipIf(process.getuid?.() === 0)(
+  'refuses an unreadable .tau/.gitignore and leaves it unchanged',
+  async ({ onTestFinished }) => {
+    const repository = await createTemporaryRepository(onTestFinished);
+    const ignoreFile = join(repository, '.tau/.gitignore');
+
+    await mkdir(join(repository, '.tau'));
+    await writeFile(ignoreFile, 'state.json\n');
+    await chmod(ignoreFile, 0o200);
+    onTestFinished(() => chmod(ignoreFile, 0o600));
+
+    await expect(ensureTauDirectory(repository, 'slices')).rejects.toMatchObject({
+      code: 'EACCES',
+    });
+
+    await chmod(ignoreFile, 0o600);
+
+    expect(await readFile(ignoreFile, 'utf8')).toBe('state.json\n');
+  },
+);
