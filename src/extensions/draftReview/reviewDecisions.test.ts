@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { decideEdit, selectReviewedComments } from './reviewDecisions.js';
+import { decideEdit, reviewPlacement, selectReviewedComments } from './reviewDecisions.js';
 import type { FileFacts, SessionComment } from './reviewDecisions.js';
 
 const comment = (id: string, path: string | null): SessionComment => ({
@@ -47,4 +47,16 @@ it.each<{ name: string; facts: Partial<FileFacts>; decision: string }>([
   const base: FileFacts = { path: 'a.md', original: 'one', staged: 'one', current: 'one' };
 
   expect(decideEdit({ ...base, ...facts })).toBe(decision);
+});
+
+it('places the review right of a wide pane', () => {
+  expect(reviewPlacement({ width: 164, zoomed: false, minimumWidth: 82 })).toBe('right');
+});
+
+it('places the review in a tab when the pane is one column too narrow', () => {
+  expect(reviewPlacement({ width: 163, zoomed: false, minimumWidth: 82 })).toBe('tab');
+});
+
+it('places the review in a tab when the pane is zoomed', () => {
+  expect(reviewPlacement({ width: 200, zoomed: true, minimumWidth: 82 })).toBe('tab');
 });
