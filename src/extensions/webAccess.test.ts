@@ -50,9 +50,13 @@ const setup = (config: unknown = {}) => {
   return { emit, find, getAvailable };
 };
 
-const startSession = (worker: string) => {
+const startSession = (worker: string, toolNames: string[] = []) => {
   vi.stubEnv('TAU_WORKER_RECORD', worker);
-  const fake = fakeExtensionApi({ getAllTools: () => [] });
+
+  const fake = fakeExtensionApi({
+    getAllTools: () => toolNames.map((name) => ({ name })) as never,
+  });
+
   webAccessExtension(fake.pi);
 
   return () => {
@@ -67,6 +71,12 @@ afterEach(() => vi.unstubAllEnvs());
 it('names a missing bundled tool in a parent session but leaves worker tools to the profile', () => {
   expect(startSession('')).toThrow('"web_search", "fetch_content" are not registered');
   expect(startSession('/records/task')).not.toThrow();
+});
+
+it('accepts a parent session that registers both web tools and names only the missing one', () => {
+  expect(startSession('', ['web_search', 'fetch_content', 'read'])).not.toThrow();
+  expect(startSession('', ['web_search'])).toThrow('Tool "fetch_content" is not registered');
+  expect(startSession('', ['fetch_content'])).toThrow('Tool "web_search" is not registered');
 });
 
 it('leaves answer fetches without a passed answerModel untouched and trims a passed one', () => {
@@ -136,4 +146,46 @@ it('blocks an unavailable answerModel instead of letting the package route to an
   app.getAvailable.mockReturnValue([routed]);
 
   expect(() => app.emit({ mode: 'answer', answerModel: 'custom/model' })).toThrow('not available');
+});
+
+it('lets a native answerModel through when a router lists the same ID', () => {
+  const app = setup();
+
+  const routed = fauxProvider({
+    provider: 'router',
+    models: [{ id: 'custom/model' }],
+  }).getModel();
+
+  const native = fauxProvider({ provider: 'custom', models: [{ id: 'model' }] }).getModel();
+  app.getAvailable.mockReturnValue([routed, native]);
+
+  expect(app.emit({ mode: 'answer', answerModel: ' custom/model ' })).toStrictEqual({
+    mode: 'answer',
+    answerModel: 'custom/model',
+  });
+});
+
+it('blocks a routed answerModel when the native model is unavailable, whatever else is listed', () => {
+  const app = setup();
+
+  const models = [
+    fauxProvider({ provider: 'custom', models: [{ id: 'unrelated' }] }).getModel(),
+    fauxProvider({ provider: 'elsewhere', models: [{ id: 'model' }] }).getModel(),
+    fauxProvider({ provider: 'router', models: [{ id: 'custom/model' }] }).getModel(),
+  ];
+
+  app.getAvailable.mockReturnValue(models);
+
+  expect(() => app.emit({ mode: 'answer', answerModel: 'custom/model' })).toThrow('not available');
+});
+
+it('lets a native answerModel through when the availability snapshot lacks it and no router lists it', () => {
+  const app = setup();
+  const other = fauxProvider({ provider: 'test-provider', models: [{ id: 'other' }] }).getModel();
+  app.getAvailable.mockReturnValue([other]);
+
+  expect(app.emit({ mode: 'answer', answerModel: 'custom/model' })).toStrictEqual({
+    mode: 'answer',
+    answerModel: 'custom/model',
+  });
 });

@@ -83,3 +83,16 @@ it('ignores an untrusted repository list and fails loudly on an invalid entry', 
   expect(invalid).toThrow(userFile);
   expect(invalid).toThrow('"two"');
 });
+
+it.for(['a/one', { 'a/one': true }, null, 7])(
+  'names the config file when allowedModels is not an array: %j',
+  (allowedModels, { onTestFinished }) => {
+    const { context, userFile } = fixture(onTestFinished);
+
+    writeFileSync(userFile, JSON.stringify({ allowedModels }));
+    const resolve = () => resolveAllowedModel(context, 'a/one');
+
+    expect(resolve).toThrow(userFile);
+    expect(resolve).toThrow('allowedModels');
+  },
+);

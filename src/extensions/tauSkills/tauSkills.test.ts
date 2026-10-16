@@ -50,11 +50,15 @@ describe('tauSkillsExtension', () => {
     await broCommand.handler('the test failure', { isIdle: () => true } as never);
     await broCommand.handler('', { isIdle: () => true } as never);
     await broCommand.handler('', { isIdle: () => false } as never);
+    await broCommand.handler('  padded failure \n', { isIdle: () => true } as never);
+    await broCommand.handler(' \n ', { isIdle: () => true } as never);
 
     expect(fake.sendUserMessage.mock.calls).toEqual([
       ['/skill:bro the test failure', { deliverAs: 'followUp', expandPromptTemplates: true }],
       ['/skill:bro', { deliverAs: 'followUp', expandPromptTemplates: true }],
       ['/skill:bro', { deliverAs: 'steer', expandPromptTemplates: true }],
+      ['/skill:bro padded failure', { deliverAs: 'followUp', expandPromptTemplates: true }],
+      ['/skill:bro', { deliverAs: 'followUp', expandPromptTemplates: true }],
     ]);
   });
 
