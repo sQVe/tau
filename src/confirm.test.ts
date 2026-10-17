@@ -237,8 +237,8 @@ const observedDialog = async (
   options: { keybindings?: KeybindingsManager; rows?: number; message?: string } = {},
 ) => {
   const closed: boolean[] = [];
-  const redraws: number[] = [];
   const pages: string[][] = [];
+  const screens: string[][] = [];
   let requests = 0;
 
   const ui = {
@@ -264,10 +264,19 @@ const observedDialog = async (
 
       pages.push(component.render(100));
 
+      // Like Pi's TUI, the screen repaints only after a redraw request.
+      let screen = pages[0] ?? [];
+
       for (const key of keys) {
+        const before = requests;
+
         component.handleInput?.(key);
-        redraws.push(requests);
-        pages.push(component.render(100));
+
+        const page = component.render(100);
+
+        pages.push(page);
+        screen = requests > before ? page : screen;
+        screens.push(screen);
       }
 
       return closed[0];
@@ -277,7 +286,7 @@ const observedDialog = async (
   const context = { mode: 'tui', hasUI: true, ui } as unknown as ExtensionContext;
   const answer = await confirm(context, 'Title', options.message ?? 'Message');
 
-  return { answer, closed, redraws, pages };
+  return { answer, closed, pages, screens };
 };
 
 const markedRow = (page: string[]) =>
@@ -325,10 +334,26 @@ it('marks only the selected option and shows each option once', async () => {
   }
 });
 
-it('asks for a redraw after each key that moves the selection or scrolls', async () => {
-  const { redraws } = await observedDialog(['j', 'k', '\u001B[6~', '\u001B[5~']);
+it('shows the new selection and scroll position after each key', async () => {
+  const message = Array.from({ length: 30 }, (_, index) => `Write ${index + 1}`).join('\n');
 
-  expect(redraws).toEqual([1, 2, 3, 4]);
+  const { screens } = await observedDialog(['j', '\u001B[6~', '\u001B[5~', 'k'], {
+    rows: 18,
+    message,
+  });
+
+  const shows = (index: number, text: string) =>
+    screens[index]?.some((row) => row.trim() === text) ?? false;
+
+  expect(markedRow(screens[0] ?? [])).toEqual(['→ No']);
+
+  expect([shows(0, 'Write 1'), shows(1, 'Write 1'), shows(2, 'Write 1')]).toEqual([
+    true,
+    false,
+    true,
+  ]);
+
+  expect(markedRow(screens[3] ?? [])).toEqual(['→ Yes']);
 });
 
 it('frames the full dialog with colored borders around the options', async () => {
