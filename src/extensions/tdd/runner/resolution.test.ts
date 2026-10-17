@@ -290,3 +290,91 @@ it('persists and presents resolution evidence through the production observation
   expect(context).not.toContain('Elapsed:');
   expect(summary.length).toBeLessThanOrEqual(2000);
 });
+
+const installedVitest = async (fields: Record<string, unknown>) => {
+  await manifest(JSON.stringify({ name: 'vitest', bin: './vitest.mjs', ...fields }));
+  await writeFile(join(cwd, 'node_modules/vitest/vitest.mjs'), '');
+};
+
+it.for([
+  ['1.2.3'],
+  ['10.20.30'],
+  ['5.0.1-beta.2'],
+  ['5.0.1+build.5'],
+  ['5.0.1-rc_1+exp-sha.5'],
+  [`1.2.3-${'a'.repeat(122)}`],
+])('accepts the manifest version %s', async ([version]) => {
+  await installedVitest({ version });
+
+  expect(defaultResolveVitest(cwd)).toEqual({
+    path: join(cwd, 'node_modules/vitest/vitest.mjs'),
+    version,
+  });
+});
+
+it.for([
+  ['a missing version', undefined],
+  ['a number', 5],
+  ['a list', ['5.0.1']],
+  ['a prefixed version', 'v5.0.1'],
+  ['a suffixed version', '5.0.1!'],
+  ['a two-part version', '5.0'],
+  ['an empty build tag', '5.0.1+'],
+  ['a version longer than 128 characters', `1.2.3-${'a'.repeat(123)}`],
+])('rejects %s as the manifest version', async ([, version]) => {
+  await installedVitest({ version });
+
+  expect(defaultResolveVitest(cwd)).toMatchObject({
+    kind: 'runner-resolution-error',
+    resolution: { stage: 'manifest', errorCode: 'INVALID_VERSION', errorType: 'TypeError' },
+  });
+});
+
+it.for<[string, Record<string, unknown>]>([
+  ['a blank bin entry', { bin: '  ' }],
+  ['a bin entry that names a directory', { bin: './dist' }],
+  ['a numeric bin entry', { bin: 5 }],
+  ['a null bin entry', { bin: null }],
+])('rejects %s', async ([, fields]) => {
+  await manifest(JSON.stringify({ name: 'vitest', version: '5.0.1', ...fields }));
+  await mkdir(join(cwd, 'node_modules/vitest/dist'));
+
+  expect(defaultResolveVitest(cwd)).toMatchObject({
+    kind: 'runner-resolution-error',
+    resolution: { stage: 'binary', errorCode: 'INVALID_BIN' },
+  });
+});
+
+it('refuses a bin entry that names the parent directory without reporting a binary path', async () => {
+  await manifest(JSON.stringify({ name: 'vitest', version: '5.0.1', bin: '..' }));
+
+  const result = defaultResolveVitest(cwd);
+
+  expect(result).toMatchObject({
+    kind: 'runner-resolution-error',
+    resolution: { stage: 'binary', errorCode: 'INVALID_BIN' },
+  });
+
+  expect(result).not.toHaveProperty('resolution.binaryPath');
+});
+
+it('names only a package root other than the session cwd', async () => {
+  const unpackaged = await mkdtemp(join(tmpdir(), 'tau-unpackaged-'));
+  onTestFinished(() => rm(unpackaged, { recursive: true, force: true }));
+  await writeFile(join(cwd, 'package.json'), '{}');
+  await mkdir(join(cwd, 'other'), { recursive: true });
+  await writeFile(join(cwd, 'other/package.json'), '{}');
+
+  const run = (files: string[]) =>
+    runTests(
+      { scope: 'focused', verificationArgv, cwd, files, testNames: [] },
+      { resolveVitest: defaultResolveVitest, spawn: vi.fn<SpawnCommand>(), timeoutMs: 30_000 },
+    );
+
+  const unexplained = defaultResolveVitest(cwd);
+  const local = await run(['value.test.ts', 'src/value.test.ts']);
+  const elsewhere = await run([join(unpackaged, 'x.test.ts'), 'src/a.test.ts', 'other/a.test.ts']);
+
+  expect(local).toHaveProperty('message', 'message' in unexplained ? unexplained.message : '');
+  expect(elsewhere).toHaveProperty('message', expect.stringContaining(join(cwd, 'other')));
+});

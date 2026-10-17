@@ -129,6 +129,26 @@ describe('TDD config', () => {
     expect(notify).toHaveBeenCalledWith(expect.stringContaining('tdd.futureKey'), 'warning');
   });
 
+  it('loads a configured verification command that starts with vitest', async ({
+    onTestFinished,
+  }) => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tau-config-argv-'));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    await mkdir(join(cwd, '.pi'));
+
+    await writeFile(
+      join(cwd, '.pi', 'tau.json'),
+      JSON.stringify({ tdd: { verificationArgv: ['vitest', 'run', '--silent'] } }),
+    );
+
+    const { config } = loadTddConfig(
+      { cwd, agentDirectory: join(cwd, 'agent'), projectTrusted: true },
+      { notify: () => undefined },
+    );
+
+    expect(config.verificationArgv).toEqual(['vitest', 'run', '--silent']);
+  });
+
   it.for<[string, string, string]>([
     ['.pi/tau.json', '{', '.pi/tau.json'],
     ['.pi/tau.json', '[]', '.pi/tau.json'],
@@ -136,6 +156,7 @@ describe('TDD config', () => {
     ['.pi/tau.json', '{"tdd": {"testGlobs": ["", "**/*.test.ts"]}}', 'testGlobs'],
     ['.pi/tau.json', '{"tdd": {"verificationArgv": ["jest"]}}', 'verificationArgv'],
     ['.pi/tau.json', '{"tdd": {"verificationArgv": []}}', 'verificationArgv'],
+    ['.pi/tau.json', '{"tdd": {"verificationArgv": ["vitest", ""]}}', 'verificationArgv'],
     ['agent/tau.json', '{"tdd": {"excludedGlobs": "dist"}}', 'excludedGlobs'],
   ])('names %s and the problem for %s', async ([file, content, problem], { onTestFinished }) => {
     const cwd = await mkdtemp(join(tmpdir(), 'tau-config-invalid-'));
