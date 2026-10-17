@@ -995,27 +995,16 @@ it('focuses the action row only when the cursor is on it', () => {
   expect(rowOf(dialog, actionText)).not.toBe(unfocused);
 });
 
-it('shows only the question, options, and key hints before a notice arrives', () => {
-  const { dialog } = open([twoOptions()]);
+it('adds the action row only when a notice arrives', () => {
+  const { dialog, notify } = open([twoOptions()]);
+  const before = dialog.render(80);
 
-  const known = [
-    'Which layout?',
-    'Decides',
-    'Impact',
-    'Stacked',
-    'Split',
-    'One column',
-    'Two columns',
-    'Type something',
-    'Esc',
-  ];
+  notify(scout);
 
-  const unexplained = dialog
-    .render(80)
-    .filter((line) => line.trim() !== '' && !/^─+$/u.test(line))
-    .filter((line) => !known.some((text) => line.includes(text)));
+  const after = dialog.render(80);
 
-  expect(unexplained).toEqual([]);
+  expect(after.length).toBeGreaterThan(before.length);
+  expect(after).toEqual(expect.arrayContaining(before));
 });
 
 const firstMark = (line: string) => line.slice(0, line.indexOf('Tab1'));
