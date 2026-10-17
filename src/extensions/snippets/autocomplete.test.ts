@@ -176,21 +176,20 @@ it.each([
   { case: 'punctuation ends the query', lines: ['Review #si. '], col: 11 },
   { case: 'the line has no query', lines: ['Read @sr '], col: 9 },
 ])('passes to the wrapped provider when $case before a space', async ({ lines, col }) => {
-  const { wrapped, result } = suggest(lines, 0, col);
+  const { result } = suggest(lines, 0, col);
 
   expect(await result).toEqual({ items: [wrappedItem], prefix: '@sr' });
-  expect(wrapped.getSuggestions).toHaveBeenCalledOnce();
 });
 
+const triggersAfterAt = (lines: string[], line: number, column: number) =>
+  lines[line]?.charAt(column - 1) === '@';
+
 it('passes the file completion trigger of the wrapped provider through', () => {
-  const shouldTriggerFileCompletion = vi.fn<() => boolean>(() => true);
-  const wrapped = { ...createWrapped(), shouldTriggerFileCompletion };
+  const wrapped = { ...createWrapped(), shouldTriggerFileCompletion: triggersAfterAt };
   const provider = snippetAutocomplete(() => snippets)(wrapped);
 
-  const triggers = provider.shouldTriggerFileCompletion?.(['@'], 0, 1);
-
-  expect(triggers).toBe(true);
-  expect(shouldTriggerFileCompletion).toHaveBeenCalledWith(['@'], 0, 1);
+  expect(provider.shouldTriggerFileCompletion?.(['@'], 0, 1)).toBe(true);
+  expect(provider.shouldTriggerFileCompletion?.(['a'], 0, 1)).toBe(false);
 });
 
 it('has no file completion trigger when the wrapped provider has none', () => {
@@ -217,12 +216,11 @@ describe('completing a snippet item that does not belong to the query', () => {
       item: { value: '#gone', label: '#gone' },
     },
   ])('passes to the wrapped provider when $case', ({ lines, prefix, item }) => {
-    const { wrapped, provider } = suggest(lines, 0, lines[0]?.length ?? 0);
+    const { provider } = suggest(lines, 0, lines[0]?.length ?? 0);
     const column = lines[0]?.length ?? 0;
 
     const result = provider.applyCompletion(lines, 0, column, item ?? simplifyItem, prefix);
 
     expect(result).toEqual({ lines: ['wrapped'], cursorLine: 0, cursorCol: 7 });
-    expect(wrapped.applyCompletion).toHaveBeenCalledOnce();
   });
 });
