@@ -11,3 +11,7 @@ coverage/
 /.pi/*-reports/
 /.pi/*-review/
 /.pi/settings.json
+
+/.stryker-tmp/
+/stryker.log
+/reports/

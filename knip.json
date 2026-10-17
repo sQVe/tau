@@ -1,11 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/tau.ts", "scripts/*.ts"],
-  "ignoreDependencies": [
-    "pi-web-access",
-    "jiti",
-    "@stryker-mutator/core",
-    "@stryker-mutator/vitest-runner"
-  ],
+  "entry": ["src/tau.ts", "scripts/*.ts", "stryker.vitest.config.ts"],
+  "ignoreDependencies": ["pi-web-access", "jiti"],
   "ignoreBinaries": ["herdr"]
 }
