@@ -430,6 +430,7 @@ it('mentions an ignored config file only when one was skipped', () => {
     ignored: '/repo/.pi/tau.json',
   });
 
-  expect(trusted).not.toContain('Ignored');
-  expect(untrusted).toContain('Ignored /repo/.pi/tau.json');
+  expect(trusted).not.toContain('/repo/.pi/tau.json');
+  expect(untrusted).toContain('/repo/.pi/tau.json');
+  expect(untrusted.split('\n')).toHaveLength(trusted.split('\n').length + 1);
 });
