@@ -1,8 +1,9 @@
-import { copyFile, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { errorMessage } from '../errors.js';
 import { readCaptureRecord, recordFileName, writeCaptureRecord } from './record.js';
@@ -111,4 +112,156 @@ it('refuses a record that is not JSON', async () => {
   await writeFile(join(directory, recordFileName), '{"version": 1,');
 
   await expect(readCaptureRecord(directory)).rejects.toThrow(join(directory, recordFileName));
+});
+
+const sha = 'a'.repeat(40);
+
+const savedSnapshot = {
+  present: ['src/kept.ts'],
+  absent: ['src/gone.ts'],
+  skipped: [{ kind: 'binary', path: 'image.png', identity: sha, existed: true }],
+};
+
+const savedRecord = (fixture: string) =>
+  JSON.parse(readFileSync(join(fixtures, fixture), 'utf8')) as Record<string, unknown>;
+
+const writeRecord = async (directory: string, record: unknown) => {
+  await writeFile(join(directory, recordFileName), JSON.stringify(record));
+};
+
+const rejection = (outcome: Promise<unknown>) =>
+  outcome.then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+
+const refusal = async (record: unknown) => {
+  const directory = await reviewDirectory();
+
+  await writeRecord(directory, record);
+
+  const error = await rejection(readCaptureRecord(directory));
+
+  expect(error).toBeInstanceOf(Error);
+
+  return errorMessage(error);
+};
+
+it('reads a record that holds a snapshot', async () => {
+  const directory = await reviewDirectory();
+  const record = { ...savedRecord('version-2-fix.json'), snapshot: savedSnapshot };
+
+  await writeRecord(directory, record);
+
+  expect(await readCaptureRecord(directory)).toEqual(record);
+});
+
+describe('refuses a saved record', () => {
+  const fix = savedRecord('version-2-fix.json');
+
+  const invalidRecords = {
+    'with a field it does not define': { ...fix, extra: 1 },
+    'of version 1 with a field it does not define': {
+      ...savedRecord('version-1.json'),
+      extra: 1,
+    },
+    'with a snapshot field it does not define': {
+      ...fix,
+      snapshot: { ...savedSnapshot, extra: 1 },
+    },
+    'with a skipped path field it does not define': {
+      ...fix,
+      snapshot: { ...savedSnapshot, skipped: [{ ...savedSnapshot.skipped[0], extra: 1 }] },
+    },
+    'with an empty present path': { ...fix, snapshot: { ...savedSnapshot, present: [''] } },
+    'with an empty absent path': { ...fix, snapshot: { ...savedSnapshot, absent: [''] } },
+    'with an empty skipped path': {
+      ...fix,
+      snapshot: { ...savedSnapshot, skipped: [{ ...savedSnapshot.skipped[0], path: '' }] },
+    },
+  };
+
+  it.each(Object.entries(invalidRecords))('%s', async (_name, record) => {
+    const directory = await reviewDirectory();
+
+    await writeRecord(directory, record);
+
+    await expect(readUnchanged(directory)).rejects.toThrow('Malformed capture record');
+  });
+});
+
+it.each(['null', '7', '"text"', '[]'])('refuses the JSON value %s as malformed', async (text) => {
+  const directory = await reviewDirectory();
+
+  await writeFile(join(directory, recordFileName), text);
+
+  await expect(readUnchanged(directory)).rejects.toThrow('Malformed capture record');
+});
+
+it('names the field of a bad target in a record that is otherwise valid', async () => {
+  const record = savedRecord('version-2-fix.json');
+  const target = record['target'] as Record<string, unknown>;
+
+  const message = await refusal({ ...record, target: { ...target, base: 'HEAD' } });
+
+  expect(message).toContain('/target/base');
+});
+
+it('names the first bad field when the target kind is unknown', async () => {
+  const record = savedRecord('version-2-fix.json');
+
+  const message = await refusal({ ...record, target: { kind: 'stash' } });
+
+  expect(message).toContain('Malformed capture record');
+  expect(message).not.toContain('/target/base');
+});
+
+it('names the record field when only the target is valid', async () => {
+  const record = savedRecord('version-2-fix.json');
+
+  const message = await refusal({ ...record, hash: 'short' });
+
+  expect(message).toContain('/hash');
+});
+
+it('names a newer record format, not a malformed record', async () => {
+  const directory = await reviewDirectory('newer.json');
+
+  const error = await rejection(readUnchanged(directory));
+
+  expect(errorMessage(error)).not.toContain('Malformed');
+});
+
+it('does not call a record with a non-number version newer', async () => {
+  const message = await refusal({ ...savedRecord('version-2.json'), version: '3' });
+
+  expect(message).toContain('Malformed capture record');
+});
+
+it('keeps the cause when a record is not JSON', async () => {
+  const directory = await reviewDirectory();
+
+  await writeFile(join(directory, recordFileName), '{"version": 1,');
+
+  const error = await rejection(readCaptureRecord(directory));
+
+  expect(error).toHaveProperty('cause', expect.any(SyntaxError));
+});
+
+it('keeps the cause when a record is missing', async () => {
+  const directory = await reviewDirectory();
+
+  const error = await rejection(readCaptureRecord(directory));
+
+  expect(error).toHaveProperty('cause.code', 'ENOENT');
+});
+
+it('passes on a read failure that is not a missing file', async () => {
+  const directory = await reviewDirectory();
+
+  await mkdir(join(directory, recordFileName));
+
+  const error = await rejection(readCaptureRecord(directory));
+
+  expect(error).toHaveProperty('code', 'EISDIR');
 });
