@@ -133,6 +133,7 @@ it('decides unknown, without running gh stack view, while a stack rebase is paus
 
   expect(details).toMatchObject({
     result: 'unknown',
+    branch: 'feature',
     evidence: { current: { rebasePaused: true } },
   });
 
@@ -140,13 +141,20 @@ it('decides unknown, without running gh stack view, while a stack rebase is paus
 });
 
 it('decides unknown for a detached HEAD', async () => {
-  const { root, run } = await setUp();
+  const { root, fake, run } = await setUp();
 
   await git(root, 'checkout', '--quiet', '--detach');
 
   const details = await run({ action: 'check' });
 
-  expect(details).toMatchObject({ result: 'unknown', branch: null });
+  expect(details).toMatchObject({
+    result: 'unknown',
+    reason: containing('HEAD is detached'),
+    branch: null,
+    evidence: { current: { rebasePaused: false }, resolved: null, github: null },
+  });
+
+  expect(fake.calls).toEqual(['stack view --json']);
 });
 
 it('decides standalone when GitHub shows no stack and nothing around the pull request', async () => {
@@ -452,4 +460,135 @@ it('refuses an empty remote name', async () => {
     result: 'unknown',
     reason: containing('remote must not be empty'),
   });
+});
+
+it('decides unknown, with the failed read as evidence, when another branch has no push target', async () => {
+  const { fake, run } = await setUp();
+
+  const details = await run({ action: 'check', branch: 'elsewhere', remote: '' });
+
+  expect(details).toMatchObject({
+    result: 'unknown',
+    branch: 'elsewhere',
+    evidence: { current: null, resolved: { ok: false }, github: null },
+  });
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('decides unknown, with the failed read as evidence, when a tracked branch has no push target', async () => {
+  const { fake, run } = await setUp();
+
+  fake.stackView = {
+    code: 0,
+    stdout: JSON.stringify({
+      trunk: 'main',
+      currentBranch: 'feature',
+      branches: [layer('feature')],
+    }),
+    stderr: '',
+  };
+
+  const details = await run({ action: 'check', remote: '' });
+
+  expect(details).toMatchObject({
+    result: 'unknown',
+    branch: 'feature',
+    evidence: { current: { rebasePaused: false }, resolved: { ok: false }, github: null },
+  });
+});
+
+it('decides unknown, with the failed read as evidence, when a tracked branch cannot list its dependents', async () => {
+  const { fake, run } = await setUp();
+
+  fake.stackView = {
+    code: 0,
+    stdout: JSON.stringify({
+      trunk: 'main',
+      currentBranch: 'feature',
+      branches: [layer('feature')],
+    }),
+    stderr: '',
+  };
+
+  fake.override('pr list --repo github.com/sQVe/tau --base feature', {
+    code: 1,
+    stderr: 'HTTP 500',
+  });
+
+  const details = await run({ action: 'check' });
+
+  expect(details).toMatchObject({
+    result: 'unknown',
+    reason: containing('HTTP 500'),
+    branch: 'feature',
+    evidence: { resolved: { ok: true }, github: null, basedOn: { ok: false } },
+  });
+});
+
+it('passes the abort signal to every gh call', async () => {
+  const { root, fake } = await setUp();
+  const controller = new AbortController();
+
+  fake.pulls = [pull()];
+
+  await createStackTool(fake.exec).execute(
+    'call',
+    { action: 'check' },
+    controller.signal,
+    undefined,
+    noUiContext(root),
+  );
+
+  expect(fake.signals.length).toBeGreaterThan(0);
+  expect(fake.signals.every((signal) => signal === controller.signal)).toBe(true);
+});
+
+it('decides unknown with no branch for a detached HEAD during a paused rebase', async () => {
+  const { root, run } = await setUp();
+
+  await git(root, 'checkout', '--quiet', '--detach');
+  await writeFile(join(root, '.git', 'gh-stack-rebase-state'), '{}');
+
+  const details = await run({ action: 'check' });
+
+  expect(details).toMatchObject({
+    result: 'unknown',
+    branch: null,
+    evidence: { current: { rebasePaused: true } },
+  });
+});
+
+const basedOnList = (count: number) =>
+  JSON.stringify(
+    Array.from({ length: count }, (_, index) => ({
+      number: 100 + index,
+      url: `https://github.com/sQVe/tau/pull/${100 + index}`,
+      headRefName: `above-${index}`,
+    })),
+  );
+
+it('decides unknown when the pull request list may have been cut off at its limit', async () => {
+  const { fake, run } = await setUp();
+
+  fake.pulls = [pull()];
+  fake.override('pr list --repo github.com/sQVe/tau --base feature', { stdout: basedOnList(100) });
+
+  const details = await run({ action: 'check' });
+
+  expect(details).toMatchObject({
+    result: 'unknown',
+    reason: containing('may be incomplete'),
+  });
+});
+
+it('reads a pull request list one short of its limit as complete', async () => {
+  const { fake, run } = await setUp();
+
+  fake.pulls = [pull()];
+  fake.override('pr list --repo github.com/sQVe/tau --base feature', { stdout: basedOnList(99) });
+
+  const details = await run({ action: 'check' });
+
+  expect(details).toMatchObject({ result: 'untracked', held: ['openPullBasedOnBranch'] });
 });

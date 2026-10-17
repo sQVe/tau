@@ -8,6 +8,7 @@ import { createStackTool } from './tool.js';
 
 interface Layers {
   layers: { branch: string; status: string; reason: string | null; remoteTip: string | null }[];
+  evidence: { layers: { branch: string; facts: Record<string, unknown> }[] };
 }
 
 const sha = 'c'.repeat(40);
@@ -45,7 +46,7 @@ const setUp = async () => {
     return result.details as unknown as Layers;
   };
 
-  return { gitFake, run };
+  return { gitFake, fake, run };
 };
 
 const answerCherry = (gitFake: GitFake, newOutput: string, oldOutput: string) => {
@@ -110,5 +111,53 @@ it('decides unknown when git log fails', async () => {
 
   gitFake.answer('log --oneline', { code: 128, stderr: 'fatal: bad revision' });
 
-  expect((await run()).layers).toMatchObject([{ status: 'unknown' }]);
+  const { layers } = await run();
+
+  expect(layers).toMatchObject([{ status: 'unknown' }]);
+  expect(layers[0]?.reason).toContain('git log --oneline');
 });
+
+it('leaves the published facts out of the evidence when the remote tip read fails', async () => {
+  const { gitFake, run } = await setUp();
+
+  gitFake.answer('rev-parse --verify --quiet refs/remotes/origin/a', {
+    code: 128,
+    stderr: 'fatal: boom',
+  });
+
+  const { evidence } = await run();
+
+  expect(evidence.layers).toHaveLength(1);
+  expect(evidence.layers[0]?.facts).toMatchObject({ remoteTip: { ok: false }, published: null });
+});
+
+it('leaves the published facts out of the evidence when the remote branch is missing', async () => {
+  const { gitFake, run } = await setUp();
+
+  gitFake.answer('rev-parse --verify --quiet refs/remotes/origin/a', { code: 1 });
+
+  const { evidence } = await run();
+
+  expect(evidence.layers[0]?.facts).toMatchObject({
+    remoteTip: { ok: true, value: null },
+    published: null,
+  });
+});
+
+it.each(['abcdef1x', 'abcdef', 'x abcdef1', 'abcdef1\n--all'])(
+  'refuses the start tip %j',
+  async (startTip) => {
+    const { fake } = await setUp();
+
+    const result = createStackTool(fake.exec).execute(
+      'call',
+      { action: 'history', remote: 'origin', startTips: { a: startTip } },
+      undefined,
+      undefined,
+      noUiContext(process.cwd()),
+    );
+
+    await expect(result).rejects.toThrow('must be a commit SHA');
+    expect(fake.calls).toEqual([]);
+  },
+);

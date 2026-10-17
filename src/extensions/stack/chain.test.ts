@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 
 import { noUiContext } from '../../../tests/toolContext.js';
+import { withoutField } from '../../../tests/withoutField.js';
 import { createStackFake } from './fixtures/stackFake.js';
 import type { FakePull } from './fixtures/stackFake.js';
 import { createStackTool } from './tool.js';
@@ -273,4 +274,145 @@ it('treats URLs that differ only in the case of the owner and name as one reposi
   );
 
   expect(details).toMatchObject({ decision: { result: 'parent', parent: { number: 3 } } });
+});
+
+it('stops when only a later blocker sits in a GitHub stack', async () => {
+  const { fake, run } = setUp();
+
+  fake.pulls = [pull(2), pull(5), pull(6, { baseRefName: 'slice-5' })];
+  fake.stacks = { 5: [5, 6] };
+
+  const details = await run([url(2), url(5)]);
+
+  expect(details).toMatchObject({
+    decision: { result: 'stop', reason: containing('different GitHub stacks') },
+  });
+});
+
+it.each([
+  { name: 'bottom', stack: [2, 3], viewed: 'pr view 2 ', blocker: 3 },
+  { name: 'top', stack: [3, 4], viewed: 'pr view 4 ', blocker: 3 },
+])('stops when the $name pull request of the stack cannot be viewed', async (scenario) => {
+  const { fake, run } = setUp();
+  const { stack, viewed, blocker } = scenario;
+
+  fake.pulls = [pull(2), pull(3, { baseRefName: 'slice-2' }), pull(4, { baseRefName: 'slice-3' })];
+  fake.stacks = { [blocker]: stack };
+  fake.override(viewed, { code: 1, stderr: 'boom' });
+
+  const details = await run([url(blocker)]);
+
+  expect(details).toMatchObject({
+    decision: { result: 'stop', reason: containing(viewed.trim()) },
+  });
+});
+
+it('returns the blockers and the facts it decided from as evidence', async () => {
+  const { fake, run } = setUp();
+
+  fake.pulls = [pull(3)];
+
+  const details = await run([url(3)]);
+
+  expect(details).toMatchObject({
+    evidence: {
+      blockers: [{ number: 3, url: url(3), view: { ok: true } }],
+      facts: { parent: { number: 3 }, slicePullRequest: null },
+    },
+  });
+});
+
+it('returns the blockers and no facts when it stops before the parent', async () => {
+  const { fake, run } = setUp();
+
+  fake.pulls = [pull(3, { state: 'MERGED' })];
+
+  const details = await run([url(3)]);
+
+  expect(details).toMatchObject({
+    decision: { result: 'stop' },
+    evidence: { blockers: [{ number: 3 }], facts: null },
+  });
+});
+
+it.each([
+  { name: 'text before the URL', input: `see ${url(3)}` },
+  { name: 'a pull request number with letters after it', input: `${url(3)}x` },
+  { name: 'a path that does not follow the number', input: `${url(3)}files` },
+])('refuses $name', async ({ input }) => {
+  const { fake, run } = setUp();
+
+  await expect(run([input])).rejects.toThrow('not a pull request URL');
+  expect(fake.calls).toEqual([]);
+});
+
+it.each([
+  { name: 'spaces around the URL', input: `  ${url(3)}  ` },
+  { name: 'a path after the number', input: `${url(3)}/files` },
+  { name: 'a query after the number', input: `${url(3)}?diff=split` },
+])('accepts $name', async ({ input }) => {
+  const { fake, run } = setUp();
+
+  fake.pulls = [pull(3)];
+
+  expect(await run([input])).toMatchObject({
+    decision: { result: 'parent', parent: { number: 3 } },
+  });
+});
+
+it('passes the abort signal to every gh call', async () => {
+  const { fake } = setUp();
+  const controller = new AbortController();
+
+  fake.pulls = [pull(3)];
+
+  await createStackTool(fake.exec).execute(
+    'call',
+    { action: 'chain', pullRequests: [url(3)] },
+    controller.signal,
+    undefined,
+    noUiContext(process.cwd()),
+  );
+
+  expect(fake.signals.length).toBeGreaterThan(0);
+  expect(fake.signals.every((signal) => signal === controller.signal)).toBe(true);
+});
+
+const viewEntry = { number: 2, headRefName: 'slice-2', baseRefName: 'main', state: 'OPEN' };
+
+const viewKeys = Object.keys(viewEntry);
+
+const missingViewFields = viewKeys.map((key) => ({
+  name: `no ${key}`,
+  output: withoutField(viewEntry, key),
+}));
+
+const malformedViewOutputs = [
+  ...missingViewFields,
+  { name: 'a fractional number', output: { ...viewEntry, number: 1.5 } },
+];
+
+it.each(malformedViewOutputs)('stops on a pull request view with $name', async ({ output }) => {
+  const { fake, run } = setUp();
+
+  fake.pulls = [pull(2)];
+  fake.override('pr view 2', { stdout: JSON.stringify(output) });
+
+  expect(await run([url(2)])).toMatchObject({
+    decision: { result: 'stop', reason: containing('unexpected output') },
+  });
+});
+
+it.each([
+  { name: 'no default branch reference', output: {} },
+  { name: 'a default branch reference without a name', output: { defaultBranchRef: {} } },
+])('stops on a repository view with $name', async ({ output }) => {
+  const { fake, run } = setUp();
+
+  fake.pulls = [pull(2)];
+  fake.override('repo view', { stdout: JSON.stringify(output) });
+
+  expect(await run([url(2)])).toMatchObject({
+    decision: { result: 'stop', reason: containing('unexpected output') },
+  });
 });

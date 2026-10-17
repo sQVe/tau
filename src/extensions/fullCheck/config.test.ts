@@ -116,3 +116,60 @@ it('ignores two keys that name another repository', () => {
 
   expect(readFullCheckArgv(location, ui, 'sQVe/tau')).toEqual(['pnpm', 'check']);
 });
+
+it('gives no command when the user file has no fullCheck key', () => {
+  const { location, write } = fixture();
+
+  write({ other: 1 });
+
+  expect(readFullCheckArgv(location, ui, 'sQVe/tau')).toBeUndefined();
+});
+
+it('gives no command when the user file does not exist', () => {
+  const { location } = fixture();
+
+  expect(readFullCheckArgv(location, ui, 'sQVe/tau')).toBeUndefined();
+});
+
+it('gives no command when fullCheck has no repositories', () => {
+  const { location, write } = fixture();
+
+  write({ fullCheck: {} });
+
+  expect(readFullCheckArgv(location, ui, 'sQVe/tau')).toBeUndefined();
+});
+
+it.each([
+  {
+    name: 'fullCheck is not an object',
+    value: 'pnpm check',
+    message: 'fullCheck must be an object',
+  },
+  { name: 'fullCheck is null', value: null, message: 'fullCheck must be an object' },
+  {
+    name: 'repositories is not an object',
+    value: { repositories: ['sQVe/tau'] },
+    message: 'fullCheck.repositories must be an object',
+  },
+  {
+    name: 'repositories is null',
+    value: { repositories: null },
+    message: 'fullCheck.repositories must be an object',
+  },
+  {
+    name: 'an entry is not an object',
+    value: { repositories: { 'sQVe/tau': 'pnpm check' } },
+    message: 'fullCheck.repositories.sQVe/tau must be an object',
+  },
+  {
+    name: 'an entry has no argv',
+    value: { repositories: { 'sQVe/tau': {} } },
+    message: 'fullCheck.repositories.sQVe/tau.argv',
+  },
+])('fails when $name', ({ value, message }) => {
+  const { location, write } = fixture();
+
+  write({ fullCheck: value });
+
+  expect(() => readFullCheckArgv(location, ui, 'sQVe/tau')).toThrow(message);
+});

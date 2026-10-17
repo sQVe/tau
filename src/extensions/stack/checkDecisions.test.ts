@@ -174,6 +174,10 @@ it('keeps the stack number and the pull request numbers of a stack in order', ()
   );
 });
 
+it('reads a stack with an empty pull request list as no stack', () => {
+  expect(readStacksResponse('gh api', stacksOutput(40, []))).toEqual(readOk({ kind: 'none' }));
+});
+
 it.each([
   { out: output('', 0), why: 'empty output' },
   { out: output('null'), why: 'null' },
@@ -185,6 +189,11 @@ it.each([
   { out: stacksOutput(17, { number: 1 }), why: 'pull_requests that is not a list' },
   { out: stacksOutput(40, [null]), why: 'a pull request entry that is null' },
   { out: stacksOutput(40, [{}]), why: 'a pull request entry without a number' },
+  { out: stacksOutput(40, [{ number: 1 }, null]), why: 'a valid entry before a null entry' },
+  {
+    out: stacksOutput(40, [{ number: '1' }, { number: 2 }]),
+    why: 'a bad entry before a valid one',
+  },
   { out: stacksOutput(40, [{ number: '1' }]), why: 'string numbers' },
   { out: stacksOutput(40, [{ number: 1.5 }]), why: 'a fraction' },
   { out: stacksOutput('forty', numbered(1)), why: 'a stack number that is not a number' },

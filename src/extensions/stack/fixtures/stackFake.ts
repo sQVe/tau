@@ -15,6 +15,8 @@ export interface StackFake {
   exec: Exec;
   // Each gh call, as the arguments joined by spaces.
   calls: string[];
+  // The abort signal each gh call received, in call order.
+  signals: (AbortSignal | undefined)[];
   defaultBranch: string;
   // The pull requests of the one repository the fake serves, github.com/sQVe/tau.
   pulls: FakePull[];
@@ -46,11 +48,13 @@ const repositoryUrl = 'https://github.com/sQVe/tau';
 
 export const createStackFake = (): StackFake => {
   const calls: string[] = [];
+  const signals: (AbortSignal | undefined)[] = [];
   const overrides = new Map<string, Partial<ExecResult>>();
 
   const fake: StackFake = {
     exec: async () => failure('not set up'),
     calls,
+    signals,
     defaultBranch: 'main',
     pulls: [],
     stacks: {},
@@ -154,7 +158,7 @@ export const createStackFake = (): StackFake => {
     return failure(`unexpected gh ${commandArguments.join(' ')}`);
   };
 
-  fake.exec = async (command, commandArguments) => {
+  fake.exec = async (command, commandArguments, options) => {
     if (command === 'ssh') {
       return failure('ssh: Could not resolve hostname', 255);
     }
@@ -162,6 +166,7 @@ export const createStackFake = (): StackFake => {
     const joined = commandArguments.join(' ');
 
     calls.push(joined);
+    signals.push(options?.signal);
 
     const replaced = [...overrides].find(([prefix]) => joined.startsWith(prefix));
     const result = command === 'gh' ? answer(commandArguments) : failure(`unexpected ${command}`);

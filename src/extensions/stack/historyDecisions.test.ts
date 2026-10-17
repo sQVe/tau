@@ -89,6 +89,8 @@ it.each([
 it.each([
   { out: output('', 0), why: 'empty output with exit 0' },
   { out: output('not a sha\n'), why: 'a value that is not a SHA' },
+  { out: output(`x${tip}\n`), why: 'text before the SHA' },
+  { out: output(`${tip}x\n`), why: 'text after the SHA' },
   { out: output('', 128, 'fatal: bad'), why: 'exit 128' },
   { out: output('abc', 1), why: 'output with exit 1' },
   { out: output('', null), why: 'a command that did not finish' },
@@ -135,6 +137,7 @@ it.each([
 it.each([
   { out: output('abcdef0123\n'), why: 'a line without a mark' },
   { out: output('* abcdef0123\n'), why: 'an unknown mark' },
+  { out: output('x- abcdef0123\n'), why: 'text before the mark' },
   { out: output('- not-a-sha\n'), why: 'a value that is not a SHA' },
   { out: output('- abcdef0123 subject\n'), why: 'a verbose line' },
   { out: output('', 128, 'fatal: unknown commit'), why: 'a failed command' },

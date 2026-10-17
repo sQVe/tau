@@ -10,6 +10,8 @@ it.each([
   { name: 'only other groups', output: ' 100 S\n 300 R\n', expected: false },
   { name: 'a group id that only prefixes another', output: ' 2000 S\n', expected: false },
   { name: 'rows with blank lines', output: '\n  200   S  \n\n', expected: true },
+  { name: 'a zombie after several spaces', output: '  200      Z\n', expected: false },
+  { name: 'a row with no state column', output: '  200\n', expected: false },
 ])('decides $expected for $name', ({ output, expected }) => {
   expect(groupHasRunningMember(output, 200)).toBe(expected);
 });
