@@ -153,6 +153,27 @@ it.each([
     changes: false,
   },
   {
+    change: 'a person leaves a review with only whitespace',
+    after: {
+      ...base,
+      reviews: [review(201, restPerson), review(202, restPerson, ' \n\t')],
+    },
+    changes: false,
+  },
+  {
+    change: 'a deleted account adds a review',
+    after: { ...base, reviews: [review(201, restPerson), review(202, null)] },
+    changes: true,
+  },
+  {
+    change: 'a deleted account adds a conversation comment',
+    after: {
+      ...base,
+      comments: [comment(301, restPerson), comment(302, null)],
+    },
+    changes: true,
+  },
+  {
     change: 'the viewer adds a conversation comment',
     after: { ...base, comments: [comment(301, restPerson), comment(302, restViewer)] },
     changes: false,
@@ -209,4 +230,37 @@ it.each([
   const threads = threadsToShow(unresolvedThreads(withThreadComments(comments)));
 
   expect(threads).toHaveLength(shown ? 1 : 0);
+});
+
+it('lists state entries in the same order however GitHub orders the comments', () => {
+  const comments = [threadComment(102, graphqlPerson), threadComment(101, graphqlPerson)];
+
+  const feedback: Feedback = {
+    viewer,
+    threads: [thread(comments)],
+    reviews: [review(202, restPerson), review(201, restPerson)],
+    comments: [comment(302, restPerson), comment(301, restPerson)],
+  };
+
+  const reordered: Feedback = {
+    viewer,
+    threads: [thread([...comments].toReversed())],
+    reviews: [...feedback.reviews].toReversed(),
+    comments: [...feedback.comments].toReversed(),
+  };
+
+  const order = stateEntries(feedback).map((entry) => `${entry.kind}:${entry.id}`);
+
+  expect(order).toEqual([
+    'comment:301',
+    'comment:302',
+    'review:201',
+    'review:202',
+    'thread:101',
+    'thread:102',
+  ]);
+
+  expect(stateText('github.com/sQVe/tau#7', reordered)).toBe(
+    stateText('github.com/sQVe/tau#7', feedback),
+  );
 });

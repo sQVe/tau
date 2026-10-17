@@ -59,6 +59,49 @@ const runViewCalls = (fake: GhFake) =>
   fake.calls.filter((call) => call.commandArguments.slice(0, 2).join(' ') === 'run view');
 
 describe('checks', () => {
+  it('lists only the gap of the truncation when the kept checks have no gaps', async () => {
+    const { fake, readChecks } = await setUp();
+
+    fake.checks = Array.from({ length: 20 }, (_, index) =>
+      check({ name: `${index}-${'x'.repeat(5000)}`, link: jobLink(11, 21 + index) }),
+    );
+
+    const result = await readChecks();
+
+    expect(result.checks.length).toBeGreaterThan(0);
+    expect(result.checks.length).toBeLessThan(20);
+
+    expect(result.gaps).toEqual([
+      expect.objectContaining({ kind: 'truncatedList', kept: result.checks.length, total: 20 }),
+    ]);
+  });
+
+  it('passes the abort signal to every gh call', async () => {
+    const { root, fake } = await setUp();
+    const controller = new AbortController();
+
+    fake.checks = [failingCheck];
+    fake.jobLogs['21'] = { log: 'boom' };
+
+    const tool = createPrFeedbackTool(fake.exec);
+
+    await tool.execute(
+      'call',
+      {
+        action: 'checks',
+        repository: 'github.com/sQVe/tau',
+        pr: 7,
+        head: 'abc123',
+      },
+      controller.signal,
+      undefined,
+      noUiContext(root),
+    );
+
+    expect(fake.calls.length).toBeGreaterThan(2);
+    expect(fake.calls.map((call) => call.signal)).toEqual(fake.calls.map(() => controller.signal));
+  });
+
   it.each([
     { name: 'escaped logs', log: '\u0000'.repeat(20_000), stderr: undefined },
     { name: 'long command errors', log: undefined, stderr: 'x'.repeat(10_000) },
@@ -383,6 +426,10 @@ describe('checks gaps', () => {
     { bucket: 'fail', link: 'https://buildkite.com/sqve/tau/builds/9' },
     { bucket: 'cancel', link: '' },
     { bucket: 'fail', link: 'https://github.com/other/tau/actions/runs/11/job/21' },
+    {
+      bucket: 'fail',
+      link: 'https://example.com/redirect/https://github.com/sQVe/tau/actions/runs/11/job/21',
+    },
   ])('returns a gap for a $bucket check with link "$link"', async ({ bucket, link }) => {
     const { fake, readChecks } = await setUp();
 

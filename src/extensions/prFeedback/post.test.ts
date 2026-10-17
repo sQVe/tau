@@ -29,6 +29,8 @@ interface ReadDetails {
   pr: { headRefOid: string };
 }
 
+type Category = 'uncertain' | 'posted' | 'notPosted';
+
 // Lets a test act as another session right after post reads posted.json.
 const postedHooks = vi.hoisted(() => ({
   afterRead: undefined as (() => Promise<void>) | undefined,
@@ -283,7 +285,10 @@ describe('post refusals', () => {
       arrange(target);
     });
 
-    await expect(post(details, context)).rejects.toThrow(/read again/u);
+    const failure = await postFailure(post(details, context));
+
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure?.message).toMatch(/read again/u);
     expect(fake.writes).toEqual([]);
     expect(await readPosted(details.directory)).toBeUndefined();
   });
@@ -310,7 +315,10 @@ describe('post refusals', () => {
       writeFile(join(details.directory, 'posted.json'), JSON.stringify(otherSession)),
     );
 
-    await expect(post(details, context)).rejects.toThrow(/read again/u);
+    const failure = await postFailure(post(details, context));
+
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure?.message).toMatch(/read again/u);
     expect(fake.writes).toEqual([]);
     expect(await readPosted(details.directory)).toEqual(otherSession);
   });
@@ -438,7 +446,15 @@ describe('post refusals', () => {
       comment: null,
     });
 
-    for (const directory of [root, join(root, '.tau'), join(details.directory, 'nested')]) {
+    const rounds = join(root, '.tau', 'pr-feedback');
+
+    for (const directory of [
+      root,
+      join(root, '.tau'),
+      rounds,
+      join(rounds, '..x'),
+      join(details.directory, 'nested'),
+    ]) {
       await expect(post(details, noUiContext(root), { directory })).rejects.toThrow(
         'The directory must be .tau/pr-feedback/<name>',
       );
@@ -640,6 +656,37 @@ describe('post', () => {
         ].join('\n'),
       },
     ]);
+  });
+
+  it('quotes the comment a reply answers when the thread has several comments', async () => {
+    const { root, fake, read, post } = await setUp();
+
+    fake.threads = [
+      thread({
+        id: 'thread-person',
+        comments: [
+          { id: 101, author: person, body: 'First remark.' },
+          { id: 102, author: { login: 'other', bot: false }, body: 'Later remark.' },
+        ],
+      }),
+    ];
+
+    const details = await read();
+
+    await writeReplies(details.directory, {
+      version: 1,
+      threads: [replyTo('thread-person', 'Done.', false)],
+      comment: null,
+    });
+
+    const { context, prompts } = recordingConfirm(root, false);
+
+    await post(details, context);
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]?.message).toContain('@reviewer');
+    expect(prompts[0]?.message).toContain('First remark.');
+    expect(prompts[0]?.message).not.toContain('Later remark.');
   });
 
   it('posts nothing, bot writes included, when the user declines', async () => {
@@ -906,6 +953,147 @@ describe('post write output', () => {
     });
 
     expect(fake.writes).toHaveLength(index);
+  });
+});
+
+// Says which category of a failed post's error each write falls into. A write is found by a
+// marker that only it carries.
+const categoriesOf = (message: string | undefined, markers: Record<string, string>) => {
+  const sections: Record<Category, string[]> = { uncertain: [], posted: [], notPosted: [] };
+  let current: Category | undefined;
+
+  for (const line of (message ?? '').split('\n')) {
+    if (/^Uncertain\b/u.test(line)) {
+      current = 'uncertain';
+    } else if (/^Posted\b/u.test(line)) {
+      current = 'posted';
+    } else if (/^Not posted\b/u.test(line)) {
+      current = 'notPosted';
+    } else if (current !== undefined) {
+      sections[current].push(line);
+    }
+  }
+
+  return Object.fromEntries(
+    Object.entries(markers).map(([name, marker]) => {
+      const found = (Object.keys(sections) as Category[]).filter((category) =>
+        sections[category].some((line) => line.includes(marker)),
+      );
+
+      return [name, found];
+    }),
+  );
+};
+
+describe('post failure report', () => {
+  const markers = { reply: 'discussion_r201', resolve: 'discussion_r202', comment: 'Done.' };
+  const order = ['reply', 'resolve', 'comment'];
+
+  const writeFixture = async () => {
+    const context = await setUp();
+
+    context.fake.threads = [
+      botThread(),
+      thread({ id: 'thread-bot-2', comments: [{ id: 202, author: bot, body: 'Fix.' }] }),
+    ];
+
+    context.fake.comments = [{ id: 302, author: bot, body: 'Summary.' }];
+
+    const details = await context.read();
+
+    await writeReplies(details.directory, {
+      version: 1,
+      threads: [replyTo('thread-bot', 'Added.', false), replyTo('thread-bot-2', null)],
+      comment: { body: 'Done.', answers: ['302'] },
+    });
+
+    return { ...context, details };
+  };
+
+  const expected = (category: Category, failing: number, failingCategory: Category) =>
+    Object.fromEntries(
+      order.map((name, index) => {
+        if (index === failing) {
+          return [name, [failingCategory]];
+        }
+
+        return [name, [index < failing ? 'posted' : category]];
+      }),
+    );
+
+  it.each([
+    { key: 'reply' as const, index: 0 },
+    { key: 'resolve' as const, index: 1 },
+    { key: 'issue comment' as const, index: 2 },
+  ])('puts each write in its category around an uncertain $key', async ({ key, index }) => {
+    const { fake, details, post } = await writeFixture();
+
+    fake.failCommand(key);
+
+    const failure = await postFailure(post(details));
+
+    expect(categoriesOf(failure?.message, markers)).toEqual(
+      expected('notPosted', index, 'uncertain'),
+    );
+  });
+
+  it.each([
+    { key: 'reply' as const, index: 0, output: '{"html_url": "u"}' },
+    { key: 'resolve' as const, index: 1, output: '{"data": {}}' },
+    { key: 'issue comment' as const, index: 2, output: '{}' },
+  ])(
+    'puts each write in its category around a $key whose output is unreadable',
+    async ({ key, index, output }) => {
+      const { fake, details, post } = await writeFixture();
+
+      fake.overrideOutput(key, output);
+
+      const failure = await postFailure(post(details));
+
+      expect(categoriesOf(failure?.message, markers)).toEqual(
+        expected('notPosted', index, 'posted'),
+      );
+    },
+  );
+
+  it.each([
+    { output: '{"data": {"resolveReviewThread": {}}}' },
+    { output: '{"data": {"resolveReviewThread": {"thread": {}}}}' },
+  ])('records a resolve whose output is $output as posted', async ({ output }) => {
+    const { fake, details, post } = await writeFixture();
+
+    fake.overrideOutput('resolve', output);
+
+    const failure = await postFailure(post(details));
+    const saved = (await readPosted(details.directory)) as { writes: { kind: string }[] };
+
+    expect(categoriesOf(failure?.message, markers)).toEqual(expected('notPosted', 1, 'posted'));
+    expect(saved.writes.map((write) => write.kind)).toEqual(['reply', 'resolve']);
+  });
+
+  it('records a resolve that GitHub reports unresolved as not posted', async () => {
+    const { fake, details, post } = await writeFixture();
+
+    fake.overrideOutput(
+      'resolve',
+      JSON.stringify({
+        data: { resolveReviewThread: { thread: { isResolved: false } } },
+      }),
+    );
+
+    const failure = await postFailure(post(details));
+
+    const saved = (await readPosted(details.directory)) as {
+      writes: { kind: string }[];
+    };
+
+    expect(categoriesOf(failure?.message, markers)).toEqual({
+      reply: ['posted'],
+      resolve: ['notPosted'],
+      comment: ['notPosted'],
+    });
+
+    expect(saved.writes.map((write) => write.kind)).toEqual(['reply']);
   });
 });
 
