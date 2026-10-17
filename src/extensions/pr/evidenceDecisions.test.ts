@@ -46,6 +46,12 @@ it.each([
     fields: ['header'],
   },
   {
+    name: 'valid head and status with a missing diff hash',
+    text: `HEAD: ${current.head}\nStatus: ${current.status}\n`,
+    identity: current,
+    fields: ['header'],
+  },
+  {
     name: 'invalid hash',
     text: log({ ...current, status: 'not-a-hash' }),
     identity: current,
@@ -75,6 +81,19 @@ it.each([
 it.each([
   { name: 'short output', body: 'ok\n', excerpt: 'ok', truncated: false },
   { name: 'empty output', body: '', excerpt: '', truncated: false },
+  { name: 'output without a final newline', body: 'ok', excerpt: 'ok', truncated: false },
+  {
+    name: 'exactly 20 lines',
+    body: `${Array.from({ length: 20 }, (_, index) => index).join('\n')}\n`,
+    excerpt: Array.from({ length: 20 }, (_, index) => index).join('\n'),
+    truncated: false,
+  },
+  {
+    name: 'exactly 4000 characters',
+    body: `${'a'.repeat(4000)}\n`,
+    excerpt: 'a'.repeat(4000),
+    truncated: false,
+  },
   {
     name: 'too many lines',
     body: `${Array.from({ length: 25 }, (_, index) => index).join('\n')}\n`,

@@ -15,6 +15,8 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { promisify } from 'node:util';
 
+import { validateToolArguments } from '@earendil-works/pi-ai';
+import type { ToolCall } from '@earendil-works/pi-ai';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
@@ -630,6 +632,95 @@ it('names gh pr list when it prints output the tool cannot read', async () => {
     /^gh pr list --repo github.com\/sQVe\/tau .* printed unexpected output: \/0 /u,
   );
 });
+
+const listedPullRequest = (change: Record<string, unknown> = {}) => ({
+  number: 7,
+  url: 'https://github.com/sQVe/tau/pull/7',
+  state: 'OPEN',
+  title: 'Add a feature',
+  body: 'Adds it.',
+  baseRefName: 'main',
+  isDraft: false,
+  headRefOid: 'abc123',
+  headRepositoryOwner: { login: 'sQVe' },
+  headRepository: { name: 'tau' },
+  ...change,
+});
+
+it.each([
+  { condition: 'the owner has no login', change: { headRepositoryOwner: {} } },
+  { condition: 'the owner is null', change: { headRepositoryOwner: null } },
+  { condition: 'the head repository has no name', change: { headRepository: {} } },
+  { condition: 'the head repository is text', change: { headRepository: 'tau' } },
+])('names gh pr list when $condition', async ({ change }) => {
+  const { root, fake, run } = await setUp();
+
+  await pushFeature(root);
+  fake.overrideOutput('pr list', JSON.stringify([listedPullRequest(change)]));
+
+  await expect(run({ action: 'target' })).rejects.toThrow(
+    /^gh pr list .* printed unexpected output/u,
+  );
+});
+
+it('leaves out a pull request whose head repository was deleted', async () => {
+  const { root, fake, run } = await setUp();
+
+  await pushFeature(root);
+  fake.overrideOutput('pr list', JSON.stringify([listedPullRequest({ headRepository: null })]));
+
+  await expect(run({ action: 'target' })).resolves.toMatchObject({ pr: null, closedPrs: [] });
+});
+
+it('returns the details as JSON text for the model', async () => {
+  const { root, fake } = await setUp();
+  const tool = createPrTool(fake.exec);
+
+  const result = await tool.execute(
+    'call',
+    { action: 'prepare' },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  const text = result.content.find((item) => item.type === 'text');
+
+  expect(text).toBeDefined();
+  expect(JSON.parse(text?.type === 'text' ? text.text : '')).toEqual(result.details);
+});
+
+const validated = (tool: ReturnType<typeof createPrTool>, call: unknown) =>
+  validateToolArguments(tool, {
+    type: 'toolCall',
+    id: 'call',
+    name: tool.name,
+    arguments: call as ToolCall['arguments'],
+  }) as PrInput;
+
+it.each([
+  { call: {} },
+  { call: { action: 'delete' } },
+  { call: { action: 'target', remote: {} } },
+  { call: { action: 'verify', pr: 'seven' } },
+  { call: { action: 'verify', draft: 'yes' } },
+])('refuses the arguments $call before anything runs', async ({ call }) => {
+  const { root, fake } = await setUp();
+  const tool = createPrTool(fake.exec);
+
+  expect(() => validated(tool, call)).toThrow(Error);
+  expect(fake.calls).toEqual([]);
+  expect(await readdir(root)).not.toContain('.tau');
+});
+
+it.each(['prepare', 'target', 'evidence', 'checkHeader', 'reuse', 'verify', 'reviewBots'])(
+  'accepts the %s action and passes it on',
+  (action) => {
+    const tool = createPrTool(createGhFake().exec);
+
+    expect(validated(tool, { action })).toEqual({ action });
+  },
+);
 
 it('refuses a detached HEAD', async () => {
   const { root, fake, run } = await setUp();

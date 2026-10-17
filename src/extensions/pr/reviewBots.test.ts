@@ -108,6 +108,7 @@ it('skips a bot whose request came after the head commit', async () => {
 it.each([
   { condition: 'the user file is missing', user: undefined },
   { condition: 'reviews is not set', user: { qa: {} } },
+  { condition: 'reviews has no repositories', user: { reviews: {} } },
   { condition: 'the repository has no entry', user: { reviews: { repositories: {} } } },
   {
     condition: 'the entry lists no bot',
@@ -152,6 +153,11 @@ it.each([
     condition: 'bots is missing',
     reviews: { repositories: { 'sQVe/tau': {} } },
     error: 'bots must be a list of bots',
+  },
+  {
+    condition: 'a bot is not an object',
+    reviews: { repositories: { 'sQVe/tau': { bots: ['codex'] } } },
+    error: 'bots[0] must be an object',
   },
   {
     condition: 'a bot has no login',
@@ -211,6 +217,44 @@ it.each([
 
   await expect(run(input)).rejects.toThrow(error);
   expect(fake.calls).toEqual([]);
+});
+
+it('reads pull request 1', async () => {
+  const { run, fake } = await setUp(config);
+
+  fake.pullRequests[repository] = [pullRequest({ number: 1 })];
+
+  await expect(run({ pr: 1 })).resolves.toEqual({ bots: [{ ...bot, status: 'request' }] });
+});
+
+it('asks for a bot when the only review has a deleted author and no commit', async () => {
+  const { run, fake } = await setUp(config);
+
+  fake.overrideOutput(
+    'pr view',
+    JSON.stringify({
+      headRefOid: 'abc123',
+      reviews: [{ author: null, commit: null }],
+      comments: [],
+    }),
+  );
+
+  await expect(run()).resolves.toEqual({ bots: [{ ...bot, status: 'request' }] });
+});
+
+it.each([
+  { condition: 'a review is null', reviews: [null] },
+  { condition: 'an author is text', reviews: [{ author: 'codex', commit: null }] },
+  { condition: 'an author has no login', reviews: [{ author: {}, commit: null }] },
+  { condition: 'a commit is text', reviews: [{ author: null, commit: 'abc123' }] },
+  { condition: 'a commit has no oid', reviews: [{ author: null, commit: {} }] },
+  { condition: 'a review has no commit', reviews: [{ author: null }] },
+])('fails when the gh output has a review where $condition', async ({ reviews }) => {
+  const { run, fake } = await setUp(config);
+
+  fake.overrideOutput('pr view', JSON.stringify({ headRefOid: 'abc123', reviews, comments: [] }));
+
+  await expect(run()).rejects.toThrow(/^gh pr view 7 /u);
 });
 
 it('fails when gh pr view fails', async () => {
@@ -301,6 +345,35 @@ describe('check suites', () => {
       '.check_suites[].created_at',
     ]);
   });
+
+  it.each([
+    {
+      order: 'latest first',
+      suites: ['2026-10-14T10:30:00Z', '2026-10-14T10:20:00Z', '2026-10-14T10:10:00Z'],
+    },
+    {
+      order: 'earliest first',
+      suites: ['2026-10-14T10:10:00Z', '2026-10-14T10:20:00Z', '2026-10-14T10:30:00Z'],
+    },
+    {
+      order: 'earliest in the middle',
+      suites: ['2026-10-14T10:20:00Z', '2026-10-14T10:10:00Z', '2026-10-14T10:30:00Z'],
+    },
+  ])(
+    'counts a request after the earliest suite when the suites come $order',
+    async ({ suites }) => {
+      const { run, fake } = await setUp(config);
+
+      fake.pullRequests[repository] = [
+        pullRequest({
+          comments: [{ body: bot.comment, createdAt: '2026-10-14T10:15:00Z' }],
+          headCheckSuites: suites,
+        }),
+      ];
+
+      await expect(run()).resolves.toEqual({ bots: [{ ...bot, status: 'requested' }] });
+    },
+  );
 
   it('counts a request after the check suite', async () => {
     const { run, fake } = await setUp(config);

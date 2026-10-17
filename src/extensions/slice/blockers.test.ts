@@ -17,6 +17,11 @@ it.each([
   { case: 'a repeated blocker', blockedBy: [[], [1, 1]], problem: /slice 2 .*slice 1/ },
   { case: 'a two-slice cycle', blockedBy: [[2], [1]], problem: /slices 1, 2/ },
   { case: 'a three-slice cycle', blockedBy: [[3], [1], [2]], problem: /slices 1, 3, 2/ },
+  {
+    case: 'a cycle reached through a slice outside it',
+    blockedBy: [[2], [3], [2]],
+    problem: /slices 2, 3 block/,
+  },
   { case: 'a cycle after a chain', blockedBy: [[], [1, 3], [2]], problem: /slices 2, 3/ },
 ])('refuses $case and names the slices', ({ blockedBy, problem }) => {
   expect(blockerProblem(blockedBy)).toMatch(problem);

@@ -17,6 +17,9 @@ const renamed =
 // A file whose path is literally "a/old.ts b/new.ts" has the paths the rename reports.
 const renameLookalike = section('a/old.ts b/new.ts', '@@ -1 +1 @@', '-x', '+y');
 
+const unprefixed = (line: string, paths = 'one.ts one.ts') =>
+  `diff --git ${paths}\n@@ -1 +1 @@\n${line}\n`;
+
 const diff = (...sections: string[]) => Buffer.from(sections.join(''));
 
 it.each([
@@ -40,6 +43,28 @@ it.each([
     reviewed: diff(renamed),
     current: diff(section('new.ts', '@@ -0,0 +1 @@', '+added')),
     result: { missing: ['a/old.ts b/new.ts'], extra: ['new.ts'] },
+  },
+  { reviewed: diff(), current: diff(one), result: { extra: ['one.ts'] } },
+  {
+    reviewed: Buffer.from(`notes\n${one}`),
+    current: Buffer.from(`other notes\n${one}`),
+    result: { differing: [''] },
+  },
+  {
+    reviewed: diff(one),
+    current: Buffer.from(`notes\n${one}`),
+    result: { extra: [''] },
+  },
+  { reviewed: Buffer.from('x'), current: Buffer.from('y'), result: { differing: [''] } },
+  {
+    reviewed: diff(unprefixed('+old')),
+    current: diff(unprefixed('+new')),
+    result: { differing: ['one.ts one.ts'] },
+  },
+  {
+    reviewed: diff(unprefixed('+old', 'a/one.ts c/one.ts')),
+    current: diff(unprefixed('+new', 'a/one.ts c/one.ts')),
+    result: { differing: ['a/one.ts c/one.ts'] },
   },
   {
     reviewed: diff(one, two),
