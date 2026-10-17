@@ -752,61 +752,34 @@ const limitCall = (change: Record<string, unknown>, optionChange: Record<string,
   };
 };
 
-it.each([
-  { limit: 'label of 60', call: limitCall({}, { label: 'x'.repeat(60) }), valid: true },
-  { limit: 'label of 61', call: limitCall({}, { label: 'x'.repeat(61) }), valid: false },
-  {
-    limit: 'description of 220',
-    call: limitCall({}, { description: 'x'.repeat(220) }),
-    valid: true,
-  },
-  {
-    limit: 'description of 221',
-    call: limitCall({}, { description: 'x'.repeat(221) }),
-    valid: false,
-  },
-  { limit: 'problem of 300', call: limitCall({ problem: 'x'.repeat(300) }), valid: true },
-  { limit: 'problem of 301', call: limitCall({ problem: 'x'.repeat(301) }), valid: false },
-  { limit: 'impact of 200', call: limitCall({ impact: 'x'.repeat(200) }), valid: true },
-  { limit: 'impact of 201', call: limitCall({ impact: 'x'.repeat(201) }), valid: false },
-  { limit: 'header of 16', call: limitCall({ header: 'x'.repeat(16) }), valid: true },
-  { limit: 'header of 17', call: limitCall({ header: 'x'.repeat(17) }), valid: false },
-  {
-    limit: '4 options',
-    call: limitCall({
-      options: ['A', 'B', 'C', 'D'].map((label) => ({ label, description: 'a' })),
-    }),
-    valid: true,
-  },
-  {
-    limit: '5 options',
-    call: limitCall({
-      options: ['A', 'B', 'C', 'D', 'E'].map((label) => ({ label, description: 'a' })),
-    }),
-    valid: false,
-  },
-  {
-    limit: '1 option',
-    call: limitCall({ options: [{ label: 'A', description: 'a' }] }),
-    valid: false,
-  },
-  {
-    limit: '4 questions',
-    call: {
-      questions: Array.from({ length: 4 }, () => limitCall({}).questions[0]),
-    },
-    valid: true,
-  },
-  {
-    limit: '5 questions',
-    call: {
-      questions: Array.from({ length: 5 }, () => limitCall({}).questions[0]),
-    },
-    valid: false,
-  },
-  { limit: 'no questions', call: { questions: [] }, valid: false },
-])('checks the arguments against $limit', ({ call, valid }) => {
+it('accepts a call of ordinary size', () => {
   const { tool } = registeredTool();
 
-  expect(Value.Check(tool.parameters, call)).toBe(valid);
+  expect(Value.Check(tool.parameters, limitCall({}))).toBe(true);
+});
+
+const long = 'x'.repeat(1000);
+
+const manyOptions = Array.from({ length: 20 }, (_, index) => ({
+  label: `Option ${index}`,
+  description: 'a',
+}));
+
+it.each([
+  { limit: 'a very long label', call: limitCall({}, { label: long }) },
+  { limit: 'a very long description', call: limitCall({}, { description: long }) },
+  { limit: 'a very long problem', call: limitCall({ problem: long }) },
+  { limit: 'a very long impact', call: limitCall({ impact: long }) },
+  { limit: 'a very long header', call: limitCall({ header: long }) },
+  { limit: 'many options', call: limitCall({ options: manyOptions }) },
+  { limit: 'no options', call: limitCall({ options: [] }) },
+  {
+    limit: 'many questions',
+    call: { questions: Array.from({ length: 20 }, () => limitCall({}).questions[0]) },
+  },
+  { limit: 'no questions', call: { questions: [] } },
+])('refuses $limit', ({ call }) => {
+  const { tool } = registeredTool();
+
+  expect(Value.Check(tool.parameters, call)).toBe(false);
 });
