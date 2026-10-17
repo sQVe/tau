@@ -475,3 +475,41 @@ it('lists added markers from the branch diff since the merge base', async () => 
     { path: 'feature.test.ts', line: 1, marker: '.only(', text: marked },
   ]);
 });
+
+it('adds scan gaps from the marker scan to the publication gaps', async () => {
+  const { root, run } = await setUp();
+  const onlySuffix = '.only';
+  const marked = `it${onlySuffix}('works', () => {}); // ${'x'.repeat(2000)}`;
+
+  await writeFile(join(root, 'feature.test.ts'), `${marked}\n`);
+  await git(root, 'add', 'feature.test.ts');
+  await git(root, 'commit', '--quiet', '-m', 'add test');
+
+  const evidence = await run();
+
+  expect(evidence.markers).toHaveLength(1);
+
+  expect(evidence.gaps).toContainEqual({
+    kind: 'reviewEvidence',
+    gap: {
+      kind: 'truncatedLine',
+      path: 'feature.test.ts',
+      line: 1,
+      kept: 500,
+      total: marked.length,
+    },
+  });
+});
+
+it('adds a markers read failure and keeps the rest of the evidence when the diff fails', async () => {
+  const { root, run } = await setUp();
+
+  await git(root, 'config', 'diff.algorithm', 'bogus');
+
+  const evidence = await run();
+
+  expect(evidence.markers).toEqual([]);
+  expect(evidence.gaps.filter((gap) => gap.kind === 'markers')).toHaveLength(1);
+  expect(evidence.branch).toBe('feature');
+  expect(evidence.target).not.toBeNull();
+});
