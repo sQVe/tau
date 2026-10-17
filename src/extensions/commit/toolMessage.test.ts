@@ -6,7 +6,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   temporaryDirectories,
-  runCommand,
   git,
   createTemporaryRepository,
   writeRepositoryFile,
@@ -14,6 +13,7 @@ import {
   commitContext,
   executeCommit,
   fakeCommit,
+  execInRequestedDirectory,
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
 
@@ -135,7 +135,7 @@ describe('message policy', () => {
             }
           }
 
-          return runCommand(command, argumentsList, options?.cwd ?? directory);
+          return execInRequestedDirectory(command, argumentsList, options);
         },
       });
 

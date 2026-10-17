@@ -9,8 +9,8 @@ import {
   executeCommit,
   fakeCommit,
   git,
-  runCommand,
   writeRepositoryFile,
+  execInRequestedDirectory,
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
 
@@ -147,7 +147,7 @@ describe('direct commit staging', () => {
 
     const tool = createCommitTool({
       exec: async (command, argumentsList, options) => {
-        const result = await runCommand(command, argumentsList, options?.cwd ?? directory);
+        const result = await execInRequestedDirectory(command, argumentsList, options);
 
         if (argumentsList.includes('add')) {
           await writeRepositoryFile(directory, 'other', 'staged bytes');
@@ -199,7 +199,7 @@ describe('direct commit staging', () => {
 
     const tool = createCommitTool({
       exec: (command, argumentsList, options) =>
-        runCommand(command, argumentsList, options?.cwd ?? directory),
+        execInRequestedDirectory(command, argumentsList, options),
     });
 
     const result = await tool.execute(
@@ -261,7 +261,7 @@ describe('direct commit staging', () => {
           return { stdout: '', stderr: 'snapshot exploded', code: 1, killed: false };
         }
 
-        return runCommand(command, argumentsList, options?.cwd ?? directory);
+        return execInRequestedDirectory(command, argumentsList, options);
       },
     });
 

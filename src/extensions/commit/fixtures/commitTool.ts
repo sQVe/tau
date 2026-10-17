@@ -13,7 +13,16 @@ import { createTemporaryRepository as createRepository } from '../../../../tests
 import { createCommitTool } from '../tool.js';
 import type { CommitInput } from '../validation.js';
 
+type CommandResult = Awaited<ReturnType<ExtensionAPI['exec']>>;
+
 type CommitToolResult = ReturnType<ReturnType<typeof createCommitTool>['execute']>;
+
+interface ObservedCommands {
+  // Runs after each finished command, before the tool sees its result.
+  afterCommand?: (commandArguments: string[]) => Promise<void>;
+  // Replaces the real result of a command when it returns one.
+  override?: (commandArguments: string[]) => CommandResult | undefined;
+}
 
 interface FakeCommit {
   custom: Mock<() => never>;
@@ -129,15 +138,37 @@ export const commitContext = (repositoryDirectory: string): ExtensionToolContext
     },
   }) as unknown as ExtensionToolContext;
 
+// A git call without a cwd would run in the process directory, so the fixture refuses it.
+export const execInRequestedDirectory: ExtensionAPI['exec'] = (
+  command,
+  commandArguments,
+  options,
+) => {
+  if (options?.cwd === undefined) {
+    throw new Error(`${command} ${commandArguments.join(' ')} ran without a cwd`);
+  }
+
+  return runCommand(command, commandArguments, options.cwd, options.signal);
+};
+
+export const createObservedCommitTool = (
+  observed: ObservedCommands,
+): ReturnType<typeof createCommitTool> =>
+  createCommitTool({
+    async exec(command, commandArguments, options) {
+      const result = await execInRequestedDirectory(command, commandArguments, options);
+
+      await observed.afterCommand?.(commandArguments);
+
+      return observed.override?.(commandArguments) ?? result;
+    },
+  });
+
 export const executeCommit = async (
   repositoryDirectory: string,
   input: CommitInput,
 ): CommitToolResult => {
-  const commitTool = createCommitTool({
-    exec(command: string, commandArguments: string[], options?: { cwd?: string }) {
-      return runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory);
-    },
-  });
+  const commitTool = createCommitTool({ exec: execInRequestedDirectory });
 
   return commitTool.execute(
     'tool-call-1',

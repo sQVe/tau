@@ -8,8 +8,8 @@ import {
   createTemporaryRepository,
   executeCommit,
   git,
-  runCommand,
   writeRepositoryFile,
+  execInRequestedDirectory,
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
 
@@ -112,7 +112,7 @@ describe('hook outcomes', () => {
 
       const tool = createCommitTool({
         exec: async (command, argumentsList, options) => {
-          const result = await runCommand(command, argumentsList, options?.cwd ?? directory);
+          const result = await execInRequestedDirectory(command, argumentsList, options);
 
           if (argumentsList[0] === 'commit') {
             await writeRepositoryFile(directory, 'other', 'other');
@@ -162,7 +162,7 @@ describe('hook outcomes', () => {
       exec: (command, argumentsList, options) =>
         argumentsList.includes('reset')
           ? Promise.resolve({ code: 1, killed: false, stdout: '', stderr: 'index locked\n' })
-          : runCommand(command, argumentsList, options?.cwd ?? directory),
+          : execInRequestedDirectory(command, argumentsList, options),
     });
 
     const failure = await tool
@@ -219,7 +219,7 @@ describe('hook outcomes', () => {
           return { code: 1, killed: false, stdout: 'raw output\n', stderr: 'raw error\n' };
         }
 
-        return runCommand(command, argumentsList, options?.cwd ?? directory);
+        return execInRequestedDirectory(command, argumentsList, options);
       },
     });
 
@@ -254,7 +254,7 @@ describe('hook outcomes', () => {
             return { code: 1, killed: false, stdout: '', stderr: 'report unavailable' };
           }
 
-          const result = await runCommand(command, argumentsList, options?.cwd ?? directory);
+          const result = await execInRequestedDirectory(command, argumentsList, options);
 
           if (argumentsList[0] === 'commit') {
             committed = true;
@@ -348,7 +348,7 @@ describe('hook outcomes', () => {
           await git(directory, ['add', 'other']);
         }
 
-        return runCommand(command, argumentsList, options?.cwd ?? directory);
+        return execInRequestedDirectory(command, argumentsList, options);
       },
     });
 

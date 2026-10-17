@@ -5,8 +5,8 @@ import {
   createTemporaryRepository,
   executeCommit,
   git,
-  runCommand,
   writeRepositoryFile,
+  execInRequestedDirectory,
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
 
@@ -29,7 +29,7 @@ it('rejects a target removed from history before the snapshot and restores the i
         await git(directory, ['update-ref', 'HEAD', unrelated]);
       }
 
-      return runCommand(command, commandArguments, options?.cwd ?? directory);
+      return execInRequestedDirectory(command, commandArguments, options);
     },
   });
 
