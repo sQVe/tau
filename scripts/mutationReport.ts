@@ -1,3 +1,7 @@
+export type MutationMode = 'changed' | 'audit';
+
+export type MutationStatus = 'pass' | 'survivors' | 'nothing' | 'error';
+
 export interface MutantLocation {
   start: { line: number; column: number };
   end: { line: number; column: number };
@@ -10,14 +14,61 @@ export interface Mutant {
   location: MutantLocation;
 }
 
-export interface MutationReport {
+// The part of Stryker's JSON report this module reads.
+export interface StrykerReport {
   files: Record<string, { mutants: Mutant[] }>;
+}
+
+export interface Survivor {
+  file: string;
+  line: number;
+  column: number;
+  mutator: string;
+  original: string;
+  replacement: string;
+  covered: boolean;
+}
+
+export interface Totals {
+  mutants: number;
+  killed: number;
+  survived: number;
+  noCoverage: number;
+  timeout: number;
+  invalid: number;
+}
+
+// A null mode means the command line did not name one.
+export interface MutationOutcome {
+  version: 1;
+  mode: MutationMode | null;
+  status: MutationStatus;
+  error?: string;
+  survivors: Survivor[];
+  unmutated: string[];
+  totals: Totals;
+}
+
+export interface MutationFacts {
+  mode: MutationMode;
+  // Undefined when Stryker did not run.
+  stryker?: StrykerReport | undefined;
+  sources: Record<string, string>;
+  unmutated: string[];
+  // Set when the run failed before it produced a report.
+  error?: string;
 }
 
 const maxSnippetLength = 80;
 
-// Stryker counts compile and runtime errors as invalid mutants, outside the score.
-const unreported = new Set(['Ignored', 'CompileError', 'RuntimeError']);
+const emptyTotals: Totals = {
+  mutants: 0,
+  killed: 0,
+  survived: 0,
+  noCoverage: 0,
+  timeout: 0,
+  invalid: 0,
+};
 
 const squash = (text: string) => {
   const flat = text.replaceAll(/\s+/g, ' ').trim();
@@ -40,51 +91,118 @@ const originalText = (source: string, { start, end }: MutantLocation) => {
   return [first, ...middle, last].join('\n');
 };
 
-const mutantLine = (path: string, mutant: Mutant, source: string) => {
-  const original = squash(originalText(source, mutant.location));
-  const replacement = squash(mutant.replacement);
-  const label = mutant.status === 'NoCoverage' ? ' (no coverage)' : '';
+const isSurvivor = ({ status }: Mutant) => status === 'Survived' || status === 'NoCoverage';
 
-  return `${path}:${mutant.location.start.line} ${mutant.mutatorName}: ${original} -> ${replacement}${label}`;
-};
+const survivorOf = (file: string, mutant: Mutant, source: string): Survivor => ({
+  file,
+  line: mutant.location.start.line,
+  column: mutant.location.start.column,
+  mutator: mutant.mutatorName,
+  original: squash(originalText(source, mutant.location)),
+  replacement: squash(mutant.replacement),
+  covered: mutant.status !== 'NoCoverage',
+});
 
-const reportedMutants = (report: MutationReport) =>
-  Object.entries(report.files).flatMap(([path, { mutants }]) =>
-    mutants
-      .filter(({ status }) => status === 'Survived' || status === 'NoCoverage')
-      .map((mutant) => ({ path, mutant })),
-  );
-
-const byPosition = (
-  left: { path: string; mutant: Mutant },
-  right: { path: string; mutant: Mutant },
-) => {
-  if (left.path !== right.path) {
-    return left.path < right.path ? -1 : 1;
+const bySurvivorPosition = (left: Survivor, right: Survivor) => {
+  if (left.file !== right.file) {
+    return left.file < right.file ? -1 : 1;
   }
 
-  const leftStart = left.mutant.location.start;
-  const rightStart = right.mutant.location.start;
-
-  return leftStart.line - rightStart.line || leftStart.column - rightStart.column;
+  return left.line - right.line || left.column - right.column;
 };
 
-const totalsLine = (report: MutationReport) => {
-  const mutants = Object.values(report.files).flatMap((file) => file.mutants);
-  const counted = mutants.filter(({ status }) => !unreported.has(status));
-  const count = (status: string) => counted.filter((mutant) => mutant.status === status).length;
+const totalsOf = (mutants: Mutant[]): Totals => {
+  const count = (...statuses: string[]) =>
+    mutants.filter(({ status }) => statuses.includes(status)).length;
 
-  return `${counted.length} mutants: ${count('Killed') + count('Timeout')} killed, ${count('Survived')} survived, ${count('NoCoverage')} no coverage`;
+  return {
+    mutants: mutants.filter(({ status }) => status !== 'Ignored').length,
+    killed: count('Killed'),
+    survived: count('Survived'),
+    noCoverage: count('NoCoverage'),
+    timeout: count('Timeout'),
+    invalid: count('CompileError', 'RuntimeError'),
+  };
 };
 
-// Lists each surviving or uncovered mutant, then a totals line. `sources` maps each path to its text.
-export const formatMutationReport = (
-  report: MutationReport,
-  sources: Record<string, string>,
-): string => {
-  const lines = reportedMutants(report)
-    .toSorted(byPosition)
-    .map(({ path, mutant }) => mutantLine(path, mutant, sources[path] ?? ''));
+const outcome = (
+  facts: MutationFacts,
+  status: MutationStatus,
+  survivors: Survivor[],
+  totals: Totals,
+  error?: string,
+): MutationOutcome => ({
+  version: 1,
+  mode: facts.mode,
+  status,
+  ...(error === undefined ? {} : { error }),
+  survivors,
+  unmutated: facts.unmutated,
+  totals,
+});
 
-  return [...lines, totalsLine(report)].join('\n');
+const unmutatedMessage = (unmutated: string[]) =>
+  `${unmutated.length} file(s) were not mutated: the mutant cap left them out, or Stryker selected none of their mutants.`;
+
+const survivorsStatus = (mode: MutationMode) => ({
+  status: 'survivors' as const,
+  exitCode: mode === 'changed' ? 2 : 0,
+});
+
+// Decides the status and exit code from the facts of one run.
+export const buildMutationReport = (
+  facts: MutationFacts,
+): { report: MutationOutcome; exitCode: number } => {
+  const mutants = Object.values(facts.stryker?.files ?? {}).flatMap((file) => file.mutants);
+  const totals = facts.stryker === undefined ? emptyTotals : totalsOf(mutants);
+
+  const survivors = Object.entries(facts.stryker?.files ?? {})
+    .flatMap(([file, { mutants: fileMutants }]) =>
+      fileMutants
+        .filter(isSurvivor)
+        .map((mutant) => survivorOf(file, mutant, facts.sources[file] ?? '')),
+    )
+    .toSorted(bySurvivorPosition);
+
+  if (facts.error !== undefined) {
+    return { report: outcome(facts, 'error', survivors, totals, facts.error), exitCode: 1 };
+  }
+
+  if (facts.unmutated.length > 0) {
+    const error = unmutatedMessage(facts.unmutated);
+
+    return { report: outcome(facts, 'error', survivors, totals, error), exitCode: 1 };
+  }
+
+  if (totals.mutants === 0) {
+    return { report: outcome(facts, 'nothing', survivors, totals), exitCode: 0 };
+  }
+
+  if (totals.invalid === totals.mutants) {
+    const error = 'Every mutant failed to compile or run.';
+
+    return { report: outcome(facts, 'error', survivors, totals, error), exitCode: 1 };
+  }
+
+  if (survivors.length > 0) {
+    const { status, exitCode } = survivorsStatus(facts.mode);
+
+    return { report: outcome(facts, status, survivors, totals), exitCode };
+  }
+
+  return { report: outcome(facts, 'pass', survivors, totals), exitCode: 0 };
 };
+
+// A run that failed before it chose a mode or counted mutants.
+export const failedMutationReport = (
+  mode: MutationMode | null,
+  error: string,
+): MutationOutcome => ({
+  version: 1,
+  mode,
+  status: 'error',
+  error,
+  survivors: [],
+  unmutated: [],
+  totals: emptyTotals,
+});

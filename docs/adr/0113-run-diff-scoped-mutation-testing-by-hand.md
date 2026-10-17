@@ -1,7 +1,8 @@
 # ADR 0113: Run diff-scoped mutation testing by hand
 
 **Date**: 2026-10-16\
-**Status**: Accepted
+**Status**: Accepted; exit codes, repository scope, and test selection superseded by [ADR
+0115][adr-0115]
 
 ## Context
 
@@ -57,3 +58,5 @@ not touch.
 
 Rejected because it selected few or no tests for Tau changes. The script uses a fixed test scope per
 changed area.
+
+[adr-0115]: ./0115-copy-mutation-script-per-repository-and-fail-on-survivors.md

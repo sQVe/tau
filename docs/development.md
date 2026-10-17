@@ -44,12 +44,17 @@ bundled with Vite+.
 
 ## Check test strength
 
-Run `pnpm mutation <base> [<head>]` by hand to mutation-test the production lines changed between
-`base` and `head`. `head` defaults to `HEAD`. The script runs
-[StrykerJS](https://stryker-mutator.io) on an export of the head commit in a temporary directory,
-with the tests of the changed area. It prints each surviving mutant as
-`path:line mutator: original -> replacement`, marks mutants that no test covers, and then prints
-totals. It exits 0 whether or not mutants survive, and it is not part of `pnpm check`.
+Run these by hand from the repository root. Neither is part of `pnpm check`.
+
+```sh
+pnpm mutation changed <base>
+pnpm mutation audit <path>...
+```
+
+`changed` mutation-tests the production lines changed since `<base>`. `audit` mutation-tests whole
+files. Both use [StrykerJS](https://stryker-mutator.io) with the root `stryker.config.json`. The
+script prints a JSON report. See [scripts/mutation.md](../scripts/mutation.md) for the report and
+exit codes.
 
 ## Try Tau
 

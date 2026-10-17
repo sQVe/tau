@@ -1,139 +1,188 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import { parseArgs } from 'node:util';
+import { join, matchesGlob, relative, resolve } from 'node:path';
 
-import { formatMutationReport } from './mutationReport.ts';
-import type { MutationReport } from './mutationReport.ts';
-import { changedLinesDiffArguments, mutationScope } from './mutationScope.ts';
-import type { MutationScope } from './mutationScope.ts';
+import { Instrumenter } from '@stryker-mutator/instrumenter';
+import { noopLogger } from '@stryker-mutator/util';
 
-const usage = `Usage: node scripts/mutation.ts <base> [<head>]
+import { buildMutationReport, failedMutationReport } from './mutationReport.ts';
+import type { MutationMode, MutationOutcome, StrykerReport } from './mutationReport.ts';
+import {
+  auditScope,
+  changedLinesDiffArguments,
+  changedScope,
+  countedMutants,
+  fitCap,
+  isProductionFile,
+  mergedConfig,
+  mutateConfigError,
+  mutatePatterns,
+  parseCommand,
+  rejectedAuditPaths,
+  unreportedFiles,
+} from './mutationScope.ts';
+import type { Command, FileScope } from './mutationScope.ts';
 
-Runs StrykerJS on the production lines changed between base and head (default HEAD), then lists
-the mutants that survived. Run it by hand; it is not part of pnpm check.`;
-
-const print = (text: string) => process.stdout.write(`${text}\n`);
-
-const printError = (text: string) => process.stderr.write(`${text}\n`);
-
-const checkout = resolve(dirname(import.meta.filename), '..');
-
-const reportPath = 'reports/mutation/mutation.json';
+interface StrykerConfig {
+  mutate?: string[];
+  thresholds?: Record<string, unknown>;
+  mutator?: { excludedMutations?: string[] };
+  [key: string]: unknown;
+}
 
 const maxGitOutput = Number.POSITIVE_INFINITY;
 
-const git = (...args: string[]) =>
-  execFileSync('git', args, { cwd: checkout, encoding: 'utf8', maxBuffer: maxGitOutput });
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: maxGitOutput });
 
-// The tree's own vite.config.ts decides the test options. Older commits have no projects.
-const vitestConfig = (scope: MutationScope) => `import base from './vite.config.ts';
-
-const { projects: _projects, ...test } = base.test ?? {};
-
-export default {
-  ...base,
-  test: {
-    ...test,
-    include: ${JSON.stringify(scope.include)},
-    exclude: ${JSON.stringify(scope.exclude)},
-  },
-};
-`;
-
-const strykerConfig = (scope: MutationScope) => ({
-  testRunner: 'vitest',
-  vitest: { configFile: 'stryker.vitest.config.ts', related: false },
-  coverageAnalysis: 'perTest',
-  mutate: scope.mutate,
-  // TypeScript 7 has no JS API, so Stryker's tsconfig rewrite crashes. A missing file skips it.
-  tsconfigFile: 'stryker-no-tsconfig.json',
-  checkers: [],
-  concurrency: 6,
-  timeoutMS: 20_000,
-  reporters: ['json', 'progress'],
-  jsonReporter: { fileName: reportPath },
-  fileLogLevel: 'info',
-  ignorePatterns: ['.tau', 'docs', 'CHANGELOG.md'],
-  tempDirName: '.stryker-tmp',
-  cleanTempDir: true,
-});
-
-const exportTree = (head: string, directory: string) => {
-  const archive = join(directory, 'head.tar');
-
-  git('archive', '--format=tar', '-o', archive, head);
-  execFileSync('tar', ['-xf', archive, '-C', directory]);
-  rmSync(archive);
-  symlinkSync(join(checkout, 'node_modules'), join(directory, 'node_modules'));
+const parseConfig = (path: string): StrykerConfig => {
+  // SAFETY: the file is a Stryker config; only the fields in StrykerConfig are read here.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the config is user JSON.
+  return JSON.parse(readFileSync(path, 'utf8')) as StrykerConfig;
 };
 
-const writeConfigs = (directory: string, scope: MutationScope) => {
-  writeFileSync(join(directory, 'stryker.vitest.config.ts'), vitestConfig(scope));
+const readConfig = (path: string): StrykerConfig => {
+  const config = parseConfig(path);
 
-  writeFileSync(
-    join(directory, 'stryker.config.json'),
-    JSON.stringify(strykerConfig(scope), undefined, 2),
-  );
-};
+  const problem = mutateConfigError(config.mutate, path);
 
-const printReport = (directory: string) => {
-  const text = readFileSync(join(directory, reportPath), 'utf8');
-  // SAFETY: Stryker's JSON reporter writes this shape; the formatter reads only these fields.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the report is Stryker output.
-  const report = JSON.parse(text) as MutationReport;
-
-  const sources = Object.fromEntries(
-    Object.keys(report.files).map((path) => [path, readFileSync(join(directory, path), 'utf8')]),
-  );
-
-  print(formatMutationReport(report, sources));
-};
-
-const run = () => {
-  const { positionals } = parseArgs({ allowPositionals: true });
-  const [base, head = 'HEAD'] = positionals;
-
-  if (base === undefined || positionals.length > 2) {
-    printError(usage);
-    process.exitCode = 2;
-
-    return;
+  if (problem !== undefined) {
+    throw new Error(problem);
   }
 
-  const diff = git(...changedLinesDiffArguments(base, head));
-  const scope = mutationScope(diff);
+  return config;
+};
 
-  if (scope === undefined) {
-    print(`Nothing to mutate: no production lines changed between ${base} and ${head}.`);
+const changedFiles = (root: string, base: string, isProduction: (path: string) => boolean) => {
+  const diff = git(root, ...changedLinesDiffArguments(base));
+  const untrackedOutput = git(root, 'ls-files', '-z', '--others', '--exclude-standard');
+  const untracked = untrackedOutput.split('\0').filter((path) => path !== '');
 
-    return;
+  return changedScope(diff, untracked, isProduction);
+};
+
+const auditFiles = (root: string, paths: string[], isProduction: (path: string) => boolean) => {
+  const relativePaths = paths.map((path) => relative(root, resolve(path)));
+  const rejected = rejectedAuditPaths(relativePaths, isProduction);
+
+  if (rejected.length > 0) {
+    throw new Error(`Not production code in the config's mutate globs: ${rejected.join(', ')}`);
   }
 
-  const directory = mkdtempSync(join(tmpdir(), 'tau-mutation-'));
+  return auditScope(relativePaths, isProduction);
+};
 
-  exportTree(head, directory);
-  writeConfigs(directory, scope);
-  print(`Mutating ${scope.mutate.length} range(s) of ${head} in ${directory}`);
+const wholeFileRanges = (scope: FileScope) =>
+  scope.ranges === undefined
+    ? true
+    : scope.ranges.map(({ start, end }) => ({
+        start: { line: start - 1, column: 0 },
+        end: { line: end - 1, column: Number.MAX_SAFE_INTEGER },
+      }));
 
-  const stryker = spawnSync(join(checkout, 'node_modules/.bin/stryker'), ['run'], {
-    cwd: directory,
-    stdio: 'inherit',
+const countMutants = async (root: string, scope: FileScope, config: StrykerConfig) => {
+  const instrumenter = new Instrumenter(noopLogger);
+  const content = readFileSync(join(root, scope.path), 'utf8');
+
+  const result = await instrumenter.instrument(
+    [{ name: scope.path, content, mutate: wholeFileRanges(scope) }],
+    { plugins: null, excludedMutations: config.mutator?.excludedMutations ?? [], ignorers: [] },
+  );
+
+  return countedMutants(result.mutants);
+};
+
+const runStryker = (root: string, config: StrykerConfig, scopes: FileScope[]): StrykerReport => {
+  const directory = mkdtempSync(join(tmpdir(), 'mutation-'));
+
+  try {
+    const reportPath = join(directory, 'mutation.json');
+    const configPath = join(directory, 'stryker.config.json');
+
+    const merged = mergedConfig(config, scopes.flatMap(mutatePatterns), reportPath);
+
+    writeFileSync(configPath, JSON.stringify(merged, undefined, 2));
+
+    const stryker = spawnSync(join(root, 'node_modules/.bin/stryker'), ['run', configPath], {
+      cwd: root,
+      stdio: ['ignore', 2, 2],
+    });
+
+    if (stryker.status !== 0) {
+      throw new Error(`Stryker exited with status ${stryker.status}. See its output on stderr.`);
+    }
+
+    // SAFETY: Stryker's JSON reporter writes this shape; the report builder reads only these fields.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the report is Stryker output.
+    return JSON.parse(readFileSync(reportPath, 'utf8')) as StrykerReport;
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+};
+
+const readSources = (root: string, report: StrykerReport) =>
+  Object.fromEntries(
+    Object.keys(report.files).map((path) => [path, readFileSync(join(root, path), 'utf8')]),
+  );
+
+const mutate = async (command: Command): Promise<{ report: MutationOutcome; exitCode: number }> => {
+  const root = git(process.cwd(), 'rev-parse', '--show-toplevel').trim();
+  const config = readConfig(resolve(root, command.configPath ?? 'stryker.config.json'));
+  const mutateGlobs = config.mutate ?? [];
+  const isProduction = (path: string) => isProductionFile(path, mutateGlobs, matchesGlob);
+
+  const scopes =
+    command.mode === 'changed'
+      ? changedFiles(root, command.base ?? 'HEAD', isProduction)
+      : auditFiles(root, command.paths, isProduction);
+
+  const counts = await Promise.all(
+    scopes.map(async (scope) => ({
+      path: scope.path,
+      mutants: await countMutants(root, scope, config),
+    })),
+  );
+
+  const { run, unmutated } = fitCap(counts, command.maxMutants);
+  const runScopes = scopes.filter(({ path }) => run.includes(path));
+  const stryker = runScopes.length === 0 ? undefined : runStryker(root, config, runScopes);
+  const sources = stryker === undefined ? {} : readSources(root, stryker);
+
+  const reportedPaths = Object.entries(stryker?.files ?? {})
+    .filter(([, { mutants }]) => mutants.length > 0)
+    .map(([path]) => path);
+
+  const unreported = unreportedFiles(
+    counts.filter(({ path }) => run.includes(path)),
+    reportedPaths,
+  );
+
+  return buildMutationReport({
+    mode: command.mode,
+    ...(stryker === undefined ? {} : { stryker }),
+    sources,
+    unmutated: [...unmutated, ...unreported].toSorted(),
   });
-
-  if (stryker.status !== 0) {
-    printError(
-      `Stryker failed. Kept ${directory}; see ${join(directory, 'logs/stryker.log')} and ${join(directory, 'stryker.log')}.`,
-    );
-
-    process.exitCode = 1;
-
-    return;
-  }
-
-  printReport(directory);
-  rmSync(directory, { recursive: true, force: true });
 };
 
-run();
+const main = async () => {
+  let result: { report: MutationOutcome; exitCode: number };
+  let mode: MutationMode | null = null;
+
+  try {
+    const command = parseCommand(process.argv.slice(2));
+
+    mode = command.mode;
+    result = await mutate(command);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    result = { report: failedMutationReport(mode, message), exitCode: 1 };
+  }
+
+  process.stdout.write(`${JSON.stringify(result.report, undefined, 2)}\n`);
+  process.exitCode = result.exitCode;
+};
+
+await main();

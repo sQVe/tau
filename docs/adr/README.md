@@ -139,3 +139,4 @@ line that links to the replacement.
 - [0112: Review collaborative drafts as files in tuicr](./0112-review-collaborative-drafts-as-files-in-tuicr.md)
 - [0113: Run diff-scoped mutation testing by hand](./0113-run-diff-scoped-mutation-testing-by-hand.md)
 - [0114: Remind managers at half the context window to start a new session](./0114-remind-managers-at-half-the-context-window-to-start-a-new-session.md)
+- [0115: Copy the mutation script into each repository and fail on survivors](./0115-copy-mutation-script-per-repository-and-fail-on-survivors.md)

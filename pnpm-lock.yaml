@@ -146,6 +146,12 @@ importers:
       '@stryker-mutator/core':
         specifier: 10.0.0
         version: 10.0.0(@types/node@24.13.3)
+      '@stryker-mutator/instrumenter':
+        specifier: 10.0.0
+        version: 10.0.0
+      '@stryker-mutator/util':
+        specifier: 10.0.0
+        version: 10.0.0
       '@stryker-mutator/vitest-runner':
         specifier: 10.0.0
         version: 10.0.0(@stryker-mutator/core@10.0.0(@types/node@24.13.3))(vitest@4.1.11)
@@ -161,6 +167,9 @@ importers:
       knip:
         specifier: 6.37.0
         version: 6.37.0
+      minimatch:
+        specifier: 10.2.6
+        version: 10.2.6
       oxc-parser:
         specifier: 0.150.0
         version: 0.150.0

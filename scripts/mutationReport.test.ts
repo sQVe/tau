@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatMutationReport } from './mutationReport.js';
-import type { Mutant } from './mutationReport.js';
+import { buildMutationReport, failedMutationReport } from './mutationReport.js';
+import type { Mutant, MutationFacts } from './mutationReport.js';
 
 const mutant = (fields: Partial<Mutant>): Mutant => ({
   mutatorName: 'Regex',
@@ -11,108 +11,235 @@ const mutant = (fields: Partial<Mutant>): Mutant => ({
   ...fields,
 });
 
-const reportOf = (files: Record<string, Mutant[]>) => ({
-  files: Object.fromEntries(Object.entries(files).map(([path, mutants]) => [path, { mutants }])),
+const factsOf = (
+  files: Record<string, Mutant[]>,
+  fields: Partial<MutationFacts> = {},
+): MutationFacts => ({
+  mode: 'changed',
+  stryker: {
+    files: Object.fromEntries(Object.entries(files).map(([path, mutants]) => [path, { mutants }])),
+  },
+  sources: {},
+  unmutated: [],
+  ...fields,
 });
 
-describe('formatMutationReport', () => {
-  it('names the file, line, and change of a surviving mutant', () => {
-    const source = 'one\nconst pattern = /a=[^=]+/;\n';
+const at = (line: number, column: number) => ({
+  start: { line, column },
+  end: { line, column: column + 1 },
+});
 
-    const report = reportOf({
-      'src/a.ts': [
-        mutant({
-          replacement: '/a=[^=]/',
-          location: { start: { line: 2, column: 17 }, end: { line: 2, column: 26 } },
-        }),
-      ],
-    });
+describe('buildMutationReport', () => {
+  it.each([
+    {
+      name: 'a cap that leaves a file unmutated',
+      facts: factsOf({ 'src/a.ts': [mutant({ status: 'Killed' })] }, { unmutated: ['src/b.ts'] }),
+      status: 'error',
+      exitCode: 1,
+      unmutated: ['src/b.ts'],
+    },
+    {
+      name: 'a cap that leaves two files unmutated in audit mode',
+      facts: factsOf(
+        {},
+        { mode: 'audit', stryker: undefined, unmutated: ['src/a.ts', 'src/b.ts'] },
+      ),
+      status: 'error',
+      exitCode: 1,
+      unmutated: ['src/a.ts', 'src/b.ts'],
+    },
+    {
+      name: 'a failed run',
+      facts: factsOf({}, { stryker: undefined, error: 'Stryker failed' }),
+      status: 'error',
+      exitCode: 1,
+      unmutated: [],
+    },
+    {
+      name: 'no Stryker run',
+      facts: factsOf({}, { stryker: undefined }),
+      status: 'nothing',
+      exitCode: 0,
+      unmutated: [],
+    },
+    {
+      name: 'a run with no mutant',
+      facts: factsOf({ 'src/a.ts': [mutant({ status: 'Ignored' })] }),
+      status: 'nothing',
+      exitCode: 0,
+      unmutated: [],
+    },
+    {
+      name: 'only invalid mutants',
+      facts: factsOf({
+        'src/a.ts': [mutant({ status: 'CompileError' }), mutant({ status: 'RuntimeError' })],
+      }),
+      status: 'error',
+      exitCode: 1,
+      unmutated: [],
+    },
+    {
+      name: 'killed mutants and an invalid one',
+      facts: factsOf({
+        'src/a.ts': [mutant({ status: 'Killed' }), mutant({ status: 'CompileError' })],
+      }),
+      status: 'pass',
+      exitCode: 0,
+      unmutated: [],
+    },
+    {
+      name: 'a survivor in changed mode',
+      facts: factsOf({ 'src/a.ts': [mutant({})] }),
+      status: 'survivors',
+      exitCode: 2,
+      unmutated: [],
+    },
+    {
+      name: 'an uncovered mutant in changed mode',
+      facts: factsOf({ 'src/a.ts': [mutant({ status: 'NoCoverage' })] }),
+      status: 'survivors',
+      exitCode: 2,
+      unmutated: [],
+    },
+    {
+      name: 'a survivor in audit mode',
+      facts: factsOf({ 'src/a.ts': [mutant({})] }, { mode: 'audit' }),
+      status: 'survivors',
+      exitCode: 0,
+      unmutated: [],
+    },
+  ])('gives $status and exit $exitCode for $name', ({ facts, status, exitCode, unmutated }) => {
+    const result = buildMutationReport(facts);
 
-    expect(formatMutationReport(report, { 'src/a.ts': source })).toBe(
-      [
-        'src/a.ts:2 Regex: /a=[^=]+/ -> /a=[^=]/',
-        '1 mutants: 0 killed, 1 survived, 0 no coverage',
-      ].join('\n'),
-    );
+    expect(result.report.status).toBe(status);
+    expect(result.exitCode).toBe(exitCode);
+    expect(result.report.unmutated).toEqual(unmutated);
   });
 
-  it('labels a mutant no test covers', () => {
-    const report = reportOf({ 'src/a.ts': [mutant({ status: 'NoCoverage', replacement: 'x' })] });
+  it('lists each unmutated file and keeps the survivors of the files that ran', () => {
+    const facts = factsOf({ 'src/a.ts': [mutant({})] }, { unmutated: ['src/b.ts', 'src/c.ts'] });
 
-    expect(formatMutationReport(report, { 'src/a.ts': 'a' })).toContain(
-      'src/a.ts:1 Regex: a -> x (no coverage)',
+    const { report, exitCode } = buildMutationReport(facts);
+
+    expect(exitCode).toBe(1);
+    expect(report.unmutated).toEqual(['src/b.ts', 'src/c.ts']);
+    expect(report.survivors).toHaveLength(1);
+  });
+
+  it('lists audit survivors with file, line, mutator, original, and replacement', () => {
+    const source = 'one\nconst pattern = /a=[^=]+/;\n';
+
+    const facts = factsOf(
+      {
+        'src/a.ts': [
+          mutant({
+            replacement: '/a=[^=]/',
+            location: { start: { line: 2, column: 17 }, end: { line: 2, column: 26 } },
+          }),
+        ],
+      },
+      { mode: 'audit', sources: { 'src/a.ts': source } },
     );
+
+    const { report, exitCode } = buildMutationReport(facts);
+
+    expect(exitCode).toBe(0);
+
+    expect(report.survivors).toEqual([
+      {
+        file: 'src/a.ts',
+        line: 2,
+        column: 17,
+        mutator: 'Regex',
+        original: '/a=[^=]+/',
+        replacement: '/a=[^=]/',
+        covered: true,
+      },
+    ]);
+  });
+
+  it('marks an uncovered survivor', () => {
+    const facts = factsOf({ 'src/a.ts': [mutant({ status: 'NoCoverage', replacement: 'x' })] });
+
+    expect(buildMutationReport(facts).report.survivors[0]?.covered).toBe(false);
   });
 
   it('joins a multi-line original and cuts a long one', () => {
     const source = `foo(\n  bar,\n${'z'.repeat(100)})`;
 
-    const report = reportOf({
-      'src/a.ts': [
-        mutant({
-          mutatorName: 'BlockStatement',
-          replacement: '{}',
-          location: { start: { line: 1, column: 1 }, end: { line: 3, column: 102 } },
-        }),
-      ],
-    });
+    const facts = factsOf(
+      {
+        'src/a.ts': [
+          mutant({
+            mutatorName: 'BlockStatement',
+            replacement: '{}',
+            location: { start: { line: 1, column: 1 }, end: { line: 3, column: 102 } },
+          }),
+        ],
+      },
+      { sources: { 'src/a.ts': source } },
+    );
 
-    const [line] = formatMutationReport(report, { 'src/a.ts': source }).split('\n');
-
-    expect(line).toBe(`src/a.ts:1 BlockStatement: foo( bar, ${'z'.repeat(70)}... -> {}`);
+    expect(buildMutationReport(facts).report.survivors[0]?.original).toBe(
+      `foo( bar, ${'z'.repeat(70)}...`,
+    );
   });
 
-  it('sorts by path then line and counts every status', () => {
-    const report = reportOf({
+  it('sorts survivors by path, line, and column and counts every status', () => {
+    const facts = factsOf({
       'src/b.ts': [mutant({ status: 'Killed' }), mutant({ replacement: 'q' })],
       'src/a.ts': [
-        mutant({
-          location: { start: { line: 9, column: 1 }, end: { line: 9, column: 2 } },
-        }),
+        mutant({ location: at(9, 1) }),
+        mutant({ location: at(3, 5) }),
+        mutant({ location: at(3, 1) }),
         mutant({ status: 'Timeout' }),
         mutant({ status: 'Ignored' }),
         mutant({ status: 'RuntimeError' }),
-        mutant({
-          status: 'NoCoverage',
-          location: { start: { line: 3, column: 1 }, end: { line: 3, column: 2 } },
-        }),
+        mutant({ status: 'NoCoverage', location: at(4, 1) }),
       ],
     });
 
-    const lines = formatMutationReport(report, {}).split('\n');
+    const { report } = buildMutationReport(facts);
 
-    expect(lines.map((line) => line.split(' ')[0])).toEqual([
-      'src/a.ts:3',
-      'src/a.ts:9',
-      'src/b.ts:1',
-      '5',
+    expect(report.survivors.map(({ file, line, column }) => `${file}:${line}:${column}`)).toEqual([
+      'src/a.ts:3:1',
+      'src/a.ts:3:5',
+      'src/a.ts:4:1',
+      'src/a.ts:9:1',
+      'src/b.ts:1:1',
     ]);
 
-    expect(lines.at(-1)).toBe('5 mutants: 2 killed, 2 survived, 1 no coverage');
-  });
-
-  it('sorts mutants on one line by column', () => {
-    const report = reportOf({
-      'src/a.ts': [
-        mutant({
-          replacement: 'late',
-          location: { start: { line: 1, column: 5 }, end: { line: 1, column: 6 } },
-        }),
-        mutant({ replacement: 'early' }),
-      ],
+    expect(report.totals).toEqual({
+      mutants: 8,
+      killed: 1,
+      survived: 4,
+      noCoverage: 1,
+      timeout: 1,
+      invalid: 1,
     });
+  });
+});
 
-    const lines = formatMutationReport(report, { 'src/a.ts': 'abcdef' }).split('\n');
+describe('buildMutationReport with a failed run', () => {
+  it('keeps the error text in the report', () => {
+    const { report } = buildMutationReport(
+      factsOf({}, { stryker: undefined, error: 'Stryker exited with status 3.' }),
+    );
 
-    expect(lines.slice(0, 2)).toEqual([
-      'src/a.ts:1 Regex: a -> early',
-      'src/a.ts:1 Regex: e -> late',
-    ]);
+    expect(report.error).toBe('Stryker exited with status 3.');
   });
 
-  it('prints only the totals when nothing survives', () => {
-    const report = reportOf({ 'src/a.ts': [mutant({ status: 'Killed' })] });
+  it('gives an error with the file count when files are unmutated', () => {
+    const { report } = buildMutationReport(factsOf({}, { unmutated: ['src/a.ts'] }));
 
-    expect(formatMutationReport(report, {})).toBe('1 mutants: 1 killed, 0 survived, 0 no coverage');
+    expect(report.error).toContain('1 file(s)');
+  });
+});
+
+describe('failedMutationReport', () => {
+  it('reports the error with no mode when none was chosen', () => {
+    const report = failedMutationReport(null, 'bad usage');
+
+    expect(report).toMatchObject({ mode: null, status: 'error', error: 'bad usage' });
   });
 });
