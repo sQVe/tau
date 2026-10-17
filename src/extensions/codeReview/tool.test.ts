@@ -14,11 +14,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { Value } from 'typebox/value';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { noUiContext } from '../../../tests/toolContext.js';
-import { createCodeReviewTool } from './tool.js';
+import { codeReviewToolParameters, createCodeReviewTool } from './tool.js';
 import type { CodeReviewInput } from './tool.js';
 
 const git = async (root: string, commandArguments: string[]) => {
@@ -853,5 +854,178 @@ it.skipIf(process.getuid?.() === 0)(
     const result = await captureWorkingTree(root, review);
 
     expect(result['gaps']).toContainEqual({ kind: 'unreadable', path: 'locked/a.ts' });
+  },
+);
+
+// Puts a git wrapper first on PATH that fails the commands whose arguments contain `failing`.
+const failGitCommand = async (failing: string) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-review-git-'));
+  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+
+  const { stdout } = await promisify(execFile)('sh', ['-c', 'command -v git']);
+
+  const script = [
+    '#!/bin/sh',
+    `case " $* " in *" ${failing} "*) echo 'forced failure' >&2; exit 2;; esac`,
+    `exec '${stdout.trim()}' "$@"`,
+  ].join('\n');
+
+  await writeFile(join(directory, 'git'), `${script}\n`, { mode: 0o755 });
+  vi.stubEnv('PATH', `${directory}:${process.env['PATH'] ?? ''}`);
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+};
+
+it('accepts each documented action in the parameters Pi validates and rejects an unknown one', () => {
+  const actions = ['prepare', 'capture', 'freshness', 'evidence'];
+
+  for (const action of actions) {
+    expect(Value.Check(codeReviewToolParameters, { action })).toBe(true);
+  }
+
+  expect(Value.Check(codeReviewToolParameters, { action: 'delete' })).toBe(false);
+});
+
+it('gives the model the result as JSON text in the tool content', async () => {
+  const { root, directory } = await preparedReview();
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+
+  const result = await createCodeReviewTool().execute(
+    'call',
+    { action: 'capture', directory, target: { kind: 'workingTree', base: 'HEAD' } },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  const [block] = result.content;
+
+  expect(block?.type).toBe('text');
+  expect(JSON.parse(block?.type === 'text' ? block.text : '')).toEqual(result.details);
+  expect(result.details['paths']).toEqual(['tracked.txt']);
+});
+
+it('captures a root commit with a null base in the result and the saved record', async () => {
+  const { root, directory } = await preparedReview();
+  const commit = (await git(root, ['rev-parse', 'HEAD'])).trim();
+
+  const result = await run(root, {
+    action: 'capture',
+    directory,
+    target: { kind: 'rootCommit', commit },
+  });
+
+  const record = JSON.parse(await readFile(join(directory, 'capture.json'), 'utf8')) as unknown;
+
+  expect(result).toMatchObject({ base: null, head: commit, paths: ['tracked.txt'] });
+  expect(record).toMatchObject({ base: null, head: commit });
+});
+
+it('refuses an incomplete capture and writes nothing', async () => {
+  const { root, directory } = await preparedReview();
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+  await writeFile(join(root, 'untracked.txt'), 'new\n');
+
+  const before = await listDirectory(directory);
+
+  await failGitCommand('diff');
+
+  expect(
+    await failureOf(root, {
+      action: 'capture',
+      directory,
+      target: { kind: 'workingTree', base: 'HEAD' },
+    }),
+  ).toContain('forced failure');
+
+  expect(await listDirectory(directory)).toEqual(before);
+});
+
+it('refuses a capture when HEAD cannot be read and writes nothing', async () => {
+  const { root, directory } = await preparedReview();
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+
+  const before = await listDirectory(directory);
+
+  await failGitCommand('--verify HEAD');
+
+  expect(
+    await failureOf(root, {
+      action: 'capture',
+      directory,
+      target: { kind: 'workingTree', base: 'HEAD' },
+    }),
+  ).toContain('forced failure');
+
+  expect(await listDirectory(directory)).toEqual(before);
+});
+
+it.each(['## Capture \n', '## Capture\r\n'])(
+  'accepts a Capture heading with trailing whitespace: %j',
+  async (heading) => {
+    const { root, directory } = await preparedReview();
+
+    await writeFile(join(directory, 'input.md'), `# Review input\n\n${heading}`);
+    await writeFile(join(root, 'tracked.txt'), 'two\n');
+
+    const result = await captureWorkingTree(root, directory);
+
+    expect(result['empty']).toBe(false);
+    expect(await readFile(join(directory, 'input.md'), 'utf8')).toContain('+two');
+  },
+);
+
+it('names the missing heading when input.md has no heading at all', async () => {
+  const { root, directory } = await preparedReview();
+
+  await writeFile(join(directory, 'input.md'), 'plain text\n');
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+
+  const before = await listDirectory(directory);
+
+  expect(
+    await failureOf(root, {
+      action: 'capture',
+      directory,
+      target: { kind: 'workingTree', base: 'HEAD' },
+    }),
+  ).toContain('## Capture');
+
+  expect(await listDirectory(directory)).toEqual(before);
+});
+
+it('names the missing target when capture gets none and writes nothing', async () => {
+  const { directory, root } = await preparedReview();
+  const before = await listDirectory(directory);
+
+  expect(await failureOf(root, { action: 'capture', directory })).toContain('target');
+  expect(await listDirectory(directory)).toEqual(before);
+});
+
+// Every entry outside .git with its contents, so a new .tau directory shows.
+const snapshotCheckout = async (root: string) =>
+  Promise.all(
+    (await readdir(root, { recursive: true, withFileTypes: true }))
+      .filter((entry) => !join(entry.parentPath, entry.name).startsWith(join(root, '.git')))
+      .map(async (entry) => {
+        const path = join(entry.parentPath, entry.name);
+
+        return [path, entry.isFile() ? await readFile(path, 'utf8') : 'entry'];
+      }),
+  );
+
+it.each(['capture', 'freshness', 'evidence'] as const)(
+  'names the missing directory when %s gets none',
+  async (action) => {
+    const root = await committedRepository();
+    const before = await snapshotCheckout(root);
+
+    expect(await failureOf(root, { action })).toContain('directory');
+    expect(await snapshotCheckout(root)).toEqual(before);
   },
 );

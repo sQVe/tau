@@ -104,8 +104,11 @@ describe('statusbar rendering', () => {
   it('formats context window sizes', () => {
     for (const [contextWindow, text] of [
       [999, '999'],
+      [1000, '1.0k'],
       [1500, '1.5k'],
       [10000, '10k'],
+      [999999, '1000k'],
+      [1000000, '1.0M'],
       [1500000, '1.5M'],
       [10000000, '10M'],
     ] as const) {

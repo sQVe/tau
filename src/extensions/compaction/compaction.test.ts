@@ -17,16 +17,20 @@ const createHarness = (onTestFinished: TestContext['onTestFinished']) => {
   const compact = vi.fn<() => void>();
   const contextWindow = 300_000;
   let tokens: number | null = 0;
+  let usageAvailable = true;
 
   const context = {
     hasUI: true,
     ui: { notify },
     compact,
-    getContextUsage: () => ({
-      tokens,
-      contextWindow,
-      percent: tokens === null ? null : (tokens / contextWindow) * 100,
-    }),
+    getContextUsage: () =>
+      usageAvailable
+        ? {
+            tokens,
+            contextWindow,
+            percent: tokens === null ? null : (tokens / contextWindow) * 100,
+          }
+        : undefined,
   } as unknown as ExtensionContext;
 
   compactionExtension(fake.pi);
@@ -40,7 +44,13 @@ const createHarness = (onTestFinished: TestContext['onTestFinished']) => {
     await emit('agent_settled');
   };
 
-  return { fake, notify, compact, emit, settleAt };
+  const settleWithoutUsage = async () => {
+    usageAvailable = false;
+    await emit('agent_settled');
+    usageAvailable = true;
+  };
+
+  return { fake, notify, compact, emit, settleAt, settleWithoutUsage };
 };
 
 it('reminds once when the context passes half the window and again after a compaction', async ({
@@ -66,6 +76,41 @@ it('reminds once when the context passes half the window and again after a compa
   expect(harness.compact).not.toHaveBeenCalled();
   expect(harness.fake.sendMessage).not.toHaveBeenCalled();
   expect(harness.fake.sendUserMessage).not.toHaveBeenCalled();
+});
+
+it('reminds again after the context drops below half the window and passes it again', async ({
+  onTestFinished,
+}) => {
+  const harness = createHarness(onTestFinished);
+
+  await harness.settleAt(160_000);
+  await harness.settleAt(100_000);
+
+  expect(harness.notify).toHaveBeenCalledTimes(1);
+
+  await harness.settleAt(160_000);
+
+  expect(harness.notify).toHaveBeenCalledTimes(2);
+});
+
+it('reminds again when a new session starts already over half the window', async ({
+  onTestFinished,
+}) => {
+  const harness = createHarness(onTestFinished);
+
+  await harness.settleAt(160_000);
+  await harness.emit('session_start');
+  await harness.settleAt(160_000);
+
+  expect(harness.notify).toHaveBeenCalledTimes(2);
+});
+
+it('stays quiet when Pi reports no context usage', async ({ onTestFinished }) => {
+  const harness = createHarness(onTestFinished);
+
+  await harness.settleWithoutUsage();
+
+  expect(harness.notify).not.toHaveBeenCalled();
 });
 
 it('registers nothing in a worker', ({ onTestFinished }) => {

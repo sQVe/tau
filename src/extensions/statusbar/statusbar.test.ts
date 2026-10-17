@@ -296,6 +296,91 @@ describe('statusbar extension', () => {
     expect(footer.unsubscribe).toHaveBeenCalledOnce();
   });
 
+  it('ignores a git status that finishes after its footer was replaced', async ({
+    onTestFinished,
+  }) => {
+    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
+    const log = join(directory, 'git.log');
+    const finished = join(directory, 'finished.log');
+    const bin = join(directory, 'bin');
+    await mkdir(bin);
+
+    const startedCount = async () => (await readFile(log, 'utf8')).split('\n').length - 1;
+
+    const finishedCount = async () => {
+      const text = await readFile(finished, 'utf8').catch(() => '');
+
+      return text.split('\n').length - 1;
+    };
+
+    const footers: { dispose?: () => void }[] = [];
+
+    // Releases every gate and waits for each started shim, so none outlives the directory.
+    onTestFinished(async () => {
+      vi.unstubAllEnvs();
+
+      for (const footer of footers) {
+        footer.dispose?.();
+      }
+
+      await writeFile(join(directory, 'release1'), '');
+      await writeFile(join(directory, 'release2'), '');
+
+      await vi.waitFor(async () => {
+        expect(await finishedCount()).toBe(await startedCount());
+      });
+
+      await rm(directory, { recursive: true, force: true });
+    });
+
+    // The first status waits for the first release and reports a change. The second waits for the
+    // second release and reports a clean tree.
+    await writeFile(
+      join(bin, 'git'),
+      [
+        '#!/bin/sh',
+        `echo start >> '${log}'`,
+        `count=$(wc -l < '${log}')`,
+        `gate='${directory}'/release$count`,
+        'while [ ! -f "$gate" ]; do sleep 0.01; done',
+        `if [ "$count" = 1 ]; then echo ' M file'; fi`,
+        `echo end >> '${finished}'`,
+      ].join('\n'),
+      { mode: 0o755 },
+    );
+
+    vi.stubEnv('PATH', `${bin}:${process.env.PATH ?? ''}`);
+
+    const application = setup(directory);
+    await application.emit('session_start');
+    const previous = application.mount();
+    footers.push(previous.component);
+
+    await vi.waitFor(async () => {
+      expect(await startedCount()).toBe(1);
+    });
+
+    previous.component.dispose?.();
+    await application.emit('session_start');
+    const replacement = application.mount();
+    footers.push(replacement.component);
+
+    await writeFile(join(directory, 'release1'), '');
+
+    await vi.waitFor(async () => {
+      expect(await startedCount()).toBe(2);
+    });
+
+    expect(replacement.requestRender).not.toHaveBeenCalled();
+    expect(replacement.component.render(100)[0]).not.toContain('main*');
+
+    await writeFile(join(directory, 'release2'), '');
+
+    await vi.waitFor(async () => {
+      expect(await finishedCount()).toBe(2);
+    });
+  });
+
   it('runs one git status at a time and merges overlapping refreshes', async ({
     onTestFinished,
   }) => {

@@ -39,6 +39,7 @@ it.each([
   { frontmatter: requiredFor(42) },
   { frontmatter: requiredFor(['opening a pull request']) },
   { frontmatter: requiredFor(null) },
+  { frontmatter: { metadata: null } },
   { frontmatter: { metadata: 'required-for: opening a pull request' } },
   { frontmatter: { metadata: ['opening a pull request'] } },
   { frontmatter: { metadata: new Set(['required-for']) } },

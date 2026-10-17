@@ -1,4 +1,6 @@
 import { execFile } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -57,5 +59,12 @@ describe('bare repository root guard', () => {
     });
 
     expect(await startSession(join(root, 'main'))).toBe('user append');
+  });
+
+  it('leaves a session outside any repository alone', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'tau-bare-root-none-'));
+    cleanups.push(() => rm(directory, { recursive: true, force: true }));
+
+    expect(await startSession(directory)).toBe('user append');
   });
 });

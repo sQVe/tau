@@ -3,6 +3,7 @@ import { link, mkdir, readdir, readFile, stat, symlink, unlink, writeFile } from
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
+import { Value } from 'typebox/value';
 import { expect, it, onTestFinished } from 'vitest';
 
 import {
@@ -182,4 +183,32 @@ it('refuses a later ignore exception in a bare root without changing it', async 
 
   expect(await readFile(ignoreFile, 'utf8')).toBe(content);
   expect(await readdir(join(root, '.tau'))).toEqual(['.gitignore']);
+});
+
+it('accepts only the prepare action in the parameters Pi validates', () => {
+  const { parameters } = createHandoverTool();
+
+  expect(Value.Check(parameters, { action: 'prepare' })).toBe(true);
+  expect(Value.Check(parameters, { action: 'delete' })).toBe(false);
+  expect(Value.Check(parameters, {})).toBe(false);
+});
+
+it('gives the model the directory as JSON text in the tool content', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const result = await createHandoverTool().execute(
+    'call',
+    { action: 'prepare' },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  const [block] = result.content;
+
+  expect(block?.type).toBe('text');
+
+  expect(JSON.parse(block?.type === 'text' ? block.text : '')).toEqual({
+    directory: join(root, '.tau', 'handovers'),
+  });
 });

@@ -227,3 +227,50 @@ it.each([
 ])('refuses the push URLs of a remote: $error', ({ pushes, error }) => {
   expect(() => pickPushRepository({ ...remote('origin', fork, fork), pushes })).toThrow(error);
 });
+
+const refspecHead = (trackingRef: string, ...fetchRefspecs: string[]) =>
+  headFacts({
+    pushTarget: pushTarget('origin', trackingRef),
+    remotes: [remote('origin', fork, fork, fetchRefspecs)],
+  });
+
+it.each([
+  {
+    name: 'an exact refspec',
+    facts: refspecHead('refs/remotes/origin/main', 'refs/heads/trunk:refs/remotes/origin/main'),
+    branch: 'trunk',
+  },
+  {
+    name: 'a suffix pattern',
+    facts: refspecHead('refs/remotes/origin/feature-x', 'refs/heads/*:refs/remotes/origin/*-x'),
+    branch: 'feature',
+  },
+  {
+    name: 'a plus sign inside a ref',
+    facts: refspecHead('refs/remotes/origin/c++/x', 'refs/heads/c++/*:refs/remotes/origin/c++/*'),
+    branch: 'c++/x',
+  },
+])('maps the tracking ref back through $name', ({ facts, branch }) => {
+  expect(pickHead(facts)).toEqual({ remote: 'origin', branch });
+});
+
+it.each([
+  {
+    name: 'an exact refspec for another ref',
+    facts: refspecHead('refs/remotes/origin/other', 'refs/heads/trunk:refs/remotes/origin/main'),
+  },
+  {
+    name: 'a suffix the ref does not end with',
+    facts: refspecHead('refs/remotes/origin/feature', 'refs/heads/*:refs/remotes/origin/*-x'),
+  },
+  {
+    name: 'a prefix and suffix that overlap in the ref',
+    facts: refspecHead('refs/remotes/origin/a', 'refs/heads/*:refs/remotes/origin/a*a'),
+  },
+  {
+    name: 'a refspec without a destination',
+    facts: refspecHead('refs/remotes/origin/main', 'refs/heads/main'),
+  },
+])('finds no fetch refspec that maps $name', ({ facts }) => {
+  expect(() => pickHead(facts)).toThrow('no fetch refspec of origin maps from a branch');
+});
