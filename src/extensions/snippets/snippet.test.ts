@@ -71,6 +71,23 @@ describe('parsing a snippet file', () => {
     });
   });
 
+  it.for([
+    ['a space before the colon', 'name : Spaced', 'Spaced'],
+    ['a field name inside a sentence', 'about name: Hidden', 'spaced'],
+    ['no space after the colon', 'name:Tight', 'Tight'],
+    ['many spaces after the colon', 'name:    Wide', 'Wide'],
+    ['trailing spaces', 'name: Trailing   ', 'Trailing'],
+    ['quotes and trailing spaces', 'name: "Quoted"   ', 'Quoted'],
+    ['quotes inside the value', 'name: Say "hi" to \'them\' now', 'Say "hi" to \'them\' now'],
+    ['quotes around and inside the value', 'name: "Say "hi" now"', 'Say "hi" now'],
+    ['only an opening quote', 'name: "Open', 'Open'],
+    ['only a closing quote', "name: Close'", 'Close'],
+  ])('reads the value with %s', async ([, line, expected]) => {
+    const raw = `---\n${line}\n---\nBody.`;
+
+    expect(await loadOne('spaced.md', raw)).toMatchObject({ name: expected });
+  });
+
   it('reads a file that uses carriage returns and drops them from the body', async () => {
     const raw = '---\r\nname: Windows\r\n---\r\nFirst line.\r\nSecond line.\r\n';
 
@@ -93,12 +110,20 @@ describe('parsing a snippet file', () => {
     ['no frontmatter', 'Just a body with no frontmatter.'],
     ['an unterminated frontmatter block', '---\nname: Broken\nBody.'],
     ['an empty body', '---\nname: Empty\n---\n   \n'],
+    ['frontmatter after a blank line', '\n---\nname: Late\n---\nBody.'],
+    ['frontmatter after other text', 'Intro\n---\nname: Late\n---\nBody.'],
   ])('returns null for %s', async ([, raw]) => {
     expect(await loadOne('invalid.md', raw!)).toBeNull();
   });
 });
 
 describe('loadSnippets', () => {
+  it('removes .md only from the end of the filename to make the id', async () => {
+    expect(await loadOne('notes.md-draft.MD', snippetFile('Notes', 'Body.'))).toMatchObject({
+      id: 'notes.md-draft',
+    });
+  });
+
   it('reads markdown files, skips other files, and sorts by id', async ({ onTestFinished }) => {
     const directory = await mkdtemp(join(tmpdir(), 'tau-snippets-'));
     onTestFinished(() => rm(directory, { recursive: true, force: true }));

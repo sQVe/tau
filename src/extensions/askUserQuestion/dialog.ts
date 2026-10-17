@@ -79,7 +79,8 @@ const decoratedHeaderRows = 5;
 const footerRows = 3;
 // The full preview adds a border, a title, a blank row, and the hidden-line count to the footer.
 const fullPreviewChromeRows = 7;
-// The compact full preview keeps the title, the hidden-line count, and the key hints.
+// The compact full preview adds the title, the hidden-line count, and the key hints. The title is
+// the first row dropped when a waiting notice leaves no room.
 const compactFullPreviewChromeRows = 3;
 
 const workerNoticeCount = (count: number) =>
@@ -508,7 +509,10 @@ class QuestionDialog implements Component {
     const footer = [...indicator, ...this.footer(keys, width)];
 
     if (this.compact()) {
-      return [title, ...lines, ...footer];
+      const titleFits = lines.length + footer.length + 1 <= this.availableRows();
+      const titleRows = titleFits ? [title] : [];
+
+      return [...titleRows, ...lines, ...footer];
     }
 
     return [theme.fg('accent', '─'.repeat(width)), title, '', ...lines, ...footer];

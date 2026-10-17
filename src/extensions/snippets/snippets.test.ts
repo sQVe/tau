@@ -13,6 +13,12 @@ import { loadSnippets } from './snippet.js';
 import type { Snippet } from './snippet.js';
 import snippetsExtension from './snippets.js';
 
+interface SessionOptions {
+  reason?: 'startup' | 'resume';
+  entries?: unknown[];
+  previousEditor?: () => EditorComponent;
+}
+
 type EditorFactory = NonNullable<ReturnType<ExtensionUIContext['getEditorComponent']>>;
 type WidgetContent = Parameters<ExtensionUIContext['setWidget']>[1];
 type WidgetTheme = Parameters<NonNullable<WidgetContent>>[1];
@@ -62,7 +68,7 @@ beforeEach(() => {
   vi.mocked(loadSnippets).mockResolvedValue([simplify, review, checklist]);
 });
 
-const startSession = async (mode: ExtensionContext['mode']) => {
+const startSession = async (mode: ExtensionContext['mode'], options: SessionOptions = {}) => {
   const fake = fakeExtensionApi();
   snippetsExtension(fake.pi);
 
@@ -76,7 +82,7 @@ const startSession = async (mode: ExtensionContext['mode']) => {
     addAutocompleteProvider: (factory: AutocompleteProviderFactory) => {
       autocompleteFactories.push(factory);
     },
-    getEditorComponent: () => editorFactories.at(-1),
+    getEditorComponent: () => editorFactories.at(-1) ?? options.previousEditor,
     setEditorComponent: (factory: EditorFactory) => {
       editorFactories.push(factory);
     },
@@ -85,9 +91,11 @@ const startSession = async (mode: ExtensionContext['mode']) => {
     },
   };
 
-  const context = { mode, ui } as unknown as ExtensionContext;
+  const sessionManager = { buildContextEntries: () => options.entries ?? [] };
+  const context = { mode, ui, sessionManager } as unknown as ExtensionContext;
+  const reason = options.reason ?? 'startup';
 
-  await fake.handler('session_start')({ type: 'session_start', reason: 'startup' }, context);
+  await fake.handler('session_start')({ type: 'session_start', reason }, context);
 
   return { autocompleteFactories, editorFactories, widgets, notify };
 };
@@ -295,4 +303,35 @@ it('shows no preview for an item that is not a snippet', async () => {
   await harness.typeUntilListed('@');
 
   expect(harness.widgets.filter((content) => content !== undefined)).toEqual([]);
+});
+
+const userEntry = (content: unknown) => ({ type: 'message', message: { role: 'user', content } });
+
+it('refills history from a resumed session into an editor that has no history', async () => {
+  const editor = { render: () => [] } as unknown as EditorComponent;
+
+  const session = await startSession('tui', {
+    reason: 'resume',
+    entries: [userEntry('first prompt')],
+    previousEditor: () => editor,
+  });
+
+  const factory = session.editorFactories[0];
+
+  expect(factory?.(...editorParts())).toBe(editor);
+});
+
+it('refills history from a resumed session into the editor that has it', async () => {
+  const addToHistory = vi.fn<(text: string) => void>();
+  const editor = { render: () => [], addToHistory } as unknown as EditorComponent;
+
+  const session = await startSession('tui', {
+    reason: 'resume',
+    entries: [userEntry('first prompt'), userEntry([{ type: 'text', text: 'second prompt' }])],
+    previousEditor: () => editor,
+  });
+
+  session.editorFactories[0]?.(...editorParts());
+
+  expect(addToHistory.mock.calls).toEqual([['first prompt'], ['second prompt']]);
 });

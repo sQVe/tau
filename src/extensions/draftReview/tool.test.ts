@@ -4,10 +4,12 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { Value } from 'typebox/value';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import type { Exec } from '../../exec.js';
+import { saveCollectedRecord } from './collectedRecord.js';
 import { createDraftReviewTool } from './tool.js';
 import type { DraftReviewRuntime } from './tool.js';
 
@@ -723,4 +725,159 @@ it('returns cancelled and keeps no record when aborted during pane layout', asyn
 
 it('returns cancelled and keeps no record when aborted during tab create', async () => {
   expect(await abortDuringOpen('tab create')).toEqual(cancelledWithNothingKept);
+});
+
+it('gives the model the result as text content', async () => {
+  const { run, setSession } = await fixture();
+  const opened = await run({ action: 'review', paths: ['.tau/slices/a.md'] });
+
+  expect(opened.content).toHaveLength(1);
+  expect(opened.content[0]).toMatchObject({ type: 'text' });
+  expect(JSON.parse((opened.content[0] as { text: string }).text)).toEqual(opened.details);
+
+  const manual = opened.details;
+
+  if (manual.status !== 'manual') {
+    throw new Error('Expected a manual review.');
+  }
+
+  await setSession([comment('on-a', 'slices/a.md')]);
+
+  const collected = await run({ action: 'collect', directory: manual.directory });
+
+  expect(JSON.parse((collected.content[0] as { text: string }).text)).toEqual(collected.details);
+  expect(collected.details).toMatchObject({ comments: [{ content: 'on-a' }] });
+});
+
+it('refuses a review call that has no paths', async () => {
+  const { run } = await fixture();
+
+  await expect(run({ action: 'review' })).rejects.toThrow('at least one path');
+});
+
+it.each([
+  { call: { action: 'review' }, valid: true },
+  { call: { action: 'collect' }, valid: true },
+  { call: { action: 'review', paths: ['.tau/a.md'] }, valid: true },
+  { call: { action: 'collect', directory: '.tau/draft-review/review-1' }, valid: true },
+  { call: { action: 'other' }, valid: false },
+  { call: {}, valid: false },
+  { call: { action: 'review', paths: [''] }, valid: false },
+  { call: { action: 'collect', directory: '' }, valid: false },
+])('checks the arguments $call: valid is $valid', ({ call, valid }) => {
+  const { parameters } = createDraftReviewTool({
+    exec: vi.fn<Exec>(),
+    herdrPaneId: () => undefined,
+  });
+
+  expect(Value.Check(parameters, call)).toBe(valid);
+});
+
+const manualReview = async (paths = ['.tau/slices/a.md']) => {
+  const context = await fixture();
+  const opened = await context.run({ action: 'review', paths });
+
+  if (opened.details.status !== 'manual') {
+    throw new Error('Expected a manual review.');
+  }
+
+  return { ...context, manual: opened.details, staging: stagingOf(opened.details.command) };
+};
+
+it('collects without edits when the user deleted the staging directory', async () => {
+  const { run, manual, staging, real, records } = await manualReview();
+
+  await rm(staging, { recursive: true });
+
+  const collected = await run({ action: 'collect', directory: manual.directory });
+
+  expect(collected.details).toEqual({ status: 'reviewed', comments: [], edits: [] });
+  expect(await readFile(real('slices/a.md'), 'utf8')).toBe('one\ntwo\n');
+  expect(await records()).toEqual([]);
+});
+
+it('collects without an edit for a file the user deleted from staging', async () => {
+  const { run, manual, staging, real } = await manualReview([
+    '.tau/slices/a.md',
+    '.tau/slices/b.md',
+  ]);
+
+  await rm(join(staging, 'slices/a.md'));
+  await writeFile(join(staging, 'slices/b.md'), 'user\n');
+
+  const collected = await run({ action: 'collect', directory: manual.directory });
+
+  expect(collected.details).toMatchObject({ edits: [{ path: real('slices/b.md') }] });
+  expect(await readFile(real('slices/a.md'), 'utf8')).toBe('one\ntwo\n');
+});
+
+it('fails when a staged file cannot be read, deleting nothing and keeping the review', async () => {
+  const { run, setSession, deleted, manual, staging, real, records } = await manualReview([
+    '.tau/slices/a.md',
+    '.tau/slices/b.md',
+  ]);
+
+  await rm(join(staging, 'slices/a.md'));
+  await mkdir(join(staging, 'slices/a.md'));
+  await writeFile(join(staging, 'slices/b.md'), 'user\n');
+  await setSession([comment('on-b', 'slices/b.md')]);
+
+  await expect(run({ action: 'collect', directory: manual.directory })).rejects.toThrow(/EISDIR/);
+
+  expect(await deleted()).toEqual([]);
+  expect(await readFile(real('slices/a.md'), 'utf8')).toBe('one\ntwo\n');
+  expect(await readFile(real('slices/b.md'), 'utf8')).toBe('bee\n');
+  expect(existsSync(staging)).toBe(true);
+  expect(await records()).toHaveLength(1);
+});
+
+it.each(['applied', 'conflict'] as const)(
+  'does not decide again an edit saved as %s',
+  async (status) => {
+    const { run, manual, real } = await manualReview();
+
+    await saveCollectedRecord(manual.directory, {
+      comments: [],
+      edits: [{ path: 'slices/a.md', diff: 'saved diff', staged: 'user\n', status }],
+    });
+
+    const collected = await run({ action: 'collect', directory: manual.directory });
+
+    expect(collected.details).toMatchObject({ edits: [{ diff: 'saved diff', status }] });
+    expect(await readFile(real('slices/a.md'), 'utf8')).toBe('one\ntwo\n');
+  },
+);
+
+it('keeps the plan from the first try when the first delete fails', async () => {
+  const { run, setSession, data, manual } = await manualReview();
+
+  await setSession([comment('one', 'slices/a.md'), comment('two', 'slices/a.md')]);
+  await writeFile(join(data, 'fail.txt'), 'one');
+
+  const failed = run({ action: 'collect', directory: manual.directory });
+
+  await expect(failed).rejects.toThrow(/deleted before it: none\./);
+
+  await setSession([]);
+  await rm(join(data, 'fail.txt'));
+
+  const retried = await run({ action: 'collect', directory: manual.directory });
+
+  expect(retried.details).toMatchObject({ comments: [{ content: 'one' }, { content: 'two' }] });
+});
+
+it('names the comments deleted before a failed delete', async () => {
+  const { run, setSession, data, manual } = await manualReview();
+
+  await setSession([
+    comment('one', 'slices/a.md'),
+    comment('two', 'slices/a.md'),
+    comment('three', 'slices/a.md'),
+  ]);
+
+  await writeFile(join(data, 'fail.txt'), 'three');
+
+  await expect(run({ action: 'collect', directory: manual.directory })).rejects.toThrow(
+    /deleted before it: one, two\./,
+  );
 });

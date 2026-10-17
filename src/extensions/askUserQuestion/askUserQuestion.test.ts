@@ -1,6 +1,7 @@
 import { validateToolArguments } from '@earendil-works/pi-ai';
 import type { ToolCall } from '@earendil-works/pi-ai';
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { Value } from 'typebox/value';
 import { expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
@@ -513,4 +514,272 @@ it('answers a typed answer differently from an options-only answer with the same
 
   expect(answers(typed)).toEqual([expect.objectContaining({ selected: ['Stacked'], typed: true })]);
   expect(typed.content).not.toEqual(optionsOnly.content);
+});
+
+const textOf = (result: { content: unknown }) =>
+  (result.content as { type: string; text: string }[]).map((item) => item.text).join('\n');
+
+const previewed = {
+  ...layout,
+  options: [
+    { label: 'Stacked', description: 'One column.', preview: 'column-sketch' },
+    { label: 'Split', description: 'Two columns.' },
+  ],
+};
+
+it('tells the model which option the user picked and its preview', async () => {
+  const { run, latest } = driver();
+  const pending = run([previewed]);
+
+  latest().handleInput('\r');
+
+  const text = textOf(await pending);
+
+  expect(text).toContain(layout.question);
+  expect(text).toContain('Stacked');
+  expect(text).toContain('column-sketch');
+});
+
+it('leaves a preview out of the text when the picked option has none', async () => {
+  const { run, latest } = driver();
+  const pending = run([previewed]);
+
+  latest().handleInput(down);
+  latest().handleInput('\r');
+
+  const text = textOf(await pending);
+
+  expect(text).toContain('Split');
+  expect(text).not.toContain('column-sketch');
+  expect(text).not.toContain('undefined');
+});
+
+it('gives the model different text for answered, declined, and deferred results', async () => {
+  const answeredRun = driver();
+  const answeredPending = answeredRun.run([layout]);
+
+  answeredRun.latest().handleInput('\r');
+
+  const declinedRun = driver();
+  const declinedPending = declinedRun.run([layout]);
+
+  declinedRun.latest().handleInput(escape);
+
+  const deferredRun = driver();
+  const deferredPending = deferredRun.run([layout]);
+
+  deferredRun.events.emit(workerNoticeChannel, notice);
+
+  for (const key of [down, down, down, '\r']) {
+    deferredRun.latest().handleInput(key);
+  }
+
+  const answeredText = textOf(await answeredPending);
+  const declinedText = textOf(await declinedPending);
+  const deferredText = textOf(await deferredPending);
+
+  expect(answeredText).toContain('Stacked');
+  expect(declinedText).toMatch(/declined/iu);
+  expect(declinedText).not.toContain('Stacked');
+  expect(deferredText).toMatch(/notice/iu);
+  expect(deferredText).not.toContain('Stacked');
+  expect(new Set([answeredText, declinedText, deferredText]).size).toBe(3);
+});
+
+it('fails outside the terminal UI so the model asks in plain text', async () => {
+  const { tool } = registeredTool();
+  const custom = vi.fn<() => Promise<DialogResult>>().mockResolvedValue({ kind: 'declined' });
+
+  const context = {
+    mode: 'rpc',
+    ui: { custom },
+    sessionManager: { getBranch: () => [] },
+  } as unknown as Parameters<ToolDefinition['execute']>[4];
+
+  const params = { questions: [layout] } as Parameters<ToolDefinition['execute']>[1];
+
+  await expect(tool.execute('call', params, undefined, undefined, context)).rejects.toThrow(
+    'plain text',
+  );
+
+  expect(custom).not.toHaveBeenCalled();
+});
+
+it('reports a dialog that closes without a result as declined', async () => {
+  const { call, custom } = ask(layout);
+
+  custom.mockResolvedValue(undefined as unknown as DialogResult);
+
+  const result = await call();
+
+  expect(result.details).toEqual({ kind: 'declined' });
+  expect(textOf(result)).toMatch(/declined/iu);
+});
+
+it('treats a question without multiSelect as single-select', async () => {
+  const { run, latest } = driver();
+  const pending = run([layout]);
+
+  latest().handleInput(' ');
+  latest().handleInput('\r');
+
+  expect(answers(await pending)).toEqual([expect.objectContaining({ selected: ['Stacked'] })]);
+});
+
+const deferOnce = async (
+  run: (questions: unknown[]) => Promise<unknown>,
+  latest: () => OpenDialog,
+  events: ReturnType<typeof driver>['events'],
+  questions: unknown[],
+) => {
+  const first = run(questions);
+
+  events.emit(workerNoticeChannel, notice);
+
+  for (const key of [' ', down, down, down, '\r']) {
+    latest().handleInput(key);
+  }
+
+  await first;
+};
+
+// Enter submits only when the earlier check came back, so the result shows what was restored.
+const restoredResult = async (change: Record<string, unknown>) => {
+  const { events, run, latest } = driver();
+
+  await deferOnce(run, latest, events, [features]);
+
+  const second = run([change]);
+
+  latest().handleInput('\r');
+  latest().handleInput(escape);
+
+  return (await second).details;
+};
+
+const featureOptions = (change: Record<string, unknown>[]) =>
+  features.options.map((option, index) => ({ ...option, ...change[index] }));
+
+it.each([
+  { rule: 'the same questions', change: {}, restored: true },
+  { rule: 'a question preview', change: { preview: 'draft' }, restored: false },
+  {
+    rule: 'an option preview',
+    change: { options: featureOptions([{ preview: 'sketch' }]) },
+    restored: false,
+  },
+  {
+    rule: 'an option description',
+    change: { options: featureOptions([{ description: 'Checks more.' }]) },
+    restored: false,
+  },
+  {
+    rule: 'a recommendation',
+    change: { options: featureOptions([{}, { recommended: true }]) },
+    restored: false,
+  },
+  {
+    rule: 'a recommendation on the first option',
+    change: { options: featureOptions([{ recommended: true }]) },
+    restored: false,
+  },
+  {
+    rule: 'a header',
+    change: { header: 'Other' },
+    restored: false,
+  },
+])('restores the deferred selections for $rule: $restored', async ({ change, restored }) => {
+  const details = await restoredResult({ ...features, ...change });
+
+  expect(details).toMatchObject({ kind: restored ? 'answered' : 'declined' });
+});
+
+it('restores the deferred selections only once', async () => {
+  const { events, run, latest } = driver();
+
+  await deferOnce(run, latest, events, [features]);
+
+  const second = run([features]);
+
+  latest().handleInput(escape);
+  await second;
+
+  const third = run([features]);
+
+  latest().handleInput('\r');
+  latest().handleInput(escape);
+
+  expect((await third).details).toMatchObject({ kind: 'declined' });
+});
+
+it('keeps the restored typed text when the user edits the custom row', async () => {
+  const { events, run, latest } = driver();
+  const first = run([features]);
+
+  events.emit(workerNoticeChannel, notice);
+
+  for (const key of [down, down, 'h', 'i', down, '\r']) {
+    latest().handleInput(key);
+  }
+
+  await first;
+
+  const second = run([features]);
+
+  latest().handleInput('!');
+  latest().handleInput('\r');
+
+  const [typed] = answers(await second);
+
+  expect(typed?.selected[0]).toContain('hi');
+  expect(typed?.selected[0]).toContain('!');
+});
+
+const limitCall = (change: Record<string, unknown>, optionChange: Record<string, unknown> = {}) => {
+  const option = { label: 'A', description: 'a', ...optionChange };
+
+  return {
+    questions: [
+      {
+        question: 'Q?',
+        problem: 'P',
+        impact: 'I',
+        header: 'H',
+        options: [option, { ...option, label: 'B' }],
+        ...change,
+      },
+    ],
+  };
+};
+
+it('accepts a call of ordinary size', () => {
+  const { tool } = registeredTool();
+
+  expect(Value.Check(tool.parameters, limitCall({}))).toBe(true);
+});
+
+const long = 'x'.repeat(1000);
+
+const manyOptions = Array.from({ length: 20 }, (_, index) => ({
+  label: `Option ${index}`,
+  description: 'a',
+}));
+
+it.each([
+  { limit: 'a very long label', call: limitCall({}, { label: long }) },
+  { limit: 'a very long description', call: limitCall({}, { description: long }) },
+  { limit: 'a very long problem', call: limitCall({ problem: long }) },
+  { limit: 'a very long impact', call: limitCall({ impact: long }) },
+  { limit: 'a very long header', call: limitCall({ header: long }) },
+  { limit: 'many options', call: limitCall({ options: manyOptions }) },
+  { limit: 'no options', call: limitCall({ options: [] }) },
+  {
+    limit: 'many questions',
+    call: { questions: Array.from({ length: 20 }, () => limitCall({}).questions[0]) },
+  },
+  { limit: 'no questions', call: { questions: [] } },
+])('refuses $limit', ({ call }) => {
+  const { tool } = registeredTool();
+
+  expect(Value.Check(tool.parameters, call)).toBe(false);
 });

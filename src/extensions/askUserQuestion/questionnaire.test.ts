@@ -565,3 +565,119 @@ it('opens the full preview of the question on an option without one', () => {
 
   expect(outcome).toMatchObject({ kind: 'update', state: { fullPreview: { offset: 0 } } });
 });
+
+it.each([
+  { rule: 'an option in single-select', question: single, state: at([single], 0) },
+  {
+    rule: 'a checked option in multi-select',
+    question: multi,
+    state: at([multi], 1, { checked: [0] }),
+  },
+  {
+    rule: 'the custom row with text',
+    question: multi,
+    state: at([multi], 3, { customText: 'Docs' }),
+  },
+])('answers with Enter on $rule while a notice waits', ({ question, state }) => {
+  expect(handleKey(state, press('enter'), [question], viewport, true).kind).toBe('submit');
+});
+
+it('stays on the question when Enter has nothing to answer', () => {
+  const questions = [multi, single];
+  const state = initialState(questions);
+
+  expect(handleKey(state, press('enter'), questions, viewport, false)).toEqual({
+    kind: 'update',
+    state,
+  });
+});
+
+const answerOf = (question: QuestionFacts, label: string) => ({
+  question: question.question,
+  selected: [label],
+  typed: false,
+});
+
+it('asks again when the user moves a single-select cursor onto the custom row', () => {
+  const questions = [single, multi];
+
+  const outcome = run(questions, initialState(questions), [
+    press('enter'),
+    press('previousQuestion'),
+    press('bottom'),
+    press('nextQuestion'),
+    press('space'),
+    press('enter'),
+  ]);
+
+  expect(outcome).toMatchObject({ kind: 'update', state: { tab: 0 } });
+});
+
+it('asks again when the typed text of an answered question changes', () => {
+  const state = { ...at([single], 2), answers: [answerOf(single, 'Luxon')] };
+
+  expect(withCustomText(state, 'Docs').answers).toEqual([undefined]);
+});
+
+it('keeps the answer when the typed text stays the same', () => {
+  const state = {
+    ...at([single], 2, { customText: 'Docs' }),
+    answers: [answerOf(single, 'Luxon')],
+  };
+
+  expect(withCustomText(state, 'Docs').answers).toEqual(state.answers);
+});
+
+it('does not check an option on a key that is not Space', () => {
+  const outcome = handleKey(at([multi], 1), press('other'), [multi], viewport, false);
+
+  expect(outcome.kind === 'update' && outcome.state.questions[0]?.checked).toEqual([]);
+});
+
+it('moves the cursor of a restored typed answer to the custom row', () => {
+  const typed = { question: single.question, selected: ['Docs'], typed: true };
+  const saved = { ...at([single], 3, { customText: 'Docs' }), answers: [typed] };
+
+  expect(restoredState(saved, [single]).questions[0]?.cursor).toBe(2);
+});
+
+const three: QuestionFacts[] = ['One?', 'Two?', 'Three?'].map((question) => ({
+  question,
+  multiSelect: false,
+  options: [{ label: 'A' }, { label: 'B' }],
+}));
+
+it.each([
+  { key: 'nextQuestion', from: 0, tab: 1 },
+  { key: 'nextQuestion', from: 2, tab: 0 },
+  { key: 'previousQuestion', from: 0, tab: 2 },
+  { key: 'previousQuestion', from: 2, tab: 1 },
+] as const)('moves from question $from to $tab with $key among three', ({ key, from, tab }) => {
+  const state = { ...initialState(three), tab: from };
+
+  expect(handleKey(state, press(key), three, viewport, false)).toMatchObject({
+    kind: 'update',
+    state: { tab },
+  });
+});
+
+it.each(['nextQuestion', 'previousQuestion'] as const)(
+  'switches questions with %s on the custom row instead of typing',
+  (key) => {
+    const state = at(three, 2, { customText: 'Docs' });
+    const outcome = handleKey(state, press(key), three, viewport, false);
+
+    expect(outcome.kind).toBe('update');
+  },
+);
+
+it('goes on to the next question that has no answer', () => {
+  const outcome = run(three, initialState(three), [
+    press('nextQuestion'),
+    press('enter'),
+    press('nextQuestion'),
+    press('enter'),
+  ]);
+
+  expect(outcome).toMatchObject({ kind: 'update', state: { tab: 2 } });
+});
