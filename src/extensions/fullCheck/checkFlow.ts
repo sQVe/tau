@@ -35,7 +35,6 @@ export const readRepository = async (root: string): Promise<string | undefined> 
   return output === undefined ? undefined : repositoryFromRemote(output);
 };
 
-// Resolves the saved passing log for an unchanged state, or undefined when the command must run.
 export const findReusedLog = async (
   root: string,
   identity: CheckIdentity,
