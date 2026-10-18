@@ -9,3 +9,5 @@ export const isTop = (data: string): boolean => matchesKey(data, Key.home) || ma
 
 export const isBottom = (data: string): boolean =>
   matchesKey(data, Key.end) || matchesKey(data, Key.shift('g'));
+
+export const isHalfPageDown = (data: string): boolean => matchesKey(data, 'd');
