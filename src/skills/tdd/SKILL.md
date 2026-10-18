@@ -40,7 +40,8 @@ make it pass, then verify the whole suite once.
    - One pass on the current inputs is enough. Do not rerun an equivalent full suite for bookkeeping
      or because you are about to hand off. Required hooks and CI still run on their own.
    - After the full check passes, run `mutation_check` with `mode: "changed"` and no `base`. Handle
-     each survivor in this order, then rerun until it passes:
+     each survivor in this order. A fix changes the full check's inputs, so run the full check and
+     then `mutation_check` again until both pass:
      1. Write a test that kills a real gap.
      2. Simplify redundant code the mutant points at.
      3. Only for a true equivalent mutant, add `// Stryker disable next-line <mutator>: <reason>`
