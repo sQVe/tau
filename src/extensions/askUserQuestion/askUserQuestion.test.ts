@@ -783,3 +783,26 @@ it.each([
 
   expect(Value.Check(tool.parameters, call)).toBe(false);
 });
+
+const endingAfter = async (answersGiven: { selected: string[]; typed: boolean }[]) => {
+  const { call, custom } = ask(layout);
+
+  custom.mockResolvedValue({
+    kind: 'answered',
+    answers: answersGiven.map((answer, index) => ({ question: `Q${index}?`, ...answer })),
+  });
+
+  const text = textOf(await call());
+
+  return text.slice(text.lastIndexOf('". ') + 3);
+};
+
+it('ends the text as for a typed answer when only some answers are typed', async () => {
+  const selected = { selected: ['a'], typed: false };
+  const typed = { selected: ['b'], typed: true };
+  const typedEnding = await endingAfter([typed]);
+
+  expect(await endingAfter([selected])).not.toBe(typedEnding);
+  expect(await endingAfter([selected, typed])).toBe(typedEnding);
+  expect(await endingAfter([typed, selected])).toBe(typedEnding);
+});

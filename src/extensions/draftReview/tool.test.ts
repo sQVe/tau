@@ -881,3 +881,108 @@ it('names the comments deleted before a failed delete', async () => {
     /deleted before it: one, two\./,
   );
 });
+
+const crowdedLayout = (agentWidth: number, otherWidth: number) =>
+  JSON.stringify({
+    result: {
+      layout: {
+        workspace_id: 'w',
+        tab_id: 'w:t1',
+        zoomed: false,
+        panes: [
+          { pane_id: 'w:p0', rect: { width: otherWidth, height: 50, x: 0, y: 0 } },
+          { pane_id: 'w:p1', rect: { width: agentWidth, height: 50, x: 0, y: 0 } },
+        ],
+      },
+    },
+  });
+
+it.each([
+  { agentWidth: 200, otherWidth: 50, placement: 'pane split' },
+  { agentWidth: 50, otherWidth: 200, placement: 'tab create' },
+])(
+  'places the review by the agent pane width $agentWidth, not another pane',
+  async ({ agentWidth, otherWidth, placement }) => {
+    const { run, herdrCalls } = await fixture(async (argumentsList) => {
+      if (argumentsList[1] === 'layout') {
+        return crowdedLayout(agentWidth, otherWidth);
+      }
+
+      if (argumentsList[1] === 'split') {
+        return paneInfo;
+      }
+
+      return argumentsList[1] === 'create' ? tabInfo : '';
+    });
+
+    await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
+
+    expect(steps(herdrCalls)).toContain(placement);
+  },
+);
+
+it('sends herdr the split and close arguments for a pane beside the agent', async () => {
+  const { run, herdrCalls } = await fixture(async (argumentsList) =>
+    argumentsList[1] === 'split' ? paneInfo : '',
+  );
+
+  await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
+
+  const staging = /--file '([^']+)'/.exec(
+    herdrCalls.find(([, action]) => action === 'run')?.[3] ?? '',
+  )?.[1];
+
+  expect(herdrCalls.find(([, action]) => action === 'split')).toEqual([
+    'pane',
+    'split',
+    '--pane',
+    'w:p1',
+    '--direction',
+    'right',
+    '--cwd',
+    staging,
+    '--focus',
+  ]);
+
+  expect(herdrCalls.at(-1)).toEqual(['pane', 'close', 'w:p2']);
+});
+
+it('sends herdr the arguments for a focused review tab in the agent workspace', async () => {
+  const { run, herdrCalls } = await fixture(tabHerdr(100, false));
+
+  await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
+
+  const staging = /--file '([^']+)'/.exec(
+    herdrCalls.find(([, action]) => action === 'run')?.[3] ?? '',
+  )?.[1];
+
+  expect(herdrCalls.find(([group, action]) => group === 'tab' && action === 'create')).toEqual([
+    'tab',
+    'create',
+    '--workspace',
+    'w',
+    '--cwd',
+    staging,
+    '--label',
+    expect.any(String),
+    '--focus',
+  ]);
+});
+
+it('reports a tab close failure other than a missing tab and keeps the agent tab unfocused', async () => {
+  const { run, herdrCalls } = await fixture(
+    tabHerdr(100, false, async (argumentsList) => {
+      if (argumentsList[1] === 'close') {
+        throw new Error('herdr failed: socket closed');
+      }
+
+      return '';
+    }),
+  );
+
+  await expect(run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1')).rejects.toThrow(
+    'socket closed',
+  );
+
+  expect(herdrCalls.some(([group, action]) => group === 'tab' && action === 'focus')).toBe(false);
+});
