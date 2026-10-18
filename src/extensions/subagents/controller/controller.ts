@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 
 import { isMissingFile } from '../../../errors.js';
+import { skillToolsChangedOnDisk } from '../../../skillTools.js';
 import { listTerminals, result } from '../../../terminal.js';
 import type { TerminalCall } from '../../../terminal.js';
 import { acceptanceRefusal } from '../acceptanceRefusal.js';
@@ -494,6 +495,12 @@ export class WorkerController {
   ): Promise<LaunchStatus> {
     if (this.closed) {
       throw new Error('Parent controller stopped.');
+    }
+
+    if (skillToolsChangedOnDisk()) {
+      throw new Error(
+        'Tau changed on disk since this Pi session loaded it, so the worker would expect other tools. Run /reload, then launch again.',
+      );
     }
 
     launchSignal.throwIfAborted();

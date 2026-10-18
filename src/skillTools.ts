@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 export const skillTools: Readonly<Record<string, readonly string[]>> = {
   'code-review': ['code_review', 'tracker_draft'],
   brainstorm: ['slice', 'draft_review'],
@@ -13,3 +16,11 @@ export const skillTools: Readonly<Record<string, readonly string[]>> = {
   'pr-feedback': ['pr_feedback'],
   tracker: ['tracker_evidence', 'tracker_draft', 'draft_review'],
 };
+
+const skillToolsPath = fileURLToPath(import.meta.url);
+const loadedSource = readFileSync(skillToolsPath, 'utf8');
+
+// A worker loads this file again from disk and checks that Pi registered every tool it lists. Pi
+// registers only the tools the parent passed, so a parent with an older copy starts workers that fail.
+export const skillToolsChangedOnDisk = (): boolean =>
+  readFileSync(skillToolsPath, 'utf8') !== loadedSource;
