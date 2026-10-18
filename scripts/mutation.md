@@ -83,6 +83,7 @@ in both modes when any file is unmutated.
       "covered": true
     }
   ],
+  "falseSurvivors": [],
   "unmutated": ["src/b.ts"],
   "totals": {
     "mutants": 10,
@@ -90,7 +91,8 @@ in both modes when any file is unmutated.
     "survived": 1,
     "noCoverage": 1,
     "timeout": 0,
-    "invalid": 0
+    "invalid": 0,
+    "falseSurvived": 0
   }
 }
 ```
@@ -101,3 +103,7 @@ in both modes when any file is unmutated.
 - Survivors are `Survived` and `NoCoverage` mutants. `covered` is false for `NoCoverage`.
 - `totals.invalid` counts `CompileError` and `RuntimeError` mutants. When every mutant is invalid,
   the status is `error`.
+- A false survivor is a static mutant that Stryker marks `Survived` although fewer tests completed
+  than the report holds. The mutant made a test file throw while Vitest loaded it, so no test in
+  that file ran. `falseSurvivors` lists them in the shape of `survivors`. They are not in
+  `survivors` or `totals.survived`, and they do not change the status.

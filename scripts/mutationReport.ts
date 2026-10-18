@@ -12,11 +12,14 @@ export interface Mutant {
   replacement: string;
   status: string;
   location: MutantLocation;
+  static?: boolean;
+  testsCompleted?: number;
 }
 
 // The part of Stryker's JSON report this module reads.
 export interface StrykerReport {
   files: Record<string, { mutants: Mutant[] }>;
+  testFiles?: Record<string, { tests: unknown[] }>;
 }
 
 export interface Survivor {
@@ -36,6 +39,7 @@ export interface Totals {
   noCoverage: number;
   timeout: number;
   invalid: number;
+  falseSurvived: number;
 }
 
 // A null mode means the command line did not name one.
@@ -45,6 +49,7 @@ export interface MutationOutcome {
   status: MutationStatus;
   error?: string;
   survivors: Survivor[];
+  falseSurvivors: Survivor[];
   unmutated: string[];
   totals: Totals;
 }
@@ -68,6 +73,7 @@ const emptyTotals: Totals = {
   noCoverage: 0,
   timeout: 0,
   invalid: 0,
+  falseSurvived: 0,
 };
 
 const squash = (text: string) => {
@@ -93,6 +99,19 @@ const originalText = (source: string, { start, end }: MutantLocation) => {
 
 const isSurvivor = ({ status }: Mutant) => status === 'Survived' || status === 'NoCoverage';
 
+const testCountOf = (report: StrykerReport | undefined) =>
+  Object.values(report?.testFiles ?? {}).reduce((sum, { tests }) => sum + tests.length, 0);
+
+// A static mutant that makes a test file throw while it loads leaves that file's tests unrun,
+// yet Stryker reports it as Survived.
+const isFalseSurvivor = (mutant: Mutant, testCount: number) => {
+  const isStaticSurvivor = mutant.static === true && mutant.status === 'Survived';
+
+  return (
+    isStaticSurvivor && mutant.testsCompleted !== undefined && mutant.testsCompleted < testCount
+  );
+};
+
 const survivorOf = (file: string, mutant: Mutant, source: string): Survivor => ({
   file,
   line: mutant.location.start.line,
@@ -111,17 +130,20 @@ const bySurvivorPosition = (left: Survivor, right: Survivor) => {
   return left.line - right.line || left.column - right.column;
 };
 
-const totalsOf = (mutants: Mutant[]): Totals => {
+const totalsOf = (mutants: Mutant[], testCount: number): Totals => {
   const count = (...statuses: string[]) =>
     mutants.filter(({ status }) => statuses.includes(status)).length;
+
+  const falseSurvived = mutants.filter((mutant) => isFalseSurvivor(mutant, testCount)).length;
 
   return {
     mutants: mutants.filter(({ status }) => status !== 'Ignored').length,
     killed: count('Killed'),
-    survived: count('Survived'),
+    survived: count('Survived') - falseSurvived,
     noCoverage: count('NoCoverage'),
     timeout: count('Timeout'),
     invalid: count('CompileError', 'RuntimeError'),
+    falseSurvived,
   };
 };
 
@@ -129,6 +151,7 @@ const outcome = (
   facts: MutationFacts,
   status: MutationStatus,
   survivors: Survivor[],
+  falseSurvivors: Survivor[],
   totals: Totals,
   error?: string,
 ): MutationOutcome => ({
@@ -137,6 +160,7 @@ const outcome = (
   status,
   ...(error === undefined ? {} : { error }),
   survivors,
+  falseSurvivors,
   unmutated: facts.unmutated,
   totals,
 });
@@ -153,44 +177,59 @@ const survivorsStatus = (mode: MutationMode) => ({
 export const buildMutationReport = (
   facts: MutationFacts,
 ): { report: MutationOutcome; exitCode: number } => {
-  const mutants = Object.values(facts.stryker?.files ?? {}).flatMap((file) => file.mutants);
-  const totals = facts.stryker === undefined ? emptyTotals : totalsOf(mutants);
+  const testCount = testCountOf(facts.stryker);
+  const files = Object.entries(facts.stryker?.files ?? {});
+  const mutants = files.flatMap(([, file]) => file.mutants);
+  const totals = facts.stryker === undefined ? emptyTotals : totalsOf(mutants, testCount);
 
-  const survivors = Object.entries(facts.stryker?.files ?? {})
-    .flatMap(([file, { mutants: fileMutants }]) =>
-      fileMutants
-        .filter(isSurvivor)
-        .map((mutant) => survivorOf(file, mutant, facts.sources[file] ?? '')),
-    )
-    .toSorted(bySurvivorPosition);
+  const survivorsWhere = (keep: (mutant: Mutant) => boolean) =>
+    files
+      .flatMap(([file, { mutants: fileMutants }]) =>
+        fileMutants
+          .filter((mutant) => isSurvivor(mutant) && keep(mutant))
+          .map((mutant) => survivorOf(file, mutant, facts.sources[file] ?? '')),
+      )
+      .toSorted(bySurvivorPosition);
+
+  const survivors = survivorsWhere((mutant) => !isFalseSurvivor(mutant, testCount));
+  const falseSurvivors = survivorsWhere((mutant) => isFalseSurvivor(mutant, testCount));
 
   if (facts.error !== undefined) {
-    return { report: outcome(facts, 'error', survivors, totals, facts.error), exitCode: 1 };
+    return {
+      report: outcome(facts, 'error', survivors, falseSurvivors, totals, facts.error),
+      exitCode: 1,
+    };
   }
 
   if (facts.unmutated.length > 0) {
     const error = unmutatedMessage(facts.unmutated);
 
-    return { report: outcome(facts, 'error', survivors, totals, error), exitCode: 1 };
+    return {
+      report: outcome(facts, 'error', survivors, falseSurvivors, totals, error),
+      exitCode: 1,
+    };
   }
 
   if (totals.mutants === 0) {
-    return { report: outcome(facts, 'nothing', survivors, totals), exitCode: 0 };
+    return { report: outcome(facts, 'nothing', survivors, falseSurvivors, totals), exitCode: 0 };
   }
 
   if (totals.invalid === totals.mutants) {
     const error = 'Every mutant failed to compile or run.';
 
-    return { report: outcome(facts, 'error', survivors, totals, error), exitCode: 1 };
+    return {
+      report: outcome(facts, 'error', survivors, falseSurvivors, totals, error),
+      exitCode: 1,
+    };
   }
 
   if (survivors.length > 0) {
     const { status, exitCode } = survivorsStatus(facts.mode);
 
-    return { report: outcome(facts, status, survivors, totals), exitCode };
+    return { report: outcome(facts, status, survivors, falseSurvivors, totals), exitCode };
   }
 
-  return { report: outcome(facts, 'pass', survivors, totals), exitCode: 0 };
+  return { report: outcome(facts, 'pass', survivors, falseSurvivors, totals), exitCode: 0 };
 };
 
 // A run that failed before it chose a mode or counted mutants.
@@ -203,6 +242,7 @@ export const failedMutationReport = (
   status: 'error',
   error,
   survivors: [],
+  falseSurvivors: [],
   unmutated: [],
   totals: emptyTotals,
 });
