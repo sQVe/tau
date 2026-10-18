@@ -1,6 +1,8 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import type { ToolCall } from '@earendil-works/pi-ai';
+import { validateToolArguments } from '@earendil-works/pi-ai';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
@@ -396,5 +398,148 @@ describe('read errors', () => {
 
     await expect(read()).rejects.toThrow(error);
     expect(await feedbackDirectories(root)).toEqual([]);
+  });
+});
+
+const threadPage = (node: unknown) => [
+  { data: { repository: { pullRequest: { reviewThreads: { nodes: [node] } } } } },
+];
+
+describe('read output of the wrong shape', () => {
+  const author = { login: 'reviewer', typename: 'User' };
+
+  const threadNode = (change: Record<string, unknown> = {}) => ({
+    id: 'thread-1',
+    isResolved: false,
+    isOutdated: false,
+    path: 'src/tau.ts',
+    line: 12,
+    viewerCanReply: true,
+    viewerCanResolve: true,
+    comments: {
+      pageInfo: { hasNextPage: false },
+      nodes: [
+        {
+          databaseId: 101,
+          author,
+          body: 'Rename this.',
+          url: 'u',
+          createdAt: 'c',
+          updatedAt: 'u',
+        },
+      ],
+    },
+    ...change,
+  });
+
+  const pullRequest = {
+    number: 7,
+    url: 'https://github.com/sQVe/tau/pull/7',
+    state: 'OPEN',
+    author: { login: 'sqve' },
+    headRefOid: 'abc123',
+  };
+
+  it.each([
+    { key: 'user' as const, output: {} },
+    { key: 'pr view' as const, output: {} },
+    { key: 'pr view' as const, output: { ...pullRequest, author: {} } },
+    { key: 'graphql' as const, output: threadPage(threadNode({ comments: { nodes: [] } })) },
+    {
+      key: 'graphql' as const,
+      output: threadPage(
+        threadNode({
+          comments: {
+            pageInfo: {},
+            nodes: [
+              {
+                databaseId: 101,
+                author,
+                body: 'b',
+                url: 'u',
+                createdAt: 'c',
+                updatedAt: 'u',
+              },
+            ],
+          },
+        }),
+      ),
+    },
+    {
+      key: 'graphql' as const,
+      output: threadPage(
+        threadNode({
+          comments: {
+            pageInfo: { hasNextPage: false },
+            nodes: [
+              {
+                databaseId: 101,
+                author: {},
+                body: 'b',
+                url: 'u',
+                createdAt: 'c',
+                updatedAt: 'u',
+              },
+            ],
+          },
+        }),
+      ),
+    },
+    { key: 'reviews' as const, output: [[{}]] },
+    {
+      key: 'reviews' as const,
+      output: [[{ id: 1, user: {}, state: 'COMMENTED', body: 'b', html_url: 'u' }]],
+    },
+    { key: 'comments' as const, output: [[{ id: 1, user: {}, body: 'b', html_url: 'u' }]] },
+  ])('refuses the $key output $output and creates no directory', async ({ key, output }) => {
+    const { root, fake, read } = await setUp();
+
+    holdFeedback(fake);
+    fake.overrideOutput(key, JSON.stringify(output));
+
+    await expect(read()).rejects.toThrow('printed unexpected output');
+    expect(await feedbackDirectories(root)).toEqual([]);
+  });
+});
+
+const validated = (tool: ReturnType<typeof createPrFeedbackTool>, call: unknown) =>
+  validateToolArguments(tool, {
+    type: 'toolCall',
+    id: 'call',
+    name: tool.name,
+    arguments: call as ToolCall['arguments'],
+  }) as PrFeedbackInput;
+
+describe('tool arguments', () => {
+  it.each([
+    { call: {} },
+    { call: { action: 'merge' } },
+    { call: { action: 'read', repository: 'github.com/sQVe/tau', pr: 0 } },
+    { call: { action: 'read', repository: {}, pr: 7 } },
+    { call: { action: 'post', directory: {} } },
+    { call: { action: 'post', stateToken: [] } },
+    { call: { action: 'checks', head: {} } },
+  ])('refuses the arguments $call before anything runs', async ({ call }) => {
+    const { root, fake } = await setUp();
+    const tool = createPrFeedbackTool(fake.exec);
+
+    expect(() => validated(tool, call)).toThrow(Error);
+    expect(fake.calls).toEqual([]);
+    expect(await feedbackDirectories(root)).toEqual([]);
+  });
+
+  it('accepts the arguments of a read and runs it', async () => {
+    const { root, fake } = await setUp();
+    const tool = createPrFeedbackTool(fake.exec);
+
+    const parameters = validated(tool, {
+      action: 'read',
+      repository: 'github.com/sQVe/tau',
+      pr: 7,
+    });
+
+    await tool.execute('call', parameters, undefined, undefined, noUiContext(root));
+
+    expect(await feedbackDirectories(root)).toHaveLength(1);
   });
 });

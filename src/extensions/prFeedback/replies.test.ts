@@ -1,4 +1,4 @@
-import { copyFile, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -75,8 +75,8 @@ describe('saved records', () => {
     expect(await readPosted(directory)).toMatchObject({
       version: 2,
       writes: [
-        { kind: 'reply', state: 'posted', commentId: 1000 },
-        { kind: 'resolve', state: 'posted', commentId: null },
+        { kind: 'reply', state: 'posted', commentId: 1000, earlierCommentIds: [] },
+        { kind: 'resolve', state: 'posted', commentId: null, earlierCommentIds: [] },
       ],
     });
   });
@@ -103,6 +103,134 @@ describe('saved records', () => {
     await writeFile(join(directory, 'replies.json'), '{"version": 1,');
 
     await expect(readReplies(directory)).rejects.toThrow(/^Malformed .*replies\.json: not JSON/u);
+  });
+});
+
+const postedWrite = {
+  kind: 'reply',
+  thread: 'T1',
+  url: 'u',
+  text: 'Done.',
+  commentId: 5,
+};
+
+const postedVersion2Write = {
+  ...postedWrite,
+  state: 'posted',
+  earlierCommentIds: [],
+};
+
+const threadEntry = { id: 'T1', reply: 'Done.', resolve: false };
+
+describe('records of the wrong shape', () => {
+  it.each([
+    {
+      case: 'replies.json with an extra top-level field',
+      file: 'replies.json',
+      read: readReplies,
+      record: { version: 1, threads: [], comment: null, extra: 1 },
+    },
+    {
+      case: 'replies.json with an extra thread field',
+      file: 'replies.json',
+      read: readReplies,
+      record: {
+        version: 1,
+        threads: [{ ...threadEntry, extra: 1 }],
+        comment: null,
+      },
+    },
+    {
+      case: 'replies.json with an extra comment field',
+      file: 'replies.json',
+      read: readReplies,
+      record: {
+        version: 1,
+        threads: [],
+        comment: { body: 'Hi.', answers: [], extra: 1 },
+      },
+    },
+    {
+      case: 'posted.json with an extra top-level field',
+      file: 'posted.json',
+      read: readPosted,
+      record: { version: 2, writes: [], extra: 1 },
+    },
+    {
+      case: 'posted.json with an extra write field',
+      file: 'posted.json',
+      read: readPosted,
+      record: { version: 2, writes: [{ ...postedVersion2Write, extra: 1 }] },
+    },
+    {
+      case: 'posted.json with an empty thread',
+      file: 'posted.json',
+      read: readPosted,
+      record: { version: 2, writes: [{ ...postedVersion2Write, thread: '' }] },
+    },
+    {
+      case: 'version 1 posted.json with an extra top-level field',
+      file: 'posted.json',
+      read: readPosted,
+      record: { version: 1, writes: [], extra: 1 },
+    },
+    {
+      case: 'version 1 posted.json with an extra write field',
+      file: 'posted.json',
+      read: readPosted,
+      record: { version: 1, writes: [{ ...postedWrite, extra: 1 }] },
+    },
+    {
+      case: 'version 1 posted.json with an empty thread',
+      file: 'posted.json',
+      read: readPosted,
+      record: { version: 1, writes: [{ ...postedWrite, thread: '' }] },
+    },
+    {
+      case: 'version 1 posted.json with writes that are not a list',
+      file: 'posted.json',
+      read: readPosted,
+      record: { version: 1, writes: 'none' },
+    },
+    {
+      case: 'pull-request.json with an extra field',
+      file: 'pull-request.json',
+      read: readPullRequestRecord,
+      record: {
+        version: 1,
+        repository: 'github.com/sQVe/tau',
+        pr: 7,
+        extra: 1,
+      },
+    },
+    {
+      case: 'pull-request.json with pull request 0',
+      file: 'pull-request.json',
+      read: readPullRequestRecord,
+      record: { version: 1, repository: 'github.com/sQVe/tau', pr: 0 },
+    },
+    {
+      case: 'pull-request.json with a missing repository',
+      file: 'pull-request.json',
+      read: readPullRequestRecord,
+      record: { version: 1, pr: 7 },
+    },
+  ])('rejects $case', async ({ file, read, record }) => {
+    const directory = await roundDirectory();
+
+    await writeFile(join(directory, file), JSON.stringify(record));
+
+    await expect(read(directory)).rejects.toThrow(/^Malformed .*\.json: /u);
+  });
+});
+
+describe('unreadable records', () => {
+  it.each(records)('refuses a $file that cannot be read', async ({ file, read }) => {
+    const directory = await roundDirectory();
+
+    await mkdir(join(directory, file));
+
+    await expect(read(directory)).rejects.toMatchObject({ code: 'EISDIR' });
   });
 });
 

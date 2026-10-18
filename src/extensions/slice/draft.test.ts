@@ -160,6 +160,135 @@ describe('readDraft', () => {
   });
 });
 
+describe('a saved plan with invalid fields', () => {
+  type Fields = Record<string, unknown>;
+
+  const withSlice = (change: Fields) => ({ slices: [{ ...firstSlice, ...change }, secondSlice] });
+
+  const firstSlice = {
+    identifier: null,
+    title: 'Record the lifecycle',
+    file: 'slice-1.md',
+    blockedBy: [],
+  };
+
+  const secondSlice = {
+    identifier: null,
+    title: 'Add the slice skill',
+    file: 'slice-2.md',
+    blockedBy: [1],
+  };
+
+  it.each([
+    { case: 'a body file outside the draft', ...withSlice({ file: '../secret.md' }) },
+    { case: 'a body file in a subdirectory', ...withSlice({ file: 'sub/one.md' }) },
+    { case: 'a body file that starts with a dot', ...withSlice({ file: '.one.md' }) },
+    { case: 'a body file that is not markdown', ...withSlice({ file: 'one.txt' }) },
+    { case: 'a slice identifier in lowercase', ...withSlice({ identifier: 'me-1' }) },
+    { case: 'a slice identifier without a number', ...withSlice({ identifier: 'ME-x' }) },
+    { case: 'an empty slice title', ...withSlice({ title: '' }) },
+    { case: 'a blank slice title', ...withSlice({ title: '  \t' }) },
+    { case: 'a blocker of zero', ...withSlice({ blockedBy: [0] }) },
+    { case: 'a negative blocker', ...withSlice({ blockedBy: [-1] }) },
+    { case: 'a blocker that is not an integer', ...withSlice({ blockedBy: [1.5] }) },
+    { case: 'an unknown slice field', ...withSlice({ extra: true }) },
+    { case: 'an empty team', route: { team: '', project: null } },
+    { case: 'a team that is not text', route: { team: 7, project: null } },
+    { case: 'an empty project', route: { team: 'ME', project: '' } },
+    { case: 'a project that is not text', route: { team: 'ME', project: 7 } },
+    { case: 'an unknown route field', route: { team: 'ME', project: null, extra: 1 } },
+    {
+      case: 'a container identifier in lowercase',
+      container: { identifier: 'me-1', title: 'Container', file: 'container.md' },
+    },
+    {
+      case: 'a blank container title',
+      container: { identifier: null, title: ' ', file: 'container.md' },
+    },
+    {
+      case: 'a container body file outside the draft',
+      container: { identifier: null, title: 'Container', file: '../container.md' },
+    },
+    {
+      case: 'an unknown container field',
+      container: { identifier: null, title: 'Container', file: 'container.md', extra: 1 },
+    },
+    { case: 'an unknown plan field', extra: 1 },
+  ])('refuses $case', async ({ case: _case, ...fields }) => {
+    const directory = await draftDirectory('version-1.json');
+    const plan = { ...(await readPlan(directory)), ...fields };
+
+    await writeFile(join(directory, 'plan.json'), JSON.stringify(plan));
+
+    const outcome = await readWithoutChanges(directory, () => readPlan(directory));
+
+    expect(outcome.error).toMatch(/^Malformed slice draft/);
+  });
+
+  it('accepts a plan without a project', async () => {
+    const directory = await draftDirectory('version-1.json');
+    const plan = { ...(await readPlan(directory)), route: { team: 'ME', project: null } };
+
+    await writeFile(join(directory, 'plan.json'), JSON.stringify(plan));
+
+    expect((await readPlan(directory))?.route.project).toBeNull();
+  });
+
+  it('refuses two slices with the same title', async () => {
+    const directory = await draftDirectory('version-1.json');
+    const plan = (await readPlan(directory))!;
+
+    plan.slices[1]!.title = plan.slices[0]!.title;
+
+    await writeFile(join(directory, 'plan.json'), JSON.stringify(plan));
+
+    const outcome = await readWithoutChanges(directory, () => readPlan(directory));
+
+    expect(outcome.error).toMatch(/^Malformed slice draft.*two slices use the title/);
+  });
+
+  it('accepts slices with different titles', async () => {
+    const directory = await draftDirectory('version-1.json');
+
+    expect((await readPlan(directory))?.slices).toHaveLength(2);
+  });
+
+  it.each([
+    { case: 'null', text: 'null' },
+    { case: 'a number', text: '5' },
+    { case: 'a string', text: '"plan"' },
+    { case: 'an object without a version', text: '{}' },
+    { case: 'a version that is text', text: '{"version":"9"}' },
+    { case: 'a version of null', text: '{"version":null}' },
+  ])('calls $case malformed, not newer', async ({ text }) => {
+    const directory = await draftDirectory(undefined);
+
+    await writeFile(join(directory, 'plan.json'), text);
+
+    const outcome = await readWithoutChanges(directory, () => readPlan(directory));
+
+    expect(outcome.error).toMatch(/^Malformed slice draft/);
+  });
+});
+
+describe('unreadable draft files', () => {
+  it('rejects a plan that cannot be read instead of treating it as missing', async () => {
+    const directory = await draftDirectory(undefined);
+
+    await mkdir(join(directory, 'plan.json'));
+
+    await expect(readDraft(directory)).rejects.toThrow(/EISDIR/);
+  });
+
+  it('rejects a body that cannot be read instead of naming it missing', async () => {
+    const directory = await draftDirectory('version-1.json');
+
+    await mkdir(join(directory, 'container.md'));
+
+    await expect(readDraft(directory)).rejects.toThrow(/EISDIR/);
+  });
+});
+
 describe('writePlan', () => {
   it('refuses to save through a linked plan', async () => {
     const directory = await draftDirectory(undefined);
@@ -190,6 +319,13 @@ describe('writePlan', () => {
     expect(await readdir(directory)).toEqual(['plan.json']);
   });
 
+  it('reports the write error when the draft directory does not exist', async () => {
+    const directory = join(await draftDirectory(undefined), 'missing');
+    const plan = (await readPlan(await draftDirectory('version-1.json')))!;
+
+    await expect(writePlan(directory, plan)).rejects.toMatchObject({ syscall: 'open' });
+  });
+
   it('leaves no temporary file when the plan cannot be replaced', async () => {
     const directory = await draftDirectory(undefined);
     const plan = (await readPlan(await draftDirectory('version-1.json')))!;
@@ -203,6 +339,14 @@ describe('writePlan', () => {
 });
 
 describe('rejectLinkedDraftFiles', () => {
+  it('accepts a draft with a subdirectory and a plain file', async () => {
+    const directory = await draftDirectory('version-1.json');
+
+    await mkdir(join(directory, 'notes'));
+
+    await expect(rejectLinkedDraftFiles(directory)).resolves.toBeUndefined();
+  });
+
   it('refuses a draft file with another hard link', async () => {
     const directory = await draftDirectory('version-1.json');
     const outside = join(await draftDirectory(undefined), 'secret.md');

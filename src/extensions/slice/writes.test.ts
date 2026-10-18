@@ -272,11 +272,153 @@ describe('planWrites', () => {
         ),
       ],
     },
+    {
+      case: 'existing slice that gains a blocker on a recorded slice',
+      draft: draft(['ME-2', 'ME-3'], [[], [1]]),
+      container: container([child(1), child(2)]),
+      writes: [{ kind: 'addBlockedBy', number: 2, blocker: 1 }],
+      problems: [],
+    },
+    {
+      case: 'existing slice that gains a blocker on a slice not yet created',
+      draft: draft(['ME-2', null], [[2], []]),
+      container: container([child(1)]),
+      writes: [
+        { kind: 'createSlice', number: 2, sortOrder: 2 },
+        { kind: 'addBlockedBy', number: 1, blocker: 2 },
+      ],
+      problems: [],
+    },
+    {
+      case: 'existing slice that already has one blocker and gains another',
+      draft: draft(['ME-2', 'ME-3', 'ME-4'], [[], [], [1, 2]]),
+      container: container([child(1), child(2), child(3, { blockedBy: ['ME-3'] })]),
+      writes: [{ kind: 'addBlockedBy', number: 3, blocker: 1 }],
+      problems: [],
+    },
+    {
+      case: 'completed slice with no changes',
+      draft: draft(['ME-2']),
+      container: container([child(1, { completed: true })]),
+      writes: [],
+      problems: [],
+    },
+    {
+      case: 'container in another team',
+      draft: draft([]),
+      container: container([], { team: { id: 'other', key: 'XX' } }),
+      writes: [],
+      problems: [
+        expect.stringMatching(/in team XX and project Tau, but the draft routes to team ME/),
+      ],
+    },
+    {
+      case: 'unrecorded child with another title',
+      draft: draft([null]),
+      container: container([child(5, { title: 'Unrelated' })]),
+      writes: [{ kind: 'createSlice', number: 1, sortOrder: 0 }],
+      problems: [],
+    },
+    {
+      case: 'recorded child that Linear renamed to the title of an unrecorded slice',
+      draft: draft([null, 'ME-3']),
+      container: container([child(2, { title: 'Slice 1' })]),
+      writes: [
+        { kind: 'createSlice', number: 1, sortOrder: 1 },
+        { kind: 'updateSlice', number: 2, identifier: 'ME-3', title: true, description: false },
+      ],
+      problems: [],
+    },
+    {
+      case: 'recorded slice and an unrecorded child with its title',
+      draft: draft(['ME-2']),
+      container: container([child(1), child(9, { title: 'Slice 1' })]),
+      writes: [],
+      problems: [],
+    },
+    {
+      case: 'marker in the middle of a line is not a fence',
+      draft: { ...draft(['ME-2']), sliceBodies: ['use ```code``` here\n- a'] },
+      container: container([child(1, { description: 'use ```code``` here\n* a' })]),
+      writes: [],
+      problems: [],
+    },
+    {
+      case: 'tilde pair is not a fence',
+      draft: { ...draft(['ME-2']), sliceBodies: ['~~ strike\n- a'] },
+      container: container([child(1, { description: '~~ strike\n* a' })]),
+      writes: [],
+      problems: [],
+    },
+    {
+      case: 'text before a fence marker does not close the fence',
+      draft: { ...draft(['ME-2']), sliceBodies: ['```\n* a\nx ```\n- b\n```'] },
+      container: container([child(1, { description: '```\n* a\nx ```\n* b\n```' })]),
+      writes: [
+        { kind: 'updateSlice', number: 1, identifier: 'ME-2', title: false, description: true },
+      ],
+      problems: [],
+    },
+    {
+      case: 'indented closing fence',
+      draft: { ...draft(['ME-2']), sliceBodies: ['```\n* a\n  ```\n- b'] },
+      container: container([child(1, { description: '```\n* a\n  ```\n* b' })]),
+      writes: [],
+      problems: [],
+    },
+    {
+      case: 'closing fence with trailing spaces',
+      draft: { ...draft(['ME-2']), sliceBodies: ['```\n* a\n```  \n- b'] },
+      container: container([child(1, { description: '```\n* a\n```  \n* b' })]),
+      writes: [],
+      problems: [],
+    },
+    {
+      case: 'closed tilde fence',
+      draft: { ...draft(['ME-2']), sliceBodies: ['~~~\n* a\n~~~\n- b'] },
+      container: container([child(1, { description: '~~~\n* a\n~~~\n* b' })]),
+      writes: [],
+      problems: [],
+    },
+    {
+      case: 'dash inside a line',
+      draft: { ...draft(['ME-2']), sliceBodies: ['a * b'] },
+      container: container([child(1, { description: 'a - b' })]),
+      writes: [
+        { kind: 'updateSlice', number: 1, identifier: 'ME-2', title: false, description: true },
+      ],
+      problems: [],
+    },
+    {
+      case: 'open slice after a merged one that is in order',
+      draft: draft(['ME-2', 'ME-3']),
+      container: container([child(1, { merged: true }), child(2)]),
+      writes: [],
+      problems: [],
+    },
+    {
+      case: 'open slice with the sort order of the slice before it',
+      draft: draft(['ME-2', 'ME-3']),
+      container: container([child(1), child(2, { sortOrder: 1 })]),
+      writes: [{ kind: 'moveSlice', identifier: 'ME-3', sortOrder: 2 }],
+      problems: [],
+    },
+    {
+      case: 'open slice with the sort order of the merged slice after it',
+      draft: draft(['ME-2', 'ME-3']),
+      container: container([child(1, { sortOrder: 2 }), child(2, { merged: true, sortOrder: 2 })]),
+      writes: [{ kind: 'moveSlice', identifier: 'ME-2', sortOrder: 1 }],
+      problems: [],
+    },
   ])('$case', ({ draft: saved, container: linear, titleMatches, writes, problems }) => {
     const plan = planWrites(saved, linear, titleMatches ?? []);
 
     expect(plan.writes).toEqual(writes);
     expect(plan.problems).toEqual(problems);
+  });
+
+  it('drops nothing when the container does not exist yet', () => {
+    expect(planWrites(draft([null]), undefined, []).dropped).toEqual([]);
   });
 
   it('lists children the plan leaves out as dropped', () => {
@@ -386,5 +528,17 @@ describe('plannedSortOrders', () => {
     [[ordered(3, true, 'A'), undefined, ordered(4, true, 'B'), undefined]],
   ])('puts unmerged slices in plan order', (slices) => {
     expect(isInPlanOrder(applyOrders(slices))).toBe(true);
+  });
+});
+
+describe('isInPlanOrder', () => {
+  it.each([
+    { case: 'ascending', orders: [1, 2, 3], inOrder: true },
+    { case: 'equal neighbors', orders: [1, 1], inOrder: false },
+    { case: 'descending', orders: [2, 1], inOrder: false },
+  ])('says $inOrder for $case sort orders', ({ orders, inOrder }) => {
+    const slices = orders.map((order, index) => ordered(order, false, `ME-${index}`));
+
+    expect(isInPlanOrder(slices)).toBe(inOrder);
   });
 });

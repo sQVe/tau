@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { PostedWrite } from './replies.js';
 import type { Comment, Review, Thread } from './threads.js';
-import { planWrites, settleWrites } from './writes.js';
+import { planWrites, settleWrites, targetCommentIds } from './writes.js';
 import type { SettleFacts, WriteFacts } from './writes.js';
 
 const thread = (id: string, change: Partial<Thread> = {}): Thread => ({
@@ -366,5 +366,59 @@ describe('settleWrites', () => {
     },
   ])('settles $case', ({ facts: given, settled }) => {
     expect(settleWrites(given)).toEqual(settled);
+  });
+});
+
+describe('writes across threads', () => {
+  it('plans the reply and resolve of a thread when only another thread has them recorded', () => {
+    const planned = planWrites(
+      facts({
+        entries: [{ id: 'bot', reply: 'Done.', resolve: true }],
+        recorded: [
+          { kind: 'reply', thread: 'person' },
+          { kind: 'resolve', thread: 'person' },
+        ],
+      }),
+    );
+
+    expect(planned.map((write) => write.kind)).toEqual(['reply', 'resolve']);
+  });
+
+  it('lists the comments of the thread a write targets', () => {
+    const other = thread('other', {
+      comments: [{ ...thread('other').comments[0]!, id: 555 }],
+    });
+
+    const feedback = {
+      threads: [thread('person'), other],
+      comments: [comment(301, false)],
+    };
+
+    expect(targetCommentIds({ kind: 'reply', thread: 'other' }, feedback)).toEqual([555]);
+    expect(targetCommentIds({ kind: 'reply', thread: 'gone' }, feedback)).toEqual([]);
+    expect(targetCommentIds({ kind: 'comment', thread: null }, feedback)).toEqual([301]);
+  });
+
+  it('settles a resolve as posted when only other threads are unresolved', () => {
+    const settled = settleWrites(
+      settleFacts({
+        recorded: [recordedWrite('resolve', { thread: 'gone' })],
+        threads: [thread('person')],
+        unmatched: 'keep',
+      }),
+    );
+
+    expect(settled).toEqual([recordedWrite('resolve', { thread: 'gone', state: 'posted' })]);
+  });
+
+  it('lets one comment settle only one uncertain write', () => {
+    const settled = settleWrites(
+      settleFacts({
+        recorded: [recordedWrite('reply'), recordedWrite('reply')],
+        threads: [threadWithReply(viewerComment(900, 'Renamed.'))],
+      }),
+    );
+
+    expect(settled).toEqual([recordedWrite('reply', { state: 'posted', commentId: 900 })]);
   });
 });

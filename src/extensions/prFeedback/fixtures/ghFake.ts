@@ -49,6 +49,7 @@ type FakeJobLog = { log: string; killed?: boolean } | { code: number; stderr: st
 interface FakeCall {
   command: string;
   commandArguments: string[];
+  signal: AbortSignal | undefined;
 }
 
 type ReadKey = 'user' | 'pr view' | 'pr checks' | 'graphql' | 'reviews' | 'comments';
@@ -350,8 +351,8 @@ export const createGhFake = (): GhFake => {
     return failures.has(key) || failingWrites.has(writeAttempts);
   };
 
-  fake.exec = async (command, commandArguments) => {
-    calls.push({ command, commandArguments });
+  fake.exec = async (command, commandArguments, options) => {
+    calls.push({ command, commandArguments, signal: options?.signal });
 
     const key = command === 'gh' ? commandKey(commandArguments) : undefined;
 
