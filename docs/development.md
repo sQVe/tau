@@ -56,6 +56,12 @@ files. Both use [StrykerJS](https://stryker-mutator.io) with the root `stryker.c
 script prints a JSON report. See [scripts/mutation.md](../scripts/mutation.md) for the report and
 exit codes.
 
+The `Mutation` CI job runs `changed` against the pull request's base. It fails on exit 2 or exit 1.
+Exit 2 means a mutant survived on a changed line. Exit 1 means an error, such as a file over the
+mutant cap, which the report lists in `unmutated`, or changed files that no test imports. Read the
+JSON report at the end of the step's log. It lists each survivor with its file and line. Add a test
+that fails when that line changes, then push again.
+
 ## Try Tau
 
 To try this checkout in Pi without changing global settings:
