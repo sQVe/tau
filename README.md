@@ -36,6 +36,15 @@ To run the full check of a repository with the `full_check` tool, add its comman
 Only one full check runs at a time on the machine. A passing log is saved under `.tau/checks` and
 reused while the head, base, command, and uncommitted changes stay the same.
 
+To run the mutation script with the `mutation_check` tool, add its command to `.pi/tau.json` in the
+repository. Tau reads this key only from the repository file, and only when the project is trusted:
+
+```json
+{ "mutation": { "argv": ["node", "scripts/mutation.ts"] } }
+```
+
+The tool shares the lock of the full check.
+
 To limit the models Tau picks for workers, add `allowedModels` to either file:
 
 ```json

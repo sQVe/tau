@@ -1,5 +1,8 @@
 {
   "tdd": {
     "productionGlobs": ["{src,scripts}/**/*.ts"]
+  },
+  "mutation": {
+    "argv": ["node", "scripts/mutation.ts"]
   }
 }

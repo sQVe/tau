@@ -77,6 +77,7 @@ const pureModules = [
   'src/extensions/fullCheck/groupMembers.ts',
   'src/extensions/fullCheck/idleDecision.ts',
   'src/extensions/fullCheck/lockHolderDecision.ts',
+  'src/extensions/fullCheck/mutationVerdict.ts',
   'src/extensions/fullCheck/reuseDecision.ts',
   'src/extensions/pr/evidenceDecisions.ts',
   'src/extensions/pr/reuseDecisions.ts',
