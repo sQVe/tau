@@ -49,6 +49,12 @@ it.each([
     expected: 'Original subject',
   },
   {
+    name: 'autosquash prefix after the first word',
+    subject: 'feat: fixup! Original subject',
+    candidates: [],
+    expected: 'feat: fixup! Original subject',
+  },
+  {
     name: 'duplicate',
     candidates: [{ commitHash: 'other', subject: 'Original subject' }],
     expected: 'target-hash',
@@ -70,6 +76,8 @@ it.each([
   { subject: '   \t ', word: '' },
   { subject: 'fix: same subject', word: 'subject' },
   { subject: ' fix: same\nsubject  ', word: 'subject' },
+  { subject: 'feat: implementation of it', word: 'implementation' },
+  { subject: 'aaa bbb', word: 'aaa' },
 ])('selects a whitespace-free search word from $subject', ({ subject, word }) => {
   expect(fixupSubjectSearchWord(subject)).toBe(word);
 });

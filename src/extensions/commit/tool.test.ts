@@ -13,6 +13,7 @@ import {
   commitContext,
   executeCommit,
   fakeCommit,
+  execInRequestedDirectory,
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
 import { commitFailedError, validatePaths, validateSubject } from './validation.js';
@@ -208,11 +209,7 @@ describe('commitTool.execute', () => {
 
     const tool = createCommitTool({
       exec: async (command, commandArguments, options) => {
-        const result = await runCommand(
-          command,
-          commandArguments,
-          options?.cwd ?? repositoryDirectory,
-        );
+        const result = await execInRequestedDirectory(command, commandArguments, options);
 
         // Simulate a group-1 hook that edits a later group's file without staging it.
         if (commandArguments[0] === 'commit') {
@@ -281,7 +278,7 @@ describe('commitTool.execute', () => {
           await chmod(join(repositoryDirectory, '.git/hooks/pre-commit'), 0o755);
         }
 
-        return runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory);
+        return execInRequestedDirectory(command, commandArguments, options);
       },
     });
 
@@ -499,7 +496,7 @@ describe('commitTool.execute', () => {
 
     const commitTool = createCommitTool({
       exec(command: string, commandArguments: string[], options?: { cwd?: string }) {
-        return runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory);
+        return execInRequestedDirectory(command, commandArguments, options);
       },
     });
 
@@ -862,7 +859,7 @@ describe('commits without approvals', () => {
 
     const tool = createCommitTool({
       exec: (command, commandArguments, options) =>
-        runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
+        execInRequestedDirectory(command, commandArguments, options),
     });
 
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');

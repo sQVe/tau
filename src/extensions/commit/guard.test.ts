@@ -65,6 +65,14 @@ const runCommand = async (
   }
 };
 
+const execInRequestedDirectory: ExtensionAPI['exec'] = (command, commandArguments, options) => {
+  if (options?.cwd === undefined) {
+    throw new Error(`${command} ${commandArguments.join(' ')} ran without a cwd`);
+  }
+
+  return runCommand(command, commandArguments, options.cwd);
+};
+
 const git = async (repositoryDirectory: string, commandArguments: string[]): Promise<string> => {
   const result = await runCommand('git', commandArguments, repositoryDirectory);
 
@@ -93,6 +101,16 @@ const writeRepositoryFile = async (
 
   await mkdir(dirname(fullPath), { recursive: true });
   await writeFile(fullPath, content);
+};
+
+const nest = (levels: number) => {
+  let command = 'echo hello';
+
+  for (let level = 0; level < levels; level += 1) {
+    command = `bash -c '${command.replaceAll("'", "'\\''")}'`;
+  }
+
+  return command;
 };
 
 describe('guardToolCall', () => {
@@ -133,7 +151,6 @@ describe('guardToolCall', () => {
     "sh -lc 'git commit -m x'",
     "bash -lc 'git commit -m x'",
     "bash -c   'git commit -m x'",
-    "bash -c $'git commit -m x'",
   ])('blocks shell commands that contain git commit: %s', (command) => {
     expect(guardToolCall(makeBashEvent(command))).toEqual({
       block: true,
@@ -276,6 +293,94 @@ describe('guardToolCall', () => {
   ])('allows commands that only mention git commit in data: %s', (command) => {
     expect(guardToolCall(makeBashEvent(command))).toBeUndefined();
   });
+
+  it.each([
+    '(cd x); git commit -m x',
+    'a ) git commit -m x',
+    '# note\ngit commit -m x',
+    'echo a#b\ngit commit -m x',
+    'echo a#b; git commit -m x',
+    'git commit>out',
+    'git commit&>/dev/null',
+    'git>/dev/null commit',
+    'git 2>&1 commit',
+    'git\tcommit',
+    'echo $(echo $((1 + 1)); git commit)',
+    'echo "$(a (b) c; git commit)"',
+    'bash -c "git commit -m $msg"',
+    'bash -c "echo \\$(git commit)"',
+    'bash -c "echo `git commit`"',
+    'bash -c "a\\"; git commit"',
+    'git commit <<< message',
+    'git commit <<-EOF\n\tbody\n\tEOF',
+    'cat <<EOF | sh\ngit commit -m x\nEOF',
+    'cat <<`EOF`\n$(git commit)\n`EOF`',
+    "bash -c $'git commit -m x'",
+    'bash -c $"git commit -m x"',
+    `git \${x} commit`,
+    'git --config-env=alias.ab=NAME status',
+    'git --config-env alias.ab=NAME status',
+  ])('blocks parsed commands that run git commit: %s', (command) => {
+    expect(guardToolCall(makeBashEvent(command))).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it.each([
+    "echo $'git commit",
+    'echo `git commit',
+    "echo 'x'; git -C x commit '",
+    'echo "x git commit',
+    'echo $(echo "git commit" ',
+    "echo <<; echo 'git commit'",
+    'echo ${x git commit',
+  ])('blocks unparseable input that mentions git commit: %s', (command) => {
+    expect(guardToolCall(makeBashEvent(command))).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it.each(["echo $'abc", 'echo `abc', 'echo "abc', 'echo $(abc', "echo $'abc\\"])(
+    'allows unparseable input without git commit: %s',
+    (command) => {
+      expect(guardToolCall(makeBashEvent(command))).toBeUndefined();
+    },
+  );
+
+  it.each([
+    'gh pr create --body "$(cat <<\'EOF\'\nDo not run `git commit` here.\nEOF\n)"',
+    'gh pr create --body "$(cat <<"EOF"\nDo not run `git commit` here.\nEOF\n)"',
+    'gh pr create --body "$(cat <<\\EOF\nDo not run `git commit` here.\nEOF\n)"',
+    "cat <<'EOF' > notes.md\nDo not run `git commit` here.\nEOF",
+    'git status\ncat <<E"O"F\n$(git commit)\nEOF',
+    "cat <<$'EOF'\n$(git commit)\nEOF",
+    'git log x--config-env=alias.ab=y',
+    'git -c alias.commit=status status',
+    'commit git status',
+    'git -C x status',
+  ])('allows data that only mentions git commit: %s', (command) => {
+    expect(guardToolCall(makeBashEvent(command))).toBeUndefined();
+  });
+
+  it('blocks git commit in backticks inside an unquoted heredoc body', () => {
+    const command = 'cat <<EOF\nRun `git commit` now.\nEOF';
+
+    expect(guardToolCall(makeBashEvent(command))).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
+
+  it('allows nesting up to the inspection budget and blocks deeper nesting', () => {
+    expect(guardToolCall(makeBashEvent(nest(8)))).toBeUndefined();
+
+    expect(guardToolCall(makeBashEvent(nest(9)))).toEqual({
+      block: true,
+      reason: commitGuardReason,
+    });
+  });
 });
 
 const createFakePi = (executeCommand?: ExtensionAPI['exec']) => {
@@ -306,7 +411,7 @@ describe('commitExtension', () => {
     const repositoryDirectory = await createTemporaryRepository();
 
     const { fakePi, registeredTool } = createFakePi((command, commandArguments, options) =>
-      runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory),
+      execInRequestedDirectory(command, commandArguments, options),
     );
 
     const custom = vi.fn<() => Promise<string>>().mockResolvedValue('abort');
@@ -344,7 +449,7 @@ describe('commitExtension', () => {
       command: string,
       commandArguments: string[],
       options?: { cwd?: string },
-    ) => runCommand(command, commandArguments, options?.cwd ?? repositoryDirectory);
+    ) => execInRequestedDirectory(command, commandArguments, options);
 
     const { fakePi, registeredTool } = createFakePi(executeCommand);
 
