@@ -316,6 +316,8 @@ export const mergedConfig = (
 ): MergedConfig => ({
   ...config,
   disableBail: mode === 'audit',
+  // An incremental result from a run with bail on lists only the first killing test.
+  ...(mode === 'audit' ? { incremental: false } : {}),
   mutate,
   reporters: ['json', 'progress'],
   jsonReporter: { fileName: reportPath },

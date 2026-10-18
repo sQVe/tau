@@ -15,7 +15,8 @@ node scripts/mutation.ts audit <path>... [--max-mutants <n>] [--config <path>]
   every line of each untracked file.
 - `audit <path>...` mutates whole files.
 - `audit` runs Stryker with `disableBail: true`, so `killedBy` lists every test that fails a mutant.
-  `changed` runs with `disableBail: false`. Both override the config value.
+  `changed` runs with `disableBail: false`. Both override the config value. `audit` also sets
+  `incremental: false`, because a reused result from a run with bail on lists only one test.
 - `--max-mutants` sets the cap. The default is 500.
 - `--config` names the Stryker config. The default is `stryker.config.json` in the root.
 

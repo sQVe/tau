@@ -307,6 +307,15 @@ describe('mergedConfig bail', () => {
 
     expect(mergedConfig(config, [], 'r.json', row.mode).disableBail).toBe(row.expected);
   });
+
+  it.each([
+    { mode: 'audit' as const, expected: false },
+    { mode: 'changed' as const, expected: true },
+  ])('sets incremental $expected for $mode when the config turns it on', ({ mode, expected }) => {
+    const config = { thresholds: {}, incremental: true };
+
+    expect(mergedConfig(config, [], 'r.json', mode).incremental).toBe(expected);
+  });
 });
 
 describe('mutateConfigError', () => {
