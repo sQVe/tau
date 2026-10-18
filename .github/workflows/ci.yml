@@ -75,4 +75,4 @@ jobs:
           baseSha: ${{ github.event.pull_request.base.sha }}
         run: |
           mapfile -t command < <(jq --raw-output '.mutation.argv[]' .pi/tau.json)
-          "${command[@]}" changed "${baseSha}"
+          pnpm exec "${command[@]}" changed "${baseSha}"
