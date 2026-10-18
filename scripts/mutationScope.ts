@@ -1,3 +1,5 @@
+import type { MutationMode } from './mutationReport.ts';
+
 export type GlobMatcher = (path: string, glob: string) => boolean;
 
 export interface Command {
@@ -310,8 +312,10 @@ export const mergedConfig = (
   config: { thresholds?: Record<string, unknown> | undefined },
   mutate: string[],
   reportPath: string,
+  mode: MutationMode,
 ): MergedConfig => ({
   ...config,
+  disableBail: mode === 'audit',
   mutate,
   reporters: ['json', 'progress'],
   jsonReporter: { fileName: reportPath },
