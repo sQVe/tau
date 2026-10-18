@@ -93,10 +93,25 @@ export const parseMutationReport = (text: string): MutationReport => {
     throw new TypeError('The mutation report is invalid: survivors must be an array.');
   }
 
+  const survivorList = survivors.map((item, index) => readSurvivor(item, index));
+  const unmutated = readStrings(report.unmutated, 'unmutated');
+  const passing = status === 'pass' || status === 'nothing';
+
+  // A passing verdict is saved for reuse, so a contradictory report must not pass.
+  if (passing && survivorList.length > 0) {
+    throw new Error(`The mutation report is invalid: status ${status} must list no survivors.`);
+  }
+
+  if (passing && unmutated.length > 0) {
+    throw new Error(
+      `The mutation report is invalid: status ${status} must list no unmutated files.`,
+    );
+  }
+
   return {
     status,
     ...(typeof error === 'string' ? { error } : {}),
-    survivors: survivors.map((item, index) => readSurvivor(item, index)),
-    unmutated: readStrings(report.unmutated, 'unmutated'),
+    survivors: survivorList,
+    unmutated,
   };
 };

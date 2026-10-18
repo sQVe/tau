@@ -232,6 +232,23 @@ it('fails with an error that names a report that breaks the format', async () =>
   await expect(run()).rejects.toThrow('survivors[0]');
 });
 
+it.each([
+  { label: 'pass with survivors', report: { ...passReport, survivors: [survivor] } },
+  {
+    label: 'nothing with survivors',
+    report: { ...passReport, status: 'nothing', survivors: [survivor] },
+  },
+  { label: 'pass with unmutated files', report: { ...passReport, unmutated: ['src/b.ts'] } },
+])('rejects a $label report and saves nothing for reuse', async ({ report }) => {
+  const { configure, run, runCount } = await fixture();
+
+  await configure(report, 0);
+
+  await expect(run()).rejects.toThrow('The mutation report is invalid');
+  await expect(run()).rejects.toThrow('The mutation report is invalid');
+  expect(await runCount()).toBe(2);
+});
+
 it('parses a report with an extra top-level field', async () => {
   const { configure, run } = await fixture();
 
