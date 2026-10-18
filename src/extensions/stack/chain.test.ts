@@ -360,13 +360,14 @@ it.each([
   });
 });
 
-it('passes the abort signal to every gh call', async () => {
+it('stops when the call is cancelled before gh answers', async () => {
   const { fake } = setUp();
   const controller = new AbortController();
 
   fake.pulls = [pull(3)];
+  controller.abort();
 
-  await createStackTool(fake.exec).execute(
+  const result = await createStackTool(fake.exec).execute(
     'call',
     { action: 'chain', pullRequests: [url(3)] },
     controller.signal,
@@ -374,8 +375,7 @@ it('passes the abort signal to every gh call', async () => {
     noUiContext(process.cwd()),
   );
 
-  expect(fake.signals.length).toBeGreaterThan(0);
-  expect(fake.signals.every((signal) => signal === controller.signal)).toBe(true);
+  expect(result.details).toMatchObject({ decision: { result: 'stop' } });
 });
 
 const viewEntry = { number: 2, headRefName: 'slice-2', baseRefName: 'main', state: 'OPEN' };

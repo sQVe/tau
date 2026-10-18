@@ -526,13 +526,14 @@ it('decides unknown, with the failed read as evidence, when a tracked branch can
   });
 });
 
-it('passes the abort signal to every gh call', async () => {
+it('decides unknown when the call is cancelled before gh answers', async () => {
   const { root, fake } = await setUp();
   const controller = new AbortController();
 
   fake.pulls = [pull()];
+  controller.abort();
 
-  await createStackTool(fake.exec).execute(
+  const result = await createStackTool(fake.exec).execute(
     'call',
     { action: 'check' },
     controller.signal,
@@ -540,8 +541,11 @@ it('passes the abort signal to every gh call', async () => {
     noUiContext(root),
   );
 
-  expect(fake.signals.length).toBeGreaterThan(0);
-  expect(fake.signals.every((signal) => signal === controller.signal)).toBe(true);
+  expect(result.details).toMatchObject({
+    result: 'unknown',
+    branch: 'feature',
+    evidence: { current: { stackView: { exitCode: null } } },
+  });
 });
 
 it('decides unknown with no branch for a detached HEAD during a paused rebase', async () => {
