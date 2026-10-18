@@ -140,36 +140,30 @@ it('gives no command when fullCheck has no repositories', () => {
 });
 
 it.each([
-  {
-    name: 'fullCheck is not an object',
-    value: 'pnpm check',
-    message: 'fullCheck must be an object',
-  },
-  { name: 'fullCheck is null', value: null, message: 'fullCheck must be an object' },
+  { name: 'fullCheck is not an object', value: 'pnpm check', field: 'fullCheck' },
+  { name: 'fullCheck is null', value: null, field: 'fullCheck' },
   {
     name: 'repositories is not an object',
     value: { repositories: ['sQVe/tau'] },
-    message: 'fullCheck.repositories must be an object',
+    field: 'fullCheck.repositories',
   },
-  {
-    name: 'repositories is null',
-    value: { repositories: null },
-    message: 'fullCheck.repositories must be an object',
-  },
+  { name: 'repositories is null', value: { repositories: null }, field: 'fullCheck.repositories' },
   {
     name: 'an entry is not an object',
     value: { repositories: { 'sQVe/tau': 'pnpm check' } },
-    message: 'fullCheck.repositories.sQVe/tau must be an object',
+    field: 'fullCheck.repositories.sQVe/tau',
   },
   {
     name: 'an entry has no argv',
     value: { repositories: { 'sQVe/tau': {} } },
-    message: 'fullCheck.repositories.sQVe/tau.argv',
+    field: 'fullCheck.repositories.sQVe/tau.argv',
   },
-])('fails when $name', ({ value, message }) => {
-  const { location, write } = fixture();
+])('fails naming the user file and $field when $name', ({ value, field }) => {
+  const { location, write, userFile } = fixture();
 
   write({ fullCheck: value });
 
-  expect(() => readFullCheckArgv(location, ui, 'sQVe/tau')).toThrow(message);
+  expect(() => readFullCheckArgv(location, ui, 'sQVe/tau')).toThrow(
+    `Invalid Tau config ${userFile}: ${field} `,
+  );
 });
