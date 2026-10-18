@@ -20,8 +20,12 @@ export interface BabelPath {
   listKey: string | null;
 }
 
-const isTextNode = (node: BabelNode) =>
-  node.type === 'StringLiteral' || node.type === 'TemplateLiteral';
+// The ignore API skips a node with all its descendants, so a template with an expression keeps
+// every mutant.
+const isPlainTemplate = (node: BabelNode) =>
+  node.type === 'TemplateLiteral' && (node.expressions?.length ?? 0) === 0;
+
+const isTextNode = (node: BabelNode) => node.type === 'StringLiteral' || isPlainTemplate(node);
 
 const messageIndexOfBuiltinError = new Map([
   ['Error', 0],

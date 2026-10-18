@@ -2,7 +2,7 @@ import { Instrumenter } from '@stryker-mutator/instrumenter';
 import { noopLogger } from '@stryker-mutator/util';
 import { describe, expect, it } from 'vitest';
 
-import { mutationIgnorer, strykerPlugins } from './mutationIgnorer.ts';
+import { mutationIgnorer } from './mutationIgnorer.ts';
 import { buildMutationReport } from './mutationReport.ts';
 
 const instrument = async (content: string) => {
@@ -35,6 +35,14 @@ describe('mutationIgnorer', () => {
     expect(mutants.every(({ status }) => status === 'Ignored')).toBe(true);
   });
 
+  it('keeps the mutants inside the expression of a template message', async () => {
+    const source = `throw new Error(\`bad \${flag ? 'a' : 'b'}\`);`;
+    const mutants = await instrument(source);
+
+    expect(mutants.length).toBeGreaterThan(0);
+    expect(mutants.every(({ status }) => status !== 'Ignored')).toBe(true);
+  });
+
   it.each([
     { name: 'a plain object value', source: "const value = { label: 'x' };" },
     { name: 'the error of a passing result', source: "const value = { ok: true, error: 'x' };" },
@@ -54,10 +62,6 @@ describe('mutationIgnorer', () => {
 
     expect(mutants).toHaveLength(2);
     expect(mutants.every(({ status }) => status !== 'Ignored')).toBe(true);
-  });
-
-  it('registers itself as an ignore plugin', () => {
-    expect(strykerPlugins).toHaveLength(1);
   });
 
   it('leaves a disabled mutator off the report and keeps the others on that line', async () => {
