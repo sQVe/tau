@@ -20,9 +20,10 @@ node scripts/mutation.ts audit <path>... [--max-mutants <n>] [--config <path>]
 ## Setup
 
 Another repository copies `scripts/mutation.ts`, `scripts/mutationScope.ts`,
-`scripts/mutationReport.ts`, `scripts/mutationIgnorer.ts`, and its Stryker config. It needs the dev
-dependencies `@stryker-mutator/api`, `@stryker-mutator/core`, a Stryker test runner such as
-`@stryker-mutator/vitest-runner`, `@stryker-mutator/instrumenter`, and `@stryker-mutator/util`.
+`scripts/mutationReport.ts`, `scripts/mutationIgnorePolicy.ts`, `scripts/mutationIgnorer.ts`, and
+its Stryker config. It needs the dev dependencies `@stryker-mutator/api`, `@stryker-mutator/core`, a
+Stryker test runner such as `@stryker-mutator/vitest-runner`, `@stryker-mutator/instrumenter`, and
+`@stryker-mutator/util`.
 
 The config must have a non-empty `mutate` list. The script exits 1 with an error that names the
 config when it is missing. The script sets `thresholds.break` to `null`, so the report alone decides
@@ -36,7 +37,9 @@ temporary directory. The config picks the test runner and tests.
 
 `scripts/mutationIgnorer.ts` is a Stryker ignore plugin. It skips the string mutants of:
 
-- an argument of `new X(...)` when `X` is `Error` or ends in `Error`;
+- the message of a built-in error: argument 0 of `Error`, `TypeError`, `RangeError`, `SyntaxError`,
+  `ReferenceError`, `EvalError`, or `URIError`, and argument 1 of `AggregateError`;
+- argument 0 of `new X(...)` when `X` ends in `Error` and the call has exactly one argument;
 - an argument after the first of `invariant(...)`;
 - the `error` value of an object literal that also has `ok: false`.
 

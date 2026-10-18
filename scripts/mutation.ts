@@ -6,7 +6,8 @@ import { join, matchesGlob, relative, resolve } from 'node:path';
 import { Instrumenter } from '@stryker-mutator/instrumenter';
 import { noopLogger } from '@stryker-mutator/util';
 
-import { ignorerName, mutationIgnorer } from './mutationIgnorer.ts';
+import { enabledIgnorers } from './mutationIgnorePolicy.ts';
+import { mutationIgnorer } from './mutationIgnorer.ts';
 import { buildMutationReport, failedMutationReport } from './mutationReport.ts';
 import type { MutationMode, MutationOutcome, StrykerReport } from './mutationReport.ts';
 import {
@@ -85,7 +86,7 @@ const wholeFileRanges = (scope: FileScope) =>
 
 const countMutants = async (root: string, scope: FileScope, config: StrykerConfig) => {
   const instrumenter = new Instrumenter(noopLogger);
-  const ignorers = config.ignorers?.includes(ignorerName) === true ? [mutationIgnorer] : [];
+  const ignorers = enabledIgnorers(config.ignorers, mutationIgnorer);
   const content = readFileSync(join(root, scope.path), 'utf8');
 
   const result = await instrumenter.instrument(

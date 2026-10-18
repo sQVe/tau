@@ -24,6 +24,7 @@ describe('mutationIgnorer', () => {
   it.each([
     { name: 'an Error message', source: "throw new Error('x');" },
     { name: 'a custom error message', source: "throw new ParseError('x');" },
+    { name: 'an AggregateError message', source: "new AggregateError(errors, 'x');" },
     { name: 'an invariant message', source: "invariant(cond, 'x');" },
     { name: 'an invariant template message', source: 'invariant(cond, `x`);' },
     { name: 'the error of a failed result', source: "const value = { ok: false, error: 'x' };" },
@@ -39,11 +40,20 @@ describe('mutationIgnorer', () => {
     { name: 'the error of a passing result', source: "const value = { ok: true, error: 'x' };" },
     { name: 'the condition of an invariant', source: "invariant('x', 'y');" },
     { name: 'a call argument', source: "report('x');" },
+    { name: 'a custom error with a second string', source: "new TaskFormatError('retired', 'x');" },
+    { name: 'an AggregateError errors list', source: "new AggregateError('x');" },
     { name: 'a class that is not an error', source: "new Thing('x');" },
   ])('keeps a string mutant in $name', async ({ source }) => {
     const mutants = await stringMutants(source);
 
     expect(mutants.some(({ status }) => status !== 'Ignored')).toBe(true);
+  });
+
+  it('keeps both strings of a custom error with two arguments', async () => {
+    const mutants = await stringMutants("new TaskFormatError('retired', 'x');");
+
+    expect(mutants).toHaveLength(2);
+    expect(mutants.every(({ status }) => status !== 'Ignored')).toBe(true);
   });
 
   it('registers itself as an ignore plugin', () => {
