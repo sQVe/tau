@@ -17,10 +17,5 @@ export const skillTools: Readonly<Record<string, readonly string[]>> = {
   tracker: ['tracker_evidence', 'tracker_draft', 'draft_review'],
 };
 
-const skillToolsPath = fileURLToPath(import.meta.url);
-const loadedSource = readFileSync(skillToolsPath, 'utf8');
-
-// A worker loads this file again from disk and checks that Pi registered every tool it lists. Pi
-// registers only the tools the parent passed, so a parent with an older copy starts workers that fail.
-export const skillToolsChangedOnDisk = (): boolean =>
-  readFileSync(skillToolsPath, 'utf8') !== loadedSource;
+export const skillToolsPath = fileURLToPath(import.meta.url);
+export const loadedSkillToolsSource = readFileSync(skillToolsPath, 'utf8');
