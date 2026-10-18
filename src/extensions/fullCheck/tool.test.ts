@@ -66,7 +66,7 @@ it('returns the saved passing log for an unchanged state without running the com
   const second = await run();
 
   expect(first.details?.reused).toBe(false);
-  expect(second.details).toMatchObject({ passed: true, reused: true });
+  expect(second.details).toMatchObject({ passed: true, reused: true, idle: false });
   expect(second.details?.logPath).toBe(first.details?.logPath);
   expect(await runCount()).toBe(1);
 });

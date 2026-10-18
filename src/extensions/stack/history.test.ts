@@ -58,8 +58,14 @@ const setUp = async () => {
     );
 
     return result.details as {
-      layers: { branch: string; status: string; remoteTip: string | null }[];
+      layers: {
+        branch: string;
+        status: string;
+        remoteTip: string | null;
+        startTip: string | null;
+      }[];
       stop: string | null;
+      evidence: { layers: { branch: string; facts: { published: unknown } }[] };
     };
   };
 
@@ -83,6 +89,9 @@ it('reports current for branches level with their remote, with the noted remote 
   ]);
 
   expect(details.stop).toBeNull();
+  expect(details.layers.map((entry) => entry.startTip)).toEqual([null, null]);
+  expect(details.evidence.layers.map((entry) => entry.branch)).toEqual(['lower', 'upper']);
+  expect(details.evidence.layers.every((entry) => entry.facts.published !== null)).toBe(true);
 });
 
 it('reports behind for a branch named like an object property without a start tip', async () => {
@@ -223,6 +232,7 @@ it.each([
 
   expect(details.layers).toEqual([]);
   expect(details.stop).toEqual(containing('gh stack view --json'));
+  expect(details.evidence).toEqual({ layers: [] });
 });
 
 it('refuses an empty remote name with its own error', async () => {
@@ -237,10 +247,13 @@ it('refuses a remote that is not a Git remote', async () => {
   await expect(run({ remote: 'nowhere' })).rejects.toThrow('remote nowhere is not a Git remote');
 });
 
-it('refuses a start tip that is not a commit SHA', async () => {
-  const { run } = await setUp();
+it('records the start tip a layer used in place of its branch', async () => {
+  const { root, run } = await setUp();
+  const tip = await git(root, 'rev-parse', 'upper');
 
-  await expect(run({ startTips: { upper: '--all' } })).rejects.toThrow('must be a commit SHA');
+  const details = await run({ startTips: { upper: tip } });
+
+  expect(details.layers.map((entry) => entry.startTip)).toEqual([null, tip]);
 });
 
 it('changes nothing in the repository', async () => {

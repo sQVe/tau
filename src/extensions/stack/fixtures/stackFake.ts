@@ -154,7 +154,7 @@ export const createStackFake = (): StackFake => {
     return failure(`unexpected gh ${commandArguments.join(' ')}`);
   };
 
-  fake.exec = async (command, commandArguments) => {
+  fake.exec = async (command, commandArguments, options) => {
     if (command === 'ssh') {
       return failure('ssh: Could not resolve hostname', 255);
     }
@@ -162,6 +162,11 @@ export const createStackFake = (): StackFake => {
     const joined = commandArguments.join(' ');
 
     calls.push(joined);
+
+    // Pi's exec kills a command whose signal is already aborted and returns no output.
+    if (options?.signal?.aborted === true) {
+      return { code: 1, killed: true, stdout: '', stderr: '' };
+    }
 
     const replaced = [...overrides].find(([prefix]) => joined.startsWith(prefix));
     const result = command === 'gh' ? answer(commandArguments) : failure(`unexpected ${command}`);

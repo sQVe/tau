@@ -1,10 +1,10 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { readDraftRecord } from './draftRecord.js';
+import { findDraftFor, readDraftRecord } from './draftRecord.js';
 
 const fixtures = join(import.meta.dirname, 'fixtures', 'drafts');
 
@@ -62,6 +62,11 @@ const refused = [
     message: /Malformed/,
   },
   {
+    label: 'an empty comment ID',
+    text: () => '{"version":1,"identifier":null,"reviewCommentId":""}',
+    message: /Malformed/,
+  },
+  {
     label: 'a bad identifier',
     text: () => '{"version":1,"identifier":"me-600","reviewCommentId":null}',
     message: /Malformed/,
@@ -73,4 +78,28 @@ it.each(refused)('refuses $label and names the path', async ({ text, message }) 
 
   await expect(readDraftRecord(directory)).rejects.toThrow(message);
   await expect(readDraftRecord(directory)).rejects.toThrow(join(directory, 'draft.json'));
+});
+
+it('throws a read error that is not a missing file', async () => {
+  const directory = await directoryWith(undefined);
+
+  await mkdir(join(directory, 'draft.json'));
+
+  await expect(readDraftRecord(directory)).rejects.toMatchObject({ code: 'EISDIR' });
+});
+
+it('throws when the tickets path is a plain file', async () => {
+  const root = await directoryWith(undefined);
+
+  await mkdir(join(root, '.tau'));
+  await writeFile(join(root, '.tau', 'tickets'), 'not a directory\n');
+
+  await expect(findDraftFor(root, 'me-600')).rejects.toMatchObject({ code: 'ENOTDIR' });
+  expect(await readFile(join(root, '.tau', 'tickets'), 'utf8')).toBe('not a directory\n');
+});
+
+it('finds no draft when the tickets directory does not exist', async () => {
+  const root = await directoryWith(undefined);
+
+  expect(await findDraftFor(root, 'me-600')).toMatchObject({ draft: null, malformed: [] });
 });

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -88,4 +88,108 @@ it('lists no logs when the checks directory is missing', async () => {
   const directory = await temporaryDirectory();
 
   expect(await listSavedLogs(join(directory, 'checks'))).toEqual([]);
+});
+
+it('reports a record with an extra field as malformed', async () => {
+  const directory = await temporaryDirectory();
+  const path = join(directory, 'extra.json');
+
+  await writeFile(path, JSON.stringify({ version: 1, ...identity, extra: true }));
+
+  expect(await readCheckRecord(path)).toEqual({ status: 'malformed' });
+});
+
+it('throws a record read error that is not a missing file', async () => {
+  const directory = await temporaryDirectory();
+
+  await mkdir(join(directory, 'run.json'));
+
+  await expect(readCheckRecord(join(directory, 'run.json'))).rejects.toMatchObject({
+    code: 'EISDIR',
+  });
+});
+
+it('throws when the checks path cannot be listed', async () => {
+  const directory = await temporaryDirectory();
+  const checks = join(directory, 'checks');
+
+  await writeFile(checks, 'not a directory');
+
+  await expect(listSavedLogs(checks)).rejects.toMatchObject({ code: 'ENOTDIR' });
+});
+
+it('throws when a log cannot be checked for existence', async () => {
+  const directory = await temporaryDirectory();
+
+  await writeFile(join(directory, 'loop.json'), JSON.stringify({ version: 1, ...identity }));
+  await symlink('loop.log', join(directory, 'loop.log'));
+
+  await expect(listSavedLogs(directory)).rejects.toMatchObject({ code: 'ELOOP' });
+});
+
+it('keeps a directory name that ends in .log out of the record path', async () => {
+  const directory = await temporaryDirectory();
+  const logDirectory = join(directory, 'checks.log');
+  const logPath = join(logDirectory, 'run.log');
+
+  await mkdir(logDirectory);
+  await writeFile(logPath, 'output');
+  await saveCheckRecord(logPath, identity);
+
+  expect(recordPathFor(logPath)).toBe(join(logDirectory, 'run.json'));
+
+  expect(await listSavedLogs(logDirectory)).toEqual([
+    { logPath, record: { version: 1, ...identity }, logExists: true },
+  ]);
+});
+
+it('keeps a directory name that ends in .json out of the log path', async () => {
+  const directory = await temporaryDirectory();
+  const checks = join(directory, 'checks.json');
+
+  await mkdir(checks);
+  await writeFile(join(checks, 'run.log'), 'output');
+  await saveCheckRecord(join(checks, 'run.log'), identity);
+
+  expect(await listSavedLogs(checks)).toEqual([
+    { logPath: join(checks, 'run.log'), record: { version: 1, ...identity }, logExists: true },
+  ]);
+});
+
+it.each([
+  { name: 'an empty head', change: { head: '' } },
+  { name: 'an empty base', change: { base: '' } },
+  { name: 'an empty fingerprint', change: { fingerprint: '' } },
+  { name: 'an empty command', change: { argv: [] } },
+  { name: 'an empty command word', change: { argv: ['pnpm', ''] } },
+])('reports a record with $name as malformed', async ({ change }) => {
+  const directory = await temporaryDirectory();
+  const path = join(directory, 'empty.json');
+
+  await writeFile(path, JSON.stringify({ version: 1, ...identity, ...change }));
+
+  expect(await readCheckRecord(path)).toEqual({ status: 'malformed' });
+});
+
+it('reads a record with no base commit', async () => {
+  const directory = await temporaryDirectory();
+  const path = join(directory, 'null.json');
+
+  await writeFile(path, JSON.stringify({ version: 1, ...identity, base: null }));
+
+  expect(await readCheckRecord(path)).toEqual({
+    status: 'valid',
+    record: { version: 1, ...identity, base: null },
+  });
+});
+
+it('refuses to save a state without a fingerprint and writes no record', async () => {
+  const directory = await temporaryDirectory();
+  const logPath = join(directory, 'run.log');
+
+  await expect(saveCheckRecord(logPath, { ...identity, fingerprint: null })).rejects.toThrow(
+    'submodule',
+  );
+
+  expect(await readCheckRecord(recordPathFor(logPath))).toEqual({ status: 'missing' });
 });

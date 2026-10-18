@@ -3,6 +3,7 @@ import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/pro
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
+import { Value } from 'typebox/value';
 import { expect, it, onTestFinished } from 'vitest';
 
 import {
@@ -187,4 +188,57 @@ it.each(refusedIds)('refuses id $label and creates nothing', async ({ parameters
   await expect(prepare(root, parameters)).rejects.toThrow(/id/);
 
   expect(await readdir(root)).toEqual(['.git']);
+});
+
+it('returns the details as JSON text beside the details', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const result = await createTrackerDraftTool().execute(
+    'call',
+    { action: 'prepare', id: 'me-600' },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  const [content] = result.content;
+  const text = content?.type === 'text' ? content.text : '';
+
+  expect(content?.type).toBe('text');
+  expect(JSON.parse(text)).toEqual(result.details);
+});
+
+it('does not read a plain file in the tickets directory as a draft directory', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const tickets = join(root, '.tau', 'tickets');
+
+  await mkdir(tickets, { recursive: true });
+  await writeFile(join(tickets, 'notes.txt'), 'x\n');
+
+  expect(await prepare(root, { action: 'prepare', id: 'me-600' })).toEqual({
+    directory: join(tickets, 'me-600'),
+    draft: null,
+    malformed: [],
+  });
+});
+
+it('throws when the tickets path cannot be listed and creates nothing', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await mkdir(join(root, '.tau'));
+  await writeFile(join(root, '.tau', 'tickets'), 'not a directory\n');
+
+  await expect(prepare(root, { action: 'prepare', id: 'me-600' })).rejects.toMatchObject({
+    code: 'ENOTDIR',
+  });
+
+  expect(await readdir(join(root, '.tau'))).toEqual(['tickets']);
+});
+
+it.each([
+  { name: 'prepare with an id', input: { action: 'prepare', id: 'me-600' }, valid: true },
+  { name: 'another action', input: { action: 'delete', id: 'me-600' }, valid: false },
+  { name: 'an id that is not text', input: { action: 'prepare', id: 6 }, valid: false },
+])('checks the tool input for $name', ({ input, valid }) => {
+  expect(Value.Check(createTrackerDraftTool().parameters, input)).toBe(valid);
 });
