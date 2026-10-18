@@ -20,9 +20,9 @@ node scripts/mutation.ts audit <path>... [--max-mutants <n>] [--config <path>]
 ## Setup
 
 Another repository copies `scripts/mutation.ts`, `scripts/mutationScope.ts`,
-`scripts/mutationReport.ts`, and its Stryker config. It needs the dev dependencies
-`@stryker-mutator/core`, a Stryker test runner such as `@stryker-mutator/vitest-runner`,
-`@stryker-mutator/instrumenter`, and `@stryker-mutator/util`.
+`scripts/mutationReport.ts`, `scripts/mutationIgnorer.ts`, and its Stryker config. It needs the dev
+dependencies `@stryker-mutator/api`, `@stryker-mutator/core`, a Stryker test runner such as
+`@stryker-mutator/vitest-runner`, `@stryker-mutator/instrumenter`, and `@stryker-mutator/util`.
 
 The config must have a non-empty `mutate` list. The script exits 1 with an error that names the
 config when it is missing. The script sets `thresholds.break` to `null`, so the report alone decides
@@ -31,6 +31,22 @@ the exit code.
 A file counts as production code when its path matches the config's `mutate` globs, with `!` globs
 subtracted. The script replaces `mutate` with the computed ranges and writes the JSON report to a
 temporary directory. The config picks the test runner and tests.
+
+## Ignored mutants
+
+`scripts/mutationIgnorer.ts` is a Stryker ignore plugin. It skips the string mutants of:
+
+- an argument of `new X(...)` when `X` is `Error` or ends in `Error`;
+- an argument after the first of `invariant(...)`;
+- the `error` value of an object literal that also has `ok: false`.
+
+The config turns it on with two keys. `plugins` lists the test runner and
+`./scripts/mutationIgnorer.ts`, and `ignorers` lists `tauMessageIgnorer`. It also sets
+`"ignoreStatic": true`. Stryker resolves the plugin path from the repository root. The cap counts
+with the same ignorer when `ignorers` names it.
+
+To mark a mutant that no test can tell apart from the original, write
+`// Stryker disable next-line <mutator>: <reason>` above the line.
 
 ## Cap
 
