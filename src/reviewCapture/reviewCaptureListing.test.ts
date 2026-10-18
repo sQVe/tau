@@ -18,6 +18,8 @@ const git = async (root: string, ...commandArguments: string[]) => {
   return stdout;
 };
 
+const isRoot = process.getuid?.() === 0;
+
 const defaultFiles = { 'tracked.txt': 'one\n' };
 
 const committedRepository = async (files: Record<string, string> = defaultFiles) => {
@@ -158,22 +160,25 @@ const lockedDirectory = async (root: string) => {
   onTestFinished(() => chmod(join(root, 'locked'), 0o755));
 };
 
-it('reports a directory that Git could not open and the user cannot read as unreadable', async () => {
-  const root = await committedRepository();
+it.skipIf(isRoot)(
+  'reports a directory that Git could not open and the user cannot read as unreadable',
+  async () => {
+    const root = await committedRepository();
 
-  await lockedDirectory(root);
-  await writeFile(join(root, 'seen.txt'), 'seen\n');
+    await lockedDirectory(root);
+    await writeFile(join(root, 'seen.txt'), 'seen\n');
 
-  const result = await capture(root, workingTree, [
-    { match: ' ls-files -z -o ', script: warning('locked') },
-  ]);
+    const result = await capture(root, workingTree, [
+      { match: ' ls-files -z -o ', script: warning('locked') },
+    ]);
 
-  expect(result.errors).toEqual([]);
-  expect(result.paths).toEqual(['seen.txt']);
-  expect(result.gaps).toEqual([{ kind: 'unreadable', path: 'locked' }]);
-});
+    expect(result.errors).toEqual([]);
+    expect(result.paths).toEqual(['seen.txt']);
+    expect(result.gaps).toEqual([{ kind: 'unreadable', path: 'locked' }]);
+  },
+);
 
-it('reports two unopened directories that the user cannot read', async () => {
+it.skipIf(isRoot)('reports two unopened directories that the user cannot read', async () => {
   const root = await committedRepository();
 
   await lockedDirectory(root);

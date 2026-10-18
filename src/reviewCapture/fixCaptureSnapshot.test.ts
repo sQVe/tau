@@ -341,7 +341,7 @@ it('does not record an excluded path as skipped', async () => {
   expect(snapshot).toEqual({ present: ['a.txt'], absent: [], skipped: [] });
 });
 
-it('records an unreadable file as skipped with no identity', async () => {
+it.skipIf(isRoot)('records an unreadable file as skipped with no identity', async () => {
   const { root, review, pinned, captured } = await capturedChange(
     { 'a.txt': 'one\n', 'b.txt': 'one\n' },
     async (directory) => {
