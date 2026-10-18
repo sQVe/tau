@@ -13,11 +13,13 @@ export interface Mutant {
   status: string;
   location: MutantLocation;
   static?: boolean;
+  coveredBy?: string[];
   testsCompleted?: number;
 }
 
 // The part of Stryker's JSON report this module reads.
 export interface StrykerReport {
+  config?: { ignoreStatic?: boolean };
   files: Record<string, { mutants: Mutant[] }>;
   testFiles?: Record<string, { tests: unknown[] }>;
 }
@@ -102,13 +104,23 @@ const isSurvivor = ({ status }: Mutant) => status === 'Survived' || status === '
 const testCountOf = (report: StrykerReport | undefined) =>
   Object.values(report?.testFiles ?? {}).reduce((sum, { tests }) => sum + tests.length, 0);
 
+// With ignoreStatic, Stryker runs a static mutant against only the tests that cover it.
+const plannedCountOf = (report: StrykerReport | undefined) => {
+  const testCount = testCountOf(report);
+  const ignoresStatic = report?.config?.ignoreStatic === true;
+
+  return (mutant: Mutant) => (ignoresStatic ? (mutant.coveredBy?.length ?? 0) : testCount);
+};
+
 // A static mutant that makes a test file throw while it loads leaves that file's tests unrun,
 // yet Stryker reports it as Survived.
-const isFalseSurvivor = (mutant: Mutant, testCount: number) => {
+const isFalseSurvivor = (mutant: Mutant, plannedCount: (mutant: Mutant) => number) => {
   const isStaticSurvivor = mutant.static === true && mutant.status === 'Survived';
 
   return (
-    isStaticSurvivor && mutant.testsCompleted !== undefined && mutant.testsCompleted < testCount
+    isStaticSurvivor &&
+    mutant.testsCompleted !== undefined &&
+    mutant.testsCompleted < plannedCount(mutant)
   );
 };
 
@@ -130,11 +142,11 @@ const bySurvivorPosition = (left: Survivor, right: Survivor) => {
   return left.line - right.line || left.column - right.column;
 };
 
-const totalsOf = (mutants: Mutant[], testCount: number): Totals => {
+const totalsOf = (mutants: Mutant[], plannedCount: (mutant: Mutant) => number): Totals => {
   const count = (...statuses: string[]) =>
     mutants.filter(({ status }) => statuses.includes(status)).length;
 
-  const falseSurvived = mutants.filter((mutant) => isFalseSurvivor(mutant, testCount)).length;
+  const falseSurvived = mutants.filter((mutant) => isFalseSurvivor(mutant, plannedCount)).length;
 
   return {
     mutants: mutants.filter(({ status }) => status !== 'Ignored').length,
@@ -177,10 +189,10 @@ const survivorsStatus = (mode: MutationMode) => ({
 export const buildMutationReport = (
   facts: MutationFacts,
 ): { report: MutationOutcome; exitCode: number } => {
-  const testCount = testCountOf(facts.stryker);
+  const plannedCount = plannedCountOf(facts.stryker);
   const files = Object.entries(facts.stryker?.files ?? {});
   const mutants = files.flatMap(([, file]) => file.mutants);
-  const totals = facts.stryker === undefined ? emptyTotals : totalsOf(mutants, testCount);
+  const totals = facts.stryker === undefined ? emptyTotals : totalsOf(mutants, plannedCount);
 
   const survivorsWhere = (keep: (mutant: Mutant) => boolean) =>
     files
@@ -191,8 +203,8 @@ export const buildMutationReport = (
       )
       .toSorted(bySurvivorPosition);
 
-  const survivors = survivorsWhere((mutant) => !isFalseSurvivor(mutant, testCount));
-  const falseSurvivors = survivorsWhere((mutant) => isFalseSurvivor(mutant, testCount));
+  const survivors = survivorsWhere((mutant) => !isFalseSurvivor(mutant, plannedCount));
+  const falseSurvivors = survivorsWhere((mutant) => isFalseSurvivor(mutant, plannedCount));
 
   if (facts.error !== undefined) {
     return {

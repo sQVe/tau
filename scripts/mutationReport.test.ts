@@ -246,6 +246,31 @@ describe('buildMutationReport with false survivors', () => {
     expect(exitCode).toBe(0);
   });
 
+  it.each([
+    { testsCompleted: 2, survivors: 1, falseSurvivors: 0 },
+    { testsCompleted: 0, survivors: 0, falseSurvivors: 1 },
+  ])(
+    'plans only the covering tests of a static survivor with ignoreStatic ($testsCompleted completed)',
+    ({ testsCompleted, survivors, falseSurvivors }) => {
+      const base = factsOf({
+        'src/a.ts': [mutant({ static: true, coveredBy: ['1', '2'], testsCompleted })],
+      });
+
+      const facts = withTestCount(base, 5);
+
+      facts.stryker = {
+        ...facts.stryker,
+        files: facts.stryker?.files ?? {},
+        config: { ignoreStatic: true },
+      };
+
+      const { report } = buildMutationReport(facts);
+
+      expect(report.survivors).toHaveLength(survivors);
+      expect(report.falseSurvivors).toHaveLength(falseSurvivors);
+    },
+  );
+
   it('keeps a static survivor that ran every test as a survivor', () => {
     const facts = withTestCount(
       factsOf({ 'src/a.ts': [mutant({ static: true, testsCompleted: 3 })] }),
