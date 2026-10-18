@@ -17,6 +17,8 @@ export interface CheckResult {
   idle: boolean;
   logPath: string;
   tail: string;
+  // Set when stdout went to its own file, which holds the command's stdout and nothing else.
+  stdoutPath?: string;
 }
 
 const tailLineCount = 40;
@@ -27,8 +29,8 @@ export const readTail = async (logPath: string): Promise<string> => {
   return text.trimEnd().split('\n').slice(-tailLineCount).join('\n');
 };
 
-const newLogPath = async (root: string): Promise<string> => {
-  const directory = await ensureTauDirectory(root, 'checks');
+const newLogPath = async (root: string, checksPath: string): Promise<string> => {
+  const directory = await ensureTauDirectory(root, checksPath);
   const stamp = new Date().toISOString().replaceAll(/[:.]/gu, '-');
 
   return join(directory, `${stamp}-${process.pid}.log`);
@@ -126,9 +128,13 @@ export const runCheck = async (
   signal: AbortSignal | undefined,
   onStarted: (groupId: number) => Promise<void>,
   idleLimitMilliseconds = defaultIdleLimitMilliseconds,
+  separateStdout = false,
+  checksPath = 'checks',
 ): Promise<CheckResult> => {
-  const logPath = await newLogPath(root);
+  const logPath = await newLogPath(root, checksPath);
   const log = await open(logPath, 'wx');
+  const stdoutPath = logPath.replace(/\.log$/u, '.stdout');
+  const stdoutFile = separateStdout ? await open(stdoutPath, 'wx') : undefined;
 
   // Settles with the record's error, or undefined. The caller releases the lock only after this
   // settles, so the release never races the record's rewrite of the same lock file.
@@ -146,7 +152,7 @@ export const runCheck = async (
         // Windows has no groups; a detached child there would only open a new console.
         const child = spawn(command, commandArguments, {
           cwd: root,
-          stdio: ['ignore', log.fd, log.fd],
+          stdio: ['ignore', stdoutFile?.fd ?? log.fd, log.fd],
           detached: process.platform !== 'win32',
         });
 
@@ -245,7 +251,7 @@ export const runCheck = async (
           const finishCancel = async () => {
             await waitForCommandToExit(child, processId);
             clearTimeout(killTimer);
-            reject(new Error('The full check was cancelled and its command has stopped.'));
+            reject(new Error('The check was cancelled and its command has stopped.'));
           };
 
           finishCancel().catch((error: unknown) => {
@@ -275,10 +281,12 @@ export const runCheck = async (
       idle: hang.idle,
       logPath,
       tail,
+      ...(separateStdout ? { stdoutPath } : {}),
     };
   } finally {
     clearInterval(idleMonitor);
     await recorded;
     await log.close();
+    await stdoutFile?.close();
   }
 };

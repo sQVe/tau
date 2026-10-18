@@ -11,7 +11,7 @@ const knownFullCheckKeys: KnownKeys = {
   repositories: { [anyKey]: { argv: true } },
 };
 
-const readArgv = (source: string, field: string, value: unknown): string[] => {
+export const readArgv = (source: string, field: string, value: unknown): string[] => {
   const expected = `${field} must be a non-empty array of non-empty strings, such as ["pnpm", "check"].`;
 
   if (!Array.isArray(value) || value.length === 0) {

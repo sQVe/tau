@@ -1,23 +1,15 @@
-import { join } from 'node:path';
-
 import { defineTool, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionToolContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
-import { errorMessage } from '../../errors.js';
-import { readGitOutput } from '../../gitOutput.js';
-import { repositoryFromRemote } from '../../repositoryRemote.js';
 import { findTauRoot } from '../../tauDirectory.js';
+import type { Recorded } from './checkFlow.js';
+import { findReusedLog, readRepository, runAndRecord, withRepositoryLock } from './checkFlow.js';
 import { readFullCheckArgv } from './config.js';
 import { readCheckIdentity } from './identity.js';
-import { defaultLockPath, withFullCheckLock } from './queue.js';
-import { listSavedLogs, saveCheckRecord } from './record.js';
-import { decideReuse, sameReusableState } from './reuseDecision.js';
-import type { CheckIdentity } from './reuseDecision.js';
-import { readTail, runCheck } from './run.js';
 import type { CheckResult } from './run.js';
 
-export type FullCheckDetails = CheckResult & { reused: boolean; recordError?: string };
+export type FullCheckDetails = Recorded<CheckResult>;
 
 export interface FullCheckToolOptions {
   agentDirectory?: string;
@@ -34,6 +26,7 @@ const parameters = Type.Object({
   ),
 });
 
+const defaultChecksPath = 'checks';
 const defaultPollMilliseconds = 500;
 
 const notConfiguredMessage = (repository: string | undefined): string => {
@@ -41,12 +34,6 @@ const notConfiguredMessage = (repository: string | undefined): string => {
   const subject = repository ?? unnamed;
 
   return `No full check is configured for ${subject}. Run your check as before, with the command the repository documents. To configure one, add fullCheck.repositories.<owner/name>.argv to the user tau.json.`;
-};
-
-const readRepository = async (root: string): Promise<string | undefined> => {
-  const output = await readGitOutput(root, ['remote', 'get-url', 'origin']);
-
-  return output === undefined ? undefined : repositoryFromRemote(output);
 };
 
 const describeResult = (result: FullCheckDetails): string => {
@@ -68,66 +55,6 @@ const describeResult = (result: FullCheckDetails): string => {
   const headline = `${outcome}${reuse}${recordProblem} Log: ${result.logPath}`;
 
   return result.tail === '' ? headline : `${headline}\n\nLast lines:\n${result.tail}`;
-};
-
-const checksDirectory = (root: string): string => join(root, '.tau', 'checks');
-
-const findReusedLog = async (
-  root: string,
-  identity: CheckIdentity,
-): Promise<FullCheckDetails | undefined> => {
-  const decision = decideReuse(identity, await listSavedLogs(checksDirectory(root)));
-
-  if (decision.status === 'run') {
-    return undefined;
-  }
-
-  const tail = await readTail(decision.logPath);
-
-  return {
-    passed: true,
-    exitCode: 0,
-    signal: null,
-    idle: false,
-    logPath: decision.logPath,
-    tail,
-    reused: true,
-  };
-};
-
-// Runs the check and saves a reusable record only when it passed and its inputs did not change.
-const runAndRecord = async (
-  root: string,
-  identity: CheckIdentity,
-  base: string | undefined,
-  signal: AbortSignal | undefined,
-  recordCommandGroup: (groupId: number) => Promise<void>,
-  idleLimitMilliseconds: number | undefined,
-): Promise<FullCheckDetails> => {
-  const result = await runCheck(
-    root,
-    identity.argv,
-    signal,
-    recordCommandGroup,
-    idleLimitMilliseconds,
-  );
-
-  if (!result.passed) {
-    return { ...result, reused: false };
-  }
-
-  // A missing record only disables reuse, so a failure to save it never fails a passing check.
-  try {
-    const after = await readCheckIdentity(root, identity.argv, base);
-
-    if (sameReusableState(identity, after)) {
-      await saveCheckRecord(result.logPath, identity);
-    }
-  } catch (error) {
-    return { ...result, reused: false, recordError: errorMessage(error) };
-  }
-
-  return { ...result, reused: false };
 };
 
 const toToolResult = (result: FullCheckDetails) => ({
@@ -159,37 +86,39 @@ const execute = async (
   }
 
   const waiting = await readCheckIdentity(root, argv, base);
-  const reusedBeforeWaiting = await findReusedLog(root, waiting);
+  const reusedBeforeWaiting = await findReusedLog(root, waiting, defaultChecksPath);
 
   if (reusedBeforeWaiting !== undefined) {
     return toToolResult(reusedBeforeWaiting);
   }
 
-  const result = await withFullCheckLock(
+  const result = await withRepositoryLock(
     {
-      lockPath: defaultLockPath(agentDirectory, repository),
-      checkout: root,
+      root,
+      agentDirectory,
+      repository,
       signal,
       pollMilliseconds: options.pollMilliseconds ?? defaultPollMilliseconds,
-      onWaiting: (holder) => {
-        const holderName = holder === undefined ? 'another checkout' : holder.checkout;
-
-        notifyWaiting(`Waiting for the full check running in ${holderName} to finish.`);
-      },
+      notifyWaiting,
     },
     async (recordCommandGroup) => {
       const identity = await readCheckIdentity(root, argv, base);
-      const reused = await findReusedLog(root, identity);
+      const reused = await findReusedLog(root, identity, defaultChecksPath);
 
       return (
         reused ??
         runAndRecord(
           root,
           identity,
-          base,
-          signal,
-          recordCommandGroup,
-          options.idleLimitMilliseconds,
+          () => readCheckIdentity(root, argv, base),
+          {
+            signal,
+            recordCommandGroup,
+            idleLimitMilliseconds: options.idleLimitMilliseconds,
+            checksPath: defaultChecksPath,
+            separateStdout: false,
+          },
+          (checked) => Promise.resolve({ ...checked }),
         )
       );
     },
