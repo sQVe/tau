@@ -43,6 +43,10 @@ temporary directory. The config picks the test runner and tests.
 - an argument after the first of `invariant(...)`;
 - the `error` value of an object literal that also has `ok: false`.
 
+A template message with an expression is not skipped, because Stryker cannot skip a node without its
+children. Its text mutant is still reported; mark it with a disable comment when no test should pin
+the text.
+
 The config turns it on with two keys. `plugins` lists the test runner and
 `./scripts/mutationIgnorer.ts`, and `ignorers` lists `tauMessageIgnorer`. It also sets
 `"ignoreStatic": true`. Stryker resolves the plugin path from the repository root. The cap counts
@@ -58,6 +62,9 @@ Ignored mutants do not count. Files get their budget in path order. A file that 
 mutated and is listed in `unmutated`. Later files that fit still run. After the run, a file that had
 mutants in the count but none in Stryker's report is also listed in `unmutated`. The exit code is 1
 in both modes when any file is unmutated.
+
+The count includes static mutants, because Stryker finds them only after its first test run. With
+`ignoreStatic` they count against the cap although Stryker ignores them.
 
 ## Exit codes
 
@@ -107,6 +114,8 @@ in both modes when any file is unmutated.
 - `totals.invalid` counts `CompileError` and `RuntimeError` mutants. When every mutant is invalid,
   the status is `error`.
 - A false survivor is a static mutant that Stryker marks `Survived` although fewer tests completed
-  than the report holds. The mutant made a test file throw while Vitest loaded it, so no test in
-  that file ran. `falseSurvivors` lists them in the shape of `survivors`. They are not in
-  `survivors` or `totals.survived`, and they do not change the status.
+  than planned. The planned count is the number of tests in `coveredBy` when the report's
+  `config.ignoreStatic` is true and `coveredBy` is not empty. Otherwise it is every test in the
+  report. The mutant made a test file throw while Vitest loaded it, so no test in that file ran.
+  `falseSurvivors` lists them in the shape of `survivors`. They are not in `survivors` or
+  `totals.survived`, and they do not change the status.
