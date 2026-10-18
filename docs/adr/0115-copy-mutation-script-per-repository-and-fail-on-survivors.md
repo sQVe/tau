@@ -1,8 +1,10 @@
 # ADR 0115: Copy the mutation script into each repository and fail on survivors
 
 **Date**: 2026-10-16\
-**Status**: Accepted\
-**Related**: [ADR 0113 (Run diff-scoped mutation testing by hand)](./0113-run-diff-scoped-mutation-testing-by-hand.md)
+**Status**: Accepted; use of survivors as a gate superseded by
+[ADR 0117 (List mutation survivors as advice instead of a gate)](./0117-list-mutation-survivors-as-advice.md)\
+**Related**:
+[ADR 0113 (Run diff-scoped mutation testing by hand)](./0113-run-diff-scoped-mutation-testing-by-hand.md)
 
 ## Context
 

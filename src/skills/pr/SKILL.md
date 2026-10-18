@@ -135,10 +135,11 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
    - After the full check, whether `full_check` or the repository's own command ran it, run
      `mutation_check` with `mode: "changed"`, passing the pinned merge base as `base`. Save the
      `checkHeader` lines, the tool's result text, and then the content of the log it returns as
-     `$prdir/checks/mutation.log`. The result text holds the verdict and the survivors. Send
-     remaining survivors to the [triage-findings skill](../triage-findings/SKILL.md), commit its
-     fixes, and rerun. When the tool fails because the repository has no `mutation.argv` in
-     `.pi/tau.json`, skip this step and note it in the session report.
+     `$prdir/checks/mutation.log`. The result text holds the verdict and the survivors. Mutation
+     testing is advice, so do not fix survivors or rerun here. Record each survivor's file, line,
+     and change for step 7. Record an error of the tool apart from the survivors. When the tool
+     fails because the repository has no `mutation.argv` in `.pi/tau.json`, skip this step and note
+     it in the session report.
    - When the change has user-visible behavior, also send it to a `qa` worker on the committed tree
      before the preview.
    - Leave the app URL, test account, and data writes to Tau, which fills them from the user's
@@ -153,8 +154,6 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
    - An audit item with the verdict not run. It closes when it names a check that step 5 ran and
      that check passed. A not-met item stops the flow before publication. A deferred item is not a
      gap.
-   - A `mutation_check` that fails, for survivors or an error. Stop before publication and report
-     it. It is a stop, not a gap that only suggests draft.
    - A review that does not cover the pushed content. A checked fix counts as covered: it changes
      only what its finding or failing check needs, and the checks that cover it passed after it.
    - User-visible behavior that QA did not test, or that QA found failing. Untested behavior gets a
@@ -198,6 +197,10 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
      did not close. Add a `[ ]` line for fixes that no review covered only when that changes
      confidence. Drop test counts. List deferred audit items under the template's deferred
      verification section, such as `##### Deferred verification`.
+   - Surviving mutants: in the verification section, give each survivor from step 5 one plain line,
+     not a `[ ]` line, with its file, line, and change. List at most 10, then the count of the rest.
+     Give a `mutation_check` error its own plain line. Survivors and errors are neither gaps nor a
+     stop. These lines do not count toward the length limit.
    - Issues: link Linear tickets as the [tracker skill](../tracker/SKILL.md) says. For other issues,
      use `Fixes <issue>` only for issues this PR completes; use `Related to <issue>` for others.
    - Repository template: apply the same rules inside it. Map the lead, context, decisions, and
