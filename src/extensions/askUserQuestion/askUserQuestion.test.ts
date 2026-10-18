@@ -784,25 +784,21 @@ it.each([
   expect(Value.Check(tool.parameters, call)).toBe(false);
 });
 
-const endingAfter = async (answersGiven: { selected: string[]; typed: boolean }[]) => {
+const responseAfter = async (typedFlags: boolean[]) => {
   const { call, custom } = ask(layout);
 
   custom.mockResolvedValue({
     kind: 'answered',
-    answers: answersGiven.map((answer, index) => ({ question: `Q${index}?`, ...answer })),
+    answers: typedFlags.map((typed, index) => ({ question: `Q${index}?`, selected: ['a'], typed })),
   });
 
-  const text = textOf(await call());
-
-  return text.slice(text.lastIndexOf('". ') + 3);
+  return textOf(await call());
 };
 
-it('ends the text as for a typed answer when only some answers are typed', async () => {
-  const selected = { selected: ['a'], typed: false };
-  const typed = { selected: ['b'], typed: true };
-  const typedEnding = await endingAfter([typed]);
+it('responds as for typed answers when only some answers are typed', async () => {
+  const allTyped = await responseAfter([true, true]);
 
-  expect(await endingAfter([selected])).not.toBe(typedEnding);
-  expect(await endingAfter([selected, typed])).toBe(typedEnding);
-  expect(await endingAfter([typed, selected])).toBe(typedEnding);
+  expect(await responseAfter([false, false])).not.toBe(allTyped);
+  expect(await responseAfter([false, true])).toBe(allTyped);
+  expect(await responseAfter([true, false])).toBe(allTyped);
 });
