@@ -783,3 +783,22 @@ it.each([
 
   expect(Value.Check(tool.parameters, call)).toBe(false);
 });
+
+const responseAfter = async (typedFlags: boolean[]) => {
+  const { call, custom } = ask(layout);
+
+  custom.mockResolvedValue({
+    kind: 'answered',
+    answers: typedFlags.map((typed, index) => ({ question: `Q${index}?`, selected: ['a'], typed })),
+  });
+
+  return textOf(await call());
+};
+
+it('responds as for typed answers when only some answers are typed', async () => {
+  const allTyped = await responseAfter([true, true]);
+
+  expect(await responseAfter([false, false])).not.toBe(allTyped);
+  expect(await responseAfter([false, true])).toBe(allTyped);
+  expect(await responseAfter([true, false])).toBe(allTyped);
+});
