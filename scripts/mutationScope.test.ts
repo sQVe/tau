@@ -285,6 +285,7 @@ describe('mergedConfig', () => {
       { thresholds: { high: 80, low: 60, break: 100 } },
       ['a.ts'],
       'r.json',
+      'changed',
     );
 
     expect(merged.thresholds).toEqual({ high: 80, low: 60, break: null });
@@ -292,7 +293,28 @@ describe('mergedConfig', () => {
   });
 
   it('sets the break threshold when the config has none', () => {
-    expect(mergedConfig({}, [], 'r.json').thresholds).toEqual({ break: null });
+    expect(mergedConfig({}, [], 'r.json', 'changed').thresholds).toEqual({ break: null });
+  });
+});
+
+describe('mergedConfig bail', () => {
+  it.each([
+    { mode: 'audit' as const, configured: false, expected: true },
+    { mode: 'changed' as const, configured: true, expected: false },
+    { mode: 'audit' as const, configured: undefined, expected: true },
+  ])('sets disableBail $expected for $mode when the config has $configured', (row) => {
+    const config = { thresholds: {}, disableBail: row.configured };
+
+    expect(mergedConfig(config, [], 'r.json', row.mode).disableBail).toBe(row.expected);
+  });
+
+  it.each([
+    { mode: 'audit' as const, expected: false },
+    { mode: 'changed' as const, expected: true },
+  ])('sets incremental $expected for $mode when the config turns it on', ({ mode, expected }) => {
+    const config = { thresholds: {}, incremental: true };
+
+    expect(mergedConfig(config, [], 'r.json', mode).incremental).toBe(expected);
   });
 });
 

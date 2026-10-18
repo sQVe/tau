@@ -226,7 +226,11 @@ const withTestCount = (facts: MutationFacts, count: number): MutationFacts => ({
   stryker: {
     files: {},
     ...facts.stryker,
-    testFiles: { 'a.test.ts': { tests: Array.from({ length: count }, () => ({})) } },
+    testFiles: {
+      'a.test.ts': {
+        tests: Array.from({ length: count }, (_, index) => ({ id: `${index}`, name: `t${index}` })),
+      },
+    },
   },
 });
 
@@ -343,6 +347,110 @@ describe('buildMutationReport with a failed run', () => {
     const { report } = buildMutationReport(factsOf({}, { unmutated: ['src/a.ts'] }));
 
     expect(report.error).toContain('1 file(s)');
+  });
+});
+
+const killedBy = (...ids: string[]) => ({ status: 'Killed', killedBy: ids });
+
+const auditFacts = (mutants: Mutant[], tests: { id: string; name: string }[]): MutationFacts => ({
+  mode: 'audit',
+  stryker: {
+    files: { 'src/a.ts': { mutants } },
+    testFiles: { 'src/a.test.ts': { tests } },
+  },
+  sources: {},
+  unmutated: [],
+});
+
+const twoMutants = (first: Partial<Mutant>, second: Partial<Mutant>) => [
+  mutant({ ...first, location: at(1, 1), replacement: 'x' }),
+  mutant({ ...second, location: at(2, 1), replacement: 'y' }),
+];
+
+describe('buildMutationReport with tests that have no unique kill', () => {
+  it('lists two tests that kill the same mutants and exits 0', () => {
+    const facts = auditFacts(twoMutants(killedBy('0', '1'), killedBy('0', '1')), [
+      { id: '0', name: 'first' },
+      { id: '1', name: 'second' },
+    ]);
+
+    const { report, exitCode } = buildMutationReport(facts);
+
+    const kills = [
+      { file: 'src/a.ts', line: 1, column: 1, mutator: 'Regex', original: '', replacement: 'x' },
+      { file: 'src/a.ts', line: 2, column: 1, mutator: 'Regex', original: '', replacement: 'y' },
+    ];
+
+    expect(exitCode).toBe(0);
+
+    expect(report.testsWithNoUniqueKill).toEqual([
+      { file: 'src/a.test.ts', test: 'first', kills },
+      { file: 'src/a.test.ts', test: 'second', kills },
+    ]);
+  });
+
+  it('leaves out a test that alone kills a mutant and lists a test that kills nothing', () => {
+    const facts = auditFacts(twoMutants(killedBy('0'), killedBy('0', '1')), [
+      { id: '0', name: 'unique' },
+      { id: '1', name: 'shared' },
+      { id: '2', name: 'idle' },
+    ]);
+
+    const { report } = buildMutationReport(facts);
+
+    expect(report.testsWithNoUniqueKill?.map(({ test }) => test)).toEqual(['idle', 'shared']);
+    expect(report.testsWithNoUniqueKill?.find(({ test }) => test === 'idle')?.kills).toEqual([]);
+  });
+
+  it('sorts the list by test file before test name', () => {
+    const facts = auditFacts([], []);
+
+    facts.stryker = {
+      files: {},
+      testFiles: {
+        'src/b.test.ts': { tests: [{ id: '0', name: 'alpha' }] },
+        'src/a.test.ts': { tests: [{ id: '1', name: 'beta' }] },
+      },
+    };
+
+    const { report } = buildMutationReport(facts);
+
+    expect(report.testsWithNoUniqueKill?.map(({ file }) => file)).toEqual([
+      'src/a.test.ts',
+      'src/b.test.ts',
+    ]);
+  });
+
+  it('ignores a killed mutant with no killedBy', () => {
+    const facts = auditFacts([mutant({ status: 'Killed' })], [{ id: '0', name: 'idle' }]);
+
+    const { report } = buildMutationReport(facts);
+
+    expect(report.testsWithNoUniqueKill).toEqual([
+      { file: 'src/a.test.ts', test: 'idle', kills: [] },
+    ]);
+  });
+
+  it('has no list in changed mode', () => {
+    const facts = {
+      ...auditFacts(
+        [killedBy('0')].map((fields) => mutant(fields)),
+        [],
+      ),
+      mode: 'changed' as const,
+    };
+
+    const { report } = buildMutationReport(facts);
+
+    expect('testsWithNoUniqueKill' in report).toBe(false);
+  });
+
+  it('gives an empty list when Stryker did not run in audit mode', () => {
+    const { report } = buildMutationReport({ ...auditFacts([], []), stryker: undefined });
+
+    expect(report.testsWithNoUniqueKill).toEqual([]);
+    expect(failedMutationReport('audit', 'bad').testsWithNoUniqueKill).toEqual([]);
+    expect('testsWithNoUniqueKill' in failedMutationReport(null, 'bad')).toBe(false);
   });
 });
 

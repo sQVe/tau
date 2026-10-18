@@ -14,6 +14,7 @@ export interface Mutant {
   location: MutantLocation;
   static?: boolean;
   coveredBy?: string[];
+  killedBy?: string[];
   testsCompleted?: number;
 }
 
@@ -21,7 +22,7 @@ export interface Mutant {
 export interface StrykerReport {
   config?: { ignoreStatic?: boolean };
   files: Record<string, { mutants: Mutant[] }>;
-  testFiles?: Record<string, { tests: unknown[] }>;
+  testFiles?: Record<string, { tests: { id: string; name: string }[] }>;
 }
 
 export interface Survivor {
@@ -32,6 +33,14 @@ export interface Survivor {
   original: string;
   replacement: string;
   covered: boolean;
+}
+
+export type Kill = Omit<Survivor, 'covered'>;
+
+export interface TestWithNoUniqueKill {
+  file: string;
+  test: string;
+  kills: Kill[];
 }
 
 export interface Totals {
@@ -54,6 +63,8 @@ export interface MutationOutcome {
   falseSurvivors: Survivor[];
   unmutated: string[];
   totals: Totals;
+  // Present in audit mode only.
+  testsWithNoUniqueKill?: TestWithNoUniqueKill[];
 }
 
 export interface MutationFacts {
@@ -134,12 +145,61 @@ const survivorOf = (file: string, mutant: Mutant, source: string): Survivor => (
   covered: mutant.status !== 'NoCoverage',
 });
 
-const bySurvivorPosition = (left: Survivor, right: Survivor) => {
+const bySurvivorPosition = (left: Kill, right: Kill) => {
   if (left.file !== right.file) {
     return left.file < right.file ? -1 : 1;
   }
 
   return left.line - right.line || left.column - right.column;
+};
+
+const killOf = (file: string, mutant: Mutant, source: string): Kill => {
+  const { covered: _covered, ...kill } = survivorOf(file, mutant, source);
+
+  return kill;
+};
+
+const byTestPosition = (left: TestWithNoUniqueKill, right: TestWithNoUniqueKill) => {
+  if (left.file !== right.file) {
+    return left.file < right.file ? -1 : 1;
+  }
+
+  if (left.test === right.test) {
+    return 0;
+  }
+
+  return left.test < right.test ? -1 : 1;
+};
+
+// A test has a unique kill when it alone is in the killedBy list of a Killed mutant.
+const testsWithNoUniqueKillOf = (
+  report: StrykerReport,
+  sources: Record<string, string>,
+): TestWithNoUniqueKill[] => {
+  const killed = Object.entries(report.files).flatMap(([file, { mutants }]) =>
+    mutants
+      .filter(({ status, killedBy }) => status === 'Killed' && (killedBy?.length ?? 0) > 0)
+      .map((mutant) => ({ mutant, kill: killOf(file, mutant, sources[file] ?? '') })),
+  );
+
+  const entries = Object.entries(report.testFiles ?? {}).flatMap(([file, { tests }]) =>
+    tests.map(({ id, name }) => ({
+      file,
+      test: name,
+      kills: killed
+        .filter(({ mutant }) => mutant.killedBy?.includes(id) === true)
+        .map(({ kill }) => kill)
+        .toSorted(bySurvivorPosition),
+      isUnique: killed.some(
+        ({ mutant }) => mutant.killedBy?.length === 1 && mutant.killedBy[0] === id,
+      ),
+    })),
+  );
+
+  return entries
+    .filter(({ isUnique }) => !isUnique)
+    .map(({ file, test, kills }) => ({ file, test, kills }))
+    .toSorted(byTestPosition);
 };
 
 const totalsOf = (mutants: Mutant[], plannedCount: (mutant: Mutant) => number): Totals => {
@@ -159,6 +219,9 @@ const totalsOf = (mutants: Mutant[], plannedCount: (mutant: Mutant) => number): 
   };
 };
 
+const auditList = (facts: MutationFacts) =>
+  facts.stryker === undefined ? [] : testsWithNoUniqueKillOf(facts.stryker, facts.sources);
+
 const outcome = (
   facts: MutationFacts,
   status: MutationStatus,
@@ -175,6 +238,7 @@ const outcome = (
   falseSurvivors,
   unmutated: facts.unmutated,
   totals,
+  ...(facts.mode === 'audit' ? { testsWithNoUniqueKill: auditList(facts) } : {}),
 });
 
 const unmutatedMessage = (unmutated: string[]) =>
@@ -257,4 +321,5 @@ export const failedMutationReport = (
   falseSurvivors: [],
   unmutated: [],
   totals: emptyTotals,
+  ...(mode === 'audit' ? { testsWithNoUniqueKill: [] } : {}),
 });

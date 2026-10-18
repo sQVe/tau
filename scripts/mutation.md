@@ -14,6 +14,9 @@ node scripts/mutation.ts audit <path>... [--max-mutants <n>] [--config <path>]
 - `changed <base>` mutates the lines that `git diff -U0 <base>` adds against the working tree, and
   every line of each untracked file.
 - `audit <path>...` mutates whole files.
+- `audit` runs Stryker with `disableBail: true`, so `killedBy` lists every test that fails a mutant.
+  `changed` runs with `disableBail: false`. Both override the config value. `audit` also sets
+  `incremental: false`, because a reused result from a run with bail on lists only one test.
 - `--max-mutants` sets the cap. The default is 500.
 - `--config` names the Stryker config. The default is `stryker.config.json` in the root.
 
@@ -107,6 +110,12 @@ The count includes static mutants, because Stryker finds them only after its fir
 }
 ```
 
+- In `audit` mode the report also has `testsWithNoUniqueKill`. It lists each test whose killed
+  mutants are all killed by another test too, and each test that kills no mutant (`kills` is `[]`).
+  Entries are sorted by `file` (the test file), then `test` (the test name). `kills` have the shape
+  of `survivors` without `covered`. Only `Killed` mutants with a `killedBy` list count. The list
+  never changes `status` or the exit code. It is `[]` when Stryker did not run. `changed` mode and a
+  report with `mode` `null` have no such field.
 - `mode` is `null` when the command line named none.
 - `status` is `pass`, `survivors`, `nothing`, or `error`. `nothing` means no production line or no
   mutant was in scope.

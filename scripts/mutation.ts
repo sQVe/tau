@@ -97,14 +97,19 @@ const countMutants = async (root: string, scope: FileScope, config: StrykerConfi
   return countedMutants(result.mutants);
 };
 
-const runStryker = (root: string, config: StrykerConfig, scopes: FileScope[]): StrykerReport => {
+const runStryker = (
+  root: string,
+  config: StrykerConfig,
+  scopes: FileScope[],
+  mode: MutationMode,
+): StrykerReport => {
   const directory = mkdtempSync(join(tmpdir(), 'mutation-'));
 
   try {
     const reportPath = join(directory, 'mutation.json');
     const configPath = join(directory, 'stryker.config.json');
 
-    const merged = mergedConfig(config, scopes.flatMap(mutatePatterns), reportPath);
+    const merged = mergedConfig(config, scopes.flatMap(mutatePatterns), reportPath, mode);
 
     writeFileSync(configPath, JSON.stringify(merged, undefined, 2));
 
@@ -150,7 +155,10 @@ const mutate = async (command: Command): Promise<{ report: MutationOutcome; exit
 
   const { run, unmutated } = fitCap(counts, command.maxMutants);
   const runScopes = scopes.filter(({ path }) => run.includes(path));
-  const stryker = runScopes.length === 0 ? undefined : runStryker(root, config, runScopes);
+
+  const stryker =
+    runScopes.length === 0 ? undefined : runStryker(root, config, runScopes, command.mode);
+
   const sources = stryker === undefined ? {} : readSources(root, stryker);
 
   const reportedPaths = Object.entries(stryker?.files ?? {})
