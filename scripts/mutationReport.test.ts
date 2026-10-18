@@ -216,7 +216,117 @@ describe('buildMutationReport', () => {
       noCoverage: 1,
       timeout: 1,
       invalid: 1,
+      falseSurvived: 0,
     });
+  });
+});
+
+const withTestCount = (facts: MutationFacts, count: number): MutationFacts => ({
+  ...facts,
+  stryker: {
+    files: {},
+    ...facts.stryker,
+    testFiles: { 'a.test.ts': { tests: Array.from({ length: count }, () => ({})) } },
+  },
+});
+
+describe('buildMutationReport with false survivors', () => {
+  it('lists a static survivor that ran fewer tests than the report holds apart', () => {
+    const facts = withTestCount(
+      factsOf({ 'src/a.ts': [mutant({ static: true, testsCompleted: 0 })] }),
+      3,
+    );
+
+    const { report, exitCode } = buildMutationReport(facts);
+
+    expect(report.survivors).toEqual([]);
+    expect(report.falseSurvivors).toHaveLength(1);
+    expect(report.totals).toMatchObject({ mutants: 1, survived: 0, falseSurvived: 1 });
+    expect(report.status).toBe('pass');
+    expect(exitCode).toBe(0);
+  });
+
+  it.each([
+    { testsCompleted: 2, survivors: 1, falseSurvivors: 0 },
+    { testsCompleted: 0, survivors: 0, falseSurvivors: 1 },
+  ])(
+    'plans only the covering tests of a static survivor with ignoreStatic ($testsCompleted completed)',
+    ({ testsCompleted, survivors, falseSurvivors }) => {
+      const base = factsOf({
+        'src/a.ts': [mutant({ static: true, coveredBy: ['1', '2'], testsCompleted })],
+      });
+
+      const facts = withTestCount(base, 5);
+
+      facts.stryker = {
+        ...facts.stryker,
+        files: facts.stryker?.files ?? {},
+        config: { ignoreStatic: true },
+      };
+
+      const { report } = buildMutationReport(facts);
+
+      expect(report.survivors).toHaveLength(survivors);
+      expect(report.falseSurvivors).toHaveLength(falseSurvivors);
+    },
+  );
+
+  it('keeps a static survivor that ran every test as a survivor', () => {
+    const facts = withTestCount(
+      factsOf({ 'src/a.ts': [mutant({ static: true, testsCompleted: 3 })] }),
+      3,
+    );
+
+    const { report } = buildMutationReport(facts);
+
+    expect(report.survivors).toHaveLength(1);
+    expect(report.falseSurvivors).toEqual([]);
+    expect(report.totals.falseSurvived).toBe(0);
+  });
+
+  it('keeps a non-static survivor with a low test count as a survivor', () => {
+    const facts = withTestCount(
+      factsOf({ 'src/a.ts': [mutant({ static: false, testsCompleted: 0 })] }),
+      3,
+    );
+
+    const { report } = buildMutationReport(facts);
+
+    expect(report.survivors).toHaveLength(1);
+    expect(report.falseSurvivors).toEqual([]);
+  });
+
+  it('keeps a static survivor when the report has no test files', () => {
+    const facts = factsOf({ 'src/a.ts': [mutant({ static: true, testsCompleted: 0 })] });
+
+    const { report } = buildMutationReport(facts);
+
+    expect(report.survivors).toHaveLength(1);
+    expect(report.falseSurvivors).toEqual([]);
+  });
+
+  it('keeps a static NoCoverage mutant as a survivor', () => {
+    const facts = withTestCount(
+      factsOf({ 'src/a.ts': [mutant({ status: 'NoCoverage', static: true, testsCompleted: 0 })] }),
+      3,
+    );
+
+    const { report } = buildMutationReport(facts);
+
+    expect(report.survivors).toHaveLength(1);
+    expect(report.falseSurvivors).toEqual([]);
+  });
+
+  it('lists false survivors when the run failed', () => {
+    const facts = withTestCount(
+      factsOf({ 'src/a.ts': [mutant({ static: true, testsCompleted: 0 })] }, { error: 'boom' }),
+      3,
+    );
+
+    const { report } = buildMutationReport(facts);
+
+    expect(report.status).toBe('error');
+    expect(report.falseSurvivors).toHaveLength(1);
   });
 });
 
@@ -240,6 +350,13 @@ describe('failedMutationReport', () => {
   it('reports the error with no mode when none was chosen', () => {
     const report = failedMutationReport(null, 'bad usage');
 
-    expect(report).toMatchObject({ mode: null, status: 'error', error: 'bad usage' });
+    expect(report).toMatchObject({
+      mode: null,
+      status: 'error',
+      error: 'bad usage',
+      falseSurvivors: [],
+    });
+
+    expect(report.totals.falseSurvived).toBe(0);
   });
 });

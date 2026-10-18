@@ -20,9 +20,10 @@ node scripts/mutation.ts audit <path>... [--max-mutants <n>] [--config <path>]
 ## Setup
 
 Another repository copies `scripts/mutation.ts`, `scripts/mutationScope.ts`,
-`scripts/mutationReport.ts`, and its Stryker config. It needs the dev dependencies
-`@stryker-mutator/core`, a Stryker test runner such as `@stryker-mutator/vitest-runner`,
-`@stryker-mutator/instrumenter`, and `@stryker-mutator/util`.
+`scripts/mutationReport.ts`, `scripts/mutationIgnorePolicy.ts`, `scripts/mutationIgnorer.ts`, and
+its Stryker config. It needs the dev dependencies `@stryker-mutator/api`, `@stryker-mutator/core`, a
+Stryker test runner such as `@stryker-mutator/vitest-runner`, `@stryker-mutator/instrumenter`, and
+`@stryker-mutator/util`.
 
 The config must have a non-empty `mutate` list. The script exits 1 with an error that names the
 config when it is missing. The script sets `thresholds.break` to `null`, so the report alone decides
@@ -32,6 +33,28 @@ A file counts as production code when its path matches the config's `mutate` glo
 subtracted. The script replaces `mutate` with the computed ranges and writes the JSON report to a
 temporary directory. The config picks the test runner and tests.
 
+## Ignored mutants
+
+`scripts/mutationIgnorer.ts` is a Stryker ignore plugin. It skips the string mutants of:
+
+- the message of a built-in error: argument 0 of `Error`, `TypeError`, `RangeError`, `SyntaxError`,
+  `ReferenceError`, `EvalError`, or `URIError`, and argument 1 of `AggregateError`;
+- argument 0 of `new X(...)` when `X` ends in `Error` and the call has exactly one argument;
+- an argument after the first of `invariant(...)`;
+- the `error` value of an object literal that also has `ok: false`.
+
+A template message with an expression is not skipped, because Stryker cannot skip a node without its
+children. Its text mutant is still reported; mark it with a disable comment when no test should pin
+the text.
+
+The config turns it on with two keys. `plugins` lists the test runner and
+`./scripts/mutationIgnorer.ts`, and `ignorers` lists `tauMessageIgnorer`. It also sets
+`"ignoreStatic": true`. Stryker resolves the plugin path from the repository root. The cap counts
+with the same ignorer when `ignorers` names it.
+
+To mark a mutant that no test can tell apart from the original, write
+`// Stryker disable next-line <mutator>: <reason>` above the line.
+
 ## Cap
 
 Before the run, the script counts the mutants of each file in scope with the Stryker instrumenter.
@@ -39,6 +62,9 @@ Ignored mutants do not count. Files get their budget in path order. A file that 
 mutated and is listed in `unmutated`. Later files that fit still run. After the run, a file that had
 mutants in the count but none in Stryker's report is also listed in `unmutated`. The exit code is 1
 in both modes when any file is unmutated.
+
+The count includes static mutants, because Stryker finds them only after its first test run. With
+`ignoreStatic` they count against the cap although Stryker ignores them.
 
 ## Exit codes
 
@@ -67,6 +93,7 @@ in both modes when any file is unmutated.
       "covered": true
     }
   ],
+  "falseSurvivors": [],
   "unmutated": ["src/b.ts"],
   "totals": {
     "mutants": 10,
@@ -74,7 +101,8 @@ in both modes when any file is unmutated.
     "survived": 1,
     "noCoverage": 1,
     "timeout": 0,
-    "invalid": 0
+    "invalid": 0,
+    "falseSurvived": 0
   }
 }
 ```
@@ -85,3 +113,9 @@ in both modes when any file is unmutated.
 - Survivors are `Survived` and `NoCoverage` mutants. `covered` is false for `NoCoverage`.
 - `totals.invalid` counts `CompileError` and `RuntimeError` mutants. When every mutant is invalid,
   the status is `error`.
+- A false survivor is a static mutant that Stryker marks `Survived` although fewer tests completed
+  than planned. The planned count is the number of tests in `coveredBy` when the report's
+  `config.ignoreStatic` is true and `coveredBy` is not empty. Otherwise it is every test in the
+  report. The mutant made a test file throw while Vitest loaded it, so no test in that file ran.
+  `falseSurvivors` lists them in the shape of `survivors`. They are not in `survivors` or
+  `totals.survived`, and they do not change the status.
