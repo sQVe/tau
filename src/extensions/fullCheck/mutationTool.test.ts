@@ -332,7 +332,9 @@ it('waits on the lock of a running full check for a mutation check of the same r
             argv: [
               process.execPath,
               '-e',
-              `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(join(directory, 'started'))}, ''); setInterval(() => { if (fs.existsSync(${JSON.stringify(gate)})) process.exit(0); }, 10);`,
+              "const fs = require('node:fs'); const [started, gate] = process.argv.slice(1); fs.writeFileSync(started, ''); setInterval(() => { if (fs.existsSync(gate)) process.exit(0); }, 10);",
+              join(directory, 'started'),
+              gate,
             ],
           },
         },
