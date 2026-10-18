@@ -132,6 +132,13 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
    - When the repository has a configured full check, run it with the `full_check` tool, passing the
      pinned merge base as `base`. Append the log it returns after the header lines. The tool returns
      a saved passing log without a run when the head, base, command, and changes are unchanged.
+   - After the full check, whether `full_check` or the repository's own command ran it, run
+     `mutation_check` with `mode: "changed"`, passing the pinned merge base as `base`. Save the
+     `checkHeader` lines, the tool's result text, and then the content of the log it returns as
+     `$prdir/checks/mutation.log`. The result text holds the verdict and the survivors. Send
+     remaining survivors to the [triage-findings skill](../triage-findings/SKILL.md), commit its
+     fixes, and rerun. When the tool fails because the repository has no `mutation.argv` in
+     `.pi/tau.json`, skip this step and note it in the session report.
    - When the change has user-visible behavior, also send it to a `qa` worker on the committed tree
      before the preview.
    - Leave the app URL, test account, and data writes to Tau, which fills them from the user's
@@ -146,6 +153,8 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
    - An audit item with the verdict not run. It closes when it names a check that step 5 ran and
      that check passed. A not-met item stops the flow before publication. A deferred item is not a
      gap.
+   - A `mutation_check` that fails, for survivors or an error. Stop before publication and report
+     it. It is a stop, not a gap that only suggests draft.
    - A review that does not cover the pushed content. A checked fix counts as covered: it changes
      only what its finding or failing check needs, and the checks that cover it passed after it.
    - User-visible behavior that QA did not test, or that QA found failing. Untested behavior gets a

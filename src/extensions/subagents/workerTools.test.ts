@@ -41,3 +41,12 @@ it.each(['tdd', 'fix-bug', 'pr'])(
     expect(workerTools(loadout, bundledSkillTools)).toContain('full_check');
   },
 );
+
+it.each(['tdd', 'pr'])(
+  'gives a worker that loads the %s skill the mutation_check tool',
+  (skill) => {
+    const loadout = { tools: ['read'], skills: [`/skills/${skill}/SKILL.md`] };
+
+    expect(workerTools(loadout, bundledSkillTools)).toContain('mutation_check');
+  },
+);

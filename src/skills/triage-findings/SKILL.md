@@ -50,6 +50,9 @@ changing and within the requested scope. Explain the rest.
    - Weigh each fix against the branches, guards, and abstractions it adds.
    - Put defensive checks where untrusted input enters, not inside trusted code.
    - When a simpler change covers the concern, make that one instead.
+   - For a surviving mutant, in this order: write a test that kills a real gap; simplify redundant
+     code the mutant points at; only for a true equivalent mutant, add
+     `// Stryker disable next-line <mutator>: <reason>` above the line.
 4. Run the checks that cover your changes.
 5. Report every finding under one heading per outcome, in this order: Fixed, Not worth changing,
    Incorrect, and Blocked. Write "None" under an empty heading.

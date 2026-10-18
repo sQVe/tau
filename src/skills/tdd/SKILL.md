@@ -39,6 +39,15 @@ make it pass, then verify the whole suite once.
    - A full `run_tests` pass also counts when no repository check will run.
    - One pass on the current inputs is enough. Do not rerun an equivalent full suite for bookkeeping
      or because you are about to hand off. Required hooks and CI still run on their own.
+   - After the full check passes, run `mutation_check` with `mode: "changed"` and no `base`. Handle
+     each survivor in this order. A fix changes the full check's inputs, so run the full check and
+     then `mutation_check` again until both pass:
+     1. Write a test that kills a real gap.
+     2. Simplify redundant code the mutant points at.
+     3. Only for a true equivalent mutant, add `// Stryker disable next-line <mutator>: <reason>`
+        above the line.
+   - When the tool fails because the repository has no `mutation.argv` in `.pi/tau.json`, skip this
+     step and say so in the report.
 5. Report the outcome and the freshness as separate facts.
    - `stale` means tracked inputs changed. `unknown` means Tau could not read them. The runner
      report stays available in both cases.
