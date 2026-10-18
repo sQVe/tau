@@ -251,7 +251,7 @@ export const runCheck = async (
           const finishCancel = async () => {
             await waitForCommandToExit(child, processId);
             clearTimeout(killTimer);
-            reject(new Error('The full check was cancelled and its command has stopped.'));
+            reject(new Error('The check was cancelled and its command has stopped.'));
           };
 
           finishCancel().catch((error: unknown) => {

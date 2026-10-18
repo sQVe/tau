@@ -126,7 +126,7 @@ const sleep = (milliseconds: number, signal: AbortSignal | undefined): Promise<v
     signal?.addEventListener('abort', finish, { once: true });
   });
 
-const abortedError = (): Error => new Error('The full check was cancelled while it waited.');
+const abortedError = (): Error => new Error('The check was cancelled while it waited.');
 
 const listGenerations = async (lockPath: string): Promise<number[]> => {
   const prefix = `${basename(lockPath)}.`;
