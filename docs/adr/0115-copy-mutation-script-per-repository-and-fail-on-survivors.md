@@ -4,7 +4,9 @@
 **Status**: Accepted; use of survivors as a gate superseded by
 [ADR 0117 (List mutation survivors as advice instead of a gate)](./0117-list-mutation-survivors-as-advice.md);
 disable-comment rule superseded by
-[ADR 0118 (List equivalent mutants instead of adding disable comments)](./0118-list-equivalent-mutants-instead-of-disable-comments.md)\
+[ADR 0118 (List equivalent mutants instead of adding disable comments)](./0118-list-equivalent-mutants-instead-of-disable-comments.md);
+copy rule superseded by
+[ADR 0119 (Share the mutation script as one npm package)](./0119-share-the-mutation-script-as-one-npm-package.md)\
 **Related**:
 [ADR 0113 (Run diff-scoped mutation testing by hand)](./0113-run-diff-scoped-mutation-testing-by-hand.md)
 
