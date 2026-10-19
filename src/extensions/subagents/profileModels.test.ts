@@ -308,3 +308,49 @@ it('fails only the profile whose entry is bad', ({ onTestFinished }) => {
   expect(() => readProfileModel(location, 'other', uiFixture())).toThrow('profiles.other.model');
   expect(readProfileModels(location, uiFixture())).toEqual(new Map([['worker', 'a/worker']]));
 });
+
+it.for<[string, string]>([
+  ['a profile with no entry', 'missing'],
+  ['a profile entry with no route', 'plain'],
+])('reads no route and raises no notice for %s', ([, name], { onTestFinished }) => {
+  const { location, userFile } = configFixture(onTestFinished);
+
+  writeConfig(userFile, { profiles: { plain: { model: 'a/plain' } } });
+
+  const ui = uiFixture();
+
+  expect(readProfileRoute(location, name, ui)).toBeUndefined();
+  expect(ui.notify).not.toHaveBeenCalled();
+});
+
+it.for<[string, unknown, string]>([
+  ['a numeric question', { ...scoutRoute, question: 5 }, 'route.question'],
+  ['an empty question', { ...scoutRoute, question: '' }, 'route.question'],
+  ['a blank question', { ...scoutRoute, question: '  \n' }, 'route.question'],
+  [
+    'a blank label criterion',
+    {
+      ...scoutRoute,
+      labels: { ...scoutRoute.labels, wide: { criterion: ' ', model: 'a/scout' } },
+    },
+    'route.labels.wide.criterion',
+  ],
+  ['labels as a list', { ...scoutRoute, labels: Object.values(scoutRoute.labels) }, 'route.labels'],
+])('turns routing off for %s and names the field', ([, route, field], { onTestFinished }) => {
+  const { location, userFile } = configFixture(onTestFinished);
+
+  writeConfig(userFile, { profiles: { scout: { model: 'a/scout', route } } });
+
+  const ui = uiFixture();
+
+  expect(readProfileRoute(location, 'scout', ui)).toBeUndefined();
+  expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining(field), 'error');
+});
+
+it('refuses a profile model that is not a string', ({ onTestFinished }) => {
+  const { location, userFile } = configFixture(onTestFinished);
+
+  writeConfig(userFile, { profiles: { scout: { model: ['a/scout'] } } });
+
+  expect(() => readProfileModel(location, 'scout', uiFixture())).toThrow('profiles.scout.model');
+});

@@ -50,3 +50,30 @@ it.each(['tdd', 'pr'])(
     expect(workerTools(loadout, bundledSkillTools)).toContain('mutation_check');
   },
 );
+
+it('finds the skill by the directory above SKILL.md at any depth', () => {
+  const skills = ['/home/user/.pi/agent/skills/tracker/SKILL.md'];
+
+  expect(workerTools({ tools: [], skills }, { tracker: ['tracker_evidence'] })).toContain(
+    'tracker_evidence',
+  );
+});
+
+it('finds the skill when the path holds a doubled slash', () => {
+  const skills = ['/home/user/skills/tracker//SKILL.md'];
+
+  expect(workerTools({ tools: [], skills }, { tracker: ['tracker_evidence'] })).toContain(
+    'tracker_evidence',
+  );
+});
+
+it('adds no skill tool for a skill that has none', () => {
+  const skills = ['/home/user/skills/other/SKILL.md'];
+
+  expect(workerTools({ tools: ['read'], skills }, { tracker: ['tracker_evidence'] })).toEqual([
+    'read',
+    'subagent_progress',
+    'subagent_report',
+    'subagent_question',
+  ]);
+});

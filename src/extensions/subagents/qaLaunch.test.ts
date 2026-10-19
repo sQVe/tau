@@ -1,5 +1,14 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -244,4 +253,123 @@ it('refuses a cwd outside the session before it reads settings or runs a command
 
   await expect(apply(launch(other), worktree)).rejects.toThrow("only in this session's cwd");
   expect(existsSync(marker)).toBe(false);
+});
+
+it('adds the brief lines and no url for a qa launch whose settings have no urlCommand', async () => {
+  const { worktree, writeUser } = await fixture('git@github.com:sQVe/cape.git');
+
+  writeUser({
+    qa: { repositories: { [repository]: { testAccountCommand: 'op read login' } } },
+  });
+
+  const resolved = await apply(launch(worktree), worktree);
+
+  expect(resolved.url).toBeUndefined();
+  expect(resolved.task).toContain('op read login');
+});
+
+it('refuses at the deadline when the caller passes a signal that never aborts', async () => {
+  const { worktree, writeUser } = await fixture('git@github.com:sQVe/cape.git');
+
+  writeUser(settingsFor('sleep 30'));
+
+  const refusal = applyQaSettings(
+    launch(worktree),
+    new AbortController().signal,
+    context(worktree) as never,
+    200,
+  );
+
+  await expect(refusal).rejects.toThrow('qa.repositories');
+});
+
+it('kills the process group when the caller aborts the launch', async () => {
+  const { worktree, writeUser } = await fixture('git@github.com:sQVe/cape.git');
+  const pidFile = join(worktree, 'descendant.pid');
+  const abort = new AbortController();
+
+  // The sleep ends on its own, so a failed assertion leaves no process behind for long.
+  writeUser(settingsFor('sleep 10 & echo $! > descendant.pid; wait'));
+
+  const refusal = applyQaSettings(launch(worktree), abort.signal, context(worktree) as never);
+  const outcome = refusal.catch((error: unknown) => error);
+
+  onTestFinished(async () => {
+    abort.abort();
+    await outcome;
+  });
+
+  await vi.waitFor(() => {
+    expect(readFileSync(pidFile, 'utf8')).toMatch(/\n$/);
+  });
+
+  const descendant = Number(readFileSync(pidFile, 'utf8'));
+
+  abort.abort();
+  expect(String(await outcome)).toContain('qa.repositories');
+
+  await vi.waitFor(() => {
+    expect(() => process.kill(descendant, 0)).toThrow('ESRCH');
+  });
+});
+
+it('does not run the command for a launch the caller already aborted', async () => {
+  const { worktree, writeUser } = await fixture('git@github.com:sQVe/cape.git');
+  const marker = join(worktree, 'ran');
+
+  writeUser(settingsFor(`sleep 0.3; touch ran; echo http://localhost:1`));
+
+  const refusal = applyQaSettings(
+    launch(worktree),
+    AbortSignal.abort(),
+    context(worktree) as never,
+  );
+
+  await expect(refusal).rejects.toThrow('qa.repositories');
+
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 700);
+  });
+
+  expect(existsSync(marker)).toBe(false);
+});
+
+it('gives the command no input, so a command that reads input ends at once', async () => {
+  const { worktree, writeUser } = await fixture('git@github.com:sQVe/cape.git');
+
+  writeUser(settingsFor('cat; echo http://localhost:4100'));
+
+  const resolved = await applyQaSettings(
+    launch(worktree),
+    undefined,
+    context(worktree) as never,
+    3000,
+  );
+
+  expect(resolved.url).toBe('http://localhost:4100');
+});
+
+it('settles at the deadline even when a process outside the group keeps the output open', async () => {
+  const { worktree, writeUser } = await fixture('git@github.com:sQVe/cape.git');
+
+  writeUser(settingsFor('(setsid sleep 4 &); sleep 30'));
+
+  const started = performance.now();
+  const refusal = applyQaSettings(launch(worktree), undefined, context(worktree) as never, 200);
+
+  await expect(refusal).rejects.toThrow('qa.repositories');
+  expect(performance.now() - started).toBeLessThan(2000);
+});
+
+it('refuses a urlCommand that cannot start', async () => {
+  const { worktree, writeUser } = await fixture('git@github.com:sQVe/cape.git');
+  const gitOnly = join(worktree, '..', 'git-only');
+  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+
+  mkdirSync(gitOnly);
+  symlinkSync(realGit, join(gitOnly, 'git'));
+  writeUser(settingsFor('echo http://localhost:1'));
+  vi.stubEnv('PATH', gitOnly);
+
+  await expect(apply(launch(worktree), worktree)).rejects.toThrow('failed or timed out');
 });

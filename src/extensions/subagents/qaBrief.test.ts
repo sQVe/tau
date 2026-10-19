@@ -15,6 +15,7 @@ it.each([
   { condition: 'the command failed', stdout: undefined },
   { condition: 'the output is empty', stdout: ' \n' },
   { condition: 'the output is not a URL', stdout: 'localhost:3000' },
+  { condition: 'the output cannot be parsed as a URL', stdout: 'not a url' },
   { condition: 'the URL is not http', stdout: 'file:///tmp/index.html' },
 ])('refuses naming the command and the config file when $condition', ({ stdout }) => {
   const result = urlCommandResult({ ...run, stdout });
