@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 export const skillTools: Readonly<Record<string, readonly string[]>> = {
   'code-review': ['code_review', 'tracker_draft'],
   brainstorm: ['slice', 'draft_review'],
@@ -13,3 +16,6 @@ export const skillTools: Readonly<Record<string, readonly string[]>> = {
   'pr-feedback': ['pr_feedback'],
   tracker: ['tracker_evidence', 'tracker_draft', 'draft_review'],
 };
+
+export const skillToolsPath = fileURLToPath(import.meta.url);
+export const loadedSkillToolsSource = readFileSync(skillToolsPath, 'utf8');

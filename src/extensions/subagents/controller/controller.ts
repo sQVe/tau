@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 
 import { isMissingFile } from '../../../errors.js';
+import { loadedSkillToolsSource, skillToolsPath } from '../../../skillTools.js';
 import { listTerminals, result } from '../../../terminal.js';
 import type { TerminalCall } from '../../../terminal.js';
 import { acceptanceRefusal } from '../acceptanceRefusal.js';
@@ -18,6 +20,7 @@ import type { Visibility } from '../placement.js';
 import type { WorkerNotice } from '../presentation.js';
 import { readAcknowledgement, readQuestion, readReply } from '../questionRecords.js';
 import { readEvent, readTask, readTasks, namePrefix, publish, validateTask } from '../records.js';
+import { skillToolsRefusal } from '../skillToolsRefusal.js';
 import { isTaskId, taskVersion } from '../types.js';
 import type { Acknowledgement, Loadout, Question, Reply, Task } from '../types.js';
 import type { WorkerWidgetRow } from '../widget.js';
@@ -494,6 +497,13 @@ export class WorkerController {
   ): Promise<LaunchStatus> {
     if (this.closed) {
       throw new Error('Parent controller stopped.');
+    }
+
+    const currentSkillToolsSource = readFileSync(skillToolsPath, 'utf8');
+    const skillToolsRefused = skillToolsRefusal(loadedSkillToolsSource, currentSkillToolsSource);
+
+    if (skillToolsRefused !== undefined) {
+      throw new Error(skillToolsRefused);
     }
 
     launchSignal.throwIfAborted();
