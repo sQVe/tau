@@ -47,7 +47,7 @@ temporary directory. The config picks the test runner and tests.
 - the `error` value of an object literal that also has `ok: false`.
 
 A template message with an expression is not skipped, because Stryker cannot skip a node without its
-children. Its text mutant is still reported. Such a mutant stays in the survivor list.
+children. Stryker still runs its text mutant. When no test kills it, it stays in the survivor list.
 
 The config turns it on with two keys. `plugins` lists the test runner and
 `./scripts/mutationIgnorer.ts`, and `ignorers` lists `tauMessageIgnorer`. It also sets
