@@ -47,16 +47,15 @@ temporary directory. The config picks the test runner and tests.
 - the `error` value of an object literal that also has `ok: false`.
 
 A template message with an expression is not skipped, because Stryker cannot skip a node without its
-children. Its text mutant is still reported; mark it with a disable comment when no test should pin
-the text.
+children. Stryker still runs its text mutant. When no test kills it, it stays in the survivor list.
 
 The config turns it on with two keys. `plugins` lists the test runner and
 `./scripts/mutationIgnorer.ts`, and `ignorers` lists `tauMessageIgnorer`. It also sets
 `"ignoreStatic": true`. Stryker resolves the plugin path from the repository root. The cap counts
 with the same ignorer when `ignorers` names it.
 
-To mark a mutant that no test can tell apart from the original, write
-`// Stryker disable next-line <mutator>: <reason>` above the line.
+A mutant that no test can tell apart from the original also stays in the survivor list. Do not add
+disable comments. The script and Stryker still honor ones that exist.
 
 ## Cap
 
