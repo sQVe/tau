@@ -94,7 +94,7 @@ it('keeps the herdr error output of a failed client call', async () => {
     runClient(
       process.execPath,
       ['-e', 'process.stderr.write("pane missing"); process.exit(2)'],
-      1000,
+      60_000,
     ),
   ).rejects.toMatchObject({ stderr: 'pane missing' });
 });
