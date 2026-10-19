@@ -142,3 +142,4 @@ line that links to the replacement.
 - [0115: Copy the mutation script into each repository and fail on survivors](./0115-copy-mutation-script-per-repository-and-fail-on-survivors.md)
 - [0116: Name the mutation command in the repository file](./0116-name-the-mutation-command-in-the-repository-file.md)
 - [0117: List mutation survivors as advice instead of a gate](./0117-list-mutation-survivors-as-advice.md)
+- [0118: List equivalent mutants instead of adding disable comments](./0118-list-equivalent-mutants-instead-of-disable-comments.md)

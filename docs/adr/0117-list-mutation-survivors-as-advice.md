@@ -3,7 +3,9 @@
 **Date**: 2026-10-18\
 **Status**: Accepted\
 **Supersedes**: [ADR 0115 (Copy the mutation script into each repository and fail on survivors)](./0115-copy-mutation-script-per-repository-and-fail-on-survivors.md):
-use of survivors as a gate
+use of survivors as a gate\
+**Related**: [ADR 0118 (List equivalent mutants instead of adding disable comments)](./0118-list-equivalent-mutants-instead-of-disable-comments.md):
+replaces the disable-comment step of the survivor order
 
 ## Context
 

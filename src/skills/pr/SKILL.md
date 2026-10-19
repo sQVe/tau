@@ -199,9 +199,11 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
      confidence. Drop test counts. List deferred audit items under the template's deferred
      verification section, such as `##### Deferred verification`.
    - Surviving mutants: in the verification section, give each survivor from step 5 one plain line,
-     not a `[ ]` line, with its file, line, and change. List at most 10, then the count of the rest.
-     Give a `mutation_check` error its own plain line. Survivors and errors are neither gaps nor a
-     stop. These lines do not count toward the length limit.
+     not a `[ ]` line, with its file, line, and change. When an earlier `tdd` or `triage-findings`
+     report in the session, or a handover, lists a survivor as equivalent, add that reason to its
+     line. List at most 10, then the count of the rest. Give a `mutation_check` error its own plain
+     line. Survivors and errors are neither gaps nor a stop. These lines do not count toward the
+     length limit.
    - Issues: link Linear tickets as the [tracker skill](../tracker/SKILL.md) says. For other issues,
      use `Fixes <issue>` only for issues this PR completes; use `Related to <issue>` for others.
    - Repository template: apply the same rules inside it. Map the lead, context, decisions, and

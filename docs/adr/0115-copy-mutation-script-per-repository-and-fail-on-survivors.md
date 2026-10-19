@@ -2,7 +2,9 @@
 
 **Date**: 2026-10-16\
 **Status**: Accepted; use of survivors as a gate superseded by
-[ADR 0117 (List mutation survivors as advice instead of a gate)](./0117-list-mutation-survivors-as-advice.md)\
+[ADR 0117 (List mutation survivors as advice instead of a gate)](./0117-list-mutation-survivors-as-advice.md);
+disable-comment rule superseded by
+[ADR 0118 (List equivalent mutants instead of adding disable comments)](./0118-list-equivalent-mutants-instead-of-disable-comments.md)\
 **Related**:
 [ADR 0113 (Run diff-scoped mutation testing by hand)](./0113-run-diff-scoped-mutation-testing-by-hand.md)
 

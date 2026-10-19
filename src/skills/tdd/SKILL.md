@@ -41,11 +41,14 @@ make it pass, then verify the whole suite once.
      or because you are about to hand off. Required hooks and CI still run on their own.
    - After the full check passes, run `mutation_check` with `mode: "changed"` and no `base`. Handle
      each survivor in this order. A fix changes the full check's inputs, so run the full check and
-     then `mutation_check` again until both pass:
+     then `mutation_check` again after each fix:
      1. Write a test that kills a real gap.
      2. Simplify redundant code the mutant points at.
-     3. Only for a true equivalent mutant, add `// Stryker disable next-line <mutator>: <reason>`
-        above the line.
+     3. When neither applies, the mutant is equivalent. Leave the code as it is and list the mutant
+        with its reason in the report.
+   - Stop rerunning once the full check passes and every remaining survivor is listed as equivalent
+     with its reason. List a real gap you leave for later as open, with why.
+   - Report a `mutation_check` error on its own line and stop this step.
    - When the tool fails because the repository has no `mutation.argv` in `.pi/tau.json`, skip this
      step and say so in the report.
 5. Report the outcome and the freshness as separate facts.
