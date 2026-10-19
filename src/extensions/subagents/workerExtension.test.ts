@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -867,6 +867,47 @@ it('accepts a time blocker near the end of the task', async () => {
   expect(readReport(worker.directory, 'task')?.outcome).toBe('incomplete');
 });
 
+it('ends the worker turn once a report is accepted', async () => {
+  const worker = await waitingWorker();
+
+  const result = await worker.tools
+    .get('subagent_report')!
+    .execute(
+      'report',
+      { outcome: 'success', summary: `Done.${sections}`, evidence: [] },
+      undefined,
+      undefined,
+      worker.context,
+    );
+
+  expect(result.terminate).toBe(true);
+  expect(result.content[0]).toHaveProperty('text', expect.stringMatching(/\S/u));
+});
+
+it('keeps the one incomplete-report refusal after an early time blocker is refused', async () => {
+  const worker = await waitingWorker('editing', hour);
+
+  expect(() => reportIncomplete(worker, 'Time ran out.', 'time')).toThrow('remain');
+  expect(() => reportIncomplete(worker, 'Tests remain.')).toThrow('remain');
+  expect(readReport(worker.directory, 'task')).toBeUndefined();
+
+  await reportIncomplete(worker, 'Tests remain.');
+
+  expect(readReport(worker.directory, 'task')?.outcome).toBe('incomplete');
+});
+
+it('tells the worker how many seconds remain when it refuses a time blocker', async () => {
+  const worker = await waitingWorker('editing', hour);
+
+  expect(() => reportIncomplete(worker, 'Time ran out.', 'time')).toThrow(/\b3[56]\d\d seconds/u);
+});
+
+it('tells the worker how many minutes remain when it refuses an early blocker', async () => {
+  const worker = await waitingWorker('editing', hour);
+
+  expect(() => reportIncomplete(worker, 'Tests remain.')).toThrow(/\b(?:59|60) minutes/u);
+});
+
 const incidentWindow = 240_000;
 
 it('refuses a time blocker and its retry early in a four-minute task', async () => {
@@ -1198,4 +1239,21 @@ it('leaves a reply saved after the wait ended unacknowledged', async () => {
   expect(questions.readAcknowledgement(directory, 'task', details.questionId)).toBeUndefined();
   expect(sendUserMessage).not.toHaveBeenCalled();
   await emit('session_shutdown');
+});
+
+it('refuses an oversized question without leaving the worker waiting on it', async () => {
+  const { directory, ask, tools, context } = await waitingWorker();
+  const oversized = 'é'.repeat(32_000);
+
+  expect(() =>
+    tools
+      .get('subagent_question')!
+      .execute('call', { question: oversized }, undefined, undefined, context),
+  ).toThrow('exceeds');
+
+  expect(readdirSync(directory).filter((name) => name.startsWith('question-'))).toEqual([]);
+
+  const { details } = (await ask()) as { details: { questionId: string } };
+
+  expect(readdirSync(directory)).toContain(`question-${details.questionId}.json`);
 });

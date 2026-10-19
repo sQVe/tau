@@ -147,6 +147,38 @@ it('fails the setup for a bad entry of the current repository, naming the file a
   );
 });
 
+it('skips every bad entry when the checkout has no repository', ({ onTestFinished }) => {
+  const { location, userFile } = configFixture(onTestFinished);
+
+  writeConfig(userFile, {
+    tracker: { repositories: { 'sQVe/tau': { project: 'Tau' }, 'sQVe/cape': { team: 'AB' } } },
+  });
+
+  const setup = readTrackerSetup(location, ui, undefined);
+
+  expect(setup).toMatchObject({
+    status: 'read',
+    config: { repositories: new Map([['sQVe/cape', { team: 'AB', project: undefined }]]) },
+  });
+});
+
+it('skips a malformed repository key without invalidating the current repository', ({
+  onTestFinished,
+}) => {
+  const { location, userFile } = configFixture(onTestFinished);
+
+  writeConfig(userFile, {
+    tracker: { repositories: { 'Stryker was here': { team: 5 }, 'sQVe/tau': { team: 'ME' } } },
+  });
+
+  const setup = readTrackerSetup(location, ui, 'sQVe/tau');
+
+  expect(setup).toMatchObject({
+    status: 'read',
+    config: { repositories: new Map([['sQVe/tau', { team: 'ME', project: undefined }]]) },
+  });
+});
+
 it('reads team keys in upper case, as Linear stores them', ({ onTestFinished }) => {
   const { location, userFile } = configFixture(onTestFinished);
 

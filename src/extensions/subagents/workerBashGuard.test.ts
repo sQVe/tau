@@ -86,6 +86,7 @@ it('shows the head and tail of long output and saves the exact output privately'
   expect(await readFile(path, 'utf8')).toBe(result.content[0]?.text);
   expect((await stat(path)).mode & 0o777).toBe(0o600);
   expect((await stat(dirname(path))).mode & 0o777).toBe(0o700);
+  expect(dirname(dirname(path))).toBe(tmpdir());
 });
 
 it('passes the structured result through unchanged when it caps the model text', async () => {
@@ -140,4 +141,63 @@ it('caps binary output and saves the text Pi decoded', async () => {
 
   expect(text.length).toBeLessThanOrEqual(8000);
   expect(await readFile(savedPath(text), 'utf8')).toBe(result.content[0]?.text);
+});
+
+const guardDecision = async (toolName: string, input: Record<string, unknown>) => {
+  const fake = fakeExtensionApi();
+  workerBashGuard(fake.pi);
+
+  return fake.handler('tool_call')(
+    { type: 'tool_call', toolName, toolCallId: 'call', input },
+    {} as never,
+  );
+};
+
+it.each(['', '   ', '\n\t '])('blocks the empty bash command %j with a reason', async (command) => {
+  const decision = await guardDecision('bash', { command });
+
+  expect(decision).toHaveProperty('block', true);
+  expect(decision).toHaveProperty('reason', expect.stringMatching(/\S/u));
+});
+
+it('lets a bash command with content run', async () => {
+  expect(await guardDecision('bash', { command: ' ls ' })).toBeUndefined();
+});
+
+it('lets a bash call without a string command reach the tool', async () => {
+  expect(await guardDecision('bash', {})).toBeUndefined();
+});
+
+it('does not inspect the input of other tools', async () => {
+  expect(await guardDecision('read', { command: '' })).toBeUndefined();
+});
+
+it('replaces the capped text without adding a structured result the event lacked', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-worker-bash-guard-'));
+
+  onTestFinished(async () => {
+    vi.unstubAllEnvs();
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  vi.stubEnv('TMPDIR', directory);
+
+  const fake = fakeExtensionApi();
+  workerBashGuard(fake.pi);
+
+  const text = Array.from({ length: 1900 }, (_, index) => index + 1).join('\n');
+
+  const event = {
+    type: 'tool_result',
+    toolName: 'bash',
+    toolCallId: 'call',
+    input: {},
+    content: [{ type: 'text', text }],
+    isError: false,
+  };
+
+  const replaced = await fake.handler('tool_result')(event, {} as never);
+
+  expect(replaced).toBeDefined();
+  expect(replaced).not.toHaveProperty('structuredContent');
 });
