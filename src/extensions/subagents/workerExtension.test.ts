@@ -1650,7 +1650,11 @@ const settledDetail = async (messages: unknown[]) => {
   await worker.settle({ messages });
   await worker.emit('agent_settled');
 
-  return readEvent(worker.directory, 'task', 'settled')?.detail;
+  const detail = readEvent(worker.directory, 'task', 'settled')?.detail;
+
+  await worker.emit('session_shutdown');
+
+  return detail;
 };
 
 it('saves no run error when the last turn stopped normally', async () => {
