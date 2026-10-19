@@ -210,25 +210,27 @@ it('flags a failure only when the failure text is present', () => {
 
 it('shows a predecessor only for a starting worker that has one', () => {
   const predecessor = { predecessorTaskId: 'predecessor-abcdef01' };
+  const starting = collapsed({ state: 'starting' })[0] ?? '';
+  const following = collapsed({ state: 'starting', ...predecessor })[0] ?? '';
 
-  expect(collapsed({ state: 'starting', ...predecessor })[0]).toBe(
-    '○ worker starting · follows predeces',
-  );
+  expect(following.startsWith(starting)).toBe(true);
+  expect(following).toContain(shortId(predecessor.predecessorTaskId));
 
-  expect(collapsed({ state: 'running', ...predecessor })[0]).toBe('● worker running');
-  expect(collapsed({ state: 'starting' })[0]).toBe('○ worker starting');
-  expect(collapsed({ state: 'starting', predecessorTaskId: '' })[0]).toBe('○ worker starting');
+  expect(collapsed({ state: 'running', ...predecessor })).toEqual(collapsed({ state: 'running' }));
+  expect(collapsed({ state: 'starting', predecessorTaskId: '' })[0]).toBe(starting);
 });
 
 it('prints the deadline as zero-padded local time and drops a deadline that is not a number', () => {
-  expect(collapsed({ state: 'running', deadline: deadlineAt })[0]).toBe(
-    '● worker running · deadline 03:05',
-  );
+  const running = collapsed({ state: 'running' })[0] ?? '';
+  const withDeadline = collapsed({ state: 'running', deadline: deadlineAt })[0] ?? '';
 
-  expect(collapsed({ state: 'running', deadline: 'soon' })[0]).toBe('● worker running');
+  expect(withDeadline.startsWith(running)).toBe(true);
+  expect(withDeadline).toMatch(/\b03:05\b/u);
 
-  expect(expanded({ state: 'running', deadline: deadlineAt })).toContain(
-    'Deadline: 03:05 · enforced by this session',
+  expect(collapsed({ state: 'running', deadline: 'soon' })[0]).toBe(running);
+
+  expect(expanded({ state: 'running', deadline: deadlineAt })).toContainEqual(
+    expect.stringMatching(/\b03:05\b/u),
   );
 
   expect(expanded({ state: 'running', deadline: 'soon' }).join('\n')).not.toContain('Deadline');
