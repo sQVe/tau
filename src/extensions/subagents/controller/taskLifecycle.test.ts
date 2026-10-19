@@ -8,9 +8,9 @@ import { renameBudget } from './budget.js';
 import { captureError, setup } from './fixtures/controllerFixture.js';
 import * as stopModule from './stop.js';
 
-// Cleanup waits on real timers, so only the controller's own timers are faked.
+// Cleanup waits on real timers, so only the controller's own timers and clocks are faked.
 const fakeControllerTimers = () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance', 'Date'] });
 };
 
 it.each(['settled', 'startupFailure'] as const)(
@@ -35,7 +35,7 @@ it.each(['settled', 'startupFailure'] as const)(
 it('gives a worker that finished a moment to exit before closing its pane', async ({
   onTestFinished,
 }) => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance', 'Date'] });
   let polling = false;
   let polls = 0;
 
@@ -128,26 +128,28 @@ it('gives the pane rename more than a millisecond of herdr budget', async ({ onT
   controller.close();
 });
 
-it('reports every record error from a stop that could not save its records', async ({
-  onTestFinished,
-}) => {
-  const { controller, input } = setup(onTestFinished);
-  const launched = await controller.launch(input);
+// Root ignores directory permissions, so chmod cannot make the record writes fail.
+it.skipIf(process.getuid?.() === 0)(
+  'reports every record error from a stop that could not save its records',
+  async ({ onTestFinished }) => {
+    const { controller, input } = setup(onTestFinished);
+    const launched = await controller.launch(input);
 
-  chmodSync(launched.directory, 0o500);
+    chmodSync(launched.directory, 0o500);
 
-  onTestFinished(() => {
-    chmodSync(launched.directory, 0o700);
-  });
+    onTestFinished(() => {
+      chmodSync(launched.directory, 0o700);
+    });
 
-  const failure = await controller
-    .cancel(launched.taskId, input.parentSessionId)
-    .catch((error: unknown) => error);
+    const failure = await controller
+      .cancel(launched.taskId, input.parentSessionId)
+      .catch((error: unknown) => error);
 
-  expect(failure).toBeInstanceOf(Error);
-  // One error each for the stopping, cancelled, and cleanup records.
-  expect((failure as Error).message.match(/EACCES/g)).toHaveLength(3);
-});
+    expect(failure).toBeInstanceOf(Error);
+    // One error each for the stopping, cancelled, and cleanup records.
+    expect((failure as Error).message.match(/EACCES/g)).toHaveLength(3);
+  },
+);
 
 it('gives the pane rename no more than its own herdr budget', async ({ onTestFinished }) => {
   const budgets: number[] = [];
