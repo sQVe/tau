@@ -1,11 +1,11 @@
 # ADR 0117: List mutation survivors as advice instead of a gate
 
 **Date**: 2026-10-18\
-**Status**: Accepted\
-**Supersedes**: [ADR 0115 (Copy the mutation script into each repository and fail on survivors)](./0115-copy-mutation-script-per-repository-and-fail-on-survivors.md):
-use of survivors as a gate\
-**Related**: [ADR 0118 (List equivalent mutants instead of adding disable comments)](./0118-list-equivalent-mutants-instead-of-disable-comments.md):
-replaces the disable-comment step of the survivor order
+**Status**: Accepted; disable-comment step of the survivor order superseded by
+[ADR 0118 (List equivalent mutants instead of adding disable comments)](./0118-list-equivalent-mutants-instead-of-disable-comments.md)\
+**Supersedes**:
+[ADR 0115 (Copy the mutation script into each repository and fail on survivors)](./0115-copy-mutation-script-per-repository-and-fail-on-survivors.md):
+use of survivors as a gate
 
 ## Context
 

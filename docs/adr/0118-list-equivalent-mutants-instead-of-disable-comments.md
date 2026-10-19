@@ -3,7 +3,9 @@
 **Date**: 2026-10-19\
 **Status**: Accepted\
 **Supersedes**: [ADR 0115 (Copy the mutation script into each repository and fail on survivors)](./0115-copy-mutation-script-per-repository-and-fail-on-survivors.md):
-the disable-comment rule
+the disable-comment rule;
+[ADR 0117 (List mutation survivors as advice instead of a gate)](./0117-list-mutation-survivors-as-advice.md):
+the disable-comment step of the survivor order
 
 ## Context
 
