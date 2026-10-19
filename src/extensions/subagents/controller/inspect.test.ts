@@ -17,6 +17,7 @@ afterEach(() => {
 const herdrSocket = async (
   reply?: ((request: Record<string, unknown>) => unknown) | 'hang up',
   onConnectionClosed?: () => void,
+  onRequest?: () => void,
 ) => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-socket-'));
   const path = join(directory, 'herdr.sock');
@@ -29,6 +30,8 @@ const herdrSocket = async (
     }
 
     socket.on('data', (line: string) => {
+      onRequest?.();
+
       if (reply === 'hang up') {
         socket.end();
       } else if (reply) {
@@ -105,31 +108,20 @@ it('closes its connection once herdr has answered', async () => {
 
   await socketRequest(path, request, 1000);
 
-  const timeout = Symbol('timeout');
+  await closed.promise;
 
-  const winner = await Promise.race([
-    closed.promise,
-    new Promise<symbol>((resolve) => {
-      setTimeout(() => {
-        resolve(timeout);
-      }, 1000);
-    }),
-  ]);
-
-  expect(winner).not.toBe(timeout);
+  await expect(closed.promise).resolves.toBeUndefined();
 });
 
 it('stops waiting for an answer when the caller aborts', async () => {
-  const path = await herdrSocket();
   const abort = new AbortController();
-  const started = performance.now();
 
-  setTimeout(() => {
+  // The caller aborts only after herdr has received the request.
+  const path = await herdrSocket(undefined, undefined, () => {
     abort.abort();
-  }, 50);
+  });
 
   await expect(socketRequest(path, request, 5000, abort.signal)).rejects.toThrow('aborted');
-  expect(performance.now() - started).toBeLessThan(2000);
 });
 
 it('reports a request aborted before it connected as not sent', async () => {

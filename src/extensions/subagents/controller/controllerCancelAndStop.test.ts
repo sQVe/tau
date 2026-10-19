@@ -107,7 +107,7 @@ const failingLaunch = async (
   onTestFinished: (callback: () => void) => void,
   spendBudget: boolean,
 ) => {
-  vi.useFakeTimers({ toFake: ['performance', 'Date'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   let recordDirectory = '';
 
   const { controller, input } = setup(onTestFinished, 0, async (argumentsList) => {

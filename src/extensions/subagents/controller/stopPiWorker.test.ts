@@ -271,25 +271,14 @@ it('reports an unlocated worker when no terminals were recorded before the launc
   expect(world.closed()).toEqual([]);
 });
 
-const settlesWithin = async (promise: Promise<unknown>, milliseconds: number) => {
-  const timeout = Symbol('timeout');
-
-  const winner = await Promise.race([
-    promise,
-    new Promise<symbol>((resolve) => {
-      setTimeout(() => {
-        resolve(timeout);
-      }, milliseconds);
-    }),
-  ]);
-
-  return winner !== timeout;
-};
-
-const heldPlacement = () => {
+const heldPlacement = (afterGate?: () => void) => {
   const placement = new WorkerPlacement();
   const release = Promise.withResolvers<undefined>();
-  const held = placement.close(() => release.promise);
+
+  const held = placement.close(async () => {
+    await release.promise;
+    afterGate?.();
+  });
 
   return {
     placement,
@@ -308,7 +297,6 @@ it('does not wait for the placement queue when no worker was ever started', asyn
 
   const outcome = stop(handle, herdr({ panes: () => [] }).call, { placement });
 
-  expect(await settlesWithin(outcome, 200)).toBe(true);
   expect(await outcome).toMatchObject({ stopped: true });
   release();
   await held;
@@ -321,24 +309,22 @@ it('does not wait for the placement queue when the worker terminal is known', as
 
   const outcome = stop(ownedHandle(), world.call, { placement });
 
-  expect(await settlesWithin(outcome, 200)).toBe(true);
   expect(await outcome).toMatchObject({ stopped: true });
   release();
   await held;
 });
 
 it('waits for an in-flight launch to record its pane before it stops the worker', async () => {
-  const { placement, held, release } = heldPlacement();
   const world = herdr({ panes: () => [pane('pane')] });
   const handle = newHandle();
 
-  const outcome = stop(handle, world.call, { placement });
-
-  await new Promise((resolve) => {
-    setTimeout(resolve, 20);
+  // The in-flight launch records its pane when its placement step finishes.
+  const { placement, held, release } = heldPlacement(() => {
+    handle.identity.paneId = 'pane';
   });
 
-  handle.identity.paneId = 'pane';
+  const outcome = stop(handle, world.call, { placement });
+
   release();
   await held;
 
@@ -347,16 +333,11 @@ it('waits for an in-flight launch to record its pane before it stops the worker'
 });
 
 it('keeps an owned worker alive through its grace period, then closes its pane', async () => {
-  vi.useFakeTimers({ toFake: ['performance'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   const started = performance.now();
   let closedAt = 0;
 
-  const world = herdr({
-    panes: () => [pane('pane')],
-    onList: () => {
-      vi.advanceTimersByTime(400);
-    },
-  });
+  const world = herdr({ panes: () => [pane('pane')] });
 
   const call = async (argumentsList: string[]) => {
     if (argumentsList[1] === 'close') {
@@ -366,25 +347,23 @@ it('keeps an owned worker alive through its grace period, then closes its pane',
     return world.call(argumentsList);
   };
 
-  const outcome = await stop(unownedHandle(), call, { graceful: true });
+  const stopping = stop(unownedHandle(), call, { graceful: true });
+
+  await vi.advanceTimersByTimeAsync(2000);
+  const outcome = await stopping;
 
   expect(outcome.stopped).toBe(true);
   expect(closedAt).toBeGreaterThanOrEqual(1000);
 });
 
 it('does not close the pane of a worker that exits during its grace period', async () => {
-  vi.useFakeTimers({ toFake: ['performance'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   let exited = false;
   const processExists = vi.spyOn(cancellation, 'processAbsent');
 
   processExists.mockImplementation(() => exited);
 
-  const world = herdr({
-    panes: () => (exited ? [] : [pane('pane')]),
-    onList: () => {
-      vi.advanceTimersByTime(100);
-    },
-  });
+  const world = herdr({ panes: () => (exited ? [] : [pane('pane')]) });
 
   const call = async (argumentsList: string[]) => {
     // The worker exits when the second poll starts.
@@ -393,7 +372,10 @@ it('does not close the pane of a worker that exits during its grace period', asy
     return world.call(argumentsList);
   };
 
-  const outcome = await stop(ownedHandle(), call, { graceful: true });
+  const stopping = stop(ownedHandle(), call, { graceful: true });
+
+  await vi.advanceTimersByTimeAsync(2000);
+  const outcome = await stopping;
 
   expect(outcome.stopped).toBe(true);
   expect(world.closed()).toEqual([]);
@@ -462,31 +444,23 @@ it('confirms a worker that exits while its identity is checked', async () => {
 });
 
 it('stops waiting for the grace period when the stop is aborted', async () => {
-  vi.useFakeTimers({ toFake: ['performance'] });
   const abort = new AbortController();
-  let listing = true;
+  let listings = 0;
 
   const world = herdr({
-    panes: () => {
-      if (!listing) {
-        throw new Error('The test ended.');
-      }
-
-      return [pane('pane')];
+    panes: () => [pane('pane')],
+    onList: () => {
+      listings += 1;
+      abort.abort();
     },
   });
 
-  const outcome = stop(unownedHandle(), world.call, { graceful: true, signal: abort.signal });
+  const outcome = await stop(unownedHandle(), world.call, {
+    graceful: true,
+    signal: abort.signal,
+  });
 
-  setTimeout(() => {
-    abort.abort();
-  }, 50);
-
-  const settled = await settlesWithin(outcome, 500);
-
-  listing = false;
-
-  expect(settled).toBe(true);
-  expect(await outcome).toMatchObject({ stopped: false });
+  expect(outcome.stopped).toBe(false);
+  expect(listings).toBe(1);
   expect(world.closed()).toEqual([]);
 });

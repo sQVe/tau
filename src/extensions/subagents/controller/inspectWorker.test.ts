@@ -122,7 +122,7 @@ it.each([
   ['no session yet', undefined],
   ['a null session', null],
 ])('keeps polling while herdr reports %s', async (_name, session) => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   const identity = waitForPiIdentity(
     workerHandle(),
@@ -147,7 +147,7 @@ it.each([
 });
 
 it('keeps polling while herdr has not detected the agent of a new worker', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
   const identity = waitForPiIdentity(
     workerHandle(),
@@ -217,7 +217,7 @@ const settled = (promise: Promise<unknown>) => {
 };
 
 it('stops waiting for the agent session when the task is aborted', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   const handle = workerHandle();
 
   const identity = waitForPiIdentity(
@@ -236,7 +236,7 @@ it('stops waiting for the agent session when the task is aborted', async () => {
 });
 
 it('ends the wait with the pending-session error when the startup budget is gone', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   const handle = workerHandle();
 
   handle.expires = performance.now() + 100;
@@ -294,7 +294,7 @@ it('fails readiness at once for an aborted task even when a ready event exists',
 });
 
 it('stops waiting for readiness when the task is aborted', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   const handle = recordedHandle();
   const readiness = waitForWorkerReadiness(handle, herdr(readyAgent));
   const state = settled(readiness);

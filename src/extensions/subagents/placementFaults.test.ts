@@ -2,29 +2,6 @@ import { expect, it } from 'vitest';
 
 import { placementFixture as fixture } from './fixtures/placement.js';
 
-const settlesWithin = async (promise: Promise<unknown>, milliseconds: number) => {
-  const timeout = Symbol('timeout');
-
-  const winner = await Promise.race([
-    promise.then(
-      () => 'settled',
-      () => 'settled',
-    ),
-    new Promise<symbol>((resolve) => {
-      setTimeout(() => {
-        resolve(timeout);
-      }, milliseconds);
-    }),
-  ]);
-
-  return winner !== timeout;
-};
-
-const pause = (milliseconds: number) =>
-  new Promise<void>((resolve) => {
-    setTimeout(resolve, milliseconds);
-  });
-
 // Changes one herdr reply, chosen by its argument list, before the placement reads it.
 const rewriting =
   (
@@ -62,10 +39,11 @@ it('does not queue or call herdr for a launch that is already cancelled', async 
 
   const cancelled = placement.place(input('background'), client, abort.signal);
 
-  expect(await settlesWithin(cancelled, 200)).toBe(true);
+  await expect(cancelled).rejects.toThrow(/aborted|cancelled/);
   held.resolve(undefined);
   await queue;
-  await pause(20);
+  await placement.close(() => Promise.resolve());
+
   expect(calls).toEqual([]);
 });
 
@@ -85,7 +63,7 @@ it('stops calling herdr once the launch is cancelled', async () => {
     /aborted|cancelled/,
   );
 
-  await pause(50);
+  await placement.close(() => Promise.resolve());
 
   expect(calls.map((call) => call[1])).toEqual(['current']);
 });
