@@ -26,8 +26,8 @@ the script.
 The package owns the shared parts, so a fix ships once to every repository:
 
 - the diff scope, the run, and the JSON report that `mutation_check` reads;
-- the `tauMessageIgnorer` plugin and `ignoreStatic: true`, which the command adds to the Stryker
-  config unless the repository sets its own value;
+- the `tauMessageIgnorer` plugin, which the command always adds to the Stryker config, and
+  `ignoreStatic: true`, which it sets unless the repository sets its own value;
 - support for the Vitest and Bun runners, with same-folder test selection behind the
   `--same-folder-tests` switch.
 
