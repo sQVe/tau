@@ -1,14 +1,19 @@
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
@@ -50,6 +55,8 @@ const fixture = () => {
 
   return { directory, task, header };
 };
+
+const openDescriptorCount = () => readdirSync('/dev/fd').length;
 
 it('inspects native headers without newline repair or transcript mutation', () => {
   const { task } = fixture();
@@ -99,4 +106,66 @@ it.each([
 
   expect(() => validateNative(task)).toThrow('Native follow-up prevalidation refused');
   expect(existsSync(task.nativeSessionFile)).toBe(failure !== 'missing');
+});
+
+it('reads the header line of a session that already has entries', () => {
+  const { task, header } = fixture();
+
+  writeFileSync(
+    task.nativeSessionFile,
+    `${JSON.stringify(header)}\n${JSON.stringify({ type: 'message' })}\n`,
+  );
+
+  expect(validateNative(task).header.id).toBe(task.nativeSessionId);
+});
+
+it('reports the same session file as unchanged', () => {
+  const { task } = fixture();
+
+  expect(isDeepStrictEqual(validateNative(task), validateNative(task))).toBe(true);
+});
+
+it.each([
+  {
+    name: 'appended entries',
+    change: (path: string) => {
+      appendFileSync(path, '\n{}');
+    },
+  },
+  {
+    name: 'a rewrite of the same size',
+    change: (path: string) => {
+      const modified = statSync(path).mtime;
+
+      writeFileSync(path, readFileSync(path));
+      utimesSync(path, modified, new Date(modified.getTime() + 1500));
+    },
+  },
+])('notices $name in the session file', ({ change }) => {
+  const { task } = fixture();
+  const before = validateNative(task);
+
+  change(task.nativeSessionFile);
+
+  expect(isDeepStrictEqual(validateNative(task), before)).toBe(false);
+});
+
+it('closes the session file after validation', () => {
+  const { task } = fixture();
+  const before = openDescriptorCount();
+
+  validateNative(task);
+
+  expect(openDescriptorCount()).toBe(before);
+});
+
+it('closes the session file after a refused validation', () => {
+  const { task } = fixture();
+
+  writeFileSync(task.nativeSessionFile, '{');
+
+  const before = openDescriptorCount();
+
+  expect(() => validateNative(task)).toThrow('Native follow-up prevalidation refused');
+  expect(openDescriptorCount()).toBe(before);
 });

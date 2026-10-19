@@ -42,3 +42,34 @@ it.each([
 ] as const)('refuses %s ownership', (name, message) => {
   expect(readSaved(name)).toThrow(message);
 });
+
+const readInline = (content: string, nativeSessionFile = '/tmp/task/session.jsonl') => {
+  const directory = mkdtempSync(join(tmpdir(), 'tau-owned-'));
+
+  onTestFinished(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  writeFileSync(join(directory, 'owned.json'), content);
+
+  return () => readOwnedWorker(directory, { taskId: 'task', nativeSessionFile } as Task);
+};
+
+it.each([
+  ['null', 'null'],
+  ['a number', '5'],
+  ['an empty object', '{}'],
+  ['an unversioned non-Pi object', '{"kind":"shell"}'],
+  [
+    'a versioned record missing a field',
+    JSON.stringify({ ...JSON.parse(ownedRecord('current-pi')), terminalId: undefined }),
+  ],
+])('refuses %s as invalid ownership', (_name, content) => {
+  expect(readInline(content)).toThrow(/invalid/iu);
+});
+
+it('refuses ownership saved for another session', () => {
+  expect(readInline(ownedRecord('current-pi'), '/tmp/other/session.jsonl')).toThrow(
+    'does not match the task',
+  );
+});

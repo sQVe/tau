@@ -79,3 +79,18 @@ it.each([
   expect(result?.text).toBe(text);
   expect(result?.cut).toBe(text.length - (result?.head.length ?? 0) - (result?.tail.length ?? 0));
 });
+
+it('keeps whole lines when they fill exactly half the head and tail room', () => {
+  const result = decideBashOutputCap(
+    successfulBash(`${'a'.repeat(1000)}\n${'x'.repeat(20_000)}\n${'b'.repeat(2750)}`),
+  );
+
+  expect(result?.head).toBe('a'.repeat(1000));
+  expect(result?.tail).toBe('b'.repeat(2750));
+});
+
+it('cuts characters when the last line fills less than half the tail room', () => {
+  const result = decideBashOutputCap(successfulBash(`${'x'.repeat(20_000)}\n${'b'.repeat(2749)}`));
+
+  expect(result?.tail).toBe(`${'x'.repeat(2750)}\n${'b'.repeat(2749)}`);
+});
