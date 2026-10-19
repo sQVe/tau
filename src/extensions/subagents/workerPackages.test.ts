@@ -78,7 +78,6 @@ it.each([
 );
 
 it.each([
-  // distinct packages stay separate
   { profile: ['git:github.com/user/repo'], configured: ['git:github.com/other/repo'] },
   { profile: ['http:a'], configured: ['http:b'] },
   { profile: ['http:a/b'], configured: ['git:github.com/http:a/b'] },
