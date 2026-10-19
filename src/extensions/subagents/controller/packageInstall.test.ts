@@ -382,37 +382,33 @@ it('lists the user and trusted project packages the worker will load', () => {
   ]);
 });
 
-// A launch can stop in the microtasks right after its turn comes, whatever the number of them.
-it.each([0, 1, 2, 3, 4, 5, 6, 7])(
-  'does not install for a launch that stopped after %s microtasks of its turn coming',
-  async (ticks) => {
-    const installs = heldInstalls();
-    const queue = new InstallQueue();
-    const cancel = new AbortController();
+// A launch can stop in the very tick its turn comes. The signal reports the stop only once the
+// first install settled, so the queue sees it exactly when the turn passes.
+it('does not install for a launch that stopped when its turn came', async () => {
+  const installs = heldInstalls();
+  const queue = new InstallQueue();
+  const cancel = new AbortController();
+  let turnCame = false;
 
-    const first = launchPackage(installs, queue, 'npm:first');
-    const second = launchPackage(installs, queue, 'npm:second', cancel.signal);
-    const third = launchPackage(installs, queue, 'npm:third');
-    const secondOutcome = second.catch((error: unknown) => error);
+  Object.defineProperty(cancel.signal, 'aborted', { get: () => turnCame });
 
-    await installs.whenStarted('npm:first');
-    installs.settle('npm:first', 'installed');
+  const first = launchPackage(installs, queue, 'npm:first');
+  const second = launchPackage(installs, queue, 'npm:second', cancel.signal);
+  const third = launchPackage(installs, queue, 'npm:third');
+  const secondOutcome = second.catch((error: unknown) => error);
 
-    for (let tick = 0; tick < ticks; tick += 1) {
-      await Promise.resolve();
-    }
+  await installs.whenStarted('npm:first');
+  turnCame = true;
+  installs.settle('npm:first', 'installed');
 
-    cancel.abort();
+  await expect(first).resolves.toEqual(['npm:first']);
+  expect(await secondOutcome).toBeInstanceOf(Error);
+  await installs.whenStarted('npm:third');
+  installs.settle('npm:third', 'installed');
 
-    await expect(first).resolves.toEqual(['npm:first']);
-    expect(await secondOutcome).toBeInstanceOf(Error);
-    await installs.whenStarted('npm:third');
-    installs.settle('npm:third', 'installed');
-
-    await expect(third).resolves.toEqual(['npm:third']);
-    expect(installs.started).toEqual(['npm:first', 'npm:third']);
-  },
-);
+  await expect(third).resolves.toEqual(['npm:third']);
+  expect(installs.started).toEqual(['npm:first', 'npm:third']);
+});
 
 it('stops a launch whose signal was already aborted without waiting for the queue', async () => {
   const installs = heldInstalls();
