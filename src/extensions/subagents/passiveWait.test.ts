@@ -109,6 +109,7 @@ it.each([
   { command: 'sleep 0.5m', workers: true, refused: true },
   { command: 'sleep 0.51m', workers: true, refused: true },
   { command: 'sleep 25.55', workers: true, refused: false },
+  { command: "sleep '0.'600", workers: true, refused: false },
   { command: 'sleep  40', workers: true, refused: true },
   { command: 'sleep 20 20', workers: true, refused: true },
   { command: 'cat <<\'EOF\' | "bash"\nsleep 600\nEOF', workers: true, refused: true },
@@ -153,3 +154,20 @@ it.each([true, false])(
     expect(reason).toMatch(/\S/u);
   },
 );
+
+it('starts every refusal with the same directive before its next step', () => {
+  const delegatingReason =
+    passiveWaitRefusal('gh run watch', { hasActiveWorkers: false, delegating: true }) ?? '';
+
+  const sessionReason =
+    passiveWaitRefusal('gh run watch', { hasActiveWorkers: false, delegating: false }) ?? '';
+
+  const sharedLength = delegatingReason
+    .split('')
+    .findIndex((character, index) => character !== sessionReason[index]);
+
+  const sharedDirective = delegatingReason.slice(0, sharedLength);
+
+  expect(delegatingReason).not.toBe(sessionReason);
+  expect(sharedDirective).toMatch(/\S/u);
+});
