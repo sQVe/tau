@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import type { TextContent, ToolCall } from '@earendil-works/pi-ai';
 import type {
   AgentBeforeSettleEventResult,
   ExtensionContext,
@@ -9,6 +10,7 @@ import type {
   SessionEntry,
   ToolCallEventResult,
 } from '@earendil-works/pi-coding-agent';
+import { Value } from 'typebox/value';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
@@ -250,7 +252,12 @@ it('blocks draft_review and tells the worker to report the draft path to the par
   await emit('session_shutdown');
 });
 
-const assistantUsageEntry = (id: string, input: number, output: number): SessionEntry => ({
+const assistantUsageEntry = (
+  id: string,
+  input: number,
+  output: number,
+  cache?: { read: number; write: number },
+): SessionEntry => ({
   type: 'message',
   id,
   parentId: null,
@@ -265,8 +272,8 @@ const assistantUsageEntry = (id: string, input: number, output: number): Session
     usage: {
       input,
       output,
-      cacheRead: 0,
-      cacheWrite: 0,
+      cacheRead: cache?.read ?? 0,
+      cacheWrite: cache?.write ?? 0,
       totalTokens: input + output,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     },
@@ -1256,4 +1263,521 @@ it('refuses an oversized question without leaving the worker waiting on it', asy
   const { details } = (await ask()) as { details: { questionId: string } };
 
   expect(readdirSync(directory)).toContain(`question-${details.questionId}.json`);
+});
+
+const replyText = async (worker: Awaited<ReturnType<typeof waitingWorker>>) => {
+  const { details } = (await worker.ask()) as { details: { questionId: string } };
+
+  worker.sendUserMessage.mockClear();
+  saveReply(worker.directory, details.questionId);
+  await worker.emit('agent_settled');
+  await vi.advanceTimersByTimeAsync(1000);
+
+  const [text] = worker.sendUserMessage.mock.lastCall ?? [];
+
+  return { questionId: details.questionId, text };
+};
+
+it('delivers a saved reply only after the question turn settles', async () => {
+  const worker = await waitingWorker();
+  const { details } = (await worker.ask()) as { details: { questionId: string } };
+
+  worker.sendUserMessage.mockClear();
+  saveReply(worker.directory, details.questionId);
+  await vi.advanceTimersByTimeAsync(3000);
+
+  expect(worker.sendUserMessage).not.toHaveBeenCalled();
+
+  await worker.emit('agent_settled');
+  await vi.advanceTimersByTimeAsync(1000);
+
+  expect(worker.sendUserMessage).toHaveBeenCalledOnce();
+  await worker.emit('session_shutdown');
+});
+
+it('waits for the next question turn to settle after an acknowledged reply', async () => {
+  const worker = await waitingWorker();
+  const first = await replyText(worker);
+
+  expect(await worker.emit('input', { text: first.text, source: 'extension' })).toEqual({
+    action: 'continue',
+  });
+
+  const { details } = (await worker.ask()) as { details: { questionId: string } };
+
+  worker.sendUserMessage.mockClear();
+  saveReply(worker.directory, details.questionId);
+  await vi.advanceTimersByTimeAsync(3000);
+
+  expect(worker.sendUserMessage).not.toHaveBeenCalled();
+
+  await worker.emit('agent_settled');
+  await vi.advanceTimersByTimeAsync(1000);
+
+  expect(worker.sendUserMessage).toHaveBeenCalledOnce();
+  expect(readEvent(worker.directory, 'task', 'settled')).toBeUndefined();
+  await worker.emit('session_shutdown');
+});
+
+it('reports a failed reply delivery and delivers the reply on the next check', async () => {
+  const worker = await waitingWorker();
+  const { details } = (await worker.ask()) as { details: { questionId: string } };
+
+  worker.sendUserMessage.mockClear();
+
+  worker.sendUserMessage.mockImplementationOnce(() => {
+    throw new Error('Session busy.');
+  });
+
+  saveReply(worker.directory, details.questionId);
+  await worker.emit('agent_settled');
+  await vi.advanceTimersByTimeAsync(1000);
+
+  expect(worker.context.ui.notify).toHaveBeenCalledWith(
+    expect.stringContaining('Session busy.'),
+    'error',
+  );
+
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(worker.sendUserMessage).toHaveBeenCalledTimes(2);
+  const [text] = worker.sendUserMessage.mock.lastCall ?? [];
+
+  expect(await worker.emit('input', { text, source: 'extension' })).toEqual({
+    action: 'continue',
+  });
+
+  expect(questions.readAcknowledgement(worker.directory, 'task', details.questionId)).toBeDefined();
+  await worker.emit('session_shutdown');
+});
+
+it('refuses a dispatch for another task and shuts the worker down', async () => {
+  const worker = setup();
+  await worker.emit('session_start');
+  publish(worker.directory, 'dispatch.json', { taskId: 'other' });
+  await vi.advanceTimersByTimeAsync(50);
+
+  expect(worker.sendUserMessage).not.toHaveBeenCalled();
+  expect(readEvent(worker.directory, 'task', 'startupFailure')).toBeDefined();
+  expect(worker.shutdown).toHaveBeenCalledOnce();
+  await worker.emit('session_shutdown');
+});
+
+it('keeps waiting for a dispatch that is not saved yet', async () => {
+  const worker = setup();
+  await worker.emit('session_start');
+  await vi.advanceTimersByTimeAsync(1000);
+
+  expect(readEvent(worker.directory, 'task', 'startupFailure')).toBeUndefined();
+  expect(worker.shutdown).not.toHaveBeenCalled();
+
+  publish(worker.directory, 'dispatch.json', { taskId: 'task' });
+  await vi.advanceTimersByTimeAsync(50);
+
+  expect(worker.sendUserMessage).toHaveBeenCalledOnce();
+  await worker.emit('session_shutdown');
+});
+
+it.each([
+  { method: 'getSessionId', value: 'other' },
+  { method: 'getSessionFile', value: '/other/native.jsonl' },
+] as const)('refuses to start when $method does not match the task', async ({ method, value }) => {
+  const worker = setup();
+  vi.spyOn(worker.context.sessionManager, method).mockReturnValue(value);
+
+  await worker.emit('session_start');
+
+  expect(readEvent(worker.directory, 'task', 'ready')).toBeUndefined();
+  expect(readEvent(worker.directory, 'task', 'startupFailure')).toBeDefined();
+  expect(worker.shutdown).toHaveBeenCalledOnce();
+});
+
+const reportSuccess = (worker: Awaited<ReturnType<typeof waitingWorker>>) =>
+  worker.tools
+    .get('subagent_report')!
+    .execute(
+      'report',
+      { outcome: 'success', summary: `Done.${sections}`, evidence: [] },
+      undefined,
+      undefined,
+      worker.context,
+    );
+
+it.each(['before acceptance', 'waiting for a reply', 'after the report'] as const)(
+  'blocks a tool call and ends the turn %s',
+  async (moment) => {
+    const worker = moment === 'before acceptance' ? setup() : await waitingWorker();
+
+    if (moment === 'before acceptance') {
+      await worker.emit('session_start');
+    }
+
+    if (moment === 'waiting for a reply') {
+      await worker.ask();
+    }
+
+    if (moment === 'after the report') {
+      await reportSuccess(worker);
+    }
+
+    expect(await worker.emit('tool_call', { toolName: 'read' })).toMatchObject({
+      block: true,
+      terminate: true,
+    });
+
+    await worker.emit('session_shutdown');
+  },
+);
+
+it('sends no deadline warning while the worker waits for a reply', async () => {
+  const worker = await waitingWorker('editing', 240_000);
+  await worker.ask();
+  await vi.advanceTimersByTimeAsync(200_000);
+
+  expect(deadlineWarnings(worker)).toHaveLength(0);
+  await worker.emit('session_shutdown');
+});
+
+it('drops pane input before the dispatch and passes the dispatch message', async () => {
+  const worker = setup();
+  await worker.emit('session_start');
+
+  expect(await worker.emit('input', { text: 'typed', source: 'interactive' })).toEqual({
+    action: 'handled',
+  });
+
+  expect(await worker.emit('input', { text: 'dispatch', source: 'extension' })).toEqual({
+    action: 'continue',
+  });
+
+  await worker.emit('session_shutdown');
+});
+
+it('keeps the question pending when the reply acknowledgement cannot be saved', async () => {
+  const worker = await waitingWorker();
+  const { questionId, text } = await replyText(worker);
+
+  vi.spyOn(questions, 'acceptAcknowledgement').mockImplementation(() => {
+    throw new Error('Directory sync failed.');
+  });
+
+  expect(await worker.emit('input', { text, source: 'extension' })).toEqual({
+    action: 'handled',
+  });
+
+  expect(worker.context.ui.notify).toHaveBeenCalledWith(
+    expect.stringContaining('Directory sync failed.'),
+    'error',
+  );
+
+  expect(questions.readPendingQuestion(worker.directory, 'task')).toMatchObject({ questionId });
+  expect(() => worker.ask()).toThrow('no active task');
+  await worker.emit('session_shutdown');
+});
+
+it('shuts down a refused worker whose startup failure is already saved', async () => {
+  const worker = setup();
+  recordEvent(worker.directory, 'task', 'startupFailure', 'Earlier failure.');
+
+  vi.mocked(checkWorkerRuntime).mockImplementationOnce(() => {
+    throw new Error('Saved model changed.');
+  });
+
+  await worker.emit('session_start');
+
+  expect(readEvent(worker.directory, 'task', 'startupFailure')?.detail).toBe('Earlier failure.');
+  expect(worker.context.ui.notify).toHaveBeenCalledWith(expect.any(String), 'error');
+  expect(worker.shutdown).toHaveBeenCalledOnce();
+});
+
+it.each([false, true])(
+  'refuses to restart an accepted task when an earlier refusal saved is %s',
+  async (refusedBefore) => {
+    const worker = setup();
+    recordEvent(worker.directory, 'task', 'accepted', 'Pi started the assigned task.');
+
+    if (refusedBefore) {
+      recordEvent(worker.directory, 'task', 'continuationRefused', 'Earlier refusal.');
+    }
+
+    await worker.emit('session_start');
+
+    expect(readEvent(worker.directory, 'task', 'continuationRefused')).toBeDefined();
+    expect(readEvent(worker.directory, 'task', 'startupFailure')).toBeUndefined();
+    expect(readEvent(worker.directory, 'task', 'ready')).toBeUndefined();
+    expect(worker.shutdown).toHaveBeenCalledOnce();
+  },
+);
+
+it('accepts the task once when Pi starts another run after a reply', async () => {
+  const worker = await waitingWorker('editing', 240_000);
+
+  await worker.emit('agent_start');
+  await vi.advanceTimersByTimeAsync(150_000);
+
+  expect(deadlineWarnings(worker)).toHaveLength(1);
+  await worker.emit('session_shutdown');
+});
+
+it('records no acceptance when Pi starts a run for a worker that failed to start', async () => {
+  const worker = setup();
+  writeFileSync(join(worker.directory, 'task.json'), JSON.stringify({ version: 9 }));
+  await worker.emit('session_start');
+
+  await worker.emit('agent_start');
+
+  expect(existsSync(join(worker.directory, 'accepted.json'))).toBe(false);
+});
+
+it('gives the model text that tells it to wait after a question', async () => {
+  const worker = await waitingWorker();
+  const result = await worker.ask();
+
+  expect(result?.terminate).toBe(true);
+  expect(result?.content[0]).toHaveProperty('text', expect.stringMatching(/\S/u));
+  await worker.emit('session_shutdown');
+});
+
+it('gives the deadline warning text to the model', async () => {
+  const worker = await waitingWorker('editing', 240_000);
+  await vi.advanceTimersByTimeAsync(150_000);
+
+  expect(deadlineWarnings(worker)[0]?.[0].content).toMatch(/\S/u);
+  await worker.emit('session_shutdown');
+});
+
+it.each(['subagent_question', 'subagent_progress', 'subagent_report'])(
+  'describes %s to the model',
+  (name) => {
+    const worker = setup();
+
+    expect(worker.tools.get(name)?.description).toMatch(/\S/u);
+  },
+);
+
+it('limits a question to one non-empty bounded text in the tool schema', () => {
+  const worker = setup();
+  const schema = worker.tools.get('subagent_question')!.parameters;
+
+  expect(Value.Check(schema, { question: 'Which file?' })).toBe(true);
+  expect(Value.Check(schema, { question: '' })).toBe(false);
+  expect(Value.Check(schema, { question: 'x'.repeat(100_000) })).toBe(false);
+  expect(Value.Check(schema, { question: 'Which file?', scope: 'wider' })).toBe(false);
+});
+
+const toolCallEntry = (names: string[], text?: string): SessionEntry => {
+  const content: (TextContent | ToolCall)[] = [];
+
+  if (text !== undefined) {
+    content.push({ type: 'text', text });
+  }
+
+  for (const name of names) {
+    content.push({ type: 'toolCall', id: `call-${name}`, name, arguments: {} });
+  }
+
+  return {
+    type: 'message',
+    id: `assistant-${names.join('-')}`,
+    parentId: null,
+    timestamp: new Date().toISOString(),
+    message: {
+      role: 'assistant',
+      content,
+      api: 'openai-completions',
+      provider: 'openai',
+      model: 'fixture',
+      timestamp: Date.now(),
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: 'toolUse',
+    },
+  };
+};
+
+it('blocks a question called beside another tool', async () => {
+  const worker = await waitingWorker();
+  worker.branch.push(toolCallEntry(['subagent_question', 'read']));
+
+  expect(await worker.emit('tool_call', { toolName: 'subagent_question' })).toMatchObject({
+    block: true,
+  });
+
+  await worker.emit('session_shutdown');
+});
+
+it('allows a report called alone beside text when later entries follow its message', async () => {
+  const worker = await waitingWorker();
+
+  worker.branch.push(
+    toolCallEntry(['subagent_report'], 'Reporting now.'),
+    {
+      type: 'message',
+      id: 'result',
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      message: {
+        role: 'toolResult',
+        toolCallId: 'call-read',
+        toolName: 'read',
+        content: [],
+        isError: false,
+        timestamp: Date.now(),
+      },
+    },
+    {
+      type: 'custom',
+      id: 'custom',
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      customType: 'other-extension',
+      data: {},
+    },
+  );
+
+  expect(await worker.emit('tool_call', { toolName: 'subagent_report' })).toBeUndefined();
+  await worker.emit('session_shutdown');
+});
+
+const settledDetail = async (messages: unknown[]) => {
+  const worker = await waitingWorker();
+  await reportSuccess(worker);
+  await worker.settle({ messages });
+  await worker.emit('agent_settled');
+
+  return readEvent(worker.directory, 'task', 'settled')?.detail;
+};
+
+it('saves no run error when the last turn stopped normally', async () => {
+  const withoutAssistant = await settledDetail([]);
+
+  const afterStop = await settledDetail([
+    { role: 'assistant', content: [], stopReason: 'stop', errorMessage: 'Not an error.' },
+  ]);
+
+  expect(afterStop).toBe(withoutAssistant);
+});
+
+it('ends the reply wait when the check runs at the deadline itself', async () => {
+  const worker = await waitingWorker();
+  await worker.ask();
+  vi.setSystemTime(worker.createdAt + 30_000 - 1000);
+  await vi.advanceTimersByTimeAsync(1000);
+
+  expect(Date.now()).toBe(worker.createdAt + 30_000);
+  expect(worker.shutdown).toHaveBeenCalledOnce();
+  await worker.emit('session_shutdown');
+});
+
+const workerPhase = (worker: ReturnType<typeof setup>) =>
+  readWorkerActivity(worker.directory, 'task')?.phase;
+
+it('records the worker phase for acceptance, turns, streaming, and a question', async () => {
+  const worker = setup();
+  await worker.emit('session_start');
+  publish(worker.directory, 'dispatch.json', { taskId: 'task' });
+  await vi.advanceTimersByTimeAsync(50);
+
+  expect(workerPhase(worker)).toBe('starting');
+  await worker.emit('agent_start');
+  expect(workerPhase(worker)).toBe('active');
+  await worker.emit('turn_end');
+  expect(workerPhase(worker)).toBe('waiting');
+  await worker.emit('turn_start');
+  expect(workerPhase(worker)).toBe('active');
+  await worker.emit('turn_end');
+  await worker.emit('message_update');
+  await vi.advanceTimersByTimeAsync(500);
+  expect(workerPhase(worker)).toBe('active');
+  await worker.ask();
+  expect(workerPhase(worker)).toBe('waiting');
+  await worker.emit('session_shutdown');
+});
+
+it('records streaming activity at most once per interval', async () => {
+  const worker = await waitingWorker();
+  const before = readWorkerActivity(worker.directory, 'task');
+  await worker.emit('message_update');
+  await vi.advanceTimersByTimeAsync(400);
+  await worker.emit('message_update');
+  await vi.advanceTimersByTimeAsync(100);
+  const streaming = readWorkerActivity(worker.directory, 'task');
+
+  await vi.advanceTimersByTimeAsync(500);
+
+  expect(streaming?.sequence).toBe((before?.sequence ?? 0) + 1);
+  expect(readWorkerActivity(worker.directory, 'task')).toEqual(streaming);
+  await worker.emit('session_shutdown');
+});
+
+it('drops a pending streaming update once a tool starts', async () => {
+  const worker = await waitingWorker();
+  await worker.emit('message_update');
+  await worker.emit('tool_execution_start', { toolName: 'read' });
+  const toolActivity = readWorkerActivity(worker.directory, 'task');
+
+  await vi.advanceTimersByTimeAsync(500);
+
+  expect(readWorkerActivity(worker.directory, 'task')).toEqual(toolActivity);
+  await worker.emit('session_shutdown');
+});
+
+it('records the session model in the worker activity', async () => {
+  const worker = setup();
+  Object.assign(worker.context, { model: { provider: 'faux', id: 'test' } });
+  await worker.emit('session_start');
+
+  expect(readWorkerActivity(worker.directory, 'task')?.model).toBe('faux/test');
+  await worker.emit('session_shutdown');
+});
+
+it('counts only assistant messages in the worker usage', async () => {
+  const worker = setup();
+
+  worker.branch.push({
+    type: 'message',
+    id: 'user',
+    parentId: null,
+    timestamp: new Date().toISOString(),
+    message: { role: 'user', content: 'Read the file.', timestamp: Date.now() },
+  });
+
+  await worker.emit('session_start');
+  worker.branch.push(assistantUsageEntry('current', 25, 5));
+  await worker.emit('tool_execution_start', { toolName: 'read' });
+
+  expect(readWorkerActivity(worker.directory, 'task')?.usage).toMatchObject({
+    input: 25,
+    output: 5,
+  });
+
+  await worker.emit('session_shutdown');
+});
+
+it('records no usage before Pi saved an assistant message', async () => {
+  const worker = setup();
+  await worker.emit('session_start');
+
+  expect(readWorkerActivity(worker.directory, 'task')?.usage).toBeUndefined();
+  await worker.emit('session_shutdown');
+});
+
+it('records cache usage of the current task only', async () => {
+  const worker = setup();
+  worker.branch.push(assistantUsageEntry('previous', 0, 0, { read: 40, write: 10 }));
+  await worker.emit('session_start');
+  worker.branch.push(assistantUsageEntry('current', 0, 0, { read: 7, write: 3 }));
+  await worker.emit('tool_execution_start', { toolName: 'read' });
+
+  expect(readWorkerActivity(worker.directory, 'task')?.usage).toMatchObject({
+    cacheRead: 7,
+    cacheWrite: 3,
+  });
+
+  await worker.emit('session_shutdown');
 });
