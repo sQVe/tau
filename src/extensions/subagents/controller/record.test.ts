@@ -65,7 +65,7 @@ it.each([
     JSON.stringify({ ...JSON.parse(ownedRecord('current-pi')), terminalId: undefined }),
   ],
 ])('refuses %s as invalid ownership', (_name, content) => {
-  expect(readInline(content)).toThrow(Error);
+  expect(readInline(content)).toThrow(/invalid/iu);
 });
 
 it('refuses ownership saved for another session', () => {
