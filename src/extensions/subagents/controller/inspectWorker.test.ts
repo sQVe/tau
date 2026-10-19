@@ -14,6 +14,11 @@ import { createHandle } from './task.js';
 
 type AgentReply = (agentCall: number) => string;
 
+vi.mock(import('node:timers/promises'), async (importOriginal) => ({
+  ...(await importOriginal()),
+  setTimeout: (await import('./fixtures/globalTimerDelay.js')).globalTimerDelay,
+}));
+
 const token = '/tmp/worker-session.jsonl';
 const processId = 4242;
 

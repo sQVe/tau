@@ -20,6 +20,11 @@ interface World {
   onList?: () => void;
 }
 
+vi.mock(import('node:timers/promises'), async (importOriginal) => ({
+  ...(await importOriginal()),
+  setTimeout: (await import('./fixtures/globalTimerDelay.js')).globalTimerDelay,
+}));
+
 const token = '/tmp/worker-session.jsonl';
 const processId = 4242;
 
@@ -382,6 +387,7 @@ it('does not close the pane of a worker that exits during its grace period', asy
 });
 
 it('confirms a closed worker whose process lingers briefly after its pane is gone', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   let closed = false;
   let checksAfterClose = 0;
 
@@ -407,7 +413,10 @@ it('confirms a closed worker whose process lingers briefly after its pane is gon
     return response;
   };
 
-  const outcome = await stop(ownedHandle(), call);
+  const stopping = stop(ownedHandle(), call);
+
+  await vi.advanceTimersByTimeAsync(1000);
+  const outcome = await stopping;
 
   expect(outcome.stopped).toBe(true);
   expect(world.closed()).toEqual([['pane', 'close', 'pane']]);
