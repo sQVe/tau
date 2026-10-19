@@ -401,3 +401,169 @@ describe('worker widget', () => {
     expect(workerElapsed(stopped, now)).toBe('00:30');
   });
 });
+
+// Pi throws on a color name it does not know, such as an empty one.
+const piColorNames = new Set([
+  'accent',
+  'border',
+  'borderAccent',
+  'borderMuted',
+  'success',
+  'error',
+  'warning',
+  'muted',
+  'dim',
+  'text',
+]);
+
+const piTheme = () => ({
+  fg: (color: string, text: string) => {
+    if (!piColorNames.has(color)) {
+      throw new Error(`Unknown theme color: ${color}`);
+    }
+
+    return text;
+  },
+});
+
+const plainLines = (lines: string[]): string[] => lines.map((line) => stripTerminalSequences(line));
+
+describe('worker widget with Pi theme', () => {
+  it('renders live rows, overflow, stopped footer, and idle summary with every color name valid', () => {
+    const active: WorkerWidgetRow[] = Array.from({ length: 5 }, (_value, index) => ({
+      ...row,
+      name: `worker-a${index}`,
+      taskId: `active-${index}`,
+      createdAt: index,
+      requestedModel: 'openai-codex/gpt-5.6-luna',
+    }));
+
+    const stopped: WorkerWidgetRow = {
+      ...row,
+      name: 'worker-zz',
+      taskId: 'done',
+      state: 'stopped',
+    };
+
+    const busy = renderWorkerWidget([...active, stopped], 120, now, piTheme() as never);
+    const idle = renderWorkerWidget([stopped], 120, now, piTheme() as never);
+
+    expect(plainLines(busy).join('\n')).toContain('+ 1 more workers');
+    expect(plainLines(busy).at(-1)).toContain('1 stopped');
+    expect(plainLines(idle)).toHaveLength(1);
+  });
+
+  it('keeps waiting workers and the newest live workers when more than four need rows', () => {
+    const waiting: WorkerWidgetRow = {
+      ...row,
+      name: 'worker-wa',
+      taskId: 'waiting',
+      state: 'awaitingReply',
+      question: 'Choose a file',
+      createdAt: 0,
+    };
+
+    const active: WorkerWidgetRow[] = Array.from({ length: 5 }, (_value, index) => ({
+      ...row,
+      name: `worker-a${index}`,
+      taskId: `active-${index}`,
+      createdAt: index + 1,
+    }));
+
+    const text = plainLines(
+      renderWorkerWidget([waiting, ...active], 120, now, theme as never),
+    ).join('\n');
+
+    expect(text).toContain('worker-wa');
+    expect(text).toContain('worker-a4');
+    expect(text).toContain('worker-a3');
+    expect(text).toContain('worker-a2');
+    expect(text).not.toContain('worker-a1');
+    expect(text).not.toContain('worker-a0');
+    expect(text).toContain('+ 2 more workers');
+  });
+
+  it('truncates a worker name without a saved suffix instead of throwing in a narrow widget', () => {
+    const legacy: WorkerWidgetRow = { ...row, name: 'legacy-worker-name', taskId: 'legacy' };
+
+    const lines = renderWorkerWidget([legacy], 34, now, theme as never);
+
+    expect(lines.every((line) => visibleWidth(line) <= 34)).toBe(true);
+    expect(plainLines(lines).join('\n')).toContain('l... running');
+  });
+
+  it('keeps the state label for a worker that is not running even when herdr activity is saved', () => {
+    const waiting: WorkerWidgetRow = {
+      ...row,
+      state: 'awaitingReply',
+      question: 'Choose a file',
+      activity: 'herdr working',
+    };
+
+    const reported: WorkerWidgetRow = {
+      ...row,
+      name: 'worker-cd',
+      taskId: 'reported',
+      state: 'reported',
+      activity: 'herdr working',
+    };
+
+    const text = plainLines(renderWorkerWidget([waiting, reported], 140, now, theme as never)).join(
+      '\n',
+    );
+
+    expect(text).toContain('asks · waiting');
+    expect(text).toContain('reported');
+    expect(text).not.toContain('herdr working');
+  });
+
+  it('adds no text for absent attention counts, stopped count, or task label', () => {
+    const blankTask: WorkerWidgetRow = { ...row, label: undefined, task: '   \n  ' };
+
+    const [header = '', taskLine = '', footer = ''] = plainLines(
+      renderWorkerWidget([blankTask], 80, now, theme as never),
+    );
+
+    expect(header).toMatch(/^╭─ Subagents ─+ 1 live ╮$/u);
+    expect(taskLine).toContain('no task description');
+    expect(footer).toMatch(/^╰─+╯$/u);
+
+    const [, savedNoTask = ''] = plainLines(
+      renderWorkerWidget([{ ...row, label: undefined, task: undefined }], 80, now, theme as never),
+    );
+
+    expect(savedNoTask).toContain('no task description');
+
+    const [idle] = plainLines(
+      renderWorkerWidget([{ ...row, state: 'stopped' }], 80, now, theme as never),
+    );
+
+    const idleParts = (idle ?? '').trimEnd().split(' · ');
+
+    expect(idleParts[0]).toBe('Subagents');
+    expect(idleParts).toContain('1 stopped');
+    expect(idleParts).toHaveLength(3);
+
+    const [unknownIdle] = plainLines(
+      renderWorkerWidget([{ ...row, state: 'unknown' }], 80, now, theme as never),
+    );
+
+    const unknownParts = (unknownIdle ?? '').trimEnd().split(' · ');
+
+    expect(unknownParts[0]).toBe('Subagents');
+    expect(unknownParts).toContain('1 status unknown');
+    expect(unknownParts[1]).toBe(idleParts[1]);
+    expect(unknownParts).toHaveLength(3);
+  });
+
+  it('shows the task text of a record without a label with Markdown markers removed', () => {
+    const taskLine = (task: string): string =>
+      plainLines(
+        renderWorkerWidget([{ ...row, label: undefined, task }], 100, now, theme as never),
+      )[1] ?? '';
+
+    for (const task of ['## Fix the parser', '- Fix the parser', '1. 2) Fix the parser']) {
+      expect(taskLine(task)).toMatch(/\d\d:\d\d Fix the parser/u);
+    }
+  });
+});
