@@ -1,14 +1,15 @@
 # Mutation tuning note
 
 This note records how `stryker.config.json` was tuned. It lists the sample commits, the survivors of
-each commit, and the reason for each setting. The CLI is in `scripts/mutation.md`.
+each commit, and the reason for each setting. The command is now the `@sqve/mutation` package; this
+note describes the copy that Tau kept before.
 
 ## Method
 
 For each commit, a detached worktree held the commit. The mutation scripts, `stryker.config.json`,
 and `stryker.vitest.config.ts` were copied in. `node_modules` was a real directory of symlinks to
-the packages of the main checkout. Each run was `node scripts/mutation.ts changed <sha>^`. The
-worktrees are removed. The final reports are in `.tau/mutation-tuning-reports/<sha>.json`, with
+the packages of the main checkout. Each run was the old copy of the script with `changed <sha>^`.
+The worktrees are removed. The final reports are in `.tau/mutation-tuning-reports/<sha>.json`, with
 stderr and run metadata next to them. Earlier failed attempts are in
 `.tau/mutation-tuning-reports/earlier/`.
 

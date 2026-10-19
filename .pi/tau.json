@@ -3,6 +3,6 @@
     "productionGlobs": ["{src,scripts}/**/*.ts"]
   },
   "mutation": {
-    "argv": ["node", "scripts/mutation.ts"]
+    "argv": ["pnpm", "exec", "mutation"]
   }
 }

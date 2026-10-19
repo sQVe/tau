@@ -10,7 +10,7 @@ const setsMutation = (value: unknown): boolean =>
   isRecord(value) && Object.hasOwn(value, 'mutation');
 
 const missingMessage = (ignored: string | undefined): string => {
-  const base = `No mutation check is configured. Add mutation.argv to .pi/tau.json in the repository, such as {"mutation": {"argv": ["node", "scripts/mutation.ts"]}}.`;
+  const base = `No mutation check is configured. Add mutation.argv to .pi/tau.json in the repository, such as {"mutation": {"argv": ["pnpm", "exec", "mutation"]}}.`;
 
   return ignored === undefined
     ? base
@@ -40,7 +40,7 @@ export const readMutationArgv = (location: ConfigLocation, ui: ConfigWarnings): 
 
   if (!isRecord(mutation)) {
     throw new Error(
-      `Invalid Tau config ${source}: mutation must be an object such as {"argv": ["node", "scripts/mutation.ts"]}.`,
+      `Invalid Tau config ${source}: mutation must be an object such as {"argv": ["pnpm", "exec", "mutation"]}.`,
     );
   }
 

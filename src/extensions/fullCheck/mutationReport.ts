@@ -63,7 +63,7 @@ const readStrings = (value: unknown, field: string): string[] => {
   return value;
 };
 
-// Parses the JSON that scripts/mutation.ts prints. Fields it does not know are ignored.
+// Parses the JSON that the mutation command prints. Fields it does not know are ignored.
 export const parseMutationReport = (text: string): MutationReport => {
   let report: unknown;
 
