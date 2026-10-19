@@ -57,3 +57,19 @@ it('lists only the workers that need tracking', () => {
   expect(list).toContain('task-1');
   expect(list).not.toContain('task-2');
 });
+
+it('lists each tracked worker on its own line', () => {
+  const list = compactionWorkerList([
+    row,
+    { ...row, taskId: 'task-2', state: 'awaitingReply', questionId: 'question-1' },
+  ]);
+
+  const lines = list?.split('\n') ?? [];
+  const firstWorker = lines.filter((line) => line.includes('task-1'));
+  const secondWorker = lines.filter((line) => line.includes('task-2'));
+
+  expect(firstWorker).toHaveLength(1);
+  expect(secondWorker).toHaveLength(1);
+  expect(firstWorker[0]).not.toContain('task-2');
+  expect(secondWorker[0]).toContain('question-1');
+});
