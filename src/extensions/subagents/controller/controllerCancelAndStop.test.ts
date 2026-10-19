@@ -32,8 +32,7 @@ it('reports a cleaned-up saved worker on cancel without stopping or owning it', 
 it('owns a saved worker and reserves its slot while a cancel stops it', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
-  const fixture = setup(onTestFinished);
+  const fixture = setup(onTestFinished, 0, undefined, undefined, 1);
   const launched = await fixture.controller.launch(fixture.input);
 
   fixture.controller.close();
@@ -53,6 +52,9 @@ it('owns a saved worker and reserves its slot while a cancel stops it', async ({
 
       return fixture.client(argumentsList, budget, signal);
     },
+    undefined,
+    undefined,
+    1,
   );
 
   onTestFinished(() => {

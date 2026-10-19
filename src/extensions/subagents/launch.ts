@@ -10,7 +10,7 @@ import { modelStatus } from './presentation.js';
 
 interface LaunchRuntime {
   pi: Pick<ExtensionAPI, 'getCommands'>;
-  getController: () => WorkerController;
+  getController: (context: ExtensionContext) => WorkerController;
   refuseCapacity: () => void;
 }
 
@@ -32,7 +32,7 @@ export const executeLaunch = async (
   signal: AbortSignal | undefined,
   context: ExtensionContext,
 ): Promise<ToolResult<LaunchStatus | EvidenceDetails | undefined>> => {
-  const controller = runtime.getController();
+  const controller = runtime.getController(context);
 
   const { loadout, routing } = await resolveRoutedLoadout(
     parameters,

@@ -307,6 +307,25 @@ it('names the tracker route outside herdr and without the subagent tool', async 
   }
 });
 
+it('starts the session and reports once when the worker capacity is invalid', async ({
+  onTestFinished,
+}) => {
+  const { appendedWithoutTools, notify } = await sessionGuidelines(onTestFinished, {
+    user: {
+      subagents: { capacity: 0 },
+      tracker: { agentTeam: 'AI', repositories: { 'sQVe/tau': { team: 'ME' } } },
+    },
+    originUrl: 'https://github.com/sQVe/tau.git',
+    herdr: false,
+  });
+
+  const errors = notify.mock.calls.filter(([, level]) => level === 'error');
+
+  expect(appendedWithoutTools).toContain('Tracker agent team: `AI`.');
+  expect(errors).toHaveLength(1);
+  expect(String(errors[0]?.[0])).toContain('subagents.capacity');
+});
+
 it('reads the origin of the session directory when Pi inherits GIT_DIR for another repository', async ({
   onTestFinished,
 }) => {
@@ -542,6 +561,26 @@ it('reports a failed worker reattachment in the UI', async ({ onTestFinished }) 
   expect(notices[0]).toContain('Injected records failure.');
 });
 
+it('refuses a worker tool call when the configured worker capacity is invalid', async () => {
+  const fake = fakeExtensionApi();
+  const base = emptyConfigContext();
+
+  writeFileSync(join(base.cwd, 'tau.json'), JSON.stringify({ subagents: { capacity: 0 } }));
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
+
+  const context = {
+    ...base,
+    ui: { notify: vi.fn<() => void>() },
+    sessionManager: { getSessionId: () => 'parent' },
+  } as unknown as ExtensionToolContext;
+
+  await expect(
+    fake.tools
+      .get('subagent_status')!
+      .execute('status', { taskId: 'task-1' }, undefined, undefined, context),
+  ).rejects.toThrow('subagents.capacity must be an integer from 1 to 256');
+});
+
 it('waits for bounded worker cleanup during session shutdown', async ({ onTestFinished }) => {
   const fake = fakeExtensionApi();
   const released = Promise.withResolvers<undefined>();
@@ -566,6 +605,7 @@ it('waits for bounded worker cleanup during session shutdown', async ({ onTestFi
   const tools = fake.tools;
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 
@@ -612,6 +652,7 @@ it('blocks long parent sleeps only while this session has an active worker', asy
   subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 
@@ -826,6 +867,7 @@ it('places follow-ups with explicit visibility and the current parent terminal',
   });
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionFile: () => '/fixture/parent.jsonl', getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 
@@ -1295,6 +1337,7 @@ it('queues active workers and pending questions for the next prompt after a comp
   subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionId: () => 'parent-session' },
   } as unknown as ExtensionContext;
 
@@ -1347,6 +1390,7 @@ it('returns allowlisted model content for a follow-up successor and keeps full d
   });
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionFile: () => '/fixture/parent.jsonl', getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 
@@ -1401,6 +1445,7 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
   });
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 
@@ -1500,6 +1545,7 @@ it('returns the unreadable-evidence object when status records fail', async ({
   });
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 
@@ -1643,6 +1689,7 @@ it('returns the unreadable-evidence object before reading an unknown question re
   }
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 
@@ -1677,6 +1724,7 @@ it('returns the unreadable-evidence object when cancel records fail', async ({
   }
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 
@@ -1712,6 +1760,7 @@ it('returns the unreadable-evidence object when follow-up records fail', async (
   }
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionFile: () => '/fixture/parent.jsonl', getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 

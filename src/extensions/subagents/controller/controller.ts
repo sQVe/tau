@@ -24,6 +24,7 @@ import { skillToolsRefusal } from '../skillToolsRefusal.js';
 import { isTaskId, taskVersion } from '../types.js';
 import type { Acknowledgement, Loadout, Question, Reply, Task } from '../types.js';
 import type { WorkerWidgetRow } from '../widget.js';
+import { defaultWorkerCapacity } from '../workerCapacityConfig.js';
 import {
   ensureReplyActive,
   workBudget,
@@ -74,20 +75,7 @@ interface LaunchTaskPlan {
   source?: FollowUpPreparation;
 }
 
-const defaultWorkerCapacity = 4;
-const maximumWorkerCapacity = 256;
 const agentListBudget = 30_000;
-
-const workerCapacity = (): number => {
-  // oxlint-disable-next-line node/no-process-env -- Each controller reads its capacity once at construction.
-  const capacity = Number(process.env.TAU_SUBAGENT_CAP ?? defaultWorkerCapacity);
-
-  if (!Number.isInteger(capacity) || capacity < 1 || capacity > maximumWorkerCapacity) {
-    throw new Error(`TAU_SUBAGENT_CAP must be an integer from 1 to ${maximumWorkerCapacity}.`);
-  }
-
-  return capacity;
-};
 
 // A caller asked for a task it may not read; this is a refusal, never unreadable evidence.
 class TaskAccessError extends Error {
@@ -104,7 +92,7 @@ export class WorkerController {
   private readonly client: HerdrClient;
   private readonly packageManager: (loadout: Loadout) => WorkerPackageManager;
   private readonly workers = new Map<string, TaskController>();
-  private readonly capacity = workerCapacity();
+  private readonly capacity: number;
   private readonly live = new Set<string>();
   private readonly lifetime = new AbortController();
   private readonly placement = new WorkerPlacement();
@@ -117,7 +105,9 @@ export class WorkerController {
     client: HerdrClient = herdrClient,
     notify: (notice: WorkerNotice) => void = () => undefined,
     packageManager: (loadout: Loadout) => WorkerPackageManager = piPackageManager,
+    capacity = defaultWorkerCapacity,
   ) {
+    this.capacity = capacity;
     this.root = root;
     this.client = client;
     this.packageManager = packageManager;

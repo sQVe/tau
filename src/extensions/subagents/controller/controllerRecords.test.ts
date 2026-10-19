@@ -1,10 +1,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { expect, it, vi } from 'vitest';
+import { expect, it } from 'vitest';
 
 import { readTask, recordEvent } from '../records.js';
-import { WorkerController } from './controller.js';
 import { completed, setup } from './fixtures/controllerFixture.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 import { EvidenceUnavailableError } from './record.js';
@@ -40,20 +39,6 @@ it('saves the routing decision of a routed launch', async ({ onTestFinished }) =
   const launched = await controller.launch({ ...input, routing });
 
   expect(readTask(launched.directory).routing).toEqual(routing);
-});
-
-it.each(['0', '-1', '1.5', '257', 'many', ''])('refuses TAU_SUBAGENT_CAP=%j', (capacity) => {
-  vi.stubEnv('TAU_SUBAGENT_CAP', capacity);
-
-  expect(() => new WorkerController('/tmp/tau-no-workers')).toThrow('TAU_SUBAGENT_CAP');
-  vi.unstubAllEnvs();
-});
-
-it.each(['1', '4', '256'])('accepts TAU_SUBAGENT_CAP=%s', (capacity) => {
-  vi.stubEnv('TAU_SUBAGENT_CAP', capacity);
-
-  expect(() => new WorkerController('/tmp/tau-no-workers')).not.toThrow();
-  vi.unstubAllEnvs();
 });
 
 it('lists only the workers of the asked parent session in the widget', async ({

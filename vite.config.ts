@@ -9,9 +9,6 @@ interface TestProject {
   exclude: string[];
 }
 
-// oxlint-disable-next-line node/no-process-env -- Remove the shell capacity before test workers inherit it.
-delete process.env.TAU_SUBAGENT_CAP;
-
 const testHelperImports = {
   group: ['**/tests/**'],
   message: 'Production code must not import test helpers.',
@@ -81,11 +78,7 @@ export const testEnvironment = [
 
 // Variables that test code reads but sets itself, so they stay out of the fingerprint. Tests stub
 // them before reading, or this file sets or deletes them before the workers start.
-export const testManagedEnvironment = [
-  'PI_CODING_AGENT_DIR',
-  'TAU_SUBAGENT_CAP',
-  'TAU_WORKER_RECORD',
-];
+export const testManagedEnvironment = ['PI_CODING_AGENT_DIR', 'TAU_WORKER_RECORD'];
 
 const projectTasks = Object.fromEntries(
   testProjects.map(({ name }) => [

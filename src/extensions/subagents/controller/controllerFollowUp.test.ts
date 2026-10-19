@@ -17,13 +17,7 @@ vi.mock(import('node:fs'), { spy: true });
 it('skips unpublished preparation debris while published attempts remain exclusive', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
-
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-
-  const fixture = setup(onTestFinished);
+  const fixture = setup(onTestFinished, 0, undefined, undefined, 1);
 
   writeFileSync(
     fixture.input.parentSession,
@@ -92,7 +86,14 @@ it('skips unpublished preparation debris while published attempts remain exclusi
   });
 
   fixture.controller.close();
-  const controller = new WorkerController(fixture.directory, fixture.client);
+
+  const controller = new WorkerController(
+    fixture.directory,
+    fixture.client,
+    undefined,
+    undefined,
+    1,
+  );
 
   onTestFinished(() => {
     controller.close();
@@ -821,7 +822,7 @@ it('refuses known live native writers and preserves validation time in the origi
 it('refuses full-cap native follow-up before publishing an attempt', async () => {
   const fixture = await completed();
 
-  for (let index = 0; index < 4; index++) {
+  for (let index = 0; index < 12; index++) {
     await fixture.controller.launch({ ...fixture.input, loadout: fixture.source.loadout });
   }
 

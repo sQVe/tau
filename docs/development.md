@@ -170,8 +170,14 @@ A profile's `instruction-sets:` setting lists the Tau instruction sets its worke
 [instruction set decision](adr/0068-load-only-the-instruction-sets-each-worker-profile-needs.md) and
 the [browser decision](adr/0076-give-browser-workers-one-shared-set-of-browser-rules.md).
 
-Set `TAU_SUBAGENT_CAP` to limit how many live workers each parent controller runs at once. It takes
-an integer from 1 to 256, for example `TAU_SUBAGENT_CAP=8`.
+To limit how many live workers each parent controller runs at once, set `subagents.capacity` in
+`~/.pi/agent/tau.json`. It takes an integer from 1 to 256 and defaults to 12:
+
+```json
+{ "subagents": { "capacity": 8 } }
+```
+
+Only the user file may set `subagents`. An invalid value shows an error when the controller starts.
 
 ### Web provider
 

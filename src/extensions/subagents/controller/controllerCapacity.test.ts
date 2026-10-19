@@ -1,6 +1,6 @@
 import { readdirSync } from 'node:fs';
 
-import { expect, it, vi } from 'vitest';
+import { expect, it, onTestFinished as finishTest, vi } from 'vitest';
 
 import { setup } from './fixtures/controllerFixture.js';
 
@@ -63,14 +63,7 @@ it('refuses a prepared launch while shutdown is still draining workers', async (
 it('caps live workers per controller and admits again after confirmed cleanup', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
-
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-
-  const fixture = setup(onTestFinished);
-  vi.stubEnv('TAU_SUBAGENT_CAP', '2');
+  const fixture = setup(onTestFinished, 0, undefined, undefined, 1);
 
   const launched = await fixture.controller.launch(fixture.input);
   const recordsBefore = readdirSync(fixture.directory);
@@ -95,13 +88,7 @@ it('caps live workers per controller and admits again after confirmed cleanup', 
 it('admits another worker after cleanup fails its terminal identity check', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
-
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-
-  const fixture = setup(onTestFinished);
+  const fixture = setup(onTestFinished, 0, undefined, undefined, 1);
   const launched = await fixture.controller.launch(fixture.input);
   fixture.fake.layout.panes[1]!.terminal_id = 'replacement-terminal';
   const callsBefore = fixture.calls.length;
@@ -128,3 +115,19 @@ it('admits another worker after cleanup fails its terminal identity check', asyn
     recovery: cancelled.recovery,
   });
 });
+
+it.each([
+  { configured: undefined, capacity: 12 },
+  { configured: 3, capacity: 3 },
+])(
+  'allows $capacity live workers and refuses the next when capacity is $configured',
+  async ({ configured, capacity }) => {
+    const fixture = setup(finishTest, 0, undefined, undefined, configured);
+
+    for (let index = 0; index < capacity; index += 1) {
+      await fixture.controller.launch(fixture.input);
+    }
+
+    await expect(fixture.controller.launch(fixture.input)).rejects.toThrow('capacity full');
+  },
+);

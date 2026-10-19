@@ -47,6 +47,7 @@ import { trackerLines } from './trackerRouting.js';
 import { taskIdSchema } from './types.js';
 import type { WorkerState } from './types.js';
 import { renderWorkerWidget } from './widget.js';
+import { readWorkerCapacity } from './workerCapacityConfig.js';
 import { workerModelLine } from './workerModels.js';
 
 interface CapacityRefusal {
@@ -55,7 +56,7 @@ interface CapacityRefusal {
 
 interface SubagentRuntime {
   pi: ExtensionAPI;
-  getController: () => WorkerController;
+  getController: (context: ExtensionContext) => WorkerController;
   refuseCapacity: () => void;
 }
 
@@ -175,13 +176,27 @@ export const createNoticeDelivery = (pi: ExtensionAPI): NoticeDelivery => {
   };
 };
 
+// The first caller's context supplies the cwd and trust that locate the user config.
 const createController = (
+  context: ExtensionContext,
   deliver: NoticeDelivery,
   getContext: () => ExtensionContext | undefined,
-): WorkerController =>
-  new WorkerController(workerRecordsDirectory(), undefined, (notice) => {
-    deliver(getContext(), notice);
-  });
+): WorkerController => {
+  const capacity = readWorkerCapacity(
+    { cwd: context.cwd, agentDirectory: getAgentDir(), projectTrusted: context.isProjectTrusted() },
+    context.ui,
+  );
+
+  return new WorkerController(
+    workerRecordsDirectory(),
+    undefined,
+    (notice) => {
+      deliver(getContext(), notice);
+    },
+    undefined,
+    capacity,
+  );
+};
 
 const hasHerdrEnvironment = (): boolean =>
   process.env.HERDR_ENV === '1' && Boolean(process.env.HERDR_SOCKET_PATH);
@@ -242,7 +257,7 @@ const followUpWorker = async (
     throw new Error('Follow-up requires a saved parent session inside local herdr.');
   }
 
-  const controller = runtime.getController();
+  const controller = runtime.getController(context);
 
   let status: Awaited<ReturnType<WorkerController['followUp']>>;
 
@@ -273,7 +288,7 @@ const readWorkerStatus = (
   context: ExtensionContext,
 ) => {
   const parentSessionId = context.sessionManager.getSessionId();
-  const active = runtime.getController();
+  const active = runtime.getController(context);
 
   try {
     const current = active.status(parameters.taskId, parentSessionId);
@@ -300,7 +315,7 @@ const replyToWorker = (
   context: ExtensionContext,
 ) => {
   const receipt = runtime
-    .getController()
+    .getController(context)
     .reply(parameters.taskId, context.sessionManager.getSessionId(), parameters);
 
   const questionId = { questionId: parameters.questionId };
@@ -321,7 +336,7 @@ const cancelWorker = async (
 
   try {
     status = await runtime
-      .getController()
+      .getController(context)
       .cancel(parameters.taskId, context.sessionManager.getSessionId());
   } catch (error) {
     return evidenceResult(error);
@@ -592,8 +607,8 @@ export default function subagentsExtension(
 
   const runtime: SubagentRuntime = {
     pi,
-    getController: () => {
-      controller ??= createController(deliverNotice, () => sessionContext);
+    getController: (context) => {
+      controller ??= createController(context, deliverNotice, () => sessionContext);
 
       return controller;
     },
@@ -624,7 +639,11 @@ export default function subagentsExtension(
       return;
     }
 
-    const rows = runtime.getController().widgetRows(context.sessionManager.getSessionId());
+    if (controller === undefined) {
+      return;
+    }
+
+    const rows = controller.widgetRows(context.sessionManager.getSessionId());
 
     if (rows.length === 0) {
       context.ui.setWidget('tau-subagents', undefined);
@@ -674,15 +693,20 @@ export default function subagentsExtension(
       widgetTimer = undefined;
     }
 
-    runtime
-      .getController()
-      .resume(context.sessionManager.getSessionId())
-      .then(() => {
-        refreshWidget(context);
-      })
-      .catch((error: unknown) => {
-        context.ui.notify(`Saved workers could not be reattached: ${String(error)}`, 'error');
-      });
+    // An invalid config leaves the controller uncreated, and each worker tool call reports it.
+    try {
+      runtime
+        .getController(context)
+        .resume(context.sessionManager.getSessionId())
+        .then(() => {
+          refreshWidget(context);
+        })
+        .catch((error: unknown) => {
+          context.ui.notify(`Saved workers could not be reattached: ${String(error)}`, 'error');
+        });
+    } catch (error) {
+      context.ui.notify(errorMessage(error), 'error');
+    }
 
     refreshWidget(context);
 
@@ -730,7 +754,7 @@ export default function subagentsExtension(
 
   // Pi's summary drops exact task IDs and question IDs, so the list joins the next prompt.
   pi.on('session_compact', (_event, context) => {
-    const rows = runtime.getController().widgetRows(context.sessionManager.getSessionId());
+    const rows = runtime.getController(context).widgetRows(context.sessionManager.getSessionId());
     const list = compactionWorkerList(rows);
 
     if (list === undefined) {
