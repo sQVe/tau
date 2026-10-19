@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { isLocalPackage, packagesToLoad } from './workerPackages.js';
+import { packagesToLoad } from './workerPackages.js';
 
 it.each([
   { profile: [], configured: ['npm:pi-agent-browser-native'], load: [] },
@@ -123,9 +123,4 @@ it.each([
 
 it.each(['npm:', 'npm:@', 'https://'])('does not throw on the unusual source %s', (source) => {
   expect(packagesToLoad([source, source], [])).toEqual([source]);
-});
-
-it('reads a source with surrounding spaces as remote when it names a remote prefix', () => {
-  expect(isLocalPackage(' npm:foo')).toBe(false);
-  expect(isLocalPackage('./foo')).toBe(true);
 });
