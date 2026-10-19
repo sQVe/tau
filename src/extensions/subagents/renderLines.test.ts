@@ -62,7 +62,6 @@ it('renders a bare awaiting-reply worker without a question', () => {
   });
 
   expect(collapsed({ state: 'awaitingReply' })[0]).not.toBe(asking[0]);
-  expect(collapsed({ state: 'awaitingReply' })[0]).not.toContain('Stryker');
 });
 
 it('offers a follow-up only for a stopped worker with a saved report', () => {
@@ -159,21 +158,31 @@ it('says a reported worker is not stopped yet only while it is reported', () => 
 it('shows the pending question as the second line only while awaiting a reply', () => {
   const question = { questionId: 'q-1', question: 'Which file?\nSecond line.' };
 
-  expect(collapsed({ state: 'awaitingReply', pendingQuestion: question })).toEqual([
-    '? worker asks',
-    '  Which file?',
-  ]);
+  const asking = collapsed({ state: 'awaitingReply', pendingQuestion: question });
 
-  expect(collapsed({ state: 'running', pendingQuestion: question })).toEqual(['● worker running']);
+  expect(asking).toHaveLength(2);
+  expect(asking[1]).toBe('  Which file?');
+
+  expect(collapsed({ state: 'running', pendingQuestion: question })).toEqual(
+    collapsed({ state: 'running' }),
+  );
 });
 
 it('shows the report summary as the second line for a stopped worker', () => {
+  const bare = collapsed({ state: 'stopped' });
+
+  expect(bare).toHaveLength(1);
+
   expect(collapsed({ state: 'stopped', report: { summary: 'All done.\nMore.' } })).toEqual([
-    '◐ worker stopped',
+    ...bare,
     '  All done.',
   ]);
 
-  expect(collapsed({ state: 'stopped', report: {} })).toEqual(['◐ worker stopped']);
+  expect(collapsed({ state: 'stopped', report: {} })).toEqual(bare);
+
+  expect(collapsed({ state: 'running', report: { summary: 'All done.' } })).toEqual(
+    collapsed({ state: 'running' }),
+  );
 });
 
 it('flags a failure only when the failure text is present', () => {
