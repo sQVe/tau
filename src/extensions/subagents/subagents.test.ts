@@ -215,6 +215,7 @@ const sessionGuidelines = async (
     appended: appendedSystemPrompt(fake.handlers, ['subagent']),
     appendedWithoutTools: appendedSystemPrompt(fake.handlers, []),
     notify,
+    startSession: () => emitEvent(fake.handlers, 'session_start', {}, context),
   };
 };
 
@@ -1776,4 +1777,82 @@ it('returns the unreadable-evidence object when launch records fail', async ({
 
   expect(content).toEqual(evidenceContent('task-1'));
   expect(content).not.toHaveProperty('state');
+});
+
+it('lists profile names in order and gives a reason when the list is unreadable', async ({
+  onTestFinished,
+}) => {
+  const listed = await launchDescription(onTestFinished, () => undefined);
+
+  const names = ['browser', 'qa', 'reviewer', 'scout', 'worker'];
+  const positions = names.map((name) => listed.indexOf(name, listed.indexOf('Profiles:')));
+
+  expect(positions.every((position) => position >= 0)).toBe(true);
+  expect(positions).toEqual(positions.toSorted((left, right) => left - right));
+  expect(listed).toMatch(/reviewer\W+scout\W+worker/u);
+  expect(listed).not.toContain('undefined');
+
+  const unreadable = await launchDescription(onTestFinished, (directory) => {
+    writeFileSync(join(directory, 'agents'), 'not a directory');
+  });
+
+  expect(unreadable).toMatch(/Profiles: \w/u);
+  expect(unreadable).not.toContain('undefined');
+  expect(unreadable).not.toContain('browser');
+  expect(unreadable).not.toContain('worker,');
+});
+
+it('puts each manager guideline and tracker line on its own prompt line', async ({
+  onTestFinished,
+}) => {
+  const { appended } = await sessionGuidelines(onTestFinished, {
+    user: { tracker: { agentTeam: 'AI', repositories: { 'sQVe/tau': { team: 'ME' } } } },
+    originUrl: 'git@github.com:sQVe/tau.git',
+  });
+
+  const lines = appended.split('\n').filter((line) => line !== '');
+
+  expect(lines.length).toBeGreaterThan(delegationGuidelines(undefined).length);
+  expect(lines.every((line) => line.startsWith('- '))).toBe(true);
+
+  for (const guideline of delegationGuidelines(undefined)) {
+    expect(lines).toContain(`- ${guideline}`);
+  }
+
+  expect(lines).toContain('- Tracker agent team: `AI`.');
+});
+
+it('reports a bad tracker entry only for the repository the checkout is cloned from', async ({
+  onTestFinished,
+}) => {
+  const user = { tracker: { agentTeam: 'AI', repositories: { 'sQVe/tau': { team: 5 } } } };
+
+  const own = await sessionGuidelines(onTestFinished, {
+    user,
+    originUrl: 'git@github.com:sQVe/tau.git',
+  });
+
+  expect(own.appended).toContain('tracker.repositories.sQVe/tau.team must be a string');
+
+  const other = await sessionGuidelines(onTestFinished, {
+    user,
+    originUrl: 'git@github.com:sQVe/other.git',
+  });
+
+  expect(other.appended).not.toContain('must be a string');
+  expect(other.appended).toContain('no entry for `sQVe/other`');
+});
+
+it('reports a config problem again in each new session', async ({ onTestFinished }) => {
+  const { notify, startSession } = await sessionGuidelines(onTestFinished, {
+    user: { browser: { loginCommand, bogus: true } },
+  });
+
+  const warnings = () => notify.mock.calls.filter(([message]) => message.includes('browser.bogus'));
+
+  expect(warnings()).toHaveLength(1);
+
+  await startSession();
+
+  expect(warnings()).toHaveLength(2);
 });
