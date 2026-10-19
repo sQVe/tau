@@ -1,11 +1,14 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   rmSync,
   writeFileSync,
+  symlinkSync,
 } from 'node:fs';
 import { open } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
@@ -1624,3 +1627,127 @@ it('reports an unchanged broken route once per session and still launches on the
   expect(notify).toHaveBeenCalledTimes(1);
   expect(notify).toHaveBeenCalledWith(expect.stringContaining('profiles.scout.route'), 'error');
 });
+
+it('accepts a suffixed Safety Net command among other commands', async ({ onTestFinished }) => {
+  const { directory, model, request } = await workerFixture(onTestFinished);
+  const loadout = { ...fixtureLoadout(directory), model: request.model };
+
+  const safetyPath = join(
+    dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
+    'dist',
+    'pi',
+    'index.js',
+  );
+
+  const setActiveTools = vi.fn<ExtensionAPI['setActiveTools']>();
+
+  const commandsWith = (name: string, other: string) =>
+    [
+      { name: other, source: 'skill', sourceInfo: { path: tddPath } },
+      { name, source: 'extension', sourceInfo: { path: safetyPath } },
+    ] as SlashCommandInfo[];
+
+  const pi = (commands: SlashCommandInfo[]) =>
+    ({
+      getThinkingLevel: () => 'off',
+      getCommands: () => commands,
+      getAllTools: () =>
+        [...loadout.tools, 'subagent_progress', 'subagent_report', 'subagent_question'].map(
+          (name) => ({ name }),
+        ),
+      setActiveTools,
+    }) as unknown as ExtensionAPI;
+
+  const worker = { model, cwd: directory, isProjectTrusted: () => true };
+
+  for (const name of ['cc-safety-net', 'cc-safety-net:12']) {
+    expect(() => {
+      checkWorkerRuntime(loadout, pi(commandsWith(name, 'skill:tdd')), worker);
+    }).not.toThrow();
+  }
+
+  for (const name of ['cc-safety-net:0', 'cc-safety-net:x', 'x-cc-safety-net']) {
+    expect(() => {
+      checkWorkerRuntime(loadout, pi(commandsWith(name, 'skill:tdd')), worker);
+    }).toThrow('CC Safety Net');
+  }
+});
+
+it('launches with the project profile file of the session cwd', async ({ onTestFinished }) => {
+  const { directory, context, request } = await workerFixture(onTestFinished);
+
+  mkdirSync(join(directory, '.pi', 'agents'), { recursive: true });
+  writeFileSync(join(directory, '.pi', 'agents', 'worker.md'), profile('Project instructions.'));
+
+  expect(resolveLoadout(request, context).instructions).toBe('Project instructions.');
+});
+
+it('classifies nothing when the repository allowedModels excludes the classifier', async ({
+  onTestFinished,
+}) => {
+  const { directory, context, classify, profileModel } = await routedFixture(onTestFinished);
+
+  allowModels(join(directory, '.pi', 'tau.json'), [profileModel, haiku]);
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  const { routing } = await resolveRoutedLoadout({ profile: 'scout', task: 'Find it.' }, context);
+
+  expect(routing).toMatchObject({ fallbackReason: 'noRoute' });
+  expect(classify).not.toHaveBeenCalled();
+});
+
+const countHandlesTo = (target: string) =>
+  readdirSync('/proc/self/fd').filter((descriptor) => {
+    try {
+      return readlinkSync(`/proc/self/fd/${descriptor}`) === target;
+    } catch {
+      return false;
+    }
+  }).length;
+
+const linkTicket = (directory: string, target: string) => {
+  mkdirSync(join(directory, '.tau', 'slices', 'ME-1'), { recursive: true });
+  symlinkSync(target, join(directory, '.tau', 'slices', 'ME-1', 'agent-1.md'));
+};
+
+it('sends no text from a special file that a ticket path names', async ({ onTestFinished }) => {
+  const { context, classify, directory } = await routedFixture(onTestFinished);
+
+  linkTicket(directory, '/dev/zero');
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  const brief = 'Task in .tau/slices/ME-1/agent-1.md';
+  const { routing } = await resolveRoutedLoadout({ profile: 'scout', task: brief }, context);
+
+  expect(classifiedState(classify)).toEqual({ brief, profile: 'scout' });
+  expect(routing?.ticketSent).toBe(false);
+});
+
+const hasProcessDescriptors = existsSync('/proc/self/fd');
+
+it.skipIf(!hasProcessDescriptors).for([
+  ['a ticket file', true],
+  ['a special file', false],
+] as const)(
+  'leaves no handle open for %s after reading it',
+  async ([, regular], { onTestFinished }) => {
+    const { context, classify, directory } = await routedFixture(onTestFinished);
+
+    const target = regular ? join(directory, '.tau', 'slices', 'ME-1', 'agent-1.md') : '/dev/zero';
+
+    if (regular) {
+      saveTicket(directory, 'Close me.');
+    } else {
+      linkTicket(directory, target);
+    }
+
+    classify.mockResolvedValue(answered('narrow', 0.9));
+
+    await resolveRoutedLoadout(
+      { profile: 'scout', task: 'Task in .tau/slices/ME-1/agent-1.md' },
+      context,
+    );
+
+    expect(countHandlesTo(realpathSync(target))).toBe(0);
+  },
+);

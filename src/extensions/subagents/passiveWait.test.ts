@@ -104,6 +104,18 @@ it.each([
     workers: false,
     refused: false,
   },
+  { command: 'sleep 30', workers: true, refused: true },
+  { command: 'sleep 29', workers: true, refused: false },
+  { command: 'sleep 0.5m', workers: true, refused: true },
+  { command: 'sleep 0.51m', workers: true, refused: true },
+  { command: 'sleep 25.55', workers: true, refused: false },
+  { command: "sleep '0.'600", workers: true, refused: false },
+  { command: 'sleep  40', workers: true, refused: true },
+  { command: 'sleep 20 20', workers: true, refused: true },
+  { command: 'cat <<\'EOF\' | "bash"\nsleep 600\nEOF', workers: true, refused: true },
+  { command: "cat <<'EOF' > $(sleep 600)\nx\nEOF", workers: true, refused: true },
+  { command: `echo '<<"E" sleep 600' 'x'`, workers: true, refused: false },
+  { command: "echo '<<E\nx' 'sleep 600'", workers: true, refused: false },
 ])('returns refusal $refused for "$command" with workers $workers', (row) => {
   const reason = passiveWaitRefusal(row.command, {
     hasActiveWorkers: row.workers,
@@ -133,3 +145,12 @@ it.each([
 
   expect(performance.now() - start).toBeLessThan(100);
 });
+
+it.each([true, false])(
+  'gives the model a refusal text when it refuses (delegating %s)',
+  (delegating) => {
+    const reason = passiveWaitRefusal('gh run watch', { hasActiveWorkers: false, delegating });
+
+    expect(reason).toMatch(/\S/u);
+  },
+);

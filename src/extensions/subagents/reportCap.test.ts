@@ -53,3 +53,19 @@ it.each([
   expect(result?.summary.includes('😀')).toBe(false);
   expect(result?.evidence).toEqual(kept.evidence);
 });
+
+it('keeps a summary of exactly the cap whole when evidence pushes the report over it', () => {
+  const summary = 's'.repeat(8000);
+
+  expect(capReportText(summary, ['evidence'])).toEqual({ summary, evidence: [] });
+});
+
+it('keeps a whole surrogate pair at the start of the summary tail', () => {
+  const summary = `${'a'.repeat(5000)}😀${'b'.repeat(3996)}`;
+
+  const tail = `😀${'b'.repeat(3996)}`;
+  const capped = capReportText(summary, []);
+  const keptTail = capped?.summary.endsWith(tail);
+
+  expect(keptTail).toBe(true);
+});

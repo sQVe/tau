@@ -1161,3 +1161,93 @@ it('reads a saved pane identity and fails closed on invalid pane evidence', () =
   writeFileSync(join(directory, 'pane.json'), JSON.stringify({ paneId: '' }));
   expect(() => records.readPane(directory)).toThrow('Invalid saved worker pane');
 });
+
+const questionByteLimit = 64_000;
+
+const openDescriptors = () => readdirSync('/proc/self/fd').length;
+
+// Two-byte characters let a record reach the byte limit with fewer characters than the text limit.
+const textOfBytes = (bytes: number): string => {
+  const pairs = Math.floor(bytes / 2);
+
+  return `${'é'.repeat(pairs)}${'a'.repeat(bytes % 2)}`;
+};
+
+const recordOfBytes = <Record extends { question?: string; reply?: string }>(
+  record: Record,
+  field: 'question' | 'reply',
+  bytes: number,
+): Record => {
+  const emptyBytes = Buffer.byteLength(JSON.stringify({ ...record, [field]: '' }));
+
+  return { ...record, [field]: textOfBytes(bytes - emptyBytes) };
+};
+
+it('accepts and reads a question and a reply of exactly 64,000 bytes', () => {
+  const { directory, task, question, reply } = questionFixture();
+  const largeQuestion = recordOfBytes(question, 'question', questionByteLimit);
+  const largeReply = recordOfBytes(reply, 'reply', questionByteLimit);
+
+  expect(Buffer.byteLength(JSON.stringify(largeQuestion))).toBe(questionByteLimit);
+  expect(Buffer.byteLength(JSON.stringify(largeReply))).toBe(questionByteLimit);
+  expect(questions.acceptQuestion(directory, task.taskId, largeQuestion)).toEqual(largeQuestion);
+  expect(questions.acceptReply(directory, task.taskId, largeReply)).toEqual(largeReply);
+
+  expect(questions.readQuestion(directory, task.taskId, question.questionId)).toEqual(
+    largeQuestion,
+  );
+
+  expect(questions.readReply(directory, task.taskId, question.questionId)).toEqual(largeReply);
+});
+
+it('refuses a question and a reply one byte over 64,000 and saves neither', () => {
+  const { directory, task, question, reply } = questionFixture();
+  const largeQuestion = recordOfBytes(question, 'question', questionByteLimit + 1);
+  const largeReply = recordOfBytes(reply, 'reply', questionByteLimit + 1);
+
+  expect(() => questions.acceptQuestion(directory, task.taskId, largeQuestion)).toThrow('exceeds');
+
+  questions.acceptQuestion(directory, task.taskId, question);
+
+  expect(() => questions.acceptReply(directory, task.taskId, largeReply)).toThrow('exceeds');
+  expect(questions.readReply(directory, task.taskId, question.questionId)).toBeUndefined();
+  expect(readdirSync(directory)).not.toContain(`reply-${question.questionId}.json`);
+});
+
+it('refuses to read a saved question or reply over 64,000 bytes', () => {
+  const { directory, task, question, reply } = questionFixture();
+  const largeQuestion = recordOfBytes(question, 'question', questionByteLimit + 1);
+  const largeReply = recordOfBytes(reply, 'reply', questionByteLimit + 1);
+
+  records.publish(directory, `question-${question.questionId}.json`, largeQuestion);
+
+  expect(() => questions.readQuestion(directory, task.taskId, question.questionId)).toThrow(
+    'Invalid saved worker question.',
+  );
+
+  rmSync(join(directory, `question-${question.questionId}.json`));
+  records.publish(directory, `question-${question.questionId}.json`, question);
+  records.publish(directory, `reply-${question.questionId}.json`, largeReply);
+
+  expect(() => questions.readReply(directory, task.taskId, question.questionId)).toThrow(
+    'Invalid saved worker reply.',
+  );
+});
+
+it.skipIf(!fileSystem.existsSync('/proc/self/fd'))(
+  'closes the directory descriptor each time it recovers a repeated question',
+  () => {
+    const { directory, task, question } = questionFixture();
+
+    questions.acceptQuestion(directory, task.taskId, question);
+    questions.acceptQuestion(directory, task.taskId, question);
+
+    const before = openDescriptors();
+
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      questions.acceptQuestion(directory, task.taskId, question);
+    }
+
+    expect(openDescriptors()).toBe(before);
+  },
+);

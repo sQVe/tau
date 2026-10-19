@@ -403,3 +403,11 @@ it('shows acceptance criteria to the model in order', () => {
 
   expect(content.acceptance).toEqual(['First.', 'Second.']);
 });
+
+it('passes the placement through to the model status', () => {
+  const placement = { visibility: 'hidden', reason: 'No pane was available.' };
+
+  expect(
+    modelStatus({ taskId: 'task-1', state: 'running', deadline: 10, placement }).placement,
+  ).toEqual(placement);
+});
