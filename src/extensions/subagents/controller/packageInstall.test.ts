@@ -1,10 +1,13 @@
+import { getEventListeners } from 'node:events';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { ResolvedPaths } from '@earendil-works/pi-coding-agent';
-import { expect, it } from 'vitest';
+import { expect, it, onTestFinished } from 'vitest';
 
 import { fixtureLoadout } from '../fixtures/loadout.js';
-import { InstallQueue, installWorkerPackages } from './packageInstall.js';
+import { InstallQueue, installWorkerPackages, piPackageManager } from './packageInstall.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 
 const resolved = (extension: string): ResolvedPaths => ({
@@ -98,8 +101,14 @@ const pendingManager = (): WorkerPackageManager => ({
 });
 
 it.each([
-  { reason: new DOMException('Launch cancelled.', 'AbortError'), stop: 'was cancelled' },
-  { reason: new DOMException('Budget spent.', 'TimeoutError'), stop: 'ran out of launch time' },
+  {
+    reason: new DOMException('Launch cancelled.', 'AbortError'),
+    stop: 'was cancelled',
+  },
+  {
+    reason: new DOMException('Budget spent.', 'TimeoutError'),
+    stop: 'ran out of launch time',
+  },
 ])('names the package when its install $stop', async ({ reason, stop }) => {
   const abort = new AbortController();
   const packages = { ...loadout, packages: ['npm:slow', 'npm:later'] };
@@ -215,7 +224,13 @@ const heldInstalls = () => {
     }
   };
 
-  return { manager, started, whenStarted, settle, mostRunning: () => mostRunning };
+  return {
+    manager,
+    started,
+    whenStarted,
+    settle,
+    mostRunning: () => mostRunning,
+  };
 };
 
 const launchPackage = (
@@ -290,4 +305,161 @@ it('starts the next queued install after an install fails', async () => {
 
   await expect(second).resolves.toEqual(['npm:second']);
   expect(installs.mostRunning()).toBe(1);
+});
+
+it('skips a local profile package that project settings name relative to the project settings directory', async () => {
+  const { manager, installs } = fakeManager([{ source: './probe', scope: 'project' }]);
+
+  const sources = await installWorkerPackages(
+    { ...loadout, packages: ['.pi/probe'] },
+    () => manager,
+    new InstallQueue(),
+    signal,
+  );
+
+  expect(sources).toEqual([]);
+  expect(installs).toEqual([]);
+});
+
+it('expands a home directory and trims whitespace in local profile packages', async () => {
+  const { manager } = fakeManager([]);
+
+  const sources = await installWorkerPackages(
+    { ...loadout, packages: ['~', '~/probe', ' /work/spaced '] },
+    () => manager,
+    new InstallQueue(),
+    signal,
+  );
+
+  expect(sources).toEqual([homedir(), join(homedir(), 'probe'), '/work/spaced']);
+});
+
+it('keeps the install error as the cause of a failed package install', async () => {
+  const { manager } = fakeManager([], new Set(['npm:broken']));
+
+  const failure = await installWorkerPackages(
+    { ...loadout, packages: ['npm:broken'] },
+    () => manager,
+    new InstallQueue(),
+    signal,
+  ).catch((error: unknown) => error);
+
+  expect((failure as Error).cause).toEqual(new Error('npm install failed'));
+});
+
+it('lists the user and trusted project packages the worker will load', () => {
+  const root = mkdtempSync(join(tmpdir(), 'tau-packages-'));
+
+  onTestFinished(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const cwd = join(root, 'project');
+  const agentDirectory = join(root, 'agent');
+  mkdirSync(join(cwd, '.pi'), { recursive: true });
+  mkdirSync(agentDirectory, { recursive: true });
+
+  writeFileSync(
+    join(agentDirectory, 'settings.json'),
+    JSON.stringify({ packages: ['npm:user-package'] }),
+  );
+
+  writeFileSync(
+    join(cwd, '.pi', 'settings.json'),
+    JSON.stringify({ packages: ['npm:project-package'] }),
+  );
+
+  const configured = piPackageManager({
+    ...fixtureLoadout(cwd),
+    agentDirectory,
+  })
+    .listConfiguredPackages()
+    .map(({ source, scope }) => ({ source, scope }));
+
+  expect(configured.toSorted((left, right) => left.source.localeCompare(right.source))).toEqual([
+    { source: 'npm:project-package', scope: 'project' },
+    { source: 'npm:user-package', scope: 'user' },
+  ]);
+});
+
+// A launch can stop in the microtasks right after its turn comes, whatever the number of them.
+it.each([0, 1, 2, 3, 4, 5, 6, 7])(
+  'does not install for a launch that stopped after %s microtasks of its turn coming',
+  async (ticks) => {
+    const installs = heldInstalls();
+    const queue = new InstallQueue();
+    const cancel = new AbortController();
+
+    const first = launchPackage(installs, queue, 'npm:first');
+    const second = launchPackage(installs, queue, 'npm:second', cancel.signal);
+    const third = launchPackage(installs, queue, 'npm:third');
+    const secondOutcome = second.catch((error: unknown) => error);
+
+    await installs.whenStarted('npm:first');
+    installs.settle('npm:first', 'installed');
+
+    for (let tick = 0; tick < ticks; tick += 1) {
+      await Promise.resolve();
+    }
+
+    cancel.abort();
+
+    await expect(first).resolves.toEqual(['npm:first']);
+    expect(await secondOutcome).toBeInstanceOf(Error);
+    await installs.whenStarted('npm:third');
+    installs.settle('npm:third', 'installed');
+
+    await expect(third).resolves.toEqual(['npm:third']);
+    expect(installs.started).toEqual(['npm:first', 'npm:third']);
+  },
+);
+
+it('stops a launch whose signal was already aborted without waiting for the queue', async () => {
+  const installs = heldInstalls();
+  const queue = new InstallQueue();
+  const stopped = new AbortController();
+
+  stopped.abort();
+  const first = launchPackage(installs, queue, 'npm:first');
+  await installs.whenStarted('npm:first');
+
+  await expect(launchPackage(installs, queue, 'npm:second', stopped.signal)).rejects.toThrow(
+    'npm:second',
+  );
+
+  installs.settle('npm:first', 'installed');
+  await expect(first).resolves.toEqual(['npm:first']);
+  expect(installs.started).toEqual(['npm:first']);
+});
+
+it('leaves no abort listener on the launch signal once its install settled', async () => {
+  const installs = heldInstalls();
+  const queue = new InstallQueue();
+  const launch = new AbortController();
+
+  const first = launchPackage(installs, queue, 'npm:first', launch.signal);
+
+  await installs.whenStarted('npm:first');
+  installs.settle('npm:first', 'installed');
+  await expect(first).resolves.toEqual(['npm:first']);
+
+  expect(getEventListeners(launch.signal, 'abort')).toHaveLength(0);
+});
+
+it('reports a cancelled install as stopped, not as an install failure', async () => {
+  const installs = heldInstalls();
+  const queue = new InstallQueue();
+  const cancel = new AbortController();
+
+  const only = launchPackage(installs, queue, 'npm:only', cancel.signal);
+  const outcome = only.catch((error: unknown) => error);
+
+  await installs.whenStarted('npm:only');
+  cancel.abort();
+
+  const error = await outcome;
+
+  expect(error).toBeInstanceOf(Error);
+  expect((error as Error).message).not.toContain('failed to install');
+  expect((error as Error).cause).toBeUndefined();
 });
