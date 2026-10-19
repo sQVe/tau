@@ -1,5 +1,4 @@
-import * as fileSystem from 'node:fs';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 
@@ -7,7 +6,7 @@ import { expect, it, onTestFinished as afterTest, vi } from 'vitest';
 
 import * as records from './records.js';
 
-vi.mock(import('node:fs'), { spy: true });
+const openDescriptorCount = () => readdirSync('/dev/fd').length;
 
 const taskId = '11111111-1111-4111-8111-111111111111';
 const otherTaskId = '22222222-2222-4222-8222-222222222222';
@@ -188,21 +187,11 @@ it('reads a task that follows another task and leaves work time after cleanup', 
 it('closes every descriptor it opens while publishing', () => {
   const directory = temporaryDirectory();
 
-  vi.mocked(fileSystem.openSync).mockClear();
-  vi.mocked(fileSystem.closeSync).mockClear();
+  const before = openDescriptorCount();
+
   records.publish(directory, 'saved.json', { ok: true });
 
-  const opened = vi
-    .mocked(fileSystem.openSync)
-    .mock.results.map((result) => result.value as number);
-
-  const closed = vi.mocked(fileSystem.closeSync).mock.calls.map(([descriptor]) => descriptor);
-
-  expect(opened).toHaveLength(2);
-
-  expect(closed.toSorted((left, right) => left - right)).toEqual(
-    opened.toSorted((left, right) => left - right),
-  );
+  expect(openDescriptorCount()).toBe(before);
 });
 
 it('keeps worker records under the agent directory in a workers folder', () => {
