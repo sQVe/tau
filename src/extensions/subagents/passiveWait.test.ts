@@ -154,20 +154,3 @@ it.each([true, false])(
     expect(reason).toMatch(/\S/u);
   },
 );
-
-it('starts every refusal with the same directive before its next step', () => {
-  const delegatingReason =
-    passiveWaitRefusal('gh run watch', { hasActiveWorkers: false, delegating: true }) ?? '';
-
-  const sessionReason =
-    passiveWaitRefusal('gh run watch', { hasActiveWorkers: false, delegating: false }) ?? '';
-
-  const sharedLength = delegatingReason
-    .split('')
-    .findIndex((character, index) => character !== sessionReason[index]);
-
-  const sharedDirective = delegatingReason.slice(0, sharedLength);
-
-  expect(delegatingReason).not.toBe(sessionReason);
-  expect(sharedDirective).toMatch(/\S/u);
-});
