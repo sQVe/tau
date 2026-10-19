@@ -52,9 +52,14 @@ pnpm mutation audit <path>...
 ```
 
 `changed` mutation-tests the production lines changed since `<base>`. `audit` mutation-tests whole
-files. Both use [StrykerJS](https://stryker-mutator.io) with the root `stryker.config.json`. The
-script prints a JSON report. See [scripts/mutation.md](../scripts/mutation.md) for the report and
-exit codes.
+files. Both run the [`@sqve/mutation`](https://www.npmjs.com/package/@sqve/mutation) package, which
+runs [StrykerJS](https://stryker-mutator.io) with the root `stryker.config.json` and prints a JSON
+report. The package README lists the report and the exit codes.
+
+The package sets these defaults unless the config sets its own value: the `tauMessageIgnorer`
+ignorer and `ignoreStatic: true`. It sets no mutant cap and no timeout. Tau's config sets what is
+particular to this repository: the `mutate` globs, the left-out modules, `timeoutMS`, the Vitest
+runner with related tests, and the concurrency. Bump the pinned package version to get a fix.
 
 The `Mutation` CI job runs `changed` against the pull request's base. It fails on exit 2 or exit 1.
 Exit 2 means a mutant survived on a changed line. Exit 1 means an error, such as a file over the
