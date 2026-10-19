@@ -287,6 +287,15 @@ it('keeps every saved field when the details are parsed and expanded', () => {
   }
 });
 
+it('drops evidence entries that are not text', () => {
+  const withReport = (evidence: unknown[]) =>
+    expanded({ state: 'stopped', report: { summary: 'Done.', evidence } });
+
+  expect(withReport(['Ran the test.', 7, null, 'Checked the diff.'])).toEqual(
+    withReport(['Ran the test.', 'Checked the diff.']),
+  );
+});
+
 it('shows the native session ID only when no session file is saved', () => {
   const withId = expanded({ state: 'running', nativeSessionId: 'native-1' });
 
