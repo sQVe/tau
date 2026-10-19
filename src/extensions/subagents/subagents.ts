@@ -754,7 +754,11 @@ export default function subagentsExtension(
 
   // Pi's summary drops exact task IDs and question IDs, so the list joins the next prompt.
   pi.on('session_compact', (_event, context) => {
-    const rows = runtime.getController(context).widgetRows(context.sessionManager.getSessionId());
+    if (controller === undefined) {
+      return;
+    }
+
+    const rows = controller.widgetRows(context.sessionManager.getSessionId());
     const list = compactionWorkerList(rows);
 
     if (list === undefined) {

@@ -1324,6 +1324,45 @@ it('emits each notice on the event bus with the worker name and state label', ()
 const compactionRow = (taskId: string, state: WorkerWidgetRow['state'], questionId?: string) =>
   ({ name: taskId, taskId, state, questionId }) as WorkerWidgetRow;
 
+it('leaves the controller uncreated through refresh and compaction after an invalid capacity', async () => {
+  const fake = fakeExtensionApi();
+  const base = emptyConfigContext();
+  const setWidget = vi.fn<() => void>();
+  const notify = vi.fn<ExtensionContext['ui']['notify']>();
+  const widgetRows = vi.spyOn(WorkerController.prototype, 'widgetRows');
+
+  writeFileSync(join(base.cwd, 'tau.json'), JSON.stringify({ subagents: { capacity: 0 } }));
+
+  finishTest(() => {
+    vi.restoreAllMocks();
+  });
+
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
+
+  const context = {
+    ...base,
+    hasUI: true,
+    mode: 'tui',
+    scopedModels: [],
+    ui: { notify, setWidget },
+    sessionManager: { getSessionId: () => 'parent' },
+  } as unknown as ExtensionContext;
+
+  await emitEvent(fake.handlers, 'session_start', {}, context);
+  await emitEvent(fake.handlers, 'tool_result', {}, context);
+  await emitEvent(fake.handlers, 'session_compact', { reason: 'manual' }, context);
+  await emitEvent(fake.handlers, 'session_compact', { reason: 'manual' }, context);
+
+  const configNotices = notify.mock.calls.filter(([message]) =>
+    message.includes('subagents.capacity'),
+  );
+
+  expect(configNotices).toEqual([[expect.stringContaining('1 to 256'), 'error']]);
+  expect(widgetRows).not.toHaveBeenCalled();
+  expect(setWidget).not.toHaveBeenCalled();
+  expect(fake.sendMessage).not.toHaveBeenCalled();
+});
+
 it('queues active workers and pending questions for the next prompt after a compaction', async () => {
   const fake = fakeExtensionApi();
   let rows = [compactionRow('task-stopped', 'stopped')];
@@ -1336,11 +1375,16 @@ it('queues active workers and pending questions for the next prompt after a comp
 
   subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
 
+  vi.spyOn(WorkerController.prototype, 'resume').mockResolvedValue(undefined);
+
   const context = {
     ...emptyConfigContext(),
+    hasUI: false,
+    ui: { notify: vi.fn<() => void>() },
     sessionManager: { getSessionId: () => 'parent-session' },
   } as unknown as ExtensionContext;
 
+  await emitEvent(fake.handlers, 'session_start', {}, context);
   await emitEvent(fake.handlers, 'session_compact', { reason: 'manual' }, context);
 
   expect(fake.sendMessage).not.toHaveBeenCalled();
