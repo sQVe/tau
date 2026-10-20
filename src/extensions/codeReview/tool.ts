@@ -1,4 +1,4 @@
-import { appendFile, readFile } from 'node:fs/promises';
+import { appendFile, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
@@ -8,7 +8,11 @@ import { Type } from 'typebox';
 
 import { findCheckoutRoot } from '../../gitOutput.js';
 import { readReviewEvidence } from '../../reviewCapture/evidence.js';
-import { pinFixTarget, saveVerifiedSnapshot } from '../../reviewCapture/fixCapture.js';
+import {
+  pinFixTarget,
+  saveVerifiedSnapshot,
+  snapshotFolder,
+} from '../../reviewCapture/fixCapture.js';
 import { decideFixScope } from '../../reviewCapture/fixScope.js';
 import { captureReview, checkFreshness } from '../../reviewCapture/pinnedCapture.js';
 import {
@@ -135,6 +139,21 @@ const fixSummary = (target: PinnedTarget, paths: string[]) => {
   return { fixPaths: paths, scope, outsidePaths };
 };
 
+// Removes the snapshot folder only when this capture saved it. Each cleanup runs even when the other
+// fails, and neither failure may hide the capture error that caused the rollback.
+const rollback = async (
+  inputPath: string,
+  originalInput: Buffer,
+  snapshotParent: string | undefined,
+) => {
+  const removeSnapshot =
+    snapshotParent === undefined
+      ? Promise.resolve()
+      : rm(join(snapshotParent, snapshotFolder), { recursive: true, force: true });
+
+  await Promise.allSettled([removeSnapshot, writeFile(inputPath, originalInput)]);
+};
+
 const capture = async (root: string, directory: string, target: ReviewTarget | undefined) => {
   if (target === undefined) {
     throw new Error('capture needs target.');
@@ -150,10 +169,10 @@ const capture = async (root: string, directory: string, target: ReviewTarget | u
     throw new Error(`The capture failed. Nothing was written.\n- ${captured.errors.join('\n- ')}`);
   }
 
-  const { head, error } = await readHead(root);
+  const { head, error: headError } = await readHead(root);
 
   if (head === undefined) {
-    throw new Error(`${error} Nothing was written.`);
+    throw new Error(`${headError} Nothing was written.`);
   }
 
   const base = baseOf(pinned);
@@ -179,20 +198,31 @@ const capture = async (root: string, directory: string, target: ReviewTarget | u
     Buffer.from(gapsSection(captured.gaps)),
   ];
 
+  const inputPath = join(directory, inputFileName);
+  const originalInput = await readFile(inputPath);
+
   const snapshot = hasSnapshot(pinned)
     ? await saveVerifiedSnapshot(directory, root, pinned, captured)
     : undefined;
 
-  await appendFile(join(directory, inputFileName), Buffer.concat(appended));
+  try {
+    await appendFile(inputPath, Buffer.concat(appended));
 
-  await writeCaptureRecord(directory, {
-    version: 2,
-    target: pinned,
-    base,
-    head,
-    hash: captured.hash,
-    ...(snapshot === undefined ? {} : { snapshot }),
-  });
+    await writeCaptureRecord(directory, {
+      version: 2,
+      target: pinned,
+      base,
+      head,
+      hash: captured.hash,
+      ...(snapshot === undefined ? {} : { snapshot }),
+    });
+  } catch (error) {
+    const snapshotParent = snapshot === undefined ? undefined : directory;
+
+    await rollback(inputPath, originalInput, snapshotParent);
+
+    throw error;
+  }
 
   return { ...summary, empty: false };
 };

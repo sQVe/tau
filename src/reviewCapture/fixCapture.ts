@@ -66,7 +66,7 @@ interface EarlierReview {
   snapshot: Snapshot | undefined;
 }
 
-const snapshotFolder = 'snapshot';
+export const snapshotFolder = 'snapshot';
 
 const executableMode = 0o755;
 
