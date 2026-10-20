@@ -2,6 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 
+import { adrIndexMark } from './adrIndexMark.js';
+
 export type DocumentProblemKind =
   | 'broken-link'
   | 'missing-heading'
@@ -67,8 +69,6 @@ const notPathCharacter = /[\s<>*?$~{}[\]:@|"'=,()]/;
 const adrFile = /^docs\/adr\/(\d{4})-[^/]+\.md$/;
 const adrIndexEntry = /^- \[([^\n]+)\]\(\.\/(\d{4}-[^)\s]+\.md)\)([^\n]*(?:\n {2}\S[^\n]*)*)$/gm;
 const adrTitle = /^ADR (\d{4}): (.+)$/;
-const metadataField = /^\*\*([^*\n]+)\*\*:([\s\S]*)$/;
-const adrMention = /ADR (\d{4})/g;
 const adrIndexFile = 'docs/adr/README.md';
 
 // The changelog records history, so it may name paths that no longer exist.
@@ -252,56 +252,6 @@ const adrLabel = (file: string, markdown: string) => {
 
 const collapsedSpace = (text: string) => text.replaceAll(/\s+/g, ' ').trim();
 
-// The metadata is the paragraph after the heading, with one field per backslash-ended line.
-const metadataOf = (markdown: string) => {
-  const [, paragraph = ''] = markdown.split('\n\n');
-  const fields = new Map<string, string>();
-
-  for (const line of paragraph.split('\\\n')) {
-    const [, name, value = ''] = metadataField.exec(line) ?? [];
-
-    if (name !== undefined) {
-      fields.set(name, collapsedSpace(value));
-    }
-  }
-
-  return fields;
-};
-
-const mentionedAdrs = (text: string) => {
-  const numbers = [...new Set([...text.matchAll(adrMention)].map((match) => match[1] ?? ''))];
-  const last = numbers.pop() ?? '';
-
-  if (numbers.length === 0) {
-    return last;
-  }
-
-  const separator = numbers.length > 1 ? ', and ' : ' and ';
-
-  return `${numbers.join(', ')}${separator}${last}`;
-};
-
-// Until the superseded chains merge, an index line names the ADRs that its status says replace it
-// in whole or in part.
-const expectedMark = (file: string, markdown: string) => {
-  const metadata = metadataOf(markdown);
-  const status = metadata.get('Status');
-
-  if (status === undefined) {
-    return { problem: `${file} has no Status line` };
-  }
-
-  if (status.startsWith('Superseded')) {
-    return { mark: `, superseded by ${mentionedAdrs(metadata.get('Superseded by') ?? '')}` };
-  }
-
-  if (status.startsWith('Accepted;')) {
-    return { mark: `, partly superseded by ${mentionedAdrs(status)}` };
-  }
-
-  return { mark: '' };
-};
-
 const adrProblems = (adr: Document, entries: readonly AdrIndexEntry[]) => {
   const name = adr.file.slice('docs/adr/'.length);
   const listed = entries.filter((entry) => entry.name === name);
@@ -317,11 +267,13 @@ const adrProblems = (adr: Document, entries: readonly AdrIndexEntry[]) => {
     return [problem];
   }
 
-  const { mark, problem: statusProblem } = expectedMark(adr.file, adr.markdown);
+  const expected = adrIndexMark(adr.markdown);
 
-  if (statusProblem !== undefined) {
-    return [statusProblem];
+  if ('problem' in expected) {
+    return [`${adr.file} ${expected.problem}`];
   }
+
+  const { mark } = expected;
 
   const problems: string[] = [];
 
