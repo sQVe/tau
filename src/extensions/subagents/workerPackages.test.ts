@@ -1,8 +1,31 @@
-import { expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
-// Pi does not export its Git source parser through the public package API.
-import { parseGitUrl } from '../../../node_modules/@earendil-works/pi-coding-agent/dist/utils/git.js';
+import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent';
+import { expect, it, onTestFinished } from 'vitest';
+
 import { isLocalPackage, packagesToLoad } from './workerPackages.js';
+
+// Pi resolves a source it reads as local from the agent directory, and a Git source to its clone.
+const piReadsAsLocal = (source: string): boolean => {
+  const agentDirectory = mkdtempSync(join(tmpdir(), 'tau-source-'));
+
+  onTestFinished(() => {
+    rmSync(agentDirectory, { recursive: true, force: true });
+  });
+
+  const localPath = resolve(agentDirectory, source.trim());
+  mkdirSync(localPath, { recursive: true });
+
+  const manager = new DefaultPackageManager({
+    cwd: agentDirectory,
+    agentDir: agentDirectory,
+    settingsManager: SettingsManager.inMemory(),
+  });
+
+  return manager.getInstalledPath(source, 'user') === localPath;
+};
 
 it.each([
   { profile: [], configured: ['npm:pi-agent-browser-native'], load: [] },
@@ -145,11 +168,11 @@ it.each([
   'https://gist.github.com/abcdef',
   'https://host/@foo/bar',
 ])('classifies %j as Pi does', (source) => {
-  expect(isLocalPackage(source)).toBe(parseGitUrl(source) === null);
+  expect(isLocalPackage(source)).toBe(piReadsAsLocal(source));
 });
 
-it('keeps a malformed scheme URL remote although Pi rejects it, as a known difference', () => {
-  expect(parseGitUrl('https://example.com/r')).toBeNull();
+it('keeps a malformed scheme URL remote although Pi reads it as local, as a known difference', () => {
+  expect(piReadsAsLocal('https://example.com/r')).toBe(true);
   expect(isLocalPackage('https://example.com/r')).toBe(false);
 });
 
