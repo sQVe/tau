@@ -1,6 +1,6 @@
 import { getEventListeners } from 'node:events';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Value } from 'typebox/value';
@@ -1293,7 +1293,10 @@ it.each([
       const parent = join(repository, '.tau/draft-review');
       const [name] = await readdir(parent);
 
-      await mkdir(join(parent, name ?? '', 'review.json.tmp'));
+      const recordDirectory = join(parent, name ?? '');
+
+      onTestFinished(() => chmod(recordDirectory, 0o700));
+      await chmod(recordDirectory, 0o500);
     };
 
     await expect(run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1')).rejects.toThrow(

@@ -1,4 +1,4 @@
-import { readFile, rename, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Type } from 'typebox';
@@ -7,6 +7,7 @@ import { Value } from 'typebox/value';
 
 import { isMissingFile } from '../../errors.js';
 import { describeSchemaProblem } from '../../schemaProblem.js';
+import { replaceFile } from './replaceFile.js';
 
 const recordName = 'collected.json';
 const recordVersion = 1;
@@ -58,10 +59,8 @@ export const saveCollectedRecord = async (
   record: CollectedRecord,
 ): Promise<void> => {
   const path = join(recordDirectory, recordName);
-  const temporary = `${path}.tmp`;
 
-  await writeFile(temporary, JSON.stringify({ version: recordVersion, ...record }, null, 2));
-  await rename(temporary, path);
+  await replaceFile(path, JSON.stringify({ version: recordVersion, ...record }, null, 2));
 };
 
 const isNewerVersion = (value: unknown) => {
