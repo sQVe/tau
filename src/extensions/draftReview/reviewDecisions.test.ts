@@ -1,6 +1,11 @@
 import { expect, it } from 'vitest';
 
-import { decideEdit, reviewPlacement, selectReviewedComments } from './reviewDecisions.js';
+import {
+  decideDestination,
+  decideEdit,
+  reviewPlacement,
+  selectReviewedComments,
+} from './reviewDecisions.js';
 import type { FileFacts, SessionComment } from './reviewDecisions.js';
 
 const comment = (id: string, path: string | null): SessionComment => ({
@@ -56,3 +61,17 @@ it.each<{ name: string; width: number; zoomed: boolean; placement: string }>([
 ])('places the review $placement when $name', ({ width, zoomed, placement }) => {
   expect(reviewPlacement({ width, zoomed, minimumWidth: 82 })).toBe(placement);
 });
+
+it.each([
+  { kind: 'file', linkCount: 1, inside: true, expected: 'writable' },
+  { kind: 'symlink', linkCount: 1, inside: true, expected: 'symlink' },
+  { kind: 'other', linkCount: 1, inside: true, expected: 'not-file' },
+  { kind: 'file', linkCount: 2, inside: true, expected: 'hard-linked' },
+  { kind: 'file', linkCount: 1, inside: false, expected: 'outside' },
+  { kind: 'symlink', linkCount: 2, inside: false, expected: 'symlink' },
+] as const)(
+  'decides $expected for a $kind with $linkCount links, inside .tau: $inside',
+  ({ kind, linkCount, inside, expected }) => {
+    expect(decideDestination({ kind, linkCount, insideTauDirectory: inside })).toBe(expected);
+  },
+);

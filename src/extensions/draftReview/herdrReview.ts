@@ -5,7 +5,8 @@ import { errorMessage } from '../../errors.js';
 import type { Exec } from '../../exec.js';
 import { minimumPane, readLayout, rectangle } from '../../herdrLayout.js';
 import type { PaneLayout } from '../../herdrLayout.js';
-import { requireObject, result, terminalLocation, text } from '../../terminal.js';
+import { findTerminal, requireObject, result, terminalLocation, text } from '../../terminal.js';
+import type { TerminalLocation } from '../../terminal.js';
 import { reviewPlacement } from './reviewDecisions.js';
 import type { ReviewPlacement } from './reviewDecisions.js';
 
@@ -20,8 +21,10 @@ export interface PaneRequest {
 }
 
 interface ReviewSurface {
-  paneId: string;
-  close: () => Promise<void>;
+  // A pane ID can change when the user moves the terminal, so the surface keeps the terminal ID.
+  terminalId: string;
+  // Closes the surface from the terminal's current location.
+  close: (location: TerminalLocation) => Promise<void>;
 }
 
 const quote = (value: string) => `'${value.replaceAll("'", String.raw`'\''`)}'`;
@@ -56,6 +59,41 @@ export const runInPane = async (request: PaneRequest): Promise<boolean> => {
   const herdr = (argumentsList: string[], waitSignal?: AbortSignal) =>
     runCommand({ exec, cwd, signal: waitSignal }, 'herdr', argumentsList, 'herdr');
 
+  const closePane = (paneId: string) =>
+    herdr(['pane', 'close', paneId]).then(() => undefined, ignoreMissing('pane_not_found'));
+
+  const locate = (terminalId: string, waitSignal?: AbortSignal) =>
+    findTerminal(terminalId, (argumentsList) => herdr(argumentsList, waitSignal));
+
+  // Waits at the terminal's current pane. A pane_not_found either means the user closed the
+  // terminal or moved it to a new pane ID, so the wait resumes there without running again.
+  const waitForMarker = async (terminalId: string, marker: string): Promise<void> => {
+    let location = await locate(terminalId, signal);
+
+    while (location !== undefined) {
+      try {
+        // oxlint-disable-next-line no-await-in-loop -- Each wait follows the terminal to its new pane.
+        await herdr(['pane', 'wait-output', location.paneId, '--match', marker], signal);
+
+        return;
+      } catch (error) {
+        if (!errorMessage(error).includes('pane_not_found')) {
+          throw error;
+        }
+      }
+
+      const previous: TerminalLocation = location;
+
+      // oxlint-disable-next-line no-await-in-loop -- Resolve again after each lost pane.
+      location = await locate(terminalId, signal);
+
+      // A terminal still listed at the pane that was not found has no new pane to wait at.
+      if (location?.paneId === previous.paneId) {
+        return;
+      }
+    }
+  };
+
   const openSplit = async (): Promise<ReviewSurface> => {
     const split = await herdr(
       [
@@ -72,13 +110,12 @@ export const runInPane = async (request: PaneRequest): Promise<boolean> => {
       signal,
     );
 
-    const { paneId } = terminalLocation(result(split).pane);
+    const { terminalId } = terminalLocation(result(split).pane);
 
     // A pane the user already closed is gone, and the review result stands.
-    const close = () =>
-      herdr(['pane', 'close', paneId]).then(() => undefined, ignoreMissing('pane_not_found'));
+    const close = (location: TerminalLocation) => closePane(location.paneId);
 
-    return { paneId, close };
+    return { terminalId, close };
   };
 
   const openTab = async (layout: PaneLayout): Promise<ReviewSurface> => {
@@ -99,15 +136,22 @@ export const runInPane = async (request: PaneRequest): Promise<boolean> => {
 
     const response = result(created);
     const tabId = text(requireObject(response.tab).tab_id);
-    const paneId = text(requireObject(response.root_pane).pane_id);
+    const terminalId = text(requireObject(response.root_pane).terminal_id);
 
-    // Closing the tab focuses a neighbor, so focus returns to the agent's tab.
-    const close = async () => {
+    // Closing the tab focuses a neighbor, so focus returns to the agent's tab. A terminal the user
+    // moved out of the tab closes alone, and the tabs stay as they are.
+    const close = async (location: TerminalLocation) => {
+      if (location.tabId !== tabId) {
+        await closePane(location.paneId);
+
+        return;
+      }
+
       await herdr(['tab', 'close', tabId]).catch(ignoreMissing('tab_not_found'));
       await herdr(['tab', 'focus', text(layout.tab_id)]);
     };
 
-    return { paneId, close };
+    return { terminalId, close };
   };
 
   const open = async (): Promise<ReviewSurface> => {
@@ -138,7 +182,7 @@ export const runInPane = async (request: PaneRequest): Promise<boolean> => {
     throw error;
   }
 
-  const { paneId, close } = surface;
+  const { terminalId, close } = surface;
 
   // The typed line holds the marker as a printf format and an argument, so only the finished
   // command prints the joined marker.
@@ -147,8 +191,15 @@ export const runInPane = async (request: PaneRequest): Promise<boolean> => {
   const line = `${request.command}; printf 'tau-draft-review-done-%s\\n' ${quote(suffix)}`;
 
   try {
-    await herdr(['pane', 'run', paneId, line], signal);
-    await herdr(['pane', 'wait-output', paneId, '--match', marker], signal);
+    const target = await locate(terminalId, signal);
+
+    // A terminal the user already closed ends the review.
+    if (target === undefined) {
+      return true;
+    }
+
+    await herdr(['pane', 'run', target.paneId, line], signal);
+    await waitForMarker(terminalId, marker);
 
     return true;
   } catch (error) {
@@ -163,6 +214,10 @@ export const runInPane = async (request: PaneRequest): Promise<boolean> => {
 
     throw error;
   } finally {
-    await close();
+    const remaining = await locate(terminalId);
+
+    if (remaining !== undefined) {
+      await close(remaining);
+    }
   }
 };

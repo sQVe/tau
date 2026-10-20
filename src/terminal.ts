@@ -63,13 +63,23 @@ export const listTerminals = async (call: TerminalCall): Promise<TerminalLocatio
   return locations;
 };
 
+// Pane IDs change across workspaces. Find the terminal immediately before input or cleanup. An
+// absent terminal returns undefined; never fall back to the launch location.
+export const findTerminal = async (
+  terminalId: string,
+  call: TerminalCall,
+): Promise<TerminalLocation | undefined> => {
+  const locations = await listTerminals(call);
+
+  return locations.find((pane) => pane.terminalId === terminalId);
+};
+
 // Pane IDs change across workspaces. Resolve immediately before input or cleanup; never fall back to the launch location.
 export const resolveTerminal = async (
   terminalId: string,
   call: TerminalCall,
 ): Promise<TerminalLocation> => {
-  const locations = await listTerminals(call);
-  const location = locations.find((pane) => pane.terminalId === terminalId);
+  const location = await findTerminal(terminalId, call);
 
   if (!location) {
     throw new TerminalIdentityError(

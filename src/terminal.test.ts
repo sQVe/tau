@@ -1,6 +1,12 @@
 import { expect, it, vi } from 'vitest';
 
-import { requireObject, resolveTerminal, result, terminalLocation } from './terminal.js';
+import {
+  findTerminal,
+  requireObject,
+  resolveTerminal,
+  result,
+  terminalLocation,
+} from './terminal.js';
 import type { TerminalCall } from './terminal.js';
 
 const pane = { pane_id: 'new:pane', terminal_id: 'owned', workspace_id: 'new', tab_id: 'new:tab' };
@@ -18,6 +24,14 @@ it('resolves stable terminal identity across workspace-qualified pane changes', 
   });
 
   expect(call).toHaveBeenCalledExactlyOnceWith(['pane', 'list']);
+});
+
+it('finds no terminal, without an error, when the owned terminal is absent', async () => {
+  const other = { ...pane, pane_id: 'other:pane', terminal_id: 'other' };
+  const listing = JSON.stringify({ result: { panes: [other] } });
+  const call = vi.fn<TerminalCall>().mockResolvedValue(listing);
+
+  await expect(findTerminal('owned', call)).resolves.toBeUndefined();
 });
 
 it.each([

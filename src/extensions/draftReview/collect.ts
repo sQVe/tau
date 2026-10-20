@@ -1,9 +1,14 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../../errors.js';
 import { loadCollectedRecord, saveCollectedRecord } from './collectedRecord.js';
 import type { CollectedRecord } from './collectedRecord.js';
+import {
+  DestinationRefusalError,
+  requireWritableDestination,
+  writeDestination,
+} from './destination.js';
 import { diffFiles } from './diff.js';
 import { decideEdit, selectReviewedComments } from './reviewDecisions.js';
 import type { SessionComment } from './reviewDecisions.js';
@@ -68,11 +73,52 @@ const readReviewedComments = async (
   return found.flat();
 };
 
-const readRequired = async (path: string): Promise<string> => (await readOptional(path)) ?? '';
+const originalPathOf = (review: Review, path: string) =>
+  join(review.recordDirectory, 'originals', path);
 
-const planEdit = async (review: Review, path: string) => {
-  const originalPath = join(review.recordDirectory, 'originals', path);
-  const original = await readRequired(originalPath);
+class CollectRefusalError extends Error {
+  override name = 'CollectRefusalError';
+}
+
+const readRequired = async (review: Review, path: string): Promise<string> => {
+  const original = await readOptional(originalPathOf(review, path));
+
+  if (original === undefined) {
+    throw new CollectRefusalError(
+      `draft_review cannot collect ${path}: its saved original is missing from ${review.recordDirectory}.`,
+    );
+  }
+
+  return original;
+};
+
+const isRefusal = (error: unknown) =>
+  error instanceof CollectRefusalError || error instanceof DestinationRefusalError;
+
+// Says what collect already changed, from the record of an earlier or the current try.
+const progressOf = (record: CollectedRecord | undefined): string => {
+  const deleted = (record?.comments ?? []).filter(({ deleted: done }) => done);
+  const applied = (record?.edits ?? []).filter(({ status }) => status === 'applied');
+
+  if (deleted.length === 0 && applied.length === 0) {
+    return 'Nothing was deleted or written.';
+  }
+
+  const deletedText = deleted.map(({ id }) => id).join(', ') || 'none';
+  const appliedText = applied.map(({ path }) => path).join(', ') || 'none';
+
+  return `Deleted tuicr comments: ${deletedText}. Written files: ${appliedText}.`;
+};
+
+const refusalWithProgress = (error: unknown, record: CollectedRecord | undefined): unknown =>
+  isRefusal(error)
+    ? new Error(`${errorMessage(error)} The review is kept. ${progressOf(record)}`, {
+        cause: error,
+      })
+    : error;
+
+const planEdit = async (review: Review, path: string, original: string) => {
+  const originalPath = originalPathOf(review, path);
   const staged = await readOptional(join(review.stagingDirectory, path));
 
   if (staged === undefined || staged === original) {
@@ -84,9 +130,16 @@ const planEdit = async (review: Review, path: string) => {
   return [{ path, diff, staged, status: 'pending' as const }];
 };
 
-const planCollect = async (run: RunTuicr, review: Review): Promise<CollectedRecord> => {
+const planCollect = async (
+  run: RunTuicr,
+  review: Review,
+  originals: ReadonlyMap<string, string>,
+): Promise<CollectedRecord> => {
   const reviewed = await readReviewedComments(run, review);
-  const planned = await Promise.all(review.paths.map((path) => planEdit(review, path)));
+
+  const planned = await Promise.all(
+    review.paths.map((path) => planEdit(review, path, originals.get(path) ?? '')),
+  );
 
   const comments = reviewed.map(({ sessionPath, comment }) => ({
     sessionPath,
@@ -142,29 +195,94 @@ const writeBack = async (review: Review, record: CollectedRecord): Promise<void>
 
     const realPath = join(review.tauDirectory, edit.path);
     // oxlint-disable-next-line no-await-in-loop -- Each recheck must sit right before its write.
-    const original = await readRequired(join(review.recordDirectory, 'originals', edit.path));
+    const original = await readRequired(review, edit.path);
     // oxlint-disable-next-line no-await-in-loop -- Each recheck must sit right before its write.
     const current = await readOptional(realPath);
     const decision = decideEdit({ path: edit.path, original, staged: edit.staged, current });
 
-    if (decision === 'apply') {
+    // A file that disappears before the write is a conflict, like one missing at the read.
+    const written =
+      decision === 'apply' &&
       // oxlint-disable-next-line no-await-in-loop -- Each write follows its own recheck.
-      await writeFile(realPath, edit.staged);
-    }
+      (await writeDestination(review.tauDirectory, edit.path, edit.staged).catch(
+        (error: unknown) => {
+          throw refusalWithProgress(error, record);
+        },
+      ));
 
-    edit.status = decision === 'apply' ? 'applied' : 'conflict';
+    edit.status = written ? 'applied' : 'conflict';
     // oxlint-disable-next-line no-await-in-loop -- Save each outcome so a retry never re-decides it.
     await saveCollectedRecord(review.recordDirectory, record);
   }
 };
 
-export const collectReview = async (run: RunTuicr, review: Review): Promise<Collected> => {
+const readOriginals = async (review: Review): Promise<Map<string, string>> => {
+  const entries = await Promise.all(
+    review.paths.map(async (path) => [path, await readRequired(review, path)] as const),
+  );
+
+  return new Map(entries);
+};
+
+const requireReviewedPaths = (review: Review, saved: CollectedRecord): void => {
+  const paths = [...saved.comments, ...saved.edits].map(({ path }) => path);
+  const stranger = paths.find((path) => !review.paths.includes(path));
+
+  if (stranger !== undefined) {
+    throw new CollectRefusalError(
+      `draft_review refused the saved plan in ${review.recordDirectory}: ${stranger} is not a file of this review.`,
+    );
+  }
+};
+
+const requireWritableEdits = async (review: Review, record: CollectedRecord): Promise<void> => {
+  const pending = record.edits.filter(({ status }) => status === 'pending');
+
+  await Promise.all(
+    pending.map((edit) => requireWritableDestination(review.tauDirectory, edit.path)),
+  );
+};
+
+const checkBeforeChanges = async (
+  run: RunTuicr,
+  review: Review,
+  saved: CollectedRecord | undefined,
+): Promise<CollectedRecord> => {
+  const originals = await readOriginals(review);
+
+  if (saved !== undefined) {
+    requireReviewedPaths(review, saved);
+  }
+
+  const record = saved ?? (await planCollect(run, review, originals));
+
+  await requireWritableEdits(review, record);
+
+  return record;
+};
+
+// The one gate before collect changes anything. It checks the originals, the saved plan paths, and
+// every pending destination, so a refusal leaves the comments, the files, and the record as they
+// were.
+const prepareCollect = async (run: RunTuicr, review: Review): Promise<CollectedRecord> => {
   const saved = await loadCollectedRecord(review.recordDirectory);
-  const record = saved ?? (await planCollect(run, review));
+  let record: CollectedRecord;
+
+  try {
+    record = await checkBeforeChanges(run, review, saved);
+  } catch (error) {
+    throw refusalWithProgress(error, saved);
+  }
 
   if (saved === undefined) {
     await saveCollectedRecord(review.recordDirectory, record);
   }
+
+  return record;
+};
+
+export const collectReview = async (run: RunTuicr, review: Review): Promise<Collected> => {
+  const record = await prepareCollect(run, review);
 
   await deleteComments(run, review, record);
   await writeBack(review, record);
