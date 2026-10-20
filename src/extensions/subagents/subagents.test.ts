@@ -581,6 +581,89 @@ it('refuses a worker tool call when the configured worker capacity is invalid', 
   ).rejects.toThrow('subagents.capacity must be an integer from 1 to 256');
 });
 
+const fixedCapacityStart = async (resume: () => Promise<void>) => {
+  const fake = fakeExtensionApi();
+  const base = emptyConfigContext();
+  const notify = vi.fn<ExtensionContext['ui']['notify']>();
+  const order: string[] = [];
+
+  writeFileSync(join(base.cwd, 'tau.json'), JSON.stringify({ subagents: { capacity: 0 } }));
+
+  vi.spyOn(WorkerController.prototype, 'resume').mockImplementation(async (sessionId) => {
+    order.push(`resume ${sessionId}`);
+    await resume();
+  });
+
+  vi.spyOn(WorkerController.prototype, 'status').mockImplementation(() => {
+    order.push('status');
+
+    return fullWorkerStatus as unknown as ReturnType<WorkerController['status']>;
+  });
+
+  finishTest(() => {
+    vi.restoreAllMocks();
+  });
+
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
+
+  const context = {
+    ...base,
+    hasUI: false,
+    scopedModels: [],
+    ui: { notify },
+    sessionManager: { getSessionId: () => 'parent' },
+  } as unknown as ExtensionContext;
+
+  await emitEvent(fake.handlers, 'session_start', {}, context);
+  expect(order).toEqual([]);
+
+  writeFileSync(join(base.cwd, 'tau.json'), JSON.stringify({ subagents: { capacity: 1 } }));
+
+  const call = fake.tools
+    .get('subagent_status')!
+    .execute('status', { taskId: 'task-1' }, undefined, undefined, context as never);
+
+  return {
+    call,
+    order,
+    notify,
+    again: () =>
+      fake.tools
+        .get('subagent_status')!
+        .execute('status', { taskId: 'task-1' }, undefined, undefined, context as never),
+  };
+};
+
+it('resumes saved workers before a tool uses a controller created after an invalid start', async () => {
+  const resumed = Promise.withResolvers<undefined>();
+  const { call, order, again } = await fixedCapacityStart(() => resumed.promise);
+
+  await vi.waitFor(() => {
+    expect(order).toEqual(['resume parent']);
+  });
+
+  resumed.resolve(undefined);
+  await call;
+  await again();
+
+  expect(order).toEqual(['resume parent', 'status', 'status']);
+});
+
+it('reports a failed resume on the delayed path as an error and still runs the tool', async () => {
+  const { call, order, notify } = await fixedCapacityStart(() =>
+    Promise.reject(new Error('records unreadable')),
+  );
+
+  await call;
+
+  expect(order).toEqual(['resume parent', 'status']);
+
+  expect(notify).toHaveBeenCalledWith(
+    expect.stringContaining('Saved workers could not be reattached: Error: records unreadable'),
+    'error',
+  );
+});
+
 it('waits for bounded worker cleanup during session shutdown', async ({ onTestFinished }) => {
   const fake = fakeExtensionApi();
   const released = Promise.withResolvers<undefined>();
