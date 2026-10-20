@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 import type { ResolvedPaths } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished } from 'vitest';
 
@@ -93,6 +94,46 @@ it('skips a local profile package that user settings name relative to the agent 
 
   expect(sources).toEqual([]);
   expect(installs).toEqual([]);
+});
+
+it('skips a local profile package that user settings name as npm with a leading space', async () => {
+  const { manager, installs } = fakeManager([{ source: ' npm:probe', scope: 'user' }]);
+
+  const sources = await installWorkerPackages(
+    { ...loadout, packages: ['agent/npm:probe'] },
+    () => manager,
+    new InstallQueue(),
+    signal,
+  );
+
+  expect(sources).toEqual([]);
+  expect(installs).toEqual([]);
+});
+
+it('reads a profile package named npm with a leading space as a local path', async () => {
+  const { manager } = fakeManager([]);
+
+  const sources = await installWorkerPackages(
+    { ...loadout, packages: [' npm:probe'] },
+    () => manager,
+    new InstallQueue(),
+    signal,
+  );
+
+  expect(sources).toEqual([join('/work', 'npm:probe')]);
+});
+
+it('passes git profile packages to Pi unresolved, with or without a leading space', async () => {
+  const { manager } = fakeManager([]);
+
+  const sources = await installWorkerPackages(
+    { ...loadout, packages: ['git:github.com/user/tool', ' https://github.com/user/other'] },
+    () => manager,
+    new InstallQueue(),
+    signal,
+  );
+
+  expect(sources).toEqual(['git:github.com/user/tool', ' https://github.com/user/other']);
 });
 
 const pendingManager = (): WorkerPackageManager => ({
@@ -380,6 +421,44 @@ it('lists the user and trusted project packages the worker will load', () => {
     { source: 'npm:project-package', scope: 'project' },
     { source: 'npm:user-package', scope: 'user' },
   ]);
+});
+
+it('skips a profile package that Pi already loads from a leading-space npm source in settings', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'tau-packages-'));
+
+  onTestFinished(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const cwd = join(root, 'project');
+  const agentDirectory = join(root, 'agent');
+  const extension = join(agentDirectory, 'npm:probe.ts');
+  mkdirSync(cwd, { recursive: true });
+  mkdirSync(agentDirectory, { recursive: true });
+  writeFileSync(extension, 'export default () => {};\n');
+
+  writeFileSync(
+    join(agentDirectory, 'settings.json'),
+    JSON.stringify({ packages: [' npm:probe.ts'] }),
+  );
+
+  const workerLoadout = { ...fixtureLoadout(cwd), agentDirectory, packages: [extension] };
+
+  const piLoads = await new DefaultPackageManager({
+    cwd,
+    agentDir: agentDirectory,
+    settingsManager: SettingsManager.create(cwd, agentDirectory),
+  }).resolve();
+
+  const sources = await installWorkerPackages(
+    workerLoadout,
+    piPackageManager,
+    new InstallQueue(),
+    signal,
+  );
+
+  expect(piLoads.extensions.map((resource) => resource.path)).toEqual([extension]);
+  expect(sources).toEqual([]);
 });
 
 // A launch can stop in the very tick its turn comes. The signal reports the stop only once the

@@ -2,10 +2,11 @@
 // tests/structure.test.ts keeps this module pure.
 
 // Pi treats every other source as a local path.
-const remotePrefixes = ['npm:', 'git:', 'github:', 'http:', 'https:', 'ssh:'];
+const remotePrefixes = ['git:', 'github:', 'http:', 'https:', 'ssh:'];
 
+// Pi reads `npm:` before it trims a source, so ` npm:name` with a leading space is a local path.
 export const isLocalPackage = (source: string): boolean =>
-  !remotePrefixes.some((prefix) => source.trim().startsWith(prefix));
+  !source.startsWith('npm:') && !remotePrefixes.some((prefix) => source.trim().startsWith(prefix));
 
 const npmName = (spec: string): string =>
   spec.match(/^(@?[^@]+(?:\/[^@]+)?)(?:@.+)?$/)?.[1] ?? spec;
@@ -96,16 +97,11 @@ const gitIdentity = (source: string): string | undefined => {
 // npm packages match by name and git packages by host and path, as in Pi's settings. The caller
 // passes local sources as absolute paths.
 const packageIdentity = (source: string): string => {
-  // Pi reads ` npm:name` with a leading space as a path, not an npm package.
   if (source.startsWith('npm:')) {
     return `npm:${npmName(source.slice('npm:'.length).trim())}`;
   }
 
   const trimmed = source.trim();
-
-  if (isLocalPackage(trimmed)) {
-    return `local:${trimmed}`;
-  }
 
   return gitIdentity(trimmed) ?? `source:${trimmed}`;
 };
