@@ -71,10 +71,10 @@ named files. It needs the `subagent` tools inside herdr. Without them, tell the 
      and stop.
    - When `head` or `base` differs from `input.md`, the target moved: start again at step 1.
 
-3. Gather evidence with one read-only `codemode` script. It calls `code_review` `evidence` with
-   `$dir`, then returns line-numbered excerpts of the rule files that bear on the changed paths,
-   read with `git show <sha>:<path>` for a pinned commit. Save the result as `$dir/evidence.md`. If
-   the script fails, record a gap and continue with `input.md` alone.
+3. Gather evidence with one read-only `codemode` script. It returns the full `code_review`
+   `evidence` result for `$dir`, and line-numbered excerpts of the rule files that bear on the
+   changed paths, read with `git show <sha>:<path>` for a pinned commit. Save the result as
+   `$dir/evidence.md`. If the script fails, record a gap and continue with `input.md` alone.
 
 4. Run the mode.
    - Fast: one reviewer. Add "Try to disprove each finding before you report it."
