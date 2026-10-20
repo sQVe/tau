@@ -1,6 +1,6 @@
 import { getEventListeners } from 'node:events';
 import { existsSync } from 'node:fs';
-import { chmod, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Value } from 'typebox/value';
@@ -19,6 +19,29 @@ import {
 import type { Herdr } from './fixtures/reviewFixture.js';
 import { readReview } from './stage.js';
 import { createDraftReviewTool } from './tool.js';
+
+const placementFailure = vi.hoisted(() => ({ active: false }));
+
+vi.mock(import('node:fs/promises'), async (importOriginal) => {
+  const actual = await importOriginal();
+
+  return {
+    ...actual,
+    writeFile: async (...parameters: Parameters<typeof actual.writeFile>) => {
+      const [target] = parameters;
+
+      if (
+        placementFailure.active &&
+        typeof target === 'string' &&
+        target.includes('.review.json.')
+      ) {
+        throw new Error('placement write refused');
+      }
+
+      return actual.writeFile(...parameters);
+    },
+  };
+});
 
 it('prints the command outside herdr, then collects only comments on reviewed files and changed files', async () => {
   const { run, setSession, deleted, records, real, herdrCalls, data } = await fixture();
@@ -1290,13 +1313,11 @@ it.each([
     );
 
     hooks.block = async () => {
-      const parent = join(repository, '.tau/draft-review');
-      const [name] = await readdir(parent);
+      placementFailure.active = true;
 
-      const recordDirectory = join(parent, name ?? '');
-
-      onTestFinished(() => chmod(recordDirectory, 0o700));
-      await chmod(recordDirectory, 0o500);
+      onTestFinished(() => {
+        placementFailure.active = false;
+      });
     };
 
     await expect(run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1')).rejects.toThrow(
