@@ -1,12 +1,11 @@
 # ADR 0082: Own Linear conventions in one tracker skill
 
 **Date**: 2026-10-02\
-**Status**: Accepted; config location reaffirmed by
-[ADR 0095 (Keep repository routing in tracker config)](./0095-keep-repository-routing-in-tracker-config.md);
-the ban on other status changes superseded by
+**Status**: Accepted; the ban on other status changes superseded by
 [ADR 0100 (Let agents cancel Linear tickets after approval)](./0100-let-agents-cancel-linear-tickets-after-approval.md)\
 **Related**:
-[ADR 0075 (Plan work as PR-sized slices in Linear)](./0075-plan-work-as-pr-sized-slices-in-linear.md)
+[ADR 0075 (Plan work as PR-sized slices in Linear)](./0075-plan-work-as-pr-sized-slices-in-linear.md),
+[ADR 0095 (Keep repository routing in tracker config)](./0095-keep-repository-routing-in-tracker-config.md)
 
 ## Context
 

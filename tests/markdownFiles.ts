@@ -30,6 +30,12 @@ export interface Document {
   markdown: string;
 }
 
+interface AdrIndexEntry {
+  label: string;
+  name: string;
+  mark: string;
+}
+
 // Maps each backticked path that names no repository file on purpose to the documents that may
 // name it.
 export type AllowedPaths = Readonly<Record<string, readonly string[]>>;
@@ -59,8 +65,10 @@ const headingLink = /\[([^\]]*)\]\([^)]*\)/g;
 const notSlugCharacter = /[^\p{L}\p{M}\p{N}\p{Pc} -]/gu;
 const notPathCharacter = /[\s<>*?$~{}[\]:@|"'=,()]/;
 const adrFile = /^docs\/adr\/(\d{4})-[^/]+\.md$/;
-const adrIndexEntry = /^- \[([^\n]+)\]\(\.\/(\d{4}-[^)\s]+\.md)\)[ \t]*$/gm;
+const adrIndexEntry = /^- \[([^\n]+)\]\(\.\/(\d{4}-[^)\s]+\.md)\)([^\n]*(?:\n {2}\S[^\n]*)*)$/gm;
 const adrTitle = /^ADR (\d{4}): (.+)$/;
+const metadataField = /^\*\*([^*\n]+)\*\*:([\s\S]*)$/;
+const adrMention = /ADR (\d{4})/g;
 const adrIndexFile = 'docs/adr/README.md';
 
 // The changelog records history, so it may name paths that no longer exist.
@@ -242,7 +250,59 @@ const adrLabel = (file: string, markdown: string) => {
   return { label: `${fileNumber}: ${title}` };
 };
 
-const adrProblems = (adr: Document, entries: readonly { label: string; name: string }[]) => {
+const collapsedSpace = (text: string) => text.replaceAll(/\s+/g, ' ').trim();
+
+// The metadata is the paragraph after the heading, with one field per backslash-ended line.
+const metadataOf = (markdown: string) => {
+  const [, paragraph = ''] = markdown.split('\n\n');
+  const fields = new Map<string, string>();
+
+  for (const line of paragraph.split('\\\n')) {
+    const [, name, value = ''] = metadataField.exec(line) ?? [];
+
+    if (name !== undefined) {
+      fields.set(name, collapsedSpace(value));
+    }
+  }
+
+  return fields;
+};
+
+const mentionedAdrs = (text: string) => {
+  const numbers = [...new Set([...text.matchAll(adrMention)].map((match) => match[1] ?? ''))];
+  const last = numbers.pop() ?? '';
+
+  if (numbers.length === 0) {
+    return last;
+  }
+
+  const separator = numbers.length > 1 ? ', and ' : ' and ';
+
+  return `${numbers.join(', ')}${separator}${last}`;
+};
+
+// Until the superseded chains merge, an index line names the ADRs that its status says replace it
+// in whole or in part.
+const expectedMark = (file: string, markdown: string) => {
+  const metadata = metadataOf(markdown);
+  const status = metadata.get('Status');
+
+  if (status === undefined) {
+    return { problem: `${file} has no Status line` };
+  }
+
+  if (status.startsWith('Superseded')) {
+    return { mark: `, superseded by ${mentionedAdrs(metadata.get('Superseded by') ?? '')}` };
+  }
+
+  if (status.startsWith('Accepted;')) {
+    return { mark: `, partly superseded by ${mentionedAdrs(status)}` };
+  }
+
+  return { mark: '' };
+};
+
+const adrProblems = (adr: Document, entries: readonly AdrIndexEntry[]) => {
   const name = adr.file.slice('docs/adr/'.length);
   const listed = entries.filter((entry) => entry.name === name);
   const [entry] = listed;
@@ -257,14 +317,31 @@ const adrProblems = (adr: Document, entries: readonly { label: string; name: str
     return [problem];
   }
 
-  return entry.label === label ? [] : [`lists ${name} as "${entry.label}", not "${label}"`];
+  const { mark, problem: statusProblem } = expectedMark(adr.file, adr.markdown);
+
+  if (statusProblem !== undefined) {
+    return [statusProblem];
+  }
+
+  const problems: string[] = [];
+
+  if (entry.label !== label) {
+    problems.push(`lists ${name} as "${entry.label}", not "${label}"`);
+  }
+
+  if (entry.mark !== mark) {
+    problems.push(`lists ${name} with "${entry.mark}", but its status needs "${mark}"`);
+  }
+
+  return problems;
 };
 
-// The index must list each ADR once, titled as its first heading.
+// The index must list each ADR once, titled as its first heading and marked as its status says.
 const adrIndexProblems = (index: string, adrs: readonly Document[]): string[] => {
   const entries = [...index.matchAll(adrIndexEntry)].map((match) => ({
     label: match[1] ?? '',
     name: match[2] ?? '',
+    mark: collapsedSpace(match[3] ?? ''),
   }));
 
   const names = new Set(adrs.map((adr) => adr.file.slice('docs/adr/'.length)));
