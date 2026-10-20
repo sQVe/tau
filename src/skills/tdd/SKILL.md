@@ -18,7 +18,7 @@ Use this skill when you change behavior and `run_tests` is available.
   tests cannot establish RED.
 - Read why a test failed. A failure does not prove the assertion is useful. Do not weaken an
   assertion to make the code pass.
-- Hints never block work. Git hooks run separately from TDD observations.
+- Hints never block work. Git hooks and CI still run, separately from TDD observations.
 
 ## Procedure
 
@@ -30,8 +30,7 @@ Use this skill when you change behavior and `run_tests` is available.
    it passes. You may change the label, but keep the selection.
 4. Refactor and format. Then verify the whole suite once: with `full_check`, with the repository's
    own check when it has no `full_check` entry, or with a full `run_tests` pass when no repository
-   check will run. One pass on the current inputs is enough. Do not rerun an equivalent suite. Hooks
-   and CI run on their own.
+   check will run. One pass on the current inputs is enough. Do not rerun an equivalent suite.
 5. After the full check passes, run `mutation_check` with `mode: "changed"` and no `base`. Skip this
    step, and say so, when the repository has no `mutation.argv`. Report a tool error on its own line
    and stop the step. Handle each survivor in this order:
@@ -47,4 +46,5 @@ Use this skill when you change behavior and `run_tests` is available.
    `unknown`, rerun on the current inputs before you claim current verification.
 
 Tau keeps one active behavior per session and directory. A full pass starts the next cycle. Tau
-detects external edits only when a tool call returns. These checks are not atomic snapshots.
+detects external edits only when a test run or a write, edit, or bash call returns. These checks are
+not atomic snapshots.
