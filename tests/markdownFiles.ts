@@ -2,6 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 
+import { adrIndexMark } from './adrIndexMark.js';
+
 export type DocumentProblemKind =
   | 'broken-link'
   | 'missing-heading'
@@ -28,6 +30,12 @@ export interface Files {
 export interface Document {
   file: string;
   markdown: string;
+}
+
+interface AdrIndexEntry {
+  label: string;
+  name: string;
+  mark: string;
 }
 
 // Maps each backticked path that names no repository file on purpose to the documents that may
@@ -59,7 +67,7 @@ const headingLink = /\[([^\]]*)\]\([^)]*\)/g;
 const notSlugCharacter = /[^\p{L}\p{M}\p{N}\p{Pc} -]/gu;
 const notPathCharacter = /[\s<>*?$~{}[\]:@|"'=,()]/;
 const adrFile = /^docs\/adr\/(\d{4})-[^/]+\.md$/;
-const adrIndexEntry = /^- \[([^\n]+)\]\(\.\/(\d{4}-[^)\s]+\.md)\)[ \t]*$/gm;
+const adrIndexEntry = /^- \[([^\n]+)\]\(\.\/(\d{4}-[^)\s]+\.md)\)([^\n]*(?:\n {2}\S[^\n]*)*)$/gm;
 const adrTitle = /^ADR (\d{4}): (.+)$/;
 const adrIndexFile = 'docs/adr/README.md';
 
@@ -242,7 +250,9 @@ const adrLabel = (file: string, markdown: string) => {
   return { label: `${fileNumber}: ${title}` };
 };
 
-const adrProblems = (adr: Document, entries: readonly { label: string; name: string }[]) => {
+const collapsedSpace = (text: string) => text.replaceAll(/\s+/g, ' ').trim();
+
+const adrProblems = (adr: Document, entries: readonly AdrIndexEntry[]) => {
   const name = adr.file.slice('docs/adr/'.length);
   const listed = entries.filter((entry) => entry.name === name);
   const [entry] = listed;
@@ -257,14 +267,33 @@ const adrProblems = (adr: Document, entries: readonly { label: string; name: str
     return [problem];
   }
 
-  return entry.label === label ? [] : [`lists ${name} as "${entry.label}", not "${label}"`];
+  const expected = adrIndexMark(adr.markdown);
+
+  if ('problem' in expected) {
+    return [`${adr.file} ${expected.problem}`];
+  }
+
+  const { mark } = expected;
+
+  const problems: string[] = [];
+
+  if (entry.label !== label) {
+    problems.push(`lists ${name} as "${entry.label}", not "${label}"`);
+  }
+
+  if (entry.mark !== mark) {
+    problems.push(`lists ${name} with "${entry.mark}", but its status needs "${mark}"`);
+  }
+
+  return problems;
 };
 
-// The index must list each ADR once, titled as its first heading.
+// The index must list each ADR once, titled as its first heading and marked as its status says.
 const adrIndexProblems = (index: string, adrs: readonly Document[]): string[] => {
   const entries = [...index.matchAll(adrIndexEntry)].map((match) => ({
     label: match[1] ?? '',
     name: match[2] ?? '',
+    mark: collapsedSpace(match[3] ?? ''),
   }));
 
   const names = new Set(adrs.map((adr) => adr.file.slice('docs/adr/'.length)));

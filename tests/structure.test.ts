@@ -132,6 +132,7 @@ const pureModules = [
   'src/reviewCapture/freshness.ts',
   'src/reviewCapture/gitQuotedName.ts',
   'src/unknownKeys.ts',
+  'tests/adrIndexMark.ts',
   'tests/approvalRule.ts',
 ];
 
