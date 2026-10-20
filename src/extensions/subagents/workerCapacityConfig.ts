@@ -8,6 +8,8 @@ const maximumWorkerCapacity = 256;
 
 const knownSubagentsKeys: KnownKeys = { capacity: true };
 
+const isInteger = (value: unknown): value is number => Number.isInteger(value);
+
 // Reads how many live workers a parent controller runs at once. Only the user file may set
 // `subagents`, since the limit protects the machine of the user.
 export const readWorkerCapacity = (location: ConfigLocation, ui: ConfigWarnings): number => {
@@ -33,10 +35,7 @@ export const readWorkerCapacity = (location: ConfigLocation, ui: ConfigWarnings)
     return defaultWorkerCapacity;
   }
 
-  const inRange =
-    typeof capacity === 'number' && capacity >= 1 && capacity <= maximumWorkerCapacity;
-
-  if (!inRange || !Number.isInteger(capacity)) {
+  if (!isInteger(capacity) || capacity < 1 || capacity > maximumWorkerCapacity) {
     throw new Error(
       `Invalid Tau config ${source}: subagents.capacity must be an integer from 1 to ${maximumWorkerCapacity}.`,
     );
