@@ -46,7 +46,11 @@ const manifestVersion = 2;
 
 const placementSchema = Type.Union([
   Type.Object(
-    { kind: Type.Literal('split'), terminalId: Type.String({ minLength: 1 }) },
+    {
+      kind: Type.Literal('split'),
+      terminalId: Type.String({ minLength: 1 }),
+      processIds: Type.Optional(Type.Array(Type.Integer())),
+    },
     { additionalProperties: false },
   ),
   Type.Object(
@@ -55,6 +59,7 @@ const placementSchema = Type.Union([
       terminalId: Type.String({ minLength: 1 }),
       tabId: Type.String({ minLength: 1 }),
       agentTabId: Type.String({ minLength: 1 }),
+      processIds: Type.Optional(Type.Array(Type.Integer())),
     },
     { additionalProperties: false },
   ),
@@ -238,6 +243,16 @@ const writeManifest = async (review: Review, placement: SavedPlacement | null) =
 export const savePlacement = async (review: Review, placement: SavedPlacement): Promise<void> => {
   await writeManifest(review, placement);
   review.placement = placement;
+};
+
+// Saves the tuicr process IDs before the terminal closes, so a collect retry can still wait for
+// tuicr to exit.
+export const saveProcessIds = async (review: Review, processIds: number[]): Promise<void> => {
+  if (review.placement === null) {
+    throw new Error(`Review record ${review.recordDirectory} has no placement to save into.`);
+  }
+
+  await savePlacement(review, { ...review.placement, processIds });
 };
 
 const populateReview = async (review: Review) => {

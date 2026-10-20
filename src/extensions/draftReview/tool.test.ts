@@ -1,6 +1,7 @@
+import { getEventListeners } from 'node:events';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { Value } from 'typebox/value';
 import { expect, it, onTestFinished, vi } from 'vitest';
@@ -221,6 +222,14 @@ it('opens tuicr in a pane beside the agent, waits, closes the pane, and collects
   ]);
 
   expect(herdrCalls[1]).toContain('w:p1');
+
+  expect(herdrCalls.find(([, action]) => action === 'wait-output')).toEqual([
+    'pane',
+    'wait-output',
+    'w:p2',
+    '--match',
+    `tau-draft-review-done-${basename(staging)}`,
+  ]);
 
   const runCall = herdrCalls.find(([, action]) => action === 'run');
 
@@ -1058,6 +1067,279 @@ it('fails naming the record when the tuicr process never exits, and deletes noth
   expect((await readReview(repository, directory)).recordDirectory).toBe(directory);
 });
 
+const closingHerdr = (state: { closed: boolean }) =>
+  openHerdr(async (argumentsList) => {
+    if (argumentsList[1] === 'close') {
+      state.closed = true;
+    }
+
+    if (state.closed && argumentsList[1] === 'list') {
+      return JSON.stringify({ result: { panes: [] } });
+    }
+
+    return '';
+  });
+
+it('waits on the saved tuicr process when a retry finds the terminal gone, then deletes', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  const state = { closed: false, running: true, checked: [] as number[] };
+
+  const context = await fixture(closingHerdr(state), (processId) => {
+    state.checked.push(processId);
+    setImmediate(() => vi.advanceTimersByTime(100));
+
+    return state.running;
+  });
+
+  const { run, setSession, deleted, records } = context;
+  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
+  await setSession([comment('on-a', 'slices/a.md')]);
+
+  const directory = (opened.details as { directory: string }).directory;
+
+  await expect(run({ action: 'collect', directory })).rejects.toThrow(directory);
+
+  expect(await deleted()).toEqual([]);
+  expect(await records()).toHaveLength(1);
+  expect(state.closed).toBe(true);
+
+  state.checked.length = 0;
+
+  await expect(run({ action: 'collect', directory })).rejects.toThrow(directory);
+
+  expect(state.checked).toContain(4242);
+  expect(await deleted()).toEqual([]);
+  expect(await records()).toHaveLength(1);
+
+  state.running = false;
+
+  const collected = await run({ action: 'collect', directory });
+
+  expect(collected.details).toMatchObject({ status: 'reviewed', comments: [{ content: 'on-a' }] });
+  expect(await deleted()).toEqual(['on-a']);
+});
+
+it('stops waiting on the saved tuicr process when the retry is cancelled', async () => {
+  const state = { closed: false, running: true };
+  const { run, setSession, deleted } = await fixture(closingHerdr(state), () => state.running);
+  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
+  await setSession([comment('on-a', 'slices/a.md')]);
+
+  const directory = (opened.details as { directory: string }).directory;
+  const firstTry = new AbortController();
+
+  firstTry.abort();
+
+  await expect(run({ action: 'collect', directory }, undefined, firstTry.signal)).rejects.toThrow(
+    directory,
+  );
+
+  expect(state.closed).toBe(true);
+
+  const retry = new AbortController();
+
+  setTimeout(() => {
+    retry.abort();
+  }, 20);
+
+  await expect(run({ action: 'collect', directory }, undefined, retry.signal)).rejects.toThrow(
+    directory,
+  );
+
+  expect(await deleted()).toEqual([]);
+});
+
+it('polls the tuicr process 100 times, then leaves no timer or abort listener behind', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  const state = { checks: 0 };
+  const controller = new AbortController();
+
+  const { run } = await fixture(openHerdr(), () => {
+    state.checks += 1;
+    setImmediate(() => vi.advanceTimersByTime(100));
+
+    return true;
+  });
+
+  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
+  const directory = (opened.details as { directory: string }).directory;
+
+  await expect(run({ action: 'collect', directory }, 'w:p1', controller.signal)).rejects.toThrow(
+    directory,
+  );
+
+  expect(state.checks).toBe(100);
+  expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('stops waiting for tuicr at once when the call is aborted, leaving no timer behind', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  const controller = new AbortController();
+  const state = { checks: 0 };
+
+  const { run, setSession, deleted } = await fixture(openHerdr(), () => {
+    state.checks += 1;
+
+    return true;
+  });
+
+  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
+  await setSession([comment('on-a', 'slices/a.md')]);
+
+  const directory = (opened.details as { directory: string }).directory;
+  const collecting = run({ action: 'collect', directory }, 'w:p1', controller.signal);
+
+  const failure = collecting.then(
+    () => '',
+    (error: unknown) => (error instanceof Error ? error.message : ''),
+  );
+
+  await vi.waitFor(() => {
+    expect(vi.getTimerCount()).toBe(1);
+  });
+
+  controller.abort();
+
+  expect(await failure).toContain(directory);
+
+  expect(state.checks).toBe(1);
+  expect(vi.getTimerCount()).toBe(0);
+  expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+  expect(await deleted()).toEqual([]);
+});
+
+it.each([
+  { label: 'split', herdr: (onAction: Herdr) => openHerdr(onAction), close: 'pane close' },
+  { label: 'tab', herdr: (onAction: Herdr) => tabHerdr(100, false, onAction), close: 'tab close' },
+])(
+  'closes the opened $label without moving focus and keeps the error when pane run fails',
+  async ({ herdr, close }) => {
+    const { run, herdrCalls, records } = await fixture(
+      herdr(async (argumentsList) => {
+        if (argumentsList[1] === 'run') {
+          throw new Error('herdr failed: run refused');
+        }
+
+        return '';
+      }),
+    );
+
+    await expect(run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1')).rejects.toThrow(
+      'run refused',
+    );
+
+    expect(steps(herdrCalls)).toContain(close);
+    expect(steps(herdrCalls)).not.toContain('tab focus');
+    expect(await records()).toHaveLength(1);
+  },
+);
+
+it.each([
+  { label: 'the pane is already gone', closeError: 'pane_not_found', expected: 'run refused' },
+  { label: 'close fails otherwise', closeError: 'socket closed', expected: 'socket closed' },
+])('reports $expected when pane run fails and $label', async ({ closeError, expected }) => {
+  const { run } = await fixture(
+    openHerdr(async (argumentsList) => {
+      if (argumentsList[1] === 'run') {
+        throw new Error('herdr failed: run refused');
+      }
+
+      if (argumentsList[1] === 'close') {
+        throw new Error(`herdr failed: ${closeError}`);
+      }
+
+      return '';
+    }),
+  );
+
+  await expect(run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1')).rejects.toThrow(
+    expected,
+  );
+});
+
+it('keeps the run error and closes nothing when pane run fails and the terminal is gone', async () => {
+  const state = { runFailed: false };
+
+  const { run, herdrCalls } = await fixture(
+    openHerdr(async (argumentsList) => {
+      if (argumentsList[1] === 'run') {
+        state.runFailed = true;
+        throw new Error('herdr failed: run refused');
+      }
+
+      const gone = state.runFailed && argumentsList[1] === 'list';
+
+      return gone ? JSON.stringify({ result: { panes: [] } }) : '';
+    }),
+  );
+
+  await expect(run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1')).rejects.toThrow(
+    'run refused',
+  );
+
+  expect(steps(herdrCalls)).not.toContain('pane close');
+});
+
+const listing = (paneId: string) =>
+  JSON.stringify({
+    result: {
+      panes: [{ pane_id: paneId, terminal_id: 't2', workspace_id: 'w', tab_id: 'w:t1' }],
+    },
+  });
+
+it('sends no wait-output when pane run reports pane_not_found and the pane is still listed', async () => {
+  const { run, herdrCalls } = await fixture(async (argumentsList) => {
+    const [group, action] = argumentsList;
+
+    if (action === 'split') {
+      return paneInfo;
+    }
+
+    if (action === 'run') {
+      throw new Error('herdr failed: {"error":{"code":"pane_not_found"}}');
+    }
+
+    return group === 'pane' && action === 'list' ? listing('w:p2') : '';
+  });
+
+  const outcome = await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
+
+  expect(outcome.details).toMatchObject({ status: 'reviewed' });
+  expect(steps(herdrCalls)).not.toContain('pane wait-output');
+});
+
+it('keeps the herdr error as the cause of the failure that names the record', async () => {
+  const { run } = await fixture(socketClosedHerdr);
+
+  const failure = await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1').catch(
+    (error: unknown) => error,
+  );
+
+  expect((failure as Error).cause).toBeInstanceOf(Error);
+});
+
+it('refuses an open call that has no paths', async () => {
+  const { run } = await fixture();
+
+  await expect(run({ action: 'open' })).rejects.toThrow('at least one path');
+});
+
 it('collects when the tuicr terminal is already gone', async () => {
   const { run, setSession, herdrCalls } = await fixture(async (argumentsList) => {
     if (argumentsList[1] === 'split') {
@@ -1202,13 +1484,6 @@ const processHerdr =
 
     return argumentsList[1] === 'process-info' ? answer : '';
   };
-
-const listing = (paneId: string) =>
-  JSON.stringify({
-    result: {
-      panes: [{ pane_id: paneId, terminal_id: 't2', workspace_id: 'w', tab_id: 'w:t1' }],
-    },
-  });
 
 // The terminal t2 sits at w:p2 until `move` runs on a call to w:p2, then at w:p9.
 const movingHerdr = (moveOn: 'process-info' | 'close') => {

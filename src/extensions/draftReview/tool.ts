@@ -8,7 +8,7 @@ import type { Exec } from '../../exec.js';
 import { collectReview } from './collect.js';
 import type { Collected } from './collect.js';
 import { closeOpened, closePlacement, openReview, runInPane, tuicrCommand } from './herdrReview.js';
-import { readReview, removeReview, savePlacement, stageReview } from './stage.js';
+import { readReview, removeReview, savePlacement, saveProcessIds, stageReview } from './stage.js';
 import type { Review } from './stage.js';
 import type { RunTuicr } from './tuicrSession.js';
 
@@ -114,6 +114,8 @@ const collect = async (
       cwd,
       signal,
       placement,
+      savedProcessIds: placement.processIds,
+      saveProcessIds: (processIds) => saveProcessIds(record, processIds),
       isProcessRunning: runtime.isProcessRunning,
       recordDirectory: record.recordDirectory,
     });

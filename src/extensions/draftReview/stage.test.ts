@@ -6,7 +6,13 @@ import { join } from 'node:path';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
-import { parseReviewManifest, readReview, savePlacement, stageReview } from './stage.js';
+import {
+  parseReviewManifest,
+  readReview,
+  savePlacement,
+  saveProcessIds,
+  stageReview,
+} from './stage.js';
 import type { Review } from './stage.js';
 
 const fixtures = join(import.meta.dirname, 'fixtures', 'review');
@@ -58,7 +64,13 @@ it('reads a version 2 manifest with a tab placement', async () => {
     version: 2,
     stagingDirectory: '/tmp/tau-draft-review-abc123',
     paths: ['slices/a.md', 'tickets/c.md'],
-    placement: { kind: 'tab', terminalId: 't1', tabId: 'tab2', agentTabId: 'tab1' },
+    placement: {
+      kind: 'tab',
+      terminalId: 't1',
+      tabId: 'tab2',
+      agentTabId: 'tab1',
+      processIds: [4242],
+    },
   });
 });
 
@@ -81,6 +93,10 @@ it('refuses a version 1 manifest that holds a placement', () => {
 it.each([
   { label: 'an unknown kind', placement: { kind: 'window', terminalId: 't' } },
   { label: 'no terminal id', placement: { kind: 'split' } },
+  {
+    label: 'a process ID that is not a number',
+    placement: { kind: 'split', terminalId: 't', processIds: ['4'] },
+  },
 ])('refuses a placement with $label, naming the path', ({ placement }) => {
   const text = JSON.stringify({
     version: 2,
@@ -112,6 +128,20 @@ it('reads back a saved split placement with the same paths and staging directory
   const read = await readReview(repository, review.recordDirectory);
 
   expect(read).toEqual({ ...review, placement });
+});
+
+it('reads back process IDs saved into the placement', async () => {
+  const { repository } = await stagedFixture();
+  const review = await stageReview(repository, ['.tau/slices/a.md']);
+
+  await expect(saveProcessIds(review, [7])).rejects.toThrow(review.recordDirectory);
+
+  await savePlacement(review, { kind: 'split', terminalId: 't9' });
+  await saveProcessIds(review, [7, 8]);
+
+  const read = await readReview(repository, review.recordDirectory);
+
+  expect(read.placement).toEqual({ kind: 'split', terminalId: 't9', processIds: [7, 8] });
 });
 
 it('refuses a malformed fixture, naming the path', async () => {

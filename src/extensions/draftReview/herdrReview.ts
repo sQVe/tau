@@ -1,5 +1,8 @@
 import { basename } from 'node:path';
 
+import { Type } from 'typebox';
+import { Value } from 'typebox/value';
+
 import { runCommand } from '../../command.js';
 import { errorMessage } from '../../errors.js';
 import type { Exec } from '../../exec.js';
@@ -33,6 +36,10 @@ export interface CloseRequest {
   cwd: string;
   signal: AbortSignal | undefined;
   placement: OpenedPlacement;
+  // The tuicr process IDs an earlier close saved, for when the terminal is already gone.
+  savedProcessIds: number[] | undefined;
+  // Saves the tuicr process IDs before the terminal closes.
+  saveProcessIds: (processIds: number[]) => Promise<void>;
   isProcessRunning: (processId: number) => boolean | Promise<boolean>;
   // Names the review record in a wait error.
   recordDirectory: string;
@@ -196,7 +203,7 @@ const sleep = (milliseconds: number, signal: AbortSignal | undefined): Promise<v
 
     const timer = setTimeout(finish, milliseconds);
 
-    signal?.addEventListener('abort', finish, { once: true });
+    signal?.addEventListener('abort', finish);
   });
 
 const malformed = (what: string, output: string, recordDirectory: string): Error =>
@@ -204,55 +211,46 @@ const malformed = (what: string, output: string, recordDirectory: string): Error
     `herdr returned ${what} that tau cannot read, so tuicr was not closed and no comment was deleted: ${output}. The review record is ${recordDirectory}; call collect with it to try again.`,
   );
 
-const parseProcessIds = (output: string, recordDirectory: string): number[] => {
-  const fail = () => malformed('process info', JSON.stringify(output), recordDirectory);
-  let processes: unknown;
+const processInfoSchema = Type.Object({
+  result: Type.Object({
+    process_info: Type.Object({
+      foreground_processes: Type.Array(Type.Object({ pid: Type.Number() })),
+    }),
+  }),
+});
 
+const tabListSchema = Type.Object({
+  result: Type.Object({
+    tabs: Type.Array(Type.Object({ tab_id: Type.String(), focused: Type.Boolean() })),
+  }),
+});
+
+const parseJson = (output: string, what: string, recordDirectory: string): unknown => {
   try {
-    processes = requireObject(result(output).process_info).foreground_processes;
+    return JSON.parse(output);
   } catch {
-    throw fail();
+    throw malformed(what, JSON.stringify(output), recordDirectory);
   }
-
-  if (!Array.isArray(processes)) {
-    throw fail();
-  }
-
-  const processIds = processes.map((process: unknown) =>
-    typeof process === 'object' && process !== null && 'pid' in process ? process.pid : undefined,
-  );
-
-  if (!processIds.every((pid): pid is number => typeof pid === 'number')) {
-    throw fail();
-  }
-
-  return processIds;
 };
 
-const isTabEntry = (tab: unknown): tab is { tab_id: string; focused: boolean } => {
-  if (typeof tab !== 'object' || tab === null) {
-    return false;
+const parseProcessIds = (output: string, recordDirectory: string): number[] => {
+  const value = parseJson(output, 'process info', recordDirectory);
+
+  if (!Value.Check(processInfoSchema, value)) {
+    throw malformed('process info', JSON.stringify(output), recordDirectory);
   }
 
-  const hasTabId = 'tab_id' in tab && typeof tab.tab_id === 'string';
-
-  return hasTabId && 'focused' in tab && typeof tab.focused === 'boolean';
+  return value.result.process_info.foreground_processes.map(({ pid }) => pid);
 };
 
 const parseFocused = (output: string, tabId: string, recordDirectory: string): boolean => {
-  let tabs: unknown;
+  const value = parseJson(output, 'a tab list', recordDirectory);
 
-  try {
-    tabs = result(output).tabs;
-  } catch {
-    tabs = undefined;
-  }
-
-  if (!Array.isArray(tabs) || !tabs.every(isTabEntry)) {
+  if (!Value.Check(tabListSchema, value)) {
     throw malformed('a tab list', JSON.stringify(output), recordDirectory);
   }
 
-  return tabs.some((tab) => tab.tab_id === tabId && tab.focused);
+  return value.result.tabs.some((tab) => tab.tab_id === tabId && tab.focused);
 };
 
 const anyRunning = async (
@@ -292,21 +290,21 @@ const locateTerminal = (herdr: HerdrCall, terminalId: string, waitSignal?: Abort
 
 // Runs a herdr action at the terminal's current pane. A pane_not_found either means the user
 // closed the terminal or moved it to a new pane ID, so the action is tried again there. Returns
-// false when the terminal is gone.
-const atTerminal = async (
+// undefined when the terminal is gone.
+const atTerminal = async <Outcome>(
   herdr: HerdrCall,
   signal: AbortSignal | undefined,
   terminalId: string,
-  action: (location: TerminalLocation) => Promise<unknown>,
-): Promise<boolean> => {
+  action: (location: TerminalLocation) => Promise<Outcome>,
+): Promise<{ value: Outcome } | undefined> => {
   let location = await locateTerminal(herdr, terminalId, signal);
 
   while (location !== undefined) {
     try {
       // oxlint-disable-next-line no-await-in-loop -- Each try follows the terminal to its new pane.
-      await action(location);
+      const value = await action(location);
 
-      return true;
+      return { value };
     } catch (error) {
       if (!errorMessage(error).includes('pane_not_found')) {
         throw error;
@@ -320,29 +318,36 @@ const atTerminal = async (
 
     // A terminal still listed at the pane that was not found has no new pane to act at.
     if (location?.paneId === previous.paneId) {
-      return false;
+      return undefined;
     }
   }
 
-  return false;
+  return undefined;
 };
 
 // Closes the review left by an earlier open and waits until tuicr has exited. Does nothing when
-// the terminal is gone.
+// the terminal is gone and no earlier close saved tuicr's process IDs.
 export const closePlacement = async (request: CloseRequest): Promise<void> => {
   const { placement, recordDirectory, signal } = request;
   const herdr = herdrCaller(request);
-  let processIds: number[] = [];
 
   const found = await atTerminal(herdr, signal, placement.terminalId, async (location) => {
     const output = await herdr(['pane', 'process-info', '--pane', location.paneId]);
 
-    processIds = parseProcessIds(output, recordDirectory);
+    return parseProcessIds(output, recordDirectory);
   });
 
-  if (!found) {
+  if (found === undefined) {
+    if (request.savedProcessIds !== undefined) {
+      await waitForExit(request, request.savedProcessIds);
+    }
+
     return;
   }
+
+  const processIds = found.value;
+
+  await request.saveProcessIds(processIds);
 
   await atTerminal(herdr, signal, placement.terminalId, async (location) => {
     const tabWasFocused = async () => {
@@ -426,7 +431,7 @@ export const runInPane = async (request: PaneRequest): Promise<boolean> => {
     );
 
     // A terminal the user closed before or during the review ends it.
-    if (started) {
+    if (started !== undefined) {
       await atTerminal(herdr, signal, terminalId, ({ paneId }) =>
         herdr(['pane', 'wait-output', paneId, '--match', marker], signal),
       );
