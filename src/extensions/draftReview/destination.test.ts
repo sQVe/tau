@@ -72,3 +72,26 @@ it('writes nothing and reports no write when the file disappears during the chec
   await expect(writeDestination(tauDirectory, 'slices/a.md', 'edited\n')).resolves.toBe(false);
   await expect(readFile(target, 'utf8')).rejects.toThrow(/ENOENT/);
 });
+
+it('refuses when the checked folder is moved outside .tau and linked back before the open', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'tau-destination-'));
+  onTestFinished(() => rm(base, { recursive: true, force: true }));
+
+  const tauDirectory = join(base, '.tau');
+  const movedDirectory = join(base, 'moved');
+
+  await mkdir(join(tauDirectory, 'slices'), { recursive: true });
+  await writeFile(join(tauDirectory, 'slices/a.md'), 'original\n');
+
+  hooks.beforeOpen = async () => {
+    hooks.beforeOpen = undefined;
+    await rename(join(tauDirectory, 'slices'), movedDirectory);
+    await symlink(movedDirectory, join(tauDirectory, 'slices'));
+  };
+
+  await expect(writeDestination(tauDirectory, 'slices/a.md', 'edited\n')).rejects.toThrow(
+    /slices\/a\.md/,
+  );
+
+  expect(await readFile(join(movedDirectory, 'a.md'), 'utf8')).toBe('original\n');
+});

@@ -1,10 +1,11 @@
 import { constants } from 'node:fs';
 import { lstat, open, realpath } from 'node:fs/promises';
-import { isAbsolute, join, relative } from 'node:path';
+import { join, relative } from 'node:path';
 
 import { isMissingFile } from '../../errors.js';
 import { decideDestination } from './reviewDecisions.js';
 import type { DestinationDecision } from './reviewDecisions.js';
+import { climbsOut } from './stage.js';
 
 interface FileIdentity {
   dev: number;
@@ -24,12 +25,6 @@ export class DestinationRefusalError extends Error {
 
 const refuse = (path: string, decision: Exclude<DestinationDecision, 'writable'>): never => {
   throw new DestinationRefusalError(`draft_review refused ${path}: it ${refusals[decision]}.`);
-};
-
-const escapes = (tauDirectory: string, target: string) => {
-  const inside = relative(tauDirectory, target);
-
-  return inside === '..' || inside.startsWith('../') || isAbsolute(inside);
 };
 
 const kindOf = (stats: { isFile: () => boolean; isSymbolicLink: () => boolean }) => {
@@ -84,7 +79,7 @@ export const requireWritableDestination = async (
   const decision = decideDestination({
     kind: kindOf(stats),
     linkCount: stats.nlink,
-    insideTauDirectory: !escapes(tauDirectory, real),
+    insideTauDirectory: !climbsOut(relative(tauDirectory, real)),
   });
 
   if (decision !== 'writable') {
@@ -94,9 +89,10 @@ export const requireWritableDestination = async (
   return { dev: stats.dev, ino: stats.ino };
 };
 
-// Opens without following a final symlink, then requires the opened file to be the one checked
-// before the open. A directory swapped for a symlink in between opens a different file and is
-// refused before anything is truncated. Returns false, and writes nothing, when the file is gone.
+// Checks before the open, so a special file such as a FIFO is never opened. After the open, checks
+// the path again and requires it to name the opened file, because the same file can leave .tau
+// when a parent directory moves. Both happen before anything is truncated. Returns false, and
+// writes nothing, when the file is gone.
 export const writeDestination = async (
   tauDirectory: string,
   path: string,
@@ -125,7 +121,8 @@ export const writeDestination = async (
 
   try {
     const stats = await handle.stat();
-    const sameFile = stats.dev === checked.dev && stats.ino === checked.ino;
+    const located = await requireWritableDestination(tauDirectory, path);
+    const sameFile = located?.dev === stats.dev && located.ino === stats.ino;
 
     const decision = decideDestination({
       kind: kindOf(stats),

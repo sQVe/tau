@@ -103,7 +103,7 @@ const climbsOutOnAnyPlatform = (path: string) => {
   return false;
 };
 
-const climbsOut = (path: string) => {
+export const climbsOut = (path: string): boolean => {
   if (isAbsolute(path) || path.startsWith('\\')) {
     return true;
   }
