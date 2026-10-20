@@ -252,7 +252,9 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
 9. Publish.
    - Compare HEAD, local status, and commits to push with the preview; read the PR again. In a
      stack, compare each branch's SHA too. If anything changed, stop, refresh affected evidence, and
-     preview again without losing new edits.
+     preview again without losing new edits. A commit that only applies the user's tuicr edits of
+     `release-notes.md` to the committed release notes file, as step 7 says, is no change: rerun the
+     checks it affects and publish without a new preview.
    - Push with `git push <remote> HEAD:refs/heads/<branch>`; add `-u` for a new branch. After a
      rebase in step 1, push with the previewed `--force-with-lease` command instead. In a stack, use
      the stack skill instead. Stop and report a rejected push.
