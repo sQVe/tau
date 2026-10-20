@@ -11,6 +11,8 @@ import type { Exec } from '../../../exec.js';
 import { createDraftReviewTool } from '../tool.js';
 import type { DraftReviewRuntime } from '../tool.js';
 
+type ProcessCheck = (processId: number) => boolean | Promise<boolean>;
+
 export type Herdr = (argumentsList: string[], signal: AbortSignal | undefined) => Promise<string>;
 
 interface TuicrComment {
@@ -121,7 +123,10 @@ export const tabInfo = JSON.stringify({
   },
 });
 
-export const fixture = async (herdr?: Herdr): Promise<ReviewFixture> => {
+export const fixture = async (
+  herdr?: Herdr,
+  isProcessRunning: ProcessCheck = () => false,
+): Promise<ReviewFixture> => {
   const repository = await createTemporaryRepository(onTestFinished, 'tau-draft-review-repo-');
   const data = await mkdtemp(join(tmpdir(), 'tau-fake-tuicr-'));
   onTestFinished(() => rm(data, { recursive: true, force: true }));
@@ -150,7 +155,7 @@ export const fixture = async (herdr?: Herdr): Promise<ReviewFixture> => {
 
       const answer = (await herdr?.(argumentsList, options?.signal)) ?? '';
       const wide = argumentsList[1] === 'layout' && answer === '';
-      const listing = argumentsList[1] === 'list' && answer === '';
+      const listing = argumentsList[0] === 'pane' && argumentsList[1] === 'list' && answer === '';
       const fallback = wide ? layoutInfo(200) : answer;
 
       return {
@@ -170,7 +175,11 @@ export const fixture = async (herdr?: Herdr): Promise<ReviewFixture> => {
     });
   };
 
-  const runtime = (paneId?: string): DraftReviewRuntime => ({ exec, herdrPaneId: () => paneId });
+  const runtime = (paneId?: string): DraftReviewRuntime => ({
+    exec,
+    herdrPaneId: () => paneId,
+    isProcessRunning,
+  });
 
   const run = (parameters: Record<string, unknown>, paneId?: string, signal?: AbortSignal) =>
     createDraftReviewTool(runtime(paneId)).execute('call', parameters as never, signal, undefined, {
