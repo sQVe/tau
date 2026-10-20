@@ -1,7 +1,7 @@
 import { getEventListeners } from 'node:events';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 import type { ResolvedPaths } from '@earendil-works/pi-coding-agent';
@@ -423,43 +423,48 @@ it('lists the user and trusted project packages the worker will load', () => {
   ]);
 });
 
-it('skips a profile package that Pi already loads from a leading-space npm source in settings', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'tau-packages-'));
+it.each([
+  { setting: ' npm:probe.ts', file: 'npm:probe.ts' },
+  { setting: 'github:probe.ts', file: 'github:probe.ts' },
+  { setting: 'http:probe.ts', file: 'http:probe.ts' },
+  { setting: 'https:probe.ts', file: 'https:probe.ts' },
+])(
+  'skips a profile package that Pi already loads from the local settings source $setting',
+  async ({ setting, file }) => {
+    const root = mkdtempSync(join(tmpdir(), 'tau-packages-'));
 
-  onTestFinished(() => {
-    rmSync(root, { recursive: true, force: true });
-  });
+    onTestFinished(() => {
+      rmSync(root, { recursive: true, force: true });
+    });
 
-  const cwd = join(root, 'project');
-  const agentDirectory = join(root, 'agent');
-  const extension = join(agentDirectory, 'npm:probe.ts');
-  mkdirSync(cwd, { recursive: true });
-  mkdirSync(agentDirectory, { recursive: true });
-  writeFileSync(extension, 'export default () => {};\n');
+    const cwd = join(root, 'project');
+    const agentDirectory = join(root, 'agent');
+    const extension = join(agentDirectory, file);
+    mkdirSync(cwd, { recursive: true });
+    mkdirSync(dirname(extension), { recursive: true });
+    writeFileSync(extension, 'export default () => {};\n');
 
-  writeFileSync(
-    join(agentDirectory, 'settings.json'),
-    JSON.stringify({ packages: [' npm:probe.ts'] }),
-  );
+    writeFileSync(join(agentDirectory, 'settings.json'), JSON.stringify({ packages: [setting] }));
 
-  const workerLoadout = { ...fixtureLoadout(cwd), agentDirectory, packages: [extension] };
+    const workerLoadout = { ...fixtureLoadout(cwd), agentDirectory, packages: [extension] };
 
-  const piLoads = await new DefaultPackageManager({
-    cwd,
-    agentDir: agentDirectory,
-    settingsManager: SettingsManager.create(cwd, agentDirectory),
-  }).resolve();
+    const piLoads = await new DefaultPackageManager({
+      cwd,
+      agentDir: agentDirectory,
+      settingsManager: SettingsManager.create(cwd, agentDirectory),
+    }).resolve();
 
-  const sources = await installWorkerPackages(
-    workerLoadout,
-    piPackageManager,
-    new InstallQueue(),
-    signal,
-  );
+    const sources = await installWorkerPackages(
+      workerLoadout,
+      piPackageManager,
+      new InstallQueue(),
+      signal,
+    );
 
-  expect(piLoads.extensions.map((resource) => resource.path)).toEqual([extension]);
-  expect(sources).toEqual([]);
-});
+    expect(piLoads.extensions.map((resource) => resource.path)).toEqual([extension]);
+    expect(sources).toEqual([]);
+  },
+);
 
 // A launch can stop in the very tick its turn comes. The signal reports the stop only once the
 // first install settled, so the queue sees it exactly when the turn passes.
