@@ -166,9 +166,8 @@ it('stops waiting for a pending package install when the launch is cancelled', a
 it('refuses a launch at capacity before it installs profile packages', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
   const settings = packageSettings([]);
-  const { controller, input } = setup(onTestFinished, 0, undefined, settings.manager);
+  const { controller, input } = setup(onTestFinished, 0, undefined, settings.manager, 1);
 
   await controller.launch(input);
   const loadout = { ...input.loadout, packages: ['npm:pi-codex-image-gen'] };
@@ -180,7 +179,6 @@ it('refuses a launch at capacity before it installs profile packages', async ({
 it('refuses a launch whose slot another launch took during its package install', async ({
   onTestFinished,
 }) => {
-  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
   const installing = Promise.withResolvers<undefined>();
   const release = Promise.withResolvers<undefined>();
 
@@ -194,7 +192,7 @@ it('refuses a launch whose slot another launch took during its package install',
     },
   });
 
-  const { controller, input, directory } = setup(onTestFinished, 0, undefined, manager);
+  const { controller, input, directory } = setup(onTestFinished, 0, undefined, manager, 1);
   const loadout = { ...input.loadout, packages: ['npm:slow'] };
   const waiting = controller.launch({ ...input, loadout });
 

@@ -47,6 +47,7 @@ import { trackerLines } from './trackerRouting.js';
 import { taskIdSchema } from './types.js';
 import type { WorkerState } from './types.js';
 import { renderWorkerWidget } from './widget.js';
+import { readWorkerCapacity } from './workerCapacityConfig.js';
 import { workerModelLine } from './workerModels.js';
 
 interface CapacityRefusal {
@@ -55,7 +56,7 @@ interface CapacityRefusal {
 
 interface SubagentRuntime {
   pi: ExtensionAPI;
-  getController: () => WorkerController;
+  getController: (context: ExtensionContext) => Promise<WorkerController>;
   refuseCapacity: () => void;
 }
 
@@ -175,13 +176,27 @@ export const createNoticeDelivery = (pi: ExtensionAPI): NoticeDelivery => {
   };
 };
 
+// The first caller's context supplies the cwd and trust that locate the user config.
 const createController = (
+  context: ExtensionContext,
   deliver: NoticeDelivery,
   getContext: () => ExtensionContext | undefined,
-): WorkerController =>
-  new WorkerController(workerRecordsDirectory(), undefined, (notice) => {
-    deliver(getContext(), notice);
-  });
+): WorkerController => {
+  const capacity = readWorkerCapacity(
+    { cwd: context.cwd, agentDirectory: getAgentDir(), projectTrusted: context.isProjectTrusted() },
+    context.ui,
+  );
+
+  return new WorkerController(
+    workerRecordsDirectory(),
+    undefined,
+    (notice) => {
+      deliver(getContext(), notice);
+    },
+    undefined,
+    capacity,
+  );
+};
 
 const hasHerdrEnvironment = (): boolean =>
   process.env.HERDR_ENV === '1' && Boolean(process.env.HERDR_SOCKET_PATH);
@@ -242,7 +257,7 @@ const followUpWorker = async (
     throw new Error('Follow-up requires a saved parent session inside local herdr.');
   }
 
-  const controller = runtime.getController();
+  const controller = await runtime.getController(context);
 
   let status: Awaited<ReturnType<WorkerController['followUp']>>;
 
@@ -267,13 +282,13 @@ const followUpWorker = async (
   };
 };
 
-const readWorkerStatus = (
+const readWorkerStatus = async (
   runtime: SubagentRuntime,
   parameters: StatusParameters,
   context: ExtensionContext,
 ) => {
   const parentSessionId = context.sessionManager.getSessionId();
-  const active = runtime.getController();
+  const active = await runtime.getController(context);
 
   try {
     const current = active.status(parameters.taskId, parentSessionId);
@@ -294,14 +309,18 @@ const readWorkerStatus = (
   }
 };
 
-const replyToWorker = (
+const replyToWorker = async (
   runtime: SubagentRuntime,
   parameters: ReplyParameters,
   context: ExtensionContext,
 ) => {
-  const receipt = runtime
-    .getController()
-    .reply(parameters.taskId, context.sessionManager.getSessionId(), parameters);
+  const active = await runtime.getController(context);
+
+  const receipt = active.reply(
+    parameters.taskId,
+    context.sessionManager.getSessionId(),
+    parameters,
+  );
 
   const questionId = { questionId: parameters.questionId };
   const content = modelReply(parameters.taskId, { ...receipt, ...questionId });
@@ -320,9 +339,9 @@ const cancelWorker = async (
   let status: Awaited<ReturnType<WorkerController['cancel']>>;
 
   try {
-    status = await runtime
-      .getController()
-      .cancel(parameters.taskId, context.sessionManager.getSessionId());
+    const active = await runtime.getController(context);
+
+    status = await active.cancel(parameters.taskId, context.sessionManager.getSessionId());
   } catch (error) {
     return evidenceResult(error);
   }
@@ -476,7 +495,7 @@ const registerStatusTool = (runtime: SubagentRuntime): void => {
       return renderStatusResult(result.details, options.expanded, theme);
     },
     execute(_toolCallId, parameters, _signal, _onUpdate, context) {
-      return Promise.resolve().then(() => readWorkerStatus(runtime, parameters, context));
+      return readWorkerStatus(runtime, parameters, context);
     },
   });
 };
@@ -498,7 +517,7 @@ const registerReplyTool = (runtime: SubagentRuntime): void => {
       return renderReplyResult(result.details, options.expanded, theme);
     },
     execute(_toolCallId, parameters, _signal, _onUpdate, context) {
-      return Promise.resolve(replyToWorker(runtime, parameters, context));
+      return replyToWorker(runtime, parameters, context);
     },
   });
 };
@@ -590,17 +609,6 @@ export default function subagentsExtension(
   let widgetTimer: ReturnType<typeof setInterval> | undefined;
   let shuttingDown = false;
 
-  const runtime: SubagentRuntime = {
-    pi,
-    getController: () => {
-      controller ??= createController(deliverNotice, () => sessionContext);
-
-      return controller;
-    },
-    refuseCapacity: capacityRefusal.refuse,
-  };
-
-  registerSubagentTools(runtime);
   // Launch needs herdr and a parent pane, so a manager outside herdr must not be told to delegate.
   const delegating = hasHerdrParentPane();
   let guidelines = delegationGuidelines(undefined);
@@ -624,7 +632,11 @@ export default function subagentsExtension(
       return;
     }
 
-    const rows = runtime.getController().widgetRows(context.sessionManager.getSessionId());
+    if (controller === undefined) {
+      return;
+    }
+
+    const rows = controller.widgetRows(context.sessionManager.getSessionId());
 
     if (rows.length === 0) {
       context.ui.setWidget('tau-subagents', undefined);
@@ -654,6 +666,47 @@ export default function subagentsExtension(
     }
   };
 
+  let resumed: Promise<void> | undefined;
+
+  // A controller created after session start, such as once a bad config is fixed, still resumes
+  // the saved workers of this session. Tool calls wait for that resume before they use it.
+  const ensureController = (context: ExtensionContext): WorkerController => {
+    if (controller !== undefined) {
+      return controller;
+    }
+
+    const created = createController(context, deliverNotice, () => sessionContext);
+
+    controller = created;
+
+    const sessionId = context.sessionManager.getSessionId();
+
+    resumed = (async () => {
+      try {
+        await created.resume(sessionId);
+        refreshWidget(context);
+      } catch (error) {
+        context.ui.notify(`Saved workers could not be reattached: ${String(error)}`, 'error');
+      }
+    })();
+
+    return created;
+  };
+
+  const runtime: SubagentRuntime = {
+    pi,
+    getController: async (context) => {
+      const active = ensureController(context);
+
+      await resumed;
+
+      return active;
+    },
+    refuseCapacity: capacityRefusal.refuse,
+  };
+
+  registerSubagentTools(runtime);
+
   pi.on('session_start', async (_event, context) => {
     shuttingDown = false;
     sessionContext = context;
@@ -674,15 +727,12 @@ export default function subagentsExtension(
       widgetTimer = undefined;
     }
 
-    runtime
-      .getController()
-      .resume(context.sessionManager.getSessionId())
-      .then(() => {
-        refreshWidget(context);
-      })
-      .catch((error: unknown) => {
-        context.ui.notify(`Saved workers could not be reattached: ${String(error)}`, 'error');
-      });
+    // An invalid config leaves the controller uncreated, and each worker tool call reports it.
+    try {
+      ensureController(context);
+    } catch (error) {
+      context.ui.notify(errorMessage(error), 'error');
+    }
 
     refreshWidget(context);
 
@@ -730,7 +780,11 @@ export default function subagentsExtension(
 
   // Pi's summary drops exact task IDs and question IDs, so the list joins the next prompt.
   pi.on('session_compact', (_event, context) => {
-    const rows = runtime.getController().widgetRows(context.sessionManager.getSessionId());
+    if (controller === undefined) {
+      return;
+    }
+
+    const rows = controller.widgetRows(context.sessionManager.getSessionId());
     const list = compactionWorkerList(rows);
 
     if (list === undefined) {
@@ -754,5 +808,6 @@ export default function subagentsExtension(
 
     await controller?.stopAll(event.reason);
     controller = undefined;
+    resumed = undefined;
   });
 }

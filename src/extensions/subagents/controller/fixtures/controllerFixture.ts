@@ -67,6 +67,7 @@ export const setup = (
   readyDelay = 0,
   intercept?: HerdrClient,
   packageManager?: (loadout: Loadout) => WorkerPackageManager,
+  capacity?: number,
 ): SetupFixture => {
   const directory = mkdtempSync(join(tmpdir(), 'tau-controller-'));
 
@@ -161,6 +162,7 @@ export const setup = (
     client,
     (notice) => notifications.push(notice),
     packageManager,
+    capacity,
   );
 
   onTestFinished(() => {

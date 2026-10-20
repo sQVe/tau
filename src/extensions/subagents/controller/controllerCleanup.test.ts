@@ -294,8 +294,7 @@ it('cancels a live owned worker whose saved cleanup record is corrupt', async ({
 });
 
 it('keeps capacity free when a stopped worker is cancelled again', async ({ onTestFinished }) => {
-  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
-  const { controller, input } = setup(onTestFinished);
+  const { controller, input } = setup(onTestFinished, 0, undefined, undefined, 1);
   const first = await controller.launch(input);
 
   await controller.cancel(first.taskId, 'parent-id');

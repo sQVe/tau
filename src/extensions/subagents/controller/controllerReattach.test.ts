@@ -56,16 +56,18 @@ it('skips saved workers without herdr calls when the reattach capacity is full',
   onTestFinished,
 }) => {
   vi.useFakeTimers();
-  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
 
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-
-  const fixture = setup(onTestFinished);
+  const fixture = setup(onTestFinished, 0, undefined, undefined, 1);
   const saved = await fixture.controller.launch(fixture.input);
   fixture.controller.close();
-  const recovered = new WorkerController(fixture.directory, fixture.client);
+
+  const recovered = new WorkerController(
+    fixture.directory,
+    fixture.client,
+    undefined,
+    undefined,
+    1,
+  );
 
   onTestFinished(() => {
     recovered.close();
@@ -85,13 +87,8 @@ it('skips saved workers without herdr calls when the reattach capacity is full',
 
 it('reserves capacity while a saved worker inspection is pending', async ({ onTestFinished }) => {
   vi.useFakeTimers();
-  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
 
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-
-  const fixture = setup(onTestFinished);
+  const fixture = setup(onTestFinished, 0, undefined, undefined, 1);
   const saved = await fixture.controller.launch(fixture.input);
   fixture.controller.close();
   const entered = Promise.withResolvers<undefined>();
@@ -109,6 +106,9 @@ it('reserves capacity while a saved worker inspection is pending', async ({ onTe
 
       return fixture.client(argumentsList, budget, signal);
     },
+    undefined,
+    undefined,
+    1,
   );
 
   onTestFinished(() => {
@@ -218,18 +218,20 @@ it('releases the handle and capacity after failed reattach verification', async 
   onTestFinished,
 }) => {
   vi.useFakeTimers();
-  vi.stubEnv('TAU_SUBAGENT_CAP', '1');
 
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-
-  const fixture = setup(onTestFinished);
+  const fixture = setup(onTestFinished, 0, undefined, undefined, 1);
   const saved = await fixture.controller.launch(fixture.input);
   fixture.controller.close();
   fixture.fake.state.session = 'different-session';
   const recordsBefore = readdirSync(saved.directory);
-  const recovered = new WorkerController(fixture.directory, fixture.client);
+
+  const recovered = new WorkerController(
+    fixture.directory,
+    fixture.client,
+    undefined,
+    undefined,
+    1,
+  );
 
   onTestFinished(() => {
     recovered.close();
@@ -414,13 +416,8 @@ it.each(['before resume', 'during inspection'])(
   'stops a saved running worker when its work budget expires %s',
   async (expiry) => {
     vi.useFakeTimers();
-    vi.stubEnv('TAU_SUBAGENT_CAP', '1');
 
-    afterTest(() => {
-      vi.unstubAllEnvs();
-    });
-
-    const fixture = setup(afterTest);
+    const fixture = setup(afterTest, 0, undefined, undefined, 1);
 
     const launched = await fixture.controller.launch(fixture.input);
     fixture.controller.close();

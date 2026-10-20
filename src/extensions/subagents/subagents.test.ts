@@ -307,6 +307,25 @@ it('names the tracker route outside herdr and without the subagent tool', async 
   }
 });
 
+it('starts the session and reports once when the worker capacity is invalid', async ({
+  onTestFinished,
+}) => {
+  const { appendedWithoutTools, notify } = await sessionGuidelines(onTestFinished, {
+    user: {
+      subagents: { capacity: 0 },
+      tracker: { agentTeam: 'AI', repositories: { 'sQVe/tau': { team: 'ME' } } },
+    },
+    originUrl: 'https://github.com/sQVe/tau.git',
+    herdr: false,
+  });
+
+  const errors = notify.mock.calls.filter(([, level]) => level === 'error');
+
+  expect(appendedWithoutTools).toContain('Tracker agent team: `AI`.');
+  expect(errors).toHaveLength(1);
+  expect(String(errors[0]?.[0])).toContain('subagents.capacity');
+});
+
 it('reads the origin of the session directory when Pi inherits GIT_DIR for another repository', async ({
   onTestFinished,
 }) => {
@@ -542,6 +561,109 @@ it('reports a failed worker reattachment in the UI', async ({ onTestFinished }) 
   expect(notices[0]).toContain('Injected records failure.');
 });
 
+it('refuses a worker tool call when the configured worker capacity is invalid', async () => {
+  const fake = fakeExtensionApi();
+  const base = emptyConfigContext();
+
+  writeFileSync(join(base.cwd, 'tau.json'), JSON.stringify({ subagents: { capacity: 0 } }));
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
+
+  const context = {
+    ...base,
+    ui: { notify: vi.fn<() => void>() },
+    sessionManager: { getSessionId: () => 'parent' },
+  } as unknown as ExtensionToolContext;
+
+  await expect(
+    fake.tools
+      .get('subagent_status')!
+      .execute('status', { taskId: 'task-1' }, undefined, undefined, context),
+  ).rejects.toThrow('subagents.capacity must be an integer from 1 to 256');
+});
+
+const fixedCapacityStart = async (resume: () => Promise<void>) => {
+  const fake = fakeExtensionApi();
+  const base = emptyConfigContext();
+  const notify = vi.fn<ExtensionContext['ui']['notify']>();
+  const order: string[] = [];
+
+  writeFileSync(join(base.cwd, 'tau.json'), JSON.stringify({ subagents: { capacity: 0 } }));
+
+  vi.spyOn(WorkerController.prototype, 'resume').mockImplementation(async (sessionId) => {
+    order.push(`resume ${sessionId}`);
+    await resume();
+  });
+
+  vi.spyOn(WorkerController.prototype, 'status').mockImplementation(() => {
+    order.push('status');
+
+    return fullWorkerStatus as unknown as ReturnType<WorkerController['status']>;
+  });
+
+  finishTest(() => {
+    vi.restoreAllMocks();
+  });
+
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
+
+  const context = {
+    ...base,
+    hasUI: false,
+    scopedModels: [],
+    ui: { notify },
+    sessionManager: { getSessionId: () => 'parent' },
+  } as unknown as ExtensionContext;
+
+  await emitEvent(fake.handlers, 'session_start', {}, context);
+  expect(order).toEqual([]);
+
+  writeFileSync(join(base.cwd, 'tau.json'), JSON.stringify({ subagents: { capacity: 1 } }));
+
+  const call = fake.tools
+    .get('subagent_status')!
+    .execute('status', { taskId: 'task-1' }, undefined, undefined, context as never);
+
+  return {
+    call,
+    order,
+    notify,
+    again: () =>
+      fake.tools
+        .get('subagent_status')!
+        .execute('status', { taskId: 'task-1' }, undefined, undefined, context as never),
+  };
+};
+
+it('resumes saved workers before a tool uses a controller created after an invalid start', async () => {
+  const resumed = Promise.withResolvers<undefined>();
+  const { call, order, again } = await fixedCapacityStart(() => resumed.promise);
+
+  await vi.waitFor(() => {
+    expect(order).toEqual(['resume parent']);
+  });
+
+  resumed.resolve(undefined);
+  await call;
+  await again();
+
+  expect(order).toEqual(['resume parent', 'status', 'status']);
+});
+
+it('reports a failed resume on the delayed path as an error and still runs the tool', async () => {
+  const { call, order, notify } = await fixedCapacityStart(() =>
+    Promise.reject(new Error('records unreadable')),
+  );
+
+  await call;
+
+  expect(order).toEqual(['resume parent', 'status']);
+
+  expect(notify).toHaveBeenCalledWith(
+    expect.stringContaining('Saved workers could not be reattached: Error: records unreadable'),
+    'error',
+  );
+});
+
 it('waits for bounded worker cleanup during session shutdown', async ({ onTestFinished }) => {
   const fake = fakeExtensionApi();
   const released = Promise.withResolvers<undefined>();
@@ -566,6 +688,7 @@ it('waits for bounded worker cleanup during session shutdown', async ({ onTestFi
   const tools = fake.tools;
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 
@@ -612,6 +735,7 @@ it('blocks long parent sleeps only while this session has an active worker', asy
   subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 
@@ -826,6 +950,7 @@ it('places follow-ups with explicit visibility and the current parent terminal',
   });
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionFile: () => '/fixture/parent.jsonl', getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 
@@ -1282,6 +1407,45 @@ it('emits each notice on the event bus with the worker name and state label', ()
 const compactionRow = (taskId: string, state: WorkerWidgetRow['state'], questionId?: string) =>
   ({ name: taskId, taskId, state, questionId }) as WorkerWidgetRow;
 
+it('leaves the controller uncreated through refresh and compaction after an invalid capacity', async () => {
+  const fake = fakeExtensionApi();
+  const base = emptyConfigContext();
+  const setWidget = vi.fn<() => void>();
+  const notify = vi.fn<ExtensionContext['ui']['notify']>();
+  const widgetRows = vi.spyOn(WorkerController.prototype, 'widgetRows');
+
+  writeFileSync(join(base.cwd, 'tau.json'), JSON.stringify({ subagents: { capacity: 0 } }));
+
+  finishTest(() => {
+    vi.restoreAllMocks();
+  });
+
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
+
+  const context = {
+    ...base,
+    hasUI: true,
+    mode: 'tui',
+    scopedModels: [],
+    ui: { notify, setWidget },
+    sessionManager: { getSessionId: () => 'parent' },
+  } as unknown as ExtensionContext;
+
+  await emitEvent(fake.handlers, 'session_start', {}, context);
+  await emitEvent(fake.handlers, 'tool_result', {}, context);
+  await emitEvent(fake.handlers, 'session_compact', { reason: 'manual' }, context);
+  await emitEvent(fake.handlers, 'session_compact', { reason: 'manual' }, context);
+
+  const configNotices = notify.mock.calls.filter(([message]) =>
+    message.includes('subagents.capacity'),
+  );
+
+  expect(configNotices).toEqual([[expect.stringContaining('1 to 256'), 'error']]);
+  expect(widgetRows).not.toHaveBeenCalled();
+  expect(setWidget).not.toHaveBeenCalled();
+  expect(fake.sendMessage).not.toHaveBeenCalled();
+});
+
 it('queues active workers and pending questions for the next prompt after a compaction', async () => {
   const fake = fakeExtensionApi();
   let rows = [compactionRow('task-stopped', 'stopped')];
@@ -1294,10 +1458,16 @@ it('queues active workers and pending questions for the next prompt after a comp
 
   subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
 
+  vi.spyOn(WorkerController.prototype, 'resume').mockResolvedValue(undefined);
+
   const context = {
+    ...emptyConfigContext(),
+    hasUI: false,
+    ui: { notify: vi.fn<() => void>() },
     sessionManager: { getSessionId: () => 'parent-session' },
   } as unknown as ExtensionContext;
 
+  await emitEvent(fake.handlers, 'session_start', {}, context);
   await emitEvent(fake.handlers, 'session_compact', { reason: 'manual' }, context);
 
   expect(fake.sendMessage).not.toHaveBeenCalled();
@@ -1347,6 +1517,7 @@ it('returns allowlisted model content for a follow-up successor and keeps full d
   });
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionFile: () => '/fixture/parent.jsonl', getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 
@@ -1401,6 +1572,7 @@ it('returns allowlisted content for the status, reply, and cancel tools', async 
   });
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 
@@ -1500,6 +1672,7 @@ it('returns the unreadable-evidence object when status records fail', async ({
   });
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 
@@ -1643,6 +1816,7 @@ it('returns the unreadable-evidence object before reading an unknown question re
   }
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 
@@ -1677,6 +1851,7 @@ it('returns the unreadable-evidence object when cancel records fail', async ({
   }
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 
@@ -1712,6 +1887,7 @@ it('returns the unreadable-evidence object when follow-up records fail', async (
   }
 
   const context = {
+    ...emptyConfigContext(),
     sessionManager: { getSessionFile: () => '/fixture/parent.jsonl', getSessionId: () => 'parent' },
   } as unknown as ExtensionToolContext;
 

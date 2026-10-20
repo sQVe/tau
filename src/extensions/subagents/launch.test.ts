@@ -38,7 +38,11 @@ const launchWith = async (parameters: LaunchParameters, routed: typeof routing |
   vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: routed });
 
   const result = await executeLaunch(
-    { pi: { getCommands: () => [] }, getController: () => controller, refuseCapacity: () => {} },
+    {
+      pi: { getCommands: () => [] },
+      getController: () => Promise.resolve(controller),
+      refuseCapacity: () => {},
+    },
     { parameters, startedAt: { wall: 1, monotonic: 2 }, parentSession: '/work/parent.jsonl' },
     undefined,
     { sessionManager: { getSessionId: () => 'parent-one' } } as unknown as ExtensionContext,

@@ -31,7 +31,14 @@ vi.mock(import('./controller/controller.js'), async (importOriginal) => {
 
   class CapturingController extends original.WorkerController {
     constructor(...parameters: ConstructorParameters<typeof original.WorkerController>) {
-      super(parameters[0], controllers.client ?? parameters[1], parameters[2], parameters[3]);
+      super(
+        parameters[0],
+        controllers.client ?? parameters[1],
+        parameters[2],
+        parameters[3],
+        parameters[4],
+      );
+
       controllers.instances.push(this);
       controllers.notifiers.push(parameters[2] ?? (() => undefined));
     }
