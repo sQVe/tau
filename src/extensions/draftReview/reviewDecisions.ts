@@ -17,6 +17,14 @@ export interface FileFacts {
   current: string | undefined;
 }
 
+export interface DestinationFacts {
+  kind: 'file' | 'symlink' | 'other';
+  linkCount: number;
+  insideTauDirectory: boolean;
+}
+
+export type DestinationDecision = 'writable' | 'symlink' | 'not-file' | 'hard-linked' | 'outside';
+
 export type ReviewPlacement = 'right' | 'tab';
 
 export type EditDecision = 'unchanged' | 'apply' | 'conflict';
@@ -38,6 +46,24 @@ export const decideEdit = (facts: FileFacts): EditDecision => {
   const writable = facts.current === facts.original || facts.current === facts.staged;
 
   return writable ? 'apply' : 'conflict';
+};
+
+// A write must reach only the one regular file the review staged: a symlink, a file with another
+// hard link, or a path that resolves outside `.tau` could write to a file the user never reviewed.
+export const decideDestination = (facts: DestinationFacts): DestinationDecision => {
+  if (facts.kind === 'symlink') {
+    return 'symlink';
+  }
+
+  if (facts.kind === 'other') {
+    return 'not-file';
+  }
+
+  if (facts.linkCount > 1) {
+    return 'hard-linked';
+  }
+
+  return facts.insideTauDirectory ? 'writable' : 'outside';
 };
 
 // A right split halves the agent pane, so it needs room for two usable panes.

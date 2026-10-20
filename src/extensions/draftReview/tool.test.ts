@@ -1,158 +1,22 @@
-import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Value } from 'typebox/value';
-import { expect, it, onTestFinished, vi } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
-import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import type { Exec } from '../../exec.js';
 import { saveCollectedRecord } from './collectedRecord.js';
+import {
+  comment,
+  fixture,
+  layoutInfo,
+  paneInfo,
+  stagingOf,
+  tabInfo,
+} from './fixtures/reviewFixture.js';
+import type { Herdr } from './fixtures/reviewFixture.js';
 import { createDraftReviewTool } from './tool.js';
-import type { DraftReviewRuntime } from './tool.js';
-
-type Herdr = (argumentsList: string[], signal: AbortSignal | undefined) => Promise<string>;
-
-const paneInfo = JSON.stringify({
-  result: {
-    pane: { pane_id: 'w:p2', terminal_id: 't2', workspace_id: 'w', tab_id: 'w:t1' },
-  },
-});
-
-const fakeScript = (data: string) => `
-const fs = require('node:fs');
-const path = require('node:path');
-const data = ${JSON.stringify(data)};
-const [, , , subcommand, flag, value, , id] = process.argv;
-const read = (name) => fs.readFileSync(path.join(data, name), 'utf8');
-if (subcommand === 'list') {
-  fs.appendFileSync(path.join(data, 'repos.log'), value + '\\n');
-  process.stdout.write(fs.existsSync(path.join(data, 'sessions.txt')) ? read('sessions.txt') : '[]');
-} else if (subcommand === 'comments') {
-  process.stdout.write(read('comments.txt'));
-} else if (subcommand === 'delete') {
-  const failFile = path.join(data, 'fail.txt');
-  if (fs.existsSync(failFile) && read('fail.txt') === id) {
-    process.stderr.write('delete refused');
-    process.exit(1);
-  }
-  const mutateFile = path.join(data, 'mutate.json');
-  if (fs.existsSync(mutateFile)) {
-    const mutation = JSON.parse(read('mutate.json'));
-    fs.writeFileSync(mutation.path, mutation.content);
-  }
-  fs.appendFileSync(path.join(data, 'deleted.log'), id + '\\n');
-} else {
-  process.exit(2);
-}
-`;
-
-const comment = (id: string, path: string | null, content = id) => ({
-  id,
-  path,
-  start_line: path === null ? null : 2,
-  end_line: path === null ? null : 3,
-  comment_type: 'issue',
-  content,
-});
-
-const layoutInfo = (width: number, zoomed = false) =>
-  JSON.stringify({
-    result: {
-      layout: {
-        workspace_id: 'w',
-        tab_id: 'w:t1',
-        zoomed,
-        panes: [{ pane_id: 'w:p1', rect: { width, height: 50, x: 0, y: 0 } }],
-      },
-    },
-  });
-
-const tabInfo = JSON.stringify({
-  result: { tab: { tab_id: 'w:t2' }, root_pane: { pane_id: 'w:p3' } },
-});
-
-const fixture = async (herdr?: Herdr) => {
-  const repository = await createTemporaryRepository(onTestFinished, 'tau-draft-review-repo-');
-  const data = await mkdtemp(join(tmpdir(), 'tau-fake-tuicr-'));
-  onTestFinished(() => rm(data, { recursive: true, force: true }));
-
-  // Staging goes under os.tmpdir(), and failed reviews keep it for a retry. Point it at data so
-  // every test removes its staging.
-  vi.stubEnv('TMPDIR', data);
-
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-
-  const script = join(data, 'tuicr.cjs');
-  await writeFile(script, fakeScript(data));
-  await mkdir(join(repository, '.tau/slices'), { recursive: true });
-  await mkdir(join(repository, '.tau/tickets'), { recursive: true });
-  await writeFile(join(repository, '.tau/slices/a.md'), 'one\ntwo\n');
-  await writeFile(join(repository, '.tau/slices/b.md'), 'bee\n');
-  await writeFile(join(repository, '.tau/tickets/c.md'), 'sea\n');
-
-  const herdrCalls: string[][] = [];
-
-  const exec: Exec = async (command, argumentsList, options) => {
-    if (command === 'herdr') {
-      herdrCalls.push(argumentsList);
-
-      const answer = (await herdr?.(argumentsList, options?.signal)) ?? '';
-      const wide = argumentsList[1] === 'layout' && answer === '';
-
-      return {
-        stdout: wide ? layoutInfo(200) : answer,
-        stderr: '',
-        code: 0,
-        killed: false,
-      };
-    }
-
-    return new Promise((resolve) => {
-      execFile(process.execPath, [script, ...argumentsList], (error, stdout, stderr) => {
-        const code = typeof error?.code === 'number' ? error.code : Number(error !== null);
-
-        resolve({ stdout, stderr, code, killed: false });
-      });
-    });
-  };
-
-  const runtime = (paneId?: string): DraftReviewRuntime => ({ exec, herdrPaneId: () => paneId });
-
-  const run = (parameters: Record<string, unknown>, paneId?: string, signal?: AbortSignal) =>
-    createDraftReviewTool(runtime(paneId)).execute('call', parameters as never, signal, undefined, {
-      cwd: repository,
-    } as never);
-
-  const setSession = async (comments: unknown) => {
-    await writeFile(
-      join(data, 'sessions.txt'),
-      JSON.stringify([{ path: join(data, 'session.json') }]),
-    );
-
-    await writeFile(
-      join(data, 'comments.txt'),
-      typeof comments === 'string' ? comments : JSON.stringify(comments),
-    );
-  };
-
-  const deleted = async () => {
-    const log = join(data, 'deleted.log');
-
-    return existsSync(log) ? (await readFile(log, 'utf8')).split('\n').filter(Boolean) : [];
-  };
-
-  const records = () => readdir(join(repository, '.tau/draft-review'));
-  const real = (name: string) => join(repository, '.tau', name);
-
-  return { repository, data, run, setSession, deleted, records, real, herdrCalls };
-};
-
-const stagingOf = (command: string) => /'([^']+)'$/.exec(command)?.[1] ?? '';
 
 it('prints the command outside herdr, then collects only comments on reviewed files and changed files', async () => {
   const { run, setSession, deleted, records, real, herdrCalls, data } = await fixture();
@@ -347,13 +211,19 @@ it('opens tuicr in a pane beside the agent, waits, closes the pane, and collects
   expect(herdrCalls.map(([, action]) => action)).toEqual([
     'layout',
     'split',
+    'list',
     'run',
+    'list',
     'wait-output',
+    'list',
     'close',
   ]);
 
   expect(herdrCalls[1]).toContain('w:p1');
-  expect(herdrCalls[2]?.[3]).toContain(`tuicr --file '${staging}'`);
+
+  const runCall = herdrCalls.find(([, action]) => action === 'run');
+
+  expect(runCall?.[3]).toContain(`tuicr --file '${staging}'`);
 
   expect(outcome.details).toMatchObject({
     status: 'reviewed',
@@ -493,22 +363,22 @@ it('collects normally when the user closes the pane during the wait', async () =
   expect(await deleted()).toEqual(['on-a']);
 });
 
+const socketClosedHerdr: Herdr = async (argumentsList) => {
+  const [, action] = argumentsList;
+
+  if (action === 'split') {
+    return paneInfo;
+  }
+
+  if (action === 'wait-output') {
+    throw new Error('herdr failed: socket closed');
+  }
+
+  return '';
+};
+
 it('names the record directory when another herdr call fails', async () => {
-  const herdr: Herdr = async (argumentsList) => {
-    const [, action] = argumentsList;
-
-    if (action === 'split') {
-      return paneInfo;
-    }
-
-    if (action === 'wait-output') {
-      throw new Error('herdr failed: socket closed');
-    }
-
-    return '';
-  };
-
-  const { run, repository } = await fixture(herdr);
+  const { run, repository } = await fixture(socketClosedHerdr);
 
   await expect(run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1')).rejects.toThrow(
     join(repository, '.tau/draft-review/review-'),

@@ -103,7 +103,7 @@ const climbsOutOnAnyPlatform = (path: string) => {
   return false;
 };
 
-const climbsOut = (path: string) => {
+export const climbsOut = (path: string): boolean => {
   if (isAbsolute(path) || path.startsWith('\\')) {
     return true;
   }
@@ -133,6 +133,10 @@ const realFile = async (tauDirectory: string, requested: string, cwd: string): P
 
   if (!stats.isFile()) {
     throw new Error(`draft_review path is not a file: ${requested}`);
+  }
+
+  if (stats.nlink > 1) {
+    throw new Error(`draft_review path has another hard link: ${requested}`);
   }
 
   return real;
