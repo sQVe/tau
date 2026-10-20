@@ -6,7 +6,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { recordFileName, writeCaptureRecord } from './record.js';
 
-const writeState = vi.hoisted(() => ({ failMidway: false }));
+const writeState = vi.hoisted(() => ({ failMidway: false, failBefore: false }));
 
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const actual = await importOriginal();
@@ -14,6 +14,10 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
   return {
     ...actual,
     writeFile: async (...parameters: Parameters<typeof actual.writeFile>) => {
+      if (writeState.failBefore) {
+        throw new Error('write refused');
+      }
+
       if (writeState.failMidway) {
         await actual.writeFile(parameters[0], 'cut-off');
 
@@ -38,6 +42,7 @@ const reviewDirectory = async () => {
 
   onTestFinished(() => {
     writeState.failMidway = false;
+    writeState.failBefore = false;
 
     return rm(directory, { recursive: true, force: true });
   });
@@ -80,4 +85,13 @@ it('refuses to write through a symlink at the record', async () => {
 
   await expect(writeCaptureRecord(directory, record)).rejects.toThrow('symlink');
   expect(await readFile(outside, 'utf8')).toBe('outside');
+});
+
+it('reports the write error when the temporary file was never created', async () => {
+  const directory = await reviewDirectory();
+
+  writeState.failBefore = true;
+
+  await expect(writeCaptureRecord(directory, record)).rejects.toThrow('write refused');
+  expect(await readdir(directory)).toEqual([]);
 });

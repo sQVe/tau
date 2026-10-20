@@ -8,7 +8,7 @@ import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { saveCollectedRecord } from './collectedRecord.js';
 import { savePlacement, stageReview } from './stage.js';
 
-const writeState = vi.hoisted(() => ({ failMidway: false }));
+const writeState = vi.hoisted(() => ({ failMidway: false, failBefore: false }));
 
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const actual = await importOriginal();
@@ -16,6 +16,10 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
   return {
     ...actual,
     writeFile: async (...parameters: Parameters<typeof actual.writeFile>) => {
+      if (writeState.failBefore) {
+        throw new Error('write refused');
+      }
+
       if (writeState.failMidway) {
         await actual.writeFile(parameters[0], 'cut-off');
 
@@ -34,6 +38,7 @@ const directoryFixture = async () => {
 
   onTestFinished(() => {
     writeState.failMidway = false;
+    writeState.failBefore = false;
 
     return rm(directory, { recursive: true, force: true });
   });
@@ -105,4 +110,13 @@ it('keeps the earlier manifest when a placement save fails midway', async () => 
   expect(await readFile(manifest, 'utf8')).toBe(text);
   expect(await readdir(review.recordDirectory)).toEqual(before);
   expect(review.placement).toBeNull();
+});
+
+it('reports the write error when the temporary file was never created', async () => {
+  const directory = await directoryFixture();
+
+  writeState.failBefore = true;
+
+  await expect(saveCollectedRecord(directory, collected)).rejects.toThrow('write refused');
+  expect(await readdir(directory)).toEqual([]);
 });
