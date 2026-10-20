@@ -23,7 +23,12 @@ import { noUiContext } from '../../../tests/toolContext.js';
 import { codeReviewToolParameters, createCodeReviewTool } from './tool.js';
 import type { CodeReviewInput } from './tool.js';
 
-const failures = vi.hoisted(() => ({ append: false, rename: false, remove: false }));
+const failures = vi.hoisted(() => ({
+  append: false,
+  rename: false,
+  remove: false,
+  restore: false,
+}));
 
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const actual = await importOriginal();
@@ -45,6 +50,15 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
       }
 
       return actual.rename(from, to);
+    },
+    writeFile: async (...parameters: Parameters<typeof actual.writeFile>) => {
+      const [target] = parameters;
+
+      if (failures.restore && typeof target === 'string' && target.endsWith('input.md')) {
+        throw new Error('restore failed');
+      }
+
+      return actual.writeFile(...parameters);
     },
     rm: async (...parameters: Parameters<typeof actual.rm>) => {
       if (failures.remove && String(parameters[0]).endsWith('snapshot')) {
@@ -1116,25 +1130,65 @@ it('keeps a snapshot folder it did not create when a capture without a snapshot 
   expect(await readFile(join(directory, 'snapshot', 'unrelated.txt'), 'utf8')).toBe('keep\n');
 });
 
-it('removes the snapshot it saved and throws the capture error when restoring input.md fails', async () => {
+it('removes the snapshot, names both failures, and keeps the cause when restoring input.md fails', async () => {
   const { root, directory } = await preparedReview();
 
   await writeFile(join(root, 'tracked.txt'), 'two\n');
-  await chmod(join(directory, 'input.md'), 0o400);
 
-  expect(
-    await failureOf(root, {
-      action: 'capture',
-      directory,
-      target: { kind: 'workingTree', base: 'HEAD' },
-    }),
-  ).toContain('EACCES');
+  failures.rename = true;
+  failures.restore = true;
 
+  onTestFinished(() => {
+    failures.rename = false;
+    failures.restore = false;
+  });
+
+  const tool = createCodeReviewTool();
+
+  const failure = await tool
+    .execute(
+      'call',
+      { action: 'capture', directory, target: { kind: 'workingTree', base: 'HEAD' } },
+      undefined,
+      undefined,
+      noUiContext(root),
+    )
+    .then(
+      () => new Error('no error'),
+      (error: unknown) => error as Error,
+    );
+
+  expect(failure.message.startsWith('rename failed')).toBe(true);
+  expect(failure.message).toContain('restoring input.md: restore failed');
+  expect(failure.message).not.toContain('removing the snapshot');
+  expect(failure.cause).toMatchObject({ message: 'rename failed' });
   expect(await readdir(directory)).toEqual(['input.md']);
+});
 
-  await chmod(join(directory, 'input.md'), 0o600);
+it('names every failed cleanup step when restoring input.md and removing the snapshot both fail', async () => {
+  const { root, directory } = await preparedReview();
 
-  expect(await captureWorkingTree(root, directory)).toMatchObject({ empty: false });
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+
+  failures.rename = true;
+  failures.restore = true;
+  failures.remove = true;
+
+  onTestFinished(() => {
+    failures.rename = false;
+    failures.restore = false;
+    failures.remove = false;
+  });
+
+  const message = await failureOf(root, {
+    action: 'capture',
+    directory,
+    target: { kind: 'workingTree', base: 'HEAD' },
+  });
+
+  expect(message).toContain('rename failed');
+  expect(message).toContain('restoring input.md: restore failed');
+  expect(message).toContain('removing the snapshot: remove failed');
 });
 
 it('restores input.md and throws the capture error when removing the snapshot fails', async () => {

@@ -139,20 +139,43 @@ const fixSummary = (target: PinnedTarget, paths: string[]) => {
   return { fixPaths: paths, scope, outsidePaths };
 };
 
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
 // Removes the snapshot folder only when this capture saved it. Each cleanup runs even when the other
-// fails, and neither failure may hide the capture error that caused the rollback.
+// fails. Returns one line per failed cleanup, so the caller can report them next to the capture error.
 const rollback = async (
   inputPath: string,
   originalInput: Buffer,
   snapshotParent: string | undefined,
-) => {
+): Promise<string[]> => {
   const removeSnapshot =
     snapshotParent === undefined
       ? Promise.resolve()
       : rm(join(snapshotParent, snapshotFolder), { recursive: true, force: true });
 
-  await Promise.allSettled([removeSnapshot, writeFile(inputPath, originalInput)]);
+  const [snapshotResult, inputResult] = await Promise.allSettled([
+    removeSnapshot,
+    writeFile(inputPath, originalInput),
+  ]);
+
+  const failed: string[] = [];
+
+  if (inputResult.status === 'rejected') {
+    failed.push(`restoring input.md: ${messageOf(inputResult.reason)}`);
+  }
+
+  if (snapshotResult.status === 'rejected') {
+    failed.push(`removing the snapshot: ${messageOf(snapshotResult.reason)}`);
+  }
+
+  return failed;
 };
+
+const rollbackError = (error: unknown, failedCleanups: string[]) =>
+  new Error(
+    `${messageOf(error)}\nThe rollback also failed (${failedCleanups.join('; ')}). The review directory may be half-written. Prepare a new review.`,
+    { cause: error },
+  );
 
 const capture = async (root: string, directory: string, target: ReviewTarget | undefined) => {
   if (target === undefined) {
@@ -219,7 +242,11 @@ const capture = async (root: string, directory: string, target: ReviewTarget | u
   } catch (error) {
     const snapshotParent = snapshot === undefined ? undefined : directory;
 
-    await rollback(inputPath, originalInput, snapshotParent);
+    const failedCleanups = await rollback(inputPath, originalInput, snapshotParent);
+
+    if (failedCleanups.length > 0) {
+      throw rollbackError(error, failedCleanups);
+    }
 
     throw error;
   }
