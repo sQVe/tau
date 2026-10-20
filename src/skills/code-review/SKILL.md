@@ -14,159 +14,108 @@ description:
 
 ## When to use
 
-Use this skill when the user asks you to review local code: the current branch, uncommitted work, a
-commit or range, or named files. It needs the `subagent` tools inside herdr. Without them, tell the
-user and stop.
-
-## Goal
-
-Report material defects, missed requirements, rule violations, and design problems in the selected
-target. Give each finding a status that says how it was checked.
+Use this skill to review local code: the current branch, uncommitted work, a commit or range, or
+named files. It needs the `subagent` tools inside herdr. Without them, tell the user and stop.
 
 ## Hard rules
 
-- The review is read-only. Until the report is written, do not edit source, fix findings, stage,
-  commit, push, or publish. The one outside write is the report comment of step 9. It uses the
-  [tracker skill](../tracker/SKILL.md)'s comment commands and follows
-  [Hard rules](../tracker/SKILL.md#hard-rules). Do not check out, reset, or stash to reach a target.
-  Stop when the user says stop.
-- Decide ownership from the branch, never from the checkout alone: the user often checks out other
-  people's PRs. The branch is the user's own when its PR author is the
-  `gh api user --hostname <host> --jq .login` login, using the PR's host, or, with no PR, when each
-  of its commits has the author email `git config user.email`. A branch with no commits of its own
-  counts when nothing points to another author. Uncommitted work is the user's own only on a branch
-  these rules find to be the user's own. Anything else, or anything unclear, is not the user's own.
-- After the report, fix findings automatically only on the user's own work, and never after a
-  request for a read-only review or "no changes". Fixing is never approval to publish to GitHub or
-  absorb unrelated changes.
-- Mode: fast unless the user asks for deep. A request for the "full diff" names the scope, not the
-  mode. Fast launches one reviewer. Deep launches two: a finder, then a fresh checker.
-- A first review covers the whole target. A fix review after a first review captures only the fix,
-  its callers, and the findings it closes (step 1). A full review the user asks for covers the whole
-  target. Never reuse earlier findings or verdicts.
-- Launch workers with the `reviewer` profile. Omit `model` to use the configured reviewer model,
-  unless the user names a model. Omit `timeoutSeconds`, unless the user names a cheap model; then
-  set a shorter one than the default.
-- If a launch fails, report it. Never switch model or provider silently. When a launch failed before
-  the worker made a model call, and you confirmed its pane and task are gone, retry it once with the
-  same profile and model. Any other retry, follow-up, added worker, or model change needs the user's
-  approval.
-- Aim for about 5 minutes for fast and 10 for deep. The aim is yours, not the workers': put no
-  deadline, countdown, or tool budget in an assignment. Do not sleep, poll, or set timers; end your
-  turn to wait for notices. Do not cancel a running worker only because the aim passed.
-- Give every worker the test and probe rules from the [review assignment](review-assignment.md).
+- Until the report is saved, change nothing: no edits, fixes, stages, commits, pushes, publishes,
+  checkouts, resets, or stashes. The one outside write is the report comment of step 7, made with
+  the [tracker skill](../tracker/SKILL.md)'s comment commands under its
+  [Hard rules](../tracker/SKILL.md#hard-rules). Stop when the user says stop.
+- The work is the user's own only when its branch is, never decided from the checkout alone: the
+  user often checks out other people's PRs. A branch is the user's own when its PR author is the
+  `gh api user --hostname <PR host> --jq .login` login, or, with no PR, when each of its commits has
+  the author email `git config user.email`. A branch with no commits of its own counts when nothing
+  points to another author. Uncommitted work follows its branch. Anything unclear is not the user's
+  own.
+- Mode: fast unless the user asks for deep. "Full diff" names the scope, not the mode. Fast launches
+  one reviewer. Deep launches a finder, then a fresh checker.
+- A first review covers the whole target. A fix review captures only the fix, its callers, and the
+  findings it closes. Never reuse earlier findings or verdicts.
+- Launch workers with the `reviewer` profile and the [review assignment](review-assignment.md). Omit
+  `model` unless the user names one. Omit `timeoutSeconds` unless the user names a cheap model; then
+  set a shorter one.
+- If a launch fails, report it. When it failed before the worker made a model call and its pane and
+  task are gone, retry it once with the same profile and model. Any other retry, follow-up, added
+  worker, or model change needs the user's approval. Never switch model or provider silently.
+- Aim for about 5 minutes for fast and 10 for deep. The aim is yours: put no deadline or budget in
+  an assignment, never sleep or poll, and never cancel a worker only because the aim passed.
+- After the report, fix findings only on the user's own work, and never after a request for a
+  read-only review or "no changes". Fixing never approves a publish or absorbing unrelated changes.
 
 ## Procedure
 
-1. Resolve the target once, as a `code_review` capture target. Pin every revision you pass with
-   `git rev-parse`.
-   - No target given: on the default branch, review uncommitted work from `HEAD`, including
-     untracked files, as a `workingTree` target. On another branch, review the branch: a
-     `workingTree` target from `git merge-base <default> HEAD`, which includes uncommitted and
-     untracked files. Find the default with `git symbolic-ref --short refs/remotes/origin/HEAD`.
-   - Commit: a `range` from its parent to the commit. A root commit has no parent; use a
-     `rootCommit` target. Range: a `range` target for `A..B` as given.
-   - Named files: a `files` target, which captures their full contents plus their diff from `HEAD`.
-     A named file without changes is still reviewed.
-   - Fix review: when an earlier review of the same target in this session had findings that were
-     fixed, capture a `fix` target with that review's directory as `review` and the paths the closed
-     findings cite as `findingPaths`. Do not capture the whole target.
-   - Whole target: when the user asks for a full review, or when the earlier review left no usable
-     snapshot, capture the whole target fresh.
-   - Record exclusions the user declares, and pass them as `exclude`. Ask when the target, base, or
-     ownership is unclear. When the work is the user's own, workers also list worthwhile
-     pre-existing issues in touched code.
-   - Find the ticket under review: the ticket the user or a calling skill names, such as the slice
-     from the start-slice skill. Otherwise, only when the target is the current branch's own work,
-     use the branch's issue from `linear issue view --json --no-pager`. That work is a target from
-     the branch's merge base with the default branch to `HEAD` or the working tree, or uncommitted
-     work. Any other commit, range, or files target may hold other work, so it takes no branch
-     ticket. When nothing gives a ticket, or the read fails, the review has no ticket: keep the
-     local report only and say so in the reply.
+1. Resolve the target once as a `code_review` target, with every revision pinned by `git rev-parse`.
+   - No target: on the default branch (`git symbolic-ref --short refs/remotes/origin/HEAD`), a
+     `workingTree` from `HEAD`. On another branch, a `workingTree` from
+     `git merge-base <default> HEAD`.
+   - A commit: a `range` from its parent, or a `rootCommit` when it has none. `A..B`: a `range`.
+     Named files: a `files` target, which reviews them even without changes.
+   - After an earlier review of this target in this session whose findings were fixed: a `fix`
+     target, with that review's directory as `review` and the paths of the closed findings as
+     `findingPaths`. Capture the whole target instead when the user asks for a full review or the
+     earlier review left no usable snapshot.
+   - Pass declared exclusions as `exclude`. Ask when the target, base, or ownership is unclear.
+   - The ticket under review is the one the user or a calling skill names. Otherwise, only for the
+     branch's own work (merge base to `HEAD` or the working tree, or uncommitted work), use the
+     branch's issue from `linear issue view --json --no-pager`. With no ticket, or a failed read,
+     the report stays local.
 
-2. Call `code_review` with `prepare`. If it fails, stop and tell the user. Use the returned
-   directory as `$dir` from here on.
+2. Call `code_review` `prepare`, and use the returned directory as `$dir`. Write `$dir/input.md`
+   from the [input template](input.md). Then call `capture` with `$dir` and the target. If either
+   call fails, stop and report the error.
+   - Ask the user about each `unmatched` gap first. On a corrected path, start again at step 1.
+   - A `fix` capture with `scope: "wholeTarget"` widened the change: capture the whole target fresh.
+   - `empty` with no gaps: say there is nothing to review and stop. `empty` with gaps: report them
+     and stop.
+   - When `head` or `base` differs from `input.md`, the target moved: start again at step 1.
 
-3. Write `$dir/input.md` with the [input template](input.md).
+3. Gather evidence with one read-only `codemode` script. It calls `code_review` `evidence` with
+   `$dir`, then returns line-numbered excerpts of the rule files that bear on the changed paths,
+   read with `git show <sha>:<path>` for a pinned commit. Save the result as `$dir/evidence.md`. If
+   the script fails, record a gap and continue with `input.md` alone.
 
-4. Call `code_review` with `capture`, `$dir`, and the target from step 1.
-   - If the call fails, stop and tell the user what it reports.
-   - Before anything else, ask the user about each `unmatched` gap. If the user corrects a path,
-     start again from step 1 with the corrected target. List every gap in the report.
-   - If a `fix` capture returns `scope: "wholeTarget"`, the fix widened the change, even when
-     `empty` is true. Capture the whole target fresh and run a whole-target review.
-   - If `empty` is true and `gaps` is empty, there is nothing to review. Say so and stop. If `empty`
-     is true with gaps, nothing readable was captured: report the gaps and stop.
-   - If `head` differs from the repository HEAD in `input.md`, or `base` from its base SHA, the
-     target moved while you wrote it. Start again from step 1.
-   - Keep `hash` for the report. Never edit or trim the capture in `input.md`.
-
-5. Gather the evidence with one read-only `codemode` script. It calls `code_review` with `evidence`
-   and `$dir`, then reads bounded, line-numbered excerpts of the readable rule files that bear on
-   the changed paths. For a `range` or `rootCommit` target, it reads them at the pinned commit with
-   `git show <sha>:<path>`. It returns the identity, paths, rule excerpts, test bodies, added
-   markers, callers, check references, and gaps.
-   - Save the returned evidence as `$dir/evidence.md`, outside the script. List every gap it returns
-     in the report.
-   - If the script fails, report the evidence as a gap and continue with `input.md` alone.
-   - The script gathers evidence only. Target resolution, the capture, approvals, and review
-     judgment stay outside it. It never trims or replaces `input.md`.
-
-6. Run the mode.
-   - Fast: launch one reviewer with the [review assignment](review-assignment.md). Add "Try to
-     disprove each finding before you report it."
-   - Deep: launch a finder with the review assignment, adding "Report every plausible material
-     candidate; the checker tests them." When it reports, launch a fresh checker with the
-     [checker assignment](checker-assignment.md). Pass it the finder's candidates, or save the
-     finder's report to `$dir/finder.md` and pass that path. Launch the checker even when the finder
-     found no candidates.
-   - Before you launch more work, check the elapsed time. If the aim has passed, show the findings
-     you have with their status, and ask whether to continue.
-   - Apart from the one launch retry the hard rules allow, do not relaunch a worker that fails or
-     stops without a report. Show any notes it left as unverified leads and report the review as
-     incomplete.
+4. Run the mode.
+   - Fast: one reviewer. Add "Try to disprove each finding before you report it."
+   - Deep: a finder, with "Report every plausible material candidate; the checker tests them." Then
+     a fresh checker, with the `## Checker` lines of the review assignment and the finder's
+     candidates, or the path `$dir/finder.md` holding its report. Launch the checker even when the
+     finder found nothing.
+   - On the user's own work, add "Also list worthwhile pre-existing issues in touched code."
+   - Before each launch, check the elapsed time. Past the aim, show the findings so far and ask
+     whether to continue.
+   - Do not relaunch a worker that fails or stops without a report, beyond the one retry. Show its
+     notes as unverified leads and mark the review incomplete.
    - Always report finished results, even after the aim has passed.
 
-7. Call `code_review` with `freshness` and `$dir`.
-   - `fresh`: report the review as fresh.
-   - `stale`: label the review stale, give the reasons, and ask whether to run a new one.
-   - `unknown`, or a failed call: report the freshness as unknown, with the reasons or the error.
-     Still save and report the finished results.
-   - The check is not atomic. It covers only the captured target, not callers or rules outside it.
+5. Call `code_review` `freshness` with `$dir`. Report `fresh` as fresh. The check is not atomic, and
+   covers only the captured target, not callers or rules outside it. Label `stale` with its reasons
+   and ask whether to review again. Report `unknown`, or a failed call, as unknown. Keep the
+   finished results in every case.
 
-8. Save the files in `$dir` with the [report template](report.md). Write `$dir/report.md` as the
-   comment body.
+6. Save the worker reports and `$dir/report.md` with the [report template](report.md).
 
-9. Post the report of this run to the ticket from step 1, before any fixing. Skip this step when the
-   review has no ticket.
-   - Each run has a fresh `$dir`, so keep the comment ID where every run reads it. Call
-     `tracker_draft` with action `prepare` and the ticket identifier in lower case. It returns the
-     directory and its parsed `draft`.
-   - Find an earlier report comment with the tracker skill's comment list command. Pick the comment
-     with the ID in `draft.reviewCommentId`, or with none recorded, the comment whose first line is
-     `# Code review: <ticket>`. Read its saved text from that list.
-   - Post the content of `$dir/report.md` with the tracker skill's comment commands. Post without
-     asking, as [Hard rules](../tracker/SKILL.md#hard-rules) allows, only when the branch ownership
-     rule finds the work the user's own and the ticket is the user's own as the tracker skill
-     defines it. Otherwise ask with `ask_user_question` before you post, and skip the post if the
-     user declines. Update the earlier comment when one exists, and never add a second one. Record
-     the comment's ID at once as `reviewCommentId` in the returned directory's `draft.json`, with
-     `identifier` set to the ticket, and in `$dir/report.md`. Keep the other fields of the returned
-     `draft`. When `prepare` returned no `draft`, create the record with version 1. Do this both
-     after adding a new comment and after updating one found by its first line.
-   - If the post fails, keep the local report, and report the failure in the reply.
+7. Post `$dir/report.md` to the ticket, before any fixing. Skip this step without a ticket.
+   - Call `tracker_draft` `prepare` with the ticket identifier in lower case. Find the earlier
+     report with the tracker skill's comment list command: the comment with ID
+     `draft.reviewCommentId`, or with none recorded, the one whose first line is
+     `# Code review: <ticket>`. Read its text from that list.
+   - Post without asking, as [Hard rules](../tracker/SKILL.md#hard-rules) allows, only when the work
+     and the ticket are both the user's own, as the tracker skill defines a ticket. Otherwise ask
+     with `ask_user_question` first, and skip the post if the user declines.
+   - Update the earlier comment when one exists, and never add a second one. Otherwise add one.
+     Record its ID at once, in `$dir/report.md` and as `reviewCommentId` in the returned
+     `draft.json`, keeping its other fields, or create it with version 1 and `identifier` set.
+   - If the post fails, keep the local report and say so in the reply.
 
-10. Reply to the user with the [report template](report.md). Name the comment URL, or say that the
-    report stays local because the review has no ticket. When the update replaced edits made in
-    Linear, name what it dropped.
-
-- With findings on the user's own work, unless the user asked for a read-only review or "no
-  changes", continue without asking: act on them with the
-  [triage-findings](../triage-findings/SKILL.md) skill. Ask afterward about findings it leaves
-  Blocked and about a gap, failure, or stale result that needs a decision.
-- Otherwise end with one question. With findings, ask for approval of the proposed actions, such as
-  "Fix 1 and 2, and investigate 3?" When a gap, failure, or stale result needs a decision, include
-  it in the question. Act on the approved findings with the triage-findings skill.
-- With no findings from a complete, fresh run, ask no fix question.
-- Never call an incomplete or stale review clean: a worker failed, stopped early, or left a claim
-  uncertain, or the input changed during the review.
+8. Reply with the [report template](report.md). Name the comment URL, or say the report stays local.
+   Name any Linear edits the update replaced.
+   - Findings on the user's own work, without a request for a read-only review or "no changes":
+     continue with the [triage-findings](../triage-findings/SKILL.md) skill without asking. Then ask
+     about Blocked findings and any gap, failure, or stale result that needs a decision.
+   - Any other findings: end with one question that proposes actions, such as "Fix 1 and 2, and
+     investigate 3?", and includes any decision a gap or stale result needs. Act on the approved
+     findings with triage-findings.
+   - Without findings, ask only about a gap, failure, or stale result that needs a decision. Never
+     call an incomplete or stale review clean.

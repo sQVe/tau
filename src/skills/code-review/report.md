@@ -1,42 +1,36 @@
 # Review report
 
-Use this shape for the files in the review directory and for the reply to the user.
+Use this shape for the files in `$dir` and for the reply.
 
 ## Saved files
 
-- Save each worker report in `$dir`: `reviewer.md`, or `finder.md` and `checker.md`.
-- Write `$dir/report.md` as the comment body. When the review has a ticket, start it with
-  `# Code review: <ticket>`, and keep a `Comment ID:` line once the comment exists. Include the base
-  and HEAD SHAs, the capture `hash`, the source of any check result, every finding in full, and
-  refuted candidates with the checker's reason.
+- Each worker report: `reviewer.md`, or `finder.md` and `checker.md`.
+- `report.md`, the comment body. With a ticket, start it with `# Code review: <ticket>` and keep a
+  `Comment ID:` line once the comment exists. Include the base and HEAD SHAs, the capture `hash`,
+  the source of any check result, every finding in full, and refuted candidates with the checker's
+  reason.
 
 ## Reply
 
 - Header: the target, mode, elapsed time when you observed it, freshness (fresh, stale, or unknown),
-  and a link to `$dir/report.md`. State once how findings were checked: fast has one self-checking
-  reviewer, so no finding is independently checked; deep has a finder and a fresh checker.
+  and a link to `report.md`. Say once how findings were checked: fast has one self-checking
+  reviewer; deep adds a fresh checker.
 - Findings: one table, most severe first, with the columns `#`, `Problem and impact`, `Evidence`,
-  and `Recommendation`. Keep cells short. Put longer `file:line` evidence and fix directions in
-  numbered notes after the table.
-  - Evidence: the actual `file:line` and the decisive fact, such as a caller, guard, test, or
-    reproduction. In deep mode, add the status: supported, disputed (the checker refuted it but it
-    stays plausible), uncertain, or checker-new (not independently checked).
-  - Recommendation: fix, investigate, or defer, with a reason drawn from the evidence and the cost
-    of acting. Add a bounded fix direction or the question to investigate. A real issue does not
-    always need a fix.
-- Status says how a finding was checked, not how strong its evidence is. Decisive evidence, such as
-  a reproduction, can justify a fix for a checker-new finding. Do not rank confidence or give
-  scores. Your agreement does not change a status. If you read source to reach a recommendation, say
-  what you read.
-- Do not redo the review. Keep every material plausible or disputed finding in the table. Remove
-  only exact duplicates and style points no rule supports, and name each in one line. Show refuted
-  candidates only when one affects a decision. The checker's verdict is advice, not proof.
-- Gaps: after the table, list every gap from the capture (exclusions, binary files, unreadable files
-  and directories, submodules, and named paths that list no file), every gap from the evidence (such
-  as a stale capture, a cut list or body, a missing rule or check file, or a caller search that
-  failed or skipped paths), areas workers say they left unread, worker failures, stale or unknown
-  freshness, and a check result that may not match the capture. Do not infer read coverage from
-  citations.
-- Notes: after the gaps, list areas workers say they read only shallowly. They are not gaps.
+  and `Recommendation`. Put long evidence and fix directions in numbered notes after it.
+  - Evidence: the `file:line` and the decisive fact, such as a caller, guard, test, or reproduction.
+    In deep mode, add the status: supported, disputed (refuted but still plausible), uncertain, or
+    checker-new.
+  - Recommendation: fix, investigate, or defer, with a reason from the evidence and the cost of
+    acting, plus a bounded fix direction or the question to investigate.
+- Status says how a finding was checked, not how strong it is. Decisive evidence can justify fixing
+  a checker-new finding. Do not rank confidence or give scores. Your agreement does not change a
+  status. Say what source you read to reach a recommendation.
+- Do not redo the review. Keep every material plausible or disputed finding. Remove only exact
+  duplicates and style points no rule supports, and name each in one line. Show refuted candidates
+  only when one affects a decision.
+- Gaps: list every gap from the capture and the evidence, areas workers left unread, worker
+  failures, stale or unknown freshness, and a check result that may not match the capture. Do not
+  infer read coverage from citations.
+- Notes: areas workers read only shallowly. They are not gaps.
 - With no findings from a complete, fresh run, show no table. Say the workers found no material
-  issues in the target. That covers the scope they read; it does not prove the change correct.
+  issues in the scope they read. That does not prove the change correct.

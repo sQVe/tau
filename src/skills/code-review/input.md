@@ -1,18 +1,16 @@
 # Review input
 
-Use this shape for `$dir/input.md`. Fill in each section before the `capture` call. Mark context you
-do not have as unavailable. Do not invent requirements or copy the whole conversation. Keep
-`## Capture` as the last heading: the `code_review` tool appends the capture and a `## Gaps` section
-after it.
+Use this shape for `$dir/input.md`, filled in before the `capture` call. Mark missing context as
+unavailable. Do not invent requirements or copy the conversation. Keep `## Capture` last and empty:
+the tool appends the capture and `## Gaps` after it, and nothing edits them.
 
 ```markdown
 # Review input
 
 ## Target
 
-The target, the mode, and the exclusions the user declared. The base SHA, which is the start of a
-range, or none for a root commit. The repository HEAD from `git rev-parse HEAD`, even when a range
-ends at another commit.
+The target, mode, and declared exclusions. The base SHA, or none for a root commit. The repository
+HEAD from `git rev-parse HEAD`, even when a range ends at another commit.
 
 ## Rules
 
@@ -24,9 +22,8 @@ Any existing check result with its saved output path, or "none".
 
 ## Intent
 
-The known task intent, and intentional behavior changes. Then list the acceptance criteria, one per
-line, word for word, or "none". For a fix review, list the findings the fix closes, each with its
-file and line.
+The task intent and intentional behavior changes. The acceptance criteria, one per line, word for
+word, or "none". For a fix review, the findings the fix closes, each with its file and line.
 
 ## Capture
 ```
