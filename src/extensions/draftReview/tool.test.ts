@@ -1,7 +1,7 @@
 import { getEventListeners } from 'node:events';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 
 import { Value } from 'typebox/value';
 import { expect, it, onTestFinished, vi } from 'vitest';
@@ -22,7 +22,7 @@ import { createDraftReviewTool } from './tool.js';
 
 it('prints the command outside herdr, then collects only comments on reviewed files and changed files', async () => {
   const { run, setSession, deleted, records, real, herdrCalls, data } = await fixture();
-  const opened = await run({ action: 'review', paths: ['.tau/slices/a.md', '.tau/slices/b.md'] });
+  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md', '.tau/slices/b.md'] });
   const manual = opened.details;
 
   if (manual.status !== 'manual') {
@@ -75,7 +75,7 @@ it('prints the command outside herdr, then collects only comments on reviewed fi
 
 it('reports a conflict and writes nothing when the real file changed during the review', async () => {
   const { run, setSession, real } = await fixture();
-  const opened = await run({ action: 'review', paths: ['.tau/slices/a.md'] });
+  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] });
   const manual = opened.details;
 
   if (manual.status !== 'manual') {
@@ -99,7 +99,7 @@ it('reports a conflict and writes nothing when the real file changed during the 
 
 it('returns no comments and no edits when tuicr has no session or no comments', async () => {
   const { run, setSession, deleted } = await fixture();
-  const opened = await run({ action: 'review', paths: ['.tau/slices/a.md'] });
+  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] });
   const manual = opened.details;
 
   if (manual.status !== 'manual') {
@@ -110,7 +110,7 @@ it('returns no comments and no edits when tuicr has no session or no comments', 
 
   expect(withoutSession.details).toEqual({ status: 'reviewed', comments: [], edits: [] });
 
-  const second = await run({ action: 'review', paths: ['.tau/slices/a.md'] });
+  const second = await run({ action: 'open', paths: ['.tau/slices/a.md'] });
 
   await setSession([]);
 
@@ -145,7 +145,7 @@ it.each([
   },
 ])('fails and deletes nothing on $name', async ({ sessions, comments, output }) => {
   const { run, setSession, deleted, data, records } = await fixture();
-  const opened = await run({ action: 'review', paths: ['.tau/slices/a.md'] });
+  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] });
   const manual = opened.details;
 
   if (manual.status !== 'manual') {
@@ -167,14 +167,14 @@ it('refuses paths that are not files inside .tau, one reason each', async () => 
   const { run, repository, records } = await fixture();
   await writeFile(join(repository, 'outside.md'), 'x');
 
-  await expect(run({ action: 'review', paths: [] })).rejects.toThrow('at least one path');
-  await expect(run({ action: 'review', paths: ['outside.md'] })).rejects.toThrow('outside');
+  await expect(run({ action: 'open', paths: [] })).rejects.toThrow('at least one path');
+  await expect(run({ action: 'open', paths: ['outside.md'] })).rejects.toThrow('outside');
 
-  await expect(run({ action: 'review', paths: ['.tau/missing.md'] })).rejects.toThrow(
+  await expect(run({ action: 'open', paths: ['.tau/missing.md'] })).rejects.toThrow(
     'does not exist',
   );
 
-  await expect(run({ action: 'review', paths: ['.tau/slices'] })).rejects.toThrow('not a file');
+  await expect(run({ action: 'open', paths: ['.tau/slices'] })).rejects.toThrow('not a file');
 
   await expect(run({ action: 'collect', directory: '.tau/slices' })).rejects.toThrow(
     'not a review record',
@@ -184,108 +184,9 @@ it('refuses paths that are not files inside .tau, one reason each', async () => 
   await expect(records()).rejects.toThrow(/ENOENT/);
 });
 
-it('opens tuicr in a pane beside the agent, waits, closes the pane, and collects', async () => {
-  let staging = '';
-  const hooks: { session?: (comments: unknown) => Promise<void> } = {};
-
-  const herdr: Herdr = async (argumentsList) => {
-    const [, action] = argumentsList;
-
-    if (action === 'split') {
-      staging = argumentsList[argumentsList.indexOf('--cwd') + 1] ?? '';
-
-      return paneInfo;
-    }
-
-    if (action === 'wait-output') {
-      await writeFile(join(staging, 'slices/a.md'), 'one\nTWO\n');
-      await hooks.session?.([comment('on-a', 'slices/a.md'), comment('on-c', 'tickets/c.md')]);
-    }
-
-    return '';
-  };
-
-  const { run, setSession, deleted, herdrCalls, real } = await fixture(herdr);
-  hooks.session = setSession;
-
-  const outcome = await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
-
-  expect(herdrCalls.map(([, action]) => action)).toEqual([
-    'layout',
-    'split',
-    'list',
-    'run',
-    'list',
-    'wait-output',
-    'list',
-    'close',
-  ]);
-
-  expect(herdrCalls[1]).toContain('w:p1');
-
-  expect(herdrCalls.find(([, action]) => action === 'wait-output')).toEqual([
-    'pane',
-    'wait-output',
-    'w:p2',
-    '--match',
-    `tau-draft-review-done-${basename(staging)}`,
-  ]);
-
-  const runCall = herdrCalls.find(([, action]) => action === 'run');
-
-  expect(runCall?.[3]).toContain(`tuicr --file '${staging}'`);
-
-  expect(outcome.details).toMatchObject({
-    status: 'reviewed',
-    comments: [{ path: real('slices/a.md'), content: 'on-a' }],
-    edits: [{ path: real('slices/a.md'), status: 'applied' }],
-  });
-
-  expect(await deleted()).toEqual(['on-a']);
-});
-
-it('returns no comments, deletes nothing, and writes nothing when the wait is cancelled', async () => {
-  const controller = new AbortController();
-  let staging = '';
-
-  const herdr: Herdr = async (argumentsList, signal) => {
-    const [, action] = argumentsList;
-
-    if (action === 'split') {
-      staging = argumentsList[argumentsList.indexOf('--cwd') + 1] ?? '';
-
-      return paneInfo;
-    }
-
-    if (action === 'wait-output') {
-      await writeFile(join(staging, 'slices/a.md'), 'edited\n');
-      controller.abort();
-      signal?.throwIfAborted();
-    }
-
-    return '';
-  };
-
-  const { run, setSession, deleted, herdrCalls, real, records } = await fixture(herdr);
-  await setSession([comment('on-a', 'slices/a.md')]);
-
-  const outcome = await run(
-    { action: 'review', paths: ['.tau/slices/a.md'] },
-    'w:p1',
-    controller.signal,
-  );
-
-  expect(outcome.details).toEqual({ status: 'cancelled', comments: [], edits: [] });
-  expect(herdrCalls.at(-1)?.[1]).toBe('close');
-  expect(await deleted()).toEqual([]);
-  expect(await readFile(real('slices/a.md'), 'utf8')).toBe('one\ntwo\n');
-  expect(await records()).toEqual([]);
-  expect(existsSync(staging)).toBe(false);
-});
-
 it('reports a conflict and keeps the agent content when the real file changes during collect', async () => {
   const { run, setSession, data, real } = await fixture();
-  const opened = await run({ action: 'review', paths: ['.tau/slices/a.md'] });
+  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] });
   const manual = opened.details;
 
   if (manual.status !== 'manual') {
@@ -311,7 +212,7 @@ it('reports a conflict and keeps the agent content when the real file changes du
 
 it('returns every comment on a retry after a delete failed partway and deletes only the rest', async () => {
   const { run, setSession, deleted, data, real } = await fixture();
-  const opened = await run({ action: 'review', paths: ['.tau/slices/a.md'] });
+  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] });
   const manual = opened.details;
 
   if (manual.status !== 'manual') {
@@ -345,33 +246,20 @@ it('returns every comment on a retry after a delete failed partway and deletes o
   expect(await readFile(real('slices/a.md'), 'utf8')).toBe('user\n');
 });
 
-it('collects normally when the user closes the pane during the wait', async () => {
-  const hooks: { session?: (comments: unknown) => Promise<void> } = {};
+const processInfo = (...pids: number[]) =>
+  JSON.stringify({
+    result: { process_info: { foreground_processes: pids.map((pid) => ({ pid })) } },
+  });
 
-  const herdr: Herdr = async (argumentsList) => {
-    const [, action] = argumentsList;
-
-    if (action === 'split') {
-      return paneInfo;
-    }
-
-    if (action === 'wait-output') {
-      await hooks.session?.([comment('on-a', 'slices/a.md')]);
-
-      throw new Error('herdr failed: {"error":{"code":"pane_not_found"}}');
-    }
-
-    return '';
-  };
-
-  const { run, setSession, deleted } = await fixture(herdr);
-  hooks.session = setSession;
-
-  const outcome = await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
-
-  expect(outcome.details).toMatchObject({ status: 'reviewed', comments: [{ content: 'on-a' }] });
-  expect(await deleted()).toEqual(['on-a']);
-});
+const tabList = (focused: boolean) =>
+  JSON.stringify({
+    result: {
+      tabs: [
+        { tab_id: 'w:t1', focused: !focused },
+        { tab_id: 'w:t2', focused },
+      ],
+    },
+  });
 
 const socketClosedHerdr: Herdr = async (argumentsList) => {
   const [, action] = argumentsList;
@@ -380,7 +268,7 @@ const socketClosedHerdr: Herdr = async (argumentsList) => {
     return paneInfo;
   }
 
-  if (action === 'wait-output') {
+  if (action === 'run') {
     throw new Error('herdr failed: socket closed');
   }
 
@@ -390,7 +278,7 @@ const socketClosedHerdr: Herdr = async (argumentsList) => {
 it('names the record directory when another herdr call fails', async () => {
   const { run, repository } = await fixture(socketClosedHerdr);
 
-  await expect(run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1')).rejects.toThrow(
+  await expect(run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1')).rejects.toThrow(
     join(repository, '.tau/draft-review/review-'),
   );
 });
@@ -405,6 +293,10 @@ it('ignores a pane that is already gone on close but names the record when close
       return paneInfo;
     }
 
+    if (action === 'run') {
+      throw new Error('herdr failed: socket closed');
+    }
+
     if (action === 'close' && closeFailure.message !== undefined) {
       throw new Error(closeFailure.message);
     }
@@ -416,13 +308,13 @@ it('ignores a pane that is already gone on close but names the record when close
 
   closeFailure.message = 'herdr failed: {"error":{"code":"pane_not_found"}}';
 
-  const gone = await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
-
-  expect(gone.details).toMatchObject({ status: 'reviewed' });
+  await expect(run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1')).rejects.toThrow(
+    'socket closed',
+  );
 
   closeFailure.message = 'herdr failed: socket closed';
 
-  await expect(run({ action: 'review', paths: ['.tau/slices/b.md'] }, 'w:p1')).rejects.toThrow(
+  await expect(run({ action: 'open', paths: ['.tau/slices/b.md'] }, 'w:p1')).rejects.toThrow(
     join(repository, '.tau/draft-review/review-'),
   );
 });
@@ -454,7 +346,7 @@ it('opens a right split when the agent pane is 164 columns wide', async () => {
     return argumentsList[1] === 'split' ? paneInfo : '';
   });
 
-  await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
+  await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
 
   expect(steps(herdrCalls)).toContain('pane split');
   expect(herdrCalls.some(([group]) => group === 'tab')).toBe(false);
@@ -464,52 +356,30 @@ it.each([
   { width: 163, zoomed: false },
   { width: 200, zoomed: true },
 ])(
-  'opens a focused tab in the agent workspace for a $width column pane, zoomed $zoomed',
+  'opens a tab in the agent workspace for a $width column pane, zoomed $zoomed',
   async ({ width, zoomed }) => {
     const { run, herdrCalls } = await fixture(tabHerdr(width, zoomed));
 
-    await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
+    await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
 
     const create = herdrCalls.find(([group, action]) => group === 'tab' && action === 'create');
 
-    expect(create).toContain('--focus');
+    expect(create).not.toContain('--focus');
     expect(create?.[create.indexOf('--workspace') + 1]).toBe('w');
     expect(steps(herdrCalls)).not.toContain('pane split');
     expect(herdrCalls.find(([, action]) => action === 'run')?.[2]).toBe('w:p3');
   },
 );
 
-it('closes the review tab, refocuses the agent tab, and collects after tuicr exits', async () => {
-  const hooks: { session?: (comments: unknown) => Promise<void> } = {};
-
-  const { run, setSession, herdrCalls, deleted } = await fixture(
-    tabHerdr(100, false, async (argumentsList) => {
-      if (argumentsList[1] === 'wait-output') {
-        await hooks.session?.([comment('on-a', 'slices/a.md')]);
-      }
-
-      return '';
-    }),
-  );
-
-  hooks.session = setSession;
-
-  const outcome = await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
-
-  expect(herdrCalls.slice(-2)).toEqual([
-    ['tab', 'close', 'w:t2'],
-    ['tab', 'focus', 'w:t1'],
-  ]);
-
-  expect(outcome.details).toMatchObject({ status: 'reviewed', comments: [{ content: 'on-a' }] });
-  expect(await deleted()).toEqual(['on-a']);
-});
-
 it('collects when the user closes the review pane and the tab is already gone', async () => {
   const { run, herdrCalls } = await fixture(
     tabHerdr(100, false, async (argumentsList) => {
-      if (argumentsList[1] === 'wait-output') {
-        throw new Error('herdr failed: {"error":{"code":"pane_not_found"}}');
+      if (argumentsList[1] === 'process-info') {
+        return processInfo(4242);
+      }
+
+      if (argumentsList[0] === 'tab' && argumentsList[1] === 'list') {
+        return tabList(true);
       }
 
       if (argumentsList[1] === 'close') {
@@ -520,38 +390,15 @@ it('collects when the user closes the review pane and the tab is already gone', 
     }),
   );
 
-  const outcome = await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
+  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
+
+  const outcome = await run({
+    action: 'collect',
+    directory: (opened.details as { directory: string }).directory,
+  });
 
   expect(outcome.details).toMatchObject({ status: 'reviewed' });
   expect(herdrCalls.at(-1)).toEqual(['tab', 'focus', 'w:t1']);
-});
-
-it('closes the review tab and returns cancelled when a tab review is cancelled', async () => {
-  const controller = new AbortController();
-
-  const { run, herdrCalls } = await fixture(
-    tabHerdr(100, false, async (argumentsList, signal) => {
-      if (argumentsList[1] === 'wait-output') {
-        controller.abort();
-        signal?.throwIfAborted();
-      }
-
-      return '';
-    }),
-  );
-
-  const outcome = await run(
-    { action: 'review', paths: ['.tau/slices/a.md'] },
-    'w:p1',
-    controller.signal,
-  );
-
-  expect(outcome.details).toEqual({ status: 'cancelled', comments: [], edits: [] });
-
-  expect(herdrCalls.slice(-2)).toEqual([
-    ['tab', 'close', 'w:t2'],
-    ['tab', 'focus', 'w:t1'],
-  ]);
 });
 
 it('fails with the herdr error and opens nothing when the pane layout cannot be read', async () => {
@@ -563,7 +410,7 @@ it('fails with the herdr error and opens nothing when the pane layout cannot be 
     return '';
   });
 
-  await expect(run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1')).rejects.toThrow(
+  await expect(run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1')).rejects.toThrow(
     'herdr failed: socket closed',
   );
 
@@ -585,7 +432,7 @@ const abortDuringOpen = async (step: string) => {
   await setSession([comment('on-a', 'slices/a.md')]);
 
   const outcome = await run(
-    { action: 'review', paths: ['.tau/slices/a.md'] },
+    { action: 'open', paths: ['.tau/slices/a.md'] },
     'w:p1',
     controller.signal,
   );
@@ -609,7 +456,7 @@ it('returns cancelled and keeps no record when aborted during tab create', async
 
 it('gives the model the result as text content', async () => {
   const { run, setSession } = await fixture();
-  const opened = await run({ action: 'review', paths: ['.tau/slices/a.md'] });
+  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] });
 
   expect(opened.content).toHaveLength(1);
   expect(opened.content[0]).toMatchObject({ type: 'text' });
@@ -629,20 +476,32 @@ it('gives the model the result as text content', async () => {
   expect(collected.details).toMatchObject({ comments: [{ content: 'on-a' }] });
 });
 
-it('refuses a review call that has no paths', async () => {
+it('refuses an open call that has no paths', async () => {
   const { run } = await fixture();
 
-  await expect(run({ action: 'review' })).rejects.toThrow('at least one path');
+  await expect(run({ action: 'open' })).rejects.toThrow('at least one path');
+});
+
+it('refuses the removed review action', () => {
+  const { parameters } = createDraftReviewTool({
+    exec: vi.fn<Exec>(),
+    herdrPaneId: () => undefined,
+    isProcessRunning: () => false,
+  });
+
+  expect(Value.Check(parameters, { action: 'review', paths: ['.tau/slices/a.md'] })).toBe(false);
 });
 
 it.each([
-  { call: { action: 'review' }, valid: true },
+  { call: { action: 'open' }, valid: true },
   { call: { action: 'collect' }, valid: true },
-  { call: { action: 'review', paths: ['.tau/a.md'] }, valid: true },
+  { call: { action: 'open', paths: ['.tau/a.md'] }, valid: true },
+  { call: { action: 'review' }, valid: false },
+  { call: { action: 'review', paths: ['.tau/a.md'] }, valid: false },
   { call: { action: 'collect', directory: '.tau/draft-review/review-1' }, valid: true },
   { call: { action: 'other' }, valid: false },
   { call: {}, valid: false },
-  { call: { action: 'review', paths: [''] }, valid: false },
+  { call: { action: 'open', paths: [''] }, valid: false },
   { call: { action: 'collect', directory: '' }, valid: false },
 ])('checks the arguments $call: valid is $valid', ({ call, valid }) => {
   const { parameters } = createDraftReviewTool({
@@ -656,7 +515,7 @@ it.each([
 
 const manualReview = async (paths = ['.tau/slices/a.md']) => {
   const context = await fixture();
-  const opened = await context.run({ action: 'review', paths });
+  const opened = await context.run({ action: 'open', paths });
 
   if (opened.details.status !== 'manual') {
     throw new Error('Expected a manual review.');
@@ -796,18 +655,18 @@ it.each([
       return argumentsList[1] === 'create' ? tabInfo : '';
     });
 
-    await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
+    await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
 
     expect(steps(herdrCalls)).toContain(placement);
   },
 );
 
-it('sends herdr the split and close arguments for a pane beside the agent', async () => {
+it('sends herdr the split arguments for a pane beside the agent', async () => {
   const { run, herdrCalls } = await fixture(async (argumentsList) =>
     argumentsList[1] === 'split' ? paneInfo : '',
   );
 
-  await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
+  await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
 
   const staging = /--file '([^']+)'/.exec(
     herdrCalls.find(([, action]) => action === 'run')?.[3] ?? '',
@@ -822,16 +681,13 @@ it('sends herdr the split and close arguments for a pane beside the agent', asyn
     'right',
     '--cwd',
     staging,
-    '--focus',
   ]);
-
-  expect(herdrCalls.at(-1)).toEqual(['pane', 'close', 'w:p2']);
 });
 
-it('sends herdr the arguments for a focused review tab in the agent workspace', async () => {
+it('sends herdr the arguments for a review tab in the agent workspace', async () => {
   const { run, herdrCalls } = await fixture(tabHerdr(100, false));
 
-  await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
+  await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
 
   const staging = /--file '([^']+)'/.exec(
     herdrCalls.find(([, action]) => action === 'run')?.[3] ?? '',
@@ -846,13 +702,20 @@ it('sends herdr the arguments for a focused review tab in the agent workspace', 
     staging,
     '--label',
     expect.any(String),
-    '--focus',
   ]);
 });
 
 it('reports a tab close failure other than a missing tab and keeps the agent tab unfocused', async () => {
   const { run, herdrCalls } = await fixture(
     tabHerdr(100, false, async (argumentsList) => {
+      if (argumentsList[1] === 'process-info') {
+        return processInfo(4242);
+      }
+
+      if (argumentsList[0] === 'tab' && argumentsList[1] === 'list') {
+        return tabList(true);
+      }
+
       if (argumentsList[1] === 'close') {
         throw new Error('herdr failed: socket closed');
       }
@@ -861,9 +724,11 @@ it('reports a tab close failure other than a missing tab and keeps the agent tab
     }),
   );
 
-  await expect(run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1')).rejects.toThrow(
-    'socket closed',
-  );
+  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
+
+  await expect(
+    run({ action: 'collect', directory: (opened.details as { directory: string }).directory }),
+  ).rejects.toThrow('socket closed');
 
   expect(herdrCalls.some(([group, action]) => group === 'tab' && action === 'focus')).toBe(false);
 });
@@ -875,21 +740,6 @@ const stagingFor = async (repository: string): Promise<string> => {
 
   return (JSON.parse(manifest) as { stagingDirectory: string }).stagingDirectory;
 };
-
-const processInfo = (...pids: number[]) =>
-  JSON.stringify({
-    result: { process_info: { foreground_processes: pids.map((pid) => ({ pid })) } },
-  });
-
-const tabList = (focused: boolean) =>
-  JSON.stringify({
-    result: {
-      tabs: [
-        { tab_id: 'w:t1', focused: !focused },
-        { tab_id: 'w:t2', focused },
-      ],
-    },
-  });
 
 // Answers herdr like a workspace where the agent runs in w:p1 and tuicr in the pane open made.
 const openHerdr =
@@ -1303,31 +1153,10 @@ const listing = (paneId: string) =>
     },
   });
 
-it('sends no wait-output when pane run reports pane_not_found and the pane is still listed', async () => {
-  const { run, herdrCalls } = await fixture(async (argumentsList) => {
-    const [group, action] = argumentsList;
-
-    if (action === 'split') {
-      return paneInfo;
-    }
-
-    if (action === 'run') {
-      throw new Error('herdr failed: {"error":{"code":"pane_not_found"}}');
-    }
-
-    return group === 'pane' && action === 'list' ? listing('w:p2') : '';
-  });
-
-  const outcome = await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
-
-  expect(outcome.details).toMatchObject({ status: 'reviewed' });
-  expect(steps(herdrCalls)).not.toContain('pane wait-output');
-});
-
 it('keeps the herdr error as the cause of the failure that names the record', async () => {
   const { run } = await fixture(socketClosedHerdr);
 
-  const failure = await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1').catch(
+  const failure = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1').catch(
     (error: unknown) => error,
   );
 
