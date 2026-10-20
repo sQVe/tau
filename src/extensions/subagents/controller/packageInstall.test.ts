@@ -95,6 +95,46 @@ it('skips a local profile package that user settings name relative to the agent 
   expect(installs).toEqual([]);
 });
 
+it('skips a local profile package that user settings name as npm with a leading space', async () => {
+  const { manager, installs } = fakeManager([{ source: ' npm:probe', scope: 'user' }]);
+
+  const sources = await installWorkerPackages(
+    { ...loadout, packages: ['agent/npm:probe'] },
+    () => manager,
+    new InstallQueue(),
+    signal,
+  );
+
+  expect(sources).toEqual([]);
+  expect(installs).toEqual([]);
+});
+
+it('reads a profile package named npm with a leading space as a local path', async () => {
+  const { manager } = fakeManager([]);
+
+  const sources = await installWorkerPackages(
+    { ...loadout, packages: [' npm:probe'] },
+    () => manager,
+    new InstallQueue(),
+    signal,
+  );
+
+  expect(sources).toEqual([join('/work', 'npm:probe')]);
+});
+
+it('passes git profile packages to Pi unresolved, with or without a leading space', async () => {
+  const { manager } = fakeManager([]);
+
+  const sources = await installWorkerPackages(
+    { ...loadout, packages: ['git:github.com/user/tool', ' https://github.com/user/other'] },
+    () => manager,
+    new InstallQueue(),
+    signal,
+  );
+
+  expect(sources).toEqual(['git:github.com/user/tool', ' https://github.com/user/other']);
+});
+
 const pendingManager = (): WorkerPackageManager => ({
   listConfiguredPackages: () => [],
   resolveExtensionSources: () => new Promise(() => {}),
