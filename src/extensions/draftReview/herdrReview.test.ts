@@ -17,14 +17,18 @@ const listing = (terminalId: string, paneId: string, tabId: string) =>
     },
   });
 
-// Models a review terminal that moves to pane w2:p9 once the wait on its first pane fails.
+// Models a review terminal that moves to pane w2:p9 once the run or the wait on its first pane
+// fails.
 const movingHerdr = (options: {
   terminalId: string;
   firstPane: string;
   tab: boolean;
   afterMove: 'moved' | 'closed';
   onSecondWait: () => Promise<void>;
+  movesAt?: 'run' | 'wait-output';
 }) => {
+  const movesAt = options.movesAt ?? 'wait-output';
+
   const state = { moved: false, waits: [] as string[] };
 
   const herdr: Herdr = async (argumentsList) => {
@@ -52,10 +56,16 @@ const movingHerdr = (options: {
         : listing(options.terminalId, 'w2:p9', 'w2:t1');
     }
 
+    if (action === 'run' && movesAt === 'run' && target === options.firstPane) {
+      state.moved = true;
+
+      throw notFound();
+    }
+
     if (action === 'wait-output') {
       state.waits.push(target ?? '');
 
-      if (target === options.firstPane) {
+      if (target === options.firstPane && movesAt === 'wait-output') {
         state.moved = true;
 
         throw notFound();
@@ -98,6 +108,27 @@ it('keeps waiting at the new pane when the review terminal moves, then collects'
   expect(seen.deletedAtSecondWait).toEqual([]);
   expect(outcome.details).toMatchObject({ status: 'reviewed', comments: [{ content: 'on-a' }] });
   expect(await context.deleted()).toEqual(['on-a']);
+});
+
+it('runs the review at the new pane when the terminal moves before the command starts', async () => {
+  const { herdr, state } = movingHerdr({
+    terminalId: 't2',
+    firstPane: 'w:p2',
+    tab: false,
+    afterMove: 'moved',
+    onSecondWait: async () => undefined,
+    movesAt: 'run',
+  });
+
+  const { run, herdrCalls } = await fixture(herdr);
+  const outcome = await run({ action: 'review', paths: ['.tau/slices/a.md'] }, 'w:p1');
+  const runs = herdrCalls.filter(([, action]) => action === 'run').map((call) => call[2]);
+  const closes = herdrCalls.filter(([, action]) => action === 'close');
+
+  expect(runs).toEqual(['w:p2', 'w2:p9']);
+  expect(state.waits).toEqual(['w2:p9']);
+  expect(outcome.details).toMatchObject({ status: 'reviewed' });
+  expect(closes).toEqual([['pane', 'close', 'w2:p9']]);
 });
 
 it('ends the review and closes nothing when the moved terminal is gone', async () => {

@@ -65,17 +65,21 @@ export const runInPane = async (request: PaneRequest): Promise<boolean> => {
   const locate = (terminalId: string, waitSignal?: AbortSignal) =>
     findTerminal(terminalId, (argumentsList) => herdr(argumentsList, waitSignal));
 
-  // Waits at the terminal's current pane. A pane_not_found either means the user closed the
-  // terminal or moved it to a new pane ID, so the wait resumes there without running again.
-  const waitForMarker = async (terminalId: string, marker: string): Promise<void> => {
+  // Runs a herdr action at the terminal's current pane. A pane_not_found either means the user
+  // closed the terminal or moved it to a new pane ID, so the action is tried again there. Returns
+  // false when the terminal is gone.
+  const atTerminal = async (
+    terminalId: string,
+    action: (paneId: string) => Promise<unknown>,
+  ): Promise<boolean> => {
     let location = await locate(terminalId, signal);
 
     while (location !== undefined) {
       try {
-        // oxlint-disable-next-line no-await-in-loop -- Each wait follows the terminal to its new pane.
-        await herdr(['pane', 'wait-output', location.paneId, '--match', marker], signal);
+        // oxlint-disable-next-line no-await-in-loop -- Each try follows the terminal to its new pane.
+        await action(location.paneId);
 
-        return;
+        return true;
       } catch (error) {
         if (!errorMessage(error).includes('pane_not_found')) {
           throw error;
@@ -87,11 +91,13 @@ export const runInPane = async (request: PaneRequest): Promise<boolean> => {
       // oxlint-disable-next-line no-await-in-loop -- Resolve again after each lost pane.
       location = await locate(terminalId, signal);
 
-      // A terminal still listed at the pane that was not found has no new pane to wait at.
+      // A terminal still listed at the pane that was not found has no new pane to act at.
       if (location?.paneId === previous.paneId) {
-        return;
+        return false;
       }
     }
+
+    return false;
   };
 
   const openSplit = async (): Promise<ReviewSurface> => {
@@ -191,25 +197,21 @@ export const runInPane = async (request: PaneRequest): Promise<boolean> => {
   const line = `${request.command}; printf 'tau-draft-review-done-%s\\n' ${quote(suffix)}`;
 
   try {
-    const target = await locate(terminalId, signal);
+    const started = await atTerminal(terminalId, (paneId) =>
+      herdr(['pane', 'run', paneId, line], signal),
+    );
 
-    // A terminal the user already closed ends the review.
-    if (target === undefined) {
-      return true;
+    // A terminal the user closed before or during the review ends it.
+    if (started) {
+      await atTerminal(terminalId, (paneId) =>
+        herdr(['pane', 'wait-output', paneId, '--match', marker], signal),
+      );
     }
-
-    await herdr(['pane', 'run', target.paneId, line], signal);
-    await waitForMarker(terminalId, marker);
 
     return true;
   } catch (error) {
     if (signal?.aborted === true) {
       return false;
-    }
-
-    // The user closed the pane instead of quitting tuicr, which ends the review.
-    if (errorMessage(error).includes('pane_not_found')) {
-      return true;
     }
 
     throw error;
