@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import type { PathLike } from 'node:fs';
 import {
   chmod,
   mkdir,
@@ -21,6 +22,53 @@ import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { codeReviewToolParameters, createCodeReviewTool } from './tool.js';
 import type { CodeReviewInput } from './tool.js';
+
+const failures = vi.hoisted(() => ({
+  append: false,
+  rename: false,
+  remove: false,
+  restore: false,
+}));
+
+vi.mock(import('node:fs/promises'), async (importOriginal) => {
+  const actual = await importOriginal();
+
+  return {
+    ...actual,
+    appendFile: async (...parameters: Parameters<typeof actual.appendFile>) => {
+      if (failures.append) {
+        await actual.appendFile(parameters[0], 'cut-off');
+
+        throw new Error('append failed');
+      }
+
+      return actual.appendFile(...parameters);
+    },
+    rename: async (from: PathLike, to: PathLike) => {
+      if (failures.rename && String(to).endsWith('capture.json')) {
+        throw new Error('rename failed');
+      }
+
+      return actual.rename(from, to);
+    },
+    writeFile: async (...parameters: Parameters<typeof actual.writeFile>) => {
+      const [target] = parameters;
+
+      if (failures.restore && typeof target === 'string' && target.endsWith('input.md')) {
+        throw new Error('restore failed');
+      }
+
+      return actual.writeFile(...parameters);
+    },
+    rm: async (...parameters: Parameters<typeof actual.rm>) => {
+      if (failures.remove && String(parameters[0]).endsWith('snapshot')) {
+        throw new Error('remove failed');
+      }
+
+      return actual.rm(...parameters);
+    },
+  };
+});
 
 const git = async (root: string, commandArguments: string[]) => {
   const { stdout } = await promisify(execFile)('git', commandArguments, { cwd: root });
@@ -1029,3 +1077,141 @@ it.each(['capture', 'freshness', 'evidence'] as const)(
     expect(await snapshotCheckout(root)).toEqual(before);
   },
 );
+
+it.each([
+  { step: 'the append to input.md', failing: 'append', message: 'append failed' },
+  { step: 'the capture.json write', failing: 'rename', message: 'rename failed' },
+] as const)('restores the review directory when $step fails, so a retry succeeds', async (row) => {
+  const { root, directory } = await preparedReview();
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+
+  const before = await listDirectory(directory);
+
+  failures[row.failing] = true;
+
+  onTestFinished(() => {
+    failures[row.failing] = false;
+  });
+
+  expect(
+    await failureOf(root, {
+      action: 'capture',
+      directory,
+      target: { kind: 'workingTree', base: 'HEAD' },
+    }),
+  ).toContain(row.message);
+
+  expect(await listDirectory(directory)).toEqual(before);
+
+  failures[row.failing] = false;
+
+  expect(await captureWorkingTree(root, directory)).toMatchObject({ empty: false });
+  expect(await readdir(directory)).toEqual(['capture.json', 'input.md', 'snapshot']);
+});
+
+it('keeps a snapshot folder it did not create when a capture without a snapshot fails', async () => {
+  const { root, directory } = await preparedReview();
+  const commit = (await git(root, ['rev-parse', 'HEAD'])).trim();
+
+  await mkdir(join(directory, 'snapshot'));
+  await writeFile(join(directory, 'snapshot', 'unrelated.txt'), 'keep\n');
+
+  failures.rename = true;
+
+  onTestFinished(() => {
+    failures.rename = false;
+  });
+
+  expect(
+    await failureOf(root, { action: 'capture', directory, target: { kind: 'rootCommit', commit } }),
+  ).toContain('rename failed');
+
+  expect(await readFile(join(directory, 'snapshot', 'unrelated.txt'), 'utf8')).toBe('keep\n');
+});
+
+it('removes the snapshot, names both failures, and keeps the cause when restoring input.md fails', async () => {
+  const { root, directory } = await preparedReview();
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+
+  failures.rename = true;
+  failures.restore = true;
+
+  onTestFinished(() => {
+    failures.rename = false;
+    failures.restore = false;
+  });
+
+  const tool = createCodeReviewTool();
+
+  const failure = await tool
+    .execute(
+      'call',
+      { action: 'capture', directory, target: { kind: 'workingTree', base: 'HEAD' } },
+      undefined,
+      undefined,
+      noUiContext(root),
+    )
+    .then(
+      () => new Error('no error'),
+      (error: unknown) => error as Error,
+    );
+
+  expect(failure.message.startsWith('rename failed')).toBe(true);
+  expect(failure.message).toContain('restoring input.md: restore failed');
+  expect(failure.message).not.toContain('removing the snapshot');
+  expect(failure.cause).toMatchObject({ message: 'rename failed' });
+  expect(await readdir(directory)).toEqual(['input.md']);
+});
+
+it('names every failed cleanup step when restoring input.md and removing the snapshot both fail', async () => {
+  const { root, directory } = await preparedReview();
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+
+  failures.rename = true;
+  failures.restore = true;
+  failures.remove = true;
+
+  onTestFinished(() => {
+    failures.rename = false;
+    failures.restore = false;
+    failures.remove = false;
+  });
+
+  const message = await failureOf(root, {
+    action: 'capture',
+    directory,
+    target: { kind: 'workingTree', base: 'HEAD' },
+  });
+
+  expect(message).toContain('rename failed');
+  expect(message).toContain('restoring input.md: restore failed');
+  expect(message).toContain('removing the snapshot: remove failed');
+});
+
+it('restores input.md and throws the capture error when removing the snapshot fails', async () => {
+  const { root, directory } = await preparedReview();
+  const input = await readFile(join(directory, 'input.md'));
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+
+  failures.rename = true;
+  failures.remove = true;
+
+  onTestFinished(() => {
+    failures.rename = false;
+    failures.remove = false;
+  });
+
+  expect(
+    await failureOf(root, {
+      action: 'capture',
+      directory,
+      target: { kind: 'workingTree', base: 'HEAD' },
+    }),
+  ).toContain('rename failed');
+
+  expect(await readFile(join(directory, 'input.md'))).toEqual(input);
+});

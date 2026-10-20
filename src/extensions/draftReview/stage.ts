@@ -1,14 +1,4 @@
-import {
-  copyFile,
-  mkdir,
-  mkdtemp,
-  readFile,
-  realpath,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 
@@ -19,6 +9,7 @@ import { Value } from 'typebox/value';
 import { isMissingFile } from '../../errors.js';
 import { describeSchemaProblem } from '../../schemaProblem.js';
 import { createFreshTauDirectory, findTauRoot, locateTauChild } from '../../tauDirectory.js';
+import { replaceFile } from './replaceFile.js';
 
 export interface Review {
   // The real `.tau` directory the paths are relative to.
@@ -234,10 +225,8 @@ const writeManifest = async (review: Review, placement: SavedPlacement | null) =
   const manifest = { version: manifestVersion, stagingDirectory, paths, placement };
 
   const target = join(recordDirectory, manifestName);
-  const temporary = `${target}.tmp`;
 
-  await writeFile(temporary, JSON.stringify(manifest, null, 2));
-  await rename(temporary, target);
+  await replaceFile(target, JSON.stringify(manifest, null, 2));
 };
 
 export const savePlacement = async (review: Review, placement: SavedPlacement): Promise<void> => {

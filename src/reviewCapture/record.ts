@@ -1,4 +1,5 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { lstat, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { Static } from 'typebox';
@@ -162,9 +163,39 @@ export const readCaptureRecord = async (directory: string): Promise<CaptureRecor
   return parseRecord(path, text);
 };
 
+const isSymlink = async (path: string) => {
+  try {
+    const stats = await lstat(path);
+
+    return stats.isSymbolicLink();
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return false;
+    }
+
+    throw error;
+  }
+};
+
+// Writes a new file and renames it over the record, so a failed write keeps the old record or none.
+// The rename is the step that completes a capture.
 export const writeCaptureRecord = async (
   directory: string,
   record: CurrentCaptureRecord,
 ): Promise<void> => {
-  await writeFile(join(directory, recordFileName), `${JSON.stringify(record, null, 2)}\n`);
+  const path = join(directory, recordFileName);
+  const temporary = join(directory, `.${recordFileName}.${randomUUID()}`);
+
+  if (await isSymlink(path)) {
+    throw new Error(`Refusing to write through a symlink: ${path}`);
+  }
+
+  try {
+    await writeFile(temporary, `${JSON.stringify(record, null, 2)}\n`, { flag: 'wx' });
+    await rename(temporary, path);
+  } catch (error) {
+    await rm(temporary, { force: true });
+
+    throw error;
+  }
 };
