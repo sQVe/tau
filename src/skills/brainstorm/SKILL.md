@@ -24,9 +24,11 @@ unclear. Do not use it for a design the user already agreed on. Use the
 - Work one round at a time. Stop for the user where a step says so.
 - Before each stop for the user, update `design.md` in the directory from step 1 with the decisions
   so far, the findings, and the open questions. A later session can then resume from it.
-- In the question at each stop, offer "Review in tuicr" over `design.md` as the recommended option.
-  Follow the review loop in the tracker skill's [Procedure](../tracker/SKILL.md#procedure) step 5. A
-  review is never agreement to the design.
+- At each stop, open tuicr on `design.md` before the question and collect after the answer, as the
+  approval rule in the tracker skill's [Procedure](../tracker/SKILL.md#procedure) step 5 says. Treat
+  the collected comments and edits as more answers for the next round. When the user agrees to the
+  design but left a comment, revise `design.md` and ask again. A review is never agreement to the
+  design.
 
 ## Procedure
 

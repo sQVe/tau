@@ -26,10 +26,12 @@ to the user with the `draft_review` tool, which opens it in tuicr.
 
 - The tool copies the drafts to a staging directory outside Git and opens tuicr on it. In herdr it
   opens a right split beside the agent when the agent pane is wide enough for two usable panes, and
-  a new focused tab in the agent's workspace when it is narrow or zoomed. It then waits. Outside
-  herdr it returns the command, and a second call collects the review after the user says done.
-- tuicr exiting, or its pane closing, ends the review. Only cancelling the tool call cancels it.
-- The tool returns the user's comments on the reviewed drafts and a diff of each draft the user
+  a new tab in the agent's workspace when it is narrow or zoomed. Neither takes focus, and `open`
+  returns at once, so the user can answer the approval question while tuicr stays open. Outside
+  herdr it returns the command.
+- After the answer, `collect` closes tuicr and waits for it to exit. The review ends when `collect`
+  runs, not when the user leaves tuicr.
+- `collect` returns the user's comments on the reviewed drafts and a diff of each draft the user
   edited. It deletes only the comments it returned, because other drafts share the session.
 - It writes the user's edits back only when the real file still matches the copy it staged. Any
   other case is a conflict, which the agent resolves. An agent edit is never overwritten.
@@ -38,8 +40,13 @@ to the user with the `draft_review` tool, which opens it in tuicr.
 
 ### Approval
 
-- Approval dialogs keep their preview and offer "Review in tuicr" as the recommended option.
-- A review never counts as approval. After a review, the skill revises the draft and asks again.
+- The skill calls `open` before the approval question, asks with its own options, and calls
+  `collect` after any answer, including a closed dialog.
+- Accept with no comments and no edits is approval. Accept with only edits applies the edits, then
+  approves. Accept with any comment revises the draft, opens it again, and asks again.
+- Request changes acts on the comments, the edits, and the typed answer. With none of them, the
+  skill asks what to change. It then revises, opens again, and asks again.
+- A review alone never counts as approval.
 
 ## Consequences
 
@@ -47,12 +54,12 @@ to the user with the `draft_review` tool, which opens it in tuicr.
 
 - The user comments on exact lines and fixes wording directly, and the agent gets both back as data.
 - One tool owns staging, waiting, filtering, and write-back, so skills add a review with one call.
-- Approval rules do not change.
+- The review no longer adds its own question, so each approval keeps one dialog.
 
 ### Negative
 
 - The review needs tuicr installed. Outside herdr it also needs a manual command and a second call.
-- A review adds a round to each approval it is used in.
+- A comment on an accepted draft adds a round to the approval.
 - The tool depends on tuicr's session list and comment JSON, which a tuicr release can change.
 - Edits the user makes outside the staged copies, such as in the real `.tau` file, are not seen.
 
@@ -74,6 +81,12 @@ could not be reviewed.
 
 `leaf` renders Markdown in the terminal. Rejected because it has no comment store, so the agent
 could read back only file edits.
+
+### A blocking review
+
+A `review` action opens tuicr and waits for it to exit, and the dialog offers a review option.
+Rejected because the user must choose a review before reading the draft, and the agent sits idle
+until tuicr exits.
 
 ### Comments only
 

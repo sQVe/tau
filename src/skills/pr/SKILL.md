@@ -24,7 +24,8 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
 
 - Push, create or edit a PR, or change its draft status only after the user approves the preview. A
   change after approval needs a new preview, unless the approved option or the user's answer already
-  named that exact change and you apply it as stated.
+  named that exact change and you apply it as stated, or the user made it in tuicr during that
+  approval.
 - Ask every question with `ask_user_question`, including review approval and preview approval. Never
   ask in prose.
 - Follow the push rules in the [update-branch skill](../update-branch/SKILL.md). Never force-push
@@ -233,18 +234,20 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
      the head SHA it anchors to. A change to the body, a text, or an anchor needs a new preview,
      unless the user's answer named that exact change and you apply it as stated. The anchor's side
      is `LEFT` for a deleted line and `RIGHT` otherwise; show it with the line.
-   - Ask for approval with these options in this order: Review in tuicr, Publish as draft, Publish
-     as ready, Change something. Recommend Review in tuicr. Put the title and full body in the
-     question-level `preview`.
+   - Follow the approval rule in step 5 of the [tracker skill](../tracker/SKILL.md) over `title.md`,
+     `body.md`, and `release-notes.md` when it exists. Ask with these options in this order: Publish
+     as draft, Publish as ready, Change something. Publish as draft and Publish as ready are Accept.
+     Change something is Request changes. Put the title and full body in the question-level
+     `preview`.
    - In the publish option descriptions, mark the status step 6 suggests. For a draft suggestion,
      give the number of gaps and point to the session report, which lists them, so the user sees
      what ready leaves open. For an existing PR, say whether each option keeps or changes its
      current draft status. Keep each description within the tool's length limit.
    - Publishing as ready with open gaps keeps their `[ ]` verification lines in the body.
    - Closing the dialog publishes nothing. Report that and stop.
-   - Review in tuicr: follow the review loop in step 5 of the [tracker skill](../tracker/SKILL.md)
-     with `title.md`, `body.md`, and `release-notes.md` when it exists. Apply the changes, preview
-     again, and ask again. A review is never approval, and a reviewed change needs a new preview.
+   - A publish answer with only tuicr edits publishes the edited files without a new preview,
+     because the user made those edits. After a comment on a publish answer, or after Change
+     something, revise, preview the new version, and ask again. A review is never approval.
 
 9. Publish.
    - Compare HEAD, local status, and commits to push with the preview; read the PR again. In a
