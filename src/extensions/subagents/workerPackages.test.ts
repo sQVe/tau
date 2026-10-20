@@ -1,6 +1,8 @@
 import { expect, it } from 'vitest';
 
-import { packagesToLoad } from './workerPackages.js';
+// Pi does not export its Git source parser through the public package API.
+import { parseGitUrl } from '../../../node_modules/@earendil-works/pi-coding-agent/dist/utils/git.js';
+import { isLocalPackage, packagesToLoad } from './workerPackages.js';
 
 it.each([
   { profile: [], configured: ['npm:pi-agent-browser-native'], load: [] },
@@ -124,3 +126,43 @@ it.each([
 it.each(['npm:', 'npm:@', 'https://'])('does not throw on the unusual source %s', (source) => {
   expect(packagesToLoad([source, source], [])).toEqual([source]);
 });
+
+it.each([
+  'github:user/repo',
+  'github:probe.ts',
+  'http:x',
+  'https:x',
+  'ssh:x',
+  'https://github.com/u/r',
+  'https://github.com/u/r.git',
+  'https://github.com/u/r@v1',
+  'https://github.com/u/r#main',
+  ' https://github.com/u/r',
+  'HTTPS://github.com/u/r',
+  'http://example.com/a/b/c',
+  'ssh://host/a/b',
+  'ssh://git@host/a/b.git',
+  'https://gist.github.com/abcdef',
+  'https://host/@foo/bar',
+])('classifies %j as Pi does', (source) => {
+  expect(isLocalPackage(source)).toBe(parseGitUrl(source) === null);
+});
+
+it('keeps a malformed scheme URL remote although Pi rejects it, as a known difference', () => {
+  expect(parseGitUrl('https://example.com/r')).toBeNull();
+  expect(isLocalPackage('https://example.com/r')).toBe(false);
+});
+
+it.each(['git:user/repo', 'git:github.com/user/repo', ' git:github.com/user/repo'])(
+  'keeps the git-prefixed source %j remote',
+  (source) => {
+    expect(isLocalPackage(source)).toBe(false);
+  },
+);
+
+it.each(['npm:name', './probe', '/abs/probe', ' npm:name'])(
+  'treats %j as a local path or npm source',
+  (source) => {
+    expect(isLocalPackage(source)).toBe(!source.startsWith('npm:'));
+  },
+);

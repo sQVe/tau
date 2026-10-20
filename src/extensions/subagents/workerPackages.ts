@@ -1,12 +1,19 @@
 // Decides which profile packages a worker loads with -e, from the sources the caller read.
 // tests/structure.test.ts keeps this module pure.
 
-// Pi treats every other source as a local path.
-const remotePrefixes = ['git:', 'github:', 'http:', 'https:', 'ssh:'];
+const gitUrlPattern = /^(?:https?|ssh|git):\/\//i;
 
 // Pi reads `npm:` before it trims a source, so ` npm:name` with a leading space is a local path.
-export const isLocalPackage = (source: string): boolean =>
-  !source.startsWith('npm:') && !remotePrefixes.some((prefix) => source.trim().startsWith(prefix));
+// Pi treats every source that is neither npm nor Git as a local path.
+export const isLocalPackage = (source: string): boolean => {
+  if (source.startsWith('npm:')) {
+    return false;
+  }
+
+  const trimmed = source.trim();
+
+  return !trimmed.startsWith('git:') && !gitUrlPattern.test(trimmed);
+};
 
 const npmName = (spec: string): string =>
   spec.match(/^(@?[^@]+(?:\/[^@]+)?)(?:@.+)?$/)?.[1] ?? spec;
