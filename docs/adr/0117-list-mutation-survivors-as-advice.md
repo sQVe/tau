@@ -21,9 +21,10 @@ Mutation testing is advice at publication and merge: survivors and errors of the
 either one.
 
 The `pr` skill still runs `mutation_check` on the changed lines after the full check. It lists each
-survivor with its file, line, and change in the pull request, reports a tool error on its own line,
-and publishes. Neither counts as a gap that suggests a draft. The `Mutation` CI job is not a
-required status check, so a failed job does not block a merge.
+survivor with its file, line, and change in the session report, reports a tool error on its own
+line, and publishes. The pull request body never lists survivors or tool errors. Neither counts as a
+gap that suggests a draft. The `Mutation` CI job is not a required status check, so a failed job
+does not block a merge.
 
 The `tdd` skill still asks the agent to handle each survivor before hand-off, in the order of
 ADR 0115. That step improves the tests while the agent still has the change in context. It is not a
@@ -35,7 +36,8 @@ from a pass.
 ### Positive
 
 - A change ships without waiting for every survivor to be resolved.
-- Reviewers see the survivors in the pull request and can ask for a test where one matters.
+- The agent and the user see the survivors before publication and can add a test where one matters.
+- The pull request body stays short.
 
 ### Negative
 
@@ -50,7 +52,12 @@ Keep ADR 0115's rule in the `pr` skill. Rejected because it adds a step to every
 check whose purpose is to improve tests, and equivalent mutants still need a disable comment before
 anything ships.
 
+### List survivors in the pull request body
+
+Show each survivor to reviewers in the verification section. Rejected because the user wants that
+output out of pull requests, and a long survivor list crowds out the rest of the body.
+
 ### Drop the mutation check from the `pr` skill
 
-Run mutation testing only in the `tdd` skill and CI. Rejected because the pull request is where a
-reviewer reads the change, and the survivor list helps them judge the tests there.
+Run mutation testing only in the `tdd` skill and CI. Rejected because the survivor list at
+publication still shows where the tests of the change are weak.
