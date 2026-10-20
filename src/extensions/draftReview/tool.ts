@@ -16,7 +16,6 @@ export interface DraftReviewRuntime {
   exec: Exec;
   // The agent's herdr pane, or undefined outside herdr.
   herdrPaneId: () => string | undefined;
-  // Whether the operating system process is still running.
   isProcessRunning: (processId: number) => boolean | Promise<boolean>;
 }
 
