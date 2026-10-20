@@ -28,7 +28,8 @@ to the user with the `draft_review` tool, which opens it in tuicr.
   opens a right split beside the agent when the agent pane is wide enough for two usable panes, and
   a new tab in the agent's workspace when it is narrow or zoomed. Neither takes focus, and `open`
   returns at once, so the user can answer the approval question while tuicr stays open. Outside
-  herdr it returns the command.
+  herdr it returns the command, and the user quits tuicr before answering, because `collect` cannot
+  close it there.
 - After the answer, `collect` closes tuicr and waits for it to exit. The review ends when `collect`
   runs, not when the user leaves tuicr.
 - `collect` returns the user's comments on the reviewed drafts and a diff of each draft the user
@@ -43,7 +44,9 @@ to the user with the `draft_review` tool, which opens it in tuicr.
 - The skill calls `open` before the approval question, asks with its own options, and calls
   `collect` after any answer, including a closed dialog.
 - Accept with no comments and no edits is approval. Accept with only edits applies the edits, then
-  approves. Accept with any comment revises the draft, opens it again, and asks again.
+  approves. An edit that conflicts with a change to the real file is merged by hand and shown again,
+  because the user has not seen the merge. Accept with any comment revises the draft, opens it
+  again, and asks again.
 - Request changes acts on the comments, the edits, and the typed answer. With none of them, the
   skill asks what to change. It then revises, opens again, and asks again.
 - A review alone never counts as approval.

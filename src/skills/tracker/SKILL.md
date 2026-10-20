@@ -131,14 +131,16 @@ writes a tool makes, such as `slice` `apply`.
 5. Open a review of the draft files beside each approval, then preview.
    - Approval rule: use it at each approval of a draft, in this order.
      1. Before the approval question, call `draft_review` with action `open` on the draft files.
-        When it returns status `manual`, tell the user its command before the question.
+        When it returns status `manual`, tell the user its command before the question, and to quit
+        tuicr before they answer. Outside herdr, `collect` cannot close tuicr or wait for it.
      2. Ask the question with the skill's own options. Do not offer a review option.
      3. After any answer, including a closed dialog, call `draft_review` with action `collect` and
         the `directory` that `open` returned.
-     4. Accept with no comments and no edits: accept. Accept with only edits: an edit with status
-        `applied` is already in the draft, merge an edit with status `conflict` by hand, then
-        accept. Accept with any comment: revise the draft, `open` again on the new version, and ask
-        again.
+     4. Accept with no comments and no edits: accept. Accept with only edits that all have status
+        `applied`: they are already in the draft, so accept. An edit with status `conflict`: merge
+        it by hand, `open` again on the merged version, and ask again, because the user has not seen
+        the merge. Accept with any comment: revise the draft, `open` again on the new version, and
+        ask again.
      5. Request changes: act on the comments, the edits, and the typed answer. When there are none,
         ask what to change. Then revise the draft, `open` again on the new version, and ask again.
    - Stop: before a new ticket or a title or body edit on any ticket, except an agent ticket, ask

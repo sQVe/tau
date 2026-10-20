@@ -245,9 +245,10 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
      current draft status. Keep each description within the tool's length limit.
    - Publishing as ready with open gaps keeps their `[ ]` verification lines in the body.
    - Closing the dialog publishes nothing. Report that and stop.
-   - A publish answer with only tuicr edits publishes the edited files without a new preview,
-     because the user made those edits. After a comment on a publish answer, or after Change
-     something, revise, preview the new version, and ask again. A review is never approval.
+   - A publish answer with only applied tuicr edits publishes the edited files without a new
+     preview, because the user made those edits. After a comment or a conflict on a publish answer,
+     or after Change something, revise, preview the new version, and ask again. A review is never
+     approval.
 
 9. Publish.
    - Compare HEAD, local status, and commits to push with the preview; read the PR again. In a
