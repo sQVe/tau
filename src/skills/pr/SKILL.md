@@ -38,8 +38,6 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
   fix supported, in-scope review findings and the in-scope causes of failing checks without asking,
   unless the user asked for a read-only review or no changes. On anyone else's, fix only with the
   user's approval. Never weaken a check or add a retry to hide a failure.
-- A failing `mutation_check`, for survivors or a tool error, is advice. It is not a failing check to
-  fix or a failure that stops the flow. Step 8 lists it in the session report, never in the body.
 - On updates, keep title and body text you did not write this session. Change only wrong or missing
   facts, and preview each change.
 - After a partial failure, stop and report what completed. Read the remote branch and PR before
@@ -135,13 +133,6 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
    - When the repository has a configured full check, run it with the `full_check` tool, passing the
      pinned merge base as `base`. Append the log it returns after the header lines. The tool returns
      a saved passing log without a run when the head, base, command, and changes are unchanged.
-   - After the full check, whether `full_check` or the repository's own command ran it, run
-     `mutation_check` with `mode: "changed"`, passing the pinned merge base as `base`. Save the
-     `checkHeader` lines, the tool's result text, and then the content of the log it returns as
-     `$prdir/checks/mutation.log`. The result text holds the verdict and the survivors. Do not fix
-     survivors or rerun here. Record each survivor's file, line, and change for step 8. Record an
-     error of the tool apart from the survivors. When the tool fails because the repository has no
-     `mutation.argv` in `.pi/tau.json`, skip this step and note it in the session report.
    - When the change has user-visible behavior, also send it to a `qa` worker on the committed tree
      before the preview.
    - Leave the app URL, test account, and data writes to Tau, which fills them from the user's
@@ -225,11 +216,6 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
      history, reviewed commits, fixes accepted without a new review and what each fixes, rebase
      notes, machine-local failures that do not block relevant coverage, reviewer notes, dismissed
      findings with their reasons, and gaps.
-   - In the session report, give each `mutation_check` survivor from step 5 one line with its file,
-     line, and change. When an earlier `tdd` or `triage-findings` report in the session, or a
-     handover, lists a survivor as equivalent, add that reason to its line. List at most 10, then
-     the count of the rest. Give a `mutation_check` error its own line. Survivors and errors are
-     neither gaps nor a stop.
    - For a self-review, show the review's top-level body and each comment's text, file, line, and
      the head SHA it anchors to. A change to the body, a text, or an anchor needs a new preview,
      unless the user's answer named that exact change and you apply it as stated. The anchor's side

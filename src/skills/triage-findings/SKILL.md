@@ -50,9 +50,7 @@ changing and within the requested scope. Explain the rest.
    - Weigh each fix against the branches, guards, and abstractions it adds.
    - Put defensive checks where untrusted input enters, not inside trusted code.
    - When a simpler change covers the concern, make that one instead.
-   - For a surviving mutant, in this order: write a test that kills a real gap; simplify redundant
-     code the mutant points at. A true equivalent mutant is Not worth changing: leave the code as it
-     is and report the mutant with its reason.
+   - For a surviving mutant, follow the mutation step of the [tdd skill](../tdd/SKILL.md).
 4. Run the checks that cover your changes.
 5. Report every finding under one heading per outcome, in this order: Fixed, Not worth changing,
    Incorrect, and Blocked. Write "None" under an empty heading.

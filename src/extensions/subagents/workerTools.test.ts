@@ -42,14 +42,11 @@ it.each(['tdd', 'fix-bug', 'pr'])(
   },
 );
 
-it.each(['tdd', 'pr'])(
-  'gives a worker that loads the %s skill the mutation_check tool',
-  (skill) => {
-    const loadout = { tools: ['read'], skills: [`/skills/${skill}/SKILL.md`] };
+it('gives a worker that loads the tdd skill the mutation_check tool', () => {
+  const loadout = { tools: ['read'], skills: ['/skills/tdd/SKILL.md'] };
 
-    expect(workerTools(loadout, bundledSkillTools)).toContain('mutation_check');
-  },
-);
+  expect(workerTools(loadout, bundledSkillTools)).toContain('mutation_check');
+});
 
 it('finds the skill by the directory above SKILL.md at any depth', () => {
   const skills = ['/home/user/.pi/agent/skills/tracker/SKILL.md'];
