@@ -1192,3 +1192,151 @@ it.each([
     expect(herdrCalls.at(-1)).toEqual(close);
   },
 );
+
+const processHerdr =
+  (answer: string): Herdr =>
+  async (argumentsList) => {
+    if (argumentsList[1] === 'split') {
+      return paneInfo;
+    }
+
+    return argumentsList[1] === 'process-info' ? answer : '';
+  };
+
+const listing = (paneId: string) =>
+  JSON.stringify({
+    result: {
+      panes: [{ pane_id: paneId, terminal_id: 't2', workspace_id: 'w', tab_id: 'w:t1' }],
+    },
+  });
+
+// The terminal t2 sits at w:p2 until `move` runs on a call to w:p2, then at w:p9.
+const movingHerdr = (moveOn: 'process-info' | 'close') => {
+  const state = { moved: false };
+
+  const herdr: Herdr = async (argumentsList) => {
+    const [group, action] = argumentsList;
+    const target = argumentsList.at(-1);
+
+    if (action === 'split') {
+      return paneInfo;
+    }
+
+    if (group === 'pane' && action === 'list') {
+      return listing(state.moved ? 'w:p9' : 'w:p2');
+    }
+
+    if (action === moveOn && target === 'w:p2' && !state.moved) {
+      state.moved = true;
+      throw new Error('herdr failed: {"error":{"code":"pane_not_found"}}');
+    }
+
+    return action === 'process-info' ? processInfo(4242) : '';
+  };
+
+  return herdr;
+};
+
+it.each(['process-info', 'close'] as const)(
+  'follows a terminal moved before %s, closes it at the new pane, and waits before deleting',
+  async (moveOn) => {
+    const state = { checks: 0, deletedEarly: false };
+
+    const context = await fixture(movingHerdr(moveOn), async () => {
+      state.checks += 1;
+      state.deletedEarly ||= (await context.deleted()).length > 0;
+
+      return state.checks < 3;
+    });
+
+    const { run, setSession, deleted, herdrCalls } = context;
+    const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
+    await setSession([comment('on-a', 'slices/a.md')]);
+
+    const directory = (opened.details as { directory: string }).directory;
+    const collected = await run({ action: 'collect', directory });
+
+    expect(collected.details).toMatchObject({ status: 'reviewed' });
+    const infoPane = moveOn === 'process-info' ? 'w:p9' : 'w:p2';
+
+    expect(herdrCalls).toContainEqual(['pane', 'process-info', '--pane', infoPane]);
+    expect(herdrCalls).toContainEqual(['pane', 'close', 'w:p9']);
+    expect(state.checks).toBe(3);
+    expect(state.deletedEarly).toBe(false);
+    expect(await deleted()).toEqual(['on-a']);
+  },
+);
+
+it.each([
+  { label: 'empty output', answer: '' },
+  { label: 'a missing process_info', answer: JSON.stringify({ result: {} }) },
+  {
+    label: 'a missing foreground_processes',
+    answer: JSON.stringify({ result: { process_info: {} } }),
+  },
+  {
+    label: 'a non-array foreground_processes',
+    answer: JSON.stringify({ result: { process_info: { foreground_processes: 'x' } } }),
+  },
+  { label: 'a non-number pid', answer: processInfo('abc' as unknown as number) },
+])(
+  'refuses $label from process-info, deletes nothing, and keeps the record',
+  async ({ answer }) => {
+    const { run, setSession, deleted, records } = await fixture(processHerdr(answer));
+
+    const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
+    await setSession([comment('on-a', 'slices/a.md')]);
+
+    const directory = (opened.details as { directory: string }).directory;
+
+    await expect(run({ action: 'collect', directory })).rejects.toThrow(directory);
+
+    expect(await deleted()).toEqual([]);
+    expect(await records()).toHaveLength(1);
+  },
+);
+
+it('names the bad process-info output in the error', async () => {
+  const { run } = await fixture(processHerdr('{"result":{"process_info":{}}}'));
+
+  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
+  const directory = (opened.details as { directory: string }).directory;
+
+  await expect(run({ action: 'collect', directory })).rejects.toThrow('process_info');
+});
+
+it.each([
+  { label: 'a missing tabs', answer: JSON.stringify({ result: {} }) },
+  { label: 'a non-array tabs', answer: JSON.stringify({ result: { tabs: 'x' } }) },
+  { label: 'empty output', answer: '' },
+  { label: 'an entry with no fields', answer: JSON.stringify({ result: { tabs: [{}] } }) },
+  {
+    label: 'a string focused',
+    answer: JSON.stringify({ result: { tabs: [{ tab_id: 'w:t2', focused: 'yes' }] } }),
+  },
+  {
+    label: 'a null entry after the focused tab',
+    answer: JSON.stringify({ result: { tabs: [{ tab_id: 'w:t2', focused: true }, null] } }),
+  },
+])('refuses $label from tab list, deletes nothing, and keeps the record', async ({ answer }) => {
+  const { run, setSession, deleted, records, herdrCalls } = await fixture(
+    tabHerdr(100, false, async (argumentsList) => {
+      if (argumentsList[1] === 'process-info') {
+        return processInfo(4242);
+      }
+
+      return argumentsList[0] === 'tab' && argumentsList[1] === 'list' ? answer : '';
+    }),
+  );
+
+  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
+  await setSession([comment('on-a', 'slices/a.md')]);
+
+  const directory = (opened.details as { directory: string }).directory;
+
+  await expect(run({ action: 'collect', directory })).rejects.toThrow(directory);
+
+  expect(await deleted()).toEqual([]);
+  expect(await records()).toHaveLength(1);
+  expect(steps(herdrCalls)).not.toContain('tab close');
+});

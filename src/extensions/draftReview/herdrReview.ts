@@ -74,8 +74,9 @@ const herdrCaller =
       'herdr',
     );
 
-const closePane = (herdr: HerdrCall, paneId: string) =>
-  herdr(['pane', 'close', paneId]).then(() => undefined, ignoreMissing('pane_not_found'));
+const closePane = async (herdr: HerdrCall, paneId: string): Promise<void> => {
+  await herdr(['pane', 'close', paneId]);
+};
 
 const splitArguments = (request: PaneRequest, focus: boolean): string[] => {
   const argumentsList = [
@@ -168,7 +169,7 @@ const closeAt = async (
   herdr: HerdrCall,
   placement: OpenedPlacement,
   location: TerminalLocation,
-  refocus: () => Promise<boolean>,
+  refocus: () => boolean | Promise<boolean>,
 ): Promise<void> => {
   if (placement.kind === 'split' || location.tabId !== placement.tabId) {
     await closePane(herdr, location.paneId);
@@ -198,27 +199,60 @@ const sleep = (milliseconds: number, signal: AbortSignal | undefined): Promise<v
     signal?.addEventListener('abort', finish, { once: true });
   });
 
-const foregroundProcessIds = async (herdr: HerdrCall, paneId: string): Promise<number[]> => {
-  const output = await herdr(['pane', 'process-info', '--pane', paneId]).catch((error: unknown) => {
-    ignoreMissing('pane_not_found')(error);
+const malformed = (what: string, output: string, recordDirectory: string): Error =>
+  new Error(
+    `herdr returned ${what} that tau cannot read, so tuicr was not closed and no comment was deleted: ${output}. The review record is ${recordDirectory}; call collect with it to try again.`,
+  );
 
-    return '';
-  });
+const parseProcessIds = (output: string, recordDirectory: string): number[] => {
+  const fail = () => malformed('process info', JSON.stringify(output), recordDirectory);
+  let processes: unknown;
 
-  if (output === '') {
-    return [];
+  try {
+    processes = requireObject(result(output).process_info).foreground_processes;
+  } catch {
+    throw fail();
   }
-
-  const info = requireObject(result(output).process_info);
-  const processes = info.foreground_processes;
 
   if (!Array.isArray(processes)) {
-    return [];
+    throw fail();
   }
 
-  return processes
-    .map((process) => requireObject(process).pid)
-    .filter((pid): pid is number => typeof pid === 'number');
+  const processIds = processes.map((process: unknown) =>
+    typeof process === 'object' && process !== null && 'pid' in process ? process.pid : undefined,
+  );
+
+  if (!processIds.every((pid): pid is number => typeof pid === 'number')) {
+    throw fail();
+  }
+
+  return processIds;
+};
+
+const isTabEntry = (tab: unknown): tab is { tab_id: string; focused: boolean } => {
+  if (typeof tab !== 'object' || tab === null) {
+    return false;
+  }
+
+  const hasTabId = 'tab_id' in tab && typeof tab.tab_id === 'string';
+
+  return hasTabId && 'focused' in tab && typeof tab.focused === 'boolean';
+};
+
+const parseFocused = (output: string, tabId: string, recordDirectory: string): boolean => {
+  let tabs: unknown;
+
+  try {
+    tabs = result(output).tabs;
+  } catch {
+    tabs = undefined;
+  }
+
+  if (!Array.isArray(tabs) || !tabs.every(isTabEntry)) {
+    throw malformed('a tab list', JSON.stringify(output), recordDirectory);
+  }
+
+  return tabs.some((tab) => tab.tab_id === tabId && tab.focused);
 };
 
 const anyRunning = async (
@@ -253,40 +287,6 @@ const waitForExit = async (request: CloseRequest, processIds: number[]): Promise
   );
 };
 
-// Closes the review left by an earlier open and waits until tuicr has exited. Does nothing when
-// the terminal is gone.
-export const closePlacement = async (request: CloseRequest): Promise<void> => {
-  const { placement } = request;
-  const herdr = herdrCaller(request);
-
-  const location = await findTerminal(placement.terminalId, (argumentsList) =>
-    herdr(argumentsList),
-  );
-
-  if (location === undefined) {
-    return;
-  }
-
-  const processIds = await foregroundProcessIds(herdr, location.paneId);
-
-  const tabWasFocused = async () => {
-    const listed = await herdr(['tab', 'list', '--workspace', location.workspaceId]);
-    const tabs = result(listed).tabs;
-
-    return (
-      Array.isArray(tabs) &&
-      tabs.some((tab) => {
-        const entry = requireObject(tab);
-
-        return entry.tab_id === location.tabId && entry.focused === true;
-      })
-    );
-  };
-
-  await closeAt(herdr, placement, location, tabWasFocused);
-  await waitForExit(request, processIds);
-};
-
 const locateTerminal = (herdr: HerdrCall, terminalId: string, waitSignal?: AbortSignal) =>
   findTerminal(terminalId, (argumentsList) => herdr(argumentsList, waitSignal));
 
@@ -297,14 +297,14 @@ const atTerminal = async (
   herdr: HerdrCall,
   signal: AbortSignal | undefined,
   terminalId: string,
-  action: (paneId: string) => Promise<unknown>,
+  action: (location: TerminalLocation) => Promise<unknown>,
 ): Promise<boolean> => {
   let location = await locateTerminal(herdr, terminalId, signal);
 
   while (location !== undefined) {
     try {
       // oxlint-disable-next-line no-await-in-loop -- Each try follows the terminal to its new pane.
-      await action(location.paneId);
+      await action(location);
 
       return true;
     } catch (error) {
@@ -327,6 +327,36 @@ const atTerminal = async (
   return false;
 };
 
+// Closes the review left by an earlier open and waits until tuicr has exited. Does nothing when
+// the terminal is gone.
+export const closePlacement = async (request: CloseRequest): Promise<void> => {
+  const { placement, recordDirectory, signal } = request;
+  const herdr = herdrCaller(request);
+  let processIds: number[] = [];
+
+  const found = await atTerminal(herdr, signal, placement.terminalId, async (location) => {
+    const output = await herdr(['pane', 'process-info', '--pane', location.paneId]);
+
+    processIds = parseProcessIds(output, recordDirectory);
+  });
+
+  if (!found) {
+    return;
+  }
+
+  await atTerminal(herdr, signal, placement.terminalId, async (location) => {
+    const tabWasFocused = async () => {
+      const listed = await herdr(['tab', 'list', '--workspace', location.workspaceId]);
+
+      return parseFocused(listed, location.tabId, recordDirectory);
+    };
+
+    await closeAt(herdr, placement, location, tabWasFocused);
+  });
+
+  await waitForExit(request, processIds);
+};
+
 // Closes a review surface that open made, from wherever its terminal is now. Never moves focus,
 // because open did not.
 export const closeOpened = async (
@@ -337,7 +367,7 @@ export const closeOpened = async (
   const remaining = await locateTerminal(herdr, placement.terminalId);
 
   if (remaining !== undefined) {
-    await closeAt(herdr, placement, remaining, () => Promise.resolve(false));
+    await closeAt(herdr, placement, remaining, () => false).catch(ignoreMissing('pane_not_found'));
   }
 };
 
@@ -349,7 +379,7 @@ export const openReview = async (request: PaneRequest): Promise<OpenedPlacement>
   const placement = await openPlacement(herdr, request, false);
 
   try {
-    await atTerminal(herdr, request.signal, placement.terminalId, (paneId) =>
+    await atTerminal(herdr, request.signal, placement.terminalId, ({ paneId }) =>
       herdr(['pane', 'run', paneId, request.command], request.signal),
     );
   } catch (error) {
@@ -391,13 +421,13 @@ export const runInPane = async (request: PaneRequest): Promise<boolean> => {
   const line = `${request.command}; printf 'tau-draft-review-done-%s\\n' ${quote(suffix)}`;
 
   try {
-    const started = await atTerminal(herdr, signal, terminalId, (paneId) =>
+    const started = await atTerminal(herdr, signal, terminalId, ({ paneId }) =>
       herdr(['pane', 'run', paneId, line], signal),
     );
 
     // A terminal the user closed before or during the review ends it.
     if (started) {
-      await atTerminal(herdr, signal, terminalId, (paneId) =>
+      await atTerminal(herdr, signal, terminalId, ({ paneId }) =>
         herdr(['pane', 'wait-output', paneId, '--match', marker], signal),
       );
     }
@@ -413,7 +443,7 @@ export const runInPane = async (request: PaneRequest): Promise<boolean> => {
     const remaining = await locate(terminalId);
 
     if (remaining !== undefined) {
-      await closeAt(herdr, placement, remaining, () => Promise.resolve(true));
+      await closeAt(herdr, placement, remaining, () => true).catch(ignoreMissing('pane_not_found'));
     }
   }
 };
