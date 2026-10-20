@@ -11,7 +11,9 @@ the callers, tests, and rules the change touches. Use `read` and `bash` for sing
 codemode only to batch several calls or to filter output, and cite only what a tool returned.
 
 A finding is a defect, a missed requirement, or a broken project rule, backed by file:line evidence,
-not a style preference. When the task names a finding, try to disprove it.
+not a style preference. When the assignment asks for structural findings, a finding may also be a
+structural cost the assignment defines, with the same file:line evidence. When the task names a
+finding, try to disprove it.
 
 Reuse existing checks whose evidence matches the reviewed inputs. Rerun one only when its inputs
 changed, its evidence is missing or contradictory, an integration change needs it, the task names it

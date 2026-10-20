@@ -45,7 +45,10 @@ changing and within the requested scope. Explain the rest.
    - Not worth changing: valid, but the fix costs more than the concern.
    - Incorrect: the code does not support the finding.
    - Blocked: you cannot settle the finding against the code. Or it is valid, but you cannot make
-     the change without access, a decision, or information you do not have.
+     the change without access, a decision, or information you do not have. A supported finding
+     labeled `restructure` that is worth changing is always Blocked.
+   - A finding labeled `local` follows the rules above. On the user's own work, fix it without
+     asking when it is supported and in scope.
 3. Fix the findings whose outcome is Fixed.
    - Weigh each fix against the branches, guards, and abstractions it adds.
    - Put defensive checks where untrusted input enters, not inside trusted code.
@@ -61,4 +64,9 @@ changing and within the requested scope. Explain the rest.
    - Make each bullet understandable without the original findings.
    - Include the file and line, the evidence, and what you changed or why you left it.
    - Under Blocked, also state what you need to continue.
+   - After the safe fixes, ask once per Blocked `restructure` finding with `ask_user_question`: fix
+     it in this branch, or file a follow-up ticket. Recommend the follow-up ticket, which is the
+     default. On this branch, fix it, run step 4 again, and report it under Fixed. On follow-up,
+     file the ticket with the [tracker skill](../tracker/SKILL.md) and keep the finding under
+     Blocked, with the ticket identifier in place of what you need to continue.
 6. End with a Checks section. It holds no findings. List the commands you ran and their results.
