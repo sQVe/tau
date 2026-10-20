@@ -143,6 +143,8 @@ writes a tool makes, such as `slice` `apply`.
         ask again.
      5. Request changes: act on the comments, the edits, and the typed answer. When there are none,
         ask what to change. Then revise the draft, `open` again on the new version, and ask again.
+     6. Closed dialog: write nothing. Report the collected comments and each edit with its status,
+        so no comment is lost, and stop.
    - Stop: before a new ticket or a title or body edit on any ticket, except an agent ticket, ask
      with `ask_user_question` the options Write as drafted (Accept) and Request changes. Comments,
      relations, and status changes get no stop. A write that needs approval under
