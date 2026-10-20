@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "stagingDirectory": "/tmp/tau-draft-review-abc123",
+  "paths": ["slices/a.md", "tickets/c.md"],
+  "placement": {
+    "kind": "tab",
+    "terminalId": "t1",
+    "tabId": "tab2",
+    "agentTabId": "tab1",
+    "processIds": [4242]
+  }
+}

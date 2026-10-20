@@ -4,6 +4,7 @@ import {
   mkdtemp,
   readFile,
   realpath,
+  rename,
   rm,
   stat,
   writeFile,
@@ -27,33 +28,76 @@ export interface Review {
   // A directory outside Git that tuicr opens, with the files laid out by their `.tau` paths.
   stagingDirectory: string;
   paths: string[];
+  // Where tuicr runs, so a later collect can close it. `null` until a placement is saved.
+  placement: SavedPlacement | null;
+}
+
+export interface ReviewManifest {
+  version: 1 | 2;
+  stagingDirectory: string;
+  paths: string[];
+  placement: SavedPlacement | null;
 }
 
 const recordParent = 'draft-review';
 const recordPrefix = 'review-';
 const manifestName = 'review.json';
-const manifestVersion = 1;
+const manifestVersion = 2;
 
-const manifestSchema = Type.Object(
+const placementSchema = Type.Union([
+  Type.Object(
+    {
+      kind: Type.Literal('split'),
+      terminalId: Type.String({ minLength: 1 }),
+      processIds: Type.Optional(Type.Array(Type.Integer())),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      kind: Type.Literal('tab'),
+      terminalId: Type.String({ minLength: 1 }),
+      tabId: Type.String({ minLength: 1 }),
+      agentTabId: Type.String({ minLength: 1 }),
+      processIds: Type.Optional(Type.Array(Type.Integer())),
+    },
+    { additionalProperties: false },
+  ),
+]);
+
+export type SavedPlacement = Static<typeof placementSchema>;
+
+const versionOneSchema = Type.Object(
   {
-    version: Type.Literal(manifestVersion),
+    version: Type.Literal(1),
     stagingDirectory: Type.String({ minLength: 1 }),
     paths: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
   },
   { additionalProperties: false },
 );
 
+const manifestSchema = Type.Object(
+  {
+    version: Type.Literal(manifestVersion),
+    stagingDirectory: Type.String({ minLength: 1 }),
+    paths: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
+    placement: Type.Union([Type.Null(), placementSchema]),
+  },
+  { additionalProperties: false },
+);
+
+const versionOf = (value: unknown) =>
+  typeof value === 'object' && value !== null && 'version' in value ? value.version : undefined;
+
 const isNewerVersion = (value: unknown) => {
-  const version =
-    typeof value === 'object' && value !== null && 'version' in value ? value.version : undefined;
+  const version = versionOf(value);
 
   return typeof version === 'number' && version > manifestVersion;
 };
 
-export const parseReviewManifest = (
-  path: string,
-  content: string,
-): Static<typeof manifestSchema> => {
+const isVersionOne = (value: unknown) => versionOf(value) === 1;
+
+export const parseReviewManifest = (path: string, content: string): ReviewManifest => {
   let value: unknown;
 
   try {
@@ -66,6 +110,16 @@ export const parseReviewManifest = (
     throw new Error(
       `Review record ${path} has a newer format than this Tau reads. Update Tau, then restart the session.`,
     );
+  }
+
+  if (isVersionOne(value)) {
+    if (!Value.Check(versionOneSchema, value)) {
+      throw new Error(
+        `Malformed review record ${path}: ${describeSchemaProblem(versionOneSchema, value)}.`,
+      );
+    }
+
+    return { ...value, placement: null };
   }
 
   if (!Value.Check(manifestSchema, value)) {
@@ -175,6 +229,32 @@ const copyInto = async (from: string, to: string) => {
   await copyFile(from, to);
 };
 
+const writeManifest = async (review: Review, placement: SavedPlacement | null) => {
+  const { recordDirectory, stagingDirectory, paths } = review;
+  const manifest = { version: manifestVersion, stagingDirectory, paths, placement };
+
+  const target = join(recordDirectory, manifestName);
+  const temporary = `${target}.tmp`;
+
+  await writeFile(temporary, JSON.stringify(manifest, null, 2));
+  await rename(temporary, target);
+};
+
+export const savePlacement = async (review: Review, placement: SavedPlacement): Promise<void> => {
+  await writeManifest(review, placement);
+  review.placement = placement;
+};
+
+// Saves the tuicr process IDs before the terminal closes, so a collect retry can still wait for
+// tuicr to exit.
+export const saveProcessIds = async (review: Review, processIds: number[]): Promise<void> => {
+  if (review.placement === null) {
+    throw new Error(`Review record ${review.recordDirectory} has no placement to save into.`);
+  }
+
+  await savePlacement(review, { ...review.placement, processIds });
+};
+
 const populateReview = async (review: Review) => {
   const { tauDirectory, recordDirectory, stagingDirectory, paths } = review;
 
@@ -194,9 +274,7 @@ const populateReview = async (review: Review) => {
     throw failed.reason;
   }
 
-  const manifest = { version: manifestVersion, stagingDirectory, paths };
-
-  await writeFile(join(recordDirectory, manifestName), JSON.stringify(manifest, null, 2));
+  await writeManifest(review, null);
 };
 
 export const stageReview = async (cwd: string, requested: readonly string[]): Promise<Review> => {
@@ -209,7 +287,7 @@ export const stageReview = async (cwd: string, requested: readonly string[]): Pr
   try {
     stagingDirectory = await mkdtemp(join(tmpdir(), stagingPrefix));
 
-    const review = { tauDirectory, recordDirectory, stagingDirectory, paths };
+    const review = { tauDirectory, recordDirectory, stagingDirectory, paths, placement: null };
 
     await populateReview(review);
 
@@ -254,7 +332,7 @@ export const readReview = async (cwd: string, directory: string): Promise<Review
 
   const manifest = parseReviewManifest(manifestPath, content);
 
-  const { stagingDirectory, paths } = manifest;
+  const { stagingDirectory, paths, placement } = manifest;
 
   if (!isOwnStagingDirectory(stagingDirectory)) {
     throw new Error(
@@ -268,7 +346,7 @@ export const readReview = async (cwd: string, directory: string): Promise<Review
 
   const tauDirectory = await realpath(join(root, '.tau'));
 
-  return { tauDirectory, recordDirectory, stagingDirectory, paths };
+  return { tauDirectory, recordDirectory, stagingDirectory, paths, placement };
 };
 
 export const removeReview = async (review: Review): Promise<void> => {

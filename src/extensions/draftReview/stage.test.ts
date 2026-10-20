@@ -6,46 +6,19 @@ import { join } from 'node:path';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
-import { parseReviewManifest, readReview, stageReview } from './stage.js';
+import {
+  parseReviewManifest,
+  readReview,
+  savePlacement,
+  saveProcessIds,
+  stageReview,
+} from './stage.js';
 import type { Review } from './stage.js';
 
 const fixtures = join(import.meta.dirname, 'fixtures', 'review');
 const path = '/record/review.json';
 
 const fixtureText = (name: string) => readFile(join(fixtures, name), 'utf8');
-
-it('reads a current manifest', async () => {
-  expect(parseReviewManifest(path, await fixtureText('version-1.json'))).toEqual({
-    version: 1,
-    stagingDirectory: '/tmp/tau-draft-review-abc123',
-    paths: ['slices/a.md', 'tickets/c.md'],
-  });
-});
-
-it('refuses a malformed fixture, naming the path', async () => {
-  expect(() => parseReviewManifest(path, '{}')).toThrow(
-    /Malformed review record \/record\/review.json/,
-  );
-
-  expect(() => parseReviewManifest(path, '{')).toThrow(/Malformed review record .*not JSON/);
-  const fixture = await fixtureText('malformed.json');
-
-  expect(() => parseReviewManifest(path, fixture)).toThrow(
-    /Malformed review record \/record\/review.json/,
-  );
-});
-
-it('refuses a newer fixture with its own error', async () => {
-  const text = await fixtureText('newer.json');
-
-  expect(() => parseReviewManifest(path, text)).toThrow(/newer format/);
-});
-
-it('refuses an unknown field', () => {
-  const text = '{"version":1,"stagingDirectory":"/tmp/x","paths":["a.md"],"x":1}';
-
-  expect(() => parseReviewManifest(path, text)).toThrow(/Malformed review record/);
-});
 
 const stagedFixture = async () => {
   const repository = await createTemporaryRepository(onTestFinished, 'tau-stage-repo-');
@@ -84,6 +57,116 @@ it.each([
   await expect(readReview(repository, review.recordDirectory)).rejects.toThrow(
     /names a path outside \.tau/,
   );
+});
+
+it('reads a version 2 manifest with a tab placement', async () => {
+  expect(parseReviewManifest(path, await fixtureText('version-2.json'))).toEqual({
+    version: 2,
+    stagingDirectory: '/tmp/tau-draft-review-abc123',
+    paths: ['slices/a.md', 'tickets/c.md'],
+    placement: {
+      kind: 'tab',
+      terminalId: 't1',
+      tabId: 'tab2',
+      agentTabId: 'tab1',
+      processIds: [4242],
+    },
+  });
+});
+
+it('reads a version 1 manifest with no placement', async () => {
+  expect(parseReviewManifest(path, await fixtureText('version-1.json'))).toEqual({
+    version: 1,
+    stagingDirectory: '/tmp/tau-draft-review-abc123',
+    paths: ['slices/a.md', 'tickets/c.md'],
+    placement: null,
+  });
+});
+
+it('refuses a version 1 manifest that holds a placement', () => {
+  const text =
+    '{"version":1,"stagingDirectory":"/tmp/x","paths":["a.md"],"placement":{"kind":"split","terminalId":"t"}}';
+
+  expect(() => parseReviewManifest(path, text)).toThrow(/Malformed review record/);
+});
+
+it.each([
+  { label: 'an unknown kind', placement: { kind: 'window', terminalId: 't' } },
+  { label: 'no terminal id', placement: { kind: 'split' } },
+  {
+    label: 'a process ID that is not a number',
+    placement: { kind: 'split', terminalId: 't', processIds: ['4'] },
+  },
+])('refuses a placement with $label, naming the path', ({ placement }) => {
+  const text = JSON.stringify({
+    version: 2,
+    stagingDirectory: '/tmp/x',
+    paths: ['a.md'],
+    placement,
+  });
+
+  expect(() => parseReviewManifest(path, text)).toThrow(
+    /Malformed review record \/record\/review.json/,
+  );
+});
+
+it('refuses a version 2 manifest without a placement', () => {
+  const text = '{"version":2,"stagingDirectory":"/tmp/x","paths":["a.md"]}';
+
+  expect(() => parseReviewManifest(path, text)).toThrow(/Malformed review record/);
+});
+
+it('reads back a saved split placement with the same paths and staging directory', async () => {
+  const { repository } = await stagedFixture();
+  const review = await stageReview(repository, ['.tau/slices/a.md']);
+  const placement = { kind: 'split', terminalId: 't9' } as const;
+
+  expect((await readReview(repository, review.recordDirectory)).placement).toBeNull();
+
+  await savePlacement(review, placement);
+
+  const read = await readReview(repository, review.recordDirectory);
+
+  expect(read).toEqual({ ...review, placement });
+});
+
+it('reads back process IDs saved into the placement', async () => {
+  const { repository } = await stagedFixture();
+  const review = await stageReview(repository, ['.tau/slices/a.md']);
+
+  await expect(saveProcessIds(review, [7])).rejects.toThrow(review.recordDirectory);
+
+  await savePlacement(review, { kind: 'split', terminalId: 't9' });
+  await saveProcessIds(review, [7, 8]);
+
+  const read = await readReview(repository, review.recordDirectory);
+
+  expect(read.placement).toEqual({ kind: 'split', terminalId: 't9', processIds: [7, 8] });
+});
+
+it('refuses a malformed fixture, naming the path', async () => {
+  expect(() => parseReviewManifest(path, '{}')).toThrow(
+    /Malformed review record \/record\/review.json/,
+  );
+
+  expect(() => parseReviewManifest(path, '{')).toThrow(/Malformed review record .*not JSON/);
+  const fixture = await fixtureText('malformed.json');
+
+  expect(() => parseReviewManifest(path, fixture)).toThrow(
+    /Malformed review record \/record\/review.json/,
+  );
+});
+
+it('refuses a newer fixture with its own error', async () => {
+  const text = await fixtureText('newer.json');
+
+  expect(() => parseReviewManifest(path, text)).toThrow(/newer format/);
+});
+
+it('refuses an unknown field', () => {
+  const text = '{"version":1,"stagingDirectory":"/tmp/x","paths":["a.md"],"x":1}';
+
+  expect(() => parseReviewManifest(path, text)).toThrow(/Malformed review record/);
 });
 
 const tamperManifest = async (review: Review, changes: Record<string, unknown>) => {
