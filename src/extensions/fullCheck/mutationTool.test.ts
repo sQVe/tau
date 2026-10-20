@@ -1,5 +1,14 @@
 import { execFile } from 'node:child_process';
-import { appendFile, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  appendFile,
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -157,34 +166,71 @@ const waitFor = async (condition: () => Promise<boolean> | boolean) => {
   throw new Error('Timed out waiting for the condition.');
 };
 
-it('fails and lists the file, line, mutator, and change of a survivor', async () => {
+const textOf = (result: { content: { type: string; text?: string }[] }): string => {
+  const [first] = result.content;
+
+  return first?.type === 'text' ? (first.text ?? '') : '';
+};
+
+it('passes with survivors and lists the file, line, mutator, and change of each', async () => {
   const { configure, run } = await fixture();
 
   await configure(survivorReport, 2);
 
   const result = await run();
-  const [first] = result.content;
-  const text = first?.type === 'text' ? first.text : '';
+  const text = textOf(result);
 
-  expect(result.details).toMatchObject({ passed: false, status: 'survivors', reused: false });
+  expect(result.details).toMatchObject({ passed: true, status: 'survivors', reused: false });
 
   expect(result.details?.survivors).toMatchObject([
     { file: 'src/a.ts', line: 3, mutator: 'Regex', original: '/a+/', replacement: '/a/' },
   ]);
 
-  expect(text).toContain('Mutation check failed');
-  expect(text).toContain('src/a.ts:3 Regex: /a+/ => /a/');
+  expect(text).toContain('Mutation check passed (status survivors)');
+  expect(text).toContain('src/a.ts:3\n  Regex: /a+/ => /a/');
 });
 
-it('marks a survivor without coverage', async () => {
+it('counts no-coverage mutants apart from covered survivors and groups them by line', async () => {
   const { configure, run } = await fixture();
 
-  await configure({ ...survivorReport, survivors: [{ ...survivor, covered: false }] }, 2);
+  const other = { ...survivor, mutator: 'StringLiteral', original: '"x"', replacement: '""' };
+  const uncovered = { ...survivor, line: 9, covered: false };
 
-  const result = await run();
-  const [first] = result.content;
+  await configure({ ...survivorReport, survivors: [survivor, other, uncovered] }, 2);
 
-  expect(first?.type === 'text' ? first.text : '').toContain('/a/ (no coverage)');
+  const text = textOf(await run());
+
+  expect(text).toContain(
+    [
+      'Covered survivors: 2 mutants on 1 line.',
+      'src/a.ts:3',
+      '  Regex: /a+/ => /a/',
+      '  StringLiteral: "x" => ""',
+      'No coverage: 1 mutant on 1 line.',
+      'src/a.ts:9',
+      '  Regex: /a+/ => /a/',
+    ].join('\n'),
+  );
+});
+
+it('fails on survivors with unmutated files and saves nothing for reuse', async () => {
+  const { configure, run, runCount } = await fixture();
+
+  await configure({ ...survivorReport, unmutated: ['src/b.ts'] }, 2);
+
+  expect((await run()).details?.passed).toBe(false);
+  expect((await run()).details?.reused).toBe(false);
+  expect(await runCount()).toBe(2);
+});
+
+it('fails on survivors with an exit other than 0 or 2 and saves nothing', async () => {
+  const { configure, run, runCount } = await fixture();
+
+  await configure(survivorReport, 1);
+
+  expect((await run()).details?.passed).toBe(false);
+  expect((await run()).details?.reused).toBe(false);
+  expect(await runCount()).toBe(2);
 });
 
 it('returns the saved log of an unchanged state after a pass without running the script', async () => {
@@ -202,7 +248,61 @@ it('returns the saved log of an unchanged state after a pass without running the
   expect(await runCount()).toBe(1);
 });
 
-it('saves nothing for reuse after survivors in audit mode that exit 0', async () => {
+it('reuses a passing run with survivors and lists the same survivors', async () => {
+  const { configure, run, runCount } = await fixture();
+
+  await configure(survivorReport, 2);
+
+  const first = await run();
+  const second = await run();
+
+  expect(second.details).toMatchObject({ passed: true, reused: true, status: 'survivors' });
+  expect(second.details?.survivors).toEqual(first.details?.survivors);
+  expect(textOf(second)).toContain('src/a.ts:3\n  Regex: /a+/ => /a/');
+  expect(await runCount()).toBe(1);
+});
+
+it.each([
+  { label: 'missing', damage: (path: string) => rm(path) },
+  { label: 'unparsable', damage: (path: string) => writeFile(path, 'not json') },
+])('runs the script again when the saved report is $label', async ({ damage }) => {
+  const { configure, root, run, runCount } = await fixture();
+
+  await configure(survivorReport, 2);
+  await run();
+
+  const logs = join(root, '.tau', 'checks', 'mutation');
+  const stdoutFile = (await readdir(logs)).find((name) => name.endsWith('.stdout'));
+
+  await damage(join(logs, stdoutFile ?? 'missing.stdout'));
+
+  const second = await run();
+
+  expect(second.details).toMatchObject({ passed: true, reused: false });
+  expect(await runCount()).toBe(2);
+});
+
+it.each([
+  { label: 'an error status', report: { ...passReport, status: 'error', error: 'boom' } },
+  { label: 'unmutated files', report: { ...survivorReport, unmutated: ['src/b.ts'] } },
+])('runs the script again when the saved report has $label', async ({ report }) => {
+  const { configure, root, run, runCount } = await fixture();
+
+  await configure(survivorReport, 2);
+  await run();
+
+  const logs = join(root, '.tau', 'checks', 'mutation');
+  const stdoutFile = (await readdir(logs)).find((name) => name.endsWith('.stdout'));
+
+  await writeFile(join(logs, stdoutFile ?? 'missing.stdout'), JSON.stringify(report));
+
+  const second = await run();
+
+  expect(second.details?.reused).toBe(false);
+  expect(await runCount()).toBe(2);
+});
+
+it('saves a record after survivors in audit mode that exit 0', async () => {
   const { configure, run, runCount } = await fixture();
 
   await configure(survivorReport, 0);
@@ -211,9 +311,9 @@ it('saves nothing for reuse after survivors in audit mode that exit 0', async ()
   const first = await run(parameters);
   const second = await run(parameters);
 
-  expect(first.details?.passed).toBe(false);
-  expect(second.details?.reused).toBe(false);
-  expect(await runCount()).toBe(2);
+  expect(first.details?.passed).toBe(true);
+  expect(second.details).toMatchObject({ reused: true, status: 'survivors' });
+  expect(await runCount()).toBe(1);
 });
 
 it('fails with an error that names a report that breaks the format', async () => {
@@ -443,7 +543,7 @@ it('does not reuse the passing record of a full check with the same command', as
   const mutation = await run({ mode: 'audit', paths: ['src/a.ts'] });
 
   expect(full.details?.passed).toBe(true);
-  expect(mutation.details).toMatchObject({ passed: false, reused: false, status: 'survivors' });
+  expect(mutation.details).toMatchObject({ passed: true, reused: false, status: 'survivors' });
   expect(mutation.details?.survivors).toHaveLength(1);
   expect(await runCount()).toBe(2);
 });

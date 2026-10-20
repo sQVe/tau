@@ -6,6 +6,7 @@ export interface MutationRunFacts {
   // null when a signal ended the command.
   exitCode: number | null;
   idle: boolean;
+  hasUnmutated: boolean;
 }
 
 // An idle stop or a signal leaves no report to trust.
@@ -14,14 +15,20 @@ export const runWasStopped = ({
   exitCode,
 }: Pick<MutationRunFacts, 'idle' | 'exitCode'>): boolean => idle || exitCode === null;
 
-// The script exits 0 with survivors in audit mode, so the report status decides, and a nonzero
-// exit never passes.
+// Survivors are advice: the script exits 2 with them in changed mode and 0 in audit mode. Any
+// other exit with survivors, an error report, a missing report, or unmutated files fails.
 export const mutationPassed = (facts: MutationRunFacts): boolean => {
-  if (runWasStopped(facts)) {
+  if (runWasStopped(facts) || facts.hasUnmutated) {
     return false;
   }
 
   const reportedPass = facts.status === 'pass' || facts.status === 'nothing';
 
-  return reportedPass && facts.exitCode === 0;
+  if (reportedPass) {
+    return facts.exitCode === 0;
+  }
+
+  const survivorExit = facts.exitCode === 0 || facts.exitCode === 2;
+
+  return facts.status === 'survivors' && survivorExit;
 };
