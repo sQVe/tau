@@ -1,5 +1,3 @@
-import { basename } from 'node:path';
-
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
@@ -85,50 +83,30 @@ const closePane = async (herdr: HerdrCall, paneId: string): Promise<void> => {
   await herdr(['pane', 'close', paneId]);
 };
 
-const splitArguments = (request: PaneRequest, focus: boolean): string[] => {
-  const argumentsList = [
-    'pane',
-    'split',
-    '--pane',
-    request.agentPane,
-    '--direction',
-    'right',
-    '--cwd',
-    request.stagingDirectory,
-  ];
+const splitArguments = (request: PaneRequest): string[] => [
+  'pane',
+  'split',
+  '--pane',
+  request.agentPane,
+  '--direction',
+  'right',
+  '--cwd',
+  request.stagingDirectory,
+];
 
-  if (focus) {
-    argumentsList.push('--focus');
-  }
+const tabArguments = (request: PaneRequest, layout: PaneLayout): string[] => [
+  'tab',
+  'create',
+  '--workspace',
+  text(layout.workspace_id),
+  '--cwd',
+  request.stagingDirectory,
+  '--label',
+  'Draft review',
+];
 
-  return argumentsList;
-};
-
-const tabArguments = (request: PaneRequest, layout: PaneLayout, focus: boolean): string[] => {
-  const argumentsList = [
-    'tab',
-    'create',
-    '--workspace',
-    text(layout.workspace_id),
-    '--cwd',
-    request.stagingDirectory,
-    '--label',
-    'Draft review',
-  ];
-
-  if (focus) {
-    argumentsList.push('--focus');
-  }
-
-  return argumentsList;
-};
-
-const openSplit = async (
-  herdr: HerdrCall,
-  request: PaneRequest,
-  focus: boolean,
-): Promise<OpenedPlacement> => {
-  const split = await herdr(splitArguments(request, focus), request.signal);
+const openSplit = async (herdr: HerdrCall, request: PaneRequest): Promise<OpenedPlacement> => {
+  const split = await herdr(splitArguments(request), request.signal);
   const { terminalId } = terminalLocation(result(split).pane);
 
   return { kind: 'split', terminalId };
@@ -138,9 +116,8 @@ const openTab = async (
   herdr: HerdrCall,
   request: PaneRequest,
   layout: PaneLayout,
-  focus: boolean,
 ): Promise<OpenedPlacement> => {
-  const created = await herdr(tabArguments(request, layout, focus), request.signal);
+  const created = await herdr(tabArguments(request, layout), request.signal);
   const response = result(created);
   const tabId = text(requireObject(response.tab).tab_id);
   const terminalId = text(requireObject(response.root_pane).terminal_id);
@@ -148,11 +125,7 @@ const openTab = async (
   return { kind: 'tab', terminalId, tabId, agentTabId: text(layout.tab_id) };
 };
 
-const openPlacement = async (
-  herdr: HerdrCall,
-  request: PaneRequest,
-  focus: boolean,
-): Promise<OpenedPlacement> => {
+const openPlacement = async (herdr: HerdrCall, request: PaneRequest): Promise<OpenedPlacement> => {
   const layout = await readLayout(request.agentPane, (argumentsList) =>
     herdr(argumentsList, request.signal),
   );
@@ -165,9 +138,7 @@ const openPlacement = async (
     minimumWidth: minimumPane.width,
   });
 
-  return placement === 'right'
-    ? openSplit(herdr, request, focus)
-    : openTab(herdr, request, layout, focus);
+  return placement === 'right' ? openSplit(herdr, request) : openTab(herdr, request, layout);
 };
 
 // Closes the tab, or the pane when the user moved the terminal out of the tab. Closing a tab
@@ -381,7 +352,7 @@ export const closeOpened = async (
 // closes again when the command cannot start.
 export const openReview = async (request: PaneRequest): Promise<OpenedPlacement> => {
   const herdr = herdrCaller(request);
-  const placement = await openPlacement(herdr, request, false);
+  const placement = await openPlacement(herdr, request);
 
   try {
     await atTerminal(herdr, request.signal, placement.terminalId, ({ paneId }) =>
@@ -394,61 +365,4 @@ export const openReview = async (request: PaneRequest): Promise<OpenedPlacement>
   }
 
   return placement;
-};
-
-// Opens the command in a pane beside the agent, or in a new tab when the agent pane is too narrow
-// to split, and waits until it exits. Returns false when the signal aborted the open or the wait.
-// A pane or tab that opened closes either way.
-export const runInPane = async (request: PaneRequest): Promise<boolean> => {
-  const { signal } = request;
-  const herdr = herdrCaller(request);
-
-  const locate = (terminalId: string) => locateTerminal(herdr, terminalId);
-
-  let placement: OpenedPlacement;
-
-  try {
-    placement = await openPlacement(herdr, request, true);
-  } catch (error) {
-    if (signal?.aborted === true) {
-      return false;
-    }
-
-    throw error;
-  }
-
-  const { terminalId } = placement;
-
-  // The typed line holds the marker as a printf format and an argument, so only the finished
-  // command prints the joined marker.
-  const suffix = basename(request.stagingDirectory);
-  const marker = `tau-draft-review-done-${suffix}`;
-  const line = `${request.command}; printf 'tau-draft-review-done-%s\\n' ${quote(suffix)}`;
-
-  try {
-    const started = await atTerminal(herdr, signal, terminalId, ({ paneId }) =>
-      herdr(['pane', 'run', paneId, line], signal),
-    );
-
-    // A terminal the user closed before or during the review ends it.
-    if (started !== undefined) {
-      await atTerminal(herdr, signal, terminalId, ({ paneId }) =>
-        herdr(['pane', 'wait-output', paneId, '--match', marker], signal),
-      );
-    }
-
-    return true;
-  } catch (error) {
-    if (signal?.aborted === true) {
-      return false;
-    }
-
-    throw error;
-  } finally {
-    const remaining = await locate(terminalId);
-
-    if (remaining !== undefined) {
-      await closeAt(herdr, placement, remaining, () => true).catch(ignoreMissing('pane_not_found'));
-    }
-  }
 };

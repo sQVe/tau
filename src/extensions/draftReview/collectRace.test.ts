@@ -30,7 +30,7 @@ const { fixture, stagingOf } = await import('./fixtures/reviewFixture.js');
 
 it('reports a conflict, and writes nothing, when the real file disappears after collect reads it', async () => {
   const context = await fixture();
-  const opened = await context.run({ action: 'review', paths: ['.tau/slices/a.md'] });
+  const opened = await context.run({ action: 'open', paths: ['.tau/slices/a.md'] });
 
   if (opened.details.status !== 'manual') {
     throw new Error('Expected a manual review.');

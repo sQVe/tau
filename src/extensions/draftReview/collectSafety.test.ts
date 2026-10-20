@@ -9,7 +9,7 @@ import { comment, fixture, stagingOf } from './fixtures/reviewFixture.js';
 const reviewOnA = async () => {
   const context = await fixture();
   const outside = join(context.repository, 'outside.md');
-  const opened = await context.run({ action: 'review', paths: ['.tau/slices/a.md'] });
+  const opened = await context.run({ action: 'open', paths: ['.tau/slices/a.md'] });
 
   if (opened.details.status !== 'manual') {
     throw new Error('Expected a manual review.');
@@ -42,7 +42,7 @@ it('refuses to stage a file that has another hard link', async () => {
 
   await link(real('slices/a.md'), join(repository, 'outside.md'));
 
-  await expect(run({ action: 'review', paths: ['.tau/slices/a.md'] })).rejects.toThrow(
+  await expect(run({ action: 'open', paths: ['.tau/slices/a.md'] })).rejects.toThrow(
     /hard link.*slices\/a\.md/,
   );
 });
