@@ -39,32 +39,25 @@ inside herdr. Without them, tell the user and stop. For defects, use the
 
 ## Procedure
 
-1. Resolve the target once as a `code_review` target, with every revision pinned by `git rev-parse`.
+1. Resolve the target as in [Resolve the target](../code-review/phases.md#resolve-the-target).
    - The whole repository: follow the repo run in step 9.
    - A branch diff: a `workingTree` from `git merge-base <default> HEAD`. Named files: a `files`
      target, which reviews them even without changes.
-   - Any other target, such as uncommitted work, a commit, or a range, follows step 1 of
-     [code-review](../code-review/SKILL.md#procedure). Never use a `fix` target.
-   - Pass declared exclusions as `exclude`. Ask when the target, base, or ownership is unclear.
+   - Never use a `fix` target.
 
-2. Call `code_review` `prepare`, and use the returned directory as `$dir`. Write `$dir/input.md`
-   from the [input template](../code-review/input.md), with the mode `quality`. Then call `capture`
-   with `$dir` and the target. If either call fails, stop and report the error.
-   - Handle `unmatched`, `empty`, and a moved `head` or `base` as step 2 of
-     [code-review](../code-review/SKILL.md#procedure) does.
+2. Prepare and capture as in
+   [Handle the capture result](../code-review/phases.md#handle-the-capture-result), with the mode
+   `quality` in `input.md`.
 
-3. Gather evidence as step 3 of [code-review](../code-review/SKILL.md#procedure) does. Call
-   `code_review` `evidence` and save the result as `$dir/evidence.md`.
+3. Gather evidence as in [Gather evidence](../code-review/phases.md#gather-evidence).
 
-4. Launch the workers in order.
+4. Launch the workers in order, with the rules of
+   [Run the workers](../code-review/phases.md#run-the-workers).
    - Finder: the `reviewer` profile with
      [quality-assignment.md#quality-lens](quality-assignment.md#quality-lens).
    - Checker: a fresh `reviewer` worker with `#quality-lens` and
      [quality-assignment.md#checker](quality-assignment.md#checker), plus the finder's report or the
      path `$dir/finder.md`. Launch it even when the finder found nothing.
-   - Follow only these parts of step 4 of [code-review](../code-review/SKILL.md#procedure): the
-     pre-existing issues line on the user's own work, the elapsed-time check, failed workers, and
-     finished results. Do not add its finder line about every plausible candidate.
 
 5. Call `code_review` `freshness` with `$dir`. Report `fresh` as fresh. Label `stale` with its
    reasons and ask whether to review again. Report `unknown`, or a failed call, as unknown. Keep the
