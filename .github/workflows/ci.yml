@@ -75,4 +75,23 @@ jobs:
           baseSha: ${{ github.event.pull_request.base.sha }}
         run: |
           mapfile -t command < <(jq --raw-output '.mutation.argv[]' .pi/tau.json)
-          "${command[@]}" changed "${baseSha}"
+          report="${RUNNER_TEMP}/mutation-report.json"
+          status=0
+          "${command[@]}" changed "${baseSha}" > "${report}" || status=$?
+          if [ "${status}" -ne 0 ] && [ "${status}" -ne 2 ]; then
+            cat "${report}" || true
+            exit "${status}"
+          fi
+          if ! jq --exit-status '(.status | IN("pass", "nothing", "survivors")) and (.survivors | type == "array")' "${report}" > /dev/null; then
+            echo "The mutation report is missing, malformed, has no survivors array, or has a status other than pass, nothing, or survivors." >&2
+            cat "${report}" || true
+            exit 1
+          fi
+          count=$(jq '.survivors | length' "${report}")
+          if [ "${count}" -gt 0 ]; then
+            {
+              echo "Mutation survivors: ${count}"
+              echo
+              jq --raw-output '.survivors[] | "- \(.file):\(.line) \(.mutator): \(.original) => \(.replacement)\(if .covered == false then " (no coverage)" else "" end)"' "${report}"
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi

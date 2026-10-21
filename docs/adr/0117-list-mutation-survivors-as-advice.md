@@ -1,10 +1,8 @@
 # ADR 0117: List mutation survivors as advice instead of a gate
 
 **Date**: 2026-10-18\
-**Status**: Accepted; disable-comment step of the survivor order superseded by
-[ADR 0118 (List equivalent mutants instead of adding disable comments)](./0118-list-equivalent-mutants-instead-of-disable-comments.md)\
-**Supersedes**:
-[ADR 0115 (Copy the mutation script into each repository and fail on survivors)](./0115-copy-mutation-script-per-repository-and-fail-on-survivors.md):
+**Status**: Accepted\
+**Supersedes**: [ADR 0115 (Copy the mutation script into each repository and fail on survivors)](./0115-copy-mutation-script-per-repository-and-fail-on-survivors.md):
 use of survivors as a gate
 
 ## Context
@@ -17,19 +15,21 @@ jump through."
 
 ## Decision
 
-Mutation testing is advice at publication and merge: survivors and errors of the check never block
-either one.
+Mutation testing is advice everywhere: survivors never fail a check, a skill step, or a merge.
 
-The `pr` skill still runs `mutation_check` on the changed lines after the full check. It lists each
-survivor with its file, line, and change in the session report, reports a tool error on its own
-line, and publishes. The pull request body never lists survivors or tool errors. Neither counts as a
-gap that suggests a draft. The `Mutation` CI job is not a required status check, so a failed job
-does not block a merge.
+The `mutation_check` tool passes a run with survivors, when the script exits 2 in changed mode or 0
+in audit mode. It fails on an error report, unmutated files, a nonzero exit other than 2 with
+survivors, a signal, and the idle stop. It saves a passing run with survivors for reuse, and a
+reused run lists the same survivors from the saved report. It counts survivors that tests cover
+apart from mutants with no coverage, and groups each set by file and line.
 
-The `tdd` skill still asks the agent to handle each survivor before hand-off, in the order of
-ADR 0115. That step improves the tests while the agent still has the change in context. It is not a
-gate on publication. The script keeps its exit codes, so a tool or CI job can still tell survivors
-from a pass.
+The `tdd` skill runs the tool once after the full check passes. It allows one fix round of at most 3
+behaviors, a test that kills the survivor or a simplification of redundant code, and at most one
+rerun of the full check and the tool. It then lists what is left as open, with file and line, and
+gives no reason per mutant. The `pr` skill does not run the tool and does not report survivors.
+
+The `Mutation` CI job passes on exit 0 and exit 2 and fails on any other exit. It writes the
+survivors to the job summary. It is not a required status check.
 
 ## Consequences
 
@@ -42,7 +42,7 @@ from a pass.
 ### Negative
 
 - A survivor can reach the main branch with no test that kills it.
-- The CI job shows as failed on a pull request with survivors, even though the merge may go ahead.
+- A survivor appears only in the job summary, which a reviewer must open to see it.
 
 ## Alternatives considered
 
@@ -57,7 +57,8 @@ anything ships.
 Show each survivor to reviewers in the verification section. Rejected because the user wants that
 output out of pull requests, and a long survivor list crowds out the rest of the body.
 
-### Drop the mutation check from the `pr` skill
+### Keep the mutation check in the `pr` skill
 
-Run mutation testing only in the `tdd` skill and CI. Rejected because the survivor list at
-publication still shows where the tests of the change are weak.
+Run the tool at publication and list survivors in the session report. Rejected because the `tdd`
+skill already runs it while the agent has the change in context, and a second run at publication
+adds a step without new advice. CI still shows survivors in the job summary.

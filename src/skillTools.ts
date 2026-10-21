@@ -10,7 +10,7 @@ export const skillTools: Readonly<Record<string, readonly string[]>> = {
   handover: ['handover'],
   stack: ['stack'],
   'update-branch': ['stack'],
-  pr: ['pr', 'full_check', 'mutation_check', 'stack', 'draft_review'],
+  pr: ['pr', 'full_check', 'stack', 'draft_review'],
   tdd: ['full_check', 'mutation_check'],
   'fix-bug': ['full_check'],
   'pr-feedback': ['pr_feedback'],

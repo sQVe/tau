@@ -31,16 +31,12 @@ Use this skill when you change behavior and `run_tests` is available.
 4. Refactor and format. Then verify the whole suite once: with `full_check`, with the repository's
    own check when it has no `full_check` entry, or with a full `run_tests` pass when no repository
    check will run. One pass on the current inputs is enough. Do not rerun an equivalent suite.
-5. After the full check passes, run `mutation_check` with `mode: "changed"` and no `base`. Skip this
-   step, and say so, when the repository has no `mutation.argv`. Report a tool error on its own line
-   and stop the step. Handle each survivor in this order:
-   1. A real gap: write a test that kills it.
-   2. Redundant code the mutant points at: simplify it.
-   3. Otherwise it is equivalent. Leave the code and list the mutant with its reason.
-
-   A fix changes the inputs, so rerun the full check and `mutation_check` after each fix. Stop once
-   the full check passes and every remaining survivor is listed as equivalent. List a real gap you
-   leave for later as open, with why.
+5. After the full check passes, run `mutation_check` with `mode: "changed"` and no `base` once. Skip
+   this step, and say so, when the repository has no `mutation.argv`. Report a tool error on its own
+   line and stop the step. Survivors are advice. Fix at most 3 behaviors in one round: write a test
+   that kills the survivor, or simplify the redundant code it points at. After that round, rerun the
+   full check and `mutation_check` at most once. Then list what is left as open, with file and line.
+   Give no reason per mutant.
 
 6. Report the test outcome and its freshness as separate facts. When the freshness is `stale` or
    `unknown`, rerun on the current inputs before you claim current verification.

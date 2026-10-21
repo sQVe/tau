@@ -5,6 +5,7 @@ import type { MutationRunFacts } from './mutationVerdict.js';
 
 const facts = (overrides: Partial<MutationRunFacts>): MutationRunFacts => ({
   status: 'pass',
+  hasUnmutated: false,
   exitCode: 0,
   idle: false,
   ...overrides,
@@ -13,8 +14,29 @@ const facts = (overrides: Partial<MutationRunFacts>): MutationRunFacts => ({
 it.each([
   { name: 'pass', facts: facts({}), passed: true },
   { name: 'nothing', facts: facts({ status: 'nothing' }), passed: true },
-  { name: 'survivors', facts: facts({ status: 'survivors', exitCode: 2 }), passed: false },
-  { name: 'survivors in audit mode', facts: facts({ status: 'survivors' }), passed: false },
+  { name: 'survivors', facts: facts({ status: 'survivors', exitCode: 2 }), passed: true },
+  { name: 'survivors in audit mode', facts: facts({ status: 'survivors' }), passed: true },
+  {
+    name: 'survivors with exit 1',
+    facts: facts({ status: 'survivors', exitCode: 1 }),
+    passed: false,
+  },
+  {
+    name: 'survivors with a signal',
+    facts: facts({ status: 'survivors', exitCode: null }),
+    passed: false,
+  },
+  {
+    name: 'survivors with an idle stop',
+    facts: facts({ status: 'survivors', exitCode: 2, idle: true }),
+    passed: false,
+  },
+  {
+    name: 'survivors with unmutated files',
+    facts: facts({ status: 'survivors', exitCode: 2, hasUnmutated: true }),
+    passed: false,
+  },
+  { name: 'pass with exit 2', facts: facts({ exitCode: 2 }), passed: false },
   { name: 'error', facts: facts({ status: 'error', exitCode: 1 }), passed: false },
   { name: 'error with exit 0', facts: facts({ status: 'error' }), passed: false },
   { name: 'pass with a nonzero exit', facts: facts({ exitCode: 1 }), passed: false },

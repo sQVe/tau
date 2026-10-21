@@ -62,12 +62,12 @@ Tau's config sets what is particular to this repository: the `mutate` globs, the
 `timeoutMS`, the Vitest runner with related tests, and the concurrency. Bump the pinned package
 version to get a fix.
 
-The `Mutation` CI job runs `changed` against the pull request's base. It fails on exit 2 or exit 1.
-Exit 2 means a mutant survived on a changed line. Exit 1 means an error, such as a file over the
-mutant cap, which the report lists in `unmutated`, or changed files that no test imports. The job is
-not a required status check, so a failure does not block a merge. Read the JSON report at the end of
-the step's log. It lists each survivor with its file and line. Where the survivor shows a weak test,
-add a test that fails when that line changes.
+The `Mutation` CI job runs `changed` against the pull request's base. Exit 0 and exit 2 pass the
+job. Exit 2 means a mutant survived on a changed line, and the job writes each survivor with its
+file and line to the job summary as advice. Any other exit fails the job, such as exit 1 for an
+error, a file over the mutant cap that the report lists in `unmutated`, or changed files that no
+test imports. The job is not a required status check. Where a survivor shows a weak test, add a test
+that fails when that line changes.
 
 ## Try Tau
 

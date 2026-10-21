@@ -121,6 +121,8 @@ const waitForCommandToExit = async (child: ChildProcess, processId: number): Pro
   }
 };
 
+export const stdoutPathOf = (logPath: string): string => logPath.replace(/\.log$/u, '.stdout');
+
 // Runs argv without a shell in `root`, with stdout and stderr together in a new log file.
 export const runCheck = async (
   root: string,
@@ -133,7 +135,7 @@ export const runCheck = async (
 ): Promise<CheckResult> => {
   const logPath = await newLogPath(root, checksPath);
   const log = await open(logPath, 'wx');
-  const stdoutPath = logPath.replace(/\.log$/u, '.stdout');
+  const stdoutPath = stdoutPathOf(logPath);
   const stdoutFile = separateStdout ? await open(stdoutPath, 'wx') : undefined;
 
   // Settles with the record's error, or undefined. The caller releases the lock only after this
