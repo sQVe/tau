@@ -3,7 +3,7 @@
 **Date**: 2026-09-09\
 **Status**: Accepted; the duplicated comment rules were removed by
 [ADR 0042 (Remove commit comment review)](./0042-remove-commit-comment-review.md)\
-**Related**: [ADR 0001 (Application structure)](./0001-application-structure.md),
+**Related**: [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md),
 [ADR 0006 (Default writing policy)](./0006-default-writing-policy.md),
 [Agent coding instructions](../../src/instructions/coding.md),
 [ADR 0042 (Remove commit comment review)](./0042-remove-commit-comment-review.md)
@@ -45,8 +45,8 @@ coding instructions.
 ### Each extension loads its own file
 
 Both extensions read a markdown file and append it to the system prompt. The shared code is about
-ten lines, and [ADR 0001](./0001-application-structure.md) allows a primitive once two extensions
-could share one.
+ten lines, and [ADR 0120](./0120-capability-modules-with-an-enforced-import-table.md) allows a
+primitive once two extensions could share one.
 
 Keep the duplicate loaders anyway. The tests copy `index.ts` into a temporary directory and load it
 through `DefaultResourceLoader`, so a relative import outside the extension directory cannot
@@ -61,7 +61,7 @@ are the only statement.
 ### Types
 
 This extension defines no types of its own and may omit `types.ts`, an exception to
-[ADR 0001](./0001-application-structure.md).
+[ADR 0120](./0120-capability-modules-with-an-enforced-import-table.md).
 
 ## Consequences
 

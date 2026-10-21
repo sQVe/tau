@@ -6,7 +6,7 @@ superseded by
 [ADR 0080 (Insert prompt snippets through autocomplete)](./0080-insert-prompt-snippets-through-autocomplete.md),
 and the `order` field by
 [ADR 0081 (Sort prompt snippets by id)](./0081-sort-prompt-snippets-by-id.md)\
-**Related**: [ADR 0001 (Application structure)](./0001-application-structure.md),
+**Related**: [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md),
 [ADR 0007 (Vim keys in interactive components)](./0007-vim-keys-in-interactive-components.md),
 [ADR 0013 (Snippet placement)](./0013-snippet-placement.md),
 [ADR 0080 (Insert prompt snippets through autocomplete)](./0080-insert-prompt-snippets-through-autocomplete.md),

@@ -2,7 +2,7 @@
 
 **Date**: 2026-09-27\
 **Status**: Accepted\
-**Related**: [ADR 0001 (Application structure)](./0001-application-structure.md),
+**Related**: [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md),
 [ADR 0008 (Coding instructions)](./0008-coding-instructions.md),
 [ADR 0033 (Use one generic native worker workflow)](./0033-use-one-generic-native-worker-workflow.md),
 [ADR 0035 (Use size thresholds as review guidance)](./0035-use-size-thresholds-as-review-guidance.md),
@@ -39,9 +39,8 @@ agent needs before designing: the contract test for read paths, and record versi
 
 - Feature code stays in `src/extensions/<feature>/`. Extensions do not import each other.
 - Code moves under `src/` only once two extensions need it. Shared code never imports extensions.
-- `tau/extension-boundary` in `lint/plugin.ts` and the shared-module override of
-  `eslint/no-restricted-imports` in `vite.config.ts` enforce both rules
-  ([ADR 0001](./0001-application-structure.md)).
+- `tau/module-boundaries` in `lint/rules/moduleBoundaries.ts` enforces both rules
+  ([ADR 0120](./0120-capability-modules-with-an-enforced-import-table.md)).
 - A module that grows subdirectories may mark files private. An override of
   `eslint/no-restricted-imports` in `vite.config.ts` lists the public files, and the rest of the
   extension imports only those. `src/extensions/subagents/controller/` is the first: other subagents

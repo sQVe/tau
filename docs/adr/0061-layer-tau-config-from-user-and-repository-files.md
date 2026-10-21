@@ -7,7 +7,7 @@
 [ADR 0023 (Use advisory TDD observations instead of edit permissions)](./0023-advisory-tdd-observations.md),
 [ADR 0027 (Share one delegate model across bounded tool tasks)](./0027-share-one-delegate-model.md),
 [ADR 0045 (Keep worker records per Tau checkout and worktree files in `.tau/`)](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md),
-[ADR 0057 (Enforce pure decision modules from a registry)](./0057-enforce-pure-decision-modules-from-a-registry.md)
+[ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md)
 
 ## Context
 

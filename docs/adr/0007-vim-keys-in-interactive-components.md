@@ -2,7 +2,7 @@
 
 **Date**: 2026-09-08\
 **Status**: Accepted\
-**Related**: [ADR 0001 (Application structure)](./0001-application-structure.md),
+**Related**: [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md),
 [ADR 0003 (Stability of externally observable identifiers)](./0003-externally-observable-identifiers.md)
 
 [ADR 0024](./0024-commit-without-human-approval.md) removed the commit overlay and its tests. The
@@ -46,9 +46,9 @@ matches the first. Pi falls back to `modifyOtherKeys` when it cannot detect the 
 ### Where the keys live
 
 Key predicates live in [`src/keys.ts`](../../src/keys.ts), a primitive under the rule
-[ADR 0001](./0001-application-structure.md) sets for code that two or more extensions share.
-Components ask `isUp`, `isDown`, `isTop`, and `isBottom` rather than testing keys themselves, so a
-change to the set reaches every component.
+[ADR 0120](./0120-capability-modules-with-an-enforced-import-table.md) sets for code that two or
+more extensions share. Components ask `isUp`, `isDown`, `isTop`, and `isBottom` rather than testing
+keys themselves, so a change to the set reaches every component.
 
 Pi's `SelectList` cannot be driven directly, so `toCursorKey` rewrites `j` and `k` as the arrow
 sequences it reads, and callers set the ends through its `setSelectedIndex`.
