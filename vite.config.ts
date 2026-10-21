@@ -138,7 +138,7 @@ export default defineConfig({
     extends: [lint, vitest],
     jsPlugins: ['./lint/plugin.ts'],
     rules: {
-      'tau/extension-boundary': 'error',
+      'tau/module-boundaries': 'error',
       'tau/no-enoent-literal': 'error',
     },
     overrides: [
@@ -151,31 +151,6 @@ export default defineConfig({
               patterns: [testHelperImports],
             },
           ],
-        },
-      },
-      {
-        // Every module under src/ is shared; the next override restores extensions and the
-        // package entry.
-        files: ['src/*.ts', 'src/*/**/*.ts'],
-        rules: {
-          'eslint/no-restricted-imports': [
-            'error',
-            {
-              patterns: [
-                testHelperImports,
-                {
-                  group: ['**/extensions/**'],
-                  message: 'Shared modules must not depend on extensions.',
-                },
-              ],
-            },
-          ],
-        },
-      },
-      {
-        files: ['src/tau.ts', 'src/extensions/**/*.ts'],
-        rules: {
-          'eslint/no-restricted-imports': ['error', { patterns: [testHelperImports] }],
         },
       },
       {

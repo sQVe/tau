@@ -7,7 +7,7 @@ import { parseSync, Visitor } from 'oxc-parser';
 import type { Expression, MemberExpression, ModuleDeclaration } from 'oxc-parser';
 import { expect, it } from 'vitest';
 
-import { publicFiles } from '../lint/rules/extensionBoundary.ts';
+import { importTable, moduleList } from '../lint/rules/moduleBoundaries.ts';
 import { versionedRecords } from '../src/extensions/subagents/records.js';
 import config, { testEnvironment, testManagedEnvironment } from '../vite.config.ts';
 
@@ -391,9 +391,31 @@ const registryOrderProblems = (entries: readonly string[]) =>
     return entry < previous ? [`${entry} sorts before ${previous}`] : [];
   });
 
-it('keeps the pure module and public file registries sorted and free of duplicates', () => {
+it('keeps the pure module registry sorted and free of duplicates', () => {
   expect(registryOrderProblems(pureModules)).toEqual([]);
-  expect(registryOrderProblems(publicFiles)).toEqual([]);
+});
+
+it('keeps the module list and import table sorted, free of duplicates, and closed', () => {
+  const names = moduleList.map((module) => module.name);
+  const rows = Object.keys(importTable);
+  const sharedNames = names.filter((name) => name !== 'tau' && !name.startsWith('extensions/'));
+
+  expect(registryOrderProblems(names)).toEqual([]);
+  expect(registryOrderProblems(rows)).toEqual([]);
+  expect(rows).toEqual(sharedNames);
+
+  for (const module of moduleList) {
+    expect(registryOrderProblems(module.publicFiles), module.name).toEqual([]);
+  }
+
+  for (const [row, allowed] of Object.entries(importTable)) {
+    expect(registryOrderProblems(allowed), row).toEqual([]);
+
+    expect(
+      allowed.filter((name) => !sharedNames.includes(name)),
+      row,
+    ).toEqual([]);
+  }
 });
 
 it.each([

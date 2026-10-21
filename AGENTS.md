@@ -35,7 +35,8 @@ verification.
   that the root calls, and keep coupled state changes in one owner
   ([ADR 0109](docs/adr/0109-keep-action-behavior-out-of-extension-roots.md)).
 - Give a prompt or guidance list one policy per item. Keep `pureModules` in
-  `tests/structure.test.ts` and `publicFiles` in `lint/rules/extensionBoundary.ts` sorted.
+  `tests/structure.test.ts` and `modules` and `importTable` in `lint/rules/moduleBoundaries.ts`
+  sorted.
 - Name one concept with one noun inside a module. No file reverses its module's name
   ([ADR 0109](docs/adr/0109-keep-action-behavior-out-of-extension-roots.md)).
 

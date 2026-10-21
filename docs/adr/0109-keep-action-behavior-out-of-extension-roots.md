@@ -60,7 +60,7 @@ names one concept one way. Size stays a review signal under ADR 0035.
 ### Unordered registries
 
 - Keep these lists sorted and free of duplicates: `pureModules` in `tests/structure.test.ts` and the
-  `publicFiles` list in `lint/rules/extensionBoundary.ts`. `tests/structure.test.ts` checks both.
+  `publicFiles` list in `lint/rules/moduleBoundaries.ts`. `tests/structure.test.ts` checks both.
 - Sorting lowers conflicts only for additions in different places. It does not apply to ordered
   lists such as lint overrides in `vite.config.ts`.
 
