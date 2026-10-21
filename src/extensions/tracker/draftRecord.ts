@@ -1,4 +1,5 @@
-import { readFile, readdir } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 import type { Static } from 'typebox';
@@ -168,4 +169,67 @@ export const findDraftFor = async (root: string, id: string): Promise<DraftLooku
     draft: selected?.draft ?? null,
     malformed,
   };
+};
+
+const fieldSchemas = {
+  identifier: identifierSchema,
+  reviewCommentId: commentIdSchema,
+  qualityCommentId: commentIdSchema,
+};
+
+type DraftField = keyof typeof fieldSchemas;
+
+const isDraftField = (field: string): field is DraftField => Object.hasOwn(fieldSchemas, field);
+
+// Throws when field is not a draft field or value does not fit it.
+export const checkDraftField = (field: string, value: unknown): DraftField => {
+  if (!isDraftField(field)) {
+    throw new Error(
+      `Invalid field ${JSON.stringify(field)}: use identifier, reviewCommentId, or qualityCommentId.`,
+    );
+  }
+
+  const schema = fieldSchemas[field];
+
+  if (typeof value !== 'string' || !Value.Check(schema, value)) {
+    throw new Error(
+      `Invalid value ${JSON.stringify(value)} for ${field}: ${describeSchemaProblem(schema, value)}.`,
+    );
+  }
+
+  return field;
+};
+
+// Sets one field of the directory's draft.json and keeps the others. A missing record starts with
+// every field null. It writes nothing when the existing record or the value is invalid.
+export const writeDraftField = async (
+  directory: string,
+  field: string,
+  value: unknown,
+): Promise<DraftRecord> => {
+  checkDraftField(field, value);
+
+  const existing = await readDraftRecord(directory);
+
+  const base: DraftRecord = existing ?? {
+    version: currentVersion,
+    identifier: null,
+    reviewCommentId: null,
+    qualityCommentId: null,
+  };
+
+  const written: DraftRecord = { ...base, [field]: value };
+  const path = join(directory, draftFileName);
+  const temporary = join(directory, `.${draftFileName}.${randomUUID()}`);
+
+  try {
+    await writeFile(temporary, `${JSON.stringify(written, null, 2)}\n`);
+    await rename(temporary, path);
+  } catch (error) {
+    await rm(temporary, { force: true });
+
+    throw error;
+  }
+
+  return written;
 };

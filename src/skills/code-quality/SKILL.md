@@ -79,10 +79,9 @@ inside herdr. Without them, tell the user and stop. For defects, use the
      and the ticket are both the user's own, as the tracker skill defines a ticket. Otherwise ask
      with `ask_user_question` first, and skip the post if the user declines.
    - Update the earlier comment when one exists, and never add a second one. Otherwise add one.
-     Record its ID at once, in `$dir/report.md` as a `Comment ID:` line and as `qualityCommentId` in
-     the returned `draft.json`. Write the returned draft back with `"version": 2` and every other
-     field kept, or create it as
-     `{"version": 2, "identifier": "<ticket>", "reviewCommentId": null, "qualityCommentId": "<id>"}`.
+     Record its ID at once, in `$dir/report.md` as a `Comment ID:` line and by calling
+     `tracker_draft` with action `record`, the ticket `id`, field `qualityCommentId`, and the
+     comment ID as `value`.
    - If the post fails, keep the local report and say so in the reply.
 
 8. Reply with the [report template](report.md). Name the comment URL, or say the report stays local.

@@ -119,11 +119,9 @@ writes a tool makes, such as `slice` `apply`.
      the draft even when it was made under a slug, or a slug of the title. Save the body there as
      `ticket.md` and the title as `title.md`, and write the title from `title.md`.
    - Keep a `draft.json` next to the body with the Linear identifier once it exists. Write it at
-     once after each create, before any other step. When `prepare` returned no `draft`, create it as
-     `{"version": 2, "identifier": "ME-600", "reviewCommentId": null, "qualityCommentId": null}`.
-     Otherwise keep every field of the returned `draft` and change only `identifier`, so a saved
-     `reviewCommentId` and `qualityCommentId` stay. Keep the type, route, parent, and labels in the
-     preview, not in a saved file.
+     once after each create, before any other step, by calling `tracker_draft` with action `record`,
+     the same `id` as `prepare`, field `identifier`, and the identifier as `value`. Saved comment
+     IDs stay. Keep the type, route, parent, and labels in the preview, not in a saved file.
    - When the returned `draft` records an identifier, read the ticket with
      `linear issue view <id> --json --no-pager`. The write is then an update of that ticket, never a
      new create. The preview names each field that changes from the saved copy, including edits made

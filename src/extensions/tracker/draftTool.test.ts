@@ -242,3 +242,66 @@ it.each([
 ])('checks the tool input for $name', ({ input, valid }) => {
   expect(Value.Check(createTrackerDraftTool().parameters, input)).toBe(valid);
 });
+
+const record = (cwd: string, field: string, value: string, id = 'me-600') =>
+  createTrackerDraftTool().execute(
+    'call',
+    { action: 'record', id, field, value } as never,
+    undefined,
+    undefined,
+    noUiContext(cwd),
+  );
+
+it('records a field of the draft found by identifier and writes version 2', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const saved = await saveDraft(root, 'fix-login', 'version-1.json');
+
+  const result = await record(root, 'qualityCommentId', 'q7');
+
+  const expected = {
+    version: 2,
+    identifier: 'ME-600',
+    reviewCommentId: 'c1',
+    qualityCommentId: 'q7',
+  };
+
+  expect(result.details).toEqual({ directory: saved, draft: expected });
+  expect(JSON.parse(await readFile(join(saved, 'draft.json'), 'utf8'))).toEqual(expected);
+});
+
+it('creates draft.json for a new directory', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const result = await record(root, 'identifier', 'ME-601', 'me-601');
+
+  expect(result.details).toEqual({
+    directory: join(root, '.tau', 'tickets', 'me-601'),
+    draft: { version: 2, identifier: 'ME-601', reviewCommentId: null, qualityCommentId: null },
+  });
+});
+
+it('refuses a newer draft.json and leaves it unchanged', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const saved = await saveDraft(root, 'me-600', 'newer.json');
+  const before = await readFile(join(saved, 'draft.json'), 'utf8');
+
+  await expect(record(root, 'identifier', 'ME-600')).rejects.toThrow(/newer/);
+
+  expect(await readFile(join(saved, 'draft.json'), 'utf8')).toBe(before);
+});
+
+it('refuses an invalid value and creates no ticket directory or ignore file', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await expect(record(root, 'identifier', 'nope', 'me-602')).rejects.toThrow(/Invalid value/);
+
+  expect(await readdir(root)).toEqual(['.git']);
+});
+
+it('checks the tool input for record', () => {
+  const tool = createTrackerDraftTool();
+  const input = { action: 'record', id: 'me-600', field: 'identifier', value: 'ME-600' };
+
+  expect(Value.Check(tool.parameters, input)).toBe(true);
+  expect(Value.Check(tool.parameters, { ...input, field: 'version' })).toBe(false);
+});
