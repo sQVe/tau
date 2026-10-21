@@ -501,6 +501,9 @@ it('renders call lines while streaming arguments are still incomplete', () => {
   const taskOnly = plain(launch?.renderCall?.({ task: 'Do it.' }, subject, context) as Component);
   expect(taskOnly).toContain('Launch subagent');
   expect(taskOnly).not.toContain('undefined');
+
+  const emptyProfile = launch?.renderCall?.({ task: 'Do it.', profile: '' }, subject, context);
+  expect(plain(emptyProfile as Component)).toContain('Launch subagent');
 });
 
 it('shows only a short task ID on task call lines', () => {
