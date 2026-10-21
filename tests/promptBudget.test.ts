@@ -21,20 +21,12 @@ const oneActionBudget = 1000;
 const multiActionBudget = 3000;
 
 // Tools over budget today, each with its current description length as its own ceiling.
-const descriptionExceptions: Readonly<Record<string, number>> = {
-  code_review: 6047,
-  full_check: 1222,
-  mutation_check: 1985,
-  pr_feedback: 7812,
-  stack: 4488,
-  tracker_draft: 1900,
-  tracker_evidence: 1246,
-};
+const descriptionExceptions: Readonly<Record<string, number>> = {};
 
 // Today's measured size rounded up to the next 100 characters. The target is beside each ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
-  manager: 70_100, // target 38,000
-  worker: 20_700, // target 14,000
+  manager: 58_900, // target 38,000
+  worker: 19_200, // target 14,000
   reviewer: 14_600, // target 11,000
   qa: 12_600, // target 9,000
   browser: 11_400, // target 9,000

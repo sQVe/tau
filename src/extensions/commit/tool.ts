@@ -49,7 +49,7 @@ interface CommitToolResult {
 export const commitToolGuidelines = [
   'When asked to commit, call commit with exact, ordered groups without asking for confirmation. It stages whole files, so assign each path to one group.',
   'Never bypass hooks through --no-verify, core.hooksPath, environment variables, or config changes. On failure, fix the cause; never add unrelated edits, other groups, or rejected sensitive paths to clear it.',
-  'Use a conventional commit subject or the fixup field for autosquash. Do not commit sensitive files such as .env or SSH keys.',
+  'Use a conventional commit subject or the fixup field for autosquash.',
 ];
 
 const cleanupTemporary = async (directory: string): Promise<string | null> => {

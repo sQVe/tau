@@ -42,12 +42,12 @@ const trackerEvidenceParameters = Type.Object({
 export type TrackerEvidenceInput = Static<typeof trackerEvidenceParameters>;
 
 const description = `Reads, without any Linear write, the evidence the tracker skill needs before it plans a ticket.
-Parameters: team (key), project (name or null), parent (identifier or null), agentTicket (an agent ticket has no project, and its parent is not checked against the route), and keywords (search term). An empty team or keywords, or an agent ticket with a project, is an error.
+Parameters: team (key), project (name or null), parent (identifier or null), agentTicket (an agent ticket has no project, and its parent is not checked against the route), and keywords (search term).
 Returns {candidates, parent, labels, gaps}:
-- candidates: the open issues that match the keywords in the team, and in the project when one is given. Each has identifier, title, url, team, project, parent, fits, and differences. fits is true when team, project, and parent all equal the planned ticket's; differences lists the ones that do not.
-- parent: {identifier, team, project, state, matchesRoute}, or null when parent is null. matchesRoute is whether the parent's team and project equal the given ones, and null for an agent ticket.
+- candidates: the open issues that match the keywords. Each has identifier, title, url, team, project, parent, fits, and differences. fits is true when team, project, and parent all equal the planned ticket's; differences lists the ones that do not.
+- parent: {identifier, team, project, state, matchesRoute}, or null when parent is null. matchesRoute is null for an agent ticket.
 - labels: the team's labels as {id, name}.
-- gaps: {command, error} for each read that failed, was rate limited, or printed malformed output, and for a label list with more pages. A failed read leaves its field out, so a missing field means unknown, never empty. A label list with more pages keeps the labels it read, but is incomplete.`;
+- gaps: {command, error} for each read that failed or was incomplete. A failed read leaves its field out, so a missing field means unknown, never empty.`;
 
 const searchCommand = 'linear api searchIssues';
 

@@ -133,14 +133,12 @@ export const createFullCheckTool = (
   defineTool({
     name: 'full_check',
     label: 'Full check',
-    description: `Run the repository's configured full check and save its output.
+    description: `Run the repository's configured full check and save its output. Call it once on the final work state, instead of running the check by hand.
 - Optional base: the ref or commit the change is based on. Without it, the origin remote's default branch.
-- The command is fullCheck.repositories.<owner/name>.argv from the user tau.json, run without a shell in the checkout root.
-- Full checks of one repository run one at a time across its checkouts. Checks of other repositories do not wait. When another checkout holds the lock, the tool sends an update that names it and waits. Cancelling stops the wait.
-- A passing log is saved with the head, base, argv, and a fingerprint of the uncommitted changes. A later call for the same state returns that log without running the command, and says so. Any change to those inputs runs the check again. A failing run, or a run during which the inputs changed, saves nothing for reuse.
-- Saves stdout and stderr together as a log under .tau/checks in the checkout.
 - Returns pass or fail, the exit status, the log path, and the last lines of the output. A failed check is a result, not an error.
-- Errors: no Git checkout, an invalid fullCheck entry for this repository, a command that cannot start, or no configured entry. With no entry, run your check as before.`,
+- A later call for the same command, head, base, and uncommitted changes returns the saved passing log without a run, and says so.
+- Full checks of one repository run one at a time across its checkouts. A waiting call sends an update that names the checkout that holds the lock.
+- With no configured entry, the tool errors. Run the repository's check as before.`,
     promptSnippet:
       'Run the repository full check, queued per repository across checkouts, with a saved log.',
     parameters,
