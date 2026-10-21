@@ -370,7 +370,7 @@ it('wires a call and a result renderer into every subagent tool', () => {
   const call = launch?.renderCall?.(
     {
       task: 'Do the thing.\nSecond line.',
-      profile: 'worker',
+      profile: 'reviewer',
       timeoutSeconds: 60,
     },
     subject,
@@ -378,8 +378,8 @@ it('wires a call and a result renderer into every subagent tool', () => {
   );
 
   const text = plain(call as Component);
-  expect(text).toContain('Launch worker');
-  expect(text).toContain('worker');
+  expect(text).toContain('Launch reviewer');
+  expect(text.split('reviewer')).toHaveLength(2);
   expect(text).toContain('Do the thing.');
   expect(text).not.toContain('Second line.');
 });
@@ -496,7 +496,11 @@ it('renders call lines while streaming arguments are still incomplete', () => {
   expect(() => followUp?.renderCall?.({}, subject, context)).not.toThrow();
 
   const text = plain(launch?.renderCall?.({ profile: 'worker' }, subject, context) as Component);
-  expect(text).toContain('worker');
+  expect(text).toContain('Launch worker');
+
+  const taskOnly = plain(launch?.renderCall?.({ task: 'Do it.' }, subject, context) as Component);
+  expect(taskOnly).toContain('Launch subagent');
+  expect(taskOnly).not.toContain('undefined');
 });
 
 it('shows only a short task ID on task call lines', () => {

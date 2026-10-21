@@ -211,6 +211,9 @@ const callDetail = (parts: (string | undefined)[]): string | undefined => {
   return joined.length > 0 ? joined : undefined;
 };
 
+// Pi renders the call while its arguments still stream, before the profile arrives.
+const launchTitle = (profile: string | undefined): string => `Launch ${profile ?? 'subagent'}`;
+
 const launchWorker = async (
   runtime: SubagentRuntime,
   parameters: LaunchParameters,
@@ -438,8 +441,8 @@ const registerLaunchTool = (
     parameters: launchParameters,
     renderCall(parameters, theme) {
       return callText(
-        'Launch worker',
-        callDetail([parameters.profile, firstLine(parameters.task)]),
+        launchTitle(parameters.profile),
+        callDetail([firstLine(parameters.task)]),
         theme,
       );
     },
