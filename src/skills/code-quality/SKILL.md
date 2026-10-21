@@ -1,11 +1,12 @@
 ---
 name: code-quality
 description:
-  Review the structure of a branch diff or named files with a fresh finder and a fresh checker. It
-  looks for simpler designs, not bugs; use code-review for defects. Use it for "/code-quality",
-  "review the structure of my branch", or "review the code quality of these files". It never edits,
-  fixes, commits, or pushes. On the user's own work, it then acts on the supported findings with
-  triage-findings, unless the user asked for a read-only review.
+  Review the structure of a branch diff, named files, or the whole repository with a fresh finder
+  and a fresh checker. It looks for simpler designs, not bugs; use code-review for defects. Use it
+  for "/code-quality", "review the structure of my branch", "review the code quality of these
+  files", or "review the whole repository". It never edits, fixes, commits, or pushes. On the user's
+  own work, it then acts on the supported findings with triage-findings, unless the user asked for a
+  read-only review.
 ---
 
 # Code quality
@@ -13,8 +14,9 @@ description:
 ## When to use
 
 Use this skill to review the structure of local code: the current branch, uncommitted work, a commit
-or range, or named files. It needs the `subagent` tools inside herdr. Without them, tell the user
-and stop. For defects, use the [code-review](../code-review/SKILL.md) skill.
+or range, named files, or the whole repository in ordered parts. It needs the `subagent` tools
+inside herdr. Without them, tell the user and stop. For defects, use the
+[code-review](../code-review/SKILL.md) skill.
 
 ## Hard rules
 
@@ -28,8 +30,8 @@ and stop. For defects, use the [code-review](../code-review/SKILL.md) skill.
   Omit `model` unless the user names one.
 - If a launch fails, follow the retry rule of [code-review](../code-review/SKILL.md#hard-rules). Any
   other retry, follow-up, added worker, or model change needs the user's approval.
-- Aim for about 10 minutes, and follow the rules for the aim in
-  [code-review](../code-review/SKILL.md#hard-rules).
+- Aim for about 10 minutes, or about 10 minutes per part in a repo run, and follow the rules for the
+  aim in [code-review](../code-review/SKILL.md#hard-rules).
 - Run no full check, post no ticket comment except in step 7, and do not review a fix or run this
   skill again on its own.
 - After the report, act on findings only on the user's own work, and never after a request for a
@@ -38,6 +40,7 @@ and stop. For defects, use the [code-review](../code-review/SKILL.md) skill.
 ## Procedure
 
 1. Resolve the target once as a `code_review` target, with every revision pinned by `git rev-parse`.
+   - The whole repository: follow the repo run in step 9.
    - A branch diff: a `workingTree` from `git merge-base <default> HEAD`. Named files: a `files`
      target, which reviews them even without changes.
    - Any other target, such as uncommitted work, a commit, or a range, follows step 1 of
@@ -98,3 +101,24 @@ and stop. For defects, use the [code-review](../code-review/SKILL.md) skill.
      investigate 3?", and includes any decision a gap or stale result needs. Act on the approved
      findings with triage-findings.
    - Without findings, ask only about a gap, failure, or stale result that needs a decision.
+
+9. Repo run: review the whole repository as ordered parts. Parts never run in parallel.
+   - Propose the parts. Each part is a list of paths, ordered so that shared modules come before
+     their callers. Ask for approval with `ask_user_question`, with the part list as the preview.
+     Run nothing until the user approves. Approving the list approves two workers per part.
+   - Call `code_review` `prepare` once per part, in part order. The first part's directory is the
+     run directory `$run`. Then write `$run/brief.md` once from the [brief template](brief.md).
+   - For each part, in order, run steps 2 to 5 with its prepared directory as `$dir`, without a
+     second `prepare`, and a `files` target that lists the part's paths. Finish the finder and the
+     checker of one part before you start the next part.
+     - The finder's and the checker's tasks both name `$run/brief.md` and the `checked.md` path of
+       every earlier part. Part 1 has no earlier part.
+     - The checker tests the part's findings and any correction of an earlier part.
+     - Save `finder.md` and `checker.md` in the part's `$dir` as step 6 says, but write no per-part
+       `report.md`. Save `$dir/checked.md` instead: the part's findings and corrections, each with
+       the checker's status.
+   - A failed worker is a gap for its part, and the run goes on to the next part. A stale part is
+     labeled stale in its `checked.md` and in the run report, and the run goes on. Ask about stale
+     parts once, in the final reply. Never relaunch a part or rerun the skill.
+   - Write one run report, `$run/report.md`, with the [report template](report.md). Then post it as
+     step 7 says, with `$run` as `$dir`, and reply as step 8 says.
