@@ -832,6 +832,22 @@ describe('commitTool.execute', () => {
     expect(message).toContain('lint failed on src/a.ts');
     expect(message).toContain('warning: slow hook');
   });
+
+  it('drops ANSI escapes and lint-staged progress lines but keeps the real error', () => {
+    const stdout = [
+      '\u001B[33m[STARTED]\u001B[39m Preparing lint-staged...',
+      '[COMPLETED] Preparing lint-staged...',
+      '[SKIPPED] *.md — no files',
+      '\u001B[31m[FAILED]\u001B[39m eslint --fix [FAILED]',
+      '',
+    ].join('\n');
+
+    const stderr = '\u001B[1msrc/a.ts:3:1 error no-unused-vars\u001B[22m\n';
+
+    expect(commitFailedError(stdout, stderr).message).toBe(
+      'git commit failed:\n[FAILED] eslint --fix [FAILED]\nsrc/a.ts:3:1 error no-unused-vars\n',
+    );
+  });
 });
 
 describe('commits without approvals', () => {

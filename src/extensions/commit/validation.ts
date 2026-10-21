@@ -1,4 +1,5 @@
 import { posix } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
@@ -72,9 +73,17 @@ export const commitToolParameters = Type.Object({
 
 export type CommitInput = Static<typeof commitToolParameters>;
 
+const lintStagedProgressLinePattern = /^\[(STARTED|COMPLETED|SKIPPED)\] /;
+
+const cleanHookOutput = (output: string): string =>
+  stripVTControlCharacters(output)
+    .split('\n')
+    .filter((line) => !lintStagedProgressLinePattern.test(line))
+    .join('\n');
+
 // Pi forwards only error.message, so include hook diagnostics from both streams.
 export const commitFailedError = (stdout: string, stderr: string): Error =>
-  new Error(`git commit failed:\n${stdout}${stderr}`);
+  new Error(`git commit failed:\n${cleanHookOutput(stdout)}${cleanHookOutput(stderr)}`);
 
 export const validateSubject = (subject: string): void => {
   if (subject.includes('\0')) {

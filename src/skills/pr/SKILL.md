@@ -225,6 +225,9 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
      as draft, Publish as ready, Change something. Publish as draft and Publish as ready are Accept.
      Change something is Request changes. Put the title and full body in the question-level
      `preview`.
+   - Put the other preview items and the session report in visible text before the question, or in
+     the question-level `preview`.
+   - Keep `problem` to one or two sentences on the branch state, within the tool's length limit.
    - In the publish option descriptions, mark the status step 6 suggests. For a draft suggestion,
      give the number of gaps and point to the session report, which lists them, so the user sees
      what ready leaves open. For an existing PR, say whether each option keeps or changes its

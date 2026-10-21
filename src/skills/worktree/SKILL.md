@@ -13,8 +13,8 @@ metadata:
 
 Use this skill when the user asks for a worktree for a ticket or a piece of work. When you work from
 the bare repository root, an approved implementation task is such a request: create the worktree and
-tell the user. Otherwise, agreeing to a change is not a request for a worktree. Grove creates the
-worktree and runs the repository's add hooks, such as dependency installs.
+hand the task over to it. Otherwise, agreeing to a change is not a request for a worktree. Grove
+creates the worktree and runs the repository's add hooks, such as dependency installs.
 
 ## Hard rules
 
@@ -39,5 +39,6 @@ worktree and runs the repository's add hooks, such as dependency installs.
    - Pass `--base <base>` only for a new branch whose base the user or project names. Otherwise
      Grove uses the default branch. Grove rejects `--base` for an existing branch.
    - If the branch already has a worktree, Grove opens it instead.
-3. If the user asked for a handover, send it to the new workspace with the
-   [handover skill](../handover/SKILL.md).
+3. Send a handover to the new workspace with the [handover skill](../handover/SKILL.md) when the
+   user asked for one. From the bare repository root, also send the approved implementation task
+   without waiting to be asked.
