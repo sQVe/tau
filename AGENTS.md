@@ -16,9 +16,11 @@ verification.
 - Follow the [writing instructions](src/instructions/writing.md) for every document.
 - Follow the [workflow instructions](src/instructions/workflow.md) for how you run commands and
   scope work.
-- Before writing or changing a skill, or a tool that a skill calls, read the
-  [skill authoring guide](docs/skill-authoring.md).
 - Before finishing a document, verify the commands it gives against the repository.
+- Before finishing a document, check that its local links resolve. `tests/markdownFiles.test.ts` in
+  `pnpm check` checks them.
+- A pull request that changes `src/` needs a changeset. Add it with `pnpm changeset`;
+  `.github/workflows/changeset.yml` requires it.
 - Follow the module, query, and failure conventions in
   [ADR 0055](docs/adr/0055-record-tau-coding-conventions-in-agents-md.md). Give each new public read
   path over saved records or running workers a contract test for normal, missing, and malformed
@@ -33,13 +35,16 @@ verification.
   and order that must stay central. Put each action's policy and execution in a behavior owner file
   that the root calls, and keep coupled state changes in one owner
   ([ADR 0109](docs/adr/0109-keep-action-behavior-out-of-extension-roots.md)).
-- Give a prompt or guidance list one policy per item. Keep `pureModules` in
-  `tests/structure.test.ts` and `moduleList` and `importTable` in `lint/rules/moduleBoundaries.ts`
-  sorted.
+- Give a prompt or guidance list one policy per item.
 - Name one concept with one noun inside a module. No file reverses its module's name
   ([ADR 0109](docs/adr/0109-keep-action-behavior-out-of-extension-roots.md)).
 
 ## Architecture
+
+`src/tau.ts` is the entry point. It registers each extension. `src/extensions/` is the open feature
+tier, with one folder or file per feature. Shared modules never import extensions, no module imports
+`src/tau.ts`, and extensions never import each other
+([ADR 0120](docs/adr/0120-capability-modules-with-an-enforced-import-table.md)).
 
 Shared code under `src/` forms capability modules, and `tau/module-boundaries` in
 `lint/rules/moduleBoundaries.ts` enforces them
@@ -48,6 +53,13 @@ closed module list and an import table. The target shared modules are `errors`, 
 `skillTools`, `instructions`, `herdr`, `codemode`, `worker`, `git`, `config`, `linear`, `dialog`,
 `tauDirectory`, `github`, `reviewCapture`, `record`, `process`, `shell`, and `checkRecord`. When the
 rule reports an import, change the import table or the module list instead of silencing the rule.
+
+## Skills and tools
+
+Skills live in `src/skills/<name>/SKILL.md`. A skill's tool lives in an extension under
+`src/extensions/<feature>/` and is called from `src/tau.ts`. Its skill and tool names go in
+`src/skillTools.ts`. Before writing or changing a skill, or a tool that a skill calls, read the
+[skill authoring guide](docs/skill-authoring.md).
 
 ## Tests
 
