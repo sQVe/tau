@@ -37,7 +37,7 @@ export const createTrackerDraftTool = (): ToolDefinition<typeof parameters, Prep
     label: 'Tracker draft',
     description: `Prepare a directory that holds a ticket draft.
 - action prepare with id: finds the .tau/tickets/*/draft.json that records the identifier whose lower case is id, or else creates or reuses .tau/tickets/<id>, in the current checkout or bare repository root, and ensures .tau/.gitignore ends with *. Returns {directory, draft, malformed}: directory is an absolute path, draft is the parsed draft.json of that directory or null when it has none, and malformed lists the draft.json paths in other directories that cannot be read. Keeps existing files.
-- draft.json is {"version": 1, "identifier": "ME-600" or null, "reviewCommentId": a Linear comment ID or null}. You write it with the write tool; the tool only reads it.
+- draft.json is {"version": 2, "identifier": "ME-600" or null, "reviewCommentId": a Linear comment ID or null, "qualityCommentId": a Linear comment ID or null}. A version 1 record reads with qualityCommentId null. You write it with the write tool; the tool only reads it.
 - id matches ^[a-z0-9][a-z0-9-]*$, such as a lower-case ticket identifier (me-600) or a slug of the title. Nested calls resolve to the same root.
 - Errors: a missing or invalid id, a malformed or newer draft.json in the returned directory, or two directories that record the same identifier (nothing is created in these cases), no Git repository, an unresolved bare Git directory, a symlink in the directory path, a hard-linked .tau/.gitignore, or a tracked destination or ignore file in a worktree.
 - Writes nothing to the tracker.`,

@@ -22,18 +22,32 @@ const directoryWith = async (text: string | undefined) => {
 
 const fixtureText = (name: string) => readFile(join(fixtures, name), 'utf8');
 
-it('reads a current record', async () => {
+it('reads a previous version 1 record as version 2', async () => {
   const directory = await directoryWith(await fixtureText('version-1.json'));
 
   expect(await readDraftRecord(directory)).toEqual({
-    version: 1,
+    version: 2,
     identifier: 'ME-600',
     reviewCommentId: 'c1',
+    qualityCommentId: null,
+  });
+});
+
+it('reads a current version 2 record with separate comment IDs', async () => {
+  const directory = await directoryWith(await fixtureText('version-2.json'));
+
+  expect(await readDraftRecord(directory)).toEqual({
+    version: 2,
+    identifier: 'ME-600',
+    reviewCommentId: 'c1',
+    qualityCommentId: 'q1',
   });
 });
 
 it('reads a record with no identifier or comment', async () => {
-  const directory = await directoryWith('{"version":1,"identifier":null,"reviewCommentId":null}');
+  const directory = await directoryWith(
+    '{"version":2,"identifier":null,"reviewCommentId":null,"qualityCommentId":null}',
+  );
 
   expect((await readDraftRecord(directory))?.identifier).toBeNull();
 });
@@ -53,7 +67,28 @@ const refused = [
   },
   {
     label: 'an extra field',
+    text: () =>
+      '{"version":2,"identifier":null,"reviewCommentId":null,"qualityCommentId":null,"x":1}',
+    message: /Malformed/,
+  },
+  {
+    label: 'an extra field in version 1',
     text: () => '{"version":1,"identifier":null,"reviewCommentId":null,"x":1}',
+    message: /Malformed/,
+  },
+  {
+    label: 'an empty quality comment ID',
+    text: () => '{"version":2,"identifier":null,"reviewCommentId":null,"qualityCommentId":""}',
+    message: /Malformed/,
+  },
+  {
+    label: 'a version 1 record with a quality comment ID',
+    text: () => '{"version":1,"identifier":null,"reviewCommentId":null,"qualityCommentId":"q1"}',
+    message: /Malformed/,
+  },
+  {
+    label: 'a version 2 record without a quality comment ID',
+    text: () => '{"version":2,"identifier":null,"reviewCommentId":null}',
     message: /Malformed/,
   },
   {

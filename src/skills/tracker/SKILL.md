@@ -120,9 +120,10 @@ writes a tool makes, such as `slice` `apply`.
      `ticket.md` and the title as `title.md`, and write the title from `title.md`.
    - Keep a `draft.json` next to the body with the Linear identifier once it exists. Write it at
      once after each create, before any other step. When `prepare` returned no `draft`, create it as
-     `{"version": 1, "identifier": "ME-600", "reviewCommentId": null}`. Otherwise keep every field
-     of the returned `draft` and change only `identifier`, so a saved `reviewCommentId` stays. Keep
-     the type, route, parent, and labels in the preview, not in a saved file.
+     `{"version": 2, "identifier": "ME-600", "reviewCommentId": null, "qualityCommentId": null}`.
+     Otherwise keep every field of the returned `draft` and change only `identifier`, so a saved
+     `reviewCommentId` and `qualityCommentId` stay. Keep the type, route, parent, and labels in the
+     preview, not in a saved file.
    - When the returned `draft` records an identifier, read the ticket with
      `linear issue view <id> --json --no-pager`. The write is then an update of that ticket, never a
      new create. The preview names each field that changes from the saved copy, including edits made
