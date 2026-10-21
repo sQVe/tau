@@ -98,6 +98,9 @@ inside herdr. Without them, tell the user and stop. For defects, use the
    - Propose the parts. Each part is a list of paths, ordered so that shared modules come before
      their callers. Ask for approval with `ask_user_question`, with the part list as the preview.
      Run nothing until the user approves. Approving the list approves two workers per part.
+   - Build the parts from `git ls-tree -r --name-only <HEAD>` at the pinned HEAD. Each tracked file
+     belongs to a part or to a named exclusion, such as lockfiles or generated files. The preview
+     lists the exclusions, and the run report lists them as gaps.
    - Call `code_review` `prepare` once per part, in part order. The first part's directory is the
      run directory `$run`. Then write `$run/brief.md` once from the [brief template](brief.md).
    - For each part, in order, run steps 2 to 5 with its prepared directory as `$dir`, without a
