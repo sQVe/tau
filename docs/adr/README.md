@@ -95,6 +95,7 @@ and the numbers that its status names.
 - [0117: List mutation survivors as advice instead of a gate](./0117-list-mutation-survivors-as-advice.md)
 - [0118: List equivalent mutants instead of adding disable comments](./0118-list-equivalent-mutants-instead-of-disable-comments.md)
 - [0119: Share the mutation script as one npm package](./0119-share-the-mutation-script-as-one-npm-package.md)
+- [0121: Test architecture rules for placement, naming, fakes, and fixtures](./0121-test-architecture-rules.md)
 
 ## Commits
 

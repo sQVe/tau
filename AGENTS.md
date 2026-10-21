@@ -68,11 +68,21 @@ Keep tests fast so the full suite stays practical as coverage grows.
 - Do not test wording, constants, types, removed features, or internal calls. Assert exact bytes
   only where another program parses them.
 - Keep tests next to source. Cross-module and package checks go in `tests/`.
+- Name a unit test `<owner>.test.ts` or `<owner><Behavior>.test.ts`. Never name a file after a test
+  technique.
+- Put every case in the decision table. The adapter test holds one case per outcome kind and its
+  side effects.
+- Put a fixture used by one module in that module's `fixtures/`. Put a fixture used by two modules
+  or by `tests/` in `tests/`.
 - Use real Git, filesystem, and Pi where those boundaries matter. Otherwise avoid subprocesses and
   reuse existing fakes, such as `src/extensions/subagents/fixtures/herdrFake.ts`.
+- Fake the boundary, not the module. Assert outcomes, and read a `calls` list only when the call is
+  the behavior.
 - Create Git repositories with `tests/gitRepository.ts`.
 - Fake timers, `Date`, and `performance` together, and use explicit signals for async work. Use real
   time only when elapsed time is the behavior.
+- Follow [ADR 0121](docs/adr/0121-test-architecture-rules.md) for test placement, naming, fakes, and
+  fixtures.
 - Keep mutable fixtures isolated. Never drop assertions or failure cases to save time.
 - Measure slow tests before optimizing. Split a slow test file by behavior when it prevents workers
   from sharing the work. Compare repeated full-suite runs before changing worker limits.
