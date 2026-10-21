@@ -185,7 +185,9 @@ writes a tool makes, such as `slice` `apply`.
      from `linear issue comment list <ticket> --json --no-pager`, since the add command prints a
      success message and the comment URL, not the ID. The list's JSON has `id`, `body`, and `url`
      for each comment. Replace a comment's text with
-     `linear issue comment update <comment> --body-file <file> --yes`.
+     `linear issue comment update <comment> --body-file <file> --yes`. Run a `--body-file` command
+     in a later message than the call that writes its file, because calls in one message run at the
+     same time.
    - Add a dependency that the `slice` tool does not write, such as one on a ticket outside the
      container: `linear issue relation add <ticket> blocked-by <other>`. Remove one with
      `linear issue relation delete <ticket> blocked-by <other> --yes`.
