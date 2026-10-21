@@ -64,9 +64,9 @@ changing and within the requested scope. Explain the rest.
    - Make each bullet understandable without the original findings.
    - Include the file and line, the evidence, and what you changed or why you left it.
    - Under Blocked, also state what you need to continue.
-   - After the safe fixes, ask once per Blocked `restructure` finding with `ask_user_question`: fix
-     it in this branch, or file a follow-up ticket. Recommend the follow-up ticket, which is the
-     default. On this branch, fix it, run step 4 again, and report it under Fixed. On follow-up,
-     file the ticket with the [tracker skill](../tracker/SKILL.md) and keep the finding under
-     Blocked, with the ticket identifier in place of what you need to continue.
+   - After the safe fixes, ask once per supported, worthwhile `restructure` finding with
+     `ask_user_question`: fix it in this branch, or file a follow-up ticket. Recommend the follow-up
+     ticket, which is the default. On this branch, fix it, run step 4 again, and report it under
+     Fixed. On follow-up, file the ticket with the [tracker skill](../tracker/SKILL.md) and keep the
+     finding under Blocked, with the ticket identifier in place of what you need to continue.
 6. End with a Checks section. It holds no findings. List the commands you ran and their results.
