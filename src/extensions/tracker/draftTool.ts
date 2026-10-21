@@ -17,19 +17,20 @@ interface RecordDetails {
   draft: DraftRecord;
 }
 
-const parameters = Type.Union([
-  Type.Object({ action: Type.Literal('prepare'), id: Type.String() }),
-  Type.Object({
-    action: Type.Literal('record'),
-    id: Type.String(),
-    field: Type.Union([
+// Providers require an object at the top of tool parameters, so record's fields are optional here
+// and checked in record.
+const parameters = Type.Object({
+  action: Type.Union([Type.Literal('prepare'), Type.Literal('record')]),
+  id: Type.String(),
+  field: Type.Optional(
+    Type.Union([
       Type.Literal('identifier'),
       Type.Literal('reviewCommentId'),
       Type.Literal('qualityCommentId'),
     ]),
-    value: Type.String(),
-  }),
-]);
+  ),
+  value: Type.Optional(Type.String()),
+});
 
 const idPattern = /^[a-z0-9][a-z0-9-]*$/;
 
@@ -51,9 +52,13 @@ const prepare = async (cwd: string, id: unknown): Promise<PrepareDetails> => {
 const record = async (
   cwd: string,
   id: unknown,
-  field: string,
+  field: unknown,
   value: unknown,
 ): Promise<RecordDetails> => {
+  if (typeof field !== 'string') {
+    throw new TypeError('record needs a field: identifier, reviewCommentId, or qualityCommentId.');
+  }
+
   checkDraftField(field, value);
 
   const { directory } = await prepare(cwd, id);
