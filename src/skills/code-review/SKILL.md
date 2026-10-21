@@ -106,7 +106,8 @@ named files. It needs the `subagent` tools inside herdr. Without them, tell the 
      with `ask_user_question` first, and skip the post if the user declines.
    - Update the earlier comment when one exists, and never add a second one. Otherwise add one.
      Record its ID at once, in `$dir/report.md` and as `reviewCommentId` in the returned
-     `draft.json`, keeping its other fields, or create it with version 1 and `identifier` set.
+     `draft.json`, keeping its other fields including `qualityCommentId`, or create it with version
+     2, `identifier` set, and `"qualityCommentId": null`.
    - If the post fails, keep the local report and say so in the reply.
 
 8. Reply with the [report template](report.md). Name the comment URL, or say the report stays local.

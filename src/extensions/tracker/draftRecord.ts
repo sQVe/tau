@@ -16,13 +16,30 @@ export interface DraftLookup {
 
 const draftFileName = 'draft.json';
 
-const currentVersion = 1;
+const currentVersion = 2;
+
+const identifierSchema = Type.Union([
+  Type.String({ pattern: '^[A-Z][A-Z0-9]*-[0-9]+$' }),
+  Type.Null(),
+]);
+
+const commentIdSchema = Type.Union([Type.String({ minLength: 1 }), Type.Null()]);
+
+const previousDraftSchema = Type.Object(
+  {
+    version: Type.Literal(1),
+    identifier: identifierSchema,
+    reviewCommentId: commentIdSchema,
+  },
+  { additionalProperties: false },
+);
 
 const draftSchema = Type.Object(
   {
     version: Type.Literal(currentVersion),
-    identifier: Type.Union([Type.String({ pattern: '^[A-Z][A-Z0-9]*-[0-9]+$' }), Type.Null()]),
-    reviewCommentId: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
+    identifier: identifierSchema,
+    reviewCommentId: commentIdSchema,
+    qualityCommentId: commentIdSchema,
   },
   { additionalProperties: false },
 );
@@ -49,6 +66,10 @@ const parseDraftRecord = (path: string, text: string): DraftRecord => {
     throw new Error(
       `Ticket draft ${path} has a newer format than this Tau reads. Update Tau, then restart the session.`,
     );
+  }
+
+  if (Value.Check(previousDraftSchema, value)) {
+    return { ...value, version: currentVersion, qualityCommentId: null };
   }
 
   if (!Value.Check(draftSchema, value)) {

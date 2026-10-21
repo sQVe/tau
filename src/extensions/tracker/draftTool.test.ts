@@ -69,7 +69,7 @@ it('returns the directory whose draft.json records the identifier', async () => 
 
   expect(prepared).toEqual({
     directory: saved,
-    draft: { version: 1, identifier: 'ME-600', reviewCommentId: 'c1' },
+    draft: { version: 2, identifier: 'ME-600', reviewCommentId: 'c1', qualityCommentId: null },
     malformed: [],
   });
 
@@ -98,12 +98,12 @@ it('returns a directory named for the id whose draft records no identifier', asy
 
   await writeFile(
     join(directory, 'draft.json'),
-    '{"version":1,"identifier":null,"reviewCommentId":null}',
+    '{"version":2,"identifier":null,"reviewCommentId":null,"qualityCommentId":null}',
   );
 
   expect(await prepare(root, { action: 'prepare', id: 'me-600' })).toEqual({
     directory,
-    draft: { version: 1, identifier: null, reviewCommentId: null },
+    draft: { version: 2, identifier: null, reviewCommentId: null, qualityCommentId: null },
     malformed: [],
   });
 });
