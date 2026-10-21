@@ -625,18 +625,20 @@ const readLoadoutInstructionSets = (loadout: Loadout): Promise<string[]> =>
       .map((name) => readInstructionSet(name)),
   );
 
+export const workerSystemPrompt = async (loadout: Loadout): Promise<string> => {
+  const instructionSets = await readLoadoutInstructionSets(loadout);
+
+  return [workerInstructions(loadout), ...instructionSets].join('\n\n');
+};
+
 const registerSystemPromptHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {
   // Read once, so every turn gets the same text even if the checkout changes.
-  let instructionSets: Promise<string[]> | undefined;
+  let systemPrompt: Promise<string> | undefined;
 
   pi.on('before_agent_start', async (event) => {
     if (state.task) {
-      instructionSets ??= readLoadoutInstructionSets(state.task.loadout);
-      appendSystemPrompt(event, workerInstructions(state.task.loadout));
-
-      for (const text of await instructionSets) {
-        appendSystemPrompt(event, text);
-      }
+      systemPrompt ??= workerSystemPrompt(state.task.loadout);
+      appendSystemPrompt(event, await systemPrompt);
     }
   });
 };
