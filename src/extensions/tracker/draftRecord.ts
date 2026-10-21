@@ -181,7 +181,6 @@ type DraftField = keyof typeof fieldSchemas;
 
 const isDraftField = (field: string): field is DraftField => Object.hasOwn(fieldSchemas, field);
 
-// Throws when field is not a draft field or value does not fit it.
 export const checkDraftField = (field: string, value: unknown): DraftField => {
   if (!isDraftField(field)) {
     throw new Error(
