@@ -46,48 +46,28 @@ named files. It needs the `subagent` tools inside herdr. Without them, tell the 
 
 ## Procedure
 
-1. Resolve the target once as a `code_review` target, with every revision pinned by `git rev-parse`.
-   - No target: on the default branch (`git symbolic-ref --short refs/remotes/origin/HEAD`), a
-     `workingTree` from `HEAD`. On another branch, a `workingTree` from
-     `git merge-base <default> HEAD`.
-   - A commit: a `range` from its parent, or a `rootCommit` when it has none. `A..B`: a `range`.
-     Named files: a `files` target, which reviews them even without changes.
+1. Resolve the target as in [Resolve the target](phases.md#resolve-the-target).
    - After an earlier review of this target in this session whose findings were fixed: a `fix`
      target, with that review's directory as `review` and the paths of the closed findings as
      `findingPaths`. Capture the whole target instead when the user asks for a full review or the
      earlier review left no usable snapshot.
-   - Pass declared exclusions as `exclude`. Ask when the target, base, or ownership is unclear.
    - The ticket under review is the one the user or a calling skill names. Otherwise, only for the
      branch's own work (merge base to `HEAD` or the working tree, or uncommitted work), use the
      branch's issue from `linear issue view --json --no-pager`. With no ticket, or a failed read,
      the report stays local.
 
-2. Call `code_review` `prepare`, and use the returned directory as `$dir`. Write `$dir/input.md`
-   from the [input template](input.md). Then call `capture` with `$dir` and the target. If either
-   call fails, stop and report the error.
-   - Ask the user about each `unmatched` gap first. On a corrected path, start again at step 1.
-   - A `fix` capture with `scope: "wholeTarget"` widened the change: capture the whole target fresh.
-   - `empty` with no gaps: say there is nothing to review and stop. `empty` with gaps: report them
-     and stop.
-   - When `head` or `base` differs from `input.md`, the target moved: start again at step 1.
+2. Prepare and capture as in [Handle the capture result](phases.md#handle-the-capture-result).
+   - After the `unmatched` gaps and before the `empty` check, a `fix` capture with
+     `scope: "wholeTarget"` widened the change: capture the whole target fresh.
 
-3. Gather evidence with one read-only `codemode` script. It returns the full `code_review`
-   `evidence` result for `$dir`, and line-numbered excerpts of the rule files that bear on the
-   changed paths, read with `git show <sha>:<path>` for a pinned commit. Save the result as
-   `$dir/evidence.md`. If the script fails, record a gap and continue with `input.md` alone.
+3. Gather evidence as in [Gather evidence](phases.md#gather-evidence).
 
-4. Run the mode.
+4. Run the mode, with the rules of [Run the workers](phases.md#run-the-workers).
    - Fast: one reviewer. Add "Try to disprove each finding before you report it."
    - Deep: a finder, with "Report every plausible material candidate; the checker tests them." Then
      a fresh checker, with the `## Checker` lines of the review assignment and the finder's
      candidates, or the path `$dir/finder.md` holding its report. Launch the checker even when the
      finder found nothing.
-   - On the user's own work, add "Also list worthwhile pre-existing issues in touched code."
-   - Before each launch, check the elapsed time. Past the aim, show the findings so far and ask
-     whether to continue.
-   - Do not relaunch a worker that fails or stops without a report, beyond the one retry. Show its
-     notes as unverified leads and mark the review incomplete.
-   - Always report finished results, even after the aim has passed.
 
 5. Call `code_review` `freshness` with `$dir`. Report `fresh` as fresh. The check is not atomic, and
    covers only the captured target, not callers or rules outside it. Label `stale` with its reasons
@@ -105,9 +85,8 @@ named files. It needs the `subagent` tools inside herdr. Without them, tell the 
      and the ticket are both the user's own, as the tracker skill defines a ticket. Otherwise ask
      with `ask_user_question` first, and skip the post if the user declines.
    - Update the earlier comment when one exists, and never add a second one. Otherwise add one.
-     Record its ID at once, in `$dir/report.md` and as `reviewCommentId` in the returned
-     `draft.json`, keeping its other fields including `qualityCommentId`, or create it with version
-     2, `identifier` set, and `"qualityCommentId": null`.
+     Record its ID at once, in `$dir/report.md` and by calling `tracker_draft` with action `record`,
+     the ticket `id`, field `reviewCommentId`, and the comment ID as `value`.
    - If the post fails, keep the local report and say so in the reply.
 
 8. Reply with the [report template](report.md). Name the comment URL, or say the report stays local.

@@ -1,10 +1,31 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import { findDraftFor, readDraftRecord } from './draftRecord.js';
+import { findDraftFor, readDraftRecord, writeDraftField } from './draftRecord.js';
+
+const renameFailure = vi.hoisted(() => ({ error: undefined as Error | undefined }));
+
+vi.mock(import('node:fs/promises'), async (importOriginal) => {
+  const original = await importOriginal();
+
+  return {
+    ...original,
+    rename: async (...parameters: Parameters<typeof original.rename>) => {
+      if (renameFailure.error !== undefined) {
+        throw renameFailure.error;
+      }
+
+      return original.rename(...parameters);
+    },
+  };
+});
+
+afterEach(() => {
+  renameFailure.error = undefined;
+});
 
 const fixtures = join(import.meta.dirname, 'fixtures', 'drafts');
 
@@ -137,4 +158,79 @@ it('finds no draft when the tickets directory does not exist', async () => {
   const root = await directoryWith(undefined);
 
   expect(await findDraftFor(root, 'me-600')).toMatchObject({ draft: null, malformed: [] });
+});
+
+const readJson = async (directory: string) =>
+  JSON.parse(await readFile(join(directory, 'draft.json'), 'utf8')) as unknown;
+
+it.each([
+  { fixture: 'version-1.json', field: 'identifier', value: 'ME-700' },
+  { fixture: 'version-2.json', field: 'reviewCommentId', value: 'c9' },
+  { fixture: 'version-2.json', field: 'qualityCommentId', value: 'q9' },
+] as const)('sets $field, keeps the rest, and writes version 2', async (input) => {
+  const directory = await directoryWith(await fixtureText(input.fixture));
+  const before = await readDraftRecord(directory);
+
+  const written = await writeDraftField(directory, input.field, input.value);
+
+  expect(written).toEqual({ ...before, [input.field]: input.value });
+  expect(await readJson(directory)).toEqual(written);
+  expect(written.version).toBe(2);
+});
+
+it('creates draft.json with the other fields null when none exists', async () => {
+  const directory = await directoryWith(undefined);
+
+  await writeDraftField(directory, 'qualityCommentId', 'q1');
+
+  expect(await readJson(directory)).toEqual({
+    version: 2,
+    identifier: null,
+    reviewCommentId: null,
+    qualityCommentId: 'q1',
+  });
+
+  expect(await readdir(directory)).toEqual(['draft.json']);
+});
+
+it.each(['malformed.json', 'newer.json'])('refuses to change %s and keeps it', async (fixture) => {
+  const text = await fixtureText(fixture);
+  const directory = await directoryWith(text);
+
+  await expect(writeDraftField(directory, 'identifier', 'ME-1')).rejects.toThrow(/draft/);
+
+  expect(await readFile(join(directory, 'draft.json'), 'utf8')).toBe(text);
+  expect(await readdir(directory)).toEqual(['draft.json']);
+});
+
+it.each([
+  { field: 'identifier', value: 'me-1' },
+  { field: 'identifier', value: '' },
+  { field: 'reviewCommentId', value: '' },
+  { field: 'qualityCommentId', value: 5 },
+  { field: 'reviewCommentId', value: null },
+  { field: 'version', value: 'x' },
+])('refuses $field value $value and writes nothing', async ({ field, value }) => {
+  const missing = await directoryWith(undefined);
+  const saved = await directoryWith(await fixtureText('version-1.json'));
+
+  await expect(writeDraftField(missing, field, value)).rejects.toThrow(/field|value/);
+  await expect(writeDraftField(saved, field, value)).rejects.toThrow(/field|value/);
+
+  const original = await fixtureText('version-1.json');
+
+  expect(await readdir(missing)).toEqual([]);
+  expect(await readFile(join(saved, 'draft.json'), 'utf8')).toBe(original);
+});
+
+it('keeps the error, the destination, and the directory when the rename fails', async () => {
+  const text = await fixtureText('version-1.json');
+  const directory = await directoryWith(text);
+
+  renameFailure.error = new Error('rename failed');
+
+  await expect(writeDraftField(directory, 'identifier', 'ME-1')).rejects.toThrow('rename failed');
+
+  expect(await readdir(directory)).toEqual(['draft.json']);
+  expect(await readFile(join(directory, 'draft.json'), 'utf8')).toBe(text);
 });

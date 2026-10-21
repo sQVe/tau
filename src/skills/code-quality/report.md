@@ -5,6 +5,9 @@ Use this shape for the files in `$dir` and for the reply.
 ## Saved files
 
 - Each worker report: `finder.md` and `checker.md`.
+- Repo run: one `report.md` in the run directory lists findings grouped by part, in run order. A
+  list of corrections of earlier parts follows the groups. Each part directory keeps `finder.md`,
+  `checker.md`, and `checked.md` instead of its own `report.md`.
 - `report.md`: with a ticket, it starts with `# Code quality: <ticket>` and keeps a `Comment ID:`
   line once the comment exists. Then the base and HEAD SHAs, the capture `hash`, every finding in
   full, the Defects, and refuted candidates with the checker's reason.
@@ -17,6 +20,7 @@ Use this shape for the files in `$dir` and for the reply.
 - Findings: one table in the priority order of the quality assignment, with the columns `#`, `Kind`,
   `Problem and evidence`, `Sketch`, `Deletes and adds`, `Keeps`, and `Status`. Put long text in
   numbered notes after it.
+  - Repo run: one table per part, in run order, then the list of corrections of earlier parts.
   - Kind: `local` or `restructure`, as the quality assignment defines them.
   - Problem and evidence: `major` first for a major finding, then the `file:line` and the decisive
     fact.
