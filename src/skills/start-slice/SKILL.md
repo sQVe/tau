@@ -192,8 +192,8 @@ or Git. Workers then carry out the agent tickets.
       before code-review.
     - On yes, run the [code-quality skill](../code-quality/SKILL.md) on the slice branch, then go on
       to code-review. On no, go on to code-review.
-    - For a stacked slice, give code-quality the base from step 4, so it reviews only this slice's
-      diff.
+    - For a stacked slice, give code-quality a branch diff from `git merge-base <base> HEAD`, with
+      the base from step 4, so it reviews only this slice's diff.
     - When the code-review skill's ownership rule finds the slice branch the user's own, let
       code-quality continue into its triage without asking. This applies to a reused branch too.
     - Review the change with the [code-review skill](../code-review/SKILL.md), and pass it the slice
