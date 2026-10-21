@@ -103,6 +103,8 @@ inside herdr. Without them, tell the user and stop. For defects, use the
    - For each part, in order, run steps 2 to 5 with its prepared directory as `$dir`, without a
      second `prepare`, and a `files` target that lists the part's paths. Finish the finder and the
      checker of one part before you start the next part.
+     - When the capture phase would repeat for a part, stop the run and ask the user, because the
+       brief pins one HEAD and each part's directory.
      - The finder's and the checker's tasks both name `$run/brief.md` and the `checked.md` path of
        every earlier part. Part 1 has no earlier part.
      - The checker tests the part's findings and any correction of an earlier part.

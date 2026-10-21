@@ -20,11 +20,13 @@ Call `code_review` `prepare`, and use the returned directory as `$dir`. Write `$
 the [input template](input.md). Then call `capture` with `$dir` and the target. If either call
 fails, stop and report the error.
 
-- Ask the user about each `unmatched` gap first. On a corrected path, resolve the target again.
+- Ask the user about each `unmatched` gap first. On a corrected path, resolve the target again and
+  repeat this phase with a fresh `prepare`, because a directory holds only one capture.
 - Before the `empty` check, apply any rule of the calling skill that widens the capture.
 - `empty` with no gaps: say there is nothing to review and stop. `empty` with gaps: report them and
   stop.
-- When `head` or `base` differs from `input.md`, the target moved: resolve the target again.
+- When `head` or `base` differs from `input.md`, the target moved: resolve the target again and
+  repeat this phase with a fresh `prepare`.
 
 ## Gather evidence
 
