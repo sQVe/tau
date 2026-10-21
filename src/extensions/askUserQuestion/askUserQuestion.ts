@@ -1,7 +1,6 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
-import { appendToolGuidelines } from '../../systemPrompt.js';
 import { parseWorkerNoticeEvent, workerNoticeChannel } from '../../workerNoticeEvent.js';
 import { questionDialog } from './dialog.js';
 import type { DialogQuestion, DialogResult, DialogSession } from './dialog.js';
@@ -84,50 +83,14 @@ const questionParams = Type.Object({
   }),
 });
 
-const toolDescription = `Ask the user one or more structured questions during execution. Use when you need to:
-1. Gather user preferences or requirements
-2. Clarify ambiguous instructions
-3. Get decisions on implementation choices as you work
-4. Offer choices to the user about what direction to take
+const toolDescription = `Ask the user structured questions when you cannot proceed without a decision. Ask one question by default. Group only questions that do not depend on each other.
 
-Write for a user who returns cold. They have not read your discussion, so every question must stand alone:
-- \`problem\` says what is going on, in plain words.
-- \`impact\` says what the answer changes or blocks.
-- Each option \`description\` says what happens if chosen, then the main benefit and cost.
-- Say what a thing is. Never name who proposed an option (models, agents, reviewers). Never use option letters, internal codes, or unexplained ADR or ticket numbers.
+Write for a user who has not read your discussion. \`problem\`, \`impact\`, and each option \`description\` must stand alone. Never name who proposed an option. Use no option letters, internal codes, or unexplained ADR or ticket numbers. Keep options in a stable order.
 
-Usage notes:
-- Users can type a custom answer via the automatically appended "Type something." row on every question or press Esc to abandon the questionnaire. Do NOT author "Other" or "Type something." labels yourself — reserved labels are rejected at runtime.
-- Use multiSelect: true when multiple answers are valid. A typed answer is returned together with the checked options.
-- Keep options in a natural, stable order, such as the same order every time you ask the same kind of question. Set \`recommended: true\` on the option you recommend, wherever it sits. The dialog opens on it. At most one option per question may be recommended. The answer returns the plain label.
-
-Preview feature:
-Add a \`preview\` to an option when it changes something you can show: a layout, a config file, a command, a code shape, output, or a draft. Show the unchanged state for an option such as "Keep as is" when a comparison helps. An option with nothing to show, such as "Cancel", needs no preview. Use the same example scenario in every preview and keep each one short, about 10 lines. Skip previews for plain preferences where the labels and descriptions suffice.
-
-Add a \`preview\` to the question for content every option acts on, such as a draft the user approves, publishes, or changes. Every option shows it, and an option's own \`preview\` replaces it while that option is focused.
-
-Preview content renders as preformatted text below the option list while its option is focused. The user can press Ctrl+O to see a long preview in full.
-
-Example question:
-{
-  "question": "Where should the cache live?",
-  "problem": "Startup reads every config file, which takes 2 seconds. A cache would remove that wait.",
-  "impact": "The cache location decides who can find and clear it.",
-  "header": "Cache",
-  "options": [
-    { "label": "Project folder", "description": "Writes .cache/ next to the code. Easy to find and delete; each clone builds its own cache.", "recommended": true, "preview": "repo/\\n  .cache/config.json" },
-    { "label": "Home folder", "description": "Writes ~/.cache/tool/. One cache for all clones; stale entries are harder to spot.", "preview": "~/.cache/tool/repo-hash.json" }
-  ]
-}`;
-
-const promptGuidelines = [
-  "Use ask_user_question whenever the user's request is underspecified and you cannot proceed without concrete decisions — you can ask up to 4 questions per invocation.",
-  'Each question MUST have 2-4 options and a problem and an impact that let a user who has not read your discussion understand it on their own. Every option requires a concise label (1-5 words) and a description of what happens if chosen and its trade-off. Do NOT author "Other" or "Type something." labels yourself.',
-  'Never name who proposed an option, and never use option letters, internal codes, or unexplained ADR or ticket numbers. Say what the thing is.',
-  'Ask one question by default. Group only questions that do not depend on each other. Ask a question that depends on an earlier answer after you have that answer.',
-  'If the user closes the dialog without an answer, state the blocked decision and stop. Closing the dialog is not approval, and do not ask the same question again in prose.',
-  'If the result says the user chose to handle a worker notice first, nothing was answered or approved. Handle the notice, then call ask_user_question again with the same questions. The dialog restores the earlier selections.',
-];
+- Every question gets a "Type something." row. Do not author it or an "Other" option.
+- Set \`recommended: true\` on at most one option per question.
+- Set \`multiSelect: true\` when several answers can be valid. A typed answer returns with the checked options.
+- Add \`preview\` to an option to show what it produces, about 10 lines. Add \`preview\` to the question for content every option acts on, such as a draft to approve. An option preview replaces it.`;
 
 const answerSegment = (answer: Answer) => {
   const preview = answer.preview === undefined ? '' : ` selected preview: ${answer.preview}.`;
@@ -140,7 +103,7 @@ const typedAnswerEnding =
 
 const responseText = (result: DialogResult) => {
   if (result.kind === 'declined') {
-    return 'User declined to answer questions';
+    return 'User declined to answer questions. Closing the dialog is not approval. State the blocked decision and stop. Do not ask the same question again in prose.';
   }
 
   if (result.kind === 'deferred') {
@@ -177,8 +140,6 @@ const questionsKey = (questions: DialogQuestion[]): string =>
   );
 
 export default function askUserQuestionExtension(pi: ExtensionAPI): void {
-  appendToolGuidelines(pi, 'ask_user_question', promptGuidelines);
-
   // Only the latest deferred dialog is kept. Other questions asked in between leave it in place.
   let deferred: { key: string; state: QuestionnaireState } | undefined;
 
