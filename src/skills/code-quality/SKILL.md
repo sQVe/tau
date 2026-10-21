@@ -73,6 +73,7 @@ and stop. For defects, use the [code-review](../code-review/SKILL.md) skill.
    - Find the ticket as the last bullet of step 1 of
      [code-review](../code-review/SKILL.md#procedure) says. For a `files` target with no ticket
      named by the user or a calling skill, there is no ticket.
+   - Start `$dir/report.md` with the line `# Code quality: <ticket>` when it lacks one.
    - Call `tracker_draft` `prepare` with the ticket identifier in lower case. Find the earlier
      report with the tracker skill's comment list command: the comment with ID
      `draft.qualityCommentId`, or with none recorded, the one whose first line is
