@@ -22,16 +22,16 @@ and stop. For defects, use the [code-review](../code-review/SKILL.md) skill.
   checkouts, resets, or stashes. Stop when the user says stop.
 - The user's own work follows the ownership rule of
   [code-review](../code-review/SKILL.md#hard-rules). Anything unclear is not the user's own.
-- The report gives findings and Defects only. It gives the target no approval, no verdict, and no
-  clean result. Never call an incomplete or stale review clean.
+- The report gives the target no approval, no verdict, and no clean result. Never call an incomplete
+  or stale review clean.
 - Launch workers with the `reviewer` profile and the [quality assignment](quality-assignment.md).
   Omit `model` unless the user names one.
 - If a launch fails, follow the retry rule of [code-review](../code-review/SKILL.md#hard-rules). Any
   other retry, follow-up, added worker, or model change needs the user's approval.
 - Aim for about 10 minutes. The aim is yours: put no deadline or budget in an assignment, never
   sleep or poll, and never cancel a worker only because the aim ended.
-- Run no repository checks, post no ticket comment, and do not review a fix or run this skill again
-  on its own.
+- Run no full check, post no ticket comment, and do not review a fix or run this skill again on its
+  own.
 - After the report, act on findings only on the user's own work, and never after a request for a
   read-only review or "no changes". Acting never approves a publish or absorbing unrelated changes.
 
