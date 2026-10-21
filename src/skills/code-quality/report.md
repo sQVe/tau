@@ -16,9 +16,9 @@ Use this shape for the files in `$dir` and for the reply.
 - Findings: one table in the priority order of the quality assignment, with the columns `#`, `Kind`,
   `Problem and evidence`, `Sketch`, `Deletes and adds`, `Keeps`, and `Status`. Put long text in
   numbered notes after it.
-  - Kind: `local` when the touched code can fix it, or `restructure` when it moves ownership or
-    spans modules.
-  - Problem and evidence: the `file:line` and the decisive fact.
+  - Kind: `local` or `restructure`, as the quality assignment defines them.
+  - Problem and evidence: `major` first for a major finding, then the `file:line` and the decisive
+    fact.
   - Status: supported, refuted, or uncertain. It says how the checker tested a finding, not how
     strong it is. Do not rank confidence or give scores. Your agreement does not change a status.
 - Do not redo the review. Keep every supported or uncertain finding. Remove only exact duplicates,

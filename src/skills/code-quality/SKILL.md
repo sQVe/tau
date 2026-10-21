@@ -28,8 +28,8 @@ and stop. For defects, use the [code-review](../code-review/SKILL.md) skill.
   Omit `model` unless the user names one.
 - If a launch fails, follow the retry rule of [code-review](../code-review/SKILL.md#hard-rules). Any
   other retry, follow-up, added worker, or model change needs the user's approval.
-- Aim for about 10 minutes. The aim is yours: put no deadline or budget in an assignment, never
-  sleep or poll, and never cancel a worker only because the aim ended.
+- Aim for about 10 minutes, and follow the rules for the aim in
+  [code-review](../code-review/SKILL.md#hard-rules).
 - Run no full check, post no ticket comment, and do not review a fix or run this skill again on its
   own.
 - After the report, act on findings only on the user's own work, and never after a request for a
@@ -55,17 +55,13 @@ and stop. For defects, use the [code-review](../code-review/SKILL.md) skill.
 
 4. Launch the workers in order.
    - Finder: the `reviewer` profile with
-     [quality-assignment.md#quality-lens](quality-assignment.md#quality-lens). Add "Report every
-     plausible material candidate; the checker tests them."
+     [quality-assignment.md#quality-lens](quality-assignment.md#quality-lens).
    - Checker: a fresh `reviewer` worker with `#quality-lens` and
      [quality-assignment.md#checker](quality-assignment.md#checker), plus the finder's report or the
      path `$dir/finder.md`. Launch it even when the finder found nothing.
-   - On the user's own work, add "Also list worthwhile pre-existing issues in touched code."
-   - Before each launch, check the elapsed time. Past the aim, show the findings so far and ask
-     whether to continue.
-   - Do not relaunch a worker that fails or stops without a report, beyond the one retry. Show its
-     notes as unverified leads and mark the review incomplete.
-   - Always report finished results, even after the aim has ended.
+   - Follow only these parts of step 4 of [code-review](../code-review/SKILL.md#procedure): the
+     pre-existing issues line on the user's own work, the elapsed-time check, failed workers, and
+     finished results. Do not add its finder line about every plausible candidate.
 
 5. Call `code_review` `freshness` with `$dir`. Report `fresh` as fresh. Label `stale` with its
    reasons and ask whether to review again. Report `unknown`, or a failed call, as unknown. Keep the

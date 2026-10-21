@@ -48,7 +48,7 @@ changing and within the requested scope. Explain the rest.
      the change without access, a decision, or information you do not have. A supported finding
      labeled `restructure` that is worth changing is always Blocked.
    - A finding labeled `local` follows the rules above. On the user's own work, fix it without
-     asking when it is supported and in scope.
+     asking when it is supported, worth changing, and in scope.
 3. Fix the findings whose outcome is Fixed.
    - Weigh each fix against the branches, guards, and abstractions it adds.
    - Put defensive checks where untrusted input enters, not inside trusted code.

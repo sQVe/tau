@@ -33,7 +33,7 @@ Apply these standards:
    - Treat this as a strong code-quality smell by default.
    - Propose a split into helpers, subcomponents, modules, or local abstractions only when the split
      makes behavior easier to trace.
-   - When a change crosses the threshold, ask whether to decompose the code first.
+   - When a change crosses the threshold, propose decomposing the code first.
    - Waive the rule only for a compelling structural reason, when the resulting file is still
      clearly organized.
 2. Do not allow spaghetti growth in existing code.
@@ -44,7 +44,7 @@ Apply these standards:
      state machine or policy object only when it makes behavior easier to trace.
    - Report changes that make the surrounding code harder to reason about, even when they work.
 3. Clean the design, not only the behavior.
-   - When behavior can stay the same and the structure can get meaningfully cleaner, ask for the
+   - When behavior can stay the same and the structure can get meaningfully cleaner, propose the
      cleaner version.
    - Do not accept an implementation because it works when it leaves the codebase messier.
    - Prefer a simplification that removes moving pieces over a refactor that spreads the same
@@ -58,8 +58,8 @@ Apply these standards:
    - Question needless optionality, `unknown`, `any`, and casts where a clearer type boundary could
      exist.
    - Prefer explicit typed models and shared contracts over loosely shaped ad-hoc objects.
-   - When a branch uses a silent fallback to cover an unclear invariant, ask whether to make the
-     boundary explicit.
+   - When a branch uses a silent fallback to cover an unclear invariant, propose an explicit
+     boundary.
 6. Keep logic in the canonical layer and reuse existing helpers.
    - Report feature logic that leaks into shared paths and implementation details that leak through
      APIs.
@@ -67,9 +67,8 @@ Apply these standards:
    - Move code to the right package, service, or module instead of accepting architectural drift.
 7. Treat needless sequential orchestration and non-atomic updates as design smells when the cleaner
    structure is obvious.
-   - When independent work runs in sequence for no good reason, ask whether it should run in
-     parallel.
-   - When related updates can leave state half applied, ask for a more atomic structure.
+   - When independent work runs in sequence for no good reason, propose running it in parallel.
+   - When related updates can leave state half applied, propose a more atomic structure.
    - Do not focus on micro-optimizations. Do report avoidable orchestration complexity that makes
      the implementation more brittle.
 
@@ -184,20 +183,23 @@ Each finding gives:
 - A sketch of the simpler structure.
 - What it deletes and what it adds.
 - The contracts, callers, order, errors, and state that stay the same.
-- The label `local` when the touched code can fix it, or `restructure` when it moves ownership or
-  spans modules.
+- The label `restructure` when the fix moves code or ownership between modules, changes a contract
+  that other modules use, or edits files outside the target. Otherwise the label `local`.
+- `major` when it matches the list of major findings above, and its level in the priority order.
 
 Before you propose a deletion, read the history of that code with `git log -L` or
 `git log --follow`, and name why the code exists.
 
 Compare the target with the established patterns of the project:
 
-- Find two or three places where the codebase already solves the same kind of problem, such as
-  sibling tools, skills, or modules. Cite each with `file:line`.
-- Report where the target diverges from them in structure, naming, error handling, test shape, or
-  file layout.
-- When the target's way is better, say so, and propose aligning the older code in a follow-up
-  instead.
+- Find up to three places where the codebase already solves the same kind of problem, such as
+  sibling tools, skills, or modules. Cite each with `file:line`. When fewer than two exist, say so
+  and skip the comparison.
+- Report a divergence in structure, error handling, test shape, or file layout only when it has a
+  structural cost, such as a second way to do one job that readers must learn. Show the cost and why
+  the examples face the same constraints as the target.
+- When the target's way is better, say so, and propose aligning the older code as a `restructure`
+  finding.
 - Leave violations of written project rules to code-review.
 
 Do not search for defects. List a defect you meet in a separate Defects list, not as a structure
@@ -209,7 +211,10 @@ finding.
 ```markdown
 - Confirm that the code each finding would delete exists.
 - Check the contracts that the finding keeps against callers and tests.
-- For a pattern finding, confirm that the cited examples exist and share the pattern.
+- For a pattern finding, confirm that the cited examples exist, share the pattern, and face the same
+  constraints as the target.
+- Confirm each label against its definition in the quality lens. Report a wrong label as refuting
+  that part of the finding.
 - Mark each finding supported, refuted, or uncertain, with a reason drawn only from what you or the
   evidence returned.
 ```
