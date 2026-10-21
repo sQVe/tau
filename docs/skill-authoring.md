@@ -52,7 +52,7 @@ commands it runs, and lists of errors. Errors name their own cause. Tests are th
 - A one-action tool has a budget of 1,000 characters. A multi-action tool has a budget of 3,000
   characters. A tool is multi-action when its schema has an `action` parameter.
 - The budget counts the description only. Schemas are excluded.
-- Raise a budget only by editing the budget test, with the reason in it.
+- Raise a budget only by editing it here, with the reason beside it.
 
 ## Keep scripts out of skills
 
