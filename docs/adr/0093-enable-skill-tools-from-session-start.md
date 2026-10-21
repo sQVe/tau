@@ -43,7 +43,7 @@ confirm there could approve a write that nobody saw.
 
 ### Negative
 
-- Every manager request carries the five skill tool declarations, even when it uses no skill.
+- Every manager request carries the 12 skill tool declarations, even when it uses no skill.
 - A tool can run before its skill. Tools must enforce write confirmation themselves.
 
 ## Alternatives considered

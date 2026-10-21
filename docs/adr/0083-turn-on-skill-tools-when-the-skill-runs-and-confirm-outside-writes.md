@@ -39,8 +39,9 @@ approval holds on every path that reaches the tool.
 ### Skill and tool
 
 - A skill links its tool or template at the step that uses it.
-- The tool's description holds its call contract: parameters, results, and errors. The skill says
-  when to call the tool and what to do with the result, and does not repeat the contract.
+- The tool's description says when to call each action, its inputs, and the result fields a caller
+  acts on. Errors name their own cause. The skill says when to call the tool and what to do with the
+  result, and does not repeat the description.
 
 ### Writes outside the worktree
 
@@ -50,9 +51,9 @@ approval holds on every path that reaches the tool.
 
 ### Documentation
 
-`docs/` also holds `tool-authoring.md`, a guide with a checklist for tool authors. This amends the
-list of what `docs/` holds in [ADR 0010](./0010-documentation-scope.md). The skill guide links it
-and states no tool rules.
+The skill authoring guide in `docs/` also covers the tools a skill calls and has a checklist for
+tool authors. This amends the list of what `docs/` holds in
+[ADR 0010](./0010-documentation-scope.md).
 
 ## Consequences
 

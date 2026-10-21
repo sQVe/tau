@@ -5,7 +5,7 @@
 **Supersedes**: the body structure and growth path in
 [ADR 0004 (Skill authoring style)](./0004-skill-authoring-style.md)\
 **Related**: [ADR 0004 (Skill authoring style)](./0004-skill-authoring-style.md),
-[Skill authoring guide](../skill-authoring.md), [Tool authoring guide](../tool-authoring.md)
+[Skill authoring guide](../skill-authoring.md)
 
 ## Context
 
