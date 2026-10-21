@@ -30,8 +30,8 @@ and stop. For defects, use the [code-review](../code-review/SKILL.md) skill.
   other retry, follow-up, added worker, or model change needs the user's approval.
 - Aim for about 10 minutes, and follow the rules for the aim in
   [code-review](../code-review/SKILL.md#hard-rules).
-- Run no full check, post no ticket comment, and do not review a fix or run this skill again on its
-  own.
+- Run no full check, post no ticket comment except in step 7, and do not review a fix or run this
+  skill again on its own.
 - After the report, act on findings only on the user's own work, and never after a request for a
   read-only review or "no changes". Acting never approves a publish or absorbing unrelated changes.
 
@@ -69,7 +69,27 @@ and stop. For defects, use the [code-review](../code-review/SKILL.md) skill.
 
 6. Save the worker reports and `$dir/report.md` with the [report template](report.md).
 
-7. Reply with the [report template](report.md). Say the report stays local.
+7. Post `$dir/report.md` to the ticket, before any fixing. Skip this step without a ticket.
+   - Find the ticket as the last bullet of step 1 of
+     [code-review](../code-review/SKILL.md#procedure) says. For a `files` target with no ticket
+     named by the user or a calling skill, there is no ticket.
+   - Call `tracker_draft` `prepare` with the ticket identifier in lower case. Find the earlier
+     report with the tracker skill's comment list command: the comment with ID
+     `draft.qualityCommentId`, or with none recorded, the one whose first line is
+     `# Code quality: <ticket>`. Never use the code-review comment ID or a `# Code review:` comment.
+     Read its text from that list.
+   - Post without asking, as [Hard rules](../tracker/SKILL.md#hard-rules) allows, only when the work
+     and the ticket are both the user's own, as the tracker skill defines a ticket. Otherwise ask
+     with `ask_user_question` first, and skip the post if the user declines.
+   - Update the earlier comment when one exists, and never add a second one. Otherwise add one.
+     Record its ID at once, in `$dir/report.md` as a `Comment ID:` line and as `qualityCommentId` in
+     the returned `draft.json`. Write the returned draft back with `"version": 2` and every other
+     field kept, or create it as
+     `{"version": 2, "identifier": "<ticket>", "reviewCommentId": null, "qualityCommentId": "<id>"}`.
+   - If the post fails, keep the local report and say so in the reply.
+
+8. Reply with the [report template](report.md). Name the comment URL, or say the report stays local.
+   Name any Linear edits the update replaced.
    - Findings on the user's own work, without a request for a read-only review or "no changes":
      continue with the [triage-findings](../triage-findings/SKILL.md) skill without asking. Then ask
      about any gap, failure, or stale result that needs a decision.

@@ -5,8 +5,9 @@ Use this shape for the files in `$dir` and for the reply.
 ## Saved files
 
 - Each worker report: `finder.md` and `checker.md`.
-- `report.md`: the base and HEAD SHAs, the capture `hash`, every finding in full, the Defects, and
-  refuted candidates with the checker's reason.
+- `report.md`: with a ticket, it starts with `# Code quality: <ticket>` and keeps a `Comment ID:`
+  line once the comment exists. Then the base and HEAD SHAs, the capture `hash`, every finding in
+  full, the Defects, and refuted candidates with the checker's reason.
 
 ## Reply
 
