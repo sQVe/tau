@@ -197,9 +197,10 @@ or Git. Workers then carry out the agent tickets.
     - When the code-review skill's ownership rule finds the slice branch the user's own, let
       code-quality continue into its triage without asking. This applies to a reused branch too.
     - Review the change with the [code-review skill](../code-review/SKILL.md), and pass it the slice
-      as the ticket under review. When its ownership rule finds the slice branch the user's own, let
-      the review continue into fixing its findings without asking. This applies to a reused branch
-      too.
+      as the ticket under review. Ask it for a full review, so it covers the whole slice and not
+      only the code-quality fixes. When its ownership rule finds the slice branch the user's own,
+      let the review continue into fixing its findings without asking. This applies to a reused
+      branch too.
     - Then audit the slice with the [finish-slice skill](../finish-slice/SKILL.md). Stop there if it
       reports a not-met item.
     - Then open the PR with the [pr skill](../pr/SKILL.md). Link the slice from the PR as the
