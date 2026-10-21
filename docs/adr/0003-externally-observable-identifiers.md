@@ -2,7 +2,7 @@
 
 **Date**: 2026-04-10\
 **Status**: Accepted\
-**Related**: [ADR 0001 (Application structure)](./0001-application-structure.md)
+**Related**: [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md)
 
 ## Context
 

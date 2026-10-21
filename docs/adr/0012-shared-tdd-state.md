@@ -5,7 +5,7 @@
 **Superseded by**:
 [ADR 0023 (Use advisory TDD observations instead of edit permissions)](./0023-advisory-tdd-observations.md)\
 **Related**:
-[ADR 0001 (Application structure)](./0001-application-structure.md),
+[ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md),
 [ADR 0010 (Documentation scope)](./0010-documentation-scope.md)
 
 ## Context

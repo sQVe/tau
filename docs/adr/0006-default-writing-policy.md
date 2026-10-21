@@ -2,7 +2,7 @@
 
 **Date**: 2026-09-07\
 **Status**: Accepted\
-**Related**: [ADR 0001 (Application structure)](./0001-application-structure.md),
+**Related**: [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md),
 [ADR 0004 (Skill authoring style)](./0004-skill-authoring-style.md),
 [ADR 0008 (Coding instructions)](./0008-coding-instructions.md), which amends the scope above and
 moves the rules about which comments to keep,
@@ -49,7 +49,7 @@ instead of silently running without the writing rules. In Pi 0.66.1, this preven
 discards all Tau features; reload and SDK callers may handle the error differently.
 
 This extension defines no types of its own and may omit `types.ts`, an exception to
-[ADR 0001](./0001-application-structure.md).
+[ADR 0120](./0120-capability-modules-with-an-enforced-import-table.md).
 
 ### Editing skill
 

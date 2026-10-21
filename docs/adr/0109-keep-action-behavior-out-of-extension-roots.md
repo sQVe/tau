@@ -2,16 +2,14 @@
 
 **Date**: 2026-10-14\
 **Status**: Accepted\
-**Related**: [ADR 0002 (File and directory naming conventions)](./0002-file-naming-conventions.md),
-[ADR 0035 (Use size thresholds as review guidance)](./0035-use-size-thresholds-as-review-guidance.md),
+**Related**: [ADR 0035 (Use size thresholds as review guidance)](./0035-use-size-thresholds-as-review-guidance.md),
 [ADR 0050 (Split worker control into a coordinator and one controller per worker)](./0050-split-worker-control-into-a-coordinator-and-one-controller-per-worker.md),
-[ADR 0057 (Enforce pure decision modules from a registry)](./0057-enforce-pure-decision-modules-from-a-registry.md),
-[ADR 0079 (Grow modules from flat files)](./0079-grow-modules-from-flat-files.md)
+[ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md)
 
 ## Context
 
-ADR 0079 decides where modules and files live. ADR 0002 decides the case of file names. Neither says
-what an extension's registration root may hold, or how a module names one concept.
+ADR 0120 decides where modules and files live and the case of file names. It does not say what an
+extension's registration root may hold, or how a module names one concept.
 
 Agents build most features as slices in parallel branches. Over the 90 days to 2026-10-14, 71 of 309
 merged PRs edited the subagents entry (`subagents.ts`, before that `index.ts`). The busiest
@@ -48,8 +46,8 @@ names one concept one way. Size stays a review signal under ADR 0035.
   refusal, may stay in the root.
 - Keep coupled state changes together. Report acceptance keeps saving, marking, and deadline cleanup
   in one owner.
-- Keep pure decisions apart from effectful steps, as ADR 0057 says.
-- This rule does not split a flat module or a shared module's entry. ADR 0079 still starts modules
+- Keep pure decisions apart from effectful steps, as ADR 0120 says.
+- This rule does not split a flat module or a shared module's entry. ADR 0120 still starts modules
   flat. ADR 0050's coordinator keeps its stated duties.
 
 ### Prompt and guidance lists
@@ -60,7 +58,8 @@ names one concept one way. Size stays a review signal under ADR 0035.
 ### Unordered registries
 
 - Keep these lists sorted and free of duplicates: `pureModules` in `tests/structure.test.ts` and the
-  `publicFiles` list in `lint/rules/moduleBoundaries.ts`. `tests/structure.test.ts` checks both.
+  public files of each module in the module list of `lint/rules/moduleBoundaries.ts`.
+  `tests/structure.test.ts` checks both.
 - Sorting lowers conflicts only for additions in different places. It does not apply to ordered
   lists such as lint overrides in `vite.config.ts`.
 
@@ -74,14 +73,14 @@ names one concept one way. Size stays a review signal under ADR 0035.
   collection.
 - Keep an established domain phrase when it matches a config key or exported concept, such as
   `allowedModels.ts` or `requiredFor.ts`.
-- Tests keep their source name, as ADR 0002 says.
+- Tests keep their source name, as ADR 0120 says.
 
 ### Existing code
 
 - One refactor moves the measured hotspots: launch behavior out of `subagents.ts` and report
   behavior out of `workerExtension.ts`. It also renames `captureReview.ts`, sorts and checks the two
   registries, splits each multi-policy item in `managerPrompt.ts`, and splits
-  `controller/controller.test.ts` (4,475 lines) by behavior, as ADR 0002 already requires. Tests
+  `controller/controller.test.ts` (4,475 lines) by behavior, as ADR 0120 already requires. Tests
   stay at the public boundary they already defend.
 - Other actions still live in the roots, such as follow-up, status, reply, and cancel in
   `subagents.ts`, and worker questions, input, startup, and activity in `workerExtension.ts`. Move
@@ -98,7 +97,7 @@ names one concept one way. Size stays a review signal under ADR 0035.
   of the root and prompt lists.
 - A reader can tell the entry of a module from its other files, and finds one concept under one
   noun.
-- The rule extends ADR 0050 and keeps ADR 0079's flat start.
+- The rule extends ADR 0050 and keeps ADR 0120's flat start.
 
 ### Negative
 
@@ -130,5 +129,5 @@ the very feature work that overlaps other branches.
 
 ### Discover pure modules instead of listing them
 
-Mark pure modules in their own files so the registry has no shared list. Rejected because ADR 0057
+Mark pure modules in their own files so the registry has no shared list. Rejected because ADR 0120
 chose an explicit registry on purpose. Sorting removes some of its conflicts.

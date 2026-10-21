@@ -19,9 +19,7 @@ const allowedPaths: AllowedPaths = {
     'docs/adr/0061-layer-tau-config-from-user-and-repository-files.md',
     'docs/development.md',
   ],
-  'extensions/': ['docs/adr/0001-application-structure.md'],
   'skills/': [
-    'docs/adr/0001-application-structure.md',
     'docs/adr/0003-externally-observable-identifiers.md',
     'docs/adr/0004-skill-authoring-style.md',
     'docs/adr/0077-keep-a-skill-authoring-guide-in-docs.md',
@@ -42,7 +40,6 @@ const allowedPaths: AllowedPaths = {
   'src/agent_resume.rs': ['docs/adr/0059-run-each-pi-worker-as-its-panes-own-process.md'],
   'src/app/agent_resume.rs': ['docs/adr/0059-run-each-pi-worker-as-its-panes-own-process.md'],
   'src/extensions/coding/': ['docs/adr/0008-coding-instructions.md'],
-  'src/extensions/index.ts': ['docs/adr/0001-application-structure.md'],
   'src/extensions/workflow/': [
     'docs/adr/0056-load-workflow-rules-apart-from-coding-and-writing.md',
   ],

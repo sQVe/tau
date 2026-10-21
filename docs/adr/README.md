@@ -32,8 +32,6 @@ and the numbers that its status names.
 
 ## Project and code
 
-- [0001: Application structure](./0001-application-structure.md), partly superseded by 0079
-- [0002: File and directory naming conventions](./0002-file-naming-conventions.md)
 - [0003: Stability of externally observable identifiers](./0003-externally-observable-identifiers.md)
 - [0007: Vim keys in interactive components](./0007-vim-keys-in-interactive-components.md)
 - [0008: Coding instructions](./0008-coding-instructions.md), partly superseded by 0042
@@ -45,9 +43,8 @@ and the numbers that its status names.
 - [0053: Version each saved record format](./0053-version-each-saved-record-format.md), partly
   superseded by 0058
 - [0055: Record Tau coding conventions in `AGENTS.md`](./0055-record-tau-coding-conventions-in-agents-md.md)
-- [0057: Enforce pure decision modules from a registry](./0057-enforce-pure-decision-modules-from-a-registry.md)
-- [0079: Grow modules from flat files](./0079-grow-modules-from-flat-files.md)
 - [0109: Keep action behavior out of extension roots and name one concept one way](./0109-keep-action-behavior-out-of-extension-roots.md)
+- [0120: Capability modules with an enforced import table](./0120-capability-modules-with-an-enforced-import-table.md)
 
 ## Documentation and writing
 
@@ -68,7 +65,7 @@ and the numbers that its status names.
 
 ## Skills and tools
 
-- [0004: Skill authoring style](./0004-skill-authoring-style.md), partly superseded by 0079 and 0088
+- [0004: Skill authoring style](./0004-skill-authoring-style.md), partly superseded by 0120 and 0088
 - [0022: Gate the clamped read hint on the remainder](./0022-gate-the-clamped-read-hint-on-the-remainder.md),
   superseded by 0087
 - [0074: Let skills declare the actions they must own](./0074-let-skills-declare-the-actions-they-must-own.md)
@@ -244,5 +241,9 @@ and the numbers that its status names.
 
 ## Retired
 
-| ADR | Title | Replaced by | Last commit |
-| --- | ----- | ----------- | ----------- |
+| ADR  | Title                                         | Replaced by                                                        | Last commit |
+| ---- | --------------------------------------------- | ------------------------------------------------------------------ | ----------- |
+| 0001 | Application structure                         | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |
+| 0002 | File and directory naming conventions         | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |
+| 0057 | Enforce pure decision modules from a registry | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |
+| 0079 | Grow modules from flat files                  | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |

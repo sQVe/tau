@@ -2,12 +2,10 @@
 
 **Date**: 2026-04-10\
 **Status**: Accepted; skill location superseded by
-[ADR 0079 (Grow modules from flat files)](./0079-grow-modules-from-flat-files.md); body structure
-and growth path superseded by
+[ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md);
+body structure and growth path superseded by
 [ADR 0088 (Grow skills into tools and templates)](./0088-grow-skills-into-tools-and-templates.md)\
-**Related**: [ADR 0001 (Application structure)](./0001-application-structure.md),
-[ADR 0003 (Stability of externally observable identifiers)](./0003-externally-observable-identifiers.md),
-[ADR 0079 (Grow modules from flat files)](./0079-grow-modules-from-flat-files.md),
+**Related**: [ADR 0003 (Stability of externally observable identifiers)](./0003-externally-observable-identifiers.md),
 [ADR 0083 (Turn on skill tools when the skill runs, and confirm outside writes)](./0083-turn-on-skill-tools-when-the-skill-runs-and-confirm-outside-writes.md),
 [ADR 0088 (Grow skills into tools and templates)](./0088-grow-skills-into-tools-and-templates.md)
 

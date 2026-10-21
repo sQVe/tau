@@ -3,7 +3,7 @@
 **Date**: 2026-10-12\
 **Status**: Accepted\
 **Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
-[ADR 0057 (Enforce pure decision modules from a registry)](./0057-enforce-pure-decision-modules-from-a-registry.md)
+[ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md)
 
 ## Context
 

@@ -27,7 +27,7 @@ verification.
 - Write a new decision rule as a pure function in a module registered in `tests/structure.test.ts`,
   tested with a decision table like `workerState.test.ts`. The caller reads records, the clock, and
   the environment, and passes the values in as facts
-  ([ADR 0057](docs/adr/0057-enforce-pure-decision-modules-from-a-registry.md)).
+  ([ADR 0120](docs/adr/0120-capability-modules-with-an-enforced-import-table.md)).
 - Change a saved record format with a new version and fixtures
   ([ADR 0053](docs/adr/0053-version-each-saved-record-format.md)).
 - Keep an extension's registration root, any file Pi loads as an extension, to registration, wiring,
@@ -35,10 +35,20 @@ verification.
   that the root calls, and keep coupled state changes in one owner
   ([ADR 0109](docs/adr/0109-keep-action-behavior-out-of-extension-roots.md)).
 - Give a prompt or guidance list one policy per item. Keep `pureModules` in
-  `tests/structure.test.ts` and `modules` and `importTable` in `lint/rules/moduleBoundaries.ts`
+  `tests/structure.test.ts` and `moduleList` and `importTable` in `lint/rules/moduleBoundaries.ts`
   sorted.
 - Name one concept with one noun inside a module. No file reverses its module's name
   ([ADR 0109](docs/adr/0109-keep-action-behavior-out-of-extension-roots.md)).
+
+## Architecture
+
+Shared code under `src/` forms capability modules, and `tau/module-boundaries` in
+`lint/rules/moduleBoundaries.ts` enforces them
+([ADR 0120](docs/adr/0120-capability-modules-with-an-enforced-import-table.md)). The rule keeps a
+closed module list and an import table. The target shared modules are `errors`, `schema`, `command`,
+`skillTools`, `instructions`, `herdr`, `codemode`, `worker`, `git`, `config`, `linear`, `dialog`,
+`tauDirectory`, `github`, `reviewCapture`, `record`, `process`, `shell`, and `checkRecord`. When the
+rule reports an import, change the import table or the module list instead of silencing the rule.
 
 ## Tests
 
