@@ -34,9 +34,16 @@ Use this skill when you change behavior and `run_tests` is available.
 5. After the full check passes, run `mutation_check` with `mode: "changed"` and no `base` once. Skip
    this step, and say so, when the repository has no `mutation.argv`. Report a tool error on its own
    line and stop the step. Survivors are advice. Fix at most 3 behaviors in one round: write a test
-   that kills the survivor, or simplify the redundant code it points at. After that round, rerun the
+   that kills the survivor, or simplify redundant code it points at. After that round, rerun the
    full check and `mutation_check` at most once. Then list what is left as open, with file and line.
    Give no reason per mutant.
+
+   Place a killing test in the owner's existing behavior test file, or add a row to its decision
+   table. When the owner has no test file yet, use its normal test file next to it, as step 1 says.
+   Never name a test file after a campaign or a test technique, such as `mutationKills.test.ts` or a
+   slice name. Write no test for a survivor in wording, layout text, or transport encoding that no
+   caller can observe. List it with the other open survivors, with no reason. It does not count
+   toward the limit of 3 behaviors.
 
 6. Report the test outcome and its freshness as separate facts. When the freshness is `stale` or
    `unknown`, rerun on the current inputs before you claim current verification.

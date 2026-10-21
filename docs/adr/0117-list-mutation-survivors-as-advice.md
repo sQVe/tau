@@ -28,6 +28,12 @@ behaviors, a test that kills the survivor or a simplification of redundant code,
 rerun of the full check and the tool. It then lists what is left as open, with file and line, and
 gives no reason per mutant. The `pr` skill does not run the tool and does not report survivors.
 
+A test that kills a survivor joins the owner's existing behavior test file, or adds a row to its
+decision table. No test file is named after a campaign or a test technique, such as
+`mutationKills.test.ts` or a slice name. A survivor in wording, layout text, or transport encoding
+that no caller can observe gets no test. The `tdd` report lists it with the other open survivors,
+with no reason, and it does not count toward the limit of 3 behaviors.
+
 The `Mutation` CI job passes on exit 0 and exit 2 and fails on any other exit. It writes the
 survivors to the job summary. It is not a required status check.
 
@@ -38,11 +44,14 @@ survivors to the job summary. It is not a required status check.
 - A change ships without waiting for every survivor to be resolved.
 - The agent and the user see the survivors before publication and can add a test where one matters.
 - The pull request body stays short.
+- Killing tests stay in the owner's test file, so a reader finds all tests of a behavior in one
+  place.
 
 ### Negative
 
 - A survivor can reach the main branch with no test that kills it.
 - A survivor appears only in the job summary, which a reviewer must open to see it.
+- A survivor in text that no caller can observe stays open with no test.
 
 ## Alternatives considered
 
