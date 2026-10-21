@@ -359,15 +359,13 @@ export const createMutationCheckTool = (
   defineTool({
     name: 'mutation_check',
     label: 'Mutation check',
-    description: `Run the repository's mutation script and list the mutants that survived.
-- The command is mutation.argv from .pi/tau.json in the repository, run without a shell in the checkout root. Tau reads the key only from that file, so the project must be trusted.
-- Mode "changed" mutates the lines changed since base (optional; defaults to the origin remote's default branch, resolved to a commit). Mode "audit" mutates the whole files in paths (non-empty). Optional maxMutants (positive integer) caps the mutants.
-- Shares the lock of full_check: a full check and a mutation check of one repository run one at a time across checkouts. When another checkout holds the lock, the tool sends an update that names it and waits. Cancelling stops the wait.
-- Survivors are advice: a run with survivors passes (exit 2 in changed mode, exit 0 in audit mode). Fails on an error report, unmutated files, a nonzero exit other than 2 with survivors, a signal, and when the script writes no output to its log for 10 minutes.
-- A passing result is saved with the head, base, command, and a fingerprint of the uncommitted changes. A later call for the same state returns that log and lists the same survivors without running the script, and says so. If the saved report is missing or does not parse, the script runs again. A failing run saves nothing for reuse.
-- Saves the script's stderr as a log under .tau/checks/mutation in the checkout, apart from full check logs. The JSON report on stdout is saved beside it and parsed once.
-- Returns pass or fail, the log path, the error text, the unmutated files, and the survivors: covered survivors apart from no-coverage mutants, grouped by <file>:<line> with one <mutator>: <original> => <replacement> line each. A failed check is a result, not an error.
-- Errors: no Git checkout, no mutation.argv in .pi/tau.json, an invalid parameter, no base in changed mode when origin has no default branch, a command that cannot start, or a report that breaks the format.`,
+    description: `Run the repository's mutation script and list the mutants that survived. Call it after the full check passes.
+- Mode "changed" mutates the lines changed since base (optional; defaults to the origin remote's default branch). Mode "audit" mutates the whole files in paths (non-empty). Optional maxMutants caps the mutants.
+- Survivors are advice: a run with survivors passes. Fails on an error report, unmutated files, or a script that writes no output for 10 minutes.
+- Returns pass or fail, the log path, the error text, the unmutated files, and the covered survivors grouped by <file>:<line>, apart from no-coverage mutants.
+- A later call for the same arguments, head, base, and uncommitted changes returns the saved passing report without a run, and says so.
+- Shares the lock of full_check, so the two run one at a time per repository. A waiting call sends an update that names the checkout that holds the lock.
+- Requires mutation.argv in .pi/tau.json; without it the tool errors.`,
     promptSnippet:
       'Run the repository mutation script, queued with the full check, and list the survivors.',
     parameters,
