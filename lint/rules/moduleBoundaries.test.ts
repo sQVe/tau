@@ -94,6 +94,21 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
   ],
   invalid: [
     {
+      code: "import coding from '../coding.js';\n\nexport default coding;",
+      filename: '/repository/src/extensions/probe/probe.test.ts',
+      errors: [{ messageId: 'crossing', data: { source: 'probe', target: 'coding' } }],
+    },
+    {
+      code: "import coding from '../../coding.js';\n\nexport default coding;",
+      filename: '/repository/src/extensions/probe/fixtures/fake.ts',
+      errors: [{ messageId: 'crossing', data: { source: 'probe', target: 'coding' } }],
+    },
+    {
+      code: "import tau from '../../tau.js';\n\nexport default tau;",
+      filename: '/repository/src/extensions/probe/probe.test.ts',
+      errors: [{ messageId: 'root', data: { source: 'probe' } }],
+    },
+    {
       code: "import { stopOwnedWorker } from './controller/stop.js';\n\nexport const value = stopOwnedWorker;",
       filename: '/repository/src/extensions/subagents/subagents.ts',
       errors: [

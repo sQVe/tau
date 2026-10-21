@@ -268,14 +268,16 @@ export const moduleBoundariesRule: Rule = {
 
     const ownSegments = segmentsOf(filename) ?? [];
 
-    if (isTestFile(ownSegments) || isExempt(ownSegments)) {
-      return {};
-    }
+    // Tests and support files skip the private-file, import table, and unknown-file checks, but
+    // still obey the extension and src/tau.ts boundaries.
+    const isSupportFile = isTestFile(ownSegments) || isExempt(ownSegments);
 
     const { sourceExtension, sourceFolder, sourceDeclaration, sharedSource, sourceName } =
       describeSource(ownSegments);
 
-    const isUnknownFile = sourceExtension === undefined && sourceDeclaration === undefined;
+    const isUnknownFile =
+      !isSupportFile && sourceExtension === undefined && sourceDeclaration === undefined;
+
     const allowedTargets = importTable[sharedSource?.name ?? ''] ?? [];
 
     // A module may use its own files and the files of the folders that contain it.
@@ -343,13 +345,15 @@ export const moduleBoundariesRule: Rule = {
         return;
       }
 
-      checkPrivateFile(node, target);
+      if (!isSupportFile) {
+        checkPrivateFile(node, target);
+      }
 
       if (isCompositionRoot(target)) {
         context.report({ node, messageId: 'root', data: { source: sourceName } });
       } else if (sourceExtension !== undefined) {
         checkExtensionBoundary(node, target, sourceExtension);
-      } else if (sharedSource !== undefined) {
+      } else if (sharedSource !== undefined && !isSupportFile) {
         checkSharedImport(node, target, sharedSource);
       }
     };
@@ -372,7 +376,7 @@ export const moduleBoundariesRule: Rule = {
       ImportExpression(node) {
         if (node.source.type === 'Literal') {
           check(node, node.source.value);
-        } else {
+        } else if (!isSupportFile) {
           context.report({ node, messageId: 'computedImport' });
         }
       },
