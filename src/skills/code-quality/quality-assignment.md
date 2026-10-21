@@ -190,6 +190,16 @@ Each finding gives:
 Before you propose a deletion, read the history of that code with `git log -L` or
 `git log --follow`, and name why the code exists.
 
+Compare the target with the established patterns of the project:
+
+- Find two or three places where the codebase already solves the same kind of problem, such as
+  sibling tools, skills, or modules. Cite each with `file:line`.
+- Report where the target diverges from them in structure, naming, error handling, test shape, or
+  file layout.
+- When the target's way is better, say so, and propose aligning the older code in a follow-up
+  instead.
+- Leave violations of written project rules to code-review.
+
 Do not search for defects. List a defect you meet in a separate Defects list, not as a structure
 finding.
 ```
@@ -199,6 +209,7 @@ finding.
 ```markdown
 - Confirm that the code each finding would delete exists.
 - Check the contracts that the finding keeps against callers and tests.
+- For a pattern finding, confirm that the cited examples exist and share the pattern.
 - Mark each finding supported, refuted, or uncertain, with a reason drawn only from what you or the
   evidence returned.
 ```
