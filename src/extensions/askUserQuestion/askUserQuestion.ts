@@ -12,12 +12,12 @@ const optionSchema = Type.Object({
   label: Type.String({
     maxLength: 60,
     description:
-      'MAX 60 CHARACTERS — hard limit, requests over the limit are rejected. The display text for this option that the user will see and select. Should be concise (1-5 words) and say what the choice is. No option letters or internal codes.',
+      'MAX 60 CHARACTERS (hard limit). The display text for this option that the user will see and select. Should be concise (1-5 words) and say what the choice is. No option letters or internal codes.',
   }),
   description: Type.String({
     maxLength: 220,
     description:
-      'MAX 220 CHARACTERS. What happens if the user picks this option, then its main benefit and main cost. Skip the cost for a harmless preference instead of inventing one.',
+      'MAX 220 CHARACTERS (hard limit). What happens if the user picks this option, then its main benefit and main cost. Skip the cost for a harmless preference instead of inventing one.',
   }),
   recommended: Type.Optional(
     Type.Boolean({
@@ -41,12 +41,12 @@ const questionSchema = Type.Object({
   problem: Type.String({
     maxLength: 300,
     description:
-      'MAX 300 CHARACTERS. What is going on, in plain words, for a user who has not read your discussion. State the situation or issue behind the decision, not the decision itself. Do not repeat the question.',
+      'MAX 300 CHARACTERS (hard limit). What is going on, in plain words, for a user who has not read your discussion. State the situation or issue behind the decision, not the decision itself. Do not repeat the question.',
   }),
   impact: Type.String({
     maxLength: 200,
     description:
-      'MAX 200 CHARACTERS. What the answer changes or blocks. Do not repeat the problem.',
+      'MAX 200 CHARACTERS (hard limit). What the answer changes or blocks. Do not repeat the problem.',
   }),
   preview: Type.Optional(
     Type.String({
@@ -57,7 +57,7 @@ const questionSchema = Type.Object({
   header: Type.String({
     maxLength: 16,
     description:
-      'MAX 16 CHARACTERS — hard limit, requests over the limit are rejected. Very short chip/tag shown next to the question. Examples: "Auth method", "Library", "Approach".',
+      'MAX 16 CHARACTERS (hard limit). Very short chip/tag shown next to the question. Examples: "Auth method", "Library", "Approach".',
   }),
   options: Type.Array(optionSchema, {
     minItems: 2,
