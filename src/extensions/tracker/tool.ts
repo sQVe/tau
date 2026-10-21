@@ -44,7 +44,7 @@ export type TrackerEvidenceInput = Static<typeof trackerEvidenceParameters>;
 const description = `Reads, without any Linear write, the evidence the tracker skill needs before it plans a ticket.
 Parameters: team (key), project (name or null), parent (identifier or null), agentTicket (an agent ticket has no project, and its parent is not checked against the route), and keywords (search term).
 Returns {candidates, parent, labels, gaps}:
-- candidates: the open issues that match the keywords. Each has identifier, title, url, team, project, parent, fits, and differences. fits is true when team, project, and parent all equal the planned ticket's; differences lists the ones that do not.
+- candidates: the open issues in the team, and in the project when one is given, that match the keywords. Each has identifier, title, url, team, project, parent, fits, and differences. fits is true when team, project, and parent all equal the planned ticket's; differences lists the ones that do not.
 - parent: {identifier, team, project, state, matchesRoute}, or null when parent is null. matchesRoute is null for an agent ticket.
 - labels: the team's labels as {id, name}.
 - gaps: {command, error} for each read that failed or was incomplete. A failed read leaves its field out, so a missing field means unknown, never empty.`;
