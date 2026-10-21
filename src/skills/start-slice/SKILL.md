@@ -184,15 +184,25 @@ or Git. Workers then carry out the agent tickets.
       or proceeded, and each scout that failed.
     - Each acceptance criterion of the slice, with the agent ticket numbers that cover it.
 
-11. Delegate each agent ticket to a worker, and pass the path of its body file, such as
-    `$slicedir/agent-1.md`, in the task. Copy each item of its `## Acceptance` word for word, in
-    order, into the launch's `acceptance` array. Review the change with the
-    [code-review skill](../code-review/SKILL.md), and pass it the slice as the ticket under review.
-    When the code-review skill's ownership rule finds the slice branch the user's own, let the
-    review continue into fixing its findings without asking. This applies to a reused branch too.
-    Then audit the slice with the [finish-slice skill](../finish-slice/SKILL.md). Stop there if it
-    reports a not-met item. Then open the PR with the [pr skill](../pr/SKILL.md). Link the slice
-    from the PR as the tracker skill says.
+11. Run the slice in this order.
+    - Delegate each agent ticket to a worker, and pass the path of its body file, such as
+      `$slicedir/agent-1.md`, in the task. Copy each item of its `## Acceptance` word for word, in
+      order, into the launch's `acceptance` array.
+    - After the last worker reports, ask once with `ask_user_question` whether to run code-quality
+      before code-review.
+    - On yes, run the [code-quality skill](../code-quality/SKILL.md) on the slice branch. For a
+      stacked slice, give it the base from step 4, so it reviews only this slice's diff. When the
+      code-review skill's ownership rule finds the slice branch the user's own, let code-quality
+      continue into its triage without asking. This applies to a reused branch too. Then go on to
+      code-review. On no, go on to code-review.
+    - Review the change with the [code-review skill](../code-review/SKILL.md), and pass it the slice
+      as the ticket under review. When its ownership rule finds the slice branch the user's own, let
+      the review continue into fixing its findings without asking. This applies to a reused branch
+      too.
+    - Then audit the slice with the [finish-slice skill](../finish-slice/SKILL.md). Stop there if it
+      reports a not-met item.
+    - Then open the PR with the [pr skill](../pr/SKILL.md). Link the slice from the PR as the
+      tracker skill says.
 
 ## Changes after the start
 
