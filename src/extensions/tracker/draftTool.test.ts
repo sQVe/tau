@@ -305,3 +305,22 @@ it('checks the tool input for record', () => {
   expect(Value.Check(tool.parameters, input)).toBe(true);
   expect(Value.Check(tool.parameters, { ...input, field: 'version' })).toBe(false);
 });
+
+it.each([
+  { name: 'field', input: { action: 'record', id: 'me-600', value: 'ME-600' }, error: /field/ },
+  { name: 'value', input: { action: 'record', id: 'me-600', field: 'identifier' }, error: /value/ },
+])('refuses record without a $name and creates nothing', async ({ input, error }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await expect(
+    createTrackerDraftTool().execute(
+      'call',
+      input as never,
+      undefined,
+      undefined,
+      noUiContext(root),
+    ),
+  ).rejects.toThrow(error);
+
+  expect(await readdir(root)).toEqual(['.git']);
+});
