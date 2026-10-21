@@ -9,6 +9,7 @@ import { isWorkerProcess } from '../workerProcess.js';
 export const codemodeGuidelines = [
   "Call `read` and `bash` directly for a single lookup. Use codemode only when one script batches several calls or filters output before it returns. Follow a skill's script step when the skill asks for one.",
   'Gather evidence only. Never call `write`, `edit`, `commit`, `run_tests`, or report, question, progress, or orchestration tools from a script.',
+  'To write several files, make one `write` call per file in the same turn.',
   '`searchTools()`, `describeTool()`, and `describeNamespace()` return promises. Always `await` them: `const found = await searchTools("linear");`.',
   'Print strings, not result objects: `text(result.output)`. Add `exit_code`, `truncated`, and `full_output_path` only when they are not the default.',
   'Filter before printing. Return line-numbered excerpts with their file. Name what the script dropped as a gap.',
