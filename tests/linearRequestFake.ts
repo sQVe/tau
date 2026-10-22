@@ -78,7 +78,6 @@ export type Operation =
   | { kind: 'relation'; action: 'add' | 'delete'; identifier: string; blocker: string }
   | QueryOperation;
 
-// `linear api --variable` turns numbers, booleans, and null into those JSON types.
 const coerceVariable = (text: string): unknown => {
   if (['true', 'false', 'null'].includes(text) || /^-?\d+(\.\d+)?$/u.test(text)) {
     return JSON.parse(text) as unknown;
@@ -124,8 +123,6 @@ const orNull =
   (value) =>
     value === null || check(value);
 
-// Each contract names a root field, a selection fragment that tells queries on one field apart,
-// the variables the query must read, and the variables it may read. Earlier contracts win.
 const contracts: QueryContract[] = [
   {
     name: 'issueCreate',
@@ -186,7 +183,6 @@ const contracts: QueryContract[] = [
   { name: 'team', rootField: 'team', selection: '', reads: { key: isString }, optional: {} },
 ];
 
-// The first field of the operation, not counting `viewer`, outside arguments and nested selections.
 const rootFieldOf = (query: string) => {
   let braces = 0;
   let parentheses = 0;
@@ -254,7 +250,6 @@ const decodeQuery = (call: FakeCall): Operation => {
     }
   }
 
-  // The loops above prove each variable the contract names, which is what QueryVariables states.
   return { kind: 'query', name: contract.name, variables } as QueryOperation;
 };
 
