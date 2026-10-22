@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { defaultTddConfig } from '../config.js';
 import { createTestObservation } from '../observation.js';
 import { runContext, summarize } from '../render.js';
@@ -17,13 +17,12 @@ let cwd: string;
 let manifestPath: string;
 
 beforeEach(async () => {
-  cwd = await mkdtemp(join(tmpdir(), 'tau-resolution-'));
+  cwd = temporaryDirectory(onTestFinished, 'tau-resolution-');
   manifestPath = join(cwd, 'node_modules/vitest/package.json');
   vi.stubEnv('PI_CODING_AGENT_DIR', join(cwd, 'agent'));
 
   onTestFinished(async () => {
     vi.unstubAllEnvs();
-    await rm(cwd, { recursive: true, force: true });
   });
 });
 
@@ -359,8 +358,7 @@ it('refuses a bin entry that names the parent directory without reporting a bina
 });
 
 it('names only a package root other than the session cwd', async () => {
-  const unpackaged = await mkdtemp(join(tmpdir(), 'tau-unpackaged-'));
-  onTestFinished(() => rm(unpackaged, { recursive: true, force: true }));
+  const unpackaged = temporaryDirectory(onTestFinished, 'tau-unpackaged-');
   await writeFile(join(cwd, 'package.json'), '{}');
   await mkdir(join(cwd, 'other'), { recursive: true });
   await writeFile(join(cwd, 'other/package.json'), '{}');

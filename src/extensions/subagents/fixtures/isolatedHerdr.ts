@@ -27,6 +27,7 @@ interface IsolatedHerdr {
 }
 
 export const isolatedHerdr = async (configuration = ''): Promise<IsolatedHerdr> => {
+  // The root must outlive the herdr server, which exits after the test.
   const root = mkdtempSync(join(tmpdir(), 'tau-herdr-worker-'));
 
   // Never inherit the active socket, caller IDs, or user configuration.

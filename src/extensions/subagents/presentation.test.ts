@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, it } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { modelEvidenceNotice, modelReply, modelStatus, stateLabel } from './presentation.js';
 import { acceptReport, readReport } from './records.js';
 import type { WorkerState } from './types.js';
@@ -297,11 +297,7 @@ it('counts parenthesized and quoted headings that the report tool accepts', () =
 });
 
 it('caps a long report and points to the unchanged saved report', ({ onTestFinished }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-presentation-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-presentation-');
 
   acceptReport(directory, 'task-1', {
     taskId: 'task-1',

@@ -1,22 +1,16 @@
 import * as fileSystem from 'node:fs';
-import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { parsePhaseDescription, readWorkerActivity, writeWorkerActivity } from './activity.js';
 
 vi.mock(import('node:fs'), { spy: true });
 
-const directories: string[] = [];
-
 afterEach(() => {
   vi.restoreAllMocks();
-
-  for (const directory of directories.splice(0)) {
-    rmSync(directory, { recursive: true, force: true });
-  }
 });
 
 const openDescriptorCount = () => readdirSync('/dev/fd').length;
@@ -40,8 +34,7 @@ it('refuses a phase description past the length limit', () => {
 });
 
 it('writes activity without leaving a descriptor open', () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-activity-'));
-  directories.push(directory);
+  const directory = temporaryDirectory(onTestFinished, 'tau-activity-');
 
   const before = openDescriptorCount();
 
@@ -51,8 +44,7 @@ it('writes activity without leaving a descriptor open', () => {
 });
 
 it('reports a failed activity write and removes its temporary file', () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-activity-'));
-  directories.push(directory);
+  const directory = temporaryDirectory(onTestFinished, 'tau-activity-');
 
   vi.mocked(fileSystem.fsyncSync).mockImplementationOnce(() => {
     throw new Error('Disk full.');
@@ -69,8 +61,7 @@ it('reports a failed activity write and removes its temporary file', () => {
 });
 
 it('reports a failed activity replace and removes its temporary file', () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-activity-'));
-  directories.push(directory);
+  const directory = temporaryDirectory(onTestFinished, 'tau-activity-');
   mkdirSync(join(directory, 'activity.json', 'blocked'), { recursive: true });
 
   expect(() => {
@@ -81,8 +72,7 @@ it('reports a failed activity replace and removes its temporary file', () => {
 });
 
 it('round-trips a worker phase description with its own update time', () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-activity-'));
-  directories.push(directory);
+  const directory = temporaryDirectory(onTestFinished, 'tau-activity-');
 
   const activity = {
     taskId: 'task-a',
@@ -100,8 +90,7 @@ it('round-trips a worker phase description with its own update time', () => {
 });
 
 it('reads the latest activity only for the matching task identity', () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-activity-'));
-  directories.push(directory);
+  const directory = temporaryDirectory(onTestFinished, 'tau-activity-');
 
   const activity = {
     taskId: 'task-a',

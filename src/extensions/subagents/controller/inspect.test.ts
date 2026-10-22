@@ -1,10 +1,9 @@
-import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import * as cancellation from '../cancellation.js';
 import { herdrClient, isHerdrError, RequestNotSentError, socketRequest } from './inspect.js';
 
@@ -19,7 +18,7 @@ const herdrSocket = async (
   onConnectionClosed?: () => void,
   onRequest?: () => void,
 ) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-socket-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-socket-');
   const path = join(directory, 'herdr.sock');
 
   const server = createServer((socket) => {
@@ -46,7 +45,6 @@ const herdrSocket = async (
 
   onTestFinished(() => {
     server.close();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   return path;
@@ -77,11 +75,7 @@ it('fails when herdr does not answer within the budget', async () => {
 });
 
 it('reports a request that never reached herdr as not sent', async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-socket-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-socket-');
 
   await expect(socketRequest(join(directory, 'missing.sock'), request, 1000)).rejects.toThrow(
     RequestNotSentError,

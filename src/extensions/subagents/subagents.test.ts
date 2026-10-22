@@ -1,8 +1,7 @@
 import { execFile } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -20,6 +19,7 @@ import { expect, it, vi, onTestFinished as finishTest } from 'vitest';
 
 import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createTemporaryRepository, initializeRepository } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { workerNoticeChannel } from '../../worker.js';
 import { WorkerCapacityFullError, WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
@@ -101,13 +101,12 @@ const launchContext = (directory: string) =>
 
 // A session context's config fields, with an empty agent directory so no user config is read.
 const emptyConfigContext = () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-empty-agent-'));
+  const directory = temporaryDirectory(finishTest, 'tau-empty-agent-');
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
 
   finishTest(() => {
     vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   return { cwd: directory, isProjectTrusted: () => false };
@@ -161,7 +160,7 @@ const sessionGuidelines = async (
     inheritedGitDirectory?: string;
   },
 ) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-browser-guideline-'));
+  const directory = temporaryDirectory(finishTest, 'tau-browser-guideline-');
   const fake = fakeExtensionApi();
   const notify = vi.fn<ExtensionContext['ui']['notify']>();
 
@@ -414,7 +413,7 @@ const launchDescription = async (
   setup: (directory: string) => void,
   scopedModels: string[] = [],
 ) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-launch-profiles-'));
+  const directory = temporaryDirectory(finishTest, 'tau-launch-profiles-');
   const fake = fakeExtensionApi();
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
@@ -1016,12 +1015,11 @@ it('refuses launch and status arguments that only non-Pi workers used', () => {
 it('launches a Pi worker through the tool and refuses a launch outside herdr', async ({
   onTestFinished,
 }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-launch-tool-'));
+  const directory = temporaryDirectory(finishTest, 'tau-launch-tool-');
 
   onTestFinished(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
@@ -1083,12 +1081,11 @@ it('launches a Pi worker through the tool and refuses a launch outside herdr', a
 it('defaults the launch timeout by profile role and keeps an explicit timeout', async ({
   onTestFinished,
 }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-timeout-tool-'));
+  const directory = temporaryDirectory(finishTest, 'tau-timeout-tool-');
 
   onTestFinished(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
@@ -1153,12 +1150,11 @@ const listeningServer = async () => {
 };
 
 const environmentLaunch = (onTestFinished: (cleanup: () => void) => void) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-environment-tool-'));
+  const directory = temporaryDirectory(finishTest, 'tau-environment-tool-');
 
   onTestFinished(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
@@ -1917,12 +1913,11 @@ it('returns the unreadable-evidence object when follow-up records fail', async (
 it('returns the unreadable-evidence object when launch records fail', async ({
   onTestFinished,
 }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-evidence-launch-'));
+  const directory = temporaryDirectory(finishTest, 'tau-evidence-launch-');
 
   onTestFinished(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);

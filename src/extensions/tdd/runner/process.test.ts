@@ -1,14 +1,13 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { defaultSpawn, maximumStdoutBytes, maximumTotalBytes } from './process.js';
 
 const scriptDirectory = async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-process-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-process-');
 
   return directory;
 };

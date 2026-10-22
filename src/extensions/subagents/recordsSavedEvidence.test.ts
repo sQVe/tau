@@ -1,25 +1,15 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
-import { expect, it, onTestFinished as afterTest, vi } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import * as records from './records.js';
 
 const openDescriptorCount = () => readdirSync('/dev/fd').length;
 
 const taskId = '11111111-1111-4111-8111-111111111111';
 const otherTaskId = '22222222-2222-4222-8222-222222222222';
-
-const temporaryDirectory = (): string => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-records-evidence-'));
-
-  afterTest(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
-
-  return directory;
-};
 
 const savedTask = (overrides: Record<string, unknown> = {}): Record<string, unknown> => {
   const fixture = JSON.parse(
@@ -46,7 +36,7 @@ it.for([
   ['a predecessor that is not text', JSON.stringify({ predecessorTaskId: 5 }), true],
   ['a predecessor that is not a task identity', JSON.stringify({ predecessorTaskId: 'a b' }), true],
 ] as const)('lets a follow-up proceed past %s only as expected', ([, content, expected]) => {
-  const directory = temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-records-evidence-');
 
   writeFileSync(join(directory, 'task.json'), content);
 
@@ -54,11 +44,13 @@ it.for([
 });
 
 it('lets a follow-up proceed past a task record that cannot be read', () => {
-  expect(records.mayFollow(temporaryDirectory(), taskId)).toBe(true);
+  expect(
+    records.mayFollow(temporaryDirectory(onTestFinished, 'tau-records-evidence-'), taskId),
+  ).toBe(true);
 });
 
 it('does not scan the admission directory as a task', () => {
-  const root = temporaryDirectory();
+  const root = temporaryDirectory(onTestFinished, 'tau-records-evidence-');
 
   mkdirSync(join(root, '.admission'));
   const diagnostics: string[] = [];
@@ -75,7 +67,7 @@ it.for([
   ['a directory with another file', ['notes.txt'], 'diagnostics'],
   ['a directory with an unrelated receipt name', ['.receipt-XYZ'], 'diagnostics'],
 ] as const)('files %s without a task under the right notice', ([, files, where]) => {
-  const root = temporaryDirectory();
+  const root = temporaryDirectory(onTestFinished, 'tau-records-evidence-');
   const child = join(root, taskId);
 
   mkdirSync(child);
@@ -93,7 +85,7 @@ it.for([
 });
 
 it('does not file a receipt that is a directory as an unpublished task', () => {
-  const root = temporaryDirectory();
+  const root = temporaryDirectory(onTestFinished, 'tau-records-evidence-');
   const child = join(root, taskId);
 
   mkdirSync(join(child, '.receipt-0a1b2c3d'), { recursive: true });
@@ -107,7 +99,7 @@ it('does not file a receipt that is a directory as an unpublished task', () => {
 });
 
 it('scans a missing records directory silently and reports one that cannot be listed', () => {
-  const root = temporaryDirectory();
+  const root = temporaryDirectory(onTestFinished, 'tau-records-evidence-');
   const missing: string[] = [];
   const unlistable: string[] = [];
   const file = join(root, 'file');
@@ -121,7 +113,7 @@ it('scans a missing records directory silently and reports one that cannot be li
 });
 
 it('returns a task once when another directory is still unpublished', () => {
-  const root = temporaryDirectory();
+  const root = temporaryDirectory(onTestFinished, 'tau-records-evidence-');
   const published = join(root, taskId);
 
   mkdirSync(published);
@@ -136,7 +128,7 @@ it('returns a task once when another directory is still unpublished', () => {
 });
 
 it('returns each task once when one follows another and a third directory is unpublished', () => {
-  const root = temporaryDirectory();
+  const root = temporaryDirectory(onTestFinished, 'tau-records-evidence-');
   const first = join(root, taskId);
   const second = join(root, otherTaskId);
 
@@ -161,7 +153,7 @@ it.for([
   ['a task whose identity is its native session', { nativeSessionId: taskId }],
   ['a task whose deadline leaves no work time', { deadline: 2000, createdAt: 1000 }],
 ] as const)('refuses %s', ([, overrides]) => {
-  const directory = temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-records-evidence-');
 
   records.publish(directory, 'task.json', savedTask(overrides));
 
@@ -169,7 +161,7 @@ it.for([
 });
 
 it('reads a task that follows another task and leaves work time after cleanup', () => {
-  const directory = temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-records-evidence-');
 
   records.publish(
     directory,
@@ -185,7 +177,7 @@ it('reads a task that follows another task and leaves work time after cleanup', 
 });
 
 it('closes every descriptor it opens while publishing', () => {
-  const directory = temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-records-evidence-');
 
   const before = openDescriptorCount();
 
@@ -195,11 +187,11 @@ it('closes every descriptor it opens while publishing', () => {
 });
 
 it('keeps worker records under the agent directory in a workers folder', () => {
-  const agentDirectory = temporaryDirectory();
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-records-evidence-');
 
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
 
-  afterTest(() => {
+  onTestFinished(() => {
     vi.unstubAllEnvs();
   });
 
@@ -224,12 +216,15 @@ it('accepts a report that is exactly at the byte limit and refuses one byte more
   const base = Buffer.byteLength(JSON.stringify(report(0)));
   const exact = report(limit - base);
 
-  expect(Buffer.byteLength(JSON.stringify(exact))).toBe(limit);
-  expect(records.acceptReport(temporaryDirectory(), taskId, exact).taskId).toBe(taskId);
+  const exactDirectory = temporaryDirectory(onTestFinished, 'tau-records-evidence-');
+  const oversizedDirectory = temporaryDirectory(onTestFinished, 'tau-records-evidence-');
 
-  expect(() =>
-    records.acceptReport(temporaryDirectory(), taskId, report(limit - base + 1)),
-  ).toThrow(/\S/);
+  expect(Buffer.byteLength(JSON.stringify(exact))).toBe(limit);
+  expect(records.acceptReport(exactDirectory, taskId, exact).taskId).toBe(taskId);
+
+  expect(() => records.acceptReport(oversizedDirectory, taskId, report(limit - base + 1))).toThrow(
+    /\S/,
+  );
 });
 
 it.for([
@@ -246,7 +241,7 @@ it.for([
   ['of another kind', { taskId, kind: 'cancelled', detail: 'x', stopped: false, at: 1 }],
   ['without a detail', { taskId, kind: 'cleanup', stopped: false, at: 1 }],
 ] as const)('refuses a saved cleanup record %s', ([, value]) => {
-  const directory = temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-records-evidence-');
 
   writeJson(directory, 'cleanup.json', value);
 
@@ -254,7 +249,7 @@ it.for([
 });
 
 it('saves an event as not stopped unless it says the worker stopped', () => {
-  const directory = temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-records-evidence-');
 
   records.recordEvent(directory, taskId, 'cleanup', 'Pane left open.');
 
@@ -265,7 +260,7 @@ it.for([
   ['a number', 5],
   ['an empty text', ''],
 ] as const)('refuses a saved pane id that is %s', ([, paneId]) => {
-  const directory = temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-records-evidence-');
 
   writeJson(directory, 'pane.json', { paneId });
 

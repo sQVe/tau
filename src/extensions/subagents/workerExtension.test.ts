@@ -1,5 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { TextContent, ToolCall } from '@earendil-works/pi-ai';
@@ -14,6 +13,7 @@ import { Value } from 'typebox/value';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { readInstructionSet } from '../../instructions/instructions.js';
 import { readWorkerActivity, writeWorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
@@ -40,14 +40,13 @@ const setup = (
   parentClockLead = 0,
 ) => {
   vi.useFakeTimers();
-  const directory = mkdtempSync(join(tmpdir(), 'tau-worker-clock-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-worker-clock-');
 
   onTestFinished(() => {
     vi.useRealTimers();
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
     vi.clearAllMocks();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   vi.stubEnv('TAU_WORKER_RECORD', directory);

@@ -1,10 +1,7 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { agentResponse, herdrFake } from '../../../../tests/herdrFake.js';
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import * as cancellation from '../cancellation.js';
 import { fixtureLoadout } from '../fixtures/loadout.js';
 import { recordEvent } from '../records.js';
@@ -249,11 +246,7 @@ it('ends the wait with the pending-session error when the startup budget is gone
 });
 
 const recordedHandle = () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-readiness-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-readiness-');
 
   return workerHandle(directory);
 };

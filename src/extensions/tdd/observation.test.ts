@@ -1,10 +1,10 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import { beforeEach, expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { defaultTddConfig } from './config.js';
 import { createTestObservation, thrownErrorType } from './observation.js';
 import type { RunnerResult } from './runner/types.js';
@@ -26,8 +26,7 @@ const result = (status: 'passed' | 'failed', fullname = 'value works'): RunnerRe
 };
 
 const setup = async (cleanup: TestContext['onTestFinished']) => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tau-observation-'));
-  cleanup(() => rm(cwd, { recursive: true, force: true }));
+  const cwd = temporaryDirectory(cleanup, 'tau-observation-');
 
   await writeFile(join(cwd, 'value.test.ts'), 'test');
   await mkdir(join(cwd, 'src'));

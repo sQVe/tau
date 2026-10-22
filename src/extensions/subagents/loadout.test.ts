@@ -1,7 +1,6 @@
 import {
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readdirSync,
   readFileSync,
   readlinkSync,
@@ -21,6 +20,7 @@ import { ModelRegistry, ModelRuntime } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, SlashCommandInfo } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import * as loadoutModule from './loadout.js';
 import { checkWorkerRuntime, validateSavedLoadout } from './loadout.js';
@@ -55,11 +55,10 @@ const startup =
   };
 
 const workerFixture = async (onTestFinished: (callback: () => void) => void) => {
-  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'tau-pi-loadout-')));
+  const directory = realpathSync(temporaryDirectory(onTestFinished, 'tau-pi-loadout-'));
 
   onTestFinished(() => {
     vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
@@ -272,11 +271,7 @@ it('names only the allowed scoped models when a launch model is unavailable', as
 it('refuses profile files that set a model or use the reserved default name', ({
   onTestFinished,
 }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-profile-model-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-profile-model-');
 
   mkdirSync(join(directory, 'agents'));
   const withModel = join(directory, 'agents', 'worker.md');
@@ -687,11 +682,7 @@ it('preserves custom thinking profiles and rejects invalid settings without norm
 it('selects a valid named winner using the strict parser whitespace syntax', ({
   onTestFinished,
 }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-profile-whitespace-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-profile-whitespace-');
 
   const project = join(directory, '.pi', 'agents');
   mkdirSync(project, { recursive: true });
@@ -711,11 +702,7 @@ it('selects a valid named winner using the strict parser whitespace syntax', ({
 it('rejects an invalid named winner using the strict parser whitespace syntax', ({
   onTestFinished,
 }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-profile-whitespace-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-profile-whitespace-');
 
   const project = join(directory, '.pi', 'agents');
   mkdirSync(project, { recursive: true });
@@ -734,11 +721,7 @@ it('rejects an invalid named winner using the strict parser whitespace syntax', 
 it('validates only the requested winning profile and rejects malformed overrides', ({
   onTestFinished,
 }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-profile-selection-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-profile-selection-');
 
   const user = join(directory, 'agents');
   const project = join(directory, '.pi', 'agents');
@@ -793,11 +776,7 @@ it('validates only the requested winning profile and rejects malformed overrides
 it('lists bundled, user, and trusted project profiles without changing profile files', ({
   onTestFinished,
 }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-profile-list-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-profile-list-');
 
   const description: unknown = expect.any(String);
 
@@ -857,11 +836,7 @@ it('lists bundled, user, and trusted project profiles without changing profile f
 it('resolves profile precedence and refuses discarded isolation and transcript settings', ({
   onTestFinished,
 }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-profiles-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-profiles-');
 
   mkdirSync(join(directory, 'agents'));
   mkdirSync(join(directory, '.pi', 'agents'), { recursive: true });

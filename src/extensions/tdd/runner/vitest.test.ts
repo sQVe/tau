@@ -1,19 +1,9 @@
-import {
-  chmod,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  stat,
-  symlink,
-  writeFile,
-} from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
 
 import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { defaultTddConfig } from '../config.js';
 import { thrownErrorType } from '../observation.js';
 import { defaultSpawn, maximumStdoutBytes, maximumTotalBytes, nodeExecutable } from './process.js';
@@ -78,13 +68,11 @@ const makeDeps = (overrides: Partial<RunnerDeps>): RunnerDeps => ({
 
 describe('runTests', () => {
   beforeEach(async () => {
-    const agentDirectory = await mkdtemp(join(tmpdir(), 'tau-runner-agent-'));
+    const agentDirectory = temporaryDirectory(onTestFinished, 'tau-runner-agent-');
     vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
 
     onTestFinished(async () => {
       vi.unstubAllEnvs();
-
-      await rm(agentDirectory, { recursive: true, force: true });
     });
   });
 
@@ -278,8 +266,7 @@ describe('runTests', () => {
   );
 
   it('resolves the name format version from the same package as the Vitest binary', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-vitest-version-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-vitest-version-');
     const directory = join(cwd, 'node_modules/vitest');
     await mkdir(directory, { recursive: true });
 
@@ -302,8 +289,7 @@ describe('runTests', () => {
   });
 
   it('reads the current Vitest version after a same-path package upgrade', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-vitest-upgrade-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-vitest-upgrade-');
     const directory = join(cwd, 'node_modules/vitest');
     await mkdir(directory, { recursive: true });
 
@@ -378,8 +364,7 @@ describe('runTests', () => {
   });
 
   it('selects only an exact nested test with the installed Vitest runner', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-nested-selection-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-nested-selection-');
     await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
 
     await writeFile(
@@ -638,7 +623,7 @@ describe('runTests', () => {
   });
 
   it('returns every test identity and status from a real four-status fixture', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-runner-');
     const file = join(cwd, 'statuses.test.ts');
 
     try {
@@ -696,7 +681,7 @@ describe('runTests', () => {
     'classifies real Vitest failure messages for $scenario',
     { timeout: 125_000 },
     async (fixture) => {
-      const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-classification-'));
+      const cwd = temporaryDirectory(onTestFinished, 'tau-runner-classification-');
 
       try {
         await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
@@ -733,7 +718,7 @@ describe('runTests', () => {
   );
 
   it('reports a missing static import as a file failure without failing the selected test', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-import-'));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-runner-import-');
     const file = join(cwd, 'behavior.test.ts');
 
     try {
@@ -892,7 +877,7 @@ describe('runTests', () => {
   });
 
   it('preserves a passing JSON report larger than the diagnostic output cap', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-runner-');
 
     try {
       const script = join(cwd, 'report.cjs');
@@ -933,8 +918,7 @@ describe('runTests', () => {
   });
 
   it('preserves passing and failing verdicts when console output exceeds the capture limit', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-noisy-runner-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-noisy-runner-');
 
     await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
 
@@ -955,7 +939,7 @@ describe('runTests', () => {
   }, 125_000);
 
   it('settles the timeout even when a descendant keeps the piped stdio open', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-runner-');
 
     try {
       const script = join(cwd, 'hang.cjs');
@@ -986,8 +970,7 @@ describe('runTests', () => {
   });
 
   it('records a spawn error as an execution that did not start', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-unstarted-runner-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-unstarted-runner-');
 
     const result = await runTests(
       { scope: 'full', verificationArgv, cwd: join(cwd, 'missing') },
@@ -1204,7 +1187,7 @@ describe('runTests', () => {
   });
 
   it('returns cancelled and kills the child when the signal aborts', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-runner-');
 
     try {
       const script = join(cwd, 'sleep.cjs');
@@ -1237,8 +1220,7 @@ describe('runTests', () => {
   });
 
   it('sends no kill to a finished run when its signal aborts later', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-runner-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-runner-');
     const script = join(cwd, 'finish.cjs');
 
     await writeFile(script, 'process.stdout.write("done");\n');
@@ -1890,12 +1872,10 @@ it('allows two minutes for full verification and thirty seconds for focused runs
 
 describe('nodeExecutable', () => {
   it('ignores a directory named node on PATH', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-node-'));
+    const directory = temporaryDirectory(onTestFinished, 'tau-node-');
 
     onTestFinished(async () => {
       vi.unstubAllEnvs();
-
-      await rm(directory, { recursive: true, force: true });
     });
 
     await mkdir(join(directory, process.platform === 'win32' ? 'node.exe' : 'node'));
@@ -1907,12 +1887,10 @@ describe('nodeExecutable', () => {
   it.each(process.platform === 'win32' ? ['node'] : ['node', 'nodejs'])(
     'finds %s on PATH for a compiled agent',
     async (name) => {
-      const directory = await mkdtemp(join(tmpdir(), 'tau-node-'));
+      const directory = temporaryDirectory(onTestFinished, 'tau-node-');
 
       onTestFinished(async () => {
         vi.unstubAllEnvs();
-
-        await rm(directory, { recursive: true, force: true });
       });
 
       const executable = join(directory, process.platform === 'win32' ? `${name}.exe` : name);
@@ -1930,12 +1908,10 @@ describe('nodeExecutable', () => {
   it.skipIf(process.platform === 'win32')(
     'skips a node file on PATH that is not executable',
     async () => {
-      const directory = await mkdtemp(join(tmpdir(), 'tau-node-'));
+      const directory = temporaryDirectory(onTestFinished, 'tau-node-');
 
       onTestFinished(async () => {
         vi.unstubAllEnvs();
-
-        await rm(directory, { recursive: true, force: true });
       });
 
       const plain = join(directory, 'plain');
@@ -1956,12 +1932,10 @@ describe('nodeExecutable', () => {
   it.skipIf(process.platform === 'win32').for(['/opt/bin/mynode', '/opt/bin/node-agent'])(
     'looks up node on PATH for the agent executable %s',
     async (executablePath) => {
-      const directory = await mkdtemp(join(tmpdir(), 'tau-node-'));
+      const directory = temporaryDirectory(onTestFinished, 'tau-node-');
 
       onTestFinished(async () => {
         vi.unstubAllEnvs();
-
-        await rm(directory, { recursive: true, force: true });
       });
 
       const executable = join(directory, 'node');

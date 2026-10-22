@@ -1,9 +1,9 @@
-import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { cpSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished as afterTest } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { TaskFormatError } from './records.js';
 import { readStartupFailure, recordStartupFailure } from './startupFailure.js';
 
@@ -14,11 +14,7 @@ const fixturePath = (name: string): URL =>
   );
 
 const taskDirectory = (): string => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-startup-failure-'));
-
-  afterTest(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(afterTest, 'tau-startup-failure-');
 
   return directory;
 };

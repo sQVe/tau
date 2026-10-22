@@ -1,11 +1,12 @@
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
 
 import { createBashTool } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import workerBashGuard from './workerBashGuard.js';
 
 interface ModelResult {
@@ -17,11 +18,10 @@ interface ModelResult {
 // Runs Pi's real bash tool and shapes its result as Pi does for tool_result handlers.
 // Pi and the guard save full output under the temporary directory, so each test gets its own.
 const runBash = async (command: string): Promise<ModelResult> => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-worker-bash-guard-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-worker-bash-guard-');
 
   onTestFinished(async () => {
     vi.unstubAllEnvs();
-    await rm(directory, { recursive: true, force: true });
   });
 
   vi.stubEnv('TMPDIR', directory);
@@ -173,11 +173,10 @@ it('does not inspect the input of other tools', async () => {
 });
 
 it('replaces the capped text without adding a structured result the event lacked', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-worker-bash-guard-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-worker-bash-guard-');
 
   onTestFinished(async () => {
     vi.unstubAllEnvs();
-    await rm(directory, { recursive: true, force: true });
   });
 
   vi.stubEnv('TMPDIR', directory);

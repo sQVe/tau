@@ -1,19 +1,15 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { isLocalPackage, packagesToLoad } from './workerPackages.js';
 
 // Pi resolves a source it reads as local from the agent directory, and a Git source to its clone.
 const piReadsAsLocal = (source: string): boolean => {
-  const agentDirectory = mkdtempSync(join(tmpdir(), 'tau-source-'));
-
-  onTestFinished(() => {
-    rmSync(agentDirectory, { recursive: true, force: true });
-  });
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-source-');
 
   const localPath = resolve(agentDirectory, source.trim());
   mkdirSync(localPath, { recursive: true });

@@ -1,12 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { basename, delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { expect, it } from 'vitest';
 
 import { installedPiPath } from '../../../scripts/piVersionDrift.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { defaultTddConfig } from './config.js';
 import type { TddConfig } from './config.js';
 import { fingerprintInputs, listInputs } from './inputFingerprint.js';
@@ -42,8 +42,7 @@ const runUnderPi = (script: string, cwd: string) =>
 it.runIf(canRunInstalledPi)(
   'fingerprints inputs under the Bun runtime of the installed Pi',
   async ({ onTestFinished }) => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-input-fingerprint-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
 
     await mkdir(join(cwd, 'src/nested'), { recursive: true });
     await writeFile(join(cwd, 'src/value.ts'), 'value');
@@ -74,13 +73,6 @@ it.runIf(canRunInstalledPi)(
   },
 );
 
-const createWorktree = async (onTestFinished: (callback: () => Promise<void>) => void) => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tau-input-fingerprint-'));
-  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
-
-  return cwd;
-};
-
 const writeFiles = async (cwd: string, files: Record<string, string>) => {
   for (const [path, content] of Object.entries(files)) {
     await mkdir(dirname(join(cwd, path)), { recursive: true });
@@ -96,7 +88,7 @@ const fingerprintAfter = async (cwd: string, change: () => Promise<void>) => {
 };
 
 it('ignores a file under a dot directory', async ({ onTestFinished }) => {
-  const cwd = await createWorktree(onTestFinished);
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   await writeFiles(cwd, { 'src/value.ts': 'value', '.hidden/value.test.ts': 'one' });
 
   const { before, after } = await fingerprintAfter(cwd, () =>
@@ -107,7 +99,7 @@ it('ignores a file under a dot directory', async ({ onTestFinished }) => {
 });
 
 it('fingerprints an explicit dot path from the configuration globs', async ({ onTestFinished }) => {
-  const cwd = await createWorktree(onTestFinished);
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   await writeFiles(cwd, { '.pi/tau.json': 'one' });
 
   const { before, after } = await fingerprintAfter(cwd, () =>
@@ -118,7 +110,7 @@ it('fingerprints an explicit dot path from the configuration globs', async ({ on
 });
 
 it('ignores a file under an excluded directory', async ({ onTestFinished }) => {
-  const cwd = await createWorktree(onTestFinished);
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   await writeFiles(cwd, { 'src/value.ts': 'value', 'node_modules/pkg/value.test.ts': 'one' });
 
   const { before, after } = await fingerprintAfter(cwd, () =>
@@ -129,7 +121,7 @@ it('ignores a file under an excluded directory', async ({ onTestFinished }) => {
 });
 
 it('changes when an input changes, appears, or is deleted', async ({ onTestFinished }) => {
-  const cwd = await createWorktree(onTestFinished);
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   await writeFiles(cwd, { 'src/value.ts': 'one' });
 
   const changed = await fingerprintAfter(cwd, () => writeFiles(cwd, { 'src/value.ts': 'two' }));
@@ -164,7 +156,7 @@ const rewriteChangesFingerprint = async (
 it('matches a dot segment only against a pattern segment that starts with a dot', async ({
   onTestFinished,
 }) => {
-  const cwd = await createWorktree(onTestFinished);
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
 
   await writeFiles(cwd, {
     '.config/a.ts': 'one',
@@ -188,7 +180,7 @@ it('matches a dot segment only against a pattern segment that starts with a dot'
 });
 
 it('prunes an excluded directory by its own path and no other', async ({ onTestFinished }) => {
-  const cwd = await createWorktree(onTestFinished);
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   await writeFiles(cwd, { 'src/a.ts': 'one' });
 
   const unrelatedExclude = { ...onlyProduction('src/**/*.ts'), excludedGlobs: ['**/x'] };
@@ -201,7 +193,7 @@ it('prunes an excluded directory by its own path and no other', async ({ onTestF
 it('skips an unreadable directory and fingerprints the other inputs', async ({
   onTestFinished,
 }) => {
-  const cwd = await createWorktree(onTestFinished);
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   await writeFiles(cwd, { 'src/a.ts': 'one', 'denied/b.ts': 'one' });
   await chmod(join(cwd, 'denied'), 0);
   onTestFinished(() => chmod(join(cwd, 'denied'), 0o755));
@@ -213,7 +205,7 @@ it('skips an unreadable directory and fingerprints the other inputs', async ({
 it('hashes a file under a symlinked directory reached through a wildcard', async ({
   onTestFinished,
 }) => {
-  const base = await createWorktree(onTestFinished);
+  const base = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   const cwd = join(base, 'repo');
   await writeFiles(cwd, { 'src/a.ts': 'one' });
   await writeFiles(base, { 'outside/value.ts': 'one' });
@@ -231,7 +223,7 @@ it('hashes a file under a symlinked directory reached through a wildcard', async
 });
 
 it('finishes when symlinked directories form a loop', async ({ onTestFinished }) => {
-  const cwd = await createWorktree(onTestFinished);
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   await writeFiles(cwd, { 'a/x.ts': 'one' });
   await symlink('..', join(cwd, 'a/up'));
   await symlink('../b', join(cwd, 'a/b'));
@@ -241,7 +233,7 @@ it('finishes when symlinked directories form a loop', async ({ onTestFinished })
 });
 
 it('does not enter an excluded symlinked directory', async ({ onTestFinished }) => {
-  const base = await createWorktree(onTestFinished);
+  const base = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   const cwd = join(base, 'repo');
   await writeFiles(cwd, { 'src/a.ts': 'one' });
   await writeFiles(base, { 'outside/value.ts': 'one' });
@@ -255,7 +247,7 @@ it('does not enter an excluded symlinked directory', async ({ onTestFinished }) 
 it('lists inputs for patterns with a leading ./ and for numeric brace ranges', async ({
   onTestFinished,
 }) => {
-  const cwd = await createWorktree(onTestFinished);
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   await writeFiles(cwd, { 'src/a.ts': 'one', 'lib/b.ts': 'one', 'f2.ts': 'one', 'f4.ts': 'one' });
 
   const current = await rewriteChangesFingerprint(cwd, onlyProduction('./src/**/*.ts'), 'src/a.ts');
@@ -429,7 +421,7 @@ const parityProblems = async (cwd: string, entry: ParityResult) => {
 it.runIf(canRunInstalledPi)(
   'lists the same inputs as glob under the Bun runtime of the installed Pi',
   async ({ onTestFinished }) => {
-    const cwd = await createWorktree(onTestFinished);
+    const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
     await writeFiles(cwd, parityFiles);
     await symlink('../lib', join(cwd, 'src/shared'));
     await symlink('a.ts', join(cwd, 'src/alias.ts'));
@@ -466,7 +458,7 @@ it.runIf(canRunInstalledPi)(
 it('lists a symlink to a file as an input and walks a symlink loop once', async ({
   onTestFinished,
 }) => {
-  const cwd = await createWorktree(onTestFinished);
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   await writeFiles(cwd, { 'top.ts': 'one', 'a/x.ts': 'one', 'a/real.ts': 'one' });
   await symlink('real.ts', join(cwd, 'a/link.ts'));
   await symlink('..', join(cwd, 'a/up'));
@@ -489,7 +481,7 @@ it('lists a symlink to a file as an input and walks a symlink loop once', async 
 it('does not enter an excluded directory, even when it is a symlink to a directory elsewhere', async ({
   onTestFinished,
 }) => {
-  const cwd = await createWorktree(onTestFinished);
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   await writeFiles(cwd, { 'src/a.ts': 'one', 'skipped/b.ts': 'one', 'other/c.ts': 'one' });
   await symlink('../other', join(cwd, 'skipped/link'));
 
@@ -501,7 +493,7 @@ it('does not enter an excluded directory, even when it is a symlink to a directo
 it('hashes without failing when a listed test file is missing or is a directory', async ({
   onTestFinished,
 }) => {
-  const cwd = await createWorktree(onTestFinished);
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   await writeFiles(cwd, { 'src/a.ts': 'one' });
   await mkdir(join(cwd, 'dir.test.ts'));
 
@@ -515,7 +507,7 @@ it('hashes without failing when a listed test file is missing or is a directory'
 it('fails to hash a test file that cannot be read for another reason', async ({
   onTestFinished,
 }) => {
-  const cwd = await createWorktree(onTestFinished);
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   await symlink('loop.test.ts', join(cwd, 'loop.test.ts'));
 
   await expect(fingerprintInputs(cwd, onlyProduction(), ['loop.test.ts'])).rejects.toThrow('ELOOP');

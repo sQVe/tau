@@ -1,23 +1,13 @@
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { expect, it, onTestFinished as afterTest } from 'vitest';
+import { expect, it, onTestFinished } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { allocateName } from './names.js';
 
 const savedTask = join(import.meta.dirname, 'fixtures', 'taskRecords', 'current-pi.json');
-
-const temporaryDirectory = () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-names-'));
-
-  afterTest(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
-
-  return directory;
-};
 
 const allocation = (root: string, parentSessionId: string) => {
   const suffixes = ['ab', 'cd'];
@@ -32,7 +22,7 @@ const allocation = (root: string, parentSessionId: string) => {
 };
 
 const rootWithSavedScout = () => {
-  const root = temporaryDirectory();
+  const root = temporaryDirectory(onTestFinished, 'tau-names-');
 
   mkdirSync(join(root, 'current-pi'));
   copyFileSync(savedTask, join(root, 'current-pi', 'task.json'));
@@ -41,13 +31,13 @@ const rootWithSavedScout = () => {
 };
 
 it('allocates a name before any task root exists', () => {
-  const root = join(temporaryDirectory(), 'tasks');
+  const root = join(temporaryDirectory(onTestFinished, 'tau-names-'), 'tasks');
 
   expect(allocateName(allocation(root, 'parent-one'))).toBe('scout-ab');
 });
 
 it('refuses to allocate a name when the task root cannot be listed', () => {
-  const root = join(temporaryDirectory(), 'tasks');
+  const root = join(temporaryDirectory(onTestFinished, 'tau-names-'), 'tasks');
 
   writeFileSync(root, '');
 

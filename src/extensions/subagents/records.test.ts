@@ -2,7 +2,6 @@ import * as fileSystem from 'node:fs';
 import {
   fstatSync,
   fsyncSync,
-  mkdtempSync,
   mkdirSync,
   symlinkSync,
   readFileSync,
@@ -16,6 +15,7 @@ import { join } from 'node:path';
 
 import { afterEach, expect, it, onTestFinished as afterTest, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { readWorkerFacts, taskRecordStatus } from './controller/record.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import * as questions from './questionRecords.js';
@@ -26,11 +26,7 @@ vi.mock(import('node:fs'), { spy: true });
 afterEach(() => vi.resetAllMocks());
 
 const questionFixture = () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-worker-questions-'));
-
-  afterTest(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(afterTest, 'tau-worker-questions-');
 
   const task = {
     version: 11,
@@ -891,11 +887,7 @@ it('validates saved question reply and acknowledgement chains during recovery', 
 it('bounds serialized UTF-8 records including the trailing newline before publication', ({
   onTestFinished,
 }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-worker-size-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-worker-size-');
 
   const value = { text: '界'.repeat(42_660) };
   value.text += 'x'.repeat(128_000 - Buffer.byteLength(`${JSON.stringify(value)}\n`, 'utf8'));
@@ -913,11 +905,10 @@ it('bounds serialized UTF-8 records including the trailing newline before public
 });
 
 it('reads records across short descriptor reads', async ({ onTestFinished }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-worker-size-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-worker-size-');
 
   onTestFinished(() => {
     vi.resetAllMocks();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   writeFileSync(join(directory, 'record.json'), '{"text":"short read"}');
@@ -939,11 +930,10 @@ it('reads records across short descriptor reads', async ({ onTestFinished }) => 
 });
 
 it('bounds descriptor reads when a record grows during reading', async ({ onTestFinished }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-worker-size-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-worker-size-');
 
   onTestFinished(() => {
     vi.resetAllMocks();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   const path = join(directory, 'record.json');
@@ -991,11 +981,10 @@ it('bounds descriptor reads when a record grows during reading', async ({ onTest
 });
 
 it.each(['invalid JSON', 'read failure'])('closes the record descriptor after %s', (failure) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-worker-size-'));
+  const directory = temporaryDirectory(afterTest, 'tau-worker-size-');
 
   afterTest(() => {
     vi.resetAllMocks();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   writeFileSync(join(directory, 'record.json'), '{');
@@ -1016,11 +1005,7 @@ it.each(['invalid JSON', 'read failure'])('closes the record descriptor after %s
 });
 
 it('keeps report and event publication within their existing byte limits', ({ onTestFinished }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-worker-size-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-worker-size-');
 
   const report = {
     taskId: 'task-one',
@@ -1049,11 +1034,7 @@ it('keeps report and event publication within their existing byte limits', ({ on
 it('rejects oversized Unicode reports during recovery without replacing evidence', ({
   onTestFinished,
 }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-report-recovery-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-report-recovery-');
 
   const report = {
     taskId: 'task-one',
@@ -1072,11 +1053,7 @@ it('rejects oversized Unicode reports during recovery without replacing evidence
 });
 
 it('accepts one validated report without replacing durable evidence', ({ onTestFinished }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-worker-records-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-worker-records-');
 
   const report = {
     taskId: 'task-one',

@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import type { ConfigWarnings } from '../../config/config.js';
 import { classifyPath, configurationGlobs, defaultTddConfig, loadTddConfig } from './config.js';
 import { unsupportedGlobReason } from './inputGlob.js';
@@ -84,8 +84,7 @@ describe('TDD config', () => {
   it('reads the grove layout from .pi/tau.json and ignores other top-level keys', async ({
     onTestFinished,
   }) => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-config-load-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-config-load-');
     await mkdir(join(cwd, '.pi'));
 
     await writeFile(
@@ -109,8 +108,7 @@ describe('TDD config', () => {
   it('reads known fields past unknown tdd keys and warns about each', async ({
     onTestFinished,
   }) => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-config-unknown-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-config-unknown-');
     await mkdir(join(cwd, '.pi'));
     const notify = vi.fn<ConfigWarnings['notify']>();
 
@@ -132,8 +130,7 @@ describe('TDD config', () => {
   it('loads a configured verification command that starts with vitest', async ({
     onTestFinished,
   }) => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-config-argv-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-config-argv-');
     await mkdir(join(cwd, '.pi'));
 
     await writeFile(
@@ -159,8 +156,7 @@ describe('TDD config', () => {
     ['.pi/tau.json', '{"tdd": {"verificationArgv": ["vitest", ""]}}', 'verificationArgv'],
     ['agent/tau.json', '{"tdd": {"excludedGlobs": "dist"}}', 'excludedGlobs'],
   ])('names %s and the problem for %s', async ([file, content, problem], { onTestFinished }) => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-config-invalid-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-config-invalid-');
     await mkdir(join(cwd, '.pi'));
     await mkdir(join(cwd, 'agent'));
     await writeFile(join(cwd, file), content);
@@ -193,8 +189,7 @@ describe('TDD config', () => {
     ['productionGlobs', 'src/+(a|b).ts'],
     ['productionGlobs', '{src,}/**'],
   ])('rejects %s entry %s and names the glob', async ([list, glob], { onTestFinished }) => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-config-glob-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-config-glob-');
     await mkdir(join(cwd, '.pi'));
     await writeFile(join(cwd, '.pi/tau.json'), JSON.stringify({ tdd: { [list]: [glob] } }));
 
