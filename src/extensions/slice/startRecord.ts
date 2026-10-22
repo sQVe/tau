@@ -2,10 +2,9 @@ import { join } from 'node:path';
 
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
-import { Value } from 'typebox/value';
 
-import { describeSchemaProblem } from '../../schemaProblem.js';
-import { isNewerVersion, readBody, readOptionalFile, writeRecord } from './draft.js';
+import { readVersionedRecord, writeRecord } from '../../record.js';
+import { readBody } from './draft.js';
 
 export interface StartDraft {
   start: Start;
@@ -65,42 +64,22 @@ const rejectRepeats = (path: string, start: Start) => {
   }
 };
 
-const parseStart = (path: string, text: string): Start => {
-  let value: unknown;
-
-  try {
-    value = JSON.parse(text);
-  } catch (error) {
-    throw new Error(`Malformed start record ${path}: not JSON.`, { cause: error });
-  }
-
-  if (isNewerVersion(value, currentVersion)) {
-    throw new Error(
-      `Start record ${path} has a newer format than this Tau reads. Update Tau, then restart the session.`,
-    );
-  }
-
-  if (!Value.Check(startSchema, value)) {
-    throw new Error(
-      `Malformed start record ${path}: ${describeSchemaProblem(startSchema, value)}.`,
-    );
-  }
-
-  rejectRepeats(path, value);
-
-  return value;
-};
-
 // Reads the record and every body file it names. Undefined when the draft has no start.json.
 export const readStartDraft = async (directory: string): Promise<StartDraft | undefined> => {
   const path = join(directory, startFileName);
-  const text = await readOptionalFile(path);
 
-  if (text === undefined) {
+  const start = await readVersionedRecord(path, {
+    label: 'start record',
+    version: currentVersion,
+    schema: startSchema,
+  });
+
+  if (start === undefined) {
     return undefined;
   }
 
-  const start = parseStart(path, text);
+  rejectRepeats(path, start);
+
   const bodies: string[] = [];
 
   for (const ticket of start.tickets) {
@@ -112,4 +91,4 @@ export const readStartDraft = async (directory: string): Promise<StartDraft | un
 };
 
 export const writeStart = (directory: string, start: Start): Promise<void> =>
-  writeRecord(directory, startFileName, start);
+  writeRecord(join(directory, startFileName), start);

@@ -73,20 +73,26 @@ export const parseVersionedRecord = <Schema extends TSchema>(
   return value;
 };
 
-export const readVersionedRecord = async <Schema extends TSchema>(
-  path: string,
-  options: VersionedRecordOptions<Schema>,
-): Promise<Static<Schema> | undefined> => {
-  let text: string;
-
+export const readOptionalText = async (path: string): Promise<string | undefined> => {
   try {
-    text = await readFile(path, 'utf8');
+    return await readFile(path, 'utf8');
   } catch (error) {
     if (isMissingFile(error)) {
       return undefined;
     }
 
     throw error;
+  }
+};
+
+export const readVersionedRecord = async <Schema extends TSchema>(
+  path: string,
+  options: VersionedRecordOptions<Schema>,
+): Promise<Static<Schema> | undefined> => {
+  const text = await readOptionalText(path);
+
+  if (text === undefined) {
+    return undefined;
   }
 
   // oxlint-disable-next-line typescript/no-unsafe-return -- parseVersionedRecord returns the generic schema type.
