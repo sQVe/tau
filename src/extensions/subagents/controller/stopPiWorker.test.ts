@@ -1,24 +1,13 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
+import { herdrFake } from '../../../../tests/herdrFake.js';
 import * as cancellation from '../cancellation.js';
-import { agentResponse, paneListResponse, processInfoResponse } from '../fixtures/herdrFake.js';
 import { fixtureLoadout } from '../fixtures/loadout.js';
 import { WorkerPlacement } from '../placement.js';
 import type { Task } from '../types.js';
+import { herdrReply } from './fixtures/herdrReply.js';
 import { stopPiWorker } from './stop.js';
 import { createHandle } from './task.js';
-
-type Pane = Record<'pane_id' | 'terminal_id' | 'workspace_id' | 'tab_id', string>;
-
-interface World {
-  // Panes herdr lists on the n-th `pane list` call, counted from 1.
-  panes: (listCall: number) => Pane[];
-  // The `pane process-info` reply for a pane.
-  processInfo?: (paneId: string) => string;
-  // The identity checks of an owned worker run this on each `pane process-info` call.
-  onProcessInfo?: () => void;
-  onList?: () => void;
-}
 
 vi.mock(import('node:timers/promises'), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -27,64 +16,25 @@ vi.mock(import('node:timers/promises'), async (importOriginal) => ({
 
 const token = '/tmp/worker-session.jsonl';
 const processId = 4242;
+const terminalId = 'pane-terminal';
 
-const pane = (name: string): Pane => ({
-  pane_id: name,
-  terminal_id: `${name}-terminal`,
-  workspace_id: 'w',
-  tab_id: 't',
-});
+let fake = herdrFake();
 
-const sessionProcess = (paneId: string, argv = ['pi', token]): string =>
-  processInfoResponse({ paneId, shellPid: processId, processId, argv });
+const sessionArguments = ['pi', token];
 
-const herdr = (world: World) => {
-  const calls: string[][] = [];
-  const closedPanes = new Set<string>();
-  let listCalls = 0;
-
-  const call = async (argumentsList: string[]): Promise<string> => {
-    calls.push(argumentsList);
-    const [surface, action, target] = argumentsList;
-
-    if (surface === 'pane' && action === 'list' && argumentsList.length === 2) {
-      listCalls += 1;
-      world.onList?.();
-
-      const listed = world.panes(listCalls).filter((entry) => !closedPanes.has(entry.pane_id));
-
-      return paneListResponse(listed);
-    }
-
-    if (surface === 'pane' && action === 'process-info' && argumentsList[2] === '--pane') {
-      world.onProcessInfo?.();
-
-      return (world.processInfo ?? ((name) => sessionProcess(name)))(argumentsList[3] ?? '');
-    }
-
-    if (surface === 'pane' && action === 'close') {
-      closedPanes.add(target ?? '');
-
-      return '{}';
-    }
-
-    if (surface === 'pane' && action === 'get') {
-      return JSON.stringify({ result: { pane: pane(target ?? '') } });
-    }
-
-    if (surface === 'agent' && action === 'get') {
-      return agentResponse({
-        pane_id: target,
-        agent: 'pi',
-        agent_session: { value: token },
-      });
-    }
-
-    throw new Error(`Unexpected herdr call: ${argumentsList.join(' ')}`);
-  };
-
-  return { call, calls, closed: () => calls.filter((entry) => entry[1] === 'close') };
+const seedWorker = (name: string, argv = sessionArguments, workerProcessId = processId) => {
+  fake.seedWorker({
+    paneId: name,
+    terminalId: `${name}-terminal`,
+    processId: workerProcessId,
+    session: token,
+    argv,
+  });
 };
+
+const client = (argumentsList: string[]) => fake.client(argumentsList, 0);
+
+const closed = () => fake.calls.filter((entry) => entry[1] === 'close');
 
 const newHandle = () => {
   const task = { taskId: 'task', nativeSessionFile: token, loadout: fixtureLoadout('/tmp') };
@@ -98,13 +48,13 @@ const newHandle = () => {
 const ownedHandle = () => {
   const handle = newHandle();
 
-  handle.identity.terminalId = 'pane-terminal';
+  handle.identity.terminalId = terminalId;
 
   handle.identity.owned = {
     version: 2,
     kind: 'pi',
     paneId: 'pane',
-    terminalId: 'pane-terminal',
+    terminalId,
     shellPid: processId,
     processId,
     token,
@@ -117,7 +67,7 @@ const ownedHandle = () => {
 const unownedHandle = () => {
   const handle = newHandle();
 
-  handle.identity.terminalId = 'pane-terminal';
+  handle.identity.terminalId = terminalId;
 
   return handle;
 };
@@ -149,7 +99,9 @@ const stop = (
   });
 
 beforeEach(() => {
+  fake = herdrFake();
   vi.spyOn(cancellation, 'runClient').mockResolvedValue('saved start');
+  vi.spyOn(cancellation, 'processAbsent').mockImplementation(fake.processAbsent);
 });
 
 afterEach(() => {
@@ -158,122 +110,90 @@ afterEach(() => {
 });
 
 it('refuses to close a pane when the worker moved during the identity checks', async () => {
-  const moved = { ...pane('moved'), terminal_id: 'pane-terminal' };
-  const world = herdr({ panes: (listCall) => [listCall === 1 ? pane('pane') : moved] });
+  seedWorker('pane');
 
-  const outcome = await stop(unownedHandle(), world.call);
+  let listCalls = 0;
+
+  // The worker moves between the identity checks and the second look at its terminal.
+  const call = async (argumentsList: string[]) => {
+    listCalls += argumentsList[1] === 'list' ? 1 : 0;
+
+    if (listCalls === 2) {
+      fake.move(terminalId);
+    }
+
+    return client(argumentsList);
+  };
+
+  const outcome = await stop(unownedHandle(), call);
 
   expect(outcome.stopped).toBe(false);
-  expect(world.closed()).toEqual([]);
+  expect(closed()).toEqual([]);
 });
 
 it('refuses a pane whose process info names another pane', async () => {
-  const world = herdr({
-    panes: () => [pane('pane')],
-    processInfo: () => sessionProcess('another-pane'),
-  });
+  seedWorker('pane');
+  fake.malformedEvidence(terminalId, 'processInfo', herdrReply('wrongPaneId.json'));
 
-  const outcome = await stop(unownedHandle(), world.call);
+  const outcome = await stop(unownedHandle(), client);
 
   expect(outcome.stopped).toBe(false);
-  expect(world.closed()).toEqual([]);
+  expect(closed()).toEqual([]);
 });
 
 it('refuses a pane whose session runs in a process other than the shell', async () => {
-  const response = JSON.stringify({
-    result: {
-      process_info: {
-        pane_id: 'pane',
-        shell_pid: processId,
-        foreground_processes: [
-          { pid: 1, argv: ['pi', token] },
-          { pid: processId, argv: ['pi'] },
-        ],
-      },
-    },
-  });
+  seedWorker('pane');
+  fake.malformedEvidence(terminalId, 'processInfo', herdrReply('sessionInAnotherProcess.json'));
 
-  const world = herdr({ panes: () => [pane('pane')], processInfo: () => response });
-
-  const outcome = await stop(unownedHandle(), world.call);
+  const outcome = await stop(unownedHandle(), client);
 
   expect(outcome.stopped).toBe(false);
-  expect(world.closed()).toEqual([]);
+  expect(closed()).toEqual([]);
 });
 
 it('closes the new pane that runs the session after a lost launch reply', async () => {
-  const world = herdr({
-    panes: () => [pane('old'), pane('other'), pane('launched')],
-    processInfo: (name) =>
-      name === 'launched' ? sessionProcess(name) : sessionProcess(name, ['pi', 'elsewhere']),
-  });
+  seedWorker('old', ['pi', 'elsewhere'], 6001);
+  seedWorker('other', ['pi', 'elsewhere'], 6002);
+  seedWorker('launched');
 
-  const outcome = await stop(lostReplyHandle(['old-terminal']), world.call);
+  const outcome = await stop(lostReplyHandle(['old-terminal']), client);
 
   expect(outcome.stopped).toBe(true);
-  expect(world.closed()).toEqual([['pane', 'close', 'launched']]);
+  expect(closed()).toEqual([['pane', 'close', 'launched']]);
 });
 
 it('skips a new pane whose process info is unreadable after a lost launch reply', async () => {
-  const world = herdr({
-    panes: () => [pane('unreadable'), pane('launched')],
-    processInfo: (name) => {
-      if (name === 'unreadable') {
-        throw new Error('process-info failed');
-      }
+  seedWorker('unreadable', sessionArguments, 6001);
+  seedWorker('launched');
+  fake.malformedEvidence('unreadable-terminal', 'processInfo', new Error('process-info failed'));
 
-      return sessionProcess(name);
-    },
-  });
-
-  const outcome = await stop(lostReplyHandle(), world.call);
+  const outcome = await stop(lostReplyHandle(), client);
 
   expect(outcome.stopped).toBe(true);
-  expect(world.closed()).toEqual([['pane', 'close', 'launched']]);
+  expect(closed()).toEqual([['pane', 'close', 'launched']]);
 });
 
 it.each([
-  [
-    'has no foreground process for the shell',
-    JSON.stringify({
-      result: {
-        process_info: {
-          pane_id: 'pane',
-          shell_pid: processId,
-          foreground_processes: [{ pid: 1, argv: ['pi', token] }],
-        },
-      },
-    }),
-  ],
-  [
-    'has no argument list',
-    JSON.stringify({
-      result: {
-        process_info: {
-          pane_id: 'pane',
-          shell_pid: processId,
-          foreground_processes: [{ pid: processId }],
-        },
-      },
-    }),
-  ],
-  ['names another pane', sessionProcess('another-pane')],
-])('leaves a new pane alone when its process info %s', async (_name, response) => {
-  const world = herdr({ panes: () => [pane('pane')], processInfo: () => response });
+  ['has no foreground process for the shell', 'noShellProcess.json'],
+  ['has no argument list', 'noArgumentList.json'],
+  ['names another pane', 'wrongPaneId.json'],
+])('leaves a new pane alone when its process info %s', async (_name, reply) => {
+  seedWorker('pane');
+  fake.malformedEvidence(terminalId, 'processInfo', herdrReply(reply));
 
-  const outcome = await stop(lostReplyHandle(), world.call);
+  const outcome = await stop(lostReplyHandle(), client);
 
   expect(outcome.stopped).toBe(false);
-  expect(world.closed()).toEqual([]);
+  expect(closed()).toEqual([]);
 });
 
 it('reports an unlocated worker when no terminals were recorded before the launch', async () => {
-  const world = herdr({ panes: () => [pane('pane')] });
+  seedWorker('pane');
 
-  const outcome = await stop(newHandle(), world.call);
+  const outcome = await stop(newHandle(), client);
 
   expect(outcome.stopped).toBe(false);
-  expect(world.closed()).toEqual([]);
+  expect(closed()).toEqual([]);
 });
 
 const heldPlacement = (afterGate?: () => void) => {
@@ -300,7 +220,7 @@ it('does not wait for the placement queue when no worker was ever started', asyn
 
   handle.startup.neverStarted = true;
 
-  const outcome = stop(handle, herdr({ panes: () => [] }).call, { placement });
+  const outcome = stop(handle, client, { placement });
 
   expect(await outcome).toMatchObject({ stopped: true });
   release();
@@ -310,9 +230,8 @@ it('does not wait for the placement queue when no worker was ever started', asyn
 it('does not wait for the placement queue when the worker terminal is known', async () => {
   vi.spyOn(cancellation, 'processAbsent').mockReturnValue(true);
   const { placement, held, release } = heldPlacement();
-  const world = herdr({ panes: () => [] });
 
-  const outcome = stop(ownedHandle(), world.call, { placement });
+  const outcome = stop(ownedHandle(), client, { placement });
 
   expect(await outcome).toMatchObject({ stopped: true });
   release();
@@ -320,7 +239,7 @@ it('does not wait for the placement queue when the worker terminal is known', as
 });
 
 it('waits for an in-flight launch to record its pane before it stops the worker', async () => {
-  const world = herdr({ panes: () => [pane('pane')] });
+  seedWorker('pane');
   const handle = newHandle();
 
   // The in-flight launch records its pane when its placement step finishes.
@@ -328,13 +247,13 @@ it('waits for an in-flight launch to record its pane before it stops the worker'
     handle.identity.paneId = 'pane';
   });
 
-  const outcome = stop(handle, world.call, { placement });
+  const outcome = stop(handle, client, { placement });
 
   release();
   await held;
 
   expect(await outcome).toMatchObject({ stopped: true });
-  expect(world.closed()).toEqual([['pane', 'close', 'pane']]);
+  expect(closed()).toEqual([['pane', 'close', 'pane']]);
 });
 
 it('keeps an owned worker alive through its grace period, then closes its pane', async () => {
@@ -342,17 +261,17 @@ it('keeps an owned worker alive through its grace period, then closes its pane',
   const started = performance.now();
   let closedAt = 0;
 
-  const world = herdr({ panes: () => [pane('pane')] });
+  seedWorker('pane');
 
   const call = async (argumentsList: string[]) => {
     if (argumentsList[1] === 'close') {
       closedAt = performance.now() - started;
     }
 
-    return world.call(argumentsList);
+    return client(argumentsList);
   };
 
-  const stopping = stop(unownedHandle(), call, { graceful: true });
+  const stopping = stop(ownedHandle(), call, { graceful: true });
 
   await vi.advanceTimersByTimeAsync(2000);
   const outcome = await stopping;
@@ -363,18 +282,15 @@ it('keeps an owned worker alive through its grace period, then closes its pane',
 
 it('does not close the pane of a worker that exits during its grace period', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
-  let exited = false;
-  const processExists = vi.spyOn(cancellation, 'processAbsent');
-
-  processExists.mockImplementation(() => exited);
-
-  const world = herdr({ panes: () => (exited ? [] : [pane('pane')]) });
+  seedWorker('pane');
 
   const call = async (argumentsList: string[]) => {
     // The worker exits when the second poll starts.
-    exited = world.calls.some((entry) => entry[1] === 'list');
+    if (fake.calls.some((entry) => entry[1] === 'list')) {
+      fake.exit(terminalId);
+    }
 
-    return world.call(argumentsList);
+    return client(argumentsList);
   };
 
   const stopping = stop(ownedHandle(), call, { graceful: true });
@@ -383,16 +299,17 @@ it('does not close the pane of a worker that exits during its grace period', asy
   const outcome = await stopping;
 
   expect(outcome.stopped).toBe(true);
-  expect(world.closed()).toEqual([]);
+  expect(closed()).toEqual([]);
 });
 
 it('confirms a closed worker whose process lingers briefly after its pane is gone', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
-  let closed = false;
   let checksAfterClose = 0;
 
+  seedWorker('pane');
+
   vi.spyOn(cancellation, 'processAbsent').mockImplementation(() => {
-    if (!closed) {
+    if (closed().length === 0) {
       return false;
     }
 
@@ -401,75 +318,61 @@ it('confirms a closed worker whose process lingers briefly after its pane is gon
     return checksAfterClose > 3;
   });
 
-  const world = herdr({ panes: () => (closed ? [] : [pane('pane')]) });
-
-  const call = async (argumentsList: string[]) => {
-    const response = await world.call(argumentsList);
-
-    if (argumentsList[1] === 'close') {
-      closed = true;
-    }
-
-    return response;
-  };
-
-  const stopping = stop(ownedHandle(), call);
+  const stopping = stop(ownedHandle(), client);
 
   await vi.advanceTimersByTimeAsync(1000);
   const outcome = await stopping;
 
   expect(outcome.stopped).toBe(true);
-  expect(world.closed()).toEqual([['pane', 'close', 'pane']]);
+  expect(closed()).toEqual([['pane', 'close', 'pane']]);
 });
 
 it('reports a vanished pane whose process still runs as needing manual cleanup', async () => {
-  vi.spyOn(cancellation, 'processAbsent').mockReturnValue(false);
-
-  const world = herdr({ panes: () => [] });
-
-  const outcome = await stop(ownedHandle(), world.call);
+  const outcome = await stop(ownedHandle(), client);
 
   expect(outcome.stopped).toBe(false);
-  expect(world.closed()).toEqual([]);
+  expect(closed()).toEqual([]);
 });
 
 it('confirms a worker that exits while its identity is checked', async () => {
-  let exited = false;
+  seedWorker('pane');
 
-  vi.spyOn(cancellation, 'processAbsent').mockImplementation(() => exited);
-
-  const world = herdr({
-    panes: () => (exited ? [] : [pane('pane')]),
-    onProcessInfo: () => {
-      exited = true;
+  const call = async (argumentsList: string[]) => {
+    if (argumentsList[1] === 'process-info') {
+      fake.exit(terminalId);
       throw new Error('process-info failed');
-    },
-  });
+    }
 
-  const outcome = await stop(ownedHandle(), world.call);
+    return client(argumentsList);
+  };
+
+  const outcome = await stop(ownedHandle(), call);
 
   expect(outcome.stopped).toBe(true);
-  expect(world.closed()).toEqual([]);
+  expect(closed()).toEqual([]);
 });
 
 it('stops waiting for the grace period when the stop is aborted', async () => {
   const abort = new AbortController();
   let listings = 0;
 
-  const world = herdr({
-    panes: () => [pane('pane')],
-    onList: () => {
+  seedWorker('pane');
+
+  const call = async (argumentsList: string[]) => {
+    if (argumentsList[1] === 'list') {
       listings += 1;
       abort.abort();
-    },
-  });
+    }
 
-  const outcome = await stop(unownedHandle(), world.call, {
+    return client(argumentsList);
+  };
+
+  const outcome = await stop(unownedHandle(), call, {
     graceful: true,
     signal: abort.signal,
   });
 
   expect(outcome.stopped).toBe(false);
   expect(listings).toBe(1);
-  expect(world.closed()).toEqual([]);
+  expect(closed()).toEqual([]);
 });

@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { vi, onTestFinished as afterTest } from 'vitest';
 import type { MockInstance } from 'vitest';
 
+import { herdrFake } from '../../../../../tests/herdrFake.js';
 import * as cancellationModule from '../../cancellation.js';
-import { herdrFake } from '../../fixtures/herdrFake.js';
 import { fixtureLoadout } from '../../fixtures/loadout.js';
 import * as loadoutModule from '../../loadout.js';
 import type { WorkerNotice } from '../../presentation.js';
@@ -89,7 +89,7 @@ export const setup = (
 
   vi.spyOn(cancellationModule, 'runClient').mockImplementation(
     (executable, argumentsList, budget, options) => {
-      if (executable === 'ps' && ['100', '101', '102'].includes(argumentsList[1] ?? '')) {
+      if (executable === 'ps' && fake.knowsProcess(Number(argumentsList[1]))) {
         return Promise.resolve('fixture shell start');
       }
 
@@ -97,11 +97,10 @@ export const setup = (
     },
   );
 
-  // The fake worker is this test process, which is gone once its pane closes.
   const originalProcessAbsent = cancellationModule.processAbsent;
 
   vi.spyOn(cancellationModule, 'processAbsent').mockImplementation((processId) =>
-    processId === fake.state.process ? fake.state.stopped : originalProcessAbsent(processId),
+    fake.knowsProcess(processId) ? fake.processAbsent(processId) : originalProcessAbsent(processId),
   );
 
   const calls: string[][] = [];
@@ -135,13 +134,14 @@ export const setup = (
       ).root;
 
       const recordDirectory = root.env.TAU_WORKER_RECORD ?? '';
-      fake.state.session = root.command[root.command.indexOf('--session') + 1] ?? '';
       const task = readTask(recordDirectory);
+      const response = await fake.client(argumentsList, budget, signal);
+      const processId = fake.workers().at(-1)!.processId;
 
       const ready = () => {
         recordEvent(recordDirectory, task.taskId, 'ready', {
           detail: 'Ready.',
-          processId: process.pid,
+          processId,
         });
       };
 
@@ -150,6 +150,8 @@ export const setup = (
       } else if (readyDelay === 0) {
         ready();
       }
+
+      return response;
     }
 
     return fake.client(argumentsList, budget, signal);

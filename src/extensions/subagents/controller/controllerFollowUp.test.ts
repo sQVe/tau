@@ -446,7 +446,7 @@ it('allows follow-up retry after the worker exits before readiness', async () =>
   const fixture = await completed(async (argumentsList) => {
     // The worker exits once herdr first sees it.
     if (exiting && argumentsList[0] === 'agent' && argumentsList[1] === 'get') {
-      fixture.fake.state.stopped = true;
+      fixture.fake.exit(fixture.fake.workers().at(-1)!.terminalId);
     }
 
     return '';
@@ -463,7 +463,7 @@ it('allows follow-up retry after the worker exits before readiness', async () =>
   expect(records.readReport(failed.directory, failed.taskId)).toBeUndefined();
   expect(readEvent(failed.directory, failed.taskId, 'cleanup')?.stopped).toBe(true);
   exiting = false;
-  fixture.fake.state.stopped = false;
+  fixture.fake.ready(fixture.fake.workers().at(-1)!.terminalId);
   const retried = await fixture.controller.followUp(fixture.input, fixture.context);
 
   expect(retried.state).toBe('starting');

@@ -44,20 +44,26 @@ it('refuses readiness when the worker process identity differs from the ready ev
   onTestFinished,
 }) => {
   let launched = false;
+  let replaced = false;
 
+  // The ready event names the first process; every later read sees one stable replacement.
   const fixture = setup(onTestFinished, 0, async (argumentsList) => {
     launched ||= argumentsList[0] === 'layout';
 
-    if (argumentsList[1] === 'process-info' && launched) {
-      fixture.fake.state.process = process.pid === 101 ? 102 : 101;
+    if (argumentsList[1] === 'process-info' && launched && !replaced) {
+      replaced = true;
+      fixture.fake.replaceProcess(fixture.fake.workers()[0]!.terminalId);
     }
 
     return '';
   });
 
   const status = await fixture.controller.launch(fixture.input);
+  const failure = readEvent(status.directory, status.taskId, 'startupFailure');
 
   expect(status.outcome).toBe('failure');
+  expect(failure?.detail).toContain('readiness identities did not match');
+  expect(readdirSync(status.directory)).not.toContain('dispatch.json');
   expect(fixture.calls.some((call) => call[1] === 'prompt')).toBe(false);
 });
 
@@ -107,7 +113,7 @@ it('reports a worker that exits while Tau establishes its identity as exited', a
   const fixture = setup(onTestFinished, -1, async (argumentsList) => {
     // Pi exits and herdr removes its pane while the first identity check runs.
     if (argumentsList[1] === 'process-info') {
-      fixture.fake.state.stopped = true;
+      fixture.fake.exit(fixture.fake.workers()[0]!.terminalId);
 
       throw new Error('Command failed: herdr pane process-info');
     }
@@ -133,7 +139,7 @@ const launchWithWorkerFailure = async (
       const { root } = JSON.parse(layout?.[2] ?? '') as { root: { env: Record<string, string> } };
 
       record(root.env.TAU_WORKER_RECORD ?? '');
-      fixture.fake.state.stopped = true;
+      fixture.fake.exit(fixture.fake.workers()[0]!.terminalId);
     }
 
     return '';
@@ -214,7 +220,7 @@ it('detects an owned worker exiting before readiness without waiting for the tas
   const fixture = setup(onTestFinished, -1, async (argumentsList) => {
     // Herdr removes the pane when its worker exits.
     if (argumentsList[1] === 'process-info' && ++inspections > 1) {
-      fixture.fake.state.stopped = true;
+      fixture.fake.exit(fixture.fake.workers()[0]!.terminalId);
     }
 
     return '';
@@ -251,7 +257,7 @@ it.each(['missing report', 'accepted report'])(
       acceptReport(launched.directory, launched.taskId, report);
     }
 
-    fake.state.stopped = true;
+    fake.exit(fake.workers()[0]!.terminalId);
 
     await vi.advanceTimersByTimeAsync(250);
 

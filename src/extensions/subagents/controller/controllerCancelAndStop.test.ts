@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vitest';
 
-import { readEvent, readTask } from '../records.js';
+import * as questions from '../questionRecords.js';
+import { readEvent, readTask, recordEvent } from '../records.js';
 import { WorkerCapacityFullError, WorkerController } from './controller.js';
 import { completed, setup } from './fixtures/controllerFixture.js';
 
@@ -150,4 +151,39 @@ it('records a startup failure, not a timeout, for a launch that fails within its
 
   expect(readEvent(directory, taskId, 'startupFailure')).toBeDefined();
   expect(readEvent(directory, taskId, 'timeout')).toBeUndefined();
+});
+
+it('stops one worker and leaves its sibling running and able to receive a reply', async ({
+  onTestFinished,
+}) => {
+  const { controller, input, fake } = setup(onTestFinished);
+  const first = await controller.launch(input);
+  const second = await controller.launch(input);
+  const [firstWorker, secondWorker] = fake.workers();
+
+  const cancelled = await controller.cancel(first.taskId, 'parent-id');
+
+  expect(cancelled.state).toBe('stopped');
+  expect(firstWorker?.processId).not.toBe(secondWorker?.processId);
+  expect(fake.workers().map((worker) => worker.exited)).toEqual([true, false]);
+  expect(controller.status(second.taskId, 'parent-id').state).not.toBe('stopped');
+  expect(fake.layout.panes.map((pane) => pane.terminal_id)).toContain(secondWorker?.terminalId);
+  expect(fake.processAbsent(secondWorker!.processId)).toBe(false);
+
+  recordEvent(second.directory, second.taskId, 'accepted', 'Accepted.');
+
+  questions.acceptQuestion(second.directory, second.taskId, {
+    version: 1,
+    taskId: second.taskId,
+    questionId: 'question-one',
+    question: 'Which file?',
+  });
+
+  const reply = controller.reply(second.taskId, 'parent-id', {
+    questionId: 'question-one',
+    replyId: 'reply-one',
+    reply: 'source.txt',
+  });
+
+  expect(reply).toMatchObject({ replyAccepted: true });
 });

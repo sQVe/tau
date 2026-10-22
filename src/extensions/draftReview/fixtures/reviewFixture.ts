@@ -7,13 +7,12 @@ import { join } from 'node:path';
 import { onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
+import type { herdrFake } from '../../../../tests/herdrFake.js';
 import type { Exec } from '../../../command.js';
 import { createDraftReviewTool } from '../tool.js';
 import type { DraftReviewRuntime } from '../tool.js';
 
 type ProcessCheck = (processId: number) => boolean | Promise<boolean>;
-
-export type Herdr = (argumentsList: string[], signal: AbortSignal | undefined) => Promise<string>;
 
 interface TuicrComment {
   id: string;
@@ -41,11 +40,10 @@ interface ReviewFixture {
   herdrCalls: string[][];
 }
 
-export const paneInfo = JSON.stringify({
-  result: {
-    pane: { pane_id: 'w:p2', terminal_id: 't2', workspace_id: 'w', tab_id: 'w:t1' },
-  },
-});
+type Herdr = ReturnType<typeof herdrFake>;
+
+// The fake herdr ignores the budget.
+const herdrBudget = 0;
 
 const fakeScript = (data: string) => `
 const fs = require('node:fs');
@@ -80,6 +78,9 @@ if (subcommand === 'list') {
 }
 `;
 
+// The pane the fake herdr starts the agent in.
+export const agentPane = 'parent';
+
 export const comment = (id: string, path: string | null, content = id): TuicrComment => ({
   id,
   path,
@@ -87,40 +88,6 @@ export const comment = (id: string, path: string | null, content = id): TuicrCom
   end_line: path === null ? null : 3,
   comment_type: 'issue',
   content,
-});
-
-export const layoutInfo = (width: number, zoomed = false): string =>
-  JSON.stringify({
-    result: {
-      layout: {
-        workspace_id: 'w',
-        tab_id: 'w:t1',
-        zoomed,
-        panes: [{ pane_id: 'w:p1', rect: { width, height: 50, x: 0, y: 0 } }],
-      },
-    },
-  });
-
-const paneListing = JSON.stringify({
-  result: {
-    panes: [
-      { pane_id: 'w:p1', terminal_id: 't1', workspace_id: 'w', tab_id: 'w:t1' },
-      { pane_id: 'w:p2', terminal_id: 't2', workspace_id: 'w', tab_id: 'w:t1' },
-      { pane_id: 'w:p3', terminal_id: 't3', workspace_id: 'w', tab_id: 'w:t2' },
-    ],
-  },
-});
-
-export const tabInfo = JSON.stringify({
-  result: {
-    tab: { tab_id: 'w:t2' },
-    root_pane: {
-      pane_id: 'w:p3',
-      terminal_id: 't3',
-      workspace_id: 'w',
-      tab_id: 'w:t2',
-    },
-  },
 });
 
 export const fixture = async (
@@ -152,18 +119,9 @@ export const fixture = async (
   const exec: Exec = async (command, argumentsList, options) => {
     if (command === 'herdr') {
       herdrCalls.push(argumentsList);
+      const stdout = (await herdr?.client(argumentsList, herdrBudget, options?.signal)) ?? '';
 
-      const answer = (await herdr?.(argumentsList, options?.signal)) ?? '';
-      const wide = argumentsList[1] === 'layout' && answer === '';
-      const listing = argumentsList[0] === 'pane' && argumentsList[1] === 'list' && answer === '';
-      const fallback = wide ? layoutInfo(200) : answer;
-
-      return {
-        stdout: listing ? paneListing : fallback,
-        stderr: '',
-        code: 0,
-        killed: false,
-      };
+      return { stdout, stderr: '', code: 0, killed: false };
     }
 
     return new Promise((resolve) => {
@@ -207,7 +165,16 @@ export const fixture = async (
   const records = () => readdir(join(repository, '.tau/draft-review'));
   const real = (name: string) => join(repository, '.tau', name);
 
-  return { repository, data, run, setSession, deleted, records, real, herdrCalls };
+  return {
+    repository,
+    data,
+    run,
+    setSession,
+    deleted,
+    records,
+    real,
+    herdrCalls,
+  };
 };
 
 export const stagingOf = (command: string): string => /'([^']+)'$/.exec(command)?.[1] ?? '';

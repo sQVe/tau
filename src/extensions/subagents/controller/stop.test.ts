@@ -1,10 +1,11 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
+import { herdrFake } from '../../../../tests/herdrFake.js';
 import * as cancellation from '../cancellation.js';
-import { agentResponse, paneListResponse, processInfoResponse } from '../fixtures/herdrFake.js';
 import { fixtureLoadout } from '../fixtures/loadout.js';
 import { WorkerPlacement } from '../placement.js';
 import type { Task } from '../types.js';
+import { herdrReply } from './fixtures/herdrReply.js';
 import { stopPiWorker } from './stop.js';
 import { createHandle } from './task.js';
 
@@ -24,6 +25,7 @@ type Scenario =
 
 const token = '/tmp/worker-session.jsonl';
 const processId = 4242;
+const otherProcessId = 4343;
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -32,8 +34,6 @@ afterEach(() => {
 const stopScenario = async (scenario: Scenario) => {
   const task = { taskId: 'task', nativeSessionFile: token, loadout: fixtureLoadout('/tmp') };
   const handle = createHandle('/tmp/task', task as Task, performance.now() + 1000);
-  const calls: string[][] = [];
-  let present = true;
 
   const lostReply = [
     'lost launch reply',
@@ -44,10 +44,8 @@ const stopScenario = async (scenario: Scenario) => {
 
   handle.startup.neverStarted = false;
 
-  // herdr reported the launched pane, but it closed before Tau read its terminal.
   if (scenario === 'exited before its terminal was read') {
     handle.identity.paneId = 'pane';
-    present = false;
   }
 
   if (lostReply) {
@@ -74,64 +72,47 @@ const stopScenario = async (scenario: Scenario) => {
     scenario === 'changed start' ? 'another start' : 'saved start',
   );
 
+  const fake = herdrFake();
+
+  const argv = ['rewritten argv', 'unowned without session'].includes(scenario)
+    ? ['pi']
+    : ['pi', token];
+
+  fake.seedWorker({ paneId: 'pane', terminalId: 'terminal', processId, session: token, argv });
+
+  if (scenario === 'two panes on the session') {
+    fake.seedWorker({
+      paneId: 'other',
+      terminalId: 'other-terminal',
+      processId: otherProcessId,
+      session: token,
+      argv,
+    });
+  }
+
+  if (scenario === 'wrong session') {
+    fake.replaceSession('terminal', '/tmp/another.jsonl');
+  }
+
+  if (scenario === 'replaced process') {
+    fake.replaceProcess('terminal');
+  }
+
+  if (scenario === 'wrong pane') {
+    fake.malformedEvidence('terminal', 'processInfo', herdrReply('wrongPaneId.json'));
+  }
+
+  // herdr reported the launched pane, but it closed before Tau read its terminal.
+  if (scenario === 'exited before its terminal was read') {
+    fake.exit('terminal');
+  }
+
   // The pane's process ends when herdr closes the pane.
-  vi.spyOn(cancellation, 'processAbsent').mockImplementation(() => !present);
-
-  const call = async (argumentsList: string[]) => {
-    calls.push(argumentsList);
-    const [surface, action] = argumentsList;
-
-    if (surface === 'pane' && action === 'list') {
-      const pane = { pane_id: 'pane', terminal_id: 'terminal', workspace_id: 'w', tab_id: 't' };
-      const other = { ...pane, pane_id: 'other', terminal_id: 'other-terminal' };
-
-      return paneListResponse(
-        present ? [pane, ...(scenario === 'two panes on the session' ? [other] : [])] : [],
-      );
-    }
-
-    if (action === 'process-info') {
-      const root = scenario === 'replaced process' ? 999 : processId;
-
-      const paneId = argumentsList[argumentsList.indexOf('--pane') + 1];
-
-      return processInfoResponse({
-        paneId: scenario === 'wrong pane' ? 'another-pane' : paneId,
-        shellPid: root,
-        processId: root,
-        argv: [
-          'pi',
-          ...(['rewritten argv', 'unowned without session'].includes(scenario) ? [] : [token]),
-        ],
-      });
-    }
-
-    if (surface === 'agent' && action === 'get') {
-      return agentResponse({
-        pane_id: 'pane',
-        agent: 'pi',
-        agent_session: { value: scenario === 'wrong session' ? '/tmp/another.jsonl' : token },
-      });
-    }
-
-    if (action === 'close') {
-      present = false;
-
-      return '{}';
-    }
-
-    if (action === 'get') {
-      throw Object.assign(new Error('pane not found'), {
-        stderr: JSON.stringify({ error: { code: 'pane_not_found' } }),
-      });
-    }
-
-    throw new Error(`Unexpected herdr call: ${argumentsList.join(' ')}`);
-  };
+  vi.spyOn(cancellation, 'processAbsent').mockImplementation(fake.processAbsent);
 
   const stop = await stopPiWorker({
     handle,
-    call,
+    call: (argumentsList) => fake.client(argumentsList, 0),
     remainingBudget: () => 1000,
     signal: AbortSignal.timeout(1000),
     placement: new WorkerPlacement(),
@@ -140,7 +121,7 @@ const stopScenario = async (scenario: Scenario) => {
 
   return {
     stopped: stop.stopped,
-    closed: calls.some((argumentsList) => argumentsList[1] === 'close'),
+    closed: fake.calls.some((argumentsList) => argumentsList[1] === 'close'),
   };
 };
 

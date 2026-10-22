@@ -27,6 +27,7 @@ export interface PlacementFixture {
   labels: Map<string, string>;
   dimensions: Map<string, { width: number; height: number }>;
   parent: FixturePane;
+  view: { zoomed: boolean };
 }
 
 export const placementFixture = (width: number, height: number): PlacementFixture => {
@@ -42,6 +43,7 @@ export const placementFixture = (width: number, height: number): PlacementFixtur
   const titles = new Map<string, string>();
   const labels = new Map<string, string>();
   const calls: string[][] = [];
+  const view = { zoomed: false };
   let created = 0;
 
   const client = async (argumentsList: string[]) => {
@@ -65,7 +67,7 @@ export const placementFixture = (width: number, height: number): PlacementFixtur
           layout: {
             workspace_id: 'workspace',
             tab_id: tabId,
-            zoomed: false,
+            zoomed: view.zoomed,
             area: { x: 0, y: 0, width, height },
             panes: panes
               .filter((pane) => pane.tab_id === tabId)
@@ -167,5 +169,6 @@ export const placementFixture = (width: number, height: number): PlacementFixtur
     labels,
     dimensions,
     parent,
+    view,
   };
 };
