@@ -15,7 +15,7 @@ import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { declinedExec } from '../../../tests/declinedExec.js';
+import { declinedExec } from '../../../tests/declinedExecFake.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createMutationCheckTool } from './mutationTool.js';
 import { createFullCheckTool } from './tool.js';

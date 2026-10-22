@@ -8,7 +8,7 @@ import type {
 import { vi } from 'vitest';
 import type { Mock } from 'vitest';
 
-import { declinedExec } from './declinedExec.js';
+import { declinedExec } from './declinedExecFake.js';
 
 type Handler = (event: never, context: ExtensionContext) => unknown;
 type Command = Parameters<ExtensionAPI['registerCommand']>[1];

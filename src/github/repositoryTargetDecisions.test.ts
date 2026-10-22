@@ -310,6 +310,15 @@ it.each<{ url: string; location: RemoteLocation | undefined }>([
     url: 'https://github.com:8443/sQVe/tau/',
     location: { host: 'github.com:8443', path: 'sQVe/tau/', ssh: undefined },
   },
+  {
+    url: 'git://github.com/sQVe/tau.git',
+    location: { host: 'github.com', path: 'sQVe/tau.git', ssh: undefined },
+  },
+  {
+    url: 'git+ssh://git@github.com/sQVe/tau.git',
+    location: { host: 'github.com', path: 'sQVe/tau.git', ssh: undefined },
+  },
+  { url: 'file://github.com/sQVe/tau.git', location: undefined },
   { url: '/srv/sQVe/tau.git', location: undefined },
   { url: '../tau', location: undefined },
   { url: '', location: undefined },

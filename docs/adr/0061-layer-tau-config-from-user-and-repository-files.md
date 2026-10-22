@@ -47,8 +47,7 @@ so the files sit where Pi users look, and the repository file follows Pi's proje
 
 A config section keyed `owner/name`, such as `fullCheck.repositories`, applies to the repository
 that `origin` names. Only an `origin` on the GitHub host, `github.com`, names one. A repository with
-the same `owner/name` on another host never gets another repository's entry, and the output says
-that `origin` is not on `github.com`.
+the same `owner/name` on another host never gets another repository's entry.
 
 ### Trust
 

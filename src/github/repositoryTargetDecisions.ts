@@ -263,6 +263,9 @@ export const fromHeadRepository = (pr: ListedHead, head: Repository): boolean =>
   return sameOwner && sameName;
 };
 
+// Git reads any other URL protocol, such as file:, as a local path or cannot fetch from it.
+const remoteProtocols = new Set(['http:', 'https:', 'ssh:', 'git:', 'git+ssh:']);
+
 // Reads https://host/owner/name.git, ssh://git@host:port/owner/name.git, and
 // git@host:owner/name.git. The port of an ssh:// URL is the SSH port, not part of the web host.
 export const parseRemoteUrl = (url: string): RemoteLocation | undefined => {
@@ -276,6 +279,11 @@ export const parseRemoteUrl = (url: string): RemoteLocation | undefined => {
 
   try {
     const parsed = new URL(url);
+
+    if (!remoteProtocols.has(parsed.protocol)) {
+      return undefined;
+    }
+
     const overSsh = parsed.protocol === 'ssh:';
     const host = overSsh ? parsed.hostname : parsed.host;
     const user = decodeURIComponent(parsed.username);

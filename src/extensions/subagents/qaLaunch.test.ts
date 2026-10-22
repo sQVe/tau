@@ -14,7 +14,7 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { declinedExec } from '../../../tests/declinedExec.js';
+import { declinedExec } from '../../../tests/declinedExecFake.js';
 import { initializeRepository } from '../../../tests/gitRepository.js';
 import type { LaunchParameters } from './launchParameters.js';
 import { applyQaSettings } from './qaLaunch.js';
