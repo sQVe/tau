@@ -111,7 +111,6 @@ export const resolveTerminal = async (
   return location;
 };
 
-// Leave room for pane borders and status rows around 80 columns and 20 useful rows.
 export const minimumPane = { width: 82, height: 24 };
 
 const isPositiveInteger = (value: unknown): boolean =>
