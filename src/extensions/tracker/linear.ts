@@ -1,8 +1,7 @@
 import { Type } from 'typebox';
-import { Value } from 'typebox/value';
 
 import type { Exec } from '../../command.js';
-import { api, openStateTypes, unexpectedOutput } from '../../linear.js';
+import { api, openStateTypes, readTeamId } from '../../linear.js';
 
 export interface FoundIssue {
   identifier: string;
@@ -32,8 +31,6 @@ export interface LabelList {
 const searchPageSize = 50;
 const labelPageSize = 250;
 
-const teamQuery = 'query($key: String!) { team(id: $key) { id } }';
-
 const searchQuery =
   'query($term: String!, $first: Int!, $teamId: String!, $filter: IssueFilter!) { searchIssues(term: $term, first: $first, teamId: $teamId, filter: $filter) { nodes { identifier title url state { type } team { key } project { name } parent { identifier } } } }';
 
@@ -45,10 +42,6 @@ const labelsQuery =
 
 const nameSchema = Type.Union([Type.Object({ name: Type.String() }), Type.Null()]);
 const pageInfoSchema = Type.Object({ hasNextPage: Type.Boolean() });
-
-const teamSchema = Type.Object({
-  team: Type.Union([Type.Object({ id: Type.String() }), Type.Null()]),
-});
 
 const searchSchema = Type.Object({
   searchIssues: Type.Object({
@@ -89,23 +82,6 @@ const labelsSchema = Type.Object({
   ]),
 });
 
-// Throws when Linear has no team with that key.
-const readTeamId = async (exec: Exec, cwd: string, team: string): Promise<string> => {
-  const response = await api(exec, cwd, teamQuery, { key: team });
-
-  if (!Value.Check(teamSchema, response.data)) {
-    throw unexpectedOutput(response);
-  }
-
-  const found = response.data.team;
-
-  if (found === null) {
-    throw new Error(`Linear has no team ${team}.`);
-  }
-
-  return found.id;
-};
-
 // Searches the open issues in the route's team, and its project when the route names one. The team
 // goes in teamId, not in the filter: with a team filter, Linear leaves out real matches.
 export const searchIssues = async (
@@ -120,18 +96,15 @@ export const searchIssues = async (
     filter['project'] = { name: { eq: search.project } };
   }
 
-  const response = await api(exec, cwd, searchQuery, {
-    term: search.keywords,
-    first: searchPageSize,
-    teamId,
-    filter,
-  });
+  const data = await api(
+    exec,
+    cwd,
+    searchQuery,
+    { term: search.keywords, first: searchPageSize, teamId, filter },
+    searchSchema,
+  );
 
-  if (!Value.Check(searchSchema, response.data)) {
-    throw unexpectedOutput(response);
-  }
-
-  return response.data.searchIssues.nodes.map((node) => ({
+  return data.searchIssues.nodes.map((node) => ({
     identifier: node.identifier,
     title: node.title,
     url: node.url,
@@ -147,13 +120,7 @@ export const readParentRouting = async (
   cwd: string,
   identifier: string,
 ): Promise<ParentRouting> => {
-  const response = await api(exec, cwd, parentQuery, { id: identifier });
-
-  if (!Value.Check(parentSchema, response.data)) {
-    throw unexpectedOutput(response);
-  }
-
-  const { issue } = response.data;
+  const { issue } = await api(exec, cwd, parentQuery, { id: identifier }, parentSchema);
 
   if (issue === null) {
     throw new Error(`Linear has no issue ${identifier}.`);
@@ -164,13 +131,8 @@ export const readParentRouting = async (
 
 // Throws when Linear has no team with that key.
 export const readLabels = async (exec: Exec, cwd: string, team: string): Promise<LabelList> => {
-  const response = await api(exec, cwd, labelsQuery, { key: team, first: labelPageSize });
-
-  if (!Value.Check(labelsSchema, response.data)) {
-    throw unexpectedOutput(response);
-  }
-
-  const found = response.data.team;
+  const data = await api(exec, cwd, labelsQuery, { key: team, first: labelPageSize }, labelsSchema);
+  const found = data.team;
 
   if (found === null) {
     throw new Error(`Linear has no team ${team}.`);

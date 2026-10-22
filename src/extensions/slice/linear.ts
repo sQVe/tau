@@ -1,10 +1,9 @@
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
-import { Value } from 'typebox/value';
 
 import type { Exec, CommandRuntime } from '../../command.js';
 import { checkOutput, readJson } from '../../github.js';
-import { api, openStateTypes, run, unexpectedOutput } from '../../linear.js';
+import { api, openStateTypes, readTeamId, run } from '../../linear.js';
 import type { LinearChild, LinearContainer } from './writes.js';
 
 export interface CreatedIssue {
@@ -24,8 +23,6 @@ const containerQuery =
 
 const issuesQuery =
   'query($filter: IssueFilter!) { issues(first: 50, filter: $filter) { nodes { identifier } } }';
-
-const teamQuery = 'query($key: String!) { team(id: $key) { id } }';
 
 const teamProjectQuery =
   'query($key: String!, $name: String!) { team(id: $key) { id projects(filter: { name: { eq: $name } }) { nodes { id } } } }';
@@ -75,10 +72,6 @@ const containerSchema = Type.Object({
 
 const issuesSchema = Type.Object({
   issues: Type.Object({ nodes: Type.Array(Type.Object({ identifier: Type.String() })) }),
-});
-
-const teamSchema = Type.Object({
-  team: Type.Union([Type.Object({ id: Type.String() }), Type.Null()]),
 });
 
 const teamProjectSchema = Type.Object({
@@ -147,13 +140,7 @@ export const readContainer = async (
   cwd: string,
   identifier: string,
 ): Promise<LinearContainer | undefined> => {
-  const response = await api(exec, cwd, containerQuery, { id: identifier });
-
-  if (!Value.Check(containerSchema, response.data)) {
-    throw unexpectedOutput(response);
-  }
-
-  const { issue } = response.data;
+  const { issue } = await api(exec, cwd, containerQuery, { id: identifier }, containerSchema);
 
   if (issue === null) {
     return undefined;
@@ -197,29 +184,9 @@ export const findOpenIssues = async (
     filter['project'] = { name: { eq: search.project } };
   }
 
-  const response = await api(exec, cwd, issuesQuery, { filter });
+  const data = await api(exec, cwd, issuesQuery, { filter }, issuesSchema);
 
-  if (!Value.Check(issuesSchema, response.data)) {
-    throw unexpectedOutput(response);
-  }
-
-  return response.data.issues.nodes.map((issue) => issue.identifier);
-};
-
-const readTeamId = async (exec: Exec, cwd: string, key: string) => {
-  const response = await api(exec, cwd, teamQuery, { key });
-
-  if (!Value.Check(teamSchema, response.data)) {
-    throw unexpectedOutput(response);
-  }
-
-  const { team } = response.data;
-
-  if (team === null) {
-    throw new Error(`Linear has no team ${key}.`);
-  }
-
-  return team.id;
+  return data.issues.nodes.map((issue) => issue.identifier);
 };
 
 // Looks the project up among the team's projects, since another team may use the same name.
@@ -228,16 +195,13 @@ const readTeamProjectIds = async (
   cwd: string,
   route: { team: string; project: string },
 ) => {
-  const response = await api(exec, cwd, teamProjectQuery, {
-    key: route.team,
-    name: route.project,
-  });
-
-  if (!Value.Check(teamProjectSchema, response.data)) {
-    throw unexpectedOutput(response);
-  }
-
-  const { team } = response.data;
+  const { team } = await api(
+    exec,
+    cwd,
+    teamProjectQuery,
+    { key: route.team, name: route.project },
+    teamProjectSchema,
+  );
 
   if (team === null) {
     throw new Error(`Linear has no team ${route.team}.`);
@@ -280,21 +244,20 @@ export const createIssue = async (
   },
 ): Promise<CreatedIssue> => {
   const preserveSortOrderOnCreate = issue.subIssueSortOrder !== undefined;
-  const response = await api(exec, cwd, createMutation, { ...issue, preserveSortOrderOnCreate });
 
-  if (!Value.Check(createSchema, response.data)) {
-    throw unexpectedOutput(response);
-  }
+  const data = await api(
+    exec,
+    cwd,
+    createMutation,
+    { ...issue, preserveSortOrderOnCreate },
+    createSchema,
+  );
 
-  return response.data.issueCreate.issue;
+  return data.issueCreate.issue;
 };
 
 const update = async (exec: Exec, cwd: string, identifier: string, input: IssueInput) => {
-  const response = await api(exec, cwd, updateMutation, { id: identifier, input });
-
-  if (!Value.Check(updateSchema, response.data)) {
-    throw unexpectedOutput(response);
-  }
+  await api(exec, cwd, updateMutation, { id: identifier, input }, updateSchema);
 };
 
 export const updateIssue = async (

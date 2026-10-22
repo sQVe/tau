@@ -1,8 +1,7 @@
 import { Type } from 'typebox';
-import { Value } from 'typebox/value';
 
 import type { Exec } from '../../command.js';
-import { api, unexpectedOutput } from '../../linear.js';
+import { api } from '../../linear.js';
 
 interface StartChild {
   identifier: string;
@@ -58,13 +57,8 @@ export const readStartSlice = async (
   cwd: string,
   identifier: string,
 ): Promise<StartSlice | undefined> => {
-  const response = await api(exec, cwd, sliceQuery, { id: identifier });
-
-  if (!Value.Check(sliceSchema, response.data)) {
-    throw unexpectedOutput(response);
-  }
-
-  const { issue } = response.data;
+  const data = await api(exec, cwd, sliceQuery, { id: identifier }, sliceSchema);
+  const { issue } = data;
 
   if (issue === null) {
     return undefined;
@@ -79,7 +73,7 @@ export const readStartSlice = async (
 
   return {
     id: issue.id,
-    viewer: response.data.viewer.id,
+    viewer: data.viewer.id,
     children: issue.children.nodes.map((node) => ({
       identifier: node.identifier,
       title: node.title,
