@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 
-import { readAllowedModels } from '../../models/models.js';
+import { readAllowedModels } from '../../config/models.js';
 import { readProfileModel, readProfileModels, readProfileRoute } from './profileModels.js';
 
 const uiFixture = () => ({ notify: vi.fn<(message: string, level?: string) => void>() });

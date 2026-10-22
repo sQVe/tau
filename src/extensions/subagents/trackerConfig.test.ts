@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 
-import type { ConfigWarnings } from '../../tauConfig.js';
+import type { ConfigWarnings } from '../../config/config.js';
 import { readTrackerConfig, readTrackerSetup } from './trackerConfig.js';
 
 const ui = { notify: () => undefined };

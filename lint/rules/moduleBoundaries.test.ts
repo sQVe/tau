@@ -12,7 +12,7 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
       filename,
     },
     {
-      code: "import { parseModelEntry } from '../../models/models.js';\n\nexport const value = parseModelEntry;",
+      code: "import { parseModelEntry } from '../../config/models.js';\n\nexport const value = parseModelEntry;",
       filename,
     },
     {
@@ -32,11 +32,11 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
       filename: '/repository/src/extensions/subagents/subagents.ts',
     },
     {
-      code: "import { effectiveAllowedModels } from '../../models/allowedModels.js';\n\nexport const value = effectiveAllowedModels;",
+      code: "import { effectiveAllowedModels } from '../../config/allowedModels.js';\n\nexport const value = effectiveAllowedModels;",
       filename: '/repository/src/extensions/probe/probe.test.ts',
     },
     {
-      code: "import { effectiveAllowedModels } from '../../../models/allowedModels.js';\n\nexport const value = effectiveAllowedModels;",
+      code: "import { effectiveAllowedModels } from '../../../config/allowedModels.js';\n\nexport const value = effectiveAllowedModels;",
       filename: '/repository/src/extensions/probe/fixtures/fake.ts',
     },
     {
@@ -48,8 +48,8 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
       filename: '/repository/src/command.ts',
     },
     {
-      code: "import { parseModelEntry } from './models.js';\nimport { readConfig } from '../tauConfig.js';\n\nexport const value = [parseModelEntry, readConfig];",
-      filename: '/repository/src/models/allowedModels.ts',
+      code: "import { parseModelEntry } from './models.js';\nimport { readConfig } from './config.js';\n\nexport const value = [parseModelEntry, readConfig];",
+      filename: '/repository/src/config/allowedModels.ts',
     },
     {
       code: "import type { ExecResult } from './exec.js';\n\nexport type Value = ExecResult;",
@@ -165,18 +165,18 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
     },
     {
       code: "import tau from '../tau.js';\n\nexport default tau;",
-      filename: '/repository/src/models/models.ts',
-      errors: [{ messageId: 'root', data: { source: 'models' } }],
+      filename: '/repository/src/config/models.ts',
+      errors: [{ messageId: 'root', data: { source: 'config' } }],
     },
     {
-      code: "import { effectiveAllowedModels } from '../../models/allowedModels.js';\n\nexport const value = effectiveAllowedModels;",
+      code: "import { effectiveAllowedModels } from '../../config/allowedModels.js';\n\nexport const value = effectiveAllowedModels;",
       filename,
-      errors: [{ messageId: 'private', data: { folder: 'models', file: 'allowedModels' } }],
+      errors: [{ messageId: 'private', data: { folder: 'config', file: 'allowedModels' } }],
     },
     {
-      code: "import { effectiveAllowedModels } from './models/allowedModels.js';\n\nexport const value = effectiveAllowedModels;",
+      code: "import { effectiveAllowedModels } from './config/allowedModels.js';\n\nexport const value = effectiveAllowedModels;",
       filename: '/repository/src/tau.ts',
-      errors: [{ messageId: 'private', data: { folder: 'models', file: 'allowedModels' } }],
+      errors: [{ messageId: 'private', data: { folder: 'config', file: 'allowedModels' } }],
     },
     {
       code: 'export const value = 1;',
@@ -210,8 +210,8 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
     },
     {
       code: "import { keys } from '../keys.js';\n\nexport const value = keys;",
-      filename: '/repository/src/models/models.ts',
-      errors: [{ messageId: 'notAllowed', data: { source: 'models', target: 'keys' } }],
+      filename: '/repository/src/config/models.ts',
+      errors: [{ messageId: 'notAllowed', data: { source: 'config', target: 'keys' } }],
     },
     {
       code: "import { commitToolGuidelines } from './extensions/commit/commit.js';\n\nexport const value = commitToolGuidelines;",

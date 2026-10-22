@@ -9,7 +9,7 @@ import { defineTool, getAgentDir } from '@earendil-works/pi-coding-agent';
 import { Text } from '@earendil-works/pi-tui';
 import { Type } from 'typebox';
 
-import { forgetReportedWarnings } from '../../tauConfig.js';
+import { forgetReportedWarnings } from '../../config/config.js';
 import { classifyPath, loadTddConfig } from './config.js';
 import type { LoadedTddConfig } from './config.js';
 import { createTestObservation, observationDirectory } from './observation.js';

@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { parseModelReference } from '../../../models/models.js';
+import { parseModelReference } from '../../../config/models.js';
 import { skillTools } from '../../../skillTools.js';
 import { listTerminals, requireObject, result } from '../../../terminal.js';
 import type { TerminalLocation } from '../../../terminal.js';

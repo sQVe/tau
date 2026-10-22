@@ -1,7 +1,7 @@
+import { readUserOnlyKey, warnUnknownKeys } from '../../config/config.js';
+import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
+import { findRepositoryEntry } from '../../config/repositoryEntry.js';
 import { isRecord } from '../../isRecord.js';
-import { findRepositoryEntry } from '../../repositoryEntry.js';
-import { readUserOnlyKey, warnUnknownKeys } from '../../tauConfig.js';
-import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
 import { anyKey } from '../../unknownKeys.js';
 import type { KnownKeys } from '../../unknownKeys.js';
 import { normalizeLogin } from './reviewBotDecisions.js';

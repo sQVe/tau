@@ -4,11 +4,11 @@ import { join } from 'node:path';
 
 import { expect, it } from 'vitest';
 
+import { readAllowedModels } from '../src/config/models.js';
 import { readBrowserLoginCommand } from '../src/extensions/subagents/browserLogin.js';
 import { readProfileModels } from '../src/extensions/subagents/profileModels.js';
 import { readTrackerConfig } from '../src/extensions/subagents/trackerConfig.js';
 import { loadTddConfig } from '../src/extensions/tdd/config.js';
-import { readAllowedModels } from '../src/models/models.js';
 
 const writeConfig = (path: string, value: unknown) => {
   writeFileSync(path, JSON.stringify(value));

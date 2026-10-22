@@ -1,4 +1,4 @@
-import { parseModelReference } from '../../../models/models.js';
+import { parseModelReference } from '../../../config/models.js';
 import { resolveTerminal, text } from '../../../terminal.js';
 import type { TerminalCall } from '../../../terminal.js';
 import { processAbsent } from '../cancellation.js';

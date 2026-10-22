@@ -1,8 +1,13 @@
+import {
+  notifyOnce,
+  readUserOnlyKey,
+  userConfigPath,
+  warnUnknownKeys,
+} from '../../config/config.js';
+import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
+import { parseModelReference } from '../../config/models.js';
 import { errorMessage } from '../../errors.js';
 import { isRecord } from '../../isRecord.js';
-import { parseModelReference } from '../../models/models.js';
-import { notifyOnce, readUserOnlyKey, userConfigPath, warnUnknownKeys } from '../../tauConfig.js';
-import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
 import { anyKey } from '../../unknownKeys.js';
 import type { KnownKeys } from '../../unknownKeys.js';
 import type { ModelRoute, RouteLabel } from './modelRoutes.js';
