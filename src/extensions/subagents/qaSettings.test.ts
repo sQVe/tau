@@ -152,3 +152,13 @@ it('reads the entry past unknown keys and warns about them', () => {
     'warning',
   );
 });
+
+it('refuses a matched entry key that is not owner/name', () => {
+  const { location, writeUser } = configFixture();
+
+  writeUser({ qa: { repositories: { tau: entry } } });
+
+  expect(() => readQaSettings(location, ui, 'tau')).toThrow(
+    '"tau" in qa.repositories must be an owner/name',
+  );
+});

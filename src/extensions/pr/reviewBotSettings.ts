@@ -1,8 +1,7 @@
-import { readUserOnlyKey, warnUnknownKeys } from '../../config/config.js';
+import { warnUnknownKeys } from '../../config/config.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
-import { findRepositoryEntry } from '../../config/repositoryEntry.js';
+import { readRepositorySection } from '../../config/repositorySection.js';
 import { isRecord } from '../../isRecord.js';
-import { anyKey } from '../../unknownKeys.js';
 import type { KnownKeys } from '../../unknownKeys.js';
 import { normalizeLogin } from './reviewBotDecisions.js';
 
@@ -12,10 +11,6 @@ export interface ReviewBot {
   // The exact body of the comment that requests a review.
   comment: string;
 }
-
-const knownReviewKeys: KnownKeys = {
-  repositories: { [anyKey]: { bots: true } },
-};
 
 const readText = (source: string, field: string, value: unknown): string => {
   if (typeof value !== 'string') {
@@ -64,11 +59,9 @@ const rejectDuplicateLogins = (source: string, field: string, bots: ReviewBot[])
 const readEntry = (
   source: string,
   ui: ConfigWarnings,
-  key: string,
+  field: string,
   value: unknown,
 ): ReviewBot[] => {
-  const field = `reviews.repositories.${key}`;
-
   if (!isRecord(value)) {
     throw new Error(
       `Invalid Tau config ${source}: ${field} must be an object such as {"bots": [{"login": "chatgpt-codex-connector", "comment": "@codex review"}]}.`,
@@ -93,36 +86,11 @@ export const readReviewBots = (
   location: ConfigLocation,
   ui: ConfigWarnings,
   repository: string,
-): ReviewBot[] | undefined => {
-  const user = readUserOnlyKey(location, 'reviews');
-
-  if (user === undefined) {
-    return undefined;
-  }
-
-  const { source, value: reviews } = user;
-
-  if (!isRecord(reviews)) {
-    throw new Error(
-      `Invalid Tau config ${source}: reviews must be an object such as {"repositories": {"sQVe/tau": {"bots": []}}}.`,
-    );
-  }
-
-  warnUnknownKeys(ui, source, reviews, knownReviewKeys, 'reviews');
-
-  const { repositories } = reviews;
-
-  if (repositories === undefined) {
-    return undefined;
-  }
-
-  if (!isRecord(repositories)) {
-    throw new Error(
-      `Invalid Tau config ${source}: reviews.repositories must be an object keyed by owner/name.`,
-    );
-  }
-
-  const match = findRepositoryEntry(source, 'reviews.repositories', repositories, repository);
-
-  return match === undefined ? undefined : readEntry(source, ui, match[0], match[1]);
-};
+): ReviewBot[] | undefined =>
+  readRepositorySection(location, ui, {
+    key: 'reviews',
+    knownEntryKeys: { bots: true },
+    example: '{"repositories": {"sQVe/tau": {"bots": []}}}',
+    repository,
+    readEntry: (source, field, value) => readEntry(source, ui, field, value),
+  });
