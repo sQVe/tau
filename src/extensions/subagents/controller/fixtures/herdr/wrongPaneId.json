@@ -1,0 +1,10 @@
+{
+  "result": {
+    "process_info": {
+      "pane_id": "another-pane",
+      "shell_pid": 4242,
+      "foreground_process_group_id": 4242,
+      "foreground_processes": [{ "pid": 4242, "argv": ["pi", "/tmp/worker-session.jsonl"] }]
+    }
+  }
+}

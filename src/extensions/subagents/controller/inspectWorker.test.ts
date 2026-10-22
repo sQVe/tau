@@ -4,19 +4,14 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import {
-  agentResponse,
-  paneListResponse,
-  processInfoResponse,
-} from '../../../../tests/herdrFake.js';
+import { agentResponse, herdrFake } from '../../../../tests/herdrFake.js';
 import * as cancellation from '../cancellation.js';
 import { fixtureLoadout } from '../fixtures/loadout.js';
 import { recordEvent } from '../records.js';
 import type { Task } from '../types.js';
+import { herdrReply } from './fixtures/herdrReply.js';
 import { isHerdrError, waitForPiIdentity, waitForWorkerReadiness } from './inspect.js';
 import { createHandle } from './task.js';
-
-type AgentReply = (agentCall: number) => string;
 
 vi.mock(import('node:timers/promises'), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -25,6 +20,7 @@ vi.mock(import('node:timers/promises'), async (importOriginal) => ({
 
 const token = '/tmp/worker-session.jsonl';
 const processId = 4242;
+const terminalId = 'pane-terminal';
 
 // The test ends a loop that a mutant would turn into a busy loop.
 const agentCallLimit = 30;
@@ -57,7 +53,7 @@ const workerHandle = (directory = '/tmp/task', owned = false) => {
 
   const handle = createHandle(directory, task as Task, performance.now() + 60_000);
 
-  handle.identity.terminalId = 'pane-terminal';
+  handle.identity.terminalId = terminalId;
   handle.startup.neverStarted = false;
 
   if (owned) {
@@ -65,7 +61,7 @@ const workerHandle = (directory = '/tmp/task', owned = false) => {
       version: 2,
       kind: 'pi',
       paneId: 'pane',
-      terminalId: 'pane-terminal',
+      terminalId,
       shellPid: processId,
       processId,
       token,
@@ -76,55 +72,40 @@ const workerHandle = (directory = '/tmp/task', owned = false) => {
   return handle;
 };
 
-const readyAgent = (): string =>
-  agentResponse({
-    pane_id: 'pane',
-    agent: 'pi',
-    agent_session: { kind: 'path', value: token },
-  });
-
 const sessionAgent = (session: unknown): string =>
   agentResponse({ pane_id: 'pane', agent: 'pi', agent_session: session });
 
-const herdr = (agent: AgentReply) => {
+const herdr = (setup?: (fake: ReturnType<typeof herdrFake>) => void) => {
+  const fake = herdrFake();
   let agentCalls = 0;
 
+  fake.seedWorker({
+    paneId: 'pane',
+    terminalId,
+    processId,
+    session: token,
+    argv: ['pi', token],
+  });
+
+  setup?.(fake);
+
   return async (argumentsList: string[]): Promise<string> => {
-    const [surface, action] = argumentsList;
-
-    if (surface === 'pane' && action === 'list' && argumentsList.length === 2) {
-      return paneListResponse([
-        { pane_id: 'pane', terminal_id: 'pane-terminal', workspace_id: 'w', tab_id: 't' },
-      ]);
-    }
-
-    if (surface === 'pane' && action === 'process-info' && argumentsList[2] === '--pane') {
-      return processInfoResponse({
-        paneId: argumentsList[3],
-        shellPid: processId,
-        processId,
-        argv: ['pi', token],
-      });
-    }
-
-    if (surface === 'agent' && action === 'get') {
+    if (argumentsList[0] === 'agent' && argumentsList[1] === 'get') {
       agentCalls += 1;
 
       if (agentCalls > agentCallLimit) {
         throw new Error('The test stopped polling.');
       }
-
-      return agent(agentCalls);
     }
 
-    throw new Error(`Unexpected herdr call: ${argumentsList.join(' ')}`);
+    return fake.client(argumentsList, 0);
   };
 };
 
 it('identifies a Pi worker whose pane, session, and process agree', async () => {
-  const owned = await waitForPiIdentity(workerHandle(), herdr(readyAgent));
+  const owned = await waitForPiIdentity(workerHandle(), herdr());
 
-  expect(owned).toMatchObject({ paneId: 'pane', terminalId: 'pane-terminal', shellPid: processId });
+  expect(owned).toMatchObject({ paneId: 'pane', terminalId, shellPid: processId });
 });
 
 it.each([
@@ -135,7 +116,9 @@ it.each([
 
   const identity = waitForPiIdentity(
     workerHandle(),
-    herdr((agentCall) => (agentCall < 3 ? sessionAgent(session) : readyAgent())),
+    herdr((fake) => {
+      fake.queueAgentReplies(terminalId, [sessionAgent(session), sessionAgent(session)]);
+    }),
   );
 
   await vi.advanceTimersByTimeAsync(600);
@@ -144,13 +127,15 @@ it.each([
 });
 
 it.each([
-  ['an empty session value', { value: '' }],
-  ['a session that is not an object', 'session'],
-])('fails at once on %s', async (_name, session) => {
+  ['an empty session value', 'emptySessionValue.json'],
+  ['a session that is not an object', 'sessionNotObject.json'],
+])('fails at once on %s', async (_name, reply) => {
   await expect(
     waitForPiIdentity(
       workerHandle(),
-      herdr(() => sessionAgent(session)),
+      herdr((fake) => {
+        fake.malformedEvidence(terminalId, 'agent', herdrReply(reply));
+      }),
     ),
   ).rejects.toThrow('integration');
 });
@@ -160,12 +145,11 @@ it('keeps polling while herdr has not detected the agent of a new worker', async
 
   const identity = waitForPiIdentity(
     workerHandle(),
-    herdr((agentCall) => {
-      if (agentCall < 3) {
-        throw herdrError('agent_not_found');
-      }
-
-      return readyAgent();
+    herdr((fake) => {
+      fake.queueAgentReplies(terminalId, [
+        herdrError('agent_not_found'),
+        herdrError('agent_not_found'),
+      ]);
     }),
   );
 
@@ -178,8 +162,8 @@ it('does not wait for the agent of a worker that Tau already identified', async 
   await expect(
     waitForPiIdentity(
       workerHandle('/tmp/task', true),
-      herdr(() => {
-        throw herdrError('agent_not_found');
+      herdr((fake) => {
+        fake.holdReply(terminalId, 'agent', herdrError('agent_not_found'));
       }),
     ),
   ).rejects.toSatisfy((error) => isHerdrError(error, 'agent_not_found'));
@@ -189,8 +173,8 @@ it('fails at once on a herdr error other than a missing agent', async () => {
   await expect(
     waitForPiIdentity(
       workerHandle(),
-      herdr(() => {
-        throw herdrError('pane_not_found');
+      herdr((fake) => {
+        fake.holdReply(terminalId, 'agent', herdrError('pane_not_found'));
       }),
     ),
   ).rejects.toSatisfy((error) => isHerdrError(error, 'pane_not_found'));
@@ -200,12 +184,20 @@ it('rejects a pane whose agent is not Pi', async () => {
   await expect(
     waitForPiIdentity(
       workerHandle(),
-      herdr(() =>
-        agentResponse({ pane_id: 'pane', agent: 'claude', agent_session: { value: token } }),
-      ),
+      herdr((fake) => {
+        fake.holdReply(
+          terminalId,
+          'agent',
+          agentResponse({ pane_id: 'pane', agent: 'claude', agent_session: { value: token } }),
+        );
+      }),
     ),
   ).rejects.toThrow('identity');
 });
+
+const pendingSession = (fake: ReturnType<typeof herdrFake>) => {
+  fake.holdReply(terminalId, 'agent', sessionAgent(undefined));
+};
 
 const settled = (promise: Promise<unknown>) => {
   const state: { done: boolean; failure?: unknown } = { done: false };
@@ -229,10 +221,7 @@ it('stops waiting for the agent session when the task is aborted', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   const handle = workerHandle();
 
-  const identity = waitForPiIdentity(
-    handle,
-    herdr(() => sessionAgent(undefined)),
-  );
+  const identity = waitForPiIdentity(handle, herdr(pendingSession));
 
   const state = settled(identity);
 
@@ -250,10 +239,7 @@ it('ends the wait with the pending-session error when the startup budget is gone
 
   handle.expires = performance.now() + 100;
 
-  const identity = waitForPiIdentity(
-    handle,
-    herdr(() => sessionAgent(undefined)),
-  );
+  const identity = waitForPiIdentity(handle, herdr(pendingSession));
 
   const failure = identity.catch((error: unknown) => error);
 
@@ -277,7 +263,7 @@ it('returns the ready event once the worker is ready', async () => {
 
   recordEvent(handle.directory, 'task', 'ready', 'Ready.');
 
-  await expect(waitForWorkerReadiness(handle, herdr(readyAgent))).resolves.toMatchObject({
+  await expect(waitForWorkerReadiness(handle, herdr())).resolves.toMatchObject({
     kind: 'ready',
   });
 });
@@ -288,7 +274,7 @@ it('fails readiness with the startup failure detail even when a ready event exis
   recordEvent(handle.directory, 'task', 'ready', 'Ready.');
   recordEvent(handle.directory, 'task', 'startupFailure', 'Extension failed to load.');
 
-  await expect(waitForWorkerReadiness(handle, herdr(readyAgent))).rejects.toThrow(
+  await expect(waitForWorkerReadiness(handle, herdr())).rejects.toThrow(
     'Extension failed to load.',
   );
 });
@@ -299,13 +285,13 @@ it('fails readiness at once for an aborted task even when a ready event exists',
   recordEvent(handle.directory, 'task', 'ready', 'Ready.');
   handle.abort.abort();
 
-  await expect(waitForWorkerReadiness(handle, herdr(readyAgent))).rejects.toThrow('aborted');
+  await expect(waitForWorkerReadiness(handle, herdr())).rejects.toThrow('aborted');
 });
 
 it('stops waiting for readiness when the task is aborted', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
   const handle = recordedHandle();
-  const readiness = waitForWorkerReadiness(handle, herdr(readyAgent));
+  const readiness = waitForWorkerReadiness(handle, herdr());
   const state = settled(readiness);
 
   await vi.advanceTimersByTimeAsync(100);

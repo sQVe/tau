@@ -18,11 +18,28 @@ interface FakeWorker {
   exited: boolean;
 }
 
+interface SeededWorker {
+  paneId: string;
+  terminalId: string;
+  processId: number;
+  session: string;
+  argv: string[];
+}
+
+// An Error makes the call fail the way a failing herdr command does.
+type Reply = string | Error;
+
+type Surface = 'agent' | 'processInfo';
+
 interface HerdrFake {
   client: HerdrClient;
   calls: string[][];
   layout: PlacementFixture;
   workers: () => FakeWorker[];
+  seedWorker: (worker: SeededWorker) => void;
+  queueAgentReplies: (terminalId: string, replies: Reply[]) => void;
+  malformedEvidence: (terminalId: string, surface: Surface, reply: Reply) => void;
+  holdReply: (terminalId: string, surface: Surface, reply: Reply) => void;
   exit: (terminalId: string) => void;
   ready: (terminalId: string) => void;
   move: (terminalId: string) => void;
@@ -36,12 +53,7 @@ const shellProcessId = 100;
 const firstWorkerProcessId = 5001;
 
 // Response shapes were checked against herdr 0.9.1.
-export const processInfoResponse = ({
-  paneId,
-  shellPid,
-  processId,
-  argv,
-}: ProcessSnapshot): string =>
+const processInfoResponse = ({ paneId, shellPid, processId, argv }: ProcessSnapshot): string =>
   JSON.stringify({
     result: {
       process_info: {
@@ -56,8 +68,13 @@ export const processInfoResponse = ({
 export const agentResponse = (agent: Record<string, unknown>): string =>
   JSON.stringify({ result: { agent } });
 
-export const paneListResponse = (panes: Record<string, string>[]): string =>
-  JSON.stringify({ result: { panes } });
+const answer = (reply: Reply) => {
+  if (reply instanceof Error) {
+    throw reply;
+  }
+
+  return reply;
+};
 
 const paneArgument = (argumentsList: string[]) =>
   argumentsList[argumentsList.indexOf('--pane') + 1];
@@ -79,6 +96,10 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
   const processes = new Map<number, boolean>([[shellProcessId, false]]);
   let nextProcessId = firstWorkerProcessId;
   const calls: string[][] = [];
+  // Replies that stand in for the state-derived evidence of one terminal.
+  const queuedAgentReplies = new Map<string, Reply[]>();
+  const malformedReplies = new Map<string, Reply[]>();
+  const heldReplies = new Map<string, Reply>();
 
   const terminalOf = (paneId: string | undefined) =>
     layout.panes.find((pane) => pane.pane_id === paneId)?.terminal_id;
@@ -106,6 +127,12 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
   const processInfo = (argumentsList: string[]) => {
     const paneId = paneArgument(argumentsList);
     const worker = workerOf(paneId);
+    const key = `processInfo:${terminalOf(paneId)}`;
+    const pinned = malformedReplies.get(key)?.shift() ?? heldReplies.get(key);
+
+    if (pinned !== undefined) {
+      return answer(pinned);
+    }
 
     // Any other pane runs a shell.
     return processInfoResponse({
@@ -119,7 +146,19 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
   const agentActions: Record<string, (argumentsList: string[]) => string> = {
     list: () => JSON.stringify({ result: { type: 'agent_list', agents: [] } }),
     get: (argumentsList) => {
+      const terminalId = terminalOf(argumentsList[2]);
       const worker = workerOf(argumentsList[2]);
+      const queued = queuedAgentReplies.get(`${terminalId}`)?.shift();
+      const key = `agent:${terminalId}`;
+      const pinned = malformedReplies.get(key)?.shift() ?? heldReplies.get(key);
+
+      if (queued !== undefined) {
+        return answer(queued);
+      }
+
+      if (pinned !== undefined) {
+        return answer(pinned);
+      }
 
       if (worker === undefined) {
         throw herdrError('agent target not found', 'agent_not_found');
@@ -179,6 +218,10 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
       return processInfo(argumentsList);
     }
 
+    if (surface === 'pane' && action === 'get' && terminalOf(argumentsList[2]) === undefined) {
+      throw herdrError('pane not found', 'pane_not_found');
+    }
+
     if (surface === 'pane' && action === 'close') {
       const closing = workerOf(argumentsList[2]);
 
@@ -208,6 +251,30 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
         session,
         exited,
       })),
+    seedWorker: ({ paneId, terminalId, processId, session, argv }) => {
+      layout.panes.push({ ...layout.parent, pane_id: paneId, terminal_id: terminalId });
+      processes.set(processId, false);
+
+      workers.set(terminalId, {
+        paneId,
+        terminalId,
+        processId,
+        session,
+        exited: false,
+        command: argv,
+      });
+    },
+    queueAgentReplies: (terminalId, replies) => {
+      queuedAgentReplies.set(terminalId, [...replies]);
+    },
+    malformedEvidence: (terminalId, surface, reply) => {
+      const key = `${surface}:${terminalId}`;
+
+      malformedReplies.set(key, [...(malformedReplies.get(key) ?? []), reply]);
+    },
+    holdReply: (terminalId, surface, reply) => {
+      heldReplies.set(`${surface}:${terminalId}`, reply);
+    },
     exit,
     ready: (terminalId) => {
       const worker = requireWorker(terminalId);

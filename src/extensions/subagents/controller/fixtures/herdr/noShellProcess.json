@@ -1,0 +1,9 @@
+{
+  "result": {
+    "process_info": {
+      "pane_id": "pane",
+      "shell_pid": 4242,
+      "foreground_processes": [{ "pid": 1, "argv": ["pi", "/tmp/worker-session.jsonl"] }]
+    }
+  }
+}
