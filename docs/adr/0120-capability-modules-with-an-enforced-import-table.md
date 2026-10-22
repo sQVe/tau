@@ -37,7 +37,7 @@ The target shared modules and the modules each may import:
 | --------------- | ----------------------------------------- |
 | `errors`        | nothing                                   |
 | `schema`        | nothing                                   |
-| `command`       | nothing                                   |
+| `command`       | `schema`                                  |
 | `instructions`  | nothing                                   |
 | `herdr`         | nothing                                   |
 | `codemode`      | nothing                                   |
@@ -87,8 +87,9 @@ or the module list instead of silencing the rule.
 - Register a module that makes pure decisions in `pureModules` in `tests/structure.test.ts`. The
   check fails the suite when a registered module does a runtime import of an unregistered module,
   imports dynamically, or reads the clock, randomness, or the environment. The caller reads those
-  values and passes them in as facts. The check follows imports, not names, so renaming a file does
-  not escape it.
+  values and passes them in as facts. The one outside library a registered module may import is
+  `typebox/value` in `src/schema.ts`, whose schema checks are pure. The check follows imports, not
+  names, so renaming a file does not escape it.
 
 ### File names
 
