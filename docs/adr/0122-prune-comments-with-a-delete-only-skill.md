@@ -16,7 +16,8 @@ because a model can always find a new objection to wording and the gate blocked 
 Add a `/prune-comments` skill that deletes comments and does nothing else. A fresh worker judges
 each comment against one keep test: keep it only when it names the concrete wrong change a reader
 would make without it, which names, types, and tests do not already prevent. Doc comments follow the
-same test. Tool directives, license headers, and generated files are never judged.
+same test. Tool directives, license headers, generated files, and text the program reads at runtime,
+such as Python docstrings, are never judged, because deleting runtime text changes behavior.
 
 The skill runs on request, not at commit time, so it blocks no commit. It never rewords or adds a
 comment, so a finding cannot draw a new objection to new text. A diff target judges only the
