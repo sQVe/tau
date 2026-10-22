@@ -1,10 +1,25 @@
-import type { Exec } from './exec.js';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type { Static, TSchema } from 'typebox';
+import { Value } from 'typebox/value';
 
-interface CommandRuntime {
+import { describeSchemaProblem } from './schemaProblem.js';
+
+export type Exec = ExtensionAPI['exec'];
+
+// TypeScript accepts an assertion arrow function only through a declared type.
+export type CheckOutput = <Schema extends TSchema>(
+  label: string,
+  schema: Schema,
+  value: unknown,
+) => asserts value is Static<Schema>;
+
+export interface CommandRuntime {
   exec: Exec;
   cwd: string;
   signal?: AbortSignal | undefined;
 }
+
+export const outputPreviewLength = 200;
 
 export const runCommand = async (
   runtime: CommandRuntime,
@@ -24,4 +39,21 @@ export const runCommand = async (
   }
 
   return result.stdout;
+};
+
+export const parseJson = (label: string, stdout: string): unknown => {
+  try {
+    return JSON.parse(stdout);
+  } catch (error) {
+    throw new Error(
+      `${label} printed output that is not JSON: ${stdout.slice(0, outputPreviewLength)}`,
+      { cause: error },
+    );
+  }
+};
+
+export const checkOutput: CheckOutput = (label, schema, value) => {
+  if (!Value.Check(schema, value)) {
+    throw new Error(`${label} printed unexpected output: ${describeSchemaProblem(schema, value)}`);
+  }
 };

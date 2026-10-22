@@ -1,7 +1,8 @@
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import type { Repository, Runtime } from '../../github.js';
+import type { CommandRuntime } from '../../command.js';
+import type { Repository } from '../../github.js';
 import { describeSchemaProblem } from '../../schemaProblem.js';
 import {
   boundChecks,
@@ -45,7 +46,10 @@ const validateCheckList: CheckListValidation = (value) =>
     ? { checks: value }
     : { problem: `printed unexpected output: ${describeSchemaProblem(checkListSchema, value)}` };
 
-const runGh = async (runtime: Runtime, commandArguments: string[]): Promise<CommandResult> => {
+const runGh = async (
+  runtime: CommandRuntime,
+  commandArguments: string[],
+): Promise<CommandResult> => {
   const result = await runtime.exec('gh', commandArguments, {
     cwd: runtime.cwd,
     ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
@@ -54,7 +58,7 @@ const runGh = async (runtime: Runtime, commandArguments: string[]): Promise<Comm
   return { command: ['gh', ...commandArguments].join(' '), ...result };
 };
 
-const readCheckList = async (runtime: Runtime, repository: Repository, pr: number) => {
+const readCheckList = async (runtime: CommandRuntime, repository: Repository, pr: number) => {
   const commandArguments = [
     'pr',
     'checks',
@@ -71,7 +75,7 @@ const readCheckList = async (runtime: Runtime, repository: Repository, pr: numbe
 };
 
 const readFailedLog = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
   check: CheckItem,
   remainingCharacters: number,
@@ -99,7 +103,7 @@ const readFailedLog = async (
 };
 
 const readCheck = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
   check: CheckItem,
   remainingCharacters: number,
@@ -115,7 +119,12 @@ const readCheck = async (
 };
 
 // gh pr checks reads the live head, so a push during the read can mix in another head's checks.
-const requireHead = async (runtime: Runtime, repository: Repository, pr: number, head: string) => {
+const requireHead = async (
+  runtime: CommandRuntime,
+  repository: Repository,
+  pr: number,
+  head: string,
+) => {
   const pullRequest = await readPullRequest(runtime, repository, pr);
 
   if (pullRequest.headRefOid !== head) {
@@ -129,7 +138,7 @@ const requireHead = async (runtime: Runtime, repository: Repository, pr: number,
 // nothing. Returns a gap for each piece of evidence it could not read instead of failing, and
 // throws when the head is not head before or after the check list.
 export const readChecks = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
   pull: { pr: number; head: string },
 ): Promise<PullRequestChecks> => {

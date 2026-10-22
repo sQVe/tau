@@ -44,7 +44,7 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
       filename: '/repository/tests/probe.ts',
     },
     {
-      code: "import { exec } from './exec.js';\n\nexport const value = exec;",
+      code: "import { describeSchemaProblem } from './schemaProblem.js';\n\nexport const value = describeSchemaProblem;",
       filename: '/repository/src/command.ts',
     },
     {
@@ -52,7 +52,7 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
       filename: '/repository/src/config/allowedModels.ts',
     },
     {
-      code: "import type { ExecResult } from './exec.js';\n\nexport type Value = ExecResult;",
+      code: "import type { Problem } from './schemaProblem.js';\n\nexport type Value = Problem;",
       filename: '/repository/src/command.ts',
     },
     {

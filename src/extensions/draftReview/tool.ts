@@ -3,8 +3,8 @@ import { defineTool } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
 import { runCommand } from '../../command.js';
+import type { Exec } from '../../command.js';
 import { errorMessage } from '../../errors.js';
-import type { Exec } from '../../exec.js';
 import { collectReview } from './collect.js';
 import type { Collected } from './collect.js';
 import { closeOpened, closePlacement, openReview, tuicrCommand } from './herdrReview.js';

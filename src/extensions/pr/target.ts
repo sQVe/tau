@@ -1,7 +1,8 @@
 import { Type } from 'typebox';
 
+import type { CommandRuntime } from '../../command.js';
 import { checkOutput, label, readJson, run } from '../../github.js';
-import type { Repository, Runtime } from '../../github.js';
+import type { Repository } from '../../github.js';
 import { readGit } from '../../gitOutput.js';
 import { resolveBaseRepository, resolveHead } from '../../repositoryTarget.js';
 import { formatRepository } from '../../repositoryTargetDecisions.js';
@@ -49,7 +50,11 @@ const pullRequestFields =
   'number,url,state,title,body,baseRefName,isDraft,headRefOid,headRepositoryOwner,headRepository';
 
 // gh pr list prints at most --limit pull requests and does not say when it left some out.
-const readPullRequestList = async (runtime: Runtime, repository: Repository, branch: string) => {
+const readPullRequestList = async (
+  runtime: CommandRuntime,
+  repository: Repository,
+  branch: string,
+) => {
   const commandArguments = [
     'pr',
     'list',
@@ -87,7 +92,10 @@ const pinMergeBase = async (cwd: string, remote: string, branch: string) => {
   return readGit(cwd, ['merge-base', trackingRef, 'HEAD']);
 };
 
-export const readTarget = async (runtime: Runtime, request: TargetRequest): Promise<Target> => {
+export const readTarget = async (
+  runtime: CommandRuntime,
+  request: TargetRequest,
+): Promise<Target> => {
   const { cwd } = runtime;
   const head = await resolveHead(runtime, request);
   const { host } = head.repository;

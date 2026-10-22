@@ -1,8 +1,9 @@
 import { Type } from 'typebox';
 
+import type { CommandRuntime } from '../../command.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { checkOutput, parseRepository, label, readJson, run } from '../../github.js';
-import type { Repository, Runtime } from '../../github.js';
+import type { Repository } from '../../github.js';
 import { decideReviewBots } from './reviewBotDecisions.js';
 import type { ReviewBotDecision } from './reviewBotDecisions.js';
 import { readReviewBots } from './reviewBotSettings.js';
@@ -40,7 +41,7 @@ const requirePullRequest = (pr: number | undefined) => {
   return pr;
 };
 
-const readPublished = async (runtime: Runtime, repository: string, pr: number) => {
+const readPublished = async (runtime: CommandRuntime, repository: string, pr: number) => {
   const commandArguments = [
     'pr',
     'view',
@@ -58,7 +59,7 @@ const readPublished = async (runtime: Runtime, repository: string, pr: number) =
   return view;
 };
 
-const readHeadDate = async (runtime: Runtime, repository: Repository, head: string) => {
+const readHeadDate = async (runtime: CommandRuntime, repository: Repository, head: string) => {
   const commandArguments = [
     'api',
     '--hostname',
@@ -80,7 +81,11 @@ const readHeadDate = async (runtime: Runtime, repository: Repository, head: stri
 
 // The earliest check suite approximates the push time, since gh does not report it. It is
 // undefined when the head has no check suites. --paginate prints one line per suite across pages.
-const readHeadCheckSuiteDate = async (runtime: Runtime, repository: Repository, head: string) => {
+const readHeadCheckSuiteDate = async (
+  runtime: CommandRuntime,
+  repository: Repository,
+  head: string,
+) => {
   const commandArguments = [
     'api',
     '--hostname',
@@ -107,7 +112,7 @@ const readHeadCheckSuiteDate = async (runtime: Runtime, repository: Repository, 
 // committer date and its earliest check suite. With no check suite, the committer date alone
 // applies.
 export const readReviewBotStatuses = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   location: ConfigLocation,
   ui: ConfigWarnings,
   request: ReviewBotsRequest,

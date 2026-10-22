@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import { constants, lstat, readFile, readdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
+import type { CommandRuntime } from '../../command.js';
 import { errorMessage, isMissingFile } from '../../errors.js';
-import type { Runtime } from '../../github.js';
 import { readGit, readGitBytes } from '../../gitOutput.js';
 import { readReviewEvidence } from '../../reviewCapture/evidence.js';
 import type { ReviewEvidence } from '../../reviewCapture/evidence.js';
@@ -266,7 +266,7 @@ const readChecks = async (root: string, evidence: PublicationEvidence) => {
 };
 
 export const readPublicationEvidence = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   root: string,
   request: PublicationRequest,
 ): Promise<PublicationEvidence> => {

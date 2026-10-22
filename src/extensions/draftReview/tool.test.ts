@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { Value } from 'typebox/value';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import type { Exec } from '../../exec.js';
+import type { Exec } from '../../command.js';
 import { saveCollectedRecord } from './collectedRecord.js';
 import {
   comment,

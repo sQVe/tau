@@ -1,4 +1,4 @@
-import type { Runtime } from '../../github.js';
+import type { CommandRuntime } from '../../command.js';
 import {
   activeLayerParents,
   decideLayer,
@@ -111,7 +111,7 @@ const rejectInvalidRequest = async (cwd: string, request: HistoryRequest) => {
 
 // Runs the remote-history check on every active branch of the stack.
 export const readHistory = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   request: HistoryRequest,
 ): Promise<HistoryResult> => {
   const { cwd } = runtime;

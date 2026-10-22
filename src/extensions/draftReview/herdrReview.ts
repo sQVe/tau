@@ -2,8 +2,8 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { runCommand } from '../../command.js';
+import type { Exec } from '../../command.js';
 import { errorMessage } from '../../errors.js';
-import type { Exec } from '../../exec.js';
 import { minimumPane, readLayout, rectangle } from '../../herdrLayout.js';
 import type { PaneLayout } from '../../herdrLayout.js';
 import { findTerminal, requireObject, result, terminalLocation, text } from '../../terminal.js';

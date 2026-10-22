@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { hasErrorCode, isMissingFile } from './errors.js';
+import { errorMessage, hasErrorCode, isMissingFile } from './errors.js';
 
 const withCode = (code: string) => Object.assign(new Error('failed'), { code });
 
@@ -21,4 +21,15 @@ it.for<[string, unknown]>([
 it('reads a missing file from the ENOENT code only', () => {
   expect(isMissingFile(withCode('ENOENT'))).toBe(true);
   expect(isMissingFile(withCode('EISDIR'))).toBe(false);
+});
+
+it.for<[string, unknown, string]>([
+  ['an Error', new Error('failed'), 'failed'],
+  ['an object with a message', { message: 'x' }, 'x'],
+  ['an object without a message', { code: 1 }, '{"code":1}'],
+  ['a string', 'plain', 'plain'],
+  ['null', null, 'null'],
+  ['an object JSON cannot print', { size: 1n }, '[object Object]'],
+])('describes %s', ([, error, expected]) => {
+  expect(errorMessage(error)).toBe(expected);
 });

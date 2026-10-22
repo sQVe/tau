@@ -1,7 +1,8 @@
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { Repository, Runtime } from '../../github.js';
+import type { CommandRuntime } from '../../command.js';
+import type { Repository } from '../../github.js';
 import { readOptionalGit } from '../../gitOutput.js';
 import { resolveBaseRepository, resolveHead } from '../../repositoryTarget.js';
 import {
@@ -64,7 +65,7 @@ const exists = async (path: string): Promise<boolean> => {
   }
 };
 
-const readCurrentFacts = async (runtime: Runtime): Promise<Read<CurrentBranchFacts>> => {
+const readCurrentFacts = async (runtime: CommandRuntime): Promise<Read<CurrentBranchFacts>> => {
   const command = 'git rev-parse --absolute-git-dir';
   const output = await runGitRead(runtime.cwd, ['rev-parse', '--absolute-git-dir']);
   const directory = output.stdout.trim();
@@ -84,7 +85,7 @@ const readCurrentFacts = async (runtime: Runtime): Promise<Read<CurrentBranchFac
 };
 
 const resolve = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   request: CheckRequest,
   branch: string,
 ): Promise<Read<Resolved>> => {
@@ -105,7 +106,10 @@ const resolve = async (
   }
 };
 
-const gatherGithubFacts = async (runtime: Runtime, resolved: Resolved): Promise<GithubFacts> => {
+const gatherGithubFacts = async (
+  runtime: CommandRuntime,
+  resolved: Resolved,
+): Promise<GithubFacts> => {
   const { pushRepository, baseRepository, defaultBranch, serverBranch } = resolved;
 
   const [headPulls, basedOn] = await Promise.all([
@@ -132,7 +136,7 @@ const unknownResult = (
 ): CheckResult => ({ result: 'unknown', reason, branch, evidence });
 
 const checkOnGithub = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   request: CheckRequest,
   branch: string,
   current: CurrentBranchFacts | null,
@@ -153,7 +157,7 @@ const checkOnGithub = async (
 
 // A local stack can miss a pull request based on the branch, so a tracked branch also reads those.
 const checkTracked = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   request: CheckRequest,
   branch: string,
   current: CurrentBranchFacts,
@@ -179,7 +183,7 @@ const checkTracked = async (
 };
 
 const checkCurrent = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   request: CheckRequest,
   branch: string | undefined,
 ): Promise<CheckResult> => {
@@ -220,7 +224,10 @@ const checkCurrent = async (
 };
 
 // Runs the stack check on the current branch, or on another branch with only the GitHub reads.
-export const readCheck = async (runtime: Runtime, request: CheckRequest): Promise<CheckResult> => {
+export const readCheck = async (
+  runtime: CommandRuntime,
+  request: CheckRequest,
+): Promise<CheckResult> => {
   const currentBranch = await readOptionalGit(runtime.cwd, [
     'symbolic-ref',
     '--quiet',

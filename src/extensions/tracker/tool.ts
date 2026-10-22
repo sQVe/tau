@@ -3,7 +3,7 @@ import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import type { Exec } from '../../exec.js';
+import type { Exec } from '../../command.js';
 import { decideCandidateFit, decideParentMatchesRoute } from './candidateFit.js';
 import type { CandidateFit, Placement } from './candidateFit.js';
 import { readLabels, readParentRouting, searchIssues } from './linear.js';

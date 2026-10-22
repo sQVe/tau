@@ -1,7 +1,7 @@
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import type { Exec } from '../../exec.js';
+import type { Exec } from '../../command.js';
 import { api, openStateTypes, unexpectedOutput } from '../../linear.js';
 
 export interface FoundIssue {

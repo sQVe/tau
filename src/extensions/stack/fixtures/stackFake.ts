@@ -1,4 +1,4 @@
-import type { Exec } from '../../../exec.js';
+import type { Exec } from '../../../command.js';
 
 type ExecResult = Awaited<ReturnType<Exec>>;
 

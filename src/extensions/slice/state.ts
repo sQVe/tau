@@ -1,17 +1,13 @@
 import { createHash } from 'node:crypto';
 
-import type { Exec } from '../../exec.js';
+import type { CommandRuntime } from '../../command.js';
 import type { Draft } from './draft.js';
 import { readDraft } from './draft.js';
 import { findOpenIssues, readContainer } from './linear.js';
 import { isInPlanOrder, planWrites } from './writes.js';
 import type { LinearContainer, OrderedSlice, WritePlan } from './writes.js';
 
-export interface Runtime {
-  exec: Exec;
-  root: string;
-  signal: AbortSignal | undefined;
-}
+export type Runtime = Omit<CommandRuntime, 'cwd'> & { root: string };
 
 export interface SliceState {
   directory: string;

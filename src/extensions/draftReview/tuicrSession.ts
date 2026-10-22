@@ -1,6 +1,7 @@
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { outputPreviewLength, parseJson } from '../../command.js';
 import type { SessionComment } from './reviewDecisions.js';
 
 export type RunTuicr = (argumentsList: string[]) => Promise<string>;
@@ -18,18 +19,6 @@ const commentListSchema = Type.Array(
   }),
 );
 
-const excerptLength = 200;
-
-const parseJson = (command: string, output: string): unknown => {
-  try {
-    return JSON.parse(output);
-  } catch {
-    throw new Error(
-      `${command} printed output that is not JSON: ${output.slice(0, excerptLength)}`,
-    );
-  }
-};
-
 // tuicr stores a file-mode session under the opened directory, so the directory finds the session.
 export const listSessionPaths = async (run: RunTuicr, directory: string): Promise<string[]> => {
   const output = await run(['review', 'list', '--repo', directory]);
@@ -37,7 +26,7 @@ export const listSessionPaths = async (run: RunTuicr, directory: string): Promis
 
   if (!Value.Check(sessionListSchema, parsed)) {
     throw new Error(
-      `tuicr review list printed an unexpected session list: ${output.slice(0, excerptLength)}`,
+      `tuicr review list printed an unexpected session list: ${output.slice(0, outputPreviewLength)}`,
     );
   }
 
@@ -53,7 +42,7 @@ export const readSessionComments = async (
 
   if (!Value.Check(commentListSchema, parsed)) {
     throw new Error(
-      `tuicr review comments printed unexpected comments: ${output.slice(0, excerptLength)}`,
+      `tuicr review comments printed unexpected comments: ${output.slice(0, outputPreviewLength)}`,
     );
   }
 

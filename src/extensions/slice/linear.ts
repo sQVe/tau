@@ -2,9 +2,8 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import type { Exec } from '../../exec.js';
+import type { Exec, CommandRuntime } from '../../command.js';
 import { checkOutput, readJson } from '../../github.js';
-import type { Runtime } from '../../github.js';
 import { api, openStateTypes, run, unexpectedOutput } from '../../linear.js';
 import type { LinearChild, LinearContainer } from './writes.js';
 
@@ -106,7 +105,7 @@ const pullRequestUrl = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/u;
 type ChildNode = Static<typeof childSchema>;
 
 const readPullRequestState = async (exec: Exec, cwd: string, url: string) => {
-  const runtime: Runtime = { exec, cwd, signal: undefined };
+  const runtime: CommandRuntime = { exec, cwd, signal: undefined };
   const commandArguments = ['pr', 'view', url, '--json', 'state'];
   const value = await readJson(runtime, commandArguments);
 

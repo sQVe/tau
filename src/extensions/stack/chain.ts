@@ -1,4 +1,5 @@
-import type { Repository, Runtime } from '../../github.js';
+import type { CommandRuntime } from '../../command.js';
+import type { Repository } from '../../github.js';
 import { sameRepository } from '../../repositoryTargetDecisions.js';
 import { decideChain, parsePullRequestUrl, pickParent } from './chainDecisions.js';
 import type {
@@ -67,7 +68,7 @@ const parseRequest = (request: ChainRequest) => {
 };
 
 const readBlocker = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
   { reference, url }: { reference: PullRequestReference; url: string },
 ): Promise<BlockerFacts> => {
@@ -80,7 +81,7 @@ const readBlocker = async (
 };
 
 const readStackEnds = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
   stack: readonly number[],
 ): Promise<ChainFacts['stackEnds']> => {
@@ -105,7 +106,10 @@ const readStackEnds = async (
 
 // Decides the parent of a stacked slice from its open blockers, then whether the parent already
 // has a branch above it and which trunk the new branch starts from.
-export const readChain = async (runtime: Runtime, request: ChainRequest): Promise<ChainResult> => {
+export const readChain = async (
+  runtime: CommandRuntime,
+  request: ChainRequest,
+): Promise<ChainResult> => {
   const { repository, blockers: parsed, slice } = parseRequest(request);
   const repositoryName = `${repository.host}/${repository.owner}/${repository.name}`;
 

@@ -3,7 +3,7 @@ import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
-import type { Exec } from '../../exec.js';
+import type { Exec } from '../../command.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import { checkDraftDirectory, draftName } from './draftDirectory.js';
 import { applyStart, describeStartWrite } from './startApply.js';
