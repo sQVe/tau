@@ -1,9 +1,9 @@
-import { copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { copyFile, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it, onTestFinished } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import {
   readPosted,
   readPullRequestRecord,
@@ -15,9 +15,7 @@ import {
 const fixtures = join(import.meta.dirname, 'fixtures');
 
 const roundDirectory = async (fixture?: { kind: string; name: string; file: string }) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-pr-feedback-'));
-
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-pr-feedback-');
 
   if (fixture !== undefined) {
     await copyFile(join(fixtures, fixture.kind, fixture.name), join(directory, fixture.file));

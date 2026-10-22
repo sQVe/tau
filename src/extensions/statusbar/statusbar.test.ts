@@ -1,6 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify, stripVTControlCharacters } from 'node:util';
 
@@ -9,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { initializeRepository } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import statusbarExtension from './statusbar.js';
 
 const executeFile = promisify(execFile);
@@ -80,8 +80,7 @@ describe('statusbar extension', () => {
   it('shows a clean checkout as clean when Pi inherits a missing index', async ({
     onTestFinished,
   }) => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
-    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
     await initializeRepository(directory);
     await writeFile(join(directory, 'tracked'), 'original bytes');
     await executeFile('git', ['add', 'tracked'], { cwd: directory });
@@ -108,8 +107,7 @@ describe('statusbar extension', () => {
   it('shows an edited checkout as dirty when Pi inherits an invalid GIT_DIR', async ({
     onTestFinished,
   }) => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
-    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
     await initializeRepository(directory);
     await writeFile(join(directory, 'tracked'), 'original bytes');
     await executeFile('git', ['add', 'tracked'], { cwd: directory });
@@ -133,8 +131,7 @@ describe('statusbar extension', () => {
   });
 
   it('reads dirty state without refreshing the shared index', async ({ onTestFinished }) => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
-    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
     await initializeRepository(directory);
     await writeFile(join(directory, 'tracked'), 'same bytes');
     await executeFile('git', ['add', 'tracked'], { cwd: directory });
@@ -175,8 +172,7 @@ describe('statusbar extension', () => {
   it('refreshes a replacement footer after the old footer is disposed', async ({
     onTestFinished,
   }) => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
-    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
 
     await initializeRepository(directory);
 
@@ -255,8 +251,7 @@ describe('statusbar extension', () => {
   it('refreshes dirty state on tool results and branch changes outside render', async ({
     onTestFinished,
   }) => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
-    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
 
     await initializeRepository(directory);
 
@@ -299,7 +294,7 @@ describe('statusbar extension', () => {
   it('ignores a git status that finishes after its footer was replaced', async ({
     onTestFinished,
   }) => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
+    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
     const log = join(directory, 'git.log');
     const finished = join(directory, 'finished.log');
     const bin = join(directory, 'bin');
@@ -329,8 +324,6 @@ describe('statusbar extension', () => {
       await vi.waitFor(async () => {
         expect(await finishedCount()).toBe(await startedCount());
       });
-
-      await rm(directory, { recursive: true, force: true });
     });
 
     // The first status waits for the first release and reports a change. The second waits for the
@@ -384,8 +377,7 @@ describe('statusbar extension', () => {
   it('runs one git status at a time and merges overlapping refreshes', async ({
     onTestFinished,
   }) => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
-    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
     const log = join(directory, 'git.log');
     const release = join(directory, 'release');
     const bin = join(directory, 'bin');
@@ -428,8 +420,7 @@ describe('statusbar extension', () => {
   it('marks a new file dirty at startup even when git hides untracked files', async ({
     onTestFinished,
   }) => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
-    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
 
     await initializeRepository(directory);
     await executeFile('git', ['config', 'status.showUntrackedFiles', 'no'], { cwd: directory });
@@ -450,8 +441,7 @@ describe('statusbar extension', () => {
   });
 
   it('handles non-repositories', async ({ onTestFinished }) => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-statusbar-'));
-    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
 
     const application = setup(directory);
 

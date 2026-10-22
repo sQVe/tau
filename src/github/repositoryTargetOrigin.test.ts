@@ -1,11 +1,10 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import type { Exec } from '../command.js';
 import { readOriginRepository } from './repositoryTarget.js';
 import type { OriginRepository } from './repositoryTarget.js';
@@ -53,8 +52,7 @@ it.each<{ condition: string; url: string | undefined; origin: OriginRepository }
 });
 
 it('reads no origin outside a repository', async () => {
-  const directory = await mkdtemp(`${tmpdir()}/tau-no-repository-`);
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-no-repository-');
 
   expect(await readOriginRepository({ exec: sshAlias, cwd: directory })).toEqual({
     status: 'missing',

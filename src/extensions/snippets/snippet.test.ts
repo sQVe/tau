@@ -1,18 +1,17 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it, onTestFinished as afterThisTest } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { loadSnippets } from './snippet.js';
 
 const snippetFile = (name: string, body: string) => `---\nname: ${name}\n---\n${body}\n`;
 
 // Each case loads one file the way the extension does, so it covers the parser and the loader together.
 const loadOne = async (filename: string, content: string) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-snippet-parse-'));
-  afterThisTest(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(afterThisTest, 'tau-snippet-parse-');
   await writeFile(join(directory, filename), content);
   const [snippet] = await loadSnippets(directory);
 
@@ -125,8 +124,7 @@ describe('loadSnippets', () => {
   });
 
   it('reads markdown files, skips other files, and sorts by id', async ({ onTestFinished }) => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-snippets-'));
-    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    const directory = temporaryDirectory(onTestFinished, 'tau-snippets-');
 
     await writeFile(join(directory, 'second.md'), snippetFile('Second', 'Second.'));
     await writeFile(join(directory, 'first.md'), snippetFile('First', 'First.'));
@@ -140,17 +138,16 @@ describe('loadSnippets', () => {
     expect(snippets.map((snippet) => snippet.id)).toEqual(['first', 'later', 'second']);
   });
 
-  it('reports a missing directory instead of returning no snippets', async () => {
+  it('reports a missing directory instead of returning no snippets', async ({ onTestFinished }) => {
     // Created then removed, so a leftover directory cannot make this pass.
-    const directory = await mkdtemp(join(tmpdir(), 'tau-snippets-gone-'));
+    const directory = temporaryDirectory(onTestFinished, 'tau-snippets-gone-');
     await rm(directory, { recursive: true, force: true });
 
     await expect(loadSnippets(directory)).rejects.toThrow('ENOENT');
   });
 
   it('skips a directory whose name ends in .md', async ({ onTestFinished }) => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-snippets-'));
-    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    const directory = temporaryDirectory(onTestFinished, 'tau-snippets-');
 
     await mkdir(join(directory, 'draft.md'));
     await writeFile(join(directory, 'real.md'), snippetFile('Real', 'Real body.'));

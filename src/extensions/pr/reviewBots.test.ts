@@ -1,11 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { createGhFake } from './fixtures/ghFake.js';
 import type { FakePullRequest } from './fixtures/ghFake.js';
 import { readReviewBots } from './reviewBotSettings.js';
@@ -32,11 +32,9 @@ const pullRequest = (overrides: Partial<FakePullRequest> = {}): FakePullRequest 
 
 const setUp = async (userConfig?: unknown) => {
   const root = await createTemporaryRepository(onTestFinished);
-  const agentDirectory = await mkdtemp(join(tmpdir(), 'tau-review-bots-'));
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-review-bots-');
   const fake = createGhFake();
   const notices: string[] = [];
-
-  onTestFinished(() => rm(agentDirectory, { recursive: true, force: true }));
 
   if (userConfig !== undefined) {
     await writeFile(join(agentDirectory, 'tau.json'), JSON.stringify(userConfig));
@@ -437,9 +435,7 @@ it('warns once for an unknown field inside a bot entry', async () => {
 });
 
 it('refuses a matched entry key that is not owner/name', async () => {
-  const agentDirectory = await mkdtemp(join(tmpdir(), 'tau-review-bots-'));
-
-  onTestFinished(() => rm(agentDirectory, { recursive: true, force: true }));
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-review-bots-');
 
   await writeFile(
     join(agentDirectory, 'tau.json'),

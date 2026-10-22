@@ -1,5 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { fauxProvider } from '@earendil-works/pi-ai';
@@ -7,15 +6,12 @@ import type { ExtensionContext, ToolCallEvent } from '@earendil-works/pi-coding-
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../tests/extensionApi.js';
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import webAccessExtension from './webAccess.js';
 
 // The user file holds only the given config, whatever the developer's agent directory holds.
 const setup = (config: unknown = {}) => {
-  const agentDirectory = mkdtempSync(join(tmpdir(), 'tau-web-access-agent-'));
-
-  onTestFinished(() => {
-    rmSync(agentDirectory, { recursive: true, force: true });
-  });
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-web-access-agent-');
 
   writeFileSync(join(agentDirectory, 'tau.json'), JSON.stringify(config));
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);

@@ -1,18 +1,17 @@
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { chmodSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../tests/gitRepository.js';
+import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.js';
 import { findCheckoutRoot, readGitOutput, readOptionalGit, runGit } from './gitOutput.js';
 
 it('resolves no output when Git runs past the timeout', async ({ onTestFinished }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-git-shim-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-git-shim-');
 
   onTestFinished(() => {
     vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   // `exec` replaces the shell, so the kill reaches the process that holds the output pipe.
@@ -35,11 +34,7 @@ it('finds the checkout root from a directory inside it', async ({ onTestFinished
 });
 
 it('names the tool when the directory is not in a Git checkout', async ({ onTestFinished }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-no-checkout-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-no-checkout-');
 
   await expect(findCheckoutRoot(directory, 'pr')).rejects.toThrow(
     `The pr tool needs a Git checkout, and ${directory} is not in one.`,
@@ -49,11 +44,10 @@ it('names the tool when the directory is not in a Git checkout', async ({ onTest
 it('resolves the exit code when Git exits before it reads its input', async ({
   onTestFinished,
 }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-git-shim-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-git-shim-');
 
   onTestFinished(() => {
     vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   writeFileSync(join(directory, 'git'), '#!/bin/sh\nexit 3\n');
@@ -83,12 +77,8 @@ it('passes the user environment to Git', async ({ onTestFinished }) => {
 });
 
 it('rejects when Git does not exit with a number', async ({ onTestFinished }) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-git-missing-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-git-missing-');
   const missing = join(directory, 'absent');
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
 
   await expect(runGit(missing, ['status'])).rejects.toMatchObject({ code: 'ENOENT' });
 });
@@ -108,11 +98,10 @@ it('resolves undefined when Git exits with 1', async ({ onTestFinished }) => {
 it.for([2, 128])(
   'throws with the Git message when Git exits with %s',
   async (exitCode, { onTestFinished }) => {
-    const directory = mkdtempSync(join(tmpdir(), 'tau-git-shim-'));
+    const directory = temporaryDirectory(onTestFinished, 'tau-git-shim-');
 
     onTestFinished(() => {
       vi.unstubAllEnvs();
-      rmSync(directory, { recursive: true, force: true });
     });
 
     writeFileSync(join(directory, 'git'), `#!/bin/sh\necho "boom" >&2\nexit ${exitCode}\n`);

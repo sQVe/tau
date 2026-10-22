@@ -1,6 +1,5 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -8,6 +7,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { declinedExec } from '../../../tests/declinedExecFake.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { createFullCheckTool } from './tool.js';
 
 const git = (cwd: string, ...commandArguments: string[]) =>
@@ -24,8 +24,7 @@ const countingArgv = (counter: string, extra = '') => [
 ];
 
 const fixture = async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-full-check-reuse-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-full-check-reuse-');
 
   const root = await createTemporaryRepository(onTestFinished, 'tau-full-check-reuse-repo-');
   const counter = join(directory, 'count.txt');

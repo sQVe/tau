@@ -1,6 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { access, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -8,6 +7,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { declinedExec } from '../../../tests/declinedExecFake.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { defaultLockPath, withFullCheckLock } from './queue.js';
 import { createFullCheckTool } from './tool.js';
 
@@ -38,8 +38,7 @@ const timer = setInterval(() => {
 `;
 
 const fixture = async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-full-check-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-full-check-');
 
   const agentDirectory = join(directory, 'agent');
   const record = join(directory, 'record.txt');

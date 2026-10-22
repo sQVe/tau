@@ -1,16 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import {
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  symlink,
-  utimes,
-  writeFile,
-} from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -18,6 +8,7 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createSavedReview } from '../../../tests/savedReview.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { saveCheckRecord } from '../../checkRecord/checkRecord.js';
 import { readCheckState } from '../../checkRecord/identity.js';
 import { readPublicationEvidence } from './evidence.js';
@@ -40,9 +31,8 @@ const commitFile = async (root: string, text: string) => {
 
 const setUp = async (kind: 'range' | 'workingTree' = 'range') => {
   const root = await createTemporaryRepository(onTestFinished);
-  const remote = await mkdtemp(join(tmpdir(), 'tau-pr-evidence-'));
+  const remote = temporaryDirectory(onTestFinished, 'tau-pr-evidence-');
 
-  onTestFinished(() => rm(remote, { recursive: true, force: true }));
   await git(remote, 'init', '--quiet', '--bare', '--initial-branch=main');
   await git(root, 'config', `url.${remote}.insteadOf`, 'https://github.com/sQVe/tau.git');
   await git(root, 'remote', 'add', 'origin', 'https://github.com/sQVe/tau.git');

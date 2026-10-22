@@ -1,15 +1,5 @@
 import { execFile } from 'node:child_process';
-import {
-  appendFile,
-  chmod,
-  mkdir,
-  mkdtemp,
-  readdir,
-  readFile,
-  rm,
-  writeFile,
-} from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { appendFile, chmod, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -17,6 +7,7 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { declinedExec } from '../../../tests/declinedExecFake.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { createMutationCheckTool } from './mutationTool.js';
 import { createFullCheckTool } from './tool.js';
 
@@ -74,8 +65,7 @@ else setInterval(() => { if (fs.existsSync(${JSON.stringify(gate ?? '')})) finis
 `;
 
 const fixture = async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-mutation-check-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-mutation-check-');
 
   const root = await createTemporaryRepository(onTestFinished, 'tau-mutation-check-repo-');
   const counter = join(directory, 'count.txt');

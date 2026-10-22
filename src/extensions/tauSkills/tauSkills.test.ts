@@ -1,12 +1,12 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import { parseFrontmatter } from '@earendil-works/pi-coding-agent';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import tauSkillsExtension from './tauSkills.js';
 
 const skillsDirectory = resolve(import.meta.dirname, '../../skills');
@@ -107,8 +107,7 @@ describe('tauSkillsExtension', () => {
   ])(
     'refuses to load a skill with $problem and registers nothing',
     async ({ metadata }, { onTestFinished }) => {
-      const directory = await mkdtemp(join(tmpdir(), 'tau-skills-'));
-      onTestFinished(() => rm(directory, { recursive: true, force: true }));
+      const directory = temporaryDirectory(onTestFinished, 'tau-skills-');
 
       const writeSkill = async (name: string, frontmatter: string) => {
         await mkdir(join(directory, name));

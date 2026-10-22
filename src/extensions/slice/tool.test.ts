@@ -4,7 +4,6 @@ import {
   copyFile,
   link,
   mkdir,
-  mkdtemp,
   readFile,
   readdir,
   rm,
@@ -12,7 +11,6 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
@@ -23,6 +21,7 @@ import {
   createTemporaryRepository,
 } from '../../../tests/gitRepository.js';
 import { createLinearFake } from '../../../tests/linearFake.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { createSliceTool } from './tool.js';
 import type { SliceInput } from './tool.js';
@@ -111,9 +110,7 @@ const setUp = async (fixture = 'version-1.json', createRoot = temporaryRepositor
 };
 
 const outsideDirectory = async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-slice-outside-'));
-
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-slice-outside-');
 
   return directory;
 };

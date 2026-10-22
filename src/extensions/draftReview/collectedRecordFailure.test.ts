@@ -1,10 +1,10 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { saveCollectedRecord } from './collectedRecord.js';
 import { savePlacement, stageReview } from './stage.js';
 
@@ -34,13 +34,11 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 const collected = { comments: [], edits: [] };
 
 const directoryFixture = async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-record-write-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-record-write-');
 
   onTestFinished(() => {
     writeState.failMidway = false;
     writeState.failBefore = false;
-
-    return rm(directory, { recursive: true, force: true });
   });
 
   return directory;

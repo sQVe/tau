@@ -1,15 +1,14 @@
 import { execFile } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { ExtensionAPI, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
-import { afterEach, vi } from 'vitest';
+import { afterEach, onTestFinished, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
 import { createTemporaryRepository as createRepository } from '../../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { createCommitTool } from '../tool.js';
 import type { CommitInput } from '../validation.js';
 
@@ -40,18 +39,10 @@ interface FakeCommit {
 
 const execFileAsync = promisify(execFile);
 
-// Vitest isolates this module and its cleanup hook per test file.
-export const temporaryDirectories: string[] = [];
-
 afterEach(async () => {
   vi.restoreAllMocks();
 
-  await Promise.all([
-    ...temporaryDirectories
-      .splice(0)
-      .map((directory) => rm(directory, { recursive: true, force: true })),
-    ...repositoryCleanups.splice(0).map((cleanup) => cleanup()),
-  ]);
+  await Promise.all(repositoryCleanups.splice(0).map((cleanup) => cleanup()));
 });
 
 export const runCommand = async (
@@ -180,8 +171,7 @@ export const executeCommit = async (
 };
 
 export const fakeCommit = (): FakeCommit => {
-  const gitDirectory = mkdtempSync(join(tmpdir(), 'tau-mock-git-'));
-  temporaryDirectories.push(gitDirectory);
+  const gitDirectory = temporaryDirectory(onTestFinished, 'tau-mock-git-');
 
   const custom = vi.fn<() => never>(() => {
     throw new Error('Unexpected approval UI');

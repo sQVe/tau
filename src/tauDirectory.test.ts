@@ -4,7 +4,6 @@ import {
   link as hardLink,
   lstat,
   mkdir,
-  mkdtemp,
   readdir,
   readFile,
   realpath,
@@ -12,13 +11,14 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
-import { expect, it } from 'vitest';
+import { expect, it, onTestFinished as afterThisTest } from 'vitest';
+import type { TestContext } from 'vitest';
 
 import { createTemporaryBareRoot, createTemporaryRepository } from '../tests/gitRepository.js';
+import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.js';
 import {
   checkTauDirectory,
   climbsOut,
@@ -41,15 +41,6 @@ const isIgnored = async (repository: string, path: string) => {
   }
 };
 
-const createTemporaryDirectory = async (
-  registerCleanup: (cleanup: () => Promise<void>) => void,
-) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-directory-'));
-  registerCleanup(() => rm(directory, { recursive: true, force: true }));
-
-  return directory;
-};
-
 const listTree = async (directory: string) =>
   (await readdir(directory, { recursive: true })).toSorted();
 
@@ -62,8 +53,8 @@ const symlinkCases = [
 
 for (const { name, link } of symlinkCases) {
   it(`refuses when ${name} is a symlink and creates nothing`, async ({ onTestFinished }) => {
-    const root = await createTemporaryDirectory(onTestFinished);
-    const outside = await createTemporaryDirectory(onTestFinished);
+    const root = temporaryDirectory(onTestFinished, 'tau-directory-');
+    const outside = temporaryDirectory(onTestFinished, 'tau-directory-');
 
     await mkdir(join(root, link, '..'), { recursive: true });
     await symlink(outside, join(root, link));
@@ -78,9 +69,9 @@ for (const { name, link } of symlinkCases) {
   });
 }
 
-const hardLinkedIgnoreFile = async (registerCleanup: (cleanup: () => Promise<void>) => void) => {
+const hardLinkedIgnoreFile = async (registerCleanup: TestContext['onTestFinished']) => {
   const root = await createTemporaryRepository(registerCleanup);
-  const outside = await createTemporaryDirectory(registerCleanup);
+  const outside = temporaryDirectory(registerCleanup, 'tau-directory-');
   const outsideFile = join(outside, 'ignore');
 
   await writeFile(outsideFile, 'outside bytes\n');
@@ -191,7 +182,7 @@ it('creates a new ignored directory on each fresh call', async ({ onTestFinished
 it.for(['', '../outside', 'slices/../..', '/tmp/outside', 'slices//me-479'])(
   'refuses the path %j and creates nothing',
   async (path, { onTestFinished }) => {
-    const root = await createTemporaryDirectory(onTestFinished);
+    const root = temporaryDirectory(onTestFinished, 'tau-directory-');
 
     await expect(ensureTauDirectory(root, path)).rejects.toBeInstanceOf(Error);
 
@@ -214,7 +205,7 @@ it.for([String.raw`..\outside`, String.raw`slices\me-479`])(
 it.for(['../review-', String.raw`..\review-`])(
   'refuses the fresh directory prefix %j with a separator and creates nothing',
   async (prefix, { onTestFinished }) => {
-    const root = await createTemporaryDirectory(onTestFinished);
+    const root = temporaryDirectory(onTestFinished, 'tau-directory-');
 
     await expect(createFreshTauDirectory(root, 'workers', prefix)).rejects.toThrow(prefix);
 
@@ -326,7 +317,7 @@ it('refuses when Git tracks a file in an ignored target', async ({ onTestFinishe
 it.for(['..', '.', ''])(
   'refuses the fresh directory prefix %j and creates nothing',
   async (prefix, { onTestFinished }) => {
-    const root = await createTemporaryDirectory(onTestFinished);
+    const root = temporaryDirectory(onTestFinished, 'tau-directory-');
 
     await expect(createFreshTauDirectory(root, 'workers', prefix)).rejects.toBeInstanceOf(Error);
 
@@ -525,8 +516,6 @@ it.each([
   expect(climbsOut(path)).toBe(climbs);
 });
 
-const makeLinkedFileDirectory = () => mkdtemp(join(tmpdir(), 'tau-linked-file-'));
-
 const acceptedFileCases = [
   { name: 'a missing path', setup: async () => undefined },
   { name: 'a plain file', setup: (path: string) => writeFile(path, 'text\n') },
@@ -538,7 +527,7 @@ const refusedFileCases = [
     name: 'a symlink',
     kind: 'a symlink',
     setup: async (path: string) => {
-      const target = join(await makeLinkedFileDirectory(), 'target.md');
+      const target = join(temporaryDirectory(afterThisTest, 'tau-linked-file-'), 'target.md');
 
       await writeFile(target, 'text\n');
       await symlink(target, path);
@@ -548,7 +537,7 @@ const refusedFileCases = [
     name: 'a hard-linked file',
     kind: 'a file with another hard link',
     setup: async (path: string) => {
-      const other = join(await makeLinkedFileDirectory(), 'other.md');
+      const other = join(temporaryDirectory(afterThisTest, 'tau-linked-file-'), 'other.md');
 
       await writeFile(other, 'text\n');
       await hardLink(other, path);
@@ -566,7 +555,7 @@ const refusedFileCases = [
 for (const verb of ['read', 'write'] as const) {
   for (const { name, setup } of acceptedFileCases) {
     it(`rejectLinkedFile for ${verb} accepts ${name}`, async () => {
-      const path = join(await makeLinkedFileDirectory(), 'file.md');
+      const path = join(temporaryDirectory(afterThisTest, 'tau-linked-file-'), 'file.md');
 
       await setup(path);
 
@@ -576,7 +565,7 @@ for (const verb of ['read', 'write'] as const) {
 
   for (const { name, kind, setup } of refusedFileCases) {
     it(`rejectLinkedFile for ${verb} refuses ${name}`, async () => {
-      const path = join(await makeLinkedFileDirectory(), 'file.md');
+      const path = join(temporaryDirectory(afterThisTest, 'tau-linked-file-'), 'file.md');
 
       await setup(path);
 
@@ -588,7 +577,7 @@ for (const verb of ['read', 'write'] as const) {
 }
 
 it('rejectLinkedFile rethrows an lstat error other than a missing file', async () => {
-  const parent = join(await makeLinkedFileDirectory(), 'plain.md');
+  const parent = join(temporaryDirectory(afterThisTest, 'tau-linked-file-'), 'plain.md');
 
   await writeFile(parent, 'text\n');
 
@@ -596,7 +585,7 @@ it('rejectLinkedFile rethrows an lstat error other than a missing file', async (
 });
 
 it('rejectLinkedEntries accepts a directory with a subdirectory and a plain file', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-linked-entries-'));
+  const directory = temporaryDirectory(afterThisTest, 'tau-linked-entries-');
 
   await mkdir(join(directory, 'notes'));
   await writeFile(join(directory, 'slice-1.md'), 'text\n');
@@ -605,8 +594,8 @@ it('rejectLinkedEntries accepts a directory with a subdirectory and a plain file
 });
 
 it('rejectLinkedEntries refuses an entry with another hard link and leaves the other file', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-linked-entries-'));
-  const outside = join(await mkdtemp(join(tmpdir(), 'tau-linked-outside-')), 'secret.md');
+  const directory = temporaryDirectory(afterThisTest, 'tau-linked-entries-');
+  const outside = join(temporaryDirectory(afterThisTest, 'tau-linked-outside-'), 'secret.md');
 
   await writeFile(outside, 'Not for Linear.\n');
   await hardLink(outside, join(directory, 'slice-1.md'));
@@ -616,7 +605,7 @@ it('rejectLinkedEntries refuses an entry with another hard link and leaves the o
 });
 
 it('rejectLinkedEntries refuses a symlinked entry', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-linked-entries-'));
+  const directory = temporaryDirectory(afterThisTest, 'tau-linked-entries-');
 
   await symlink(directory, join(directory, 'loop'));
 

@@ -1,18 +1,9 @@
-import {
-  copyFile,
-  mkdir,
-  mkdtemp,
-  readdir,
-  readFile,
-  rm,
-  symlink,
-  writeFile,
-} from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { copyFile, mkdir, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { listSavedLogs, readCheckRecord, recordPathFor, saveCheckRecord } from './checkRecord.js';
 import { decideReuse } from './reuseDecision.js';
 
@@ -30,15 +21,8 @@ const validRecord = {
   record: { version: 2, ...identity, passed: true },
 };
 
-const temporaryDirectory = async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-check-record-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
-
-  return directory;
-};
-
 it('reads the current record fixture and a record it saved', async () => {
-  const directory = await temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
   const logPath = join(directory, 'run.log');
 
   await saveCheckRecord(logPath, identity, true);
@@ -61,13 +45,13 @@ it('reads the current record fixture and a record it saved', async () => {
 });
 
 it('reports a missing record as missing', async () => {
-  const directory = await temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
 
   expect(await readCheckRecord(join(directory, 'none.json'))).toEqual({ status: 'missing' });
 });
 
 it('reports malformed records as malformed', async () => {
-  const directory = await temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
   const notJson = join(directory, 'not-json.json');
 
   await writeFile(notJson, '{ broken');
@@ -81,7 +65,7 @@ it('reports malformed records as malformed', async () => {
 });
 
 it('lists logs newest first and keeps a malformed record from hiding the others', async () => {
-  const directory = await temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
   const checks = join(directory, 'checks');
   await mkdir(checks);
 
@@ -114,13 +98,13 @@ it('lists logs newest first and keeps a malformed record from hiding the others'
 });
 
 it('lists no logs when the checks directory is missing', async () => {
-  const directory = await temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
 
   expect(await listSavedLogs(join(directory, 'checks'))).toEqual([]);
 });
 
 it('reports a record with an extra field as malformed', async () => {
-  const directory = await temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
   const path = join(directory, 'extra.json');
 
   await writeFile(path, JSON.stringify({ version: 2, ...identity, passed: true, extra: true }));
@@ -129,7 +113,7 @@ it('reports a record with an extra field as malformed', async () => {
 });
 
 it('throws a record read error that is not a missing file', async () => {
-  const directory = await temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
 
   await mkdir(join(directory, 'run.json'));
 
@@ -139,7 +123,7 @@ it('throws a record read error that is not a missing file', async () => {
 });
 
 it('throws when the checks path cannot be listed', async () => {
-  const directory = await temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
   const checks = join(directory, 'checks');
 
   await writeFile(checks, 'not a directory');
@@ -148,7 +132,7 @@ it('throws when the checks path cannot be listed', async () => {
 });
 
 it('throws when a log cannot be checked for existence', async () => {
-  const directory = await temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
 
   await writeFile(
     join(directory, 'loop.json'),
@@ -161,7 +145,7 @@ it('throws when a log cannot be checked for existence', async () => {
 });
 
 it('keeps a directory name that ends in .log out of the record path', async () => {
-  const directory = await temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
   const logDirectory = join(directory, 'checks.log');
   const logPath = join(logDirectory, 'run.log');
 
@@ -177,7 +161,7 @@ it('keeps a directory name that ends in .log out of the record path', async () =
 });
 
 it('keeps a directory name that ends in .json out of the log path', async () => {
-  const directory = await temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
   const checks = join(directory, 'checks.json');
 
   await mkdir(checks);
@@ -196,7 +180,7 @@ it.each([
   { name: 'an empty command', change: { argv: [] } },
   { name: 'an empty command word', change: { argv: ['pnpm', ''] } },
 ])('reports a record with $name as malformed', async ({ change }) => {
-  const directory = await temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
   const path = join(directory, 'empty.json');
 
   await writeFile(path, JSON.stringify({ version: 2, ...identity, passed: true, ...change }));
@@ -205,7 +189,7 @@ it.each([
 });
 
 it('reads a failing record as valid with passed false', async () => {
-  const directory = await temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
   const logPath = join(directory, 'run.log');
 
   await saveCheckRecord(logPath, identity, false);
@@ -221,7 +205,7 @@ it('reads a version 1 record as malformed so it is never reused', async () => {
 });
 
 it('reads a record with no base commit', async () => {
-  const directory = await temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
   const path = join(directory, 'null.json');
 
   await writeFile(path, JSON.stringify({ version: 2, ...identity, passed: true, base: null }));
@@ -233,7 +217,7 @@ it('reads a record with no base commit', async () => {
 });
 
 it('refuses to save a state without a fingerprint and writes no record', async () => {
-  const directory = await temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
   const logPath = join(directory, 'run.log');
 
   await expect(saveCheckRecord(logPath, { ...identity, fingerprint: null }, true)).rejects.toThrow(
@@ -244,7 +228,7 @@ it('refuses to save a state without a fingerprint and writes no record', async (
 });
 
 it('leaves no temporary file when the record cannot replace its path', async () => {
-  const directory = await temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
   const logPath = join(directory, 'run.log');
 
   await mkdir(recordPathFor(logPath));

@@ -1,13 +1,13 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget } from './capture.js';
 import type { DirectReviewTarget } from './capture.js';
 import { installFakeGit } from './fixtures/fakeGit.js';
@@ -219,8 +219,7 @@ it('fails the capture when Git cannot give the object format', async () => {
 });
 
 it('hashes the capture of a SHA-256 repository the way Git does', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'tau-sha256-'));
-  onTestFinished(() => rm(root, { recursive: true, force: true }));
+  const root = temporaryDirectory(onTestFinished, 'tau-sha256-');
 
   await git(root, 'init', '--quiet', '--object-format=sha256', '--initial-branch=main');
   await writeFile(join(root, 'a.txt'), 'one\n');

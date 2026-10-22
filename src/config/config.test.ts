@@ -1,9 +1,8 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { writeFileSync } from 'node:fs';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import {
   readTauConfig,
   readUserOnlyKey,
@@ -13,12 +12,8 @@ import {
 
 let directory: string;
 
-beforeEach(() => {
-  directory = mkdtempSync(join(tmpdir(), 'tau-config-'));
-});
-
-afterEach(() => {
-  rmSync(directory, { recursive: true, force: true });
+beforeEach(({ onTestFinished }) => {
+  directory = temporaryDirectory(onTestFinished, 'tau-config-');
 });
 
 const location = () => ({ cwd: directory, agentDirectory: directory, projectTrusted: false });

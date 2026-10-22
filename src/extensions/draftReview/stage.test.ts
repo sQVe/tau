@@ -1,11 +1,11 @@
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { stagedNames } from './reviewDecisions.js';
 import {
   parseReviewManifest,
@@ -23,8 +23,7 @@ const fixtureText = (name: string) => readFile(join(fixtures, name), 'utf8');
 
 const stagedFixture = async () => {
   const repository = await createTemporaryRepository(onTestFinished, 'tau-stage-repo-');
-  const data = await mkdtemp(join(tmpdir(), 'tau-stage-data-'));
-  onTestFinished(() => rm(data, { recursive: true, force: true }));
+  const data = temporaryDirectory(onTestFinished, 'tau-stage-data-');
   vi.stubEnv('TMPDIR', data);
 
   onTestFinished(() => {
@@ -237,7 +236,9 @@ it.each(['outside the temporary directory', 'without the prefix', 'inside a stag
     const review = await stageReview(repository, ['.tau/slices/a.md']);
 
     const directories: Record<string, () => Promise<string>> = {
+      // The directory sits under the repository, not the temporary directory.
       'outside the temporary directory': () => mkdtemp(join(repository, 'tau-draft-review-')),
+      // The directory sits under the data directory with a name the stage prefix does not match.
       'without the prefix': () => mkdtemp(join(data, 'precious-')),
       'inside a staging directory': async () => {
         const nested = join(review.stagingDirectory, 'tau-draft-review-nested');

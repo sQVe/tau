@@ -1,21 +1,11 @@
-import {
-  chmod,
-  copyFile,
-  cp,
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  symlink,
-  writeFile,
-} from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, copyFile, cp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { confirmContext, noUiContext } from '../../../tests/toolContext.js';
 import { isMissingFile } from '../../errors.js';
 import { createGhFake } from './fixtures/ghFake.js';
@@ -238,9 +228,8 @@ describe('post refusals', () => {
 
   it('posts nothing when the feedback directory becomes a symlink during the confirm', async () => {
     const { root, fake, read, post } = await setUp();
-    const outside = await mkdtemp(join(tmpdir(), 'tau-pr-feedback-outside-'));
+    const outside = temporaryDirectory(onTestFinished, 'tau-pr-feedback-outside-');
 
-    onTestFinished(() => rm(outside, { recursive: true, force: true }));
     fake.threads = [botThread(), personThread()];
 
     const details = await read();

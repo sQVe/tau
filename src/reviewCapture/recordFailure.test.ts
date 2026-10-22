@@ -1,9 +1,9 @@
-import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, readdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { recordFileName, writeCaptureRecord } from './record.js';
 
 const writeState = vi.hoisted(() => ({ failMidway: false, failBefore: false }));
@@ -38,13 +38,11 @@ const record = {
 } as const;
 
 const reviewDirectory = async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-record-failure-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-record-failure-');
 
   onTestFinished(() => {
     writeState.failMidway = false;
     writeState.failBefore = false;
-
-    return rm(directory, { recursive: true, force: true });
   });
 
   return directory;

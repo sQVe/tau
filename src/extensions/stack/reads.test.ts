@@ -1,9 +1,8 @@
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { withoutField } from '../../../tests/withoutField.js';
 import type { Repository } from '../../github/github.js';
 import { createStackFake } from './fixtures/stackFake.js';
@@ -142,9 +141,7 @@ it.each(malformedViews)('fails gh stack view output with $name', async ({ view }
 });
 
 it('reads a failed Git process as an output without an exit code', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-git-read-'));
-
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-git-read-');
 
   const output = await runGitRead(join(directory, 'missing'), ['status']);
 
