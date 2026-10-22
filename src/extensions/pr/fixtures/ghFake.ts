@@ -1,9 +1,11 @@
+import {
+  argumentAfter,
+  createExecFake,
+  failedResult,
+  succeededResult,
+} from '../../../../tests/execFake.js';
+import type { ExecCall } from '../../../../tests/execFake.js';
 import type { Exec } from '../../../command.js';
-
-interface FakeCall {
-  command: string;
-  commandArguments: string[];
-}
 
 interface FakeRepository {
   defaultBranch: string;
@@ -35,7 +37,7 @@ type CommandKey = 'auth status' | 'repo view' | 'pr list' | 'pr view' | 'api' | 
 
 export interface GhFake {
   exec: Exec;
-  calls: FakeCall[];
+  calls: ExecCall[];
   // Keyed by <host>/<owner>/<name>.
   repositories: Record<string, FakeRepository>;
   // Keyed by the base repository, <host>/<owner>/<name>.
@@ -44,14 +46,8 @@ export interface GhFake {
   // ssh fails for any other arguments.
   sshHostnames: Record<string, string>;
   overrideOutput: (key: CommandKey, stdout: string) => void;
-  failCommand: (key: CommandKey) => void;
+  failCommand: (key: CommandKey, stderr?: string) => void;
 }
-
-const argumentAfter = (commandArguments: readonly string[], flag: string) => {
-  const index = commandArguments.indexOf(flag);
-
-  return index === -1 ? '' : (commandArguments[index + 1] ?? '');
-};
 
 // gh pr list prints at most 30 pull requests unless --limit says otherwise.
 const defaultListLimit = 30;
@@ -75,24 +71,6 @@ const parentOutput = (parent: string | undefined) => {
 };
 
 export const createGhFake = (): GhFake => {
-  const calls: FakeCall[] = [];
-  const overrides = new Map<CommandKey, string>();
-  const failures = new Set<CommandKey>();
-
-  const fake: GhFake = {
-    exec: async () => ({ code: 1, killed: false, stdout: '', stderr: 'not set up' }),
-    calls,
-    repositories: {},
-    pullRequests: {},
-    sshHostnames: {},
-    overrideOutput: (key, stdout) => {
-      overrides.set(key, stdout);
-    },
-    failCommand: (key) => {
-      failures.add(key);
-    },
-  };
-
   const repositoryView = (commandArguments: readonly string[]) => {
     const name = commandArguments[2] ?? '';
     const repository = fake.repositories[name];
@@ -109,9 +87,9 @@ export const createGhFake = (): GhFake => {
   };
 
   const pullRequestList = (commandArguments: readonly string[]) => {
-    const repository = argumentAfter(commandArguments, '--repo');
+    const repository = argumentAfter(commandArguments, '--repo') ?? '';
     const head = argumentAfter(commandArguments, '--head');
-    const limit = Number(argumentAfter(commandArguments, '--limit') || defaultListLimit);
+    const limit = Number(argumentAfter(commandArguments, '--limit') ?? defaultListLimit);
     const matching = (fake.pullRequests[repository] ?? []).filter((pr) => pr.headBranch === head);
     const listed = matching.slice(0, limit);
 
@@ -130,7 +108,7 @@ export const createGhFake = (): GhFake => {
   };
 
   const pullRequestView = (commandArguments: readonly string[]) => {
-    const repository = argumentAfter(commandArguments, '--repo');
+    const repository = argumentAfter(commandArguments, '--repo') ?? '';
     const number = Number(commandArguments[2]);
     const pr = (fake.pullRequests[repository] ?? []).find((listed) => listed.number === number);
 
@@ -208,30 +186,40 @@ export const createGhFake = (): GhFake => {
       : { code: 0, killed: false, stdout: `user git\nhostname ${hostname}\nport 22\n`, stderr: '' };
   };
 
-  fake.exec = async (command, commandArguments) => {
-    if (command === 'ssh') {
-      return sshConfig(commandArguments);
-    }
-
-    calls.push({ command, commandArguments });
-
+  const keyOf = (command: string, commandArguments: readonly string[]) => {
     const baseKey = commandKeys[commandArguments.slice(0, 2).join(' ')];
     const readsCheckSuites = commandArguments[3]?.endsWith('/check-suites') === true;
-    const key = baseKey === 'api' && readsCheckSuites ? 'check-suites' : baseKey;
 
-    if (command !== 'gh' || key === undefined) {
-      return { code: 1, killed: false, stdout: '', stderr: `unexpected ${command} call` };
+    if (command !== 'gh') {
+      return undefined;
     }
 
-    if (failures.has(key)) {
-      return { code: 1, killed: false, stdout: '', stderr: `${key} failed` };
-    }
+    return baseKey === 'api' && readsCheckSuites ? 'check-suites' : baseKey;
+  };
 
-    const stdout = overrides.get(key) ?? output(key, commandArguments);
+  const handlerFor = (key: CommandKey) => (commandArguments: readonly string[]) => {
+    const stdout = output(key, commandArguments);
 
     return stdout === undefined
-      ? { code: 1, killed: false, stdout: '', stderr: 'Could not resolve to a Repository' }
-      : { code: 0, killed: false, stdout, stderr: '' };
+      ? failedResult('Could not resolve to a Repository')
+      : succeededResult(stdout);
+  };
+
+  const shared = createExecFake<CommandKey>({
+    keyOf,
+    handlerFor,
+    failureStderr: (key) => `${key} failed`,
+  });
+
+  const fake: GhFake = {
+    calls: shared.calls,
+    repositories: {},
+    pullRequests: {},
+    sshHostnames: {},
+    overrideOutput: shared.overrideOutput,
+    failCommand: shared.failCommand,
+    exec: async (...callArguments: Parameters<Exec>) =>
+      callArguments[0] === 'ssh' ? sshConfig(callArguments[1]) : shared.exec(...callArguments),
   };
 
   return fake;

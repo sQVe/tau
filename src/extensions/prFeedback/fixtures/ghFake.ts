@@ -1,3 +1,5 @@
+import { createExecFake, failedResult, succeededResult } from '../../../../tests/execFake.js';
+import type { ExecCall, ExecResult } from '../../../../tests/execFake.js';
 import type { Exec } from '../../../command.js';
 
 interface FakeAuthor {
@@ -46,12 +48,6 @@ export interface FakeCheck {
 // means Pi stopped gh after it printed the log.
 type FakeJobLog = { log: string; killed?: boolean } | { code: number; stderr: string };
 
-interface FakeCall {
-  command: string;
-  commandArguments: string[];
-  signal: AbortSignal | undefined;
-}
-
 type ReadKey = 'user' | 'pr view' | 'pr checks' | 'graphql' | 'reviews' | 'comments';
 
 type WriteKey = 'reply' | 'resolve' | 'issue comment';
@@ -65,7 +61,7 @@ type FakeWrite =
 
 export interface GhFake {
   exec: Exec;
-  calls: FakeCall[];
+  calls: ExecCall[];
   viewer: string;
   pullRequest: FakePullRequest | undefined;
   // Each gh pr view moves the head to the next SHA here first, as a push between reads does.
@@ -81,7 +77,7 @@ export interface GhFake {
   checksKilled: boolean;
   jobLogs: Record<string, FakeJobLog>;
   overrideOutput: (key: CommandKey, stdout: string) => void;
-  failCommand: (key: CommandKey) => void;
+  failCommand: (key: CommandKey, stderr?: string) => void;
   failWrite: (number: number) => void;
   loseWriteResponse: (number: number) => void;
 }
@@ -153,41 +149,10 @@ const isWriteKey = (key: CommandKey): key is WriteKey =>
   key === 'reply' || key === 'resolve' || key === 'issue comment';
 
 export const createGhFake = (): GhFake => {
-  const calls: FakeCall[] = [];
-  const overrides = new Map<CommandKey, string>();
-  const failures = new Set<CommandKey>();
   const failingWrites = new Set<number>();
   const lostResponses = new Set<number>();
   let writeAttempts = 0;
   let nextCommentId = 1000;
-
-  const fake: GhFake = {
-    exec: async () => ({ code: 1, killed: false, stdout: '', stderr: 'not set up' }),
-    calls,
-    viewer: 'sqve',
-    pullRequest: { number: 7, state: 'OPEN', author: 'sqve', headRefOid: 'abc123' },
-    nextHeads: [],
-    threads: [],
-    reviews: [],
-    comments: [],
-    writes: [],
-    checks: [],
-    checksExitCode: 0,
-    checksKilled: false,
-    jobLogs: {},
-    overrideOutput: (key, stdout) => {
-      overrides.set(key, stdout);
-    },
-    failCommand: (key) => {
-      failures.add(key);
-    },
-    failWrite: (number) => {
-      failingWrites.add(number);
-    },
-    loseWriteResponse: (number) => {
-      lostResponses.add(number);
-    },
-  };
 
   const viewerAuthor = () => ({ login: fake.viewer, bot: false });
 
@@ -334,38 +299,16 @@ export const createGhFake = (): GhFake => {
     return { code: found.code, killed: false, stdout: '', stderr: found.stderr };
   };
 
-  // A write that prints overridden output still takes effect, as when gh prints something odd.
-  const respond = (key: Exclude<CommandKey, 'run view'>, commandArguments: readonly string[]) => {
-    const value = isWriteKey(key) ? writers[key](commandArguments) : responses[key]();
+  const respond = (key: Exclude<CommandKey, 'run view'>, commandArguments: readonly string[]) =>
+    JSON.stringify(isWriteKey(key) ? writers[key](commandArguments) : responses[key]());
 
-    return overrides.get(key) ?? JSON.stringify(value);
-  };
-
-  const failsNow = (key: CommandKey) => {
-    if (!isWriteKey(key)) {
-      return failures.has(key);
+  const answer = (key: Exclude<CommandKey, 'run view'>, commandArguments: readonly string[]) => {
+    if (isWriteKey(key)) {
+      writeAttempts += 1;
     }
 
-    writeAttempts += 1;
-
-    return failures.has(key) || failingWrites.has(writeAttempts);
-  };
-
-  fake.exec = async (command, commandArguments, options) => {
-    calls.push({ command, commandArguments, signal: options?.signal });
-
-    const key = command === 'gh' ? commandKey(commandArguments) : undefined;
-
-    if (key === undefined) {
-      return { code: 1, killed: false, stdout: '', stderr: `unknown command: ${command}` };
-    }
-
-    if (failsNow(key)) {
-      return { code: 1, killed: false, stdout: '', stderr: 'HTTP 502: Bad Gateway' };
-    }
-
-    if (key === 'run view') {
-      return jobLog(commandArguments);
+    if (isWriteKey(key) && failingWrites.has(writeAttempts)) {
+      return failedResult('HTTP 502: Bad Gateway');
     }
 
     try {
@@ -380,10 +323,46 @@ export const createGhFake = (): GhFake => {
         return { code: fake.checksExitCode, killed: fake.checksKilled, stdout, stderr: '' };
       }
 
-      return { code: 0, killed: false, stdout, stderr: '' };
+      return succeededResult(stdout);
     } catch (error) {
-      return { code: 1, killed: false, stdout: '', stderr: (error as Error).message };
+      return failedResult((error as Error).message);
     }
+  };
+
+  const handlerFor =
+    (key: CommandKey) =>
+    (commandArguments: readonly string[]): ExecResult =>
+      key === 'run view' ? jobLog(commandArguments) : answer(key, commandArguments);
+
+  const shared = createExecFake<CommandKey>({
+    keyOf: (command, commandArguments) =>
+      command === 'gh' ? commandKey(commandArguments) : undefined,
+    handlerFor,
+    failureStderr: () => 'HTTP 502: Bad Gateway',
+  });
+
+  const fake: GhFake = {
+    exec: shared.exec,
+    calls: shared.calls,
+    viewer: 'sqve',
+    pullRequest: { number: 7, state: 'OPEN', author: 'sqve', headRefOid: 'abc123' },
+    nextHeads: [],
+    threads: [],
+    reviews: [],
+    comments: [],
+    writes: [],
+    checks: [],
+    checksExitCode: 0,
+    checksKilled: false,
+    jobLogs: {},
+    overrideOutput: shared.overrideOutput,
+    failCommand: shared.failCommand,
+    failWrite: (number) => {
+      failingWrites.add(number);
+    },
+    loseWriteResponse: (number) => {
+      lostResponses.add(number);
+    },
   };
 
   return fake;

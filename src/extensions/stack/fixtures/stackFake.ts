@@ -1,6 +1,11 @@
+import {
+  argumentAfter,
+  createExecFake,
+  failedResult,
+  succeededResult,
+} from '../../../../tests/execFake.js';
+import type { ExecCall, ExecHandler } from '../../../../tests/execFake.js';
 import type { Exec } from '../../../command.js';
-
-type ExecResult = Awaited<ReturnType<Exec>>;
 
 export interface FakePull {
   number: number;
@@ -13,8 +18,7 @@ export interface FakePull {
 
 export interface StackFake {
   exec: Exec;
-  // Each gh call, as the arguments joined by spaces.
-  calls: string[];
+  calls: ExecCall[];
   defaultBranch: string;
   // The pull requests of the one repository the fake serves, github.com/sQVe/tau.
   pulls: FakePull[];
@@ -23,44 +27,38 @@ export interface StackFake {
   // The stacks API answers 404 for every pull request.
   stackedPullRequestsOff: boolean;
   stackView: { code: number; stdout: string; stderr: string };
-  // Replaces the answer of the first call whose arguments start with prefix.
-  override: (prefix: string, result: Partial<ExecResult>) => void;
+  // The keys are `stack view`, `pr list --head`, `pr list --base`, `pr view <number>`, `api`, and `repo view`.
+  overrideOutput: (key: string, stdout: string) => void;
+  failCommand: (key: string, stderr?: string) => void;
 }
 
-const ok = (stdout: string): ExecResult => ({ code: 0, killed: false, stdout, stderr: '' });
-
-const failure = (stderr: string, code = 1): ExecResult => ({
-  code,
-  killed: false,
-  stdout: '',
-  stderr,
-});
-
-const argumentAfter = (commandArguments: readonly string[], flag: string) => {
-  const index = commandArguments.indexOf(flag);
-
-  return index === -1 ? undefined : commandArguments[index + 1];
-};
+export const joinedCalls = (fake: StackFake): string[] =>
+  fake.calls.map((call) => call.commandArguments.join(' '));
 
 const repositoryUrl = 'https://github.com/sQVe/tau';
 
+const stackKeyOf = (command: string, commandArguments: readonly string[]): string | undefined => {
+  const [first, second] = commandArguments;
+  const subcommand = `${first} ${second}`;
+
+  if (command !== 'gh') {
+    return undefined;
+  }
+
+  if (subcommand === 'pr list') {
+    const flag = ['--head', '--base'].find((candidate) => commandArguments.includes(candidate));
+
+    return flag === undefined ? subcommand : `${subcommand} ${flag}`;
+  }
+
+  if (subcommand === 'pr view') {
+    return `${subcommand} ${commandArguments[2]}`;
+  }
+
+  return first === 'api' ? 'api' : subcommand;
+};
+
 export const createStackFake = (): StackFake => {
-  const calls: string[] = [];
-  const overrides = new Map<string, Partial<ExecResult>>();
-
-  const fake: StackFake = {
-    exec: async () => failure('not set up'),
-    calls,
-    defaultBranch: 'main',
-    pulls: [],
-    stacks: {},
-    stackedPullRequestsOff: false,
-    stackView: { code: 2, stdout: '', stderr: 'no stack' },
-    override: (prefix, result) => {
-      overrides.set(prefix, result);
-    },
-  };
-
   const openPulls = () => fake.pulls.filter((pull) => (pull.state ?? 'OPEN') === 'OPEN');
 
   const listed = (commandArguments: readonly string[]) => {
@@ -73,7 +71,7 @@ export const createStackFake = (): StackFake => {
         pull.baseRefName === (base ?? pull.baseRefName),
     );
 
-    return ok(
+    return succeededResult(
       JSON.stringify(
         matching.map((pull) => ({
           number: pull.number,
@@ -91,10 +89,10 @@ export const createStackFake = (): StackFake => {
     const pull = fake.pulls.find((candidate) => candidate.number === Number(commandArguments[2]));
 
     if (pull === undefined) {
-      return failure('Could not resolve to a PullRequest');
+      return failedResult('Could not resolve to a PullRequest');
     }
 
-    return ok(
+    return succeededResult(
       JSON.stringify({
         number: pull.number,
         headRefName: pull.headBranch,
@@ -106,7 +104,7 @@ export const createStackFake = (): StackFake => {
 
   const stacksApi = (commandArguments: readonly string[]) => {
     if (fake.stackedPullRequestsOff) {
-      return failure('gh: Not Found (HTTP 404)');
+      return failedResult('gh: Not Found (HTTP 404)');
     }
 
     const number = Number(/pull_request=(\d+)/u.exec(commandArguments[3] ?? '')?.[1]);
@@ -114,7 +112,7 @@ export const createStackFake = (): StackFake => {
     const pullRequests = fake.stacks[number] ?? [];
 
     if (pullRequests.length === 0) {
-      return ok('[]');
+      return succeededResult('[]');
     }
 
     const stack = {
@@ -122,56 +120,51 @@ export const createStackFake = (): StackFake => {
       pull_requests: pullRequests.map((pullRequest) => ({ number: pullRequest })),
     };
 
-    return ok(JSON.stringify([stack]));
+    return succeededResult(JSON.stringify([stack]));
   };
 
-  const answer = (commandArguments: readonly string[]): ExecResult => {
-    const [first, second] = commandArguments;
-    const command = `${first} ${second}`;
+  const repositoryView = () => {
+    const view = { isFork: false, parent: null, defaultBranchRef: { name: fake.defaultBranch } };
 
-    if (command === 'stack view') {
-      return { ...fake.stackView, killed: false };
-    }
-
-    if (command === 'pr list') {
-      return listed(commandArguments);
-    }
-
-    if (command === 'pr view') {
-      return viewed(commandArguments);
-    }
-
-    if (first === 'api') {
-      return stacksApi(commandArguments);
-    }
-
-    if (command === 'repo view') {
-      const view = { isFork: false, parent: null, defaultBranchRef: { name: fake.defaultBranch } };
-
-      return ok(JSON.stringify(view));
-    }
-
-    return failure(`unexpected gh ${commandArguments.join(' ')}`);
+    return succeededResult(JSON.stringify(view));
   };
 
-  fake.exec = async (command, commandArguments, options) => {
-    if (command === 'ssh') {
-      return failure('ssh: Could not resolve hostname', 255);
-    }
+  const handlers: Record<string, ExecHandler> = {
+    'stack view': () => ({ ...fake.stackView, killed: false }),
+    'pr list --head': listed,
+    'pr list --base': listed,
+    'pr list': listed,
+    api: stacksApi,
+    'repo view': repositoryView,
+  };
 
-    const joined = commandArguments.join(' ');
-
-    calls.push(joined);
+  const handlerFor = (key: string): ExecHandler | undefined => {
+    const handler = key.startsWith('pr view ') ? viewed : handlers[key];
 
     // Pi's exec kills a command whose signal is already aborted and returns no output.
-    if (options?.signal?.aborted === true) {
-      return { code: 1, killed: true, stdout: '', stderr: '' };
-    }
+    return handler === undefined
+      ? undefined
+      : (commandArguments, options) =>
+          options?.signal?.aborted === true
+            ? { code: 1, killed: true, stdout: '', stderr: '' }
+            : handler(commandArguments, options);
+  };
 
-    const replaced = [...overrides].find(([prefix]) => joined.startsWith(prefix));
-    const result = command === 'gh' ? answer(commandArguments) : failure(`unexpected ${command}`);
+  const shared = createExecFake({ keyOf: stackKeyOf, handlerFor });
 
-    return replaced === undefined ? result : { ...result, ...replaced[1] };
+  const fake: StackFake = {
+    calls: shared.calls,
+    exec: async (...callArguments: Parameters<Exec>) =>
+      callArguments[0] === 'ssh'
+        ? failedResult('ssh: Could not resolve hostname', 255)
+        : shared.exec(...callArguments),
+    defaultBranch: 'main',
+    pulls: [],
+    stacks: {},
+    stackedPullRequestsOff: false,
+    stackView: { code: 2, stdout: '', stderr: 'no stack' },
+    overrideOutput: shared.overrideOutput,
+    failCommand: shared.failCommand,
   };
 
   return fake;

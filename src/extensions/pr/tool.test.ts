@@ -870,6 +870,7 @@ it('names gh pr view when it prints output that is not JSON', async () => {
   const { fake, run } = await setUp();
   const directory = await prepareBody(run);
 
+  holdPullRequests(fake, 'github.com/sQVe/tau', [pullRequest()]);
   fake.overrideOutput('pr view', '{"url":');
 
   await expect(run({ ...approved, directory })).rejects.toThrow(
@@ -881,6 +882,7 @@ it('names gh pr view when its JSON lacks a field', async () => {
   const { fake, run } = await setUp();
   const directory = await prepareBody(run);
 
+  holdPullRequests(fake, 'github.com/sQVe/tau', [pullRequest()]);
   fake.overrideOutput('pr view', JSON.stringify({ url: 'https://github.com/sQVe/tau/pull/7' }));
 
   await expect(run({ ...approved, directory })).rejects.toThrow(

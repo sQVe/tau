@@ -13,10 +13,14 @@ const unexpected: unknown = expect.stringContaining('unexpected output');
 
 const repository: Repository = { host: 'github.com', owner: 'sQVe', name: 'tau' };
 
-const runtimeFor = (stdout: string) => {
+const runtimeFor = (key: 'pr list --head' | 'pr list --base' | 'stack view', stdout: string) => {
   const fake = createStackFake();
 
-  fake.override('', { code: 0, stdout });
+  if (key === 'stack view') {
+    fake.stackView = { code: 0, stdout, stderr: '' };
+  } else {
+    fake.overrideOutput(key, stdout);
+  }
 
   return { exec: fake.exec, cwd: process.cwd(), signal: undefined };
 };
@@ -42,13 +46,17 @@ const malformedHeadEntries = [
 ];
 
 it('reads a well-formed head pull request list', async () => {
-  const read = await readHeadPulls(runtimeFor(JSON.stringify([headEntry])), repository, 'feature');
+  const read = await readHeadPulls(
+    runtimeFor('pr list --head', JSON.stringify([headEntry])),
+    repository,
+    'feature',
+  );
 
   expect(read).toEqual({ ok: true, value: [headEntry] });
 });
 
 it.each(malformedHeadEntries)('fails a head list entry with $name', async ({ entry }) => {
-  const runtime = runtimeFor(JSON.stringify([entry]));
+  const runtime = runtimeFor('pr list --head', JSON.stringify([entry]));
 
   expect(await readHeadPulls(runtime, repository, 'feature')).toMatchObject({
     ok: false,
@@ -69,7 +77,7 @@ const malformedBasedEntries = [
 ];
 
 it('reads a well-formed based-on pull request list', async () => {
-  const runtime = runtimeFor(JSON.stringify([basedEntry]));
+  const runtime = runtimeFor('pr list --base', JSON.stringify([basedEntry]));
 
   expect(await readBasedOnPulls(runtime, repository, 'feature')).toEqual({
     ok: true,
@@ -78,7 +86,7 @@ it('reads a well-formed based-on pull request list', async () => {
 });
 
 it.each(malformedBasedEntries)('fails a based-on list entry with $name', async ({ entry }) => {
-  const runtime = runtimeFor(JSON.stringify([entry]));
+  const runtime = runtimeFor('pr list --base', JSON.stringify([entry]));
 
   expect(await readBasedOnPulls(runtime, repository, 'feature')).toMatchObject({
     ok: false,
@@ -119,13 +127,13 @@ const malformedViews = [
 ];
 
 it('reads a well-formed stack view', async () => {
-  const runtime = runtimeFor(JSON.stringify(viewOf([viewLayer])));
+  const runtime = runtimeFor('stack view', JSON.stringify(viewOf([viewLayer])));
 
   expect(await readStackViewFacts(runtime)).toMatchObject({ exitCode: 0, view: { ok: true } });
 });
 
 it.each(malformedViews)('fails gh stack view output with $name', async ({ view }) => {
-  const read = await readStackViewFacts(runtimeFor(JSON.stringify(view)));
+  const read = await readStackViewFacts(runtimeFor('stack view', JSON.stringify(view)));
 
   expect(read).toMatchObject({
     exitCode: 0,

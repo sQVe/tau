@@ -5,7 +5,7 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { noUiContext } from '../../../tests/toolContext.js';
 import { createStackCheckout, git } from './fixtures/checkout.js';
-import { createStackFake } from './fixtures/stackFake.js';
+import { createStackFake, joinedCalls } from './fixtures/stackFake.js';
 import type { FakePull } from './fixtures/stackFake.js';
 import { createStackTool } from './tool.js';
 import type { StackInput } from './tool.js';
@@ -80,8 +80,8 @@ it('decides tracked from gh stack view and reads only the pull requests based on
     basedOn: [],
   });
 
-  expect(stackViewCalls(fake.calls)).toHaveLength(1);
-  expect(fake.calls.filter((call) => call.startsWith('pr list'))).toHaveLength(1);
+  expect(stackViewCalls(joinedCalls(fake))).toHaveLength(1);
+  expect(joinedCalls(fake).filter((call) => call.startsWith('pr list'))).toHaveLength(1);
 });
 
 it('decides tracked from the gh stack 0.2.1 view output, which has no head and no pr', async () => {
@@ -121,7 +121,7 @@ it.each([
   const details = await run({ action: 'check' });
 
   expect(details).toMatchObject({ result: 'unknown', reason: containing(reason) });
-  expect(fake.calls).toEqual(['stack view --json']);
+  expect(joinedCalls(fake)).toEqual(['stack view --json']);
 });
 
 it('decides unknown, without running gh stack view, while a stack rebase is paused', async () => {
@@ -137,7 +137,7 @@ it('decides unknown, without running gh stack view, while a stack rebase is paus
     evidence: { current: { rebasePaused: true } },
   });
 
-  expect(stackViewCalls(fake.calls)).toEqual([]);
+  expect(stackViewCalls(joinedCalls(fake))).toEqual([]);
 });
 
 it('decides unknown for a detached HEAD', async () => {
@@ -154,7 +154,7 @@ it('decides unknown for a detached HEAD', async () => {
     evidence: { current: { rebasePaused: false }, resolved: null, github: null },
   });
 
-  expect(fake.calls).toEqual(['stack view --json']);
+  expect(joinedCalls(fake)).toEqual(['stack view --json']);
 });
 
 it('decides standalone when GitHub shows no stack and nothing around the pull request', async () => {
@@ -253,18 +253,18 @@ it('decides unknown for several open pull requests from the push repository', as
 it.each([
   {
     name: 'the head pull request list',
-    prefix: 'pr list --repo github.com/sQVe/tau --head feature',
+    key: 'pr list --head',
   },
   {
     name: 'the based-on pull request list',
-    prefix: 'pr list --repo github.com/sQVe/tau --base feature',
+    key: 'pr list --base',
   },
-  { name: 'the stacks API', prefix: 'api' },
-])('decides unknown when $name fails', async ({ prefix }) => {
+  { name: 'the stacks API', key: 'api' },
+])('decides unknown when $name fails', async ({ key }) => {
   const { fake, run } = await setUp();
 
   fake.pulls = [pull()];
-  fake.override(prefix, { code: 1, stderr: 'HTTP 500' });
+  fake.failCommand(key, 'HTTP 500');
 
   const details = await run({ action: 'check' });
 
@@ -274,7 +274,7 @@ it.each([
 it('decides unknown when a pull request list is malformed', async () => {
   const { fake, run } = await setUp();
 
-  fake.override('pr list --repo github.com/sQVe/tau --head', { stdout: '{"oops":1}' });
+  fake.overrideOutput('pr list --head', '{"oops":1}');
 
   const details = await run({ action: 'check' });
 
@@ -288,7 +288,7 @@ it('decides unknown when the stacks API prints something that is not a list of n
   const { fake, run } = await setUp();
 
   fake.pulls = [pull()];
-  fake.override('api', { stdout: '' });
+  fake.overrideOutput('api', '');
 
   expect(await run({ action: 'check' })).toMatchObject({ result: 'unknown' });
 });
@@ -302,7 +302,7 @@ it.each([
   const { fake, run } = await setUp();
 
   fake.pulls = [pull()];
-  fake.override('api', { stdout });
+  fake.overrideOutput('api', stdout);
 
   expect(await run({ action: 'check' })).toMatchObject({
     result: 'unknown',
@@ -335,7 +335,7 @@ it('checks another branch with the GitHub reads only', async () => {
   const other = await run({ action: 'check', branch: 'other' });
 
   expect(other).toMatchObject({ branch: 'other' });
-  expect(stackViewCalls(fake.calls)).toHaveLength(1);
+  expect(stackViewCalls(joinedCalls(fake))).toHaveLength(1);
 });
 
 it('does not run gh stack view for a branch that is not checked out, even while a rebase is paused', async () => {
@@ -349,7 +349,7 @@ it('does not run gh stack view for a branch that is not checked out, even while 
   const details = await run({ action: 'check', branch: 'parent' });
 
   expect(details).toMatchObject({ result: 'standalone', branch: 'parent' });
-  expect(stackViewCalls(fake.calls)).toEqual([]);
+  expect(stackViewCalls(joinedCalls(fake))).toEqual([]);
 });
 
 it('decides untracked for a parent that another open pull request is based on', async () => {
@@ -383,7 +383,7 @@ it('runs no gh command that writes', async () => {
   await run({ action: 'check' });
   await run({ action: 'check', branch: 'feature' });
 
-  const writes = fake.calls.filter((call) =>
+  const writes = joinedCalls(fake).filter((call) =>
     /^stack (add|init|rebase|push|sync|link|checkout)/u.test(call),
   );
 
@@ -426,10 +426,7 @@ it('decides unknown for a tracked branch when the based-on read fails', async ()
     stderr: '',
   };
 
-  fake.override('pr list --repo github.com/sQVe/tau --base feature', {
-    code: 1,
-    stderr: 'HTTP 500',
-  });
+  fake.failCommand('pr list --base', 'HTTP 500');
 
   expect(await run({ action: 'check' })).toMatchObject({
     result: 'unknown',
@@ -449,8 +446,8 @@ it('reads GitHub for the named branch, not for a local branch below it', async (
   const details = await run({ action: 'check', branch: 'parent' });
 
   expect(details).toMatchObject({ branch: 'parent', result: 'untracked' });
-  expect(fake.calls.some((call) => call.includes('--head parent/child'))).toBe(false);
-  expect(fake.calls.some((call) => call.includes('--head parent '))).toBe(true);
+  expect(joinedCalls(fake).some((call) => call.includes('--head parent/child'))).toBe(false);
+  expect(joinedCalls(fake).some((call) => call.includes('--head parent '))).toBe(true);
 });
 
 it('refuses an empty remote name', async () => {
@@ -511,10 +508,7 @@ it('decides unknown, with the failed read as evidence, when a tracked branch can
     stderr: '',
   };
 
-  fake.override('pr list --repo github.com/sQVe/tau --base feature', {
-    code: 1,
-    stderr: 'HTTP 500',
-  });
+  fake.failCommand('pr list --base', 'HTTP 500');
 
   const details = await run({ action: 'check' });
 
@@ -576,7 +570,7 @@ it('decides unknown when the pull request list may have been cut off at its limi
   const { fake, run } = await setUp();
 
   fake.pulls = [pull()];
-  fake.override('pr list --repo github.com/sQVe/tau --base feature', { stdout: basedOnList(100) });
+  fake.overrideOutput('pr list --base', basedOnList(100));
 
   const details = await run({ action: 'check' });
 
@@ -590,7 +584,7 @@ it('reads a pull request list one short of its limit as complete', async () => {
   const { fake, run } = await setUp();
 
   fake.pulls = [pull()];
-  fake.override('pr list --repo github.com/sQVe/tau --base feature', { stdout: basedOnList(99) });
+  fake.overrideOutput('pr list --base', basedOnList(99));
 
   const details = await run({ action: 'check' });
 
