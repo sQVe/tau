@@ -119,9 +119,13 @@ export const parseReviewManifest = (path: string, content: string): ReviewManife
     return { ...manifest, stagedPaths: manifest.paths };
   }
 
-  if (manifest.stagedPaths.length !== manifest.paths.length) {
+  // A staged path paired with the wrong file would write one draft's text over another.
+  const expected = stagedNames(manifest.paths);
+  const matches = expected.every((name, index) => manifest.stagedPaths[index] === name);
+
+  if (!matches || manifest.stagedPaths.length !== expected.length) {
     throw new Error(
-      `Malformed review record ${path}: stagedPaths must name one staged path for each path.`,
+      `Malformed review record ${path}: stagedPaths must hold the staged name of each path.`,
     );
   }
 
@@ -356,12 +360,6 @@ export const readReview = async (cwd: string, directory: string): Promise<Review
 
   if (paths.some(climbsOut)) {
     throw new Error(`draft_review record names a path outside .tau: ${manifestPath}`);
-  }
-
-  if (stagedPaths.some(climbsOut)) {
-    throw new Error(
-      `draft_review record names a staged path outside its staging directory: ${manifestPath}`,
-    );
   }
 
   const tauDirectory = await realpath(join(root, '.tau'));

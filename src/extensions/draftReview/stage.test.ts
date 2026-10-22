@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { stagedNames } from './reviewDecisions.js';
 import {
   parseReviewManifest,
   readReview,
@@ -49,9 +50,10 @@ it.each([
   const { repository } = await stagedFixture();
   const review = await stageReview(repository, ['.tau/slices/a.md']);
   const manifestPath = join(review.recordDirectory, 'review.json');
-  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { paths: string[] };
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>;
 
-  manifest.paths = [climbing];
+  manifest['paths'] = [climbing];
+  manifest['stagedPaths'] = stagedNames([climbing]);
   await writeFile(manifestPath, JSON.stringify(manifest));
 
   await expect(readReview(repository, review.recordDirectory)).rejects.toThrow(
@@ -69,12 +71,17 @@ it('reads a version 3 manifest with its staged paths', async () => {
   });
 });
 
-it('refuses a version 3 manifest without a staged path for each path', () => {
+it.each([
+  { label: 'a missing staged path', stagedPaths: ['01-s/1-a.md'] },
+  { label: 'swapped staged paths', stagedPaths: ['01-s/2-b.md', '01-s/1-a.md'] },
+  { label: 'a duplicated staged path', stagedPaths: ['01-s/1-a.md', '01-s/1-a.md'] },
+  { label: 'an extra staged path', stagedPaths: ['01-s/1-a.md', '01-s/2-b.md', '02-c.md'] },
+])('refuses a version 3 manifest with $label', ({ stagedPaths }) => {
   const text = JSON.stringify({
     version: 3,
     stagingDirectory: '/tmp/x',
-    paths: ['a.md', 'b.md'],
-    stagedPaths: ['01-a.md'],
+    paths: ['s/a.md', 's/b.md'],
+    stagedPaths,
     placement: null,
   });
 
@@ -204,27 +211,12 @@ it('refuses a safe path list that holds one path climbing out of .tau', async ()
   const { repository } = await stagedFixture();
   const review = await stageReview(repository, ['.tau/slices/a.md']);
 
-  await tamperManifest(review, {
-    paths: ['slices/a.md', '../outside.md'],
-    stagedPaths: ['01-slices/1-a.md', '02-outside.md'],
-  });
+  const paths = ['slices/a.md', '../outside.md'];
+
+  await tamperManifest(review, { paths, stagedPaths: stagedNames(paths) });
 
   await expect(readReview(repository, review.recordDirectory)).rejects.toThrow(
     /names a path outside \.tau/,
-  );
-});
-
-it('refuses a staged path that climbs out of the staging directory', async () => {
-  const { repository } = await stagedFixture();
-  const review = await stageReview(repository, ['.tau/slices/a.md']);
-
-  await tamperManifest(review, {
-    paths: ['slices/a.md', 'slices/b.md'],
-    stagedPaths: ['01-slices/1-a.md', '../outside.md'],
-  });
-
-  await expect(readReview(repository, review.recordDirectory)).rejects.toThrow(
-    /staged path outside its staging directory/,
   );
 });
 
@@ -233,7 +225,7 @@ it('reads a manifest whose paths wander but stay inside .tau', async () => {
   const review = await stageReview(repository, ['.tau/slices/a.md']);
   const paths = ['slices/a.md', 'a/b/../../c.md', 'a//./b.md'];
 
-  await tamperManifest(review, { paths, stagedPaths: paths });
+  await tamperManifest(review, { paths, stagedPaths: stagedNames(paths) });
 
   expect((await readReview(repository, review.recordDirectory)).paths).toEqual(paths);
 });
