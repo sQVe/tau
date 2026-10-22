@@ -1,11 +1,11 @@
 import type { PathLike } from 'node:fs';
-import { chmod, mkdir, mkdtemp, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, mkdir, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import {
   createDiagnosticsDirectory,
   finishDiagnostics,
@@ -36,8 +36,7 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 const retentionMilliseconds = 7 * 24 * 60 * 60 * 1000;
 
 const temporaryRoot = async (onTestFinished: TestContext['onTestFinished']) => {
-  const root = await mkdtemp(join(tmpdir(), 'tau-retention-'));
-  onTestFinished(() => rm(root, { recursive: true, force: true }));
+  const root = temporaryDirectory(onTestFinished, 'tau-retention-');
 
   return root;
 };
@@ -53,13 +52,11 @@ const completedRun = async (root: string, name: string, finishedAt: number) => {
 };
 
 const stubAgentDirectory = async (onTestFinished: TestContext['onTestFinished']) => {
-  const agentDirectory = await mkdtemp(join(tmpdir(), 'tau-retention-root-'));
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-retention-root-');
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
 
   onTestFinished(async () => {
     vi.unstubAllEnvs();
-
-    await rm(agentDirectory, { recursive: true, force: true });
   });
 
   return agentDirectory;
@@ -68,8 +65,7 @@ const stubAgentDirectory = async (onTestFinished: TestContext['onTestFinished'])
 it('retains recent completed runs while pruning old and excess diagnostics without touching active runs', async ({
   onTestFinished,
 }) => {
-  const root = await mkdtemp(join(tmpdir(), 'tau-retention-'));
-  onTestFinished(() => rm(root, { recursive: true, force: true }));
+  const root = temporaryDirectory(onTestFinished, 'tau-retention-');
   const now = Date.now();
   const completed: string[] = [];
 

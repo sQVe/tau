@@ -1,5 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type {
@@ -10,6 +9,7 @@ import type {
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { monotonicNow } from './controller/budget.js';
 import { WorkerController } from './controller/controller.js';
 import { setup } from './controller/fixtures/controllerFixture.js';
@@ -50,7 +50,7 @@ vi.mock(import('./controller/controller.js'), async (importOriginal) => {
 let agentDirectory: string;
 
 beforeEach(() => {
-  agentDirectory = mkdtempSync(join(tmpdir(), 'tau-parent-'));
+  agentDirectory = temporaryDirectory(onTestFinished, 'tau-parent-');
   controllers.notifiers.length = 0;
   controllers.instances.length = 0;
   controllers.client = undefined;
@@ -70,7 +70,6 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
-  rmSync(agentDirectory, { recursive: true, force: true });
 });
 
 const stoppedNotice: WorkerNotice = {

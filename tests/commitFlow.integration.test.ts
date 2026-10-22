@@ -1,6 +1,5 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -18,6 +17,7 @@ import tauExtension from '../src/tau.js';
 import { createTemporaryRepository } from './gitRepository.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 type RegisterCleanup = TestContext['onTestFinished'];
 
@@ -47,17 +47,6 @@ const git = async (repositoryDirectory: string, commandArguments: string[]): Pro
   return stdout;
 };
 
-const createTemporaryDirectory = async (
-  registerCleanup: RegisterCleanup,
-  prefix: string,
-): Promise<string> => {
-  const directory = await mkdtemp(join(tmpdir(), prefix));
-
-  registerCleanup(() => rm(directory, { recursive: true, force: true }));
-
-  return directory;
-};
-
 const createCommittedRepository = async (registerCleanup: RegisterCleanup): Promise<string> => {
   const repositoryDirectory = await createTemporaryRepository(registerCleanup, 'tau-flow-repo-');
 
@@ -82,7 +71,7 @@ const createHarness = async (
   options: { hasUI?: boolean } = {},
 ): Promise<Harness> => {
   const repositoryDirectory = await createCommittedRepository(registerCleanup);
-  const agentDirectory = await createTemporaryDirectory(registerCleanup, 'tau-flow-agent-');
+  const agentDirectory = temporaryDirectory(registerCleanup, 'tau-flow-agent-');
 
   isolateWebAccessConfig(agentDirectory, registerCleanup);
 

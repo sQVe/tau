@@ -1,17 +1,9 @@
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { fixtureLoadout } from '../fixtures/loadout.js';
 import type { Task } from '../types.js';
 import {
@@ -24,16 +16,6 @@ import {
 afterEach(() => {
   vi.unstubAllEnvs();
 });
-
-const temporaryDirectory = () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-launch-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
-
-  return directory;
-};
 
 const launchTask = (directory: string): Task =>
   ({
@@ -59,7 +41,7 @@ it('starts the worker without waiting for an approval prompt', () => {
 });
 
 it('runs the first executable pi found on PATH', () => {
-  const root = temporaryDirectory();
+  const root = temporaryDirectory(onTestFinished, 'tau-launch-');
   pi(join(root, 'plain'), 0o644);
   const executable = pi(join(root, 'bin'), 0o755);
 
@@ -69,7 +51,7 @@ it('runs the first executable pi found on PATH', () => {
 });
 
 it('fails when PATH holds no executable pi', () => {
-  const root = temporaryDirectory();
+  const root = temporaryDirectory(onTestFinished, 'tau-launch-');
   pi(join(root, 'plain'), 0o644);
 
   vi.stubEnv('PATH', join(root, 'plain'));
@@ -78,7 +60,7 @@ it('fails when PATH holds no executable pi', () => {
 });
 
 it('ignores a relative PATH entry', () => {
-  const root = temporaryDirectory();
+  const root = temporaryDirectory(onTestFinished, 'tau-launch-');
   const directory = join(root, 'bin');
   pi(directory, 0o755);
 
@@ -100,7 +82,7 @@ it("passes the parent's environment except its working-directory variables", () 
 });
 
 it('prepares a private task directory below missing parents with a seeded session', () => {
-  const root = temporaryDirectory();
+  const root = temporaryDirectory(onTestFinished, 'tau-launch-');
   const directory = join(root, 'missing', 'task');
   const task = launchTask(directory);
 
@@ -111,7 +93,7 @@ it('prepares a private task directory below missing parents with a seeded sessio
 });
 
 it('keeps the saved session of a follow-up', () => {
-  const directory = temporaryDirectory();
+  const directory = temporaryDirectory(onTestFinished, 'tau-launch-');
   const task = launchTask(directory);
 
   prepareTaskDirectory(directory, task, true);

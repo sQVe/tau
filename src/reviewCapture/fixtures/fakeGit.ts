@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { onTestFinished, vi } from 'vitest';
+
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 
 export interface GitOverride {
   // A text that the call's arguments, joined with spaces and padded with one space on each side, hold.
@@ -17,8 +18,7 @@ export interface GitOverride {
 // Puts a `git` script first on PATH for the rest of the test. A call that matches an override runs
 // the override's script; every other call runs the real Git.
 export const installFakeGit = async (overrides: GitOverride[]): Promise<void> => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-fake-git-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-fake-git-');
 
   const { stdout } = await promisify(execFile)('sh', ['-c', 'command -v git']);
 

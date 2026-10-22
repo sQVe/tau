@@ -1,36 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { temporaryTauConfig } from '../../../tests/tauConfigHarness.js';
 import type { ConfigWarnings } from '../../config/config.js';
 import { readQaSettings } from './qaSettings.js';
 
 const ui = { notify: () => undefined };
 const repository = 'sQVe/cape';
-
-const configFixture = () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-qa-settings-'));
-  const agentDirectory = join(directory, 'agent');
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
-
-  mkdirSync(agentDirectory);
-  mkdirSync(join(directory, '.pi'));
-
-  return {
-    location: { cwd: directory, agentDirectory, projectTrusted: true },
-    writeUser: (value: unknown) => {
-      writeFileSync(join(agentDirectory, 'tau.json'), JSON.stringify(value));
-    },
-    writeRepository: (value: unknown) => {
-      writeFileSync(join(directory, '.pi', 'tau.json'), JSON.stringify(value));
-    },
-  };
-};
 
 const entry = {
   urlCommand: './scripts/dev-url',
@@ -39,7 +14,7 @@ const entry = {
 };
 
 it('reads the entry of the repository from the user file', () => {
-  const { location, writeUser } = configFixture();
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-qa-settings-');
 
   writeUser({ qa: { repositories: { [repository]: entry } } });
 
@@ -47,7 +22,7 @@ it('reads the entry of the repository from the user file', () => {
 });
 
 it('matches the repository ignoring case and defaults dataWrites to false', () => {
-  const { location, writeUser } = configFixture();
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-qa-settings-');
 
   writeUser({ qa: { repositories: { 'sqve/CAPE': { urlCommand: './dev-url' } } } });
 
@@ -69,7 +44,7 @@ it.each([
   },
   { condition: 'the repository is unknown', user: { qa: { repositories: {} } }, name: undefined },
 ])('reads no settings when $condition', ({ user, name }) => {
-  const { location, writeUser } = configFixture();
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-qa-settings-');
 
   if (user !== undefined) {
     writeUser(user);
@@ -107,7 +82,7 @@ it.each([
     error: 'name the same repository',
   },
 ])('refuses settings when $condition', ({ qa, error }) => {
-  const { location, writeUser } = configFixture();
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-qa-settings-');
 
   writeUser({ qa });
 
@@ -115,7 +90,7 @@ it.each([
 });
 
 it('ignores a bad entry for another repository', () => {
-  const { location, writeUser } = configFixture();
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-qa-settings-');
 
   writeUser({
     qa: { repositories: { 'sQVe/tau': { dataWrites: 'no' }, [repository]: { dataWrites: true } } },
@@ -125,7 +100,10 @@ it('ignores a bad entry for another repository', () => {
 });
 
 it('refuses qa set in a repository file', () => {
-  const { location, writeUser, writeRepository } = configFixture();
+  const { location, writeUser, writeRepository } = temporaryTauConfig(
+    onTestFinished,
+    'tau-qa-settings-',
+  );
 
   writeUser({ qa: { repositories: { [repository]: entry } } });
   writeRepository({ qa: { repositories: { [repository]: { urlCommand: './evil' } } } });
@@ -136,7 +114,7 @@ it('refuses qa set in a repository file', () => {
 });
 
 it('reads the entry past unknown keys and warns about them', () => {
-  const { location, writeUser } = configFixture();
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-qa-settings-');
   const notify = vi.fn<ConfigWarnings['notify']>();
 
   writeUser({
@@ -154,7 +132,7 @@ it('reads the entry past unknown keys and warns about them', () => {
 });
 
 it('refuses a matched entry key that is not owner/name', () => {
-  const { location, writeUser } = configFixture();
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-qa-settings-');
 
   writeUser({ qa: { repositories: { tau: entry } } });
 

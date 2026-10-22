@@ -1,10 +1,10 @@
-import { mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
 import { expect, it } from 'vitest';
 
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { saveDiagnostics } from './diagnostics.js';
 import { maximumTotalBytes } from './process.js';
 
@@ -18,8 +18,7 @@ it('reports decoded byte counts and truncation without splitting UTF-8 character
     Buffer.alloc(maximumTotalBytes, 255),
     Buffer.from('€'.repeat(10923)),
   ]) {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-diagnostic-bytes-'));
-    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    const directory = temporaryDirectory(onTestFinished, 'tau-diagnostic-bytes-');
     const decoder = new StringDecoder('utf8');
     const text = decoder.write(raw) + decoder.end();
 
@@ -58,8 +57,7 @@ it('reports decoded byte counts and truncation without splitting UTF-8 character
 it('preserves other artifacts and the excerpt when individual saves fail', async ({
   onTestFinished,
 }) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-diagnostic-errors-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-diagnostic-errors-');
   await writeFile(join(directory, 'target.json'), '{"numTotalTests":1}');
   await symlink(join(directory, 'target.json'), join(directory, 'report.json'));
   await writeFile(join(directory, 'stdout.txt'), 'keep existing file');
@@ -115,8 +113,7 @@ const spawnResult = (stdout: string, stderr: string) => ({
 });
 
 it('records no error and no report when the runner wrote no report', async ({ onTestFinished }) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-diagnostic-clean-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-diagnostic-clean-');
 
   const result = await saveDiagnostics(runDiagnostics(directory), spawnResult('out', 'err'));
 
@@ -129,8 +126,7 @@ it('records no error and no report when the runner wrote no report', async ({ on
 it('marks output as truncated when the process observed more bytes than it captured', async ({
   onTestFinished,
 }) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-diagnostic-capped-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-diagnostic-capped-');
 
   const result = await saveDiagnostics(runDiagnostics(directory), {
     ...spawnResult('', 'captured'),
@@ -144,8 +140,7 @@ it.for([
   ['a small', 20],
   ['a limit-sized', reportLimit],
 ] as const)('keeps %s report whole', async ([, bytes], { onTestFinished }) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-diagnostic-report-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-diagnostic-report-');
   await writeFile(join(directory, 'report.json'), 'x'.repeat(bytes));
 
   const result = await saveDiagnostics(runDiagnostics(directory), undefined);

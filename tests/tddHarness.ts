@@ -1,5 +1,4 @@
-import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { rm, symlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
@@ -17,6 +16,7 @@ import tauExtension from '../src/tau.js';
 import { initializeRepository } from './gitRepository.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 interface ToolResult {
   details: ObservationResult;
@@ -41,8 +41,7 @@ interface Harness {
 let counter = 0;
 
 export const createWorktree = async (cleanup: TestContext['onTestFinished']): Promise<string> => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tau-tdd-'));
-  cleanup(() => rm(cwd, { recursive: true, force: true }));
+  const cwd = temporaryDirectory(cleanup, 'tau-tdd-');
 
   await initializeRepository(cwd);
   await symlink(resolve(import.meta.dirname, '../node_modules'), join(cwd, 'node_modules'), 'dir');

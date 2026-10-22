@@ -1,20 +1,19 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository } from './gitRepository.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 const executeFile = promisify(execFile);
 
 it('ignores a hostile user Git configuration, also for Git calls the code under test makes', async ({
   onTestFinished,
 }) => {
-  const home = await mkdtemp(join(tmpdir(), 'tau-hostile-home-'));
-  onTestFinished(() => rm(home, { recursive: true, force: true }));
+  const home = temporaryDirectory(onTestFinished, 'tau-hostile-home-');
 
   onTestFinished(() => {
     vi.unstubAllEnvs();

@@ -1,17 +1,5 @@
 import { execFile } from 'node:child_process';
-import {
-  link,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  stat,
-  symlink,
-  utimes,
-  writeFile,
-} from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { link, mkdir, readFile, readdir, stat, symlink, utimes, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -20,6 +8,7 @@ import type { ToolCall } from '@earendil-works/pi-ai';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { readGitBytes } from '../../gitOutput.js';
 import { createGhFake } from './fixtures/ghFake.js';
@@ -36,8 +25,7 @@ const git = async (cwd: string, ...commandArguments: string[]) => {
 };
 
 const createBareRemote = async (url: string, checkout: string) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-pr-remote-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-pr-remote-');
 
   await git(directory, 'init', '--quiet', '--bare', '--initial-branch=main');
   await git(checkout, 'config', `url.${directory}.insteadOf`, url);
@@ -915,10 +903,9 @@ it('refuses to verify a directory that prepare did not create', async () => {
 
 it('refuses to verify a run directory that is a symlink', async () => {
   const { root, fake, run } = await setUp();
-  const outside = await mkdtemp(join(tmpdir(), 'tau-pr-outside-'));
+  const outside = temporaryDirectory(onTestFinished, 'tau-pr-outside-');
   const directory = join(root, '.tau', 'pr', 'run-linked');
 
-  onTestFinished(() => rm(outside, { recursive: true, force: true }));
   await prepareBody(run);
   await writeFile(join(outside, 'body.md'), 'Adds it.\n');
   await symlink(outside, directory);
@@ -930,9 +917,8 @@ it('refuses to verify a run directory that is a symlink', async () => {
 it('refuses to verify a body.md that is a symlink', async () => {
   const { fake, run } = await setUp();
   const { directory } = await run({ action: 'prepare' });
-  const outside = await mkdtemp(join(tmpdir(), 'tau-pr-outside-'));
+  const outside = temporaryDirectory(onTestFinished, 'tau-pr-outside-');
 
-  onTestFinished(() => rm(outside, { recursive: true, force: true }));
   await writeFile(join(outside, 'body.md'), 'Adds it.\n');
   await symlink(join(outside, 'body.md'), join(String(directory), 'body.md'));
 
@@ -946,9 +932,8 @@ it('refuses to verify a body.md that is a symlink', async () => {
 it('refuses to verify a body.md with another hard link', async () => {
   const { fake, run } = await setUp();
   const { directory } = await run({ action: 'prepare' });
-  const outside = await mkdtemp(join(tmpdir(), 'tau-pr-outside-'));
+  const outside = temporaryDirectory(onTestFinished, 'tau-pr-outside-');
 
-  onTestFinished(() => rm(outside, { recursive: true, force: true }));
   await writeFile(join(outside, 'body.md'), 'Adds it.\n');
   await link(join(outside, 'body.md'), join(String(directory), 'body.md'));
 

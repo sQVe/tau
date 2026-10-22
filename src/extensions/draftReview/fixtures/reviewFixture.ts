@@ -1,13 +1,13 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import type { herdrFake } from '../../../../tests/herdrFake.js';
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import type { Exec } from '../../../command.js';
 import { createDraftReviewTool } from '../tool.js';
 import type { DraftReviewRuntime } from '../tool.js';
@@ -95,8 +95,7 @@ export const fixture = async (
   isProcessRunning: ProcessCheck = () => false,
 ): Promise<ReviewFixture> => {
   const repository = await createTemporaryRepository(onTestFinished, 'tau-draft-review-repo-');
-  const data = await mkdtemp(join(tmpdir(), 'tau-fake-tuicr-'));
-  onTestFinished(() => rm(data, { recursive: true, force: true }));
+  const data = temporaryDirectory(onTestFinished, 'tau-fake-tuicr-');
 
   // Staging goes under os.tmpdir(), and failed reviews keep it for a retry. Point it at data so
   // every test removes its staging.

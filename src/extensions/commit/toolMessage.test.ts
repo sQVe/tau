@@ -2,10 +2,9 @@ import type * as fileSystem from 'node:fs/promises';
 import { chmod, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import {
-  temporaryDirectories,
   git,
   createTemporaryRepository,
   writeRepositoryFile,
@@ -108,7 +107,7 @@ describe('message policy', () => {
 
       vi.mocked(rm).mockImplementation(async (path, options) => {
         if (String(path).includes('tau-commit-message-')) {
-          temporaryDirectories.push(String(path));
+          onTestFinished(() => original.rm(path, options));
 
           throw new Error('cleanup denied');
         }

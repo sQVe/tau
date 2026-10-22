@@ -1,8 +1,9 @@
-import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
+
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 
 const hooks: {
   beforeOpen: (() => Promise<void>) | undefined;
@@ -30,8 +31,7 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 const { writeDestination } = await import('./destination.js');
 
 it('refuses and leaves the outside file whole when a directory is swapped for a symlink before the open', async () => {
-  const base = await mkdtemp(join(tmpdir(), 'tau-destination-'));
-  onTestFinished(() => rm(base, { recursive: true, force: true }));
+  const base = temporaryDirectory(onTestFinished, 'tau-destination-');
 
   const tauDirectory = join(base, '.tau');
   const outsideDirectory = join(base, 'outside');
@@ -55,8 +55,7 @@ it('refuses and leaves the outside file whole when a directory is swapped for a 
 });
 
 it('writes nothing and reports no write when the file disappears during the check', async () => {
-  const base = await mkdtemp(join(tmpdir(), 'tau-destination-'));
-  onTestFinished(() => rm(base, { recursive: true, force: true }));
+  const base = temporaryDirectory(onTestFinished, 'tau-destination-');
 
   const tauDirectory = join(base, '.tau');
   const target = join(tauDirectory, 'slices/a.md');
@@ -74,8 +73,7 @@ it('writes nothing and reports no write when the file disappears during the chec
 });
 
 it('refuses when the checked folder is moved outside .tau and linked back before the open', async () => {
-  const base = await mkdtemp(join(tmpdir(), 'tau-destination-'));
-  onTestFinished(() => rm(base, { recursive: true, force: true }));
+  const base = temporaryDirectory(onTestFinished, 'tau-destination-');
 
   const tauDirectory = join(base, '.tau');
   const movedDirectory = join(base, 'moved');

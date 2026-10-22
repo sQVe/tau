@@ -1,5 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,6 +20,7 @@ import { delegationGuidelines } from '../src/extensions/subagents/managerPrompt.
 import { readInstructionSet } from '../src/instructions/instructions.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createPiSession } from './piSession.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 it('ships Safety Net as a runtime dependency and explicit extension', () => {
   expect(manifest.dependencies).toHaveProperty('cc-safety-net', '2.4.1');
@@ -31,204 +31,196 @@ it('ships Safety Net as a runtime dependency and explicit extension', () => {
 it('loads Tau through Pi with commit features, question and bundled web tools, and writing and coding rules but not browser rules on every run', async ({
   onTestFinished,
 }) => {
-  const workingDirectory = await mkdtemp(join(tmpdir(), 'tau-package-'));
+  const workingDirectory = temporaryDirectory(onTestFinished, 'tau-package-');
   const packageRoot = fileURLToPath(new URL('../', import.meta.url));
 
-  try {
-    const agentDirectory = join(workingDirectory, 'agent');
-    isolateWebAccessConfig(agentDirectory, onTestFinished);
+  const agentDirectory = join(workingDirectory, 'agent');
+  isolateWebAccessConfig(agentDirectory, onTestFinished);
 
-    // Delegation guidelines load only for a manager inside herdr.
-    onTestFinished(() => {
-      vi.unstubAllEnvs();
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  vi.stubEnv('HERDR_ENV', '1');
+  vi.stubEnv('HERDR_PANE_ID', 'parent');
+  vi.stubEnv('HERDR_SOCKET_PATH', join(workingDirectory, 'herdr.sock'));
+
+  // Pi-claude-bridge keeps this options object at before_agent_start and forwards only its
+  // appendSystemPrompt and context files at agent_start, after every handler has run.
+  const forwarded: NormalizedBuildSystemPromptOptions[] = [];
+
+  const bridge = (pi: ExtensionAPI) => {
+    let options: NormalizedBuildSystemPromptOptions | undefined;
+
+    pi.on('before_agent_start', (event) => {
+      options = event.systemPromptOptions;
     });
 
-    vi.stubEnv('HERDR_ENV', '1');
-    vi.stubEnv('HERDR_PANE_ID', 'parent');
-    vi.stubEnv('HERDR_SOCKET_PATH', join(workingDirectory, 'herdr.sock'));
-
-    // Pi-claude-bridge keeps this options object at before_agent_start and forwards only its
-    // appendSystemPrompt and context files at agent_start, after every handler has run.
-    const forwarded: NormalizedBuildSystemPromptOptions[] = [];
-
-    const bridge = (pi: ExtensionAPI) => {
-      let options: NormalizedBuildSystemPromptOptions | undefined;
-
-      pi.on('before_agent_start', (event) => {
-        options = event.systemPromptOptions;
-      });
-
-      pi.on('agent_start', () => {
-        if (options) {
-          forwarded.push(structuredClone(options));
-        }
-      });
-    };
-
-    const scriptedProvider = fauxProvider({ provider: 'tau-package-writing' });
-
-    const { session, extensionsResult } = await createPiSession(onTestFinished, {
-      cwd: workingDirectory,
-      agentDirectory,
-      providers: [scriptedProvider],
-      extensionPaths: [packageRoot],
-      extensionFactories: [bridge],
-      tools: ['subagent', 'commit'],
+    pi.on('agent_start', () => {
+      if (options) {
+        forwarded.push(structuredClone(options));
+      }
     });
+  };
 
-    const { extensions, errors } = extensionsResult;
+  const scriptedProvider = fauxProvider({ provider: 'tau-package-writing' });
 
-    expect(errors).toEqual([]);
-    expect(extensions).toHaveLength(4);
-    const safetyExtension = extensions.find((extension) => extension.commands.has('cc-safety-net'));
-    expect(safetyExtension).toBeDefined();
-    expect(safetyExtension?.handlers.has('tool_call')).toBe(true);
+  const { session, extensionsResult } = await createPiSession(onTestFinished, {
+    cwd: workingDirectory,
+    agentDirectory,
+    providers: [scriptedProvider],
+    extensionPaths: [packageRoot],
+    extensionFactories: [bridge],
+    tools: ['subagent', 'commit'],
+  });
 
-    const tauExtension = extensions.find((extension) => extension.tools.has('commit'));
+  const { extensions, errors } = extensionsResult;
 
-    expect(tauExtension?.tools.has('run_tests')).toBe(true);
-    expect(extensions.some((extension) => extension.tools.has('ask_user_question'))).toBe(true);
+  expect(errors).toEqual([]);
+  expect(extensions).toHaveLength(4);
+  const safetyExtension = extensions.find((extension) => extension.commands.has('cc-safety-net'));
+  expect(safetyExtension).toBeDefined();
+  expect(safetyExtension?.handlers.has('tool_call')).toBe(true);
 
-    const webAccessExtension = extensions.find((extension) => extension.tools.has('web_search'));
+  const tauExtension = extensions.find((extension) => extension.tools.has('commit'));
 
-    expect(webAccessExtension).toBeDefined();
+  expect(tauExtension?.tools.has('run_tests')).toBe(true);
+  expect(extensions.some((extension) => extension.tools.has('ask_user_question'))).toBe(true);
 
-    expect([...(webAccessExtension?.tools.keys() ?? [])].toSorted()).toEqual([
-      'fetch_content',
-      'get_search_content',
-      'source_check',
-      'web_enable',
-      'web_search',
-    ]);
+  const webAccessExtension = extensions.find((extension) => extension.tools.has('web_search'));
 
-    expect(
-      session.resourceLoader
-        .getSkills()
-        .skills.map((skill) => skill.name)
-        .toSorted(),
-    ).toEqual([
-      'brainstorm',
-      'bro',
-      'code-quality',
-      'code-review',
-      'commit',
-      'diagram',
-      'finish-slice',
-      'fix-bug',
-      'handover',
-      'pr',
-      'pr-feedback',
-      'prune-comments',
-      'slice',
-      'stack',
-      'start-slice',
-      'tdd',
-      'tracker',
-      'triage-findings',
-      'update-branch',
-      'worktree',
-    ]);
+  expect(webAccessExtension).toBeDefined();
 
-    expect(session.resourceLoader.getSkills().diagnostics).toEqual([]);
+  expect([...(webAccessExtension?.tools.keys() ?? [])].toSorted()).toEqual([
+    'fetch_content',
+    'get_search_content',
+    'source_check',
+    'web_enable',
+    'web_search',
+  ]);
 
-    const skillsWithoutCommand = session.resourceLoader
+  expect(
+    session.resourceLoader
       .getSkills()
-      .skills.filter((skill) => tauExtension?.commands.has(skill.name) !== true);
+      .skills.map((skill) => skill.name)
+      .toSorted(),
+  ).toEqual([
+    'brainstorm',
+    'bro',
+    'code-quality',
+    'code-review',
+    'commit',
+    'diagram',
+    'finish-slice',
+    'fix-bug',
+    'handover',
+    'pr',
+    'pr-feedback',
+    'prune-comments',
+    'slice',
+    'stack',
+    'start-slice',
+    'tdd',
+    'tracker',
+    'triage-findings',
+    'update-branch',
+    'worktree',
+  ]);
 
-    expect(skillsWithoutCommand).toEqual([]);
+  expect(session.resourceLoader.getSkills().diagnostics).toEqual([]);
 
-    await session.bindExtensions({});
+  const skillsWithoutCommand = session.resourceLoader
+    .getSkills()
+    .skills.filter((skill) => tauExtension?.commands.has(skill.name) !== true);
 
-    const prompts: string[] = [];
-    const transcripts: string[] = [];
+  expect(skillsWithoutCommand).toEqual([]);
 
-    scriptedProvider.setResponses(
-      [0, 1].map(() => (context) => {
-        prompts.push(getCurrentSystemPrompt(context.messages));
-        transcripts.push(JSON.stringify(context.messages));
+  await session.bindExtensions({});
 
-        return fauxAssistantMessage('Ready.');
-      }),
-    );
+  const prompts: string[] = [];
+  const transcripts: string[] = [];
 
-    await session.prompt('First run.');
-    await session.prompt('Second run.');
+  scriptedProvider.setResponses(
+    [0, 1].map(() => (context) => {
+      prompts.push(getCurrentSystemPrompt(context.messages));
+      transcripts.push(JSON.stringify(context.messages));
 
-    expect(prompts).toHaveLength(2);
+      return fauxAssistantMessage('Ready.');
+    }),
+  );
 
-    const writingInstructions = await readFile(
-      join(packageRoot, 'src/instructions/writing.md'),
-      'utf8',
-    );
+  await session.prompt('First run.');
+  await session.prompt('Second run.');
 
-    const codingInstructions = await readFile(
-      join(packageRoot, 'src/instructions/coding.md'),
-      'utf8',
-    );
+  expect(prompts).toHaveLength(2);
 
-    const workflowInstructions = await readFile(
-      join(packageRoot, 'src/instructions/workflow.md'),
-      'utf8',
-    );
+  const writingInstructions = await readFile(
+    join(packageRoot, 'src/instructions/writing.md'),
+    'utf8',
+  );
 
-    expect(writingInstructions).toContain(
-      'Write for readers who use English as a second language.',
-    );
+  const codingInstructions = await readFile(
+    join(packageRoot, 'src/instructions/coding.md'),
+    'utf8',
+  );
 
-    expect(codingInstructions).toContain('Separate the logical steps in every function');
+  const workflowInstructions = await readFile(
+    join(packageRoot, 'src/instructions/workflow.md'),
+    'utf8',
+  );
 
-    const prSkill = await readFile(join(packageRoot, 'src/skills/pr/SKILL.md'), 'utf8');
+  expect(writingInstructions).toContain('Write for readers who use English as a second language.');
 
-    const { metadata } = parseFrontmatter<{ metadata?: Record<string, unknown> }>(
-      prSkill,
-    ).frontmatter;
+  expect(codingInstructions).toContain('Separate the logical steps in every function');
 
-    const prRequiredFor = metadata?.['required-for'];
+  const prSkill = await readFile(join(packageRoot, 'src/skills/pr/SKILL.md'), 'utf8');
 
-    expect(prRequiredFor).toEqual(expect.any(String));
+  const { metadata } = parseFrontmatter<{ metadata?: Record<string, unknown> }>(
+    prSkill,
+  ).frontmatter;
 
-    const blocks = [
-      writingInstructions.trim(),
-      codingInstructions.trim(),
-      workflowInstructions.trim(),
-      String(prRequiredFor),
-      ...delegationGuidelines(undefined),
-      ...commitToolGuidelines,
-    ];
+  const prRequiredFor = metadata?.['required-for'];
 
-    expect(forwarded).toHaveLength(2);
+  expect(prRequiredFor).toEqual(expect.any(String));
 
-    for (const options of forwarded) {
-      expect(options.forceSystemPrompt).toBeUndefined();
+  const blocks = [
+    writingInstructions.trim(),
+    codingInstructions.trim(),
+    workflowInstructions.trim(),
+    String(prRequiredFor),
+    ...delegationGuidelines(undefined),
+    ...commitToolGuidelines,
+  ];
 
-      for (const block of blocks) {
-        expect(options.appendSystemPrompt.split(block)).toHaveLength(2);
-      }
-    }
+  expect(forwarded).toHaveLength(2);
 
-    for (const prompt of prompts) {
-      for (const block of blocks) {
-        expect(prompt.split(block)).toHaveLength(2);
-      }
-    }
+  for (const options of forwarded) {
+    expect(options.forceSystemPrompt).toBeUndefined();
 
     for (const block of blocks) {
-      expect(transcripts[1]?.split(JSON.stringify(block).slice(1, -1))).toHaveLength(2);
+      expect(options.appendSystemPrompt.split(block)).toHaveLength(2);
     }
+  }
 
-    const browserInstructions = await readInstructionSet('browser');
-
-    for (const prompt of prompts) {
-      expect(prompt).not.toContain(browserInstructions);
+  for (const prompt of prompts) {
+    for (const block of blocks) {
+      expect(prompt.split(block)).toHaveLength(2);
     }
-  } finally {
-    await rm(workingDirectory, { recursive: true, force: true });
+  }
+
+  for (const block of blocks) {
+    expect(transcripts[1]?.split(JSON.stringify(block).slice(1, -1))).toHaveLength(2);
+  }
+
+  const browserInstructions = await readInstructionSet('browser');
+
+  for (const prompt of prompts) {
+    expect(prompt).not.toContain(browserInstructions);
   }
 }, 30_000);
 
 it('reports an extension error for a missing bundled web extension', async ({ onTestFinished }) => {
-  const workingDirectory = await mkdtemp(join(tmpdir(), 'tau-package-missing-'));
-  onTestFinished(() => rm(workingDirectory, { recursive: true, force: true }));
+  const workingDirectory = temporaryDirectory(onTestFinished, 'tau-package-missing-');
 
   const agentDirectory = join(workingDirectory, 'agent');
   const scriptedProvider = fauxProvider({ provider: 'tau-package-missing' });
@@ -258,8 +250,7 @@ it('reports an extension error for a missing bundled web extension', async ({ on
 }, 30_000);
 
 it('loads Tau as a Pi package without extension warnings', async ({ onTestFinished }) => {
-  const workingDirectory = await mkdtemp(join(tmpdir(), 'tau-package-warnings-'));
-  onTestFinished(() => rm(workingDirectory, { recursive: true, force: true }));
+  const workingDirectory = temporaryDirectory(onTestFinished, 'tau-package-warnings-');
 
   const agentDirectory = join(workingDirectory, 'agent');
   isolateWebAccessConfig(agentDirectory, onTestFinished);

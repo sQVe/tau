@@ -1,6 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -12,6 +11,7 @@ import { createFullCheckTool } from '../src/extensions/fullCheck/tool.js';
 import { decideFullCheck } from '../src/extensions/pr/evidenceDecisions.js';
 import { declinedExec } from './declinedExecFake.js';
 import { createTemporaryRepository } from './gitRepository.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 const git = (cwd: string, ...commandArguments: string[]) =>
   promisify(execFile)(
@@ -27,9 +27,7 @@ const countingArgv = (counter: string, extra = '') => [
 ];
 
 it('reports passed to the pr evidence after the first command runs again over another command that failed', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-full-check-pr-'));
-
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-full-check-pr-');
 
   const root = await createTemporaryRepository(onTestFinished, 'tau-full-check-pr-repo-');
   const counter = join(directory, 'count.txt');

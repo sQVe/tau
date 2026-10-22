@@ -1,15 +1,14 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { diffFiles } from './diff.js';
 
 const directoryWithFiles = async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-diff-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-diff-');
 
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
   await writeFile(join(directory, 'one.md'), 'one\n');
   await writeFile(join(directory, 'two.md'), 'two\n');
 

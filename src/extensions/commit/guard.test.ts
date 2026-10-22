@@ -1,27 +1,18 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { ExtensionAPI, ToolCallEvent } from '@earendil-works/pi-coding-agent';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { initializeRepository } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import commitExtension from './commit.js';
 import { commitGuardReason, guardToolCall } from './guard.js';
 
 const execFileAsync = promisify(execFile);
-const temporaryDirectories: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(
-    temporaryDirectories
-      .splice(0)
-      .map((directory) => rm(directory, { recursive: true, force: true })),
-  );
-});
 
 const makeReadEvent = (): ToolCallEvent => ({
   type: 'tool_call',
@@ -84,8 +75,7 @@ const git = async (repositoryDirectory: string, commandArguments: string[]): Pro
 };
 
 const createTemporaryRepository = async (): Promise<string> => {
-  const repositoryDirectory = await mkdtemp(join(tmpdir(), 'tau-commit-guard-'));
-  temporaryDirectories.push(repositoryDirectory);
+  const repositoryDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
 
   await initializeRepository(repositoryDirectory);
 

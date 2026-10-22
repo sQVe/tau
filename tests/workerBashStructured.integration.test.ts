@@ -1,7 +1,3 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
 import { createCodemodeExtension } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
@@ -9,6 +5,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import workerBashGuard from '../src/extensions/subagents/workerBashGuard.js';
 import tddExtension from '../src/extensions/tdd/tdd.js';
 import { createBoundSession } from './piSession.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 interface BashValue {
   head: string;
@@ -20,11 +17,10 @@ interface BashValue {
 
 // Returns what a codemode script receives from `tools.bash` in a session loaded like a worker's.
 const scriptBash = async (command: string): Promise<BashValue> => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-worker-bash-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-worker-bash-');
 
   onTestFinished(() => {
     vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);

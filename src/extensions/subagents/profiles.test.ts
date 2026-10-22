@@ -1,9 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, it } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import {
   listProfiles,
@@ -15,11 +15,7 @@ import {
 import type { Task } from './types.js';
 
 const agentsFixture = (onTestFinished: (callback: () => void) => void) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-profiles-test-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-profiles-test-');
 
   const agents = join(directory, 'agents');
   mkdirSync(agents);

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
@@ -14,6 +14,7 @@ import { editRenderers } from '../../../node_modules/@earendil-works/pi-coding-a
 import { writeRenderers } from '../../../node_modules/@earendil-works/pi-coding-agent/dist/core/tools/renderers/write.js';
 import { ToolExecutionComponent } from '../../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/components/tool-execution.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { loadTddConfig } from './config.js';
 import { configSummary, runContext, summarize } from './render.js';
 import type { RunnerResult } from './runner/types.js';
@@ -79,8 +80,7 @@ const setup = (hasUI = false, trusted = true) => {
 it.for(['edit', 'write'] as const)(
   'notifies once for a new %s hint while preserving agent content and ignoring unrelated results',
   async (toolName, { onTestFinished }) => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-edit-notify-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-edit-notify-');
     const application = setup(true);
 
     const content = [
@@ -137,8 +137,7 @@ it.for(['edit', 'write'] as const)(
 );
 
 it('keeps headless edit hints in agent content without notifying', async ({ onTestFinished }) => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tau-headless-hint-'));
-  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const cwd = temporaryDirectory(onTestFinished, 'tau-headless-hint-');
   const application = setup(false);
 
   expect(await application.edit(cwd)).toEqual({
@@ -199,8 +198,7 @@ it.for(['edit', 'write'] as const)(
 it.for(['ordinary', 'long'] as const)(
   'shows hints in collapsed %s results with the installed Pi renderer',
   async (size, { onTestFinished }) => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tau-hint-render-'));
-    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const cwd = temporaryDirectory(onTestFinished, 'tau-hint-render-');
     await writeFile(join(cwd, 'value.test.ts'), 'test');
     const directory = join(cwd, 'diagnostics');
     await mkdir(directory);
@@ -345,8 +343,7 @@ it.for(['ordinary', 'long'] as const)(
 it('emits advisory edit hints for supported layouts but not generated or dependency files', async ({
   onTestFinished,
 }) => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tau-layout-edit-'));
-  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const cwd = temporaryDirectory(onTestFinished, 'tau-layout-edit-');
 
   for (const path of [
     'apps/web/src/page.tsx',
@@ -384,8 +381,7 @@ it('emits advisory edit hints for supported layouts but not generated or depende
 it('resets hints on session boundaries but not turns, compaction, or model changes', async ({
   onTestFinished,
 }) => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tau-hint-lifecycle-'));
-  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const cwd = temporaryDirectory(onTestFinished, 'tau-hint-lifecycle-');
   const application = setup();
 
   expect(application.handlers.has('tool_call')).toBe(false);
@@ -422,8 +418,7 @@ it('resets hints on session boundaries but not turns, compaction, or model chang
 it('isolates cwd and preserves arbitrary tool content, details, and errors', async ({
   onTestFinished,
 }) => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tau-hint-cwd-'));
-  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const cwd = temporaryDirectory(onTestFinished, 'tau-hint-cwd-');
   const application = setup();
 
   const content = [
@@ -457,8 +452,7 @@ it('isolates cwd and preserves arbitrary tool content, details, and errors', asy
 });
 
 it('keeps structuredContent when it appends a hint', async ({ onTestFinished }) => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tau-hint-structured-'));
-  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const cwd = temporaryDirectory(onTestFinished, 'tau-hint-structured-');
   const application = setup();
   const content = [{ type: 'text', text: 'Original result' }];
   const structuredContent = { output: 'Original result', exit_code: 0 };
@@ -480,8 +474,7 @@ it('keeps structuredContent when it appends a hint', async ({ onTestFinished }) 
 it('does not let a late run completion restore observations after a session reset', async ({
   onTestFinished,
 }) => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tau-hint-late-'));
-  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const cwd = temporaryDirectory(onTestFinished, 'tau-hint-late-');
   await writeFile(join(cwd, 'value.test.ts'), 'test');
   const application = setup();
   const started = Promise.withResolvers<undefined>();
@@ -519,9 +512,8 @@ const writeEvent = (path: string) => ({
   content: [{ type: 'text', text: 'Written' }],
 });
 
-const configFixture = async (onTestFinished: (cleanup: () => Promise<void>) => void) => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tau-config-'));
-  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+const configFixture = async (onTestFinished: (cleanup: () => void) => void) => {
+  const cwd = temporaryDirectory(onTestFinished, 'tau-config-');
   await mkdir(join(cwd, '.pi'));
   await mkdir(join(cwd, 'agent'));
   await writeFile(join(cwd, 'value.test.ts'), 'test');
@@ -687,8 +679,7 @@ it.for<[string, Record<string, unknown>, boolean]>([
 });
 
 it('ignores a tool result that has no path to a file', async ({ onTestFinished }) => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tau-no-path-'));
-  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const cwd = temporaryDirectory(onTestFinished, 'tau-no-path-');
   const application = setup();
 
   for (const event of [
@@ -707,8 +698,7 @@ it('ignores a tool result that has no path to a file', async ({ onTestFinished }
 });
 
 it('strips only a leading @ from a tool path', async ({ onTestFinished }) => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tau-at-path-'));
-  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const cwd = temporaryDirectory(onTestFinished, 'tau-at-path-');
   const application = setup();
 
   const write = (path: string) =>

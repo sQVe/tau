@@ -1,12 +1,12 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget } from './capture.js';
 import { saveVerifiedSnapshot, verifySnapshot } from './fixCapture.js';
 
@@ -28,8 +28,7 @@ it('refuses a snapshot that no longer matches the captured bytes and leaves no f
   await promisify(execFile)('git', ['commit', '--quiet', '-m', 'first'], { cwd: root });
   await writeFile(join(root, 'a.txt'), 'two\n');
 
-  const review = await mkdtemp(join(tmpdir(), 'tau-fix-snapshot-'));
-  onTestFinished(() => rm(review, { recursive: true, force: true }));
+  const review = temporaryDirectory(onTestFinished, 'tau-fix-snapshot-');
   await mkdir(review, { recursive: true });
 
   const pinned = await pinWorkingTree(root);
@@ -52,8 +51,7 @@ it('refuses a saved copy whose bytes differ from the captured bytes, even when t
   await promisify(execFile)('git', ['commit', '--quiet', '-m', 'first'], { cwd: root });
   await writeFile(join(root, 'a.txt'), 'two\n');
 
-  const review = await mkdtemp(join(tmpdir(), 'tau-fix-verify-'));
-  onTestFinished(() => rm(review, { recursive: true, force: true }));
+  const review = temporaryDirectory(onTestFinished, 'tau-fix-verify-');
 
   const pinned = await pinWorkingTree(root);
   const captured = await captureTarget(root, pinned);
@@ -82,8 +80,7 @@ it('accepts a snapshot of a file that Git converts on check-in', async () => {
   await promisify(execFile)('git', ['commit', '--quiet', '-m', 'first'], { cwd: root });
   await writeFile(join(root, 'a.txt'), 'two\r\n');
 
-  const review = await mkdtemp(join(tmpdir(), 'tau-fix-filters-'));
-  onTestFinished(() => rm(review, { recursive: true, force: true }));
+  const review = temporaryDirectory(onTestFinished, 'tau-fix-filters-');
 
   const pinned = await pinWorkingTree(root);
   const captured = await captureTarget(root, pinned);
@@ -106,8 +103,7 @@ const committedFile = async (name: string, mode?: number) => {
     await writeFile(join(root, name), 'two\n');
   }
 
-  const review = await mkdtemp(join(tmpdir(), 'tau-fix-quoted-'));
-  onTestFinished(() => rm(review, { recursive: true, force: true }));
+  const review = temporaryDirectory(onTestFinished, 'tau-fix-quoted-');
 
   const pinned = await pinWorkingTree(root);
   const captured = await captureTarget(root, pinned);
@@ -163,8 +159,7 @@ const renamedRepository = async (edit: boolean) => {
     await writeFile(join(root, 'new.ts'), 'one\ntwo\nthree\nfour\nfive\nseven\n');
   }
 
-  const review = await mkdtemp(join(tmpdir(), 'tau-fix-rename-'));
-  onTestFinished(() => rm(review, { recursive: true, force: true }));
+  const review = temporaryDirectory(onTestFinished, 'tau-fix-rename-');
 
   const pinned = await pinTarget(root, { kind: 'workingTree', base });
 

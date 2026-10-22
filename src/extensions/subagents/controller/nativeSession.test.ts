@@ -1,19 +1,14 @@
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { readFileSync, statSync, writeFileSync } from 'node:fs';
 
 import { expect, it, onTestFinished } from 'vitest';
 
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { fixtureLoadout } from '../fixtures/loadout.js';
 import type { Task } from '../types.js';
 import { nativeIdentity, seedSession } from './nativeSession.js';
 
 const sessionTask = (): Task => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-native-session-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-native-session-');
 
   return {
     ...nativeIdentity(directory),

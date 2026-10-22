@@ -1,12 +1,12 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget } from './capture.js';
 
 const git = async (root: string, commandArguments: string[]) => {
@@ -30,8 +30,7 @@ const head = async (root: string) => (await git(root, ['rev-parse', 'HEAD'])).tr
 const isRoot = process.getuid?.() === 0;
 
 const hashObject = async (bytes: Buffer) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-capture-hash-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-capture-hash-');
 
   const file = join(directory, 'capture.diff');
   await writeFile(file, bytes);
@@ -58,8 +57,7 @@ it('captures a tracked change and an untracked file with the hash Git gives the 
 
 it('reads the repository index even when the caller names another one', async () => {
   const root = await committedRepository();
-  const directory = await mkdtemp(join(tmpdir(), 'tau-capture-index-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-capture-index-');
 
   vi.stubEnv('GIT_INDEX_FILE', join(directory, 'empty-index'));
 
@@ -78,8 +76,7 @@ it('reads the repository index even when the caller names another one', async ()
 // Puts a git wrapper first on PATH. After the first diff it runs, the wrapper runs the shell
 // command `change`, as if the working tree changed during the capture.
 const changeTreeAfterFirstDiff = async (change: string) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-capture-race-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-capture-race-');
 
   const { stdout } = await promisify(execFile)('sh', ['-c', 'command -v git']);
   const marker = join(directory, 'changed');

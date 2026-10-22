@@ -1,12 +1,13 @@
 import { getEventListeners } from 'node:events';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 import type { ResolvedPaths } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished } from 'vitest';
 
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { fixtureLoadout } from '../fixtures/loadout.js';
 import { InstallQueue, installWorkerPackages, piPackageManager } from './packageInstall.js';
 import type { WorkerPackageManager } from './packageInstall.js';
@@ -389,11 +390,7 @@ it('keeps the install error as the cause of a failed package install', async () 
 });
 
 it('lists the user and trusted project packages the worker will load', () => {
-  const root = mkdtempSync(join(tmpdir(), 'tau-packages-'));
-
-  onTestFinished(() => {
-    rmSync(root, { recursive: true, force: true });
-  });
+  const root = temporaryDirectory(onTestFinished, 'tau-packages-');
 
   const cwd = join(root, 'project');
   const agentDirectory = join(root, 'agent');
@@ -431,11 +428,7 @@ it.each([
 ])(
   'skips a profile package that Pi already loads from the local settings source $setting',
   async ({ setting, file }) => {
-    const root = mkdtempSync(join(tmpdir(), 'tau-packages-'));
-
-    onTestFinished(() => {
-      rmSync(root, { recursive: true, force: true });
-    });
+    const root = temporaryDirectory(onTestFinished, 'tau-packages-');
 
     const cwd = join(root, 'project');
     const agentDirectory = join(root, 'agent');

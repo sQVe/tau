@@ -1,15 +1,4 @@
-import {
-  copyFile,
-  cp,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  symlink,
-  writeFile,
-} from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { copyFile, cp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
@@ -17,6 +6,7 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createLinearFake } from '../../../tests/linearFake.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { confirmContext, noUiContext } from '../../../tests/toolContext.js';
 import { createStartSliceTool } from './startTool.js';
 import { createSliceTool } from './tool.js';
@@ -177,9 +167,7 @@ describe('start_slice', () => {
     addAgentChild(fake, { identifier: 'AI-12', title: 'Report the start', description: 'Two.\n' });
 
     const { directory, call } = await setUp(fake);
-    const outside = await mkdtemp(join(tmpdir(), 'tau-start-outside-'));
-
-    onTestFinished(() => rm(outside, { recursive: true, force: true }));
+    const outside = temporaryDirectory(onTestFinished, 'tau-start-outside-');
 
     const originalRecord = await readFile(join(directory, 'start.json'), 'utf8');
     const { stateToken } = await call('read');

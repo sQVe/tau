@@ -1,10 +1,10 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { AgentBeforeSettleEvent } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { remindToReport } from './reportReminder.js';
 import type { Task } from './types.js';
 import type { WorkerExtensionState } from './workerExtensionState.js';
@@ -14,11 +14,10 @@ const cancellationBudget = 1000;
 const nanosecondsPerMillisecond = 1_000_000;
 
 const settingWorker = (monotonicNow: number) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-report-reminder-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-report-reminder-');
 
   onTestFinished(() => {
     vi.restoreAllMocks();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   vi.spyOn(process.hrtime, 'bigint').mockReturnValue(

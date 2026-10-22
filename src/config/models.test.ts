@@ -1,10 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { ModelRegistry } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { resolveAllowedModel } from './models.js';
 
 const writeConfig = (path: string, allowedModels: string[] | undefined) => {
@@ -18,11 +18,10 @@ const fixture = (
   user?: string[],
   repository?: string[],
 ) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-models-allowed-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-models-allowed-');
 
   onTestFinished(() => {
     vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   mkdirSync(join(directory, '.pi'));

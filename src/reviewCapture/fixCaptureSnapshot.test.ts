@@ -1,23 +1,13 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import {
-  chmod,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rename,
-  rm,
-  symlink,
-  writeFile,
-} from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget } from './capture.js';
 import { saveVerifiedSnapshot, verifySnapshot } from './fixCapture.js';
 
@@ -52,8 +42,7 @@ const capturedChange = async (
   await git(root, 'commit', '--quiet', '-m', 'first');
   await change(root);
 
-  const review = await mkdtemp(join(tmpdir(), 'tau-snapshot-save-'));
-  onTestFinished(() => rm(review, { recursive: true, force: true }));
+  const review = temporaryDirectory(onTestFinished, 'tau-snapshot-save-');
 
   const pinned = await pinTarget(root, { kind: 'workingTree', base: 'HEAD', exclude });
 

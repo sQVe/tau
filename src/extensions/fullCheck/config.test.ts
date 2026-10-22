@@ -1,20 +1,16 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import type { ConfigWarnings } from '../../config/config.js';
 import { readFullCheckArgv } from './config.js';
 
 const fixture = () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-full-check-config-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-full-check-config-');
   const agentDirectory = join(directory, 'agent');
   const userFile = join(agentDirectory, 'tau.json');
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
 
   mkdirSync(agentDirectory);
 

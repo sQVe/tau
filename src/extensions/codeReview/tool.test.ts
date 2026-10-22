@@ -1,17 +1,6 @@
 import { execFile } from 'node:child_process';
 import type { PathLike } from 'node:fs';
-import {
-  chmod,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  stat,
-  symlink,
-  writeFile,
-} from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -19,6 +8,7 @@ import { Value } from 'typebox/value';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { codeReviewToolParameters, createCodeReviewTool } from './tool.js';
 import type { CodeReviewInput } from './tool.js';
@@ -135,8 +125,7 @@ it('prepares a fresh review directory that Git ignores', async () => {
 
 it('refuses to prepare through a symlinked .tau/workers', async () => {
   const root = await committedRepository();
-  const outside = await mkdtemp(join(tmpdir(), 'tau-review-outside-'));
-  onTestFinished(() => rm(outside, { recursive: true, force: true }));
+  const outside = temporaryDirectory(onTestFinished, 'tau-review-outside-');
 
   await mkdir(join(root, '.tau'));
   await symlink(outside, join(root, '.tau', 'workers'));
@@ -295,8 +284,7 @@ it.each([
 
 it('refuses a review directory that is a symlink', async () => {
   const root = await committedRepository();
-  const outside = await mkdtemp(join(tmpdir(), 'tau-review-outside-'));
-  onTestFinished(() => rm(outside, { recursive: true, force: true }));
+  const outside = temporaryDirectory(onTestFinished, 'tau-review-outside-');
 
   await run(root, { action: 'prepare' });
   await writeFile(join(outside, 'input.md'), inputHeader);
@@ -378,8 +366,7 @@ it('reports unknown when the recapture fails and leaves no recheck.diff', async 
 
 it('refuses a saved target revision that Git could read as an option and writes nothing outside', async () => {
   const { root, directory } = await preparedReview();
-  const outside = await mkdtemp(join(tmpdir(), 'tau-review-outside-'));
-  onTestFinished(() => rm(outside, { recursive: true, force: true }));
+  const outside = temporaryDirectory(onTestFinished, 'tau-review-outside-');
 
   await writeFile(join(root, 'tracked.txt'), 'two\n');
   await captureWorkingTree(root, directory);
@@ -423,8 +410,7 @@ it('returns the evidence for a saved capture', async () => {
 // Commits src/a.test.ts, then replaces src with a link to an outside folder with its own a.test.ts.
 const linkedDirectoryReview = async () => {
   const { root, directory } = await preparedReview();
-  const outside = await mkdtemp(join(tmpdir(), 'tau-review-outside-'));
-  onTestFinished(() => rm(outside, { recursive: true, force: true }));
+  const outside = temporaryDirectory(onTestFinished, 'tau-review-outside-');
 
   await mkdir(join(root, 'src'));
   await writeFile(join(root, 'src', 'a.test.ts'), 'tracked\n');
@@ -907,8 +893,7 @@ it.skipIf(process.getuid?.() === 0)(
 
 // Puts a git wrapper first on PATH that fails the commands whose arguments contain `failing`.
 const failGitCommand = async (failing: string) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-review-git-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-review-git-');
 
   const { stdout } = await promisify(execFile)('sh', ['-c', 'command -v git']);
 

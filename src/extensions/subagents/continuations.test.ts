@@ -1,19 +1,15 @@
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished as afterTest } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { refuseLiveNativeWriter } from './continuations.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import type { Task } from './types.js';
 
 const sessionFixture = () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-live-writers-'));
-
-  afterTest(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(afterTest, 'tau-live-writers-');
 
   const nativeSessionFile = join(directory, 'native.jsonl');
   const linkedSessionFile = join(directory, 'linked.jsonl');

@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { fixtureLoadout } from '../fixtures/loadout.js';
 import type { Task } from '../types.js';
 import { readOwnedWorker } from './record.js';
@@ -12,11 +12,7 @@ const ownedRecord = (name: string): string =>
   readFileSync(new URL(`../fixtures/ownedRecords/${name}.json`, import.meta.url), 'utf8');
 
 const readSaved = (name: string | undefined) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-owned-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-owned-');
 
   if (name !== undefined) {
     writeFileSync(join(directory, 'owned.json'), ownedRecord(name));
@@ -44,11 +40,7 @@ it.each([
 });
 
 const readInline = (content: string, nativeSessionFile = '/tmp/task/session.jsonl') => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-owned-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-owned-');
 
   writeFileSync(join(directory, 'owned.json'), content);
 

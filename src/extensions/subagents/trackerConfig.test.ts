@@ -1,39 +1,17 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { writeFileSync } from 'node:fs';
 
 import { expect, it, vi } from 'vitest';
 
+import { temporaryTauConfig } from '../../../tests/tauConfigHarness.js';
 import type { ConfigWarnings } from '../../config/config.js';
 import { readTrackerConfig, readTrackerSetup } from './trackerConfig.js';
 
 const ui = { notify: () => undefined };
 
-const writeConfig = (path: string, value: unknown) => {
-  writeFileSync(path, JSON.stringify(value));
-};
-
-const configFixture = (onTestFinished: (callback: () => void) => void) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-tracker-config-'));
-  const agentDirectory = join(directory, 'agent');
-  const userFile = join(agentDirectory, 'tau.json');
-  const repositoryFile = join(directory, '.pi', 'tau.json');
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
-
-  mkdirSync(agentDirectory);
-  mkdirSync(join(directory, '.pi'));
-  const location = { cwd: directory, agentDirectory, projectTrusted: true };
-
-  return { location, userFile, repositoryFile };
-};
-
 it('reads the agent team and repositories from the user file', ({ onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-tracker-config-');
 
-  writeConfig(userFile, {
+  writeUser({
     tracker: {
       agentTeam: 'AI',
       repositories: { 'sQVe/tau': { team: 'ME', project: 'Tau' }, 'sQVe/cape': { team: 'AB' } },
@@ -52,10 +30,10 @@ it('reads the agent team and repositories from the user file', ({ onTestFinished
 });
 
 it('reads past unknown keys and reports each key path once', ({ onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-tracker-config-');
   const notify = vi.fn<ConfigWarnings['notify']>();
 
-  writeConfig(userFile, {
+  writeUser({
     tracker: {
       futureKey: 1,
       repositories: { 'sQVe/tau': { team: 'ME', project: 'Tau', futureKey: 2 } },
@@ -85,9 +63,9 @@ it.for<[string, unknown]>([
 ])(
   'keeps the current repository routed past %s for another one',
   ([, other], { onTestFinished }) => {
-    const { location, userFile } = configFixture(onTestFinished);
+    const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-tracker-config-');
 
-    writeConfig(userFile, {
+    writeUser({
       tracker: {
         agentTeam: 'AI',
         repositories: { 'sQVe/tau': { team: 'ME' }, ...(other as object) },
@@ -122,9 +100,9 @@ it.for<[string, [string, unknown][]]>([
     ],
   ],
 ])('refuses case-duplicate repositories with %s', ([, entries], { onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-tracker-config-');
 
-  writeConfig(userFile, { tracker: { repositories: Object.fromEntries(entries) } });
+  writeUser({ tracker: { repositories: Object.fromEntries(entries) } });
 
   const setup = readTrackerSetup(location, ui, 'sQVe/tau');
 
@@ -134,9 +112,12 @@ it.for<[string, [string, unknown][]]>([
 it('fails the setup for a bad entry of the current repository, naming the file and field', ({
   onTestFinished,
 }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-tracker-config-',
+  );
 
-  writeConfig(userFile, { tracker: { repositories: { 'sqve/Tau': { project: 'Tau' } } } });
+  writeUser({ tracker: { repositories: { 'sqve/Tau': { project: 'Tau' } } } });
 
   const setup = readTrackerSetup(location, ui, 'sQVe/tau');
 
@@ -148,9 +129,9 @@ it('fails the setup for a bad entry of the current repository, naming the file a
 });
 
 it('skips every bad entry when the checkout has no repository', ({ onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-tracker-config-');
 
-  writeConfig(userFile, {
+  writeUser({
     tracker: { repositories: { 'sQVe/tau': { project: 'Tau' }, 'sQVe/cape': { team: 'AB' } } },
   });
 
@@ -165,9 +146,9 @@ it('skips every bad entry when the checkout has no repository', ({ onTestFinishe
 it('skips a malformed repository key without invalidating the current repository', ({
   onTestFinished,
 }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-tracker-config-');
 
-  writeConfig(userFile, {
+  writeUser({
     tracker: { repositories: { 'Stryker was here': { team: 5 }, 'sQVe/tau': { team: 'ME' } } },
   });
 
@@ -180,9 +161,9 @@ it('skips a malformed repository key without invalidating the current repository
 });
 
 it('reads team keys in upper case, as Linear stores them', ({ onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-tracker-config-');
 
-  writeConfig(userFile, {
+  writeUser({
     tracker: { agentTeam: 'ai', repositories: { 'sQVe/tau': { team: 'me', project: 'Tau' } } },
   });
 
@@ -193,20 +174,20 @@ it('reads team keys in upper case, as Linear stores them', ({ onTestFinished }) 
 });
 
 it('reads no tracker config without config files or a tracker block', ({ onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-tracker-config-');
 
   expect(readTrackerConfig(location, ui, 'sQVe/tau')).toBeUndefined();
 
-  writeConfig(userFile, { profiles: {} });
+  writeUser({ profiles: {} });
 
   expect(readTrackerConfig(location, ui, 'sQVe/tau')).toBeUndefined();
   expect(readTrackerSetup(location, ui, 'sQVe/tau')).toEqual({ status: 'unset' });
 });
 
 it('reads an empty tracker block as no agent team and no repositories', ({ onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-tracker-config-');
 
-  writeConfig(userFile, { tracker: {} });
+  writeUser({ tracker: {} });
 
   expect(readTrackerConfig(location, ui, 'sQVe/tau')).toEqual({
     agentTeam: undefined,
@@ -261,9 +242,12 @@ it.for<[string, unknown, string]>([
     'tracker.repositories.sQVe/tau.project',
   ],
 ])('refuses %s and names the file and field', ([, tracker, field], { onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-tracker-config-',
+  );
 
-  writeConfig(userFile, { tracker });
+  writeUser({ tracker });
 
   const read = () => readTrackerConfig(location, ui, 'sQVe/tau');
 
@@ -276,9 +260,12 @@ it.for<[string, unknown, string]>([
 });
 
 it('refuses repository keys that differ only in case and names both', ({ onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-tracker-config-',
+  );
 
-  writeConfig(userFile, {
+  writeUser({
     tracker: { repositories: { 'sQVe/tau': { team: 'ME' }, 'sqve/Tau': { team: 'OTHER' } } },
   });
 
@@ -290,9 +277,12 @@ it('refuses repository keys that differ only in case and names both', ({ onTestF
 });
 
 it('refuses the old slice key and names tracker.agentTeam', ({ onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-tracker-config-',
+  );
 
-  writeConfig(userFile, { slice: { agentTeam: 'AI' }, tracker: { agentTeam: 'AI' } });
+  writeUser({ slice: { agentTeam: 'AI' }, tracker: { agentTeam: 'AI' } });
 
   const read = () => readTrackerConfig(location, ui, 'sQVe/tau');
 
@@ -301,10 +291,13 @@ it('refuses the old slice key and names tracker.agentTeam', ({ onTestFinished })
 });
 
 it('refuses tracker in the repository file and names that file', ({ onTestFinished }) => {
-  const { location, userFile, repositoryFile } = configFixture(onTestFinished);
+  const { location, repositoryFile, writeUser, writeRepository } = temporaryTauConfig(
+    onTestFinished,
+    'tau-tracker-config-',
+  );
 
-  writeConfig(userFile, { tracker: { agentTeam: 'AI' } });
-  writeConfig(repositoryFile, { tracker: { agentTeam: 'OTHER' } });
+  writeUser({ tracker: { agentTeam: 'AI' } });
+  writeRepository({ tracker: { agentTeam: 'OTHER' } });
 
   expect(() => readTrackerConfig(location, ui, 'sQVe/tau')).toThrow(repositoryFile);
 
@@ -314,7 +307,7 @@ it('refuses tracker in the repository file and names that file', ({ onTestFinish
 });
 
 it('reports a config file that is not JSON as an invalid setup', ({ onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, userFile } = temporaryTauConfig(onTestFinished, 'tau-tracker-config-');
 
   writeFileSync(userFile, '{ "tracker": ');
 

@@ -1,9 +1,9 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished as afterThisTest, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { loadSnippets } from './snippet.js';
 
 // The directory lists its files in reverse alphabetical order.
@@ -20,8 +20,7 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 });
 
 it('sorts by id whatever order the directory lists the files in', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-snippets-order-'));
-  afterThisTest(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(afterThisTest, 'tau-snippets-order-');
 
   for (const id of ['alpha', 'bravo', 'charlie']) {
     await writeFile(join(directory, `${id}.md`), `---\nname: ${id}\n---\nBody.\n`);

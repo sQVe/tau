@@ -1,16 +1,16 @@
 import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { expect, it } from 'vitest';
 
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
+
 const root = fileURLToPath(new URL('../', import.meta.url));
 
 it('rejects lint warnings in project checks', async ({ onTestFinished }) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-lint-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-lint-');
 
   const fixture = join(directory, 'warning.js');
   await writeFile(fixture, 'console.log("warning fixture");\n');
@@ -30,8 +30,7 @@ it('rejects lint warnings in project checks', async ({ onTestFinished }) => {
 it('runs house style only in the style command and Tau rules in both', async ({
   onTestFinished,
 }) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-style-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-style-');
 
   const fixture = join(directory, 'style.ts');
 
@@ -70,8 +69,7 @@ it('runs house style only in the style command and Tau rules in both', async ({
 it('keeps size thresholds advisory without weakening other lint checks', async ({
   onTestFinished,
 }) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-style-size-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-style-size-');
 
   const fixture = join(directory, 'large.ts');
 
@@ -101,6 +99,7 @@ it('keeps size thresholds advisory without weakening other lint checks', async (
 }, 30_000);
 
 it('keeps test helpers out of production code', async ({ onTestFinished }) => {
+  // The directory must sit inside the repository, under `src/`.
   const directory = await mkdtemp(join(root, 'src', 'tau-lint-imports-'));
   onTestFinished(() => rm(directory, { recursive: true, force: true }));
   const helper = "import { initializeRepository } from '../../tests/gitRepository.js';\n";
@@ -148,8 +147,7 @@ const lintModuleBoundaries = (files: string[]) => {
 it('fails new shared files and shared imports that the module table does not list', async ({
   onTestFinished,
 }) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-modules-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-modules-');
   await mkdir(join(directory, 'src'));
 
   const example = join(directory, 'src', 'example.ts');
@@ -182,8 +180,7 @@ it('fails new shared files and shared imports that the module table does not lis
 it('keeps extensions out of shared modules but lets the package entry load them', async ({
   onTestFinished,
 }) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-modules-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-modules-');
   await mkdir(join(directory, 'src'));
 
   const shared = join(directory, 'src', 'skillTools.ts');
@@ -206,6 +203,7 @@ it('keeps extensions out of shared modules but lets the package entry load them'
 it('keeps private controller files out of the rest of the subagents extension', async ({
   onTestFinished,
 }) => {
+  // The directory must sit inside the repository, under `src/`.
   const directory = await mkdtemp(
     join(root, 'src', 'extensions', 'subagents', 'tau-lint-private-'),
   );
@@ -242,8 +240,7 @@ it('keeps private controller files out of the rest of the subagents extension', 
 }, 30_000);
 
 it('ignores an unrelated src folder above the project root', async ({ onTestFinished }) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-modules-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-modules-');
 
   const project = join(directory, 'src', 'project');
   const files = ['scripts', 'lint', 'tests'].map((folder) => join(project, folder, 'probe.ts'));

@@ -1,9 +1,6 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { acceptReport, recordEvent } from '../records.js';
 import type { Task, TaskEvent } from '../types.js';
 import {
@@ -24,11 +21,7 @@ afterEach(() => {
 });
 
 const handleFor = (remaining: number, cancellationBudget = 0) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-budget-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-budget-');
 
   const task = { taskId: 'task', cancellationBudget } as Task;
 

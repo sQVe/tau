@@ -1,9 +1,10 @@
 import { writeFileSync } from 'node:fs';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { vi } from 'vitest';
+import { onTestFinished, vi } from 'vitest';
+
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 
 type RegisterCleanup = (cleanup: () => Promise<void>) => void;
 
@@ -35,13 +36,12 @@ process.exitCode = answer.code ?? 0;
 // A git executable that prints canned answers, to test how the tool reads missing and malformed
 // output that real Git does not produce. It is first on PATH until the test ends.
 export const createGitFake = async (registerCleanup: RegisterCleanup): Promise<GitFake> => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-git-fake-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-git-fake-');
   const answers: Record<string, GitAnswer> = {};
   const answersFile = join(directory, 'answers.json');
 
   registerCleanup(async () => {
     vi.unstubAllEnvs();
-    await rm(directory, { recursive: true, force: true });
   });
 
   await writeFile(join(directory, 'git'), script);

@@ -3,19 +3,17 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
-  rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { declinedExec } from '../../../tests/declinedExecFake.js';
 import { initializeRepository } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import type { LaunchParameters } from './launchParameters.js';
 import { applyQaSettings } from './qaLaunch.js';
 
@@ -29,13 +27,12 @@ const repository = 'sQVe/cape';
 const notify = vi.fn<() => void>();
 
 const fixture = async (origin: string | undefined): Promise<Fixture> => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-qa-launch-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-qa-launch-');
   const agentDirectory = join(directory, 'agent');
   const worktree = join(directory, 'tree');
 
   onTestFinished(() => {
     vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   mkdirSync(agentDirectory);

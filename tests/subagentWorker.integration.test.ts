@@ -1,5 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -47,16 +46,16 @@ import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import { readInstructionSet } from '../src/instructions/instructions.js';
 import { skillTools } from '../src/skillTools.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 const handover =
   'Changes: edited source.txt\nEvidence: command-ok\nDecisions: None\nConcerns: Safety Net blocked deletion';
 
 it('keeps the questionnaire available to the parent', async () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-parent-questionnaire-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-parent-questionnaire-');
 
   onTestFinished(() => {
     vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
@@ -159,12 +158,11 @@ it.each(['editing', 'investigation'] as const)(
     );
 
     const expectedSource = role === 'editing' ? 'after' : 'before';
-    const directory = mkdtempSync(join(tmpdir(), 'tau-worker-pi-'));
+    const directory = temporaryDirectory(onTestFinished, 'tau-worker-pi-');
 
     onTestFinished(() => {
       vi.unstubAllEnvs();
       vi.restoreAllMocks();
-      rmSync(directory, { recursive: true, force: true });
     });
 
     vi.stubEnv('PI_CODING_AGENT_DIR', directory);

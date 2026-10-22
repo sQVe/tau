@@ -1,10 +1,10 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Type } from 'typebox';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.js';
 import {
   parseVersionedRecord,
   publishTextSync,
@@ -56,13 +56,11 @@ const options = {
 };
 
 const directoryFixture = async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-record-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-record-');
 
   onTestFinished(() => {
     writeState.failMidway = false;
     writeState.failFsync = false;
-
-    return rm(directory, { recursive: true, force: true });
   });
 
   return directory;

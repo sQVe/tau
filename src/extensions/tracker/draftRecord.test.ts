@@ -1,9 +1,9 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { findDraftFor, readDraftRecord, writeDraftField } from './draftRecord.js';
 
 const renameFailure = vi.hoisted(() => ({ error: undefined as Error | undefined }));
@@ -30,9 +30,7 @@ afterEach(() => {
 const fixtures = join(import.meta.dirname, 'fixtures', 'drafts');
 
 const directoryWith = async (text: string | undefined) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-draft-'));
-
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-draft-');
 
   if (text !== undefined) {
     await writeFile(join(directory, 'draft.json'), text);

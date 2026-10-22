@@ -1,12 +1,12 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, mkdir, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget, readHead } from './capture.js';
 import type { DirectReviewTarget } from './capture.js';
 import { readReviewEvidence } from './evidence.js';
@@ -43,8 +43,7 @@ const savedCapture = async (
   target: DirectReviewTarget,
   input = inputText('None.', 'none'),
 ) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-review-evidence-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-review-evidence-');
 
   const pinned = await pinTarget(root, target);
   const captured = await captureTarget(root, pinned);
@@ -151,8 +150,7 @@ it('finds callers outside test files and the module itself in a working tree tar
 
 it('does not read a sibling test that links outside the repository', async () => {
   const root = await createTemporaryRepository(onTestFinished);
-  const outside = await mkdtemp(join(tmpdir(), 'tau-review-outside-'));
-  onTestFinished(() => rm(outside, { recursive: true, force: true }));
+  const outside = temporaryDirectory(onTestFinished, 'tau-review-outside-');
 
   const base = await commit(root, { 'src/math.ts': sourceFiles['src/math.ts'] }, 'first');
 
@@ -172,8 +170,7 @@ it('does not read a sibling test that links outside the repository', async () =>
 
 const linkedDirectoryRepository = async () => {
   const root = await createTemporaryRepository(onTestFinished);
-  const outside = await mkdtemp(join(tmpdir(), 'tau-review-outside-'));
-  onTestFinished(() => rm(outside, { recursive: true, force: true }));
+  const outside = temporaryDirectory(onTestFinished, 'tau-review-outside-');
 
   const base = await commit(root, { 'src/a.test.ts': 'tracked\n' }, 'first');
 
@@ -214,8 +211,7 @@ it('writes nothing to the review directory except the freshness recapture', asyn
 
 it('refuses a review directory without capture.json', async () => {
   const root = await createTemporaryRepository(onTestFinished);
-  const directory = await mkdtemp(join(tmpdir(), 'tau-review-evidence-'));
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-review-evidence-');
 
   await expect(readReviewEvidence(root, directory)).rejects.toThrow('No capture record');
   expect(await readdir(directory)).toEqual([]);

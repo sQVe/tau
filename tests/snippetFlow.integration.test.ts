@@ -1,6 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
 import { CustomEditor, SessionManager } from '@earendil-works/pi-coding-agent';
@@ -22,6 +20,7 @@ import { expect, it, vi } from 'vitest';
 import { loadSnippets } from '../src/extensions/snippets/snippet.js';
 import tauExtension from '../src/tau.js';
 import { createPiSession } from './piSession.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 type RegisterCleanup = TestContext['onTestFinished'];
 
@@ -134,10 +133,8 @@ const createScriptedUI = (session: AgentSession, cwd: string) => {
 };
 
 const createHarness = async (registerCleanup: RegisterCleanup, options: HarnessOptions = {}) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-snippet-flow-'));
-  const agentDirectory = await mkdtemp(join(tmpdir(), 'tau-snippet-agent-'));
-  registerCleanup(() => rm(directory, { recursive: true, force: true }));
-  registerCleanup(() => rm(agentDirectory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(registerCleanup, 'tau-snippet-flow-');
+  const agentDirectory = temporaryDirectory(registerCleanup, 'tau-snippet-agent-');
 
   const faux = fauxProvider({ provider: 'tau-snippet-test' });
 
@@ -240,8 +237,7 @@ const fillHistory = (editor: EditorComponent, session: AgentSession) => {
 };
 
 const createSavedSession = async (registerCleanup: RegisterCleanup) => {
-  const sessionDirectory = await mkdtemp(join(tmpdir(), 'tau-snippet-sessions-'));
-  registerCleanup(() => rm(sessionDirectory, { recursive: true, force: true }));
+  const sessionDirectory = temporaryDirectory(registerCleanup, 'tau-snippet-sessions-');
 
   const first = await createHarness(registerCleanup, {
     sessionManager: (cwd) => SessionManager.create(cwd, sessionDirectory),

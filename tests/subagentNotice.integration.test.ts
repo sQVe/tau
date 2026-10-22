@@ -1,5 +1,3 @@
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -23,6 +21,7 @@ import { expect, it, vi } from 'vitest';
 import { createNoticeDelivery } from '../src/extensions/subagents/subagents.js';
 import { appendSystemPrompt } from '../src/instructions/systemPrompt.js';
 import { createBoundSession } from './piSession.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 type BeforeCompact = (
   event: SessionBeforeCompactEvent,
@@ -64,8 +63,7 @@ const createHarness = async (
     earlierRunStart?: () => Promise<void>;
   },
 ) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-subagent-notice-'));
-  registerCleanup(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(registerCleanup, 'tau-subagent-notice-');
 
   const faux = fauxProvider({ provider: 'tau-notice-fixture' });
   const contexts: Context[] = [];

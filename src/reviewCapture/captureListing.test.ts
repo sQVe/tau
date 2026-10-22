@@ -1,12 +1,12 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget } from './capture.js';
 import type { DirectReviewTarget } from './capture.js';
 import { installFakeGit } from './fixtures/fakeGit.js';
@@ -350,8 +350,7 @@ it('fails the capture when Git cannot check one of two named paths', async () =>
 
 it('reports a tracked file below a link that leads outside the checkout as unreadable', async () => {
   const root = await committedRepository({ 'dir/a.txt': 'one\n', 'b.txt': 'one\n' });
-  const outside = await mkdtemp(join(tmpdir(), 'tau-outside-'));
-  onTestFinished(() => rm(outside, { recursive: true, force: true }));
+  const outside = temporaryDirectory(onTestFinished, 'tau-outside-');
 
   await writeFile(join(outside, 'a.txt'), 'outside secret\n');
   await rm(join(root, 'dir'), { recursive: true });

@@ -1,10 +1,10 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { promisify } from 'node:util';
 
+import { onTestFinished } from 'vitest';
+
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 
 type RegisterCleanup = (cleanup: () => Promise<void>) => void;
 
@@ -18,9 +18,7 @@ export const git = async (cwd: string, ...commandArguments: string[]): Promise<s
 // pushed and checked out.
 export const createStackCheckout = async (registerCleanup: RegisterCleanup): Promise<string> => {
   const root = await createTemporaryRepository(registerCleanup);
-  const remote = await mkdtemp(join(tmpdir(), 'tau-stack-remote-'));
-
-  registerCleanup(() => rm(remote, { recursive: true, force: true }));
+  const remote = temporaryDirectory(onTestFinished, 'tau-stack-remote-');
 
   await git(root, 'config', 'maintenance.auto', 'false');
   await git(root, 'config', 'gc.auto', '0');

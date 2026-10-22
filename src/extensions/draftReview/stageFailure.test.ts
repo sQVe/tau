@@ -1,11 +1,11 @@
 import type { PathLike } from 'node:fs';
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { stageReview } from './stage.js';
 
 const copyState = vi.hoisted(() => ({ failOn: '' }));
@@ -27,8 +27,7 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 
 const fixture = async () => {
   const repository = await createTemporaryRepository(onTestFinished, 'tau-stage-failure-repo-');
-  const data = await mkdtemp(join(tmpdir(), 'tau-stage-failure-data-'));
-  onTestFinished(() => rm(data, { recursive: true, force: true }));
+  const data = temporaryDirectory(onTestFinished, 'tau-stage-failure-data-');
   vi.stubEnv('TMPDIR', data);
 
   onTestFinished(() => {

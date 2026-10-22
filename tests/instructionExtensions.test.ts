@@ -1,9 +1,10 @@
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { DefaultResourceLoader, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
+
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 const instructionSets = ['writing', 'coding', 'workflow'] as const;
 
@@ -19,8 +20,7 @@ for (const instructionSet of instructionSets) {
   it(`rejects invalid ${instructionSet} instructions and reads them again on reload`, async ({
     onTestFinished,
   }) => {
-    const workingDirectory = await mkdtemp(join(tmpdir(), `tau-${instructionSet}-`));
-    onTestFinished(() => rm(workingDirectory, { recursive: true, force: true }));
+    const workingDirectory = temporaryDirectory(onTestFinished, `tau-${instructionSet}-`);
 
     // Keep the extension's relative imports and the instruction files' path.
     const extensionPath = join(workingDirectory, 'extensions', 'instructions.ts');

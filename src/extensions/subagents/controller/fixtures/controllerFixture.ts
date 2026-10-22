@@ -1,11 +1,11 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { vi, onTestFinished as afterTest } from 'vitest';
 import type { MockInstance } from 'vitest';
 
 import { herdrFake } from '../../../../../tests/herdrFake.js';
+import { temporaryDirectory } from '../../../../../tests/temporaryDirectoryHarness.js';
 import * as cancellationModule from '../../cancellation.js';
 import { fixtureLoadout } from '../../fixtures/loadout.js';
 import * as loadoutModule from '../../loadout.js';
@@ -69,13 +69,12 @@ export const setup = (
   packageManager?: (loadout: Loadout) => WorkerPackageManager,
   capacity?: number,
 ): SetupFixture => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-controller-'));
+  const directory = temporaryDirectory(afterTest, 'tau-controller-');
 
   onTestFinished(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);

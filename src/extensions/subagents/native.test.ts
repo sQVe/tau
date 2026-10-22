@@ -2,7 +2,6 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -11,22 +10,18 @@ import {
   utimesSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { validateNative } from './native.js';
 import type { Task } from './types.js';
 
 const fixture = () => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-native-'));
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
+  const directory = temporaryDirectory(onTestFinished, 'tau-native-');
 
   const task: Task = {
     version: 11,
