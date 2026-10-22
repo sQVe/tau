@@ -1,4 +1,4 @@
-import { requireObject } from '../../../terminal.js';
+import { requireObject } from '../../../herdr.js';
 import { WorkerPlacement } from '../placement.js';
 import type { Visibility } from '../placement.js';
 

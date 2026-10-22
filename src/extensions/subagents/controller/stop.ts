@@ -6,8 +6,8 @@ import {
   resolveTerminal,
   result,
   terminalLocation,
-} from '../../../terminal.js';
-import type { TerminalLocation } from '../../../terminal.js';
+} from '../../../herdr.js';
+import type { TerminalLocation } from '../../../herdr.js';
 import { processAbsent } from '../cancellation.js';
 import { decidePiStop } from '../piStop.js';
 import type { WorkerPlacement } from '../placement.js';

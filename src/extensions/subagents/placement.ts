@@ -1,15 +1,16 @@
-import { minimumPane, readLayout, rectangle } from '../../herdrLayout.js';
-import type { PaneLayout, Rectangle } from '../../herdrLayout.js';
 // Replaces tmux.ts surface placement from pi-interactive-subagents c3e8b53.
 import {
   listTerminals,
+  minimumPane,
+  readLayout,
+  rectangle,
   requireObject,
   resolveTerminal,
   result,
   terminalLocation,
   text,
-} from '../../terminal.js';
-import type { TerminalCall, TerminalLocation } from '../../terminal.js';
+} from '../../herdr.js';
+import type { PaneLayout, Rectangle, TerminalCall, TerminalLocation } from '../../herdr.js';
 
 export type Visibility = 'foreground' | 'background';
 

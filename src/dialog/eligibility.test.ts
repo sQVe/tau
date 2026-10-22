@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { confirmationRefusal } from './confirmationEligibility.js';
+import { confirmationRefusal } from './eligibility.js';
 
 it.each([
   { isWorker: true, hasUI: true, refused: true },

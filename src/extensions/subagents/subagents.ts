@@ -1,4 +1,3 @@
-/* oxlint-disable node/no-process-env -- The herdr connection comes from the active Pi process. */
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
@@ -15,6 +14,7 @@ import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { errorMessage } from '../../errors.js';
 import { readOriginRepository } from '../../github/repositoryTarget.js';
 import { configRepositoryKey } from '../../github/repositoryTargetDecisions.js';
+import { herdrPaneId, herdrSocketPath, insideHerdr } from '../../herdr.js';
 import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
 import { isRecord } from '../../schema.js';
 import { isWorkerProcess, workerNoticeChannel } from '../../worker.js';
@@ -202,11 +202,9 @@ const createController = (
   );
 };
 
-const hasHerdrEnvironment = (): boolean =>
-  process.env.HERDR_ENV === '1' && Boolean(process.env.HERDR_SOCKET_PATH);
+const hasHerdrEnvironment = (): boolean => insideHerdr() && Boolean(herdrSocketPath());
 
-const hasHerdrParentPane = (): boolean =>
-  hasHerdrEnvironment() && Boolean(process.env.HERDR_PANE_ID);
+const hasHerdrParentPane = (): boolean => hasHerdrEnvironment() && Boolean(herdrPaneId());
 
 // Pi streams call arguments, so a renderer can run before the model finishes any field.
 const callDetail = (parts: (string | undefined)[]): string | undefined => {

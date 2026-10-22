@@ -92,10 +92,10 @@ Writes:
 - [ ] Nothing changes between the preview and the write. If it does, preview again.
 - [ ] Each hard rule holds on every path, including the retry and continue paths.
 - [ ] Scratch files use a task-named path or `mktemp`, never a shared name in `/tmp`.
-- [ ] A tool asks with `confirmWithUser` in `src/confirm.ts` before a write outside the worktree
-      that the tracker skill's [Hard rules](../src/skills/tracker/SKILL.md#hard-rules) list says
-      needs approval. That confirm is the approval the list asks for, so the calling skill does not
-      ask again. It refuses in a worker, even one with UI, because the user does not watch the
+- [ ] A tool asks with `confirmWithUser` in `src/dialog/dialog.ts` before a write outside the
+      worktree that the tracker skill's [Hard rules](../src/skills/tracker/SKILL.md#hard-rules) list
+      says needs approval. That confirm is the approval the list asks for, so the calling skill does
+      not ask again. It refuses in a worker, even one with UI, because the user does not watch the
       worker's pane.
 - [ ] The confirm shows the exact writes the tool will make, so the user sees what they approve.
 - [ ] When a call has a write that needs a confirm, the tool writes nothing if the user declines or
