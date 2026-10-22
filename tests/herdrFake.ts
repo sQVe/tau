@@ -144,7 +144,7 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
 
     return processInfoResponse({
       paneId,
-      shellPid: evidence?.processId ?? shellProcessId,
+      shellPid: evidence?.shellProcessId ?? shellProcessId,
       processId: evidence?.processId ?? shellProcessId,
       argv: evidence?.argv ?? ['shell'],
     });
@@ -192,6 +192,7 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
       terminalId: pane.terminal_id,
       session: '',
       command: ['tuicr'],
+      runsInShell: true,
     });
 
     if (opensExited) {

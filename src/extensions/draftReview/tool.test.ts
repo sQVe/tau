@@ -803,14 +803,27 @@ it('fails naming the record when the tuicr process never exits, and deletes noth
     vi.useRealTimers();
   });
 
+  const herdr = herdrFake();
+  const checked = new Set<number>();
+
   // The next poll's timer exists by the time this immediate runs.
-  const { run, setSession, deleted, records, repository } = await fixture(herdrFake(), () => {
+  const { run, setSession, deleted, records, repository } = await fixture(herdr, (processId) => {
+    checked.add(processId);
     setImmediate(() => vi.advanceTimersByTime(100));
 
     return true;
   });
 
   const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
+  const { terminalId, processId } = tuicr(herdr);
+
+  // herdr may name only the foreground processes.
+  herdr.holdReply(
+    terminalId,
+    'processInfo',
+    JSON.stringify({ result: { process_info: { foreground_processes: [{ pid: processId }] } } }),
+  );
+
   await setSession([comment('on-a', '01-slices/1-a.md')]);
 
   const directory = (opened.details as { directory: string }).directory;
@@ -820,6 +833,7 @@ it('fails naming the record when the tuicr process never exits, and deletes noth
   expect(await deleted()).toEqual([]);
   expect(await records()).toHaveLength(1);
   expect((await readReview(repository, directory)).recordDirectory).toBe(directory);
+  expect([...checked]).toEqual([tuicr(herdr).processId]);
 });
 
 it('waits on the saved tuicr process when a retry finds the terminal gone, then deletes', async () => {

@@ -17,9 +17,12 @@ interface Registration {
   processId?: number;
   session: string;
   command: string[];
+  // A command herdr runs in the pane's shell, such as tuicr, gets a shell process of its own.
+  runsInShell?: boolean;
 }
 
 interface ProcessEvidence {
+  shellProcessId: number;
   processId: number;
   argv: string[];
 }
@@ -55,7 +58,11 @@ const firstWorkerProcessId = 5001;
  * of a worker, so a replaced process stays known.
  */
 export const herdrWorkerFake = (): HerdrWorkerFake => {
-  const workers = new Map<string, FakeWorker & { command: string[] }>();
+  const workers = new Map<
+    string,
+    FakeWorker & { command: string[]; shellProcessId: number | undefined }
+  >();
+
   const processes = new Map<number, boolean>([[shellProcessId, false]]);
   let nextProcessId = firstWorkerProcessId;
   // Replies that stand in for the state-derived evidence of one terminal.
@@ -100,7 +107,8 @@ export const herdrWorkerFake = (): HerdrWorkerFake => {
   };
 
   return {
-    register: ({ paneId, terminalId, processId, session, command }) => {
+    register: ({ paneId, terminalId, processId, session, command, runsInShell }) => {
+      const ownShellProcessId = runsInShell === true ? startProcess() : undefined;
       const workerProcessId = processId === undefined ? startProcess() : claimProcess(processId);
 
       workers.set(terminalId, {
@@ -110,6 +118,7 @@ export const herdrWorkerFake = (): HerdrWorkerFake => {
         session,
         exited: false,
         command,
+        shellProcessId: ownShellProcessId,
       });
     },
     find: (terminalId) => workers.get(terminalId ?? ''),
@@ -152,7 +161,11 @@ export const herdrWorkerFake = (): HerdrWorkerFake => {
         return undefined;
       }
 
-      return { processId: worker.processId, argv: worker.command };
+      return {
+        shellProcessId: worker.shellProcessId ?? worker.processId,
+        processId: worker.processId,
+        argv: worker.command,
+      };
     },
     agentReply: (terminalId) => {
       const queued = queuedAgentReplies.get(`${terminalId}`)?.shift();
