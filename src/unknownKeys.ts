@@ -9,14 +9,14 @@ export interface KnownKeys {
 export const anyKey = '*';
 
 // Full key paths below `path` that `known` does not list, at any depth. A value that is not an
-// object has no keys to check; its type is the reader's concern.
+// object has no keys to check; its type is the reader's concern. An empty `path` is the file's root.
 export const findUnknownKeys = (value: unknown, known: KnownKeys, path: string): string[] => {
   if (!isRecord(value)) {
     return [];
   }
 
   return Object.entries(value).flatMap(([key, child]) => {
-    const keyPath = `${path}.${key}`;
+    const keyPath = path === '' ? key : `${path}.${key}`;
     const expected = Object.hasOwn(known, key) ? known[key] : known[anyKey];
 
     if (expected === undefined) {

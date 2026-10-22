@@ -1,4 +1,9 @@
-import { readTauConfig, readUserOnlyKey, warnUnknownKeys } from '../../config/config.js';
+import {
+  readTauConfig,
+  readUserOnlyKey,
+  requireKnownKey,
+  warnUnknownKeys,
+} from '../../config/config.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { errorMessage } from '../../errors.js';
 import { isRecord } from '../../isRecord.js';
@@ -33,6 +38,8 @@ const knownTrackerKeys: KnownKeys = {
 };
 
 const rejectSliceKey = (location: ConfigLocation): void => {
+  requireKnownKey('slice');
+
   const file = readTauConfig(location).files.find(
     ({ value }) => isRecord(value) && Object.hasOwn(value, 'slice'),
   );

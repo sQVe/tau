@@ -6,7 +6,7 @@ import { Value } from 'typebox/value';
 
 import { effectiveAllowedModels } from './allowedModels.js';
 import type { AllowedModels } from './allowedModels.js';
-import { readTauConfig } from './config.js';
+import { readTauConfig, requireKnownKey } from './config.js';
 import type { ConfigFile, ConfigLocation } from './config.js';
 
 interface ModelReference {
@@ -34,6 +34,8 @@ const allowedModelsFileSchema = Type.Object({
 });
 
 const allowedModelsLayer = ({ source, value }: ConfigFile) => {
+  requireKnownKey('allowedModels');
+
   if (!Value.Check(allowedModelsFileSchema, value)) {
     throw new Error(
       `Invalid Tau config ${source}: allowedModels must be an array of provider/model-id strings.`,

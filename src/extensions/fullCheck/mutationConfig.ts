@@ -1,4 +1,9 @@
-import { readTauConfig, userConfigPath, warnUnknownKeys } from '../../config/config.js';
+import {
+  readTauConfig,
+  requireKnownKey,
+  userConfigPath,
+  warnUnknownKeys,
+} from '../../config/config.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { isRecord } from '../../isRecord.js';
 import type { KnownKeys } from '../../unknownKeys.js';
@@ -6,8 +11,11 @@ import { readArgv } from './config.js';
 
 const knownMutationKeys: KnownKeys = { argv: true };
 
-const setsMutation = (value: unknown): boolean =>
-  isRecord(value) && Object.hasOwn(value, 'mutation');
+const setsMutation = (value: unknown): boolean => {
+  requireKnownKey('mutation');
+
+  return isRecord(value) && Object.hasOwn(value, 'mutation');
+};
 
 const missingMessage = (ignored: string | undefined): string => {
   const base = `No mutation check is configured. Add mutation.argv to .pi/tau.json in the repository, such as {"mutation": {"argv": ["pnpm", "exec", "mutation"]}}.`;

@@ -28,6 +28,10 @@ it.for<[string, unknown, string[]]>([
   expect(findUnknownKeys(value, known, 'profiles.worker')).toEqual(expected);
 });
 
+it('names a key at the root of the file without a leading dot', () => {
+  expect(findUnknownKeys({ model: 'a/b', modle: 'a/b' }, known, '')).toEqual(['modle']);
+});
+
 it('drops key paths already reported for the same file and repeats them for another file', () => {
   const reported = new Set([reportedId('/user.json', 'a.b')]);
 

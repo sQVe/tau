@@ -71,11 +71,38 @@ export const readTauConfig = ({
   return { files: [user, project].filter((file) => file !== undefined), ignored };
 };
 
+// Every top-level key of tau.json, with the feature that owns it. `slice` is removed but listed so
+// it is not reported as unknown; its reader fails on it with its own error.
+const topLevelKeys: Readonly<Record<string, string>> = {
+  allowedModels: 'models',
+  browser: 'browser',
+  fullCheck: 'fullCheck',
+  mutation: 'fullCheck',
+  profiles: 'subagents',
+  qa: 'subagents',
+  reviews: 'pr',
+  subagents: 'subagents',
+  tdd: 'tdd',
+  tracker: 'subagents',
+  slice: 'subagents',
+};
+
+// Guards each top-level read, so a reader cannot read a key that warnUnknownTopLevelKeys reports.
+export const requireKnownKey = (key: string): void => {
+  if (!Object.hasOwn(topLevelKeys, key)) {
+    throw new Error(
+      `Tau reads tau.json key ${key}, which is missing from topLevelKeys in src/config/config.ts.`,
+    );
+  }
+};
+
 const setsKey = ({ value }: ConfigFile, key: string): boolean =>
   isRecord(value) && Object.hasOwn(value, key);
 
 // The user owns which models they pay for and trust, so a repository file cannot set a model key.
 export const readUserOnlyKey = (location: ConfigLocation, key: string): ConfigFile | undefined => {
+  requireKnownKey(key);
+
   const { files } = readTauConfig(location);
   const userPath = userConfigPath(location.agentDirectory);
   const repository = files.find((file) => file.source !== userPath && setsKey(file, key));
@@ -145,5 +172,17 @@ export const warnUnknownKeys = (
   for (const keyPath of fresh) {
     reported.add(reportedId(source, keyPath));
     ui.notify(`Tau config ${source}: ${keyPath} is not a known key and was ignored.`, 'warning');
+  }
+};
+
+// Each feature checks the keys inside its own section, so the top level knows only the section names.
+const knownTopLevelKeys: KnownKeys = Object.fromEntries(
+  Object.keys(topLevelKeys).map((key) => [key, true]),
+);
+
+// Warns once per session for each file and top-level key that `topLevelKeys` does not list.
+export const warnUnknownTopLevelKeys = (ui: ConfigWarnings, files: ConfigFile[]): void => {
+  for (const { source, value } of files) {
+    warnUnknownKeys(ui, source, value, knownTopLevelKeys, '');
   }
 };
