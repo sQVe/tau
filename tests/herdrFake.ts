@@ -42,11 +42,21 @@ interface HerdrFake {
   holdReply: (terminalId: string, surface: Surface, reply: Reply) => void;
   exit: (terminalId: string) => void;
   ready: (terminalId: string) => void;
-  move: (terminalId: string) => void;
+  move: (terminalId: string, tabId?: string) => void;
   replaceSession: (terminalId: string, session: string) => void;
   replaceProcess: (terminalId: string) => void;
   processAbsent: (processId: number) => boolean;
   knowsProcess: (processId: number) => boolean;
+  addPane: (paneId: string, width: number) => void;
+  zoom: () => void;
+  focus: (tabId: string) => void;
+  failCall: (step: string, error: Error, exitsTerminal?: boolean) => void;
+  hangCall: (step: string) => void;
+  beforeCall: (step: string, hook: () => void) => void;
+  moveDuring: (step: string, tabId?: string) => void;
+  exitWhenOpened: () => void;
+  loseTabOnClose: (tabId: string) => void;
+  malformedTabList: (reply: Reply) => void;
 }
 
 const shellProcessId = 100;
@@ -79,6 +89,35 @@ const answer = (reply: Reply) => {
 const paneArgument = (argumentsList: string[]) =>
   argumentsList[argumentsList.indexOf('--pane') + 1];
 
+const paneNotFound = () => new Error('herdr failed: {"error":{"code":"pane_not_found"}}');
+
+const tabNotFound = () => new Error('herdr failed: {"error":{"code":"tab_not_found"}}');
+
+// A call that never answers until its caller gives up.
+const hangUntilAborted = (signal: AbortSignal | undefined) =>
+  new Promise<string>((_resolve, reject) => {
+    if (signal === undefined) {
+      reject(new Error('A hung call needs an abort signal.'));
+
+      return;
+    }
+
+    const rejectWithReason = () => {
+      reject(signal.reason as Error);
+    };
+
+    if (signal.aborted) {
+      rejectWithReason();
+
+      return;
+    }
+
+    signal.addEventListener('abort', rejectWithReason, { once: true });
+  });
+
+const valueOf = (argumentsList: string[], flag: string) =>
+  argumentsList[argumentsList.indexOf(flag) + 1] ?? '';
+
 const herdrError = (message: string, code: string) =>
   Object.assign(new Error(message), {
     stderr: JSON.stringify({ error: { code } }),
@@ -100,6 +139,16 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
   const queuedAgentReplies = new Map<string, Reply[]>();
   const malformedReplies = new Map<string, Reply[]>();
   const heldReplies = new Map<string, Reply>();
+  // Faults keyed by the call they hit, such as `pane run`.
+  const failures = new Map<string, { error: Error; exitsTerminal: boolean }>();
+  const hungSteps = new Set<string>();
+  const hooks = new Map<string, () => void>();
+  const movingSteps = new Map<string, string | undefined>();
+  const lostTabs = new Set<string>();
+  const malformedTabLists: Reply[] = [];
+  let focusedTab = layout.parent.tab_id;
+  let openedCount = 0;
+  let opensExited = false;
 
   const terminalOf = (paneId: string | undefined) =>
     layout.panes.find((pane) => pane.pane_id === paneId)?.terminal_id;
@@ -186,6 +235,155 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
     layout.panes.splice(0, layout.panes.length, ...running);
   };
 
+  const tabIds = () => [...new Set(layout.panes.map((pane) => pane.tab_id))];
+
+  const startReview = (pane: (typeof layout.panes)[number]) => {
+    layout.dimensions.set(pane.pane_id, { ...layout.dimensions.get(layout.parent.pane_id)! });
+
+    workers.set(pane.terminal_id, {
+      paneId: pane.pane_id,
+      terminalId: pane.terminal_id,
+      processId: startProcess(),
+      session: '',
+      exited: false,
+      command: ['tuicr'],
+    });
+
+    if (opensExited) {
+      exit(pane.terminal_id);
+    }
+  };
+
+  const openedPane = (tabId: string, workspaceId: string) => {
+    openedCount += 1;
+
+    const pane = {
+      ...layout.parent,
+      pane_id: `review-pane-${openedCount}`,
+      terminal_id: `review-terminal-${openedCount}`,
+      workspace_id: workspaceId,
+      tab_id: tabId,
+    };
+
+    layout.panes.push(pane);
+    startReview(pane);
+
+    return pane;
+  };
+
+  const closeTab = (tabId: string) => {
+    const doomed = layout.panes.filter((pane) => pane.tab_id === tabId);
+
+    const lost = lostTabs.delete(tabId);
+
+    for (const pane of doomed) {
+      if (workers.has(pane.terminal_id)) {
+        exit(pane.terminal_id);
+      }
+    }
+
+    removeExitedPanes();
+
+    if (lost || doomed.length === 0) {
+      throw tabNotFound();
+    }
+
+    if (focusedTab === tabId) {
+      focusedTab = layout.panes[0]?.tab_id ?? tabId;
+    }
+
+    return '{}';
+  };
+
+  const reviewActions: Record<string, (argumentsList: string[]) => string> = {
+    'pane split': (argumentsList) => {
+      const target = layout.panes.find((pane) => pane.pane_id === valueOf(argumentsList, '--pane'));
+
+      if (target === undefined) {
+        throw paneNotFound();
+      }
+
+      return JSON.stringify({
+        result: { pane: openedPane(target.tab_id, target.workspace_id) },
+      });
+    },
+    'tab create': (argumentsList) => {
+      const tabId = `review-tab-${openedCount + 1}`;
+      const pane = openedPane(tabId, valueOf(argumentsList, '--workspace'));
+      focusedTab = tabId;
+
+      return JSON.stringify({ result: { tab: { tab_id: tabId }, root_pane: pane } });
+    },
+    'tab list': () => {
+      const malformed = malformedTabLists.shift();
+
+      if (malformed !== undefined) {
+        return answer(malformed);
+      }
+
+      const tabs = tabIds().map((tabId) => ({ tab_id: tabId, focused: tabId === focusedTab }));
+
+      return JSON.stringify({ result: { tabs } });
+    },
+    'tab focus': (argumentsList) => {
+      focusedTab = argumentsList[2] ?? focusedTab;
+
+      return '{}';
+    },
+    'tab close': (argumentsList) => closeTab(argumentsList[2] ?? ''),
+    'pane run': (argumentsList) => {
+      if (terminalOf(argumentsList[2]) === undefined) {
+        throw paneNotFound();
+      }
+
+      return '{}';
+    },
+  };
+
+  const targetTerminal = (argumentsList: string[]) =>
+    terminalOf(paneArgument(argumentsList)) ?? terminalOf(argumentsList[2]);
+
+  const move = (terminalId: string, tabId?: string) => {
+    const worker = requireWorker(terminalId);
+    const pane = layout.panes.find((candidate) => candidate.terminal_id === terminalId);
+
+    worker.paneId = `${worker.paneId}-moved`;
+
+    if (pane !== undefined) {
+      pane.pane_id = worker.paneId;
+      pane.tab_id = tabId ?? pane.tab_id;
+    }
+  };
+
+  // Applies the faults a test set for this call. A fault throws or hangs; otherwise the call goes on.
+  const interrupt = async (step: string, argumentsList: string[], signal?: AbortSignal) => {
+    hooks.get(step)?.();
+
+    if (hungSteps.has(step)) {
+      await hangUntilAborted(signal);
+    }
+
+    const terminalId = targetTerminal(argumentsList);
+
+    if (movingSteps.has(step) && terminalId !== undefined) {
+      const tabId = movingSteps.get(step);
+      movingSteps.delete(step);
+      move(terminalId, tabId);
+
+      throw paneNotFound();
+    }
+
+    const failure = failures.get(step);
+
+    if (failure !== undefined) {
+      if (failure.exitsTerminal && terminalId !== undefined) {
+        exit(terminalId);
+      }
+
+      throw failure.error;
+    }
+  };
+
   const startWorker = (argumentsList: string[], response: string) => {
     const layoutRequest = JSON.parse(argumentsList[2] ?? '') as { root: { command: string[] } };
     const command = layoutRequest.root.command;
@@ -203,11 +401,20 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
     });
   };
 
-  const client: HerdrClient = async (argumentsList) => {
+  const client: HerdrClient = async (argumentsList, _budget, signal) => {
     calls.push(argumentsList);
     removeExitedPanes();
 
     const [surface, action] = argumentsList;
+    const step = `${surface} ${action}`;
+    await interrupt(step, argumentsList, signal);
+
+    const reviewAction = reviewActions[step];
+
+    if (reviewAction !== undefined) {
+      return reviewAction(argumentsList);
+    }
+
     const agentAction = surface === 'agent' ? agentActions[action ?? ''] : undefined;
 
     if (agentAction !== undefined) {
@@ -281,21 +488,52 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
       worker.exited = false;
       processes.set(worker.processId, false);
     },
-    move: (terminalId) => {
-      const worker = requireWorker(terminalId);
-      const pane = layout.panes.find((candidate) => candidate.terminal_id === terminalId);
-
-      worker.paneId = `${worker.paneId}-moved`;
-
-      if (pane !== undefined) {
-        pane.pane_id = worker.paneId;
-      }
-    },
+    move,
     replaceSession: (terminalId, session) => {
       requireWorker(terminalId).session = session;
     },
     replaceProcess: (terminalId) => {
       requireWorker(terminalId).processId = startProcess();
+    },
+    addPane: (paneId, paneWidth) => {
+      // Listed before the agent pane, so a lookup that takes the first pane gets the wrong one.
+      layout.panes.unshift({
+        ...layout.parent,
+        pane_id: paneId,
+        terminal_id: `${paneId}-terminal`,
+      });
+
+      layout.dimensions.set(paneId, {
+        width: paneWidth,
+        height: layout.dimensions.get(layout.parent.pane_id)!.height,
+      });
+    },
+    zoom: () => {
+      layout.view.zoomed = true;
+    },
+    focus: (tabId) => {
+      focusedTab = tabId;
+    },
+    failCall: (step, error, exitsTerminal = false) => {
+      failures.set(step, { error, exitsTerminal });
+    },
+    beforeCall: (step, hook) => {
+      hooks.set(step, hook);
+    },
+    hangCall: (step) => {
+      hungSteps.add(step);
+    },
+    moveDuring: (step, tabId) => {
+      movingSteps.set(step, tabId);
+    },
+    exitWhenOpened: () => {
+      opensExited = true;
+    },
+    loseTabOnClose: (tabId) => {
+      lostTabs.add(tabId);
+    },
+    malformedTabList: (reply) => {
+      malformedTabLists.push(reply);
     },
     processAbsent: (processId) => processes.get(processId) === true,
     knowsProcess: (processId) => processes.has(processId),
