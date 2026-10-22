@@ -1,6 +1,5 @@
-import { isRecord } from '../isRecord.js';
-import { anyKey } from '../unknownKeys.js';
-import type { KnownKeys } from '../unknownKeys.js';
+import { anyKey, isRecord } from '../schema.js';
+import type { KnownKeys } from '../schema.js';
 import { readUserOnlyKey, warnUnknownKeys } from './config.js';
 import type { ConfigLocation, ConfigWarnings } from './config.js';
 import { findRepositoryEntry } from './repositoryEntry.js';

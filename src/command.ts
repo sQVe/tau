@@ -2,7 +2,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { describeSchemaProblem } from './schemaProblem.js';
+import { describeSchemaProblem } from './schema.js';
 
 export type Exec = ExtensionAPI['exec'];
 

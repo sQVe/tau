@@ -3,7 +3,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { registerCodemodeBudget } from '../codemode/codemode.js';
 import { isNestedChangeCall, nestedChangeCallReason } from '../codemode/controlTools.js';
 import { appendToolGuidelines } from '../instructions/systemPrompt.js';
-import { isWorkerProcess } from '../workerProcess.js';
+import { isWorkerProcess } from '../worker.js';
 
 export const codemodeGuidelines = [
   "Call `read` and `bash` directly for a single lookup. Use codemode only when one script batches several calls or filters output before it returns. Follow a skill's script step when the skill asks for one.",

@@ -2,6 +2,7 @@ import { join } from 'node:path';
 
 import type { ThemeColor } from '@earendil-works/pi-coding-agent';
 
+import { isRecord } from '../../schema.js';
 import type { WorkerActivity } from './activity.js';
 import { capReportText } from './reportCap.js';
 import type { WorkerState } from './types.js';
@@ -109,9 +110,6 @@ const addField = (target: Record<string, unknown>, key: string, value: unknown):
     target[key] = value;
   }
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
 
 export const handoverSectionNames = ['Changes', 'Evidence', 'Decisions', 'Concerns'] as const;
 

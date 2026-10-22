@@ -124,14 +124,13 @@ const pureModules = [
   'src/extensions/tdd/configLayers.ts',
   'src/extensions/tdd/inputGlob.ts',
   'src/extensions/tracker/candidateFit.ts',
-  'src/isRecord.ts',
   'src/repositoryRemote.ts',
   'src/repositoryTargetDecisions.ts',
   'src/reviewCapture/evidenceDecisions.ts',
   'src/reviewCapture/fixScope.ts',
   'src/reviewCapture/freshness.ts',
   'src/reviewCapture/gitQuotedName.ts',
-  'src/unknownKeys.ts',
+  'src/schema.ts',
   'tests/adrIndexMark.ts',
   'tests/approvalRule.ts',
 ];
@@ -175,6 +174,14 @@ const isTypeOnly = (node: ModuleDeclaration) => {
 
 const findingLines = (found: string[]) => found.map((finding) => Number(finding.split(':')[1]));
 
+// The outside libraries a registered module may import, by module path.
+const pureLibraries: Readonly<Record<string, readonly string[]>> = {
+  'src/schema.ts': ['typebox/value'],
+};
+
+const isPureLibrary = (path: string, specifier: string) =>
+  pureLibraries[path]?.includes(specifier) ?? false;
+
 // Lists each runtime import outside the registry, dynamic load, and effect in a registered module.
 const impurities = (path: string, source: string, registry: readonly string[]) => {
   const found: string[] = [];
@@ -190,6 +197,10 @@ const impurities = (path: string, source: string, registry: readonly string[]) =
     }
 
     const target = posix.join(posix.dirname(path), specifier).replace(/\.js$/, '.ts');
+
+    if (isPureLibrary(path, specifier)) {
+      return;
+    }
 
     if (!specifier.startsWith('.') || !registry.includes(target)) {
       at(node.start, `runtime import of ${specifier}`);
@@ -455,13 +466,18 @@ it('refuses reads and effects in a pure module but allows types and other pure m
     'export const pick = () => Math.random();',
     'export const home = () => process.env.HOME;',
     "export const homeByKey = () => process['env'].HOME;",
+    "import { Value } from 'typebox/value';",
   ].join('\n');
+
+  const schemaLibrary = "import { Value } from 'typebox/value';";
 
   expect(impurities('src/pure/decide.ts', allowed, registry)).toEqual([]);
 
   expect(findingLines(impurities('src/pure/decide.ts', refused, registry))).toEqual(
-    Array.from({ length: 16 }, (_, index) => index + 1),
+    Array.from({ length: 17 }, (_, index) => index + 1),
   );
+
+  expect(impurities('src/schema.ts', schemaLibrary, registry)).toEqual([]);
 });
 
 it('keeps src/ free of index files, one-file folders, and folder modules without an entry', () => {

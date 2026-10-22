@@ -1,6 +1,6 @@
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { readRepositorySection } from '../../config/repositorySection.js';
-import { isRecord } from '../../isRecord.js';
+import { isRecord } from '../../schema.js';
 
 export interface QaSettings {
   urlCommand: string | undefined;

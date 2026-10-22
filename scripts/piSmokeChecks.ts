@@ -1,3 +1,5 @@
+import { isRecord } from '../src/schema.ts';
+
 export interface GitFacts {
   commits: { subject: string; files: string[] }[];
 }
@@ -33,9 +35,6 @@ const parseEvent = (line: string): unknown => {
     return undefined;
   }
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
 
 const resultText = (result: unknown): string => {
   const content = isRecord(result) ? result.content : undefined;

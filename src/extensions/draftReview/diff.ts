@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import { isRecord } from '../../isRecord.js';
+import { isRecord } from '../../schema.js';
 
 const run = promisify(execFile);
 

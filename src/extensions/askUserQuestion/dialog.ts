@@ -10,7 +10,7 @@ import {
 import type { Component, TUI } from '@earendil-works/pi-tui';
 
 import { isBottom, isDown, isTop, isUp } from '../../keys.js';
-import type { WorkerNoticeEvent } from '../../workerNoticeEvent.js';
+import type { WorkerNoticeEvent } from '../../worker.js';
 import {
   handleKey,
   initialState,

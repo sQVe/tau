@@ -15,8 +15,7 @@ import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { isMissingFile } from './errors.js';
-import { isRecord } from './isRecord.js';
-import { describeSchemaProblem } from './schemaProblem.js';
+import { describeSchemaProblem, isRecord } from './schema.js';
 
 export interface VersionedRecordOptions<Schema extends TSchema> {
   // Names the record in error messages, such as `capture record`.

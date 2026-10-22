@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
-import { parseWorkerNoticeEvent, workerNoticeChannel } from '../../workerNoticeEvent.js';
+import { parseWorkerNoticeEvent, workerNoticeChannel } from '../../worker.js';
 import { questionDialog } from './dialog.js';
 import type { DialogQuestion, DialogResult, DialogSession } from './dialog.js';
 import type { Answer, QuestionnaireState } from './questionnaire.js';

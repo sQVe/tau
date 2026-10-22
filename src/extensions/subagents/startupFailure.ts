@@ -1,7 +1,7 @@
 import { Value } from 'typebox/value';
 
 import { errorMessage } from '../../errors.js';
-import { isRecord } from '../../isRecord.js';
+import { isRecord } from '../../schema.js';
 import { publishRecord, readOptionalRecord, TaskFormatError } from './records.js';
 import type { StartupEvidence } from './startupFailureDecision.js';
 import { taskFormat } from './taskFormat.js';

@@ -6,8 +6,8 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
 import { isMissingFile } from '../../errors.js';
-import { isRecord } from '../../isRecord.js';
 import { parseVersionedRecord, writeRecord } from '../../record.js';
+import { isRecord } from '../../schema.js';
 import { createFreshTauDirectory, findTauRoot, locateTauChild } from '../../tauDirectory.js';
 import { stagedNames } from './reviewDecisions.js';
 

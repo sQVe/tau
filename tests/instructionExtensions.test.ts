@@ -11,7 +11,8 @@ const copiedFiles = [
   'extensions/instructions.ts',
   'instructions/instructions.ts',
   'instructions/systemPrompt.ts',
-  'workerProcess.ts',
+  'schema.ts',
+  'worker.ts',
 ];
 
 for (const instructionSet of instructionSets) {

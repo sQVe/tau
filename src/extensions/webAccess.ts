@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { resolveAllowedModel } from '../config/models.js';
-import { isWorkerProcess } from '../workerProcess.js';
+import { isWorkerProcess } from '../worker.js';
 
 const requiredWebAccessTools = ['web_search', 'fetch_content'];
 

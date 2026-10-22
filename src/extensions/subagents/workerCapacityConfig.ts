@@ -1,7 +1,7 @@
 import { readUserOnlyKey, warnUnknownKeys } from '../../config/config.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
-import { isRecord } from '../../isRecord.js';
-import type { KnownKeys } from '../../unknownKeys.js';
+import { isRecord } from '../../schema.js';
+import type { KnownKeys } from '../../schema.js';
 
 export const defaultWorkerCapacity = 12;
 const maximumWorkerCapacity = 256;

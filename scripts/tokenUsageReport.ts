@@ -1,3 +1,5 @@
+import { isRecord } from '../src/schema.ts';
+
 export type Side = 'parent' | 'worker';
 
 export interface WorkerTask {
@@ -88,9 +90,6 @@ interface CountedFile {
   row: SessionRow;
   firstTurnSeen: boolean;
 }
-
-const isRecord = (value: unknown): value is Entry =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
 
