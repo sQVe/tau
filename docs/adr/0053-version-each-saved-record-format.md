@@ -1,8 +1,7 @@
 # ADR 0053: Version each saved record format
 
 **Date**: 2026-09-27\
-**Status**: Accepted; task record policy superseded by
-[ADR 0058 (Run subagents only as Pi workers)](./0058-run-subagents-only-as-pi-workers.md)\
+**Status**: Accepted\
 **Related**: [ADR 0045 (Keep worker records per Tau checkout and worktree files in `.tau/`)](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md),
 [ADR 0052 (Drop backwards compatibility by default)](./0052-drop-backwards-compatibility-by-default.md)
 
@@ -53,11 +52,13 @@ may skip what it cannot read. Restarting the session is the supported fix. Suppo
 running Tau until the session restarts, best effort, lets the older session skip what it cannot read
 and keep working on everything else. A restart loads the newer reader.
 
-### Write through `publishRecord`
+### Write through `src/record.ts`
 
-Versioned formats are listed in `versionedRecords` and written only through `publishRecord`. A
-structure test checks that each listed schema has a version literal and that no module writes a
-listed file with plain `publish`. Other records move to this path when their format next changes.
+`src/record.ts` is the one path for versioned records. It parses and writes them, and it holds the
+synchronous publish and bounded read that worker records use. Versioned worker formats are listed in
+`versionedRecords` and written only through `publishRecord`. A structure test checks that each
+listed schema has a version literal and that no module writes a listed file with plain `publish`.
+Other records move to this path when their format next changes.
 
 ### Test both directions
 
@@ -66,18 +67,13 @@ read the previous and current fixtures with the current reader. They also check 
 malformed fixture are skipped without hiding other records. Task records, in
 `src/extensions/subagents/fixtures/taskRecords/`, are the example to copy.
 
-### Task records
-
-Task record format 3 applies to both worker kinds. Versions 1 and 2 are the previous format and stay
-supported. The earlier retired formats stay retired.
-
 ## Consequences
 
 ### Positive
 
 - A newer record cannot break unrelated work in an older session, and its notice names the fix.
 - Adding a field is a deliberate step with a version change and fixtures.
-- Current code reads one format per record type. Older formats are converted where they are read.
+- Each record type states which versions its reader supports, so a reader never guesses.
 
 ### Negative
 

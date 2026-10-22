@@ -1,4 +1,13 @@
 import { randomUUID } from 'node:crypto';
+import {
+  closeSync,
+  fsyncSync,
+  linkSync,
+  openSync,
+  readSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { lstat, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
@@ -115,5 +124,68 @@ export const writeRecord = async (path: string, value: unknown): Promise<void> =
     await rm(temporary, { force: true });
 
     throw error;
+  }
+};
+
+export const savedVersion = (value: unknown): unknown =>
+  isRecord(value) ? value['version'] : undefined;
+
+const fsyncPath = (path: string, flags: string) => {
+  const descriptor = openSync(path, flags);
+
+  try {
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+};
+
+// Publishes a complete file without replacing an existing record. The temporary name starts with
+// `.receipt-`, which readers of unpublished folders match.
+export const publishTextSync = (path: string, text: string, options: { mode: number }): void => {
+  const temporary = join(dirname(path), `.receipt-${randomUUID()}`);
+  const descriptor = openSync(temporary, 'wx', options.mode);
+
+  try {
+    try {
+      writeFileSync(descriptor, text);
+      fsyncSync(descriptor);
+    } finally {
+      closeSync(descriptor);
+    }
+
+    linkSync(temporary, path);
+    fsyncPath(dirname(path), 'r');
+  } finally {
+    unlinkSync(temporary);
+  }
+};
+
+// Returns undefined when the file holds more than `byteLimit` bytes. Read errors, a missing file
+// included, are thrown.
+export const readTextWithinSync = (path: string, byteLimit: number): string | undefined => {
+  const descriptor = openSync(path, 'r');
+
+  try {
+    const buffer = Buffer.alloc(byteLimit + 1);
+    let bytesRead = 0;
+
+    while (bytesRead < buffer.length) {
+      const read = readSync(descriptor, buffer, {
+        offset: bytesRead,
+        length: buffer.length - bytesRead,
+        position: bytesRead,
+      });
+
+      if (read === 0) {
+        break;
+      }
+
+      bytesRead += read;
+    }
+
+    return bytesRead > byteLimit ? undefined : buffer.subarray(0, bytesRead).toString('utf8');
+  } finally {
+    closeSync(descriptor);
   }
 };

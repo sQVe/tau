@@ -40,8 +40,7 @@ and the numbers that its status names.
 - [0035: Use size thresholds as review guidance](./0035-use-size-thresholds-as-review-guidance.md)
 - [0046: Declare types before values, except types derived with `typeof`](./0046-declare-types-before-values.md)
 - [0052: Drop backwards compatibility by default](./0052-drop-backwards-compatibility-by-default.md)
-- [0053: Version each saved record format](./0053-version-each-saved-record-format.md), partly
-  superseded by 0058
+- [0053: Version each saved record format](./0053-version-each-saved-record-format.md)
 - [0055: Record Tau coding conventions in `AGENTS.md`](./0055-record-tau-coding-conventions-in-agents-md.md)
 - [0109: Keep action behavior out of extension roots and name one concept one way](./0109-keep-action-behavior-out-of-extension-roots.md)
 - [0120: Capability modules with an enforced import table](./0120-capability-modules-with-an-enforced-import-table.md)

@@ -1,17 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto';
-import {
-  closeSync,
-  existsSync,
-  fsyncSync,
-  linkSync,
-  lstatSync,
-  openSync,
-  readSync,
-  readdirSync,
-  realpathSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, lstatSync, readdirSync, realpathSync } from 'node:fs';
 import type { Dirent } from 'node:fs';
 import { basename, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +9,7 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { errorMessage, isMissingFile } from '../../errors.js';
+import { publishTextSync, readTextWithinSync, savedVersion } from '../../record.js';
 import { taskFormat } from './taskFormat.js';
 import {
   eventSchema,
@@ -88,29 +77,7 @@ const serializeRecord = (value: unknown): string => {
 
 // Publish complete files without replacing an accepted record. This is not protection from trusted workers editing files directly.
 export const publish = (directory: string, name: string, value: unknown): void => {
-  const serialized = serializeRecord(value);
-  const temporary = join(directory, `.receipt-${randomUUID()}`);
-  const descriptor = openSync(temporary, 'wx', ownerReadWriteMode);
-
-  try {
-    writeFileSync(descriptor, serialized);
-    fsyncSync(descriptor);
-  } finally {
-    closeSync(descriptor);
-  }
-
-  try {
-    linkSync(temporary, join(directory, name));
-    const directoryDescriptor = openSync(directory, 'r');
-
-    try {
-      fsyncSync(directoryDescriptor);
-    } finally {
-      closeSync(directoryDescriptor);
-    }
-  } finally {
-    unlinkSync(temporary);
-  }
+  publishTextSync(join(directory, name), serializeRecord(value), { mode: ownerReadWriteMode });
 };
 
 export const versionedRecords = {
@@ -127,34 +94,13 @@ export const publishRecord = <Name extends keyof typeof versionedRecords>(
 };
 
 export const readRecord = (directory: string, name: string): unknown => {
-  const descriptor = openSync(join(directory, name), 'r');
+  const text = readTextWithinSync(join(directory, name), recordByteLimit);
 
-  try {
-    const buffer = Buffer.alloc(recordByteLimit + 1);
-    let bytesRead = 0;
-
-    while (bytesRead < buffer.length) {
-      const read = readSync(descriptor, buffer, {
-        offset: bytesRead,
-        length: buffer.length - bytesRead,
-        position: bytesRead,
-      });
-
-      if (read === 0) {
-        break;
-      }
-
-      bytesRead += read;
-    }
-
-    if (bytesRead > recordByteLimit) {
-      throw new Error('Worker record exceeds 128 KB.');
-    }
-
-    return JSON.parse(buffer.subarray(0, bytesRead).toString('utf8'));
-  } finally {
-    closeSync(descriptor);
+  if (text === undefined) {
+    throw new Error('Worker record exceeds 128 KB.');
   }
+
+  return JSON.parse(text);
 };
 
 export const readOptionalRecord = (directory: string, name: string): unknown => {
@@ -218,9 +164,6 @@ export const validateTask = (value: unknown): Task => {
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
-
-const savedVersion = (value: unknown): unknown =>
-  isObjectRecord(value) ? value.version : undefined;
 
 export class TaskFormatError extends Error {
   override name = 'TaskFormatError';

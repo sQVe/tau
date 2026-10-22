@@ -5,9 +5,31 @@ import { join } from 'node:path';
 import { Type } from 'typebox';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { parseVersionedRecord, readVersionedRecord, writeRecord } from './record.js';
+import {
+  parseVersionedRecord,
+  publishTextSync,
+  readTextWithinSync,
+  readVersionedRecord,
+  savedVersion,
+  writeRecord,
+} from './record.js';
 
-const writeState = vi.hoisted(() => ({ failMidway: false }));
+const writeState = vi.hoisted(() => ({ failMidway: false, failFsync: false }));
+
+vi.mock(import('node:fs'), async (importOriginal) => {
+  const actual = await importOriginal();
+
+  return {
+    ...actual,
+    fsyncSync: (descriptor: number) => {
+      if (writeState.failFsync) {
+        throw new Error('fsync failed');
+      }
+
+      actual.fsyncSync(descriptor);
+    },
+  };
+});
 
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const actual = await importOriginal();
@@ -37,6 +59,7 @@ const directoryFixture = async () => {
 
   onTestFinished(() => {
     writeState.failMidway = false;
+    writeState.failFsync = false;
 
     return rm(directory, { recursive: true, force: true });
   });
@@ -128,4 +151,47 @@ it('keeps the old record and leaves no temporary file when a write fails', async
   await expect(writeRecord(path, { version: 2 })).rejects.toThrow('write failed');
   expect(await readFile(path, 'utf8')).toBe(before);
   expect(await readdir(directory)).toEqual(['a.json']);
+});
+
+it('publishes text once and leaves no receipt file', async () => {
+  const directory = await directoryFixture();
+  const path = join(directory, 'a.json');
+
+  publishTextSync(path, 'first', { mode: 0o600 });
+
+  expect(() => {
+    publishTextSync(path, 'second', { mode: 0o600 });
+  }).toThrow('EEXIST');
+
+  expect(await readFile(path, 'utf8')).toBe('first');
+  expect(await readdir(directory)).toEqual(['a.json']);
+});
+
+it('reads text within the byte limit and refuses more', async () => {
+  const directory = await directoryFixture();
+  const path = join(directory, 'a.json');
+
+  await writeFile(path, 'abcd');
+
+  expect(readTextWithinSync(path, 4)).toBe('abcd');
+  expect(readTextWithinSync(path, 3)).toBeUndefined();
+  expect(() => readTextWithinSync(join(directory, 'missing.json'), 4)).toThrow('ENOENT');
+});
+
+it('reads the saved version of an object only', () => {
+  expect(savedVersion({ version: 2 })).toBe(2);
+  expect(savedVersion('text')).toBeUndefined();
+  expect(savedVersion(null)).toBeUndefined();
+});
+
+it('leaves no receipt file when the file fsync fails', async () => {
+  const directory = await directoryFixture();
+
+  writeState.failFsync = true;
+
+  expect(() => {
+    publishTextSync(join(directory, 'a.json'), 'text', { mode: 0o600 });
+  }).toThrow('fsync failed');
+
+  expect(await readdir(directory)).toEqual([]);
 });
