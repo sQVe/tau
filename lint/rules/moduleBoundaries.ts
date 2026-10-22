@@ -25,6 +25,11 @@ const groupingFolders = new Set(['extensions', 'skills']);
 export const moduleList: readonly ModuleDeclaration[] = [
   { name: 'box', entry: 'box', publicFiles: [] },
   {
+    name: 'checkRecord',
+    entry: 'checkRecord/checkRecord',
+    publicFiles: ['checkRecord/identity', 'checkRecord/reuseDecision'],
+  },
+  {
     name: 'codemode',
     entry: 'codemode/codemode',
     publicFiles: ['codemode/controlTools', 'codemode/fullOutput'],
@@ -86,6 +91,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
 // root and has no row.
 export const importTable: Readonly<Record<string, readonly string[]>> = {
   box: [],
+  checkRecord: ['errors', 'gitOutput', 'record'],
   codemode: [],
   command: ['schema'],
   config: ['errors', 'schema'],

@@ -4,16 +4,11 @@ import { join } from 'node:path';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import { isMissingFile } from '../../errors.js';
-import { parseVersionedRecord, readOptionalText, writeRecord } from '../../record.js';
-import type { CheckIdentity, SavedLog } from './reuseDecision.js';
+import { isMissingFile } from '../errors.js';
+import { parseVersionedRecord, readOptionalText, writeRecord } from '../record.js';
+import type { CheckIdentity, RecordRead, SavedLog } from './reuseDecision.js';
 
-export type RecordRead =
-  | { status: 'valid'; record: CheckIdentity & { version: 1; fingerprint: string } }
-  | { status: 'missing' }
-  | { status: 'malformed' };
-
-const checkRecordVersion = 1;
+const checkRecordVersion = 2;
 
 const checkRecordSchema = Type.Object(
   {
@@ -22,6 +17,7 @@ const checkRecordSchema = Type.Object(
     base: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
     argv: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
     fingerprint: Type.String({ minLength: 1 }),
+    passed: Type.Boolean(),
   },
   { additionalProperties: false },
 );
@@ -53,14 +49,24 @@ export const readCheckRecord = async (recordPath: string): Promise<RecordRead> =
 };
 
 // Writes next to the log through a rename, so a reader never sees half a record.
-export const saveCheckRecord = async (logPath: string, identity: CheckIdentity): Promise<void> => {
+export const saveCheckRecord = async (
+  logPath: string,
+  identity: CheckIdentity,
+  passed: boolean,
+): Promise<void> => {
   const { fingerprint } = identity;
 
   if (fingerprint === null) {
     throw new Error('A state with changes inside a submodule cannot be saved for reuse.');
   }
 
-  const record: CheckRecord = { version: checkRecordVersion, ...identity, fingerprint };
+  const record: CheckRecord = {
+    version: checkRecordVersion,
+    ...identity,
+    fingerprint,
+    passed,
+  };
+
   const recordPath = recordPathFor(logPath);
 
   await writeRecord(recordPath, record);
@@ -106,7 +112,7 @@ export const listSavedLogs = async (checksDirectory: string): Promise<SavedLog[]
 
       return {
         logPath,
-        record: read.status === 'valid' ? read.record : undefined,
+        read,
         logExists: await exists(logPath),
       };
     }),

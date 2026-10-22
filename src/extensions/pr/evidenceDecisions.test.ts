@@ -1,9 +1,22 @@
 import { expect, it } from 'vitest';
 
-import { checkLogGaps, matchCheckLog, selectLatestChecks } from './evidenceDecisions.js';
-import type { CheckIdentity, CheckLog, ModifiedCheckLog } from './evidenceDecisions.js';
+import type { CheckState } from '../../checkRecord/identity.js';
+import type { SavedLog } from '../../checkRecord/reuseDecision.js';
+import {
+  checkLogGaps,
+  decideFullCheck,
+  matchCheckLog,
+  selectLatestChecks,
+} from './evidenceDecisions.js';
+import type {
+  CheckHeaderIdentity,
+  FullCheckDecision,
+  CheckLog,
+  ModifiedCheckLog,
+  PublicationGap,
+} from './evidenceDecisions.js';
 
-const current: CheckIdentity = {
+const current: CheckHeaderIdentity = {
   head: 'a'.repeat(40),
   status: 'b'.repeat(64),
   diff: 'c'.repeat(64),
@@ -111,7 +124,7 @@ it.each([
 
   expect(check).toMatchObject({ matches: true, excerpt, truncated });
 
-  expect(checkLogGaps([check])).toEqual(
+  expect(checkLogGaps([check], null)).toEqual(
     truncated ? [{ kind: 'checkExcerpt', path: 'check.log' }] : [],
   );
 });
@@ -142,7 +155,7 @@ it.each([
 ])('reports a gap only for incomplete evidence: $name', ({ check, gap }) => {
   const expected = gap ? [{ kind: 'check', path: check.path, reasons: check.reasons }] : [];
 
-  expect(checkLogGaps([check])).toEqual(expected);
+  expect(checkLogGaps([check], null)).toEqual(expected);
 });
 
 it('reports unreadable logs as gaps', () => {
@@ -154,14 +167,39 @@ it('reports unreadable logs as gaps', () => {
     truncated: false,
   };
 
-  expect(checkLogGaps([check])).toEqual([
+  expect(checkLogGaps([check], null)).toEqual([
     { kind: 'check', path: check.path, reasons: check.reasons },
   ]);
 });
 
-it('reports the absence of logs', () => {
-  expect(checkLogGaps([])).toEqual([{ kind: 'noChecks' }]);
-});
+it.each([
+  { name: 'no full check', fullCheck: null, expected: [{ kind: 'noChecks' }] },
+  {
+    name: 'a missing full check',
+    fullCheck: { status: 'missing' },
+    expected: [{ kind: 'noChecks' }],
+  },
+  {
+    name: 'a malformed full check',
+    fullCheck: { status: 'malformed' },
+    expected: [{ kind: 'noChecks' }],
+  },
+  {
+    name: 'a passed full check',
+    fullCheck: { status: 'passed', logPath: 'a.log', argv: ['pnpm', 'check'] },
+    expected: [],
+  },
+  {
+    name: 'a failed full check',
+    fullCheck: { status: 'failed', logPath: 'a.log', argv: ['pnpm', 'check'] },
+    expected: [],
+  },
+] satisfies { name: string; fullCheck: FullCheckDecision | null; expected: PublicationGap[] }[])(
+  'reports the absence of logs with $name',
+  ({ fullCheck, expected }) => {
+    expect(checkLogGaps([], fullCheck)).toEqual(expected);
+  },
+);
 
 const savedLog = (run: string, modifiedAt: number | null, text = log()): ModifiedCheckLog => ({
   name: 'test.log',
@@ -223,4 +261,89 @@ it.each([
   },
 ])('selects the latest evidence per check name: $name', ({ logs, selected }) => {
   expect(selectLatestChecks(logs)).toEqual(selected);
+});
+
+const state = { head: 'h1', base: 'b1', fingerprint: 'f1' };
+const argv = ['pnpm', 'check'];
+
+const savedRecord = (
+  logPath: string,
+  passed: boolean,
+  overrides = {},
+  logExists = true,
+): SavedLog => ({
+  logPath,
+  logExists,
+  read: {
+    status: 'valid',
+    record: { version: 2, ...state, argv, fingerprint: 'f1', passed, ...overrides },
+  },
+});
+
+it.each([
+  {
+    name: 'a saved success',
+    current: state,
+    saved: [savedRecord('a.log', true)],
+    expected: { status: 'passed', logPath: 'a.log', argv },
+  },
+  {
+    name: 'a saved failure',
+    current: state,
+    saved: [savedRecord('a.log', false)],
+    expected: { status: 'failed', logPath: 'a.log', argv },
+  },
+  {
+    name: 'the newest matching record when an older one differs',
+    current: state,
+    saved: [savedRecord('c.log', false), savedRecord('b.log', true)],
+    expected: { status: 'failed', logPath: 'c.log', argv },
+  },
+  {
+    name: 'a record for another fingerprint',
+    current: state,
+    saved: [savedRecord('a.log', true, { fingerprint: 'f2' })],
+    expected: { status: 'missing' },
+  },
+  {
+    name: 'a record whose log is gone',
+    current: state,
+    saved: [savedRecord('a.log', true, {}, false)],
+    expected: { status: 'missing' },
+  },
+  { name: 'no records', current: state, saved: [], expected: { status: 'missing' } },
+  {
+    name: 'a missing record',
+    current: state,
+    saved: [{ logPath: 'a.log', logExists: true, read: { status: 'missing' } }],
+    expected: { status: 'missing' },
+  },
+  {
+    name: 'a malformed record',
+    current: state,
+    saved: [{ logPath: 'a.log', logExists: true, read: { status: 'malformed' } }],
+    expected: { status: 'malformed' },
+  },
+  {
+    name: 'a malformed record beside a matching one',
+    current: state,
+    saved: [
+      { logPath: 'b.log', logExists: true, read: { status: 'malformed' } },
+      savedRecord('a.log', true),
+    ],
+    expected: { status: 'passed', logPath: 'a.log', argv },
+  },
+  {
+    name: 'a current state without a fingerprint',
+    current: { ...state, fingerprint: null },
+    saved: [savedRecord('a.log', true)],
+    expected: { status: 'missing' },
+  },
+] satisfies {
+  name: string;
+  current: CheckState;
+  saved: SavedLog[];
+  expected: FullCheckDecision;
+}[])('decides the full check record from $name', ({ current: currentState, saved, expected }) => {
+  expect(decideFullCheck(currentState, saved)).toEqual(expected);
 });

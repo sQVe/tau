@@ -123,7 +123,7 @@ it('rejects a base that names no commit and runs no command', async () => {
   expect(await runCount()).toBe(0);
 });
 
-it('saves no reusable record for a failing run', async () => {
+it('saves a failing record next to the log and runs the command again', async () => {
   const { configure, counter, run, runCount, root } = await fixture();
 
   await configure(countingArgv(counter, 'process.exit(1)'));
@@ -136,8 +136,20 @@ it('saves no reusable record for a failing run', async () => {
   expect(await runCount()).toBe(2);
 
   const saved = await readdir(join(root, '.tau', 'checks'));
+  const recordNames = saved.filter((name) => name.endsWith('.json'));
 
-  expect(saved.filter((name) => name.endsWith('.json'))).toEqual([]);
+  expect(recordNames).toHaveLength(2);
+
+  const texts = await Promise.all(
+    recordNames.map((name) => readFile(join(root, '.tau', 'checks', name), 'utf8')),
+  );
+
+  expect(texts.map((text) => (JSON.parse(text) as { passed: boolean }).passed)).toEqual([
+    false,
+    false,
+  ]);
+
+  expect(saved.filter((name) => name.endsWith('.log'))).toHaveLength(2);
 });
 
 it('saves no reusable record when the inputs change during the run', async () => {

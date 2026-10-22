@@ -1,13 +1,16 @@
+import type { CheckState } from '../../checkRecord/identity.js';
+import { findStateRecord } from '../../checkRecord/reuseDecision.js';
+import type { SavedLog } from '../../checkRecord/reuseDecision.js';
 import type { ReviewEvidence } from '../../reviewCapture/evidence.js';
 
-export interface CheckIdentity {
+export interface CheckHeaderIdentity {
   head: string;
   status: string;
   diff: string;
 }
 
 interface CheckReason {
-  field: keyof CheckIdentity | 'header' | 'read' | 'current';
+  field: keyof CheckHeaderIdentity | 'header' | 'read' | 'current';
   reason: string;
 }
 
@@ -36,14 +39,19 @@ export type PublicationGap =
   | { kind: 'reuseMismatch'; reasons: string[] }
   | { kind: 'reviewEvidence'; gap: ReviewEvidence['gaps'][number] }
   | { kind: 'check'; path: string; reasons: CheckReason[] }
-  | { kind: 'checkExcerpt'; path: string };
+  | { kind: 'checkExcerpt'; path: string }
+  | { kind: 'fullCheck'; status: 'failed' | 'missing' | 'malformed' };
+
+export type FullCheckDecision =
+  | { status: 'passed' | 'failed'; logPath: string; argv: string[] }
+  | { status: 'missing' | 'malformed' };
 
 const identityFields = ['head', 'status', 'diff'] as const;
 const headerNames = ['HEAD', 'Status', 'Diff'] as const;
 const excerptLines = 20;
 const excerptCharacters = 4000;
 
-const readHeader = (lines: readonly string[]): CheckIdentity | undefined => {
+const readHeader = (lines: readonly string[]): CheckHeaderIdentity | undefined => {
   const values = headerNames.map((name, index) => {
     const pattern = new RegExp(`^${name}: ([a-f0-9]{40}|[a-f0-9]{64})$`, 'u');
 
@@ -59,7 +67,10 @@ const readHeader = (lines: readonly string[]): CheckIdentity | undefined => {
   return { head, status, diff };
 };
 
-const compareIdentity = (recorded: CheckIdentity, current: CheckIdentity): CheckReason[] =>
+const compareIdentity = (
+  recorded: CheckHeaderIdentity,
+  current: CheckHeaderIdentity,
+): CheckReason[] =>
   identityFields
     .filter((field) => recorded[field] !== current[field])
     .map((field) => ({
@@ -68,8 +79,8 @@ const compareIdentity = (recorded: CheckIdentity, current: CheckIdentity): Check
     }));
 
 const checkReasons = (
-  recorded: CheckIdentity | undefined,
-  current: CheckIdentity | null,
+  recorded: CheckHeaderIdentity | undefined,
+  current: CheckHeaderIdentity | null,
 ): CheckReason[] => {
   const reasons: CheckReason[] = [];
 
@@ -91,10 +102,18 @@ const checkReasons = (
   return reasons;
 };
 
+export const excerptBody = (body: string[]): { excerpt: string; truncated: boolean } => {
+  const tail = body.slice(-excerptLines).join('\n');
+  const excerpt = tail.slice(-excerptCharacters);
+  const truncated = body.length > excerptLines || tail.length > excerptCharacters;
+
+  return { excerpt, truncated };
+};
+
 export const matchCheckLog = (
   path: string,
   text: string,
-  current: CheckIdentity | null,
+  current: CheckHeaderIdentity | null,
 ): CheckLog => {
   const lines = text.split('\n');
   const recorded = readHeader(lines);
@@ -110,11 +129,7 @@ export const matchCheckLog = (
     body.pop();
   }
 
-  const tail = body.slice(-excerptLines).join('\n');
-  const excerpt = tail.slice(-excerptCharacters);
-  const truncated = body.length > excerptLines || tail.length > excerptCharacters;
-
-  return { path, matches: true, reasons: [], excerpt, truncated };
+  return { path, matches: true, reasons: [], ...excerptBody(body) };
 };
 
 const isNewerLog = (candidate: TimedCheckLog, previous: TimedCheckLog) => {
@@ -151,7 +166,17 @@ const hasEvidenceFailure = (check: CheckLog) =>
     (reason) => reason.field === 'header' || reason.field === 'read' || reason.field === 'current',
   );
 
-export const checkLogGaps = (checks: readonly CheckLog[]): PublicationGap[] => {
+const hasFullCheckLog = (fullCheck: FullCheckDecision | null): boolean =>
+  fullCheck?.status === 'passed' || fullCheck?.status === 'failed';
+
+export const checkLogGaps = (
+  checks: readonly CheckLog[],
+  fullCheck: FullCheckDecision | null,
+): PublicationGap[] => {
+  if (checks.length === 0 && hasFullCheckLog(fullCheck)) {
+    return [];
+  }
+
   if (checks.length === 0) {
     return [{ kind: 'noChecks' }];
   }
@@ -163,4 +188,24 @@ export const checkLogGaps = (checks: readonly CheckLog[]): PublicationGap[] => {
 
     return check.truncated ? [{ kind: 'checkExcerpt', path: check.path }] : [];
   });
+};
+
+// Takes the newest record for the current state. argv is not compared, because the caller does not
+// read the full check config.
+export const decideFullCheck = (current: CheckState, saved: SavedLog[]): FullCheckDecision => {
+  if (current.fingerprint === null) {
+    return { status: 'missing' };
+  }
+
+  const match = findStateRecord(current, saved);
+
+  if (match?.read.status === 'valid') {
+    const { passed, argv } = match.read.record;
+
+    return { status: passed ? 'passed' : 'failed', logPath: match.logPath, argv };
+  }
+
+  const malformed = saved.some((log) => log.read.status === 'malformed');
+
+  return { status: malformed ? 'malformed' : 'missing' };
 };

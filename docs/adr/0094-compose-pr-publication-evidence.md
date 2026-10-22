@@ -24,8 +24,14 @@ Failures and missing evidence remain gaps; they do not hide independent evidence
 publication verdict. The action inherits the target reader's base fetch and the review reader's
 freshness recapture. It writes no other worktree files.
 
-Check logs carry three initial header lines: `HEAD: <sha>`, `Status: <hash>`, and `Diff: <hash>`.
-Status and diff hashes use SHA-256 over the exact output bytes of
+The full check has one identity, the saved record that `full_check` writes next to its log in
+`.tau/checks` (see ADR 0105). The action reads the record for the current head, the merge base, and
+the working tree changes, and returns `fullCheck` as passed, failed, missing, or malformed. It does
+not compare the command, since it does not read the full check config. Failed, missing, and
+malformed records become gaps. Other checks carry header lines.
+
+Check logs for other checks carry three initial header lines: `HEAD: <sha>`, `Status: <hash>`, and
+`Diff: <hash>`. Status and diff hashes use SHA-256 over the exact output bytes of
 `git --no-optional-locks status --porcelain` and
 `git diff --no-ext-diff --no-textconv --no-color <mergeBase> HEAD`, including trailing newlines.
 Disabling optional locks keeps status from refreshing the index. Disabling external diff helpers,
