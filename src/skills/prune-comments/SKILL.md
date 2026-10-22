@@ -42,7 +42,8 @@ does not review code. For that, use [code-quality](../code-quality/SKILL.md) or
    fails or leaves no report, delete nothing, report the gap, and stop.
 
 5. Call `code_review` `freshness` with `$dir`. On `stale` or `unknown`, delete nothing and ask the
-   user whether to capture again.
+   user whether to run again. A new run starts at step 1 with a fresh `prepare` and a new worker,
+   because the old report's lines match the old capture.
 
 6. Delete by whose work it is, and by whether the user asked for a read-only run. Delete only the
    comments the report marks `delete`, and keep the code around them unchanged.
