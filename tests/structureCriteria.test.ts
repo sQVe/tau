@@ -34,9 +34,6 @@ it('keeps the numbered criteria in structure-criteria.md and out of the lens', (
   expect(criterionNumbers(criteria)).toEqual(['0', '1', '2', '3', '4', '5', '6', '7']);
 });
 
-it('tells the manager to paste structure-criteria.md into each worker task', () => {
-  const text = outsideLens(assignment);
-
-  expect(text).toContain('structure-criteria.md');
-  expect(text).toMatch(/paste/i);
+it('links structure-criteria.md for the manager, outside the worker lens', () => {
+  expect(outsideLens(assignment)).toContain('](structure-criteria.md)');
 });
