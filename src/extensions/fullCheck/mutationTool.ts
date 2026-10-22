@@ -4,15 +4,15 @@ import { defineTool, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionToolContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
+import { readCheckIdentity } from '../../checkRecord/identity.js';
+import type { CheckIdentity } from '../../checkRecord/reuseDecision.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import { findReusedLog, readRepository, runAndRecord, withRepositoryLock } from './checkFlow.js';
 import type { Recorded } from './checkFlow.js';
-import { readCheckIdentity } from './identity.js';
 import { readMutationArgv } from './mutationConfig.js';
 import { parseMutationReport } from './mutationReport.js';
 import type { MutationReport, MutationStatus, Survivor } from './mutationReport.js';
 import { mutationPassed, runWasStopped } from './mutationVerdict.js';
-import type { CheckIdentity } from './reuseDecision.js';
 import { stdoutPathOf } from './run.js';
 import type { CheckResult } from './run.js';
 

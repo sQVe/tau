@@ -24,17 +24,21 @@ at once fail with "Docker could not bind a port: address already in use".
 The lock files live in their own `full-check` directory. A Pi session that started before this
 change still uses the single machine-wide file `full-check.lock.<n>` and never reads the new
 directory. The new code never reads the old file. Until every Pi session restarts, a check on old
-code and a check on new code of the same repository can run at once. Each passing log gets a
-versioned record next to it in `.tau/checks`. The record holds the head commit, the base commit, the
-configured `argv`, and a hash of the tracked changes against `HEAD` and of the untracked files Git
-does not ignore. A later call with equal values returns that log without running the command. It
-checks before waiting and again after taking the lock, since another session may have saved a
-matching log while this one waited.
+code and a check on new code of the same repository can run at once. Each finished log gets a
+versioned record next to it in `.tau/checks`. The shared module `src/checkRecord/` owns the record
+and the identity, so `full_check`, `mutation_check`, and other tools read one definition. The record
+holds the head commit, the base commit, the configured `argv`, whether the run passed, and a hash of
+the tracked changes against `HEAD` and of the untracked files Git does not ignore. A later call with
+equal values returns that log without running the command. It checks before waiting and again after
+taking the lock, since another session may have saved a matching log while this one waited.
 
-The tool reads the identity before and after the run. It saves a record only when the command passed
-and both identities are equal, so an edit during the run never gives a reusable log. A missing or
-malformed record is not a match. The reuse rule is a pure function that takes the records and the
-current identity as facts.
+The tool reads the identity before and after the run. It saves a record, passing or failing, only
+when both identities are equal, so an edit during the run never gives a reusable log. Only a record
+with `passed: true` is a match. A missing or malformed record is not a match.
+
+The record is version 2, which adds `passed`. A version 1 record reads as malformed and is never
+reused, so the first check on each state runs again. The reuse rule is a pure function that takes
+the records and the current identity as facts.
 
 ## Consequences
 

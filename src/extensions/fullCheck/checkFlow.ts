@@ -1,12 +1,12 @@
 import { join } from 'node:path';
 
+import { listSavedLogs, saveCheckRecord } from '../../checkRecord/checkRecord.js';
+import { decideReuse, sameReusableState } from '../../checkRecord/reuseDecision.js';
+import type { CheckIdentity } from '../../checkRecord/reuseDecision.js';
 import { errorMessage } from '../../errors.js';
 import { readGitOutput } from '../../gitOutput.js';
 import { repositoryFromRemote } from '../../repositoryRemote.js';
 import { defaultLockPath, withFullCheckLock } from './queue.js';
-import { listSavedLogs, saveCheckRecord } from './record.js';
-import { decideReuse, sameReusableState } from './reuseDecision.js';
-import type { CheckIdentity } from './reuseDecision.js';
 import { readTail, runCheck } from './run.js';
 import type { CheckResult } from './run.js';
 
@@ -59,8 +59,8 @@ export const findReusedLog = async (
   };
 };
 
-// Runs the command and saves a reusable record only when `settle` judges it a pass and its inputs
-// did not change. A failing verdict saves nothing.
+// Runs the command and saves a record with the verdict of `settle` when its inputs did not change.
+// Only a passing record is reused.
 export const runAndRecord = async <Verdict extends { passed: boolean }>(
   root: string,
   identity: CheckIdentity,
@@ -80,16 +80,12 @@ export const runAndRecord = async <Verdict extends { passed: boolean }>(
 
   const verdict = await settle(result);
 
-  if (!verdict.passed) {
-    return { ...verdict, reused: false };
-  }
-
-  // A missing record only disables reuse, so a failure to save it never fails a passing check.
+  // A missing record only disables reuse, so a failure to save it never changes the verdict.
   try {
     const after = await readIdentity();
 
     if (sameReusableState(identity, after)) {
-      await saveCheckRecord(result.logPath, identity);
+      await saveCheckRecord(result.logPath, identity, verdict.passed);
     }
   } catch (error) {
     return { ...verdict, reused: false, recordError: errorMessage(error) };

@@ -6,10 +6,17 @@ export interface CheckIdentity {
   fingerprint: string | null;
 }
 
+export type RecordRead =
+  | {
+      status: 'valid';
+      record: CheckIdentity & { version: 2; fingerprint: string; passed: boolean };
+    }
+  | { status: 'missing' }
+  | { status: 'malformed' };
+
 export interface SavedLog {
   logPath: string;
-  // undefined when the record is missing or malformed.
-  record: CheckIdentity | undefined;
+  read: RecordRead;
   logExists: boolean;
 }
 
@@ -28,15 +35,16 @@ const sameIdentity = (left: CheckIdentity, right: CheckIdentity): boolean =>
 export const sameReusableState = (before: CheckIdentity, after: CheckIdentity): boolean =>
   before.fingerprint !== null && sameState(before, after);
 
-// Reuses the first saved log, newest first, whose record matches the current identity.
+const matchesPassingRecord = (current: CheckIdentity, read: RecordRead): boolean =>
+  read.status === 'valid' && read.record.passed && sameIdentity(current, read.record);
+
+// Reuses the first saved log, newest first, whose passing record matches the current identity.
 export const decideReuse = (current: CheckIdentity, saved: SavedLog[]): ReuseDecision => {
   if (current.fingerprint === null) {
     return { status: 'run' };
   }
 
-  const match = saved.find(
-    (log) => log.logExists && log.record !== undefined && sameIdentity(current, log.record),
-  );
+  const match = saved.find((log) => log.logExists && matchesPassingRecord(current, log.read));
 
   return match === undefined ? { status: 'run' } : { status: 'reuse', logPath: match.logPath };
 };

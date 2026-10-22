@@ -2,9 +2,16 @@ import { createHash } from 'node:crypto';
 import { lstat, readFile, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { isMissingFile } from '../../errors.js';
-import { runGit } from '../../gitOutput.js';
+import { isMissingFile } from '../errors.js';
+import { runGit } from '../gitOutput.js';
 import type { CheckIdentity } from './reuseDecision.js';
+
+export interface CheckState {
+  head: string;
+  base: string | null;
+  // null when a submodule has changes the fingerprint cannot see, so the state is never reusable.
+  fingerprint: string | null;
+}
 
 const hashText = (text: Buffer | string): string => createHash('sha256').update(text).digest('hex');
 
@@ -123,13 +130,9 @@ const readFingerprint = async (root: string): Promise<string | null> => {
   return hash.digest('hex');
 };
 
-// Reads what a full check result depends on. base is a ref or commit; without it, the origin
-// remote's default branch, or null when the checkout has none.
-export const readCheckIdentity = async (
-  root: string,
-  argv: string[],
-  base: string | undefined,
-): Promise<CheckIdentity> => {
+// Reads the commit and changes a check result depends on. base is a ref or commit; without it,
+// the origin remote's default branch, or null when the checkout has none.
+const readCheckState = async (root: string, base: string | undefined): Promise<CheckState> => {
   const head = await readGitText(root, ['rev-parse', 'HEAD']);
 
   if (head === undefined) {
@@ -139,7 +142,12 @@ export const readCheckIdentity = async (
   return {
     head,
     base: await readBase(root, base),
-    argv,
     fingerprint: await readFingerprint(root),
   };
 };
+
+export const readCheckIdentity = async (
+  root: string,
+  argv: string[],
+  base: string | undefined,
+): Promise<CheckIdentity> => ({ ...(await readCheckState(root, base)), argv });

@@ -2,11 +2,11 @@ import { defineTool, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionToolContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
+import { readCheckIdentity } from '../../checkRecord/identity.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import type { Recorded } from './checkFlow.js';
 import { findReusedLog, readRepository, runAndRecord, withRepositoryLock } from './checkFlow.js';
 import { readFullCheckArgv } from './config.js';
-import { readCheckIdentity } from './identity.js';
 import type { CheckResult } from './run.js';
 
 export type FullCheckDetails = Recorded<CheckResult>;
