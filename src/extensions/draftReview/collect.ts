@@ -12,7 +12,7 @@ import {
 import { diffFiles } from './diff.js';
 import { decideEdit, selectReviewedComments } from './reviewDecisions.js';
 import type { SessionComment } from './reviewDecisions.js';
-import { removeReview } from './stage.js';
+import { removeReview, stagedPathOf } from './stage.js';
 import type { Review } from './stage.js';
 import { deleteSessionComment, listSessionPaths, readSessionComments } from './tuicrSession.js';
 import type { RunTuicr } from './tuicrSession.js';
@@ -55,6 +55,10 @@ const readOptional = async (path: string): Promise<string | undefined> => {
   }
 };
 
+// tuicr names each file by its staged path; collect names it by its `.tau` path.
+const pathOfStaged = (review: Review, stagedPath: string | null): string =>
+  review.paths[review.stagedPaths.indexOf(stagedPath ?? '')] ?? '';
+
 const readReviewedComments = async (
   run: RunTuicr,
   review: Review,
@@ -64,9 +68,12 @@ const readReviewedComments = async (
   const found = await Promise.all(
     sessionPaths.map(async (sessionPath) => {
       const comments = await readSessionComments(run, sessionPath);
-      const kept = selectReviewedComments(comments, review.paths);
+      const kept = selectReviewedComments(comments, review.stagedPaths);
 
-      return kept.map((comment) => ({ sessionPath, comment }));
+      return kept.map((comment) => ({
+        sessionPath,
+        comment: { ...comment, path: pathOfStaged(review, comment.path) },
+      }));
     }),
   );
 
@@ -119,13 +126,14 @@ const refusalWithProgress = (error: unknown, record: CollectedRecord | undefined
 
 const planEdit = async (review: Review, path: string, original: string) => {
   const originalPath = originalPathOf(review, path);
-  const staged = await readOptional(join(review.stagingDirectory, path));
+  const stagedPath = join(review.stagingDirectory, stagedPathOf(review, path));
+  const staged = await readOptional(stagedPath);
 
   if (staged === undefined || staged === original) {
     return [];
   }
 
-  const diff = await diffFiles(originalPath, join(review.stagingDirectory, path), path);
+  const diff = await diffFiles(originalPath, stagedPath, path);
 
   return [{ path, diff, staged, status: 'pending' as const }];
 };

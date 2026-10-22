@@ -18,8 +18,8 @@ const reviewOnA = async () => {
   const { directory, command } = opened.details;
   const staging = stagingOf(command);
 
-  await context.setSession([comment('on-a', 'slices/a.md')]);
-  await writeFile(join(staging, 'slices/a.md'), 'HACKED\n');
+  await context.setSession([comment('on-a', '01-slices/1-a.md')]);
+  await writeFile(join(staging, '01-slices/1-a.md'), 'HACKED\n');
 
   const collect = () => context.run({ action: 'collect', directory });
 
@@ -34,7 +34,7 @@ const expectRefusedAndKept = async (
 
   expect(await context.deleted()).toEqual([]);
   expect(await context.records()).toHaveLength(1);
-  expect(await readFile(join(context.staging, 'slices/a.md'), 'utf8')).toBe('HACKED\n');
+  expect(await readFile(join(context.staging, '01-slices/1-a.md'), 'utf8')).toBe('HACKED\n');
 };
 
 it('refuses to stage a file that has another hard link', async () => {

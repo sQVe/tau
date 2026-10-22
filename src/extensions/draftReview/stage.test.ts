@@ -59,11 +59,34 @@ it.each([
   );
 });
 
-it('reads a version 2 manifest with a tab placement', async () => {
+it('reads a version 3 manifest with its staged paths', async () => {
+  expect(parseReviewManifest(path, await fixtureText('version-3.json'))).toEqual({
+    version: 3,
+    stagingDirectory: '/tmp/tau-draft-review-abc123',
+    paths: ['slices/a.md', 'tickets/c.md'],
+    stagedPaths: ['01-slices/1-a.md', '02-tickets/1-c.md'],
+    placement: { kind: 'split', terminalId: 't1' },
+  });
+});
+
+it('refuses a version 3 manifest without a staged path for each path', () => {
+  const text = JSON.stringify({
+    version: 3,
+    stagingDirectory: '/tmp/x',
+    paths: ['a.md', 'b.md'],
+    stagedPaths: ['01-a.md'],
+    placement: null,
+  });
+
+  expect(() => parseReviewManifest(path, text)).toThrow(/Malformed review record.*stagedPaths/);
+});
+
+it('reads a version 2 manifest with a tab placement and its paths as staged paths', async () => {
   expect(parseReviewManifest(path, await fixtureText('version-2.json'))).toEqual({
     version: 2,
     stagingDirectory: '/tmp/tau-draft-review-abc123',
     paths: ['slices/a.md', 'tickets/c.md'],
+    stagedPaths: ['slices/a.md', 'tickets/c.md'],
     placement: {
       kind: 'tab',
       terminalId: 't1',
@@ -74,11 +97,12 @@ it('reads a version 2 manifest with a tab placement', async () => {
   });
 });
 
-it('reads a version 1 manifest with no placement', async () => {
+it('reads a version 1 manifest with no placement and its paths as staged paths', async () => {
   expect(parseReviewManifest(path, await fixtureText('version-1.json'))).toEqual({
     version: 1,
     stagingDirectory: '/tmp/tau-draft-review-abc123',
     paths: ['slices/a.md', 'tickets/c.md'],
+    stagedPaths: ['slices/a.md', 'tickets/c.md'],
     placement: null,
   });
 });
@@ -180,10 +204,27 @@ it('refuses a safe path list that holds one path climbing out of .tau', async ()
   const { repository } = await stagedFixture();
   const review = await stageReview(repository, ['.tau/slices/a.md']);
 
-  await tamperManifest(review, { paths: ['slices/a.md', '../outside.md'] });
+  await tamperManifest(review, {
+    paths: ['slices/a.md', '../outside.md'],
+    stagedPaths: ['01-slices/1-a.md', '02-outside.md'],
+  });
 
   await expect(readReview(repository, review.recordDirectory)).rejects.toThrow(
     /names a path outside \.tau/,
+  );
+});
+
+it('refuses a staged path that climbs out of the staging directory', async () => {
+  const { repository } = await stagedFixture();
+  const review = await stageReview(repository, ['.tau/slices/a.md']);
+
+  await tamperManifest(review, {
+    paths: ['slices/a.md', 'slices/b.md'],
+    stagedPaths: ['01-slices/1-a.md', '../outside.md'],
+  });
+
+  await expect(readReview(repository, review.recordDirectory)).rejects.toThrow(
+    /staged path outside its staging directory/,
   );
 });
 
@@ -192,7 +233,7 @@ it('reads a manifest whose paths wander but stay inside .tau', async () => {
   const review = await stageReview(repository, ['.tau/slices/a.md']);
   const paths = ['slices/a.md', 'a/b/../../c.md', 'a//./b.md'];
 
-  await tamperManifest(review, { paths });
+  await tamperManifest(review, { paths, stagedPaths: paths });
 
   expect((await readReview(repository, review.recordDirectory)).paths).toEqual(paths);
 });
@@ -226,6 +267,18 @@ it.each(['outside the temporary directory', 'without the prefix', 'inside a stag
     expect(existsSync(stagingDirectory)).toBe(true);
   },
 );
+
+it('stages a file whose name already uses the 255 bytes a name may hold', async () => {
+  const { repository } = await stagedFixture();
+  const name = `${'a'.repeat(252)}.md`;
+
+  await writeFile(join(repository, '.tau', name), 'long\n');
+
+  const review = await stageReview(repository, [`.tau/${name}`]);
+  const [stagedPath = ''] = review.stagedPaths;
+
+  expect(await readFile(join(review.stagingDirectory, stagedPath), 'utf8')).toBe('long\n');
+});
 
 it('refuses to review a file inside the draft_review record directory', async () => {
   const { repository } = await stagedFixture();
