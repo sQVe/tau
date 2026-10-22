@@ -142,7 +142,7 @@ it('returns publication evidence through the tool', async () => {
     reuse: null,
     review: null,
     checks: [],
-    gaps: [{ kind: 'noReview' }, { kind: 'noChecks' }],
+    gaps: [{ kind: 'noReview' }, { kind: 'fullCheck', status: 'missing' }, { kind: 'noChecks' }],
   });
 });
 

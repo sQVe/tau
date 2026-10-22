@@ -75,9 +75,10 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
      old audit as a gap.
    - Print the target's head, base, merge base, repository, open PR fields, and closed PRs; ticket
      intent; reuse status, reasons, and available reports; review freshness and evidence gaps; added
-     skip or suppression markers; and matching check-log paths with their bounded excerpts. Print
-     one combined list of gaps from the tool, failed or skipped reads, missing ticket intent, and
-     anything omitted to fit the limit. Read omitted evidence through its returned path when needed.
+     skip or suppression markers; matching check-log paths with their bounded excerpts, and
+     `fullCheck` with its status, log path, and excerpt. Print one combined list of gaps from the
+     tool, failed or skipped reads, missing ticket intent, and anything omitted to fit the limit.
+     Read omitted evidence through its returned path when needed.
    - The script gathers evidence only. It never calls `prepare` or `verify`, and writes nothing
      itself. Target questions, rebases, review runs, previews, and approvals stay outside it.
    - If `target` is null because no head remote or several were found, ask which remote to use and
@@ -120,19 +121,22 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
    skill's ownership, fix, and approval flow.
 
 5. Run checks. Rerun the evidence script first. Reuse a required pre-merge check only when the
-   script lists its log as matching and reading its result shows it passed. A match does not detect
-   every edit to an already dirty file. Otherwise run it once on the committed tree. Rerun affected
-   checks after relevant changes, even if their headers still match.
+   script lists its log as matching and reading its result shows it passed. The full check is the
+   exception below. A match does not detect every edit to an already dirty file. Otherwise run it
+   once on the committed tree. Rerun affected checks after relevant changes, even if their headers
+   still match.
    - In a stack, first restack branches above with the stack skill. Check the PR's branch and every
      branch above changed by restacking, because step 9 pushes them all. After later commits,
      restack and rerun affected checks before previewing.
-   - Save real output, never a summary, as `$prdir/checks/<name>.log`. Before the run, call the `pr`
-     tool's `checkHeader` action with the pinned merge base as `mergeBase`. Write its returned lines
-     at the top of the log, then append the check's output and exit status. Stop if the action
-     fails.
-   - When the repository has a configured full check, run it with the `full_check` tool, passing the
-     pinned merge base as `base`. Append the log it returns after the header lines. The tool returns
-     a saved passing log without a run when the head, base, command, and changes are unchanged.
+   - Save real output of each other check, never a summary, as `$prdir/checks/<name>.log`. Before
+     the run, call the `pr` tool's `checkHeader` action with the pinned merge base as `mergeBase`.
+     Write its returned lines at the top of the log, then append the check's output and exit status.
+     Stop if the action fails.
+   - When the repository has a configured full check, read `fullCheck` from the evidence script.
+     When it is `passed`, reuse it. When it is `failed`, `missing`, or `malformed`, run the
+     `full_check` tool with the pinned merge base as `base`. Then rerun the evidence script, and
+     report any `fullCheck` status other than `passed` as a gap. The log stays in `.tau/checks/`; do
+     not copy it or add header lines.
    - When the change has user-visible behavior, also send it to a `qa` worker on the committed tree
      before the preview.
    - Leave the app URL, test account, and data writes to Tau, which fills them from the user's

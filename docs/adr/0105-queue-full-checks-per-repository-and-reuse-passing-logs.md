@@ -36,6 +36,10 @@ The tool reads the identity before and after the run. It saves a record, passing
 when both identities are equal, so an edit during the run never gives a reusable log. Only a record
 with `passed: true` is a match. A missing or malformed record is not a match.
 
+The record is the only identity of a full check. The `pr` tool's `evidence` action reads it for the
+published tree, with the merge base as `base`, and reports it as passed, failed, missing, or
+malformed. The full check log carries no header lines.
+
 The record is version 2, which adds `passed`. A version 1 record reads as malformed and is never
 reused, so the first check on each state runs again. The reuse rule is a pure function that takes
 the records and the current identity as facts.

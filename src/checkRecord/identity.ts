@@ -132,7 +132,10 @@ const readFingerprint = async (root: string): Promise<string | null> => {
 
 // Reads the commit and changes a check result depends on. base is a ref or commit; without it,
 // the origin remote's default branch, or null when the checkout has none.
-const readCheckState = async (root: string, base: string | undefined): Promise<CheckState> => {
+export const readCheckState = async (
+  root: string,
+  base: string | undefined,
+): Promise<CheckState> => {
   const head = await readGitText(root, ['rev-parse', 'HEAD']);
 
   if (head === undefined) {

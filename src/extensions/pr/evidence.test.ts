@@ -18,8 +18,10 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createSavedReview } from '../../../tests/savedReview.js';
+import { saveCheckRecord } from '../../checkRecord/checkRecord.js';
+import { readCheckState } from '../../checkRecord/identity.js';
 import { readPublicationEvidence } from './evidence.js';
-import type { PublicationRequest } from './evidence.js';
+import type { PublicationEvidence, PublicationRequest } from './evidence.js';
 import { createGhFake } from './fixtures/ghFake.js';
 
 const git = async (cwd: string, ...commandArguments: string[]) => {
@@ -88,6 +90,24 @@ const outputHash = async (root: string, commandArguments: string[]) => {
 
   return createHash('sha256').update(stdout).digest('hex');
 };
+
+const saveFullCheck = async (root: string, mergeBase: string, passed: boolean) => {
+  const directory = join(root, '.tau', 'checks');
+  const logPath = join(directory, '2026-01-01T00-00-00.log');
+
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(root, '.git', 'info', 'exclude'), '.tau/\n', { flag: 'a' });
+  await writeFile(logPath, 'compiling\nall done\n');
+
+  const state = await readCheckState(root, mergeBase);
+
+  await saveCheckRecord(logPath, { ...state, argv: ['pnpm', 'check'] }, passed);
+
+  return logPath;
+};
+
+const gapsWithoutFullCheck = (evidence: PublicationEvidence) =>
+  evidence.gaps.filter((gap) => gap.kind !== 'fullCheck');
 
 const saveCheck = async (root: string, mergeBase: string, body = 'tests passed\n') => {
   const directory = join(root, '.tau', 'pr', 'run-check', 'checks');
@@ -170,7 +190,7 @@ it('returns a matching review, matching check log, and PR fields without changin
     reuse: { status: 'match' },
     review: { freshness: { status: 'fresh' }, paths: ['feature.txt'] },
     checks: [{ path, matches: true, reasons: [], excerpt: 'tests passed', truncated: false }],
-    gaps: [],
+    gaps: [{ kind: 'fullCheck', status: 'missing' }],
   });
 
   expect(await readSavedFiles(root)).toEqual(before);
@@ -277,7 +297,7 @@ it.each([
     },
   ]);
 
-  expect(evidence.gaps).toEqual([]);
+  expect(gapsWithoutFullCheck(evidence)).toEqual([]);
 
   expect(await readSavedFiles(root)).toEqual(before);
 });
@@ -302,7 +322,7 @@ it('returns only the newest log for a check without gaps from superseded runs', 
     { path: newer, matches: true, reasons: [], excerpt: 'tests passed', truncated: false },
   ]);
 
-  expect(evidence.gaps).toEqual([]);
+  expect(gapsWithoutFullCheck(evidence)).toEqual([]);
   expect(await readSavedFiles(root)).toEqual(before);
 });
 
@@ -512,4 +532,56 @@ it('adds a markers read failure and keeps the rest of the evidence when the diff
   expect(evidence.gaps.filter((gap) => gap.kind === 'markers')).toHaveLength(1);
   expect(evidence.branch).toBe('feature');
   expect(evidence.target).not.toBeNull();
+});
+
+it.each([
+  {
+    name: 'passed',
+    prepare: (root: string, mergeBase: string) => saveFullCheck(root, mergeBase, true),
+    gaps: [],
+  },
+  {
+    name: 'failed',
+    prepare: (root: string, mergeBase: string) => saveFullCheck(root, mergeBase, false),
+    gaps: [{ kind: 'fullCheck', status: 'failed' }],
+  },
+])('reads a $name full check record with its log excerpt', async ({ name, prepare, gaps }) => {
+  const { root, mergeBase, run } = await setUp();
+  const logPath = await prepare(root, mergeBase);
+  const evidence = await run();
+
+  expect(evidence.fullCheck).toEqual({
+    status: name,
+    logPath,
+    argv: ['pnpm', 'check'],
+    excerpt: 'compiling\nall done',
+    truncated: false,
+  });
+
+  expect(evidence.checks).toEqual([]);
+  expect(evidence.gaps).toEqual(gaps);
+});
+
+it('reports a missing full check record when the tree changed after the run', async () => {
+  const { root, mergeBase, run } = await setUp();
+
+  await saveFullCheck(root, mergeBase, true);
+  await writeFile(join(root, 'feature.txt'), 'edited\n');
+
+  const evidence = await run();
+
+  expect(evidence.fullCheck).toEqual({ status: 'missing' });
+  expect(evidence.gaps).toContainEqual({ kind: 'fullCheck', status: 'missing' });
+});
+
+it('reports a malformed full check record', async () => {
+  const { root, mergeBase, run } = await setUp();
+  const logPath = await saveFullCheck(root, mergeBase, true);
+
+  await writeFile(logPath.replace(/\.log$/u, '.json'), '{');
+
+  const evidence = await run();
+
+  expect(evidence.fullCheck).toEqual({ status: 'malformed' });
+  expect(evidence.gaps).toContainEqual({ kind: 'fullCheck', status: 'malformed' });
 });

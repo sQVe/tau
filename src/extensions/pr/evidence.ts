@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { constants, lstat, readFile, readdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
+import { listSavedLogs } from '../../checkRecord/checkRecord.js';
+import { readCheckState } from '../../checkRecord/identity.js';
 import type { CommandRuntime } from '../../command.js';
 import { errorMessage, isMissingFile } from '../../errors.js';
 import { readGit, readGitBytes } from '../../gitOutput.js';
@@ -10,10 +12,17 @@ import type { ReviewEvidence } from '../../reviewCapture/evidence.js';
 import { scanMarkers } from '../../reviewCapture/evidenceDecisions.js';
 import type { MarkerLine } from '../../reviewCapture/evidenceDecisions.js';
 import { checkReviewDirectory } from '../../reviewCapture/reviewDirectory.js';
-import { checkLogGaps, matchCheckLog, selectLatestChecks } from './evidenceDecisions.js';
+import {
+  checkLogGaps,
+  decideFullCheck,
+  excerptBody,
+  matchCheckLog,
+  selectLatestChecks,
+} from './evidenceDecisions.js';
 import type {
-  CheckIdentity,
+  CheckHeaderIdentity,
   CheckLog,
+  FullCheckDecision,
   ModifiedCheckLog,
   PublicationGap,
 } from './evidenceDecisions.js';
@@ -28,6 +37,8 @@ export interface PublicationRequest {
   review?: string;
 }
 
+type FullCheckEvidence = FullCheckDecision & { excerpt?: string; truncated?: boolean };
+
 export interface PublicationEvidence {
   target: Target | null;
   branch: string | null;
@@ -36,6 +47,7 @@ export interface PublicationEvidence {
   review: ReviewEvidence | null;
   markers: MarkerLine[];
   checks: CheckLog[];
+  fullCheck: FullCheckEvidence | null;
   gaps: PublicationGap[];
 }
 
@@ -123,7 +135,10 @@ const hashOutput = async (root: string, commandArguments: string[]) => {
   return createHash('sha256').update(bytes).digest('hex');
 };
 
-const readCheckIdentity = async (root: string, mergeBase: string): Promise<CheckIdentity> => ({
+const readHeaderIdentity = async (
+  root: string,
+  mergeBase: string,
+): Promise<CheckHeaderIdentity> => ({
   head: await readGit(root, ['rev-parse', 'HEAD']),
   status: await hashOutput(root, ['--no-optional-locks', 'status', '--porcelain']),
   diff: await hashOutput(root, [
@@ -151,7 +166,7 @@ export const readCheckHeader = async (
     `${mergeBase}^{commit}`,
   ]);
 
-  const identity = await readCheckIdentity(root, commit);
+  const identity = await readHeaderIdentity(root, commit);
 
   return {
     lines: [`HEAD: ${identity.head}`, `Status: ${identity.status}`, `Diff: ${identity.diff}`],
@@ -178,7 +193,7 @@ const readDirectory = async (path: string) => {
 
 const readCheckLog = async (
   path: string,
-  current: CheckIdentity | null,
+  current: CheckHeaderIdentity | null,
 ): Promise<ModifiedCheckLog> => {
   let modifiedAt: number | null = null;
   let check: CheckLog;
@@ -211,7 +226,7 @@ const readCheckLog = async (
   return { name: basename(path), modifiedAt, check };
 };
 
-const readRunChecks = async (directory: string, current: CheckIdentity | null) => {
+const readRunChecks = async (directory: string, current: CheckHeaderIdentity | null) => {
   const entries = await readDirectory(directory);
 
   const paths = entries
@@ -223,12 +238,12 @@ const readRunChecks = async (directory: string, current: CheckIdentity | null) =
 };
 
 const readChecks = async (root: string, evidence: PublicationEvidence) => {
-  let current: CheckIdentity | null = null;
+  let current: CheckHeaderIdentity | null = null;
   const logs: ModifiedCheckLog[] = [];
 
   if (evidence.target !== null) {
     try {
-      current = await readCheckIdentity(root, evidence.target.mergeBase);
+      current = await readHeaderIdentity(root, evidence.target.mergeBase);
     } catch (error) {
       evidence.gaps.push(readFailure('checks', error));
     }
@@ -262,7 +277,42 @@ const readChecks = async (root: string, evidence: PublicationEvidence) => {
   }
 
   evidence.checks = selectLatestChecks(logs);
-  evidence.gaps.push(...checkLogGaps(evidence.checks));
+  evidence.gaps.push(...checkLogGaps(evidence.checks, evidence.fullCheck));
+};
+
+const readLogExcerpt = async (logPath: string) => {
+  const text = await readFile(logPath, 'utf8');
+  const body = text.split('\n');
+
+  if (body.at(-1) === '') {
+    body.pop();
+  }
+
+  return excerptBody(body);
+};
+
+const readFullCheck = async (root: string, evidence: PublicationEvidence) => {
+  if (evidence.target === null) {
+    return;
+  }
+
+  try {
+    const state = await readCheckState(root, evidence.target.mergeBase);
+    const saved = await listSavedLogs(join(root, '.tau', 'checks'));
+    const decision = decideFullCheck(state, saved);
+
+    evidence.fullCheck = decision;
+
+    if (decision.status === 'passed' || decision.status === 'failed') {
+      evidence.fullCheck = { ...decision, ...(await readLogExcerpt(decision.logPath)) };
+    }
+
+    if (decision.status !== 'passed') {
+      evidence.gaps.push({ kind: 'fullCheck', status: decision.status });
+    }
+  } catch (error) {
+    evidence.gaps.push(readFailure('checks', error));
+  }
 };
 
 export const readPublicationEvidence = async (
@@ -278,6 +328,7 @@ export const readPublicationEvidence = async (
     review: null,
     markers: [],
     checks: [],
+    fullCheck: null,
     gaps: [],
   };
 
@@ -315,6 +366,7 @@ export const readPublicationEvidence = async (
   }
 
   await readReview(root, request, evidence);
+  await readFullCheck(root, evidence);
   await readChecks(root, evidence);
 
   return evidence;
