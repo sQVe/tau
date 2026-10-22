@@ -33,7 +33,7 @@ const stagedFixture = async () => {
   await mkdir(join(repository, '.tau/slices'), { recursive: true });
   await writeFile(join(repository, '.tau/slices/a.md'), 'one\n');
 
-  return { repository, data };
+  return { repository };
 };
 
 it.each([
@@ -232,14 +232,14 @@ it('reads a manifest whose paths wander but stay inside .tau', async () => {
 it.each(['outside the temporary directory', 'without the prefix', 'inside a staging directory'])(
   'refuses a manifest naming a staging directory Tau did not create (%s) and keeps it',
   async (kind) => {
-    const { repository, data } = await stagedFixture();
+    const { repository } = await stagedFixture();
     const review = await stageReview(repository, ['.tau/slices/a.md']);
 
     const directories: Record<string, () => Promise<string>> = {
       // The directory sits under the repository, not the temporary directory.
       'outside the temporary directory': () => mkdtemp(join(repository, 'tau-draft-review-')),
-      // The directory sits under the data directory with a name the stage prefix does not match.
-      'without the prefix': () => mkdtemp(join(data, 'precious-')),
+      // TMPDIR points at the data directory, and the name lacks the stage prefix.
+      'without the prefix': () => Promise.resolve(temporaryDirectory(onTestFinished, 'precious-')),
       'inside a staging directory': async () => {
         const nested = join(review.stagingDirectory, 'tau-draft-review-nested');
 
