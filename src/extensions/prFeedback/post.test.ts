@@ -448,15 +448,9 @@ describe('post refusals', () => {
 
     const rounds = join(root, '.tau', 'pr-feedback');
 
-    for (const directory of [
-      root,
-      join(root, '.tau'),
-      rounds,
-      join(rounds, '..x'),
-      join(details.directory, 'nested'),
-    ]) {
+    for (const directory of [root, join(root, '.tau'), rounds, join(details.directory, 'nested')]) {
       await expect(post(details, noUiContext(root), { directory })).rejects.toThrow(
-        'The directory must be .tau/pr-feedback/<name>',
+        'The feedback directory must',
       );
     }
 

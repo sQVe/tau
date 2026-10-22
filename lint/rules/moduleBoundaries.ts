@@ -105,7 +105,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   instructions: [],
   keys: [],
   linear: ['command', 'errors'],
-  record: ['errors', 'schema'],
+  record: ['errors', 'schema', 'tauDirectory'],
   reviewCapture: ['errors', 'gitOutput', 'record', 'schema', 'tauDirectory'],
   schema: [],
   skillTools: [],

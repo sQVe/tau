@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
 import { access, constants, lstat, realpath, stat } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
 import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
 import { runGit } from '../gitOutput.js';
+import { climbsOut } from '../tauDirectory.js';
 import { keepAddedLines } from './evidenceDecisions.js';
 
 export interface Gap {
@@ -444,16 +445,12 @@ const captureDiffOnce = async (
   }
 };
 
-// Only a whole `..` segment leaves the root; `..rules.md` is a name inside it.
-export const leavesRoot = (fromRoot: string): boolean =>
-  fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot);
-
 // A linked directory in the path can lead outside the checkout.
 export const isInsideRoot = async (root: string, file: string): Promise<boolean> => {
   const realRoot = await realpath(root);
   const realParent = await realpath(dirname(file));
 
-  return !leavesRoot(relative(realRoot, realParent));
+  return !climbsOut(relative(realRoot, realParent));
 };
 
 // A path whose parent cannot be resolved is left to the read, which reports why it failed.

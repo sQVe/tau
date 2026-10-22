@@ -951,7 +951,20 @@ it('refuses to verify a body.md with another hard link', async () => {
   await link(join(outside, 'body.md'), join(String(directory), 'body.md'));
 
   await expect(run({ ...approved, directory: String(directory) })).rejects.toThrow(
-    'Refusing to read a body.md with another hard link',
+    'Refusing to read through a file with another hard link',
+  );
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses to verify a body.md that is a FIFO', async () => {
+  const { fake, run } = await setUp();
+  const { directory } = await run({ action: 'prepare' });
+
+  await promisify(execFile)('mkfifo', [join(String(directory), 'body.md')]);
+
+  await expect(run({ ...approved, directory: String(directory) })).rejects.toThrow(
+    'is not a regular file',
   );
 
   expect(fake.calls).toEqual([]);

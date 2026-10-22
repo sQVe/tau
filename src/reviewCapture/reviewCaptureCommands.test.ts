@@ -7,7 +7,7 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
 import { installFakeGit } from './fixtures/fakeGit.js';
-import { leavesRoot, pinTarget, readHead, runCaptureCommand } from './reviewCapture.js';
+import { pinTarget, readHead, runCaptureCommand } from './reviewCapture.js';
 
 const git = async (root: string, ...commandArguments: string[]) => {
   const { stdout } = await promisify(execFile)('git', commandArguments, { cwd: root });
@@ -58,17 +58,6 @@ it('reports a command that cannot start', async () => {
 
   expect(result.stdout).toBeUndefined();
   expect(result.error).toContain('ENOENT');
-});
-
-it.each([
-  { path: '..', leaves: true },
-  { path: '../a', leaves: true },
-  { path: '/etc', leaves: true },
-  { path: '..rules.md', leaves: false },
-  { path: 'a/../b', leaves: false },
-  { path: '', leaves: false },
-])('says whether the relative path $path leaves the root', ({ path, leaves }) => {
-  expect(leavesRoot(path)).toBe(leaves);
 });
 
 it('reads HEAD', async () => {

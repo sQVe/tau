@@ -288,8 +288,8 @@ it.each([
 
   const freshness = await failureOf(root, { action: 'freshness', directory });
 
-  expect(capture).toContain('.tau/workers/review-');
-  expect(freshness).toContain('.tau/workers/review-');
+  expect(capture).toContain('The review directory must');
+  expect(freshness).toContain('The review directory must');
   expect(await readFile(join(directory, 'input.md'), 'utf8')).toBe(inputHeader);
 });
 

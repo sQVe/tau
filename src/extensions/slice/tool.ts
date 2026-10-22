@@ -8,9 +8,9 @@ import { Type } from 'typebox';
 
 import type { Exec } from '../../command.js';
 import { isMissingFile } from '../../errors.js';
-import { ensureTauDirectory, findTauRoot } from '../../tauDirectory.js';
+import { ensureTauDirectory, findTauRoot, rejectLinkedEntries } from '../../tauDirectory.js';
 import { applySlicePlan } from './apply.js';
-import { readPlan, rejectLinkedDraftFiles } from './draft.js';
+import { readPlan } from './draft.js';
 import { checkDraftDirectory, draftName } from './draftDirectory.js';
 import { readState, slicesPath } from './state.js';
 import type { Runtime } from './state.js';
@@ -47,7 +47,7 @@ Errors: a malformed or newer plan.json, a missing body file, a prepare id whose 
 const createDraftDirectory = async (root: string, name: string) => {
   const directory = await ensureTauDirectory(root, `${slicesPath}/${name}`);
 
-  await rejectLinkedDraftFiles(directory);
+  await rejectLinkedEntries(directory);
 
   return directory;
 };

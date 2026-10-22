@@ -1,6 +1,5 @@
 import {
   copyFile,
-  link,
   mkdir,
   mkdtemp,
   readFile,
@@ -15,7 +14,7 @@ import { join } from 'node:path';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import type { Plan } from './draft.js';
-import { readDraft, readPlan, rejectLinkedDraftFiles, writePlan } from './draft.js';
+import { readDraft, readPlan, writePlan } from './draft.js';
 
 const fixtures = join(import.meta.dirname, 'fixtures', 'plans');
 
@@ -335,26 +334,5 @@ describe('writePlan', () => {
     await expect(writePlan(directory, plan)).rejects.toThrow(/plan\.json/);
 
     expect(await readdir(directory)).toEqual(['plan.json']);
-  });
-});
-
-describe('rejectLinkedDraftFiles', () => {
-  it('accepts a draft with a subdirectory and a plain file', async () => {
-    const directory = await draftDirectory('version-1.json');
-
-    await mkdir(join(directory, 'notes'));
-
-    await expect(rejectLinkedDraftFiles(directory)).resolves.toBeUndefined();
-  });
-
-  it('refuses a draft file with another hard link', async () => {
-    const directory = await draftDirectory('version-1.json');
-    const outside = join(await draftDirectory(undefined), 'secret.md');
-
-    await writeFile(outside, 'Not for Linear.\n');
-    await link(outside, join(directory, 'slice-1.md'));
-
-    await expect(rejectLinkedDraftFiles(directory)).rejects.toThrow(/hard link: .*slice-1\.md$/);
-    expect(await readFile(outside, 'utf8')).toBe('Not for Linear.\n');
   });
 });

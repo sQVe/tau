@@ -1,9 +1,8 @@
 import { lstat } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { join } from 'node:path';
 
 import { isMissingFile } from '../../errors.js';
-import { checkTauDirectory } from '../../tauDirectory.js';
-import { rejectLinkedDraftFiles } from './draft.js';
+import { checkTauDirectory, rejectLinkedEntries, requireTauChild } from '../../tauDirectory.js';
 import { slicesPath } from './state.js';
 
 const isMissing = (path: string) =>
@@ -36,7 +35,7 @@ export const checkDraftDirectory = async (
   }
 
   await checkTauDirectory(root, `${slicesPath}/${name}`);
-  await rejectLinkedDraftFiles(directory);
+  await rejectLinkedEntries(directory);
 
   return directory;
 };
@@ -46,14 +45,5 @@ export const draftName = (root: string, directory: string | undefined): string =
     throw new Error('read and apply need the directory that prepare returned.');
   }
 
-  const absolute = resolve(root, directory);
-  const fromSlices = relative(join(root, '.tau', slicesPath), absolute);
-  const outside = fromSlices === '' || fromSlices.startsWith('..') || isAbsolute(fromSlices);
-  const nested = fromSlices.includes('/') || fromSlices.includes('\\');
-
-  if (outside || nested) {
-    throw new Error(`The draft directory must be .tau/slices/<id>, not ${directory}.`);
-  }
-
-  return fromSlices;
+  return requireTauChild(root, slicesPath, '', directory, 'The draft directory');
 };

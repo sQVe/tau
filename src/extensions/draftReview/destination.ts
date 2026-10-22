@@ -3,9 +3,9 @@ import { lstat, open, realpath } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
 import { isMissingFile } from '../../errors.js';
+import { climbsOut } from '../../tauDirectory.js';
 import { decideDestination } from './reviewDecisions.js';
 import type { DestinationDecision } from './reviewDecisions.js';
-import { climbsOut } from './stage.js';
 
 interface FileIdentity {
   dev: number;
