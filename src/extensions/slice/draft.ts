@@ -1,4 +1,3 @@
-import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { Static } from 'typebox';
@@ -139,34 +138,6 @@ export const readDraft = async (directory: string): Promise<Draft | undefined> =
   }
 
   return { plan, containerBody, sliceBodies };
-};
-
-const hasOtherHardLinks = async (path: string) => {
-  const stats = await lstat(path);
-
-  return stats.nlink > 1;
-};
-
-// A linked draft file could send the model's or the tool's writes outside the repository, and a
-// body read through a hard link could send another file's contents to Linear.
-export const rejectLinkedDraftFiles = async (directory: string): Promise<void> => {
-  const entries = await readdir(directory, { withFileTypes: true });
-  const link = entries.find((entry) => entry.isSymbolicLink());
-
-  if (link !== undefined) {
-    throw new Error(`Refusing to write through a symlink: ${join(directory, link.name)}`);
-  }
-
-  const files = entries
-    .filter((entry) => entry.isFile())
-    .map((entry) => join(directory, entry.name));
-
-  const hardLinked = await Promise.all(files.map((file) => hasOtherHardLinks(file)));
-  const firstHardLinked = files.find((_, index) => hardLinked[index] === true);
-
-  if (firstHardLinked !== undefined) {
-    throw new Error(`Refusing a draft file with another hard link: ${firstHardLinked}`);
-  }
 };
 
 export const writePlan = (directory: string, plan: Plan): Promise<void> =>

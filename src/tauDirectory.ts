@@ -1,5 +1,14 @@
-import { appendFile, lstat, mkdir, mkdtemp, readFile, realpath, stat } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import {
+  appendFile,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  stat,
+} from 'node:fs/promises';
+import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 
 import { isMissingFile } from './errors.js';
 import { findCheckoutRoot, readGitOutput } from './gitOutput.js';
@@ -40,7 +49,7 @@ const writtenPaths = (segments: readonly string[]) => [
   '.tau/.gitignore',
 ];
 
-const isSymlink = async (path: string) => {
+export const isSymlink = async (path: string): Promise<boolean> => {
   try {
     const stats = await lstat(path);
 
@@ -51,6 +60,43 @@ const isSymlink = async (path: string) => {
     }
 
     throw error;
+  }
+};
+
+// A linked file could send a read or write outside the checkout, and a read of a FIFO waits for a
+// writer forever. A directory always has several links.
+export const rejectLinkedFile = async (path: string, verb: 'read' | 'write'): Promise<void> => {
+  const stats = await lstat(path).catch((error: unknown) => {
+    if (isMissingFile(error)) {
+      return undefined;
+    }
+
+    throw error;
+  });
+
+  if (stats === undefined) {
+    return;
+  }
+
+  if (stats.isSymbolicLink()) {
+    throw new Error(`Refusing to ${verb} through a symlink: ${path}`);
+  }
+
+  if (!stats.isFile() && !stats.isDirectory()) {
+    throw new Error(`Refusing to ${verb} through a file that is not a regular file: ${path}`);
+  }
+
+  if (stats.isFile() && stats.nlink > 1) {
+    throw new Error(`Refusing to ${verb} through a file with another hard link: ${path}`);
+  }
+};
+
+export const rejectLinkedEntries = async (directory: string): Promise<void> => {
+  const names = await readdir(directory);
+
+  for (const name of names) {
+    // oxlint-disable-next-line no-await-in-loop -- Checking in directory order names the first refusal.
+    await rejectLinkedFile(join(directory, name), 'write');
   }
 };
 
@@ -278,9 +324,39 @@ export const createFreshTauDirectory = async (
   return mkdtemp(join(parent, prefix));
 };
 
-// A relative path leaves its base only through a `..` segment. A name such as `..run-x` stays in.
-const climbsOut = (name: string) =>
-  name === '..' || name.startsWith('../') || name.startsWith('..\\');
+// On POSIX a backslash is a name character, so `a\b/../..` climbs one level natively while the
+// cross-platform walk counts two names. Both checks must pass. A name such as `..run-x` stays in.
+const climbsOutNatively = (path: string) => {
+  const normalized = normalize(path);
+
+  return normalized === '..' || normalized.startsWith(`..${sep}`);
+};
+
+const climbsOutOnAnyPlatform = (path: string) => {
+  let depth = 0;
+
+  for (const segment of path.split(/[/\\]/)) {
+    if (segment === '..') {
+      depth -= 1;
+    } else if (segment !== '' && segment !== '.') {
+      depth += 1;
+    }
+
+    if (depth < 0) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+export const climbsOut = (path: string): boolean => {
+  if (isAbsolute(path) || path.startsWith('\\')) {
+    return true;
+  }
+
+  return climbsOutNatively(path) || climbsOutOnAnyPlatform(path);
+};
 
 // Places directory against `<root>/.tau/<parentPath>`: a child is one segment directly in it that
 // starts with prefix and has more after it.
@@ -292,7 +368,7 @@ export const locateTauChild = (
 ): TauChild => {
   const name = relative(join(root, '.tau', parentPath), resolve(root, directory));
 
-  if (climbsOut(name) || isAbsolute(name)) {
+  if (climbsOut(name)) {
     return { kind: 'outside' };
   }
 
@@ -305,4 +381,32 @@ export const locateTauChild = (
   }
 
   return { kind: 'child', name };
+};
+
+export const requireTauChild = (
+  root: string,
+  parentPath: string,
+  prefix: string,
+  directory: string,
+  label: string,
+): string => {
+  const located = locateTauChild(root, parentPath, prefix, directory);
+
+  if (located.kind === 'outside') {
+    throw new Error(`${label} must be in .tau/${parentPath}, not ${directory}.`);
+  }
+
+  if (located.kind === 'nested') {
+    throw new Error(`${label} must sit directly in .tau/${parentPath}, not ${directory}.`);
+  }
+
+  if (located.kind === 'unnamed' && prefix === '') {
+    throw new Error(`${label} must name a directory in .tau/${parentPath}, not ${directory}.`);
+  }
+
+  if (located.kind === 'unnamed') {
+    throw new Error(`${label} must be named ${prefix}* by prepare, not ${directory}.`);
+  }
+
+  return located.name;
 };

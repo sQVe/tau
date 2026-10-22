@@ -3,7 +3,7 @@ import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { isMissingFile } from '../errors.js';
-import { checkTauDirectory, locateTauChild } from '../tauDirectory.js';
+import { checkTauDirectory, rejectLinkedFile, requireTauChild } from '../tauDirectory.js';
 import { inputFileName, recheckFileName, recordFileName } from './record.js';
 
 export const workersPath = 'workers';
@@ -18,30 +18,8 @@ export const existingEntry = (path: string): Promise<Stats | undefined> =>
     throw error;
   });
 
-// A linked file could send the tool's writes, or the reviewer's reads, outside the repository.
-const rejectLinkedFile = async (path: string) => {
-  const entry = await existingEntry(path);
-
-  if (entry?.isSymbolicLink() === true) {
-    throw new Error(`Refusing to write through a symlink: ${path}`);
-  }
-
-  if (entry !== undefined && entry.nlink > 1) {
-    throw new Error(`Refusing a review file with another hard link: ${path}`);
-  }
-};
-
-const reviewName = (root: string, directory: string) => {
-  const located = locateTauChild(root, workersPath, reviewPrefix, directory);
-
-  if (located.kind !== 'child') {
-    throw new Error(
-      `The review directory must be .tau/workers/review-* from prepare, not ${directory}.`,
-    );
-  }
-
-  return located.name;
-};
+const reviewName = (root: string, directory: string) =>
+  requireTauChild(root, workersPath, reviewPrefix, directory, 'The review directory');
 
 // Refuses a review directory that a link could send outside the checkout, and changes nothing.
 export const checkReviewDirectory = async (root: string, directory: string): Promise<string> => {
@@ -58,7 +36,7 @@ export const checkReviewDirectory = async (root: string, directory: string): Pro
 
   for (const file of [inputFileName, recordFileName, recheckFileName]) {
     // oxlint-disable-next-line no-await-in-loop -- three lstat calls; order keeps the first error stable.
-    await rejectLinkedFile(join(path, file));
+    await rejectLinkedFile(join(path, file), 'write');
   }
 
   return path;

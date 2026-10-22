@@ -3,6 +3,7 @@ import { join, relative, resolve } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.js';
 import { runGit } from '../gitOutput.js';
+import { climbsOut } from '../tauDirectory.js';
 import {
   boundList,
   callerText,
@@ -31,7 +32,7 @@ import type {
 import type { Freshness } from './freshness.js';
 import { captureReview, checkFreshness } from './pinnedCapture.js';
 import { inputFileName, readCaptureRecord, recheckFileName } from './record.js';
-import { isInsideRoot, leavesRoot } from './reviewCapture.js';
+import { isInsideRoot } from './reviewCapture.js';
 import type { PinnedTarget } from './reviewCapture.js';
 
 interface FileBody {
@@ -278,7 +279,7 @@ const findCallers = async (
 
 const repositoryPath = (root: string, path: string) => {
   const fromRoot = relative(root, resolve(root, path));
-  const outside = leavesRoot(fromRoot);
+  const outside = climbsOut(fromRoot);
 
   return outside || fromRoot === '' ? undefined : fromRoot;
 };

@@ -8,7 +8,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { lstat, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import type { Static, TSchema } from 'typebox';
@@ -16,6 +16,7 @@ import { Value } from 'typebox/value';
 
 import { isMissingFile } from './errors.js';
 import { describeSchemaProblem, isRecord } from './schema.js';
+import { isSymlink } from './tauDirectory.js';
 
 export interface VersionedRecordOptions<Schema extends TSchema> {
   // Names the record in error messages, such as `capture record`.
@@ -96,20 +97,6 @@ export const readVersionedRecord = async <Schema extends TSchema>(
 
   // oxlint-disable-next-line typescript/no-unsafe-return -- parseVersionedRecord returns the generic schema type.
   return parseVersionedRecord(path, text, options);
-};
-
-const isSymlink = async (path: string) => {
-  try {
-    const stats = await lstat(path);
-
-    return stats.isSymbolicLink();
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return false;
-    }
-
-    throw error;
-  }
 };
 
 // Writes a new file and renames it over the record, so a failed write keeps the old record or none.

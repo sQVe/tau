@@ -293,7 +293,7 @@ it('refuses reuse of a directory outside .tau/workers/review-*', async () => {
   await mkdir(directory);
 
   await expect(run({ action: 'reuse', directory, mergeBase: forkPoint })).rejects.toThrow(
-    'The review directory must be .tau/workers/review-*',
+    'The review directory must be named review-* by prepare',
   );
 });
 

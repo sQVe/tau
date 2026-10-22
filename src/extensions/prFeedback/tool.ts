@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { join } from 'node:path';
 
 import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
@@ -9,7 +9,7 @@ import { Type } from 'typebox';
 import type { Exec, CommandRuntime } from '../../command.js';
 import { parseRepository } from '../../github/github.js';
 import { findCheckoutRoot } from '../../gitOutput.js';
-import { checkTauDirectory, createFreshTauDirectory } from '../../tauDirectory.js';
+import { checkTauDirectory, createFreshTauDirectory, requireTauChild } from '../../tauDirectory.js';
 import { readChecks } from './checks.js';
 import { boundFeedback, chunkFeedbackBodies } from './feedbackBounds.js';
 import { postReplies } from './post.js';
@@ -72,18 +72,11 @@ const feedbackDirectory = async (root: string, directory: string | undefined) =>
     throw new Error('post needs the directory that read returned.');
   }
 
-  const absolute = resolve(root, directory);
-  const name = relative(join(root, '.tau', feedbackPath), absolute);
-  const outside = name === '' || name.startsWith('..') || isAbsolute(name);
-  const nested = name.includes('/') || name.includes('\\');
-
-  if (outside || nested) {
-    throw new Error(`The directory must be .tau/${feedbackPath}/<name>, not ${directory}.`);
-  }
+  const name = requireTauChild(root, feedbackPath, '', directory, 'The feedback directory');
 
   await checkTauDirectory(root, `${feedbackPath}/${name}`);
 
-  return absolute;
+  return join(root, '.tau', feedbackPath, name);
 };
 
 const post = async (

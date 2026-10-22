@@ -21,10 +21,14 @@ import { expect, it } from 'vitest';
 import { createTemporaryBareRoot, createTemporaryRepository } from '../tests/gitRepository.js';
 import {
   checkTauDirectory,
+  climbsOut,
   createFreshTauDirectory,
   ensureTauDirectory,
   findTauRoot,
   locateTauChild,
+  rejectLinkedEntries,
+  rejectLinkedFile,
+  requireTauChild,
 } from './tauDirectory.js';
 
 const isIgnored = async (repository: string, path: string) => {
@@ -465,3 +469,156 @@ it.skipIf(process.getuid?.() === 0)(
     expect(await readFile(ignoreFile, 'utf8')).toBe('state.json\n');
   },
 );
+
+it.each([
+  { directory: '.tau/pr/..run-x', prefix: '', name: '..run-x' },
+  { directory: '.tau/pr/run-x', prefix: 'run-', name: 'run-x' },
+])('accepts $directory with prefix "$prefix" as the Tau child $name', (row) => {
+  expect(
+    requireTauChild('/repository', 'pr', row.prefix, row.directory, 'The body directory'),
+  ).toBe(row.name);
+});
+
+it.each([
+  {
+    directory: '.tau/pr/../x',
+    prefix: '',
+    error: 'The body directory must be in .tau/pr, not .tau/pr/../x.',
+  },
+  {
+    directory: '/elsewhere/x',
+    prefix: '',
+    error: 'The body directory must be in .tau/pr, not /elsewhere/x.',
+  },
+  {
+    directory: '.tau/pr/a/b',
+    prefix: '',
+    error: 'The body directory must sit directly in .tau/pr, not .tau/pr/a/b.',
+  },
+  {
+    directory: '.tau/pr',
+    prefix: '',
+    error: 'The body directory must name a directory in .tau/pr, not .tau/pr.',
+  },
+  {
+    directory: '.tau/pr/other',
+    prefix: 'run-',
+    error: 'The body directory must be named run-* by prepare, not .tau/pr/other.',
+  },
+])('refuses $directory with prefix "$prefix" as a Tau child', (row) => {
+  expect(() =>
+    requireTauChild('/repository', 'pr', row.prefix, row.directory, 'The body directory'),
+  ).toThrow(row.error);
+});
+
+it.each([
+  { path: '..', climbs: true },
+  { path: '../a', climbs: true },
+  { path: '/etc', climbs: true },
+  { path: String.raw`..\x`, climbs: true },
+  { path: String.raw`a\b/../..`, climbs: true },
+  { path: '..rules.md', climbs: false },
+  { path: '..run-x', climbs: false },
+  { path: 'a/../b', climbs: false },
+  { path: '', climbs: false },
+])('says whether the relative path $path climbs out', ({ path, climbs }) => {
+  expect(climbsOut(path)).toBe(climbs);
+});
+
+const makeLinkedFileDirectory = () => mkdtemp(join(tmpdir(), 'tau-linked-file-'));
+
+const acceptedFileCases = [
+  { name: 'a missing path', setup: async () => undefined },
+  { name: 'a plain file', setup: (path: string) => writeFile(path, 'text\n') },
+  { name: 'a directory', setup: (path: string) => mkdir(path) },
+];
+
+const refusedFileCases = [
+  {
+    name: 'a symlink',
+    kind: 'a symlink',
+    setup: async (path: string) => {
+      const target = join(await makeLinkedFileDirectory(), 'target.md');
+
+      await writeFile(target, 'text\n');
+      await symlink(target, path);
+    },
+  },
+  {
+    name: 'a hard-linked file',
+    kind: 'a file with another hard link',
+    setup: async (path: string) => {
+      const other = join(await makeLinkedFileDirectory(), 'other.md');
+
+      await writeFile(other, 'text\n');
+      await hardLink(other, path);
+    },
+  },
+  {
+    name: 'a FIFO',
+    kind: 'a file that is not a regular file',
+    setup: async (path: string) => {
+      await promisify(execFile)('mkfifo', [path]);
+    },
+  },
+];
+
+for (const verb of ['read', 'write'] as const) {
+  for (const { name, setup } of acceptedFileCases) {
+    it(`rejectLinkedFile for ${verb} accepts ${name}`, async () => {
+      const path = join(await makeLinkedFileDirectory(), 'file.md');
+
+      await setup(path);
+
+      await expect(rejectLinkedFile(path, verb)).resolves.toBeUndefined();
+    });
+  }
+
+  for (const { name, kind, setup } of refusedFileCases) {
+    it(`rejectLinkedFile for ${verb} refuses ${name}`, async () => {
+      const path = join(await makeLinkedFileDirectory(), 'file.md');
+
+      await setup(path);
+
+      await expect(rejectLinkedFile(path, verb)).rejects.toThrow(
+        `Refusing to ${verb} through ${kind}: ${path}`,
+      );
+    });
+  }
+}
+
+it('rejectLinkedFile rethrows an lstat error other than a missing file', async () => {
+  const parent = join(await makeLinkedFileDirectory(), 'plain.md');
+
+  await writeFile(parent, 'text\n');
+
+  await expect(rejectLinkedFile(join(parent, 'file.md'), 'read')).rejects.toThrow('ENOTDIR');
+});
+
+it('rejectLinkedEntries accepts a directory with a subdirectory and a plain file', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-linked-entries-'));
+
+  await mkdir(join(directory, 'notes'));
+  await writeFile(join(directory, 'slice-1.md'), 'text\n');
+
+  await expect(rejectLinkedEntries(directory)).resolves.toBeUndefined();
+});
+
+it('rejectLinkedEntries refuses an entry with another hard link and leaves the other file', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-linked-entries-'));
+  const outside = join(await mkdtemp(join(tmpdir(), 'tau-linked-outside-')), 'secret.md');
+
+  await writeFile(outside, 'Not for Linear.\n');
+  await hardLink(outside, join(directory, 'slice-1.md'));
+
+  await expect(rejectLinkedEntries(directory)).rejects.toThrow(/hard link: .*slice-1\.md$/);
+  expect(await readFile(outside, 'utf8')).toBe('Not for Linear.\n');
+});
+
+it('rejectLinkedEntries refuses a symlinked entry', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tau-linked-entries-'));
+
+  await symlink(directory, join(directory, 'loop'));
+
+  await expect(rejectLinkedEntries(directory)).rejects.toThrow(/symlink: .*loop$/);
+});

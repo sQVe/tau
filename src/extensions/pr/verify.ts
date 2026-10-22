@@ -7,7 +7,7 @@ import type { CommandRuntime } from '../../command.js';
 import { checkOutput, parseRepository, readJson } from '../../github/github.js';
 import { readGit } from '../../gitOutput.js';
 import { existingEntry } from '../../reviewCapture/reviewDirectory.js';
-import { checkTauDirectory, locateTauChild } from '../../tauDirectory.js';
+import { checkTauDirectory, rejectLinkedFile, requireTauChild } from '../../tauDirectory.js';
 import { comparePullRequest } from './verifyDecisions.js';
 import type { Difference, PullRequestFields } from './verifyDecisions.js';
 
@@ -40,23 +40,8 @@ const pullRequestViewSchema = Type.Object({
   headRefOid: Type.String(),
 });
 
-const runName = (root: string, directory: string) => {
-  const located = locateTauChild(root, runPath, runPrefix, directory);
-
-  if (located.kind === 'outside') {
-    throw new Error(`The body directory must be in .tau/${runPath}, not ${directory}.`);
-  }
-
-  if (located.kind === 'nested') {
-    throw new Error(`The body directory must sit directly in .tau/${runPath}, not ${directory}.`);
-  }
-
-  if (located.kind === 'unnamed') {
-    throw new Error(`The body directory must be named ${runPrefix}* by prepare, not ${directory}.`);
-  }
-
-  return located.name;
-};
+const runName = (root: string, directory: string) =>
+  requireTauChild(root, runPath, runPrefix, directory, 'The body directory');
 
 // A linked directory or body.md, symbolic or hard, could make verify compare a file from outside
 // the checkout.
@@ -72,13 +57,7 @@ const readBody = async (root: string, directory: string) => {
     throw new Error(`No ${bodyFileName} at ${path}. Write the approved body there first.`);
   }
 
-  if (entry.isSymbolicLink()) {
-    throw new Error(`Refusing to read through a symlink: ${path}`);
-  }
-
-  if (entry.nlink > 1) {
-    throw new Error(`Refusing to read a ${bodyFileName} with another hard link: ${path}`);
-  }
+  await rejectLinkedFile(path, 'read');
 
   return readFile(path, 'utf8');
 };

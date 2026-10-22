@@ -200,7 +200,7 @@ it('refuses paths that are not files inside .tau, one reason each', async () => 
   await expect(run({ action: 'open', paths: ['.tau/slices'] })).rejects.toThrow('not a file');
 
   await expect(run({ action: 'collect', directory: '.tau/slices' })).rejects.toThrow(
-    'not a review record',
+    'The draft_review directory must be in .tau/draft-review',
   );
 
   await expect(run({ action: 'collect' })).rejects.toThrow('needs a directory');

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
@@ -270,6 +270,20 @@ it('stages a file whose name already uses the 255 bytes a name may hold', async 
   const [stagedPath = ''] = review.stagedPaths;
 
   expect(await readFile(join(review.stagingDirectory, stagedPath), 'utf8')).toBe('long\n');
+});
+
+it('stages a file by a path relative to a subdirectory cwd and reads the review by one too', async () => {
+  const { repository } = await stagedFixture();
+  const cwd = join(repository, 'packages');
+
+  await mkdir(cwd, { recursive: true });
+
+  const review = await stageReview(cwd, ['../.tau/slices/a.md']);
+  const relativeRecord = relative(cwd, review.recordDirectory);
+  const read = await readReview(cwd, relativeRecord);
+
+  expect(read.paths).toEqual(['slices/a.md']);
+  expect(read.recordDirectory).toBe(review.recordDirectory);
 });
 
 it('refuses to review a file inside the draft_review record directory', async () => {

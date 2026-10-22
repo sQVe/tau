@@ -1243,7 +1243,7 @@ describe('slice tool draft directory', () => {
 
     await expect(
       run(fake, context, { action: 'read', directory: String.raw`.tau/slices/parent\child` }),
-    ).rejects.toThrow(/must be \.tau\/slices\/<id>/);
+    ).rejects.toThrow(/must sit directly in \.tau\/slices/);
 
     expect(await exists(join(root, '.tau'))).toBe(false);
   });

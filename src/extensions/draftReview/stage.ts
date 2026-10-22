@@ -1,6 +1,6 @@
 import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
@@ -8,7 +8,12 @@ import type { Static } from 'typebox';
 import { isMissingFile } from '../../errors.js';
 import { parseVersionedRecord, writeRecord } from '../../record.js';
 import { isRecord } from '../../schema.js';
-import { createFreshTauDirectory, findTauRoot, locateTauChild } from '../../tauDirectory.js';
+import {
+  climbsOut,
+  createFreshTauDirectory,
+  findTauRoot,
+  requireTauChild,
+} from '../../tauDirectory.js';
 import { stagedNames } from './reviewDecisions.js';
 
 export interface Review {
@@ -130,40 +135,6 @@ export const parseReviewManifest = (path: string, content: string): ReviewManife
   }
 
   return manifest;
-};
-
-// On POSIX a backslash is a name character, so `a\b/../..` climbs one level natively while the
-// cross-platform walk counts two names. Both checks must pass.
-const climbsOutNatively = (path: string) => {
-  const normalized = normalize(path);
-
-  return normalized === '..' || normalized.startsWith(`..${sep}`);
-};
-
-const climbsOutOnAnyPlatform = (path: string) => {
-  let depth = 0;
-
-  for (const segment of path.split(/[/\\]/)) {
-    if (segment === '..') {
-      depth -= 1;
-    } else if (segment !== '' && segment !== '.') {
-      depth += 1;
-    }
-
-    if (depth < 0) {
-      return true;
-    }
-  }
-
-  return false;
-};
-
-export const climbsOut = (path: string): boolean => {
-  if (isAbsolute(path) || path.startsWith('\\')) {
-    return true;
-  }
-
-  return climbsOutNatively(path) || climbsOutOnAnyPlatform(path);
 };
 
 const realFile = async (tauDirectory: string, requested: string, cwd: string): Promise<string> => {
@@ -326,15 +297,16 @@ const isOwnStagingDirectory = (directory: string) =>
 
 export const readReview = async (cwd: string, directory: string): Promise<Review> => {
   const root = await findTauRoot(cwd, 'draft_review');
-  const child = locateTauChild(root, recordParent, recordPrefix, resolve(cwd, directory));
 
-  if (child.kind !== 'child') {
-    throw new Error(
-      `draft_review directory is not a review record under .tau/${recordParent}: ${directory}`,
-    );
-  }
+  const name = requireTauChild(
+    root,
+    recordParent,
+    recordPrefix,
+    resolve(cwd, directory),
+    'The draft_review directory',
+  );
 
-  const recordDirectory = join(root, '.tau', recordParent, child.name);
+  const recordDirectory = join(root, '.tau', recordParent, name);
   const manifestPath = join(recordDirectory, manifestName);
   let content: string;
 
