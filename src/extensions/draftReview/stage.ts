@@ -4,12 +4,11 @@ import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep 
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
-import { Value } from 'typebox/value';
 
 import { isMissingFile } from '../../errors.js';
-import { describeSchemaProblem } from '../../schemaProblem.js';
+import { isRecord } from '../../isRecord.js';
+import { parseVersionedRecord, writeRecord } from '../../record.js';
 import { createFreshTauDirectory, findTauRoot, locateTauChild } from '../../tauDirectory.js';
-import { replaceFile } from './replaceFile.js';
 
 export interface Review {
   // The real `.tau` directory the paths are relative to.
@@ -77,49 +76,19 @@ const manifestSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const versionOf = (value: unknown) =>
-  typeof value === 'object' && value !== null && 'version' in value ? value.version : undefined;
+const isVersionOne = (value: unknown) => isRecord(value) && value['version'] === 1;
 
-const isNewerVersion = (value: unknown) => {
-  const version = versionOf(value);
-
-  return typeof version === 'number' && version > manifestVersion;
-};
-
-const isVersionOne = (value: unknown) => versionOf(value) === 1;
+const manifestSchemaFor = (value: unknown) =>
+  isVersionOne(value) ? versionOneSchema : manifestSchema;
 
 export const parseReviewManifest = (path: string, content: string): ReviewManifest => {
-  let value: unknown;
+  const manifest = parseVersionedRecord(path, content, {
+    label: 'review record',
+    version: manifestVersion,
+    schema: manifestSchemaFor,
+  });
 
-  try {
-    value = JSON.parse(content);
-  } catch (error) {
-    throw new Error(`Malformed review record ${path}: not JSON.`, { cause: error });
-  }
-
-  if (isNewerVersion(value)) {
-    throw new Error(
-      `Review record ${path} has a newer format than this Tau reads. Update Tau, then restart the session.`,
-    );
-  }
-
-  if (isVersionOne(value)) {
-    if (!Value.Check(versionOneSchema, value)) {
-      throw new Error(
-        `Malformed review record ${path}: ${describeSchemaProblem(versionOneSchema, value)}.`,
-      );
-    }
-
-    return { ...value, placement: null };
-  }
-
-  if (!Value.Check(manifestSchema, value)) {
-    throw new Error(
-      `Malformed review record ${path}: ${describeSchemaProblem(manifestSchema, value)}.`,
-    );
-  }
-
-  return value;
+  return manifest.version === 1 ? { ...manifest, placement: null } : manifest;
 };
 
 // On POSIX a backslash is a name character, so `a\b/../..` climbs one level natively while the
@@ -226,7 +195,7 @@ const writeManifest = async (review: Review, placement: SavedPlacement | null) =
 
   const target = join(recordDirectory, manifestName);
 
-  await replaceFile(target, JSON.stringify(manifest, null, 2));
+  await writeRecord(target, manifest);
 };
 
 export const savePlacement = async (review: Review, placement: SavedPlacement): Promise<void> => {

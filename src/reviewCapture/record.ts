@@ -1,5 +1,4 @@
-import { randomUUID } from 'node:crypto';
-import { lstat, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { Static } from 'typebox';
@@ -7,7 +6,7 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { isMissingFile } from '../errors.js';
-import { describeSchemaProblem } from '../schemaProblem.js';
+import { parseVersionedRecord, writeRecord } from '../record.js';
 import { objectNameSchema, pinnedTargetSchema, pinnedTargetSchemas } from './reviewCapture.js';
 
 export const recordFileName = 'capture.json';
@@ -105,46 +104,13 @@ const isVersionOne = (value: unknown) => isObject(value) && value['version'] ===
 const recordSchema = (value: unknown) =>
   isVersionOne(value) ? versionOneRecordSchema : captureRecordSchema;
 
-const schemaProblem = (value: unknown) => {
-  const problem = targetProblem(value);
-
-  if (problem !== undefined) {
-    return problem;
-  }
-
-  return describeSchemaProblem(recordSchema(value), value);
-};
-
-const isNewerVersion = (value: unknown) => {
-  const hasVersion = typeof value === 'object' && value !== null && 'version' in value;
-  const version = hasVersion ? value.version : undefined;
-
-  return typeof version === 'number' && version > currentVersion;
-};
-
-const parseRecord = (path: string, text: string): CaptureRecord => {
-  let value: unknown;
-
-  try {
-    value = JSON.parse(text);
-  } catch (error) {
-    throw new Error(`Malformed capture record ${path}: not JSON.`, { cause: error });
-  }
-
-  if (isNewerVersion(value)) {
-    throw new Error(
-      `Capture record ${path} has a newer format than this Tau reads. Update Tau, then restart the session.`,
-    );
-  }
-
-  const schema = recordSchema(value);
-
-  if (!Value.Check(schema, value)) {
-    throw new Error(`Malformed capture record ${path}: ${schemaProblem(value)}.`);
-  }
-
-  return value;
-};
+const parseRecord = (path: string, text: string) =>
+  parseVersionedRecord(path, text, {
+    label: 'capture record',
+    version: currentVersion,
+    schema: recordSchema,
+    check: targetProblem,
+  });
 
 export const readCaptureRecord = async (directory: string): Promise<CaptureRecord> => {
   const path = join(directory, recordFileName);
@@ -163,39 +129,9 @@ export const readCaptureRecord = async (directory: string): Promise<CaptureRecor
   return parseRecord(path, text);
 };
 
-const isSymlink = async (path: string) => {
-  try {
-    const stats = await lstat(path);
-
-    return stats.isSymbolicLink();
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return false;
-    }
-
-    throw error;
-  }
-};
-
-// Writes a new file and renames it over the record, so a failed write keeps the old record or none.
-// The rename is the step that completes a capture.
 export const writeCaptureRecord = async (
   directory: string,
   record: CurrentCaptureRecord,
 ): Promise<void> => {
-  const path = join(directory, recordFileName);
-  const temporary = join(directory, `.${recordFileName}.${randomUUID()}`);
-
-  if (await isSymlink(path)) {
-    throw new Error(`Refusing to write through a symlink: ${path}`);
-  }
-
-  try {
-    await writeFile(temporary, `${JSON.stringify(record, null, 2)}\n`, { flag: 'wx' });
-    await rename(temporary, path);
-  } catch (error) {
-    await rm(temporary, { force: true });
-
-    throw error;
-  }
+  await writeRecord(join(directory, recordFileName), record);
 };
