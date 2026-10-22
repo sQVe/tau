@@ -9,27 +9,26 @@ import { Type } from 'typebox';
 import { findCheckoutRoot } from '../../gitOutput.js';
 import { readReviewEvidence } from '../../reviewCapture/evidence.js';
 import {
-  pinFixTarget,
-  saveVerifiedSnapshot,
-  snapshotFolder,
-} from '../../reviewCapture/fixCapture.js';
-import { decideFixScope } from '../../reviewCapture/fixScope.js';
-import { captureReview, checkFreshness } from '../../reviewCapture/pinnedCapture.js';
-import {
+  captureReview,
+  checkFreshness,
+  checkReviewDirectory,
+  decideFixScope,
+  existingEntry,
   inputFileName,
+  pinFixTarget,
+  pinTarget,
   readCaptureRecord,
+  readHead,
   recheckFileName,
   recordFileName,
-  writeCaptureRecord,
-} from '../../reviewCapture/record.js';
-import { pinTarget, readHead, reviewTargetSchema } from '../../reviewCapture/reviewCapture.js';
-import type { Gap, PinnedTarget, ReviewTarget } from '../../reviewCapture/reviewCapture.js';
-import {
-  checkReviewDirectory,
-  existingEntry,
   reviewPrefix,
+  reviewTargetSchema,
+  saveVerifiedSnapshot,
+  snapshotFolder,
   workersPath,
-} from '../../reviewCapture/reviewDirectory.js';
+  writeCaptureRecord,
+} from '../../reviewCapture/reviewCapture.js';
+import type { Gap, PinnedTarget, ReviewTarget } from '../../reviewCapture/reviewCapture.js';
 import { createFreshTauDirectory } from '../../tauDirectory.js';
 
 export const codeReviewToolParameters = Type.Object({

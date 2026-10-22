@@ -6,8 +6,8 @@ import { promisify } from 'node:util';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { captureTarget, pinTarget } from './capture.js';
 import { installFakeGit } from './fixtures/fakeGit.js';
-import { captureTarget, pinTarget } from './reviewCapture.js';
 
 const git = async (root: string, ...commandArguments: string[]) => {
   const { stdout } = await promisify(execFile)('git', commandArguments, { cwd: root });

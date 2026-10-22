@@ -70,15 +70,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
   {
     name: 'reviewCapture',
     entry: 'reviewCapture/reviewCapture',
-    publicFiles: [
-      'reviewCapture/evidence',
-      'reviewCapture/evidenceDecisions',
-      'reviewCapture/fixCapture',
-      'reviewCapture/fixScope',
-      'reviewCapture/pinnedCapture',
-      'reviewCapture/record',
-      'reviewCapture/reviewDirectory',
-    ],
+    publicFiles: ['reviewCapture/evidence'],
   },
   { name: 'schema', entry: 'schema', publicFiles: [] },
   { name: 'skillTools', entry: 'skillTools', publicFiles: [] },
