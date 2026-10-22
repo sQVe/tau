@@ -1,7 +1,3 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
 import { expect, it } from 'vitest';
 
 import { readAllowedModels } from '../src/config/models.js';
@@ -9,42 +5,23 @@ import { readBrowserLoginCommand } from '../src/extensions/subagents/browserLogi
 import { readProfileModels } from '../src/extensions/subagents/profileModels.js';
 import { readTrackerConfig } from '../src/extensions/subagents/trackerConfig.js';
 import { loadTddConfig } from '../src/extensions/tdd/config.js';
-
-const writeConfig = (path: string, value: unknown) => {
-  writeFileSync(path, JSON.stringify(value));
-};
-
-const configFixture = (onTestFinished: (callback: () => void) => void) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-config-readers-'));
-  const agentDirectory = join(directory, 'agent');
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
-
-  mkdirSync(agentDirectory);
-  mkdirSync(join(directory, '.pi'));
-  const location = { cwd: directory, agentDirectory, projectTrusted: true };
-
-  return {
-    location,
-    userFile: join(agentDirectory, 'tau.json'),
-    repositoryFile: join(directory, '.pi', 'tau.json'),
-  };
-};
+import { temporaryTauConfig } from './tauConfigHarness.js';
 
 it('leaves TDD config, profiles, and allowed models readable when bulkRead is broken', ({
   onTestFinished,
 }) => {
-  const { location, userFile, repositoryFile } = configFixture(onTestFinished);
+  const { location, writeUser, writeRepository } = temporaryTauConfig(
+    onTestFinished,
+    'tau-config-readers-',
+  );
 
-  writeConfig(userFile, {
+  writeUser({
     allowedModels: ['a/one'],
     profiles: { scout: { model: 'a/one' } },
     bulkRead: 'broken',
   });
 
-  writeConfig(repositoryFile, { bulkRead: {}, tdd: { productionGlobs: ['lib/**'] } });
+  writeRepository({ bulkRead: {}, tdd: { productionGlobs: ['lib/**'] } });
 
   expect(readAllowedModels(location)?.models).toEqual(['a/one']);
 
@@ -60,15 +37,18 @@ it('leaves TDD config, profiles, and allowed models readable when bulkRead is br
 it('leaves TDD config, profiles, and allowed models readable next to a bulkRead model', ({
   onTestFinished,
 }) => {
-  const { location, userFile, repositoryFile } = configFixture(onTestFinished);
+  const { location, writeUser, writeRepository } = temporaryTauConfig(
+    onTestFinished,
+    'tau-config-readers-',
+  );
 
-  writeConfig(userFile, {
+  writeUser({
     allowedModels: ['a/one'],
     profiles: { scout: { model: 'a/one' } },
     bulkRead: { model: 'openai-codex/gpt-5.6-luna' },
   });
 
-  writeConfig(repositoryFile, { tdd: { productionGlobs: ['lib/**'] } });
+  writeRepository({ tdd: { productionGlobs: ['lib/**'] } });
 
   expect(readAllowedModels(location)?.models).toEqual(['a/one']);
 
@@ -82,10 +62,14 @@ it('leaves TDD config, profiles, and allowed models readable next to a bulkRead 
 });
 
 it('keeps every reader working when each block holds unknown keys', ({ onTestFinished }) => {
-  const { location, userFile, repositoryFile } = configFixture(onTestFinished);
+  const { location, writeUser, writeRepository } = temporaryTauConfig(
+    onTestFinished,
+    'tau-config-readers-',
+  );
+
   const ui = { notify: () => undefined };
 
-  writeConfig(userFile, {
+  writeUser({
     allowedModels: ['a/one'],
     profiles: { scout: { model: 'a/one', futureKey: 1 } },
     tracker: {
@@ -96,7 +80,7 @@ it('keeps every reader working when each block holds unknown keys', ({ onTestFin
     browser: { loginCommand: 'open-browser', futureKey: 1 },
   });
 
-  writeConfig(repositoryFile, { tdd: { productionGlobs: ['lib/**'], futureKey: 1 } });
+  writeRepository({ tdd: { productionGlobs: ['lib/**'], futureKey: 1 } });
 
   expect(readAllowedModels(location)?.models).toEqual(['a/one']);
   expect(readProfileModels(location, ui)).toEqual(new Map([['scout', 'a/one']]));

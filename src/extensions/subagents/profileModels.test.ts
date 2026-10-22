@@ -1,39 +1,15 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
 import { expect, it, vi } from 'vitest';
 
+import { temporaryTauConfig } from '../../../tests/tauConfigHarness.js';
 import { readAllowedModels } from '../../config/models.js';
 import { readProfileModel, readProfileModels, readProfileRoute } from './profileModels.js';
 
 const uiFixture = () => ({ notify: vi.fn<(message: string, level?: string) => void>() });
 
-const writeConfig = (path: string, value: unknown) => {
-  writeFileSync(path, JSON.stringify(value));
-};
-
-const configFixture = (onTestFinished: (callback: () => void) => void) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-profile-models-'));
-  const agentDirectory = join(directory, 'agent');
-  const userFile = join(agentDirectory, 'tau.json');
-  const repositoryFile = join(directory, '.pi', 'tau.json');
-
-  onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
-  });
-
-  mkdirSync(agentDirectory);
-  mkdirSync(join(directory, '.pi'));
-  const location = { cwd: directory, agentDirectory, projectTrusted: true };
-
-  return { location, userFile, repositoryFile };
-};
-
 it('reads profile models from the user file', ({ onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
 
-  writeConfig(userFile, {
+  writeUser({
     allowedModels: ['a/one'],
     profiles: { scout: { model: 'a/scout' }, default: { model: 'openrouter/meta/llama' } },
   });
@@ -47,12 +23,15 @@ it('reads profile models from the user file', ({ onTestFinished }) => {
 });
 
 it('reads no profile models without config files or a profiles block', ({ onTestFinished }) => {
-  const { location, userFile, repositoryFile } = configFixture(onTestFinished);
+  const { location, writeUser, writeRepository } = temporaryTauConfig(
+    onTestFinished,
+    'tau-profile-models-',
+  );
 
   expect(readProfileModels(location, uiFixture())).toEqual(new Map());
 
-  writeConfig(userFile, { allowedModels: ['a/one'] });
-  writeConfig(repositoryFile, { tdd: {} });
+  writeUser({ allowedModels: ['a/one'] });
+  writeRepository({ tdd: {} });
 
   expect(readProfileModels(location, uiFixture())).toEqual(new Map());
 });
@@ -64,9 +43,12 @@ it.for<[string, unknown, string]>([
   ['a malformed model', { scout: { model: 'no-provider' } }, 'profiles.scout.model'],
   ['a non-string model', { scout: { model: 5 } }, 'profiles.scout.model'],
 ])('refuses %s and names the file and field', ([, profiles, field], { onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-profile-models-',
+  );
 
-  writeConfig(userFile, { profiles });
+  writeUser({ profiles });
 
   const name = field.split('.')[1] ?? 'scout';
   const read = () => readProfileModel(location, name, uiFixture());
@@ -76,10 +58,13 @@ it.for<[string, unknown, string]>([
 });
 
 it('refuses profiles in the repository file and names that file', ({ onTestFinished }) => {
-  const { location, userFile, repositoryFile } = configFixture(onTestFinished);
+  const { location, repositoryFile, writeUser, writeRepository } = temporaryTauConfig(
+    onTestFinished,
+    'tau-profile-models-',
+  );
 
-  writeConfig(userFile, { profiles: { scout: { model: 'a/scout' } } });
-  writeConfig(repositoryFile, { profiles: {} });
+  writeUser({ profiles: { scout: { model: 'a/scout' } } });
+  writeRepository({ profiles: {} });
 
   expect(() => readProfileModels(location, uiFixture())).toThrow(repositoryFile);
   expect(() => readProfileModel(location, 'scout', uiFixture())).toThrow(repositoryFile);
@@ -90,10 +75,13 @@ it('refuses profiles in the repository file and names that file', ({ onTestFinis
 });
 
 it('leaves allowed models readable when profiles are broken', ({ onTestFinished }) => {
-  const { location, userFile, repositoryFile } = configFixture(onTestFinished);
+  const { location, writeUser, writeRepository } = temporaryTauConfig(
+    onTestFinished,
+    'tau-profile-models-',
+  );
 
-  writeConfig(userFile, { allowedModels: ['a/one'], profiles: { scout: 'broken' } });
-  writeConfig(repositoryFile, { profiles: {} });
+  writeUser({ allowedModels: ['a/one'], profiles: { scout: 'broken' } });
+  writeRepository({ profiles: {} });
 
   expect(() => readProfileModels(location, uiFixture())).toThrow('profiles');
   expect(readAllowedModels(location)?.models).toEqual(['a/one']);
@@ -109,9 +97,9 @@ const scoutRoute = {
 };
 
 it('reads a profile route and keeps the profile model', ({ onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
 
-  writeConfig(userFile, {
+  writeUser({
     profiles: { scout: { model: 'a/scout', route: scoutRoute }, plain: { model: 'a/plain' } },
   });
 
@@ -137,9 +125,9 @@ it.for<[number, number]>([
   [0.25, 0.25],
   [1, 1],
 ])('reads a route canary of %s', ([canary, expected], { onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
 
-  writeConfig(userFile, {
+  writeUser({
     profiles: { scout: { model: 'a/scout', route: { ...scoutRoute, canary } } },
   });
 
@@ -152,9 +140,12 @@ it.for<[string, unknown, string]>([
   ['a canary above 1', { ...scoutRoute, canary: 1.5 }, 'outside the range 0 to 1'],
   ['a negative canary', { ...scoutRoute, canary: -0.1 }, 'outside the range 0 to 1'],
 ])('turns routing off for %s with its own message', ([, routes, message], { onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-profile-models-',
+  );
 
-  writeConfig(userFile, { profiles: { scout: { model: 'a/scout', route: routes } } });
+  writeUser({ profiles: { scout: { model: 'a/scout', route: routes } } });
 
   const ui = uiFixture();
 
@@ -201,9 +192,12 @@ it.for<[string, unknown, string]>([
 ])(
   'turns routing off for %s and names the file and field',
   ([, routes, field], { onTestFinished }) => {
-    const { location, userFile } = configFixture(onTestFinished);
+    const { location, userFile, writeUser } = temporaryTauConfig(
+      onTestFinished,
+      'tau-profile-models-',
+    );
 
-    writeConfig(userFile, { profiles: { scout: { model: 'a/scout', route: routes } } });
+    writeUser({ profiles: { scout: { model: 'a/scout', route: routes } } });
 
     const ui = uiFixture();
 
@@ -218,9 +212,9 @@ it.for<[string, unknown, string]>([
   ['a route without classifier', { ...scoutRoute, classifier: undefined }, 'route.classifier'],
   ['a malformed classifier', { ...scoutRoute, classifier: 'router' }, 'route.classifier'],
 ])('turns routing off for %s and names the field', ([, route, field], { onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
 
-  writeConfig(userFile, { profiles: { scout: { model: 'a/scout', route } } });
+  writeUser({ profiles: { scout: { model: 'a/scout', route } } });
 
   const ui = uiFixture();
 
@@ -232,9 +226,9 @@ it.for<[string, unknown, string]>([
 it('turns routing off for a profile that still sets routes and names the edit', ({
   onTestFinished,
 }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
 
-  writeConfig(userFile, { profiles: { scout: { model: 'a/scout', routes: scoutRoute } } });
+  writeUser({ profiles: { scout: { model: 'a/scout', routes: scoutRoute } } });
 
   const ui = uiFixture();
 
@@ -253,9 +247,12 @@ it('turns routing off for a profile that still sets routes and names the edit', 
 it('reads a profile with unknown keys at any depth and reports each key path once per session', ({
   onTestFinished,
 }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-profile-models-',
+  );
 
-  writeConfig(userFile, {
+  writeUser({
     profiles: {
       worker: {
         model: 'a/worker',
@@ -297,9 +294,9 @@ it('reads a profile with unknown keys at any depth and reports each key path onc
 });
 
 it('fails only the profile whose entry is bad', ({ onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
 
-  writeConfig(userFile, {
+  writeUser({
     profiles: { scout: { model: 5 }, worker: { model: 'a/worker' }, other: { routes: {} } },
   });
 
@@ -313,9 +310,9 @@ it.for<[string, string]>([
   ['a profile with no entry', 'missing'],
   ['a profile entry with no route', 'plain'],
 ])('reads no route and raises no notice for %s', ([, name], { onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
 
-  writeConfig(userFile, { profiles: { plain: { model: 'a/plain' } } });
+  writeUser({ profiles: { plain: { model: 'a/plain' } } });
 
   const ui = uiFixture();
 
@@ -337,9 +334,9 @@ it.for<[string, unknown, string]>([
   ],
   ['labels as a list', { ...scoutRoute, labels: Object.values(scoutRoute.labels) }, 'route.labels'],
 ])('turns routing off for %s and names the field', ([, route, field], { onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
 
-  writeConfig(userFile, { profiles: { scout: { model: 'a/scout', route } } });
+  writeUser({ profiles: { scout: { model: 'a/scout', route } } });
 
   const ui = uiFixture();
 
@@ -348,9 +345,9 @@ it.for<[string, unknown, string]>([
 });
 
 it('refuses a profile model that is not a string', ({ onTestFinished }) => {
-  const { location, userFile } = configFixture(onTestFinished);
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
 
-  writeConfig(userFile, { profiles: { scout: { model: ['a/scout'] } } });
+  writeUser({ profiles: { scout: { model: ['a/scout'] } } });
 
   expect(() => readProfileModel(location, 'scout', uiFixture())).toThrow('profiles.scout.model');
 });
