@@ -118,6 +118,7 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
       'handover',
       'pr',
       'pr-feedback',
+      'prune-comments',
       'slice',
       'stack',
       'start-slice',
