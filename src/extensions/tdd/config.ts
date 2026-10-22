@@ -3,7 +3,12 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { configFileName, readTauConfig, warnUnknownKeys } from '../../config/config.js';
+import {
+  configFileName,
+  readTauConfig,
+  requireKnownKey,
+  warnUnknownKeys,
+} from '../../config/config.js';
 import type { ConfigFile, ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import type { KnownKeys } from '../../unknownKeys.js';
 import { mergeConfigLayers } from './configLayers.js';
@@ -99,6 +104,8 @@ const rejectUnsupportedGlobs = (source: string, values: Partial<TddConfig>) => {
 };
 
 const tddLayer = ({ source, value }: ConfigFile, ui: ConfigWarnings): ConfigLayer => {
+  requireKnownKey('tdd');
+
   if (!Value.Check(configFileSchema, value)) {
     throw new Error(
       `Invalid TDD config ${source}: ${problem(value)}. Expected {"tdd": {...}} with productionGlobs, testGlobs, testSupportGlobs, and excludedGlobs as string arrays, and verificationArgv starting with "vitest". Fix the file; Tau does not fall back to another config.`,

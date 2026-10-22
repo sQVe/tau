@@ -233,6 +233,15 @@ it('gives the manager the configured browser login command', async ({ onTestFini
   expect(notify).not.toHaveBeenCalled();
 });
 
+it('warns at session start about an unknown top-level key in the repository file', async ({
+  onTestFinished,
+}) => {
+  const { notify } = await sessionGuidelines(onTestFinished, { repository: { tddd: {} } });
+
+  expect(notify).toHaveBeenCalledOnce();
+  expect(notify).toHaveBeenCalledWith(expect.stringContaining('.pi/tau.json: tddd '), 'warning');
+});
+
 it('gives the manager the browser guideline without a command when none is configured', async ({
   onTestFinished,
 }) => {

@@ -4,7 +4,11 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import { forgetReportedWarnings } from '../../config/config.js';
+import {
+  forgetReportedWarnings,
+  readTauConfig,
+  warnUnknownTopLevelKeys,
+} from '../../config/config.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { isNestedControlCall, nestedControlCallReason } from '../../controlTools.js';
 import { errorMessage } from '../../errors.js';
@@ -370,6 +374,20 @@ const launchProfiles = (
   }
 };
 
+const warnUnknownConfigKeys = (context: ExtensionContext): void => {
+  try {
+    const { files } = readTauConfig({
+      cwd: context.cwd,
+      agentDirectory: getAgentDir(),
+      projectTrusted: context.isProjectTrusted(),
+    });
+
+    warnUnknownTopLevelKeys(context.ui, files);
+  } catch {
+    // The feature readers report an unreadable config file.
+  }
+};
+
 const profileText = (profiles: ProfileSummary[]): string =>
   profiles.length === 0
     ? 'unreadable, launch reports why'
@@ -718,6 +736,7 @@ export default function subagentsExtension(
     shuttingDown = false;
     sessionContext = context;
     forgetReportedWarnings(context.ui);
+    warnUnknownConfigKeys(context);
 
     // Project profiles and scoped models load only once the session's cwd and trust are known.
     // The description stays fixed for the session, so the prompt cache holds.

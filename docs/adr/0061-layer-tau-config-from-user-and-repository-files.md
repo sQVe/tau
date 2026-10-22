@@ -86,8 +86,8 @@ never falls through to another model. Model settings are not part of this decisi
 
 - Replacing a whole list means copying the earlier value to extend it. The status output shows what
   applies.
-- A misspelled top-level key, such as `tddd`, is ignored. The status output then shows only built-in
-  defaults.
+- A misspelled top-level key, such as `tddd`, is ignored. Tau warns once per session with the file
+  and the key.
 - In an untrusted project, the repository file has no effect beyond a note in the status output.
 - A `verificationArgv` without `--reporter=json` makes every run fail as an unreadable report.
 - Changing either file starts a new observation and forgets RED in the current cycle.
