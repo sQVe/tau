@@ -1,10 +1,9 @@
 import { readdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 
 import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 
-import * as terminalModule from '../../../terminal.js';
-import { readEvent, readTask, recordEvent } from '../records.js';
+import { readEvent } from '../records.js';
 import { captureError, setup } from './fixtures/controllerFixture.js';
 import { EvidenceUnavailableError } from './record.js';
 
@@ -13,16 +12,12 @@ vi.mock(import('node:fs'), { spy: true });
 it.each(['confirmed', 'unconfirmed', 'confirmed with failing notices'] as const)(
   'keeps terminal ownership during %s cleanup and releases it afterward',
   async (outcome) => {
-    const tokens = new Map<string, string>();
     const entered = Promise.withResolvers<undefined>();
     const resume = Promise.withResolvers<undefined>();
     let cleaning = false;
     let held = false;
 
-    const workerProcessId = (paneId: string) =>
-      harness.fake.workers().find((worker) => worker.paneId === paneId)?.processId ?? 0;
-
-    const harness = setup(afterTest, 0, async (argumentsList, budget, signal) => {
+    const harness = setup(afterTest, 0, async (argumentsList) => {
       if (cleaning && !held && argumentsList[1] === 'list') {
         held = true;
         entered.resolve(undefined);
@@ -33,63 +28,7 @@ it.each(['confirmed', 'unconfirmed', 'confirmed with failing notices'] as const)
         }
       }
 
-      const paneId = argumentsList[argumentsList.indexOf('--pane') + 1]!;
-
-      if (argumentsList[0] === 'layout') {
-        const response = await harness.fake.client(argumentsList, budget, signal);
-
-        const created = terminalModule.text(
-          terminalModule.requireObject(
-            terminalModule.requireObject(terminalModule.result(response).layout).root,
-          ).pane_id,
-        );
-
-        const { command } = (JSON.parse(argumentsList[2]!) as { root: { command: string[] } }).root;
-
-        const token = command[command.indexOf('--session') + 1]!;
-        tokens.set(created, token);
-        const task = readTask(dirname(token));
-
-        recordEvent(dirname(token), task.taskId, 'ready', {
-          detail: 'Ready.',
-          processId: workerProcessId(created),
-        });
-
-        return response;
-      }
-
-      if (argumentsList[1] === 'process-info') {
-        return JSON.stringify({
-          result: {
-            process_info: {
-              pane_id: paneId,
-              shell_pid: workerProcessId(paneId),
-              foreground_process_group_id: workerProcessId(paneId),
-              foreground_processes: [
-                { pid: workerProcessId(paneId), argv: ['pi', tokens.get(paneId)] },
-              ],
-            },
-          },
-        });
-      }
-
-      if (argumentsList[0] === 'agent' && argumentsList[1] === 'get') {
-        return JSON.stringify({
-          result: {
-            agent: {
-              pane_id: argumentsList[2],
-              agent: 'pi',
-              agent_session: { value: tokens.get(argumentsList[2]!) },
-            },
-          },
-        });
-      }
-
-      if (argumentsList[0] === 'agent' && argumentsList[1] === 'list') {
-        return '';
-      }
-
-      return harness.fake.client(argumentsList, budget, signal);
+      return '';
     });
 
     const { controller, input, notifications } = harness;
