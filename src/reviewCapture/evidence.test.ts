@@ -7,10 +7,10 @@ import { promisify } from 'node:util';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { captureTarget, pinTarget, readHead } from './capture.js';
+import type { DirectReviewTarget } from './capture.js';
 import { readReviewEvidence } from './evidence.js';
 import { writeCaptureRecord } from './record.js';
-import { captureTarget, pinTarget, readHead } from './reviewCapture.js';
-import type { DirectReviewTarget } from './reviewCapture.js';
 
 const isRoot = process.getuid?.() === 0;
 

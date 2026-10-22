@@ -1,6 +1,7 @@
+import type { Gap } from './capture.js';
 import type { Freshness } from './freshness.js';
 import { readQuoted } from './gitQuotedName.js';
-import type { Gap, PinnedTarget } from './reviewCapture.js';
+import type { PinnedTarget } from './target.js';
 
 export type EvidenceList = 'paths' | 'tests' | 'callers' | 'markers' | 'rules' | 'checks';
 

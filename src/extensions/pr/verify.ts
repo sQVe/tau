@@ -6,7 +6,7 @@ import { Type } from 'typebox';
 import type { CommandRuntime } from '../../command.js';
 import { checkOutput, parseRepository, readJson } from '../../github/github.js';
 import { readGit } from '../../gitOutput.js';
-import { existingEntry } from '../../reviewCapture/reviewDirectory.js';
+import { existingEntry } from '../../reviewCapture/reviewCapture.js';
 import { checkTauDirectory, rejectLinkedFile, requireTauChild } from '../../tauDirectory.js';
 import { comparePullRequest } from './verifyDecisions.js';
 import type { Difference, PullRequestFields } from './verifyDecisions.js';

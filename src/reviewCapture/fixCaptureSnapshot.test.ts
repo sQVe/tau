@@ -18,8 +18,8 @@ import { promisify } from 'node:util';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { captureTarget, pinTarget } from './capture.js';
 import { saveVerifiedSnapshot, verifySnapshot } from './fixCapture.js';
-import { captureTarget, pinTarget } from './reviewCapture.js';
 
 const isRoot = process.getuid?.() === 0;
 

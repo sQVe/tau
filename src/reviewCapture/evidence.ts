@@ -4,6 +4,7 @@ import { join, relative, resolve } from 'node:path';
 import { errorMessage, isMissingFile } from '../errors.js';
 import { runGit } from '../gitOutput.js';
 import { climbsOut } from '../tauDirectory.js';
+import { isInsideRoot } from './capture.js';
 import {
   boundList,
   callerText,
@@ -32,8 +33,10 @@ import type {
 import type { Freshness } from './freshness.js';
 import { captureReview, checkFreshness } from './pinnedCapture.js';
 import { inputFileName, readCaptureRecord, recheckFileName } from './record.js';
-import { isInsideRoot } from './reviewCapture.js';
-import type { PinnedTarget } from './reviewCapture.js';
+import type { PinnedTarget } from './target.js';
+
+export { scanMarkers } from './evidenceDecisions.js';
+export type { MarkerLine } from './evidenceDecisions.js';
 
 interface FileBody {
   path: string;

@@ -4,9 +4,6 @@ import { dirname, isAbsolute, join } from 'node:path';
 
 import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
 import { runGit } from '../gitOutput.js';
-import { readQuoted } from './gitQuotedName.js';
-import { readCaptureRecord, recordFileName } from './record.js';
-import type { Snapshot } from './record.js';
 import {
   captureTarget,
   captureWholeFile,
@@ -21,9 +18,13 @@ import {
   runCaptureCommand,
   uniqueGaps,
   wholeFileList,
-} from './reviewCapture.js';
-import type { Capture, DirectTarget, Gap, Part, PinnedTarget } from './reviewCapture.js';
+} from './capture.js';
+import type { Capture, DirectTarget, Gap, Part } from './capture.js';
+import { readQuoted } from './gitQuotedName.js';
+import { readCaptureRecord, recordFileName } from './record.js';
+import type { Snapshot } from './record.js';
 import { checkReviewDirectory, existingEntry } from './reviewDirectory.js';
+import type { PinnedTarget } from './target.js';
 
 export type FixTarget = Extract<PinnedTarget, { kind: 'fix' }>;
 

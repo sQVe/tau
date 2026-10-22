@@ -1,10 +1,11 @@
 import { rm, writeFile } from 'node:fs/promises';
 
+import { captureTarget, readHead } from './capture.js';
+import type { Capture } from './capture.js';
 import { captureFixTarget } from './fixCapture.js';
 import { decideFreshness } from './freshness.js';
 import type { CaptureState, Freshness } from './freshness.js';
-import { captureTarget, readHead } from './reviewCapture.js';
-import type { Capture, PinnedTarget } from './reviewCapture.js';
+import type { PinnedTarget } from './target.js';
 
 export const captureReview = (root: string, target: PinnedTarget): Promise<Capture> =>
   target.kind === 'fix' ? captureFixTarget(root, target) : captureTarget(root, target);

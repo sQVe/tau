@@ -7,7 +7,7 @@ import { Value } from 'typebox/value';
 
 import { isMissingFile } from '../errors.js';
 import { parseVersionedRecord, writeRecord } from '../record.js';
-import { objectNameSchema, pinnedTargetSchema, pinnedTargetSchemas } from './reviewCapture.js';
+import { objectNameSchema, pinnedTargetSchema, pinnedTargetSchemas } from './target.js';
 
 export const recordFileName = 'capture.json';
 export const inputFileName = 'input.md';

@@ -1,7 +1,7 @@
 import { Value } from 'typebox/value';
 import { describe, expect, it } from 'vitest';
 
-import { pinnedTargetSchema, reviewTargetSchema } from './reviewCapture.js';
+import { pinnedTargetSchema, reviewTargetSchema } from './target.js';
 
 const sha = 'a'.repeat(40);
 

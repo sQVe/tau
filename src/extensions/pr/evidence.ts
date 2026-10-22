@@ -7,11 +7,9 @@ import { readCheckState } from '../../checkRecord/identity.js';
 import type { CommandRuntime } from '../../command.js';
 import { errorMessage, isMissingFile } from '../../errors.js';
 import { readGit, readGitBytes } from '../../gitOutput.js';
-import { readReviewEvidence } from '../../reviewCapture/evidence.js';
-import type { ReviewEvidence } from '../../reviewCapture/evidence.js';
-import { scanMarkers } from '../../reviewCapture/evidenceDecisions.js';
-import type { MarkerLine } from '../../reviewCapture/evidenceDecisions.js';
-import { checkReviewDirectory } from '../../reviewCapture/reviewDirectory.js';
+import { readReviewEvidence, scanMarkers } from '../../reviewCapture/evidence.js';
+import type { MarkerLine, ReviewEvidence } from '../../reviewCapture/evidence.js';
+import { checkReviewDirectory } from '../../reviewCapture/reviewCapture.js';
 import {
   checkLogGaps,
   decideFullCheck,
