@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 export const skillTools: Readonly<Record<string, readonly string[]>> = {
   'code-review': ['code_review', 'tracker_draft'],
   'code-quality': ['code_review', 'tracker_draft'],
+  'prune-comments': ['code_review'],
   brainstorm: ['slice', 'draft_review'],
   slice: ['slice', 'draft_review'],
   'finish-slice': ['slice', 'start_slice'],

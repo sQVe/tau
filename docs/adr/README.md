@@ -238,6 +238,7 @@ and the numbers that its status names.
 - [0096: Create and keep linear stacks with gh stack](./0096-create-and-keep-linear-stacks-with-gh-stack.md)
 - [0104: Capture fix reviews from a review snapshot](./0104-capture-fix-reviews-from-a-review-snapshot.md)
 - [0111: Request review bots from config and skip the preview for a named change](./0111-request-review-bots-from-config-and-skip-named-changes-in-pr.md)
+- [0122: Prune comments with a delete-only skill](./0122-prune-comments-with-a-delete-only-skill.md)
 
 ## Retired
 

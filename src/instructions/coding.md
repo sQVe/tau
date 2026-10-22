@@ -64,8 +64,8 @@ and repository conventions when they differ from these defaults.
 
 ## Comment only what the code cannot say
 
-- Default to no comment. Add one only when a reader would otherwise make a wrong change: a
-  constraint, invariant, workaround, or surprising behavior the code cannot show.
+- Default to no comment or doc comment. Add one only when a reader would otherwise make a wrong
+  change: a constraint, invariant, workaround, or surprising behavior the code cannot show.
 - Never cite an ADR, ticket, PR, or review, and never describe the code's history. State the rule
   itself.
 - Never restate the name, type, or signature below the comment.
