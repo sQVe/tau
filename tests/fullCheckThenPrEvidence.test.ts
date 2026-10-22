@@ -10,6 +10,7 @@ import { listSavedLogs } from '../src/checkRecord/checkRecord.js';
 import { readCheckState } from '../src/checkRecord/identity.js';
 import { createFullCheckTool } from '../src/extensions/fullCheck/tool.js';
 import { decideFullCheck } from '../src/extensions/pr/evidenceDecisions.js';
+import { declinedExec } from './declinedExecFake.js';
 import { createTemporaryRepository } from './gitRepository.js';
 
 const git = (cwd: string, ...commandArguments: string[]) =>
@@ -46,13 +47,15 @@ it('reports passed to the pr evidence after the first command runs again over an
     );
 
   const run = () =>
-    createFullCheckTool({ agentDirectory: directory, pollMilliseconds: 10 }).execute(
-      'call',
-      {},
-      undefined,
-      undefined,
-      { cwd: root, isProjectTrusted: () => true, ui: { notify: () => undefined } } as never,
-    );
+    createFullCheckTool({
+      agentDirectory: directory,
+      pollMilliseconds: 10,
+      exec: declinedExec,
+    }).execute('call', {}, undefined, undefined, {
+      cwd: root,
+      isProjectTrusted: () => true,
+      ui: { notify: () => undefined },
+    } as never);
 
   const runCount = async () => (await readFile(counter, 'utf8')).length;
 
