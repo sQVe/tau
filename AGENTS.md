@@ -75,7 +75,7 @@ Keep tests fast so the full suite stays practical as coverage grows.
 - Put a fixture used by one module in that module's `fixtures/`. Put a fixture used by two modules
   or by `tests/` in `tests/`.
 - Use real Git, filesystem, and Pi where those boundaries matter. Otherwise avoid subprocesses and
-  reuse existing fakes, such as `src/extensions/subagents/fixtures/herdrFake.ts`.
+  reuse existing fakes, such as `tests/herdrFake.ts`.
 - Fake the boundary, not the module. Assert outcomes, and read a `calls` list only when the call is
   the behavior.
 - Create Git repositories with `tests/gitRepository.ts`.

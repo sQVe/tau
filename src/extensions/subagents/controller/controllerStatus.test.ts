@@ -222,7 +222,10 @@ it('keeps a failed timeout notice in worker status once', async ({ onTestFinishe
   const launched = await controller.launch(input);
   await vi.advanceTimersByTimeAsync(20_000);
 
-  expect(readEvent(launched.directory, launched.taskId, 'timeout')).toBeDefined();
+  // Stopping the worker polls its pane on real timers.
+  await vi.waitFor(() => {
+    expect(readEvent(launched.directory, launched.taskId, 'timeout')).toBeDefined();
+  });
 
   let failure = '';
 

@@ -96,7 +96,7 @@ it('names the -e packages when the worker exits before readiness', async ({ onTe
     async (argumentsList) => {
       // Pi exits at startup, and herdr removes its pane.
       if (argumentsList[1] === 'process-info' && ++inspections > 1) {
-        fixture.fake.state.stopped = true;
+        fixture.fake.exit(fixture.fake.workers()[0]!.terminalId);
       }
 
       return '';

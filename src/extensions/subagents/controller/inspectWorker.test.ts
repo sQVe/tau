@@ -4,8 +4,12 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import {
+  agentResponse,
+  paneListResponse,
+  processInfoResponse,
+} from '../../../../tests/herdrFake.js';
 import * as cancellation from '../cancellation.js';
-import { agentResponse, paneListResponse, processInfoResponse } from '../fixtures/herdrFake.js';
 import { fixtureLoadout } from '../fixtures/loadout.js';
 import { recordEvent } from '../records.js';
 import type { Task } from '../types.js';

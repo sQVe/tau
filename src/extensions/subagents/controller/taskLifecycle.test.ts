@@ -45,7 +45,7 @@ it('gives a worker that finished a moment to exit before closing its pane', asyn
 
       // Listings: locate the pane, poll, then a later poll after a close would have started.
       if (polls === 4) {
-        fake.state.stopped = true;
+        fake.exit(fake.workers()[0]!.terminalId);
       }
     }
 
@@ -88,7 +88,7 @@ it('stops a worker and records a failure when its evidence cannot be read while 
   const failure = readEvent(launched.directory, launched.taskId, 'startupFailure');
 
   expect(failure?.detail).not.toBe('');
-  expect(fake.state.stopped).toBe(true);
+  expect(fake.workers()[0]?.exited).toBe(true);
   controller.close();
 });
 
@@ -105,7 +105,7 @@ it('keeps a worker running when the launch signal aborts after the launch return
 
   expect(readEvent(launched.directory, launched.taskId, 'cancelled')).toBeUndefined();
   expect(readEvent(launched.directory, launched.taskId, 'stopping')).toBeUndefined();
-  expect(fake.state.stopped).toBe(false);
+  expect(fake.workers()[0]?.exited).toBe(false);
   expect(controller.owns(launched.taskId)).toBe(true);
   controller.close();
 });

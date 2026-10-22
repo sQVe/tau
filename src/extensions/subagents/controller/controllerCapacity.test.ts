@@ -78,7 +78,7 @@ it('caps live workers per controller and admits again after confirmed cleanup', 
   expect(fixture.fake.layout.panes).toEqual(panesBefore);
   expect(fixture.calls.filter((call) => call[0] === 'layout')).toHaveLength(1);
   await fixture.controller.cancel(launched.taskId, fixture.input.parentSessionId);
-  fixture.fake.state.stopped = false;
+  fixture.fake.ready(fixture.fake.workers()[0]!.terminalId);
   const replacement = await fixture.controller.launch(fixture.input);
 
   expect(replacement.state).toBe('starting');

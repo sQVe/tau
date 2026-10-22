@@ -1,7 +1,11 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
+import {
+  agentResponse,
+  paneListResponse,
+  processInfoResponse,
+} from '../../../../tests/herdrFake.js';
 import * as cancellation from '../cancellation.js';
-import { agentResponse, paneListResponse, processInfoResponse } from '../fixtures/herdrFake.js';
 import { fixtureLoadout } from '../fixtures/loadout.js';
 import { WorkerPlacement } from '../placement.js';
 import type { Task } from '../types.js';

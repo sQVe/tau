@@ -4,7 +4,6 @@ import { dirname, join } from 'node:path';
 import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 
 import * as terminalModule from '../../../terminal.js';
-import { placementFixture } from '../fixtures/placement.js';
 import { readEvent, readTask, recordEvent } from '../records.js';
 import { captureError, setup } from './fixtures/controllerFixture.js';
 import { EvidenceUnavailableError } from './record.js';
@@ -14,14 +13,16 @@ vi.mock(import('node:fs'), { spy: true });
 it.each(['confirmed', 'unconfirmed', 'confirmed with failing notices'] as const)(
   'keeps terminal ownership during %s cleanup and releases it afterward',
   async (outcome) => {
-    const terminal = placementFixture(340, 100);
     const tokens = new Map<string, string>();
     const entered = Promise.withResolvers<undefined>();
     const resume = Promise.withResolvers<undefined>();
     let cleaning = false;
     let held = false;
 
-    const harness = setup(afterTest, 0, async (argumentsList) => {
+    const workerProcessId = (paneId: string) =>
+      harness.fake.workers().find((worker) => worker.paneId === paneId)?.processId ?? 0;
+
+    const harness = setup(afterTest, 0, async (argumentsList, budget, signal) => {
       if (cleaning && !held && argumentsList[1] === 'list') {
         held = true;
         entered.resolve(undefined);
@@ -35,7 +36,7 @@ it.each(['confirmed', 'unconfirmed', 'confirmed with failing notices'] as const)
       const paneId = argumentsList[argumentsList.indexOf('--pane') + 1]!;
 
       if (argumentsList[0] === 'layout') {
-        const response = await terminal.client(argumentsList);
+        const response = await harness.fake.client(argumentsList, budget, signal);
 
         const created = terminalModule.text(
           terminalModule.requireObject(
@@ -51,14 +52,10 @@ it.each(['confirmed', 'unconfirmed', 'confirmed with failing notices'] as const)
 
         recordEvent(dirname(token), task.taskId, 'ready', {
           detail: 'Ready.',
-          processId: process.pid,
+          processId: workerProcessId(created),
         });
 
         return response;
-      }
-
-      if (argumentsList[1] === 'close' && argumentsList[2] === 'worker-1') {
-        fake.state.stopped = true;
       }
 
       if (argumentsList[1] === 'process-info') {
@@ -66,9 +63,11 @@ it.each(['confirmed', 'unconfirmed', 'confirmed with failing notices'] as const)
           result: {
             process_info: {
               pane_id: paneId,
-              shell_pid: process.pid,
-              foreground_process_group_id: process.pid,
-              foreground_processes: [{ pid: process.pid, argv: ['pi', tokens.get(paneId)] }],
+              shell_pid: workerProcessId(paneId),
+              foreground_process_group_id: workerProcessId(paneId),
+              foreground_processes: [
+                { pid: workerProcessId(paneId), argv: ['pi', tokens.get(paneId)] },
+              ],
             },
           },
         });
@@ -90,10 +89,11 @@ it.each(['confirmed', 'unconfirmed', 'confirmed with failing notices'] as const)
         return '';
       }
 
-      return terminal.client(argumentsList);
+      return harness.fake.client(argumentsList, budget, signal);
     });
 
-    const { controller, input, fake, notifications } = harness;
+    const { controller, input, notifications } = harness;
+    const terminal = harness.fake.layout;
 
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const first = await controller.launch({ ...input, visibility: 'background' });
@@ -182,7 +182,7 @@ it.each(['moved', 'duplicate', 'missing', 'replacement process'] as const)(
       }
 
       if (argumentsList[1] === 'process-info') {
-        const processId = scenario === 'replacement process' ? 100 : process.pid;
+        const processId = scenario === 'replacement process' ? 100 : fake.workers()[0]!.processId;
 
         return JSON.stringify({
           result: {
@@ -210,7 +210,7 @@ it.each(['moved', 'duplicate', 'missing', 'replacement process'] as const)(
 
       if (argumentsList[1] === 'close') {
         closed = true;
-        fake.state.stopped = true;
+        fake.exit(fake.workers()[0]!.terminalId);
 
         return '{}';
       }
@@ -331,7 +331,7 @@ it('waits for an in-flight launch before confirming shutdown cleanup', async ({
   await shutdown;
   const launched = await launching;
 
-  expect(fixture.fake.state.stopped).toBe(true);
+  expect(fixture.fake.workers()[0]?.exited).toBe(true);
   expect(readEvent(launched.directory, launched.taskId, 'cleanup')?.stopped).toBe(true);
   expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
 });

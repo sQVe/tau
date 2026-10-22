@@ -222,7 +222,7 @@ it('releases the handle and capacity after failed reattach verification', async 
   const fixture = setup(onTestFinished, 0, undefined, undefined, 1);
   const saved = await fixture.controller.launch(fixture.input);
   fixture.controller.close();
-  fixture.fake.state.session = 'different-session';
+  fixture.fake.replaceSession(fixture.fake.workers()[0]!.terminalId, 'different-session');
   const recordsBefore = readdirSync(saved.directory);
 
   const recovered = new WorkerController(
@@ -382,7 +382,7 @@ it('confirms an exited worker once after the saved deadline has expired', async 
   const fixture = setup(onTestFinished);
   const launched = await fixture.controller.launch(fixture.input);
   fixture.controller.close();
-  fixture.fake.state.stopped = true;
+  fixture.fake.exit(fixture.fake.workers()[0]!.terminalId);
 
   vi.spyOn(process, 'kill').mockImplementation(() => {
     throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
@@ -470,7 +470,7 @@ it.each(['before resume', 'during inspection'])(
 
     expect(fixture.fake.layout.panes.map((pane) => pane.pane_id)).toEqual(['parent']);
     expect(notifications).toHaveLength(1);
-    fixture.fake.state.stopped = false;
+    fixture.fake.ready(fixture.fake.workers()[0]!.terminalId);
     const next = await recovered.launch(fixture.input);
 
     expect(next.state).toBe('starting');
@@ -525,10 +525,10 @@ it.each(['changed session', 'absent process'])(
     const fixture = setup(afterTest);
     const launched = await fixture.controller.launch(fixture.input);
     recordEvent(launched.directory, launched.taskId, 'accepted', 'Accepted.');
-    fixture.fake.state.session = 'different-session';
+    fixture.fake.replaceSession(fixture.fake.workers()[0]!.terminalId, 'different-session');
 
     if (failure === 'absent process') {
-      fixture.fake.state.stopped = true;
+      fixture.fake.exit(fixture.fake.workers()[0]!.terminalId);
 
       vi.spyOn(process, 'kill').mockImplementation(() => {
         throw Object.assign(new Error('Absent'), { code: 'ESRCH' });
