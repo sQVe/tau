@@ -1,15 +1,6 @@
-import { readUserOnlyKey, warnUnknownKeys } from '../../config/config.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
-import { findRepositoryEntry } from '../../config/repositoryEntry.js';
+import { readRepositorySection } from '../../config/repositorySection.js';
 import { isRecord } from '../../isRecord.js';
-import { anyKey } from '../../unknownKeys.js';
-import type { KnownKeys } from '../../unknownKeys.js';
-
-const repositoryKeyPattern = /^[^\s/]+\/[^\s/]+$/u;
-
-const knownFullCheckKeys: KnownKeys = {
-  repositories: { [anyKey]: { argv: true } },
-};
 
 export const readArgv = (source: string, field: string, value: unknown): string[] => {
   const expected = `${field} must be a non-empty array of non-empty strings, such as ["pnpm", "check"].`;
@@ -27,15 +18,7 @@ export const readArgv = (source: string, field: string, value: unknown): string[
   return items;
 };
 
-const readEntry = (source: string, key: string, value: unknown): string[] => {
-  const field = `fullCheck.repositories.${key}`;
-
-  if (!repositoryKeyPattern.test(key)) {
-    throw new Error(
-      `Invalid Tau config ${source}: ${JSON.stringify(key)} in fullCheck.repositories must be an owner/name such as "sQVe/tau".`,
-    );
-  }
-
+const readEntry = (source: string, field: string, value: unknown): string[] => {
   if (!isRecord(value)) {
     throw new Error(
       `Invalid Tau config ${source}: ${field} must be an object such as {"argv": ["pnpm", "check"]}.`,
@@ -51,41 +34,12 @@ export const readFullCheckArgv = (
   location: ConfigLocation,
   ui: ConfigWarnings,
   repository: string | undefined,
-): string[] | undefined => {
+): string[] | undefined =>
   // Only the user file may name a command, since the check runs in every checkout of the user.
-  const user = readUserOnlyKey(location, 'fullCheck');
-
-  if (user === undefined) {
-    return undefined;
-  }
-
-  const { source, value: fullCheck } = user;
-
-  if (!isRecord(fullCheck)) {
-    throw new Error(
-      `Invalid Tau config ${source}: fullCheck must be an object such as {"repositories": {"sQVe/tau": {"argv": ["pnpm", "check"]}}}.`,
-    );
-  }
-
-  warnUnknownKeys(ui, source, fullCheck, knownFullCheckKeys, 'fullCheck');
-
-  const { repositories } = fullCheck;
-
-  if (repositories === undefined) {
-    return undefined;
-  }
-
-  if (!isRecord(repositories)) {
-    throw new Error(
-      `Invalid Tau config ${source}: fullCheck.repositories must be an object keyed by owner/name.`,
-    );
-  }
-
-  if (repository === undefined) {
-    return undefined;
-  }
-
-  const match = findRepositoryEntry(source, 'fullCheck.repositories', repositories, repository);
-
-  return match === undefined ? undefined : readEntry(source, match[0], match[1]);
-};
+  readRepositorySection(location, ui, {
+    key: 'fullCheck',
+    knownEntryKeys: { argv: true },
+    example: '{"repositories": {"sQVe/tau": {"argv": ["pnpm", "check"]}}}',
+    repository,
+    readEntry,
+  });

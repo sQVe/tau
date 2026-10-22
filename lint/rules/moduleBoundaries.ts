@@ -29,7 +29,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
   {
     name: 'config',
     entry: 'config/config',
-    publicFiles: ['config/models', 'config/repositoryEntry'],
+    publicFiles: ['config/models', 'config/repositoryEntry', 'config/repositorySection'],
   },
   { name: 'confirm', entry: 'confirm', publicFiles: [] },
   { name: 'confirmationEligibility', entry: 'confirmationEligibility', publicFiles: [] },

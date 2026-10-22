@@ -8,6 +8,7 @@ import { describe, expect, it, onTestFinished } from 'vitest';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createGhFake } from './fixtures/ghFake.js';
 import type { FakePullRequest } from './fixtures/ghFake.js';
+import { readReviewBots } from './reviewBotSettings.js';
 import { createPrTool } from './tool.js';
 import type { PrInput } from './tool.js';
 
@@ -433,4 +434,21 @@ it('warns once for an unknown field inside a bot entry', async () => {
 
   expect(notices).toHaveLength(1);
   expect(notices[0]).toContain('reviews.repositories.sQVe/tau.bots[0].extra');
+});
+
+it('refuses a matched entry key that is not owner/name', async () => {
+  const agentDirectory = await mkdtemp(join(tmpdir(), 'tau-review-bots-'));
+
+  onTestFinished(() => rm(agentDirectory, { recursive: true, force: true }));
+
+  await writeFile(
+    join(agentDirectory, 'tau.json'),
+    JSON.stringify({ reviews: { repositories: { tau: { bots: [bot] } } } }),
+  );
+
+  const location = { cwd: agentDirectory, agentDirectory, projectTrusted: true };
+
+  expect(() => readReviewBots(location, { notify: () => undefined }, 'tau')).toThrow(
+    '"tau" in reviews.repositories must be an owner/name',
+  );
 });
