@@ -69,7 +69,6 @@ export const parseVersionedRecord = <Schema extends TSchema>(
     throw new Error(`Malformed ${label} ${path}: ${describeSchemaProblem(chosen, value)}.`);
   }
 
-  // SAFETY: Value.Check accepted the value against the chosen schema above.
   // oxlint-disable-next-line typescript/no-unsafe-return -- the generic schema type cannot narrow the checked value.
   return value;
 };
