@@ -1230,24 +1230,26 @@ it('names the bad process-info output in the error', async () => {
 });
 
 it.each([
-  { label: 'a missing tabs', answer: JSON.stringify({ result: {} }) },
-  { label: 'a non-array tabs', answer: JSON.stringify({ result: { tabs: 'x' } }) },
-  { label: 'empty output', answer: '' },
-  { label: 'an entry with no fields', answer: JSON.stringify({ result: { tabs: [{}] } }) },
+  { label: 'a missing tabs', answer: () => JSON.stringify({ result: {} }) },
+  { label: 'a non-array tabs', answer: () => JSON.stringify({ result: { tabs: 'x' } }) },
+  { label: 'empty output', answer: () => '' },
+  { label: 'an entry with no fields', answer: () => JSON.stringify({ result: { tabs: [{}] } }) },
   {
     label: 'a string focused',
-    answer: JSON.stringify({ result: { tabs: [{ tab_id: 'w:t2', focused: 'yes' }] } }),
+    answer: (tabId: string) =>
+      JSON.stringify({ result: { tabs: [{ tab_id: tabId, focused: 'yes' }] } }),
   },
   {
     label: 'a null entry after the focused tab',
-    answer: JSON.stringify({ result: { tabs: [{ tab_id: 'w:t2', focused: true }, null] } }),
+    answer: (tabId: string) =>
+      JSON.stringify({ result: { tabs: [{ tab_id: tabId, focused: true }, null] } }),
   },
 ])('refuses $label from tab list, deletes nothing, and keeps the record', async ({ answer }) => {
   const herdr = herdrFake(100);
   const { run, setSession, deleted, records, herdrCalls } = await fixture(herdr);
 
   const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-  herdr.malformedTabList(answer);
+  herdr.malformedTabList(answer(reviewTab(herdr)));
   await setSession([comment('on-a', '01-slices/1-a.md')]);
 
   const directory = (opened.details as { directory: string }).directory;

@@ -44,11 +44,14 @@ it('refuses readiness when the worker process identity differs from the ready ev
   onTestFinished,
 }) => {
   let launched = false;
+  let replaced = false;
 
+  // The ready event names the first process; every later read sees one stable replacement.
   const fixture = setup(onTestFinished, 0, async (argumentsList) => {
     launched ||= argumentsList[0] === 'layout';
 
-    if (argumentsList[1] === 'process-info' && launched) {
+    if (argumentsList[1] === 'process-info' && launched && !replaced) {
+      replaced = true;
       fixture.fake.replaceProcess(fixture.fake.workers()[0]!.terminalId);
     }
 
@@ -56,8 +59,11 @@ it('refuses readiness when the worker process identity differs from the ready ev
   });
 
   const status = await fixture.controller.launch(fixture.input);
+  const failure = readEvent(status.directory, status.taskId, 'startupFailure');
 
   expect(status.outcome).toBe('failure');
+  expect(failure?.detail).toContain('readiness identities did not match');
+  expect(readdirSync(status.directory)).not.toContain('dispatch.json');
   expect(fixture.calls.some((call) => call[1] === 'prompt')).toBe(false);
 });
 

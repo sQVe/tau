@@ -114,8 +114,11 @@ export const fixture = async (
   await writeFile(join(repository, '.tau/slices/b.md'), 'bee\n');
   await writeFile(join(repository, '.tau/tickets/c.md'), 'sea\n');
 
+  const herdrCalls: string[][] = [];
+
   const exec: Exec = async (command, argumentsList, options) => {
     if (command === 'herdr') {
+      herdrCalls.push(argumentsList);
       const stdout = (await herdr?.client(argumentsList, herdrBudget, options?.signal)) ?? '';
 
       return { stdout, stderr: '', code: 0, killed: false };
@@ -170,7 +173,7 @@ export const fixture = async (
     deleted,
     records,
     real,
-    herdrCalls: herdr?.calls ?? [],
+    herdrCalls,
   };
 };
 
