@@ -1,6 +1,12 @@
-import { readFileSync } from 'node:fs';
-
 import type { Exec } from '../src/command.js';
+import { decode } from './linearRequestFake.js';
+import type {
+  FakeCall,
+  Operation,
+  QueryName,
+  QueryOperation,
+  QueryVariables,
+} from './linearRequestFake.js';
 
 type StateType =
   | 'triage'
@@ -10,10 +16,6 @@ type StateType =
   | 'completed'
   | 'canceled'
   | 'duplicate';
-
-interface StateFilter {
-  type: { in: string[] };
-}
 
 interface FakeIssue {
   identifier: string;
@@ -42,11 +44,6 @@ interface FakeProject {
   teamId: string;
 }
 
-interface FakeCall {
-  command: string;
-  commandArguments: string[];
-}
-
 export interface LinearFake {
   exec: Exec;
   calls: FakeCall[];
@@ -69,39 +66,7 @@ const teams = new Map([
 
 const labels = [{ id: 'label-bug', name: 'Bug', teamId: 'team-me' }];
 
-// `linear api --variable` turns numbers, booleans, and null into those JSON types.
-const coerceVariable = (text: string): unknown => {
-  if (['true', 'false', 'null'].includes(text) || /^-?\d+(\.\d+)?$/u.test(text)) {
-    return JSON.parse(text) as unknown;
-  }
-
-  return text;
-};
-
 const issueId = (identifier: string) => `id-${identifier}`;
-
-const readVariables = (commandArguments: readonly string[]) => {
-  const variables: Record<string, unknown> = {};
-
-  for (const [index, argument] of commandArguments.entries()) {
-    const value = commandArguments[index + 1] ?? '';
-
-    if (argument === '--variable') {
-      const separator = value.indexOf('=');
-      const text = value.slice(separator + 1);
-
-      variables[value.slice(0, separator)] = text.startsWith('@')
-        ? readFileSync(text.slice(1), 'utf8')
-        : coerceVariable(text);
-    }
-
-    if (argument === '--variables-json') {
-      Object.assign(variables, JSON.parse(value));
-    }
-  }
-
-  return variables;
-};
 
 // Saves a "- " list item as "* ", as Linear does, and leaves fenced code unchanged.
 const openingFence = (line: string): Fence | undefined => {
@@ -138,8 +103,6 @@ const savedDescription = (description: string) => {
   return lines.join('\n');
 };
 
-const writeKinds = ['issueCreate', 'issueUpdate'];
-
 const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
   identifier: issue.identifier,
   title: issue.title,
@@ -157,22 +120,21 @@ const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
   },
 });
 
-const isLinearWrite = ({ command, commandArguments }: FakeCall): boolean => {
-  if (command !== 'linear') {
-    return false;
+const isWrite = (operation: Operation): boolean => {
+  if (operation.kind === 'relation') {
+    return true;
   }
 
-  if (commandArguments[0] === 'api') {
-    return writeKinds.some((kind) => commandArguments[1]?.includes(kind) === true);
-  }
+  const writeNames: QueryName[] = ['issueCreate', 'issueUpdate'];
 
-  return commandArguments[0] === 'issue';
+  return operation.kind === 'query' && writeNames.includes(operation.name);
 };
 
 export const createLinearFake = (): LinearFake => {
   const issues = new Map<string, FakeIssue>();
   const mergedPullRequests = new Set<string>();
   const calls: FakeCall[] = [];
+  const writeCalls: FakeCall[] = [];
   const overrides = new Map<string, string>();
   const callFailures = new Map<string, string>();
   const movedOnUpdate = new Map<string, number>();
@@ -261,23 +223,16 @@ export const createLinearFake = (): LinearFake => {
     return parent;
   };
 
-  const createData = (variables: Record<string, unknown>) => {
+  const createData = (variables: QueryVariables['issueCreate']) => {
     const { title, description } = variables;
-
-    if (typeof title !== 'string' || typeof description !== 'string') {
-      throw new TypeError(
-        'Variable "$title" got invalid value; String cannot represent a non string value',
-      );
-    }
-
-    const parent = parentByLinearId(variables['parent']);
+    const parent = parentByLinearId(variables.parent);
 
     const siblingOrders = [...issues.values()]
       .filter((other) => other.parent === parent)
       .map((other) => other.sortOrder);
 
     const sortOrder =
-      variables['preserveSortOrderOnCreate'] === true ? variables['subIssueSortOrder'] : undefined;
+      variables.preserveSortOrderOnCreate === true ? variables.subIssueSortOrder : undefined;
 
     // The fake keeps a passed sort order only when the create asks to preserve it, as Linear's schema
     // documents. Otherwise it puts a new child first, so the child lands out of plan order.
@@ -285,10 +240,10 @@ export const createLinearFake = (): LinearFake => {
       title,
       description,
       parent,
-      teamId: String(variables['team']),
-      projectId: (variables['project'] as string | null) ?? null,
-      labelIds: (variables['labels'] as string[] | undefined) ?? [],
-      sortOrder: typeof sortOrder === 'number' ? sortOrder : Math.min(0, ...siblingOrders) - 1,
+      teamId: variables.team,
+      projectId: variables.project ?? null,
+      labelIds: variables.labels ?? [],
+      sortOrder: sortOrder ?? Math.min(0, ...siblingOrders) - 1,
     });
 
     return {
@@ -304,14 +259,7 @@ export const createLinearFake = (): LinearFake => {
 
   // Supports the filter that findOpenIssues sends: team key, exact title, optional project name,
   // and an allow-list of state types.
-  const issuesData = (variables: Record<string, unknown>) => {
-    const filter = variables['filter'] as {
-      team: { key: { eq: string } };
-      title: { eq: string };
-      project?: { name: { eq: string } };
-      state: StateFilter;
-    };
-
+  const issuesData = ({ filter }: QueryVariables['issues']) => {
     const projectIds =
       filter.project === undefined
         ? undefined
@@ -329,13 +277,9 @@ export const createLinearFake = (): LinearFake => {
 
   // Supports what the tracker search sends: a team ID, and a filter with an optional project name
   // and an allow-list of state types. An issue matches when its title holds any word of the term.
-  const searchData = (variables: Record<string, unknown>) => {
-    const filter = variables['filter'] as {
-      project?: { name: { eq: string } };
-      state: StateFilter;
-    };
-
-    const words = String(variables['term']).toLowerCase().split(/\s+/u);
+  const searchData = (variables: QueryVariables['searchIssues']) => {
+    const { filter } = variables;
+    const words = variables.term.toLowerCase().split(/\s+/u);
 
     const projectIds =
       filter.project === undefined
@@ -343,7 +287,7 @@ export const createLinearFake = (): LinearFake => {
         : projectIdsNamed(filter.project.name.eq).map((candidate) => candidate.id);
 
     const nodes = [...issues.values()]
-      .filter((issue) => issue.teamId === variables['teamId'])
+      .filter((issue) => issue.teamId === variables.teamId)
       .filter((issue) => filter.state.type.in.includes(issue.stateType))
       .filter((issue) => words.some((word) => issue.title.toLowerCase().includes(word)))
       .filter((issue) => projectIds === undefined || projectIds.includes(issue.projectId ?? ''))
@@ -392,91 +336,84 @@ export const createLinearFake = (): LinearFake => {
     return { team: { labels: { nodes, pageInfo: { hasNextPage: false } } } };
   };
 
-  const apiData = (query: string, variables: Record<string, unknown>) => {
-    if (query.includes('issueCreate')) {
-      return createData(variables);
-    }
+  const updateData = (variables: QueryVariables['issueUpdate']) => {
+    const issue = issues.get(variables.id)!;
+    const { input } = variables;
 
-    if (query.includes('issueUpdate')) {
-      const issue = issues.get(String(variables['id']))!;
+    issue.title = input.title ?? issue.title;
+    issue.description = savedDescription(input.description ?? issue.description);
 
-      const input = (variables['input'] ?? { subIssueSortOrder: variables['order'] }) as Partial<{
-        title: string;
-        description: string;
-        subIssueSortOrder: number;
-      }>;
+    issue.sortOrder =
+      input.subIssueSortOrder ?? movedOnUpdate.get(issue.identifier) ?? issue.sortOrder;
 
-      issue.title = input.title ?? issue.title;
-      issue.description = savedDescription(input.description ?? issue.description);
+    return { issueUpdate: { success: true } };
+  };
 
-      issue.sortOrder =
-        input.subIssueSortOrder ?? movedOnUpdate.get(issue.identifier) ?? issue.sortOrder;
-
-      return { issueUpdate: { success: true } };
-    }
-
-    if (query.includes('searchIssues(')) {
-      return searchData(variables);
-    }
-
-    if (query.includes('issues(')) {
-      return issuesData(variables);
-    }
-
-    if (query.includes('children')) {
-      return containerData(String(variables['id']));
-    }
-
-    if (query.includes('issue(')) {
-      return routingData(String(variables['id']));
-    }
-
-    if (query.includes('labels(')) {
-      return labelsData(String(variables['key']));
-    }
-
-    const found = teams.get(String(variables['key']));
+  const teamProjectsData = (variables: QueryVariables['teamProjects']) => {
+    const found = teams.get(variables.key);
 
     if (found === undefined) {
       return { team: null };
     }
 
-    if (!query.includes('projects(')) {
-      return { team: { id: found.id } };
-    }
-
-    const nodes = projectIdsNamed(String(variables['name']), found.id);
+    const nodes = projectIdsNamed(variables.name, found.id);
 
     return { team: { id: found.id, projects: { nodes } } };
   };
 
-  const issueCommand = (commandArguments: readonly string[]) => {
-    if (commandArguments[1] === 'update') {
-      const issue = issues.get(commandArguments[2]!)!;
-      const title = commandArguments.indexOf('--title');
-      const descriptionFile = commandArguments.indexOf('--description-file');
+  const teamData = (variables: QueryVariables['team']) => {
+    const found = teams.get(variables.key);
 
-      if (title !== -1) {
-        issue.title = commandArguments[title + 1]!;
+    return found === undefined ? { team: null } : { team: { id: found.id } };
+  };
+
+  const apiData = (operation: QueryOperation) => {
+    switch (operation.name) {
+      case 'issueCreate': {
+        return createData(operation.variables);
       }
 
-      if (descriptionFile !== -1) {
-        issue.description = savedDescription(
-          readFileSync(commandArguments[descriptionFile + 1]!, 'utf8'),
-        );
+      case 'issueUpdate': {
+        return updateData(operation.variables);
       }
 
-      return;
+      case 'searchIssues': {
+        return searchData(operation.variables);
+      }
+
+      case 'issues': {
+        return issuesData(operation.variables);
+      }
+
+      case 'container': {
+        return containerData(operation.variables.id);
+      }
+
+      case 'routing': {
+        return routingData(operation.variables.id);
+      }
+
+      case 'labels': {
+        return labelsData(operation.variables.key);
+      }
+
+      case 'teamProjects': {
+        return teamProjectsData(operation.variables);
+      }
+
+      case 'team': {
+        return teamData(operation.variables);
+      }
+
+      default: {
+        return operation satisfies never;
+      }
     }
+  };
 
-    const action = commandArguments[2];
-    const identifier = commandArguments[3]!;
-    const blocker = commandArguments[5]!;
+  const changeRelation = (operation: Extract<Operation, { kind: 'relation' }>) => {
+    const { action, identifier, blocker } = operation;
     const issue = issues.get(identifier)!;
-
-    if (action === 'delete' && !commandArguments.includes('--yes')) {
-      throw new Error('This command needs to ask for confirmation. Pass --yes to confirm.');
-    }
 
     issue.blockedBy =
       action === 'add'
@@ -484,22 +421,16 @@ export const createLinearFake = (): LinearFake => {
         : issue.blockedBy.filter((other) => other !== blocker);
   };
 
-  const respond = (call: FakeCall) => {
-    const { command, commandArguments } = call;
-
-    if (command === 'gh') {
-      const url = commandArguments[2]!;
-
-      return JSON.stringify({ state: mergedPullRequests.has(url) ? 'MERGED' : 'OPEN' });
+  const respond = (operation: Operation) => {
+    if (operation.kind === 'pullRequest') {
+      return JSON.stringify({ state: mergedPullRequests.has(operation.url) ? 'MERGED' : 'OPEN' });
     }
 
-    if (commandArguments[0] === 'api') {
-      const data = apiData(commandArguments[1]!, readVariables(commandArguments));
-
-      return JSON.stringify({ data });
+    if (operation.kind === 'query') {
+      return JSON.stringify({ data: apiData(operation) });
     }
 
-    issueCommand(commandArguments);
+    changeRelation(operation);
 
     return '';
   };
@@ -509,9 +440,19 @@ export const createLinearFake = (): LinearFake => {
 
     calls.push(call);
 
-    const writeIndex = calls.filter(isLinearWrite).length;
+    let operation: Operation;
 
-    if (isLinearWrite(call) && failures.has(writeIndex)) {
+    try {
+      operation = decode(call);
+    } catch (error) {
+      return { code: 1, killed: false, stdout: '', stderr: (error as Error).message };
+    }
+
+    if (isWrite(operation)) {
+      writeCalls.push(call);
+    }
+
+    if (isWrite(operation) && failures.has(writeCalls.length)) {
       return { code: 1, killed: false, stdout: '', stderr: 'network error' };
     }
 
@@ -525,7 +466,7 @@ export const createLinearFake = (): LinearFake => {
     const override = [...overrides].find(([key]) => calledWith.includes(key))?.[1];
 
     try {
-      const stdout = override ?? respond(call);
+      const stdout = override ?? respond(operation);
 
       return { code: 0, killed: false, stdout, stderr: '' };
     } catch (error) {
@@ -562,6 +503,6 @@ export const createLinearFake = (): LinearFake => {
     failCall: (key: string, stderr: string): void => {
       callFailures.set(key, stderr);
     },
-    writes: (): FakeCall[] => calls.filter(isLinearWrite),
+    writes: (): FakeCall[] => [...writeCalls],
   };
 };
