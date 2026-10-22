@@ -13,9 +13,9 @@ import {
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { errorMessage } from '../../errors.js';
 import { readGitOutput } from '../../gitOutput.js';
+import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
 import { isRecord } from '../../isRecord.js';
 import { repositoryFromRemote } from '../../repositoryRemote.js';
-import { appendSystemPrompt } from '../../systemPrompt.js';
 import { workerNoticeChannel } from '../../workerNoticeEvent.js';
 import type { WorkerNoticeEvent } from '../../workerNoticeEvent.js';
 import { isWorkerProcess } from '../../workerProcess.js';

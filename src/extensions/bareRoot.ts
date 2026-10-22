@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { readGitOutput } from '../gitOutput.js';
-import { appendSystemPrompt } from '../systemPrompt.js';
+import { appendSystemPrompt } from '../instructions/systemPrompt.js';
 
 const rule =
   'This session runs in the bare repository root, not a worktree. Use it to read, answer ' +

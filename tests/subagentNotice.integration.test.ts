@@ -21,7 +21,7 @@ import { Type } from 'typebox';
 import { expect, it, vi } from 'vitest';
 
 import { createNoticeDelivery } from '../src/extensions/subagents/subagents.js';
-import { appendSystemPrompt } from '../src/systemPrompt.js';
+import { appendSystemPrompt } from '../src/instructions/systemPrompt.js';
 import { createBoundSession } from './piSession.js';
 
 type BeforeCompact = (

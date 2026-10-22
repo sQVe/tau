@@ -5,30 +5,38 @@ import { join } from 'node:path';
 import { DefaultResourceLoader, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
-const instructionExtensions = ['writing', 'coding', 'workflow'] as const;
+const instructionSets = ['writing', 'coding', 'workflow'] as const;
 
-const sharedModules = ['instructionSets', 'systemPrompt', 'workerProcess'];
+const copiedFiles = [
+  'extensions/instructions.ts',
+  'instructions/instructions.ts',
+  'instructions/systemPrompt.ts',
+  'workerProcess.ts',
+];
 
-for (const extension of instructionExtensions) {
-  it(`rejects invalid ${extension} instructions and reads them again on reload`, async ({
+for (const instructionSet of instructionSets) {
+  it(`rejects invalid ${instructionSet} instructions and reads them again on reload`, async ({
     onTestFinished,
   }) => {
-    const workingDirectory = await mkdtemp(join(tmpdir(), `tau-${extension}-`));
+    const workingDirectory = await mkdtemp(join(tmpdir(), `tau-${instructionSet}-`));
     onTestFinished(() => rm(workingDirectory, { recursive: true, force: true }));
 
-    // Keep the extension's relative imports of the shared modules and their instructions path.
-    const extensionPath = join(workingDirectory, 'extensions', `${extension}.ts`);
-    const instructionsPath = join(workingDirectory, 'instructions', `${extension}.md`);
+    // Keep the extension's relative imports and the instruction files' path.
+    const extensionPath = join(workingDirectory, 'extensions', 'instructions.ts');
+    const instructionsPath = join(workingDirectory, 'instructions', `${instructionSet}.md`);
 
     await mkdir(join(workingDirectory, 'extensions'));
     await mkdir(join(workingDirectory, 'instructions'));
-    await copyFile(new URL(`../src/extensions/${extension}.ts`, import.meta.url), extensionPath);
 
-    for (const sharedModule of sharedModules) {
+    for (const copiedFile of copiedFiles) {
       await copyFile(
-        new URL(`../src/${sharedModule}.ts`, import.meta.url),
-        join(workingDirectory, `${sharedModule}.ts`),
+        new URL(`../src/${copiedFile}`, import.meta.url),
+        join(workingDirectory, copiedFile),
       );
+    }
+
+    for (const otherSet of instructionSets) {
+      await writeFile(join(workingDirectory, 'instructions', `${otherSet}.md`), `# ${otherSet}\n`);
     }
 
     await writeFile(instructionsPath, ' \n\t');
@@ -53,7 +61,7 @@ for (const extension of instructionExtensions) {
     expect(errors[0]?.error).toContain('empty');
     expect(extensions).toEqual([]);
 
-    await writeFile(instructionsPath, `# Updated ${extension} rules\n`);
+    await writeFile(instructionsPath, `# Updated ${instructionSet} rules\n`);
     await loader.reload();
 
     expect(loader.getExtensions().errors).toEqual([]);

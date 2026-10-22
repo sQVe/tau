@@ -17,7 +17,7 @@ interface FolderModule {
 }
 
 // Folders that group files under src/ without forming a module.
-const groupingFolders = new Set(['extensions', 'skills', 'instructions']);
+const groupingFolders = new Set(['extensions', 'skills']);
 
 // Every module under src/ that is not an extension. A module is one flat file or one folder.
 // name is the path below src/ without the extension. entry and publicFiles are paths below src/
@@ -50,7 +50,11 @@ export const moduleList: readonly ModuleDeclaration[] = [
   { name: 'gitOutput', entry: 'gitOutput', publicFiles: [] },
   { name: 'github', entry: 'github', publicFiles: [] },
   { name: 'herdrLayout', entry: 'herdrLayout', publicFiles: [] },
-  { name: 'instructionSets', entry: 'instructionSets', publicFiles: [] },
+  {
+    name: 'instructions',
+    entry: 'instructions/instructions',
+    publicFiles: ['instructions/systemPrompt'],
+  },
   { name: 'isRecord', entry: 'isRecord', publicFiles: [] },
   { name: 'keys', entry: 'keys', publicFiles: [] },
   { name: 'linear', entry: 'linear', publicFiles: [] },
@@ -73,7 +77,6 @@ export const moduleList: readonly ModuleDeclaration[] = [
   },
   { name: 'schemaProblem', entry: 'schemaProblem', publicFiles: [] },
   { name: 'skillTools', entry: 'skillTools', publicFiles: [] },
-  { name: 'systemPrompt', entry: 'systemPrompt', publicFiles: [] },
   { name: 'tau', entry: 'tau', publicFiles: [] },
   { name: 'tauDirectory', entry: 'tauDirectory', publicFiles: [] },
   { name: 'terminal', entry: 'terminal', publicFiles: [] },
@@ -95,7 +98,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   gitOutput: [],
   github: ['command'],
   herdrLayout: ['terminal'],
-  instructionSets: [],
+  instructions: [],
   isRecord: [],
   keys: [],
   linear: ['command', 'errors'],
@@ -106,7 +109,6 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   reviewCapture: ['errors', 'gitOutput', 'record', 'schemaProblem', 'tauDirectory'],
   schemaProblem: [],
   skillTools: [],
-  systemPrompt: [],
   tauDirectory: ['errors', 'gitOutput'],
   terminal: [],
   unknownKeys: ['isRecord'],

@@ -4,8 +4,8 @@ import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { modelReferencePattern } from '../../config/models.js';
-import { instructionSetNames } from '../../instructionSets.js';
-import type { InstructionSetName } from '../../instructionSets.js';
+import { instructionSetNames } from '../../instructions/instructions.js';
+import type { InstructionSetName } from '../../instructions/instructions.js';
 
 export type WorkerState =
   | 'starting'

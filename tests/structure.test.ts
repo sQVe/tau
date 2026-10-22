@@ -267,7 +267,7 @@ const environmentReads = (path: string, source: string) => {
 };
 
 // Folders that group files under src/ without forming a module.
-const groupingFolders = new Set(['src', 'src/extensions', 'src/skills', 'src/instructions']);
+const groupingFolders = new Set(['src', 'src/extensions', 'src/skills']);
 
 const isProductionSource = (path: string) =>
   path.endsWith('.ts') && !isTest(path) && !isFixture(path);
@@ -480,7 +480,7 @@ it('refuses index files, one-file folders, and missing entries but allows flat f
     'src/models/allowedModels.ts',
     'src/instructions/coding.md',
     'src/skills/pr/SKILL.md',
-    'src/extensions/coding.ts',
+    'src/extensions/themes.ts',
     'src/extensions/commit/commit.ts',
     'src/extensions/commit/tool.ts',
     'src/extensions/commit/fixtures/repository.ts',

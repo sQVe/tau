@@ -18,6 +18,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import { nestedChangeCallReason } from '../src/codemode/controlTools.js';
 import codemodeExtension, { codemodeGuidelines } from '../src/extensions/codemode.js';
 import fullCheckExtension from '../src/extensions/fullCheck/fullCheck.js';
+import instructionsExtension from '../src/extensions/instructions.js';
 import {
   nativeIdentity,
   seedSession,
@@ -26,7 +27,6 @@ import { resolveProfile } from '../src/extensions/subagents/profiles.js';
 import { publish, readEvent, validateTask } from '../src/extensions/subagents/records.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
-import workflowExtension from '../src/extensions/workflow.js';
 import { skillTools } from '../src/skillTools.js';
 import { createBoundSession } from './piSession.js';
 
@@ -142,7 +142,7 @@ const startProfileWorker = async (
   ];
 
   if (workflow) {
-    extensionFactories.push(workflowExtension, codemodeExtension);
+    extensionFactories.push(instructionsExtension, codemodeExtension);
   }
 
   extensionFactories.push(workerExtension);
@@ -280,7 +280,7 @@ it.for([
       settings: { compaction: { enabled: false }, retry: { enabled: false } },
       extensionFactories: [
         createCodemodeExtension({ mode: 'on' }),
-        workflowExtension,
+        instructionsExtension,
         codemodeExtension,
       ],
     });
@@ -334,7 +334,7 @@ const startManager = async (directory: string) => {
     extensionFactories: [
       createCodemodeExtension({ mode: 'on' }),
       packageToolFixtures(executed),
-      workflowExtension,
+      instructionsExtension,
       codemodeExtension,
     ],
   });

@@ -5,8 +5,11 @@ import { fileURLToPath } from 'node:url';
 
 import { Value } from 'typebox/value';
 
-import { defaultInstructionSetNames, isInstructionSetName } from '../../instructionSets.js';
-import type { InstructionSetName } from '../../instructionSets.js';
+import {
+  defaultInstructionSetNames,
+  isInstructionSetName,
+} from '../../instructions/instructions.js';
+import type { InstructionSetName } from '../../instructions/instructions.js';
 import { assignmentContractFor, handoverContract } from './handover.js';
 import { thinkingSchema, toolNamePattern } from './types.js';
 import type { Loadout, Profile, Task } from './types.js';

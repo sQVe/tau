@@ -14,7 +14,7 @@ import { Value } from 'typebox/value';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { readInstructionSet } from '../../instructionSets.js';
+import { readInstructionSet } from '../../instructions/instructions.js';
 import { readWorkerActivity, writeWorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
 import { taskRecordStatus } from './controller/record.js';

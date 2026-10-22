@@ -2,7 +2,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { registerCodemodeBudget } from '../codemode/codemode.js';
 import { isNestedChangeCall, nestedChangeCallReason } from '../codemode/controlTools.js';
-import { appendToolGuidelines } from '../systemPrompt.js';
+import { appendToolGuidelines } from '../instructions/systemPrompt.js';
 import { isWorkerProcess } from '../workerProcess.js';
 
 export const codemodeGuidelines = [

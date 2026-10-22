@@ -45,7 +45,7 @@ import subagentsExtension, {
 } from '../src/extensions/subagents/subagents.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
-import { readInstructionSet } from '../src/instructionSets.js';
+import { readInstructionSet } from '../src/instructions/instructions.js';
 import { skillTools } from '../src/skillTools.js';
 
 const handover =
@@ -154,8 +154,8 @@ it.each(['editing', 'investigation'] as const)(
       new URL('../src/extensions/askUserQuestion/askUserQuestion.ts', import.meta.url),
     );
 
-    const instructionExtensions = ['writing', 'coding', 'workflow'].map((name) =>
-      fileURLToPath(new URL(`../src/extensions/${name}.ts`, import.meta.url)),
+    const instructionsExtension = fileURLToPath(
+      new URL('../src/extensions/instructions.ts', import.meta.url),
     );
 
     const expectedSource = role === 'editing' ? 'after' : 'before';
@@ -252,7 +252,7 @@ it.each(['editing', 'investigation'] as const)(
       safety,
       questionnaire,
       // The parent's configuration loads the instruction extensions too; a worker must not repeat them.
-      ...instructionExtensions,
+      instructionsExtension,
     ];
 
     const loader = new DefaultResourceLoader({

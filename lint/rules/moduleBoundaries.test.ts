@@ -185,8 +185,8 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
     },
     {
       code: 'export const value = 1;',
-      filename: '/repository/src/instructions/helper.ts',
-      errors: [{ messageId: 'unknownFile', data: { file: 'instructions/helper.ts' } }],
+      filename: '/repository/src/unlisted/helper.ts',
+      errors: [{ messageId: 'unknownFile', data: { file: 'unlisted/helper.ts' } }],
     },
     {
       code: "import { keys } from './keys.js';\n\nexport const value = keys;",

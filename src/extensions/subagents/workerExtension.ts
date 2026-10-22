@@ -21,8 +21,8 @@ import {
   nestedChangeCallReason,
   nestedControlCallReason,
 } from '../../codemode/controlTools.js';
-import { instructionSetNames, readInstructionSet } from '../../instructionSets.js';
-import { appendSystemPrompt } from '../../systemPrompt.js';
+import { instructionSetNames, readInstructionSet } from '../../instructions/instructions.js';
+import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
 import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
 import type { WorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
