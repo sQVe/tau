@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -192,4 +192,17 @@ it('refuses to save a state without a fingerprint and writes no record', async (
   );
 
   expect(await readCheckRecord(recordPathFor(logPath))).toEqual({ status: 'missing' });
+});
+
+it('leaves no temporary file when the record cannot replace its path', async () => {
+  const directory = await temporaryDirectory();
+  const logPath = join(directory, 'run.log');
+
+  await mkdir(recordPathFor(logPath));
+
+  await expect(saveCheckRecord(logPath, identity)).rejects.toThrow(
+    /EISDIR|ENOTEMPTY|EEXIST|EPERM/u,
+  );
+
+  expect(await readdir(directory)).toEqual(['run.json']);
 });

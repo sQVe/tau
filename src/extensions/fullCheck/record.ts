@@ -1,12 +1,11 @@
-import { randomUUID } from 'node:crypto';
-import { access, readdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { access, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
-import { Value } from 'typebox/value';
 
 import { isMissingFile } from '../../errors.js';
+import { parseVersionedRecord, readOptionalText, writeRecord } from '../../record.js';
 import type { CheckIdentity, SavedLog } from './reuseDecision.js';
 
 export type RecordRead =
@@ -34,24 +33,20 @@ export const recordPathFor = (logPath: string): string => logPath.replace(/\.log
 const logPathFor = (recordPath: string): string => recordPath.replace(/\.json$/u, '.log');
 
 export const readCheckRecord = async (recordPath: string): Promise<RecordRead> => {
-  let text: string;
+  const text = await readOptionalText(recordPath);
 
-  try {
-    text = await readFile(recordPath, 'utf8');
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return { status: 'missing' };
-    }
-
-    throw error;
+  if (text === undefined) {
+    return { status: 'missing' };
   }
 
   try {
-    const value: unknown = JSON.parse(text);
+    const record = parseVersionedRecord(recordPath, text, {
+      label: 'check record',
+      version: checkRecordVersion,
+      schema: checkRecordSchema,
+    });
 
-    return Value.Check(checkRecordSchema, value)
-      ? { status: 'valid', record: value }
-      : { status: 'malformed' };
+    return { status: 'valid', record };
   } catch {
     return { status: 'malformed' };
   }
@@ -67,10 +62,8 @@ export const saveCheckRecord = async (logPath: string, identity: CheckIdentity):
 
   const record: CheckRecord = { version: checkRecordVersion, ...identity, fingerprint };
   const recordPath = recordPathFor(logPath);
-  const temporaryPath = `${recordPath}.${randomUUID()}.tmp`;
 
-  await writeFile(temporaryPath, `${JSON.stringify(record, undefined, 2)}\n`);
-  await rename(temporaryPath, recordPath);
+  await writeRecord(recordPath, record);
 };
 
 const exists = async (path: string): Promise<boolean> => {
