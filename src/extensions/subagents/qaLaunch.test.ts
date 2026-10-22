@@ -14,6 +14,7 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { declinedExec } from '../../../tests/declinedExecFake.js';
 import { initializeRepository } from '../../../tests/gitRepository.js';
 import type { LaunchParameters } from './launchParameters.js';
 import { applyQaSettings } from './qaLaunch.js';
@@ -76,7 +77,7 @@ const context = (worktree: string) => ({
 });
 
 const apply = (parameters: LaunchParameters, worktree: string) =>
-  applyQaSettings(parameters, undefined, context(worktree) as never);
+  applyQaSettings(parameters, undefined, context(worktree) as never, declinedExec);
 
 const scriptPrinting = (worktree: string, output: string, exitCode = 0): string => {
   writeFileSync(
@@ -135,7 +136,14 @@ it('refuses at the deadline a urlCommand that ignores SIGTERM and kills its chil
   writeUser(settingsFor(`trap '' TERM; (sleep 0.5; touch survived) & sleep 30`));
 
   const started = performance.now();
-  const refusal = applyQaSettings(launch(worktree), undefined, context(worktree) as never, 200);
+
+  const refusal = applyQaSettings(
+    launch(worktree),
+    undefined,
+    context(worktree) as never,
+    declinedExec,
+    200,
+  );
 
   await expect(refusal).rejects.toThrow('qa.repositories');
   expect(performance.now() - started).toBeLessThan(900);
@@ -159,6 +167,7 @@ it('does not kill a background child of a successful urlCommand after the deadli
     launch(worktree),
     undefined,
     context(worktree) as never,
+    declinedExec,
     200,
   );
 
@@ -277,6 +286,7 @@ it('refuses at the deadline when the caller passes a signal that never aborts', 
     launch(worktree),
     new AbortController().signal,
     context(worktree) as never,
+    declinedExec,
     200,
   );
 
@@ -291,7 +301,13 @@ it('kills the process group when the caller aborts the launch', async () => {
   // The sleep ends on its own, so a failed assertion leaves no process behind for long.
   writeUser(settingsFor('sleep 10 & echo $! > descendant.pid; wait'));
 
-  const refusal = applyQaSettings(launch(worktree), abort.signal, context(worktree) as never);
+  const refusal = applyQaSettings(
+    launch(worktree),
+    abort.signal,
+    context(worktree) as never,
+    declinedExec,
+  );
+
   const outcome = refusal.catch((error: unknown) => error);
 
   onTestFinished(async () => {
@@ -323,6 +339,7 @@ it('does not run the command for a launch the caller already aborted', async () 
     launch(worktree),
     AbortSignal.abort(),
     context(worktree) as never,
+    declinedExec,
   );
 
   await expect(refusal).rejects.toThrow('qa.repositories');
@@ -343,6 +360,7 @@ it('gives the command no input, so a command that reads input ends at once', asy
     launch(worktree),
     undefined,
     context(worktree) as never,
+    declinedExec,
     3000,
   );
 
@@ -355,7 +373,14 @@ it('settles at the deadline even when a process outside the group keeps the outp
   writeUser(settingsFor('(setsid sleep 4 &); sleep 30'));
 
   const started = performance.now();
-  const refusal = applyQaSettings(launch(worktree), undefined, context(worktree) as never, 200);
+
+  const refusal = applyQaSettings(
+    launch(worktree),
+    undefined,
+    context(worktree) as never,
+    declinedExec,
+    200,
+  );
 
   await expect(refusal).rejects.toThrow('qa.repositories');
   expect(performance.now() - started).toBeLessThan(2000);

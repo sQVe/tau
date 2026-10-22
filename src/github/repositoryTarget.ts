@@ -1,11 +1,12 @@
 import { Type } from 'typebox';
 
-import type { CommandRuntime } from './command.js';
+import type { CommandRuntime } from '../command.js';
+import { readGit, readOptionalGit, runGit } from '../gitOutput.js';
 import { checkOutput, parseRepository, readJson } from './github.js';
 import type { Repository } from './github.js';
-import { readGit, readOptionalGit, runGit } from './gitOutput.js';
 import {
   formatRepository,
+  parseRemoteUrl,
   pickBaseRepository,
   pickHead,
   pickPushRepository,
@@ -15,8 +16,14 @@ import type {
   PushTarget,
   Remote,
   RemotePush,
+  SshDestination,
   ViewedRepository,
 } from './repositoryTargetDecisions.js';
+
+export type OriginRepository =
+  | { status: 'missing' }
+  | { status: 'unnamed' }
+  | { status: 'named'; repository: Repository };
 
 export interface HeadRequest {
   remote: string | undefined;
@@ -28,19 +35,6 @@ interface RemoteUrls {
   urls: string[];
   pushUrls: string[];
   fetchRefspecs: string[];
-}
-
-// SSH reads the host as a Host alias from its config, which can also match on the user and port.
-interface SshDestination {
-  host: string;
-  user: string;
-  port: string;
-}
-
-interface RemoteLocation {
-  host: string;
-  path: string;
-  ssh: SshDestination | undefined;
 }
 
 type ResolveHost = (destination: SshDestination) => Promise<string>;
@@ -60,6 +54,8 @@ export interface ResolvedBase {
   // The default branch of the head repository, which may differ from its upstream's.
   headDefaultBranch: string;
 }
+
+const originTimeoutMilliseconds = 5000;
 
 const repositoryViewSchema = Type.Object({
   isFork: Type.Boolean(),
@@ -98,30 +94,6 @@ const readPushTarget = async (cwd: string, branch: string): Promise<PushTarget |
   const result = await runGit(cwd, commandArguments);
 
   throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
-};
-
-// Reads https://host/owner/name.git, ssh://git@host:port/owner/name.git, and
-// git@host:owner/name.git. The port of an ssh:// URL is the SSH port, not part of the web host.
-const parseRemoteUrl = (url: string): RemoteLocation | undefined => {
-  const scp = /^(?:([\w.-]+)@)?([\w.-]+):(?!\/)(.+)$/u.exec(url);
-
-  if (scp !== null) {
-    const host = scp[2] ?? '';
-
-    return { host, path: scp[3] ?? '', ssh: { host, user: scp[1] ?? '', port: '' } };
-  }
-
-  try {
-    const parsed = new URL(url);
-    const overSsh = parsed.protocol === 'ssh:';
-    const host = overSsh ? parsed.hostname : parsed.host;
-    const user = decodeURIComponent(parsed.username);
-    const ssh = overSsh ? { host, user, port: parsed.port } : undefined;
-
-    return { host, path: parsed.pathname.slice(1), ssh };
-  } catch {
-    return undefined;
-  }
 };
 
 const locatedRepository = (host: string, path: string): Repository | undefined => {
@@ -171,6 +143,7 @@ const sshHostResolver = (runtime: CommandRuntime): ResolveHost => {
   const resolve = async (destination: SshDestination, commandArguments: string[]) => {
     const result = await runtime.exec('ssh', ['-G', ...commandArguments], {
       cwd: runtime.cwd,
+      timeout: originTimeoutMilliseconds,
       ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
     });
 
@@ -193,6 +166,30 @@ const sshHostResolver = (runtime: CommandRuntime): ResolveHost => {
 
     return known;
   };
+};
+
+// Session start waits for this, so a checkout outside a repository, a missing origin, and a Git
+// failure all read as no origin.
+const readOriginUrl = async (cwd: string): Promise<string | undefined> => {
+  try {
+    const result = await runGit(cwd, ['remote', 'get-url', 'origin'], originTimeoutMilliseconds);
+
+    return result.exitCode === 0 ? result.stdout.toString('utf8').trim() : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+export const readOriginRepository = async (runtime: CommandRuntime): Promise<OriginRepository> => {
+  const url = await readOriginUrl(runtime.cwd);
+
+  if (url === undefined) {
+    return { status: 'missing' };
+  }
+
+  const repository = await remoteRepository(url, sshHostResolver(runtime));
+
+  return repository === undefined ? { status: 'unnamed' } : { status: 'named', repository };
 };
 
 const remoteUrlKey = /^remote\.(.+)\.(url|pushurl|fetch)$/u;

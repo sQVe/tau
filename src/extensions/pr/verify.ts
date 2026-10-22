@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { Type } from 'typebox';
 
 import type { CommandRuntime } from '../../command.js';
-import { checkOutput, parseRepository, readJson } from '../../github.js';
+import { checkOutput, parseRepository, readJson } from '../../github/github.js';
 import { readGit } from '../../gitOutput.js';
 import { existingEntry } from '../../reviewCapture/reviewDirectory.js';
 import { checkTauDirectory, locateTauChild } from '../../tauDirectory.js';

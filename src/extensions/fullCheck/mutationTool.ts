@@ -6,8 +6,15 @@ import { Type } from 'typebox';
 
 import { readCheckIdentity } from '../../checkRecord/identity.js';
 import type { CheckIdentity } from '../../checkRecord/reuseDecision.js';
+import type { Exec } from '../../command.js';
 import { findTauRoot } from '../../tauDirectory.js';
-import { findReusedLog, readRepository, runAndRecord, withRepositoryLock } from './checkFlow.js';
+import {
+  findReusedLog,
+  readRepository,
+  repositoryLockKey,
+  runAndRecord,
+  withRepositoryLock,
+} from './checkFlow.js';
 import type { Recorded } from './checkFlow.js';
 import { readMutationArgv } from './mutationConfig.js';
 import { parseMutationReport } from './mutationReport.js';
@@ -26,6 +33,7 @@ interface MutationVerdict extends CheckResult {
 export type MutationDetails = Recorded<MutationVerdict>;
 
 export interface MutationCheckToolOptions {
+  exec: Exec;
   agentDirectory?: string;
   pollMilliseconds?: number;
   idleLimitMilliseconds?: number;
@@ -292,7 +300,7 @@ const execute = async (
 ) => {
   const root = await findTauRoot(context.cwd, 'mutation_check');
   const agentDirectory = options.agentDirectory ?? getAgentDir();
-  const repository = await readRepository(root);
+  const repository = await readRepository({ exec: options.exec, cwd: root, signal });
 
   const location = {
     cwd: root,
@@ -321,7 +329,7 @@ const execute = async (
     {
       root,
       agentDirectory,
-      repository,
+      repository: repositoryLockKey(repository),
       signal,
       pollMilliseconds: options.pollMilliseconds ?? defaultPollMilliseconds,
       notifyWaiting,
@@ -354,7 +362,7 @@ const execute = async (
 };
 
 export const createMutationCheckTool = (
-  options: MutationCheckToolOptions = {},
+  options: MutationCheckToolOptions,
 ): ToolDefinition<typeof parameters, MutationDetails | undefined> =>
   defineTool({
     name: 'mutation_check',

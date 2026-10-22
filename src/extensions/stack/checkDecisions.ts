@@ -1,6 +1,6 @@
-import type { Repository } from '../../github.js';
-import { fromHeadRepository } from '../../repositoryTargetDecisions.js';
-import type { ListedHead } from '../../repositoryTargetDecisions.js';
+import type { Repository } from '../../github/github.js';
+import { fromHeadRepository } from '../../github/repositoryTargetDecisions.js';
+import type { ListedHead } from '../../github/repositoryTargetDecisions.js';
 import { isRecord } from '../../schema.js';
 import { describeFailures, failedExit, failures, malformedOutput, readOk } from './readResult.js';
 import type { CommandOutput, Read } from './readResult.js';

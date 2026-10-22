@@ -5,8 +5,9 @@ import { resolve as resolvePath } from 'node:path';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { readGitOutput } from '../../gitOutput.js';
-import { repositoryFromRemote } from '../../repositoryRemote.js';
+import type { Exec } from '../../command.js';
+import { readOriginRepository } from '../../github/repositoryTarget.js';
+import { configRepositoryKey } from '../../github/repositoryTargetDecisions.js';
 import type { LaunchParameters } from './launchParameters.js';
 import { requireSessionCwd } from './loadout.js';
 import { briefWithQaLines, qaBriefLines, urlCommandResult } from './qaBrief.js';
@@ -97,6 +98,7 @@ export const applyQaSettings = async (
   parameters: LaunchParameters,
   signal: AbortSignal | undefined,
   context: QaContext,
+  exec: Exec,
   urlCommandTimeout = urlCommandTimeoutMilliseconds,
 ): Promise<LaunchParameters> => {
   const worktree = resolvePath(context.cwd, parameters.cwd ?? '.');
@@ -108,9 +110,8 @@ export const applyQaSettings = async (
   // The command runs checkout code, so only the session's own cwd may reach it.
   requireSessionCwd(context, parameters.cwd);
 
-  const originOutput = await readGitOutput(worktree, ['remote', 'get-url', 'origin']);
-  const originUrl = originOutput?.trim();
-  const repository = originUrl === undefined ? undefined : repositoryFromRemote(originUrl);
+  const origin = await readOriginRepository({ exec, cwd: worktree, signal });
+  const repository = origin.status === 'named' ? configRepositoryKey(origin.repository) : undefined;
 
   const settings = readQaSettings(
     { cwd: worktree, agentDirectory: getAgentDir(), projectTrusted: context.isProjectTrusted() },

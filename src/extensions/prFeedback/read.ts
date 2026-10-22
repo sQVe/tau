@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import type { CommandRuntime } from '../../command.js';
-import type { Repository } from '../../github.js';
+import type { Repository } from '../../github/github.js';
 import { repositoryName } from './checkEvidence.js';
 import {
   readIssueComments,

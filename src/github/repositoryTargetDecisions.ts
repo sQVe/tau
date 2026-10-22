@@ -1,5 +1,18 @@
 import type { Repository } from './github.js';
 
+// SSH reads the host as a Host alias from its config, which can also match on the user and port.
+export interface SshDestination {
+  host: string;
+  user: string;
+  port: string;
+}
+
+export interface RemoteLocation {
+  host: string;
+  path: string;
+  ssh: SshDestination | undefined;
+}
+
 export interface RemotePush {
   url: string;
   // undefined when the URL names no GitHub repository.
@@ -249,3 +262,40 @@ export const fromHeadRepository = (pr: ListedHead, head: Repository): boolean =>
 
   return sameOwner && sameName;
 };
+
+// Git reads any other URL protocol, such as file:, as a local path or cannot fetch from it.
+const remoteProtocols = new Set(['http:', 'https:', 'ssh:', 'git:', 'git+ssh:']);
+
+// Reads https://host/owner/name.git, ssh://git@host:port/owner/name.git, and
+// git@host:owner/name.git. The port of an ssh:// URL is the SSH port, not part of the web host.
+export const parseRemoteUrl = (url: string): RemoteLocation | undefined => {
+  const scp = /^(?:([\w.-]+)@)?([\w.-]+):(?!\/)(.+)$/u.exec(url);
+
+  if (scp !== null) {
+    const host = scp[2] ?? '';
+
+    return { host, path: scp[3] ?? '', ssh: { host, user: scp[1] ?? '', port: '' } };
+  }
+
+  try {
+    const parsed = new URL(url);
+
+    if (!remoteProtocols.has(parsed.protocol)) {
+      return undefined;
+    }
+
+    const overSsh = parsed.protocol === 'ssh:' || parsed.protocol === 'git+ssh:';
+    const host = overSsh ? parsed.hostname : parsed.host;
+    const user = decodeURIComponent(parsed.username);
+    const ssh = overSsh ? { host, user, port: parsed.port } : undefined;
+
+    return { host, path: parsed.pathname.slice(1), ssh };
+  } catch {
+    return undefined;
+  }
+};
+
+// The key of a config entry such as `fullCheck.repositories.<owner/name>`. Only a repository on
+// the GitHub host has one, so a same-named repository elsewhere never gets another's entry.
+export const configRepositoryKey = ({ host, owner, name }: Repository): string | undefined =>
+  host.toLowerCase() === 'github.com' ? `${owner}/${name}` : undefined;

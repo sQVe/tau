@@ -2,12 +2,14 @@ import { expect, it } from 'vitest';
 
 import type { Repository } from './github.js';
 import {
+  configRepositoryKey,
+  parseRemoteUrl,
   pickBaseRepository,
   pickHead,
   pickPushRepository,
   upstreamRepository,
 } from './repositoryTargetDecisions.js';
-import type { HeadFacts, Remote } from './repositoryTargetDecisions.js';
+import type { HeadFacts, Remote, RemoteLocation } from './repositoryTargetDecisions.js';
 
 const upstream = { host: 'github.com', owner: 'sQVe', name: 'tau' };
 const fork = { host: 'github.com', owner: 'fork', name: 'tau' };
@@ -273,4 +275,67 @@ it.each([
   },
 ])('finds no fetch refspec that maps $name', ({ facts }) => {
   expect(() => pickHead(facts)).toThrow('no fetch refspec of origin maps from a branch');
+});
+
+it.each<{ url: string; location: RemoteLocation | undefined }>([
+  {
+    url: 'git@github.com:sQVe/tau.git',
+    location: {
+      host: 'github.com',
+      path: 'sQVe/tau.git',
+      ssh: { host: 'github.com', user: 'git', port: '' },
+    },
+  },
+  {
+    url: 'github.com:sQVe/tau',
+    location: {
+      host: 'github.com',
+      path: 'sQVe/tau',
+      ssh: { host: 'github.com', user: '', port: '' },
+    },
+  },
+  {
+    url: 'ssh://git@github.com:22/sQVe/tau',
+    location: {
+      host: 'github.com',
+      path: 'sQVe/tau',
+      ssh: { host: 'github.com', user: 'git', port: '22' },
+    },
+  },
+  {
+    url: 'https://user:token@github.com/sQVe/tau.git',
+    location: { host: 'github.com', path: 'sQVe/tau.git', ssh: undefined },
+  },
+  {
+    url: 'https://github.com:8443/sQVe/tau/',
+    location: { host: 'github.com:8443', path: 'sQVe/tau/', ssh: undefined },
+  },
+  {
+    url: 'git://github.com/sQVe/tau.git',
+    location: { host: 'github.com', path: 'sQVe/tau.git', ssh: undefined },
+  },
+  {
+    url: 'git+ssh://git@github.com:22/sQVe/tau.git',
+    location: {
+      host: 'github.com',
+      path: 'sQVe/tau.git',
+      ssh: { host: 'github.com', user: 'git', port: '22' },
+    },
+  },
+  { url: 'file://github.com/sQVe/tau.git', location: undefined },
+  { url: '/srv/sQVe/tau.git', location: undefined },
+  { url: '../tau', location: undefined },
+  { url: '', location: undefined },
+])('parses the remote URL $url', ({ url, location }) => {
+  expect(parseRemoteUrl(url)).toEqual(location);
+});
+
+it.each([
+  { host: 'github.com', key: 'sQVe/tau' },
+  { host: 'GitHub.com', key: 'sQVe/tau' },
+  { host: 'gitlab.com', key: undefined },
+  { host: 'github.com:8443', key: undefined },
+  { host: 'ghe.example.com', key: undefined },
+])('gives the config key $key for a repository on $host', ({ host, key }) => {
+  expect(configRepositoryKey({ host, owner: 'sQVe', name: 'tau' })).toBe(key);
 });

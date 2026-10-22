@@ -1,6 +1,6 @@
 import type { CommandRuntime } from '../../command.js';
-import type { Repository } from '../../github.js';
-import { sameRepository } from '../../repositoryTargetDecisions.js';
+import type { Repository } from '../../github/github.js';
+import { sameRepository } from '../../github/repositoryTargetDecisions.js';
 import { decideChain, parsePullRequestUrl, pickParent } from './chainDecisions.js';
 import type {
   BlockerFacts,

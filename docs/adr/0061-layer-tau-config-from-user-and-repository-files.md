@@ -43,6 +43,12 @@ so the files sit where Pi users look, and the repository file follows Pi's proje
 - `verificationArgv` must start with `vitest` until other runners exist (ME-353, ME-354).
 - A missing file contributes nothing.
 
+### Repository entries
+
+A config section keyed `owner/name`, such as `fullCheck.repositories`, applies to the repository
+that `origin` names. Only an `origin` on the GitHub host, `github.com`, names one. A repository with
+the same `owner/name` on another host never gets another repository's entry.
+
 ### Trust
 
 Tau reads `.pi/tau.json` only when Pi trusts the project, as Pi does for `.pi/settings.json`. An

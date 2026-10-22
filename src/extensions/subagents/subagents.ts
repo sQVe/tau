@@ -5,6 +5,7 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
 import { isNestedControlCall, nestedControlCallReason } from '../../codemode/controlTools.js';
+import type { Exec } from '../../command.js';
 import {
   forgetReportedWarnings,
   readTauConfig,
@@ -12,9 +13,9 @@ import {
 } from '../../config/config.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { errorMessage } from '../../errors.js';
-import { readGitOutput } from '../../gitOutput.js';
+import { readOriginRepository } from '../../github/repositoryTarget.js';
+import { configRepositoryKey } from '../../github/repositoryTargetDecisions.js';
 import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
-import { repositoryFromRemote } from '../../repositoryRemote.js';
 import { isRecord } from '../../schema.js';
 import { isWorkerProcess, workerNoticeChannel } from '../../worker.js';
 import type { WorkerNoticeEvent } from '../../worker.js';
@@ -221,6 +222,11 @@ const launchTitle = (profile: string | undefined): string => {
   return `Launch ${name}`;
 };
 
+const piExec =
+  (pi: ExtensionAPI): Exec =>
+  (command, commandArguments, options) =>
+    pi.exec(command, commandArguments, options);
+
 const launchWorker = async (
   runtime: SubagentRuntime,
   parameters: LaunchParameters,
@@ -241,7 +247,7 @@ const launchWorker = async (
   }
 
   requireTrustedProject(context);
-  const resolved = await checkLaunchEnvironment(parameters, signal, context);
+  const resolved = await checkLaunchEnvironment(parameters, signal, context, piExec(runtime.pi));
 
   return executeLaunch(
     runtime,
@@ -578,19 +584,16 @@ const registerSubagentTools = (runtime: SubagentRuntime): void => {
   registerCancelTool(runtime);
 };
 
-// Outside a repository, or without an origin remote, Git fails and no repository entry applies.
-const readOriginUrl = async (cwd: string): Promise<string | undefined> => {
-  const output = await readGitOutput(cwd, ['remote', 'get-url', 'origin']);
-
-  return output?.trim();
-};
-
-const trackerGuidelines = async (location: ConfigLocation, ui: ConfigWarnings) => {
-  const originUrl = await readOriginUrl(location.cwd);
-  const repository = originUrl === undefined ? undefined : repositoryFromRemote(originUrl);
+const trackerGuidelines = async (
+  pi: ExtensionAPI,
+  location: ConfigLocation,
+  ui: ConfigWarnings,
+) => {
+  const origin = await readOriginRepository({ exec: piExec(pi), cwd: location.cwd });
+  const repository = origin.status === 'named' ? configRepositoryKey(origin.repository) : undefined;
   const setup = readTrackerSetup(location, ui, repository);
 
-  return trackerLines({ setup, originUrl });
+  return trackerLines({ setup, origin });
 };
 
 export const registerCapacityRefusal = (pi: ExtensionAPI): CapacityRefusal => {
@@ -767,7 +770,7 @@ export default function subagentsExtension(
       projectTrusted: context.isProjectTrusted(),
     };
 
-    tracker = await trackerGuidelines(location, context.ui);
+    tracker = await trackerGuidelines(pi, location, context.ui);
   });
 
   pi.on('tool_result', (_event, context) => {

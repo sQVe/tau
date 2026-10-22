@@ -3,8 +3,8 @@ import type { Static } from 'typebox';
 
 import type { CommandRuntime } from '../../command.js';
 import { errorMessage } from '../../errors.js';
-import { checkOutput, label, parseJson, readJson, run } from '../../github.js';
-import type { CheckOutput, Repository } from '../../github.js';
+import { checkOutput, label, parseJson, readJson, run } from '../../github/github.js';
+import type { CheckOutput, Repository } from '../../github/github.js';
 import { repositoryName } from './checkEvidence.js';
 
 const threadsQuery = `query ($owner: String!, $name: String!, $number: Int!, $endCursor: String) {

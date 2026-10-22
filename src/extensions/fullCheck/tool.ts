@@ -3,15 +3,24 @@ import type { ExtensionToolContext, ToolDefinition } from '@earendil-works/pi-co
 import { Type } from 'typebox';
 
 import { readCheckIdentity } from '../../checkRecord/identity.js';
+import type { Exec } from '../../command.js';
+import { configRepositoryKey } from '../../github/repositoryTargetDecisions.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import type { Recorded } from './checkFlow.js';
-import { findReusedLog, readRepository, runAndRecord, withRepositoryLock } from './checkFlow.js';
+import {
+  findReusedLog,
+  readRepository,
+  repositoryLockKey,
+  runAndRecord,
+  withRepositoryLock,
+} from './checkFlow.js';
 import { readFullCheckArgv } from './config.js';
 import type { CheckResult } from './run.js';
 
 export type FullCheckDetails = Recorded<CheckResult>;
 
 export interface FullCheckToolOptions {
+  exec: Exec;
   agentDirectory?: string;
   pollMilliseconds?: number;
   idleLimitMilliseconds?: number;
@@ -30,7 +39,7 @@ const defaultChecksPath = 'checks';
 const defaultPollMilliseconds = 500;
 
 const notConfiguredMessage = (repository: string | undefined): string => {
-  const unnamed = 'this checkout, whose origin remote does not name an owner/name repository,';
+  const unnamed = 'this checkout, whose origin remote does not name a github.com repository,';
   const subject = repository ?? unnamed;
 
   return `No full check is configured for ${subject}. Run your check as before, with the command the repository documents. To configure one, add fullCheck.repositories.<owner/name>.argv to the user tau.json.`;
@@ -71,7 +80,7 @@ const execute = async (
 ) => {
   const root = await findTauRoot(context.cwd, 'full_check');
   const agentDirectory = options.agentDirectory ?? getAgentDir();
-  const repository = await readRepository(root);
+  const repository = await readRepository({ exec: options.exec, cwd: root, signal });
 
   const location = {
     cwd: root,
@@ -79,10 +88,11 @@ const execute = async (
     projectTrusted: context.isProjectTrusted(),
   };
 
-  const argv = readFullCheckArgv(location, context.ui, repository);
+  const configKey = repository === undefined ? undefined : configRepositoryKey(repository);
+  const argv = readFullCheckArgv(location, context.ui, configKey);
 
-  if (repository === undefined || argv === undefined) {
-    throw new Error(notConfiguredMessage(repository));
+  if (repository === undefined || configKey === undefined || argv === undefined) {
+    throw new Error(notConfiguredMessage(configKey));
   }
 
   const waiting = await readCheckIdentity(root, argv, base);
@@ -96,7 +106,7 @@ const execute = async (
     {
       root,
       agentDirectory,
-      repository,
+      repository: repositoryLockKey(repository),
       signal,
       pollMilliseconds: options.pollMilliseconds ?? defaultPollMilliseconds,
       notifyWaiting,
@@ -128,7 +138,7 @@ const execute = async (
 };
 
 export const createFullCheckTool = (
-  options: FullCheckToolOptions = {},
+  options: FullCheckToolOptions,
 ): ToolDefinition<typeof parameters, FullCheckDetails | undefined> =>
   defineTool({
     name: 'full_check',

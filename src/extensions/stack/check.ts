@@ -2,9 +2,9 @@ import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { CommandRuntime } from '../../command.js';
-import type { Repository } from '../../github.js';
+import type { Repository } from '../../github/github.js';
+import { resolveBaseRepository, resolveHead } from '../../github/repositoryTarget.js';
 import { readOptionalGit } from '../../gitOutput.js';
-import { resolveBaseRepository, resolveHead } from '../../repositoryTarget.js';
 import {
   decideGithub,
   decideStackView,

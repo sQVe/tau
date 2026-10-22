@@ -8,6 +8,8 @@ import type {
 import { vi } from 'vitest';
 import type { Mock } from 'vitest';
 
+import { declinedExec } from './declinedExecFake.js';
+
 type Handler = (event: never, context: ExtensionContext) => unknown;
 type Command = Parameters<ExtensionAPI['registerCommand']>[1];
 
@@ -47,6 +49,7 @@ export const fakeExtensionApi = (overrides: Partial<ExtensionAPI> = {}): FakeExt
     },
     sendUserMessage,
     sendMessage,
+    exec: declinedExec,
     ...overrides,
   } as unknown as ExtensionAPI;
 

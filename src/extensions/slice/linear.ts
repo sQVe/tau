@@ -2,7 +2,7 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
 import type { Exec, CommandRuntime } from '../../command.js';
-import { checkOutput, readJson } from '../../github.js';
+import { checkOutput, readJson } from '../../github/github.js';
 import { api, openStateTypes, readTeamId, run } from '../../linear.js';
 import type { LinearChild, LinearContainer } from './writes.js';
 
