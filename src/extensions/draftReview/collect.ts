@@ -1,7 +1,7 @@
-import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { errorMessage, isMissingFile } from '../../errors.js';
+import { errorMessage } from '../../errors.js';
+import { readOptionalText } from '../../record.js';
 import { loadCollectedRecord, saveCollectedRecord } from './collectedRecord.js';
 import type { CollectedRecord } from './collectedRecord.js';
 import {
@@ -43,18 +43,6 @@ interface SessionCommentRef {
   comment: SessionComment;
 }
 
-const readOptional = async (path: string): Promise<string | undefined> => {
-  try {
-    return await readFile(path, 'utf8');
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return undefined;
-    }
-
-    throw error;
-  }
-};
-
 // tuicr names each file by its staged path; collect names it by its `.tau` path.
 const pathOfStaged = (review: Review, stagedPath: string | null): string =>
   review.paths[review.stagedPaths.indexOf(stagedPath ?? '')] ?? '';
@@ -88,7 +76,7 @@ class CollectRefusalError extends Error {
 }
 
 const readRequired = async (review: Review, path: string): Promise<string> => {
-  const original = await readOptional(originalPathOf(review, path));
+  const original = await readOptionalText(originalPathOf(review, path));
 
   if (original === undefined) {
     throw new CollectRefusalError(
@@ -127,7 +115,7 @@ const refusalWithProgress = (error: unknown, record: CollectedRecord | undefined
 const planEdit = async (review: Review, path: string, original: string) => {
   const originalPath = originalPathOf(review, path);
   const stagedPath = join(review.stagingDirectory, stagedPathOf(review, path));
-  const staged = await readOptional(stagedPath);
+  const staged = await readOptionalText(stagedPath);
 
   if (staged === undefined || staged === original) {
     return [];
@@ -205,7 +193,7 @@ const writeBack = async (review: Review, record: CollectedRecord): Promise<void>
     // oxlint-disable-next-line no-await-in-loop -- Each recheck must sit right before its write.
     const original = await readRequired(review, edit.path);
     // oxlint-disable-next-line no-await-in-loop -- Each recheck must sit right before its write.
-    const current = await readOptional(realPath);
+    const current = await readOptionalText(realPath);
     const decision = decideEdit({ path: edit.path, original, staged: edit.staged, current });
 
     // A file that disappears before the write is a conflict, like one missing at the read.

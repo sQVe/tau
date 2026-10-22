@@ -1,13 +1,10 @@
-import { randomUUID } from 'node:crypto';
-import { lstat, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
-import { Value } from 'typebox/value';
 
-import { isMissingFile } from '../../errors.js';
-import { describeSchemaProblem } from '../../schemaProblem.js';
+import { readOptionalText, readVersionedRecord, writeRecord } from '../../record.js';
 import { blockerProblem } from './blockers.js';
 
 export interface Draft {
@@ -59,15 +56,6 @@ const planSchema = Type.Object(
 
 export type Plan = Static<typeof planSchema>;
 
-const savedVersion = (value: unknown) =>
-  typeof value === 'object' && value !== null && 'version' in value ? value.version : undefined;
-
-export const isNewerVersion = (value: unknown, supported: number): boolean => {
-  const version = savedVersion(value);
-
-  return typeof version === 'number' && version > supported;
-};
-
 // Apply writes one Linear issue per identifier, so a repeated identifier would write one issue twice.
 const rejectRepeatedIdentifiers = (path: string, plan: Plan) => {
   const identifiers = new Set<string>();
@@ -108,44 +96,8 @@ const rejectBadReferences = (path: string, plan: Plan) => {
   }
 };
 
-const parsePlan = (path: string, text: string): Plan => {
-  let value: unknown;
-
-  try {
-    value = JSON.parse(text);
-  } catch (error) {
-    throw new Error(`Malformed slice draft ${path}: not JSON.`, { cause: error });
-  }
-
-  if (isNewerVersion(value, currentVersion)) {
-    throw new Error(
-      `Slice draft ${path} has a newer format than this Tau reads. Update Tau, then restart the session.`,
-    );
-  }
-
-  if (!Value.Check(planSchema, value)) {
-    throw new Error(`Malformed slice draft ${path}: ${describeSchemaProblem(planSchema, value)}.`);
-  }
-
-  rejectBadReferences(path, value);
-
-  return value;
-};
-
-export const readOptionalFile = async (path: string): Promise<string | undefined> => {
-  try {
-    return await readFile(path, 'utf8');
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return undefined;
-    }
-
-    throw error;
-  }
-};
-
 export const readBody = async (directory: string, file: string): Promise<string> => {
-  const body = await readOptionalFile(join(directory, file));
+  const body = await readOptionalText(join(directory, file));
 
   if (body === undefined) {
     throw new Error(`The slice draft names ${file}, but ${join(directory, file)} does not exist.`);
@@ -156,9 +108,18 @@ export const readBody = async (directory: string, file: string): Promise<string>
 
 export const readPlan = async (directory: string): Promise<Plan | undefined> => {
   const path = join(directory, planFileName);
-  const text = await readOptionalFile(path);
 
-  return text === undefined ? undefined : parsePlan(path, text);
+  const plan = await readVersionedRecord(path, {
+    label: 'slice draft',
+    version: currentVersion,
+    schema: planSchema,
+  });
+
+  if (plan !== undefined) {
+    rejectBadReferences(path, plan);
+  }
+
+  return plan;
 };
 
 export const readDraft = async (directory: string): Promise<Draft | undefined> => {
@@ -208,44 +169,5 @@ export const rejectLinkedDraftFiles = async (directory: string): Promise<void> =
   }
 };
 
-const isSymlink = async (path: string) => {
-  try {
-    const stats = await lstat(path);
-
-    return stats.isSymbolicLink();
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return false;
-    }
-
-    throw error;
-  }
-};
-
-// Writes a new file and renames it over the record, so a failed save keeps the saved identifiers.
-// The rename replaces a link at the record instead of following it.
-export const writeRecord = async (
-  directory: string,
-  fileName: string,
-  record: unknown,
-): Promise<void> => {
-  const path = join(directory, fileName);
-  const content = `${JSON.stringify(record, null, 2)}\n`;
-  const temporary = join(directory, `.${fileName}.${randomUUID()}`);
-
-  if (await isSymlink(path)) {
-    throw new Error(`Refusing to write through a symlink: ${path}`);
-  }
-
-  try {
-    await writeFile(temporary, content, { flag: 'wx' });
-    await rename(temporary, path);
-  } catch (error) {
-    await rm(temporary, { force: true });
-
-    throw error;
-  }
-};
-
 export const writePlan = (directory: string, plan: Plan): Promise<void> =>
-  writeRecord(directory, planFileName, plan);
+  writeRecord(join(directory, planFileName), plan);

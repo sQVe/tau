@@ -1,14 +1,13 @@
-import { randomUUID } from 'node:crypto';
-import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { Static, TSchema } from 'typebox';
+import type { Static } from 'typebox';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { errorMessage, isMissingFile } from '../../errors.js';
+import { errorMessage } from '../../errors.js';
 import { parseRepository } from '../../github.js';
 import type { Repository } from '../../github.js';
+import { parseVersionedRecord, readOptionalText, savedVersion, writeRecord } from '../../record.js';
 import { describeSchemaProblem } from '../../schemaProblem.js';
 import { repositoryName } from './checkEvidence.js';
 
@@ -16,13 +15,6 @@ export interface PullRequestRecord {
   repository: Repository;
   pr: number;
 }
-
-// TypeScript accepts an assertion arrow function only through a declared type.
-type CheckRecord = <Schema extends TSchema>(
-  path: string,
-  schema: Schema,
-  value: unknown,
-) => asserts value is Static<Schema>;
 
 const currentVersion = 1;
 
@@ -107,53 +99,8 @@ const repliesExample = JSON.stringify({
   comment: { body: '<text>', answers: ['<review or comment id>'] },
 });
 
-const savedVersion = (value: unknown) =>
-  typeof value === 'object' && value !== null && 'version' in value ? value.version : undefined;
-
-const isNewerVersion = (value: unknown, current: number) => {
-  const version = savedVersion(value);
-
-  return typeof version === 'number' && version > current;
-};
-
-const parseRecordJson = (path: string, text: string, current = currentVersion): unknown => {
-  let value: unknown;
-
-  try {
-    value = JSON.parse(text);
-  } catch (error) {
-    throw new Error(`Malformed ${path}: not JSON.`, { cause: error });
-  }
-
-  if (isNewerVersion(value, current)) {
-    throw new Error(
-      `${path} has a newer format than this Tau reads. Update Tau, then restart the session.`,
-    );
-  }
-
-  return value;
-};
-
-const checkRecord: CheckRecord = (path, schema, value) => {
-  if (!Value.Check(schema, value)) {
-    throw new Error(`Malformed ${path}: ${describeSchemaProblem(schema, value)}.`);
-  }
-};
-
-const readOptionalFile = async (path: string) => {
-  try {
-    return await readFile(path, 'utf8');
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return undefined;
-    }
-
-    throw error;
-  }
-};
-
 const readRequiredFile = async (path: string, missing: string) => {
-  const text = await readOptionalFile(path);
+  const text = await readOptionalText(path);
 
   if (text === undefined) {
     throw new Error(missing);
@@ -162,26 +109,24 @@ const readRequiredFile = async (path: string, missing: string) => {
   return text;
 };
 
-// Writes a new file and renames it over the record, so a failed save keeps the saved record.
-const writeRecord = async (path: string, record: unknown) => {
-  const temporary = `${path}.${randomUUID()}`;
+const checkReplies = (value: unknown) => {
+  if (Value.Check(repliesSchema, value)) {
+    return undefined;
+  }
 
-  await writeFile(temporary, `${JSON.stringify(record, null, 2)}\n`, { flag: 'wx' });
-  await rename(temporary, path);
+  return `${describeSchemaProblem(repliesSchema, value)}. Expected shape: ${repliesExample}, where reply and comment may be null`;
 };
 
 export const readReplies = async (directory: string): Promise<Replies> => {
   const path = join(directory, repliesFileName);
   const text = await readRequiredFile(path, `post needs ${path}. Nothing was posted.`);
-  const replies = parseRecordJson(path, text);
 
-  if (!Value.Check(repliesSchema, replies)) {
-    throw new Error(
-      `Malformed ${path}: ${describeSchemaProblem(repliesSchema, replies)}. Expected shape: ${repliesExample}, where reply and comment may be null.`,
-    );
-  }
-
-  return replies;
+  return parseVersionedRecord(path, text, {
+    label: 'replies record',
+    version: currentVersion,
+    schema: repliesSchema,
+    check: checkReplies,
+  });
 };
 
 // Version 1 saved only writes that GitHub took.
@@ -194,25 +139,25 @@ const fromPostedVersion1 = (record: Static<typeof postedVersion1Schema>): Posted
   })),
 });
 
+const isPostedVersion1 = (
+  record: Static<typeof postedVersion1Schema> | Posted,
+): record is Static<typeof postedVersion1Schema> => record.version === 1;
+
 export const readPosted = async (directory: string): Promise<Posted> => {
   const path = join(directory, postedFileName);
-  const text = await readOptionalFile(path);
+  const text = await readOptionalText(path);
 
   if (text === undefined) {
     return { version: postedVersion, writes: [] };
   }
 
-  const posted = parseRecordJson(path, text, postedVersion);
+  const posted = parseVersionedRecord(path, text, {
+    label: 'posted record',
+    version: postedVersion,
+    schema: (value) => (savedVersion(value) === 1 ? postedVersion1Schema : postedSchema),
+  });
 
-  if (savedVersion(posted) === 1) {
-    checkRecord(path, postedVersion1Schema, posted);
-
-    return fromPostedVersion1(posted);
-  }
-
-  checkRecord(path, postedSchema, posted);
-
-  return posted;
+  return isPostedVersion1(posted) ? fromPostedVersion1(posted) : posted;
 };
 
 export const writePosted = (directory: string, writes: readonly PostedWrite[]): Promise<void> =>
@@ -226,14 +171,18 @@ export const readPullRequestRecord = async (directory: string): Promise<PullRequ
     `${directory} has no ${pullRequestFileName}. Pass the directory that read returned.`,
   );
 
-  const record = parseRecordJson(path, text);
-
-  checkRecord(path, pullRequestRecordSchema, record);
+  const record = parseVersionedRecord(path, text, {
+    label: 'pull request record',
+    version: currentVersion,
+    schema: pullRequestRecordSchema,
+  });
 
   try {
     return { repository: parseRepository(record.repository), pr: record.pr };
   } catch (error) {
-    throw new Error(`Malformed ${path}: ${errorMessage(error)}`, { cause: error });
+    throw new Error(`Malformed pull request record ${path}: ${errorMessage(error)}`, {
+      cause: error,
+    });
   }
 };
 

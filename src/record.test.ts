@@ -8,6 +8,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import {
   parseVersionedRecord,
   publishTextSync,
+  readOptionalText,
   readTextWithinSync,
   readVersionedRecord,
   savedVersion,
@@ -126,6 +127,22 @@ it('picks the schema from the value', () => {
   expect(parseVersionedRecord('a.json', '{"version":1}', { ...options, schema })).toEqual({
     version: 1,
   });
+});
+
+it('reads optional text and gives undefined for a missing file', async () => {
+  const directory = await directoryFixture();
+  const path = join(directory, 'a.txt');
+
+  await writeFile(path, 'hello');
+
+  expect(await readOptionalText(path)).toBe('hello');
+  expect(await readOptionalText(join(directory, 'missing.txt'))).toBeUndefined();
+});
+
+it('throws when the optional text path is a directory', async () => {
+  const directory = await directoryFixture();
+
+  await expect(readOptionalText(directory)).rejects.toThrow('EISDIR');
 });
 
 it('writes the record as indented JSON with a trailing newline', async () => {

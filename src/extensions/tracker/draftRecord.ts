@@ -1,5 +1,4 @@
-import { randomUUID } from 'node:crypto';
-import { readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 import type { Static } from 'typebox';
@@ -7,6 +6,7 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { isMissingFile } from '../../errors.js';
+import { readVersionedRecord, writeRecord } from '../../record.js';
 import { describeSchemaProblem } from '../../schemaProblem.js';
 
 export interface DraftLookup {
@@ -47,56 +47,27 @@ const draftSchema = Type.Object(
 
 export type DraftRecord = Static<typeof draftSchema>;
 
-const isNewerVersion = (value: unknown) => {
-  const version =
-    typeof value === 'object' && value !== null && 'version' in value ? value.version : undefined;
-
-  return typeof version === 'number' && version > currentVersion;
-};
-
-const parseDraftRecord = (path: string, text: string): DraftRecord => {
-  let value: unknown;
-
-  try {
-    value = JSON.parse(text);
-  } catch (error) {
-    throw new Error(`Malformed ticket draft ${path}: not JSON.`, { cause: error });
-  }
-
-  if (isNewerVersion(value)) {
-    throw new Error(
-      `Ticket draft ${path} has a newer format than this Tau reads. Update Tau, then restart the session.`,
-    );
-  }
-
-  if (Value.Check(previousDraftSchema, value)) {
-    return { ...value, version: currentVersion, qualityCommentId: null };
-  }
-
-  if (!Value.Check(draftSchema, value)) {
-    throw new Error(
-      `Malformed ticket draft ${path}: ${describeSchemaProblem(draftSchema, value)}.`,
-    );
-  }
-
-  return value;
-};
+const chooseSchema = (value: unknown) =>
+  Value.Check(previousDraftSchema, value) ? previousDraftSchema : draftSchema;
 
 export const readDraftRecord = async (directory: string): Promise<DraftRecord | null> => {
   const path = join(directory, draftFileName);
-  let text: string;
 
-  try {
-    text = await readFile(path, 'utf8');
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return null;
-    }
+  const saved = await readVersionedRecord(path, {
+    label: 'ticket draft',
+    version: currentVersion,
+    schema: chooseSchema,
+  });
 
-    throw error;
+  if (saved === undefined) {
+    return null;
   }
 
-  return parseDraftRecord(path, text);
+  if (saved.version === 1) {
+    return { ...saved, version: currentVersion, qualityCommentId: null };
+  }
+
+  return saved;
 };
 
 const toError = (error: unknown) => (error instanceof Error ? error : new Error(String(error)));
@@ -219,16 +190,8 @@ export const writeDraftField = async (
 
   const written: DraftRecord = { ...base, [field]: value };
   const path = join(directory, draftFileName);
-  const temporary = join(directory, `.${draftFileName}.${randomUUID()}`);
 
-  try {
-    await writeFile(temporary, `${JSON.stringify(written, null, 2)}\n`);
-    await rename(temporary, path);
-  } catch (error) {
-    await rm(temporary, { force: true });
-
-    throw error;
-  }
+  await writeRecord(path, written);
 
   return written;
 };
