@@ -299,7 +299,7 @@ it('accepts ls-files that prints only whitespace to stderr', async () => {
   expect(result.paths).toEqual(['new.txt']);
 });
 
-it('keeps the exit code when ls-files cannot start', async () => {
+it('reports a null exit code when ls-files cannot start', async () => {
   const root = await committedRepository();
 
   const result = await capture(root, workingTree, [
@@ -307,7 +307,7 @@ it('keeps the exit code when ls-files cannot start', async () => {
   ]);
 
   expect(result.errors).toHaveLength(1);
-  expect(result.errors[0]).toContain('failed: exit -1:');
+  expect(result.errors[0]).toContain('failed: exit null:');
 });
 
 it('does not list untracked or unchanged files for a range', async () => {

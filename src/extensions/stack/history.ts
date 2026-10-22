@@ -1,4 +1,5 @@
 import type { CommandRuntime } from '../../command.js';
+import { runGit } from '../../git.js';
 import {
   activeLayerParents,
   decideLayer,
@@ -9,7 +10,8 @@ import {
   requireStackView,
 } from './historyDecisions.js';
 import type { LayerDecision, LayerFacts, LayerParents } from './historyDecisions.js';
-import { gitLabel, readStackViewFacts, runGitRead } from './reads.js';
+import { gitCommandOutput } from './readResult.js';
+import { gitLabel, readStackViewFacts } from './reads.js';
 
 export interface HistoryRequest {
   remote: string;
@@ -42,7 +44,7 @@ const remoteRef = (remote: string, name: string) => `refs/remotes/${remote}/${na
 const tipRef = (tips: StartTips, name: string) => tips.get(name) ?? branchRef(name);
 
 const gather = async (cwd: string, commandArguments: string[]) => {
-  const output = await runGitRead(cwd, commandArguments);
+  const output = gitCommandOutput(await runGit(cwd, commandArguments));
 
   return { command: gitLabel(commandArguments), output };
 };

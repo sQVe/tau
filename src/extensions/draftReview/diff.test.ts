@@ -1,8 +1,11 @@
+import { execFile } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { diffFiles } from './diff.js';
 
@@ -42,5 +45,30 @@ it('fails with the git error when git itself fails', async () => {
 
   const failed = diffFiles(join(directory, 'one.md'), join(directory, 'two.md'), 'x.md');
 
-  await expect(failed).rejects.toMatchObject({ code: 128 });
+  await expect(failed).rejects.toThrow('git diff --no-index failed:');
+});
+
+const lines = (marker: string) => `${['a', 'b', 'c', marker, 'd', 'e', 'f'].join('\n')}\n`;
+
+it('ignores the repository an inherited GIT_DIR selects', async () => {
+  const directory = await directoryWithFiles();
+
+  await writeFile(join(directory, 'one.md'), lines('one'));
+  await writeFile(join(directory, 'two.md'), lines('two'));
+
+  const expected = await diffFiles(join(directory, 'one.md'), join(directory, 'two.md'), 'x.md');
+  const other = await createTemporaryRepository(onTestFinished);
+
+  await promisify(execFile)('git', ['config', 'diff.context', '0'], { cwd: other });
+  vi.stubEnv('GIT_DIR', join(other, '.git'));
+  vi.stubEnv('GIT_INDEX_FILE', join(other, '.git', 'index'));
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const actual = await diffFiles(join(directory, 'one.md'), join(directory, 'two.md'), 'x.md');
+
+  expect(actual).toBe(expected);
+  expect(expected).toContain(' a\n');
 });

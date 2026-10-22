@@ -2,7 +2,7 @@ import { access, constants, lstat, readFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.js';
-import { runGit } from '../gitOutput.js';
+import { runGit } from '../git.js';
 import { climbsOut } from '../tauDirectory.js';
 import { isInsideRoot } from './capture.js';
 import {
@@ -114,17 +114,37 @@ const readWorkingFile = async (root: string, path: string): Promise<FileRead> =>
   }
 };
 
-const existsInCommit = async (root: string, revision: string, path: string) => {
+const fatalExitCode = 128;
+
+const missingInCommit =
+  /^fatal: path '[^]*' (?:does not exist|exists on disk, but not) in '[^]*'$/mu;
+
+const commitPathStatus = async (
+  root: string,
+  revision: string,
+  path: string,
+): Promise<NamedPath['status']> => {
   const result = await runGit(root, ['cat-file', '-e', `${revision}:${path}`]);
 
-  return result.exitCode === 0;
+  if (result.exitCode === 0) {
+    return 'readable';
+  }
+
+  return result.exitCode === fatalExitCode && missingInCommit.test(result.stderr)
+    ? 'missing'
+    : 'unreadable';
 };
 
 const readCommitFile = async (root: string, revision: string, path: string): Promise<FileRead> => {
   const object = `${revision}:${path}`;
+  const status = await commitPathStatus(root, revision, path);
 
-  if (!(await existsInCommit(root, revision, path))) {
+  if (status === 'missing') {
     return { kind: 'absent' };
+  }
+
+  if (status === 'unreadable') {
+    return { kind: 'unreadable' };
   }
 
   const blob = await runGit(root, ['cat-file', 'blob', object]);
@@ -197,7 +217,7 @@ const grepModules = async (
   const result = await runGit(root, [...options, ...scope, '--', ...scriptPathspecs]);
 
   // git grep exits 1 when nothing matches.
-  if (result.exitCode > 1) {
+  if (result.exitCode === null || result.exitCode > 1) {
     return { error: result.stderr.trim() || `git grep exited ${result.exitCode}` };
   }
 
@@ -310,7 +330,7 @@ const namedPathStatus = async (
     return filesystemStatus(root, path);
   }
 
-  return (await existsInCommit(root, revision, inRepository)) ? 'readable' : 'missing';
+  return commitPathStatus(root, revision, inRepository);
 };
 
 const namedPathGap = (path: NamedPath, section: NamedSection): EvidenceGap[] => {

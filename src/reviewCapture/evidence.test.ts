@@ -1,9 +1,9 @@
 import { execFile } from 'node:child_process';
 import { chmod, mkdir, readdir, rm, symlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { promisify } from 'node:util';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
@@ -645,4 +645,37 @@ it('lists a marker a files target adds once, and none from unchanged tracked fil
     { path: 'edited.test.ts', line: 3 },
     { path: 'fresh.test.ts', line: 1 },
   ]);
+});
+
+it('reports a gap when Git is killed while it checks a committed test file', async () => {
+  const { root, from, to } = await rangeRepository();
+  const directory = await savedCapture(root, { kind: 'range', from, to });
+  const shims = temporaryDirectory(onTestFinished, 'tau-evidence-shim-');
+  const realGit = (await promisify(execFile)('which', ['git'])).stdout.trim();
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const script = `#!/bin/sh\ncase " $* " in *" cat-file -e "*) kill -9 $$;; esac\nexec '${realGit}' "$@"\n`;
+
+  await writeFile(join(shims, 'git'), script);
+  await chmod(join(shims, 'git'), 0o755);
+  vi.stubEnv('PATH', `${shims}${delimiter}${process.env['PATH'] ?? ''}`);
+
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.tests).toEqual([]);
+  expect(evidence.gaps).toContainEqual({ kind: 'unreadable', path: 'src/math.test.ts' });
+});
+
+it('treats a missing committed test path that holds a newline as absent, not unreadable', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const from = await commit(root, { 'src/other.ts': 'export const other = 1;\n' }, 'first');
+  const to = await commit(root, { 'src/line\nbreak.ts': 'export const x = 1;\n' }, 'second');
+  const directory = await savedCapture(root, { kind: 'range', from, to });
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.tests).toEqual([]);
+  expect(evidence.gaps).not.toContainEqual(expect.objectContaining({ kind: 'unreadable' }));
 });

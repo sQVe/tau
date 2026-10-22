@@ -4,9 +4,11 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { withoutField } from '../../../tests/withoutField.js';
+import { runGit } from '../../git.js';
 import type { Repository } from '../../github/github.js';
 import { createStackFake } from './fixtures/stackFake.js';
-import { readBasedOnPulls, readHeadPulls, readStackViewFacts, runGitRead } from './reads.js';
+import { gitCommandOutput } from './readResult.js';
+import { readBasedOnPulls, readHeadPulls, readStackViewFacts } from './reads.js';
 
 const unexpected: unknown = expect.stringContaining('unexpected output');
 
@@ -140,10 +142,10 @@ it.each(malformedViews)('fails gh stack view output with $name', async ({ view }
   });
 });
 
-it('reads a failed Git process as an output without an exit code', async () => {
+it('reads a Git process that cannot start as an output without an exit code', async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-git-read-');
 
-  const output = await runGitRead(join(directory, 'missing'), ['status']);
+  const output = gitCommandOutput(await runGit(join(directory, 'missing'), ['status']));
 
   expect(output.exitCode).toBeNull();
   expect(output.stdout).toBe('');

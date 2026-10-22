@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { isMissingFile } from '../../errors.js';
-import { readGit, readGitBytes, readOptionalGit } from '../../gitOutput.js';
+import { readGit, runGit } from '../../git.js';
 import {
   checkReviewDirectory,
   existingEntry,
@@ -48,12 +48,18 @@ const resolveCommit = (root: string, revision: string) =>
 const isAncestor = async (root: string, ancestor: string, descendant: string) => {
   const commandArguments = ['merge-base', '--is-ancestor', ancestor, descendant];
 
-  return (await readOptionalGit(root, commandArguments)) !== undefined;
+  const result = await runGit(root, commandArguments);
+
+  if (result.exitCode !== 0 && result.exitCode !== 1) {
+    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
+  }
+
+  return result.exitCode === 0;
 };
 
 // --no-textconv and the fixed prefixes match the diff that code_review captures.
-const readBranchDiff = (root: string, mergeBase: string) =>
-  readGitBytes(root, [
+const readBranchDiff = async (root: string, mergeBase: string) => {
+  const commandArguments = [
     'diff',
     '--no-ext-diff',
     '--no-textconv',
@@ -62,7 +68,16 @@ const readBranchDiff = (root: string, mergeBase: string) =>
     '--end-of-options',
     mergeBase,
     'HEAD',
-  ]);
+  ];
+
+  const result = await runGit(root, commandArguments);
+
+  if (result.exitCode !== 0) {
+    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
+  }
+
+  return result.stdout;
+};
 
 const isRegularFile = async (path: string) => {
   const entry = await existingEntry(path);

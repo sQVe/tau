@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 
 import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
-import { runGit } from '../gitOutput.js';
+import { runGit } from '../git.js';
+import type { GitResult } from '../git.js';
 import {
   captureTarget,
   captureWholeFile,
@@ -180,6 +181,11 @@ const saveSnapshot = async (
 
 const blobAt = async (root: string, base: string, path: string) => {
   const result = await runGit(root, ['ls-tree', '-z', '--full-tree', base, '--', path]);
+
+  if (result.exitCode === null) {
+    throw new Error(`git ls-tree failed: ${result.stderr.trim()}`);
+  }
+
   const line = result.stdout.toString('utf8').split('\0')[0] ?? '';
   const [meta = ''] = line.split('\t');
   const [mode = '', type = '', sha = ''] = meta.split(' ');
@@ -554,12 +560,8 @@ const writeEarlier = async (
   await writeFile(destination, blob.stdout, { mode });
 };
 
-const diffPart = (
-  path: string,
-  result: { exitCode: number; stdout: Buffer; stderr: string },
-  command: string[],
-): Part => {
-  if (result.exitCode > 1 || result.stderr.trim() !== '') {
+const diffPart = (path: string, result: GitResult, command: string[]): Part => {
+  if (result.exitCode === null || result.exitCode > 1 || result.stderr.trim() !== '') {
     return failure(command, `exit ${result.exitCode}: ${result.stderr.trim()}`);
   }
 
@@ -576,11 +578,7 @@ const runNoIndexDiff = async (cwd: string, path: string, files: string[], prefix
   const options = ['--no-ext-diff', '--no-textconv', '--no-color', '--no-index', ...prefixes];
   const command = ['diff', ...options, '--', ...files];
 
-  try {
-    return diffPart(path, await runGit(cwd, command), command);
-  } catch (error) {
-    return failure(command, errorMessage(error));
-  }
+  return diffPart(path, await runGit(cwd, command), command);
 };
 
 const comparePath = async (context: FixContext, path: string): Promise<Part> => {

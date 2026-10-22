@@ -80,9 +80,9 @@ the reasons are per group of lines, not per line, because the commit has 125 sur
 | pr/evidence.ts:115 (no coverage)                         | BlockStatement        | `{ evidence.gaps.push(readFailure('markers', error)` | `{}`                                       | gap        | No test reads scan gaps or a failed marker read into the publication evidence.                           |
 | pr/evidence.ts:116 (no coverage)                         | StringLiteral         | `'markers'`                                          | `""`                                       | gap        | No test reads scan gaps or a failed marker read into the publication evidence.                           |
 | pr/evidence.ts:279                                       | ArrayDeclaration      | `[]`                                                 | `["Stryker was here"]`                     | gap        | No test reads scan gaps or a failed marker read into the publication evidence.                           |
-| src/gitOutput.ts:98                                      | OptionalChaining      | `child.stdin?.on`                                    | `child.stdin.on`                           | equivalent | Git runs with a stdin pipe here, so the optional chain never meets undefined.                            |
-| src/gitOutput.ts:100                                     | ConditionalExpression | `input !== undefined`                                | `true`                                     | gap        | No test runs a command without input that reads stdin, so closing it early is not pinned.                |
-| src/gitOutput.ts:101                                     | OptionalChaining      | `child.stdin?.end`                                   | `child.stdin.end`                          | equivalent | Git runs with a stdin pipe here, so the optional chain never meets undefined.                            |
+| src/git.ts:98                                            | OptionalChaining      | `child.stdin?.on`                                    | `child.stdin.on`                           | equivalent | Git runs with a stdin pipe here, so the optional chain never meets undefined.                            |
+| src/git.ts:100                                           | ConditionalExpression | `input !== undefined`                                | `true`                                     | gap        | No test runs a command without input that reads stdin, so closing it early is not pinned.                |
+| src/git.ts:101                                           | OptionalChaining      | `child.stdin?.end`                                   | `child.stdin.end`                          | equivalent | Git runs with a stdin pipe here, so the optional chain never meets undefined.                            |
 | src/reviewCapture/evidenceDecisions.ts:412               | Regex                 | `/\.(?:md'mdx'markdown)$/i`                          | `/\.(?:md'mdx'markdown)/i`                 | gap        | No test pins this step of the diff parser, such as multi-digit counts, quoted names, or truncated hunks. |
 | src/reviewCapture/evidenceDecisions.ts:414               | Regex                 | `/^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/`        | `/@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @` | gap        | No test pins this step of the diff parser, such as multi-digit counts, quoted names, or truncated hunks. |
 | src/reviewCapture/evidenceDecisions.ts:414               | Regex                 | `/^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/`        | `/^@@ -\d+(?:,(\d))? \+(\d+)(?:,(\d+))? @` | gap        | No test pins this step of the diff parser, such as multi-digit counts, quoted names, or truncated hunks. |
@@ -366,8 +366,8 @@ These are for a follow-up ticket. This work changed no production code or test.
 
 - e9696243, pr/evidence.ts lines 112, 113, 115, 116, 279: No test reads scan gaps or a failed marker
   read into the publication evidence.
-- e9696243, src/gitOutput.ts lines 100: No test runs a command without input that reads stdin, so
-  closing it early is not pinned.
+- e9696243, src/git.ts lines 100: No test runs a command without input that reads stdin, so closing
+  it early is not pinned.
 - e9696243, src/reviewCapture/evidenceDecisions.ts lines 412, 414, 422, 426, 431, 442, 444, 451,
   457, 458, 463, 464, 465, 471, 483, 490, 491, 496, 497, 499, 527, 542, 563, 573, 576, 577: No test
   pins this step of the diff parser, such as multi-digit counts, quoted names, or truncated hunks.

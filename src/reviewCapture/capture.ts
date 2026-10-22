@@ -3,7 +3,7 @@ import { access, constants, lstat, realpath, stat } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 
 import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
-import { runGit } from '../gitOutput.js';
+import { runGit } from '../git.js';
 import { climbsOut } from '../tauDirectory.js';
 import { keepAddedLines } from './evidenceDecisions.js';
 import type { PinnedTarget, ReviewTarget } from './target.js';
@@ -90,21 +90,17 @@ export const runCaptureCommand = async (
   root: string,
   commandArguments: string[],
 ): Promise<{ stdout: Buffer; error?: undefined } | { stdout?: undefined; error: string }> => {
-  try {
-    const result = await runGit(root, commandArguments);
+  const result = await runGit(root, commandArguments);
 
-    if (result.exitCode !== 0) {
-      return { error: `exit ${result.exitCode}: ${result.stderr.trim()}` };
-    }
-
-    if (result.stderr.trim() !== '') {
-      return { error: result.stderr.trim() };
-    }
-
-    return { stdout: result.stdout };
-  } catch (error) {
-    return { error: errorMessage(error) };
+  if (result.exitCode !== 0) {
+    return { error: `exit ${result.exitCode}: ${result.stderr.trim()}` };
   }
+
+  if (result.stderr.trim() !== '') {
+    return { error: result.stderr.trim() };
+  }
+
+  return { stdout: result.stdout };
 };
 
 const resolveCommit = async (root: string, revision: string) => {
@@ -447,7 +443,9 @@ export const captureWholeFile = async (
 
   try {
     const result = await runGit(root, command);
-    const succeeded = result.exitCode <= 1 && result.stderr.trim() === '';
+
+    const succeeded =
+      result.exitCode !== null && result.exitCode <= 1 && result.stderr.trim() === '';
 
     if (succeeded) {
       const gaps = isBinaryDiff(result.stdout) ? [{ kind: 'binary' as const, path }] : [];
@@ -472,14 +470,6 @@ export const captureWholeFile = async (
 };
 
 const unopenedDirectory = /^warning: could not open directory '(.+)\/': Permission denied$/;
-
-const runListFiles = async (root: string, commandArguments: string[]) => {
-  try {
-    return await runGit(root, commandArguments);
-  } catch (error) {
-    return { exitCode: -1, stdout: Buffer.alloc(0), stderr: errorMessage(error) };
-  }
-};
 
 // Directories that `ls-files` warned it could not open and that the user cannot read. Undefined
 // when stderr holds anything else, so that message stays an error.
@@ -507,7 +497,7 @@ const splitFileList = (stdout: Buffer) =>
 // cannot read becomes an unreadable entry, since its untracked contents are missing.
 const listFiles = async (root: string, options: string[], spec: string[]): Promise<FileList> => {
   const commandArguments = ['ls-files', '-z', ...options, '--exclude-standard', ...spec];
-  const result = await runListFiles(root, commandArguments);
+  const result = await runGit(root, commandArguments);
   const clean = result.exitCode === 0 && result.stderr.trim() === '';
 
   if (clean) {
@@ -634,7 +624,7 @@ const readBlobs = async (
   const commandArguments = ['cat-file', '--batch'];
 
   try {
-    const result = await runGit(root, commandArguments, undefined, `${objects.join('\n')}\n`);
+    const result = await runGit(root, commandArguments, { input: `${objects.join('\n')}\n` });
 
     if (result.exitCode !== 0 || result.stderr.trim() !== '') {
       const detail = `exit ${result.exitCode}: ${result.stderr.trim()}`;

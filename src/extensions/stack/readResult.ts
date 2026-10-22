@@ -1,3 +1,5 @@
+import type { GitResult } from '../../git.js';
+
 export interface FailedRead {
   ok: false;
   command: string;
@@ -14,6 +16,12 @@ export interface CommandOutput {
   stdout: string;
   stderr: string;
 }
+
+export const gitCommandOutput = (result: GitResult): CommandOutput => ({
+  exitCode: result.exitCode,
+  stdout: result.stdout.toString('utf8'),
+  stderr: result.stderr,
+});
 
 export const readOk = <Value>(value: Value): Read<Value> => ({ ok: true, value });
 
