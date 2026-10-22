@@ -70,12 +70,27 @@ it.each([
   {
     name: 'a failed record before a passing match',
     logs: [saved({ passed: false }, 'new.log'), saved({}, 'old.log')],
+    expected: { status: 'run' },
+  },
+  {
+    name: 'a newer record whose log is gone above a passing match',
+    logs: [saved({ passed: false }, 'new.log', false), saved({}, 'old.log')],
     expected: { status: 'reuse', logPath: 'old.log' },
   },
   {
     name: 'a mismatch before a match',
     logs: [saved({ head: 'head-two' }, 'new.log'), saved({}, 'old.log')],
     expected: { status: 'reuse', logPath: 'old.log' },
+  },
+  {
+    name: 'a newer failing record with another argv above an older passing match',
+    logs: [saved({ passed: false, argv: ['pnpm', 'test'] }, 'new.log'), saved({}, 'old.log')],
+    expected: { status: 'run' },
+  },
+  {
+    name: 'a newer passing record with another argv above an older passing match',
+    logs: [saved({ argv: ['pnpm', 'test'] }, 'new.log'), saved({}, 'old.log')],
+    expected: { status: 'run' },
   },
   {
     name: 'two matches',

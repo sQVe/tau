@@ -1,4 +1,5 @@
 import type { CheckState } from '../../checkRecord/identity.js';
+import { findStateRecord } from '../../checkRecord/reuseDecision.js';
 import type { SavedLog } from '../../checkRecord/reuseDecision.js';
 import type { ReviewEvidence } from '../../reviewCapture/evidence.js';
 
@@ -189,14 +190,6 @@ export const checkLogGaps = (
   });
 };
 
-const sameState = (current: CheckState, record: CheckState): boolean =>
-  record.head === current.head &&
-  record.base === current.base &&
-  record.fingerprint === current.fingerprint;
-
-const matchesState = (current: CheckState, log: SavedLog): boolean =>
-  log.logExists && log.read.status === 'valid' && sameState(current, log.read.record);
-
 // Takes the newest record for the current state. argv is not compared, because the caller does not
 // read the full check config.
 export const decideFullCheck = (current: CheckState, saved: SavedLog[]): FullCheckDecision => {
@@ -204,7 +197,7 @@ export const decideFullCheck = (current: CheckState, saved: SavedLog[]): FullChe
     return { status: 'missing' };
   }
 
-  const match = saved.find((log) => matchesState(current, log));
+  const match = findStateRecord(current, saved);
 
   if (match?.read.status === 'valid') {
     const { passed, argv } = match.read.record;

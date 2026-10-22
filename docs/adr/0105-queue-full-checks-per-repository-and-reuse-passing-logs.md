@@ -33,8 +33,11 @@ equal values returns that log without running the command. It checks before wait
 taking the lock, since another session may have saved a matching log while this one waited.
 
 The tool reads the identity before and after the run. It saves a record, passing or failing, only
-when both identities are equal, so an edit during the run never gives a reusable log. Only a record
-with `passed: true` is a match. A missing or malformed record is not a match.
+when both identities are equal, so an edit during the run never gives a reusable log. Reuse takes
+the newest record for the state, which is the head, base, and fingerprint. It reuses that record's
+log only when the record passed with the same command. A newer failing record, a different command,
+and a missing or malformed record all run the check again. The new run saves a newer record, so a
+reader of the newest record, such as the `pr` tool, sees the latest result.
 
 The record is the only identity of a full check. The `pr` tool's `evidence` action reads it for the
 published tree, with the merge base as `base`, and reports it as passed, failed, missing, or

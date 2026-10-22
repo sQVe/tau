@@ -20,31 +20,42 @@ export interface SavedLog {
   logExists: boolean;
 }
 
+type CheckState = Pick<CheckIdentity, 'head' | 'base' | 'fingerprint'>;
+
 export type ReuseDecision = { status: 'reuse'; logPath: string } | { status: 'run' };
 
 const sameArgv = (left: string[], right: string[]): boolean =>
   left.length === right.length && left.every((argument, index) => argument === right[index]);
 
-const sameState = (left: CheckIdentity, right: CheckIdentity): boolean =>
+const sameState = (left: CheckState, right: CheckState): boolean =>
   left.head === right.head && left.base === right.base && left.fingerprint === right.fingerprint;
-
-const sameIdentity = (left: CheckIdentity, right: CheckIdentity): boolean =>
-  sameState(left, right) && sameArgv(left.argv, right.argv);
 
 // A result may be reused or saved for reuse only when the state has a fingerprint.
 export const sameReusableState = (before: CheckIdentity, after: CheckIdentity): boolean =>
   before.fingerprint !== null && sameState(before, after);
 
-const matchesPassingRecord = (current: CheckIdentity, read: RecordRead): boolean =>
-  read.status === 'valid' && read.record.passed && sameIdentity(current, read.record);
+// Finds the newest saved log of the state, passed or failed. A log whose file is gone is skipped.
+export const findStateRecord = (current: CheckState, saved: SavedLog[]): SavedLog | undefined =>
+  saved.find(
+    (log) => log.logExists && log.read.status === 'valid' && sameState(current, log.read.record),
+  );
 
-// Reuses the first saved log, newest first, whose passing record matches the current identity.
+const matchesPassingRecord = (current: CheckIdentity, read: RecordRead): boolean =>
+  read.status === 'valid' && read.record.passed && sameArgv(current.argv, read.record.argv);
+
+// Takes the newest record for the state and reuses its log only when it passed with the same
+// command. A newer failing record or another command runs the check again, so the run saves a
+// newer record that readers of the newest record see.
 export const decideReuse = (current: CheckIdentity, saved: SavedLog[]): ReuseDecision => {
   if (current.fingerprint === null) {
     return { status: 'run' };
   }
 
-  const match = saved.find((log) => log.logExists && matchesPassingRecord(current, log.read));
+  const match = findStateRecord(current, saved);
 
-  return match === undefined ? { status: 'run' } : { status: 'reuse', logPath: match.logPath };
+  if (match !== undefined && matchesPassingRecord(current, match.read)) {
+    return { status: 'reuse', logPath: match.logPath };
+  }
+
+  return { status: 'run' };
 };
