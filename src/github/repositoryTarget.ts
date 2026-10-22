@@ -55,6 +55,8 @@ export interface ResolvedBase {
   headDefaultBranch: string;
 }
 
+const originTimeoutMilliseconds = 5000;
+
 const repositoryViewSchema = Type.Object({
   isFork: Type.Boolean(),
   parent: Type.Union([
@@ -141,6 +143,7 @@ const sshHostResolver = (runtime: CommandRuntime): ResolveHost => {
   const resolve = async (destination: SshDestination, commandArguments: string[]) => {
     const result = await runtime.exec('ssh', ['-G', ...commandArguments], {
       cwd: runtime.cwd,
+      timeout: originTimeoutMilliseconds,
       ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
     });
 
@@ -164,8 +167,6 @@ const sshHostResolver = (runtime: CommandRuntime): ResolveHost => {
     return known;
   };
 };
-
-const originTimeoutMilliseconds = 5000;
 
 // Session start waits for this, so a checkout outside a repository, a missing origin, and a Git
 // failure all read as no origin.

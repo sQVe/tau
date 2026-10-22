@@ -284,7 +284,7 @@ export const parseRemoteUrl = (url: string): RemoteLocation | undefined => {
       return undefined;
     }
 
-    const overSsh = parsed.protocol === 'ssh:';
+    const overSsh = parsed.protocol === 'ssh:' || parsed.protocol === 'git+ssh:';
     const host = overSsh ? parsed.hostname : parsed.host;
     const user = decodeURIComponent(parsed.username);
     const ssh = overSsh ? { host, user, port: parsed.port } : undefined;

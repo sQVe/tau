@@ -315,8 +315,12 @@ it.each<{ url: string; location: RemoteLocation | undefined }>([
     location: { host: 'github.com', path: 'sQVe/tau.git', ssh: undefined },
   },
   {
-    url: 'git+ssh://git@github.com/sQVe/tau.git',
-    location: { host: 'github.com', path: 'sQVe/tau.git', ssh: undefined },
+    url: 'git+ssh://git@github.com:22/sQVe/tau.git',
+    location: {
+      host: 'github.com',
+      path: 'sQVe/tau.git',
+      ssh: { host: 'github.com', user: 'git', port: '22' },
+    },
   },
   { url: 'file://github.com/sQVe/tau.git', location: undefined },
   { url: '/srv/sQVe/tau.git', location: undefined },

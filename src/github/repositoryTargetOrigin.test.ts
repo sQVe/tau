@@ -60,3 +60,16 @@ it('reads no origin outside a repository', async () => {
     status: 'missing',
   });
 });
+
+it('keeps the URL host when the ssh read is killed, and bounds the read with a timeout', async () => {
+  const timeouts: (number | undefined)[] = [];
+
+  const killed: Exec = (_command, _commandArguments, options) => {
+    timeouts.push(options?.timeout);
+
+    return Promise.resolve({ code: 0, killed: true, stdout: 'hostname github.com\n', stderr: '' });
+  };
+
+  expect(await originOf('git@work:sQVe/tau.git', killed)).toEqual(named('work'));
+  expect(timeouts).toEqual([5000]);
+});
