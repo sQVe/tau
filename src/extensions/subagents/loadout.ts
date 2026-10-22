@@ -14,14 +14,14 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { Value } from 'typebox/value';
 
+import { userConfigPath } from '../../config/config.js';
+import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import {
   parseModelReference,
   readAllowedModels,
   requireAllowedModel,
-} from '../../models/models.js';
+} from '../../config/models.js';
 import { skillTools } from '../../skillTools.js';
-import { userConfigPath } from '../../tauConfig.js';
-import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
 import { acceptanceRefusal } from './acceptanceRefusal.js';
 import { decideCanary, pickRoutedModel } from './modelRoutes.js';
 import type { ClassifierOutcome, ModelRoute, RoutedLaunch } from './modelRoutes.js';

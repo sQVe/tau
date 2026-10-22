@@ -1,6 +1,6 @@
+import { readUserOnlyKey, warnUnknownKeys } from '../../config/config.js';
+import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { isRecord } from '../../isRecord.js';
-import { readUserOnlyKey, warnUnknownKeys } from '../../tauConfig.js';
-import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
 import type { KnownKeys } from '../../unknownKeys.js';
 
 export const defaultWorkerCapacity = 12;

@@ -1,7 +1,7 @@
+import { readTauConfig, readUserOnlyKey, warnUnknownKeys } from '../../config/config.js';
+import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { errorMessage } from '../../errors.js';
 import { isRecord } from '../../isRecord.js';
-import { readTauConfig, readUserOnlyKey, warnUnknownKeys } from '../../tauConfig.js';
-import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
 import { anyKey } from '../../unknownKeys.js';
 import type { KnownKeys } from '../../unknownKeys.js';
 

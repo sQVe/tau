@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import type { ConfigWarnings } from '../../tauConfig.js';
+import type { ConfigWarnings } from '../../config/config.js';
 import { readQaSettings } from './qaSettings.js';
 
 const ui = { notify: () => undefined };

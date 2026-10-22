@@ -1,8 +1,8 @@
 import { Type } from 'typebox';
 
+import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { checkOutput, parseRepository, label, readJson, run } from '../../github.js';
 import type { Repository, Runtime } from '../../github.js';
-import type { ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
 import { decideReviewBots } from './reviewBotDecisions.js';
 import type { ReviewBotDecision } from './reviewBotDecisions.js';
 import { readReviewBots } from './reviewBotSettings.js';

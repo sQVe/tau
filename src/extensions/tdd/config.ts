@@ -3,8 +3,8 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { configFileName, readTauConfig, warnUnknownKeys } from '../../tauConfig.js';
-import type { ConfigFile, ConfigLocation, ConfigWarnings } from '../../tauConfig.js';
+import { configFileName, readTauConfig, warnUnknownKeys } from '../../config/config.js';
+import type { ConfigFile, ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import type { KnownKeys } from '../../unknownKeys.js';
 import { mergeConfigLayers } from './configLayers.js';
 import type { ConfigLayer, MergedTddConfig } from './configLayers.js';
