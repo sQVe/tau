@@ -89,6 +89,43 @@ test('refuses an optional variable of the wrong type and creates no issue', asyn
   expect(fake.writes()).toEqual([]);
 });
 
+test('refuses an optional variable the query does not declare and creates no issue', async () => {
+  const fake = createLinearFake();
+
+  const variables = { team: 'team-me', title: 'T', description: 'D', labels: ['label-bug'] };
+
+  const result = await fake.exec('linear', [
+    'api',
+    createWithoutTitle,
+    '--variables-json',
+    JSON.stringify(variables),
+  ]);
+
+  expect(result.code).toBe(1);
+  expect(fake.issues.size).toBe(0);
+  expect(fake.writes()).toEqual([]);
+});
+
+test('refuses an update input field of the wrong type and leaves the issue unchanged', async () => {
+  const fake = createLinearFake();
+  const issue = fake.addIssue({ title: 'Keep', description: 'Body', sortOrder: 3 });
+
+  const variables = { id: 'ME-1', input: { title: 'Changed', description: 1 } };
+
+  const result = await fake.exec('linear', [
+    'api',
+    updateMutation,
+    '--variables-json',
+    JSON.stringify(variables),
+  ]);
+
+  expect(result.code).toBe(1);
+  expect(fake.writes()).toEqual([]);
+  expect(issue.title).toBe('Keep');
+  expect(issue.description).toBe('Body');
+  expect(issue.sortOrder).toBe(3);
+});
+
 test('an override or failure does not rescue an unsupported call', async () => {
   const fake = createLinearFake();
 

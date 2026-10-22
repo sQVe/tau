@@ -123,6 +123,18 @@ const orNull =
   (value) =>
     value === null || check(value);
 
+const issueInputFields: Record<string, Check> = {
+  title: isString,
+  description: isString,
+  subIssueSortOrder: isNumber,
+};
+
+const isIssueInputField = ([name, value]: [string, unknown]) =>
+  issueInputFields[name]?.(value) === true;
+
+const isIssueInput: Check = (value) =>
+  isObject(value) && Object.entries(value as object).every(isIssueInputField);
+
 const contracts: QueryContract[] = [
   {
     name: 'issueCreate',
@@ -141,7 +153,7 @@ const contracts: QueryContract[] = [
     name: 'issueUpdate',
     rootField: 'issueUpdate',
     selection: '',
-    reads: { id: isString, input: isObject },
+    reads: { id: isString, input: isIssueInput },
     optional: {},
   },
   {
@@ -245,7 +257,15 @@ const decodeQuery = (call: FakeCall): Operation => {
   }
 
   for (const [name, check] of Object.entries(contract.optional)) {
-    if (name in variables && !check(variables[name])) {
+    if (!(name in variables)) {
+      continue;
+    }
+
+    if (!declared.has(name)) {
+      throw unsupported(call, `${contract.name} does not declare $${name}`);
+    }
+
+    if (!check(variables[name])) {
       throw unsupported(call, `${contract.name} variable ${name} has the wrong type`);
     }
   }
