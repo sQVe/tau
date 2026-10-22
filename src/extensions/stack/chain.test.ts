@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 
 import { noUiContext } from '../../../tests/toolContext.js';
 import { withoutField } from '../../../tests/withoutField.js';
-import { createStackFake } from './fixtures/stackFake.js';
+import { createStackFake, joinedCalls } from './fixtures/stackFake.js';
 import type { FakePull } from './fixtures/stackFake.js';
 import { createStackTool } from './tool.js';
 
@@ -163,34 +163,39 @@ it('takes the only blocker when stacked pull requests are off', async () => {
 it.each([
   {
     name: 'a pull request that cannot be viewed',
-    prefix: 'pr view 2',
-    result: { code: 1, stderr: 'boom' },
+    key: 'pr view 2',
+    stderr: 'boom',
   },
   {
     name: 'a pull request view with malformed output',
-    prefix: 'pr view 2',
-    result: { stdout: '[]' },
+    key: 'pr view 2',
+    stdout: '[]',
   },
-  { name: 'a stacks API failure', prefix: 'api', result: { code: 1, stderr: 'HTTP 500' } },
-  { name: 'empty stacks API output', prefix: 'api', result: { stdout: '' } },
-  { name: 'a null stacks reply', prefix: 'api', result: { stdout: 'null' } },
-  { name: 'a null stack', prefix: 'api', result: { stdout: '[null]' } },
+  { name: 'a stacks API failure', key: 'api', stderr: 'HTTP 500' },
+  { name: 'empty stacks API output', key: 'api', stdout: '' },
+  { name: 'a null stacks reply', key: 'api', stdout: 'null' },
+  { name: 'a null stack', key: 'api', stdout: '[null]' },
   {
     name: 'a stack without a number',
-    prefix: 'api',
-    result: { stdout: '[{"pull_requests":[]}]' },
+    key: 'api',
+    stdout: '[{"pull_requests":[]}]',
   },
   {
     name: 'a stack without a pull request list',
-    prefix: 'api',
-    result: { stdout: '[{"number":17}]' },
+    key: 'api',
+    stdout: '[{"number":17}]',
   },
-  { name: 'malformed stacks API output', prefix: 'api', result: { stdout: '{"a":1}' } },
-])('stops on $name, with the failed read as evidence', async ({ prefix, result }) => {
+  { name: 'malformed stacks API output', key: 'api', stdout: '{"a":1}' },
+])('stops on $name, with the failed read as evidence', async ({ key, stdout, stderr }) => {
   const { fake, run } = setUp();
 
   fake.pulls = [pull(2)];
-  fake.override(prefix, result);
+
+  if (stderr === undefined) {
+    fake.overrideOutput(key, stdout);
+  } else {
+    fake.failCommand(key, stderr);
+  }
 
   const details = await run([url(2)]);
 
@@ -202,7 +207,7 @@ it('stops when the default branch cannot be read', async () => {
   const { fake, run } = setUp();
 
   fake.pulls = [pull(2)];
-  fake.override('repo view', { code: 1, stderr: 'boom' });
+  fake.failCommand('repo view', 'boom');
 
   expect(await run([url(2)])).toMatchObject({ decision: { result: 'stop' } });
 });
@@ -259,7 +264,9 @@ it('runs no gh command that writes', async () => {
 
   await run([url(2), url(3)]);
 
-  expect(fake.calls.filter((call) => !/^(pr (view|list)|api|repo view)/u.test(call))).toEqual([]);
+  expect(
+    joinedCalls(fake).filter((call) => !/^(pr (view|list)|api|repo view)/u.test(call)),
+  ).toEqual([]);
 });
 
 it('treats URLs that differ only in the case of the owner and name as one repository', async () => {
@@ -290,15 +297,15 @@ it('stops when only a later blocker sits in a GitHub stack', async () => {
 });
 
 it.each([
-  { name: 'bottom', stack: [2, 3], viewed: 'pr view 2 ', blocker: 3 },
-  { name: 'top', stack: [3, 4], viewed: 'pr view 4 ', blocker: 3 },
+  { name: 'bottom', stack: [2, 3], viewed: 'pr view 2', blocker: 3 },
+  { name: 'top', stack: [3, 4], viewed: 'pr view 4', blocker: 3 },
 ])('stops when the $name pull request of the stack cannot be viewed', async (scenario) => {
   const { fake, run } = setUp();
   const { stack, viewed, blocker } = scenario;
 
   fake.pulls = [pull(2), pull(3, { baseRefName: 'slice-2' }), pull(4, { baseRefName: 'slice-3' })];
   fake.stacks = { [blocker]: stack };
-  fake.override(viewed, { code: 1, stderr: 'boom' });
+  fake.failCommand(viewed, 'boom');
 
   const details = await run([url(blocker)]);
 
@@ -396,7 +403,7 @@ it.each(malformedViewOutputs)('stops on a pull request view with $name', async (
   const { fake, run } = setUp();
 
   fake.pulls = [pull(2)];
-  fake.override('pr view 2', { stdout: JSON.stringify(output) });
+  fake.overrideOutput('pr view 2', JSON.stringify(output));
 
   expect(await run([url(2)])).toMatchObject({
     decision: { result: 'stop', reason: containing('unexpected output') },
@@ -410,7 +417,7 @@ it.each([
   const { fake, run } = setUp();
 
   fake.pulls = [pull(2)];
-  fake.override('repo view', { stdout: JSON.stringify(output) });
+  fake.overrideOutput('repo view', JSON.stringify(output));
 
   expect(await run([url(2)])).toMatchObject({
     decision: { result: 'stop', reason: containing('unexpected output') },
