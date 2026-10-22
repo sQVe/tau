@@ -1,10 +1,10 @@
-import type { Repository } from '../../github.js';
+import type { Repository } from '../../github/github.js';
 import {
   formatRepository,
   fromHeadRepository,
   sameRepository,
-} from '../../repositoryTargetDecisions.js';
-import type { Remote } from '../../repositoryTargetDecisions.js';
+} from '../../github/repositoryTargetDecisions.js';
+import type { Remote } from '../../github/repositoryTargetDecisions.js';
 
 export interface ListedPullRequest {
   number: number;

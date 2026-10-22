@@ -4,8 +4,8 @@ import {
   checkOutput as checkCommandOutput,
   parseJson as parseCommandJson,
   runCommand,
-} from './command.js';
-import type { CommandRuntime } from './command.js';
+} from '../command.js';
+import type { CommandRuntime } from '../command.js';
 
 export interface Repository {
   host: string;

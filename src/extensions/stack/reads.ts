@@ -3,10 +3,10 @@ import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
 import type { CommandRuntime } from '../../command.js';
-import { label } from '../../github.js';
-import type { Repository } from '../../github.js';
+import { label } from '../../github/github.js';
+import type { Repository } from '../../github/github.js';
+import { formatRepository } from '../../github/repositoryTargetDecisions.js';
 import { runGit } from '../../gitOutput.js';
-import { formatRepository } from '../../repositoryTargetDecisions.js';
 import { describeSchemaProblem } from '../../schema.js';
 import type { PullView } from './chainDecisions.js';
 import { readStacksResponse } from './checkDecisions.js';

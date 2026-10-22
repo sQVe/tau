@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
-import type { Repository } from '../../github.js';
-import type { Remote } from '../../repositoryTargetDecisions.js';
+import type { Repository } from '../../github/github.js';
+import type { Remote } from '../../github/repositoryTargetDecisions.js';
 import {
   pickBaseBranch,
   pickBaseRemote,

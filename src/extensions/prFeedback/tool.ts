@@ -7,7 +7,7 @@ import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
 import type { Exec, CommandRuntime } from '../../command.js';
-import { parseRepository } from '../../github.js';
+import { parseRepository } from '../../github/github.js';
 import { findCheckoutRoot } from '../../gitOutput.js';
 import { checkTauDirectory, createFreshTauDirectory } from '../../tauDirectory.js';
 import { readChecks } from './checks.js';

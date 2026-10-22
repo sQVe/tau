@@ -2,7 +2,7 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import type { CommandRuntime } from '../../command.js';
-import type { Repository } from '../../github.js';
+import type { Repository } from '../../github/github.js';
 import { describeSchemaProblem } from '../../schema.js';
 import {
   boundChecks,

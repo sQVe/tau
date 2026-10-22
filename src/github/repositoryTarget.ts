@@ -1,9 +1,9 @@
 import { Type } from 'typebox';
 
-import type { CommandRuntime } from './command.js';
+import type { CommandRuntime } from '../command.js';
+import { readGit, readOptionalGit, runGit } from '../gitOutput.js';
 import { checkOutput, parseRepository, readJson } from './github.js';
 import type { Repository } from './github.js';
-import { readGit, readOptionalGit, runGit } from './gitOutput.js';
 import {
   formatRepository,
   pickBaseRepository,

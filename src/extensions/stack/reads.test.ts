@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { withoutField } from '../../../tests/withoutField.js';
-import type { Repository } from '../../github.js';
+import type { Repository } from '../../github/github.js';
 import { createStackFake } from './fixtures/stackFake.js';
 import { readBasedOnPulls, readHeadPulls, readStackViewFacts, runGitRead } from './reads.js';
 

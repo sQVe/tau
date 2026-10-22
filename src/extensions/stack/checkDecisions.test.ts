@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import type { Repository } from '../../github.js';
+import type { Repository } from '../../github/github.js';
 import {
   decideGithub,
   decideStackView,

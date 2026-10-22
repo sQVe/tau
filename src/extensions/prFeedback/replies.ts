@@ -5,8 +5,8 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { errorMessage } from '../../errors.js';
-import { parseRepository } from '../../github.js';
-import type { Repository } from '../../github.js';
+import { parseRepository } from '../../github/github.js';
+import type { Repository } from '../../github/github.js';
 import { parseVersionedRecord, readOptionalText, savedVersion, writeRecord } from '../../record.js';
 import { describeSchemaProblem } from '../../schema.js';
 import { repositoryName } from './checkEvidence.js';
