@@ -55,13 +55,13 @@ it('prints the command outside herdr, then collects only comments on reviewed fi
   const staging = stagingOf(manual.command);
 
   expect(manual.command).toMatch(/^tuicr --file '/);
-  expect(await readFile(join(staging, 'slices/a.md'), 'utf8')).toBe('one\ntwo\n');
+  expect(await readFile(join(staging, '01-slices/1-a.md'), 'utf8')).toBe('one\ntwo\n');
   expect(herdrCalls).toEqual([]);
 
-  await writeFile(join(staging, 'slices/a.md'), 'one\nTWO\n');
+  await writeFile(join(staging, '01-slices/1-a.md'), 'one\nTWO\n');
 
   await setSession([
-    comment('on-a', 'slices/a.md'),
+    comment('on-a', '01-slices/1-a.md'),
     comment('on-c', 'tickets/c.md'),
     comment('session-level', null),
   ]);
@@ -105,7 +105,7 @@ it('reports a conflict and writes nothing when the real file changed during the 
     throw new Error('Expected a manual review.');
   }
 
-  await writeFile(join(stagingOf(manual.command), 'slices/a.md'), 'user\n');
+  await writeFile(join(stagingOf(manual.command), '01-slices/1-a.md'), 'user\n');
   await writeFile(real('slices/a.md'), 'agent\n');
   await setSession([]);
 
@@ -216,8 +216,8 @@ it('reports a conflict and keeps the agent content when the real file changes du
     throw new Error('Expected a manual review.');
   }
 
-  await writeFile(join(stagingOf(manual.command), 'slices/a.md'), 'user\n');
-  await setSession([comment('on-a', 'slices/a.md')]);
+  await writeFile(join(stagingOf(manual.command), '01-slices/1-a.md'), 'user\n');
+  await setSession([comment('on-a', '01-slices/1-a.md')]);
 
   await writeFile(
     join(data, 'mutate.json'),
@@ -242,8 +242,8 @@ it('returns every comment on a retry after a delete failed partway and deletes o
     throw new Error('Expected a manual review.');
   }
 
-  await writeFile(join(stagingOf(manual.command), 'slices/a.md'), 'user\n');
-  await setSession([comment('one', 'slices/a.md'), comment('two', 'slices/a.md')]);
+  await writeFile(join(stagingOf(manual.command), '01-slices/1-a.md'), 'user\n');
+  await setSession([comment('one', '01-slices/1-a.md'), comment('two', '01-slices/1-a.md')]);
   await writeFile(join(data, 'fail.txt'), 'two');
 
   await expect(run({ action: 'collect', directory: manual.directory })).rejects.toThrow(
@@ -254,7 +254,7 @@ it('returns every comment on a retry after a delete failed partway and deletes o
   expect(await readFile(real('slices/a.md'), 'utf8')).toBe('one\ntwo\n');
 
   // The session now holds only the comment that remains.
-  await setSession([comment('two', 'slices/a.md')]);
+  await setSession([comment('two', '01-slices/1-a.md')]);
   await rm(join(data, 'fail.txt'));
 
   const retried = await run({ action: 'collect', directory: manual.directory });
@@ -452,7 +452,7 @@ const abortDuringOpen = async (step: string) => {
     return argumentsList[1] === 'layout' ? layoutInfo(100) : tabInfo;
   });
 
-  await setSession([comment('on-a', 'slices/a.md')]);
+  await setSession([comment('on-a', '01-slices/1-a.md')]);
 
   const outcome = await run(
     { action: 'open', paths: ['.tau/slices/a.md'] },
@@ -491,7 +491,7 @@ it('gives the model the result as text content', async () => {
     throw new Error('Expected a manual review.');
   }
 
-  await setSession([comment('on-a', 'slices/a.md')]);
+  await setSession([comment('on-a', '01-slices/1-a.md')]);
 
   const collected = await run({ action: 'collect', directory: manual.directory });
 
@@ -565,8 +565,8 @@ it('collects without an edit for a file the user deleted from staging', async ()
     '.tau/slices/b.md',
   ]);
 
-  await rm(join(staging, 'slices/a.md'));
-  await writeFile(join(staging, 'slices/b.md'), 'user\n');
+  await rm(join(staging, '01-slices/1-a.md'));
+  await writeFile(join(staging, '01-slices/2-b.md'), 'user\n');
 
   const collected = await run({ action: 'collect', directory: manual.directory });
 
@@ -580,10 +580,10 @@ it('fails when a staged file cannot be read, deleting nothing and keeping the re
     '.tau/slices/b.md',
   ]);
 
-  await rm(join(staging, 'slices/a.md'));
-  await mkdir(join(staging, 'slices/a.md'));
-  await writeFile(join(staging, 'slices/b.md'), 'user\n');
-  await setSession([comment('on-b', 'slices/b.md')]);
+  await rm(join(staging, '01-slices/1-a.md'));
+  await mkdir(join(staging, '01-slices/1-a.md'));
+  await writeFile(join(staging, '01-slices/2-b.md'), 'user\n');
+  await setSession([comment('on-b', '01-slices/2-b.md')]);
 
   await expect(run({ action: 'collect', directory: manual.directory })).rejects.toThrow(/EISDIR/);
 
@@ -614,7 +614,7 @@ it.each(['applied', 'conflict'] as const)(
 it('keeps the plan from the first try when the first delete fails', async () => {
   const { run, setSession, data, manual } = await manualReview();
 
-  await setSession([comment('one', 'slices/a.md'), comment('two', 'slices/a.md')]);
+  await setSession([comment('one', '01-slices/1-a.md'), comment('two', '01-slices/1-a.md')]);
   await writeFile(join(data, 'fail.txt'), 'one');
 
   const failed = run({ action: 'collect', directory: manual.directory });
@@ -633,9 +633,9 @@ it('names the comments deleted before a failed delete', async () => {
   const { run, setSession, data, manual } = await manualReview();
 
   await setSession([
-    comment('one', 'slices/a.md'),
-    comment('two', 'slices/a.md'),
-    comment('three', 'slices/a.md'),
+    comment('one', '01-slices/1-a.md'),
+    comment('two', '01-slices/1-a.md'),
+    comment('three', '01-slices/1-a.md'),
   ]);
 
   await writeFile(join(data, 'fail.txt'), 'three');
@@ -900,7 +900,7 @@ it('closes the tuicr pane and waits for its process to exit before deleting a co
 
   const { run, setSession, deleted, herdrCalls } = context;
   const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
-  await setSession([comment('on-a', 'slices/a.md')]);
+  await setSession([comment('on-a', '01-slices/1-a.md')]);
 
   const collected = await run({
     action: 'collect',
@@ -929,7 +929,7 @@ it('fails naming the record when the tuicr process never exits, and deletes noth
   });
 
   const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
-  await setSession([comment('on-a', 'slices/a.md')]);
+  await setSession([comment('on-a', '01-slices/1-a.md')]);
 
   const directory = (opened.details as { directory: string }).directory;
 
@@ -971,7 +971,7 @@ it('waits on the saved tuicr process when a retry finds the terminal gone, then 
 
   const { run, setSession, deleted, records } = context;
   const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
-  await setSession([comment('on-a', 'slices/a.md')]);
+  await setSession([comment('on-a', '01-slices/1-a.md')]);
 
   const directory = (opened.details as { directory: string }).directory;
 
@@ -1001,7 +1001,7 @@ it('stops waiting on the saved tuicr process when the retry is cancelled', async
   const state = { closed: false, running: true };
   const { run, setSession, deleted } = await fixture(closingHerdr(state), () => state.running);
   const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
-  await setSession([comment('on-a', 'slices/a.md')]);
+  await setSession([comment('on-a', '01-slices/1-a.md')]);
 
   const directory = (opened.details as { directory: string }).directory;
   const firstTry = new AbortController();
@@ -1073,7 +1073,7 @@ it('stops waiting for tuicr at once when the call is aborted, leaving no timer b
   });
 
   const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
-  await setSession([comment('on-a', 'slices/a.md')]);
+  await setSession([comment('on-a', '01-slices/1-a.md')]);
 
   const directory = (opened.details as { directory: string }).directory;
   const collecting = run({ action: 'collect', directory }, 'w:p1', controller.signal);
@@ -1204,7 +1204,7 @@ it('collects when the tuicr terminal is already gone', async () => {
   });
 
   const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
-  await setSession([comment('on-a', 'slices/a.md')]);
+  await setSession([comment('on-a', '01-slices/1-a.md')]);
 
   const collected = await run({
     action: 'collect',
@@ -1218,7 +1218,7 @@ it('collects when the tuicr terminal is already gone', async () => {
 it('collects when tuicr quit but its pane is still open', async () => {
   const { run, setSession, herdrCalls } = await fixture(openHerdr(), () => false);
   const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
-  await setSession([comment('on-a', 'slices/a.md')]);
+  await setSession([comment('on-a', '01-slices/1-a.md')]);
 
   const collected = await run({
     action: 'collect',
@@ -1379,7 +1379,7 @@ it.each(['process-info', 'close'] as const)(
 
     const { run, setSession, deleted, herdrCalls } = context;
     const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
-    await setSession([comment('on-a', 'slices/a.md')]);
+    await setSession([comment('on-a', '01-slices/1-a.md')]);
 
     const directory = (opened.details as { directory: string }).directory;
     const collected = await run({ action: 'collect', directory });
@@ -1413,7 +1413,7 @@ it.each([
     const { run, setSession, deleted, records } = await fixture(processHerdr(answer));
 
     const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
-    await setSession([comment('on-a', 'slices/a.md')]);
+    await setSession([comment('on-a', '01-slices/1-a.md')]);
 
     const directory = (opened.details as { directory: string }).directory;
 
@@ -1458,7 +1458,7 @@ it.each([
   );
 
   const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, 'w:p1');
-  await setSession([comment('on-a', 'slices/a.md')]);
+  await setSession([comment('on-a', '01-slices/1-a.md')]);
 
   const directory = (opened.details as { directory: string }).directory;
 

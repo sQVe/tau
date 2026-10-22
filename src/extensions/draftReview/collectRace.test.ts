@@ -38,7 +38,7 @@ it('reports a conflict, and writes nothing, when the real file disappears after 
 
   const realFile = context.real('slices/a.md');
 
-  await writeFile(join(stagingOf(opened.details.command), 'slices/a.md'), 'edited\n');
+  await writeFile(join(stagingOf(opened.details.command), '01-slices/1-a.md'), 'edited\n');
 
   hooks.afterRead = async (path) => {
     if (path === realFile) {

@@ -5,6 +5,7 @@ import {
   decideEdit,
   reviewPlacement,
   selectReviewedComments,
+  stagedNames,
 } from './reviewDecisions.js';
 import type { FileFacts, SessionComment } from './reviewDecisions.js';
 
@@ -27,6 +28,66 @@ it('keeps only comments on reviewed files', () => {
   const kept = selectReviewedComments(comments, ['slices/a.md', 'tickets/b.md']);
 
   expect(kept.map(({ id }) => id)).toEqual(['reviewed']);
+});
+
+const tenFiles = Array.from({ length: 10 }, (_, index) => `pr/run-a/${String(index)}.md`);
+
+it.each<{ name: string; paths: string[]; staged: string[] }>([
+  {
+    name: 'two runs listed in the opposite order of their names',
+    paths: ['pr/run-b/title.md', 'pr/run-b/body.md', 'pr/run-a/title.md', 'pr/run-a/body.md'],
+    staged: [
+      '01-pr-run-b/1-title.md',
+      '01-pr-run-b/2-body.md',
+      '02-pr-run-a/1-title.md',
+      '02-pr-run-a/2-body.md',
+    ],
+  },
+  {
+    name: 'a folder that comes back after another',
+    paths: ['pr/run-b/title.md', 'slices/x.md', 'pr/run-b/body.md'],
+    staged: ['01-pr-run-b/1-title.md', '02-slices/1-x.md', '01-pr-run-b/2-body.md'],
+  },
+  {
+    name: 'a file directly in .tau',
+    paths: ['slices/x.md', 'notes.md'],
+    staged: ['01-slices/1-x.md', '02-notes.md'],
+  },
+  {
+    name: 'two folders that flatten to one name',
+    paths: ['pr/run-a/x.md', 'pr-run/a/x.md'],
+    staged: ['01-pr-run-a/1-x.md', '02-pr-run-a/1-x.md'],
+  },
+  {
+    name: 'ten files in one folder',
+    paths: tenFiles,
+    staged: tenFiles.map(
+      (_, index) => `01-pr-run-a/${String(index + 1).padStart(2, '0')}-${String(index)}.md`,
+    ),
+  },
+])('stages $name under numbered names', ({ paths, staged }) => {
+  expect(stagedNames(paths)).toEqual(staged);
+});
+
+it.each([
+  { name: 'a 255-byte file directly in .tau', paths: [`${'a'.repeat(252)}.md`] },
+  {
+    name: 'two folders that flatten past 255 bytes',
+    paths: [`${'b'.repeat(130)}/${'c'.repeat(130)}/x.md`],
+  },
+  { name: 'a 255-byte file name of multibyte characters', paths: [`d/${'é'.repeat(127)}a`] },
+])('keeps each staged name part within 255 bytes for $name', ({ paths }) => {
+  const parts = stagedNames(paths).flatMap((staged) => staged.split('/'));
+
+  expect(parts.every((part) => Buffer.byteLength(part) <= 255)).toBe(true);
+  expect(parts.every((part) => /^\d+-/.test(part))).toBe(true);
+});
+
+it('stages names that sort in the order of the paths', () => {
+  const paths = Array.from({ length: 12 }, (_, index) => `run-${String(11 - index)}/body.md`);
+  const staged = stagedNames(paths);
+
+  expect(staged.toSorted()).toEqual(staged);
 });
 
 it.each<{ name: string; facts: Partial<FileFacts>; decision: string }>([

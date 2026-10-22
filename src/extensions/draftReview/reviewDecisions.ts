@@ -29,6 +29,58 @@ export type ReviewPlacement = 'right' | 'tab';
 
 export type EditDecision = 'unchanged' | 'apply' | 'conflict';
 
+const nameByteLimit = 255;
+
+const truncateToBytes = (text: string, limit: number) => {
+  let result = '';
+
+  for (const character of text) {
+    if (Buffer.byteLength(result + character) > limit) {
+      break;
+    }
+
+    result += character;
+  }
+
+  return result;
+};
+
+// File systems cap one name at 255 bytes. The number alone keeps a cut name unique among its
+// siblings.
+const numbered = (index: number, count: number, minimumWidth: number, name: string) => {
+  const width = Math.max(minimumWidth, String(count).length);
+  const prefix = `${String(index + 1).padStart(width, '0')}-`;
+
+  return `${prefix}${truncateToBytes(name, nameByteLimit - prefix.length)}`;
+};
+
+const folderOf = (path: string) => path.slice(0, Math.max(path.lastIndexOf('/'), 0));
+
+// A file directly in `.tau` is its own top entry.
+const topEntryOf = (path: string) => folderOf(path) || path;
+
+// tuicr sorts files by name, so numbered names keep the order the caller gave. A top entry is the
+// folder of a file, flattened into one name and numbered by its first path, or a file directly in
+// `.tau`. The numbers keep two flattened folders with the same name apart.
+export const stagedNames = (paths: readonly string[]): string[] => {
+  const topEntries = [...new Set(paths.map(topEntryOf))];
+
+  return paths.map((path) => {
+    const topEntry = topEntryOf(path);
+    const flattened = topEntry.replaceAll('/', '-');
+    const topName = numbered(topEntries.indexOf(topEntry), topEntries.length, 2, flattened);
+
+    if (topEntry === path) {
+      return topName;
+    }
+
+    const siblings = paths.filter((sibling) => topEntryOf(sibling) === topEntry);
+    const fileName = path.slice(topEntry.length + 1);
+
+    return `${topName}/${numbered(siblings.indexOf(path), siblings.length, 1, fileName)}`;
+  });
+};
+
 // Session-level comments have no path and belong to no reviewed file.
 export const selectReviewedComments = (
   comments: readonly SessionComment[],

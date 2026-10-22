@@ -130,8 +130,10 @@ writes a tool makes, such as `slice` `apply`.
 5. Open a review of the draft files beside each approval, then preview.
    - Approval rule: use it at each approval of a draft, in this order.
      1. Before the approval question, call `draft_review` with action `open` on the draft files.
-        When it returns status `manual`, tell the user its command before the question, and to quit
-        tuicr before they answer. Outside herdr, `collect` cannot close tuicr or wait for it.
+        Pass the paths in reading order, such as the title file before the body file, since that
+        order sets the order in tuicr. When it returns status `manual`, tell the user its command
+        before the question, and to quit tuicr before they answer. Outside herdr, `collect` cannot
+        close tuicr or wait for it.
      2. Ask the question with the skill's own options. Do not offer a review option.
      3. After any answer, including a closed dialog, call `draft_review` with action `collect` and
         the `directory` that `open` returned.

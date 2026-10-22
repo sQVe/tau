@@ -221,10 +221,11 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
      unless the user's answer named that exact change and you apply it as stated. The anchor's side
      is `LEFT` for a deleted line and `RIGHT` otherwise; show it with the line.
    - Follow the approval rule in step 5 of the [tracker skill](../tracker/SKILL.md) over `title.md`,
-     `body.md`, and `release-notes.md` when it exists. Ask with these options in this order: Publish
-     as draft, Publish as ready, Change something. Publish as draft and Publish as ready are Accept.
-     Change something is Request changes. Put the title and full body in the question-level
-     `preview`.
+     `body.md`, and `release-notes.md` when it exists, passed to `draft_review` in that order. When
+     one review covers the drafts of several PRs in a stack, pass each PR's files bottom to top. Ask
+     with these options in this order: Publish as draft, Publish as ready, Change something. Publish
+     as draft and Publish as ready are Accept. Change something is Request changes. Put the title
+     and full body in the question-level `preview`.
    - Put the other preview items and the session report in visible text before the question, or in
      the question-level `preview`.
    - Keep `problem` to one or two sentences on the branch state, within the tool's length limit.

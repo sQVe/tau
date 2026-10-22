@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "stagingDirectory": "/tmp/tau-draft-review-abc123",
+  "paths": ["slices/a.md", "tickets/c.md"],
+  "stagedPaths": ["01-slices/1-a.md", "02-tickets/1-c.md"],
+  "placement": { "kind": "split", "terminalId": "t1" }
+}

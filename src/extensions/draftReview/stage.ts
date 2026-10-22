@@ -9,30 +9,34 @@ import { isMissingFile } from '../../errors.js';
 import { isRecord } from '../../isRecord.js';
 import { parseVersionedRecord, writeRecord } from '../../record.js';
 import { createFreshTauDirectory, findTauRoot, locateTauChild } from '../../tauDirectory.js';
+import { stagedNames } from './reviewDecisions.js';
 
 export interface Review {
   // The real `.tau` directory the paths are relative to.
   tauDirectory: string;
   // Holds the review record and the original content of each file.
   recordDirectory: string;
-  // A directory outside Git that tuicr opens, with the files laid out by their `.tau` paths.
+  // A directory outside Git that tuicr opens, with each file under its staged path.
   stagingDirectory: string;
   paths: string[];
+  // The path of each file in the staging directory, in the order of `paths`.
+  stagedPaths: string[];
   // Where tuicr runs, so a later collect can close it. `null` until a placement is saved.
   placement: SavedPlacement | null;
 }
 
 export interface ReviewManifest {
-  version: 1 | 2;
+  version: 1 | 2 | typeof manifestVersion;
   stagingDirectory: string;
   paths: string[];
+  stagedPaths: string[];
   placement: SavedPlacement | null;
 }
 
 const recordParent = 'draft-review';
 const recordPrefix = 'review-';
 const manifestName = 'review.json';
-const manifestVersion = 2;
+const manifestVersion = 3;
 
 const placementSchema = Type.Union([
   Type.Object(
@@ -66,9 +70,9 @@ const versionOneSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const manifestSchema = Type.Object(
+const versionTwoSchema = Type.Object(
   {
-    version: Type.Literal(manifestVersion),
+    version: Type.Literal(2),
     stagingDirectory: Type.String({ minLength: 1 }),
     paths: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
     placement: Type.Union([Type.Null(), placementSchema]),
@@ -76,10 +80,28 @@ const manifestSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const isVersionOne = (value: unknown) => isRecord(value) && value['version'] === 1;
+const manifestSchema = Type.Object(
+  {
+    version: Type.Literal(manifestVersion),
+    stagingDirectory: Type.String({ minLength: 1 }),
+    paths: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
+    stagedPaths: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
+    placement: Type.Union([Type.Null(), placementSchema]),
+  },
+  { additionalProperties: false },
+);
 
-const manifestSchemaFor = (value: unknown) =>
-  isVersionOne(value) ? versionOneSchema : manifestSchema;
+const versionOf = (value: unknown) => (isRecord(value) ? value['version'] : undefined);
+
+const manifestSchemaFor = (value: unknown) => {
+  const version = versionOf(value);
+
+  if (version === 1) {
+    return versionOneSchema;
+  }
+
+  return version === 2 ? versionTwoSchema : manifestSchema;
+};
 
 export const parseReviewManifest = (path: string, content: string): ReviewManifest => {
   const manifest = parseVersionedRecord(path, content, {
@@ -88,7 +110,26 @@ export const parseReviewManifest = (path: string, content: string): ReviewManife
     schema: manifestSchemaFor,
   });
 
-  return manifest.version === 1 ? { ...manifest, placement: null } : manifest;
+  // Versions 1 and 2 staged each file under its `.tau` path.
+  if (manifest.version === 1) {
+    return { ...manifest, stagedPaths: manifest.paths, placement: null };
+  }
+
+  if (manifest.version === 2) {
+    return { ...manifest, stagedPaths: manifest.paths };
+  }
+
+  // A staged path paired with the wrong file would write one draft's text over another.
+  const expected = stagedNames(manifest.paths);
+  const matches = expected.every((name, index) => manifest.stagedPaths[index] === name);
+
+  if (!matches || manifest.stagedPaths.length !== expected.length) {
+    throw new Error(
+      `Malformed review record ${path}: stagedPaths must hold the staged name of each path.`,
+    );
+  }
+
+  return manifest;
 };
 
 // On POSIX a backslash is a name character, so `a\b/../..` climbs one level natively while the
@@ -184,14 +225,24 @@ const reviewablePaths = async (
 
 const stagingPrefix = 'tau-draft-review-';
 
+export const stagedPathOf = (review: Review, path: string): string => {
+  const stagedPath = review.stagedPaths[review.paths.indexOf(path)];
+
+  if (stagedPath === undefined) {
+    throw new Error(`Review record ${review.recordDirectory} has no staged path for ${path}.`);
+  }
+
+  return stagedPath;
+};
+
 const copyInto = async (from: string, to: string) => {
   await mkdir(dirname(to), { recursive: true });
   await copyFile(from, to);
 };
 
 const writeManifest = async (review: Review, placement: SavedPlacement | null) => {
-  const { recordDirectory, stagingDirectory, paths } = review;
-  const manifest = { version: manifestVersion, stagingDirectory, paths, placement };
+  const { recordDirectory, stagingDirectory, paths, stagedPaths } = review;
+  const manifest = { version: manifestVersion, stagingDirectory, paths, stagedPaths, placement };
 
   const target = join(recordDirectory, manifestName);
 
@@ -222,7 +273,7 @@ const populateReview = async (review: Review) => {
       const original = join(recordDirectory, 'originals', path);
 
       await copyInto(join(tauDirectory, path), original);
-      await copyInto(original, join(stagingDirectory, path));
+      await copyInto(original, join(stagingDirectory, stagedPathOf(review, path)));
     }),
   );
 
@@ -245,7 +296,16 @@ export const stageReview = async (cwd: string, requested: readonly string[]): Pr
   try {
     stagingDirectory = await mkdtemp(join(tmpdir(), stagingPrefix));
 
-    const review = { tauDirectory, recordDirectory, stagingDirectory, paths, placement: null };
+    const stagedPaths = stagedNames(paths);
+
+    const review = {
+      tauDirectory,
+      recordDirectory,
+      stagingDirectory,
+      paths,
+      stagedPaths,
+      placement: null,
+    };
 
     await populateReview(review);
 
@@ -290,7 +350,7 @@ export const readReview = async (cwd: string, directory: string): Promise<Review
 
   const manifest = parseReviewManifest(manifestPath, content);
 
-  const { stagingDirectory, paths, placement } = manifest;
+  const { stagingDirectory, paths, stagedPaths, placement } = manifest;
 
   if (!isOwnStagingDirectory(stagingDirectory)) {
     throw new Error(
@@ -304,7 +364,7 @@ export const readReview = async (cwd: string, directory: string): Promise<Review
 
   const tauDirectory = await realpath(join(root, '.tau'));
 
-  return { tauDirectory, recordDirectory, stagingDirectory, paths, placement };
+  return { tauDirectory, recordDirectory, stagingDirectory, paths, stagedPaths, placement };
 };
 
 export const removeReview = async (review: Review): Promise<void> => {

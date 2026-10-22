@@ -32,7 +32,7 @@ const parameters = Type.Object({
 });
 
 const description = `Show draft files under .tau/ to the user in tuicr. Returns the user's tuicr comments on those files and the edits the user made.
-- action open, paths: every path must be a file inside the repository's .tau directory. Paths may be absolute or relative to the working directory. The tool copies the files into a staging directory outside Git, with names relative to .tau/ such as slices/me-328/slice-1.md, and opens that directory in tuicr without moving focus. It returns at once. Ask the user your question, then call collect with directory.
+- action open, paths: every path must be a file inside the repository's .tau directory. Paths may be absolute or relative to the working directory. The tool copies the files into a staging directory outside Git and opens that directory in tuicr without moving focus. Staged names carry order numbers, such as 01-pr-run-5ASmpd/1-title.md, so tuicr shows them in paths order, grouped by folder. It returns at once. Ask the user your question, then call collect with directory.
   - Inside herdr: opens tuicr in a pane beside yours when your pane is wide enough to split, or in a new tab in your workspace when it is narrow or zoomed. Returns {status: "opened", directory}.
   - Outside herdr: opens nothing. Returns {status: "manual", command, directory}. Tell the user to run command, and to tell you when they are done. Then call collect with directory.
   - If the call is cancelled while tuicr opens, the tool closes what it opened, removes the staging directory, and returns {status: "cancelled", comments: [], edits: []}.
