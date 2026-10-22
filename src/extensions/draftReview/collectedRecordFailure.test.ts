@@ -34,7 +34,7 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 const collected = { comments: [], edits: [] };
 
 const directoryFixture = async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-replace-file-'));
+  const directory = await mkdtemp(join(tmpdir(), 'tau-record-write-'));
 
   onTestFinished(() => {
     writeState.failMidway = false;
@@ -47,7 +47,7 @@ const directoryFixture = async () => {
 };
 
 const stagedReview = async () => {
-  const repository = await createTemporaryRepository(onTestFinished, 'tau-replace-file-repo-');
+  const repository = await createTemporaryRepository(onTestFinished, 'tau-record-write-repo-');
   const data = await directoryFixture();
   vi.stubEnv('TMPDIR', data);
 

@@ -57,9 +57,11 @@ it('skips unpublished preparation debris while published attempts remain exclusi
   }
 
   const abandonedDirectory = join(fixture.directory, abandoned.name);
-  const receiptFiles = readdirSync(abandonedDirectory);
-  expect(receiptFiles).toHaveLength(1);
-  expect(receiptFiles[0]).toMatch(/^\.receipt-/);
+  expect(readdirSync(abandonedDirectory)).toEqual([]);
+
+  // A crash mid-publish leaves a receipt file that no failure path removes.
+  const receiptFiles = ['.receipt-0a1b2c3d-0000-4000-8000-000000000000'];
+  writeFileSync(join(abandonedDirectory, receiptFiles[0] ?? ''), 'partial');
   const receipt = readFileSync(join(abandonedDirectory, receiptFiles[0] ?? ''));
 
   const launched = await fixture.controller.launch(fixture.input);

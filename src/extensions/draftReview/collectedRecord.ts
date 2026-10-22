@@ -1,13 +1,9 @@
-import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
-import { Value } from 'typebox/value';
 
-import { isMissingFile } from '../../errors.js';
-import { describeSchemaProblem } from '../../schemaProblem.js';
-import { replaceFile } from './replaceFile.js';
+import { readVersionedRecord, writeRecord } from '../../record.js';
 
 const recordName = 'collected.json';
 const recordVersion = 1;
@@ -60,57 +56,19 @@ export const saveCollectedRecord = async (
 ): Promise<void> => {
   const path = join(recordDirectory, recordName);
 
-  await replaceFile(path, JSON.stringify({ version: recordVersion, ...record }, null, 2));
-};
-
-const isNewerVersion = (value: unknown) => {
-  const version =
-    typeof value === 'object' && value !== null && 'version' in value ? value.version : undefined;
-
-  return typeof version === 'number' && version > recordVersion;
-};
-
-const parseRecord = (path: string, content: string): Static<typeof recordSchema> => {
-  let value: unknown;
-
-  try {
-    value = JSON.parse(content);
-  } catch (error) {
-    throw new Error(`Malformed collected review ${path}: not JSON.`, { cause: error });
-  }
-
-  if (isNewerVersion(value)) {
-    throw new Error(
-      `Collected review ${path} has a newer format than this Tau reads. Update Tau, then restart the session.`,
-    );
-  }
-
-  if (!Value.Check(recordSchema, value)) {
-    throw new Error(
-      `Malformed collected review ${path}: ${describeSchemaProblem(recordSchema, value)}.`,
-    );
-  }
-
-  return value;
+  await writeRecord(path, { version: recordVersion, ...record });
 };
 
 export const loadCollectedRecord = async (
   recordDirectory: string,
 ): Promise<CollectedRecord | undefined> => {
   const path = join(recordDirectory, recordName);
-  let content: string;
 
-  try {
-    content = await readFile(path, 'utf8');
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return undefined;
-    }
+  const parsed = await readVersionedRecord(path, {
+    label: 'collected review',
+    version: recordVersion,
+    schema: recordSchema,
+  });
 
-    throw error;
-  }
-
-  const parsed = parseRecord(path, content);
-
-  return { comments: parsed.comments, edits: parsed.edits };
+  return parsed === undefined ? undefined : { comments: parsed.comments, edits: parsed.edits };
 };
