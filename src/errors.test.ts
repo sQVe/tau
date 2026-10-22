@@ -29,6 +29,7 @@ it.for<[string, unknown, string]>([
   ['an object without a message', { code: 1 }, '{"code":1}'],
   ['a string', 'plain', 'plain'],
   ['null', null, 'null'],
+  ['an object JSON cannot print', { size: 1n }, '[object Object]'],
 ])('describes %s', ([, error, expected]) => {
   expect(errorMessage(error)).toBe(expected);
 });

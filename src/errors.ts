@@ -1,3 +1,12 @@
+// Callers report errors from catch blocks, so this must not throw. JSON throws on cycles and BigInt.
+const describeObject = (error: unknown): string => {
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return Object.prototype.toString.call(error);
+  }
+};
+
 export const errorMessage = (error: unknown): string => {
   if (error instanceof Error) {
     return error.message;
@@ -9,7 +18,7 @@ export const errorMessage = (error: unknown): string => {
 
   const message: unknown = 'message' in error ? error.message : undefined;
 
-  return typeof message === 'string' ? message : JSON.stringify(error);
+  return typeof message === 'string' ? message : describeObject(error);
 };
 
 export const hasErrorCode = (error: unknown, code: string): boolean =>
