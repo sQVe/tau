@@ -98,13 +98,12 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
 2. Commit the task's changes and required release notes, such as a `.changeset` file. List unrelated
    changes in the session report.
 
-3. Check comments added since the merge base yourself. This does not block the PR.
-   - Read each file using its language's comment syntax, including whole block and doc comments.
-     Quote each comment exactly with `file:line`.
-   - Apply "Comment only what the code cannot say" in the
-     [coding instructions](../../instructions/coding.md), or the repository's comment rules.
-   - Remove only failing comments and commit the removal. Report each removal in the session report,
-     not the PR body. Repeat for comments added by later commits before previewing.
+3. Run the [prune-comments skill](../prune-comments/SKILL.md) on `<merge base>..HEAD`.
+   - It commits its own removals. Do not commit them here.
+   - Later commits that add comments before the preview: run it again on those commits only.
+   - Report each removal in the session report, not the PR body.
+   - A failed run, including a missing skill or worker tools, is a gap in the session report. It
+     does not change the draft status in step 6. Go on.
 
 4. Review `<merge base>..HEAD`, with both ends pinned. Rerun step 1's evidence script if the branch
    or saved evidence changed since collection. Reuse an earlier review only if:
