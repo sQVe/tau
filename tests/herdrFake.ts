@@ -79,7 +79,6 @@ const paneNotFound = () => new Error('herdr failed: {"error":{"code":"pane_not_f
 
 const tabNotFound = () => new Error('herdr failed: {"error":{"code":"tab_not_found"}}');
 
-// A call that never answers until its caller gives up.
 const hangUntilAborted = (signal: AbortSignal | undefined) =>
   new Promise<string>((_resolve, reject) => {
     if (signal === undefined) {
