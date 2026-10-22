@@ -4,18 +4,18 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
+import { isNestedControlCall, nestedControlCallReason } from '../../codemode/controlTools.js';
 import {
   forgetReportedWarnings,
   readTauConfig,
   warnUnknownTopLevelKeys,
 } from '../../config/config.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
-import { isNestedControlCall, nestedControlCallReason } from '../../controlTools.js';
 import { errorMessage } from '../../errors.js';
 import { readGitOutput } from '../../gitOutput.js';
+import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
 import { isRecord } from '../../isRecord.js';
 import { repositoryFromRemote } from '../../repositoryRemote.js';
-import { appendSystemPrompt } from '../../systemPrompt.js';
 import { workerNoticeChannel } from '../../workerNoticeEvent.js';
 import type { WorkerNoticeEvent } from '../../workerNoticeEvent.js';
 import { isWorkerProcess } from '../../workerProcess.js';

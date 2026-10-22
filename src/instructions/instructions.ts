@@ -11,7 +11,7 @@ export const isInstructionSetName = (name: string): name is InstructionSetName =
   instructionSetNames.some((setName) => setName === name);
 
 export const readInstructionSet = async (name: InstructionSetName): Promise<string> => {
-  const path = new URL(`./instructions/${name}.md`, import.meta.url);
+  const path = new URL(`./${name}.md`, import.meta.url);
   const instructions = await readFile(path, 'utf8');
 
   const trimmedInstructions = instructions.trim();

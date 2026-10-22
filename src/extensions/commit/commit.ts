@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
-import { appendToolGuidelines } from '../../systemPrompt.js';
+import { appendToolGuidelines } from '../../instructions/systemPrompt.js';
 import { guardToolCall } from './guard.js';
 import { commitToolGuidelines, createCommitTool } from './tool.js';
 

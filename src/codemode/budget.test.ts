@@ -8,7 +8,7 @@ import {
   readOutputBudget,
   raiseOutputCap,
   splitOutput,
-} from './codemodeBudget.js';
+} from './budget.js';
 
 const body = 'text("done");';
 

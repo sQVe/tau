@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { loadSkillsFromDir, parseFrontmatter } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ResourceDiagnostic, Skill } from '@earendil-works/pi-coding-agent';
 
-import { appendSystemPrompt } from '../../systemPrompt.js';
+import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
 import { isWorkerProcess } from '../../workerProcess.js';
 import { requiredActions } from './requiredFor.js';
 

@@ -17,14 +17,18 @@ interface FolderModule {
 }
 
 // Folders that group files under src/ without forming a module.
-const groupingFolders = new Set(['extensions', 'skills', 'instructions']);
+const groupingFolders = new Set(['extensions', 'skills']);
 
 // Every module under src/ that is not an extension. A module is one flat file or one folder.
 // name is the path below src/ without the extension. entry and publicFiles are paths below src/
 // without the extension; other files of a folder module are private.
 export const moduleList: readonly ModuleDeclaration[] = [
   { name: 'box', entry: 'box', publicFiles: [] },
-  { name: 'codemodeBudget', entry: 'codemodeBudget', publicFiles: [] },
+  {
+    name: 'codemode',
+    entry: 'codemode/codemode',
+    publicFiles: ['codemode/controlTools', 'codemode/fullOutput'],
+  },
   { name: 'command', entry: 'command', publicFiles: [] },
   {
     name: 'config',
@@ -33,7 +37,6 @@ export const moduleList: readonly ModuleDeclaration[] = [
   },
   { name: 'confirm', entry: 'confirm', publicFiles: [] },
   { name: 'confirmationEligibility', entry: 'confirmationEligibility', publicFiles: [] },
-  { name: 'controlTools', entry: 'controlTools', publicFiles: [] },
   { name: 'errors', entry: 'errors', publicFiles: [] },
   {
     name: 'extensions/subagents/controller',
@@ -47,12 +50,15 @@ export const moduleList: readonly ModuleDeclaration[] = [
   { name: 'gitOutput', entry: 'gitOutput', publicFiles: [] },
   { name: 'github', entry: 'github', publicFiles: [] },
   { name: 'herdrLayout', entry: 'herdrLayout', publicFiles: [] },
-  { name: 'instructionSets', entry: 'instructionSets', publicFiles: [] },
+  {
+    name: 'instructions',
+    entry: 'instructions/instructions',
+    publicFiles: ['instructions/systemPrompt'],
+  },
   { name: 'isRecord', entry: 'isRecord', publicFiles: [] },
   { name: 'keys', entry: 'keys', publicFiles: [] },
   { name: 'linear', entry: 'linear', publicFiles: [] },
   { name: 'record', entry: 'record', publicFiles: [] },
-  { name: 'registerCodemodeBudget', entry: 'registerCodemodeBudget', publicFiles: [] },
   { name: 'repositoryRemote', entry: 'repositoryRemote', publicFiles: [] },
   { name: 'repositoryTarget', entry: 'repositoryTarget', publicFiles: [] },
   { name: 'repositoryTargetDecisions', entry: 'repositoryTargetDecisions', publicFiles: [] },
@@ -69,10 +75,8 @@ export const moduleList: readonly ModuleDeclaration[] = [
       'reviewCapture/reviewDirectory',
     ],
   },
-  { name: 'saveFullOutput', entry: 'saveFullOutput', publicFiles: [] },
   { name: 'schemaProblem', entry: 'schemaProblem', publicFiles: [] },
   { name: 'skillTools', entry: 'skillTools', publicFiles: [] },
-  { name: 'systemPrompt', entry: 'systemPrompt', publicFiles: [] },
   { name: 'tau', entry: 'tau', publicFiles: [] },
   { name: 'tauDirectory', entry: 'tauDirectory', publicFiles: [] },
   { name: 'terminal', entry: 'terminal', publicFiles: [] },
@@ -85,30 +89,26 @@ export const moduleList: readonly ModuleDeclaration[] = [
 // root and has no row.
 export const importTable: Readonly<Record<string, readonly string[]>> = {
   box: [],
-  codemodeBudget: [],
+  codemode: [],
   command: ['schemaProblem'],
   config: ['errors', 'isRecord', 'unknownKeys'],
   confirm: ['confirmationEligibility', 'keys', 'workerProcess'],
   confirmationEligibility: [],
-  controlTools: [],
   errors: [],
   gitOutput: [],
   github: ['command'],
   herdrLayout: ['terminal'],
-  instructionSets: [],
+  instructions: [],
   isRecord: [],
   keys: [],
   linear: ['command', 'errors'],
   record: ['errors', 'isRecord', 'schemaProblem'],
-  registerCodemodeBudget: ['codemodeBudget', 'saveFullOutput'],
   repositoryRemote: [],
   repositoryTarget: ['command', 'gitOutput', 'github', 'repositoryTargetDecisions'],
   repositoryTargetDecisions: ['github'],
   reviewCapture: ['errors', 'gitOutput', 'record', 'schemaProblem', 'tauDirectory'],
-  saveFullOutput: [],
   schemaProblem: [],
   skillTools: [],
-  systemPrompt: [],
   tauDirectory: ['errors', 'gitOutput'],
   terminal: [],
   unknownKeys: ['isRecord'],

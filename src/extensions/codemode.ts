@@ -1,9 +1,8 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
-import { isNestedChangeCall, nestedChangeCallReason } from '../controlTools.js';
-import { readInstructionSet } from '../instructionSets.js';
-import { registerCodemodeBudget } from '../registerCodemodeBudget.js';
-import { appendSystemPrompt, appendToolGuidelines } from '../systemPrompt.js';
+import { registerCodemodeBudget } from '../codemode/codemode.js';
+import { isNestedChangeCall, nestedChangeCallReason } from '../codemode/controlTools.js';
+import { appendToolGuidelines } from '../instructions/systemPrompt.js';
 import { isWorkerProcess } from '../workerProcess.js';
 
 export const codemodeGuidelines = [
@@ -20,13 +19,11 @@ export const codemodeGuidelines = [
   'Cite only what a script or a direct tool call returned.',
 ];
 
-export default async function workflowExtension(pi: ExtensionAPI): Promise<void> {
-  const instructions = await readInstructionSet('workflow');
-
+export default function codemodeExtension(pi: ExtensionAPI): void {
   appendToolGuidelines(pi, 'codemode', codemodeGuidelines);
 
-  // A worker appends the instruction sets its saved task lists, and the worker extension refuses
-  // nested change calls, because a launched worker may run without Tau.
+  // The worker extension refuses nested change calls in a worker, because a launched worker may run
+  // without Tau.
   if (isWorkerProcess()) {
     return;
   }
@@ -45,9 +42,5 @@ export default async function workflowExtension(pi: ExtensionAPI): Promise<void>
     }
 
     return { block: true, reason: nestedChangeCallReason };
-  });
-
-  pi.on('before_agent_start', (event) => {
-    appendSystemPrompt(event, instructions);
   });
 }

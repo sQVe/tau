@@ -79,7 +79,7 @@ or the module list instead of silencing the rule.
 - A module is a flat file until it has two production source files. Then it becomes a folder whose
   entry file is named after the folder. Count production files only; tests, `fixtures/`,
   `profiles/`, and `snippets/` do not count. A flat module keeps its test beside it.
-- `src/extensions/`, `src/skills/`, and `src/instructions/` group files and are not modules.
+- `src/extensions/` and `src/skills/` group files and are not modules.
 - Other modules import a folder module through its entry file. A module may list extra public files
   that other modules already depend on, such as `controller.ts`, `record.ts`, and `budget.ts` in
   `subagents/controller/`. Tests and fixtures may import private files. Do not add shared `types.ts`

@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ToolResultEvent } from '@earendil-works/pi-coding-agent';
 
-import { saveFullOutput } from '../../saveFullOutput.js';
+import { saveFullOutput } from '../../codemode/fullOutput.js';
 import { decideBashOutputCap } from './bashOutputCap.js';
 
 const capBashOutput = async (event: ToolResultEvent) => {
