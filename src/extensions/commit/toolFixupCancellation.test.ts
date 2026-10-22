@@ -1,10 +1,10 @@
 import { expect, it } from 'vitest';
 
+import { runGit } from '../../git.js';
 import {
   commitContext,
   createTemporaryRepository,
   git,
-  runCommand,
   writeRepositoryFile,
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
@@ -21,14 +21,12 @@ it('cancels the history scan before staging or committing', async () => {
   const head = await git(directory, ['rev-parse', 'HEAD']);
   const index = await git(directory, ['ls-files', '--stage']);
 
-  const tool = createCommitTool({
-    exec(command, commandArguments, options) {
-      if (commandArguments.includes('--format=%H%x00%s')) {
-        controller.abort();
-      }
+  const tool = createCommitTool((cwd, commandArguments, options) => {
+    if (commandArguments.includes('--format=%H%x00%s')) {
+      controller.abort();
+    }
 
-      return runCommand(command, commandArguments, directory, options?.signal);
-    },
+    return runGit(cwd, commandArguments, options);
   });
 
   await expect(

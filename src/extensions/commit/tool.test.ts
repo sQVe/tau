@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { noUiContext } from '../../../tests/toolContext.js';
+import { runGit } from '../../git.js';
 import {
   runCommand,
   git,
@@ -13,7 +14,6 @@ import {
   commitContext,
   executeCommit,
   fakeCommit,
-  execInRequestedDirectory,
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
 import { commitFailedError, validatePaths, validateSubject } from './validation.js';
@@ -207,17 +207,15 @@ describe('commitTool.execute', () => {
   it('commits later files changed by an earlier hook', async () => {
     const { repositoryDirectory, groups } = await createPrefetchRepository();
 
-    const tool = createCommitTool({
-      exec: async (command, commandArguments, options) => {
-        const result = await execInRequestedDirectory(command, commandArguments, options);
+    const tool = createCommitTool(async (cwd, commandArguments, options) => {
+      const result = await runGit(cwd, commandArguments, options);
 
-        // Simulate a group-1 hook that edits a later group's file without staging it.
-        if (commandArguments[0] === 'commit') {
-          await writeRepositoryFile(repositoryDirectory, 'three.txt', 'rewritten by a hook');
-        }
+      // Simulate a group-1 hook that edits a later group's file without staging it.
+      if (commandArguments[0] === 'commit') {
+        await writeRepositoryFile(repositoryDirectory, 'three.txt', 'rewritten by a hook');
+      }
 
-        return result;
-      },
+      return result;
     });
 
     await tool.execute(
@@ -236,11 +234,11 @@ describe('commitTool.execute', () => {
     { files: ['two.txt'], subject: 'invalid' },
     { files: ['.env'], subject: 'feat: add two' },
   ])('validates all groups before staging: %j', async (invalid) => {
-    const { input, execute, exec } = fakeCommit();
+    const { input, execute, runner } = fakeCommit();
     input.groups.push({ ...invalid, body: '' });
 
     await expect(execute()).rejects.toThrow(/Invalid/);
-    expect(exec).not.toHaveBeenCalled();
+    expect(runner).not.toHaveBeenCalled();
   });
 
   it.each(['cancel', 'hook'])('stops on %s and names earlier commits', async (failure) => {
@@ -258,28 +256,26 @@ describe('commitTool.execute', () => {
     const controller = new AbortController();
     let stagings = 0;
 
-    const tool = createCommitTool({
-      exec: async (command, commandArguments, options) => {
-        if (commandArguments.includes('add')) {
-          stagings += 1;
-        }
+    const tool = createCommitTool(async (cwd, commandArguments, options) => {
+      if (commandArguments.includes('add')) {
+        stagings += 1;
+      }
 
-        if (stagings === 3 && commandArguments.includes('add') && failure === 'cancel') {
-          controller.abort();
-        }
+      if (stagings === 3 && commandArguments.includes('add') && failure === 'cancel') {
+        controller.abort();
+      }
 
-        if (stagings === 3 && commandArguments.includes('add') && failure === 'hook') {
-          await writeRepositoryFile(
-            repositoryDirectory,
-            '.git/hooks/pre-commit',
-            '#!/bin/sh\necho hook said no >&2\nexit 1\n',
-          );
+      if (stagings === 3 && commandArguments.includes('add') && failure === 'hook') {
+        await writeRepositoryFile(
+          repositoryDirectory,
+          '.git/hooks/pre-commit',
+          '#!/bin/sh\necho hook said no >&2\nexit 1\n',
+        );
 
-          await chmod(join(repositoryDirectory, '.git/hooks/pre-commit'), 0o755);
-        }
+        await chmod(join(repositoryDirectory, '.git/hooks/pre-commit'), 0o755);
+      }
 
-        return execInRequestedDirectory(command, commandArguments, options);
-      },
+      return runGit(cwd, commandArguments, options);
     });
 
     const failureError = await tool
@@ -494,11 +490,7 @@ describe('commitTool.execute', () => {
     await git(repositoryDirectory, ['add', 'baseline']);
     await git(repositoryDirectory, ['commit', '-m', 'test: baseline']);
 
-    const commitTool = createCommitTool({
-      exec(command: string, commandArguments: string[], options?: { cwd?: string }) {
-        return execInRequestedDirectory(command, commandArguments, options);
-      },
-    });
+    const commitTool = createCommitTool(runGit);
 
     const result = await commitTool.execute(
       'tool-call-1',
@@ -852,8 +844,8 @@ describe('commitTool.execute', () => {
 
 describe('commits without approvals', () => {
   it('commits every group without opening the overlay', async () => {
-    const { exec, context, custom } = fakeCommit();
-    const tool = createCommitTool({ exec });
+    const { runner, context, custom } = fakeCommit();
+    const tool = createCommitTool(runner);
 
     const groups = [
       { files: ['one.txt'], subject: 'feat: add one' },
@@ -866,17 +858,16 @@ describe('commits without approvals', () => {
       groups.map((group) => group.subject),
     );
 
-    expect(exec.mock.calls.filter((call) => call[1][0] === 'commit')).toHaveLength(2);
+    expect(runner.mock.calls.filter((call) => call[1][0] === 'commit')).toHaveLength(2);
     expect(custom).not.toHaveBeenCalled();
   });
 
   it('commits without a UI', async () => {
     const repositoryDirectory = await createTemporaryRepository();
 
-    const tool = createCommitTool({
-      exec: (command, commandArguments, options) =>
-        execInRequestedDirectory(command, commandArguments, options),
-    });
+    const tool = createCommitTool((cwd, commandArguments, options) =>
+      runGit(cwd, commandArguments, options),
+    );
 
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
 
@@ -899,62 +890,62 @@ describe('commits without approvals', () => {
 
 describe('commit execution', () => {
   it('returns without UI or git operations when already cancelled', async () => {
-    const { execute, exec, custom } = fakeCommit();
+    const { execute, runner, custom } = fakeCommit();
 
     await execute(AbortSignal.abort());
 
-    expect(exec).not.toHaveBeenCalled();
+    expect(runner).not.toHaveBeenCalled();
     expect(custom).not.toHaveBeenCalled();
   });
 
   it('unstages the requested files when the index cannot be read before a snapshot', async () => {
-    const { execute, exec } = fakeCommit();
-    const readGit = exec.getMockImplementation();
+    const { execute, runner } = fakeCommit();
+    const readGit = runner.getMockImplementation();
 
     if (readGit === undefined) {
       throw new Error('fakeCommit has no Git implementation');
     }
 
-    exec.mockImplementation((command, commandArguments, options) =>
+    runner.mockImplementation((cwd, commandArguments, options) =>
       commandArguments[0] === 'ls-files'
-        ? Promise.resolve({ code: 1, killed: false, stdout: '', stderr: 'index locked' })
-        : readGit(command, commandArguments, options),
+        ? Promise.resolve({ exitCode: 1, stdout: Buffer.alloc(0), stderr: 'index locked' })
+        : readGit(cwd, commandArguments, options),
     );
 
     await expect(execute()).rejects.toThrow('index locked');
 
-    expect(exec).toHaveBeenLastCalledWith(
-      'git',
+    expect(runner).toHaveBeenLastCalledWith(
+      '/repo',
       ['--literal-pathspecs', 'reset', '--', 'README.md'],
-      { cwd: '/repo' },
+      { timeoutMilliseconds: null },
     );
   });
 
   it('unstages without opening UI if cancelled while staging', async () => {
     const controller = new AbortController();
-    const { execute, exec, custom } = fakeCommit();
-    const readGit = exec.getMockImplementation();
+    const { execute, runner, custom } = fakeCommit();
+    const readGit = runner.getMockImplementation();
 
     if (readGit === undefined) {
       throw new Error('fakeCommit has no Git implementation');
     }
 
-    exec.mockImplementation((command, commandArguments, options) => {
+    runner.mockImplementation((cwd, commandArguments, options) => {
       if (commandArguments.includes('add')) {
         controller.abort();
       }
 
-      return readGit(command, commandArguments, options);
+      return readGit(cwd, commandArguments, options);
     });
 
     await execute(controller.signal);
 
     expect(custom).not.toHaveBeenCalled();
 
-    expect(exec).toHaveBeenLastCalledWith(
-      'git',
+    expect(runner).toHaveBeenLastCalledWith(
+      '/repo',
       ['--literal-pathspecs', 'reset', '--', 'README.md'],
-      { cwd: '/repo' },
+      { timeoutMilliseconds: null },
     );
   });
 });

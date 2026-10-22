@@ -1,12 +1,12 @@
 import { expect, it } from 'vitest';
 
+import { runGit } from '../../git.js';
 import {
   commitContext,
   createTemporaryRepository,
   executeCommit,
   git,
   writeRepositoryFile,
-  execInRequestedDirectory,
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
 
@@ -23,14 +23,12 @@ it('rejects a target removed from history before the snapshot and restores the i
 
   await writeRepositoryFile(directory, 'file.txt', 'corrected\n');
 
-  const tool = createCommitTool({
-    async exec(command, commandArguments, options) {
-      if (commandArguments[0] === 'write-tree') {
-        await git(directory, ['update-ref', 'HEAD', unrelated]);
-      }
+  const tool = createCommitTool(async (cwd, commandArguments, options) => {
+    if (commandArguments[0] === 'write-tree') {
+      await git(directory, ['update-ref', 'HEAD', unrelated]);
+    }
 
-      return execInRequestedDirectory(command, commandArguments, options);
-    },
+    return runGit(cwd, commandArguments, options);
   });
 
   await expect(

@@ -2,14 +2,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type {
-  ExtensionAPI,
-  ExtensionContext,
-  ToolDefinition,
-} from '@earendil-works/pi-coding-agent';
+import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../errors.js';
+import type { runGit } from '../../git.js';
 import { buildFixupSubject, validateGroupMessage } from './autosquash.js';
 import {
   listStagedPaths,
@@ -31,7 +28,7 @@ import {
 import type { CommitInput } from './validation.js';
 
 interface CommitToolRuntime {
-  pi: Pick<ExtensionAPI, 'exec'>;
+  runner: typeof runGit;
   context: ExtensionContext;
   signal: AbortSignal | undefined;
 }
@@ -91,11 +88,11 @@ const validateGroupFileRequests = async (
   runtime: CommitToolRuntime,
   parameters: CommitInput,
 ): Promise<void> => {
-  const { pi, context } = runtime;
+  const { runner, context } = runtime;
   const files = parameters.groups.flatMap((group) => group.files);
-  const prefix = await repositoryPathPrefix(pi, context.cwd);
-  const stagedPaths = await listStagedPaths(pi, context.cwd);
-  const indexEntries = await readIndexEntries(pi, context.cwd, files);
+  const prefix = await repositoryPathPrefix(runner, context.cwd);
+  const stagedPaths = await listStagedPaths(runner, context.cwd);
+  const indexEntries = await readIndexEntries(runner, context.cwd, files);
 
   const requests = files.map((file) => {
     const path = normalizeRepositoryPath(`${prefix}${file}`);
@@ -119,7 +116,7 @@ const resolveGroup = async (
   }
 
   const target = await resolveFixupTarget(
-    runtime.pi,
+    runtime.runner,
     runtime.context.cwd,
     group.fixup.target,
     runtime.signal,
@@ -155,7 +152,7 @@ const runGroup = async (
       subject: group.subject,
       targetHash: group.targetHash,
       temporaryDirectory,
-      pi: runtime.pi,
+      runner: runtime.runner,
       context: runtime.context,
       signal: runtime.signal,
       committedFiles: new Set(committedGroups.flatMap((committedGroup) => committedGroup.files)),
@@ -238,7 +235,7 @@ const executeCommitTool = async (
 };
 
 export const createCommitTool = (
-  pi: Pick<ExtensionAPI, 'exec'>,
+  runner: typeof runGit,
 ): ToolDefinition<typeof commitToolParameters, { groups: CommitSuccess['details'][] }> =>
   defineTool({
     name: 'commit',
@@ -249,6 +246,6 @@ export const createCommitTool = (
     parameters: commitToolParameters,
     executionMode: 'sequential',
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
-      return executeCommitTool({ pi, context, signal }, parameters);
+      return executeCommitTool({ runner, context, signal }, parameters);
     },
   });

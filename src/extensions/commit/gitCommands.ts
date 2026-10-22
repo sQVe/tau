@@ -1,60 +1,64 @@
 import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-
 import { isMissingFile } from '../../errors.js';
+import type { GitResult, runGit } from '../../git.js';
 import { fixupSubjectSearchWord, selectFixupTargetReference } from './autosquash.js';
 import { unknownPaths } from './fileRequests.js';
 import type { FileRequest } from './fileRequests.js';
 import { normalizeRepositoryPath } from './validation.js';
 
-interface RunGitOptions {
+type GitRunner = typeof runGit;
+
+interface ReadTextOptions {
   signal?: AbortSignal | undefined;
   timeout?: number | null;
 }
 
 const defaultTimeoutMilliseconds = 30_000;
 
-export const runGit = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
+export const decodeOutput = (result: GitResult): string => result.stdout.toString('utf8');
+
+const failureText = (result: GitResult): string => result.stderr || decodeOutput(result);
+
+export const readGitText = async (
+  runner: GitRunner,
   workingDirectory: string,
   commandArguments: string[],
-  options: RunGitOptions = {},
+  options: ReadTextOptions = {},
 ): Promise<string> => {
-  const result = await pi.exec('git', commandArguments, {
-    cwd: workingDirectory,
+  const result = await runner(workingDirectory, commandArguments, {
+    timeoutMilliseconds:
+      options.timeout === undefined ? defaultTimeoutMilliseconds : options.timeout,
     ...(options.signal ? { signal: options.signal } : {}),
-    ...(options.timeout === null ? {} : { timeout: options.timeout ?? defaultTimeoutMilliseconds }),
   });
 
-  if (result.code !== 0 || result.killed) {
-    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr || result.stdout}`);
+  if (result.exitCode !== 0) {
+    throw new Error(`git ${commandArguments.join(' ')} failed: ${failureText(result)}`);
   }
 
-  return result.stdout;
+  return decodeOutput(result);
 };
 
 export const isCommitAncestor = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
+  runner: GitRunner,
   workingDirectory: string,
   target: string,
   head: string,
 ): Promise<boolean> => {
-  const ancestor = await pi.exec('git', ['merge-base', '--is-ancestor', target, head], {
-    cwd: workingDirectory,
-    timeout: defaultTimeoutMilliseconds,
+  const ancestor = await runner(workingDirectory, ['merge-base', '--is-ancestor', target, head], {
+    timeoutMilliseconds: defaultTimeoutMilliseconds,
   });
 
-  if (ancestor.killed || ancestor.code > 1) {
-    throw new Error(`Could not check fixup target ancestry: ${ancestor.stderr || ancestor.stdout}`);
+  if (ancestor.exitCode === null || ancestor.exitCode > 1) {
+    throw new Error(`Could not check fixup target ancestry: ${failureText(ancestor)}`);
   }
 
-  return ancestor.code === 0;
+  return ancestor.exitCode === 0;
 };
 
 const scanFixupCandidates = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
+  runner: GitRunner,
   workingDirectory: string,
   subject: string,
   signal: AbortSignal | undefined,
@@ -66,8 +70,8 @@ const scanFixupCandidates = async (
   }
 
   // History size is unbounded; cancellation replaces a fixed scan deadline.
-  const output = await runGit(
-    pi,
+  const output = await readGitText(
+    runner,
     workingDirectory,
     ['log', '--no-show-signature', '--format=%H%x00%s', '-F', `--grep=${word}`, 'HEAD', '--'],
     { timeout: null, signal },
@@ -88,28 +92,30 @@ const scanFixupCandidates = async (
 };
 
 export const resolveFixupTarget = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
+  runner: GitRunner,
   workingDirectory: string,
   target: string,
   signal: AbortSignal | undefined,
 ): Promise<{ commitHash: string; reference: string }> => {
-  const resolved = await pi.exec(
-    'git',
+  const resolved = await runner(
+    workingDirectory,
     ['rev-parse', '--verify', '--quiet', '--end-of-options', `${target}^{commit}`],
-    { cwd: workingDirectory, timeout: defaultTimeoutMilliseconds },
+    {
+      timeoutMilliseconds: defaultTimeoutMilliseconds,
+    },
   );
 
-  if (resolved.code !== 0 || resolved.killed) {
+  if (resolved.exitCode !== 0) {
     throw new Error(`Fixup target does not resolve to a commit: ${target}`);
   }
 
-  const commitHash = resolved.stdout.trim();
+  const commitHash = decodeOutput(resolved).trim();
 
-  if (!(await isCommitAncestor(pi, workingDirectory, commitHash, 'HEAD'))) {
+  if (!(await isCommitAncestor(runner, workingDirectory, commitHash, 'HEAD'))) {
     throw new Error(`Fixup target is not an ancestor of HEAD: ${target}`);
   }
 
-  const parents = await runGit(pi, workingDirectory, [
+  const parents = await readGitText(runner, workingDirectory, [
     'log',
     '--no-show-signature',
     '-1',
@@ -121,7 +127,7 @@ export const resolveFixupTarget = async (
     throw new Error(`Fixup target is a merge commit: ${target}`);
   }
 
-  const subject = await runGit(pi, workingDirectory, [
+  const subject = await readGitText(runner, workingDirectory, [
     'log',
     '--no-show-signature',
     '-1',
@@ -129,34 +135,32 @@ export const resolveFixupTarget = async (
     commitHash,
   ]);
 
-  const candidates = await scanFixupCandidates(pi, workingDirectory, subject, signal);
+  const candidates = await scanFixupCandidates(runner, workingDirectory, subject, signal);
 
   const reference = selectFixupTargetReference(subject.replace(/\n$/, ''), commitHash, candidates);
 
   return { commitHash, reference };
 };
 
-export const readIndex = (
-  pi: Pick<ExtensionAPI, 'exec'>,
-  workingDirectory: string,
-): Promise<string> => runGit(pi, workingDirectory, ['ls-files', '--stage', '--debug', '-v', '-z']);
+export const readIndex = (runner: GitRunner, workingDirectory: string): Promise<string> =>
+  readGitText(runner, workingDirectory, ['ls-files', '--stage', '--debug', '-v', '-z']);
 
 export const writeTree = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
+  runner: GitRunner,
   workingDirectory: string,
   signal: AbortSignal | undefined,
 ): Promise<string> => {
-  const tree = await runGit(pi, workingDirectory, ['write-tree'], { signal });
+  const tree = await readGitText(runner, workingDirectory, ['write-tree'], { signal });
 
   return tree.trim();
 };
 
 export const listStagedPaths = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
+  runner: GitRunner,
   workingDirectory: string,
 ): Promise<string[]> => {
-  const output = await runGit(
-    pi,
+  const output = await readGitText(
+    runner,
     workingDirectory,
     [
       'diff',
@@ -211,22 +215,22 @@ export const validateFileRequests = async (
 
 // Literal pathspecs prevent glob expansion from staging unrequested files.
 export const stageFiles = (
-  pi: Pick<ExtensionAPI, 'exec'>,
+  runner: GitRunner,
   workingDirectory: string,
   files: string[],
 ): Promise<string> =>
-  runGit(pi, workingDirectory, ['--literal-pathspecs', 'add', '--', ...files], {
+  readGitText(runner, workingDirectory, ['--literal-pathspecs', 'add', '--', ...files], {
     timeout: null,
   });
 
 // Maps each repository path with an index entry to `mode,object,path` for `update-index --cacheinfo`.
 export const readIndexEntries = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
+  runner: GitRunner,
   workingDirectory: string,
   files: string[],
 ): Promise<Map<string, string>> => {
-  const output = await runGit(
-    pi,
+  const output = await readGitText(
+    runner,
     workingDirectory,
     ['--literal-pathspecs', 'ls-files', '--stage', '--full-name', '-z', '--', ...files],
     { timeout: null },
@@ -247,13 +251,13 @@ export const readIndexEntries = async (
 };
 
 export const restoreIndexEntries = (
-  pi: Pick<ExtensionAPI, 'exec'>,
+  runner: GitRunner,
   workingDirectory: string,
   entries: string[],
   removedFiles: string[],
 ): Promise<string> =>
-  runGit(
-    pi,
+  readGitText(
+    runner,
     workingDirectory,
     [
       'update-index',
@@ -267,22 +271,22 @@ export const restoreIndexEntries = (
   );
 
 export const unstageFiles = (
-  pi: Pick<ExtensionAPI, 'exec'>,
+  runner: GitRunner,
   workingDirectory: string,
   files: string[],
 ): Promise<string> =>
-  runGit(pi, workingDirectory, ['--literal-pathspecs', 'reset', '--', ...files], {
+  readGitText(runner, workingDirectory, ['--literal-pathspecs', 'reset', '--', ...files], {
     timeout: null,
   });
 
 // Staged paths are repository-relative; requested paths are relative to the working directory.
 // Outside a work tree, such as a bare repository's folder, the index lists unrelated paths.
 export const repositoryPathPrefix = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
+  runner: GitRunner,
   workingDirectory: string,
 ): Promise<string> => {
-  const output = await runGit(
-    pi,
+  const output = await readGitText(
+    runner,
     workingDirectory,
     ['rev-parse', '--is-inside-work-tree', '--show-prefix'],
     { timeout: null },
@@ -302,21 +306,23 @@ export const repositoryPathPrefix = async (
 
 // HEAD is unresolved before the first commit.
 export const currentHead = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
+  runner: GitRunner,
   workingDirectory: string,
 ): Promise<string | null> => {
-  const result = await pi.exec('git', ['rev-parse', 'HEAD'], { cwd: workingDirectory });
+  const result = await runner(workingDirectory, ['rev-parse', 'HEAD'], {
+    timeoutMilliseconds: null,
+  });
 
-  return result.code === 0 ? result.stdout.trim() : null;
+  return result.exitCode === 0 ? decodeOutput(result).trim() : null;
 };
 
 export const listCommitPaths = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
+  runner: GitRunner,
   workingDirectory: string,
   commitHash: string,
 ): Promise<string[]> => {
-  const output = await runGit(
-    pi,
+  const output = await readGitText(
+    runner,
     workingDirectory,
     [
       'diff-tree',

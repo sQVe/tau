@@ -3,13 +3,13 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { runGit } from '../../git.js';
 import {
   commitContext,
   createTemporaryRepository,
   executeCommit,
   git,
   writeRepositoryFile,
-  execInRequestedDirectory,
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
 
@@ -110,21 +110,19 @@ describe('hook outcomes', () => {
       await writeRepositoryFile(directory, 'requested', 'value');
       let concurrentHead = '';
 
-      const tool = createCommitTool({
-        exec: async (command, argumentsList, options) => {
-          const result = await execInRequestedDirectory(command, argumentsList, options);
+      const tool = createCommitTool(async (cwd, argumentsList, options) => {
+        const result = await runGit(cwd, argumentsList, options);
 
-          if (argumentsList[0] === 'commit') {
-            await writeRepositoryFile(directory, 'other', 'other');
-            await git(directory, ['add', 'other']);
-            await git(directory, ['commit', '-m', 'test: concurrent writer']);
-            concurrentHead = (await git(directory, ['rev-parse', 'HEAD'])).trim();
-            await writeRepositoryFile(directory, 'other', 'staged edit');
-            await git(directory, ['add', 'other']);
-          }
+        if (argumentsList[0] === 'commit') {
+          await writeRepositoryFile(directory, 'other', 'other');
+          await git(directory, ['add', 'other']);
+          await git(directory, ['commit', '-m', 'test: concurrent writer']);
+          concurrentHead = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+          await writeRepositoryFile(directory, 'other', 'staged edit');
+          await git(directory, ['add', 'other']);
+        }
 
-          return result;
-        },
+        return result;
       });
 
       const failure = await tool
@@ -158,12 +156,11 @@ describe('hook outcomes', () => {
       'printf "  subject-empty  \\n"; printf "  commitlint rejected  \\n" >&2; exit 1',
     );
 
-    const tool = createCommitTool({
-      exec: (command, argumentsList, options) =>
-        argumentsList.includes('reset')
-          ? Promise.resolve({ code: 1, killed: false, stdout: '', stderr: 'index locked\n' })
-          : execInRequestedDirectory(command, argumentsList, options),
-    });
+    const tool = createCommitTool((cwd, argumentsList, options) =>
+      argumentsList.includes('reset')
+        ? Promise.resolve({ exitCode: 1, stdout: Buffer.alloc(0), stderr: 'index locked\n' })
+        : runGit(cwd, argumentsList, options),
+    );
 
     const failure = await tool
       .execute(
@@ -210,17 +207,15 @@ describe('hook outcomes', () => {
     await writeRepositoryFile(directory, 'requested', 'value');
     await writeRepositoryFile(directory, 'other', 'other');
 
-    const tool = createCommitTool({
-      exec: async (command, argumentsList, options) => {
-        if (argumentsList[0] === 'commit') {
-          await git(directory, ['commit', '-m', 'test: concurrent writer']);
-          await git(directory, ['add', 'other']);
+    const tool = createCommitTool(async (cwd, argumentsList, options) => {
+      if (argumentsList[0] === 'commit') {
+        await git(directory, ['commit', '-m', 'test: concurrent writer']);
+        await git(directory, ['add', 'other']);
 
-          return { code: 1, killed: false, stdout: 'raw output\n', stderr: 'raw error\n' };
-        }
+        return { exitCode: 1, stdout: Buffer.from('raw output\n'), stderr: 'raw error\n' };
+      }
 
-        return execInRequestedDirectory(command, argumentsList, options);
-      },
+      return runGit(cwd, argumentsList, options);
     });
 
     const failure = await tool
@@ -248,20 +243,18 @@ describe('hook outcomes', () => {
       await writeRepositoryFile(directory, 'requested', 'value');
       let committed = false;
 
-      const tool = createCommitTool({
-        exec: async (command, argumentsList, options) => {
-          if (committed && argumentsList[0] === failingCommand) {
-            return { code: 1, killed: false, stdout: '', stderr: 'report unavailable' };
-          }
+      const tool = createCommitTool(async (cwd, argumentsList, options) => {
+        if (committed && argumentsList[0] === failingCommand) {
+          return { exitCode: 1, stdout: Buffer.alloc(0), stderr: 'report unavailable' };
+        }
 
-          const result = await execInRequestedDirectory(command, argumentsList, options);
+        const result = await runGit(cwd, argumentsList, options);
 
-          if (argumentsList[0] === 'commit') {
-            committed = true;
-          }
+        if (argumentsList[0] === 'commit') {
+          committed = true;
+        }
 
-          return result;
-        },
+        return result;
       });
 
       const failure = await tool
@@ -337,19 +330,17 @@ describe('hook outcomes', () => {
     let commitHash = '';
     let concurrentHead = '';
 
-    const tool = createCommitTool({
-      exec: async (command, argumentsList, options) => {
-        if (argumentsList[0] === 'diff-tree') {
-          commitHash = argumentsList.at(-1)!;
-          await git(directory, ['add', 'other']);
-          await git(directory, ['commit', '-m', 'test: concurrent writer']);
-          concurrentHead = (await git(directory, ['rev-parse', 'HEAD'])).trim();
-          await writeRepositoryFile(directory, 'other', 'staged edit');
-          await git(directory, ['add', 'other']);
-        }
+    const tool = createCommitTool(async (cwd, argumentsList, options) => {
+      if (argumentsList[0] === 'diff-tree') {
+        commitHash = argumentsList.at(-1)!;
+        await git(directory, ['add', 'other']);
+        await git(directory, ['commit', '-m', 'test: concurrent writer']);
+        concurrentHead = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+        await writeRepositoryFile(directory, 'other', 'staged edit');
+        await git(directory, ['add', 'other']);
+      }
 
-        return execInRequestedDirectory(command, argumentsList, options);
-      },
+      return runGit(cwd, argumentsList, options);
     });
 
     const result = await tool.execute(
