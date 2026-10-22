@@ -2,20 +2,14 @@ import type { HerdrClient } from '../src/extensions/subagents/controller/inspect
 import { placementFixture } from '../src/extensions/subagents/fixtures/placement.js';
 import type { PlacementFixture } from '../src/extensions/subagents/fixtures/placement.js';
 import { requireObject, result, text } from '../src/terminal.js';
+import { herdrWorkerFake, shellProcessId } from './herdrWorkerFake.js';
+import type { FakeWorker, Reply, Surface } from './herdrWorkerFake.js';
 
 interface ProcessSnapshot {
   paneId: string | undefined;
   shellPid: number;
   processId: number;
   argv: string[];
-}
-
-interface FakeWorker {
-  paneId: string;
-  terminalId: string;
-  processId: number;
-  session: string;
-  exited: boolean;
 }
 
 interface SeededWorker {
@@ -25,11 +19,6 @@ interface SeededWorker {
   session: string;
   argv: string[];
 }
-
-// An Error makes the call fail the way a failing herdr command does.
-type Reply = string | Error;
-
-type Surface = 'agent' | 'processInfo';
 
 interface HerdrFake {
   client: HerdrClient;
@@ -58,9 +47,6 @@ interface HerdrFake {
   loseTabOnClose: (tabId: string) => void;
   malformedTabList: (reply: Reply) => void;
 }
-
-const shellProcessId = 100;
-const firstWorkerProcessId = 5001;
 
 // Response shapes were checked against herdr 0.9.1.
 const processInfoResponse = ({ paneId, shellPid, processId, argv }: ProcessSnapshot): string =>
@@ -129,23 +115,15 @@ const herdrError = (message: string, code: string) =>
  */
 export const herdrFake = (width = 200, height = 60): HerdrFake => {
   const layout = placementFixture(width, height);
-  // A layout command runs as its pane's own process, keyed by terminal. It follows its terminal
-  // when herdr moves the pane.
-  const workers = new Map<string, FakeWorker & { command: string[] }>();
-  const processes = new Map<number, boolean>([[shellProcessId, false]]);
-  let nextProcessId = firstWorkerProcessId;
+  const fleet = herdrWorkerFake();
   const calls: string[][] = [];
-  // Replies that stand in for the state-derived evidence of one terminal.
-  const queuedAgentReplies = new Map<string, Reply[]>();
-  const malformedReplies = new Map<string, Reply[]>();
-  const heldReplies = new Map<string, Reply>();
+  const malformedTabLists: Reply[] = [];
   // Faults keyed by the call they hit, such as `pane run`.
   const failures = new Map<string, { error: Error; exitsTerminal: boolean }>();
   const hungSteps = new Set<string>();
   const hooks = new Map<string, () => void>();
   const movingSteps = new Map<string, string | undefined>();
   const lostTabs = new Set<string>();
-  const malformedTabLists: Reply[] = [];
   let focusedTab = layout.parent.tab_id;
   let openedCount = 0;
   let opensExited = false;
@@ -153,57 +131,31 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
   const terminalOf = (paneId: string | undefined) =>
     layout.panes.find((pane) => pane.pane_id === paneId)?.terminal_id;
 
-  const workerOf = (paneId: string | undefined) => workers.get(terminalOf(paneId) ?? '');
-
-  const requireWorker = (terminalId: string) => {
-    const worker = workers.get(terminalId);
-
-    if (worker === undefined) {
-      throw new Error(`No fake worker has terminal ${terminalId}.`);
-    }
-
-    return worker;
-  };
-
-  const startProcess = () => {
-    const processId = nextProcessId;
-    nextProcessId += 1;
-    processes.set(processId, false);
-
-    return processId;
-  };
-
   const processInfo = (argumentsList: string[]) => {
     const paneId = paneArgument(argumentsList);
-    const worker = workerOf(paneId);
-    const key = `processInfo:${terminalOf(paneId)}`;
-    const pinned = malformedReplies.get(key)?.shift() ?? heldReplies.get(key);
+    const terminalId = terminalOf(paneId);
+    const pinned = fleet.processReply(terminalId);
 
     if (pinned !== undefined) {
       return answer(pinned);
     }
 
     // Any other pane runs a shell.
+    const evidence = fleet.processEvidence(terminalId);
+
     return processInfoResponse({
       paneId,
-      shellPid: worker?.processId ?? shellProcessId,
-      processId: worker?.processId ?? shellProcessId,
-      argv: worker?.command ?? ['shell'],
+      shellPid: evidence?.processId ?? shellProcessId,
+      processId: evidence?.processId ?? shellProcessId,
+      argv: evidence?.argv ?? ['shell'],
     });
   };
 
   const agentActions: Record<string, (argumentsList: string[]) => string> = {
     list: () => JSON.stringify({ result: { type: 'agent_list', agents: [] } }),
     get: (argumentsList) => {
-      const terminalId = terminalOf(argumentsList[2]);
-      const worker = workerOf(argumentsList[2]);
-      const queued = queuedAgentReplies.get(`${terminalId}`)?.shift();
-      const key = `agent:${terminalId}`;
-      const pinned = malformedReplies.get(key)?.shift() ?? heldReplies.get(key);
-
-      if (queued !== undefined) {
-        return answer(queued);
-      }
+      const worker = fleet.find(terminalOf(argumentsList[2]));
+      const pinned = fleet.agentReply(terminalOf(argumentsList[2]));
 
       if (pinned !== undefined) {
         return answer(pinned);
@@ -222,15 +174,9 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
     },
   };
 
-  const exit = (terminalId: string) => {
-    const worker = requireWorker(terminalId);
-    worker.exited = true;
-    processes.set(worker.processId, true);
-  };
-
   // Herdr removes a command pane once its process exits.
   const removeExitedPanes = () => {
-    const running = layout.panes.filter((pane) => workers.get(pane.terminal_id)?.exited !== true);
+    const running = layout.panes.filter((pane) => !fleet.isExited(pane.terminal_id));
 
     layout.panes.splice(0, layout.panes.length, ...running);
   };
@@ -238,19 +184,19 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
   const tabIds = () => [...new Set(layout.panes.map((pane) => pane.tab_id))];
 
   const startReview = (pane: (typeof layout.panes)[number]) => {
-    layout.dimensions.set(pane.pane_id, { ...layout.dimensions.get(layout.parent.pane_id)! });
+    layout.dimensions.set(pane.pane_id, {
+      ...layout.dimensions.get(layout.parent.pane_id)!,
+    });
 
-    workers.set(pane.terminal_id, {
+    fleet.register({
       paneId: pane.pane_id,
       terminalId: pane.terminal_id,
-      processId: startProcess(),
       session: '',
-      exited: false,
       command: ['tuicr'],
     });
 
     if (opensExited) {
-      exit(pane.terminal_id);
+      fleet.exit(pane.terminal_id);
     }
   };
 
@@ -277,8 +223,8 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
     const lost = lostTabs.delete(tabId);
 
     for (const pane of doomed) {
-      if (workers.has(pane.terminal_id)) {
-        exit(pane.terminal_id);
+      if (fleet.has(pane.terminal_id)) {
+        fleet.exit(pane.terminal_id);
       }
     }
 
@@ -312,7 +258,9 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
       const pane = openedPane(tabId, valueOf(argumentsList, '--workspace'));
       focusedTab = tabId;
 
-      return JSON.stringify({ result: { tab: { tab_id: tabId }, root_pane: pane } });
+      return JSON.stringify({
+        result: { tab: { tab_id: tabId }, root_pane: pane },
+      });
     },
     'tab list': () => {
       const malformed = malformedTabLists.shift();
@@ -321,7 +269,10 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
         return answer(malformed);
       }
 
-      const tabs = tabIds().map((tabId) => ({ tab_id: tabId, focused: tabId === focusedTab }));
+      const tabs = tabIds().map((tabId) => ({
+        tab_id: tabId,
+        focused: tabId === focusedTab,
+      }));
 
       return JSON.stringify({ result: { tabs } });
     },
@@ -344,13 +295,11 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
     terminalOf(paneArgument(argumentsList)) ?? terminalOf(argumentsList[2]);
 
   const move = (terminalId: string, tabId?: string) => {
-    const worker = requireWorker(terminalId);
+    const movedPaneId = fleet.move(terminalId);
     const pane = layout.panes.find((candidate) => candidate.terminal_id === terminalId);
 
-    worker.paneId = `${worker.paneId}-moved`;
-
     if (pane !== undefined) {
-      pane.pane_id = worker.paneId;
+      pane.pane_id = movedPaneId;
       pane.tab_id = tabId ?? pane.tab_id;
     }
   };
@@ -377,7 +326,7 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
 
     if (failure !== undefined) {
       if (failure.exitsTerminal && terminalId !== undefined) {
-        exit(terminalId);
+        fleet.exit(terminalId);
       }
 
       throw failure.error;
@@ -385,18 +334,19 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
   };
 
   const startWorker = (argumentsList: string[], response: string) => {
-    const layoutRequest = JSON.parse(argumentsList[2] ?? '') as { root: { command: string[] } };
+    const layoutRequest = JSON.parse(argumentsList[2] ?? '') as {
+      root: { command: string[] };
+    };
+
     const command = layoutRequest.root.command;
 
     const paneId = text(requireObject(requireObject(result(response).layout).root).pane_id);
     const terminalId = terminalOf(paneId) ?? '';
 
-    workers.set(terminalId, {
+    fleet.register({
       paneId,
       terminalId,
-      processId: startProcess(),
       session: command[command.indexOf('--session') + 1] ?? '',
-      exited: false,
       command,
     });
   };
@@ -430,10 +380,10 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
     }
 
     if (surface === 'pane' && action === 'close') {
-      const closing = workerOf(argumentsList[2]);
+      const closing = fleet.find(terminalOf(argumentsList[2]));
 
       if (closing !== undefined) {
-        exit(closing.terminalId);
+        fleet.exit(closing.terminalId);
       }
     }
 
@@ -450,51 +400,24 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
     client,
     calls,
     layout,
-    workers: () =>
-      [...workers.values()].map(({ paneId, terminalId, processId, session, exited }) => ({
-        paneId,
-        terminalId,
-        processId,
-        session,
-        exited,
-      })),
+    workers: fleet.snapshot,
     seedWorker: ({ paneId, terminalId, processId, session, argv }) => {
-      layout.panes.push({ ...layout.parent, pane_id: paneId, terminal_id: terminalId });
-      processes.set(processId, false);
-
-      workers.set(terminalId, {
-        paneId,
-        terminalId,
-        processId,
-        session,
-        exited: false,
-        command: argv,
+      layout.panes.push({
+        ...layout.parent,
+        pane_id: paneId,
+        terminal_id: terminalId,
       });
-    },
-    queueAgentReplies: (terminalId, replies) => {
-      queuedAgentReplies.set(terminalId, [...replies]);
-    },
-    malformedEvidence: (terminalId, surface, reply) => {
-      const key = `${surface}:${terminalId}`;
 
-      malformedReplies.set(key, [...(malformedReplies.get(key) ?? []), reply]);
+      fleet.register({ paneId, terminalId, processId, session, command: argv });
     },
-    holdReply: (terminalId, surface, reply) => {
-      heldReplies.set(`${surface}:${terminalId}`, reply);
-    },
-    exit,
-    ready: (terminalId) => {
-      const worker = requireWorker(terminalId);
-      worker.exited = false;
-      processes.set(worker.processId, false);
-    },
+    queueAgentReplies: fleet.queueAgentReplies,
+    malformedEvidence: fleet.malformedEvidence,
+    holdReply: fleet.holdReply,
+    exit: fleet.exit,
+    ready: fleet.ready,
     move,
-    replaceSession: (terminalId, session) => {
-      requireWorker(terminalId).session = session;
-    },
-    replaceProcess: (terminalId) => {
-      requireWorker(terminalId).processId = startProcess();
-    },
+    replaceSession: fleet.replaceSession,
+    replaceProcess: fleet.replaceProcess,
     addPane: (paneId, paneWidth) => {
       // Listed before the agent pane, so a lookup that takes the first pane gets the wrong one.
       layout.panes.unshift({
@@ -535,7 +458,7 @@ export const herdrFake = (width = 200, height = 60): HerdrFake => {
     malformedTabList: (reply) => {
       malformedTabLists.push(reply);
     },
-    processAbsent: (processId) => processes.get(processId) === true,
-    knowsProcess: (processId) => processes.has(processId),
+    processAbsent: fleet.processAbsent,
+    knowsProcess: fleet.knowsProcess,
   };
 };
