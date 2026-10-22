@@ -37,7 +37,6 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
   const agentDirectory = join(workingDirectory, 'agent');
   isolateWebAccessConfig(agentDirectory, onTestFinished);
 
-  // Delegation guidelines load only for a manager inside herdr.
   onTestFinished(() => {
     vi.unstubAllEnvs();
   });

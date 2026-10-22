@@ -238,7 +238,6 @@ it.each(['outside the temporary directory', 'without the prefix', 'inside a stag
     const directories: Record<string, () => Promise<string>> = {
       // The directory sits under the repository, not the temporary directory.
       'outside the temporary directory': () => mkdtemp(join(repository, 'tau-draft-review-')),
-      // TMPDIR points at the data directory, and the name lacks the stage prefix.
       'without the prefix': () => Promise.resolve(temporaryDirectory(onTestFinished, 'precious-')),
       'inside a staging directory': async () => {
         const nested = join(review.stagingDirectory, 'tau-draft-review-nested');
