@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { declinedExec } from '../../../tests/declinedExec.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createFullCheckTool } from './tool.js';
 
@@ -46,6 +47,7 @@ const fixture = async () => {
   const run = (base?: string, idleLimitMilliseconds?: number) =>
     createFullCheckTool({
       agentDirectory: directory,
+      exec: declinedExec,
       pollMilliseconds: 10,
       ...(idleLimitMilliseconds === undefined ? {} : { idleLimitMilliseconds }),
     }).execute('call', base === undefined ? {} : { base }, undefined, undefined, {

@@ -1,9 +1,10 @@
-import { repositoryFromRemote } from '../../repositoryRemote.js';
+import type { OriginRepository } from '../../github/repositoryTarget.js';
+import { configRepositoryKey } from '../../github/repositoryTargetDecisions.js';
 import type { TrackerConfig, TrackerSetup } from './trackerConfig.js';
 
 export interface TrackerFacts {
   setup: TrackerSetup;
-  originUrl: string | undefined;
+  origin: OriginRepository;
 }
 
 // The tracker skill finds these lines by prefix, so keep the prefixes stable.
@@ -20,15 +21,19 @@ const agentTeamLine = ({ agentTeam }: TrackerConfig): string =>
 const findRepository = ({ repositories }: TrackerConfig, repository: string) =>
   [...repositories].find(([key]) => key.toLowerCase() === repository.toLowerCase())?.[1];
 
-const repositoryLine = (config: TrackerConfig, originUrl: string | undefined): string => {
-  if (originUrl === undefined) {
+const repositoryLine = (config: TrackerConfig, origin: OriginRepository): string => {
+  if (origin.status === 'missing') {
     return `${setupPrefix} this checkout has no origin remote, so no tracker.repositories entry applies.`;
   }
 
-  const repository = repositoryFromRemote(originUrl);
+  if (origin.status === 'unnamed') {
+    return `${setupPrefix} the origin remote URL does not name an owner/name repository, so no tracker.repositories entry applies.`;
+  }
+
+  const repository = configRepositoryKey(origin.repository);
 
   if (repository === undefined) {
-    return `${setupPrefix} the origin remote URL does not name an owner/name repository, so no tracker.repositories entry applies.`;
+    return `${setupPrefix} the origin remote is not on github.com, so no tracker.repositories entry applies.`;
   }
 
   const entry = findRepository(config, repository);
@@ -42,7 +47,7 @@ const repositoryLine = (config: TrackerConfig, originUrl: string | undefined): s
   return `${repositoryPrefix} \`${repository}\` uses team \`${entry.team}\` and ${project}.`;
 };
 
-export const trackerLines = ({ setup, originUrl }: TrackerFacts): string[] => {
+export const trackerLines = ({ setup, origin }: TrackerFacts): string[] => {
   if (setup.status === 'unset') {
     return [];
   }
@@ -53,5 +58,5 @@ export const trackerLines = ({ setup, originUrl }: TrackerFacts): string[] => {
     return [`${setupPrefix} ${message}`];
   }
 
-  return [agentTeamLine(setup.config), repositoryLine(setup.config, originUrl)];
+  return [agentTeamLine(setup.config), repositoryLine(setup.config, origin)];
 };

@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { declinedExec } from '../../../tests/declinedExec.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { defaultLockPath, withFullCheckLock } from './queue.js';
 import { createFullCheckTool } from './tool.js';
@@ -122,7 +123,11 @@ const runTool = async (
   signal?: AbortSignal,
   updates: string[] = [],
 ) => {
-  const result = await createFullCheckTool({ agentDirectory, pollMilliseconds: 10 }).execute(
+  const result = await createFullCheckTool({
+    agentDirectory,
+    exec: declinedExec,
+    pollMilliseconds: 10,
+  }).execute(
     'call',
     {},
     signal,

@@ -3,9 +3,10 @@ import { join } from 'node:path';
 import { listSavedLogs, saveCheckRecord } from '../../checkRecord/checkRecord.js';
 import { decideReuse, sameReusableState } from '../../checkRecord/reuseDecision.js';
 import type { CheckIdentity } from '../../checkRecord/reuseDecision.js';
+import type { CommandRuntime } from '../../command.js';
 import { errorMessage } from '../../errors.js';
-import { readGitOutput } from '../../gitOutput.js';
-import { repositoryFromRemote } from '../../repositoryRemote.js';
+import type { Repository } from '../../github/github.js';
+import { readOriginRepository } from '../../github/repositoryTarget.js';
 import { defaultLockPath, withFullCheckLock } from './queue.js';
 import { readTail, runCheck } from './run.js';
 import type { CheckResult } from './run.js';
@@ -29,11 +30,14 @@ export interface LockContext {
   notifyWaiting: (message: string) => void;
 }
 
-export const readRepository = async (root: string): Promise<string | undefined> => {
-  const output = await readGitOutput(root, ['remote', 'get-url', 'origin']);
+export const readRepository = async (runtime: CommandRuntime): Promise<Repository | undefined> => {
+  const origin = await readOriginRepository(runtime);
 
-  return output === undefined ? undefined : repositoryFromRemote(output);
+  return origin.status === 'named' ? origin.repository : undefined;
 };
+
+// The lock is shared by every checkout of `owner/name`, whatever the host.
+export const repositoryLockKey = ({ owner, name }: Repository): string => `${owner}/${name}`;
 
 export const findReusedLog = async (
   root: string,

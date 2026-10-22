@@ -15,6 +15,7 @@ import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
+import { declinedExec } from '../../../tests/declinedExec.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createMutationCheckTool } from './mutationTool.js';
 import { createFullCheckTool } from './tool.js';
@@ -118,6 +119,7 @@ const fixture = async () => {
   ) =>
     createMutationCheckTool({
       agentDirectory: directory,
+      exec: declinedExec,
       pollMilliseconds: 10,
       ...(idleLimitMilliseconds === undefined ? {} : { idleLimitMilliseconds }),
     }).execute(
@@ -413,6 +415,7 @@ it('waits on the lock of a running mutation check for a full check of the same r
 
   const fullCheck = createFullCheckTool({
     agentDirectory: directory,
+    exec: declinedExec,
     pollMilliseconds: 10,
   }).execute(
     'call',
@@ -461,6 +464,7 @@ it('waits on the lock of a running full check for a mutation check of the same r
 
   const fullCheck = createFullCheckTool({
     agentDirectory: directory,
+    exec: declinedExec,
     pollMilliseconds: 10,
   }).execute('call', {}, undefined, undefined, context as never);
 
@@ -537,6 +541,7 @@ it('does not reuse the passing record of a full check with the same command', as
 
   const full = await createFullCheckTool({
     agentDirectory: directory,
+    exec: declinedExec,
     pollMilliseconds: 10,
   }).execute('call', {}, undefined, undefined, context as never);
 
@@ -647,6 +652,7 @@ it('rejects an untrusted repository that sets mutation and names the ignored fil
 
   const outcome = createMutationCheckTool({
     agentDirectory: directory,
+    exec: declinedExec,
     pollMilliseconds: 10,
   }).execute('call', changedParameters, undefined, undefined, untrusted as never);
 

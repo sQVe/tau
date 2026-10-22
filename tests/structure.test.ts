@@ -125,7 +125,6 @@ const pureModules = [
   'src/extensions/tdd/inputGlob.ts',
   'src/extensions/tracker/candidateFit.ts',
   'src/github/repositoryTargetDecisions.ts',
-  'src/repositoryRemote.ts',
   'src/reviewCapture/evidenceDecisions.ts',
   'src/reviewCapture/fixScope.ts',
   'src/reviewCapture/freshness.ts',

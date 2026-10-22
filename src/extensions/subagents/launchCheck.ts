@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
+import type { Exec } from '../../command.js';
 import { appAnswers } from './appProbe.js';
 import {
   appUrlRefusal,
@@ -20,8 +21,9 @@ export const checkLaunchEnvironment = async (
   requested: LaunchParameters,
   signal: AbortSignal | undefined,
   context: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted' | 'ui'>,
+  exec: Exec,
 ): Promise<LaunchParameters> => {
-  const parameters = await applyQaSettings(requested, signal, context);
+  const parameters = await applyQaSettings(requested, signal, context, exec);
   const urlRefusal = appUrlRefusal(parameters.profile, parameters.url);
 
   if (urlRefusal !== undefined) {
