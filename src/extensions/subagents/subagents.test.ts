@@ -20,7 +20,7 @@ import { expect, it, vi, onTestFinished as finishTest } from 'vitest';
 
 import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createTemporaryRepository, initializeRepository } from '../../../tests/gitRepository.js';
-import { workerNoticeChannel } from '../../workerNoticeEvent.js';
+import { workerNoticeChannel } from '../../worker.js';
 import { WorkerCapacityFullError, WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
 import { fixtureModel } from './fixtures/controlledProvider.js';

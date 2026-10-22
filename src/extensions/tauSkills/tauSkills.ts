@@ -4,7 +4,7 @@ import { loadSkillsFromDir, parseFrontmatter } from '@earendil-works/pi-coding-a
 import type { ExtensionAPI, ResourceDiagnostic, Skill } from '@earendil-works/pi-coding-agent';
 
 import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
-import { isWorkerProcess } from '../../workerProcess.js';
+import { isWorkerProcess } from '../../worker.js';
 import { requiredActions } from './requiredFor.js';
 
 const buildSkillMessage = (skillName: string, argumentsText: string) => {

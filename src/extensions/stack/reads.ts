@@ -7,7 +7,7 @@ import { label } from '../../github.js';
 import type { Repository } from '../../github.js';
 import { runGit } from '../../gitOutput.js';
 import { formatRepository } from '../../repositoryTargetDecisions.js';
-import { describeSchemaProblem } from '../../schemaProblem.js';
+import { describeSchemaProblem } from '../../schema.js';
 import type { PullView } from './chainDecisions.js';
 import { readStacksResponse } from './checkDecisions.js';
 import type { BasedPull, HeadPull, StackedPullRequests, StackViewRead } from './checkDecisions.js';

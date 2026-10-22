@@ -3,7 +3,7 @@ import { Value } from 'typebox/value';
 
 import type { CommandRuntime } from '../../command.js';
 import type { Repository } from '../../github.js';
-import { describeSchemaProblem } from '../../schemaProblem.js';
+import { describeSchemaProblem } from '../../schema.js';
 import {
   boundChecks,
   checkListEvidence,

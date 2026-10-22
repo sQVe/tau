@@ -7,9 +7,8 @@ import {
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { parseModelReference } from '../../config/models.js';
 import { errorMessage } from '../../errors.js';
-import { isRecord } from '../../isRecord.js';
-import { anyKey } from '../../unknownKeys.js';
-import type { KnownKeys } from '../../unknownKeys.js';
+import { anyKey, isRecord } from '../../schema.js';
+import type { KnownKeys } from '../../schema.js';
 import type { ModelRoute, RouteLabel } from './modelRoutes.js';
 import type { ProfileModels } from './workerModels.js';
 

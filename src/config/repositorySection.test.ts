@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import type { KnownKeys } from '../unknownKeys.js';
+import type { KnownKeys } from '../schema.js';
 import type { ConfigWarnings } from './config.js';
 import { readRepositorySection } from './repositorySection.js';
 

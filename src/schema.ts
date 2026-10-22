@@ -1,10 +1,20 @@
-import { isRecord } from './isRecord.js';
+import type { TSchema } from 'typebox';
+import { Value } from 'typebox/value';
 
 // A key set to `true` is a known leaf. A nested object lists the known keys below it. The key `*`
 // describes every key not listed, for objects that map free names to entries.
 export interface KnownKeys {
   readonly [key: string]: KnownKeys | true;
 }
+
+export const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export const describeSchemaProblem = (schema: TSchema, value: unknown): string => {
+  const [error] = Value.Errors(schema, value);
+
+  return error === undefined ? 'unknown problem' : `${error.instancePath || '/'} ${error.message}`;
+};
 
 export const anyKey = '*';
 

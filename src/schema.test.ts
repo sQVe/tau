@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
-import { anyKey, findUnknownKeys, reportedId, unreportedKeys } from './unknownKeys.js';
-import type { KnownKeys } from './unknownKeys.js';
+import { anyKey, findUnknownKeys, reportedId, unreportedKeys } from './schema.js';
+import type { KnownKeys } from './schema.js';
 
 const known: KnownKeys = {
   model: true,

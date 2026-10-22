@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { parseWorkerNoticeEvent } from './workerNoticeEvent.js';
+import { parseWorkerNoticeEvent } from './worker.js';
 
 it('reads a notice payload', () => {
   expect(parseWorkerNoticeEvent({ worker: 'scout', label: 'asks' })).toEqual({

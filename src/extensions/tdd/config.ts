@@ -10,7 +10,7 @@ import {
   warnUnknownKeys,
 } from '../../config/config.js';
 import type { ConfigFile, ConfigLocation, ConfigWarnings } from '../../config/config.js';
-import type { KnownKeys } from '../../unknownKeys.js';
+import type { KnownKeys } from '../../schema.js';
 import { mergeConfigLayers } from './configLayers.js';
 import type { ConfigLayer, MergedTddConfig } from './configLayers.js';
 import { createInputRules, unsupportedGlobReason } from './inputGlob.js';

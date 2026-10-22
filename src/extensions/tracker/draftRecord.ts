@@ -7,7 +7,7 @@ import { Value } from 'typebox/value';
 
 import { isMissingFile } from '../../errors.js';
 import { readVersionedRecord, writeRecord } from '../../record.js';
-import { describeSchemaProblem } from '../../schemaProblem.js';
+import { describeSchemaProblem } from '../../schema.js';
 
 export interface DraftLookup {
   name: string;

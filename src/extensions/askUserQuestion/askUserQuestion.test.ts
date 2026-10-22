@@ -6,7 +6,7 @@ import { expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { workerNoticeChannel } from '../../workerNoticeEvent.js';
+import { workerNoticeChannel } from '../../worker.js';
 import askUserQuestionExtension from './askUserQuestion.js';
 import { actionLabel } from './dialog.js';
 import type { DialogResult } from './dialog.js';

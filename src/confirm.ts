@@ -5,7 +5,7 @@ import type { Component } from '@earendil-works/pi-tui';
 
 import { confirmationRefusal } from './confirmationEligibility.js';
 import { isBottom, isDown, isTop, isUp } from './keys.js';
-import { isWorkerProcess } from './workerProcess.js';
+import { isWorkerProcess } from './worker.js';
 
 interface ConfirmRequest {
   // What needs the confirmation, such as "Writing to Linear".

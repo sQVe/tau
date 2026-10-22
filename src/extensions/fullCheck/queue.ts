@@ -2,7 +2,7 @@ import { link, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/p
 import { basename, dirname, join } from 'node:path';
 
 import { hasErrorCode, isMissingFile } from '../../errors.js';
-import { isRecord } from '../../isRecord.js';
+import { isRecord } from '../../schema.js';
 import { holderIsGone } from './lockHolderDecision.js';
 import type { LockHolderFacts } from './lockHolderDecision.js';
 

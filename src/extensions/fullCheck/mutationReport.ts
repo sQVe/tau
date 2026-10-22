@@ -1,4 +1,4 @@
-import { isRecord } from '../../isRecord.js';
+import { isRecord } from '../../schema.js';
 
 export interface Survivor {
   file: string;

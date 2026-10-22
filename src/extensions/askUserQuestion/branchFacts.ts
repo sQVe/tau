@@ -1,9 +1,7 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 
+import { isRecord } from '../../schema.js';
 import type { BranchFact } from './typedAnswerGuard.js';
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
 
 // Details without a boolean `typed` count as not typed, so an unreadable result blocks no call.
 const hasTypedAnswer = (details: unknown): boolean => {

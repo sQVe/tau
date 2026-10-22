@@ -4,6 +4,7 @@ import { sep } from 'node:path';
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import { Text } from '@earendil-works/pi-tui';
 
+import { isRecord } from '../../schema.js';
 import { parentTrackedStates } from './compactionWorkers.js';
 import { handoverSections, stateLabel, stateLabels } from './presentation.js';
 import type { StateLabel } from './presentation.js';
@@ -68,9 +69,6 @@ export const callText = (title: string, detail: string | undefined, theme: Theme
 
   return new Text(body, 0, 0);
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
 
 const isWorkerState = (value: unknown): value is WorkerState =>
   typeof value === 'string' && Object.hasOwn(stateLabels, value);

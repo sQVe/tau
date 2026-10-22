@@ -3,7 +3,7 @@ import { visibleWidth } from '@earendil-works/pi-tui';
 import type { TUI } from '@earendil-works/pi-tui';
 import { expect, it, vi } from 'vitest';
 
-import type { WorkerNoticeEvent } from '../../workerNoticeEvent.js';
+import type { WorkerNoticeEvent } from '../../worker.js';
 import { actionLabel, questionDialog } from './dialog.js';
 import type { DialogQuestion, DialogResult } from './dialog.js';
 import type { QuestionnaireState } from './questionnaire.js';

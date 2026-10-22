@@ -124,14 +124,13 @@ const pureModules = [
   'src/extensions/tdd/configLayers.ts',
   'src/extensions/tdd/inputGlob.ts',
   'src/extensions/tracker/candidateFit.ts',
-  'src/isRecord.ts',
   'src/repositoryRemote.ts',
   'src/repositoryTargetDecisions.ts',
   'src/reviewCapture/evidenceDecisions.ts',
   'src/reviewCapture/fixScope.ts',
   'src/reviewCapture/freshness.ts',
   'src/reviewCapture/gitQuotedName.ts',
-  'src/unknownKeys.ts',
+  'src/schema.ts',
   'tests/adrIndexMark.ts',
   'tests/approvalRule.ts',
 ];
@@ -175,6 +174,9 @@ const isTypeOnly = (node: ModuleDeclaration) => {
 
 const findingLines = (found: string[]) => found.map((finding) => Number(finding.split(':')[1]));
 
+// Pure libraries that a registered module may import.
+const pureLibraries = new Set(['typebox/value']);
+
 // Lists each runtime import outside the registry, dynamic load, and effect in a registered module.
 const impurities = (path: string, source: string, registry: readonly string[]) => {
   const found: string[] = [];
@@ -190,6 +192,10 @@ const impurities = (path: string, source: string, registry: readonly string[]) =
     }
 
     const target = posix.join(posix.dirname(path), specifier).replace(/\.js$/, '.ts');
+
+    if (pureLibraries.has(specifier)) {
+      return;
+    }
 
     if (!specifier.startsWith('.') || !registry.includes(target)) {
       at(node.start, `runtime import of ${specifier}`);

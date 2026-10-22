@@ -6,9 +6,8 @@ import {
 } from '../../config/config.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { errorMessage } from '../../errors.js';
-import { isRecord } from '../../isRecord.js';
-import { anyKey } from '../../unknownKeys.js';
-import type { KnownKeys } from '../../unknownKeys.js';
+import { anyKey, isRecord } from '../../schema.js';
+import type { KnownKeys } from '../../schema.js';
 
 export interface TrackerRepository {
   team: string;
