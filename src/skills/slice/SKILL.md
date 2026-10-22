@@ -103,9 +103,10 @@ design it follows in its Design section. The container has one sub-ticket per sl
 6. Call `slice` with `apply` for the last read.
    - First follow the approval rule in the tracker skill's
      [Procedure](../tracker/SKILL.md#procedure) step 5 over `plan.md` and every body file
-     `plan.json` names, such as `container.md` or `ticket.md` and the `slice-<n>.md` files. After a
-     review, carry `plan.md` changes into the draft as step 4 says, call `read` again, and resolve
-     its `problems`. Judge each acceptance item the review added or changed as step 5 says.
+     `plan.json` names, such as `container.md` or `ticket.md` and the `slice-<n>.md` files. Pass
+     `plan.md` first, then the container body, then the slice files in plan order. After a review,
+     carry `plan.md` changes into the draft as step 4 says, call `read` again, and resolve its
+     `problems`. Judge each acceptance item the review added or changed as step 5 says.
    - Then read the ownership of the existing container and of each existing slice that the read's
      `writes` change, as the tracker skill's [Hard rules](../tracker/SKILL.md#hard-rules) say. When
      another person owns one, show those writes and ask with `ask_user_question` before you apply,
