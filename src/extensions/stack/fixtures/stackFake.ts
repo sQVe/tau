@@ -32,7 +32,6 @@ export interface StackFake {
   failCommand: (key: string, stderr?: string) => void;
 }
 
-// Each gh call, as the arguments joined by spaces.
 export const joinedCalls = (fake: StackFake): string[] =>
   fake.calls.map((call) => call.commandArguments.join(' '));
 
