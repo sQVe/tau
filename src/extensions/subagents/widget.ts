@@ -1,7 +1,7 @@
 import type { Theme } from '@earendil-works/pi-coding-agent';
 import { stripTerminalSequences, truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 
-import { boxFrameWidth, boxLine, topBorder } from '../../box.js';
+import { boxFrameWidth, boxLine, topBorder } from '../../dialog/box.js';
 import { stateLabel } from './presentation.js';
 import { workerNamePattern } from './types.js';
 import type { WorkerState } from './types.js';

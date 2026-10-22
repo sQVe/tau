@@ -10,7 +10,7 @@ import type {
 import { wrapTextWithAnsi } from '@earendil-works/pi-tui';
 import type { AutocompleteItem, Component } from '@earendil-works/pi-tui';
 
-import { bottomBorder, boxFrameWidth, boxLine, topBorder } from '../../box.js';
+import { bottomBorder, boxFrameWidth, boxLine, topBorder } from '../../dialog/box.js';
 import { errorMessage } from '../../errors.js';
 import { snippetAutocomplete, snippetForItem } from './autocomplete.js';
 import { refillsHistory, sentPromptTexts } from './history.js';

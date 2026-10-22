@@ -1,6 +1,6 @@
 import { expect, it, vi, onTestFinished } from 'vitest';
 
-import { requireObject, result } from '../../terminal.js';
+import { requireObject, result } from '../../herdr.js';
 import { placementFixture as fixture } from './fixtures/placement.js';
 import { splitDirection } from './placement.js';
 

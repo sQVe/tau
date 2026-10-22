@@ -67,7 +67,7 @@ const pureModules = [
   'src/codemode/controlTools.ts',
   'src/config/allowedModels.ts',
   'src/config/repositoryEntry.ts',
-  'src/confirmationEligibility.ts',
+  'src/dialog/eligibility.ts',
   'src/extensions/askUserQuestion/questionnaire.ts',
   'src/extensions/askUserQuestion/typedAnswerGuard.ts',
   'src/extensions/askUserQuestion/validation.ts',

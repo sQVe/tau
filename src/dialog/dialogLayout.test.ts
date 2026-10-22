@@ -17,7 +17,7 @@ import {
 import type { Component, Terminal } from '@earendil-works/pi-tui';
 import { expect, it } from 'vitest';
 
-import { confirm } from '../src/confirm.js';
+import { confirm } from './dialog.js';
 
 const theme = {
   fg: (_color: string, text: string) => text,

@@ -23,7 +23,6 @@ const groupingFolders = new Set(['extensions', 'skills']);
 // name is the path below src/ without the extension. entry and publicFiles are paths below src/
 // without the extension; other files of a folder module are private.
 export const moduleList: readonly ModuleDeclaration[] = [
-  { name: 'box', entry: 'box', publicFiles: [] },
   {
     name: 'checkRecord',
     entry: 'checkRecord/checkRecord',
@@ -40,8 +39,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
     entry: 'config/config',
     publicFiles: ['config/models', 'config/repositoryEntry', 'config/repositorySection'],
   },
-  { name: 'confirm', entry: 'confirm', publicFiles: [] },
-  { name: 'confirmationEligibility', entry: 'confirmationEligibility', publicFiles: [] },
+  { name: 'dialog', entry: 'dialog/dialog', publicFiles: ['dialog/box', 'dialog/keys'] },
   { name: 'errors', entry: 'errors', publicFiles: [] },
   {
     name: 'extensions/subagents/controller',
@@ -58,13 +56,12 @@ export const moduleList: readonly ModuleDeclaration[] = [
     entry: 'github/github',
     publicFiles: ['github/repositoryTarget', 'github/repositoryTargetDecisions'],
   },
-  { name: 'herdrLayout', entry: 'herdrLayout', publicFiles: [] },
+  { name: 'herdr', entry: 'herdr', publicFiles: [] },
   {
     name: 'instructions',
     entry: 'instructions/instructions',
     publicFiles: ['instructions/systemPrompt'],
   },
-  { name: 'keys', entry: 'keys', publicFiles: [] },
   { name: 'linear', entry: 'linear', publicFiles: [] },
   { name: 'record', entry: 'record', publicFiles: [] },
   {
@@ -84,33 +81,28 @@ export const moduleList: readonly ModuleDeclaration[] = [
   { name: 'skillTools', entry: 'skillTools', publicFiles: [] },
   { name: 'tau', entry: 'tau', publicFiles: [] },
   { name: 'tauDirectory', entry: 'tauDirectory', publicFiles: [] },
-  { name: 'terminal', entry: 'terminal', publicFiles: [] },
   { name: 'worker', entry: 'worker', publicFiles: [] },
 ];
 
 // The shared modules each module may import, one row per module. src/tau.ts is the composition
 // root and has no row.
 export const importTable: Readonly<Record<string, readonly string[]>> = {
-  box: [],
   checkRecord: ['errors', 'gitOutput', 'record'],
   codemode: [],
   command: ['schema'],
   config: ['errors', 'schema'],
-  confirm: ['confirmationEligibility', 'keys', 'worker'],
-  confirmationEligibility: [],
+  dialog: ['worker'],
   errors: [],
   gitOutput: [],
   github: ['command', 'errors', 'gitOutput', 'schema'],
-  herdrLayout: ['terminal'],
+  herdr: [],
   instructions: [],
-  keys: [],
   linear: ['command', 'errors'],
   record: ['errors', 'schema', 'tauDirectory'],
   reviewCapture: ['errors', 'gitOutput', 'record', 'schema', 'tauDirectory'],
   schema: [],
   skillTools: [],
   tauDirectory: ['errors', 'gitOutput'],
-  terminal: [],
   worker: ['schema'],
 };
 

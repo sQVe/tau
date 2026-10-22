@@ -1,13 +1,20 @@
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 
 import {
   findTerminal,
+  herdrPaneId,
+  herdrSocketPath,
+  insideHerdr,
   requireObject,
   resolveTerminal,
   result,
   terminalLocation,
-} from './terminal.js';
-import type { TerminalCall } from './terminal.js';
+} from './herdr.js';
+import type { TerminalCall } from './herdr.js';
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 const pane = { pane_id: 'new:pane', terminal_id: 'owned', workspace_id: 'new', tab_id: 'new:tab' };
 
@@ -72,3 +79,34 @@ it.each(['pane_id', 'terminal_id', 'workspace_id', 'tab_id'])(
     }
   },
 );
+
+const readerCases = [
+  { name: 'HERDR_ENV', value: '1', read: insideHerdr, expected: true },
+  { name: 'HERDR_ENV', value: '0', read: insideHerdr, expected: false },
+  { name: 'HERDR_ENV', value: '', read: insideHerdr, expected: false },
+  { name: 'HERDR_PANE_ID', value: 'w1:p1', read: herdrPaneId, expected: 'w1:p1' },
+  { name: 'HERDR_PANE_ID', value: '', read: herdrPaneId, expected: undefined },
+  {
+    name: 'HERDR_SOCKET_PATH',
+    value: '/run/herdr.sock',
+    read: herdrSocketPath,
+    expected: '/run/herdr.sock',
+  },
+  { name: 'HERDR_SOCKET_PATH', value: '', read: herdrSocketPath, expected: undefined },
+];
+
+it.each(readerCases)('reads $name as $expected when set to "$value"', (readerCase) => {
+  vi.stubEnv(readerCase.name, readerCase.value);
+
+  expect(readerCase.read()).toBe(readerCase.expected);
+});
+
+it.each([
+  { name: 'HERDR_PANE_ID', read: herdrPaneId, expected: undefined },
+  { name: 'HERDR_SOCKET_PATH', read: herdrSocketPath, expected: undefined },
+  { name: 'HERDR_ENV', read: insideHerdr, expected: false },
+])('reads $name as absent when unset', (readerCase) => {
+  vi.stubEnv(readerCase.name, undefined);
+
+  expect(readerCase.read()).toBe(readerCase.expected);
+});

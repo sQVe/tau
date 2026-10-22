@@ -13,7 +13,7 @@ import {
   resolveTerminal,
   result,
   terminalLocation,
-} from '../src/terminal.js';
+} from '../src/herdr.js';
 
 const minimumPane = { width: 82, height: 24 };
 

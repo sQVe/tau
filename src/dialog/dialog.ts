@@ -3,9 +3,9 @@ import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
 import { Container, matchesKey, Spacer, Text, truncateToWidth } from '@earendil-works/pi-tui';
 import type { Component } from '@earendil-works/pi-tui';
 
-import { confirmationRefusal } from './confirmationEligibility.js';
+import { isWorkerProcess } from '../worker.js';
+import { confirmationRefusal } from './eligibility.js';
 import { isBottom, isDown, isTop, isUp } from './keys.js';
-import { isWorkerProcess } from './worker.js';
 
 interface ConfirmRequest {
   // What needs the confirmation, such as "Writing to Linear".

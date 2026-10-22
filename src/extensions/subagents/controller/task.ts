@@ -1,6 +1,6 @@
 import { parseModelReference } from '../../../config/models.js';
-import { resolveTerminal, text } from '../../../terminal.js';
-import type { TerminalCall } from '../../../terminal.js';
+import { resolveTerminal, text } from '../../../herdr.js';
+import type { TerminalCall } from '../../../herdr.js';
 import { processAbsent } from '../cancellation.js';
 import type { WorkerPlacement } from '../placement.js';
 import { modelEvidenceNotice, modelStatus } from '../presentation.js';

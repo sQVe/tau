@@ -6,9 +6,9 @@ import { isDeepStrictEqual } from 'node:util';
 import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 
 import { isMissingFile } from '../../../errors.js';
+import { listTerminals, result } from '../../../herdr.js';
+import type { TerminalCall } from '../../../herdr.js';
 import { loadedSkillToolsSource, skillToolsPath } from '../../../skillTools.js';
-import { listTerminals, result } from '../../../terminal.js';
-import type { TerminalCall } from '../../../terminal.js';
 import { acceptanceRefusal } from '../acceptanceRefusal.js';
 import { processAbsent } from '../cancellation.js';
 import { refuseLiveNativeWriter } from '../continuations.js';

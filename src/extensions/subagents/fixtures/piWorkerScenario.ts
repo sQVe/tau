@@ -10,7 +10,7 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { expect, onTestFinished, vi } from 'vitest';
 
-import { listTerminals, requireObject, result, terminalLocation } from '../../../terminal.js';
+import { listTerminals, requireObject, result, terminalLocation } from '../../../herdr.js';
 import { runClient } from '../cancellation.js';
 import { WorkerController } from '../controller/controller.js';
 import { resolveLoadout, validateSavedLoadout } from '../loadout.js';

@@ -10,9 +10,9 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { parseModelReference } from '../../../config/models.js';
+import { herdrSocketPath, listTerminals, requireObject, result } from '../../../herdr.js';
+import type { TerminalLocation } from '../../../herdr.js';
 import { skillTools } from '../../../skillTools.js';
-import { listTerminals, requireObject, result } from '../../../terminal.js';
-import type { TerminalLocation } from '../../../terminal.js';
 import { matchesWorker, runClient } from '../cancellation.js';
 import type { OwnedWorker } from '../cancellation.js';
 import { publishRecord, readEvent } from '../records.js';
@@ -51,7 +51,7 @@ export const socketRequest = async (
   signal?: AbortSignal,
 ): Promise<string> => {
   if (!socketPath) {
-    throw new RequestNotSentError('HERDR_SOCKET_PATH is not set.');
+    throw new RequestNotSentError('The herdr socket path is not set.');
   }
 
   const expired = AbortSignal.timeout(budget);
@@ -102,8 +102,7 @@ export const socketRequest = async (
 
 export const herdrClient: HerdrClient = (argumentsList, budget, signal) =>
   argumentsList[0] === 'layout'
-    ? // oxlint-disable-next-line node/no-process-env -- herdr gives each pane its socket path.
-      socketRequest(process.env.HERDR_SOCKET_PATH ?? '', argumentsList, budget, signal)
+    ? socketRequest(herdrSocketPath() ?? '', argumentsList, budget, signal)
     : runClient('herdr', argumentsList, budget, signal ? { signal } : {});
 
 // extensionPackages are the profile packages the parent installed for this start.

@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import type { CommandRuntime } from '../../command.js';
-import { confirmWithUser } from '../../confirm.js';
+import { confirmWithUser } from '../../dialog/dialog.js';
 import { errorMessage } from '../../errors.js';
 import type { Repository } from '../../github/github.js';
 import {

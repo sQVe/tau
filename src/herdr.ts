@@ -1,3 +1,5 @@
+/* oxlint-disable node/no-process-env -- The herdr connection comes from the active Pi process. */
+
 export type TerminalCall = (argumentsList: string[]) => Promise<string>;
 
 export interface TerminalLocation {
@@ -6,6 +8,25 @@ export interface TerminalLocation {
   workspaceId: string;
   tabId: string;
 }
+
+export type PaneLayout = Record<string, unknown> & { panes: unknown[] };
+
+export interface Rectangle {
+  width: number;
+  height: number;
+}
+
+const environmentValue = (name: string): string | undefined => {
+  const value = process.env[name];
+
+  return value === undefined || value === '' ? undefined : value;
+};
+
+export const insideHerdr = (): boolean => environmentValue('HERDR_ENV') === '1';
+
+export const herdrPaneId = (): string | undefined => environmentValue('HERDR_PANE_ID');
+
+export const herdrSocketPath = (): string | undefined => environmentValue('HERDR_SOCKET_PATH');
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -88,4 +109,34 @@ export const resolveTerminal = async (
   }
 
   return location;
+};
+
+// Leave room for pane borders and status rows around 80 columns and 20 useful rows.
+export const minimumPane = { width: 82, height: 24 };
+
+const isPositiveInteger = (value: unknown): boolean =>
+  Number.isSafeInteger(value) && Number(value) > 0;
+
+export const rectangle = (value: unknown): Rectangle => {
+  const bounds = requireObject(value);
+
+  if (!isPositiveInteger(bounds.width) || !isPositiveInteger(bounds.height)) {
+    throw new Error('Invalid herdr pane dimensions.');
+  }
+
+  return { width: Number(bounds.width), height: Number(bounds.height) };
+};
+
+export const readLayout = async (paneId: string, call: TerminalCall): Promise<PaneLayout> => {
+  const layout = requireObject(result(await call(['pane', 'layout', '--pane', paneId])).layout);
+
+  if (typeof layout.zoomed !== 'boolean') {
+    throw new TypeError('Missing herdr zoom state.');
+  }
+
+  if (!Array.isArray(layout.panes)) {
+    throw new TypeError('Missing herdr layout panes.');
+  }
+
+  return { ...layout, panes: layout.panes };
 };

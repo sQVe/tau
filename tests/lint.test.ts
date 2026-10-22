@@ -153,7 +153,7 @@ it('fails new shared files and shared imports that the module table does not lis
   await mkdir(join(directory, 'src'));
 
   const example = join(directory, 'src', 'example.ts');
-  const valueImport = join(directory, 'src', 'keys.ts');
+  const valueImport = join(directory, 'src', 'skillTools.ts');
   const typeImport = join(directory, 'src', 'errors.ts');
 
   await writeFile(example, 'export const value = 1;\n');
@@ -175,7 +175,7 @@ it('fails new shared files and shared imports that the module table does not lis
   expect(result.status).toBe(1);
   expect(diagnostics).toHaveLength(3);
   expect(linesFor(example)[0]).toContain('File "example.ts" is not in a module');
-  expect(linesFor(valueImport)[0]).toContain('"keys" must not import module "github"');
+  expect(linesFor(valueImport)[0]).toContain('"skillTools" must not import module "github"');
   expect(linesFor(typeImport)[0]).toContain('"errors" must not import module "schema"');
 }, 30_000);
 
@@ -186,7 +186,7 @@ it('keeps extensions out of shared modules but lets the package entry load them'
   onTestFinished(() => rm(directory, { recursive: true, force: true }));
   await mkdir(join(directory, 'src'));
 
-  const shared = join(directory, 'src', 'keys.ts');
+  const shared = join(directory, 'src', 'skillTools.ts');
   const entry = join(directory, 'src', 'tau.ts');
 
   const extension =

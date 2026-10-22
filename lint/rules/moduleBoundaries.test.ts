@@ -56,12 +56,12 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
       filename: '/repository/src/command.ts',
     },
     {
-      code: "import { keys } from '../keys.js';\nexport const value = keys;",
+      code: "import { keys } from '../skillTools.js';\nexport const value = keys;",
       filename: '/repository/src/reviewCapture/fixtures/fakeGit.ts',
     },
     {
       code: "import { anything } from './github.js';\n\nexport const value = anything;",
-      filename: '/repository/src/keys.test.ts',
+      filename: '/repository/src/skillTools.test.ts',
     },
     {
       code: 'export const value = 1;',
@@ -88,7 +88,7 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
       filename: '/repository/src/extensions/snippets/snippets/loader.ts',
     },
     {
-      code: "import { keys } from '../../../keys.js';\n\nexport const value = keys;",
+      code: "import { keys } from '../../../skillTools.js';\n\nexport const value = keys;",
       filename: '/repository/src/extensions/snippets/fixtures/helper.ts',
     },
   ],
@@ -160,8 +160,8 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
     },
     {
       code: "import tau from './tau.js';\n\nexport default tau;",
-      filename: '/repository/src/keys.ts',
-      errors: [{ messageId: 'root', data: { source: 'keys' } }],
+      filename: '/repository/src/skillTools.ts',
+      errors: [{ messageId: 'root', data: { source: 'skillTools' } }],
     },
     {
       code: "import tau from '../tau.js';\n\nexport default tau;",
@@ -189,38 +189,40 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
       errors: [{ messageId: 'unknownFile', data: { file: 'unlisted/helper.ts' } }],
     },
     {
-      code: "import { keys } from './keys.js';\n\nexport const value = keys;",
+      code: "import { keys } from './skillTools.js';\n\nexport const value = keys;",
       filename: '/repository/src/command.ts',
-      errors: [{ messageId: 'notAllowed', data: { source: 'command', target: 'keys' } }],
+      errors: [{ messageId: 'notAllowed', data: { source: 'command', target: 'skillTools' } }],
     },
     {
-      code: "import type { Keys } from './keys.js';\n\nexport type Value = Keys;",
+      code: "import type { Keys } from './skillTools.js';\n\nexport type Value = Keys;",
       filename: '/repository/src/command.ts',
-      errors: [{ messageId: 'notAllowed', data: { source: 'command', target: 'keys' } }],
+      errors: [{ messageId: 'notAllowed', data: { source: 'command', target: 'skillTools' } }],
     },
     {
-      code: "export { keys } from './keys.js';",
+      code: "export { keys } from './skillTools.js';",
       filename: '/repository/src/command.ts',
-      errors: [{ messageId: 'notAllowed', data: { source: 'command', target: 'keys' } }],
+      errors: [{ messageId: 'notAllowed', data: { source: 'command', target: 'skillTools' } }],
     },
     {
-      code: "export const load = () => import('./keys.js');",
+      code: "export const load = () => import('./skillTools.js');",
       filename: '/repository/src/command.ts',
       errors: [{ messageId: 'notAllowed' }],
     },
     {
-      code: "import { keys } from '../keys.js';\n\nexport const value = keys;",
+      code: "import { keys } from '../skillTools.js';\n\nexport const value = keys;",
       filename: '/repository/src/config/models.ts',
-      errors: [{ messageId: 'notAllowed', data: { source: 'config', target: 'keys' } }],
+      errors: [{ messageId: 'notAllowed', data: { source: 'config', target: 'skillTools' } }],
     },
     {
       code: "import { commitToolGuidelines } from './extensions/commit/commit.js';\n\nexport const value = commitToolGuidelines;",
-      filename: '/repository/src/keys.ts',
-      errors: [{ messageId: 'sharedToExtension', data: { source: 'keys', target: 'commit' } }],
+      filename: '/repository/src/skillTools.ts',
+      errors: [
+        { messageId: 'sharedToExtension', data: { source: 'skillTools', target: 'commit' } },
+      ],
     },
     {
       code: 'export const load = (name: string) => import(name);',
-      filename: '/repository/src/keys.ts',
+      filename: '/repository/src/skillTools.ts',
       errors: [{ messageId: 'computedImport' }],
     },
     {

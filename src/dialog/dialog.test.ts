@@ -3,8 +3,8 @@ import { KeybindingsManager, TUI_KEYBINDINGS as tuiKeybindings } from '@earendil
 import type { Component } from '@earendil-works/pi-tui';
 import { expect, it, vi } from 'vitest';
 
-import { customContext } from '../tests/toolContext.js';
-import { confirm } from './confirm.js';
+import { customContext } from '../../tests/toolContext.js';
+import { confirm } from './dialog.js';
 
 const theme = {
   fg: (color: string, text: string) => `<${color}>${text}</${color}>`,

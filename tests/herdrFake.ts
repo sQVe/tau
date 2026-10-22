@@ -1,7 +1,7 @@
 import type { HerdrClient } from '../src/extensions/subagents/controller/inspect.js';
 import { placementFixture } from '../src/extensions/subagents/fixtures/placement.js';
 import type { PlacementFixture } from '../src/extensions/subagents/fixtures/placement.js';
-import { requireObject, result, text } from '../src/terminal.js';
+import { requireObject, result, text } from '../src/herdr.js';
 import { herdrWorkerFake, shellProcessId } from './herdrWorkerFake.js';
 import type { FakeWorker, Reply, Surface } from './herdrWorkerFake.js';
 
