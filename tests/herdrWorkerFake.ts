@@ -169,9 +169,8 @@ export const herdrWorkerFake = (): HerdrWorkerFake => {
     },
     agentReply: (terminalId) => {
       const queued = queuedAgentReplies.get(`${terminalId}`)?.shift();
-      const pinned = pinnedReply('agent', terminalId);
 
-      return queued ?? pinned;
+      return queued ?? pinnedReply('agent', terminalId);
     },
     queueAgentReplies: (terminalId, replies) => {
       queuedAgentReplies.set(terminalId, [...replies]);
