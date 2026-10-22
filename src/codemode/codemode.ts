@@ -12,8 +12,8 @@ import {
   splitOutput,
   raiseOutputCap,
   readOutputBudget,
-} from './codemodeBudget.js';
-import { saveFullOutput } from './saveFullOutput.js';
+} from './budget.js';
+import { saveFullOutput } from './fullOutput.js';
 
 type ToolResultContent = ToolResultEvent['content'][number];
 

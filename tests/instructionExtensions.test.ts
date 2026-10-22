@@ -7,15 +7,7 @@ import { expect, it } from 'vitest';
 
 const instructionExtensions = ['writing', 'coding', 'workflow'] as const;
 
-const sharedModules = [
-  'codemodeBudget',
-  'controlTools',
-  'instructionSets',
-  'registerCodemodeBudget',
-  'saveFullOutput',
-  'systemPrompt',
-  'workerProcess',
-];
+const sharedModules = ['instructionSets', 'systemPrompt', 'workerProcess'];
 
 for (const extension of instructionExtensions) {
   it(`rejects invalid ${extension} instructions and reads them again on reload`, async ({

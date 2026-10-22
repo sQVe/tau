@@ -14,14 +14,14 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
+import { registerCodemodeBudget } from '../../codemode/codemode.js';
 import {
   isNestedChangeCall,
   isNestedControlCall,
   nestedChangeCallReason,
   nestedControlCallReason,
-} from '../../controlTools.js';
+} from '../../codemode/controlTools.js';
 import { instructionSetNames, readInstructionSet } from '../../instructionSets.js';
-import { registerCodemodeBudget } from '../../registerCodemodeBudget.js';
 import { appendSystemPrompt } from '../../systemPrompt.js';
 import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
 import type { WorkerActivity } from './activity.js';

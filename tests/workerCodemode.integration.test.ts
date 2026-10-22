@@ -15,7 +15,8 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { nestedChangeCallReason } from '../src/controlTools.js';
+import { nestedChangeCallReason } from '../src/codemode/controlTools.js';
+import codemodeExtension, { codemodeGuidelines } from '../src/extensions/codemode.js';
 import fullCheckExtension from '../src/extensions/fullCheck/fullCheck.js';
 import {
   nativeIdentity,
@@ -25,7 +26,7 @@ import { resolveProfile } from '../src/extensions/subagents/profiles.js';
 import { publish, readEvent, validateTask } from '../src/extensions/subagents/records.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
-import workflowExtension, { codemodeGuidelines } from '../src/extensions/workflow.js';
+import workflowExtension from '../src/extensions/workflow.js';
 import { skillTools } from '../src/skillTools.js';
 import { createBoundSession } from './piSession.js';
 
@@ -84,7 +85,7 @@ const temporaryDirectory = (prefix: string): string => {
 };
 
 // Starts a worker session from a bundled profile, as a launched Pi worker would. A launched worker
-// may run without Tau, so `workflow: false` leaves out the workflow extension.
+// may run without Tau, so `workflow: false` leaves out the workflow and codemode extensions.
 const startProfileWorker = async (
   directory: string,
   profileName: string,
@@ -141,7 +142,7 @@ const startProfileWorker = async (
   ];
 
   if (workflow) {
-    extensionFactories.push(workflowExtension);
+    extensionFactories.push(workflowExtension, codemodeExtension);
   }
 
   extensionFactories.push(workerExtension);
@@ -277,7 +278,11 @@ it.for([
       providers: [provider],
       tools: [...tools],
       settings: { compaction: { enabled: false }, retry: { enabled: false } },
-      extensionFactories: [createCodemodeExtension({ mode: 'on' }), workflowExtension],
+      extensionFactories: [
+        createCodemodeExtension({ mode: 'on' }),
+        workflowExtension,
+        codemodeExtension,
+      ],
     });
 
     provider.setResponses([step]);
@@ -330,6 +335,7 @@ const startManager = async (directory: string) => {
       createCodemodeExtension({ mode: 'on' }),
       packageToolFixtures(executed),
       workflowExtension,
+      codemodeExtension,
     ],
   });
 
