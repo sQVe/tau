@@ -180,7 +180,6 @@ const knownTopLevelKeys: KnownKeys = Object.fromEntries(
   Object.keys(topLevelKeys).map((key) => [key, true]),
 );
 
-// Warns once per session for each file and top-level key that `topLevelKeys` does not list.
 export const warnUnknownTopLevelKeys = (ui: ConfigWarnings, files: ConfigFile[]): void => {
   for (const { source, value } of files) {
     warnUnknownKeys(ui, source, value, knownTopLevelKeys, '');
