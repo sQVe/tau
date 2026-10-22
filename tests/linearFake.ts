@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 
-import type { Exec } from '../src/exec.js';
+import type { Exec } from '../src/command.js';
 
 type StateType =
   | 'triage'

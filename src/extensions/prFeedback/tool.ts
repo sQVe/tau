@@ -6,9 +6,8 @@ import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
-import type { Exec } from '../../exec.js';
+import type { Exec, CommandRuntime } from '../../command.js';
 import { parseRepository } from '../../github.js';
-import type { Runtime } from '../../github.js';
 import { findCheckoutRoot } from '../../gitOutput.js';
 import { checkTauDirectory, createFreshTauDirectory } from '../../tauDirectory.js';
 import { readChecks } from './checks.js';
@@ -87,7 +86,11 @@ const feedbackDirectory = async (root: string, directory: string | undefined) =>
   return absolute;
 };
 
-const post = async (runtime: Runtime, context: ExtensionContext, parameters: PrFeedbackInput) => {
+const post = async (
+  runtime: CommandRuntime,
+  context: ExtensionContext,
+  parameters: PrFeedbackInput,
+) => {
   const root = await findCheckoutRoot(runtime.cwd, 'pr_feedback');
 
   if (parameters.stateToken === undefined) {
@@ -104,7 +107,7 @@ const post = async (runtime: Runtime, context: ExtensionContext, parameters: PrF
   });
 };
 
-const read = async (runtime: Runtime, parameters: PrFeedbackInput) => {
+const read = async (runtime: CommandRuntime, parameters: PrFeedbackInput) => {
   if (parameters.repository === undefined) {
     throw new Error('read needs repository.');
   }
@@ -127,7 +130,7 @@ const read = async (runtime: Runtime, parameters: PrFeedbackInput) => {
   return { ...boundFeedback(feedback, { directory, feedback: path }) };
 };
 
-const checks = async (runtime: Runtime, parameters: PrFeedbackInput) => {
+const checks = async (runtime: CommandRuntime, parameters: PrFeedbackInput) => {
   if (parameters.repository === undefined) {
     throw new Error('checks needs repository.');
   }

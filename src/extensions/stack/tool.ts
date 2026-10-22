@@ -3,8 +3,7 @@ import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
-import type { Exec } from '../../exec.js';
-import type { Runtime } from '../../github.js';
+import type { Exec, CommandRuntime } from '../../command.js';
 import { readChain } from './chain.js';
 import { readCheck } from './check.js';
 import { readHistory } from './history.js';
@@ -64,7 +63,7 @@ const runAction = async (
   parameters: StackInput,
   signal: AbortSignal | undefined,
 ): Promise<Record<string, unknown>> => {
-  const runtime: Runtime = { exec, cwd, signal };
+  const runtime: CommandRuntime = { exec, cwd, signal };
 
   if (parameters.action === 'check') {
     return {

@@ -1,20 +1,16 @@
 import type { Static, TSchema } from 'typebox';
-import { Value } from 'typebox/value';
 
-import { runCommand } from './command.js';
-import type { Exec } from './exec.js';
-import { describeSchemaProblem } from './schemaProblem.js';
+import {
+  checkOutput as checkCommandOutput,
+  parseJson as parseCommandJson,
+  runCommand,
+} from './command.js';
+import type { CommandRuntime } from './command.js';
 
 export interface Repository {
   host: string;
   owner: string;
   name: string;
-}
-
-export interface Runtime {
-  exec: Exec;
-  cwd: string;
-  signal: AbortSignal | undefined;
 }
 
 // TypeScript accepts an assertion arrow function only through a declared type.
@@ -23,8 +19,6 @@ export type CheckOutput = <Schema extends TSchema>(
   schema: Schema,
   value: unknown,
 ) => asserts value is Static<Schema>;
-
-const outputPreviewLength = 200;
 
 const repositoryPart = /^[\w.-]+$/u;
 const hostPattern = /^[\w.-]+(?::\d+)?$/u;
@@ -48,33 +42,21 @@ const isLongValue = (argument: string) =>
 export const label = (commandArguments: readonly string[]): string =>
   ['gh', ...commandArguments.filter((argument) => !isLongValue(argument))].join(' ');
 
-const preview = (stdout: string) => stdout.slice(0, outputPreviewLength);
-
-export const run = (runtime: Runtime, commandArguments: string[]): Promise<string> => {
+export const run = (runtime: CommandRuntime, commandArguments: string[]): Promise<string> => {
   const commandLabel = label(commandArguments);
 
   return runCommand(runtime, 'gh', commandArguments, commandLabel);
 };
 
-export const parseJson = (commandArguments: readonly string[], stdout: string): unknown => {
-  try {
-    return JSON.parse(stdout);
-  } catch (error) {
-    throw new Error(
-      `${label(commandArguments)} printed output that is not JSON: ${preview(stdout)}`,
-      { cause: error },
-    );
-  }
-};
+export const parseJson = (commandArguments: readonly string[], stdout: string): unknown =>
+  parseCommandJson(label(commandArguments), stdout);
 
-export const readJson = async (runtime: Runtime, commandArguments: string[]): Promise<unknown> =>
-  parseJson(commandArguments, await run(runtime, commandArguments));
+export const readJson = async (
+  runtime: CommandRuntime,
+  commandArguments: string[],
+): Promise<unknown> => parseJson(commandArguments, await run(runtime, commandArguments));
 
 // Names the command and the first field that does not match.
 export const checkOutput: CheckOutput = (commandArguments, schema, value) => {
-  if (!Value.Check(schema, value)) {
-    throw new Error(
-      `${label(commandArguments)} printed unexpected output: ${describeSchemaProblem(schema, value)}`,
-    );
-  }
+  checkCommandOutput(label(commandArguments), schema, value);
 };

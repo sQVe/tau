@@ -1,5 +1,6 @@
-import { runCommand } from './command.js';
-import type { Exec } from './exec.js';
+import { outputPreviewLength, parseJson, runCommand } from './command.js';
+import type { Exec } from './command.js';
+import { errorMessage } from './errors.js';
 
 export interface ApiResponse {
   label: string;
@@ -7,18 +8,9 @@ export interface ApiResponse {
   data: unknown;
 }
 
-const outputPreviewLength = 200;
-
 // Linear also has closed state types besides `completed` and `canceled`, such as `duplicate`, so open
 // issues are matched by an allow-list.
 export const openStateTypes = ['triage', 'backlog', 'unstarted', 'started'];
-
-const errorMessage = (error: unknown) => {
-  const message: unknown =
-    typeof error === 'object' && error !== null && 'message' in error ? error.message : undefined;
-
-  return typeof message === 'string' ? message : JSON.stringify(error);
-};
 
 // GraphQL can return partial `data` beside `errors`, with a failed field set to null.
 const graphqlErrors = (value: unknown): string[] => {
@@ -57,16 +49,7 @@ export const api = async (
     JSON.stringify(variables),
   ]);
 
-  let value: unknown;
-
-  try {
-    value = JSON.parse(stdout);
-  } catch (error) {
-    throw new Error(
-      `${label} printed output that is not JSON: ${stdout.slice(0, outputPreviewLength)}`,
-      { cause: error },
-    );
-  }
+  const value = parseJson(label, stdout);
 
   const errors = graphqlErrors(value);
 

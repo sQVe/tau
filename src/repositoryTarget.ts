@@ -1,7 +1,8 @@
 import { Type } from 'typebox';
 
+import type { CommandRuntime } from './command.js';
 import { checkOutput, parseRepository, readJson } from './github.js';
-import type { Repository, Runtime } from './github.js';
+import type { Repository } from './github.js';
 import { readGit, readOptionalGit, runGit } from './gitOutput.js';
 import {
   formatRepository,
@@ -164,7 +165,7 @@ const sshArguments = (destination: SshDestination) => {
 // Resolves an SSH Host alias, such as github-work, to the hostname SSH connects to for that user and
 // port. Keeps the host when ssh fails or prints no hostname, and never passes ssh a destination
 // that it would read as an option.
-const sshHostResolver = (runtime: Runtime): ResolveHost => {
+const sshHostResolver = (runtime: CommandRuntime): ResolveHost => {
   const resolved = new Map<string, Promise<string>>();
 
   const resolve = async (destination: SshDestination, commandArguments: string[]) => {
@@ -282,7 +283,7 @@ const readRemote = async (
   };
 };
 
-const readRemotes = async (runtime: Runtime): Promise<Remote[]> => {
+const readRemotes = async (runtime: CommandRuntime): Promise<Remote[]> => {
   const urls = await readRemoteUrls(runtime.cwd);
   const resolveHost = sshHostResolver(runtime);
 
@@ -309,7 +310,7 @@ const readRemotesWithBranch = async (cwd: string, remotes: readonly Remote[], br
     .filter((name) => refs.includes(`refs/remotes/${name}/${branch}`));
 };
 
-const readRepositoryView = async (runtime: Runtime, repository: Repository) => {
+const readRepositoryView = async (runtime: CommandRuntime, repository: Repository) => {
   const commandArguments = [
     'repo',
     'view',
@@ -326,7 +327,7 @@ const readRepositoryView = async (runtime: Runtime, repository: Repository) => {
 };
 
 export const resolveHead = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   request: HeadRequest,
 ): Promise<ResolvedHead> => {
   const { cwd } = runtime;
@@ -354,7 +355,7 @@ export const resolveHead = async (
 };
 
 const viewRepository = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
 ): Promise<ViewedRepository> => {
   const view = await readRepositoryView(runtime, repository);
@@ -370,7 +371,7 @@ const viewRepository = async (
 };
 
 export const resolveBaseRepository = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   headRepository: Repository,
 ): Promise<ResolvedBase> => {
   const head = await viewRepository(runtime, headRepository);

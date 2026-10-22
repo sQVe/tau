@@ -2,8 +2,9 @@ import { Type } from 'typebox';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
+import type { CommandRuntime } from '../../command.js';
 import { label } from '../../github.js';
-import type { Repository, Runtime } from '../../github.js';
+import type { Repository } from '../../github.js';
 import { runGit } from '../../gitOutput.js';
 import { formatRepository } from '../../repositoryTargetDecisions.js';
 import { describeSchemaProblem } from '../../schemaProblem.js';
@@ -64,7 +65,10 @@ const pullViewSchema = Type.Object({
 
 const defaultBranchSchema = Type.Object({ defaultBranchRef: Type.Object({ name: Type.String() }) });
 
-const runGh = async (runtime: Runtime, commandArguments: string[]): Promise<CommandOutput> => {
+const runGh = async (
+  runtime: CommandRuntime,
+  commandArguments: string[],
+): Promise<CommandOutput> => {
   const result = await runtime.exec('gh', commandArguments, {
     cwd: runtime.cwd,
     ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
@@ -129,7 +133,7 @@ const parseJsonOutput = <Schema extends TSchema>(
 };
 
 const listPulls = async <Schema extends TSchema>(
-  runtime: Runtime,
+  runtime: CommandRuntime,
   commandArguments: string[],
   schema: Schema,
 ): Promise<Read<Static<Schema>>> => {
@@ -147,7 +151,7 @@ const listPulls = async <Schema extends TSchema>(
 };
 
 // Only an exit 0 run has output to read. Any other exit code is a result in itself.
-export const readStackViewFacts = async (runtime: Runtime): Promise<StackViewRead> => {
+export const readStackViewFacts = async (runtime: CommandRuntime): Promise<StackViewRead> => {
   const output = await runGh(runtime, ['stack', 'view', '--json']);
 
   if (output.exitCode !== 0) {
@@ -158,7 +162,7 @@ export const readStackViewFacts = async (runtime: Runtime): Promise<StackViewRea
 };
 
 export const readHeadPulls = (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
   branch: string,
 ): Promise<Read<HeadPull[]>> =>
@@ -182,7 +186,7 @@ export const readHeadPulls = (
   );
 
 export const readBasedOnPulls = (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
   branch: string,
 ): Promise<Read<BasedPull[]>> =>
@@ -206,7 +210,7 @@ export const readBasedOnPulls = (
   );
 
 export const readStacks = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
   number: number,
 ): Promise<Read<StackedPullRequests>> => {
@@ -221,7 +225,7 @@ export const readStacks = async (
 };
 
 export const readPullView = (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
   pull: number | string,
 ): Promise<Read<PullView>> => {
@@ -241,7 +245,7 @@ export const readPullView = (
 };
 
 export const readDefaultBranch = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
 ): Promise<Read<string>> => {
   const commandArguments = [

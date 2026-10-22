@@ -3,8 +3,7 @@ import { defineTool, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
-import type { Exec } from '../../exec.js';
-import type { Runtime } from '../../github.js';
+import type { Exec, CommandRuntime } from '../../command.js';
 import { findCheckoutRoot } from '../../gitOutput.js';
 import { createFreshTauDirectory } from '../../tauDirectory.js';
 import { readCheckHeader, readPublicationEvidence } from './evidence.js';
@@ -78,13 +77,13 @@ const description = `Gather publication facts for a pull request, verify the pub
 - verify {repository, pr, directory, title, base, draft}: compares the pull request with the approved preview. directory is the prepare directory holding body.md. Returns {url, matches, differences}. Each difference is {field, expected, actual} for title, body, base, draft, or head.
 - reviewBots {repository, pr}: reads the bots configured in the user tau.json for the repository. Returns {bots}, each {login, comment, status}. status is reviewed when the bot reviewed the current head, requested when its comment was posted after the head commit and its first check suite, and request otherwise. Post comment for each bot with status request. An empty bots list means the config has no entry: request no bot.`;
 
-const prepare = async (runtime: Runtime) => {
+const prepare = async (runtime: CommandRuntime) => {
   const root = await findCheckoutRoot(runtime.cwd, 'pr');
 
   return { directory: await createFreshTauDirectory(root, runPath, runPrefix) };
 };
 
-const reuse = async (runtime: Runtime, parameters: PrInput) => {
+const reuse = async (runtime: CommandRuntime, parameters: PrInput) => {
   const root = await findCheckoutRoot(runtime.cwd, 'pr');
 
   const { directory, mergeBase } = parameters;
@@ -93,7 +92,7 @@ const reuse = async (runtime: Runtime, parameters: PrInput) => {
   return { ...result };
 };
 
-const verify = async (runtime: Runtime, parameters: PrInput) => {
+const verify = async (runtime: CommandRuntime, parameters: PrInput) => {
   const root = await findCheckoutRoot(runtime.cwd, 'pr');
 
   const result = await readVerify(runtime, root, parameters);
@@ -102,7 +101,7 @@ const verify = async (runtime: Runtime, parameters: PrInput) => {
 };
 
 const reviewBots = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   options: PrToolOptions,
   parameters: PrInput,
   context: PrContext,

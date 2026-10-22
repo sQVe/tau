@@ -3,8 +3,8 @@ import { join } from 'node:path';
 
 import { Type } from 'typebox';
 
+import type { CommandRuntime } from '../../command.js';
 import { checkOutput, parseRepository, readJson } from '../../github.js';
-import type { Runtime } from '../../github.js';
 import { readGit } from '../../gitOutput.js';
 import { existingEntry } from '../../reviewCapture/reviewDirectory.js';
 import { checkTauDirectory, locateTauChild } from '../../tauDirectory.js';
@@ -84,7 +84,7 @@ const readBody = async (root: string, directory: string) => {
 };
 
 const readPublished = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: string,
   pr: number,
 ): Promise<PullRequestFields & { url: string }> => {
@@ -136,7 +136,7 @@ const parsePullRequestNumber = (pr: number | undefined) => {
 
 // Reads the run's body.md, local HEAD, and the published pull request, and writes nothing.
 export const readVerify = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   root: string,
   request: VerifyRequest,
 ): Promise<VerifyResult> => {

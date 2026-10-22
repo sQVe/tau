@@ -2,9 +2,10 @@ import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
+import type { CommandRuntime } from '../../command.js';
 import { confirmWithUser } from '../../confirm.js';
 import { errorMessage } from '../../errors.js';
-import type { Repository, Runtime } from '../../github.js';
+import type { Repository } from '../../github.js';
 import {
   postIssueComment,
   postReply,
@@ -26,7 +27,7 @@ export interface PostInput {
 }
 
 interface WriteTarget {
-  runtime: Runtime;
+  runtime: CommandRuntime;
   repository: Repository;
   pr: number;
 }
@@ -401,7 +402,7 @@ const saveSettled = async (directory: string, feedback: PullRequestFeedback) => 
 // Posts only the writes the read checked. The feedback and posted.json are read again after the
 // confirm, since the user can take any time to answer.
 export const postReplies = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   context: ExtensionContext,
   checkDirectory: () => Promise<string>,
   input: PostInput,

@@ -1,9 +1,10 @@
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
+import type { CommandRuntime } from '../../command.js';
 import { errorMessage } from '../../errors.js';
 import { checkOutput, label, parseJson, readJson, run } from '../../github.js';
-import type { CheckOutput, Repository, Runtime } from '../../github.js';
+import type { CheckOutput, Repository } from '../../github.js';
 import { repositoryName } from './checkEvidence.js';
 
 const threadsQuery = `query ($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
@@ -148,7 +149,10 @@ export class UnreadWriteOutputError extends Error {
   }
 }
 
-export const readViewer = async (runtime: Runtime, repository: Repository): Promise<string> => {
+export const readViewer = async (
+  runtime: CommandRuntime,
+  repository: Repository,
+): Promise<string> => {
   const commandArguments = ['api', 'user', '--hostname', repository.host];
   const viewer = await readJson(runtime, commandArguments);
 
@@ -158,7 +162,7 @@ export const readViewer = async (runtime: Runtime, repository: Repository): Prom
 };
 
 export const readPullRequest = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
   pr: number,
 ): Promise<PullRequest> => {
@@ -180,7 +184,7 @@ export const readPullRequest = async (
 };
 
 export const readThreads = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
   pr: number,
 ): Promise<ThreadNode[]> => {
@@ -218,7 +222,7 @@ const restListArguments = (repository: Repository, path: string) => [
 ];
 
 export const readReviews = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
   pr: number,
 ): Promise<ReviewItem[]> => {
@@ -231,7 +235,7 @@ export const readReviews = async (
 };
 
 export const readIssueComments = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
   pr: number,
 ): Promise<IssueCommentItem[]> => {
@@ -243,7 +247,7 @@ export const readIssueComments = async (
   return pages.flat();
 };
 
-const runWrite = async (runtime: Runtime, commandArguments: string[]) => {
+const runWrite = async (runtime: CommandRuntime, commandArguments: string[]) => {
   try {
     return await run(runtime, commandArguments);
   } catch (error) {
@@ -251,7 +255,7 @@ const runWrite = async (runtime: Runtime, commandArguments: string[]) => {
   }
 };
 
-const writeJson = async (runtime: Runtime, commandArguments: string[]): Promise<unknown> => {
+const writeJson = async (runtime: CommandRuntime, commandArguments: string[]): Promise<unknown> => {
   const stdout = await runWrite(runtime, commandArguments);
 
   try {
@@ -282,7 +286,7 @@ const postArguments = (repository: Repository, path: string, body: string) => [
 
 // Returns the ID of the new comment.
 export const postReply = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
   reply: { pr: number; replyTo: number; body: string },
 ): Promise<number> => {
@@ -297,7 +301,7 @@ export const postReply = async (
 
 // Returns the ID of the new comment.
 export const postIssueComment = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
   comment: { pr: number; body: string },
 ): Promise<number> => {
@@ -311,7 +315,7 @@ export const postIssueComment = async (
 };
 
 export const resolveThread = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
   threadId: string,
 ): Promise<void> => {

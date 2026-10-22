@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
-import type { Exec } from '../../../exec.js';
+import type { Exec } from '../../../command.js';
 import { createDraftReviewTool } from '../tool.js';
 import type { DraftReviewRuntime } from '../tool.js';
 

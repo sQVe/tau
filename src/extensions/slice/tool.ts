@@ -6,8 +6,8 @@ import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
+import type { Exec } from '../../command.js';
 import { isMissingFile } from '../../errors.js';
-import type { Exec } from '../../exec.js';
 import { ensureTauDirectory, findTauRoot } from '../../tauDirectory.js';
 import { applySlicePlan } from './apply.js';
 import { readPlan, rejectLinkedDraftFiles } from './draft.js';

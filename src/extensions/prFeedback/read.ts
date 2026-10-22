@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
-import type { Repository, Runtime } from '../../github.js';
+import type { CommandRuntime } from '../../command.js';
+import type { Repository } from '../../github.js';
 import { repositoryName } from './checkEvidence.js';
 import {
   readIssueComments,
@@ -29,7 +30,7 @@ export interface PullRequestFeedback {
 
 // Reads the pull request and its feedback once. Writes nothing.
 export const readFeedback = async (
-  runtime: Runtime,
+  runtime: CommandRuntime,
   repository: Repository,
   pr: number,
 ): Promise<PullRequestFeedback> => {

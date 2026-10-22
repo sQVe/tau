@@ -165,7 +165,7 @@ it('fails new shared files and shared imports that the module table does not lis
 
   await writeFile(
     typeImport,
-    "import type { ExecResult } from './exec.js';\n\nexport type Value = ExecResult;\n",
+    "import type { Problem } from './schemaProblem.js';\n\nexport type Value = Problem;\n",
   );
 
   const { result, diagnostics } = lintModuleBoundaries([example, valueImport, typeImport]);
@@ -176,7 +176,7 @@ it('fails new shared files and shared imports that the module table does not lis
   expect(diagnostics).toHaveLength(3);
   expect(linesFor(example)[0]).toContain('File "example.ts" is not in a module');
   expect(linesFor(valueImport)[0]).toContain('"keys" must not import module "github"');
-  expect(linesFor(typeImport)[0]).toContain('"errors" must not import module "exec"');
+  expect(linesFor(typeImport)[0]).toContain('"errors" must not import module "schemaProblem"');
 }, 30_000);
 
 it('keeps extensions out of shared modules but lets the package entry load them', async ({
