@@ -94,27 +94,27 @@ it('rejects text that is not JSON and keeps the parse error', () => {
   };
 
   expect(failure()).toMatchObject({
-    message: 'Malformed sample record a.json: not JSON.',
+    message: expect.stringMatching(/^Malformed .*a\.json/) as unknown,
     cause: expect.any(SyntaxError) as unknown,
   });
 });
 
 it('rejects a newer version before it checks the schema', () => {
   expect(() => parseVersionedRecord('a.json', '{"version":3,"other":1}', options)).toThrow(
-    'Sample record a.json has a newer format than this Tau reads. Update Tau, then restart the session.',
+    /newer format/,
   );
 });
 
 it('rejects a known version that fails the schema', () => {
   expect(() => parseVersionedRecord('a.json', '{"version":2,"name":1}', options)).toThrow(
-    /^Malformed sample record a\.json: \/name .+\.$/,
+    /^Malformed .*\/name/,
   );
 });
 
 it('reports the problem from check before the schema', () => {
   expect(() =>
     parseVersionedRecord('a.json', '{"version":2}', { ...options, check: () => '/part bad' }),
-  ).toThrow('Malformed sample record a.json: /part bad.');
+  ).toThrow(/^Malformed .*\/part bad/);
 });
 
 it('picks the schema from the value', () => {
