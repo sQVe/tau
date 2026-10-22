@@ -1,7 +1,3 @@
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
 import { fauxProvider } from '@earendil-works/pi-ai';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
@@ -13,16 +9,16 @@ import {
 import tauExtension from '../src/tau.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 it('terminates a raw git commit call after Tau refuses worker capacity', async ({
   onTestFinished,
 }) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-capacity-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-capacity-');
 
   onTestFinished(async () => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
-    await rm(directory, { recursive: true, force: true });
   });
 
   isolateWebAccessConfig(directory, onTestFinished);

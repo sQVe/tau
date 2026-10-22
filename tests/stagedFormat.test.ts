@@ -1,12 +1,13 @@
 import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import type { TestContext } from 'vitest';
 import { expect, it } from 'vitest';
 
 import viteConfig from '../vite.config.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const jsonFamily = '!(pnpm-lock).{json,md,yaml,yml,css}';
@@ -50,6 +51,7 @@ const runStagedFormatter = (pattern: string, paths: string[]): number => {
 // formatter commands see no target file.
 const createIgnoredFixture = async (name: string, contents: string) => {
   await mkdir(join(root, '.pi'), { recursive: true });
+  // The directory must sit inside the repository so the formatter ignores it.
   const directory = await mkdtemp(join(root, '.pi', 'format-probe-'));
   const path = join(directory, name);
   await writeFile(path, contents);
@@ -57,8 +59,12 @@ const createIgnoredFixture = async (name: string, contents: string) => {
   return { directory, path };
 };
 
-const createTemporaryFixture = async (name: string, contents: string) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-staged-format-'));
+const createTemporaryFixture = async (
+  cleanup: TestContext['onTestFinished'],
+  name: string,
+  contents: string,
+) => {
+  const directory = temporaryDirectory(cleanup, 'tau-staged-format-');
   const path = join(directory, name);
   await writeFile(path, contents);
 
@@ -82,19 +88,26 @@ it('rejects a supported unformatted staged file even when another target is igno
   onTestFinished,
 }) => {
   const ignored = await createIgnoredFixture('ignored.json', '{"alpha":   1}\n');
-  const unformatted = await createTemporaryFixture('unformatted.json', '{"alpha":   1}\n');
+
+  const unformatted = await createTemporaryFixture(
+    onTestFinished,
+    'unformatted.json',
+    '{"alpha":   1}\n',
+  );
 
   onTestFinished(async () => {
     await rm(ignored.directory, { recursive: true, force: true });
-    await rm(unformatted.directory, { recursive: true, force: true });
   });
 
   expect(runStagedFormatter(jsonFamily, [ignored.path, unformatted.path])).toBe(1);
 });
 
 it('accepts a supported formatted staged file', async ({ onTestFinished }) => {
-  const formatted = await createTemporaryFixture('formatted.json', '{\n  "alpha": 1\n}\n');
-  onTestFinished(() => rm(formatted.directory, { recursive: true, force: true }));
+  const formatted = await createTemporaryFixture(
+    onTestFinished,
+    'formatted.json',
+    '{\n  "alpha": 1\n}\n',
+  );
 
   expect(runStagedFormatter(jsonFamily, [formatted.path])).toBe(0);
 });

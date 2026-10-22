@@ -1,6 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
@@ -10,6 +8,7 @@ import type { TestContext } from 'vitest';
 import { bundledProfileDirectory, parseProfile } from '../src/extensions/subagents/profiles.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 const webToolNames = ['fetch_content', 'get_search_content', 'web_search'];
 
@@ -17,16 +16,15 @@ const extensionPaths = [
   resolve(import.meta.dirname, '../node_modules/pi-web-access/dist/index.js'),
 ];
 
-const createDirectory = async (registerCleanup: TestContext['onTestFinished']) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-web-activation-'));
-  registerCleanup(() => rm(directory, { recursive: true, force: true }));
+const createDirectory = (registerCleanup: TestContext['onTestFinished']) => {
+  const directory = temporaryDirectory(registerCleanup, 'tau-web-activation-');
   isolateWebAccessConfig(join(directory, 'agent'), registerCleanup);
 
   return directory;
 };
 
 it('keeps the scout profile web tools active from the first turn', async ({ onTestFinished }) => {
-  const directory = await createDirectory(onTestFinished);
+  const directory = createDirectory(onTestFinished);
   const scoutPath = join(bundledProfileDirectory, 'scout.md');
   const scout = parseProfile(readFileSync(scoutPath, 'utf8'), 'scout', scoutPath);
 
@@ -47,7 +45,7 @@ it('keeps the scout profile web tools active from the first turn', async ({ onTe
 it('lets a parent session enable the hidden web tools with web_enable', async ({
   onTestFinished,
 }) => {
-  const directory = await createDirectory(onTestFinished);
+  const directory = createDirectory(onTestFinished);
   const provider = fauxProvider();
 
   const { session } = await createBoundSession(onTestFinished, {

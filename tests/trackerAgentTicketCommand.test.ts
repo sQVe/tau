@@ -1,10 +1,10 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createLinearFake } from './linearFake.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 const splitCommand = (command: string): string[] => {
   const words = command.match(/(?:[^\s']+|'[^']*')+/gu) ?? [];
@@ -13,9 +13,7 @@ const splitCommand = (command: string): string[] => {
 };
 
 it('creates an agent ticket with a digits-only string title under its slice', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-tracker-command-'));
-
-  onTestFinished(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(onTestFinished, 'tau-tracker-command-');
 
   const descriptionFile = join(directory, 'description.md');
 

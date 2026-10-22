@@ -1,6 +1,4 @@
 import { existsSync, readdirSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
@@ -9,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import tauExtension from '../src/tau.js';
 import { createBoundSession } from './piSession.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 // Real Pi sessions need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
@@ -21,10 +20,8 @@ const skillNames = readdirSync(skillsDirectory).filter((name) =>
 );
 
 const createSession = async (registerCleanup: TestContext['onTestFinished']) => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-skill-command-'));
-  const agentDirectory = await mkdtemp(join(tmpdir(), 'tau-skill-command-agent-'));
-  registerCleanup(() => rm(directory, { recursive: true, force: true }));
-  registerCleanup(() => rm(agentDirectory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(registerCleanup, 'tau-skill-command-');
+  const agentDirectory = temporaryDirectory(registerCleanup, 'tau-skill-command-agent-');
 
   const faux = fauxProvider({ provider: 'tau-skill-command-test' });
 

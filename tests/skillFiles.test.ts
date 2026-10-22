@@ -1,11 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { blockIdentity, findSkillProblems } from './skillFiles.js';
 import type { SkillAllowlists, SkillProblemKind } from './skillFiles.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 const skillsDirectory = join(import.meta.dirname, '..', 'src', 'skills');
 
@@ -30,10 +30,8 @@ const shellBlock = (...lines: string[]) =>
   `${validFrontmatter('demo')}\`\`\`sh\n${lines.join('\n')}\n\`\`\`\n`;
 
 const createSkills = async (skills: Record<string, string>) => {
-  const root = await mkdtemp(join(tmpdir(), 'tau-skill-files-'));
+  const root = temporaryDirectory(onTestFinished, 'tau-skill-files-');
   const directory = join(root, 'skills');
-
-  onTestFinished(() => rm(root, { recursive: true, force: true }));
 
   await mkdir(join(root, 'docs', 'adr'), { recursive: true });
   await writeFile(join(root, 'docs', 'adr', '0004.md'), '# ADR 0004\n');

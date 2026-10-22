@@ -1,5 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -29,6 +28,7 @@ import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import { skillTools } from '../src/skillTools.js';
 import { createBoundSession } from './piSession.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 interface ToolOutcome {
   toolName: string;
@@ -71,12 +71,11 @@ const packageToolFixtures = (executed: string[]) => (pi: ExtensionAPI) => {
   }
 };
 
-const temporaryDirectory = (prefix: string): string => {
-  const directory = mkdtempSync(join(tmpdir(), prefix));
+const piAgentDirectory = (prefix: string): string => {
+  const directory = temporaryDirectory(onTestFinished, prefix);
 
   onTestFinished(() => {
     vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
@@ -218,7 +217,7 @@ it.for([
   ['qa', false],
   ['browser', false],
 ] as const)('gives the bundled %s profile codemode: %s', async ([profileName, expected]) => {
-  const directory = temporaryDirectory('tau-profile-codemode-');
+  const directory = piAgentDirectory('tau-profile-codemode-');
   const worker = await startProfileWorker(directory, profileName);
 
   expect(readEvent(worker.taskDirectory, worker.taskId, 'ready')).toBeDefined();
@@ -226,7 +225,7 @@ it.for([
 });
 
 it('refuses a scout script call to a tool the profile does not list', async () => {
-  const directory = temporaryDirectory('tau-scout-codemode-');
+  const directory = piAgentDirectory('tau-scout-codemode-');
   const worker = await startProfileWorker(directory, 'scout');
 
   const script =
@@ -250,7 +249,7 @@ it.for([
 ] as const)(
   'adds the codemode guidelines to the %s worker prompt: %s',
   async ([profileName, expected]) => {
-    const directory = temporaryDirectory('tau-worker-guidelines-');
+    const directory = piAgentDirectory('tau-worker-guidelines-');
     const worker = await startProfileWorker(directory, profileName);
     const { captured, step } = captureSystemPrompt();
 
@@ -267,7 +266,7 @@ it.for([
 ] as const)(
   'adds the codemode guidelines to a manager prompt with tools %j: %s',
   async ([tools, expected]) => {
-    const directory = temporaryDirectory('tau-manager-guidelines-');
+    const directory = piAgentDirectory('tau-manager-guidelines-');
     vi.stubEnv('TAU_WORKER_RECORD', '');
     const provider = fauxProvider({ provider: 'tau-manager-guidelines' });
     const { captured, step } = captureSystemPrompt();
@@ -362,7 +361,7 @@ const startManager = async (directory: string) => {
 };
 
 it('refuses change tools called from a worker script and changes nothing', async () => {
-  const directory = temporaryDirectory('tau-worker-change-script-');
+  const directory = piAgentDirectory('tau-worker-change-script-');
   const worker = await startProfileWorker(directory, 'worker', { workflow: false });
 
   const outcomes = await runTask(worker, [
@@ -379,7 +378,7 @@ it('refuses change tools called from a worker script and changes nothing', async
 });
 
 it('runs change tools a worker calls directly', async () => {
-  const directory = temporaryDirectory('tau-worker-change-direct-');
+  const directory = piAgentDirectory('tau-worker-change-direct-');
   const worker = await startProfileWorker(directory, 'worker', { workflow: false });
 
   const outcomes = await runTask(worker, [directChangeCalls, ...stopWithoutReport]);
@@ -391,7 +390,7 @@ it('runs change tools a worker calls directly', async () => {
 });
 
 it('refuses change tools called from a manager script and changes nothing', async () => {
-  const directory = temporaryDirectory('tau-manager-change-script-');
+  const directory = piAgentDirectory('tau-manager-change-script-');
   const manager = await startManager(directory);
 
   const outcomes = await manager.run([
@@ -408,7 +407,7 @@ it('refuses change tools called from a manager script and changes nothing', asyn
 });
 
 it('runs change tools a manager calls directly', async () => {
-  const directory = temporaryDirectory('tau-manager-change-direct-');
+  const directory = piAgentDirectory('tau-manager-change-direct-');
   const manager = await startManager(directory);
 
   const outcomes = await manager.run([directChangeCalls, fauxAssistantMessage('Done.')]);
@@ -438,7 +437,7 @@ text('small two');
 `;
 
 it('blocks a worker script that raises the budget without a reason and runs nothing', async () => {
-  const directory = temporaryDirectory('tau-worker-budget-refusal-');
+  const directory = piAgentDirectory('tau-worker-budget-refusal-');
   const worker = await startProfileWorker(directory, 'scout');
 
   const outcomes = await runTask(worker, [
@@ -456,7 +455,7 @@ it('blocks a worker script that raises the budget without a reason and runs noth
 });
 
 it('returns the items that fit and names each cut item with the full-output path', async () => {
-  const directory = temporaryDirectory('tau-worker-budget-cut-');
+  const directory = piAgentDirectory('tau-worker-budget-cut-');
   const worker = await startProfileWorker(directory, 'scout');
 
   const outcomes = await runTask(worker, [
@@ -482,7 +481,7 @@ it('returns the items that fit and names each cut item with the full-output path
 });
 
 it('returns a script within its budget as Pi does without the budget handlers', async () => {
-  const directory = temporaryDirectory('tau-worker-budget-within-');
+  const directory = piAgentDirectory('tau-worker-budget-within-');
   const worker = await startProfileWorker(directory, 'scout');
 
   const outcomes = await runTask(worker, [
@@ -500,7 +499,7 @@ it('returns a script within its budget as Pi does without the budget handlers', 
 });
 
 it('blocks a manager script that raises the budget without a reason', async () => {
-  const directory = temporaryDirectory('tau-manager-budget-refusal-');
+  const directory = piAgentDirectory('tau-manager-budget-refusal-');
   const manager = await startManager(directory);
 
   const outcomes = await manager.run([
@@ -516,7 +515,7 @@ it('blocks a manager script that raises the budget without a reason', async () =
 });
 
 it('keeps a script with 1,000 short rows within the default budget', async () => {
-  const directory = temporaryDirectory('tau-worker-budget-rows-');
+  const directory = piAgentDirectory('tau-worker-budget-rows-');
   const worker = await startProfileWorker(directory, 'scout');
   const script = "for (let row = 1; row <= 1000; row++) text('row ' + row + ' ' + 'x'.repeat(40));";
 
@@ -535,7 +534,7 @@ it('keeps a script with 1,000 short rows within the default budget', async () =>
 });
 
 it('lets Pi reject an invalid max_output_tokens and runs no nested call', async () => {
-  const directory = temporaryDirectory('tau-worker-budget-invalid-');
+  const directory = piAgentDirectory('tau-worker-budget-invalid-');
   const worker = await startProfileWorker(directory, 'scout');
   const script = `// @options: {"max_output_tokens": -1}\nawait tools.read({ path: 'source.txt' });\ntext('invalid-ran');`;
 

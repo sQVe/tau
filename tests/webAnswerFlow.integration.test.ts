@@ -16,6 +16,7 @@ let agentDirectory: string;
 
 // pi-web-access keeps the config path from its first load in this process, so every scenario shares one.
 beforeAll(async () => {
+  // The directory outlives each test, so `afterAll` removes it.
   directory = await mkdtemp(join(tmpdir(), 'tau-web-answer-'));
   agentDirectory = join(directory, 'agent');
   await mkdir(agentDirectory);

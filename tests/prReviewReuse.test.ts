@@ -1,6 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -12,6 +11,7 @@ import { createGhFake } from '../src/extensions/pr/fixtures/ghFake.js';
 import { createPrTool } from '../src/extensions/pr/tool.js';
 import type { PrInput } from '../src/extensions/pr/tool.js';
 import { createTemporaryRepository } from './gitRepository.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 import { noUiContext } from './toolContext.js';
 
 const git = async (cwd: string, ...commandArguments: string[]) => {
@@ -126,9 +126,8 @@ it('reuses a review after a rebase onto a base that changes other files', async 
 });
 
 it('reuses an unchanged review in a SHA-256 repository', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'tau-reuse-sha256-'));
+  const root = temporaryDirectory(onTestFinished, 'tau-reuse-sha256-');
 
-  onTestFinished(() => rm(root, { recursive: true, force: true }));
   await git(root, 'init', '--quiet', '--initial-branch=main', '--object-format=sha256');
 
   const forkPoint = await commitFile(root, 'feature.txt', 'one\n');
@@ -184,9 +183,7 @@ it('refuses reuse when recheck.diff is replaced after reuse reads it', async () 
 
   const recheckPath = join(directory, 'recheck.diff');
   const reviewedBytes = await readFile(recheckPath);
-  const wrapperDirectory = await mkdtemp(join(tmpdir(), 'tau-reuse-race-'));
-
-  onTestFinished(() => rm(wrapperDirectory, { recursive: true, force: true }));
+  const wrapperDirectory = temporaryDirectory(onTestFinished, 'tau-reuse-race-');
 
   const reviewedPath = join(wrapperDirectory, 'reviewed.diff');
 

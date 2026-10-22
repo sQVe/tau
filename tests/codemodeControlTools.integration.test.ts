@@ -1,5 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -30,6 +29,7 @@ import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import { skillTools } from '../src/skillTools.js';
 import { createBoundSession } from './piSession.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 interface ToolOutcome {
   toolName: string;
@@ -64,11 +64,10 @@ const codemodeCall = (code: string) => fauxAssistantMessage([fauxToolCall('codem
 
 // Runs a dispatched worker task whose model follows `responses`, then waits until Pi settles.
 const runWorker = async (responses: FauxResponseStep[]) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-codemode-worker-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-codemode-worker-');
 
   onTestFinished(() => {
     vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
@@ -175,11 +174,10 @@ const seedStoppedChild = (directory: string, sessionManager: SessionManager): vo
 
 // Runs one prompt in a manager session outside herdr, whose model follows `responses`.
 const runManager = async (responses: FauxResponseStep[]) => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-codemode-manager-'));
+  const directory = temporaryDirectory(onTestFinished, 'tau-codemode-manager-');
 
   onTestFinished(() => {
     vi.unstubAllEnvs();
-    rmSync(directory, { recursive: true, force: true });
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);

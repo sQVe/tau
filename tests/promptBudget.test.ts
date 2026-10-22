@@ -132,6 +132,7 @@ const sessions = new Map<string, { tools: ToolDefinition[]; size: number }>();
 let directory = '';
 
 beforeAll(async () => {
+  // The directory is shared by every test, so `afterAll` removes it.
   directory = mkdtempSync(join(tmpdir(), 'tau-prompt-budget-'));
   sessions.set('manager', await managerSession(directory));
 

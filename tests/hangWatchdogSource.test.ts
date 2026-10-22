@@ -1,11 +1,11 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { watchdogSource } from './hangWatchdogSource.js';
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 const processIsAlive = (processId: number): boolean => {
   try {
@@ -72,7 +72,7 @@ setInterval(() => {}, 1000);
 it.skipIf(process.platform !== 'linux')(
   'kills a blocked fork and its descendants after its parent is killed',
   async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'tau-watchdog-'));
+    const directory = temporaryDirectory(onTestFinished, 'tau-watchdog-');
     const file = join(directory, 'pids');
 
     const parent = spawn(process.execPath, ['-e', parentScript, file], { stdio: 'ignore' });

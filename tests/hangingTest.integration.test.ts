@@ -1,10 +1,12 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { symlink, writeFile } from 'node:fs/promises';
 import { join, resolve as resolvePath } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
+import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
+
+import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 interface NestedRun {
   failed: boolean;
@@ -22,13 +24,12 @@ const blockingSleep = "import { execFileSync } from 'node:child_process';";
 const repositoryRoot = resolvePath(import.meta.dirname, '..');
 
 const runNested = async (
-  cleanup: (callback: () => Promise<void>) => void,
+  cleanup: TestContext['onTestFinished'],
   testSource: string,
   hookTimeout = 1000,
   collectionTimeout = '3000',
 ): Promise<NestedRun> => {
-  const directory = await mkdtemp(join(tmpdir(), 'tau-hang-'));
-  cleanup(() => rm(directory, { recursive: true, force: true }));
+  const directory = temporaryDirectory(cleanup, 'tau-hang-');
 
   await symlink(join(repositoryRoot, 'node_modules'), join(directory, 'node_modules'), 'dir');
   await writeFile(join(directory, 'package.json'), '{"type":"module"}');
