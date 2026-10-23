@@ -3,6 +3,7 @@ import { expect, it } from 'vitest';
 import {
   boundList,
   callerText,
+  committedPathStatus,
   freshnessGaps,
   importPattern,
   importsModule,
@@ -16,6 +17,68 @@ import {
   sourceRevision,
   testPaths,
 } from './evidenceDecisions.js';
+
+it.each([
+  { name: 'successful exit', exitCode: 0, stderr: '', status: 'readable' },
+  {
+    name: 'successful exit with misleading stderr',
+    exitCode: 0,
+    stderr: "fatal: path 'test.ts' does not exist in 'HEAD'",
+    status: 'readable',
+  },
+  {
+    name: 'missing path',
+    exitCode: 128,
+    stderr: "fatal: path 'test.ts' does not exist in 'HEAD'",
+    status: 'missing',
+  },
+  {
+    name: 'path only on disk',
+    exitCode: 128,
+    stderr: "fatal: path 'test.ts' exists on disk, but not in 'HEAD'",
+    status: 'missing',
+  },
+  {
+    name: 'missing path with newline and quotes',
+    exitCode: 128,
+    stderr: "fatal: path 'line\n'quoted'.ts' does not exist in 'HEAD'\n",
+    status: 'missing',
+  },
+  {
+    name: 'disk-only path with newline and quotes',
+    exitCode: 128,
+    stderr: "fatal: path 'line\n'quoted'.ts' exists on disk, but not in 'HEAD'\n",
+    status: 'missing',
+  },
+  { name: 'null exit', exitCode: null, stderr: '', status: 'unreadable' },
+  {
+    name: 'null exit with misleading stderr',
+    exitCode: null,
+    stderr: "fatal: path 'test.ts' does not exist in 'HEAD'",
+    status: 'unreadable',
+  },
+  {
+    name: 'other fatal failure',
+    exitCode: 128,
+    stderr: 'fatal: not a valid object name HEAD',
+    status: 'unreadable',
+  },
+  { name: 'other nonzero exit', exitCode: 1, stderr: '', status: 'unreadable' },
+  {
+    name: 'nonfatal exit with missing-path stderr',
+    exitCode: 1,
+    stderr: "fatal: path 'test.ts' does not exist in 'HEAD'",
+    status: 'unreadable',
+  },
+  {
+    name: 'nonfatal exit with disk-only stderr',
+    exitCode: 129,
+    stderr: "fatal: path 'test.ts' exists on disk, but not in 'HEAD'",
+    status: 'unreadable',
+  },
+])('classifies committed path status for $name', ({ exitCode, stderr, status }) => {
+  expect(committedPathStatus(exitCode, stderr)).toBe(status);
+});
 
 const from = 'a'.repeat(40);
 const to = 'b'.repeat(40);

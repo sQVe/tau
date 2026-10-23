@@ -8,6 +8,7 @@ import { isInsideRoot } from './capture.js';
 import {
   boundList,
   callerText,
+  committedPathStatus,
   defaultEvidenceLimits,
   freshnessGaps,
   importPattern,
@@ -27,6 +28,7 @@ import type {
   EvidenceLimits,
   GrepMatch,
   MarkerLine,
+  NamedPath,
   NamedSection,
   NumberedLine,
 } from './evidenceDecisions.js';
@@ -48,11 +50,6 @@ interface CallerLine {
   path: string;
   line: number;
   text: string;
-}
-
-interface NamedPath {
-  path: string;
-  status: 'readable' | 'missing' | 'unreadable';
 }
 
 // The evidence for one saved capture. It holds facts and gaps only, never a review judgment.
@@ -114,11 +111,6 @@ const readWorkingFile = async (root: string, path: string): Promise<FileRead> =>
   }
 };
 
-const fatalExitCode = 128;
-
-const missingInCommit =
-  /^fatal: path '[^]*' (?:does not exist|exists on disk, but not) in '[^]*'$/mu;
-
 const commitPathStatus = async (
   root: string,
   revision: string,
@@ -126,13 +118,7 @@ const commitPathStatus = async (
 ): Promise<NamedPath['status']> => {
   const result = await runGit(root, ['cat-file', '-e', `${revision}:${path}`]);
 
-  if (result.exitCode === 0) {
-    return 'readable';
-  }
-
-  return result.exitCode === fatalExitCode && missingInCommit.test(result.stderr)
-    ? 'missing'
-    : 'unreadable';
+  return committedPathStatus(result.exitCode, result.stderr);
 };
 
 const readCommitFile = async (root: string, revision: string, path: string): Promise<FileRead> => {
