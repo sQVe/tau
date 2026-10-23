@@ -71,18 +71,19 @@ const createTemporaryFixture = async (
   return { directory, path };
 };
 
-it('accepts staged paths that the formatter ignores', async ({ onTestFinished }) => {
-  const ignoredJson = await createIgnoredFixture('ignored.json', '{"alpha":   1}\n');
-  const ignoredScript = await createIgnoredFixture('ignored.ts', 'const alpha   = 1\n');
+it.for([
+  { family: jsonFamily, fileName: 'ignored.json', contents: '{"alpha":   1}\n' },
+  { family: typeScriptFamily, fileName: 'ignored.ts', contents: 'const alpha   = 1\n' },
+])(
+  'accepts staged paths that the formatter ignores for $family',
+  async ({ family, fileName, contents }, { onTestFinished }) => {
+    const ignored = await createIgnoredFixture(fileName, contents);
 
-  onTestFinished(async () => {
-    await rm(ignoredJson.directory, { recursive: true, force: true });
-    await rm(ignoredScript.directory, { recursive: true, force: true });
-  });
+    onTestFinished(() => rm(ignored.directory, { recursive: true, force: true }));
 
-  expect(runStagedFormatter(jsonFamily, [ignoredJson.path])).toBe(0);
-  expect(runStagedFormatter(typeScriptFamily, [ignoredScript.path])).toBe(0);
-});
+    expect(runStagedFormatter(family, [ignored.path])).toBe(0);
+  },
+);
 
 it('rejects a supported unformatted staged file even when another target is ignored', async ({
   onTestFinished,
