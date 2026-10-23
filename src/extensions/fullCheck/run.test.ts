@@ -184,6 +184,28 @@ it('does not stop a command that keeps writing output', async () => {
   expect(result).toMatchObject({ passed: true, idle: false });
 });
 
+it('keeps separately captured stdout parseable and stderr in the command log', async () => {
+  const root = await createTemporaryRepository(onTestFinished, 'tau-full-check-run-');
+
+  const script =
+    'process.stdout.write(JSON.stringify({ status: "ok" })); process.stderr.write("diagnostic\\n");';
+
+  const result = await runCheck(
+    root,
+    [process.execPath, '-e', script],
+    undefined,
+    async () => {},
+    4000,
+    true,
+  );
+
+  const stdout: unknown = JSON.parse(await readFile(result.stdoutPath ?? '', 'utf8'));
+
+  expect(result).toMatchObject({ passed: true, idle: false, tail: 'diagnostic' });
+  expect(stdout).toEqual({ status: 'ok' });
+  expect(await readFile(result.logPath, 'utf8')).toBe('diagnostic\n');
+});
+
 it('sends no signal to the group after an idle stop returns', async () => {
   const root = await createTemporaryRepository(onTestFinished, 'tau-full-check-run-');
   const realKill = process.kill.bind(process);

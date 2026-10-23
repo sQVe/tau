@@ -100,7 +100,8 @@ export const runCheck = async (
         // A command that writes nothing for the idle limit is hung. Stopping it releases the lock.
         idleMonitor = setInterval(
           () => {
-            const { size } = fstatSync(log.fd);
+            const stdoutSize = stdoutFile === undefined ? 0 : fstatSync(stdoutFile.fd).size;
+            const size = fstatSync(log.fd).size + stdoutSize;
             const now = Date.now();
 
             if (size !== lastSize) {
