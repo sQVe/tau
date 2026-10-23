@@ -2,23 +2,18 @@ import { execFile } from 'node:child_process';
 import type { ChildProcess, ExecFileException } from 'node:child_process';
 
 export interface GitResult {
-  // null when Git could not start, was killed, ran past the timeout, or was aborted.
   exitCode: number | null;
   stdout: Buffer;
   stderr: string;
 }
 
 export interface GitOptions {
-  // Defaults to 60 000. null means no timeout.
   timeoutMilliseconds?: number | null;
   input?: string;
   signal?: AbortSignal;
-  // Added on top of the scrubbed environment.
   environment?: Record<string, string>;
 }
 
-// An inherited repository selector would make Git read that repository instead of the one at cwd,
-// and an inherited index file, such as one a Git hook exports, would replace its index.
 const gitEnvironment = (): NodeJS.ProcessEnv => {
   // oxlint-disable-next-line node/no-process-env -- Git inherits the user's environment apart from the repository selectors and index file.
   const inherited = process.env;
@@ -35,14 +30,11 @@ const gitEnvironment = (): NodeJS.ProcessEnv => {
   return { ...env, LC_ALL: 'C' };
 };
 
-// 1 GiB.
 const maxOutputBytes = 1_073_741_824;
 
 const defaultTimeoutMilliseconds = 60_000;
 const outputIdleMilliseconds = 100;
 
-// Node sets killed when its timeout or the abort signal kills Git, and a killed Git can still exit
-// with any code, such as one that handles SIGTERM.
 const killedByTimeout = (
   child: ChildProcess | undefined,
   error: ExecFileException | null,
@@ -70,8 +62,6 @@ const drainAfterExit = (child: ChildProcess): (() => void) => {
     clearTimeout(timer);
 
     timer = setTimeout(() => {
-      // A hook descendant can retain these handles after Git exits. Keep execFile's byte collector
-      // until output falls idle, then let its native close callback report the result.
       for (const stream of streams) {
         stream?.destroy();
       }
@@ -162,7 +152,6 @@ export const runGit = (
 
       stopDraining = drainAfterExit(child);
 
-      // Git can exit before it reads its input. The exit code and stderr then decide the outcome.
       child.stdin?.on('error', () => undefined);
 
       if (input !== undefined) {
@@ -174,7 +163,6 @@ export const runGit = (
     }
   });
 
-// Runs Git and resolves its trimmed output. Throws with Git's stderr on a nonzero or null exit.
 export const readGit = async (
   cwd: string,
   commandArguments: string[],
@@ -189,8 +177,6 @@ export const readGit = async (
   return result.stdout.toString('utf8').trim();
 };
 
-// Resolves the top directory of the Git checkout that holds cwd. toolName names the caller in the
-// error.
 export const findCheckoutRoot = async (cwd: string, toolName: string): Promise<string> => {
   const result = await runGit(cwd, ['rev-parse', '--show-toplevel'], {
     timeoutMilliseconds: 5000,

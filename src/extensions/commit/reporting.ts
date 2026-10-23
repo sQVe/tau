@@ -107,7 +107,6 @@ const buildCommitReport = async (
 export const reportCommit = async (reporting: CommitReporting): Promise<CommitSuccess> => {
   let commitHash = '';
 
-  // A reporting failure must not hide a successful commit or undo hooks' work.
   try {
     const commitHashOutput = await readGitText(reporting.runner, reporting.cwd, [
       'rev-parse',
@@ -125,7 +124,6 @@ export const reportCommit = async (reporting: CommitReporting): Promise<CommitSu
     const messageOffset = commitObject.indexOf('\n\n');
     const firstParent = commitObject.slice(0, messageOffset).match(/^parent (.+)$/m)?.[1] ?? null;
 
-    // First-parent matching detects an intervening commit, not rewrites sharing the same parent.
     if (firstParent !== reporting.snapshot.head) {
       throw new Error(
         "HEAD changed before commit reporting. The captured HEAD could not be verified as this group's commit. HEAD and staging were left untouched.",

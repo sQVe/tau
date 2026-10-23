@@ -172,8 +172,6 @@ const rejectLaterExceptions = async (root: string) => {
   }
 };
 
-// Resolves Git's output, or undefined when Git fails or runs past the timeout, since session start
-// waits for it.
 const readQuickly = async (
   cwd: string,
   commandArguments: string[],

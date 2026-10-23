@@ -36,13 +36,11 @@ const getSessionCost = (context: ExtensionContext): number => {
 };
 
 const readDirty = async (context: ExtensionContext): Promise<boolean> => {
-  // Override status.showUntrackedFiles so new files always count as dirty.
   const result = await runGit(context.cwd, ['status', '--porcelain', '--untracked-files=normal'], {
     timeoutMilliseconds: gitTimeoutMilliseconds,
     environment: { GIT_OPTIONAL_LOCKS: '0' },
   });
 
-  // Outside a repository, or when git fails, show no dirty marker.
   return result.exitCode === 0 && result.stdout.length > 0;
 };
 

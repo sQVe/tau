@@ -66,7 +66,6 @@ const repositoryViewSchema = Type.Object({
   defaultBranchRef: Type.Object({ name: Type.String() }),
 });
 
-// Resolves the trimmed output, or undefined when Git exits with 1.
 const readUnlessMissing = async (
   cwd: string,
   commandArguments: string[],

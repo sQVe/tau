@@ -210,7 +210,6 @@ describe('commitTool.execute', () => {
     const tool = createCommitTool(async (cwd, commandArguments, options) => {
       const result = await runGit(cwd, commandArguments, options);
 
-      // Simulate a group-1 hook that edits a later group's file without staging it.
       if (commandArguments[0] === 'commit') {
         await writeRepositoryFile(repositoryDirectory, 'three.txt', 'rewritten by a hook');
       }
