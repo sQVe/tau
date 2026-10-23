@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 
-import { hasErrorCode } from '../../errors.js';
+import { processState } from '../../process/process.js';
 
 export interface OwnedWorker {
   // Pi ownership format 2: the pane's shell process is the worker process.
@@ -113,12 +113,4 @@ export const matchesWorker = (info: Record<string, unknown>, owned: OwnedWorker)
   Array.isArray(info.foreground_processes) &&
   info.foreground_processes.some((value) => foregroundProcessMatches(value, owned));
 
-export const processAbsent = (processId: number): boolean => {
-  try {
-    process.kill(processId, 0);
-
-    return false;
-  } catch (error) {
-    return hasErrorCode(error, 'ESRCH');
-  }
-};
+export const processAbsent = (processId: number): boolean => processState(processId) === 'gone';

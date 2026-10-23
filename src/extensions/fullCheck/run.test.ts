@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { onTestFinished, expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
-import { commandIsAlive } from './queue.js';
+import { groupState } from '../../process/process.js';
 import { runCheck } from './run.js';
 
 vi.mock(import('node:child_process'), async (importOriginal) => {
@@ -20,7 +20,7 @@ vi.mock(import('node:child_process'), async (importOriginal) => {
 });
 
 const waitForGroupExit = async (groupId: number): Promise<void> => {
-  while (commandIsAlive(groupId)) {
+  while ((await groupState(groupId)) !== 'gone') {
     await new Promise((resolve) => {
       setTimeout(resolve, 10);
     });
@@ -182,6 +182,28 @@ it('does not stop a command that keeps writing output', async () => {
   );
 
   expect(result).toMatchObject({ passed: true, idle: false });
+});
+
+it('keeps separately captured stdout parseable and stderr in the command log', async () => {
+  const root = await createTemporaryRepository(onTestFinished, 'tau-full-check-run-');
+
+  const script =
+    'process.stdout.write(JSON.stringify({ status: "ok" })); process.stderr.write("diagnostic\\n");';
+
+  const result = await runCheck(
+    root,
+    [process.execPath, '-e', script],
+    undefined,
+    async () => {},
+    4000,
+    true,
+  );
+
+  const stdout: unknown = JSON.parse(await readFile(result.stdoutPath ?? '', 'utf8'));
+
+  expect(result).toMatchObject({ passed: true, idle: false, tail: 'diagnostic' });
+  expect(stdout).toEqual({ status: 'ok' });
+  expect(await readFile(result.logPath, 'utf8')).toBe('diagnostic\n');
 });
 
 it('sends no signal to the group after an idle stop returns', async () => {

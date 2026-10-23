@@ -4,6 +4,7 @@ import { accessSync, constants, statSync } from 'node:fs';
 import { basename, delimiter, join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
+import { signalGroup } from '../../../process/process.js';
 import type { SpawnCommand, SpawnResult } from './types.js';
 
 interface SpawnState {
@@ -73,18 +74,6 @@ const appendChunk = (
   return current + decoder.write(chunk.subarray(0, remaining));
 };
 
-const killChild = (child: ChildProcess, useProcessGroup: boolean): void => {
-  try {
-    if (useProcessGroup && child.pid != null) {
-      process.kill(-child.pid, 'SIGKILL');
-    } else {
-      child.kill('SIGKILL');
-    }
-  } catch {
-    child.kill('SIGKILL');
-  }
-};
-
 const settleSpawn = (request: SettleRequest): void => {
   const { state, child, resolve, code, command, release } = request;
 
@@ -135,15 +124,12 @@ const captureStderr = (state: SpawnState, chunk: Buffer): void => {
 
 export const defaultSpawn: SpawnCommand = (command, argumentsList, options) =>
   new Promise<SpawnResult>((resolve) => {
-    // detached lets the timeout path signal the whole process group on POSIX.
-    // Windows has no equivalent; we fall back to child.kill there.
-    const useProcessGroup = process.platform !== 'win32';
     const executable = nodeExecutable();
     const commandLine = [executable, command, ...argumentsList];
 
     const child = nodeSpawn(executable, [command, ...argumentsList], {
       cwd: options.cwd,
-      detached: useProcessGroup,
+      detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -176,7 +162,7 @@ export const defaultSpawn: SpawnCommand = (command, argumentsList, options) =>
     };
 
     const abort = () => {
-      killChild(child, useProcessGroup);
+      signalGroup(child, 'SIGKILL');
       settle(null);
     };
 
@@ -192,7 +178,7 @@ export const defaultSpawn: SpawnCommand = (command, argumentsList, options) =>
     // and a descendant holding the piped stdio would keep `close` pending forever.
     const timer = setTimeout(() => {
       state.timedOut = true;
-      killChild(child, useProcessGroup);
+      signalGroup(child, 'SIGKILL');
       settle(null);
     }, options.timeoutMs);
 

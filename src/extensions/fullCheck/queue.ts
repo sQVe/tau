@@ -1,7 +1,9 @@
 import { link, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import { hasErrorCode, isMissingFile } from '../../errors.js';
+import { groupState, processState } from '../../process/process.js';
 import { isRecord } from '../../schema.js';
 import { holderIsGone } from './lockHolderDecision.js';
 import type { LockHolderFacts } from './lockHolderDecision.js';
@@ -78,17 +80,6 @@ const readOwner = async (lockPath: string): Promise<LockOwner | undefined> => {
   }
 };
 
-const processIsAlive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-
-    return true;
-  } catch (error) {
-    // EPERM means the process exists but belongs to another user.
-    return hasErrorCode(error, 'EPERM');
-  }
-};
-
 const generationPath = (lockPath: string, generation: number): string =>
   `${lockPath}.${generation}`;
 
@@ -113,20 +104,18 @@ const tryCreate = async (path: string, owner: LockOwner): Promise<boolean> => {
   }
 };
 
-const sleep = (milliseconds: number, signal: AbortSignal | undefined): Promise<void> =>
-  new Promise((resolve) => {
-    const finish = () => {
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', finish);
-      resolve();
-    };
-
-    const timer = setTimeout(finish, milliseconds);
-
-    signal?.addEventListener('abort', finish, { once: true });
-  });
-
 const abortedError = (): Error => new Error('The check was cancelled while it waited.');
+
+const waitForNextPoll = async (
+  milliseconds: number,
+  signal: AbortSignal | undefined,
+): Promise<void> => {
+  try {
+    await sleep(milliseconds, undefined, { signal });
+  } catch {
+    throw abortedError();
+  }
+};
 
 const listGenerations = async (lockPath: string): Promise<number[]> => {
   const prefix = `${basename(lockPath)}.`;
@@ -138,25 +127,17 @@ const listGenerations = async (lockPath: string): Promise<number[]> => {
     .toSorted((left, right) => left - right);
 };
 
-// POSIX probes the command's process group. Windows has no groups, so it probes the command itself.
-export const commandIsAlive = (commandId: number): boolean => {
-  const target = process.platform === 'win32' ? commandId : -commandId;
+const readHolderFacts = async (holder: LockOwner | undefined): Promise<LockHolderFacts> => {
+  const commandState =
+    holder?.commandGroup === undefined ? 'gone' : await groupState(holder.commandGroup);
 
-  try {
-    process.kill(target, 0);
-
-    return true;
-  } catch (error) {
-    return hasErrorCode(error, 'EPERM');
-  }
+  return {
+    recorded: holder !== undefined,
+    released: holder?.released === true,
+    sessionAlive: holder !== undefined && processState(holder.pid) !== 'gone',
+    commandAlive: commandState !== 'gone',
+  };
 };
-
-const readHolderFacts = (holder: LockOwner | undefined): LockHolderFacts => ({
-  recorded: holder !== undefined,
-  released: holder?.released === true,
-  sessionAlive: holder !== undefined && processIsAlive(holder.pid),
-  commandAlive: holder?.commandGroup !== undefined && commandIsAlive(holder.commandGroup),
-});
 
 // The lock is the file of the highest generation. A new owner takes the next generation with an
 // atomic link, so two sessions that both see a dead holder cannot both win, and no one ever
@@ -243,7 +224,10 @@ const acquireLock = async (options: QueueOptions, owner: LockOwner): Promise<str
     // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
     const { highest, holder } = await findHolder(lockPath);
 
-    if (highest === undefined || holderIsGone(readHolderFacts(holder))) {
+    // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
+    const facts = await readHolderFacts(holder);
+
+    if (highest === undefined || holderIsGone(facts)) {
       const next = (highest ?? 0) + 1;
       const path = generationPath(lockPath, next);
 
@@ -261,7 +245,7 @@ const acquireLock = async (options: QueueOptions, owner: LockOwner): Promise<str
     }
 
     // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
-    await sleep(pollMilliseconds, signal);
+    await waitForNextPoll(pollMilliseconds, signal);
   }
 };
 
@@ -285,6 +269,10 @@ export const withFullCheckLock = async <T>(
   const path = await acquireLock(options, owner);
 
   try {
+    if (options.signal?.aborted === true) {
+      throw abortedError();
+    }
+
     return await run((groupId) => rewriteOwnFile(path, owner, { ...owner, commandGroup: groupId }));
   } finally {
     await rewriteOwnFile(path, owner, { ...owner, released: true });

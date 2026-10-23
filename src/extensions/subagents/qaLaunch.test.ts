@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { ChildProcess, execFileSync, spawn } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
@@ -8,8 +8,9 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { PassThrough } from 'node:stream';
 
-import { expect, it, onTestFinished, vi } from 'vitest';
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { declinedExec } from '../../../tests/declinedExecFake.js';
 import { initializeRepository } from '../../../tests/gitRepository.js';
@@ -21,6 +22,18 @@ interface Fixture {
   worktree: string;
   writeUser: (value: unknown) => void;
 }
+
+vi.mock(import('node:child_process'), async (importOriginal) => {
+  const original = await importOriginal();
+
+  const spawnFake = vi.fn<typeof original.spawn>(original.spawn);
+
+  return { ...original, spawn: spawnFake as unknown as typeof original.spawn };
+});
+
+afterEach(() => {
+  vi.resetAllMocks();
+});
 
 const repository = 'sQVe/cape';
 
@@ -382,6 +395,54 @@ it('settles at the deadline even when a process outside the group keeps the outp
   await expect(refusal).rejects.toThrow('qa.repositories');
   expect(performance.now() - started).toBeLessThan(2000);
 });
+
+it.each([
+  { timing: 'before spawn', alreadyAborted: true, spawnedCount: 0 },
+  { timing: 'during spawn', alreadyAborted: false, spawnedCount: 1 },
+])(
+  'handles an unavailable shell when the launch aborts $timing',
+  async ({ alreadyAborted, spawnedCount }) => {
+    const { worktree, writeUser } = await fixture('https://github.com/sQVe/cape.git');
+    const controller = new AbortController();
+    const child = new ChildProcess();
+    child.stdout = new PassThrough();
+    const state = { spawned: false };
+
+    writeUser(settingsFor('echo http://localhost:1'));
+
+    vi.mocked(spawn).mockImplementationOnce(() => {
+      state.spawned = true;
+      controller.abort();
+
+      return child;
+    });
+
+    if (alreadyAborted) {
+      controller.abort();
+    }
+
+    const refusal = applyQaSettings(
+      launch(worktree),
+      controller.signal,
+      context(worktree) as never,
+      declinedExec,
+    );
+
+    await expect(refusal).rejects.toThrow('failed or timed out');
+
+    // Node delivers a failed spawn's error after spawn returns, even when the caller has aborted.
+    expect(() => {
+      if (state.spawned) {
+        const error = Object.assign(new Error('spawn sh ENOENT'), { code: 'ENOENT' });
+
+        child.emit('error', error);
+        child.emit('close', -2);
+      }
+    }).not.toThrow();
+
+    expect(spawn).toHaveBeenCalledTimes(spawnedCount);
+  },
+);
 
 it('refuses a urlCommand that cannot start', async () => {
   const { worktree, writeUser } = await fixture('git@github.com:sQVe/cape.git');

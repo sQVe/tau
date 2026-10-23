@@ -24,6 +24,22 @@ const worker = {
   token: '/tmp/session',
 };
 
+it.each([
+  { name: 'running', code: undefined, absent: false },
+  { name: 'gone', code: 'ESRCH', absent: true },
+  { name: 'unknown', code: 'EINVAL', absent: false },
+])('reports a $name worker process as absent: $absent', ({ code, absent }) => {
+  vi.spyOn(process, 'kill').mockImplementation(() => {
+    if (code !== undefined) {
+      throw Object.assign(new Error('Probe failed'), { code });
+    }
+
+    return true;
+  });
+
+  expect(processAbsent(101)).toBe(absent);
+});
+
 it('matches a Pi worker by process ID when herdr omits its argv', () => {
   expect(matchesWorker(information, { ...worker, startedAt: 'Mon Sep 21 10:43:04 2026' })).toBe(
     true,
@@ -46,27 +62,6 @@ it('matches a Pi worker among other foreground processes', () => {
   const pane = { ...information, foreground_processes: processes };
 
   expect(matchesWorker(pane, { ...worker, startedAt: 'start' })).toBe(true);
-});
-
-it('counts a process as absent only when the kernel reports no such process', () => {
-  const signals: unknown[] = [];
-
-  vi.spyOn(process, 'kill').mockImplementation((processId, signal) => {
-    signals.push([processId, signal]);
-
-    throw Object.assign(new Error('No such process'), { code: 'ESRCH' });
-  });
-
-  expect(processAbsent(101)).toBe(true);
-  expect(signals).toEqual([[101, 0]]);
-});
-
-it('never counts EPERM as an absent process', () => {
-  vi.spyOn(process, 'kill').mockImplementation(() => {
-    throw Object.assign(new Error('Permission denied'), { code: 'EPERM' });
-  });
-
-  expect(processAbsent(101)).toBe(false);
 });
 
 it('bounds a real stalled client and reports failure instead of success', async () => {
