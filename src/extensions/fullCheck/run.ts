@@ -136,15 +136,12 @@ export const runCheck = async (
 
           const finishClose = async () => {
             if (signal?.aborted === true) {
-              // The launcher may exit on SIGTERM while a descendant in its group keeps running.
               stop();
               await stopping;
 
               throw new Error('The check was cancelled and its command has stopped.');
             }
 
-            // Background processes may outlive the direct child, and the lock must not be released
-            // while they run. An unknown state counts as running.
             if ((await groupState(processId)) !== 'gone') {
               stop();
             }

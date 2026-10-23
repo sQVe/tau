@@ -770,7 +770,6 @@ it('takes over a lock whose command group holds only zombies', async () => {
     session.once('close', resolve);
   });
 
-  // WNOWAIT observes the child's exit without reaping it. stdin keeps the parent alive until cleanup.
   const parent = spawn(
     'python3',
     [

@@ -34,8 +34,6 @@ const readProcessTable = async (): Promise<string | undefined> => {
   }
 };
 
-// A zombie keeps the group visible to kill(-group, 0) and SIGKILL cannot remove it, so the process
-// table decides once the probe finds the group. Windows has no process groups.
 export const groupState = async (groupId: number): Promise<ProcessState> => {
   if (process.platform === 'win32') {
     return processState(groupId);
@@ -50,7 +48,6 @@ export const groupState = async (groupId: number): Promise<ProcessState> => {
   return groupStateFromTable(await readProcessTable(), groupId);
 };
 
-// Never throws. Windows has no process groups, so only the direct child can be signalled there.
 export const signalGroup = (child: ChildProcess, signal: NodeJS.Signals): void => {
   try {
     if (process.platform === 'win32' || child.pid === undefined) {
@@ -67,8 +64,6 @@ export const signalGroup = (child: ChildProcess, signal: NodeJS.Signals): void =
   }
 };
 
-// Asks the group to stop, kills it after the grace period, and resolves when it is gone. After the
-// SIGKILL an unreadable process table counts as gone, so it cannot hold the caller forever.
 export const stopGroup = async (child: ChildProcess, graceMilliseconds: number): Promise<void> => {
   const { pid } = child;
 

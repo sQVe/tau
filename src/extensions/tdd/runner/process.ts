@@ -124,7 +124,6 @@ const captureStderr = (state: SpawnState, chunk: Buffer): void => {
 
 export const defaultSpawn: SpawnCommand = (command, argumentsList, options) =>
   new Promise<SpawnResult>((resolve) => {
-    // detached lets the timeout path signal the whole process group on POSIX.
     const executable = nodeExecutable();
     const commandLine = [executable, command, ...argumentsList];
 

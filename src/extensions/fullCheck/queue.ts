@@ -127,7 +127,6 @@ const listGenerations = async (lockPath: string): Promise<number[]> => {
     .toSorted((left, right) => left - right);
 };
 
-// An unknown state keeps the lock: only a process that is certainly gone lets another check start.
 const readHolderFacts = async (holder: LockOwner | undefined): Promise<LockHolderFacts> => {
   const commandState =
     holder?.commandGroup === undefined ? 'gone' : await groupState(holder.commandGroup);
