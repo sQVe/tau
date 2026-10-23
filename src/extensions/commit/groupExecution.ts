@@ -9,24 +9,22 @@ import {
   currentHead,
   decodeOutput,
   isCommitAncestor,
-  listCommitPaths,
   readIndex,
   readIndexEntries,
   listStagedPaths,
-  readGitText,
   repositoryPathPrefix,
   restoreIndexEntries,
   stageFiles,
   unstageFiles,
   writeTree,
 } from './gitCommands.js';
+import { reportCommit } from './reporting.js';
 import type { CommitSuccess } from './types.js';
 import {
   buildCommitMessage,
   commitFailedError,
   normalizeBody,
   normalizeRepositoryPath,
-  isSensitivePath,
 } from './validation.js';
 import type { CommitInput } from './validation.js';
 
@@ -326,136 +324,6 @@ const commitStaged = async (run: GroupRun): Promise<GitResult> => {
   return commitResult;
 };
 
-const buildHookReport = (
-  run: GroupRun,
-  committedPaths: string[],
-  changedPathsOutput: string,
-  storedMessage: string,
-) => {
-  const hookChanges = {
-    files: changedPathsOutput.split('\0').filter(Boolean),
-    message: storedMessage !== buildCommitMessage(run.subject, run.body),
-  };
-
-  const sensitivePaths = committedPaths.filter((file) => isSensitivePath(file));
-  const reportLines: string[] = [];
-
-  if (sensitivePaths.length > 0) {
-    reportLines.push(`Warning: committed sensitive paths: ${sensitivePaths.join(', ')}`);
-  }
-
-  if (hookChanges.files.length > 0) {
-    reportLines.push(`Hook changed paths: ${hookChanges.files.join(', ')}`);
-  }
-
-  if (hookChanges.message) {
-    reportLines.push(`Hook changed the commit message:\n${storedMessage}`);
-  }
-
-  const hookReport = reportLines.join('\n');
-
-  return { hookChanges, hookReport };
-};
-
-const buildCommitReport = async (
-  run: GroupRun,
-  commitHash: string,
-  commitObject: string,
-  messageOffset: number,
-): Promise<CommitSuccess> => {
-  const snapshot = requireSnapshot(run);
-
-  const committedPaths = await listCommitPaths(run.runner, run.context.cwd, commitHash);
-  const storedMessage = commitObject.slice(messageOffset + 2);
-  const firstNewline = storedMessage.indexOf('\n');
-  const storedSubject = firstNewline === -1 ? storedMessage : storedMessage.slice(0, firstNewline);
-
-  const storedBody =
-    firstNewline === -1 ? '' : storedMessage.slice(firstNewline + 1).replace(/^\n/, '');
-
-  const changedPathsOutput = await readGitText(run.runner, run.context.cwd, [
-    'diff',
-    '--no-ext-diff',
-    '--no-textconv',
-    '--no-renames',
-    '--no-relative',
-    '--name-only',
-    '-z',
-    snapshot.tree,
-    `${commitHash}^{tree}`,
-    '--',
-  ]);
-
-  const { hookChanges, hookReport } = buildHookReport(
-    run,
-    committedPaths,
-    changedPathsOutput,
-    storedMessage,
-  );
-
-  const reportLines = [`${commitHash} ${storedSubject}`, 'Git hooks: run.'];
-
-  if (hookReport) {
-    reportLines.push(hookReport);
-  }
-
-  return {
-    content: [
-      {
-        type: 'text',
-        text: reportLines.join('\n'),
-      },
-    ],
-    details: {
-      sha: commitHash,
-      files: committedPaths,
-      subject: storedSubject,
-      body: storedBody || null,
-      message: storedMessage,
-      hooks: 'run',
-      hookChanges,
-    },
-  };
-};
-
-const reportCommit = async (run: GroupRun, commitResult: GitResult): Promise<CommitSuccess> => {
-  const snapshot = requireSnapshot(run);
-  let commitHash = '';
-
-  // A reporting failure must not hide a successful commit or undo hooks' work.
-  try {
-    const commitHashOutput = await readGitText(run.runner, run.context.cwd, ['rev-parse', 'HEAD']);
-    const capturedHead = commitHashOutput.trim();
-
-    const commitObject = await readGitText(run.runner, run.context.cwd, [
-      'cat-file',
-      '-p',
-      capturedHead,
-    ]);
-
-    const messageOffset = commitObject.indexOf('\n\n');
-    const firstParent = commitObject.slice(0, messageOffset).match(/^parent (.+)$/m)?.[1] ?? null;
-
-    // First-parent matching detects an intervening commit, not rewrites sharing the same parent.
-    if (firstParent !== snapshot.head) {
-      throw new Error(
-        "HEAD changed before commit reporting. The captured HEAD could not be verified as this group's commit. HEAD and staging were left untouched.",
-      );
-    }
-
-    commitHash = capturedHead;
-
-    return await buildCommitReport(run, commitHash, commitObject, messageOffset);
-  } catch (error) {
-    const commitSuffix = commitHash ? `: ${commitHash}` : '';
-
-    throw new Error(
-      `Git commit succeeded${commitSuffix}. The commit was not undone.\nReporting failed: ${String(error)}\nDo not retry this group. Inspect Git history first.\n${decodeOutput(commitResult)}${commitResult.stderr}`,
-      { cause: error },
-    );
-  }
-};
-
 export const executeGroup = async (execution: GroupExecution): Promise<GroupOutcome> => {
   const subject = execution.subject;
   const body = normalizeBody(execution.parameters.body ?? null);
@@ -524,5 +392,15 @@ export const executeGroup = async (execution: GroupExecution): Promise<GroupOutc
 
   const commitResult = await commitStaged(run);
 
-  return { kind: 'committed', result: await reportCommit(run, commitResult) };
+  const snapshot = requireSnapshot(run);
+
+  const result = await reportCommit({
+    runner: run.runner,
+    cwd: run.context.cwd,
+    snapshot: { tree: snapshot.tree, head: snapshot.head },
+    expectedMessage: buildCommitMessage(run.subject, run.body),
+    commitResult,
+  });
+
+  return { kind: 'committed', result };
 };
