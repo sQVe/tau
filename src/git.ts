@@ -15,7 +15,7 @@ export interface GitOptions {
 }
 
 const gitEnvironment = (): NodeJS.ProcessEnv => {
-  // oxlint-disable-next-line node/no-process-env -- Git inherits the user's environment apart from the repository selectors and index file.
+  // oxlint-disable-next-line node/no-process-env -- Git inherits the user's environment apart from repository, index, and object-store selectors.
   const inherited = process.env;
 
   const {
@@ -23,6 +23,7 @@ const gitEnvironment = (): NodeJS.ProcessEnv => {
     GIT_WORK_TREE: _gitWorkTree,
     GIT_COMMON_DIR: _gitCommonDirectory,
     GIT_INDEX_FILE: _gitIndexFile,
+    GIT_OBJECT_DIRECTORY: _gitObjectDirectory,
     LANGUAGE: _language,
     ...env
   } = inherited;

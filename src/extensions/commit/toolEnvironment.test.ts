@@ -1,6 +1,7 @@
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 
 import {
   createTemporaryRepository,
@@ -8,6 +9,37 @@ import {
   git,
   writeRepositoryFile,
 } from './fixtures/commitTool.js';
+
+it('keeps commit objects in the working repository when GIT_OBJECT_DIRECTORY is inherited', async ({
+  onTestFinished,
+}) => {
+  const repositoryA = await createTemporaryRepository();
+  const repositoryB = await createTemporaryRepository();
+  const foreignObjects = join(repositoryB, '.git', 'objects');
+  const objectsBefore = await readdir(foreignObjects, { recursive: true });
+
+  await writeRepositoryFile(repositoryA, 'file.txt', 'content\n');
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  vi.stubEnv('GIT_OBJECT_DIRECTORY', foreignObjects);
+
+  await executeCommit(repositoryA, {
+    groups: [{ files: ['file.txt'], subject: 'feat: add file' }],
+  });
+
+  vi.stubEnv('GIT_OBJECT_DIRECTORY', undefined);
+
+  const objectsAfter = await readdir(foreignObjects, { recursive: true });
+
+  const sortedObjectsBefore = objectsBefore.toSorted();
+  const sortedObjectsAfter = objectsAfter.toSorted();
+
+  expect.soft(sortedObjectsAfter).toEqual(sortedObjectsBefore);
+  expect(await git(repositoryA, ['show', 'HEAD:file.txt'])).toBe('content\n');
+});
 
 const inheritedNames = ['GIT_DIR', 'GIT_INDEX_FILE'] as const;
 const savedValues = new Map<string, string | undefined>();
