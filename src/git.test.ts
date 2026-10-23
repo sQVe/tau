@@ -262,6 +262,33 @@ it('adds the environment on top of the scrubbed one', async ({ onTestFinished })
   expect(result.stdout.toString('utf8').trim()).toBe(realpathSync(root));
 });
 
+it('uses alternate object directories only when explicitly supplied', async ({
+  onTestFinished,
+}) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const foreign = await createTemporaryRepository(onTestFinished);
+  const content = 'foreign-only content\n';
+  const object = await readGit(foreign, ['hash-object', '-w', '--stdin'], { input: content });
+  const foreignObjects = join(foreign, '.git', 'objects');
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  vi.stubEnv('GIT_ALTERNATE_OBJECT_DIRECTORIES', foreignObjects);
+
+  const inherited = await runGit(root, ['cat-file', 'blob', object]);
+
+  const explicit = await runGit(root, ['cat-file', 'blob', object], {
+    environment: { GIT_ALTERNATE_OBJECT_DIRECTORIES: foreignObjects },
+  });
+
+  expect(inherited.exitCode).toBe(128);
+  expect(inherited.stdout.length).toBe(0);
+  expect(explicit.exitCode).toBe(0);
+  expect(explicit.stdout.toString('utf8')).toBe(content);
+});
+
 it('resolves the trimmed output of a Git command that exits 0', async ({ onTestFinished }) => {
   const root = await createTemporaryRepository(onTestFinished);
 

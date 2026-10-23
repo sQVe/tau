@@ -24,6 +24,7 @@ const gitEnvironment = (): NodeJS.ProcessEnv => {
     GIT_COMMON_DIR: _gitCommonDirectory,
     GIT_INDEX_FILE: _gitIndexFile,
     GIT_OBJECT_DIRECTORY: _gitObjectDirectory,
+    GIT_ALTERNATE_OBJECT_DIRECTORIES: _gitAlternateObjectDirectories,
     LANGUAGE: _language,
     ...env
   } = inherited;

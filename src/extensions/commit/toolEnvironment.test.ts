@@ -1,4 +1,4 @@
-import { readdir } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { afterEach, expect, it, vi } from 'vitest';
@@ -39,6 +39,45 @@ it('keeps commit objects in the working repository when GIT_OBJECT_DIRECTORY is 
 
   expect.soft(sortedObjectsAfter).toEqual(sortedObjectsBefore);
   expect(await git(repositoryA, ['show', 'HEAD:file.txt'])).toBe('content\n');
+});
+
+it('keeps committed content local when alternate object directories are inherited', async ({
+  onTestFinished,
+}) => {
+  const repositoryA = await createTemporaryRepository();
+  const repositoryB = await createTemporaryRepository();
+  const content = 'foreign-only blob content\n';
+  const foreignObjects = join(repositoryB, '.git', 'objects');
+
+  await writeRepositoryFile(repositoryB, 'seed.txt', content);
+  await git(repositoryB, ['hash-object', '-w', 'seed.txt']);
+  await writeRepositoryFile(repositoryA, 'file.txt', content);
+
+  const entriesBefore = await readdir(foreignObjects, { recursive: true, withFileTypes: true });
+  const foreignFiles = entriesBefore.filter((entry) => entry.isFile());
+  const foreignPaths = foreignFiles.map((entry) => join(entry.parentPath, entry.name));
+  const bytesBefore = await Promise.all(foreignPaths.map((path) => readFile(path)));
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  vi.stubEnv('GIT_ALTERNATE_OBJECT_DIRECTORIES', foreignObjects);
+
+  await executeCommit(repositoryA, {
+    groups: [{ files: ['file.txt'], subject: 'feat: add file' }],
+  });
+
+  vi.stubEnv('GIT_ALTERNATE_OBJECT_DIRECTORIES', undefined);
+
+  expect(await git(repositoryA, ['show', 'HEAD:file.txt'])).toBe(content);
+  await git(repositoryA, ['fsck', '--full']);
+
+  const entriesAfter = await readdir(foreignObjects, { recursive: true, withFileTypes: true });
+  const bytesAfter = await Promise.all(foreignPaths.map((path) => readFile(path)));
+
+  expect(entriesAfter).toEqual(entriesBefore);
+  expect(bytesAfter).toEqual(bytesBefore);
 });
 
 const inheritedNames = ['GIT_DIR', 'GIT_INDEX_FILE'] as const;
