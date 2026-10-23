@@ -39,6 +39,7 @@ const gitEnvironment = (): NodeJS.ProcessEnv => {
 const maxOutputBytes = 1_073_741_824;
 
 const defaultTimeoutMilliseconds = 60_000;
+const outputIdleMilliseconds = 100;
 
 // Node sets killed when its timeout or the abort signal kills Git, and a killed Git can still exit
 // with any code, such as one that handles SIGTERM.
@@ -61,6 +62,42 @@ const unfinished = (reason: string): GitResult => ({
   stderr: reason,
 });
 
+const drainAfterExit = (child: ChildProcess): (() => void) => {
+  const streams = [child.stdout, child.stderr];
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const waitForIdle = () => {
+    clearTimeout(timer);
+
+    timer = setTimeout(() => {
+      // A hook descendant can retain these handles after Git exits. Keep execFile's byte collector
+      // until output falls idle, then let its native close callback report the result.
+      for (const stream of streams) {
+        stream?.destroy();
+      }
+    }, outputIdleMilliseconds);
+  };
+
+  const exited = () => {
+    for (const stream of streams) {
+      stream?.on('data', waitForIdle);
+    }
+
+    waitForIdle();
+  };
+
+  child.once('exit', exited);
+
+  return () => {
+    clearTimeout(timer);
+    child.off('exit', exited);
+
+    for (const stream of streams) {
+      stream?.off('data', waitForIdle);
+    }
+  };
+};
+
 // Runs Git on the repository at cwd and always resolves, so a caller can accept a nonzero exit.
 // Git prints its messages in English, so a caller can match them. When Git cannot start, is killed,
 // prints more than 1 GiB, runs past the timeout, or is aborted, the exit code is null and stderr
@@ -79,8 +116,11 @@ export const runGit = (
     } = options;
 
     let child: ChildProcess | undefined;
+    let stopDraining: (() => void) | undefined;
 
     const finish = (error: ExecFileException | null, stdout: Buffer, stderr: Buffer) => {
+      stopDraining?.();
+
       const stdoutBytes = Buffer.from(stdout);
       const stderrText = Buffer.from(stderr).toString('utf8');
 
@@ -120,6 +160,8 @@ export const runGit = (
         finish,
       );
 
+      stopDraining = drainAfterExit(child);
+
       // Git can exit before it reads its input. The exit code and stderr then decide the outcome.
       child.stdin?.on('error', () => undefined);
 
@@ -127,6 +169,7 @@ export const runGit = (
         child.stdin?.end(input);
       }
     } catch (error) {
+      stopDraining?.();
       resolve(unfinished(error instanceof Error ? error.message : String(error)));
     }
   });
