@@ -1,11 +1,11 @@
 import { Type } from 'typebox';
 
 import type { CommandRuntime } from '../../command.js';
+import { readGit } from '../../git.js';
 import { checkOutput, label, readJson, run } from '../../github/github.js';
 import type { Repository } from '../../github/github.js';
 import { resolveBaseRepository, resolveHead } from '../../github/repositoryTarget.js';
 import { formatRepository } from '../../github/repositoryTargetDecisions.js';
-import { readGit } from '../../gitOutput.js';
 import {
   pickBaseBranch,
   pickBaseRemote,

@@ -50,7 +50,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
       'extensions/subagents/controller/record',
     ],
   },
-  { name: 'gitOutput', entry: 'gitOutput', publicFiles: [] },
+  { name: 'git', entry: 'git', publicFiles: [] },
   {
     name: 'github',
     entry: 'github/github',
@@ -79,22 +79,22 @@ export const moduleList: readonly ModuleDeclaration[] = [
 // The shared modules each module may import, one row per module. src/tau.ts is the composition
 // root and has no row.
 export const importTable: Readonly<Record<string, readonly string[]>> = {
-  checkRecord: ['errors', 'gitOutput', 'record'],
+  checkRecord: ['errors', 'git', 'record'],
   codemode: [],
   command: ['schema'],
   config: ['errors', 'schema'],
   dialog: ['worker'],
   errors: [],
-  gitOutput: [],
-  github: ['command', 'errors', 'gitOutput', 'schema'],
+  git: ['errors'],
+  github: ['command', 'errors', 'git', 'schema'],
   herdr: [],
   instructions: [],
   linear: ['command', 'errors'],
   record: ['errors', 'schema', 'tauDirectory'],
-  reviewCapture: ['errors', 'gitOutput', 'record', 'schema', 'tauDirectory'],
+  reviewCapture: ['errors', 'git', 'record', 'schema', 'tauDirectory'],
   schema: [],
   skillTools: [],
-  tauDirectory: ['errors', 'gitOutput'],
+  tauDirectory: ['errors', 'git'],
   worker: ['schema'],
 };
 

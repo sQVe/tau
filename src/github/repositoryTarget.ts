@@ -1,7 +1,7 @@
 import { Type } from 'typebox';
 
 import type { CommandRuntime } from '../command.js';
-import { readGit, readOptionalGit, runGit } from '../gitOutput.js';
+import { readGit, runGit } from '../git.js';
 import { checkOutput, parseRepository, readJson } from './github.js';
 import type { Repository } from './github.js';
 import {
@@ -65,6 +65,23 @@ const repositoryViewSchema = Type.Object({
   ]),
   defaultBranchRef: Type.Object({ name: Type.String() }),
 });
+
+const readUnlessMissing = async (
+  cwd: string,
+  commandArguments: string[],
+): Promise<string | undefined> => {
+  const result = await runGit(cwd, commandArguments);
+
+  if (result.exitCode === 1) {
+    return undefined;
+  }
+
+  if (result.exitCode !== 0) {
+    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
+  }
+
+  return result.stdout.toString('utf8').trim();
+};
 
 const lines = (text: string | undefined) => (text ?? '').split('\n').filter((line) => line !== '');
 
@@ -171,13 +188,11 @@ const sshHostResolver = (runtime: CommandRuntime): ResolveHost => {
 // Session start waits for this, so a checkout outside a repository, a missing origin, and a Git
 // failure all read as no origin.
 const readOriginUrl = async (cwd: string): Promise<string | undefined> => {
-  try {
-    const result = await runGit(cwd, ['remote', 'get-url', 'origin'], originTimeoutMilliseconds);
+  const result = await runGit(cwd, ['remote', 'get-url', 'origin'], {
+    timeoutMilliseconds: originTimeoutMilliseconds,
+  });
 
-    return result.exitCode === 0 ? result.stdout.toString('utf8').trim() : undefined;
-  } catch {
-    return undefined;
-  }
+  return result.exitCode === 0 ? result.stdout.toString('utf8').trim() : undefined;
 };
 
 export const readOriginRepository = async (runtime: CommandRuntime): Promise<OriginRepository> => {
@@ -196,7 +211,7 @@ const remoteUrlKey = /^remote\.(.+)\.(url|pushurl|fetch)$/u;
 
 // Reads every url, pushurl, and fetch refspec of each remote.
 const readRemoteUrls = async (cwd: string) => {
-  const output = await readOptionalGit(cwd, [
+  const output = await readUnlessMissing(cwd, [
     'config',
     '--get-regexp',
     String.raw`^remote\..*\.((push)?url|fetch)$`,
@@ -249,7 +264,7 @@ const readPushes = async (
   name: string,
   configured: readonly string[],
 ) => {
-  const output = await readOptionalGit(cwd, ['remote', 'get-url', '--push', '--all', name]);
+  const output = await readUnlessMissing(cwd, ['remote', 'get-url', '--push', '--all', name]);
   const expanded = lines(output);
   const count = Math.max(expanded.length, configured.length);
 
@@ -269,7 +284,7 @@ const readRemote = async (
   // Git fetches from the first url, and pushes to every url when no pushurl is set.
   const [url = ''] = urls.urls;
   const pushUrls = urls.pushUrls.length === 0 ? urls.urls : urls.pushUrls;
-  const fetchUrl = await readOptionalGit(cwd, ['remote', 'get-url', name]);
+  const fetchUrl = await readUnlessMissing(cwd, ['remote', 'get-url', name]);
   const fetched = await effectiveRepository(resolveHost, fetchUrl, url);
 
   return {
@@ -290,7 +305,7 @@ const readRemotes = async (runtime: CommandRuntime): Promise<Remote[]> => {
 };
 
 const readBranch = async (cwd: string) => {
-  const branch = await readOptionalGit(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
+  const branch = await readUnlessMissing(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
 
   if (branch === undefined) {
     throw new Error('HEAD is detached. Check out the branch the pull request is for.');

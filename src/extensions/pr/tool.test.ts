@@ -10,7 +10,7 @@ import { expect, it, onTestFinished } from 'vitest';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';
-import { readGitBytes } from '../../gitOutput.js';
+import { runGit } from '../../git.js';
 import { createGhFake } from './fixtures/ghFake.js';
 import type { FakePullRequest, GhFake } from './fixtures/ghFake.js';
 import { createPrTool } from './tool.js';
@@ -143,7 +143,7 @@ it('makes a check log match evidence for a committed diff over 1 MiB', async () 
   await git(root, 'commit', '--quiet', '-m', 'large change');
   await pushFeature(root);
 
-  const diff = await readGitBytes(root, ['diff', forkPoint, 'HEAD']);
+  const { stdout: diff } = await runGit(root, ['diff', forkPoint, 'HEAD']);
 
   expect(diff.length).toBeGreaterThan(1_048_576);
 

@@ -1,30 +1,30 @@
 import { lstat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { ExecResult, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage, isMissingFile } from '../../errors.js';
+import type { GitResult, runGit } from '../../git.js';
 import {
   currentHead,
+  decodeOutput,
   isCommitAncestor,
-  listCommitPaths,
   readIndex,
   readIndexEntries,
   listStagedPaths,
   repositoryPathPrefix,
   restoreIndexEntries,
-  runGit,
   stageFiles,
   unstageFiles,
   writeTree,
 } from './gitCommands.js';
+import { reportCommit } from './reporting.js';
 import type { CommitSuccess } from './types.js';
 import {
   buildCommitMessage,
   commitFailedError,
   normalizeBody,
   normalizeRepositoryPath,
-  isSensitivePath,
 } from './validation.js';
 import type { CommitInput } from './validation.js';
 
@@ -44,7 +44,7 @@ interface GroupExecution {
   subject: string;
   targetHash: string | undefined;
   temporaryDirectory: string;
-  pi: Pick<ExtensionAPI, 'exec'>;
+  runner: typeof runGit;
   context: ExtensionContext;
   signal: AbortSignal | undefined;
   committedFiles: Set<string>;
@@ -65,7 +65,7 @@ export interface GroupOutcome {
 }
 
 interface CleanupCheck {
-  pi: Pick<ExtensionAPI, 'exec'>;
+  runner: typeof runGit;
   cwd: string;
   requestedFiles: Set<string>;
   prefix: string;
@@ -89,7 +89,7 @@ const validateStagingArea = async (
   execution: GroupExecution,
   requestedFiles: Set<string>,
 ): Promise<string[]> => {
-  const stagedPaths = await listStagedPaths(execution.pi, execution.context.cwd);
+  const stagedPaths = await listStagedPaths(execution.runner, execution.context.cwd);
   const unrelatedStagedPaths = stagedPaths.filter((file) => !requestedFiles.has(file));
 
   if (unrelatedStagedPaths.length > 0) {
@@ -116,7 +116,7 @@ const readStagedBefore = async (
     files,
     entries:
       stagedRequests.length > 0
-        ? await readIndexEntries(execution.pi, execution.context.cwd, stagedRequests)
+        ? await readIndexEntries(execution.runner, execution.context.cwd, stagedRequests)
         : new Map<string, string>(),
   };
 };
@@ -141,7 +141,7 @@ const isMissingFromWorktree = (cwd: string, file: string) =>
   );
 
 const restoreRequest = async (
-  pi: Pick<ExtensionAPI, 'exec'>,
+  runner: typeof runGit,
   cwd: string,
   check: Pick<CleanupCheck, 'prefix' | 'stagedBefore'>,
   files: string[],
@@ -149,7 +149,7 @@ const restoreRequest = async (
   const deletions = stagedDeletions(check, files);
 
   if (check.stagedBefore.entries.size > 0 || deletions.length > 0) {
-    await restoreIndexEntries(pi, cwd, [...check.stagedBefore.entries.values()], deletions);
+    await restoreIndexEntries(runner, cwd, [...check.stagedBefore.entries.values()], deletions);
   }
 
   const unstaged = files.filter(
@@ -157,7 +157,7 @@ const restoreRequest = async (
   );
 
   if (unstaged.length > 0) {
-    await unstageFiles(pi, cwd, unstaged);
+    await unstageFiles(runner, cwd, unstaged);
   }
 };
 
@@ -173,10 +173,10 @@ const stageAndVerifyRequest = async (run: GroupRun): Promise<boolean> => {
   const filesToAdd = run.parameters.files.filter((file) => !skipped.has(file));
 
   if (filesToAdd.length > 0) {
-    await stageFiles(run.pi, run.context.cwd, filesToAdd);
+    await stageFiles(run.runner, run.context.cwd, filesToAdd);
   }
 
-  const stagedAfterRequest = await listStagedPaths(run.pi, run.context.cwd);
+  const stagedAfterRequest = await listStagedPaths(run.runner, run.context.cwd);
   const unrequestedPaths = stagedAfterRequest.filter((file) => !run.requestedFiles.has(file));
 
   if (unrequestedPaths.length > 0) {
@@ -212,9 +212,9 @@ const requireSnapshot = (run: GroupRun): StagedSnapshot => {
 };
 
 const snapshotStagedTree = async (run: GroupRun): Promise<boolean> => {
-  const tree = await writeTree(run.pi, run.context.cwd, run.signal);
-  const index = await readIndex(run.pi, run.context.cwd);
-  const head = await currentHead(run.pi, run.context.cwd);
+  const tree = await writeTree(run.runner, run.context.cwd, run.signal);
+  const index = await readIndex(run.runner, run.context.cwd);
+  const head = await currentHead(run.runner, run.context.cwd);
 
   run.snapshot = { tree, index, head };
 
@@ -224,7 +224,7 @@ const snapshotStagedTree = async (run: GroupRun): Promise<boolean> => {
 
   if (run.targetHash !== undefined) {
     const targetInHistory =
-      head !== null && (await isCommitAncestor(run.pi, run.context.cwd, run.targetHash, head));
+      head !== null && (await isCommitAncestor(run.runner, run.context.cwd, run.targetHash, head));
 
     if (!targetInHistory) {
       throw new Error('Fixup target is no longer an ancestor of the snapshot HEAD.');
@@ -245,13 +245,13 @@ const snapshotChanged = async (
     return true;
   }
 
-  return (await currentHead(check.pi, check.cwd)) !== snapshot.head;
+  return (await currentHead(check.runner, check.cwd)) !== snapshot.head;
 };
 
 const assertCleanupOwnership = async (check: CleanupCheck): Promise<void> => {
   if (check.snapshot === null) {
     // Before the candidate snapshot, unexpected entries may belong to another writer.
-    const staged = await listStagedPaths(check.pi, check.cwd);
+    const staged = await listStagedPaths(check.runner, check.cwd);
 
     if (staged.some((file) => !check.requestedFiles.has(file))) {
       throw new Error('Concurrent staging was left untouched. Inspect the index before retrying.');
@@ -260,7 +260,7 @@ const assertCleanupOwnership = async (check: CleanupCheck): Promise<void> => {
     return;
   }
 
-  const currentIndex = await readIndex(check.pi, check.cwd);
+  const currentIndex = await readIndex(check.runner, check.cwd);
 
   if (await snapshotChanged(check, check.snapshot, currentIndex)) {
     throw new Error('Staged content or HEAD changed. Concurrent staging was left untouched.');
@@ -269,7 +269,7 @@ const assertCleanupOwnership = async (check: CleanupCheck): Promise<void> => {
 
 const cleanUpGroup = async (check: CleanupCheck, files: string[]): Promise<void> => {
   await assertCleanupOwnership(check);
-  await restoreRequest(check.pi, check.cwd, check, files);
+  await restoreRequest(check.runner, check.cwd, check, files);
 };
 
 // A cleanup failure must not hide why the group failed.
@@ -291,27 +291,29 @@ const runGroupPipeline = async (run: GroupRun): Promise<boolean> => {
   return snapshotStagedTree(run);
 };
 
-const commitStaged = async (run: GroupRun): Promise<ExecResult> => {
+const commitStaged = async (run: GroupRun): Promise<GitResult> => {
   const snapshot = requireSnapshot(run);
 
-  const commitResult = await run.pi.exec(
-    'git',
+  const commitResult = await run.runner(
+    run.context.cwd,
     ['commit', '--cleanup=verbatim', '-F', run.messagePath],
-    { cwd: run.context.cwd },
+    {
+      timeoutMilliseconds: null,
+    },
   );
 
-  if (commitResult.code !== 0 || commitResult.killed) {
-    const failure = commitFailedError(commitResult.stdout, commitResult.stderr);
+  if (commitResult.exitCode !== 0) {
+    const failure = commitFailedError(decodeOutput(commitResult), commitResult.stderr);
 
     try {
-      if ((await currentHead(run.pi, run.context.cwd)) !== snapshot.head) {
+      if ((await currentHead(run.runner, run.context.cwd)) !== snapshot.head) {
         throw new Error(
           'HEAD changed during git commit. Staging was left untouched. Inspect the repository before retrying.',
         );
       }
 
       // Requested-path staging during hooks is hook-owned; same-path concurrent writers are unsupported.
-      await restoreRequest(run.pi, run.context.cwd, run, run.parameters.files);
+      await restoreRequest(run.runner, run.context.cwd, run, run.parameters.files);
     } catch (error) {
       throw new Error(`${failure.message}\n${String(error)}`, { cause: error });
     }
@@ -320,130 +322,6 @@ const commitStaged = async (run: GroupRun): Promise<ExecResult> => {
   }
 
   return commitResult;
-};
-
-const buildHookReport = (
-  run: GroupRun,
-  committedPaths: string[],
-  changedPathsOutput: string,
-  storedMessage: string,
-) => {
-  const hookChanges = {
-    files: changedPathsOutput.split('\0').filter(Boolean),
-    message: storedMessage !== buildCommitMessage(run.subject, run.body),
-  };
-
-  const sensitivePaths = committedPaths.filter((file) => isSensitivePath(file));
-  const reportLines: string[] = [];
-
-  if (sensitivePaths.length > 0) {
-    reportLines.push(`Warning: committed sensitive paths: ${sensitivePaths.join(', ')}`);
-  }
-
-  if (hookChanges.files.length > 0) {
-    reportLines.push(`Hook changed paths: ${hookChanges.files.join(', ')}`);
-  }
-
-  if (hookChanges.message) {
-    reportLines.push(`Hook changed the commit message:\n${storedMessage}`);
-  }
-
-  const hookReport = reportLines.join('\n');
-
-  return { hookChanges, hookReport };
-};
-
-const buildCommitReport = async (
-  run: GroupRun,
-  commitHash: string,
-  commitObject: string,
-  messageOffset: number,
-): Promise<CommitSuccess> => {
-  const snapshot = requireSnapshot(run);
-
-  const committedPaths = await listCommitPaths(run.pi, run.context.cwd, commitHash);
-  const storedMessage = commitObject.slice(messageOffset + 2);
-  const firstNewline = storedMessage.indexOf('\n');
-  const storedSubject = firstNewline === -1 ? storedMessage : storedMessage.slice(0, firstNewline);
-
-  const storedBody =
-    firstNewline === -1 ? '' : storedMessage.slice(firstNewline + 1).replace(/^\n/, '');
-
-  const changedPathsOutput = await runGit(run.pi, run.context.cwd, [
-    'diff',
-    '--no-ext-diff',
-    '--no-textconv',
-    '--no-renames',
-    '--no-relative',
-    '--name-only',
-    '-z',
-    snapshot.tree,
-    `${commitHash}^{tree}`,
-    '--',
-  ]);
-
-  const { hookChanges, hookReport } = buildHookReport(
-    run,
-    committedPaths,
-    changedPathsOutput,
-    storedMessage,
-  );
-
-  const reportLines = [`${commitHash} ${storedSubject}`, 'Git hooks: run.'];
-
-  if (hookReport) {
-    reportLines.push(hookReport);
-  }
-
-  return {
-    content: [
-      {
-        type: 'text',
-        text: reportLines.join('\n'),
-      },
-    ],
-    details: {
-      sha: commitHash,
-      files: committedPaths,
-      subject: storedSubject,
-      body: storedBody || null,
-      message: storedMessage,
-      hooks: 'run',
-      hookChanges,
-    },
-  };
-};
-
-const reportCommit = async (run: GroupRun, commitResult: ExecResult): Promise<CommitSuccess> => {
-  const snapshot = requireSnapshot(run);
-  let commitHash = '';
-
-  // A reporting failure must not hide a successful commit or undo hooks' work.
-  try {
-    const commitHashOutput = await runGit(run.pi, run.context.cwd, ['rev-parse', 'HEAD']);
-    const capturedHead = commitHashOutput.trim();
-    const commitObject = await runGit(run.pi, run.context.cwd, ['cat-file', '-p', capturedHead]);
-    const messageOffset = commitObject.indexOf('\n\n');
-    const firstParent = commitObject.slice(0, messageOffset).match(/^parent (.+)$/m)?.[1] ?? null;
-
-    // First-parent matching detects an intervening commit, not rewrites sharing the same parent.
-    if (firstParent !== snapshot.head) {
-      throw new Error(
-        "HEAD changed before commit reporting. The captured HEAD could not be verified as this group's commit. HEAD and staging were left untouched.",
-      );
-    }
-
-    commitHash = capturedHead;
-
-    return await buildCommitReport(run, commitHash, commitObject, messageOffset);
-  } catch (error) {
-    const commitSuffix = commitHash ? `: ${commitHash}` : '';
-
-    throw new Error(
-      `Git commit succeeded${commitSuffix}. The commit was not undone.\nReporting failed: ${String(error)}\nDo not retry this group. Inspect Git history first.\n${commitResult.stdout}${commitResult.stderr}`,
-      { cause: error },
-    );
-  }
 };
 
 export const executeGroup = async (execution: GroupExecution): Promise<GroupOutcome> => {
@@ -460,7 +338,7 @@ export const executeGroup = async (execution: GroupExecution): Promise<GroupOutc
     return cancelled;
   }
 
-  const prefix = await repositoryPathPrefix(execution.pi, execution.context.cwd);
+  const prefix = await repositoryPathPrefix(execution.runner, execution.context.cwd);
 
   const requestedFiles = new Set(
     execution.parameters.files.map((file) => repositoryPath(prefix, file)),
@@ -498,7 +376,7 @@ export const executeGroup = async (execution: GroupExecution): Promise<GroupOutc
   } finally {
     if (!readyToCommit) {
       const check = {
-        pi: execution.pi,
+        runner: execution.runner,
         cwd: execution.context.cwd,
         requestedFiles,
         prefix,
@@ -514,5 +392,15 @@ export const executeGroup = async (execution: GroupExecution): Promise<GroupOutc
 
   const commitResult = await commitStaged(run);
 
-  return { kind: 'committed', result: await reportCommit(run, commitResult) };
+  const snapshot = requireSnapshot(run);
+
+  const result = await reportCommit({
+    runner: run.runner,
+    cwd: run.context.cwd,
+    snapshot: { tree: snapshot.tree, head: snapshot.head },
+    expectedMessage: buildCommitMessage(run.subject, run.body),
+    commitResult,
+  });
+
+  return { kind: 'committed', result };
 };

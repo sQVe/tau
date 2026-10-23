@@ -6,7 +6,7 @@ import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
-import { findCheckoutRoot } from '../../gitOutput.js';
+import { findCheckoutRoot } from '../../git.js';
 import { readReviewEvidence } from '../../reviewCapture/evidence.js';
 import {
   captureReview,

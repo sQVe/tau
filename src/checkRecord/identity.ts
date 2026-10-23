@@ -3,7 +3,7 @@ import { lstat, readFile, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { isMissingFile } from '../errors.js';
-import { runGit } from '../gitOutput.js';
+import { runGit } from '../git.js';
 import type { CheckIdentity } from './reuseDecision.js';
 
 export interface CheckState {
@@ -15,17 +15,16 @@ export interface CheckState {
 
 const hashText = (text: Buffer | string): string => createHash('sha256').update(text).digest('hex');
 
-const readGitText = async (
-  root: string,
-  commandArguments: string[],
-): Promise<string | undefined> => {
+const resolveCommit = async (root: string, reference: string): Promise<string | undefined> => {
+  const commandArguments = ['rev-parse', '--verify', '--quiet', `${reference}^{commit}`];
   const result = await runGit(root, commandArguments);
+
+  if (result.exitCode === null) {
+    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
+  }
 
   return result.exitCode === 0 ? result.stdout.toString('utf8').trim() : undefined;
 };
-
-const resolveCommit = (root: string, reference: string): Promise<string | undefined> =>
-  readGitText(root, ['rev-parse', '--verify', '--quiet', `${reference}^{commit}`]);
 
 const readBase = async (root: string, base: string | undefined): Promise<string | null> => {
   if (base === undefined) {
@@ -136,7 +135,7 @@ export const readCheckState = async (
   root: string,
   base: string | undefined,
 ): Promise<CheckState> => {
-  const head = await readGitText(root, ['rev-parse', 'HEAD']);
+  const head = await resolveCommit(root, 'HEAD');
 
   if (head === undefined) {
     throw new Error(`The full_check tool needs a commit at HEAD in ${root}.`);

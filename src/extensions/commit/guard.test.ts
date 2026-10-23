@@ -56,14 +56,6 @@ const runCommand = async (
   }
 };
 
-const execInRequestedDirectory: ExtensionAPI['exec'] = (command, commandArguments, options) => {
-  if (options?.cwd === undefined) {
-    throw new Error(`${command} ${commandArguments.join(' ')} ran without a cwd`);
-  }
-
-  return runCommand(command, commandArguments, options.cwd);
-};
-
 const git = async (repositoryDirectory: string, commandArguments: string[]): Promise<string> => {
   const result = await runCommand('git', commandArguments, repositoryDirectory);
 
@@ -373,9 +365,8 @@ describe('guardToolCall', () => {
   });
 });
 
-const createFakePi = (executeCommand?: ExtensionAPI['exec']) => {
+const createFakePi = () => {
   const fake = fakeExtensionApi({
-    exec: executeCommand ?? (() => Promise.reject(new Error('not wired'))),
     registerFlag: vi.fn<ExtensionAPI['registerFlag']>(),
     getFlag: vi.fn<ExtensionAPI['getFlag']>().mockReturnValue(false),
   });
@@ -400,9 +391,7 @@ describe('commitExtension', () => {
   it('commits without registering or reading an approval flag', async () => {
     const repositoryDirectory = await createTemporaryRepository();
 
-    const { fakePi, registeredTool } = createFakePi((command, commandArguments, options) =>
-      execInRequestedDirectory(command, commandArguments, options),
-    );
+    const { fakePi, registeredTool } = createFakePi();
 
     const custom = vi.fn<() => Promise<string>>().mockResolvedValue('abort');
 
@@ -435,13 +424,7 @@ describe('commitExtension', () => {
     const repositoryDirectory = await createTemporaryRepository();
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
 
-    const executeCommand: ExtensionAPI['exec'] = (
-      command: string,
-      commandArguments: string[],
-      options?: { cwd?: string },
-    ) => execInRequestedDirectory(command, commandArguments, options);
-
-    const { fakePi, registeredTool } = createFakePi(executeCommand);
+    const { fakePi, registeredTool } = createFakePi();
 
     commitExtension(fakePi);
 

@@ -1,10 +1,8 @@
-import { execFile } from 'node:child_process';
 import { sep } from 'node:path';
-import { promisify } from 'node:util';
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { gitEnvironment } from '../../gitOutput.js';
+import { runGit } from '../../git.js';
 import { footerTheme, renderFooterLine } from './render.js';
 
 type FooterFactory = NonNullable<Parameters<ExtensionContext['ui']['setFooter']>[0]>;
@@ -17,13 +15,8 @@ interface StatusbarState {
   pendingContext: ExtensionContext | undefined;
 }
 
-const executeFile = promisify(execFile);
-
 // Bound background Git work. Failures leave the dirty marker hidden.
 const gitTimeoutMilliseconds = 5000;
-const gitMaximumBufferMebibytes = 10;
-const bytesPerMebibyte = 1_048_576;
-const gitMaximumBufferBytes = gitMaximumBufferMebibytes * bytesPerMebibyte;
 const shownDirectoryDepth = 2;
 
 const getSessionCost = (context: ExtensionContext): number => {
@@ -43,24 +36,12 @@ const getSessionCost = (context: ExtensionContext): number => {
 };
 
 const readDirty = async (context: ExtensionContext): Promise<boolean> => {
-  try {
-    // Override status.showUntrackedFiles so new files always count as dirty.
-    const { stdout } = await executeFile(
-      'git',
-      ['status', '--porcelain', '--untracked-files=normal'],
-      {
-        cwd: context.cwd,
-        env: { ...gitEnvironment(), GIT_OPTIONAL_LOCKS: '0' },
-        timeout: gitTimeoutMilliseconds,
-        maxBuffer: gitMaximumBufferBytes,
-      },
-    );
+  const result = await runGit(context.cwd, ['status', '--porcelain', '--untracked-files=normal'], {
+    timeoutMilliseconds: gitTimeoutMilliseconds,
+    environment: { GIT_OPTIONAL_LOCKS: '0' },
+  });
 
-    return stdout.length > 0;
-  } catch {
-    // Outside a repository, or when git fails, show no dirty marker.
-    return false;
-  }
+  return result.exitCode === 0 && result.stdout.length > 0;
 };
 
 // Tool results arrive in bursts. Run one git status at a time and fold the requests that arrive

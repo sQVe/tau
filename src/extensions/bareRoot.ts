@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
-import { readGitOutput } from '../gitOutput.js';
+import { runGit } from '../git.js';
 import { appendSystemPrompt } from '../instructions/systemPrompt.js';
 
 const rule =
@@ -10,9 +10,11 @@ const rule =
   'handover skill. Writing handover messages under .tau/handovers in the root is fine.';
 
 const isBareRoot = async (cwd: string) => {
-  const output = await readGitOutput(cwd, ['rev-parse', '--is-bare-repository']);
+  const result = await runGit(cwd, ['rev-parse', '--is-bare-repository'], {
+    timeoutMilliseconds: 5000,
+  });
 
-  return output?.trim() === 'true';
+  return result.exitCode === 0 && result.stdout.toString('utf8').trim() === 'true';
 };
 
 export default function bareRootExtension(pi: ExtensionAPI): void {

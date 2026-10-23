@@ -3,16 +3,18 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
-import type { ExtensionAPI, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, onTestFinished, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
 import { createTemporaryRepository as createRepository } from '../../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import { runGit } from '../../../git.js';
+import type { GitResult } from '../../../git.js';
 import { createCommitTool } from '../tool.js';
 import type { CommitInput } from '../validation.js';
 
-type CommandResult = Awaited<ReturnType<ExtensionAPI['exec']>>;
+type GitRunner = typeof runGit;
 
 type CommitToolResult = ReturnType<ReturnType<typeof createCommitTool>['execute']>;
 
@@ -20,13 +22,13 @@ interface ObservedCommands {
   // Runs after each finished command, before the tool sees its result.
   afterCommand?: (commandArguments: string[]) => Promise<void>;
   // Replaces the real result of a command when it returns one.
-  override?: (commandArguments: string[]) => CommandResult | undefined;
+  override?: (commandArguments: string[]) => GitResult | undefined;
 }
 
 interface FakeCommit {
   custom: Mock<() => never>;
   editor: Mock<() => never>;
-  exec: Mock<ExtensionAPI['exec']>;
+  runner: Mock<GitRunner>;
   context: {
     cwd: string;
     hasUI: boolean;
@@ -129,37 +131,22 @@ export const commitContext = (repositoryDirectory: string): ExtensionToolContext
     },
   }) as unknown as ExtensionToolContext;
 
-// A git call without a cwd would run in the process directory, so the fixture refuses it.
-export const execInRequestedDirectory: ExtensionAPI['exec'] = (
-  command,
-  commandArguments,
-  options,
-) => {
-  if (options?.cwd === undefined) {
-    throw new Error(`${command} ${commandArguments.join(' ')} ran without a cwd`);
-  }
-
-  return runCommand(command, commandArguments, options.cwd, options.signal);
-};
-
 export const createObservedCommitTool = (
   observed: ObservedCommands,
 ): ReturnType<typeof createCommitTool> =>
-  createCommitTool({
-    async exec(command, commandArguments, options) {
-      const result = await execInRequestedDirectory(command, commandArguments, options);
+  createCommitTool(async (cwd, commandArguments, options) => {
+    const result = await runGit(cwd, commandArguments, options);
 
-      await observed.afterCommand?.(commandArguments);
+    await observed.afterCommand?.(commandArguments);
 
-      return observed.override?.(commandArguments) ?? result;
-    },
+    return observed.override?.(commandArguments) ?? result;
   });
 
 export const executeCommit = async (
   repositoryDirectory: string,
   input: CommitInput,
 ): CommitToolResult => {
-  const commitTool = createCommitTool({ exec: execInRequestedDirectory });
+  const commitTool = createCommitTool(runGit);
 
   return commitTool.execute(
     'tool-call-1',
@@ -184,7 +171,7 @@ export const fakeCommit = (): FakeCommit => {
   let storedMessage = '';
   let stagedFiles: string[] = [];
 
-  const exec = vi.fn<ExtensionAPI['exec']>(async (_command, commandArguments) => {
+  const runner = vi.fn<GitRunner>(async (_cwd, commandArguments) => {
     let stdout = '';
 
     if (commandArguments.includes('add')) {
@@ -222,10 +209,10 @@ export const fakeCommit = (): FakeCommit => {
       stdout = 'true\n\n';
     }
 
-    return { code: 0, killed: false, stderr: '', stdout };
+    return { exitCode: 0, stderr: '', stdout: Buffer.from(stdout) };
   });
 
-  const tool = createCommitTool({ exec });
+  const tool = createCommitTool(runner);
   const context = { cwd: '/repo', hasUI: true, ui: { custom, editor } };
 
   const input = {
@@ -241,5 +228,5 @@ export const fakeCommit = (): FakeCommit => {
   const execute = (signal?: AbortSignal) =>
     tool.execute('call', input, signal, undefined, context as never);
 
-  return { custom, editor, exec, context, input, execute, gitDirectory };
+  return { custom, editor, runner, context, input, execute, gitDirectory };
 };

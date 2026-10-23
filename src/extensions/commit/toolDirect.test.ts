@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { runGit } from '../../git.js';
 import {
   commitContext,
   createTemporaryRepository,
@@ -10,18 +11,17 @@ import {
   fakeCommit,
   git,
   writeRepositoryFile,
-  execInRequestedDirectory,
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
 
 describe('direct commit staging', () => {
   it('preserves untimed wrappers and bounded Git calls', async () => {
-    const { execute, exec } = fakeCommit();
+    const { execute, runner } = fakeCommit();
     const signal = new AbortController().signal;
 
     await execute(signal);
 
-    const untimedCalls = exec.mock.calls.filter(([, argumentsList]) => {
+    const untimedCalls = runner.mock.calls.filter(([, argumentsList]) => {
       const queryFlags =
         argumentsList.includes('--show-prefix') || argumentsList.includes('--cached');
 
@@ -33,55 +33,65 @@ describe('direct commit staging', () => {
     expect(untimedCalls).toHaveLength(7);
 
     for (const call of untimedCalls) {
-      expect(call[2]).toEqual({ cwd: '/repo' });
+      expect(call[0]).toBe('/repo');
+      expect(call[2]).toEqual({ timeoutMilliseconds: null });
     }
 
     for (const command of ['ls-files', 'write-tree', 'cat-file']) {
-      const calls = exec.mock.calls.filter(([, argumentsList]) => argumentsList[0] === command);
+      const calls = runner.mock.calls.filter(([, argumentsList]) => argumentsList[0] === command);
 
       expect(calls.length).toBeGreaterThan(0);
 
       for (const call of calls) {
+        expect(call[0]).toBe('/repo');
+
         expect(call[2]).toEqual({
-          cwd: '/repo',
-          timeout: 30_000,
+          timeoutMilliseconds: 30_000,
           ...(command === 'write-tree' ? { signal } : {}),
         });
       }
     }
 
-    const headCalls = exec.mock.calls.filter(
+    const headCalls = runner.mock.calls.filter(
       ([, argumentsList]) => argumentsList[0] === 'rev-parse' && argumentsList[1] === 'HEAD',
     );
 
-    const hookDiff = exec.mock.calls.find(
+    const hookDiff = runner.mock.calls.find(
       ([, argumentsList]) => argumentsList[0] === 'diff' && !argumentsList.includes('--cached'),
     );
 
-    expect(headCalls.at(-1)?.[2]).toEqual({ cwd: '/repo', timeout: 30_000 });
-    expect(hookDiff?.[2]).toEqual({ cwd: '/repo', timeout: 30_000 });
+    const snapshotHeadCalls = headCalls.slice(0, -1);
+
+    expect(snapshotHeadCalls.length).toBeGreaterThan(0);
+
+    for (const call of snapshotHeadCalls) {
+      expect(call[2]).toEqual({ timeoutMilliseconds: null });
+    }
+
+    expect(headCalls.at(-1)?.[2]).toEqual({ timeoutMilliseconds: 30_000 });
+    expect(hookDiff?.[2]).toEqual({ timeoutMilliseconds: 30_000 });
   });
 
   it('stops and unstages when Git staging is killed despite a zero exit code', async () => {
-    const { execute, exec } = fakeCommit();
-    const executeGit = exec.getMockImplementation()!;
+    const { execute, runner } = fakeCommit();
+    const executeGit = runner.getMockImplementation()!;
 
-    exec.mockImplementation(async (command, argumentsList, options) => {
-      const result = await executeGit(command, argumentsList, options);
+    runner.mockImplementation(async (cwd, argumentsList, options) => {
+      const result = await executeGit(cwd, argumentsList, options);
 
       return argumentsList.includes('add')
-        ? { ...result, killed: true, stderr: 'staging interrupted' }
+        ? { ...result, exitCode: null, stderr: 'staging interrupted' }
         : result;
     });
 
     await expect(execute()).rejects.toThrow('staging interrupted');
 
-    expect(exec.mock.calls.some((call) => call[1][0] === 'commit')).toBe(false);
+    expect(runner.mock.calls.some((call) => call[1][0] === 'commit')).toBe(false);
 
-    expect(exec).toHaveBeenLastCalledWith(
-      'git',
+    expect(runner).toHaveBeenLastCalledWith(
+      '/repo',
       ['--literal-pathspecs', 'reset', '--', 'README.md'],
-      { cwd: '/repo' },
+      { timeoutMilliseconds: null },
     );
   });
 
@@ -145,18 +155,16 @@ describe('direct commit staging', () => {
     await writeRepositoryFile(directory, 'requested', 'requested');
     await writeRepositoryFile(directory, 'other', 'working bytes');
 
-    const tool = createCommitTool({
-      exec: async (command, argumentsList, options) => {
-        const result = await execInRequestedDirectory(command, argumentsList, options);
+    const tool = createCommitTool(async (cwd, argumentsList, options) => {
+      const result = await runGit(cwd, argumentsList, options);
 
-        if (argumentsList.includes('add')) {
-          await writeRepositoryFile(directory, 'other', 'staged bytes');
-          await git(directory, ['add', 'other']);
-          await writeRepositoryFile(directory, 'other', 'working bytes');
-        }
+      if (argumentsList.includes('add')) {
+        await writeRepositoryFile(directory, 'other', 'staged bytes');
+        await git(directory, ['add', 'other']);
+        await writeRepositoryFile(directory, 'other', 'working bytes');
+      }
 
-        return result;
-      },
+      return result;
     });
 
     await expect(
@@ -197,10 +205,7 @@ describe('direct commit staging', () => {
 
     await chmod(join(directory, '.git/hooks/pre-commit'), 0o755);
 
-    const tool = createCommitTool({
-      exec: (command, argumentsList, options) =>
-        execInRequestedDirectory(command, argumentsList, options),
-    });
+    const tool = createCommitTool(runGit);
 
     const result = await tool.execute(
       'nested',
@@ -251,18 +256,16 @@ describe('direct commit staging', () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'requested', 'working');
 
-    const tool = createCommitTool({
-      exec: async (command, argumentsList, options) => {
-        if (argumentsList.includes('reset')) {
-          return { stdout: '', stderr: 'reset denied', code: 1, killed: false };
-        }
+    const tool = createCommitTool(async (cwd, argumentsList, options) => {
+      if (argumentsList.includes('reset')) {
+        return { stdout: Buffer.alloc(0), stderr: 'reset denied', exitCode: 1 };
+      }
 
-        if (argumentsList[0] === 'write-tree') {
-          return { stdout: '', stderr: 'snapshot exploded', code: 1, killed: false };
-        }
+      if (argumentsList[0] === 'write-tree') {
+        return { stdout: Buffer.alloc(0), stderr: 'snapshot exploded', exitCode: 1 };
+      }
 
-        return execInRequestedDirectory(command, argumentsList, options);
-      },
+      return runGit(cwd, argumentsList, options);
     });
 
     const failure = await tool

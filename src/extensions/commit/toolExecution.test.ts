@@ -135,8 +135,8 @@ const fixupGroups: CommitInput = {
 
 describe('fixup ancestry check', () => {
   it.each([
-    { name: 'killed with exit code 0', result: { code: 0, killed: true } },
-    { name: 'failed with exit code 2', result: { code: 2, killed: false } },
+    { name: 'killed with exit code 0', result: { exitCode: null } },
+    { name: 'failed with exit code 2', result: { exitCode: 2 } },
   ])('rejects a merge-base $name', async ({ result }) => {
     const directory = await createTemporaryRepository();
     await commitTracked(directory, 'a.txt', 'one\n');
@@ -148,7 +148,7 @@ describe('fixup ancestry check', () => {
     const tool = createObservedCommitTool({
       override: (commandArguments) =>
         commandArguments[0] === 'merge-base'
-          ? { stdout: '', stderr: 'merge-base broke', ...result }
+          ? { stdout: Buffer.alloc(0), stderr: 'merge-base broke', ...result }
           : undefined,
     });
 

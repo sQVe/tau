@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { Type } from 'typebox';
 
 import type { CommandRuntime } from '../../command.js';
+import { readGit } from '../../git.js';
 import { checkOutput, parseRepository, readJson } from '../../github/github.js';
-import { readGit } from '../../gitOutput.js';
 import { existingEntry } from '../../reviewCapture/reviewCapture.js';
 import { checkTauDirectory, rejectLinkedFile, requireTauChild } from '../../tauDirectory.js';
 import { comparePullRequest } from './verifyDecisions.js';

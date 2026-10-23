@@ -2,9 +2,9 @@ import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { CommandRuntime } from '../../command.js';
+import { runGit } from '../../git.js';
 import type { Repository } from '../../github/github.js';
 import { resolveBaseRepository, resolveHead } from '../../github/repositoryTarget.js';
-import { readOptionalGit } from '../../gitOutput.js';
 import {
   decideGithub,
   decideStackView,
@@ -20,15 +20,9 @@ import type {
   GithubFacts,
   ViewOutcome,
 } from './checkDecisions.js';
-import { readFailed, readOk } from './readResult.js';
+import { gitCommandOutput, readFailed, readOk } from './readResult.js';
 import type { Read } from './readResult.js';
-import {
-  readBasedOnPulls,
-  readHeadPulls,
-  readStacks,
-  readStackViewFacts,
-  runGitRead,
-} from './reads.js';
+import { readBasedOnPulls, readHeadPulls, readStacks, readStackViewFacts } from './reads.js';
 
 export interface CheckRequest {
   remote: string | undefined;
@@ -67,7 +61,7 @@ const exists = async (path: string): Promise<boolean> => {
 
 const readCurrentFacts = async (runtime: CommandRuntime): Promise<Read<CurrentBranchFacts>> => {
   const command = 'git rev-parse --absolute-git-dir';
-  const output = await runGitRead(runtime.cwd, ['rev-parse', '--absolute-git-dir']);
+  const output = gitCommandOutput(await runGit(runtime.cwd, ['rev-parse', '--absolute-git-dir']));
   const directory = output.stdout.trim();
 
   if (output.exitCode !== 0 || directory === '') {
@@ -228,12 +222,14 @@ export const readCheck = async (
   runtime: CommandRuntime,
   request: CheckRequest,
 ): Promise<CheckResult> => {
-  const currentBranch = await readOptionalGit(runtime.cwd, [
-    'symbolic-ref',
-    '--quiet',
-    '--short',
-    'HEAD',
-  ]);
+  const branchRead = await runGit(runtime.cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
+
+  if (branchRead.exitCode !== 0 && branchRead.exitCode !== 1) {
+    throw new Error(`git symbolic-ref --quiet --short HEAD failed: ${branchRead.stderr.trim()}`);
+  }
+
+  const currentBranch =
+    branchRead.exitCode === 0 ? branchRead.stdout.toString('utf8').trim() : undefined;
 
   const { branch } = request;
 

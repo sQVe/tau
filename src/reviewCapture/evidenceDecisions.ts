@@ -7,6 +7,11 @@ export type EvidenceList = 'paths' | 'tests' | 'callers' | 'markers' | 'rules' |
 
 export type NamedSection = 'rules' | 'checks';
 
+export interface NamedPath {
+  path: string;
+  status: 'readable' | 'missing' | 'unreadable';
+}
+
 export type EvidenceGap =
   | Gap
   | { kind: 'freshness'; status: 'stale' | 'unknown'; reasons: string[] }
@@ -91,6 +96,22 @@ export const defaultEvidenceLimits: EvidenceLimits = {
   callerLineCharacters: 500,
   namedPaths: 50,
   markers: 200,
+};
+
+const fatalExitCode = 128;
+
+const missingInCommit =
+  /^fatal: path '[^]*' (?:does not exist|exists on disk, but not) in '[^]*'$/mu;
+
+export const committedPathStatus = (
+  exitCode: number | null,
+  stderr: string,
+): NamedPath['status'] => {
+  if (exitCode === 0) {
+    return 'readable';
+  }
+
+  return exitCode === fatalExitCode && missingInCommit.test(stderr) ? 'missing' : 'unreadable';
 };
 
 const scriptExtension = /\.[cm]?[jt]sx?$/;

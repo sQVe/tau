@@ -11,7 +11,7 @@ import {
 import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 
 import { isMissingFile } from './errors.js';
-import { findCheckoutRoot, readGitOutput } from './gitOutput.js';
+import { findCheckoutRoot, runGit } from './git.js';
 
 export type TauChild =
   | { kind: 'outside' }
@@ -172,9 +172,18 @@ const rejectLaterExceptions = async (root: string) => {
   }
 };
 
+const readQuickly = async (
+  cwd: string,
+  commandArguments: string[],
+): Promise<string | undefined> => {
+  const result = await runGit(cwd, commandArguments, { timeoutMilliseconds: 5000 });
+
+  return result.exitCode === 0 ? result.stdout.toString('utf8') : undefined;
+};
+
 // Git does not ignore a file it tracks, so a write to a tracked path would show as a change.
 const rejectTracked = async (root: string, relativePath: string) => {
-  const tracked = await readGitOutput(root, ['ls-files', '--', relativePath]);
+  const tracked = await readQuickly(root, ['ls-files', '--', relativePath]);
 
   if (tracked === undefined) {
     throw new Error(`Git could not list the tracked files in ${relativePath}`);
@@ -188,7 +197,7 @@ const rejectTracked = async (root: string, relativePath: string) => {
 // Asks Git whether a file in the target is ignored, and whether it tracks any file there already.
 const rejectUnignored = async (root: string, relativeDirectory: string) => {
   const probe = `${relativeDirectory}/file`;
-  const output = await readGitOutput(root, ['check-ignore', '--', probe]);
+  const output = await readQuickly(root, ['check-ignore', '--', probe]);
 
   if (output === undefined || output.trim() === '') {
     throw new Error(`Git does not ignore files in ${relativeDirectory}`);
@@ -198,13 +207,13 @@ const rejectUnignored = async (root: string, relativeDirectory: string) => {
 };
 
 const isBareRoot = async (root: string) => {
-  const output = await readGitOutput(root, ['rev-parse', '--is-bare-repository']);
+  const output = await readQuickly(root, ['rev-parse', '--is-bare-repository']);
 
   return output?.trim() === 'true';
 };
 
 const findBareRoot = async (cwd: string, toolName: string) => {
-  const output = await readGitOutput(cwd, ['rev-parse', '--absolute-git-dir']);
+  const output = await readQuickly(cwd, ['rev-parse', '--absolute-git-dir']);
   const path = output?.trim();
 
   if (path === undefined || path === '') {

@@ -6,7 +6,6 @@ import type { CommandRuntime } from '../../command.js';
 import { label } from '../../github/github.js';
 import type { Repository } from '../../github/github.js';
 import { formatRepository } from '../../github/repositoryTargetDecisions.js';
-import { runGit } from '../../gitOutput.js';
 import { describeSchemaProblem } from '../../schema.js';
 import type { PullView } from './chainDecisions.js';
 import { readStacksResponse } from './checkDecisions.js';
@@ -79,27 +78,6 @@ const runGh = async (
     stdout: result.stdout,
     stderr: result.stderr,
   };
-};
-
-export const runGitRead = async (
-  cwd: string,
-  commandArguments: string[],
-): Promise<CommandOutput> => {
-  try {
-    const result = await runGit(cwd, commandArguments);
-
-    return {
-      exitCode: result.exitCode,
-      stdout: result.stdout.toString('utf8'),
-      stderr: result.stderr,
-    };
-  } catch (error) {
-    return {
-      exitCode: null,
-      stdout: '',
-      stderr: error instanceof Error ? error.message : String(error),
-    };
-  }
 };
 
 export const gitLabel = (commandArguments: readonly string[]): string =>

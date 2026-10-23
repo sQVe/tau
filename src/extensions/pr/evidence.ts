@@ -6,7 +6,7 @@ import { listSavedLogs } from '../../checkRecord/checkRecord.js';
 import { readCheckState } from '../../checkRecord/identity.js';
 import type { CommandRuntime } from '../../command.js';
 import { errorMessage, isMissingFile } from '../../errors.js';
-import { readGit, readGitBytes } from '../../gitOutput.js';
+import { readGit, runGit } from '../../git.js';
 import { readReviewEvidence, scanMarkers } from '../../reviewCapture/evidence.js';
 import type { MarkerLine, ReviewEvidence } from '../../reviewCapture/evidence.js';
 import { checkReviewDirectory } from '../../reviewCapture/reviewCapture.js';
@@ -104,7 +104,7 @@ const readReview = async (
 
 const readMarkers = async (root: string, evidence: PublicationEvidence, mergeBase: string) => {
   try {
-    const bytes = await readGitBytes(root, [
+    const diff = await readGit(root, [
       'diff',
       '--no-ext-diff',
       '--no-textconv',
@@ -115,7 +115,7 @@ const readMarkers = async (root: string, evidence: PublicationEvidence, mergeBas
       'HEAD',
     ]);
 
-    const scan = scanMarkers(bytes.toString('utf8'));
+    const scan = scanMarkers(diff);
 
     evidence.markers = scan.items;
 
@@ -128,9 +128,13 @@ const readMarkers = async (root: string, evidence: PublicationEvidence, mergeBas
 };
 
 const hashOutput = async (root: string, commandArguments: string[]) => {
-  const bytes = await readGitBytes(root, commandArguments);
+  const result = await runGit(root, commandArguments);
 
-  return createHash('sha256').update(bytes).digest('hex');
+  if (result.exitCode !== 0) {
+    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
+  }
+
+  return createHash('sha256').update(result.stdout).digest('hex');
 };
 
 const readHeaderIdentity = async (

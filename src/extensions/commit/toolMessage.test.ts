@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { runGit } from '../../git.js';
 import {
   git,
   createTemporaryRepository,
@@ -12,7 +13,6 @@ import {
   commitContext,
   executeCommit,
   fakeCommit,
-  execInRequestedDirectory,
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
 
@@ -115,27 +115,24 @@ describe('message policy', () => {
         await original.rm(path, options);
       });
 
-      const tool = createCommitTool({
-        exec: (command, argumentsList, options) => {
-          if (argumentsList.includes('add')) {
-            stagings += 1;
+      const tool = createCommitTool((cwd, argumentsList, options) => {
+        if (argumentsList.includes('add')) {
+          stagings += 1;
 
-            if (stagings === 2) {
-              if (outcome === 'group failure') {
-                return Promise.resolve({
-                  code: 1,
-                  killed: false,
-                  stdout: '',
-                  stderr: 'primary group failure',
-                });
-              }
-
-              controller.abort();
+          if (stagings === 2) {
+            if (outcome === 'group failure') {
+              return Promise.resolve({
+                exitCode: 1,
+                stdout: Buffer.alloc(0),
+                stderr: 'primary group failure',
+              });
             }
-          }
 
-          return execInRequestedDirectory(command, argumentsList, options);
-        },
+            controller.abort();
+          }
+        }
+
+        return runGit(cwd, argumentsList, options);
       });
 
       try {
@@ -182,8 +179,8 @@ describe('message policy', () => {
   );
 
   it('rejects NUL in every group before any Git operation', async () => {
-    const { exec, context } = fakeCommit();
-    const tool = createCommitTool({ exec });
+    const { runner, context } = fakeCommit();
+    const tool = createCommitTool(runner);
 
     for (const invalid of [
       { subject: 'feat: bad\0hidden' },
@@ -205,6 +202,6 @@ describe('message policy', () => {
       ).rejects.toThrow(/NUL/);
     }
 
-    expect(exec).not.toHaveBeenCalled();
+    expect(runner).not.toHaveBeenCalled();
   });
 });
