@@ -10,19 +10,19 @@ export type { ProcessState } from './stateDecision.js';
 
 const groupPollMilliseconds = 20;
 
-const probe = (processId: number): ProcessState => {
+const probe = (processId: number): string | undefined => {
   try {
     process.kill(processId, 0);
 
-    return stateFromProbe(undefined);
+    return undefined;
   } catch (error) {
     const code = error instanceof Error && 'code' in error ? String(error.code) : 'unknown';
 
-    return stateFromProbe(code);
+    return code;
   }
 };
 
-export const processState = (processId: number): ProcessState => probe(processId);
+export const processState = (processId: number): ProcessState => stateFromProbe(probe(processId));
 
 const readProcessTable = async (): Promise<string | undefined> => {
   try {
@@ -39,10 +39,10 @@ export const groupState = async (groupId: number): Promise<ProcessState> => {
     return processState(groupId);
   }
 
-  const probed = probe(-groupId);
+  const errorCode = probe(-groupId);
 
-  if (probed !== 'running') {
-    return probed;
+  if (errorCode !== undefined) {
+    return stateFromProbe(errorCode);
   }
 
   return groupStateFromTable(await readProcessTable(), groupId);

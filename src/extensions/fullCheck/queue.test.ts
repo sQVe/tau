@@ -760,6 +760,84 @@ it('waits for the command group of a dead session before running a new check', a
   ]);
 });
 
+it('keeps a dead session lock for a permission-denied command absent from ps on cancellation', async () => {
+  const { agentDirectory, directory } = await fixture();
+  const session = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
+
+  await new Promise((resolve) => {
+    session.once('close', resolve);
+  });
+
+  const command = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+    stdio: 'ignore',
+    detached: true,
+  });
+
+  const closed = new Promise((resolve) => {
+    command.once('close', resolve);
+  });
+
+  const groupId = command.pid ?? 0;
+  const kernelKill = process.kill.bind(process);
+
+  onTestFinished(async () => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    command.kill('SIGKILL');
+    await closed;
+  });
+
+  expect(groupId).toBeGreaterThan(0);
+  expect(kernelKill(-groupId, 0)).toBe(true);
+
+  const lockPath = lockPathFor(agentDirectory);
+  const heldPath = `${lockPath}.1`;
+
+  const owner = JSON.stringify({
+    pid: session.pid,
+    checkout: '/gone',
+    startedAt: new Date().toISOString(),
+    token: 'dead-session',
+    commandGroup: groupId,
+  });
+
+  await mkdir(dirname(lockPath), { recursive: true });
+  await writeFile(heldPath, owner);
+  await writeFile(join(directory, 'ps'), '#!/bin/sh\nprintf "1 S\\n"\n', { mode: 0o755 });
+  vi.stubEnv('PATH', directory);
+
+  vi.spyOn(process, 'kill').mockImplementation((processId, signal) => {
+    if (processId === -groupId && signal === 0) {
+      throw Object.assign(new Error('Permission denied'), { code: 'EPERM' });
+    }
+
+    return kernelKill(processId, signal);
+  });
+
+  const controller = new AbortController();
+  const run = vi.fn<() => Promise<undefined>>(async () => undefined);
+
+  const outcome = withFullCheckLock(
+    {
+      lockPath,
+      checkout: '/queued',
+      signal: controller.signal,
+      pollMilliseconds: 60_000,
+      onWaiting: () => {
+        controller.abort();
+      },
+    },
+    run,
+  );
+
+  await expect(outcome).rejects.toThrow('cancelled while it waited');
+
+  expect(run).not.toHaveBeenCalled();
+  expect(kernelKill(-groupId, 0)).toBe(true);
+  expect(await readFile(heldPath, 'utf8')).toBe(owner);
+  expect(await readdir(dirname(lockPath))).toEqual([basename(heldPath)]);
+});
+
 it('takes over a lock whose command group holds only zombies', async () => {
   const { agentDirectory } = await fixture();
 

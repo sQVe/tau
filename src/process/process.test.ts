@@ -102,6 +102,14 @@ it.each([
   },
 );
 
+it('keeps a permission-denied group running without reading an omitted process-table row', async () => {
+  failProbeWith('EPERM');
+  const read = vi.mocked(promisify(execFile)).mockResolvedValue({ stdout: '202 S\n', stderr: '' });
+
+  expect(await groupState(101)).toBe('running');
+  expect(read).not.toHaveBeenCalled();
+});
+
 it('reports a failed process-table read as unknown', async () => {
   vi.spyOn(process, 'kill').mockReturnValue(true);
   const read = vi.mocked(promisify(execFile)).mockRejectedValue(new Error('ps failed'));
