@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { groupHasRunningMember } from './groupMembers.js';
+import { groupHasRunningMember, groupStateFromTable, stateFromProbe } from './stateDecision.js';
 
 it.each([
   { name: 'a running member', output: ' 100 S\n 200 Ss\n', expected: true },
@@ -14,4 +14,22 @@ it.each([
   { name: 'a row with no state column', output: '  200\n', expected: false },
 ])('decides $expected for $name', ({ output, expected }) => {
   expect(groupHasRunningMember(output, 200)).toBe(expected);
+});
+
+it.each([
+  { name: 'a successful probe', code: undefined, expected: 'running' },
+  { name: 'EPERM', code: 'EPERM', expected: 'running' },
+  { name: 'ESRCH', code: 'ESRCH', expected: 'gone' },
+  { name: 'another error', code: 'EINVAL', expected: 'unknown' },
+])('maps $name to $expected', ({ code, expected }) => {
+  expect(stateFromProbe(code)).toBe(expected);
+});
+
+it.each([
+  { name: 'a running member', output: ' 200 S\n', expected: 'running' },
+  { name: 'only zombies', output: ' 200 Z\n', expected: 'gone' },
+  { name: 'no member', output: ' 100 S\n', expected: 'gone' },
+  { name: 'a failed read', output: undefined, expected: 'unknown' },
+])('reads the process table with $name as $expected', ({ output, expected }) => {
+  expect(groupStateFromTable(output, 200)).toBe(expected);
 });

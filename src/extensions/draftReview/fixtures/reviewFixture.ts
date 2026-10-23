@@ -26,6 +26,7 @@ interface TuicrComment {
 type DraftReviewTool = ReturnType<typeof createDraftReviewTool>;
 
 interface ReviewFixture {
+  exec: Exec;
   repository: string;
   data: string;
   run: (
@@ -165,6 +166,7 @@ export const fixture = async (
   const real = (name: string) => join(repository, '.tau', name);
 
   return {
+    exec,
     repository,
     data,
     run,

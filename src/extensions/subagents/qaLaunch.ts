@@ -8,6 +8,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { Exec } from '../../command.js';
 import { readOriginRepository } from '../../github/repositoryTarget.js';
 import { configRepositoryKey } from '../../github/repositoryTargetDecisions.js';
+import { signalGroup } from '../../process/process.js';
 import type { LaunchParameters } from './launchParameters.js';
 import { requireSessionCwd } from './loadout.js';
 import { briefWithQaLines, qaBriefLines, urlCommandResult } from './qaBrief.js';
@@ -28,6 +29,12 @@ const runUrlCommand = (
   timeoutMilliseconds: number,
 ): Promise<string | undefined> =>
   new Promise((resolve) => {
+    if (signal?.aborted === true) {
+      resolve(undefined);
+
+      return;
+    }
+
     const deadline = AbortSignal.timeout(timeoutMilliseconds);
     const stopSignal = signal === undefined ? deadline : AbortSignal.any([signal, deadline]);
 
@@ -45,11 +52,7 @@ const runUrlCommand = (
         return;
       }
 
-      try {
-        process.kill(-child.pid, 'SIGKILL');
-      } catch {
-        // The group already exited.
-      }
+      signalGroup(child, 'SIGKILL');
     };
 
     const stop = (): void => {
@@ -62,6 +65,10 @@ const runUrlCommand = (
       stopSignal.removeEventListener('abort', stop);
       resolve(stdout);
     };
+
+    child.on('error', () => {
+      finish(undefined);
+    });
 
     if (stopSignal.aborted) {
       stop();
@@ -81,10 +88,6 @@ const runUrlCommand = (
       }
 
       chunks.push(chunk);
-    });
-
-    child.on('error', () => {
-      finish(undefined);
     });
 
     child.on('close', (code) => {

@@ -3,6 +3,7 @@ import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { appendFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import { onTestFinished, expect, it, vi } from 'vitest';
 
@@ -15,6 +16,15 @@ vi.mock(import('node:child_process'), async (importOriginal) => {
   const spawnFake = vi.fn<() => ChildProcess>();
 
   return { ...original, spawn: spawnFake as unknown as typeof original.spawn };
+});
+
+vi.mock(import('node:timers/promises'), async (importOriginal) => {
+  const original = await importOriginal();
+  const { globalTimerDelay } = await import('../../../tests/timerFake.js');
+
+  const delay = vi.fn<typeof original.setTimeout>(globalTimerDelay);
+
+  return { ...original, setTimeout: delay as typeof original.setTimeout };
 });
 
 const idleLimit = 400;
@@ -46,6 +56,7 @@ const setUp = async () => {
   onTestFinished(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.resetAllMocks();
   });
 
   const controller = new AbortController();
@@ -125,16 +136,67 @@ it('does not stop a command that wrote output twice again after the idle limit p
   expect(await outcome).toMatchObject({ passed: true, idle: false });
 });
 
-it('sends one stop request and one kill when an abort follows an idle stop', async () => {
+const unknownGroup = (signals: unknown[]) => {
+  vi.spyOn(process, 'kill').mockImplementation((_target, signal) => {
+    if (signal === 0) {
+      throw Object.assign(new Error('Probe failed'), { code: 'EINVAL' });
+    }
+
+    signals.push(signal);
+
+    return true;
+  });
+};
+
+it('waits for stopping an unknown group after the direct child closes', async () => {
+  const { child, signals, outcome } = await setUp();
+  unknownGroup(signals);
+  let settled = false;
+
+  const result = outcome.then((value) => {
+    settled = true;
+
+    return value;
+  });
+
+  child.emit('close', 0, null);
+  await vi.advanceTimersByTimeAsync(0);
+
+  expect(signals).toEqual(['SIGTERM']);
+  expect(settled).toBe(false);
+
+  await vi.advanceTimersByTimeAsync(5000);
+
+  expect(signals).toEqual(['SIGTERM', 'SIGKILL']);
+  expect(settled).toBe(false);
+
+  await vi.advanceTimersByTimeAsync(20);
+
+  expect(await result).toMatchObject({ passed: true, exitCode: 0 });
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('reports a non-Error stopping rejection as an Error after close', async () => {
+  const { child, signals, outcome } = await setUp();
+  unknownGroup(signals);
+  vi.mocked(sleep).mockRejectedValueOnce('poll failed');
+
+  child.emit('close', 0, null);
+
+  await expect(outcome).rejects.toThrow('poll failed');
+  expect(signals).toEqual(['SIGTERM']);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('sends one stop request when an abort follows an idle stop', async () => {
   const { child, signals, controller, outcome } = await setUp();
 
   vi.advanceTimersByTime(idleLimit * 1.5);
   controller.abort();
-  vi.advanceTimersByTime(10_000);
 
-  expect(signals).toEqual(['SIGTERM', 'SIGKILL']);
+  expect(signals).toEqual(['SIGTERM']);
 
-  child.emit('close', null, 'SIGKILL');
+  child.emit('close', null, 'SIGTERM');
 
   await expect(outcome).rejects.toThrow('its command has stopped');
 });

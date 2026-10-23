@@ -11,7 +11,7 @@ import { createHandle } from './task.js';
 
 vi.mock(import('node:timers/promises'), async (importOriginal) => ({
   ...(await importOriginal()),
-  setTimeout: (await import('./fixtures/globalTimerDelay.js')).globalTimerDelay,
+  setTimeout: (await import('../../../../tests/timerFake.js')).globalTimerDelay,
 }));
 
 const token = '/tmp/worker-session.jsonl';

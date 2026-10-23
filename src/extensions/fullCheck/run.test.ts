@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { onTestFinished, expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
-import { commandIsAlive } from './queue.js';
+import { groupState } from '../../process/process.js';
 import { runCheck } from './run.js';
 
 vi.mock(import('node:child_process'), async (importOriginal) => {
@@ -20,7 +20,7 @@ vi.mock(import('node:child_process'), async (importOriginal) => {
 });
 
 const waitForGroupExit = async (groupId: number): Promise<void> => {
-  while (commandIsAlive(groupId)) {
+  while ((await groupState(groupId)) !== 'gone') {
     await new Promise((resolve) => {
       setTimeout(resolve, 10);
     });
