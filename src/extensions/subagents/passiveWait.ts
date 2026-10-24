@@ -64,6 +64,31 @@ const replaceHeredocs = (command: string, replacement: HeredocReplacement): stri
     );
   });
 
+// A # starts a comment only at the start of a word. Quoted spans and heredocs match first, so a #
+// inside them stays text.
+const quotedHeredocOrComment = new RegExp(
+  String.raw`${quotedOrHeredoc.source}|(?<=^|[\s;&|()<>])#[^\n]*`,
+  'g',
+);
+
+// An escaped blank before # joins it to the word, so that # starts no comment.
+const withoutComments = (command: string): string => {
+  let escapeEnd = -1;
+
+  return command.replace(
+    quotedHeredocOrComment,
+    (span: string, _quote, _delimiter, _rest, offset: number) => {
+      if (span.startsWith('\\')) {
+        escapeEnd = offset + span.length;
+      }
+
+      const isComment = span.startsWith('#') && offset !== escapeEnd;
+
+      return isComment ? '' : span;
+    },
+  );
+};
+
 const withoutHeredocText = (command: string): string =>
   replaceHeredocs(command, (_span, _quote, rest) => `<<EOF${rest}`);
 
@@ -113,10 +138,8 @@ const refusalReason = (delegating: boolean): string => {
   return lines.join(' ');
 };
 
-export const passiveWaitRefusal = (
-  command: string,
-  facts: PassiveWaitFacts,
-): string | undefined => {
+export const passiveWaitRefusal = (input: string, facts: PassiveWaitFacts): string | undefined => {
+  const command = withoutComments(input);
   const prose = withoutQuotedText(withoutHeredocText(command));
   const expandable = withoutLiteralHeredocText(command);
   const shellRuns = runsShell.test(prose) || quotedShellName.test(expandable);

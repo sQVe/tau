@@ -116,6 +116,16 @@ it.each([
   { command: "cat <<'EOF' > $(sleep 600)\nx\nEOF", workers: true, refused: true },
   { command: `echo '<<"E" sleep 600' 'x'`, workers: true, refused: false },
   { command: "echo '<<E\nx' 'sleep 600'", workers: true, refused: false },
+  { command: 'printf ok # sleep 600', workers: true, refused: false },
+  { command: 'git status\n# sleep 600\nls', workers: true, refused: false },
+  { command: ' # sleep 600', workers: true, refused: false },
+  { command: 'ls # see <<EOF\nsleep 600', workers: true, refused: true },
+  { command: 'sleep 600 # wait', workers: true, refused: true },
+  { command: "bash -c 'sleep 600'", workers: true, refused: true },
+  { command: 'echo a#b; sleep 600', workers: true, refused: true },
+  { command: 'echo a\\ #b; sleep 600', workers: true, refused: true },
+  { command: 'echo "# x"; sleep 600', workers: true, refused: true },
+  { command: 'ls # while true; do sleep 60; done', workers: false, refused: false },
 ])('returns refusal $refused for "$command" with workers $workers', (row) => {
   const reason = passiveWaitRefusal(row.command, {
     hasActiveWorkers: row.workers,
