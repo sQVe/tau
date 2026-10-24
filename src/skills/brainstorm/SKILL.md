@@ -40,10 +40,10 @@ unclear. Do not use it for a design the user already agreed on. Use the
    `subagent` tools can launch one, and otherwise read it yourself. When an answer is observable,
    probe for it: run the command, read the output, or check the actual data. Ask the user only about
    priorities, preferences, and constraints that need human judgment. Read the
-   [structure criteria](../code-quality/structure-criteria.md) and answer its plan questions about
-   ownership, branches, types, and writes. Record the module that owns the concept, the existing
-   helpers and patterns to reuse, with paths, and each refactor the change needs first. Leave its
-   file-size question to `start-slice`.
+   [structure criteria](../code-quality/structure-criteria.md) and answer all its plan questions
+   except the file-size question. Record the module that owns the concept, the existing helpers and
+   patterns to reuse, with paths, and each refactor the change needs first. Leave its file-size
+   question to `start-slice`.
 
 3. Ask a few frontier questions in each round. A frontier question is one whose prerequisites are
    settled. A question that depends on an open question waits for a later round. Research still
@@ -70,11 +70,10 @@ unclear. Do not use it for a design the user already agreed on. Use the
    run a premortem. When the user accepts, send `design.md` to a fresh `scout`. Ask it to assume the
    design shipped and failed, and to write how it failed. When the `subagent` tools cannot launch a
    scout, write the premortem yourself and tell the user it does not come from a fresh reader. Apply
-   the structure criteria's plan questions in the same premortem, not a separate review. Ask what
-   would delete branches or helpers, which existing code the design would tangle, which types and
-   boundaries must stay clean, which module owns the concept, and which refactor or write must land
-   first. Leave the file-size question to `start-slice`. Turn each credible failure into a question
-   for the user or an open risk in `design.md`. Skip this step for a design that is easy to undo.
+   all plan questions from the [structure criteria](../code-quality/structure-criteria.md) in the
+   same premortem, not a separate review. Leave the file-size question to `start-slice`. Turn each
+   credible failure into a question for the user or an open risk in `design.md`. Skip this step for
+   a design that is easy to undo.
 
 8. When the user agrees to the design, run the [slice skill](../slice/SKILL.md) on the draft
    directory. Do this also when the work fits one PR.
