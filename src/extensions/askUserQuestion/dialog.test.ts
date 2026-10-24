@@ -701,6 +701,49 @@ it('starts from the saved state with the typed text in the custom row', () => {
   ]);
 });
 
+it('restores a typed answer that equals an option label after a deferral', () => {
+  const questions = [
+    layoutQuestion([
+      { label: 'Same', description: 'Reuse the layout.', preview: 'same()' },
+      { label: 'Other', description: 'Change the layout.' },
+    ]),
+    layoutQuestion([
+      { label: 'Stacked', description: 'One column.' },
+      { label: 'Split', description: 'Two columns.' },
+    ]),
+  ];
+
+  const first = open(questions);
+
+  for (const key of [down, down, 'S', 'a', 'm', 'e', '\r', '\u001B[Z']) {
+    first.dialog.handleInput(key);
+  }
+
+  first.notify(scout);
+
+  for (const key of [down, '\r']) {
+    first.dialog.handleInput(key);
+  }
+
+  expect(first.results).toMatchObject([{ kind: 'deferred' }]);
+
+  const [saved] = first.saves;
+  const second = open(questions, 24, 60, saved);
+
+  second.dialog.handleInput('\r');
+  second.dialog.handleInput('\r');
+
+  expect(second.results).toEqual([
+    {
+      kind: 'answered',
+      answers: [
+        { question: 'Which layout?', selected: ['Same'], typed: true },
+        { question: 'Which layout?', selected: ['Stacked'], typed: false },
+      ],
+    },
+  ]);
+});
+
 const workers = (count: number) =>
   Array.from({ length: count }, (_item, index) => ({
     worker: `worker-${index + 1}`,

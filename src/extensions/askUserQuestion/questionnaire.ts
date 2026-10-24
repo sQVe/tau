@@ -86,6 +86,10 @@ const answeredRow = (facts: QuestionFacts, answer: Answer | undefined): number |
     return undefined;
   }
 
+  if (answer.typed) {
+    return facts.options.length;
+  }
+
   const index = facts.options.findIndex((option) => option.label === answer.selected[0]);
 
   return index === -1 ? facts.options.length : index;

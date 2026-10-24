@@ -641,6 +641,19 @@ it('moves the cursor of a restored typed answer to the custom row', () => {
   expect(restoredState(saved, [single]).questions[0]?.cursor).toBe(2);
 });
 
+it('restores a typed answer that equals an option label to the custom row', () => {
+  const same: QuestionFacts = {
+    question: 'Which layout?',
+    multiSelect: false,
+    options: [{ label: 'Same', preview: 'same()' }],
+  };
+
+  const typed = { question: same.question, selected: ['Same'], typed: true };
+  const saved = { ...at([same], 2, { customText: 'Same' }), answers: [typed] };
+
+  expect(restoredState(saved, [same]).questions[0]?.cursor).toBe(1);
+});
+
 const three: QuestionFacts[] = ['One?', 'Two?', 'Three?'].map((question) => ({
   question,
   multiSelect: false,
