@@ -46,6 +46,14 @@ Recommendation: <The approach, and why.>
 - Data flow: <How data moves between the parts.>
 - Integration points: <Where the design meets existing code, with file paths.>
 
+## Structure
+
+- Owner: <The existing module that owns the concept, with its path>. Reason: <Why this module owns
+  it.>
+- Reuse: <Existing modules or helpers to use, with paths>. Reason: <Why each fits.>
+- Refactors: <A refactor that must land before this design>. Reason: <Why the design needs it
+  first.>
+
 ## Acceptance criteria
 
 - [ ] <An outcome a reviewer can check.>

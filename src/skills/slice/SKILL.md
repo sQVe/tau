@@ -61,7 +61,8 @@ design it follows in its Design section. The container has one sub-ticket per sl
 3. Split the design into slices.
    - Each slice leaves `main` working and fits one review sitting, ideally a few hundred changed
      lines.
-   - Put groundwork, such as refactors or new helpers, in an earlier slice.
+   - Make each refactor in the design's Structure an earlier groundwork slice. Put new helpers the
+     behavior needs in an earlier slice too.
    - Prefer thin slices that deliver real behavior over layers that deliver nothing until the last
      one.
    - Use one slice only when the work cannot split, and say why. Then the ticket is the slice, and
@@ -86,14 +87,19 @@ design it follows in its Design section. The container has one sub-ticket per sl
      or blocker into `plan.json`, keeping each identifier, and a goal into the `## Goal` of the
      slice's body file.
 
+   Carry each structure choice into the draft: a key decision, such as an owning module or a
+   prerequisite refactor, gets a line in `container.md`; a rule for one slice, such as reusing an
+   existing helper, goes in that slice's `## Design`.
+
    For a design with one slice, write `ticket.md` as the container's file, as the slice template
    describes, and list no slices.
 
    Then call `read` again. Resolve its `problems` as in step 2.
 
 5. Check the plan.
-   - Map each acceptance criterion of the design to the slice numbers that cover it. When a
-     criterion has none, change the draft and call `read` again.
+   - Map each acceptance criterion of the design to the slice numbers that cover it. Map each
+     refactor in the design's Structure to the slice that delivers it, alongside that coverage. When
+     a criterion has none, change the draft and call `read` again.
    - Judge each `## Acceptance` item in the slice body files. An item passes when it names a test, a
      command, or a manual observation, with its expected result. When the design says what to check,
      rewrite the item and call `read` again. Before step 6, list each item that still names no
