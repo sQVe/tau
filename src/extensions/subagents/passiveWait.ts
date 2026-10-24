@@ -92,7 +92,8 @@ const withoutComments = (command: string): string => {
     (span: string, _quote, _delimiter, rest: string | undefined, offset: number) => {
       if (span.startsWith('\\')) {
         // Bash removes a backslash-newline before it splits words, so the character before it decides.
-        const joinsWord = span !== '\\\n' || !startsWord(command, offset);
+        const continuesWord = offset === joinedWordOffset || !startsWord(command, offset);
+        const joinsWord = span !== '\\\n' || continuesWord;
 
         joinedWordOffset = joinsWord ? offset + span.length : -1;
 

@@ -132,6 +132,9 @@ it.each([
   { command: 'printf ok \\\n# sleep 600', workers: true, refused: false },
   { command: 'echo a\\\n#b; sleep 600', workers: true, refused: true },
   { command: '\\\n# sleep 600', workers: true, refused: false },
+  { command: 'echo a\\\n\\\n#b; sleep 600', workers: true, refused: true },
+  { command: 'echo a\\ \\\n#b; sleep 600', workers: true, refused: true },
+  { command: 'printf ok \\\n\\\n# sleep 600', workers: true, refused: false },
   { command: 'echo \\ #b; sleep 600', workers: true, refused: true },
 ])('returns refusal $refused for "$command" with workers $workers', (row) => {
   const reason = passiveWaitRefusal(row.command, {
