@@ -133,7 +133,6 @@ const isVitestTestFile = (value: unknown): value is VitestTestFile => {
   return value.assertionResults.every(isVitestAssertionResult);
 };
 
-// Vitest reports always include these counts and a file array; anything less is not test evidence.
 const isVitestReport = (value: unknown): value is VitestReport => {
   if (!isRecord(value)) {
     return false;
