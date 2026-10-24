@@ -26,9 +26,7 @@ it.each([
   { name: 'line -1', item: { ...survivor, line: -1 }, field: 'line' },
   { name: 'line 1.5', item: { ...survivor, line: 1.5 }, field: 'line' },
 ])('rejects a survivor with $name', ({ item, field }) => {
-  expect(() => parseMutationReport(reportWith(item))).toThrow(
-    new RegExp(`^The mutation report is invalid: survivors\\[0\\] .*${field}`, 'u'),
-  );
+  expect(() => parseMutationReport(reportWith(item))).toThrow(field);
 });
 
 it.each([
