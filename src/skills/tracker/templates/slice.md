@@ -2,8 +2,9 @@
 
 Use this shape for a human sub-ticket of a container that one branch and one PR deliver. For a
 design with one slice, the ticket is the slice, and its `## Design` holds the design. Name results,
-not files or functions: the agent tickets choose those when the slice starts. Aim for about 250
-words, and put longer details in linked files.
+not new files or functions: the agent tickets choose those when the slice starts. `## Design` may
+name existing modules and helpers the slice reuses. Aim for about 250 words, and put longer details
+in linked files.
 
 ```markdown
 ## Goal
