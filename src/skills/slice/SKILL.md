@@ -99,7 +99,8 @@ design it follows in its Design section. The container has one sub-ticket per sl
 5. Check the plan.
    - Map each acceptance criterion of the design to the slice numbers that cover it. Map each
      refactor in the design's Structure to the slice that delivers it, alongside that coverage. When
-     a criterion has none, change the draft and call `read` again.
+     a criterion or refactor has no delivering slice, change the draft and call `read` again. Do not
+     proceed to `apply` until both are covered.
    - Judge each `## Acceptance` item in the slice body files. An item passes when it names a test, a
      command, or a manual observation, with its expected result. When the design says what to check,
      rewrite the item and call `read` again. Before step 6, list each item that still names no
