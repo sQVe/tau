@@ -58,6 +58,7 @@ const overlappingRemotes = [
 
 it.each([
   {
+    caseName: 'explicit remote over the push target',
     facts: headFacts({
       requestedRemote: 'upstream',
       pushTarget: pushTarget('origin', 'refs/remotes/origin/feature'),
@@ -65,6 +66,7 @@ it.each([
     head: { remote: 'upstream', branch: 'feature' },
   },
   {
+    caseName: 'push target maps the tracking ref',
     facts: headFacts({
       pushTarget: pushTarget('origin', 'refs/remotes/origin/topic/feature'),
       remotesWithBranch: ['upstream'],
@@ -72,10 +74,12 @@ it.each([
     head: { remote: 'origin', branch: 'topic/feature' },
   },
   {
+    caseName: 'unique remote-tracking branch',
     facts: headFacts({ remotesWithBranch: ['origin'] }),
     head: { remote: 'origin', branch: 'feature' },
   },
   {
+    caseName: 'remote name with a slash',
     facts: headFacts({
       pushTarget: pushTarget('foo/bar', 'refs/remotes/foo/bar/feature'),
       remotes: [remote('foo', fork, fork), remote('foo/bar', upstream, upstream)],
@@ -83,6 +87,7 @@ it.each([
     head: { remote: 'foo/bar', branch: 'feature' },
   },
   {
+    caseName: 'cache fetch refspec',
     facts: headFacts({
       pushTarget: pushTarget('origin', 'refs/remotes/origin/cache/feature'),
       remotes: cacheRemotes,
@@ -90,6 +95,7 @@ it.each([
     head: { remote: 'origin', branch: 'feature' },
   },
   {
+    caseName: 'remote ref from the push configuration',
     facts: headFacts({
       pushTarget: pushTarget('origin', 'refs/remotes/origin/cache/other', 'refs/heads/other'),
       remotes: cacheRemotes,
@@ -97,6 +103,7 @@ it.each([
     head: { remote: 'origin', branch: 'other' },
   },
   {
+    caseName: 'ignores negative and tag refspecs',
     facts: headFacts({
       pushTarget: pushTarget('origin', 'refs/remotes/origin/feature'),
       remotes: [
@@ -111,6 +118,7 @@ it.each([
     head: { remote: 'origin', branch: 'feature' },
   },
   {
+    caseName: 'prefix pattern refspec',
     facts: headFacts({
       pushTarget: pushTarget('origin', 'refs/remotes/origin/feature'),
       remotes: [
@@ -120,6 +128,7 @@ it.each([
     head: { remote: 'origin', branch: 'feature' },
   },
   {
+    caseName: 'overlapping pattern refspecs',
     facts: headFacts({
       pushTarget: pushTarget('origin', 'refs/remotes/origin/feature'),
       remotes: [
@@ -131,7 +140,17 @@ it.each([
     }),
     head: { remote: 'origin', branch: 'feature' },
   },
-])('picks the head $head.remote/$head.branch', ({ facts, head }) => {
+  {
+    caseName: 'sole origin, no target/tracking ref',
+    facts: headFacts({ remotes: [remote('origin', fork, fork)] }),
+    head: { remote: 'origin', branch: 'feature' },
+  },
+  {
+    caseName: 'sole publish, no target/tracking ref',
+    facts: headFacts({ remotes: [remote('publish', fork, fork)] }),
+    head: { remote: 'publish', branch: 'feature' },
+  },
+])('head: $caseName', ({ facts, head }) => {
   expect(pickHead(facts)).toEqual(head);
 });
 

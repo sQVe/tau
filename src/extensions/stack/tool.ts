@@ -13,7 +13,7 @@ export const stackToolParameters = Type.Object({
   remote: Type.Optional(
     Type.String({
       description:
-        'check: the Git remote the branch pushes to, when it has no push target. history: the remote to compare with.',
+        'check: the Git remote to resolve the branch against when it is ambiguous. history: the remote to compare with.',
     }),
   ),
   branch: Type.Optional(

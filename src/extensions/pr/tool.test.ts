@@ -278,6 +278,20 @@ it('bases a branch with no pull request on the default branch', async () => {
   });
 });
 
+it('targets a sole unpushed branch remote named publish', async () => {
+  const { root, forkPoint, run } = await setUp();
+
+  await git(root, 'remote', 'rename', 'origin', 'publish');
+
+  const details = await run({ action: 'target' });
+
+  expect(details).toMatchObject({
+    head: { remote: 'publish', branch: 'feature' },
+    base: { remote: 'publish', branch: 'main' },
+    mergeBase: forkPoint,
+  });
+});
+
 it('bases a branch with no open pull request on the requested base', async () => {
   const { root, run } = await setUp();
 

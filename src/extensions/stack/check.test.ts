@@ -310,17 +310,34 @@ it.each([
   });
 });
 
-it('decides unknown when no remote has the branch to push to', async () => {
+it('decides standalone for an unpushed branch on a sole remote named publish', async () => {
   const { root, run } = await setUp();
 
+  await git(root, 'remote', 'rename', 'origin', 'publish');
   await git(root, 'checkout', '--quiet', '-b', 'local-only');
 
   const details = await run({ action: 'check' });
 
-  expect(details).toMatchObject({
-    result: 'unknown',
-    reason: containing('local-only'),
-  });
+  expect(details).toMatchObject({ branch: 'local-only', result: 'standalone' });
+});
+
+it.each([
+  { name: 'no remote has the branch', tracking: false },
+  { name: 'several remotes have the branch', tracking: true },
+])('decides unknown when $name on several remotes', async ({ tracking }) => {
+  const { root, run } = await setUp();
+
+  await git(root, 'remote', 'add', 'other', 'https://github.com/example/other.git');
+  await git(root, 'checkout', '--quiet', '-b', 'local-only');
+
+  if (tracking) {
+    await git(root, 'update-ref', 'refs/remotes/origin/local-only', 'HEAD');
+    await git(root, 'update-ref', 'refs/remotes/other/local-only', 'HEAD');
+  }
+
+  const details = await run({ action: 'check' });
+
+  expect(details).toMatchObject({ result: 'unknown', reason: containing('local-only') });
 });
 
 it('checks another branch with the GitHub reads only', async () => {

@@ -189,6 +189,12 @@ export const pickHead = (facts: HeadFacts): Head => {
     return pushHead(branch, facts.pushTarget, remotes);
   }
 
+  const soleRemote = remotes.length === 1 ? remotes[0] : undefined;
+
+  if (soleRemote !== undefined) {
+    return { remote: soleRemote.name, branch };
+  }
+
   const [sole, ...others] = facts.remotesWithBranch;
 
   if (sole === undefined) {
