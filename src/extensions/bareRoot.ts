@@ -3,11 +3,19 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { runGit } from '../git.js';
 import { appendSystemPrompt } from '../instructions/systemPrompt.js';
 
-const rule =
+const bareRootRules = [
   'This session runs in the bare repository root, not a worktree. Use it to read, answer ' +
-  'questions, open worktrees, and hand off work. Do development in a worktree: open one with the ' +
-  'worktree skill for new work, and pass work that belongs to an existing worktree on with the ' +
-  'handover skill. Writing handover messages under .tau/handovers in the root is fine.';
+    'questions, open worktrees, and hand off work.',
+  'Do development in a worktree: open one with the worktree skill for new work, and pass work ' +
+    'that belongs to an existing worktree on with the handover skill.',
+  'Writing handover messages under .tau/handovers in the root is fine.',
+  "Before planning work for a worktree, read the selected worktree's AGENTS.md and its other " +
+    'applicable rules.',
+  'Plan against the default worktree only when no worktree has been selected.',
+  'Read the applicable rules again when you switch worktrees.',
+];
+
+const rule = bareRootRules.map((policy) => `- ${policy}`).join('\n');
 
 const isBareRoot = async (cwd: string) => {
   const result = await runGit(cwd, ['rev-parse', '--is-bare-repository'], {

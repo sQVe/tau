@@ -33,10 +33,11 @@ const startSession = async (cwd: string) => {
 };
 
 describe('bare repository root guard', () => {
-  it('appends the bare root rule to the system prompt in a bare root', async () => {
+  it('appends guidance without replacing existing prompt text in a bare root', async () => {
     const root = await createTemporaryBareRoot((cleanup) => cleanups.push(cleanup));
+    const appendedPrompt = await startSession(root);
 
-    expect(await startSession(root)).toMatch(/^user append\n\n\S/);
+    expect(appendedPrompt).toMatch(/^user append\s+\S/);
   });
 
   it.for(['GIT_DIR', 'GIT_COMMON_DIR'])(

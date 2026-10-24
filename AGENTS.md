@@ -9,8 +9,6 @@ verification.
 - Follow the structure and naming decisions in [docs/adr](docs/adr/README.md), and record new
   decisions there. Read that guide before adding an ADR. Do not write documents that explain how a
   feature works; see [ADR 0010](docs/adr/0010-documentation-scope.md).
-- Name values in camelCase and types in PascalCase. Never SCREAMING_CASE, not even for module
-  constants.
 - Follow the [coding instructions](src/instructions/coding.md) for all code. Pi loads them through
   Tau; other agents must read the file.
 - Follow the [writing instructions](src/instructions/writing.md) for every document.
@@ -19,8 +17,9 @@ verification.
 - Before finishing a document, verify the commands it gives against the repository.
 - Before finishing a document, check that its local links resolve. `tests/markdownFiles.test.ts` in
   `pnpm check` checks them.
-- A pull request that changes `src/` needs a changeset. Add it with `pnpm changeset`;
-  `.github/workflows/changeset.yml` requires it.
+- A pull request that touches `src/` needs a changeset, except the release pull request from
+  `changeset-release/main` or titled `chore: release version packages`. Add it with
+  `pnpm changeset`; `.github/workflows/changeset.yml` requires it.
 - Follow the module, query, and failure conventions in
   [ADR 0055](docs/adr/0055-record-tau-coding-conventions-in-agents-md.md). Give each new public read
   path over saved records or running workers a contract test for normal, missing, and malformed
@@ -49,10 +48,8 @@ tier, with one folder or file per feature. Shared modules never import extension
 Shared code under `src/` forms capability modules, and `tau/module-boundaries` in
 `lint/rules/moduleBoundaries.ts` enforces them
 ([ADR 0120](docs/adr/0120-capability-modules-with-an-enforced-import-table.md)). The rule keeps a
-closed module list and an import table. The target shared modules are `errors`, `schema`, `command`,
-`skillTools`, `instructions`, `herdr`, `codemode`, `worker`, `git`, `config`, `linear`, `dialog`,
-`tauDirectory`, `github`, `reviewCapture`, `record`, `process`, `shell`, and `checkRecord`. When the
-rule reports an import, change the import table or the module list instead of silencing the rule.
+closed module list and an import table. When the rule reports an import, change the import table or
+the module list instead of silencing the rule.
 
 ## Skills and tools
 
