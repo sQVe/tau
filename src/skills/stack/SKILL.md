@@ -42,7 +42,7 @@ Use this skill when a branch belongs to a stack, or when another skill sends you
 ## Procedure
 
 1. Stack check. Run it on the current branch before you create, rebase, or push it. Call the `stack`
-   tool's `check` action, with `remote` when the branch has no push target. It ends in one of four
+   tool's `check` action, with `remote` when the head remote is ambiguous. It ends in one of four
    results.
    - Tracked: the PR's base must be the returned `parent`.
    - Untracked: when the result has a `githubStack`, import it with step 3 and run the check again.
