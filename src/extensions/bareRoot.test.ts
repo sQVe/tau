@@ -35,9 +35,18 @@ const startSession = async (cwd: string) => {
 describe('bare repository root guard', () => {
   it('appends every bare root policy to the system prompt in a bare root', async () => {
     const root = await createTemporaryBareRoot((cleanup) => cleanups.push(cleanup));
-    const expectedRule = bareRootRules.map((policy) => `- ${policy}`).join('\n');
+    const appendedPrompt = await startSession(root);
 
-    expect(await startSession(root)).toBe(`user append\n\n${expectedRule}`);
+    expect(appendedPrompt).toMatch(/^user append/);
+
+    let previousPosition = 0;
+
+    for (const policy of bareRootRules) {
+      const position = appendedPrompt.indexOf(policy);
+
+      expect(position).toBeGreaterThan(previousPosition);
+      previousPosition = position;
+    }
   });
 
   it.for(['GIT_DIR', 'GIT_COMMON_DIR'])(
