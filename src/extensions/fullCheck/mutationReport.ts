@@ -44,11 +44,17 @@ const readSurvivor = (item: unknown, index: number): Survivor => {
     );
   }
 
-  if (typeof line !== 'number' || !Number.isInteger(line)) {
-    throw new TypeError(`The mutation report is invalid: ${where} needs an integer line.`);
+  if (typeof line !== 'number' || !Number.isInteger(line) || line < 1) {
+    throw new TypeError(
+      `The mutation report is invalid: ${where} needs an integer line of at least 1.`,
+    );
   }
 
-  return { file, line, mutator, original, replacement, covered: covered !== false };
+  if (typeof covered !== 'boolean') {
+    throw new TypeError(`The mutation report is invalid: ${where} needs a Boolean covered.`);
+  }
+
+  return { file, line, mutator, original, replacement, covered };
 };
 
 const readStrings = (value: unknown, field: string): string[] => {
