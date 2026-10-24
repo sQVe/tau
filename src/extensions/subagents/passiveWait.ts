@@ -67,22 +67,46 @@ const replaceHeredocs = (command: string, replacement: HeredocReplacement): stri
 // A # starts a comment only at the start of a word. Quoted spans and heredocs match first, so a #
 // inside them stays text.
 const quotedHeredocOrComment = new RegExp(
-  String.raw`${quotedOrHeredoc.source}|(?<=^|[\s;&|()<>])#[^\n]*`,
+  String.raw`${quotedOrHeredoc.source}|(?<=^|[ \t\n;&|()<>])#[^\n]*`,
   'g',
 );
 
-// An escaped blank before # joins it to the word, so that # starts no comment.
+const wordSeparator = /[ \t\n;&|()<>]/;
+
+const startsWord = (command: string, offset: number): boolean =>
+  offset === 0 || wordSeparator.test(command.charAt(offset - 1));
+
+// Splits a heredoc span around the rest of its opener line, which holds shell code.
+const splitHeredocOpener = (heredocSpan: string, rest: string): [string, string] => {
+  const [opener = ''] = heredocSpan.split('\n', 1);
+
+  return [heredocSpan.slice(0, opener.length - rest.length), heredocSpan.slice(opener.length)];
+};
+
 const withoutComments = (command: string): string => {
-  let escapeEnd = -1;
+  // The offset where a # would continue the word of an escape before it.
+  let joinedWordOffset = -1;
 
   return command.replace(
     quotedHeredocOrComment,
-    (span: string, _quote, _delimiter, _rest, offset: number) => {
+    (span: string, _quote, _delimiter, rest: string | undefined, offset: number) => {
       if (span.startsWith('\\')) {
-        escapeEnd = offset + span.length;
+        // Bash removes a backslash-newline before it splits words, so the character before it decides.
+        const joinsWord = span !== '\\\n' || !startsWord(command, offset);
+
+        joinedWordOffset = joinsWord ? offset + span.length : -1;
+
+        return span;
       }
 
-      const isComment = span.startsWith('#') && offset !== escapeEnd;
+      // A # right after the delimiter is part of the delimiter word.
+      if (rest !== undefined && !rest.startsWith('#')) {
+        const [marker, body] = splitHeredocOpener(span, rest);
+
+        return marker + withoutComments(rest) + body;
+      }
+
+      const isComment = span.startsWith('#') && offset !== joinedWordOffset;
 
       return isComment ? '' : span;
     },
