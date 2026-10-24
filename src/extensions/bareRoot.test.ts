@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeExtensionApi } from '../../tests/extensionApi.js';
 import { createTemporaryBareRoot, createTemporaryRepository } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
-import bareRootExtension from './bareRoot.js';
+import bareRootExtension, { bareRootRules } from './bareRoot.js';
 
 const cleanups: (() => Promise<void>)[] = [];
 
@@ -33,10 +33,11 @@ const startSession = async (cwd: string) => {
 };
 
 describe('bare repository root guard', () => {
-  it('appends the bare root rule to the system prompt in a bare root', async () => {
+  it('appends every bare root policy to the system prompt in a bare root', async () => {
     const root = await createTemporaryBareRoot((cleanup) => cleanups.push(cleanup));
+    const expectedRule = bareRootRules.map((policy) => `- ${policy}`).join('\n');
 
-    expect(await startSession(root)).toMatch(/^user append\n\n\S/);
+    expect(await startSession(root)).toBe(`user append\n\n${expectedRule}`);
   });
 
   it.for(['GIT_DIR', 'GIT_COMMON_DIR'])(
