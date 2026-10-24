@@ -94,11 +94,13 @@ const gatherCandidates = async (exec: Exec, cwd: string, input: TrackerEvidenceI
 
   const planned: Placement = { team: input.team, project: input.project, parent: input.parent };
 
-  const candidates = search.value.map((issue) =>
+  const candidates = search.value.issues.map((issue) =>
     Object.assign({}, issue, decideCandidateFit(planned, issue)),
   );
 
-  return { candidates, gaps: [] };
+  const gaps = search.value.hasNextPage ? [morePagesGap(searchCommand, 'search results')] : [];
+
+  return { candidates, gaps };
 };
 
 const gatherParent = async (exec: Exec, cwd: string, input: TrackerEvidenceInput) => {

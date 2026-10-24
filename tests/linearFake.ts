@@ -286,22 +286,25 @@ export const createLinearFake = (): LinearFake => {
         ? undefined
         : projectIdsNamed(filter.project.name.eq).map((candidate) => candidate.id);
 
-    const nodes = [...issues.values()]
+    const matches = [...issues.values()]
       .filter((issue) => issue.teamId === variables.teamId)
       .filter((issue) => filter.state.type.in.includes(issue.stateType))
       .filter((issue) => words.some((word) => issue.title.toLowerCase().includes(word)))
-      .filter((issue) => projectIds === undefined || projectIds.includes(issue.projectId ?? ''))
-      .map((issue) => ({
-        identifier: issue.identifier,
-        title: issue.title,
-        url: `https://linear.app/me/issue/${issue.identifier}`,
-        state: { type: issue.stateType },
-        team: { key: team(issue.teamId).key },
-        project: issue.projectId === null ? null : { name: project(issue.projectId)!.name },
-        parent: issue.parent === null ? null : { identifier: issue.parent },
-      }));
+      .filter((issue) => projectIds === undefined || projectIds.includes(issue.projectId ?? ''));
 
-    return { searchIssues: { nodes } };
+    const nodes = matches.slice(0, variables.first).map((issue) => ({
+      identifier: issue.identifier,
+      title: issue.title,
+      url: `https://linear.app/me/issue/${issue.identifier}`,
+      state: { type: issue.stateType },
+      team: { key: team(issue.teamId).key },
+      project: issue.projectId === null ? null : { name: project(issue.projectId)!.name },
+      parent: issue.parent === null ? null : { identifier: issue.parent },
+    }));
+
+    const hasNextPage = matches.length > variables.first;
+
+    return { searchIssues: { nodes, pageInfo: { hasNextPage } } };
   };
 
   const routingData = (identifier: string) => {
