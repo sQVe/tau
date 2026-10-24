@@ -15,11 +15,13 @@ import type {
   TestResult,
 } from './types.js';
 
+type VitestAssertionStatus = TestResult['status'] | 'pending' | 'disabled';
+
 interface VitestAssertionResult {
   fullName?: string;
   title?: string;
   ancestorTitles?: string[];
-  status: TestResult['status'] | 'pending' | 'disabled';
+  status: VitestAssertionStatus;
   failureMessages?: string[];
   duration?: number | null;
 }
@@ -27,18 +29,18 @@ interface VitestAssertionResult {
 interface VitestTestFile {
   name?: string;
   status?: string;
-  assertionResults?: VitestAssertionResult[];
+  assertionResults: VitestAssertionResult[];
   message?: string;
 }
 
 interface VitestReport {
-  numTotalTests?: number;
-  numFailedTests?: number;
-  numPassedTests?: number;
+  numTotalTests: number;
+  numFailedTests: number;
+  numPassedTests: number;
   numTotalTestSuites?: number;
   startTime?: number;
   success?: boolean;
-  testResults?: VitestTestFile[];
+  testResults: VitestTestFile[];
 }
 
 const defaultTimeoutMilliseconds = 30_000;
@@ -47,15 +49,113 @@ const fullTimeoutMilliseconds = 120_000;
 export const maximumFailures = 10;
 const maximumMessageCharacters = 300;
 
-// Vitest reports always include at least one of these top-level keys.
-const isVitestReport = (value: unknown): value is VitestReport => {
-  if (value == null || typeof value !== 'object') {
+const assertionStatuses = new Set<string>([
+  'passed',
+  'failed',
+  'skipped',
+  'todo',
+  'pending',
+  'disabled',
+]);
+
+const fileStatuses = new Set<string>(['passed', 'failed']);
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value != null && typeof value === 'object';
+
+const isOptionalString = (value: unknown) => value === undefined || typeof value === 'string';
+
+const isStringArray = (value: unknown) =>
+  Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+
+const isOptionalStringArray = (value: unknown) => value === undefined || isStringArray(value);
+
+const isOptionalNumberOrNull = (value: unknown) =>
+  value === undefined || value === null || typeof value === 'number';
+
+const isVitestAssertionResult = (value: unknown): value is VitestAssertionResult => {
+  if (!isRecord(value)) {
     return false;
   }
 
-  const keys = ['numTotalTests', 'numFailedTests', 'testResults', 'numTotalTestSuites'];
+  if (!isOptionalString(value.fullName)) {
+    return false;
+  }
 
-  return keys.some((key) => key in value);
+  if (!isOptionalString(value.title)) {
+    return false;
+  }
+
+  if (!isOptionalStringArray(value.ancestorTitles)) {
+    return false;
+  }
+
+  if (!isOptionalStringArray(value.failureMessages)) {
+    return false;
+  }
+
+  if (!isOptionalNumberOrNull(value.duration)) {
+    return false;
+  }
+
+  if (typeof value.status !== 'string') {
+    return false;
+  }
+
+  return assertionStatuses.has(value.status);
+};
+
+const isVitestTestFile = (value: unknown): value is VitestTestFile => {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if (!isOptionalString(value.name)) {
+    return false;
+  }
+
+  if (!isOptionalString(value.message)) {
+    return false;
+  }
+
+  if (typeof value.status !== 'string') {
+    return false;
+  }
+
+  if (!fileStatuses.has(value.status)) {
+    return false;
+  }
+
+  if (!Array.isArray(value.assertionResults)) {
+    return false;
+  }
+
+  return value.assertionResults.every(isVitestAssertionResult);
+};
+
+// Vitest reports always include these counts and a file array; anything less is not test evidence.
+const isVitestReport = (value: unknown): value is VitestReport => {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if (typeof value.numTotalTests !== 'number') {
+    return false;
+  }
+
+  if (typeof value.numFailedTests !== 'number') {
+    return false;
+  }
+
+  if (typeof value.numPassedTests !== 'number') {
+    return false;
+  }
+
+  if (!Array.isArray(value.testResults)) {
+    return false;
+  }
+
+  return value.testResults.every(isVitestTestFile);
 };
 
 // The report is read from the reporter's own output file: stdout carries test-controlled
@@ -133,8 +233,8 @@ const collectTests = (
   selected: (fullname: string) => boolean,
   version: string,
 ): TestResult[] =>
-  (report.testResults ?? []).flatMap((file) =>
-    (file.assertionResults ?? [])
+  report.testResults.flatMap((file) =>
+    file.assertionResults
       .filter((assertion) => selected(assertionFullName(assertion, version)))
       .map((assertion) => toTestResult(file, assertion, version)),
   );
@@ -184,7 +284,7 @@ const assertionMessage = (messages: string[], cwd: string): string => {
 };
 
 const hasFailedAssertion = (file: VitestTestFile): boolean =>
-  file.assertionResults?.some((assertion) => assertion.status === 'failed') === true;
+  file.assertionResults.some((assertion) => assertion.status === 'failed');
 
 const isFileFailure = (file: VitestTestFile, failedAssertion: boolean): boolean => {
   if (file.status !== 'failed') {
@@ -233,7 +333,7 @@ const collectFileFailures = (
     budget -= 1;
   }
 
-  for (const assertion of file.assertionResults ?? []) {
+  for (const assertion of file.assertionResults) {
     if (assertion.status !== 'failed') {
       continue;
     }
@@ -257,7 +357,7 @@ const collectFailures = (
 ): { failures: TestFailure[]; truncated: boolean } => {
   const failures: TestFailure[] = [];
 
-  for (const file of report.testResults ?? []) {
+  for (const file of report.testResults) {
     const collected = collectFileFailures(file, cwd, version, maximumFailures - failures.length);
 
     failures.push(...collected.failures);
@@ -363,9 +463,9 @@ const classifyReport = (
 ): RunnerResult => {
   const testNames = input.scope === 'focused' ? input.testNames : undefined;
   const tests = collectTests(report, selects(testNames), version);
-  const total = report.numTotalTests ?? 0;
-  const failed = report.numFailedTests ?? 0;
-  const files = report.testResults ?? [];
+  const total = report.numTotalTests;
+  const failed = report.numFailedTests;
+  const files = report.testResults;
 
   if (failed > 0 || files.some((file) => file.status === 'failed')) {
     const { failures, truncated } = collectFailures(report, input.cwd, version);
