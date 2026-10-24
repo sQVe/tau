@@ -1399,6 +1399,97 @@ describe('runTests', () => {
       },
     },
     {
+      scenario: 'a non-string assertion fullName value',
+      report: {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [
+          {
+            name: '/repo/a.test.ts',
+            status: 'passed',
+            assertionResults: [{ fullName: 42, status: 'passed' }],
+          },
+        ],
+      },
+    },
+    {
+      scenario: 'a non-string assertion title value',
+      report: {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [
+          {
+            name: '/repo/a.test.ts',
+            status: 'passed',
+            assertionResults: [{ title: 42, status: 'passed' }],
+          },
+        ],
+      },
+    },
+    {
+      scenario: 'a non-array assertion failureMessages value',
+      report: {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [
+          {
+            name: '/repo/a.test.ts',
+            status: 'passed',
+            assertionResults: [{ status: 'passed', failureMessages: 42 }],
+          },
+        ],
+      },
+    },
+    {
+      scenario: 'a non-number assertion duration value',
+      report: {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [
+          {
+            name: '/repo/a.test.ts',
+            status: 'passed',
+            assertionResults: [{ status: 'passed', duration: 'slow' }],
+          },
+        ],
+      },
+    },
+    {
+      scenario: 'a non-string file name value',
+      report: {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [
+          {
+            name: 42,
+            status: 'passed',
+            assertionResults: [{ status: 'passed' }],
+          },
+        ],
+      },
+    },
+    {
+      scenario: 'a non-string file message value',
+      report: {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [
+          {
+            name: '/repo/a.test.ts',
+            status: 'passed',
+            message: 42,
+            assertionResults: [{ status: 'passed' }],
+          },
+        ],
+      },
+    },
+    {
       scenario: 'an unknown file status',
       report: {
         numTotalTests: 1,
