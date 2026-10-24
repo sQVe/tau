@@ -76,7 +76,6 @@ const wordSeparator = /[ \t\n;&|()<>]/;
 const startsWord = (command: string, offset: number): boolean =>
   offset === 0 || wordSeparator.test(command.charAt(offset - 1));
 
-// Splits a heredoc span around the rest of its opener line, which holds shell code.
 const splitHeredocOpener = (heredocSpan: string, rest: string): [string, string] => {
   const [opener = ''] = heredocSpan.split('\n', 1);
 
@@ -84,14 +83,12 @@ const splitHeredocOpener = (heredocSpan: string, rest: string): [string, string]
 };
 
 const withoutComments = (command: string): string => {
-  // The offset where a # would continue the word of an escape before it.
   let joinedWordOffset = -1;
 
   return command.replace(
     quotedHeredocOrComment,
     (span: string, _quote, _delimiter, rest: string | undefined, offset: number) => {
       if (span.startsWith('\\')) {
-        // Bash removes a backslash-newline before it splits words, so the character before it decides.
         const continuesWord = offset === joinedWordOffset || !startsWord(command, offset);
         const joinsWord = span !== '\\\n' || continuesWord;
 
@@ -100,7 +97,6 @@ const withoutComments = (command: string): string => {
         return span;
       }
 
-      // A # right after the delimiter is part of the delimiter word.
       if (rest !== undefined && !rest.startsWith('#')) {
         const [marker, body] = splitHeredocOpener(span, rest);
 
