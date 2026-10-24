@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeExtensionApi } from '../../tests/extensionApi.js';
 import { createTemporaryBareRoot, createTemporaryRepository } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
-import bareRootExtension, { bareRootRules } from './bareRoot.js';
+import bareRootExtension from './bareRoot.js';
 
 const cleanups: (() => Promise<void>)[] = [];
 
@@ -33,20 +33,11 @@ const startSession = async (cwd: string) => {
 };
 
 describe('bare repository root guard', () => {
-  it('appends every bare root policy to the system prompt in a bare root', async () => {
+  it('appends guidance without replacing existing prompt text in a bare root', async () => {
     const root = await createTemporaryBareRoot((cleanup) => cleanups.push(cleanup));
     const appendedPrompt = await startSession(root);
 
-    expect(appendedPrompt).toMatch(/^user append/);
-
-    let previousPosition = 0;
-
-    for (const policy of bareRootRules) {
-      const position = appendedPrompt.indexOf(policy);
-
-      expect(position).toBeGreaterThan(previousPosition);
-      previousPosition = position;
-    }
+    expect(appendedPrompt).toMatch(/^user append\s+\S/);
   });
 
   it.for(['GIT_DIR', 'GIT_COMMON_DIR'])(

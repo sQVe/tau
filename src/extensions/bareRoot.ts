@@ -3,7 +3,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { runGit } from '../git.js';
 import { appendSystemPrompt } from '../instructions/systemPrompt.js';
 
-export const bareRootRules = [
+const bareRootRules = [
   'This session runs in the bare repository root, not a worktree. Use it to read, answer ' +
     'questions, open worktrees, and hand off work.',
   'Do development in a worktree: open one with the worktree skill for new work, and pass work ' +
