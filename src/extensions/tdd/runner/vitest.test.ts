@@ -1309,27 +1309,11 @@ describe('runTests', () => {
     },
   );
 
-  it('returns fail (never pass) when the report holds only a total test count', async () => {
-    const deps = makeDeps({ spawn: fakeSpawn({ report: { numTotalTests: 1 }, code: 0 }) });
-
-    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
-
-    expect(result.kind).not.toBe('pass');
-  });
-
-  it('rejects a non-array testResults value without throwing and keeps its diagnostics', async () => {
-    const deps = makeDeps({ spawn: fakeSpawn({ report: { testResults: {} }, code: 0 }) });
-
-    const running = runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
-
-    await expect(running).resolves.toMatchObject({ kind: 'fail', tests: [] });
-    const result = await running;
-
-    expect(result.diagnostics?.report?.path).toBeDefined();
-    expect((await stat(result.diagnostics!.directory)).isDirectory()).toBe(true);
-  });
-
   it.for([
+    {
+      scenario: 'only a total test count',
+      report: { numTotalTests: 1 },
+    },
     {
       scenario: 'a missing total count',
       report: { numFailedTests: 0, numPassedTests: 1, testResults: [] },
@@ -1506,7 +1490,7 @@ describe('runTests', () => {
     await expect(running).resolves.toBeDefined();
     const result = await running;
 
-    expect(result.kind).toBe('fail');
+    expect(result).toMatchObject({ kind: 'fail', tests: [] });
     expect(result.diagnostics?.report?.path).toBeDefined();
     expect((await stat(result.diagnostics!.directory)).isDirectory()).toBe(true);
   });
