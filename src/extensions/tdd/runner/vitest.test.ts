@@ -1343,6 +1343,14 @@ describe('runTests', () => {
       report: { numTotalTests: 1, numFailedTests: 0, testResults: [] },
     },
     {
+      scenario: 'a negative failed count',
+      report: { numTotalTests: 1, numFailedTests: -1, numPassedTests: 1, testResults: [] },
+    },
+    {
+      scenario: 'a non-integer passed count',
+      report: { numTotalTests: 1, numFailedTests: 0, numPassedTests: 0.5, testResults: [] },
+    },
+    {
       scenario: 'a non-array testResults value',
       report: {
         numTotalTests: 1,

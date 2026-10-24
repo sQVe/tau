@@ -73,6 +73,9 @@ const isOptionalStringArray = (value: unknown) => value === undefined || isStrin
 const isOptionalNumberOrNull = (value: unknown) =>
   value === undefined || value === null || typeof value === 'number';
 
+const isReportCount = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0;
+
 const isVitestAssertionResult = (value: unknown): value is VitestAssertionResult => {
   if (!isRecord(value)) {
     return false;
@@ -138,15 +141,15 @@ const isVitestReport = (value: unknown): value is VitestReport => {
     return false;
   }
 
-  if (typeof value.numTotalTests !== 'number') {
+  if (!isReportCount(value.numTotalTests)) {
     return false;
   }
 
-  if (typeof value.numFailedTests !== 'number') {
+  if (!isReportCount(value.numFailedTests)) {
     return false;
   }
 
-  if (typeof value.numPassedTests !== 'number') {
+  if (!isReportCount(value.numPassedTests)) {
     return false;
   }
 
