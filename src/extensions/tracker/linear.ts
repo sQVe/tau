@@ -28,11 +28,16 @@ export interface LabelList {
   hasNextPage: boolean;
 }
 
+export interface IssueList {
+  issues: FoundIssue[];
+  hasNextPage: boolean;
+}
+
 const searchPageSize = 50;
 const labelPageSize = 250;
 
 const searchQuery =
-  'query($term: String!, $first: Int!, $teamId: String!, $filter: IssueFilter!) { searchIssues(term: $term, first: $first, teamId: $teamId, filter: $filter) { nodes { identifier title url state { type } team { key } project { name } parent { identifier } } } }';
+  'query($term: String!, $first: Int!, $teamId: String!, $filter: IssueFilter!) { searchIssues(term: $term, first: $first, teamId: $teamId, filter: $filter) { nodes { identifier title url state { type } team { key } project { name } parent { identifier } } pageInfo { hasNextPage } } }';
 
 const parentQuery =
   'query($id: String!) { issue(id: $id) { team { key } project { name } state { name } } }';
@@ -56,6 +61,7 @@ const searchSchema = Type.Object({
         parent: Type.Union([Type.Object({ identifier: Type.String() }), Type.Null()]),
       }),
     ),
+    pageInfo: pageInfoSchema,
   }),
 });
 
@@ -88,7 +94,7 @@ export const searchIssues = async (
   exec: Exec,
   cwd: string,
   search: { team: string; project: string | null; keywords: string },
-): Promise<FoundIssue[]> => {
+): Promise<IssueList> => {
   const teamId = await readTeamId(exec, cwd, search.team);
   const filter: Record<string, unknown> = { state: { type: { in: openStateTypes } } };
 
@@ -104,7 +110,7 @@ export const searchIssues = async (
     searchSchema,
   );
 
-  return data.searchIssues.nodes.map((node) => ({
+  const issues = data.searchIssues.nodes.map((node) => ({
     identifier: node.identifier,
     title: node.title,
     url: node.url,
@@ -112,6 +118,8 @@ export const searchIssues = async (
     project: node.project?.name ?? null,
     parent: node.parent?.identifier ?? null,
   }));
+
+  return { issues, hasNextPage: data.searchIssues.pageInfo.hasNextPage };
 };
 
 // Throws when Linear has no issue with that identifier.

@@ -103,7 +103,7 @@ it('reports an empty search that also carries a GraphQL error as a gap', async (
   fake.overrideOutput(
     'searchIssues',
     JSON.stringify({
-      data: { searchIssues: { nodes: [] } },
+      data: { searchIssues: { nodes: [], pageInfo: { hasNextPage: false } } },
       errors: [{ message: 'Rate limit exceeded' }],
     }),
   );
@@ -130,7 +130,7 @@ it('reports a candidate whose project failed to load as a gap', async () => {
   fake.overrideOutput(
     'searchIssues',
     JSON.stringify({
-      data: { searchIssues: { nodes: [node] } },
+      data: { searchIssues: { nodes: [node], pageInfo: { hasNextPage: false } } },
       errors: [
         {
           message: 'Could not load project',
@@ -426,6 +426,50 @@ const parentIssue = {
 
 const labelNode = { id: 'label-bug', name: 'Bug' };
 
+it('keeps the first page of search matches and reports a gap when Linear has more pages', async () => {
+  const fake = createLinearFake();
+
+  for (let number = 1; number <= 51; number += 1) {
+    fake.addIssue({ identifier: `ME-${number}`, title: 'Gather evidence' });
+  }
+
+  const evidence = await gather(fake);
+
+  expect(evidence.candidates).toHaveLength(50);
+  expect(evidence.candidates?.at(-1)?.identifier).toBe('ME-50');
+  expectOneGap(evidence, 'searchIssues', 'more search results than one page');
+});
+
+it('reports a search reply without page info as a gap with no candidate list', async () => {
+  const fake = createLinearFake();
+
+  fake.overrideOutput(
+    'searchIssues',
+    JSON.stringify({ data: { searchIssues: { nodes: [searchNode] } } }),
+  );
+
+  const evidence = await gather(fake, { project: null });
+
+  expect(evidence).not.toHaveProperty('candidates');
+  expectOneGap(evidence, 'searchIssues', 'unexpected output');
+});
+
+it('returns no candidates and no search gap for a complete empty page', async () => {
+  const fake = createLinearFake();
+
+  fake.overrideOutput(
+    'searchIssues',
+    JSON.stringify({
+      data: { searchIssues: { nodes: [], pageInfo: { hasNextPage: false } } },
+    }),
+  );
+
+  const evidence = await gather(fake);
+
+  expect(evidence.candidates).toEqual([]);
+  expect(evidence.gaps).toEqual([]);
+});
+
 it.each(Object.keys(searchNode))(
   'reports a search match without %s as malformed output',
   async (field) => {
@@ -434,7 +478,12 @@ it.each(Object.keys(searchNode))(
     fake.overrideOutput(
       'searchIssues',
       JSON.stringify({
-        data: { searchIssues: { nodes: [withoutField(searchNode, field)] } },
+        data: {
+          searchIssues: {
+            nodes: [withoutField(searchNode, field)],
+            pageInfo: { hasNextPage: false },
+          },
+        },
       }),
     );
 
@@ -530,7 +579,10 @@ it('reports a label reply without a team field as a gap', async () => {
 it('reports a search reply without nodes as malformed output', async () => {
   const fake = createLinearFake();
 
-  fake.overrideOutput('searchIssues', JSON.stringify({ data: { searchIssues: {} } }));
+  fake.overrideOutput(
+    'searchIssues',
+    JSON.stringify({ data: { searchIssues: { pageInfo: { hasNextPage: false } } } }),
+  );
 
   const evidence = await gather(fake);
 
@@ -574,7 +626,9 @@ it.each([
 
   fake.overrideOutput(
     'searchIssues',
-    JSON.stringify({ data: { searchIssues: { nodes: [node] } } }),
+    JSON.stringify({
+      data: { searchIssues: { nodes: [node], pageInfo: { hasNextPage: false } } },
+    }),
   );
 
   const evidence = await gather(fake);
