@@ -34,7 +34,13 @@ it('saves no acceptance criteria for a launch that gives none', async ({ onTestF
 
 it('saves the routing decision of a routed launch', async ({ onTestFinished }) => {
   const { controller, input } = setup(onTestFinished);
-  const routing = { shadowPick: 'faux/test', canary: false, ticketSent: true };
+
+  const routing = {
+    shadowPick: 'faux/test',
+    confidenceCutoff: 0.5,
+    canary: false,
+    ticketSent: true,
+  };
 
   const launched = await controller.launch({ ...input, routing });
 

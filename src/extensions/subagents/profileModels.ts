@@ -9,6 +9,7 @@ import { parseModelReference } from '../../config/models.js';
 import { errorMessage } from '../../errors.js';
 import { anyKey, isRecord } from '../../schema.js';
 import type { KnownKeys } from '../../schema.js';
+import { defaultRouteConfidence } from './modelRoutes.js';
 import type { ModelRoute, RouteLabel } from './modelRoutes.js';
 import type { ProfileModels } from './workerModels.js';
 
@@ -50,9 +51,9 @@ const parseText = (source: string, field: string, value: unknown): string => {
   return value;
 };
 
-const parseCanary = (source: string, field: string, value: unknown): number => {
+const parseRatio = (source: string, field: string, value: unknown, missing: number): number => {
   if (value === undefined) {
-    return 0;
+    return missing;
   }
 
   if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -112,9 +113,16 @@ const parseRoute = (source: string, field: string, entry: unknown): ModelRoute =
     names.map((name) => [name, parseLabel(source, `${field}.labels.${name}`, labelEntries[name])]),
   );
 
-  const canary = parseCanary(source, `${field}.canary`, entry.canary);
+  const canary = parseRatio(source, `${field}.canary`, entry.canary, 0);
 
-  return { classifier, question, labels, canary };
+  const confidence = parseRatio(
+    source,
+    `${field}.confidence`,
+    entry.confidence,
+    defaultRouteConfidence,
+  );
+
+  return { classifier, question, labels, canary, confidence };
 };
 
 const knownProfileKeys: KnownKeys = {
@@ -124,6 +132,7 @@ const knownProfileKeys: KnownKeys = {
     classifier: true,
     question: true,
     canary: true,
+    confidence: true,
     labels: { [anyKey]: { criterion: true, model: true } },
   },
 };

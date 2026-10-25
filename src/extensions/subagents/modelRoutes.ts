@@ -14,6 +14,8 @@ export interface ModelRoute {
   labels: ReadonlyMap<string, RouteLabel>;
   // Share of confident picks that differ from the profile model and launch on the routed model.
   canary: number;
+  // Lowest classifier confidence that counts as a pick.
+  confidence: number;
 }
 
 export type ClassifierOutcome =
@@ -44,11 +46,13 @@ export interface RoutePick {
   label?: string;
   confidence?: number;
   fallbackReason?: FallbackReason;
+  // Saved only when a route exists, so the comparison can split launches by the cutoff.
+  confidenceCutoff?: number;
 }
 
 export type RoutedLaunch = RoutePick & { canary: boolean; ticketSent: boolean };
 
-const minimumRouteConfidence = 0.7;
+export const defaultRouteConfidence = 0.7;
 
 // An explicit launch model means no classification and no pick, so the result is undefined.
 export const pickRoutedModel = (facts: RouteFacts): RoutePick | undefined => {
@@ -58,9 +62,12 @@ export const pickRoutedModel = (facts: RouteFacts): RoutePick | undefined => {
     return undefined;
   }
 
+  const confidenceCutoff = route?.confidence;
+
   const fallback = (fallbackReason: FallbackReason): RoutePick => ({
     shadowPick: profileModel,
     fallbackReason,
+    ...(confidenceCutoff === undefined ? {} : { confidenceCutoff }),
   });
 
   if (route === undefined || outcome.kind === 'skipped') {
@@ -78,11 +85,11 @@ export const pickRoutedModel = (facts: RouteFacts): RoutePick | undefined => {
     return { ...fallback('unknownLabel'), label, confidence };
   }
 
-  if (confidence < minimumRouteConfidence) {
+  if (confidence < route.confidence) {
     return { ...fallback('lowConfidence'), label, confidence };
   }
 
-  return { shadowPick: routed.model, label, confidence };
+  return { shadowPick: routed.model, label, confidence, confidenceCutoff: route.confidence };
 };
 
 export const decideCanary = (facts: CanaryFacts): boolean => {

@@ -895,7 +895,11 @@ const classifierId = 'router';
 
 const classifierReference = `${classifierProvider}/${classifierId}`;
 
-const routedFixture = async (onTestFinished: (callback: () => void) => void, canary?: number) => {
+const routedFixture = async (
+  onTestFinished: (callback: () => void) => void,
+  canary?: number,
+  confidence?: number,
+) => {
   const fixture = await workerFixture(onTestFinished);
   const { directory, model } = fixture;
   const profileModel = `${model.provider}/${model.id}`;
@@ -904,6 +908,7 @@ const routedFixture = async (onTestFinished: (callback: () => void) => void, can
     classifier: classifierReference,
     question: 'How wide is this brief?',
     ...(canary === undefined ? {} : { canary }),
+    ...(confidence === undefined ? {} : { confidence }),
     labels: {
       narrow: { criterion: 'A lookup about known code.', model: haiku },
       wide: { criterion: 'An investigation across many files.', model: profileModel },
@@ -956,6 +961,7 @@ it('records the shadow pick of a scout launch and keeps the profile model', asyn
     shadowPick: haiku,
     label: 'narrow',
     confidence: 0.9,
+    confidenceCutoff: 0.7,
     canary: false,
     ticketSent: false,
   });
@@ -994,7 +1000,37 @@ it('launches a confident pick on the routed model when the canary share is 1', a
     shadowPick: haiku,
     label: 'narrow',
     confidence: 0.9,
+    confidenceCutoff: 0.7,
     canary: true,
+    ticketSent: false,
+  });
+});
+
+it('uses the route confidence cutoff and records it on the pick', async ({ onTestFinished }) => {
+  const { context, classify, profileModel } = await routedFixture(onTestFinished, undefined, 0.5);
+
+  const brief = { profile: 'scout', task: 'Find it.' };
+
+  classify.mockResolvedValue(answered('narrow', 0.5));
+
+  expect((await resolveRoutedLoadout(brief, context)).routing).toEqual({
+    shadowPick: haiku,
+    label: 'narrow',
+    confidence: 0.5,
+    confidenceCutoff: 0.5,
+    canary: false,
+    ticketSent: false,
+  });
+
+  classify.mockResolvedValue(answered('narrow', 0.49));
+
+  expect((await resolveRoutedLoadout(brief, context)).routing).toEqual({
+    shadowPick: profileModel,
+    label: 'narrow',
+    confidence: 0.49,
+    fallbackReason: 'lowConfidence',
+    confidenceCutoff: 0.5,
+    canary: false,
     ticketSent: false,
   });
 });
@@ -1109,6 +1145,7 @@ it.for([
   expect(routing).toEqual({
     shadowPick: profileModel,
     fallbackReason: 'error',
+    confidenceCutoff: 0.7,
     canary: false,
     ticketSent: false,
   });
@@ -1142,6 +1179,7 @@ it('launches on the profile model when the classifier never answers within 5 sec
   expect(routing).toEqual({
     shadowPick: profileModel,
     fallbackReason: 'timeout',
+    confidenceCutoff: 0.7,
     canary: false,
     ticketSent: false,
   });
@@ -1211,6 +1249,7 @@ it('sends the ticket a relative path names and records that it was sent', async 
     shadowPick: haiku,
     label: 'narrow',
     confidence: 0.9,
+    confidenceCutoff: 0.7,
     canary: false,
     ticketSent: true,
   });
@@ -1380,6 +1419,7 @@ it('classifies nothing when allowedModels excludes the classifier', async ({ onT
   expect(routing).toEqual({
     shadowPick: profileModel,
     fallbackReason: 'noRoute',
+    confidenceCutoff: 0.7,
     canary: false,
     ticketSent: false,
   });
@@ -1400,6 +1440,7 @@ it('records a low confidence answer and a missing classifier model as fallbacks'
     label: 'narrow',
     confidence: 0.5,
     fallbackReason: 'lowConfidence',
+    confidenceCutoff: 0.7,
     canary: false,
     ticketSent: false,
   });
@@ -1410,6 +1451,7 @@ it('records a low confidence answer and a missing classifier model as fallbacks'
   expect((await resolveRoutedLoadout(brief, context)).routing).toEqual({
     shadowPick: profileModel,
     fallbackReason: 'noRoute',
+    confidenceCutoff: 0.7,
     canary: false,
     ticketSent: false,
   });
@@ -1455,6 +1497,7 @@ it('keeps the profile model when no route applies even with a canary share of 1'
   expect(routing).toEqual({
     shadowPick: profileModel,
     fallbackReason: 'noRoute',
+    confidenceCutoff: 0.7,
     canary: false,
     ticketSent: false,
   });
@@ -1495,6 +1538,7 @@ it('draws once and keeps the profile model when the draw reaches the share', asy
     shadowPick: haiku,
     label: 'narrow',
     confidence: 0.9,
+    confidenceCutoff: 0.7,
     canary: false,
     ticketSent: false,
   });

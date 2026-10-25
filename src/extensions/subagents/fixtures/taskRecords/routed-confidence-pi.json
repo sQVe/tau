@@ -1,0 +1,37 @@
+{
+  "version": 12,
+  "taskId": "routed-confidence-pi",
+  "name": "scout-ab",
+  "task": "Inspect source.",
+  "parentSession": "/work/parent.jsonl",
+  "parentSessionId": "parent-one",
+  "createdAt": 1000,
+  "deadline": 20000,
+  "cancellationBudget": 1000,
+  "monotonicDeadline": 20000,
+  "nativeSessionId": "native-routed-confidence-pi",
+  "nativeSessionFile": "/work/agent/routed-confidence-pi.jsonl",
+  "routing": {
+    "shadowPick": "faux/small",
+    "label": "narrow",
+    "confidence": 0.5,
+    "confidenceCutoff": 0.5,
+    "canary": false,
+    "ticketSent": false
+  },
+  "loadout": {
+    "harness": "pi",
+    "profile": "scout",
+    "role": "investigation",
+    "model": "faux/test",
+    "thinking": "off",
+    "cwd": "/work",
+    "agentDirectory": "/work/agent",
+    "permissions": "trusted-full-tools",
+    "instructions": "Inspect the assigned source.",
+    "tools": ["read", "bash", "web_search"],
+    "skills": ["/work/agent/skills/code-review/SKILL.md"],
+    "instructionSets": ["writing", "workflow", "browser"],
+    "packages": ["npm:pi-agent-browser-native@0.8.2", "/work/extensions/probe"]
+  }
+}

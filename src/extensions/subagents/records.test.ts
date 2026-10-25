@@ -254,6 +254,29 @@ it('reads task records with and without routing', () => {
   });
 });
 
+it('reads a version 12 routing with the confidence cutoff the pick used', () => {
+  const root = saveTaskRecordFixtures(['routed-confidence-pi']);
+
+  expect(records.readTask(join(root, 'routed-confidence-pi')).routing).toEqual({
+    shadowPick: 'faux/small',
+    label: 'narrow',
+    confidence: 0.5,
+    confidenceCutoff: 0.5,
+    canary: false,
+    ticketSent: false,
+  });
+});
+
+it('refuses a confidence cutoff in a version 11 routing', () => {
+  const root = saveTaskRecordFixtures(['routed-pi']);
+  const routed = parsedTaskRecordFixture('routed-pi');
+  const routing = { ...(routed.routing as Record<string, unknown>), confidenceCutoff: 0.7 };
+
+  writeFileSync(join(root, 'routed-pi', 'task.json'), JSON.stringify({ ...routed, routing }));
+
+  expect(() => records.readTask(join(root, 'routed-pi'))).toThrow('Invalid saved worker task');
+});
+
 it('reads a canary routing and refuses one without the flag', () => {
   const root = saveTaskRecordFixtures(['routed-canary-pi']);
   const canary = parsedTaskRecordFixture('routed-canary-pi');
