@@ -4,9 +4,7 @@ import type { OwnedWorker } from '../cancellation.js';
 import type { Task } from '../types.js';
 
 export interface WorkerPackage {
-  // The profile source Tau shows the user.
   source: string;
-  // The local package root the worker loads with -e.
   path: string;
 }
 

@@ -153,7 +153,6 @@ const installPackage = async (
     return { source, path: source };
   }
 
-  // The worker loads a local path, so it never resolves the remote source again in Pi's cache.
   const path = packageRoot(paths);
 
   if (path === undefined) {
@@ -165,8 +164,6 @@ const installPackage = async (
   return { source, path };
 };
 
-// Installs into Pi's temporary `-e` cache, where the worker finds each package without a download.
-// Returns the sources the worker loads with -e and the local package root each one resolved to.
 export const installWorkerPackages = async (
   loadout: Loadout,
   packageManager: (loadout: Loadout) => WorkerPackageManager,
