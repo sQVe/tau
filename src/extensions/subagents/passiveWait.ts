@@ -64,6 +64,81 @@ const replaceHeredocs = (command: string, replacement: HeredocReplacement): stri
     );
   });
 
+const quotedOrHeredocAt = new RegExp(quotedOrHeredoc.source, 'y');
+
+const wordSeparator = /[ \t\n;&|()<>]/;
+
+// With extglob on, a ( after one of these opens a pattern, so a # in it is text.
+const extendedGlobOperator = /[?*+@!]/;
+
+const opensExtendedGlob = (command: string, offset: number): boolean =>
+  command.charAt(offset - 1) === '(' && extendedGlobOperator.test(command.charAt(offset - 2));
+
+const followsSeparator = (command: string, offset: number): boolean =>
+  wordSeparator.test(command.charAt(offset - 1)) && !opensExtendedGlob(command, offset);
+
+const startsWord = (command: string, offset: number): boolean =>
+  offset === 0 || followsSeparator(command, offset);
+
+const splitHeredocOpener = (heredocSpan: string, rest: string): [string, string] => {
+  const [opener = ''] = heredocSpan.split('\n', 1);
+
+  return [heredocSpan.slice(0, opener.length - rest.length), heredocSpan.slice(opener.length)];
+};
+
+const commentEnd = (command: string, offset: number): number => {
+  const lineEnd = command.indexOf('\n', offset);
+
+  return lineEnd === -1 ? command.length : lineEnd;
+};
+
+const joinedWordEnd = (
+  command: string,
+  span: string,
+  offset: number,
+  joinedWordOffset: number,
+): number => {
+  if (!span.startsWith('\\')) {
+    return joinedWordOffset;
+  }
+
+  const continuesWord = offset === joinedWordOffset || !startsWord(command, offset);
+  const joinsWord = span !== '\\\n' || continuesWord;
+
+  return joinsWord ? offset + span.length : -1;
+};
+
+const withoutComments = (command: string): string => {
+  let text = '';
+  let joinedWordOffset = -1;
+  let offset = 0;
+
+  while (offset < command.length) {
+    quotedOrHeredocAt.lastIndex = offset;
+
+    const match = quotedOrHeredocAt.exec(command);
+    const span = match?.[0] ?? command.charAt(offset);
+    const rest = match?.[3];
+    const isComment = span === '#' && startsWord(command, offset) && offset !== joinedWordOffset;
+
+    joinedWordOffset = joinedWordEnd(command, span, offset, joinedWordOffset);
+
+    if (isComment) {
+      offset = commentEnd(command, offset);
+    } else if (rest !== undefined && !rest.startsWith('#')) {
+      const [marker, body] = splitHeredocOpener(span, rest);
+
+      text += marker + withoutComments(rest) + body;
+      offset += span.length;
+    } else {
+      text += span;
+      offset += span.length;
+    }
+  }
+
+  return text;
+};
+
 const withoutHeredocText = (command: string): string =>
   replaceHeredocs(command, (_span, _quote, rest) => `<<EOF${rest}`);
 
@@ -113,10 +188,11 @@ const refusalReason = (delegating: boolean): string => {
   return lines.join(' ');
 };
 
-export const passiveWaitRefusal = (
-  command: string,
-  facts: PassiveWaitFacts,
-): string | undefined => {
+export const passiveWaitRefusal = (input: string, facts: PassiveWaitFacts): string | undefined => {
+  // A substitution or an ANSI-C quote can hold quotes that this guard does not parse, so their
+  // comments stay text.
+  const keepsComments = hasCommandSubstitution(input) || input.includes("$'");
+  const command = keepsComments ? input : withoutComments(input);
   const prose = withoutQuotedText(withoutHeredocText(command));
   const expandable = withoutLiteralHeredocText(command);
   const shellRuns = runsShell.test(prose) || quotedShellName.test(expandable);
