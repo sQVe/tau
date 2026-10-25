@@ -64,12 +64,8 @@ const replaceHeredocs = (command: string, replacement: HeredocReplacement): stri
     );
   });
 
-// A # starts a comment only at the start of a word. Quoted spans and heredocs match first, so a #
-// inside them stays text.
-const quotedHeredocOrComment = new RegExp(
-  String.raw`${quotedOrHeredoc.source}|(?<=^|[ \t\n;&|()<>])#[^\n]*`,
-  'g',
-);
+// Quoted spans and heredocs match before a #, so a # inside them stays text.
+const quotedOrHeredocAt = new RegExp(quotedOrHeredoc.source, 'y');
 
 const wordSeparator = /[ \t\n;&|()<>]/;
 
@@ -82,32 +78,60 @@ const splitHeredocOpener = (heredocSpan: string, rest: string): [string, string]
   return [heredocSpan.slice(0, opener.length - rest.length), heredocSpan.slice(opener.length)];
 };
 
+const commentEnd = (command: string, offset: number): number => {
+  const lineEnd = command.indexOf('\n', offset);
+
+  return lineEnd === -1 ? command.length : lineEnd;
+};
+
+// The offset where a # continues the word of the escape before it, or -1.
+const joinedWordEnd = (
+  command: string,
+  span: string,
+  offset: number,
+  joinedWordOffset: number,
+): number => {
+  if (!span.startsWith('\\')) {
+    return joinedWordOffset;
+  }
+
+  // Bash removes a backslash-newline before it splits words, so the character before it decides.
+  const continuesWord = offset === joinedWordOffset || !startsWord(command, offset);
+  const joinsWord = span !== '\\\n' || continuesWord;
+
+  return joinsWord ? offset + span.length : -1;
+};
+
+// A comment ends at its line, but a # inside a word does not, so the scan decides at each #.
 const withoutComments = (command: string): string => {
+  let text = '';
   let joinedWordOffset = -1;
+  let offset = 0;
 
-  return command.replace(
-    quotedHeredocOrComment,
-    (span: string, _quote, _delimiter, rest: string | undefined, offset: number) => {
-      if (span.startsWith('\\')) {
-        const continuesWord = offset === joinedWordOffset || !startsWord(command, offset);
-        const joinsWord = span !== '\\\n' || continuesWord;
+  while (offset < command.length) {
+    quotedOrHeredocAt.lastIndex = offset;
 
-        joinedWordOffset = joinsWord ? offset + span.length : -1;
+    const match = quotedOrHeredocAt.exec(command);
+    const span = match?.[0] ?? command.charAt(offset);
+    const rest = match?.[3];
+    const isComment = span === '#' && startsWord(command, offset) && offset !== joinedWordOffset;
 
-        return span;
-      }
+    joinedWordOffset = joinedWordEnd(command, span, offset, joinedWordOffset);
 
-      if (rest !== undefined && !rest.startsWith('#')) {
-        const [marker, body] = splitHeredocOpener(span, rest);
+    if (isComment) {
+      offset = commentEnd(command, offset);
+    } else if (rest !== undefined && !rest.startsWith('#')) {
+      const [marker, body] = splitHeredocOpener(span, rest);
 
-        return marker + withoutComments(rest) + body;
-      }
+      text += marker + withoutComments(rest) + body;
+      offset += span.length;
+    } else {
+      text += span;
+      offset += span.length;
+    }
+  }
 
-      const isComment = span.startsWith('#') && offset !== joinedWordOffset;
-
-      return isComment ? '' : span;
-    },
-  );
+  return text;
 };
 
 const withoutHeredocText = (command: string): string =>
