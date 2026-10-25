@@ -364,6 +364,74 @@ it('keeps a dead session lock for a permission-denied command absent from ps on 
   expect(await readdir(dirname(lockPath))).toEqual([basename(heldPath)]);
 });
 
+it('retries when another caller links the same first generation', async () => {
+  const { lockPath } = fixture();
+  const bothArrived = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  const contended = Promise.withResolvers<undefined>();
+  let arrived = 0;
+  let active = 0;
+  let maxActive = 0;
+  let maxHeld = 0;
+  let waitingCount = 0;
+
+  const options = {
+    lockPath,
+    checkout: '/racer',
+    signal: undefined,
+    pollMilliseconds: 10,
+    cancelled,
+    onWaiting: () => {
+      waitingCount += 1;
+      contended.resolve(undefined);
+    },
+    beforeLink: async () => {
+      arrived += 1;
+
+      if (arrived === 2) {
+        bothArrived.resolve(undefined);
+      }
+
+      await release.promise;
+    },
+  };
+
+  const run = vi.fn<() => Promise<string>>(async () => {
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+
+    if (active > 1) {
+      contended.resolve(undefined);
+    }
+
+    const held = await heldLocks(lockPath);
+    maxHeld = Math.max(maxHeld, held.length);
+
+    await contended.promise;
+    active -= 1;
+
+    return 'ran';
+  });
+
+  const first = withFileLock(options, run);
+  const second = withFileLock({ ...options, checkout: '/other-racer' }, run);
+  const outcomes = Promise.all([first, second]);
+
+  outcomes.catch(() => {
+    contended.resolve(undefined);
+  });
+
+  await bothArrived.promise;
+  release.resolve(undefined);
+
+  expect(await outcomes).toEqual(['ran', 'ran']);
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(maxActive).toBe(1);
+  expect(maxHeld).toBe(1);
+  expect(waitingCount).toBeGreaterThan(0);
+  expect(await heldLocks(lockPath)).toEqual([]);
+});
+
 it('takes over a lock whose command group holds only zombies', async () => {
   const { lockPath } = fixture();
 
