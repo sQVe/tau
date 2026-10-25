@@ -68,8 +68,17 @@ const quotedOrHeredocAt = new RegExp(quotedOrHeredoc.source, 'y');
 
 const wordSeparator = /[ \t\n;&|()<>]/;
 
+// With extglob on, a ( after one of these opens a pattern, so a # in it is text.
+const extendedGlobOperator = /[?*+@!]/;
+
+const opensExtendedGlob = (command: string, offset: number): boolean =>
+  command.charAt(offset - 1) === '(' && extendedGlobOperator.test(command.charAt(offset - 2));
+
+const followsSeparator = (command: string, offset: number): boolean =>
+  wordSeparator.test(command.charAt(offset - 1)) && !opensExtendedGlob(command, offset);
+
 const startsWord = (command: string, offset: number): boolean =>
-  offset === 0 || wordSeparator.test(command.charAt(offset - 1));
+  offset === 0 || followsSeparator(command, offset);
 
 const splitHeredocOpener = (heredocSpan: string, rest: string): [string, string] => {
   const [opener = ''] = heredocSpan.split('\n', 1);
@@ -180,8 +189,10 @@ const refusalReason = (delegating: boolean): string => {
 };
 
 export const passiveWaitRefusal = (input: string, facts: PassiveWaitFacts): string | undefined => {
-  // A substitution can nest quotes that this guard does not parse, so its comments stay text.
-  const command = hasCommandSubstitution(input) ? input : withoutComments(input);
+  // A substitution or an ANSI-C quote can hold quotes that this guard does not parse, so their
+  // comments stay text.
+  const keepsComments = hasCommandSubstitution(input) || input.includes("$'");
+  const command = keepsComments ? input : withoutComments(input);
   const prose = withoutQuotedText(withoutHeredocText(command));
   const expandable = withoutLiteralHeredocText(command);
   const shellRuns = runsShell.test(prose) || quotedShellName.test(expandable);
