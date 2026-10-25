@@ -50,6 +50,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
       'extensions/subagents/controller/record',
     ],
   },
+  { name: 'fileLock', entry: 'fileLock/fileLock', publicFiles: [] },
   { name: 'git', entry: 'git', publicFiles: [] },
   {
     name: 'github',
@@ -86,6 +87,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   config: ['errors', 'schema'],
   dialog: ['worker'],
   errors: [],
+  fileLock: ['errors', 'process', 'schema'],
   git: ['errors'],
   github: ['command', 'errors', 'git', 'schema'],
   herdr: [],
