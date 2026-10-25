@@ -45,11 +45,8 @@ const readConfig = (): WorkerState['config'] => {
   return worker?.config ?? { testTimeout: 0, hookTimeout: 0 };
 };
 
-// Vitest reverses the afterAll hook list under its resolved default, "stack".
 const hooksSequence = () => readConfig().sequence?.hooks ?? 'stack';
 
-// Vitest stores a before hook's own timeout under this symbol on the registered hook. The symbol
-// is the only way to read a per-hook timeout, because the hook wrapper keeps the rest private.
 const hookTimeoutKey: unique symbol = Symbol.for('VITEST_CLEANUP_TIMEOUT');
 
 type TimedHook = ((...args: never[]) => unknown) & Partial<Record<typeof hookTimeoutKey, unknown>>;
@@ -75,14 +72,12 @@ const ancestorSuites = (suite: Readonly<RunnerTestSuite>) => {
   return suites;
 };
 
-// A test runs the beforeEach hooks of its own suite and of every ancestor suite.
 const beforeEachTimeouts = (suite: Readonly<RunnerTestSuite>) =>
   ancestorSuites(suite).flatMap((current) => registeredHookTimeouts(current, 'beforeEach'));
 
 const activeBeforeAll = new Map<Readonly<RunnerTestSuite>, number[]>();
 const runningTests = new Map<string, { name: string; timeouts: number[] }>();
 
-// A timeout of 0 on any running test or hook disables the deadline while it runs.
 const blockingBudget = () => {
   const activeTimeouts = [...activeBeforeAll.values()].flat();
   const testTimeouts = [...runningTests.values()].flatMap((test) => test.timeouts);
@@ -178,7 +173,6 @@ if (!isInspecting()) {
     applyCleanup();
   };
 
-  // The default "stack" order reverses afterAll hooks, so the marker goes at the end there.
   const installAfterAllMarker = (suite: Readonly<RunnerTestSuite>) => {
     const hooks = TestRunner.getSuiteHooks(suite).afterAll;
 
@@ -189,7 +183,6 @@ if (!isInspecting()) {
     }
   };
 
-  // Vitest has no hook-start callback, so each run suite gets a marker first in its beforeAll list.
   const installPhaseMarkers = (suite: Readonly<RunnerTestSuite>) => {
     installAfterAllMarker(suite);
 
