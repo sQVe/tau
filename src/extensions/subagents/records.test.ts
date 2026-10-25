@@ -267,6 +267,21 @@ it('reads a version 12 routing with the confidence cutoff the pick used', () => 
   });
 });
 
+it('refuses a version 12 routing without the confidence cutoff', () => {
+  const root = saveTaskRecordFixtures(['routed-confidence-pi']);
+  const routed = parsedTaskRecordFixture('routed-confidence-pi');
+  const { confidenceCutoff: _dropped, ...routing } = routed.routing as Record<string, unknown>;
+
+  writeFileSync(
+    join(root, 'routed-confidence-pi', 'task.json'),
+    JSON.stringify({ ...routed, routing }),
+  );
+
+  expect(() => records.readTask(join(root, 'routed-confidence-pi'))).toThrow(
+    'Invalid saved worker task',
+  );
+});
+
 it('refuses a confidence cutoff in a version 11 routing', () => {
   const root = saveTaskRecordFixtures(['routed-pi']);
   const routed = parsedTaskRecordFixture('routed-pi');

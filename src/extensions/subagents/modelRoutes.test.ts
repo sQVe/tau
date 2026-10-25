@@ -23,9 +23,7 @@ const answered = (label: string, confidence: number): ClassifierOutcome => ({
   confidence,
 });
 
-it.for<
-  [string, string | undefined, ModelRoute | undefined, ClassifierOutcome, RoutePick | undefined]
->([
+it.for<[string, string | undefined, ModelRoute, ClassifierOutcome, RoutePick | undefined]>([
   [
     'a confident narrow answer routes to the narrow model',
     undefined,
@@ -81,13 +79,6 @@ it.for<
     { shadowPick: profileModel, fallbackReason: 'timeout', confidenceCutoff: 0.7 },
   ],
   [
-    'no route keeps the profile model',
-    undefined,
-    undefined,
-    { kind: 'skipped' },
-    { shadowPick: profileModel, fallbackReason: 'noRoute' },
-  ],
-  [
     'a skipped classification keeps the profile model',
     undefined,
     route,
@@ -136,7 +127,12 @@ it.for<[string, number, RoutePick]>([
   ).toEqual(expected);
 });
 
-const narrowPick: RoutePick = { shadowPick: haiku, label: 'narrow', confidence: 0.9 };
+const narrowPick: RoutePick = {
+  shadowPick: haiku,
+  label: 'narrow',
+  confidence: 0.9,
+  confidenceCutoff: defaultRouteConfidence,
+};
 
 it.for<[string, RoutePick | undefined, number, number, boolean]>([
   ['share 1 and a draw of 0 run as a canary', narrowPick, 1, 0, true],
@@ -146,7 +142,7 @@ it.for<[string, RoutePick | undefined, number, number, boolean]>([
   ['no pick is never a canary', undefined, 1, 0, false],
   [
     'a pick equal to the profile model is never a canary',
-    { shadowPick: profileModel, label: 'wide', confidence: 0.9 },
+    { shadowPick: profileModel, label: 'wide', confidence: 0.9, confidenceCutoff: 0.7 },
     1,
     0,
     false,

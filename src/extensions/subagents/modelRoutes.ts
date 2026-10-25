@@ -26,7 +26,7 @@ export type ClassifierOutcome =
 export interface RouteFacts {
   launchModel: string | undefined;
   profileModel: string;
-  route: ModelRoute | undefined;
+  route: ModelRoute;
   outcome: ClassifierOutcome;
 }
 
@@ -45,7 +45,7 @@ export interface RoutePick {
   label?: string;
   confidence?: number;
   fallbackReason?: FallbackReason;
-  confidenceCutoff?: number;
+  confidenceCutoff: number;
 }
 
 export type RoutedLaunch = RoutePick & { canary: boolean; ticketSent: boolean };
@@ -60,15 +60,15 @@ export const pickRoutedModel = (facts: RouteFacts): RoutePick | undefined => {
     return undefined;
   }
 
-  const confidenceCutoff = route?.confidence;
+  const confidenceCutoff = route.confidence;
 
   const fallback = (fallbackReason: FallbackReason): RoutePick => ({
     shadowPick: profileModel,
     fallbackReason,
-    ...(confidenceCutoff === undefined ? {} : { confidenceCutoff }),
+    confidenceCutoff,
   });
 
-  if (route === undefined || outcome.kind === 'skipped') {
+  if (outcome.kind === 'skipped') {
     return fallback('noRoute');
   }
 

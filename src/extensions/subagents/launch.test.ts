@@ -18,6 +18,7 @@ const loadout = fixtureLoadout('/work');
 const routing = {
   model: 'faux/routed',
   shadowPick: 'faux/routed',
+  confidenceCutoff: 0.7,
   canary: false,
   ticketSent: false,
 };

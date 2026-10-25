@@ -124,7 +124,7 @@ const routingWithoutConfidenceCutoffSchema = Type.Object(routingFields, {
 const routingSchema = Type.Object(
   {
     ...routingFields,
-    confidenceCutoff: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+    confidenceCutoff: Type.Number({ minimum: 0, maximum: 1 }),
   },
   { additionalProperties: false },
 );
