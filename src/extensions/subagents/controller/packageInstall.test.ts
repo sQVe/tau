@@ -9,8 +9,9 @@ import { beforeEach, expect, it, onTestFinished } from 'vitest';
 
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { fixtureLoadout } from '../fixtures/loadout.js';
-import { installWorkerPackages, piPackageManager } from './packageInstall.js';
+import { installWorkerPackages } from './packageInstall.js';
 import type { WorkerPackageManager } from './packageInstall.js';
+import { piPackageManager } from './piPackageManager.js';
 
 const installedRoot = (source: string): string =>
   join('/agent/tmp/extensions', source.replace(/[^a-zA-Z0-9._-]+/g, '-'));
@@ -399,37 +400,6 @@ it('keeps the install error as the cause of a failed package install', async () 
   ).catch((error: unknown) => error);
 
   expect((failure as Error).cause).toEqual(new Error('npm install failed'));
-});
-
-it('lists the user and trusted project packages the worker will load', () => {
-  const root = temporaryDirectory(onTestFinished, 'tau-packages-');
-
-  const cwd = join(root, 'project');
-  const agentDirectory = join(root, 'agent');
-  mkdirSync(join(cwd, '.pi'), { recursive: true });
-  mkdirSync(agentDirectory, { recursive: true });
-
-  writeFileSync(
-    join(agentDirectory, 'settings.json'),
-    JSON.stringify({ packages: ['npm:user-package'] }),
-  );
-
-  writeFileSync(
-    join(cwd, '.pi', 'settings.json'),
-    JSON.stringify({ packages: ['npm:project-package'] }),
-  );
-
-  const configured = piPackageManager({
-    ...fixtureLoadout(cwd),
-    agentDirectory,
-  })
-    .listConfiguredPackages()
-    .map(({ source, scope }) => ({ source, scope }));
-
-  expect(configured.toSorted((left, right) => left.source.localeCompare(right.source))).toEqual([
-    { source: 'npm:project-package', scope: 'project' },
-    { source: 'npm:user-package', scope: 'user' },
-  ]);
 });
 
 it.each([

@@ -44,8 +44,9 @@ import {
 import type { HerdrClient } from './inspect.js';
 import { checkHandover, nativeReference, requireUnclaimed } from './launchSupport.js';
 import type { FollowUpPreparation, LaunchInput } from './launchSupport.js';
-import { installWorkerPackages, piPackageManager } from './packageInstall.js';
+import { installWorkerPackages } from './packageInstall.js';
 import type { WorkerPackageManager } from './packageInstall.js';
+import { piPackageManager } from './piPackageManager.js';
 import { EvidenceUnavailableError, handleRecovery, savedRecovery, taskStatus } from './record.js';
 import type { TaskStatus } from './record.js';
 import { createHandle, savedHandle, TaskController } from './task.js';

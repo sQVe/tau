@@ -3,7 +3,6 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 import type { PackageManager, ResolvedPaths } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../../errors.js';
@@ -16,20 +15,6 @@ export type WorkerPackageManager = Pick<
   PackageManager,
   'listConfiguredPackages' | 'resolveExtensionSources'
 >;
-
-// Build Pi's package manager as the worker will: in its cwd and agent directory, with the project
-// trusted.
-export const piPackageManager = (loadout: Loadout): WorkerPackageManager => {
-  const settingsManager = SettingsManager.create(loadout.cwd, loadout.agentDirectory, {
-    projectTrusted: true,
-  });
-
-  return new DefaultPackageManager({
-    cwd: loadout.cwd,
-    agentDir: loadout.agentDirectory,
-    settingsManager,
-  });
-};
 
 // Pi expands `~` and reads a file:// URL as its path.
 const localPath = (path: string): string => {

@@ -38,18 +38,34 @@ const startInstall = (directory: string, name: string) => {
       if (code === 0) {
         resolve();
       } else {
-        reject(new Error(`Install child exited ${code}: ${errors}`));
+        reject(new Error(`Install child ${name} exited ${code}: ${errors}`));
       }
     });
   });
 
   finished.catch(() => undefined);
 
+  const waitWhileRunning = async <Value>(
+    wait: Promise<Value>,
+    expected: string,
+  ): Promise<Value> => {
+    const exited = finished.then(
+      () => {
+        throw new Error(`Install child ${name} exited 0 before ${expected}: ${errors}`);
+      },
+      (error: unknown) => {
+        throw error;
+      },
+    );
+
+    return Promise.race([wait, exited]);
+  };
+
   onTestFinished(() => {
     child.kill('SIGKILL');
   });
 
-  return finished;
+  return { finished, waitWhileRunning };
 };
 
 it('serializes install windows in two processes sharing an agent directory', async () => {
@@ -57,31 +73,37 @@ it('serializes install windows in two processes sharing an agent directory', asy
   const record = join(directory, 'windows');
   const first = startInstall(directory, 'first');
 
-  await vi.waitFor(
-    async () => {
-      expect(await readFile(record, 'utf8')).toBe('start first\n');
-    },
-    { timeout: 10_000 },
+  await first.waitWhileRunning(
+    vi.waitFor(
+      async () => {
+        expect(await readFile(record, 'utf8')).toBe('start first\n');
+      },
+      { timeout: 10_000 },
+    ),
+    'recording its start',
   );
 
   const second = startInstall(directory, 'second');
 
   try {
-    const observation = await vi.waitFor(
-      async () => {
-        const state = await readFile(join(directory, 'second.observation'), 'utf8');
+    const observation = await second.waitWhileRunning(
+      vi.waitFor(
+        async () => {
+          const state = await readFile(join(directory, 'second.observation'), 'utf8');
 
-        expect(['waiting', 'entered']).toContain(state);
+          expect(['waiting', 'entered']).toContain(state);
 
-        return state;
-      },
-      { timeout: 10_000 },
+          return state;
+        },
+        { timeout: 10_000 },
+      ),
+      'recording its install observation',
     );
 
     expect(observation).toBe('waiting');
   } finally {
     await writeFile(join(directory, 'release'), 'released');
-    await Promise.all([first, second]);
+    await Promise.all([first.finished, second.finished]);
   }
 
   expect(await readFile(record, 'utf8')).toBe('start first\nend first\nstart second\nend second\n');
