@@ -22,7 +22,7 @@ import { workBudget } from './budget.js';
 import { seedSession } from './nativeSession.js';
 import { integer, readProcessStart, WorkerExitedError } from './shellIdentity.js';
 import type { InspectionBudget } from './shellIdentity.js';
-import type { Handle } from './types.js';
+import type { Handle, WorkerPackage } from './types.js';
 
 export type HerdrClient = (
   argumentsList: string[],
@@ -106,7 +106,10 @@ export const herdrClient: HerdrClient = (argumentsList, budget, signal) =>
     : runClient('herdr', argumentsList, budget, signal ? { signal } : {});
 
 // extensionPackages are the profile packages the parent installed for this start.
-export const workerArguments = (task: Task, extensionPackages: readonly string[]): string[] => {
+export const workerArguments = (
+  task: Task,
+  extensionPackages: readonly WorkerPackage[],
+): string[] => {
   const model = parseModelReference(task.loadout.model);
 
   if (!model) {
@@ -133,7 +136,7 @@ export const workerArguments = (task: Task, extensionPackages: readonly string[]
     fileURLToPath(new URL('../workerBashGuard.ts', import.meta.url)),
     '-e',
     fileURLToPath(new URL('../workerExtension.ts', import.meta.url)),
-    ...extensionPackages.flatMap((source) => ['-e', source]),
+    ...extensionPackages.flatMap(({ path }) => ['-e', path]),
   ];
 };
 
@@ -157,10 +160,10 @@ const piExecutable = (): string => {
   throw new Error('No pi executable found on PATH.');
 };
 
-export const workerCommand = (task: Task, extensionPackages: readonly string[]): string[] => [
-  piExecutable(),
-  ...workerArguments(task, extensionPackages),
-];
+export const workerCommand = (
+  task: Task,
+  extensionPackages: readonly WorkerPackage[],
+): string[] => [piExecutable(), ...workerArguments(task, extensionPackages)];
 
 // A typed command inherited the user's shell setup, such as PATH. Pass the parent's environment,
 // which came from that shell. Herdr sets the pane's own HERDR_* identity after it.

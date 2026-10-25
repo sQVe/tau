@@ -42,7 +42,12 @@ const sharedControllers = async (cancelled: boolean) => {
           {
             path: source,
             enabled: true,
-            metadata: { source, scope: 'temporary', origin: 'package' },
+            metadata: {
+              source,
+              scope: 'temporary',
+              origin: 'package',
+              packageRoot: `/installed/${source}`,
+            },
           },
         ],
         skills: [],

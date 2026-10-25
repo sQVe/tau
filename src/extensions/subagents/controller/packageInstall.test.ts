@@ -12,12 +12,22 @@ import { fixtureLoadout } from '../fixtures/loadout.js';
 import { installWorkerPackages, piPackageManager } from './packageInstall.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 
-const resolved = (extension: string): ResolvedPaths => ({
+const installedRoot = (source: string): string =>
+  join('/agent/tmp/extensions', source.replace(/[^a-zA-Z0-9._-]+/g, '-'));
+
+const installedPackage = (source: string, path = installedRoot(source)) => ({ source, path });
+
+const resolved = (extension: string, packageRoot?: string): ResolvedPaths => ({
   extensions: [
     {
       path: extension,
       enabled: true,
-      metadata: { source: extension, scope: 'temporary', origin: 'package' },
+      metadata: {
+        source: extension,
+        scope: 'temporary',
+        origin: 'package',
+        ...(packageRoot === undefined ? {} : { packageRoot }),
+      },
     },
   ],
   skills: [],
@@ -42,7 +52,9 @@ const fakeManager = (
       }
 
       return Promise.resolve(
-        failing.has(`empty:${source}`) ? { ...resolved(''), extensions: [] } : resolved(source),
+        failing.has(`empty:${source}`)
+          ? { ...resolved(''), extensions: [] }
+          : resolved(source, failing.has(`noroot:${source}`) ? undefined : installedRoot(source)),
       );
     },
   };
@@ -80,7 +92,10 @@ it('installs each profile package that settings do not already load, one at a ti
     signal,
   );
 
-  expect(sources).toEqual(['npm:pi-codex-image-gen', join('/work', 'probe')]);
+  expect(sources).toEqual([
+    installedPackage('npm:pi-codex-image-gen'),
+    installedPackage(join('/work', 'probe'), join('/work', 'probe')),
+  ]);
 
   expect(installs).toEqual([
     { sources: ['npm:pi-codex-image-gen'], temporary: true },
@@ -123,7 +138,9 @@ it('reads a profile package named npm with a leading space as a local path', asy
     signal,
   );
 
-  expect(sources).toEqual([join('/work', 'npm:probe')]);
+  expect(sources).toEqual([
+    installedPackage(join('/work', 'npm:probe'), join('/work', 'npm:probe')),
+  ]);
 });
 
 it('passes git profile packages to Pi unresolved, with or without a leading space', async () => {
@@ -135,7 +152,10 @@ it('passes git profile packages to Pi unresolved, with or without a leading spac
     signal,
   );
 
-  expect(sources).toEqual(['git:github.com/user/tool', ' https://github.com/user/other']);
+  expect(sources).toEqual([
+    installedPackage('git:github.com/user/tool'),
+    installedPackage(' https://github.com/user/other'),
+  ]);
 });
 
 const pendingManager = (): WorkerPackageManager => ({
@@ -172,7 +192,7 @@ it('reads a file URL package as the local path it names', async () => {
     signal,
   );
 
-  expect(sources).toEqual(['/work/probe']);
+  expect(sources).toEqual([installedPackage('/work/probe', '/work/probe')]);
   expect(installs.map((install) => install.sources)).toEqual([['/work/probe']]);
 });
 
@@ -196,6 +216,16 @@ it('refuses a package that installs no Pi resources and names it', async () => {
   await expect(
     installWorkerPackages({ ...loadout, packages: ['npm:offline'] }, () => manager, signal),
   ).rejects.toThrow('Worker profile package npm:offline');
+});
+
+it('refuses a remote package whose resources have no package root and names it', async () => {
+  const { manager } = fakeManager([], new Set(['noroot:npm:noroot']));
+
+  await expect(
+    installWorkerPackages({ ...loadout, packages: ['npm:noroot'] }, () => manager, signal),
+  ).rejects.toThrow(
+    'Worker profile package npm:noroot installed without a package root; check the source.',
+  );
 });
 
 const settingsRead = (): WorkerPackageManager => {
@@ -247,7 +277,7 @@ const heldInstalls = () => {
     const install = pending.get(source);
 
     if (outcome === 'installed') {
-      install?.resolve(resolved(source));
+      install?.resolve(resolved(source, installedRoot(source)));
     } else {
       install?.reject(new Error('npm install failed'));
     }
@@ -286,8 +316,8 @@ it('lets a queued launch stop waiting without blocking the launch behind it', as
   await installs.whenStarted('npm:third');
   installs.settle('npm:third', 'installed');
 
-  await expect(first).resolves.toEqual(['npm:first']);
-  await expect(third).resolves.toEqual(['npm:third']);
+  await expect(first).resolves.toEqual([installedPackage('npm:first')]);
+  await expect(third).resolves.toEqual([installedPackage('npm:third')]);
   expect(installs.started).toEqual(['npm:first', 'npm:third']);
   expect(installs.mostRunning()).toBe(1);
 });
@@ -309,7 +339,7 @@ it('waits for an abandoned install to settle before the next one starts', async 
   await installs.whenStarted('npm:second');
   installs.settle('npm:second', 'installed');
 
-  await expect(second).resolves.toEqual(['npm:second']);
+  await expect(second).resolves.toEqual([installedPackage('npm:second')]);
   expect(installs.mostRunning()).toBe(1);
 });
 
@@ -326,7 +356,7 @@ it('starts the next queued install after an install fails', async () => {
   await installs.whenStarted('npm:second');
   installs.settle('npm:second', 'installed');
 
-  await expect(second).resolves.toEqual(['npm:second']);
+  await expect(second).resolves.toEqual([installedPackage('npm:second')]);
   expect(installs.mostRunning()).toBe(1);
 });
 
@@ -352,7 +382,11 @@ it('expands a home directory and trims whitespace in local profile packages', as
     signal,
   );
 
-  expect(sources).toEqual([homedir(), join(homedir(), 'probe'), '/work/spaced']);
+  expect(sources).toEqual([
+    installedPackage(homedir(), homedir()),
+    installedPackage(join(homedir(), 'probe'), join(homedir(), 'probe')),
+    installedPackage('/work/spaced', '/work/spaced'),
+  ]);
 });
 
 it('keeps the install error as the cause of a failed package install', async () => {
@@ -450,12 +484,12 @@ it('does not install for a launch that stopped when its turn came', async () => 
   turnCame = true;
   installs.settle('npm:first', 'installed');
 
-  await expect(first).resolves.toEqual(['npm:first']);
+  await expect(first).resolves.toEqual([installedPackage('npm:first')]);
   expect(await secondOutcome).toBeInstanceOf(Error);
   await installs.whenStarted('npm:third');
   installs.settle('npm:third', 'installed');
 
-  await expect(third).resolves.toEqual(['npm:third']);
+  await expect(third).resolves.toEqual([installedPackage('npm:third')]);
   expect(installs.started).toEqual(['npm:first', 'npm:third']);
 });
 
@@ -470,7 +504,7 @@ it('stops a launch whose signal was already aborted without waiting for the queu
   await expect(launchPackage(installs, 'npm:second', stopped.signal)).rejects.toThrow('npm:second');
 
   installs.settle('npm:first', 'installed');
-  await expect(first).resolves.toEqual(['npm:first']);
+  await expect(first).resolves.toEqual([installedPackage('npm:first')]);
   expect(installs.started).toEqual(['npm:first']);
 });
 
@@ -482,7 +516,7 @@ it('leaves no abort listener on the launch signal once its install settled', asy
 
   await installs.whenStarted('npm:first');
   installs.settle('npm:first', 'installed');
-  await expect(first).resolves.toEqual(['npm:first']);
+  await expect(first).resolves.toEqual([installedPackage('npm:first')]);
 
   expect(getEventListeners(launch.signal, 'abort')).toHaveLength(0);
 });

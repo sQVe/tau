@@ -8,11 +8,19 @@ import type { WorkerPackageManager } from './packageInstall.js';
 
 vi.mock(import('node:fs'), { spy: true });
 
+const installedRoot = (source: string): string =>
+  `/agent/tmp/extensions/${source.replace(/[^a-zA-Z0-9._-]+/g, '-')}`;
+
 const installedPackages = (sources: string[]) => ({
   extensions: sources.map((path) => ({
     path,
     enabled: true,
-    metadata: { source: path, scope: 'temporary' as const, origin: 'package' as const },
+    metadata: {
+      source: path,
+      scope: 'temporary' as const,
+      origin: 'package' as const,
+      packageRoot: installedRoot(path),
+    },
   })),
   skills: [],
   prompts: [],
@@ -57,9 +65,44 @@ it('loads profile packages with -e after the worker guards, skipping those setti
 
   expect(launched.failure).toBeUndefined();
   expect(command.at(-3)).toMatch(/workerExtension\.ts$/);
-  expect(command.slice(-2)).toEqual(['-e', 'npm:pi-codex-image-gen']);
+  expect(command.slice(-2)).toEqual(['-e', installedRoot('npm:pi-codex-image-gen')]);
   expect(settings.installs).toEqual([['npm:pi-codex-image-gen']]);
   expect(readTask(launched.directory).loadout.packages).toEqual(packages);
+});
+
+it('loads a remote profile package from the package root the parent installed', async ({
+  onTestFinished,
+}) => {
+  const installed = '/agent/tmp/extensions/npm-pi-codex-image-gen';
+
+  const manager = (): WorkerPackageManager => ({
+    listConfiguredPackages: () => [],
+    resolveExtensionSources: (sources) =>
+      Promise.resolve({
+        extensions: sources.map((source) => ({
+          path: installed,
+          enabled: true,
+          metadata: {
+            source,
+            scope: 'temporary' as const,
+            origin: 'package' as const,
+            packageRoot: installed,
+          },
+        })),
+        skills: [],
+        prompts: [],
+        themes: [],
+      }),
+  });
+
+  const { controller, input, calls } = setup(onTestFinished, 0, undefined, manager);
+  const loadout = { ...input.loadout, packages: ['npm:pi-codex-image-gen'] };
+  const launched = await controller.launch({ ...input, loadout });
+  const command = launchedCommand(calls);
+
+  expect(launched.failure).toBeUndefined();
+  expect(command.slice(-2)).toEqual(['-e', installed]);
+  expect(command).not.toContain('npm:pi-codex-image-gen');
 });
 
 it('refuses a launch whose profile package fails to install before it opens a pane', async ({
@@ -120,7 +163,10 @@ it('decides the -e packages again when a follow-up starts after settings change'
   const packages = ['npm:pi-agent-browser-native'];
   const fixture = await completed(undefined, { manager: settings.manager, sources: packages });
 
-  expect(launchedCommand(fixture.calls).slice(-2)).toEqual(['-e', 'npm:pi-agent-browser-native']);
+  expect(launchedCommand(fixture.calls).slice(-2)).toEqual([
+    '-e',
+    installedRoot('npm:pi-agent-browser-native'),
+  ]);
 
   settings.configured.push('npm:pi-agent-browser-native');
   fixture.calls.length = 0;

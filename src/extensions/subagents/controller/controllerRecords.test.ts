@@ -12,7 +12,12 @@ const installedPackages = (sources: string[]) => ({
   extensions: sources.map((path) => ({
     path,
     enabled: true,
-    metadata: { source: path, scope: 'temporary' as const, origin: 'package' as const },
+    metadata: {
+      source: path,
+      scope: 'temporary' as const,
+      origin: 'package' as const,
+      packageRoot: `/installed/${path}`,
+    },
   })),
   skills: [],
   prompts: [],

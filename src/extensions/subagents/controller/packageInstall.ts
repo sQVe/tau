@@ -10,6 +10,7 @@ import { errorMessage } from '../../../errors.js';
 import { withFileLock } from '../../../fileLock/fileLock.js';
 import type { Loadout } from '../types.js';
 import { isLocalPackage, packagesToLoad } from '../workerPackages.js';
+import type { WorkerPackage } from './types.js';
 
 export type WorkerPackageManager = Pick<
   PackageManager,
@@ -51,6 +52,11 @@ const hasResources = (paths: ResolvedPaths): boolean =>
   [paths.extensions, paths.skills, paths.prompts, paths.themes].some(
     (resources) => resources.length > 0,
   );
+
+const packageRoot = (paths: ResolvedPaths): string | undefined =>
+  [paths.extensions, paths.skills, paths.prompts, paths.themes]
+    .flatMap((resources) => resources.map((resource) => resource.metadata.packageRoot))
+    .find((root) => root !== undefined);
 
 const timedOut = (signal: AbortSignal): boolean =>
   signal.reason instanceof DOMException && signal.reason.name === 'TimeoutError';
@@ -118,7 +124,7 @@ const installPackage = async (
   manager: WorkerPackageManager,
   target: { source: string; agentDirectory: string },
   signal: AbortSignal,
-): Promise<void> => {
+): Promise<WorkerPackage> => {
   const { source } = target;
   let paths: ResolvedPaths;
 
@@ -142,15 +148,30 @@ const installPackage = async (
       `Worker profile package ${source} is missing or has no Pi resources; check the source and that Pi is online.`,
     );
   }
+
+  if (isLocalPackage(source)) {
+    return { source, path: source };
+  }
+
+  // The worker loads a local path, so it never resolves the remote source again in Pi's cache.
+  const path = packageRoot(paths);
+
+  if (path === undefined) {
+    throw new Error(
+      `Worker profile package ${source} installed without a package root; check the source.`,
+    );
+  }
+
+  return { source, path };
 };
 
 // Installs into Pi's temporary `-e` cache, where the worker finds each package without a download.
-// Returns the sources the worker loads with -e.
+// Returns the sources the worker loads with -e and the local package root each one resolved to.
 export const installWorkerPackages = async (
   loadout: Loadout,
   packageManager: (loadout: Loadout) => WorkerPackageManager,
   signal: AbortSignal,
-): Promise<string[]> => {
+): Promise<WorkerPackage[]> => {
   if (loadout.packages.length === 0) {
     return [];
   }
@@ -165,11 +186,18 @@ export const installWorkerPackages = async (
 
   const profile = loadout.packages.map((source) => absoluteSource(source, loadout.cwd));
   const sources = packagesToLoad(profile, configured);
+  const packages: WorkerPackage[] = [];
 
   for (const source of sources) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- One install at a time, so a failure names its package and skips the rest.
-    await installPackage(manager, { source, agentDirectory: loadout.agentDirectory }, signal);
+    const installed = await installPackage(
+      manager,
+      { source, agentDirectory: loadout.agentDirectory },
+      signal,
+    );
+
+    packages.push(installed);
   }
 
-  return sources;
+  return packages;
 };
