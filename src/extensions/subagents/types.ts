@@ -102,7 +102,6 @@ const taskProperties = {
 // Bump for any change to the saved fields, including a new optional field.
 export const taskVersion = 12;
 
-// Version 11 tasks stay readable. Version 11 routing has no confidenceCutoff.
 export const oldestReadableTaskVersion = 11;
 
 const routingWithoutConfidenceCutoffTaskVersion = 11;

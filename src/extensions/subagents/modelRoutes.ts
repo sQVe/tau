@@ -14,7 +14,6 @@ export interface ModelRoute {
   labels: ReadonlyMap<string, RouteLabel>;
   // Share of confident picks that differ from the profile model and launch on the routed model.
   canary: number;
-  // Lowest classifier confidence that counts as a pick.
   confidence: number;
 }
 
@@ -46,7 +45,6 @@ export interface RoutePick {
   label?: string;
   confidence?: number;
   fallbackReason?: FallbackReason;
-  // Saved only when a route exists, so the comparison can split launches by the cutoff.
   confidenceCutoff?: number;
 }
 
