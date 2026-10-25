@@ -398,6 +398,24 @@ describe.concurrent('both', () => {
     hangs(run, 'blocks after the sibling ends');
   });
 
+  it('kills a blocked test after an unlimited concurrent sibling finishes', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { describe, it } from 'vitest'; import { setTimeout } from 'node:timers/promises'; ${blockingSleep}
+describe.concurrent('both', () => {
+  it('finished unlimited sibling', async () => { await setTimeout(100); }, 0);
+  it('blocks after sibling finishes', async () => {
+    await setTimeout(500);
+    execFileSync('sleep', ['4']);
+  }, 1000);
+});`,
+    );
+
+    hangs(run, 'blocks after sibling finishes');
+  });
+
   it('does not kill a slow concurrent test after a short sibling finishes', async ({
     onTestFinished,
   }) => {

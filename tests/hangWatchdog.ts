@@ -3,7 +3,7 @@ import { setInterval } from 'node:timers';
 import { Worker } from 'node:worker_threads';
 
 import type { RunnerTestSuite } from 'vitest';
-import { afterAll, beforeAll, beforeEach, expect, onTestFinished, TestRunner } from 'vitest';
+import { afterAll, beforeAll, beforeEach, expect, TestRunner } from 'vitest';
 
 import { watchdogSource } from './hangWatchdogSource.js';
 
@@ -226,7 +226,7 @@ if (!isInspecting()) {
     runningTests.set(task.id, { name: task.name, timeouts });
     applyRunning();
 
-    onTestFinished(() => {
+    context.onTestFinished(() => {
       runningTests.delete(task.id);
 
       if (runningTests.size > 0) {
