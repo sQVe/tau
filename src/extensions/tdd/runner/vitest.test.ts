@@ -1315,6 +1315,10 @@ describe('runTests', () => {
       report: { numTotalTests: 1 },
     },
     {
+      scenario: 'only a non-array testResults value',
+      report: { testResults: {} },
+    },
+    {
       scenario: 'a missing total count',
       report: { numFailedTests: 0, numPassedTests: 1, testResults: [] },
     },
