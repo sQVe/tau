@@ -120,7 +120,11 @@ describe('runTests', () => {
 
     const result = await runTests(
       { scope: 'full', verificationArgv, cwd: '/repo' },
-      makeDeps({ spawn: fakeSpawn({ report: { numTotalTests: 1, numPassedTests: 1 } }) }),
+      makeDeps({
+        spawn: fakeSpawn({
+          report: { numTotalTests: 1, numFailedTests: 0, numPassedTests: 1, testResults: [] },
+        }),
+      }),
     );
 
     const elapsed = performance.now() - started;
@@ -219,6 +223,7 @@ describe('runTests', () => {
         fakeSpawn({
           report: {
             numTotalTests: 1,
+            numFailedTests: 0,
             numPassedTests: 0,
             testResults: [
               {
@@ -342,6 +347,7 @@ describe('runTests', () => {
           report: {
             numTotalTests: 6,
             numFailedTests: 4,
+            numPassedTests: 0,
             testResults: [
               { name: '/repo/value.test.ts', status: 'failed', assertionResults: assertions },
             ],
@@ -419,6 +425,7 @@ describe('runTests', () => {
   it('retains diagnostics for successful failed skipped and interrupted runs', async () => {
     const passingReport = {
       numTotalTests: 1,
+      numFailedTests: 0,
       numPassedTests: 1,
       testResults: [
         {
@@ -431,6 +438,8 @@ describe('runTests', () => {
 
     const failingReport = {
       numTotalTests: 0,
+      numFailedTests: 0,
+      numPassedTests: 0,
       testResults: [
         { name: '/repo/value.test.ts', status: 'failed', message: '', assertionResults: [] },
       ],
@@ -439,7 +448,12 @@ describe('runTests', () => {
     const cases = [
       { kind: 'pass', report: passingReport, code: 0, timedOut: false },
       { kind: 'fail', report: failingReport, code: 1, timedOut: false },
-      { kind: 'no-tests-collected', report: { numTotalTests: 0 }, code: 0, timedOut: false },
+      {
+        kind: 'no-tests-collected',
+        report: { numTotalTests: 0, numFailedTests: 0, numPassedTests: 0, testResults: [] },
+        code: 0,
+        timedOut: false,
+      },
       { kind: 'compile-error', report: undefined, code: 1, timedOut: false },
       { kind: 'timeout', report: undefined, code: null, timedOut: true },
       { kind: 'cancelled', report: undefined, code: null, timedOut: false },
@@ -522,6 +536,7 @@ describe('runTests', () => {
         spawn: fakeSpawn({
           report: {
             numTotalTests: 2,
+            numFailedTests: 0,
             numPassedTests: 2,
             testResults: [
               {
@@ -549,6 +564,7 @@ describe('runTests', () => {
   it('bounds saved logs and raw reports without truncating test evidence', async () => {
     const rawReport = {
       numTotalTests: 1,
+      numFailedTests: 0,
       numPassedTests: 1,
       padding: 'x'.repeat(reportLimit),
       testResults: [
@@ -603,7 +619,16 @@ describe('runTests', () => {
         spawn: async (command, argumentsList) => {
           const reportPath = outputFileFrom(argumentsList);
 
-          await writeFile(reportPath, JSON.stringify({ numTotalTests: 1, numPassedTests: 1 }));
+          await writeFile(
+            reportPath,
+            JSON.stringify({
+              numTotalTests: 1,
+              numFailedTests: 0,
+              numPassedTests: 1,
+              testResults: [],
+            }),
+          );
+
           await writeFile(join(reportPath, '..', 'stdout.txt'), 'keep this content');
 
           return fakeSpawn({ stdout: 'new output' })(command, argumentsList, {
@@ -761,6 +786,7 @@ describe('runTests', () => {
         report: {
           numTotalTests: 0,
           numFailedTests: 0,
+          numPassedTests: 0,
           testResults: Array.from({ length: maximumFailures + 1 }, (_, index) => ({
             name: `file${index}.test.ts`,
             status: 'failed',
@@ -851,7 +877,12 @@ describe('runTests', () => {
       spawn: fakeSpawn({
         code: 1,
         stderr: 'Unhandled rejection',
-        report: { numTotalTests: 1, numPassedTests: 1, numFailedTests: 0 },
+        report: {
+          numTotalTests: 1,
+          numFailedTests: 0,
+          numPassedTests: 1,
+          testResults: [],
+        },
       }),
     });
 
@@ -885,6 +916,7 @@ describe('runTests', () => {
       const report = {
         numTotalTests: 1,
         numFailedTests: 0,
+        numPassedTests: 1,
         testResults: [
           {
             name: 'x'.repeat(maximumTotalBytes * 2),
@@ -988,7 +1020,12 @@ describe('runTests', () => {
 
     const result = await runTests(
       { scope: 'full', verificationArgv, cwd: '/repo' },
-      makeDeps({ spawn: fakeSpawn({ command, report: { numTotalTests: 1, numPassedTests: 1 } }) }),
+      makeDeps({
+        spawn: fakeSpawn({
+          command,
+          report: { numTotalTests: 1, numFailedTests: 0, numPassedTests: 1, testResults: [] },
+        }),
+      }),
     );
 
     expect(result.diagnostics?.command).toEqual(command);
@@ -1050,6 +1087,7 @@ describe('runTests', () => {
     const report = {
       numTotalTests: 2,
       numFailedTests: 1,
+      numPassedTests: 1,
       testResults: [
         {
           name: '/repo/b.test.ts',
@@ -1103,7 +1141,13 @@ describe('runTests', () => {
   });
 
   it('returns no-tests-collected when the report has zero tests and zero files', async () => {
-    const report = { numTotalTests: 0, numFailedTests: 0, testResults: [] };
+    const report = {
+      numTotalTests: 0,
+      numFailedTests: 0,
+      numPassedTests: 0,
+      testResults: [],
+    };
+
     const deps = makeDeps({ spawn: fakeSpawn({ report, code: 0 }) });
 
     const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
@@ -1115,6 +1159,7 @@ describe('runTests', () => {
     const report = {
       numTotalTests: 0,
       numFailedTests: 0,
+      numPassedTests: 0,
       testResults: [
         {
           name: '/repo/broken.test.ts',
@@ -1146,6 +1191,7 @@ describe('runTests', () => {
     const report = {
       numTotalTests: 0,
       numFailedTests: 0,
+      numPassedTests: 0,
       testResults: [{ name: '/repo/empty.test.ts', status: 'passed', assertionResults: [] }],
     };
 
@@ -1263,6 +1309,196 @@ describe('runTests', () => {
     },
   );
 
+  it.for([
+    {
+      scenario: 'only a total test count',
+      report: { numTotalTests: 1 },
+    },
+    {
+      scenario: 'only a non-array testResults value',
+      report: { testResults: {} },
+    },
+    {
+      scenario: 'a missing total count',
+      report: { numFailedTests: 0, numPassedTests: 1, testResults: [] },
+    },
+    {
+      scenario: 'a missing failed count',
+      report: { numTotalTests: 1, numPassedTests: 1, testResults: [] },
+    },
+    {
+      scenario: 'a missing passed count',
+      report: { numTotalTests: 1, numFailedTests: 0, testResults: [] },
+    },
+    {
+      scenario: 'a negative failed count',
+      report: { numTotalTests: 1, numFailedTests: -1, numPassedTests: 1, testResults: [] },
+    },
+    {
+      scenario: 'a non-integer passed count',
+      report: { numTotalTests: 1, numFailedTests: 0, numPassedTests: 0.5, testResults: [] },
+    },
+    {
+      scenario: 'a non-array testResults value',
+      report: {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: {},
+      },
+    },
+    {
+      scenario: 'a non-array assertionResults value',
+      report: {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [{ name: '/repo/a.test.ts', status: 'passed', assertionResults: {} }],
+      },
+    },
+    {
+      scenario: 'an unknown assertion status',
+      report: {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [
+          {
+            name: '/repo/a.test.ts',
+            status: 'passed',
+            assertionResults: [{ fullName: 'works', status: 'unknown' }],
+          },
+        ],
+      },
+    },
+    {
+      scenario: 'a non-array ancestorTitles value',
+      report: {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [
+          {
+            name: '/repo/a.test.ts',
+            status: 'passed',
+            assertionResults: [{ status: 'passed', ancestorTitles: 42 }],
+          },
+        ],
+      },
+    },
+    {
+      scenario: 'a non-string assertion fullName value',
+      report: {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [
+          {
+            name: '/repo/a.test.ts',
+            status: 'passed',
+            assertionResults: [{ fullName: 42, status: 'passed' }],
+          },
+        ],
+      },
+    },
+    {
+      scenario: 'a non-string assertion title value',
+      report: {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [
+          {
+            name: '/repo/a.test.ts',
+            status: 'passed',
+            assertionResults: [{ title: 42, status: 'passed' }],
+          },
+        ],
+      },
+    },
+    {
+      scenario: 'a non-array assertion failureMessages value',
+      report: {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [
+          {
+            name: '/repo/a.test.ts',
+            status: 'passed',
+            assertionResults: [{ status: 'passed', failureMessages: 42 }],
+          },
+        ],
+      },
+    },
+    {
+      scenario: 'a non-number assertion duration value',
+      report: {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [
+          {
+            name: '/repo/a.test.ts',
+            status: 'passed',
+            assertionResults: [{ status: 'passed', duration: 'slow' }],
+          },
+        ],
+      },
+    },
+    {
+      scenario: 'a non-string file name value',
+      report: {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [
+          {
+            name: 42,
+            status: 'passed',
+            assertionResults: [{ status: 'passed' }],
+          },
+        ],
+      },
+    },
+    {
+      scenario: 'a non-string file message value',
+      report: {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [
+          {
+            name: '/repo/a.test.ts',
+            status: 'passed',
+            message: 42,
+            assertionResults: [{ status: 'passed' }],
+          },
+        ],
+      },
+    },
+    {
+      scenario: 'an unknown file status',
+      report: {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [{ name: '/repo/a.test.ts', status: 'unknown', assertionResults: [] }],
+      },
+    },
+  ])('rejects a report with $scenario instead of passing', async ({ report }) => {
+    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 0 }) });
+
+    const running = runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
+
+    await expect(running).resolves.toBeDefined();
+    const result = await running;
+
+    expect(result).toMatchObject({ kind: 'fail', tests: [] });
+    expect(result.diagnostics?.report?.path).toBeDefined();
+    expect((await stat(result.diagnostics!.directory)).isDirectory()).toBe(true);
+  });
+
   it('reports a file-level hook error even when every assertion passed', async () => {
     const report = {
       numTotalTests: 1,
@@ -1348,6 +1584,7 @@ describe('runTests', () => {
     const report = {
       numTotalTests: 1,
       numFailedTests: 1,
+      numPassedTests: 0,
       testResults: [
         {
           name: '/repo/mixed.test.ts',
@@ -1378,6 +1615,7 @@ describe('runTests', () => {
     const report = {
       numTotalTests: 1,
       numFailedTests: 1,
+      numPassedTests: 0,
       testResults: [
         {
           name: '/repo/a.test.ts',
@@ -1477,6 +1715,7 @@ describe('runTests', () => {
     const report = {
       numTotalTests: 15,
       numFailedTests: 15,
+      numPassedTests: 0,
       testResults: [{ name: '/repo/big.test.ts', status: 'failed', assertionResults }],
     };
 
@@ -1548,6 +1787,7 @@ describe('runTests', () => {
     const report = {
       numTotalTests: 1,
       numFailedTests: 1,
+      numPassedTests: 0,
       testResults: [
         {
           name: '/repo/src/a.test.ts',
@@ -1593,6 +1833,7 @@ describe('runTests', () => {
     const report = {
       numTotalTests: 1,
       numFailedTests: 1,
+      numPassedTests: 0,
       testResults: [
         {
           name: '/repo/src/a.test.ts',
@@ -1630,6 +1871,7 @@ describe('runTests', () => {
     const report = {
       numTotalTests: 1,
       numFailedTests: 1,
+      numPassedTests: 0,
       testResults: [
         {
           name: '/repo/src/a.test.ts',
@@ -1662,6 +1904,7 @@ describe('runTests', () => {
     const report = {
       numTotalTests: 0,
       numFailedTests: 0,
+      numPassedTests: 0,
       testResults: [
         {
           name: '/repo/src/a.test.ts',
@@ -1671,6 +1914,7 @@ describe('runTests', () => {
             '    at /repo/node_modules/vite/dist/node/chunks/dep.js:4:1',
             '    at loadFile (/repo/src/a.test.ts:1:1)',
           ].join('\n'),
+          assertionResults: [],
         },
       ],
     };
@@ -1709,6 +1953,7 @@ describe('runTests', () => {
     const report = {
       numTotalTests: 1,
       numFailedTests: 1,
+      numPassedTests: 0,
       testResults: [
         {
           name: '/repo/src/a.test.ts',
@@ -1743,6 +1988,7 @@ describe('runTests', () => {
     const report = {
       numTotalTests: 1,
       numFailedTests: 1,
+      numPassedTests: 0,
       testResults: [
         {
           name: '/repo/src/a.test.ts',
