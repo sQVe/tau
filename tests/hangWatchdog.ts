@@ -2,13 +2,20 @@ import { url } from 'node:inspector';
 import { setInterval } from 'node:timers';
 import { Worker } from 'node:worker_threads';
 
-import { afterAll, beforeAll, beforeEach, expect, onTestFinished } from 'vitest';
+import type { RunnerTestSuite } from 'vitest';
+import { afterAll, beforeAll, beforeEach, expect, onTestFinished, TestRunner } from 'vitest';
 
 import { watchdogSource } from './hangWatchdogSource.js';
 
 interface WorkerState {
-  config: { testTimeout: number; hookTimeout: number };
+  config: {
+    testTimeout: number;
+    hookTimeout: number;
+    sequence?: { hooks?: 'stack' | 'list' | 'parallel' };
+  };
 }
+
+type SuiteHook = 'beforeAll' | 'beforeEach';
 
 // Vitest fails async hangs through its own timeouts. It cannot stop a blocked event loop or a file
 // whose collection never finishes, so a watchdog thread kills the worker in those two cases.
@@ -38,12 +45,50 @@ const readConfig = (): WorkerState['config'] => {
   return worker?.config ?? { testTimeout: 0, hookTimeout: 0 };
 };
 
-const runningTests = new Map<string, { name: string; timeout: number }>();
+// Vitest reverses the afterAll hook list under its resolved default, "stack".
+const hooksSequence = () => readConfig().sequence?.hooks ?? 'stack';
 
-// A timeout of 0 on any running test disables the deadline while it runs.
+// Vitest stores a before hook's own timeout under this symbol on the registered hook. The symbol
+// is the only way to read a per-hook timeout, because the hook wrapper keeps the rest private.
+const hookTimeoutKey: unique symbol = Symbol.for('VITEST_CLEANUP_TIMEOUT');
+
+type TimedHook = ((...args: never[]) => unknown) & Partial<Record<typeof hookTimeoutKey, unknown>>;
+
+const hookTimeout = (hook: TimedHook) => {
+  const timeout = hook[hookTimeoutKey];
+
+  return typeof timeout === 'number' ? timeout : readConfig().hookTimeout;
+};
+
+const registeredHookTimeouts = (suite: Readonly<RunnerTestSuite>, name: SuiteHook) =>
+  TestRunner.getSuiteHooks(suite)[name].map(hookTimeout);
+
+const ancestorSuites = (suite: Readonly<RunnerTestSuite>) => {
+  const suites: Readonly<RunnerTestSuite>[] = [];
+  let current: Readonly<RunnerTestSuite> | undefined = suite;
+
+  while (current !== undefined) {
+    suites.push(current);
+    current = current.suite;
+  }
+
+  return suites;
+};
+
+// A test runs the beforeEach hooks of its own suite and of every ancestor suite.
+const beforeEachTimeouts = (suite: Readonly<RunnerTestSuite>) =>
+  ancestorSuites(suite).flatMap((current) => registeredHookTimeouts(current, 'beforeEach'));
+
+const activeBeforeAll = new Map<Readonly<RunnerTestSuite>, number[]>();
+const runningTests = new Map<string, { name: string; timeouts: number[] }>();
+
+// A timeout of 0 on any running test or hook disables the deadline while it runs.
 const blockingBudget = () => {
-  const testTimeouts = [...runningTests.values()].map((test) => test.timeout);
-  const timeouts = [readConfig().hookTimeout, ...testTimeouts];
+  const activeTimeouts = [...activeBeforeAll.values()].flat();
+  const testTimeouts = [...runningTests.values()].flatMap((test) => test.timeouts);
+
+  const timeouts = [readConfig().hookTimeout, ...activeTimeouts, ...testTimeouts];
+
   const longest = Math.max(...timeouts);
 
   return timeouts.includes(0) ? 0 : Math.min(longest + slackMilliseconds, maxMilliseconds);
@@ -97,17 +142,93 @@ if (!isInspecting()) {
     beat();
   };
 
-  beforeAll(() => {
-    Atomics.store(state, 2, 0);
+  const applyBeforeAll = () => {
     Atomics.store(state, 1, blockingBudget());
     setLabel(`${testPath()} (beforeAll hooks)`);
     beat();
+  };
+
+  const applyCleanup = () => {
+    Atomics.store(state, 1, blockingBudget());
+    setLabel(`${testPath()} (cleanup)`);
+    beat();
+  };
+
+  const endBeforeAll = (suite: Readonly<RunnerTestSuite>) => {
+    for (const current of ancestorSuites(suite)) {
+      activeBeforeAll.delete(current);
+    }
+  };
+
+  const startBeforeAll = (suite: Readonly<RunnerTestSuite>) => {
+    endBeforeAll(suite);
+    activeBeforeAll.set(suite, registeredHookTimeouts(suite, 'beforeAll'));
+    applyBeforeAll();
+  };
+
+  const afterAllMarker = (suite: Readonly<RunnerTestSuite>) => {
+    endBeforeAll(suite);
+
+    if (runningTests.size > 0) {
+      applyRunning();
+
+      return;
+    }
+
+    applyCleanup();
+  };
+
+  // The default "stack" order reverses afterAll hooks, so the marker goes at the end there.
+  const installAfterAllMarker = (suite: Readonly<RunnerTestSuite>) => {
+    const hooks = TestRunner.getSuiteHooks(suite).afterAll;
+
+    if (hooksSequence() === 'stack') {
+      hooks.push(afterAllMarker);
+    } else {
+      hooks.unshift(afterAllMarker);
+    }
+  };
+
+  // Vitest has no hook-start callback, so each run suite gets a marker first in its beforeAll list.
+  const installPhaseMarkers = (suite: Readonly<RunnerTestSuite>) => {
+    installAfterAllMarker(suite);
+
+    const pending = [...suite.tasks];
+
+    while (pending.length > 0) {
+      const task = pending.pop();
+
+      if (task?.type !== 'suite' || task.mode !== 'run') {
+        continue;
+      }
+
+      const hooks = TestRunner.getSuiteHooks(task);
+
+      hooks.beforeAll.unshift((markerSuite) => {
+        startBeforeAll(markerSuite);
+      });
+
+      installAfterAllMarker(task);
+      pending.push(...task.tasks);
+    }
+  };
+
+  // oxlint-disable-next-line no-empty-pattern -- Vitest passes the suite only when the first parameter destructures, even with no properties.
+  beforeAll(({}, suite) => {
+    Atomics.store(state, 2, 0);
+    installPhaseMarkers(suite);
+    startBeforeAll(suite);
   });
 
   beforeEach((context) => {
     const { task } = context;
+    const suite = task.suite ?? task.file;
 
-    runningTests.set(task.id, { name: task.name, timeout: task.timeout });
+    endBeforeAll(suite);
+
+    const timeouts = [task.timeout, ...beforeEachTimeouts(suite)];
+
+    runningTests.set(task.id, { name: task.name, timeouts });
     applyRunning();
 
     onTestFinished(() => {
@@ -119,9 +240,7 @@ if (!isInspecting()) {
         return;
       }
 
-      Atomics.store(state, 1, blockingBudget());
-      setLabel(`${testPath()} (cleanup)`);
-      beat();
+      applyCleanup();
     });
   });
 

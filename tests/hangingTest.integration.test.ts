@@ -203,15 +203,121 @@ it('runs', () => {});`,
     passes(run);
   });
 
-  it('does not kill a beforeAll with its own longer timeout', async ({ onTestFinished }) => {
+  it('does not kill a blocking beforeEach within its own timeout', async ({ onTestFinished }) => {
     const run = await runNested(
       onTestFinished,
-      `import { beforeAll, it } from 'vitest'; import { setTimeout } from 'node:timers/promises';
-beforeAll(async () => { await setTimeout(2500); }, 5000);
+      `import { beforeEach, it } from 'vitest'; ${blockingSleep}
+beforeEach(() => { execFileSync('sleep', ['3']); }, 5000);
 it('runs', () => {});`,
     );
 
     passes(run);
+  });
+
+  it('does not kill a blocking beforeAll within its own timeout', async ({ onTestFinished }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, it } from 'vitest'; ${blockingSleep}
+beforeAll(() => { execFileSync('sleep', ['3']); }, 5000);
+it('runs', () => {});`,
+    );
+
+    passes(run);
+  });
+
+  it('does not kill a nested blocking beforeAll that starts after a test', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, describe, it } from 'vitest'; ${blockingSleep}
+it('runs first', () => {});
+describe('nested', () => {
+  beforeAll(() => { execFileSync('sleep', ['3']); }, 5000);
+  it('runs', () => {});
+});`,
+    );
+
+    passes(run);
+  });
+
+  it('kills a blocking beforeAll that runs past its own timeout', async ({ onTestFinished }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, it } from 'vitest'; ${blockingSleep}
+beforeAll(() => { execFileSync('sleep', ['4']); }, 1500);
+it('unreached', () => {});`,
+    );
+
+    hangs(run, 'hanging.test.ts (beforeAll hooks)');
+  });
+
+  it('does not kill a concurrent beforeAll that blocks after a sibling test finishes', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, describe, it } from 'vitest'; import { setTimeout } from 'node:timers/promises'; ${blockingSleep}
+describe.concurrent('both', () => {
+  describe('slow', () => {
+    beforeAll(async () => { await setTimeout(500); execFileSync('sleep', ['3']); }, 5000);
+    it('slow', () => {});
+  });
+  describe('fast', () => {
+    it('fast', async () => { await setTimeout(100); });
+  });
+});`,
+    );
+
+    passes(run);
+  });
+
+  it('kills a blocked test before a suite with no hook timeout', async ({ onTestFinished }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, describe, it } from 'vitest'; ${blockingSleep}
+it('blocks', () => { execFileSync('sleep', ['4']); });
+describe('later', () => {
+  beforeAll(() => {}, 0);
+  it('runs', () => {});
+});`,
+    );
+
+    hangs(run, 'hanging.test.ts > blocks');
+  });
+
+  it('kills a blocked test after a throwing beforeAll and afterAll', async ({ onTestFinished }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { afterAll, beforeAll, describe, it } from 'vitest'; ${blockingSleep}
+describe('failed setup', () => {
+  beforeAll(() => { throw new Error('setup failed'); }, 0);
+  afterAll(() => { throw new Error('cleanup failed'); });
+  it('skipped', () => {});
+});
+describe('next suite', () => {
+  it('blocks beyond timeout', () => { execFileSync('sleep', ['4']); }, 1000);
+});`,
+    );
+
+    hangs(run, 'hanging.test.ts > blocks beyond timeout');
+  });
+
+  it('kills a blocking beforeAll when a skipped suite has no timeout', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, describe, it } from 'vitest'; ${blockingSleep}
+beforeAll(() => { execFileSync('sleep', ['4']); }, 1500);
+describe.skip('skipped', () => {
+  beforeAll(() => {}, 0);
+  it('unreached', () => {});
+});
+it('unreached', () => {});`,
+    );
+
+    hangs(run, 'hanging.test.ts (beforeAll hooks)');
   });
 
   it('does not kill two healthy concurrent tests', async ({ onTestFinished }) => {
