@@ -62,12 +62,14 @@ const registeredHookTimeouts = (suite: Readonly<RunnerTestSuite>, name: SuiteHoo
 
 const ancestorSuites = (suite: Readonly<RunnerTestSuite>) => {
   const suites: Readonly<RunnerTestSuite>[] = [];
-  let current: Readonly<RunnerTestSuite> | undefined = suite;
+  let current = suite;
 
-  while (current !== undefined) {
+  while (current.file !== current) {
     suites.push(current);
-    current = current.suite;
+    current = current.suite ?? current.file;
   }
+
+  suites.push(current);
 
   return suites;
 };

@@ -214,6 +214,21 @@ it('runs', () => {});`,
     passes(run);
   });
 
+  it('does not kill a file-level blocking beforeEach within its own timeout', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeEach, describe, it } from 'vitest'; ${blockingSleep}
+beforeEach(() => { execFileSync('sleep', ['3']); }, 5000);
+describe('nested', () => {
+  it('runs', () => {});
+});`,
+    );
+
+    passes(run);
+  });
+
   it('does not kill a blocking beforeAll within its own timeout', async ({ onTestFinished }) => {
     const run = await runNested(
       onTestFinished,
@@ -286,6 +301,21 @@ describe('later', () => {
     hangs(run, 'hanging.test.ts > blocks');
   });
 
+  it('kills a blocked test after a file-level beforeAll with no timeout', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, describe, it } from 'vitest'; ${blockingSleep}
+beforeAll(() => {}, 0);
+describe('nested', () => {
+  it('blocks', () => { execFileSync('sleep', ['4']); }, 1000);
+});`,
+    );
+
+    hangs(run, 'hanging.test.ts > blocks');
+  });
+
   it('kills a blocked test after a throwing beforeAll and afterAll', async ({ onTestFinished }) => {
     const run = await runNested(
       onTestFinished,
@@ -344,6 +374,28 @@ describe.concurrent('both', () => {
     );
 
     passes(run);
+  });
+
+  it('kills a blocked test after a sibling suite ends and names the live test', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { describe, it } from 'vitest'; import { setTimeout } from 'node:timers/promises'; ${blockingSleep}
+describe.concurrent('both', () => {
+  describe('short', () => {
+    it('short', async () => { await setTimeout(100); });
+  });
+  describe('live', () => {
+    it('blocks after the sibling ends', async () => {
+      await setTimeout(500);
+      execFileSync('sleep', ['4']);
+    });
+  });
+});`,
+    );
+
+    hangs(run, 'blocks after the sibling ends');
   });
 
   it('does not kill a slow concurrent test after a short sibling finishes', async ({
