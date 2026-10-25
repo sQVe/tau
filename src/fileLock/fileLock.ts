@@ -249,7 +249,6 @@ const acquireLock = async (options: FileLockOptions, owner: LockOwner): Promise<
   }
 };
 
-// Holds the lock until run settles, even when the signal stops after acquisition.
 export const withFileLock = async <T>(
   options: FileLockOptions,
   run: (recordCommandGroup: (groupId: number) => Promise<void>) => Promise<T>,

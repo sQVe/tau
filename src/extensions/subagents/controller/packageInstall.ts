@@ -125,7 +125,6 @@ const installPackage = async (
   const install = () => manager.resolveExtensionSources([source], { temporary: true });
 
   try {
-    // Only the caller's wait is cancelled. The lock stays held until Pi's install settles.
     paths = await untilAborted(withInstallLock(target, install, signal), signal, source);
   } catch (error) {
     if (error instanceof InstallStoppedError) {

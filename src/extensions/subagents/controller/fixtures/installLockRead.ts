@@ -22,6 +22,5 @@ export const observeInstallLockRead = (
     return content;
   };
 
-  // The wrapper forwards every overload's arguments and result without changing them.
   return read as typeof readFile;
 };
