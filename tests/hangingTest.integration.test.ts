@@ -75,7 +75,7 @@ const hangs = (run: NestedRun, name: string) => {
 };
 
 const passes = (run: NestedRun) => {
-  expect(run.failed).toBe(false);
+  expect(run.failed, run.output).toBe(false);
   expect(run.output).not.toContain('Hang in');
 };
 
@@ -265,6 +265,112 @@ it('unreached', () => {});`,
     );
 
     hangs(run, 'hanging.test.ts (beforeAll hooks)');
+  });
+
+  it('kills a blocking beforeAll before an unlimited hook in the same suite', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, describe, it } from 'vitest'; ${blockingSleep}
+describe('same suite', () => {
+  beforeAll(() => { execFileSync('sleep', ['4']); }, 1500);
+  beforeAll(() => {}, 0);
+  it('unreached', () => {});
+});`,
+    );
+
+    hangs(run, 'hanging.test.ts (beforeAll hooks)');
+  });
+
+  it('kills a blocked test after an unlimited beforeEach finishes', async ({ onTestFinished }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeEach, it } from 'vitest'; ${blockingSleep}
+beforeEach(() => {}, 0);
+it('blocks after setup', () => { execFileSync('sleep', ['4']); }, 1000);`,
+    );
+
+    hangs(run, 'hanging.test.ts > blocks after setup');
+  });
+
+  it.for(['stack', 'list'])(
+    'kills a file-level beforeAll before an unlimited hook with %s ordering',
+    async (sequence, { onTestFinished }) => {
+      const run = await runNested(
+        onTestFinished,
+        `import { beforeAll, it, vi } from 'vitest'; ${blockingSleep}
+vi.setConfig({ sequence: { hooks: '${sequence}' } });
+beforeAll(() => { execFileSync('sleep', ['4']); }, 1500);
+beforeAll(() => {}, 0);
+it('unreached', () => {});`,
+      );
+
+      hangs(run, 'hanging.test.ts (beforeAll hooks)');
+    },
+  );
+
+  it('keeps equal parallel hook budgets until each hook finishes', async ({ onTestFinished }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, beforeEach, describe, it, vi } from 'vitest';
+import { setTimeout } from 'node:timers/promises'; ${blockingSleep}
+vi.setConfig({ sequence: { hooks: 'parallel' } });
+const early = async () => { await setTimeout(100); };
+const late = async () => { await setTimeout(300); execFileSync('sleep', ['3']); };
+beforeAll(early, 5000);
+beforeAll(late, 5000);
+describe('nested', () => {
+  beforeEach(early, 5000);
+  beforeEach(late, 5000);
+  it('runs', () => {});
+});`,
+    );
+
+    passes(run);
+  });
+
+  it.for(['stack', 'list', 'parallel'])(
+    'preserves hook fixtures, suite arguments, and cleanup returns with %s ordering',
+    async (sequence, { onTestFinished }) => {
+      const run = await runNested(
+        onTestFinished,
+        `import { expect, it, vi } from 'vitest';
+vi.setConfig({ sequence: { hooks: '${sequence}' } });
+const test = it.extend({ fileValue: [42, { scope: 'file' }], testValue: 23 });
+let setup = false;
+let cleaned = false;
+test.beforeAll(({ fileValue }, suite) => {
+  expect(fileValue).toBe(42);
+  expect(suite.type).toBe('suite');
+  return () => { expect(cleaned).toBe(true); };
+});
+test.beforeEach(async ({ testValue, task }) => {
+  expect(testValue).toBe(23);
+  expect(task.name).toBe('uses setup');
+  setup = true;
+  return async () => { cleaned = true; };
+});
+test('uses setup', () => { expect(setup).toBe(true); });`,
+      );
+
+      passes(run);
+    },
+  );
+
+  it('restores the hook budget only while its returned cleanup runs', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, beforeEach, it } from 'vitest'; ${blockingSleep}
+const cleanup = () => { execFileSync('sleep', ['3']); };
+beforeAll(() => cleanup, 5000);
+beforeEach(async () => cleanup, 5000);
+it('runs', () => {});`,
+    );
+
+    passes(run);
   });
 
   it('does not kill a concurrent beforeAll that blocks after a sibling test finishes', async ({

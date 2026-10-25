@@ -3,7 +3,7 @@ import { setInterval } from 'node:timers';
 import { Worker } from 'node:worker_threads';
 
 import type { RunnerTestSuite } from 'vitest';
-import { afterAll, beforeAll, beforeEach, expect, TestRunner } from 'vitest';
+import { beforeAll, beforeEach, expect, TestRunner } from 'vitest';
 
 import { watchdogSource } from './hangWatchdogSource.js';
 
@@ -11,7 +11,6 @@ interface WorkerState {
   config: {
     testTimeout: number;
     hookTimeout: number;
-    sequence?: { hooks?: 'stack' | 'list' | 'parallel' };
   };
 }
 
@@ -45,8 +44,6 @@ const readConfig = (): WorkerState['config'] => {
   return worker?.config ?? { testTimeout: 0, hookTimeout: 0 };
 };
 
-const hooksSequence = () => readConfig().sequence?.hooks ?? 'stack';
-
 const hookTimeoutKey: unique symbol = Symbol.for('VITEST_CLEANUP_TIMEOUT');
 
 type TimedHook = ((...args: never[]) => unknown) & Partial<Record<typeof hookTimeoutKey, unknown>>;
@@ -57,32 +54,12 @@ const hookTimeout = (hook: TimedHook) => {
   return typeof timeout === 'number' ? timeout : readConfig().hookTimeout;
 };
 
-const registeredHookTimeouts = (suite: Readonly<RunnerTestSuite>, name: SuiteHook) =>
-  TestRunner.getSuiteHooks(suite)[name].map(hookTimeout);
-
-const ancestorSuites = (suite: Readonly<RunnerTestSuite>) => {
-  const suites: Readonly<RunnerTestSuite>[] = [];
-  let current = suite;
-
-  while (current.file !== current) {
-    suites.push(current);
-    current = current.suite ?? current.file;
-  }
-
-  suites.push(current);
-
-  return suites;
-};
-
-const beforeEachTimeouts = (suite: Readonly<RunnerTestSuite>) =>
-  ancestorSuites(suite).flatMap((current) => registeredHookTimeouts(current, 'beforeEach'));
-
-const activeBeforeAll = new Map<Readonly<RunnerTestSuite>, number[]>();
-const runningTests = new Map<string, { name: string; timeouts: number[] }>();
+const activeHooks = new Set<{ name: SuiteHook | 'cleanup'; timeout: number }>();
+const runningTests = new Map<string, { name: string; timeout: number }>();
 
 const blockingBudget = () => {
-  const activeTimeouts = [...activeBeforeAll.values()].flat();
-  const testTimeouts = [...runningTests.values()].flatMap((test) => test.timeouts);
+  const activeTimeouts = [...activeHooks].map((hook) => hook.timeout);
+  const testTimeouts = [...runningTests.values()].map((test) => test.timeout);
 
   const timeouts = [readConfig().hookTimeout, ...activeTimeouts, ...testTimeouts];
 
@@ -130,116 +107,86 @@ if (!isInspecting()) {
 
   heartbeat.unref();
 
-  const applyRunning = () => {
+  const applyBudget = () => {
     Atomics.store(state, 1, blockingBudget());
 
     const names = [...runningTests.values()].map((test) => test.name).join(', ');
+    const hasBeforeAll = [...activeHooks].some((hook) => hook.name === 'beforeAll');
 
-    setLabel(`${testPath()} > ${names}`);
-    beat();
-  };
-
-  const applyBeforeAll = () => {
-    Atomics.store(state, 1, blockingBudget());
-    setLabel(`${testPath()} (beforeAll hooks)`);
-    beat();
-  };
-
-  const applyCleanup = () => {
-    Atomics.store(state, 1, blockingBudget());
-    setLabel(`${testPath()} (cleanup)`);
-    beat();
-  };
-
-  const endBeforeAll = (suite: Readonly<RunnerTestSuite>) => {
-    for (const current of ancestorSuites(suite)) {
-      activeBeforeAll.delete(current);
-    }
-  };
-
-  const startBeforeAll = (suite: Readonly<RunnerTestSuite>) => {
-    endBeforeAll(suite);
-    activeBeforeAll.set(suite, registeredHookTimeouts(suite, 'beforeAll'));
-    applyBeforeAll();
-  };
-
-  const afterAllMarker = (suite: Readonly<RunnerTestSuite>) => {
-    endBeforeAll(suite);
-
-    if (runningTests.size > 0) {
-      applyRunning();
-
-      return;
-    }
-
-    applyCleanup();
-  };
-
-  const installAfterAllMarker = (suite: Readonly<RunnerTestSuite>) => {
-    const hooks = TestRunner.getSuiteHooks(suite).afterAll;
-
-    if (hooksSequence() === 'stack') {
-      hooks.push(afterAllMarker);
+    if (names) {
+      setLabel(`${testPath()} > ${names}`);
+    } else if (hasBeforeAll) {
+      setLabel(`${testPath()} (beforeAll hooks)`);
     } else {
-      hooks.unshift(afterAllMarker);
+      setLabel(`${testPath()} (cleanup)`);
     }
+
+    beat();
   };
 
-  const installPhaseMarkers = (suite: Readonly<RunnerTestSuite>) => {
-    installAfterAllMarker(suite);
+  const wrapHook = <Arguments extends unknown[]>(
+    hook: (...hookArguments: Arguments) => unknown,
+    name: SuiteHook | 'cleanup',
+    timeout: number,
+  ): ((...hookArguments: Arguments) => Promise<unknown>) => {
+    const wrapped = async (...hookArguments: Arguments) => {
+      const active = { name, timeout };
 
-    const pending = [...suite.tasks];
+      activeHooks.add(active);
+      applyBudget();
 
-    while (pending.length > 0) {
-      const task = pending.pop();
+      try {
+        const result = await hook(...hookArguments);
 
-      if (task?.type !== 'suite' || task.mode !== 'run') {
-        continue;
+        if (typeof result === 'function') {
+          return wrapHook(result as TimedHook, 'cleanup', timeout);
+        }
+
+        return result;
+      } finally {
+        activeHooks.delete(active);
+        applyBudget();
       }
+    };
 
-      const hooks = TestRunner.getSuiteHooks(task);
+    // Vitest stores cleanup timeouts and stack traces on the registered fixture-aware hook.
+    return Object.assign(wrapped, hook);
+  };
 
-      hooks.beforeAll.unshift((markerSuite) => {
-        startBeforeAll(markerSuite);
-      });
+  const installHookWrappers = (suite: Readonly<RunnerTestSuite>) => {
+    const hooks = TestRunner.getSuiteHooks(suite);
 
-      installAfterAllMarker(task);
-      pending.push(...task.tasks);
+    // Mutate entries in place: Vitest's beforeAll iterator (or parallel map) holds this array.
+    // This setup hook installs wrappers synchronously before the iterator visits later entries.
+    hooks.beforeAll.forEach((hook, index) => {
+      hooks.beforeAll[index] = wrapHook(hook, 'beforeAll', hookTimeout(hook));
+    });
+
+    hooks.beforeEach.forEach((hook, index) => {
+      hooks.beforeEach[index] = wrapHook(hook, 'beforeEach', hookTimeout(hook));
+    });
+
+    for (const task of suite.tasks) {
+      if (task.type === 'suite' && task.mode === 'run') {
+        installHookWrappers(task);
+      }
     }
   };
 
   // oxlint-disable-next-line no-empty-pattern -- Vitest passes the suite only when the first parameter destructures, even with no properties.
   beforeAll(({}, suite) => {
     Atomics.store(state, 2, 0);
-    installPhaseMarkers(suite);
-    startBeforeAll(suite);
+    installHookWrappers(suite);
+    applyBudget();
   });
 
-  beforeEach((context) => {
-    const { task } = context;
-    const suite = task.suite ?? task.file;
+  beforeEach(({ task, onTestFinished }) => {
+    runningTests.set(task.id, { name: task.name, timeout: task.timeout });
+    applyBudget();
 
-    endBeforeAll(suite);
-
-    const timeouts = [task.timeout, ...beforeEachTimeouts(suite)];
-
-    runningTests.set(task.id, { name: task.name, timeouts });
-    applyRunning();
-
-    context.onTestFinished(() => {
+    onTestFinished(() => {
       runningTests.delete(task.id);
-
-      if (runningTests.size > 0) {
-        applyRunning();
-
-        return;
-      }
-
-      applyCleanup();
+      applyBudget();
     });
-  });
-
-  afterAll(() => {
-    setLabel(`${testPath()} (afterAll hooks and cleanup)`);
   });
 }
