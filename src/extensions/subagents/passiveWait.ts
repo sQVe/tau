@@ -64,7 +64,6 @@ const replaceHeredocs = (command: string, replacement: HeredocReplacement): stri
     );
   });
 
-// Quoted spans and heredocs match before a #, so a # inside them stays text.
 const quotedOrHeredocAt = new RegExp(quotedOrHeredoc.source, 'y');
 
 const wordSeparator = /[ \t\n;&|()<>]/;
@@ -84,7 +83,6 @@ const commentEnd = (command: string, offset: number): number => {
   return lineEnd === -1 ? command.length : lineEnd;
 };
 
-// The offset where a # continues the word of the escape before it, or -1.
 const joinedWordEnd = (
   command: string,
   span: string,
@@ -95,14 +93,12 @@ const joinedWordEnd = (
     return joinedWordOffset;
   }
 
-  // Bash removes a backslash-newline before it splits words, so the character before it decides.
   const continuesWord = offset === joinedWordOffset || !startsWord(command, offset);
   const joinsWord = span !== '\\\n' || continuesWord;
 
   return joinsWord ? offset + span.length : -1;
 };
 
-// A comment ends at its line, but a # inside a word does not, so the scan decides at each #.
 const withoutComments = (command: string): string => {
   let text = '';
   let joinedWordOffset = -1;
@@ -184,7 +180,8 @@ const refusalReason = (delegating: boolean): string => {
 };
 
 export const passiveWaitRefusal = (input: string, facts: PassiveWaitFacts): string | undefined => {
-  const command = withoutComments(input);
+  // A substitution can nest quotes that this guard does not parse, so its comments stay text.
+  const command = hasCommandSubstitution(input) ? input : withoutComments(input);
   const prose = withoutQuotedText(withoutHeredocText(command));
   const expandable = withoutLiteralHeredocText(command);
   const shellRuns = runsShell.test(prose) || quotedShellName.test(expandable);

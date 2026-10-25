@@ -140,6 +140,7 @@ it.each([
   { command: 'echo \\ #a\\\n#b; sleep 600', workers: true, refused: true },
   { command: 'ls # x\\\nsleep 600', workers: true, refused: true },
   { command: 'ls #sleep 600', workers: true, refused: false },
+  { command: `echo "$(printf '%s' "a # x"; sleep 600)"`, workers: true, refused: true },
   { command: 'echo a# ; sleep 600', workers: true, refused: true },
   { command: 'echo \\ #b; sleep 600', workers: true, refused: true },
 ])('returns refusal $refused for "$command" with workers $workers', (row) => {
