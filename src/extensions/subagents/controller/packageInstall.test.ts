@@ -5,11 +5,11 @@ import { dirname, join } from 'node:path';
 
 import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 import type { ResolvedPaths } from '@earendil-works/pi-coding-agent';
-import { expect, it, onTestFinished } from 'vitest';
+import { beforeEach, expect, it, onTestFinished } from 'vitest';
 
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { fixtureLoadout } from '../fixtures/loadout.js';
-import { InstallQueue, installWorkerPackages, piPackageManager } from './packageInstall.js';
+import { installWorkerPackages, piPackageManager } from './packageInstall.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 
 const resolved = (extension: string): ResolvedPaths => ({
@@ -52,7 +52,13 @@ const fakeManager = (
 
 const signal = new AbortController().signal;
 
-const loadout = { ...fixtureLoadout('/work'), agentDirectory: '/work/agent' };
+let loadout = fixtureLoadout('/work');
+
+beforeEach(() => {
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-package-cache-');
+
+  loadout = { ...fixtureLoadout('/work'), agentDirectory };
+});
 
 it('installs each profile package that settings do not already load, one at a time', async () => {
   const { manager, installs } = fakeManager([
@@ -71,7 +77,6 @@ it('installs each profile package that settings do not already load, one at a ti
       ],
     },
     () => manager,
-    new InstallQueue(),
     signal,
   );
 
@@ -87,9 +92,8 @@ it('skips a local profile package that user settings name relative to the agent 
   const { manager, installs } = fakeManager([{ source: './probe', scope: 'user' }]);
 
   const sources = await installWorkerPackages(
-    { ...loadout, packages: ['agent/probe'] },
+    { ...loadout, packages: [join(loadout.agentDirectory, 'probe')] },
     () => manager,
-    new InstallQueue(),
     signal,
   );
 
@@ -101,9 +105,8 @@ it('skips a local profile package that user settings name as npm with a leading 
   const { manager, installs } = fakeManager([{ source: ' npm:probe', scope: 'user' }]);
 
   const sources = await installWorkerPackages(
-    { ...loadout, packages: ['agent/npm:probe'] },
+    { ...loadout, packages: [join(loadout.agentDirectory, 'npm:probe')] },
     () => manager,
-    new InstallQueue(),
     signal,
   );
 
@@ -117,7 +120,6 @@ it('reads a profile package named npm with a leading space as a local path', asy
   const sources = await installWorkerPackages(
     { ...loadout, packages: [' npm:probe'] },
     () => manager,
-    new InstallQueue(),
     signal,
   );
 
@@ -130,7 +132,6 @@ it('passes git profile packages to Pi unresolved, with or without a leading spac
   const sources = await installWorkerPackages(
     { ...loadout, packages: ['git:github.com/user/tool', ' https://github.com/user/other'] },
     () => manager,
-    new InstallQueue(),
     signal,
   );
 
@@ -155,12 +156,7 @@ it.each([
   const abort = new AbortController();
   const packages = { ...loadout, packages: ['npm:slow', 'npm:later'] };
 
-  const installing = installWorkerPackages(
-    packages,
-    pendingManager,
-    new InstallQueue(),
-    abort.signal,
-  );
+  const installing = installWorkerPackages(packages, pendingManager, abort.signal);
 
   abort.abort(reason);
 
@@ -173,7 +169,6 @@ it('reads a file URL package as the local path it names', async () => {
   const sources = await installWorkerPackages(
     { ...loadout, packages: ['/work/shared', 'file:///work/probe'] },
     () => manager,
-    new InstallQueue(),
     signal,
   );
 
@@ -188,7 +183,6 @@ it('stops at the first package that fails to install and names it', async () => 
     installWorkerPackages(
       { ...loadout, packages: ['npm:broken', 'npm:later'] },
       () => manager,
-      new InstallQueue(),
       signal,
     ),
   ).rejects.toThrow('Worker profile package npm:broken failed to install: npm install failed');
@@ -200,12 +194,7 @@ it('refuses a package that installs no Pi resources and names it', async () => {
   const { manager } = fakeManager([], new Set(['empty:npm:offline']));
 
   await expect(
-    installWorkerPackages(
-      { ...loadout, packages: ['npm:offline'] },
-      () => manager,
-      new InstallQueue(),
-      signal,
-    ),
+    installWorkerPackages({ ...loadout, packages: ['npm:offline'] }, () => manager, signal),
   ).rejects.toThrow('Worker profile package npm:offline');
 });
 
@@ -214,9 +203,7 @@ const settingsRead = (): WorkerPackageManager => {
 };
 
 it('reads no settings for a profile without packages', async () => {
-  await expect(
-    installWorkerPackages(loadout, settingsRead, new InstallQueue(), signal),
-  ).resolves.toEqual([]);
+  await expect(installWorkerPackages(loadout, settingsRead, signal)).resolves.toEqual([]);
 });
 
 // Installs settle only when the test says, and record how many run at once.
@@ -277,22 +264,19 @@ const heldInstalls = () => {
 
 const launchPackage = (
   installs: ReturnType<typeof heldInstalls>,
-  queue: InstallQueue,
   source: string,
   launchSignal = signal,
-) =>
-  installWorkerPackages({ ...loadout, packages: [source] }, installs.manager, queue, launchSignal);
+) => installWorkerPackages({ ...loadout, packages: [source] }, installs.manager, launchSignal);
 
 it('lets a queued launch stop waiting without blocking the launch behind it', async () => {
   const installs = heldInstalls();
-  const queue = new InstallQueue();
   const cancel = new AbortController();
 
-  const first = launchPackage(installs, queue, 'npm:first');
-  const second = launchPackage(installs, queue, 'npm:second', cancel.signal);
-  const third = launchPackage(installs, queue, 'npm:third');
+  const first = launchPackage(installs, 'npm:first');
 
   await installs.whenStarted('npm:first');
+  const second = launchPackage(installs, 'npm:second', cancel.signal);
+  const third = launchPackage(installs, 'npm:third');
   cancel.abort();
 
   await expect(second).rejects.toThrow('Worker profile package npm:second install was cancelled.');
@@ -310,13 +294,12 @@ it('lets a queued launch stop waiting without blocking the launch behind it', as
 
 it('waits for an abandoned install to settle before the next one starts', async () => {
   const installs = heldInstalls();
-  const queue = new InstallQueue();
   const cancel = new AbortController();
 
-  const first = launchPackage(installs, queue, 'npm:first', cancel.signal);
-  const second = launchPackage(installs, queue, 'npm:second');
+  const first = launchPackage(installs, 'npm:first', cancel.signal);
 
   await installs.whenStarted('npm:first');
+  const second = launchPackage(installs, 'npm:second');
   cancel.abort();
 
   await expect(first).rejects.toThrow('npm:first install was cancelled');
@@ -332,12 +315,10 @@ it('waits for an abandoned install to settle before the next one starts', async 
 
 it('starts the next queued install after an install fails', async () => {
   const installs = heldInstalls();
-  const queue = new InstallQueue();
-
-  const first = launchPackage(installs, queue, 'npm:first');
-  const second = launchPackage(installs, queue, 'npm:second');
+  const first = launchPackage(installs, 'npm:first');
 
   await installs.whenStarted('npm:first');
+  const second = launchPackage(installs, 'npm:second');
   expect(installs.started).toEqual(['npm:first']);
   installs.settle('npm:first', 'failed');
 
@@ -355,7 +336,6 @@ it('skips a local profile package that project settings name relative to the pro
   const sources = await installWorkerPackages(
     { ...loadout, packages: ['.pi/probe'] },
     () => manager,
-    new InstallQueue(),
     signal,
   );
 
@@ -369,7 +349,6 @@ it('expands a home directory and trims whitespace in local profile packages', as
   const sources = await installWorkerPackages(
     { ...loadout, packages: ['~', '~/probe', ' /work/spaced '] },
     () => manager,
-    new InstallQueue(),
     signal,
   );
 
@@ -382,7 +361,6 @@ it('keeps the install error as the cause of a failed package install', async () 
   const failure = await installWorkerPackages(
     { ...loadout, packages: ['npm:broken'] },
     () => manager,
-    new InstallQueue(),
     signal,
   ).catch((error: unknown) => error);
 
@@ -447,12 +425,7 @@ it.each([
       settingsManager: SettingsManager.create(cwd, agentDirectory),
     }).resolve();
 
-    const sources = await installWorkerPackages(
-      workerLoadout,
-      piPackageManager,
-      new InstallQueue(),
-      signal,
-    );
+    const sources = await installWorkerPackages(workerLoadout, piPackageManager, signal);
 
     expect(piLoads.extensions.map((resource) => resource.path)).toEqual([extension]);
     expect(sources).toEqual([]);
@@ -463,18 +436,17 @@ it.each([
 // first install settled, so the queue sees it exactly when the turn passes.
 it('does not install for a launch that stopped when its turn came', async () => {
   const installs = heldInstalls();
-  const queue = new InstallQueue();
   const cancel = new AbortController();
   let turnCame = false;
 
   Object.defineProperty(cancel.signal, 'aborted', { get: () => turnCame });
 
-  const first = launchPackage(installs, queue, 'npm:first');
-  const second = launchPackage(installs, queue, 'npm:second', cancel.signal);
-  const third = launchPackage(installs, queue, 'npm:third');
-  const secondOutcome = second.catch((error: unknown) => error);
+  const first = launchPackage(installs, 'npm:first');
 
   await installs.whenStarted('npm:first');
+  const second = launchPackage(installs, 'npm:second', cancel.signal);
+  const third = launchPackage(installs, 'npm:third');
+  const secondOutcome = second.catch((error: unknown) => error);
   turnCame = true;
   installs.settle('npm:first', 'installed');
 
@@ -489,16 +461,13 @@ it('does not install for a launch that stopped when its turn came', async () => 
 
 it('stops a launch whose signal was already aborted without waiting for the queue', async () => {
   const installs = heldInstalls();
-  const queue = new InstallQueue();
   const stopped = new AbortController();
 
   stopped.abort();
-  const first = launchPackage(installs, queue, 'npm:first');
+  const first = launchPackage(installs, 'npm:first');
   await installs.whenStarted('npm:first');
 
-  await expect(launchPackage(installs, queue, 'npm:second', stopped.signal)).rejects.toThrow(
-    'npm:second',
-  );
+  await expect(launchPackage(installs, 'npm:second', stopped.signal)).rejects.toThrow('npm:second');
 
   installs.settle('npm:first', 'installed');
   await expect(first).resolves.toEqual(['npm:first']);
@@ -507,10 +476,9 @@ it('stops a launch whose signal was already aborted without waiting for the queu
 
 it('leaves no abort listener on the launch signal once its install settled', async () => {
   const installs = heldInstalls();
-  const queue = new InstallQueue();
   const launch = new AbortController();
 
-  const first = launchPackage(installs, queue, 'npm:first', launch.signal);
+  const first = launchPackage(installs, 'npm:first', launch.signal);
 
   await installs.whenStarted('npm:first');
   installs.settle('npm:first', 'installed');
@@ -521,10 +489,9 @@ it('leaves no abort listener on the launch signal once its install settled', asy
 
 it('reports a cancelled install as stopped, not as an install failure', async () => {
   const installs = heldInstalls();
-  const queue = new InstallQueue();
   const cancel = new AbortController();
 
-  const only = launchPackage(installs, queue, 'npm:only', cancel.signal);
+  const only = launchPackage(installs, 'npm:only', cancel.signal);
   const outcome = only.catch((error: unknown) => error);
 
   await installs.whenStarted('npm:only');

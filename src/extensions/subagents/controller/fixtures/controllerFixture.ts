@@ -70,6 +70,7 @@ export const setup = (
   capacity?: number,
 ): SetupFixture => {
   const directory = temporaryDirectory(afterTest, 'tau-controller-');
+  const agentDirectory = temporaryDirectory(afterTest, 'tau-controller-agent-');
 
   onTestFinished(() => {
     vi.useRealTimers();
@@ -77,7 +78,7 @@ export const setup = (
     vi.unstubAllEnvs();
   });
 
-  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
 
   writeFileSync(
     join(directory, 'parent.jsonl'),
@@ -172,7 +173,7 @@ export const setup = (
 
   const input = {
     task: 'Edit fixture and test it.',
-    loadout: fixtureLoadout(directory),
+    loadout: { ...fixtureLoadout(directory), agentDirectory },
     timeout: 10_000,
     parentSession: join(directory, 'parent.jsonl'),
     parentSessionId: 'parent-id',

@@ -306,9 +306,9 @@ it('never runs two profile package installs at once across parallel launches', a
     );
 
   const first = launch('npm:first', cancelFirst);
-  const second = launch('npm:second', cancelSecond);
 
   await firstStarted.promise;
+  const second = launch('npm:second', cancelSecond);
 
   await vi.waitFor(() => {
     expect(queued).toBe(2);

@@ -1,3 +1,4 @@
+import { mkdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,6 +7,7 @@ import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-codin
 import type { PackageManager, ResolvedPaths } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../../errors.js';
+import { withFileLock } from '../../../fileLock/fileLock.js';
 import type { Loadout } from '../types.js';
 import { isLocalPackage, packagesToLoad } from '../workerPackages.js';
 
@@ -89,63 +91,42 @@ const untilAborted = <Value>(
   });
 };
 
-// Pi installs every -e package into one temporary folder per agent directory, without a lock, so
-// parallel launches take turns. A turn passes only when the install settles, even after its
-// launch stopped waiting, because Pi keeps installing.
-export class InstallQueue {
-  private readonly tails = new Map<string, Promise<void>>();
+const withInstallLock = async <Value>(
+  target: { source: string; agentDirectory: string },
+  install: () => Promise<Value>,
+  signal: AbortSignal,
+): Promise<Value> => {
+  const temporaryFolder = join(target.agentDirectory, 'tmp', 'extensions');
 
-  async run<Value>(
-    agentDirectory: string,
-    start: () => Promise<Value>,
-    signal: AbortSignal,
-    source: string,
-  ): Promise<Value> {
-    const previous = this.tails.get(agentDirectory) ?? Promise.resolve();
-    const turn = Promise.withResolvers<undefined>();
+  await mkdir(temporaryFolder, { recursive: true, mode: 0o700 });
+  const cache = await realpath(temporaryFolder);
 
-    const release = () => {
-      turn.resolve(undefined);
-    };
-
-    this.tails.set(agentDirectory, turn.promise);
-
-    try {
-      await untilAborted(previous, signal, source);
-    } catch (error) {
-      void previous.then(release, release);
-
-      throw error;
-    }
-
-    // A queued launch can stop in the same tick its turn comes.
-    if (signal.aborted) {
-      release();
-
-      throw new InstallStoppedError(source, signal);
-    }
-
-    const installing = Promise.resolve().then(start);
-
-    void installing.then(release, release);
-
-    return untilAborted(installing, signal, source);
-  }
-}
+  return withFileLock(
+    {
+      lockPath: join(cache, '.tau-install.lock'),
+      checkout: target.agentDirectory,
+      signal,
+      pollMilliseconds: 25,
+      onWaiting: () => undefined,
+      cancelled: () => new InstallStoppedError(target.source, signal),
+    },
+    install,
+  );
+};
 
 const installPackage = async (
   manager: WorkerPackageManager,
   target: { source: string; agentDirectory: string },
-  queue: InstallQueue,
   signal: AbortSignal,
 ): Promise<void> => {
-  const { source, agentDirectory } = target;
+  const { source } = target;
   let paths: ResolvedPaths;
 
   const install = () => manager.resolveExtensionSources([source], { temporary: true });
 
   try {
-    paths = await queue.run(agentDirectory, install, signal, source);
+    // Only the caller's wait is cancelled. The lock stays held until Pi's install settles.
+    paths = await untilAborted(withInstallLock(target, install, signal), signal, source);
   } catch (error) {
     if (error instanceof InstallStoppedError) {
       throw error;
@@ -169,7 +150,6 @@ const installPackage = async (
 export const installWorkerPackages = async (
   loadout: Loadout,
   packageManager: (loadout: Loadout) => WorkerPackageManager,
-  queue: InstallQueue,
   signal: AbortSignal,
 ): Promise<string[]> => {
   if (loadout.packages.length === 0) {
@@ -189,12 +169,7 @@ export const installWorkerPackages = async (
 
   for (const source of sources) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- One install at a time, so a failure names its package and skips the rest.
-    await installPackage(
-      manager,
-      { source, agentDirectory: loadout.agentDirectory },
-      queue,
-      signal,
-    );
+    await installPackage(manager, { source, agentDirectory: loadout.agentDirectory }, signal);
   }
 
   return sources;
