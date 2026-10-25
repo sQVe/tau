@@ -71,7 +71,10 @@ needs a model passed on the launch, `profiles.<name>.model` for its profile, or
 
 A profile can set `route`: a question, a `classifier` model, and two labels. Tau asks the classifier
 which label fits the brief and saves the model it would pick. `classifier` is a `provider/model-id`
-and must pass `allowedModels`. A route without `classifier` is off, and the worker runs on `model`:
+and must pass `allowedModels`. A route without `classifier` is off, and the worker runs on `model`.
+
+The route's `confidence` is the lowest classifier confidence from 0 to 1 that counts as a pick. A
+pick below it falls back to `model`. Without `confidence`, the cutoff is 0.7:
 
 ```json
 {
@@ -81,6 +84,7 @@ and must pass `allowedModels`. A route without `classifier` is off, and the work
       "route": {
         "classifier": "my-provider/my-classifier",
         "question": "How wide is this scout brief?",
+        "confidence": 0.5,
         "labels": {
           "narrow": {
             "criterion": "A lookup about known code.",

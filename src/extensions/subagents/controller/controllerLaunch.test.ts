@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 
 import { acceptReport, readTask, recordEvent } from '../records.js';
+import { taskVersion } from '../types.js';
 import { WorkerController } from './controller.js';
 import { setup } from './fixtures/controllerFixture.js';
 import { RequestNotSentError, workerArguments } from './inspect.js';
@@ -35,7 +36,7 @@ it('saves a launched Pi task in the current record format', async ({ onTestFinis
   const launched = await fixture.controller.launch(fixture.input);
 
   expect(JSON.parse(readFileSync(join(launched.directory, 'task.json'), 'utf8'))).toMatchObject({
-    version: 11,
+    version: taskVersion,
   });
 });
 

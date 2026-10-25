@@ -100,35 +100,56 @@ const taskProperties = {
 };
 
 // Bump for any change to the saved fields, including a new optional field.
-export const taskVersion = 11;
+export const taskVersion = 12;
 
 export const oldestReadableTaskVersion = 11;
 
+const routingWithoutConfidenceCutoffTaskVersion = 11;
+
+const routingFields = {
+  shadowPick: text,
+  label: Type.Optional(text),
+  confidence: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+  fallbackReason: Type.Optional(
+    StringEnum(['lowConfidence', 'error', 'timeout', 'noRoute', 'unknownLabel']),
+  ),
+  canary: Type.Boolean(),
+  ticketSent: Type.Boolean(),
+};
+
+const routingWithoutConfidenceCutoffSchema = Type.Object(routingFields, {
+  additionalProperties: false,
+});
+
 const routingSchema = Type.Object(
   {
-    shadowPick: text,
-    label: Type.Optional(text),
-    confidence: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
-    fallbackReason: Type.Optional(
-      StringEnum(['lowConfidence', 'error', 'timeout', 'noRoute', 'unknownLabel']),
-    ),
-    canary: Type.Boolean(),
-    ticketSent: Type.Boolean(),
+    ...routingFields,
+    confidenceCutoff: Type.Number({ minimum: 0, maximum: 1 }),
   },
   { additionalProperties: false },
 );
 
-export const taskSchema = Type.Object(
-  {
-    ...taskProperties,
-    nativeSessionId: text,
-    nativeSessionFile: text,
-    loadout: loadoutSchema,
-    version: Type.Literal(taskVersion),
-    routing: Type.Optional(routingSchema),
-  },
-  { additionalProperties: false },
-);
+const taskFields = {
+  ...taskProperties,
+  nativeSessionId: text,
+  nativeSessionFile: text,
+  loadout: loadoutSchema,
+};
+
+export const taskSchema = Type.Union([
+  Type.Object(
+    {
+      ...taskFields,
+      version: Type.Literal(routingWithoutConfidenceCutoffTaskVersion),
+      routing: Type.Optional(routingWithoutConfidenceCutoffSchema),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    { ...taskFields, version: Type.Literal(taskVersion), routing: Type.Optional(routingSchema) },
+    { additionalProperties: false },
+  ),
+]);
 
 // Version 2: the Pi worker is its pane's own process, so shellPid equals processId.
 export const ownedWorkerSchema = Type.Object(

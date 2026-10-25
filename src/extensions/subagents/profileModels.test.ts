@@ -2,6 +2,7 @@ import { expect, it, vi } from 'vitest';
 
 import { temporaryTauConfig } from '../../../tests/tauConfigHarness.js';
 import { readAllowedModels } from '../../config/models.js';
+import { defaultRouteConfidence } from './modelRoutes.js';
 import { readProfileModel, readProfileModels, readProfileRoute } from './profileModels.js';
 
 const uiFixture = () => ({ notify: vi.fn<(message: string, level?: string) => void>() });
@@ -115,6 +116,7 @@ it('reads a profile route and keeps the profile model', ({ onTestFinished }) => 
     question: scoutRoute.question,
     labels: new Map(Object.entries(scoutRoute.labels)),
     canary: 0,
+    confidence: defaultRouteConfidence,
   });
 
   expect(readProfileRoute(location, 'plain', uiFixture())).toBeUndefined();
@@ -134,30 +136,100 @@ it.for<[number, number]>([
   expect(readProfileRoute(location, 'scout', uiFixture())?.canary).toBe(expected);
 });
 
-it.for<[string, unknown, string]>([
-  ['a text canary', { ...scoutRoute, canary: '0.5' }, 'must be a number from 0 to 1'],
-  ['a null canary', { ...scoutRoute, canary: null }, 'must be a number from 0 to 1'],
-  ['a canary above 1', { ...scoutRoute, canary: 1.5 }, 'outside the range 0 to 1'],
-  ['a negative canary', { ...scoutRoute, canary: -0.1 }, 'outside the range 0 to 1'],
-])('turns routing off for %s with its own message', ([, routes, message], { onTestFinished }) => {
-  const { location, userFile, writeUser } = temporaryTauConfig(
-    onTestFinished,
-    'tau-profile-models-',
-  );
+it.for<[number, number]>([
+  [0, 0],
+  [0.5, 0.5],
+  [1, 1],
+])('reads a route confidence cutoff of %s', ([confidence, expected], { onTestFinished }) => {
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
 
-  writeUser({ profiles: { scout: { model: 'a/scout', route: routes } } });
+  writeUser({
+    profiles: { scout: { model: 'a/scout', route: { ...scoutRoute, confidence } } },
+  });
+
+  expect(readProfileRoute(location, 'scout', uiFixture())?.confidence).toBe(expected);
+});
+
+it.for<[string, string, unknown, string]>([
+  ['a text canary', 'canary', '0.5', 'must be a number from 0 to 1'],
+  ['a null canary', 'canary', null, 'must be a number from 0 to 1'],
+  ['a canary above 1', 'canary', 1.5, 'outside the range 0 to 1'],
+  ['a negative canary', 'canary', -0.1, 'outside the range 0 to 1'],
+  ['a text confidence', 'confidence', '0.5', 'must be a number from 0 to 1'],
+  ['a null confidence', 'confidence', null, 'must be a number from 0 to 1'],
+  ['a confidence above 1', 'confidence', 1.5, 'outside the range 0 to 1'],
+  ['a negative confidence', 'confidence', -0.1, 'outside the range 0 to 1'],
+])(
+  'turns routing off for %s with its own message',
+  ([, key, value, message], { onTestFinished }) => {
+    const { location, userFile, writeUser } = temporaryTauConfig(
+      onTestFinished,
+      'tau-profile-models-',
+    );
+
+    writeUser({
+      profiles: { scout: { model: 'a/scout', route: { ...scoutRoute, [key]: value } } },
+    });
+
+    const ui = uiFixture();
+
+    expect(readProfileRoute(location, 'scout', ui)).toBeUndefined();
+    expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining(userFile), 'error');
+
+    expect(ui.notify).toHaveBeenCalledWith(
+      expect.stringContaining(`profiles.scout.route.${key}`),
+      'error',
+    );
+
+    expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining(message), 'error');
+  },
+);
+
+it('turns routing off for a NaN confidence and names the field', ({ onTestFinished }) => {
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
+
+  writeUser({});
+
+  const parsed = vi.spyOn(JSON, 'parse').mockReturnValue({
+    profiles: {
+      scout: { model: 'a/scout', route: { ...scoutRoute, confidence: Number.NaN } },
+    },
+  });
+
+  onTestFinished(() => {
+    parsed.mockRestore();
+  });
 
   const ui = uiFixture();
 
   expect(readProfileRoute(location, 'scout', ui)).toBeUndefined();
-  expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining(userFile), 'error');
 
   expect(ui.notify).toHaveBeenCalledWith(
-    expect.stringContaining('profiles.scout.route.canary'),
+    expect.stringContaining('profiles.scout.route.confidence'),
     'error',
   );
 
-  expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining(message), 'error');
+  expect(ui.notify).toHaveBeenCalledWith(
+    expect.stringContaining('must be a number from 0 to 1'),
+    'error',
+  );
+});
+
+it('turns routing off for only the profile with a bad confidence cutoff', ({ onTestFinished }) => {
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
+
+  writeUser({
+    profiles: {
+      scout: { model: 'a/scout', route: { ...scoutRoute, confidence: 2 } },
+      worker: { model: 'a/worker', route: scoutRoute },
+    },
+  });
+
+  const ui = uiFixture();
+
+  expect(readProfileRoute(location, 'scout', ui)).toBeUndefined();
+  expect(readProfileRoute(location, 'worker', ui)?.confidence).toBe(defaultRouteConfidence);
+  expect(readProfileModel(location, 'scout', ui)).toBe('a/scout');
 });
 
 it.for<[string, unknown, string]>([
