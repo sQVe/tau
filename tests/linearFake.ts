@@ -188,7 +188,6 @@ export const createLinearFake = (): LinearFake => {
 
   const team = (id: string) => [...teams.values()].find((candidate) => candidate.id === id)!;
 
-  // Returns only the attachments and relations within their limits, and reports a next page for each.
   const pagedNode = (node: ReturnType<typeof childNode>) => {
     const attachments = node.attachments.nodes;
     const relations = node.inverseRelations.nodes;
@@ -516,11 +515,9 @@ export const createLinearFake = (): LinearFake => {
     limitChildren: (count: number): void => {
       childLimit = count;
     },
-    // Returns only this many attachments of each issue and reports a next page.
     limitAttachments: (count: number): void => {
       attachmentLimit = count;
     },
-    // Returns only this many relations of each issue and reports a next page.
     limitRelations: (count: number): void => {
       relationLimit = count;
     },

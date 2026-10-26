@@ -163,7 +163,6 @@ export const readContainer = async (
 
   const hasAnotherPage = connections.some((connection) => connection.pageInfo.hasNextPage);
 
-  // A list with more pages could hide the child or the attachment that a write depends on.
   if (hasAnotherPage) {
     throw new Error(
       `${identifier} has more than one Linear page of children, attachments, or relations, so a write could be planned from a partial list. Nothing was written.`,

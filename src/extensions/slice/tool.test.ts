@@ -1303,7 +1303,6 @@ describe('slice tool draft directory', () => {
   );
 });
 
-// Sets up a container with two children, and a draft with one slice titled like the second child.
 const setUpContainerWithChildren = async (sliceIdentifier: string | null) => {
   const setup = await setUp();
 
