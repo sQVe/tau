@@ -17,11 +17,14 @@ slows the animation of every loader.
 ## Decision
 
 Tau replaces `Loader.prototype.restartAnimation` from `@earendil-works/pi-tui` so it stops any
-running animation and schedules none. It also replaces `Loader.prototype.getRenderedIndicator` so it
-returns an empty string, because a spinner that does not spin looks stalled. Each loader keeps its
-message, so a waiting session still shows that it works. The patch applies to every loader in the
-process, including loaders that Pi creates, because Pi's compiled binary resolves the import to its
-own copy of the package.
+running animation and schedules none. It also replaces `Loader.prototype.updateDisplay` so a loader
+line shows only its message, with no indicator, because a spinner that does not spin looks stalled.
+It replaces `Loader.prototype.getRenderedIndicator` so it returns a static `●` in the spinner color,
+or verbatim when the loader sets its own indicator. Pi draws only that indicator when an editor
+border is too narrow for the message, so the static dot keeps that border marked. Each loader keeps
+its message, so a waiting session still shows that it works. The patch applies to every loader in
+the process, including loaders that Pi creates, because Pi's compiled binary resolves the import to
+its own copy of the package.
 
 Drop the patch when Pi offers a static or slower indicator for all loaders, or stops laying out the
 whole transcript for a spinner frame.
@@ -35,11 +38,11 @@ whole transcript for a spinner frame.
 
 ### Negative
 
-- Tau changes two private methods of a Pi class. A Pi release that renames or reworks it can break
-  the patch without a type error.
+- Tau changes three methods of a Pi class that Pi declares private or protected. A Pi release that
+  renames or reworks them can break the patch without a type error.
 - No loader animates, so a stalled session and a working one look alike until the message changes.
-- When Pi embeds the working status in a narrow editor border, it falls back to the spinner alone,
-  which is now empty.
+- When Pi embeds the working status in a narrow editor border, the only working marker is a static
+  dot. It does not animate and does not name the state.
 
 ## Alternatives considered
 
