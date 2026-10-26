@@ -40,10 +40,29 @@ workers a full run uses.
 ### Environment
 
 Each project task lists every environment variable whose value can change a test result, such as
-`CI`, `PATH`, `HOME`, the temporary directory variables, and `TAU_COLLECTION_TIMEOUT_MS`. A change
-to one of them reruns the task. The list leaves out the herdr, Pi, Tau worker, and Git variables.
-The tests set those themselves, and they differ per pane or Git hook. A test fails when test code
-reads a variable that is neither listed nor known to be set by the tests.
+`CI`, `HOME`, the temporary directory variables, and `TAU_COLLECTION_TIMEOUT_MS`. A change to one of
+them reruns the task. The list leaves out the herdr, Pi, Tau worker, and Git variables. The tests
+set those themselves, and they differ per pane or Git hook. A test fails when test code reads a
+variable that is neither listed nor known to be set by the tests.
+
+`PATH` works differently. Vite+ does not track files outside the workspace, so a fingerprint of the
+`PATH` text cannot see a change to the file `node` or `pnpm` resolves to. `pnpm check` runs
+`scripts/runTestProjects.ts`, which passes a SHA-256 digest of the file each `PATH` command resolves
+to. The tasks fingerprint that digest in place of `PATH`.
+
+A reorder or a duplicate directory leaves the digest the same only while every command still
+resolves to the same file. A new command name, or a different file for an existing name, changes it.
+A file counts only when the caller can execute it, as checked by `accessSync` with `X_OK`. A
+directory does not count. A shadowed executable, one that an earlier directory hides, does not count
+either, so a change to it leaves the digest the same. A change to the file a command resolves to
+changes the digest, including a change to its size or modification time.
+
+When a `PATH` directory exists but cannot be listed, the script cannot know its commands. It passes
+a random value in place of the digest, so every project runs, and it prints one line to stderr that
+names the directory.
+
+A task run outside `pnpm check`, such as `vp run vitest:core`, has no digest, so it fingerprints the
+raw `PATH` text.
 
 ## Consequences
 
@@ -62,6 +81,14 @@ reads a variable that is neither listed nor known to be set by the tests.
 - Adding or removing any file under `src/` reruns the projects that list those directories.
 - The environment test sees only direct reads in test code. A variable read inside a dependency or a
   child process must be added to the list by hand.
+- Each `pnpm check` reads every `PATH` directory and checks each entry before the tasks start.
+- Adding or removing a command name on `PATH`, or changing the file a command resolves to, reruns
+  every project, even one that no test reads. A new command misses the cache even when it shadows
+  nothing.
+- A `PATH` directory that cannot be listed, such as one with execute but no read permission, makes
+  every check run every project.
+- A check that does not run through `pnpm check` misses the cache after a `PATH` reorder or
+  duplicate, because it fingerprints the raw `PATH` text.
 - An aborted check can leave Vite+ runtime files in the repository root, which make the next check
   rerun the projects that list the root.
 

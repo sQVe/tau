@@ -56,8 +56,9 @@ const workersPerProject = 3;
 
 // Variables that tests, fixtures, the watchdog, or the code under test read to decide a result.
 // Tasks run in a clean environment that keeps only these and the Vite+ defaults. Only a change to
-// these misses the cache. PATH, HOME, and NODE_OPTIONS are listed because file tracking cannot
-// see a directory removed from PATH or a different home directory that has no earlier reads.
+// these misses the cache. PATH is fingerprinted as the commands it resolves to, see taskEnvironment.
+// HOME and NODE_OPTIONS are listed because file tracking cannot see a different home directory
+// that has no earlier reads.
 // Leave out herdr, Pi, Tau worker, and Git variables. Tests set those themselves, and they
 // differ per pane or Git hook, so passing them would leak the shell and miss the cache.
 export const testEnvironment = [
@@ -80,6 +81,13 @@ export const testEnvironment = [
 // them before reading, or this file sets or deletes them before the workers start.
 export const testManagedEnvironment = ['PI_CODING_AGENT_DIR', 'TAU_WORKER_RECORD'];
 
+// When pnpm check sets TAU_PATH_COMMANDS, the digest of the commands PATH resolves to stands in for
+// PATH, so a reordered PATH keeps the cache. Vite+ still passes PATH to the tests.
+// oxlint-disable-next-line node/no-process-env -- The fingerprint depends on the caller's environment.
+const pathVariable = process.env.TAU_PATH_COMMANDS === undefined ? 'PATH' : 'TAU_PATH_COMMANDS';
+
+const taskEnvironment = testEnvironment.map((name) => (name === 'PATH' ? pathVariable : name));
+
 const projectTasks = Object.fromEntries(
   testProjects.map(({ name }) => [
     `vitest:${name}`,
@@ -87,7 +95,7 @@ const projectTasks = Object.fromEntries(
       command: `vp test run --project ${name} --maxWorkers ${workersPerProject}`,
       // Nothing needs restoring, and Vitest rewrites its own result cache on every run.
       output: [],
-      env: testEnvironment,
+      env: taskEnvironment,
       // Tests ignore .tau/, but full_check writes a new log there on every run.
       input: [{ auto: true }, '!node_modules/.vite/**', '!.tau/**'],
     },
