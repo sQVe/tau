@@ -1,10 +1,8 @@
 # ADR 0094: Compose PR publication evidence
 
 **Date**: 2026-10-06\
-**Status**: Accepted; the full check identity superseded by
-[ADR 0124 (Key full check reuse by tree content and command)](./0124-key-full-check-reuse-by-tree-content.md)\
-**Related**:
-[ADR 0091 (Return review evidence from the code_review tool)](./0091-return-review-evidence-from-the-code-review-tool.md)
+**Status**: Accepted\
+**Related**: [ADR 0091 (Return review evidence from the code_review tool)](./0091-return-review-evidence-from-the-code-review-tool.md)
 
 ## Context
 
@@ -27,10 +25,10 @@ publication verdict. The action inherits the target reader's base fetch and the 
 freshness recapture. It writes no other worktree files.
 
 The full check has one identity, the saved record that `full_check` writes next to its log in
-`.tau/checks` (see ADR 0105). The action reads the record for the current head, the merge base, and
-the working tree changes, and returns `fullCheck` as passed, failed, missing, or malformed. It does
-not compare the command, since it does not read the full check config. Failed, missing, and
-malformed records become gaps. Other checks carry header lines.
+`.tau/checks` (see ADR 0105). The action reads the newest record for the tree ID of the working
+state, and returns `fullCheck` as passed, failed, missing, or malformed. It reads the configured
+full check command and reports `missing` when no command is configured or the record ran another
+one. Failed, missing, and malformed records become gaps. Other checks carry header lines.
 
 Check logs for other checks carry three initial header lines: `HEAD: <sha>`, `Status: <hash>`, and
 `Diff: <hash>`. Status and diff hashes use SHA-256 over the exact output bytes of
