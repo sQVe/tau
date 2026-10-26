@@ -42,7 +42,6 @@ export class SessionTaskIndex {
   private readonly clock: () => number;
   private readonly classified = new Set<string>();
   private readonly pending = new Map<string, number>();
-  private readonly abandoned = new Set<string>();
   private listed: RootListing | undefined;
   private readonly sessions = new Map<string, Set<string>>();
 
@@ -75,9 +74,7 @@ export class SessionTaskIndex {
 
     this.pending.delete(taskId);
 
-    if (discovery.kind === 'abandoned') {
-      this.abandoned.add(taskId);
-    } else if (discovery.kind !== 'gone') {
+    if (discovery.kind !== 'gone') {
       this.classified.add(taskId);
     }
 
@@ -92,20 +89,19 @@ export class SessionTaskIndex {
         this.classify(taskId, now);
       } else {
         this.pending.delete(taskId);
-        this.abandoned.add(taskId);
+        this.classified.add(taskId);
       }
     }
   }
 
   private prune(names: ReadonlySet<string>): void {
-    for (const taskId of [...this.classified, ...this.pending.keys(), ...this.abandoned]) {
+    for (const taskId of [...this.classified, ...this.pending.keys()]) {
       if (names.has(taskId)) {
         continue;
       }
 
       this.classified.delete(taskId);
       this.pending.delete(taskId);
-      this.abandoned.delete(taskId);
 
       for (const identities of this.sessions.values()) {
         identities.delete(taskId);
@@ -114,7 +110,7 @@ export class SessionTaskIndex {
   }
 
   private seen(taskId: string): boolean {
-    return this.classified.has(taskId) || this.pending.has(taskId) || this.abandoned.has(taskId);
+    return this.classified.has(taskId) || this.pending.has(taskId);
   }
 
   private refresh(): void {
