@@ -1,6 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { mkdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { PackageManager, ResolvedPaths } from '@earendil-works/pi-coding-agent';
@@ -9,6 +10,11 @@ import { errorMessage } from '../../../errors.js';
 import { withFileLock } from '../../../fileLock/fileLock.js';
 import type { Loadout } from '../types.js';
 import { isLocalPackage, packagesToLoad } from '../workerPackages.js';
+import {
+  removeSnapshotDirectory,
+  snapshotDirectoryFor,
+  snapshotPackageRoot,
+} from './packageSnapshot.js';
 import type { WorkerPackage } from './types.js';
 
 export type WorkerPackageManager = Pick<
@@ -107,52 +113,94 @@ const withInstallLock = async <Value>(
 
 const installPackage = async (
   manager: WorkerPackageManager,
-  target: { source: string; agentDirectory: string },
+  target: { source: string; agentDirectory: string; snapshotDirectory: string },
   signal: AbortSignal,
 ): Promise<WorkerPackage> => {
-  const { source } = target;
-  let paths: ResolvedPaths;
+  const { source, agentDirectory, snapshotDirectory } = target;
 
-  const install = () => manager.resolveExtensionSources([source], { temporary: true });
+  const install = async (): Promise<WorkerPackage> => {
+    let paths: ResolvedPaths;
+
+    try {
+      paths = await manager.resolveExtensionSources([source], { temporary: true });
+    } catch (error) {
+      throw new Error(
+        `Worker profile package ${source} failed to install: ${errorMessage(error)}`,
+        {
+          cause: error,
+        },
+      );
+    }
+
+    // Pi skips a missing local path, and an npm or git install while offline, without an error.
+    if (!hasResources(paths)) {
+      throw new Error(
+        `Worker profile package ${source} is missing or has no Pi resources; check the source and that Pi is online.`,
+      );
+    }
+
+    if (isLocalPackage(source)) {
+      return { source, path: source };
+    }
+
+    const path = packageRoot(paths);
+
+    if (path === undefined) {
+      throw new Error(
+        `Worker profile package ${source} installed without a package root; check the source.`,
+      );
+    }
+
+    const snapshot = await snapshotPackageRoot({
+      agentDirectory,
+      source,
+      packageRoot: path,
+      snapshotDirectory,
+    });
+
+    return { source, path: snapshot };
+  };
+
+  const work = withInstallLock(target, install, signal);
+
+  const cleanup = {
+    agentDirectory,
+    directory: snapshotDirectory,
+    snapshotName: basename(snapshotDirectory),
+  };
 
   try {
-    paths = await untilAborted(withInstallLock(target, install, signal), signal, source);
+    return await untilAborted(work, signal, source);
   } catch (error) {
     if (error instanceof InstallStoppedError) {
+      // An abandoned install may still copy. Remove the snapshot only after the copy settles.
+      void work
+        .finally(() => {
+          removeSnapshotDirectory(cleanup).catch(() => undefined);
+        })
+        .catch(() => undefined);
+
       throw error;
     }
 
-    throw new Error(`Worker profile package ${source} failed to install: ${errorMessage(error)}`, {
-      cause: error,
-    });
+    const cleanupError = await removeSnapshotDirectory(cleanup);
+
+    if (cleanupError !== undefined) {
+      throw new Error(
+        `${errorMessage(error)} Also failed to remove the launch package snapshot: ${cleanupError}`,
+        { cause: error },
+      );
+    }
+
+    throw error;
   }
-
-  // Pi skips a missing local path, and an npm or git install while offline, without an error.
-  if (!hasResources(paths)) {
-    throw new Error(
-      `Worker profile package ${source} is missing or has no Pi resources; check the source and that Pi is online.`,
-    );
-  }
-
-  if (isLocalPackage(source)) {
-    return { source, path: source };
-  }
-
-  const path = packageRoot(paths);
-
-  if (path === undefined) {
-    throw new Error(
-      `Worker profile package ${source} installed without a package root; check the source.`,
-    );
-  }
-
-  return { source, path };
 };
 
 export const installWorkerPackages = async (
   loadout: Loadout,
   packageManager: (loadout: Loadout) => WorkerPackageManager,
   signal: AbortSignal,
+  snapshotDirectory = snapshotDirectoryFor(loadout.agentDirectory, randomUUID()),
 ): Promise<WorkerPackage[]> => {
   if (loadout.packages.length === 0) {
     return [];
@@ -174,7 +222,7 @@ export const installWorkerPackages = async (
     // oxlint-disable-next-line eslint/no-await-in-loop -- One install at a time, so a failure names its package and skips the rest.
     const installed = await installPackage(
       manager,
-      { source, agentDirectory: loadout.agentDirectory },
+      { source, agentDirectory: loadout.agentDirectory, snapshotDirectory },
       signal,
     );
 

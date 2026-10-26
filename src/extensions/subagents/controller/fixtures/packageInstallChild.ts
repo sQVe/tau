@@ -6,6 +6,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { fixtureLoadout } from '../../fixtures/loadout.js';
 import { installWorkerPackages } from '../packageInstall.js';
 import { observeInstallLockRead } from './installLockRead.js';
+import { fakePackageRoot, writeFakePackage } from './packageCache.js';
 
 const [agentDirectory, record, name, observation, release] = process.argv.slice(2) as [
   string,
@@ -36,6 +37,8 @@ await installWorkerPackages(
       appendFileSync(record, `end ${name}\n`);
       const source = sources[0]!;
 
+      writeFakePackage(agentDirectory, source);
+
       return {
         extensions: [
           {
@@ -45,7 +48,7 @@ await installWorkerPackages(
               source,
               scope: 'temporary',
               origin: 'package',
-              packageRoot: `/installed/${source}`,
+              packageRoot: fakePackageRoot(agentDirectory, source),
             },
           },
         ],

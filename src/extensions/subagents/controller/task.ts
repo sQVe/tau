@@ -1,3 +1,5 @@
+import { basename } from 'node:path';
+
 import { parseModelReference } from '../../../config/models.js';
 import { resolveTerminal, text } from '../../../herdr.js';
 import type { TerminalCall } from '../../../herdr.js';
@@ -18,6 +20,7 @@ import type { Task } from '../types.js';
 import { remainingCleanupBudget, remainingWorkBudget, renameBudget, workBudget } from './budget.js';
 import { inspectWorker, waitForPiIdentity, waitForWorkerReadiness } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
+import { removeSnapshotDirectory, snapshotDirectoryFor } from './packageSnapshot.js';
 import { handleRecovery, readOwnedWorker, taskStatus } from './record.js';
 import { WorkerExitedError } from './shellIdentity.js';
 import { stopPiWorker } from './stop.js';
@@ -31,6 +34,7 @@ export interface ReplyReceipt {
 
 // What one worker needs from the coordinator. One context is shared by every task.
 export interface TaskContext {
+  agentDirectory: string;
   client: HerdrClient;
   notify: (notice: WorkerNotice) => void;
   placement: WorkerPlacement;
@@ -381,6 +385,18 @@ export class TaskController {
 
     handle.removeLaunchAbort?.();
     handle.abort.abort();
+    const directoryId = basename(handle.directory);
+
+    if (handle.task.taskId !== directoryId) {
+      handle.cleanup.recordErrors.push(
+        'Saved task ID does not match its task directory. Cleanup refused.',
+      );
+
+      this.context.release(directoryId);
+      handle.cleanup.stopping = Promise.resolve();
+
+      return handle.cleanup.stopping;
+    }
 
     try {
       if (readEvent(handle.directory, handle.task.taskId, 'stopping') === undefined) {
@@ -401,6 +417,10 @@ export class TaskController {
       try {
         stopped = await this.cleanup(reason, failureDetail);
       } finally {
+        if (stopped && handle.task.loadout.packages.length > 0) {
+          await this.removePackageSnapshot();
+        }
+
         // A failed notice must not hide a confirmed stop.
         this.context.release(handle.task.taskId);
 
@@ -432,6 +452,21 @@ export class TaskController {
     });
 
     return handle.cleanup.stopping;
+  }
+
+  private async removePackageSnapshot(): Promise<void> {
+    const { task } = this.handle;
+    const snapshotDirectory = snapshotDirectoryFor(task.loadout.agentDirectory, task.taskId);
+
+    const cleanupError = await removeSnapshotDirectory({
+      agentDirectory: this.context.agentDirectory,
+      directory: snapshotDirectory,
+      snapshotName: basename(this.handle.directory),
+    });
+
+    if (cleanupError !== undefined) {
+      this.handle.cleanup.recordErrors.push(cleanupError);
+    }
   }
 
   // Resolves whether the worker's pane is confirmed stopped.

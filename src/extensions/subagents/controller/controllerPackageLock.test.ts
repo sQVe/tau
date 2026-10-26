@@ -5,6 +5,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import { WorkerController } from './controller.js';
 import { setup } from './fixtures/controllerFixture.js';
 import { observeInstallLockRead } from './fixtures/installLockRead.js';
+import { fakePackageRoot, writeFakePackage } from './fixtures/packageCache.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 
 vi.mock(import('node:fs/promises'), { spy: true });
@@ -19,7 +20,7 @@ const sharedControllers = async (cancelled: boolean) => {
   let mostRunning = 0;
   const windows: string[] = [];
 
-  const manager = (): WorkerPackageManager => ({
+  const manager = (workerLoadout: { agentDirectory: string }): WorkerPackageManager => ({
     listConfiguredPackages: () => [],
     resolveExtensionSources: async (sources) => {
       const source = sources[0]!;
@@ -34,6 +35,7 @@ const sharedControllers = async (cancelled: boolean) => {
         contender.resolve('overlap');
       }
 
+      writeFakePackage(workerLoadout.agentDirectory, source);
       windows.push(`end ${source}`);
       running -= 1;
 
@@ -46,7 +48,7 @@ const sharedControllers = async (cancelled: boolean) => {
               source,
               scope: 'temporary',
               origin: 'package',
-              packageRoot: `/installed/${source}`,
+              packageRoot: fakePackageRoot(workerLoadout.agentDirectory, source),
             },
           },
         ],
