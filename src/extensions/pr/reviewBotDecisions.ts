@@ -4,7 +4,6 @@ export type ReviewBotStatus = 'request' | 'reviewed' | 'requested';
 
 export interface ReviewBotFacts {
   bots: ReviewBot[];
-  // Milliseconds since the epoch.
   headCommittedAt: number;
   // When GitHub created the earliest check suite of the head, if it created any.
   headCheckSuiteAt?: number | undefined;
