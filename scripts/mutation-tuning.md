@@ -337,10 +337,12 @@ Settings kept as they are:
   8 timed-out mutants in each of the runs that reached the mutation phase, at load averages from 10
   to 64. The count is the same at different loads, so the mutants cause the timeouts, probably
   loops, and the load does not. Stryker counts a timeout as detected, so the value stays.
-- `fileLogLevel`: `info`. The log goes to `stryker.log`, which Git ignores.
+- `fileLogLevel`: `off`. A `stryker.log` file in the repository root makes `pnpm check` rerun the
+  test projects that list the root.
 - `ignorePatterns`: `.tau`, `docs`, `CHANGELOG.md`. They keep Stryker from copying files that the
   tests do not need into the sandbox.
-- `tempDirName` and `cleanTempDir`: `.stryker-tmp` and `true`. Git ignores the folder, and the
+- `tempDirName` and `cleanTempDir`: `.tau/stryker-tmp` and `true`. A folder in the repository root
+  would make `pnpm check` rerun the test projects that list the root. Git ignores `.tau/`, and the
   sandbox is removed after a run.
 
 ## Rerun with the final config

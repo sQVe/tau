@@ -45,6 +45,13 @@ to one of them reruns the task. The list leaves out the herdr, Pi, Tau worker, a
 The tests set those themselves, and they differ per pane or Git hook. A test fails when test code
 reads a variable that is neither listed nor known to be set by the tests.
 
+### Repository root
+
+Vite+ records the directory listings a task reads, and input globs do not remove them. Some projects
+list the repository root, so a new entry there reruns them. Tools that `pnpm check` and the mutation
+check run keep their temporary files and logs out of the root, for example under `.tau/`. Stryker
+writes no log file and keeps its sandbox in `.tau/stryker-tmp`.
+
 ## Consequences
 
 ### Positive
