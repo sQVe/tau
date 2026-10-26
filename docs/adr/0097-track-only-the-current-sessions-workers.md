@@ -11,7 +11,8 @@ tool references in
 and [ADR 0087 (Gather evidence with codemode)](./0087-gather-evidence-with-codemode.md), and the
 task record retirement policy in
 [ADR 0058 (Run subagents only as Pi workers)](./0058-run-subagents-only-as-pi-workers.md)\
-**Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md)
+**Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
+[ADR 0123 (Delete stopped worker records 14 days after their last write)](./0123-delete-stopped-worker-records-14-days-after-their-last-write.md)
 
 ## Context
 
@@ -33,8 +34,9 @@ Remove `subagent_history` and the `/subagents` history overlay. Keep the passive
 compaction, the worker list points only to `subagent_status` for reports.
 
 Read only the current task record format. Older versions are retired and skipped without blocking
-other tasks. Do not upgrade, rewrite, or delete them. This keeps the reader's policy independent of
-old worker kinds and loadout shapes. The current worker ownership record format is unchanged.
+other tasks. Do not upgrade or rewrite them. They expire under the retention rule of ADR 0123, like
+current records. This keeps the reader's policy independent of old worker kinds and loadout shapes.
+The current worker ownership record format is unchanged.
 
 ## Consequences
 
@@ -49,7 +51,7 @@ old worker kinds and loadout shapes. The current worker ownership record format 
 - A manager cannot find or follow up workers from another session, including a related fork.
 - A manager that loses a stopped worker's task ID must recover it from its session evidence.
 - Tasks saved in older formats cannot be reattached or controlled through Tau. Their files remain on
-  disk, and any live panes need manual inspection.
+  disk until they expire, and any live panes need manual inspection.
 
 ## Alternatives considered
 

@@ -1,5 +1,5 @@
-import { existsSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, utimesSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 import type {
   ExtensionContext,
@@ -660,5 +660,52 @@ describe('parent widget', () => {
     expect(newSecond).not.toBe(newWidth);
     expect(invalidated).not.toBe(newSecond);
     expect(invalidated).toStrictEqual(newSecond);
+  });
+});
+
+describe('worker record retention', () => {
+  it('deletes an expired stopped worker after session start', async () => {
+    const directory = join(workerRecordsDirectory(), 'expired-task');
+    const old = new Date(Date.now() - 15 * 86_400_000);
+
+    const cleanup = {
+      taskId: 'expired-task',
+      kind: 'cleanup',
+      detail: 'Stopped.',
+      stopped: true,
+      at: 1000,
+    };
+
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, 'cleanup.json'), JSON.stringify(cleanup));
+    utimesSync(join(directory, 'cleanup.json'), old, old);
+    utimesSync(directory, old, old);
+
+    const fake = startExtension();
+
+    await emit(fake, 'session_start', {}, sessionContext());
+
+    await vi.waitFor(() => {
+      expect(existsSync(directory)).toBe(false);
+    });
+  });
+
+  it('warns when expired worker records cannot be deleted', async () => {
+    const root = workerRecordsDirectory();
+    const context = sessionContext();
+
+    mkdirSync(dirname(root), { recursive: true });
+    writeFileSync(root, '');
+
+    const fake = startExtension();
+
+    await emit(fake, 'session_start', {}, context);
+
+    await vi.waitFor(() => {
+      expect(context.ui.notify).toHaveBeenCalledWith(
+        expect.stringContaining('Expired worker records could not be deleted'),
+        'warning',
+      );
+    });
   });
 });

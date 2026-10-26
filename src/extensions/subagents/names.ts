@@ -1,17 +1,12 @@
-import { readdirSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { customAlphabet } from 'nanoid';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { isMissingFile } from '../../errors.js';
-import { namePrefix, readTask } from './records.js';
+import { namePrefix } from './records.js';
 import type { Loadout } from './types.js';
 
 export interface NameAllocation {
-  root: string;
-  parentSessionId: string;
+  retained: string[];
   loadout: Loadout;
   live: unknown;
   suffix: () => string;
@@ -28,35 +23,6 @@ const liveAgentsSchema = Type.Array(
   }),
 );
 
-// Names only label tasks, so an unreadable record must not block launches.
-const retainedNames = (root: string, parentSessionId: string): string[] => {
-  let entries;
-
-  try {
-    entries = readdirSync(root, { withFileTypes: true });
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return [];
-    }
-
-    throw error;
-  }
-
-  return entries.flatMap((entry) => {
-    if (!entry.isDirectory()) {
-      return [];
-    }
-
-    try {
-      const task = readTask(join(root, entry.name));
-
-      return task.parentSessionId === parentSessionId && task.name != null ? [task.name] : [];
-    } catch {
-      return [];
-    }
-  });
-};
-
 export const allocateName = (allocation: NameAllocation): string => {
   if (!Value.Check(liveAgentsSchema, allocation.live)) {
     throw new Error('Malformed live agent listing.');
@@ -66,7 +32,7 @@ export const allocateName = (allocation: NameAllocation): string => {
     allocation.live.flatMap((agent) => (agent.name != null ? [agent.name] : [])),
   );
 
-  for (const name of retainedNames(allocation.root, allocation.parentSessionId)) {
+  for (const name of allocation.retained) {
     taken.add(name);
   }
 

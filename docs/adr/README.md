@@ -185,6 +185,7 @@ and the numbers that its status names.
 - [0084: Keep the diagram skill out of worker profiles](./0084-keep-the-diagram-skill-out-of-worker-profiles.md)
 - [0097: Track only the current session's workers](./0097-track-only-the-current-sessions-workers.md)
 - [0102: Require acceptance criteria on editing worker launches](./0102-require-acceptance-criteria-on-editing-worker-launches.md)
+- [0123: Delete stopped worker records 14 days after their last write](./0123-delete-stopped-worker-records-14-days-after-their-last-write.md)
 
 ## Manager sessions
 
