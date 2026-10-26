@@ -3,9 +3,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
+import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 
-import { isMissingFile } from '../../../errors.js';
+import { errorMessage, isMissingFile } from '../../../errors.js';
 import { listTerminals, result } from '../../../herdr.js';
 import type { TerminalCall } from '../../../herdr.js';
 import { loadedSkillToolsSource, skillToolsPath } from '../../../skillTools.js';
@@ -44,8 +45,10 @@ import {
 import type { HerdrClient } from './inspect.js';
 import { checkHandover, nativeReference, requireUnclaimed } from './launchSupport.js';
 import type { FollowUpPreparation, LaunchInput } from './launchSupport.js';
-import { InstallQueue, installWorkerPackages, piPackageManager } from './packageInstall.js';
+import { installWorkerPackages } from './packageInstall.js';
 import type { WorkerPackageManager } from './packageInstall.js';
+import { removeSnapshotDirectory, snapshotDirectoryFor } from './packageSnapshot.js';
+import { piPackageManager } from './piPackageManager.js';
 import { EvidenceUnavailableError, handleRecovery, savedRecovery, taskStatus } from './record.js';
 import type { TaskStatus } from './record.js';
 import { createHandle, savedHandle, TaskController } from './task.js';
@@ -96,7 +99,6 @@ export class WorkerController {
   private readonly live = new Set<string>();
   private readonly lifetime = new AbortController();
   private readonly placement = new WorkerPlacement();
-  private readonly installs = new InstallQueue();
   private readonly taskContext: TaskContext;
   private closed = false;
 
@@ -113,6 +115,7 @@ export class WorkerController {
     this.packageManager = packageManager;
 
     this.taskContext = {
+      agentDirectory: getAgentDir(),
       client,
       notify,
       placement: this.placement,
@@ -551,45 +554,73 @@ export class WorkerController {
     const listing = await this.readAgentListing(launchSignal, timing);
 
     this.admit(input.loadout, listing.agents, source);
+    const snapshotDirectory = snapshotDirectoryFor(input.loadout.agentDirectory, taskId);
+
     // Settings can change between starts, so a follow-up decides the duplicates again.
-    const extensionPackages = await this.installPackages(input.loadout, launchSignal, timing);
-
-    // A follow-up's native session can gain a live writer during the install.
-    const installed = source !== undefined && extensionPackages.length > 0;
-    const currentListing = installed ? await this.readAgentListing(launchSignal, timing) : listing;
-
-    const { agents } = currentListing;
-
-    // Other launches can start during the install. Admit again so admission, allocation, and
-    // publication below run in one synchronous step.
-    this.admit(input.loadout, agents, source);
-
-    // Synchronous allocation and publication after listing coordinate launches in this process's event loop,
-    // not launches in independent processes.
-    const name = allocateName({
-      root: this.root,
-      parentSessionId: input.parentSessionId,
-      loadout: input.loadout,
-      live: agents,
-      suffix: nameSuffix,
-    });
-
-    task.name = name;
-    validateTask(task);
-
-    prepareTaskDirectory(directory, task, Boolean(source));
-    this.live.add(taskId);
-
-    const worker = new TaskController(
-      createHandle(directory, task, timing.expires),
-      this.taskContext,
+    const extensionPackages = await this.installPackages(
+      input.loadout,
+      launchSignal,
+      timing,
+      snapshotDirectory,
     );
 
-    worker.handle.startup.extensionPackages = extensionPackages;
-    this.workers.set(taskId, worker);
-    worker.arm(launchSignal);
+    try {
+      // A follow-up's native session can gain a live writer during the install.
+      const installed = source !== undefined && extensionPackages.length > 0;
 
-    return { taskId, worker };
+      const currentListing = installed
+        ? await this.readAgentListing(launchSignal, timing)
+        : listing;
+
+      const { agents } = currentListing;
+
+      // Other launches can start during the install. Admit again so admission, allocation, and
+      // publication below run in one synchronous step.
+      this.admit(input.loadout, agents, source);
+
+      // Synchronous allocation and publication after listing coordinate launches in this process's event loop,
+      // not launches in independent processes.
+      const name = allocateName({
+        root: this.root,
+        parentSessionId: input.parentSessionId,
+        loadout: input.loadout,
+        live: agents,
+        suffix: nameSuffix,
+      });
+
+      task.name = name;
+      validateTask(task);
+
+      prepareTaskDirectory(directory, task, Boolean(source));
+      this.live.add(taskId);
+
+      const worker = new TaskController(
+        createHandle(directory, task, timing.expires),
+        this.taskContext,
+      );
+
+      worker.handle.startup.extensionPackages = extensionPackages;
+
+      this.workers.set(taskId, worker);
+      worker.arm(launchSignal);
+
+      return { taskId, worker };
+    } catch (error) {
+      const cleanupError = await removeSnapshotDirectory({
+        agentDirectory: this.taskContext.agentDirectory,
+        directory: snapshotDirectory,
+        snapshotName: taskId,
+      });
+
+      if (cleanupError !== undefined) {
+        throw new Error(
+          `${errorMessage(error)} Also failed to remove the launch package snapshot: ${cleanupError}`,
+          { cause: error },
+        );
+      }
+
+      throw error;
+    }
   }
 
   // Every refusal that needs no task directory, checked before any download or write.
@@ -621,6 +652,7 @@ export class WorkerController {
     loadout: LaunchInput['loadout'],
     launchSignal: AbortSignal,
     timing: ReturnType<typeof launchTiming>,
+    snapshotDirectory: string,
   ) {
     const signal = AbortSignal.any([
       launchSignal,
@@ -628,7 +660,7 @@ export class WorkerController {
       AbortSignal.timeout(Math.max(1, remainingLaunchBudget(timing))),
     ]);
 
-    return installWorkerPackages(loadout, this.packageManager, this.installs, signal);
+    return installWorkerPackages(loadout, this.packageManager, signal, snapshotDirectory);
   }
 
   private async readAgentListing(

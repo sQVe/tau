@@ -5,23 +5,34 @@ import { expect, it } from 'vitest';
 
 import { readTask, recordEvent } from '../records.js';
 import { completed, setup } from './fixtures/controllerFixture.js';
+import { fakePackageRoot, writeFakePackage } from './fixtures/packageCache.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 import { EvidenceUnavailableError } from './record.js';
 
-const installedPackages = (sources: string[]) => ({
-  extensions: sources.map((path) => ({
-    path,
-    enabled: true,
-    metadata: { source: path, scope: 'temporary' as const, origin: 'package' as const },
-  })),
+const installedPackages = (agentDirectory: string, sources: string[]) => ({
+  extensions: sources.map((source) => {
+    writeFakePackage(agentDirectory, source);
+
+    return {
+      path: source,
+      enabled: true,
+      metadata: {
+        source,
+        scope: 'temporary' as const,
+        origin: 'package' as const,
+        packageRoot: fakePackageRoot(agentDirectory, source),
+      },
+    };
+  }),
   skills: [],
   prompts: [],
   themes: [],
 });
 
-const packageManager = (): WorkerPackageManager => ({
+const packageManager = (workerLoadout: { agentDirectory: string }): WorkerPackageManager => ({
   listConfiguredPackages: () => [],
-  resolveExtensionSources: (sources) => Promise.resolve(installedPackages(sources)),
+  resolveExtensionSources: (sources) =>
+    Promise.resolve(installedPackages(workerLoadout.agentDirectory, sources)),
 });
 
 it('saves no acceptance criteria for a launch that gives none', async ({ onTestFinished }) => {

@@ -1,19 +1,46 @@
-import { readdirSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import * as filesystem from 'node:fs/promises';
+import { join } from 'node:path';
 
-import { expect, it, vi } from 'vitest';
+import { expect, it, onTestFinished as afterTest, vi } from 'vitest';
 
 import { readTask } from '../records.js';
+import { WorkerController } from './controller.js';
 import { completed, savedFiles, setup } from './fixtures/controllerFixture.js';
+import {
+  fakePackageRoot,
+  fakePackageSnapshot,
+  snapshotDirectory,
+  writeFakePackage,
+} from './fixtures/packageCache.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 
 vi.mock(import('node:fs'), { spy: true });
+vi.mock(import('node:fs/promises'), { spy: true });
 
-const installedPackages = (sources: string[]) => ({
-  extensions: sources.map((path) => ({
-    path,
-    enabled: true,
-    metadata: { source: path, scope: 'temporary' as const, origin: 'package' as const },
-  })),
+const installedPackages = (agentDirectory: string, sources: string[]) => ({
+  extensions: sources.map((source) => {
+    writeFakePackage(agentDirectory, source);
+
+    return {
+      path: source,
+      enabled: true,
+      metadata: {
+        source,
+        scope: 'temporary' as const,
+        origin: 'package' as const,
+        packageRoot: fakePackageRoot(agentDirectory, source),
+      },
+    };
+  }),
   skills: [],
   prompts: [],
   themes: [],
@@ -22,7 +49,7 @@ const installedPackages = (sources: string[]) => ({
 const packageSettings = (configured: string[]) => {
   const installs: string[][] = [];
 
-  const manager = (): WorkerPackageManager => ({
+  const manager = (workerLoadout: { agentDirectory: string }): WorkerPackageManager => ({
     listConfiguredPackages: () =>
       configured.map((source) => ({ source, scope: 'user' as const, filtered: false })),
     resolveExtensionSources: (sources) => {
@@ -32,7 +59,7 @@ const packageSettings = (configured: string[]) => {
         return Promise.reject(new Error('npm install failed'));
       }
 
-      return Promise.resolve(installedPackages(sources));
+      return Promise.resolve(installedPackages(workerLoadout.agentDirectory, sources));
     },
   });
 
@@ -57,9 +84,68 @@ it('loads profile packages with -e after the worker guards, skipping those setti
 
   expect(launched.failure).toBeUndefined();
   expect(command.at(-3)).toMatch(/workerExtension\.ts$/);
-  expect(command.slice(-2)).toEqual(['-e', 'npm:pi-codex-image-gen']);
+
+  expect(command.slice(-2)).toEqual([
+    '-e',
+    fakePackageSnapshot(input.loadout.agentDirectory, launched.taskId, 'npm:pi-codex-image-gen'),
+  ]);
+
   expect(settings.installs).toEqual([['npm:pi-codex-image-gen']]);
   expect(readTask(launched.directory).loadout.packages).toEqual(packages);
+});
+
+it('loads a remote profile package from the snapshot the parent installed', async ({
+  onTestFinished,
+}) => {
+  const source = 'npm:pi-codex-image-gen';
+
+  const manager = (workerLoadout: { agentDirectory: string }): WorkerPackageManager => ({
+    listConfiguredPackages: () => [],
+    resolveExtensionSources: (sources) =>
+      Promise.resolve(installedPackages(workerLoadout.agentDirectory, sources)),
+  });
+
+  const { controller, input, calls } = setup(onTestFinished, 0, undefined, manager);
+  const loadout = { ...input.loadout, packages: [source] };
+  const launched = await controller.launch({ ...input, loadout });
+  const command = launchedCommand(calls);
+
+  expect(launched.failure).toBeUndefined();
+
+  expect(command.slice(-2)).toEqual([
+    '-e',
+    fakePackageSnapshot(input.loadout.agentDirectory, launched.taskId, source),
+  ]);
+
+  expect(command).not.toContain(source);
+});
+
+it('keeps the first worker package content when a later launch replaces the shared cache', async ({
+  onTestFinished,
+}) => {
+  const settings = packageSettings([]);
+  const { controller, input, calls } = setup(onTestFinished, 0, undefined, settings.manager);
+
+  const first = await controller.launch({
+    ...input,
+    loadout: { ...input.loadout, packages: ['npm:shared@1'] },
+  });
+
+  const firstPackage = launchedCommand(calls).at(-1)!;
+
+  const second = await controller.launch({
+    ...input,
+    loadout: { ...input.loadout, packages: ['npm:shared@2'] },
+  });
+
+  const secondPackage = launchedCommand(calls).at(-1)!;
+  const cacheRoot = fakePackageRoot(input.loadout.agentDirectory, 'npm:shared@1');
+
+  expect(first.failure).toBeUndefined();
+  expect(second.failure).toBeUndefined();
+  expect(readFileSync(join(cacheRoot, 'content.txt'), 'utf8')).toBe('npm:shared@2');
+  expect(readFileSync(join(firstPackage, 'content.txt'), 'utf8')).toBe('npm:shared@1');
+  expect(readFileSync(join(secondPackage, 'content.txt'), 'utf8')).toBe('npm:shared@2');
 });
 
 it('refuses a launch whose profile package fails to install before it opens a pane', async ({
@@ -120,7 +206,14 @@ it('decides the -e packages again when a follow-up starts after settings change'
   const packages = ['npm:pi-agent-browser-native'];
   const fixture = await completed(undefined, { manager: settings.manager, sources: packages });
 
-  expect(launchedCommand(fixture.calls).slice(-2)).toEqual(['-e', 'npm:pi-agent-browser-native']);
+  expect(launchedCommand(fixture.calls).slice(-2)).toEqual([
+    '-e',
+    fakePackageSnapshot(
+      fixture.source.loadout.agentDirectory,
+      fixture.source.taskId,
+      'npm:pi-agent-browser-native',
+    ),
+  ]);
 
   settings.configured.push('npm:pi-agent-browser-native');
   fixture.calls.length = 0;
@@ -182,13 +275,13 @@ it('refuses a launch whose slot another launch took during its package install',
   const installing = Promise.withResolvers<undefined>();
   const release = Promise.withResolvers<undefined>();
 
-  const manager = (): WorkerPackageManager => ({
+  const manager = (workerLoadout: { agentDirectory: string }): WorkerPackageManager => ({
     listConfiguredPackages: () => [],
     resolveExtensionSources: async (sources) => {
       installing.resolve(undefined);
       await release.promise;
 
-      return installedPackages(sources);
+      return installedPackages(workerLoadout.agentDirectory, sources);
     },
   });
 
@@ -229,7 +322,7 @@ it('refuses a follow-up whose native session gained a live writer during its ins
   let live: unknown[] = [];
   let following = false;
 
-  const manager = (): WorkerPackageManager => ({
+  const manager = (workerLoadout: { agentDirectory: string }): WorkerPackageManager => ({
     listConfiguredPackages: () => [],
     resolveExtensionSources: (sources) => {
       // The user resumes the saved session by hand while npm runs.
@@ -243,7 +336,7 @@ it('refuses a follow-up whose native session gained a live writer during its ins
         ];
       }
 
-      return Promise.resolve(installedPackages(sources));
+      return Promise.resolve(installedPackages(workerLoadout.agentDirectory, sources));
     },
   });
 
@@ -306,9 +399,9 @@ it('never runs two profile package installs at once across parallel launches', a
     );
 
   const first = launch('npm:first', cancelFirst);
-  const second = launch('npm:second', cancelSecond);
 
   await firstStarted.promise;
+  const second = launch('npm:second', cancelSecond);
 
   await vi.waitFor(() => {
     expect(queued).toBe(2);
@@ -327,4 +420,339 @@ it('never runs two profile package installs at once across parallel launches', a
   await expect(first).rejects.toThrow('npm:first install was cancelled');
   expect(started).toEqual(['npm:first']);
   expect(readdirSync(directory)).toEqual(saved);
+});
+
+it('refuses a launch when copying its package fails and removes its snapshot', async ({
+  onTestFinished,
+}) => {
+  const source = 'npm:missing';
+
+  const manager = (workerLoadout: { agentDirectory: string }): WorkerPackageManager => ({
+    listConfiguredPackages: () => [],
+    resolveExtensionSources: () =>
+      Promise.resolve({
+        extensions: [
+          {
+            path: source,
+            enabled: true,
+            metadata: {
+              source,
+              scope: 'temporary',
+              origin: 'package',
+              packageRoot: fakePackageRoot(workerLoadout.agentDirectory, source),
+            },
+          },
+        ],
+        skills: [],
+        prompts: [],
+        themes: [],
+      }),
+  });
+
+  const { controller, input, calls, directory } = setup(onTestFinished, 0, undefined, manager);
+  const saved = savedFiles(directory);
+
+  await expect(
+    controller.launch({
+      ...input,
+      loadout: { ...input.loadout, packages: [source] },
+    }),
+  ).rejects.toThrow(/npm:missing.*failed to snapshot/);
+
+  expect(calls.some((call) => call[0] === 'layout')).toBe(false);
+  expect(savedFiles(directory)).toEqual(saved);
+  expect(readdirSync(join(input.loadout.agentDirectory, 'tmp', 'tau-worker-packages'))).toEqual([]);
+});
+
+it('removes the launch package snapshot after its worker stops', async ({ onTestFinished }) => {
+  const settings = packageSettings([]);
+  const { controller, input } = setup(onTestFinished, 0, undefined, settings.manager);
+  const source = 'npm:pi-codex-image-gen';
+
+  const launched = await controller.launch({
+    ...input,
+    loadout: { ...input.loadout, packages: [source] },
+  });
+
+  const snapshot = snapshotDirectory(input.loadout.agentDirectory, launched.taskId);
+
+  expect(launched.failure).toBeUndefined();
+  expect(existsSync(snapshot)).toBe(true);
+
+  await controller.cancel(launched.taskId, input.parentSessionId);
+
+  expect(existsSync(snapshot)).toBe(false);
+});
+
+it('keeps the package snapshot when the worker stop is unconfirmed', async ({ onTestFinished }) => {
+  const settings = packageSettings([]);
+  let cleaning = false;
+
+  const { controller, input } = setup(
+    onTestFinished,
+    0,
+    async () => {
+      if (cleaning) {
+        throw new Error('Herdr unavailable');
+      }
+
+      return '';
+    },
+    settings.manager,
+  );
+
+  const launched = await controller.launch({
+    ...input,
+    loadout: { ...input.loadout, packages: ['npm:shared'] },
+  });
+
+  expect(launched.failure).toBeUndefined();
+  cleaning = true;
+  await controller.cancel(launched.taskId, input.parentSessionId);
+
+  expect(existsSync(snapshotDirectory(input.loadout.agentDirectory, launched.taskId))).toBe(true);
+});
+
+it('removes the package snapshot when a saved task is stopped by a new controller', async ({
+  onTestFinished,
+}) => {
+  const settings = packageSettings([]);
+
+  const { controller, input, client, directory } = setup(
+    onTestFinished,
+    0,
+    undefined,
+    settings.manager,
+  );
+
+  const launched = await controller.launch({
+    ...input,
+    loadout: { ...input.loadout, packages: ['npm:shared'] },
+  });
+
+  const snapshot = snapshotDirectory(input.loadout.agentDirectory, launched.taskId);
+
+  expect(launched.failure).toBeUndefined();
+  expect(existsSync(snapshot)).toBe(true);
+  controller.close();
+
+  const recovered = new WorkerController(directory, client);
+
+  onTestFinished(() => {
+    recovered.close();
+  });
+
+  await recovered.cancel(launched.taskId, input.parentSessionId);
+
+  expect(existsSync(snapshot)).toBe(false);
+});
+
+it.each(['saved agent directory', 'trusted snapshot root'])(
+  'refuses snapshot cleanup through a redirected %s',
+  async (redirected) => {
+    const settings = packageSettings([]);
+
+    const { controller, input, client, directory } = setup(
+      afterTest,
+      0,
+      undefined,
+      settings.manager,
+    );
+
+    const launched = await controller.launch({
+      ...input,
+      loadout: { ...input.loadout, packages: ['npm:shared'] },
+    });
+
+    expect(launched.failure).toBeUndefined();
+    controller.close();
+    const outsideRoot = join(directory, 'unrelated');
+    const victim = join(outsideRoot, launched.taskId);
+
+    mkdirSync(victim, { recursive: true });
+    writeFileSync(join(victim, 'keep.txt'), 'unrelated data');
+    let originalSnapshot = snapshotDirectory(input.loadout.agentDirectory, launched.taskId);
+
+    if (redirected === 'saved agent directory') {
+      const redirectedAgent = join(directory, 'redirected-agent');
+
+      mkdirSync(join(redirectedAgent, 'tmp'), { recursive: true });
+      symlinkSync(outsideRoot, join(redirectedAgent, 'tmp', 'tau-worker-packages'));
+      const task = readTask(launched.directory);
+
+      writeFileSync(
+        join(launched.directory, 'task.json'),
+        JSON.stringify({
+          ...task,
+          loadout: { ...task.loadout, agentDirectory: redirectedAgent },
+        }),
+      );
+    } else {
+      const root = join(input.loadout.agentDirectory, 'tmp', 'tau-worker-packages');
+
+      renameSync(root, `${root}-original`);
+      originalSnapshot = join(`${root}-original`, launched.taskId);
+      symlinkSync(outsideRoot, root);
+    }
+
+    const recovered = new WorkerController(directory, client);
+
+    afterTest(() => {
+      recovered.close();
+    });
+
+    await expect(recovered.cancel(launched.taskId, input.parentSessionId)).rejects.toThrow(
+      'snapshot',
+    );
+
+    expect(readFileSync(join(victim, 'keep.txt'), 'utf8')).toBe('unrelated data');
+    expect(existsSync(originalSnapshot)).toBe(true);
+  },
+);
+
+it('refuses recovered cleanup when the saved task ID names another task', async ({
+  onTestFinished,
+}) => {
+  const settings = packageSettings([]);
+
+  const { controller, input, client, directory, calls } = setup(
+    onTestFinished,
+    0,
+    undefined,
+    settings.manager,
+  );
+
+  const loadout = { ...input.loadout, packages: ['npm:shared'] };
+  const first = await controller.launch({ ...input, loadout });
+  const second = await controller.launch({ ...input, loadout });
+
+  expect(first.failure).toBeUndefined();
+  expect(second.failure).toBeUndefined();
+  controller.close();
+
+  const task = readTask(first.directory);
+
+  writeFileSync(
+    join(first.directory, 'task.json'),
+    JSON.stringify({ ...task, taskId: second.taskId }),
+  );
+
+  const saved = savedFiles(directory);
+  const previousCalls = calls.length;
+  const recovered = new WorkerController(directory, client);
+
+  onTestFinished(() => {
+    recovered.close();
+  });
+
+  await expect(recovered.cancel(first.taskId, input.parentSessionId)).rejects.toThrow(
+    'task ID does not match',
+  );
+
+  await expect(async () => recovered.status(first.taskId, input.parentSessionId)).rejects.toThrow(
+    'task ID does not match',
+  );
+
+  expect(existsSync(snapshotDirectory(input.loadout.agentDirectory, first.taskId))).toBe(true);
+  expect(existsSync(snapshotDirectory(input.loadout.agentDirectory, second.taskId))).toBe(true);
+  expect(savedFiles(directory)).toEqual(saved);
+  expect(calls.slice(previousCalls)).toEqual([]);
+});
+
+it('reports both launch and snapshot removal errors while preserving the launch cause', async () => {
+  const settings = packageSettings([]);
+  const launchError = new Error('Admission listing failed');
+  let following = false;
+  let listings = 0;
+
+  const fixture = await completed(
+    async (argumentsList) => {
+      if (following && argumentsList[0] === 'agent' && argumentsList[1] === 'list') {
+        listings += 1;
+
+        if (listings === 2) {
+          throw launchError;
+        }
+      }
+
+      return '';
+    },
+    { manager: settings.manager, sources: ['npm:shared'] },
+  );
+
+  const snapshots = join(fixture.source.loadout.agentDirectory, 'tmp', 'tau-worker-packages');
+  const before = readdirSync(snapshots);
+  const { rm: remove } = await vi.importActual<typeof filesystem>('node:fs/promises');
+
+  vi.spyOn(filesystem, 'rm').mockImplementation(async (path, options) => {
+    if (typeof path === 'string' && path.startsWith(snapshots)) {
+      throw new Error('snapshot removal denied');
+    }
+
+    return remove(path, options);
+  });
+
+  following = true;
+
+  const failure = await fixture.controller
+    .followUp(fixture.input, fixture.context)
+    .catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toContain('Admission listing failed');
+  expect((failure as Error).message).toContain('snapshot removal denied');
+  expect((failure as Error).cause).toBe(launchError);
+  expect(readdirSync(snapshots)).toHaveLength(before.length + 1);
+});
+
+it('removes the launch package snapshot when the launch fails before starting a worker', async () => {
+  const source = 'npm:pi-agent-browser-native';
+  let live: unknown[] = [];
+  let following = false;
+  let snapshotsDuringInstall: string[] = [];
+
+  const manager = (workerLoadout: { agentDirectory: string }): WorkerPackageManager => ({
+    listConfiguredPackages: () => [],
+    resolveExtensionSources: (sources) => {
+      if (following) {
+        live = [
+          {
+            pane_id: 'manual',
+            name: 'manual-pi',
+            agent_session: { kind: 'path', value: fixture.source.nativeSessionFile },
+          },
+        ];
+      }
+
+      return Promise.resolve(installedPackages(workerLoadout.agentDirectory, sources));
+    },
+  });
+
+  const fixture = await completed(
+    async (argumentsList) => {
+      if (argumentsList[0] === 'agent' && argumentsList[1] === 'list' && following) {
+        const root = join(fixture.source.loadout.agentDirectory, 'tmp', 'tau-worker-packages');
+
+        snapshotsDuringInstall = existsSync(root) ? readdirSync(root) : [];
+
+        return JSON.stringify({ result: { type: 'agent_list', agents: live } });
+      }
+
+      return '';
+    },
+    { manager, sources: [source] },
+  );
+
+  const snapshots = join(fixture.source.loadout.agentDirectory, 'tmp', 'tau-worker-packages');
+  const before = existsSync(snapshots) ? readdirSync(snapshots) : [];
+
+  following = true;
+
+  const failure = fixture.controller.followUp(fixture.input, fixture.context);
+
+  await expect(failure).rejects.toThrow('already live');
+  await expect(failure).rejects.not.toThrow('failed to remove');
+
+  expect(snapshotsDuringInstall).toHaveLength(before.length + 1);
+  expect(existsSync(snapshots) ? readdirSync(snapshots) : []).toEqual(before);
 });

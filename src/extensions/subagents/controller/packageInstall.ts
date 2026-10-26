@@ -1,32 +1,26 @@
+import { randomUUID } from 'node:crypto';
+import { mkdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 import type { PackageManager, ResolvedPaths } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../../errors.js';
+import { withFileLock } from '../../../fileLock/fileLock.js';
 import type { Loadout } from '../types.js';
 import { isLocalPackage, packagesToLoad } from '../workerPackages.js';
+import {
+  removeSnapshotDirectory,
+  snapshotDirectoryFor,
+  snapshotPackageRoot,
+} from './packageSnapshot.js';
+import type { WorkerPackage } from './types.js';
 
 export type WorkerPackageManager = Pick<
   PackageManager,
   'listConfiguredPackages' | 'resolveExtensionSources'
 >;
-
-// Build Pi's package manager as the worker will: in its cwd and agent directory, with the project
-// trusted.
-export const piPackageManager = (loadout: Loadout): WorkerPackageManager => {
-  const settingsManager = SettingsManager.create(loadout.cwd, loadout.agentDirectory, {
-    projectTrusted: true,
-  });
-
-  return new DefaultPackageManager({
-    cwd: loadout.cwd,
-    agentDir: loadout.agentDirectory,
-    settingsManager,
-  });
-};
 
 // Pi expands `~` and reads a file:// URL as its path.
 const localPath = (path: string): string => {
@@ -49,6 +43,11 @@ const hasResources = (paths: ResolvedPaths): boolean =>
   [paths.extensions, paths.skills, paths.prompts, paths.themes].some(
     (resources) => resources.length > 0,
   );
+
+const packageRoot = (paths: ResolvedPaths): string | undefined =>
+  [paths.extensions, paths.skills, paths.prompts, paths.themes]
+    .flatMap((resources) => resources.map((resource) => resource.metadata.packageRoot))
+    .find((root) => root !== undefined);
 
 const timedOut = (signal: AbortSignal): boolean =>
   signal.reason instanceof DOMException && signal.reason.name === 'TimeoutError';
@@ -89,89 +88,120 @@ const untilAborted = <Value>(
   });
 };
 
-// Pi installs every -e package into one temporary folder per agent directory, without a lock, so
-// parallel launches take turns. A turn passes only when the install settles, even after its
-// launch stopped waiting, because Pi keeps installing.
-export class InstallQueue {
-  private readonly tails = new Map<string, Promise<void>>();
+const withInstallLock = async <Value>(
+  target: { source: string; agentDirectory: string },
+  install: () => Promise<Value>,
+  signal: AbortSignal,
+): Promise<Value> => {
+  const temporaryFolder = join(target.agentDirectory, 'tmp', 'extensions');
 
-  async run<Value>(
-    agentDirectory: string,
-    start: () => Promise<Value>,
-    signal: AbortSignal,
-    source: string,
-  ): Promise<Value> {
-    const previous = this.tails.get(agentDirectory) ?? Promise.resolve();
-    const turn = Promise.withResolvers<undefined>();
+  await mkdir(temporaryFolder, { recursive: true, mode: 0o700 });
+  const cache = await realpath(temporaryFolder);
 
-    const release = () => {
-      turn.resolve(undefined);
-    };
-
-    this.tails.set(agentDirectory, turn.promise);
-
-    try {
-      await untilAborted(previous, signal, source);
-    } catch (error) {
-      void previous.then(release, release);
-
-      throw error;
-    }
-
-    // A queued launch can stop in the same tick its turn comes.
-    if (signal.aborted) {
-      release();
-
-      throw new InstallStoppedError(source, signal);
-    }
-
-    const installing = Promise.resolve().then(start);
-
-    void installing.then(release, release);
-
-    return untilAborted(installing, signal, source);
-  }
-}
+  return withFileLock(
+    {
+      lockPath: join(cache, '.tau-install.lock'),
+      checkout: target.agentDirectory,
+      signal,
+      pollMilliseconds: 25,
+      onWaiting: () => undefined,
+      cancelled: () => new InstallStoppedError(target.source, signal),
+    },
+    install,
+  );
+};
 
 const installPackage = async (
   manager: WorkerPackageManager,
-  target: { source: string; agentDirectory: string },
-  queue: InstallQueue,
+  target: { source: string; agentDirectory: string; snapshotDirectory: string },
   signal: AbortSignal,
-): Promise<void> => {
-  const { source, agentDirectory } = target;
-  let paths: ResolvedPaths;
+): Promise<WorkerPackage> => {
+  const { source, agentDirectory, snapshotDirectory } = target;
 
-  const install = () => manager.resolveExtensionSources([source], { temporary: true });
+  const install = async (): Promise<WorkerPackage> => {
+    let paths: ResolvedPaths;
+
+    try {
+      paths = await manager.resolveExtensionSources([source], { temporary: true });
+    } catch (error) {
+      throw new Error(
+        `Worker profile package ${source} failed to install: ${errorMessage(error)}`,
+        {
+          cause: error,
+        },
+      );
+    }
+
+    // Pi skips a missing local path, and an npm or git install while offline, without an error.
+    if (!hasResources(paths)) {
+      throw new Error(
+        `Worker profile package ${source} is missing or has no Pi resources; check the source and that Pi is online.`,
+      );
+    }
+
+    if (isLocalPackage(source)) {
+      return { source, path: source };
+    }
+
+    const path = packageRoot(paths);
+
+    if (path === undefined) {
+      throw new Error(
+        `Worker profile package ${source} installed without a package root; check the source.`,
+      );
+    }
+
+    const snapshot = await snapshotPackageRoot({
+      agentDirectory,
+      source,
+      packageRoot: path,
+      snapshotDirectory,
+    });
+
+    return { source, path: snapshot };
+  };
+
+  const work = withInstallLock(target, install, signal);
+
+  const cleanup = {
+    agentDirectory,
+    directory: snapshotDirectory,
+    snapshotName: basename(snapshotDirectory),
+  };
 
   try {
-    paths = await queue.run(agentDirectory, install, signal, source);
+    return await untilAborted(work, signal, source);
   } catch (error) {
     if (error instanceof InstallStoppedError) {
+      // An abandoned install may still copy. Remove the snapshot only after the copy settles.
+      void work
+        .finally(() => {
+          removeSnapshotDirectory(cleanup).catch(() => undefined);
+        })
+        .catch(() => undefined);
+
       throw error;
     }
 
-    throw new Error(`Worker profile package ${source} failed to install: ${errorMessage(error)}`, {
-      cause: error,
-    });
-  }
+    const cleanupError = await removeSnapshotDirectory(cleanup);
 
-  // Pi skips a missing local path, and an npm or git install while offline, without an error.
-  if (!hasResources(paths)) {
-    throw new Error(
-      `Worker profile package ${source} is missing or has no Pi resources; check the source and that Pi is online.`,
-    );
+    if (cleanupError !== undefined) {
+      throw new Error(
+        `${errorMessage(error)} Also failed to remove the launch package snapshot: ${cleanupError}`,
+        { cause: error },
+      );
+    }
+
+    throw error;
   }
 };
 
-// Installs into Pi's temporary `-e` cache, where the worker finds each package without a download.
-// Returns the sources the worker loads with -e.
 export const installWorkerPackages = async (
   loadout: Loadout,
   packageManager: (loadout: Loadout) => WorkerPackageManager,
-  queue: InstallQueue,
   signal: AbortSignal,
-): Promise<string[]> => {
+  snapshotDirectory = snapshotDirectoryFor(loadout.agentDirectory, randomUUID()),
+): Promise<WorkerPackage[]> => {
   if (loadout.packages.length === 0) {
     return [];
   }
@@ -186,16 +216,18 @@ export const installWorkerPackages = async (
 
   const profile = loadout.packages.map((source) => absoluteSource(source, loadout.cwd));
   const sources = packagesToLoad(profile, configured);
+  const packages: WorkerPackage[] = [];
 
   for (const source of sources) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- One install at a time, so a failure names its package and skips the rest.
-    await installPackage(
+    const installed = await installPackage(
       manager,
-      { source, agentDirectory: loadout.agentDirectory },
-      queue,
+      { source, agentDirectory: loadout.agentDirectory, snapshotDirectory },
       signal,
     );
+
+    packages.push(installed);
   }
 
-  return sources;
+  return packages;
 };

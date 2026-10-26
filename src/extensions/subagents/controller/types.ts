@@ -3,6 +3,11 @@ import type { SessionShutdownEvent } from '@earendil-works/pi-coding-agent';
 import type { OwnedWorker } from '../cancellation.js';
 import type { Task } from '../types.js';
 
+export interface WorkerPackage {
+  source: string;
+  path: string;
+}
+
 export interface Handle {
   // The handle's own task and lifetime.
   directory: string;
@@ -22,7 +27,7 @@ export interface Handle {
     // Terminals that existed before a Pi launch; a lost launch reply leaves only newer ones to search.
     terminalsBeforeLaunch?: string[];
     // Profile packages the worker loads with -e for this start.
-    extensionPackages: string[];
+    extensionPackages: WorkerPackage[];
   };
   observation: { notifiedQuestions: Set<string> };
   cleanup: {
