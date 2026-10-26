@@ -53,6 +53,8 @@ export interface LinearFake {
   mergedPullRequests: Set<string>;
   failWrite: (count: number) => void;
   limitChildren: (count: number) => void;
+  limitAttachments: (count: number) => void;
+  limitRelations: (count: number) => void;
   moveOnUpdate: (identifier: string, sortOrder: number) => void;
   overrideOutput: (key: string, stdout: string) => void;
   failCall: (key: string, stderr: string) => void;
@@ -142,6 +144,8 @@ export const createLinearFake = (): LinearFake => {
   const projects: FakeProject[] = [{ id: 'project-tau', name: 'Tau', teamId: 'team-me' }];
   let nextNumber = 1;
   let childLimit = Number.POSITIVE_INFINITY;
+  let attachmentLimit = Number.POSITIVE_INFINITY;
+  let relationLimit = Number.POSITIVE_INFINITY;
 
   const addIssue = (issue: Partial<FakeIssue> & { title: string }): FakeIssue => {
     const identifier = issue.identifier ?? `ME-${nextNumber}`;
@@ -184,6 +188,24 @@ export const createLinearFake = (): LinearFake => {
 
   const team = (id: string) => [...teams.values()].find((candidate) => candidate.id === id)!;
 
+  // Returns only the attachments and relations within their limits, and reports a next page for each.
+  const pagedNode = (node: ReturnType<typeof childNode>) => {
+    const attachments = node.attachments.nodes;
+    const relations = node.inverseRelations.nodes;
+
+    return {
+      ...node,
+      attachments: {
+        pageInfo: { hasNextPage: attachments.length > attachmentLimit },
+        nodes: attachments.slice(0, attachmentLimit),
+      },
+      inverseRelations: {
+        pageInfo: { hasNextPage: relations.length > relationLimit },
+        nodes: relations.slice(0, relationLimit),
+      },
+    };
+  };
+
   const containerData = (identifier: string) => {
     const issue = issues.get(identifier);
 
@@ -197,13 +219,13 @@ export const createLinearFake = (): LinearFake => {
     return {
       viewer: { id: 'user-viewer' },
       issue: {
-        ...childNode(issue, project(issue.projectId)),
+        ...pagedNode(childNode(issue, project(issue.projectId))),
         id: issueId(identifier),
         team: team(issue.teamId),
         project: project(issue.projectId),
         children: {
           pageInfo: { hasNextPage: children.length < allChildren.length },
-          nodes: children.map((child) => childNode(child, project(child.projectId))),
+          nodes: children.map((child) => pagedNode(childNode(child, project(child.projectId)))),
         },
       },
     };
@@ -493,6 +515,14 @@ export const createLinearFake = (): LinearFake => {
     // Returns only this many children of an issue and reports a next page.
     limitChildren: (count: number): void => {
       childLimit = count;
+    },
+    // Returns only this many attachments of each issue and reports a next page.
+    limitAttachments: (count: number): void => {
+      attachmentLimit = count;
+    },
+    // Returns only this many relations of each issue and reports a next page.
+    limitRelations: (count: number): void => {
+      relationLimit = count;
     },
     // Fails the nth write call, counted from the first write the fake sees.
     failWrite: (count: number): void => {
