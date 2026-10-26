@@ -374,7 +374,6 @@ const classifyRoute = async (
   }
 };
 
-// Classifies the brief for the shadow pick only. The loadout keeps the model resolveLoadout chose.
 export const resolveRoutedLoadout = async (
   input: LaunchRequest & { task: string },
   context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'scopedModels' | 'isProjectTrusted'> & {
