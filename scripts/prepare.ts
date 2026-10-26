@@ -7,8 +7,7 @@ import { join } from 'node:path';
 const vitePlus = join('node_modules', '.bin', 'vp');
 
 if (existsSync(vitePlus)) {
-  // The shell resolves the `vp.cmd` shim on Windows, where the extensionless `vp` cannot run.
-  const result = spawnSync(`${vitePlus} config`, { stdio: 'inherit', shell: true });
+  const result = spawnSync(vitePlus, ['config'], { stdio: 'inherit' });
 
   if (result.error) {
     process.stderr.write(`Could not run vp config: ${result.error.message}\n`);

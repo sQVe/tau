@@ -37,7 +37,7 @@ export const maximumTotalBytes = maximumTotalKibibytes * bytesPerKibibyte;
 export const maximumStdoutBytes = maximumStdoutMebibytes * bytesPerMebibyte;
 
 // Debian-family systems name the runtime `nodejs`, so both spellings count as a Node command.
-const nodeNames = process.platform === 'win32' ? ['node.exe'] : ['node', 'nodejs'];
+const nodeNames = ['node', 'nodejs'];
 
 // oxlint-disable-next-line node/no-process-env -- Compiled Pi needs a real Node executable from the caller's PATH.
 const nodeOnPath = (path = process.env.PATH ?? '') =>
@@ -57,9 +57,7 @@ const nodeOnPath = (path = process.env.PATH ?? '') =>
 // In compiled Pi, process.execPath is the agent and cannot run Vitest. Prefer Node from PATH.
 // Keep the fallback for Node executables with other names, such as `nodejs`.
 export const nodeExecutable = (executablePath = process.execPath): string =>
-  /^node(\.exe)?$/i.test(basename(executablePath.replaceAll('\\', '/')))
-    ? executablePath
-    : (nodeOnPath() ?? executablePath);
+  /^node$/i.test(basename(executablePath)) ? executablePath : (nodeOnPath() ?? executablePath);
 
 const appendChunk = (
   chunk: Buffer,
@@ -129,7 +127,7 @@ export const defaultSpawn: SpawnCommand = (command, argumentsList, options) =>
 
     const child = nodeSpawn(executable, [command, ...argumentsList], {
       cwd: options.cwd,
-      detached: process.platform !== 'win32',
+      detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -174,8 +172,8 @@ export const defaultSpawn: SpawnCommand = (command, argumentsList, options) =>
       captureStderr(state, chunk);
     });
 
-    // Settle here rather than waiting for `close`: on Windows only the direct child dies,
-    // and a descendant holding the piped stdio would keep `close` pending forever.
+    // Settle here rather than waiting for `close`: a descendant that left the group and holds the
+    // piped stdio would keep `close` pending forever.
     const timer = setTimeout(() => {
       state.timedOut = true;
       signalGroup(child, 'SIGKILL');

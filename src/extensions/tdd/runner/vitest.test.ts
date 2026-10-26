@@ -520,10 +520,7 @@ describe('runTests', () => {
 
       expect(savedReport).toEqual(fixture.report);
 
-      expect(
-        process.platform === 'win32' ||
-          ((await stat(diagnostics.directory)).mode & 0o777) === 0o700,
-      ).toBe(true);
+      expect((await stat(diagnostics.directory)).mode & 0o777).toBe(0o700);
     }
 
     expect(directories.size).toBe(cases.length);
@@ -2124,58 +2121,52 @@ describe('nodeExecutable', () => {
       vi.unstubAllEnvs();
     });
 
-    await mkdir(join(directory, process.platform === 'win32' ? 'node.exe' : 'node'));
+    await mkdir(join(directory, 'node'));
     vi.stubEnv('PATH', directory);
 
     expect(nodeExecutable('/usr/bin/nodejs')).toBe('/usr/bin/nodejs');
   });
 
-  it.each(process.platform === 'win32' ? ['node'] : ['node', 'nodejs'])(
-    'finds %s on PATH for a compiled agent',
-    async (name) => {
-      const directory = temporaryDirectory(onTestFinished, 'tau-node-');
+  it.each(['node', 'nodejs'])('finds %s on PATH for a compiled agent', async (name) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-node-');
 
-      onTestFinished(async () => {
-        vi.unstubAllEnvs();
-      });
+    onTestFinished(async () => {
+      vi.unstubAllEnvs();
+    });
 
-      const executable = join(directory, process.platform === 'win32' ? `${name}.exe` : name);
+    const executable = join(directory, name);
 
-      await writeFile(executable, '');
-      await chmod(executable, 0o755);
+    await writeFile(executable, '');
+    await chmod(executable, 0o755);
 
-      vi.stubEnv('PATH', directory);
+    vi.stubEnv('PATH', directory);
 
-      expect(nodeExecutable('/usr/bin/pi')).toBe(executable);
-      expect(nodeExecutable('/opt/pi-coding-agent/pi')).toBe(executable);
-    },
-  );
+    expect(nodeExecutable('/usr/bin/pi')).toBe(executable);
+    expect(nodeExecutable('/opt/pi-coding-agent/pi')).toBe(executable);
+  });
 
-  it.skipIf(process.platform === 'win32')(
-    'skips a node file on PATH that is not executable',
-    async () => {
-      const directory = temporaryDirectory(onTestFinished, 'tau-node-');
+  it('skips a node file on PATH that is not executable', async () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-node-');
 
-      onTestFinished(async () => {
-        vi.unstubAllEnvs();
-      });
+    onTestFinished(async () => {
+      vi.unstubAllEnvs();
+    });
 
-      const plain = join(directory, 'plain');
-      const runnable = join(directory, 'runnable');
+    const plain = join(directory, 'plain');
+    const runnable = join(directory, 'runnable');
 
-      await mkdir(plain);
-      await mkdir(runnable);
-      await writeFile(join(plain, 'node'), '');
-      await writeFile(join(runnable, 'node'), '');
-      await chmod(join(runnable, 'node'), 0o755);
+    await mkdir(plain);
+    await mkdir(runnable);
+    await writeFile(join(plain, 'node'), '');
+    await writeFile(join(runnable, 'node'), '');
+    await chmod(join(runnable, 'node'), 0o755);
 
-      vi.stubEnv('PATH', [plain, runnable].join(delimiter));
+    vi.stubEnv('PATH', [plain, runnable].join(delimiter));
 
-      expect(nodeExecutable('/usr/bin/pi')).toBe(join(runnable, 'node'));
-    },
-  );
+    expect(nodeExecutable('/usr/bin/pi')).toBe(join(runnable, 'node'));
+  });
 
-  it.skipIf(process.platform === 'win32').for(['/opt/bin/mynode', '/opt/bin/node-agent'])(
+  it.for(['/opt/bin/mynode', '/opt/bin/node-agent'])(
     'looks up node on PATH for the agent executable %s',
     async (executablePath) => {
       const directory = temporaryDirectory(onTestFinished, 'tau-node-');
@@ -2197,10 +2188,6 @@ describe('nodeExecutable', () => {
 
   it('keeps a node executable regardless of PATH', () => {
     expect(nodeExecutable('/usr/bin/node')).toBe('/usr/bin/node');
-
-    expect(nodeExecutable('C:\\Program Files\\nodejs\\node.exe')).toBe(
-      'C:\\Program Files\\nodejs\\node.exe',
-    );
   });
 
   it('keeps a nonstandard node name when no node command resolves', () => {

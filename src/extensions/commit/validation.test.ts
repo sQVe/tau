@@ -1,5 +1,5 @@
 import { Value } from 'typebox/value';
-import { afterEach, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 
 import { commitToolParameters, normalizeRepositoryPath } from './validation.js';
 
@@ -35,21 +35,9 @@ it.each(rejected)('rejects $name', ({ input }) => {
   expect(Value.Check(commitToolParameters, input)).toBe(false);
 });
 
-const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
-
-afterEach(() => {
-  Object.defineProperty(process, 'platform', originalPlatform);
-});
-
 it.each([
-  { platform: 'win32', file: 'dir\\file.txt', expected: 'dir/file.txt' },
-  { platform: 'win32', file: 'dir\\sub\\', expected: 'dir/sub' },
-  { platform: 'win32', file: 'dir//file.txt', expected: 'dir/file.txt' },
-  { platform: 'linux', file: 'dir\\file.txt', expected: 'dir\\file.txt' },
-  { platform: 'linux', file: 'dir//sub/', expected: 'dir/sub' },
-  { platform: 'darwin', file: 'dir\\file.txt', expected: 'dir\\file.txt' },
-])('normalizes $file on $platform', ({ platform, file, expected }) => {
-  Object.defineProperty(process, 'platform', { ...originalPlatform, value: platform });
-
+  { file: 'dir\\file.txt', expected: 'dir\\file.txt' },
+  { file: 'dir//sub/', expected: 'dir/sub' },
+])('normalizes $file', ({ file, expected }) => {
   expect(normalizeRepositoryPath(file)).toBe(expected);
 });

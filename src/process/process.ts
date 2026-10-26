@@ -55,10 +55,6 @@ const readProcessTable = async (): Promise<string | undefined> => {
 };
 
 export const groupState = async (groupId: number): Promise<ProcessState> => {
-  if (process.platform === 'win32') {
-    return processState(groupId);
-  }
-
   const errorCode = probe(-groupId);
 
   if (errorCode !== undefined) {
@@ -70,7 +66,7 @@ export const groupState = async (groupId: number): Promise<ProcessState> => {
 
 export const signalGroup = (child: ChildProcess, signal: NodeJS.Signals): void => {
   try {
-    if (process.platform === 'win32' || child.pid === undefined) {
+    if (child.pid === undefined) {
       child.kill(signal);
     } else {
       process.kill(-child.pid, signal);

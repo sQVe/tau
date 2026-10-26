@@ -71,11 +71,10 @@ export const runCheck = async (
     const status = await new Promise<{ exitCode: number | null; signal: string | null }>(
       (resolve, reject) => {
         // A process group leader, so a cancel reaches the processes the command starts.
-        // Windows has no groups; a detached child there would only open a new console.
         const child = spawn(command, commandArguments, {
           cwd: root,
           stdio: ['ignore', stdoutFile?.fd ?? log.fd, log.fd],
-          detached: process.platform !== 'win32',
+          detached: true,
         });
 
         if (child.pid !== undefined) {
