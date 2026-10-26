@@ -319,6 +319,26 @@ it('fails when gh api prints no date for the head commit', async () => {
   await expect(run()).rejects.toThrow('printed no committer date');
 });
 
+it('fails when gh api prints a committer date that is not a date', async () => {
+  const { run, fake } = await setUp(config);
+
+  fake.pullRequests[repository] = [pullRequest({ headCommittedAt: 'not a date' })];
+
+  await expect(run()).rejects.toThrow(/^gh api .* printed a committer date that is not a date\./u);
+});
+
+it('fails when gh pr view prints a comment date that is not a date', async () => {
+  const { run, fake } = await setUp(config);
+
+  fake.pullRequests[repository] = [
+    pullRequest({ comments: [{ body: bot.comment, createdAt: 'not a date' }] }),
+  ];
+
+  await expect(run()).rejects.toThrow(
+    /^gh pr view 7 .* printed a comment createdAt that is not a date\./u,
+  );
+});
+
 describe('check suites', () => {
   const requestBetween = [{ body: bot.comment, createdAt: '2026-10-14T10:05:00Z' }];
 
