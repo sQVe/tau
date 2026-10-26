@@ -26,8 +26,38 @@ type PrFeedbackTool = ReturnType<typeof createPrFeedbackTool>;
 
 const postedHooks = vi.hoisted(() => ({
   afterRead: undefined as (() => Promise<void>) | undefined,
-  beforeWrite: undefined as ((writes: readonly { state: string }[]) => void) | undefined,
 }));
+
+// Fails the write of the temporary file that a save of posted.json renames into place, when the
+// saved writes match. Every other file operation is real.
+const fileFaults = vi.hoisted(() => ({
+  failPostedSave: undefined as ((writes: readonly { state: string }[]) => boolean) | undefined,
+}));
+
+vi.mock(import('node:fs/promises'), async (importOriginal) => {
+  const original = await importOriginal();
+
+  const faultyWriteFile: typeof original.writeFile = async (path, data, options) => {
+    const failPostedSave = fileFaults.failPostedSave;
+    const isPostedSave = typeof path === 'string' && /\/\.posted\.json\.[^/]+$/u.test(path);
+
+    if (isPostedSave && failPostedSave !== undefined && typeof data === 'string') {
+      const saved = JSON.parse(data) as { writes: { state: string }[] };
+
+      if (failPostedSave(saved.writes)) {
+        throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+      }
+    }
+
+    await original.writeFile(path, data, options);
+  };
+
+  return {
+    ...original,
+    writeFile: faultyWriteFile,
+    default: { ...original, writeFile: faultyWriteFile },
+  };
+});
 
 vi.mock(import('./replies.js'), async (importOriginal) => {
   const original = await importOriginal();
@@ -42,10 +72,6 @@ vi.mock(import('./replies.js'), async (importOriginal) => {
       await afterRead?.();
 
       return posted;
-    },
-    writePosted: async (directory: string, writes: Parameters<typeof original.writePosted>[1]) => {
-      postedHooks.beforeWrite?.(writes);
-      await original.writePosted(directory, writes);
     },
   };
 });
@@ -198,14 +224,10 @@ const recordedWrite = (
 });
 
 const failSaves = (predicate: (writes: readonly { state: string }[]) => boolean) => {
-  postedHooks.beforeWrite = (writes) => {
-    if (predicate(writes)) {
-      throw new Error('disk full');
-    }
-  };
+  fileFaults.failPostedSave = predicate;
 
   onTestFinished(() => {
-    postedHooks.beforeWrite = undefined;
+    fileFaults.failPostedSave = undefined;
   });
 };
 
@@ -818,7 +840,7 @@ describe('post save failure', () => {
 
     expect(fake.threads[0]?.isResolved).toBe(false);
 
-    postedHooks.beforeWrite = undefined;
+    fileFaults.failPostedSave = undefined;
 
     const retry = await post(details, recordingConfirm(root, true).context);
 
@@ -1474,11 +1496,11 @@ describe('post from two sessions', () => {
 
     const failure = await postFailure(post(details));
 
-    expect(failure?.message).toContain('disk full');
+    expect(failure?.message).toContain('ENOSPC');
     expect(fake.writes).toEqual([]);
     expect(await readPosted(details.directory)).toBeUndefined();
 
-    postedHooks.beforeWrite = undefined;
+    fileFaults.failPostedSave = undefined;
 
     expect(await post(details)).toMatchObject({ status: 'posted' });
     expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 201, body: 'Added.' }]);
@@ -1509,7 +1531,7 @@ describe('post from two sessions', () => {
       ],
     });
 
-    postedHooks.beforeWrite = undefined;
+    fileFaults.failPostedSave = undefined;
 
     expect(await post(details)).toMatchObject({ status: 'unchanged' });
     expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 201, body: 'Added.' }]);
