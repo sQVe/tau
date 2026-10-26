@@ -57,9 +57,15 @@ it.each([
     same: true,
   },
   {
-    rule: 'a change to a shadowed executable is equal',
+    rule: 'a change to a shadowed executable differs',
     before: [[executable('node', 'a')], [executable('node', 'b')]],
     after: [[executable('node', 'a')], [executable('node', 'c')]],
+    same: false,
+  },
+  {
+    rule: 'reordered directories with the same shadowed executables are equal when the winners stay',
+    before: [[executable('node', 'a')], [executable('git', '1')], [executable('node', 'b')]],
+    after: [[executable('node', 'a')], [executable('node', 'b')], [executable('git', '1')]],
     same: true,
   },
 ])('$rule', ({ before, after, same }) => {
