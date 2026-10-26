@@ -11,9 +11,9 @@
   "plugins": ["@stryker-mutator/vitest-runner"],
   "concurrency": 6,
   "timeoutMS": 20000,
-  "fileLogLevel": "info",
+  "fileLogLevel": "off",
   "ignorePatterns": [".tau", "docs", "CHANGELOG.md"],
-  "tempDirName": ".stryker-tmp",
+  "tempDirName": ".tau/stryker-tmp",
   "cleanTempDir": true,
   "dryRunTimeoutMinutes": 20
 }

@@ -290,8 +290,8 @@ the reasons are per group of lines, not per line, because the commit has 125 sur
 
 ## Settings
 
-The final `stryker.config.json` differs from the starting config in two places: `vitest.related` and
-`dryRunTimeoutMinutes`.
+The final `stryker.config.json` differs from the starting config in four places: `vitest.related`,
+`dryRunTimeoutMinutes`, `fileLogLevel`, and `tempDirName`.
 
 Changed settings:
 
@@ -304,6 +304,10 @@ Changed settings:
 - `dryRunTimeoutMinutes`: `20` (new). The related set of `e9696243` is large, and a 5 minute dry run
   failed at load average 85. Twenty minutes gave the dry run room under load. The five smaller
   commits finished the dry run well inside the default.
+- `fileLogLevel`: `off` (was `info`). A `stryker.log` file in the repository root makes `pnpm check`
+  rerun the test projects that list the root.
+- `tempDirName`: `.tau/stryker-tmp` (was `.stryker-tmp`). A folder in the repository root has the
+  same effect. Git ignores `.tau/`.
 
 Settings kept as they are:
 
@@ -337,11 +341,9 @@ Settings kept as they are:
   8 timed-out mutants in each of the runs that reached the mutation phase, at load averages from 10
   to 64. The count is the same at different loads, so the mutants cause the timeouts, probably
   loops, and the load does not. Stryker counts a timeout as detected, so the value stays.
-- `fileLogLevel`: `info`. The log goes to `stryker.log`, which Git ignores.
 - `ignorePatterns`: `.tau`, `docs`, `CHANGELOG.md`. They keep Stryker from copying files that the
   tests do not need into the sandbox.
-- `tempDirName` and `cleanTempDir`: `.stryker-tmp` and `true`. Git ignores the folder, and the
-  sandbox is removed after a run.
+- `cleanTempDir`: `true`. The sandbox is removed after a run.
 
 ## Rerun with the final config
 

@@ -68,6 +68,13 @@ names the directory.
 A task run outside `pnpm check`, such as `vp run vitest:core`, has no digest, so it fingerprints the
 raw `PATH` text.
 
+### Repository root
+
+Vite+ records the directory listings a task reads, and input globs do not remove them. Some projects
+list the repository root, so a new entry there reruns them. Tools that `pnpm check` and the mutation
+check run keep their temporary files and logs out of the root, for example under `.tau/`. Stryker
+writes no log file and keeps its sandbox in `.tau/stryker-tmp`.
+
 ## Consequences
 
 ### Positive
