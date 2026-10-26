@@ -76,6 +76,28 @@ const hasInfoAttributeRules = async (root: string): Promise<boolean> => {
   return text.split('\n').some(isAttributeRule);
 };
 
+const attributeSourceMajor = 2;
+const attributeSourceMinor = 41;
+
+// `--attr-source`, which keeps .gitattributes from changing the staged bytes, needs Git 2.41.
+const supportsAttributeSource = async (root: string): Promise<boolean> => {
+  const text = await readGit(root, ['version']);
+  const match = /(\d+)\.(\d+)/u.exec(text);
+
+  if (match === null) {
+    return false;
+  }
+
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+
+  if (major !== attributeSourceMajor) {
+    return major > attributeSourceMajor;
+  }
+
+  return minor >= attributeSourceMinor;
+};
+
 const rawContentArguments = (emptyTree: string): string[] => [
   '-c',
   'core.autocrlf=false',
@@ -106,7 +128,10 @@ const writeWorkingTree = async (root: string): Promise<string> => {
 };
 
 export const readCheckState = async (root: string): Promise<CheckState> => {
-  const cannotSeeChanges = (await hasDirtySubmodule(root)) || (await hasInfoAttributeRules(root));
+  const cannotSeeChanges =
+    !(await supportsAttributeSource(root)) ||
+    (await hasDirtySubmodule(root)) ||
+    (await hasInfoAttributeRules(root));
 
   if (cannotSeeChanges) {
     return { tree: null };

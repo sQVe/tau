@@ -193,8 +193,9 @@ it('rejects with a copy error that is not a missing index, and leaves the real i
   expect(await readFile(indexPath)).toEqual(indexBefore);
 });
 
-it('fails with the Git error when Git is killed', async () => {
-  const root = await createTemporaryRepository(onTestFinished);
+// Puts a `git` script first on PATH. `intercept` is a shell case arm over " $* "; other calls run
+// the real Git.
+const shimGit = async (intercept: string): Promise<void> => {
   const shims = await mkdtemp(join(tmpdir(), 'tau-identity-shim-'));
   const realGit = (await promisify(execFile)('which', ['git'])).stdout.trim();
 
@@ -205,11 +206,41 @@ it('fails with the Git error when Git is killed', async () => {
 
   await writeFile(
     join(shims, 'git'),
-    `#!/bin/sh\ncase " $* " in *" rev-parse "*) kill -9 $$;; esac\nexec '${realGit}' "$@"\n`,
+    `#!/bin/sh\ncase " $* " in ${intercept};; esac\nexec '${realGit}' "$@"\n`,
   );
 
   await chmod(join(shims, 'git'), 0o755);
   vi.stubEnv('PATH', `${shims}${delimiter}${process.env['PATH'] ?? ''}`);
+};
+
+it('fails with the Git error when Git is killed', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await shimGit('*" rev-parse "*) kill -9 $$');
 
   await expect(readCheckIdentity(root, argv)).rejects.toThrow('git rev-parse');
+});
+
+it('gives no tree when Git is older than 2.41, so the check runs', async () => {
+  const root = await committedRepository(onTestFinished);
+
+  await shimGit(`*" version "*) echo 'git version 2.40.1'; exit 0`);
+
+  const identity = await readCheckIdentity(root, argv);
+
+  expect(identity.tree).toBeNull();
+  expect(decideReuse(identity, [])).toEqual({ status: 'run' });
+});
+
+it.each([
+  { version: 'git version 1.99.0', hasTree: false },
+  { version: 'git version 2.41.0', hasTree: true },
+  { version: 'git version 3.0.0', hasTree: true },
+  { version: 'git version unknown', hasTree: false },
+])('reads a tree only from Git 2.41 on: $version', async ({ version, hasTree }) => {
+  const root = await committedRepository(onTestFinished);
+
+  await shimGit(`*" version "*) echo '${version}'; exit 0`);
+
+  expect((await readCheckIdentity(root, argv)).tree !== null).toBe(hasTree);
 });
