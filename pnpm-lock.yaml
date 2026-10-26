@@ -141,8 +141,8 @@ importers:
         specifier: 1.79.0
         version: 1.79.0
       '@sqve/mutation':
-        specifier: 0.1.0
-        version: 0.1.0(@stryker-mutator/api@10.0.0)(@stryker-mutator/core@10.0.0(@types/node@24.13.3))(@stryker-mutator/instrumenter@10.0.0)(@stryker-mutator/util@10.0.0)(@stryker-mutator/vitest-runner@10.0.0(@stryker-mutator/core@10.0.0(@types/node@24.13.3))(vitest@4.1.11))
+        specifier: 0.1.2
+        version: 0.1.2(@stryker-mutator/api@10.0.0)(@stryker-mutator/core@10.0.0(@types/node@24.13.3))(@stryker-mutator/instrumenter@10.0.0)(@stryker-mutator/util@10.0.0)(@stryker-mutator/vitest-runner@10.0.0(@stryker-mutator/core@10.0.0(@types/node@24.13.3))(vitest@4.1.11))
       '@sqve/seam':
         specifier: 0.1.0
         version: 0.1.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(vite-plus@0.3.0(@types/node@24.13.3)(@vitest/coverage-v8@4.1.11)(@voidzero-dev/vite-plus-core@0.3.0(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.0))(esbuild@0.28.1)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.0))
@@ -1616,8 +1616,8 @@ packages:
     resolution: {integrity: sha512-CgB6HHWer/vrKps24ulRIbpcpb7K4xAU7SkZ7YHzBPlwHsvsrCJFEXK421s+cJzX+ZrqtA/TuU5w1HzI7k9N8A==}
     engines: {node: '>=18.0.0'}
 
-  '@sqve/mutation@0.1.0':
-    resolution: {integrity: sha512-h7KrqUtTFgsch5gt5DuWb5dfviqyP/Aw9pyncZsIsgTMwm1B+V/Cd+FAmKykcb7QZpvZKQNL6LT9//ThDKVtLg==}
+  '@sqve/mutation@0.1.2':
+    resolution: {integrity: sha512-nDE9DYbBS9Ur/3YAY+dxuwpTCKAoNE+EkLHmtr8cmR1dS3Sz8tVxeoyO9WRLp4HcHQOaoIAARq5JQsFprD7GLg==}
     engines: {node: '>=24.21.0'}
     hasBin: true
     peerDependencies:
@@ -5383,7 +5383,7 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  '@sqve/mutation@0.1.0(@stryker-mutator/api@10.0.0)(@stryker-mutator/core@10.0.0(@types/node@24.13.3))(@stryker-mutator/instrumenter@10.0.0)(@stryker-mutator/util@10.0.0)(@stryker-mutator/vitest-runner@10.0.0(@stryker-mutator/core@10.0.0(@types/node@24.13.3))(vitest@4.1.11))':
+  '@sqve/mutation@0.1.2(@stryker-mutator/api@10.0.0)(@stryker-mutator/core@10.0.0(@types/node@24.13.3))(@stryker-mutator/instrumenter@10.0.0)(@stryker-mutator/util@10.0.0)(@stryker-mutator/vitest-runner@10.0.0(@stryker-mutator/core@10.0.0(@types/node@24.13.3))(vitest@4.1.11))':
     dependencies:
       '@stryker-mutator/api': 10.0.0
       '@stryker-mutator/core': 10.0.0(@types/node@24.13.3)
