@@ -28,8 +28,6 @@ const postedHooks = vi.hoisted(() => ({
   afterRead: undefined as (() => Promise<void>) | undefined,
 }));
 
-// Fails the write of the temporary file that a save of posted.json renames into place, when the
-// saved writes match. Every other file operation is real.
 const fileFaults = vi.hoisted(() => ({
   failPostedSave: undefined as ((writes: readonly { state: string }[]) => boolean) | undefined,
 }));

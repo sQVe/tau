@@ -164,7 +164,6 @@ const replaceFile = async (path: string, owner: LockOwner, next: LockOwner): Pro
   await rename(staging, path);
 };
 
-// Rewrites the owner's own file. Only the owner rewrites a live file.
 const rewriteOwnFile = async (path: string, owner: LockOwner, next: LockOwner): Promise<void> => {
   if (await ownsFile(path, owner)) {
     await replaceFile(path, owner, next);
@@ -298,7 +297,6 @@ export const withFileLock = async <T>(
       rewriteOwnFile(path, owner, { ...owner, commandGroup: groupId }),
     );
   } catch (error) {
-    // The caller needs the error of the run more than the error of a failed release.
     await releaseOwnFile(path, owner).catch(() => undefined);
 
     throw error;

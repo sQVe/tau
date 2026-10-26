@@ -8,8 +8,6 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { withFileLock } from './fileLock.js';
 
-// While storageFull is set, every new file write fails as on a full disk. While truncateFails is
-// set, emptying a file fails too. Every other file operation is real.
 const fileFaults = vi.hoisted(() => ({ storageFull: false, truncateFails: false }));
 
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
