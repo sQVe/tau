@@ -23,7 +23,7 @@ const ignoreEverything = '*';
 
 const isNameSegment = (segment: string) => !['', '.', '..'].includes(segment);
 
-// Windows also reads `\` as a separator, so a segment with one could step out of `.tau`.
+// A tool that reads `\` as a separator could step out of `.tau` through a segment with one.
 const hasBackslash = (text: string) => text.includes('\\');
 
 const parseSegments = (path: string) => {

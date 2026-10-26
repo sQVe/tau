@@ -117,8 +117,7 @@ describe('reports of hook-written messages', () => {
   });
 });
 
-// Windows reads a backslash as a path separator, so the file name cannot exist there.
-it.skipIf(process.platform === 'win32')('keeps a backslash in a committed file name', async () => {
+it('keeps a backslash in a committed file name', async () => {
   const directory = await createTemporaryRepository();
   await writeRepositoryFile(directory, String.raw`we\ird.txt`, 'a');
 

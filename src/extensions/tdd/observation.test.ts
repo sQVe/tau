@@ -158,19 +158,16 @@ it('accepts a hidden test file selection', async ({ onTestFinished }) => {
   );
 });
 
-it.skipIf(process.platform === 'win32')(
-  'does not reinterpret POSIX literal backslashes as separators',
-  async ({ onTestFinished }) => {
-    const { cwd, observation } = await setup(onTestFinished);
-    await writeFile(join(cwd, 'tests\\value.test.ts'), 'literal backslash filename');
+it('does not reinterpret POSIX literal backslashes as separators', async ({ onTestFinished }) => {
+  const { cwd, observation } = await setup(onTestFinished);
+  await writeFile(join(cwd, 'tests\\value.test.ts'), 'literal backslash filename');
 
-    await expect(
-      observation.run({ ...behavior, files: ['tests\\value.test.ts'] }, 'focused'),
-    ).rejects.toThrow('Expected a test file');
+  await expect(
+    observation.run({ ...behavior, files: ['tests\\value.test.ts'] }, 'focused'),
+  ).rejects.toThrow('Expected a test file');
 
-    expect(runTests).not.toHaveBeenCalled();
-  },
-);
+  expect(runTests).not.toHaveBeenCalled();
+});
 
 it('gives no hint after a fresh focused pass without RED, and a new cycle starts after a full pass', async ({
   onTestFinished,

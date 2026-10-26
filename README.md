@@ -1,6 +1,7 @@
 # Tau
 
-Tau adds tools, work steps, and checks to [Pi](https://github.com/badlogic/pi-mono).
+Tau adds tools, work steps, and checks to [Pi](https://github.com/badlogic/pi-mono). It supports
+Linux and macOS only.
 
 Tau guides test-driven development, or TDD, with test results and nonblocking hints:
 

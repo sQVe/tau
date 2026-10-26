@@ -6,6 +6,9 @@
   "keywords": [
     "pi-package"
   ],
+  "os": [
+    "!win32"
+  ],
   "type": "module",
   "scripts": {
     "changeset": "changeset",

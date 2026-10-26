@@ -30,9 +30,6 @@ const isRunning = (pid: number) => {
   }
 };
 
-// Production signals a process group only on POSIX; Windows kills just the direct child.
-const killsProcessGroups = process.platform !== 'win32';
-
 // The script writes its own pid and a descendant's pid, then both wait for a minute.
 // The rename makes the pid file appear only when it is complete.
 const processTreeSource = (pidFile: string) =>
@@ -135,65 +132,59 @@ it.for([
   },
 );
 
-it.skipIf(!killsProcessGroups)(
-  'kills the process and its descendants when the timeout expires',
-  async () => {
-    const directory = await scriptDirectory();
-    const pidFile = join(directory, 'pids.json');
-    const script = await writeScript(directory, processTreeSource(pidFile));
-    // vi.waitFor advances fake timers while it polls, so the timeout must outlast that wait.
-    const timeoutMs = 60_000;
-    const controller = new AbortController();
+it('kills the process and its descendants when the timeout expires', async () => {
+  const directory = await scriptDirectory();
+  const pidFile = join(directory, 'pids.json');
+  const script = await writeScript(directory, processTreeSource(pidFile));
+  // vi.waitFor advances fake timers while it polls, so the timeout must outlast that wait.
+  const timeoutMs = 60_000;
+  const controller = new AbortController();
 
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
-    // The fake timeout never fires once real timers return, so a failed wait must abort the tree.
-    onTestFinished(() => {
-      controller.abort();
-      vi.useRealTimers();
-    });
-
-    const pending = defaultSpawn(script, [], {
-      cwd: directory,
-      timeoutMs,
-      signal: controller.signal,
-    });
-
-    const pids = await readProcessTree(pidFile);
-
-    vi.advanceTimersByTime(timeoutMs);
-
-    expect(await pending).toMatchObject({ code: null, timedOut: true });
-    vi.useRealTimers();
-    await expectStopped(pids);
-  },
-);
-
-it.skipIf(!killsProcessGroups)(
-  'kills the process and its descendants when the signal aborts',
-  async () => {
-    const directory = await scriptDirectory();
-    const pidFile = join(directory, 'pids.json');
-    const script = await writeScript(directory, processTreeSource(pidFile));
-    const controller = new AbortController();
-
-    onTestFinished(() => {
-      controller.abort();
-    });
-
-    const pending = defaultSpawn(script, [], {
-      cwd: directory,
-      timeoutMs: 60_000,
-      signal: controller.signal,
-    });
-
-    const pids = await readProcessTree(pidFile);
+  // The fake timeout never fires once real timers return, so a failed wait must abort the tree.
+  onTestFinished(() => {
     controller.abort();
+    vi.useRealTimers();
+  });
 
-    expect(await pending).toMatchObject({ code: null, timedOut: false });
-    await expectStopped(pids);
-  },
-);
+  const pending = defaultSpawn(script, [], {
+    cwd: directory,
+    timeoutMs,
+    signal: controller.signal,
+  });
+
+  const pids = await readProcessTree(pidFile);
+
+  vi.advanceTimersByTime(timeoutMs);
+
+  expect(await pending).toMatchObject({ code: null, timedOut: true });
+  vi.useRealTimers();
+  await expectStopped(pids);
+});
+
+it('kills the process and its descendants when the signal aborts', async () => {
+  const directory = await scriptDirectory();
+  const pidFile = join(directory, 'pids.json');
+  const script = await writeScript(directory, processTreeSource(pidFile));
+  const controller = new AbortController();
+
+  onTestFinished(() => {
+    controller.abort();
+  });
+
+  const pending = defaultSpawn(script, [], {
+    cwd: directory,
+    timeoutMs: 60_000,
+    signal: controller.signal,
+  });
+
+  const pids = await readProcessTree(pidFile);
+  controller.abort();
+
+  expect(await pending).toMatchObject({ code: null, timedOut: false });
+  await expectStopped(pids);
+});
 
 it('stops at once when the signal aborted before the run', async () => {
   const directory = await scriptDirectory();

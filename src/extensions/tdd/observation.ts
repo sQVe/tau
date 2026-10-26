@@ -1,5 +1,5 @@
 import { access, realpath, writeFile } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 
 import { errorMessage } from '../../errors.js';
 import { classifyPath, defaultTddConfig } from './config.js';
@@ -40,14 +40,13 @@ const testNames = (behavior: Behavior) =>
   Array.isArray(behavior.testFullName) ? behavior.testFullName : [behavior.testFullName];
 
 const normalizeTestFile = async (cwd: string, config: TddConfig, file: string): Promise<string> => {
-  const literalPath = file.replaceAll(sep, '/');
-  const path = relative(cwd, resolve(cwd, file)).replaceAll(sep, '/');
+  const path = relative(cwd, resolve(cwd, file));
 
   if (isAbsolute(file) || isAbsolute(path)) {
     throw new Error(`Expected a test file inside the worktree: ${file}`);
   }
 
-  if (/[*?{}\\\0]/.test(literalPath) || file.startsWith('@')) {
+  if (/[*?{}\\\0]/.test(file) || file.startsWith('@')) {
     throw new Error(`Expected a test file inside the worktree: ${file}`);
   }
 
@@ -63,7 +62,7 @@ const normalizeTestFile = async (cwd: string, config: TddConfig, file: string): 
     throw new Error(`Expected a test file inside the worktree: ${file}`);
   }
 
-  if (/[[\]]/.test(literalPath) && !(await exists())) {
+  if (/[[\]]/.test(file) && !(await exists())) {
     throw new Error(`Expected a test file inside the worktree: ${file}`);
   }
 

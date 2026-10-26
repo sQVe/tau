@@ -98,9 +98,7 @@ export const validateSubject = (subject: string): void => {
 };
 
 export const normalizeRepositoryPath = (file: string): string =>
-  posix
-    .normalize(process.platform === 'win32' ? file.replaceAll('\\', '/') : file)
-    .replace(/\/+$/, '');
+  posix.normalize(file).replace(/\/+$/, '');
 
 const isInvalidPath = (rawFile: string, file: string): boolean => {
   const invalidName = rawFile.includes('\0') || file === '' || file === '.';
@@ -113,8 +111,8 @@ const isOutsideWorktree = (file: string): boolean =>
 
 export const validatePaths = (files: string[]): void => {
   for (const rawFile of files) {
-    // Validate the backslash reading on every platform so a Windows-style traversal or sensitive
-    // name is rejected everywhere, while staging keeps the literal name on POSIX.
+    // Validate the name as if `\` were a separator, so a traversal or sensitive name hidden behind
+    // one is rejected, while staging keeps the literal name.
     const file = posix.normalize(rawFile.replaceAll('\\', '/')).replace(/\/+$/, '');
 
     if (isInvalidPath(rawFile, file)) {

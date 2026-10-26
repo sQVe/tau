@@ -231,8 +231,8 @@ it('tolerates run directories that a concurrent prune removes while it runs', as
   expect(await readdir(root)).toEqual(['run-recent']);
 });
 
-// Root bypasses directory permissions, and Windows chmod cannot deny directory traversal.
-const chmodDeniesTraversal = process.platform !== 'win32' && process.getuid?.() !== 0;
+// Root bypasses directory permissions.
+const chmodDeniesTraversal = process.getuid?.() !== 0;
 
 it.skipIf(!chmodDeniesTraversal)(
   'fails a prune when a run directory cannot be read',
