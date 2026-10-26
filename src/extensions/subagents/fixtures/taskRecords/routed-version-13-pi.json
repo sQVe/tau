@@ -1,6 +1,6 @@
 {
-  "version": 11,
-  "taskId": "routed-canary-pi",
+  "version": 13,
+  "taskId": "routed-version-13-pi",
   "name": "scout-ab",
   "task": "Inspect source.",
   "parentSession": "/work/parent.jsonl",
@@ -9,13 +9,13 @@
   "deadline": 20000,
   "cancellationBudget": 1000,
   "monotonicDeadline": 20000,
-  "nativeSessionId": "native-routed-canary-pi",
-  "nativeSessionFile": "/work/agent/routed-canary-pi.jsonl",
+  "nativeSessionId": "native-routed-version-13-pi",
+  "nativeSessionFile": "/work/agent/routed-version-13-pi.jsonl",
   "routing": {
     "shadowPick": "faux/small",
     "label": "narrow",
     "confidence": 0.9,
-    "canary": true,
+    "confidenceCutoff": 0.7,
     "ticketSent": false
   },
   "loadout": {

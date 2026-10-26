@@ -241,15 +241,20 @@ it('reads task records with and without routing', () => {
 
   expect(diagnostics).toEqual([]);
 
+  const { canary: _canary, ...routingWithoutCanary } = parsedTaskRecordFixture('routed-pi')
+    .routing as Record<string, unknown>;
+
   expect(
     scanned.map(({ task }) => task).toSorted((a, b) => a.taskId.localeCompare(b.taskId)),
-  ).toEqual([parsedTaskRecordFixture('current-pi'), parsedTaskRecordFixture('routed-pi')]);
+  ).toEqual([
+    parsedTaskRecordFixture('current-pi'),
+    { ...parsedTaskRecordFixture('routed-pi'), routing: routingWithoutCanary },
+  ]);
 
   expect(records.readTask(join(root, 'routed-pi')).routing).toEqual({
     shadowPick: 'faux/small',
     label: 'narrow',
     confidence: 0.9,
-    canary: false,
     ticketSent: false,
   });
 });
@@ -262,7 +267,6 @@ it('reads a version 12 routing with the confidence cutoff the pick used', () => 
     label: 'narrow',
     confidence: 0.5,
     confidenceCutoff: 0.5,
-    canary: false,
     ticketSent: false,
   });
 });
@@ -292,26 +296,52 @@ it('refuses a confidence cutoff in a version 11 routing', () => {
   expect(() => records.readTask(join(root, 'routed-pi'))).toThrow('Invalid saved worker task');
 });
 
-it('reads a canary routing and refuses one without the flag', () => {
-  const root = saveTaskRecordFixtures(['routed-canary-pi']);
-  const canary = parsedTaskRecordFixture('routed-canary-pi');
+it('drops the canary flag of a version 11 routing and refuses one without it', () => {
+  const root = saveTaskRecordFixtures(['routed-version-11-pi']);
+  const routed = parsedTaskRecordFixture('routed-version-11-pi');
 
-  expect(records.readTask(join(root, 'routed-canary-pi')).routing).toEqual({
+  expect(records.readTask(join(root, 'routed-version-11-pi')).routing).toEqual({
     shadowPick: 'faux/small',
     label: 'narrow',
     confidence: 0.9,
-    canary: true,
     ticketSent: false,
   });
 
-  const { canary: _dropped, ...unflagged } = canary.routing as Record<string, unknown>;
+  const { canary: _dropped, ...unflagged } = routed.routing as Record<string, unknown>;
 
   writeFileSync(
-    join(root, 'routed-canary-pi', 'task.json'),
-    JSON.stringify({ ...canary, routing: unflagged }),
+    join(root, 'routed-version-11-pi', 'task.json'),
+    JSON.stringify({ ...routed, routing: unflagged }),
   );
 
-  expect(() => records.readTask(join(root, 'routed-canary-pi'))).toThrow(
+  expect(() => records.readTask(join(root, 'routed-version-11-pi'))).toThrow(
+    'Invalid saved worker task',
+  );
+});
+
+it('reads a version 13 routing without a canary flag', () => {
+  const root = saveTaskRecordFixtures(['routed-version-13-pi']);
+
+  expect(records.readTask(join(root, 'routed-version-13-pi')).routing).toEqual({
+    shadowPick: 'faux/small',
+    label: 'narrow',
+    confidence: 0.9,
+    confidenceCutoff: 0.7,
+    ticketSent: false,
+  });
+});
+
+it('refuses a canary flag in a version 13 routing', () => {
+  const root = saveTaskRecordFixtures(['routed-version-13-pi']);
+  const routed = parsedTaskRecordFixture('routed-version-13-pi');
+  const routing = { ...(routed.routing as Record<string, unknown>), canary: false };
+
+  writeFileSync(
+    join(root, 'routed-version-13-pi', 'task.json'),
+    JSON.stringify({ ...routed, routing }),
+  );
+
+  expect(() => records.readTask(join(root, 'routed-version-13-pi'))).toThrow(
     'Invalid saved worker task',
   );
 });
@@ -324,7 +354,6 @@ it('reads whether ticket text was sent and refuses a routing without it', () => 
     shadowPick: 'faux/small',
     label: 'narrow',
     confidence: 0.9,
-    canary: true,
     ticketSent: true,
   });
 

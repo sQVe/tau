@@ -10,12 +10,16 @@ import { Value } from 'typebox/value';
 
 import { errorMessage, isMissingFile } from '../../errors.js';
 import { publishTextSync, readTextWithinSync, savedVersion } from '../../record.js';
+import { isRecord } from '../../schema.js';
 import { taskFormat } from './taskFormat.js';
 import {
   eventSchema,
   oldestReadableTaskVersion,
   reportSchema,
+  routingWithConfidenceCutoffTaskVersion,
+  routingWithoutConfidenceCutoffTaskVersion,
   startupFailureSchema,
+  retiredCanaryTaskSchema,
   taskSchema,
   taskVersion,
   isTaskId,
@@ -180,6 +184,31 @@ const newerTaskNotice = 'saved by a newer Tau; restart this session to read it.'
 
 const retiredTaskNotice = 'saved in a retired format; start a fresh task instead.';
 
+const hasRetiredCanary = (value: unknown): boolean => {
+  const version = savedVersion(value);
+
+  return (
+    version === routingWithoutConfidenceCutoffTaskVersion ||
+    version === routingWithConfidenceCutoffTaskVersion
+  );
+};
+
+const withoutRetiredCanary = (value: unknown): unknown => {
+  if (!Value.Check(retiredCanaryTaskSchema, value)) {
+    throw new Error('Invalid saved worker task or loadout.');
+  }
+
+  const { routing } = value;
+
+  if (!isRecord(routing)) {
+    return value;
+  }
+
+  const { canary: _canary, ...routingWithoutCanary } = routing;
+
+  return { ...value, routing: routingWithoutCanary };
+};
+
 // Callers treat a missing task as unpublished, so only other failures name the task.
 export const readTask = (directory: string): Task => {
   try {
@@ -194,7 +223,7 @@ export const readTask = (directory: string): Task => {
       throw new TaskFormatError('retired', `Task ${retiredTaskNotice}`);
     }
 
-    return validateTask(value);
+    return validateTask(hasRetiredCanary(value) ? withoutRetiredCanary(value) : value);
   } catch (error) {
     if (isMissingFile(error)) {
       throw error;

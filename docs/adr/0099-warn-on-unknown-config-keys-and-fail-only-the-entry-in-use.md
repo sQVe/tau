@@ -37,8 +37,8 @@ blocks unrelated work.
 - An unknown key at any depth in the user or repository file is ignored. Tau warns once per session
   with the file and the full key path.
 - One shared helper finds unknown keys for every feature, so the rule cannot drift between features.
-- A key Tau removed or renamed is not unknown. It fails the feature that owned it, with an error
-  that names the replacement.
+- A key Tau renamed, or removed in a way the user must act on, is not unknown. It fails the feature
+  that owned it, with an error that names the replacement.
 
 ### Known keys
 
@@ -51,20 +51,23 @@ blocks unrelated work.
 
 ### No version field
 
-The config has no version number. Changes add keys by default. Removing or renaming a key is allowed
-and goes through the error above. A version does not help here, because an older checkout still
-cannot read a newer file, and the user writes this file by hand, unlike the saved records in
-[ADR 0053](./0053-version-each-saved-record-format.md).
+The config has no version number. Changes add keys by default. Removing or renaming a key is
+allowed. A rename, or a removal the user must act on, goes through the error above. A version does
+not help here, because an older checkout still cannot read a newer file, and the user writes this
+file by hand, unlike the saved records in [ADR 0053](./0053-version-each-saved-record-format.md).
 
 ### Model routes
 
-- `profiles.<name>.route` holds one route: a `question`, exactly two `labels`, a `classifier` model,
-  and an optional `canary` share. `routes` is a renamed key.
+- `profiles.<name>.route` holds one route: a `question`, exactly two `labels`, and a `classifier`
+  model. `routes` is a renamed key.
 - The route names its own classifier, so Tau's code again names no model. Without `classifier`, the
   route is invalid and only routing for that profile stops. The classifier must pass
   `allowedModels`, because the brief leaves the machine.
 - `profiles.<name>.model` stays required next to a route. It is the model when the classifier has no
   confident answer.
+- `canary` was removed and is treated as an unknown key. A leftover `canary` warns once, and the
+  route still loads. The key needs no user action, because a confident pick always runs on the
+  routed model.
 
 ## Consequences
 
