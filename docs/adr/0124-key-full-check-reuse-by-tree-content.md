@@ -51,6 +51,8 @@ record reads as malformed and is never reused, so the first check on each state 
   rule, such as `*.txt text eol=lf`, made that blob differ from the file's bytes, a later edit to
   those same bytes, such as a switch between CRLF and LF, keeps the tree ID. A check that reads raw
   bytes can then reuse a stale pass. The key from ADR 0105 had the same gap for tracked files.
+- Git does not restage a file marked assume-unchanged or skip-worktree, so an edit to it keeps the
+  tree ID. The key from ADR 0105 had the same gap.
 - A record names no commit. A reader of a saved log learns the files it covered, not the commit it
   was made on.
 

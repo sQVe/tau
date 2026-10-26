@@ -88,6 +88,13 @@ it.each([
     name: 'a file mode change',
     change: (root: string) => chmod(join(root, 'tracked.txt'), 0o755),
   },
+  {
+    name: 'a mode change with filemode off',
+    change: async (root: string) => {
+      await git(root, 'config', 'core.filemode', 'false');
+      await chmod(join(root, 'tracked.txt'), 0o755);
+    },
+  },
 ])('gives a new identity for $name', async ({ change }) => {
   const root = await committedRepository(onTestFinished);
   const before = await readCheckIdentity(root, argv);

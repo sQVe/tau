@@ -80,6 +80,8 @@ const rawContentArguments = (emptyTree: string): string[] => [
   '-c',
   'core.autocrlf=false',
   '-c',
+  'core.filemode=true',
+  '-c',
   'core.attributesFile=/dev/null',
   `--attr-source=${emptyTree}`,
 ];
