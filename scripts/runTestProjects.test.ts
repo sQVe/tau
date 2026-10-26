@@ -30,7 +30,6 @@ const createSandbox = (): Sandbox => {
   return { root, binDirectory: join(root, 'bin'), recordPath: join(root, 'vp-record') };
 };
 
-// The record file sits outside every PATH directory, so writing it never changes the digest.
 const installFakeVp = async (sandbox: Sandbox, exitStatus: number) => {
   const path = join(sandbox.binDirectory, 'vp');
 
