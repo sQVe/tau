@@ -63,6 +63,12 @@ it.each([
     same: false,
   },
   {
+    rule: 'swapping two shadowed executables differs',
+    before: [[executable('pi', 'a')], [executable('pi', 'b')], [executable('pi', 'c')]],
+    after: [[executable('pi', 'a')], [executable('pi', 'c')], [executable('pi', 'b')]],
+    same: false,
+  },
+  {
     rule: 'reordered directories with the same shadowed executables are equal when the winners stay',
     before: [[executable('node', 'a')], [executable('git', '1')], [executable('node', 'b')]],
     after: [[executable('node', 'a')], [executable('node', 'b')], [executable('git', '1')]],
