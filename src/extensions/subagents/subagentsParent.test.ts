@@ -627,4 +627,38 @@ describe('parent widget', () => {
 
     expect(setWidget).not.toHaveBeenCalled();
   });
+
+  it('reuses the widget lines until the width or the second changes or the widget is invalidated', async () => {
+    useRows([runningRow]);
+    vi.setSystemTime(10_000);
+
+    const fake = startExtension();
+    const { context, setWidget } = tuiContext();
+
+    await emit(fake, 'session_start', {}, context);
+
+    const factory = setWidget.mock.calls[0]?.[1] as (
+      tui: unknown,
+      theme: unknown,
+    ) => { invalidate: () => void; render: (width: number) => string[] };
+
+    const widget = factory({}, { fg: (_color: string, text: string) => text });
+    const first = widget.render(80);
+
+    vi.setSystemTime(10_999);
+    const sameSecond = widget.render(80);
+    const newWidth = widget.render(60);
+
+    vi.setSystemTime(11_000);
+    const newSecond = widget.render(60);
+
+    widget.invalidate();
+    const invalidated = widget.render(60);
+
+    expect(sameSecond).toBe(first);
+    expect(newWidth).not.toBe(sameSecond);
+    expect(newSecond).not.toBe(newWidth);
+    expect(invalidated).not.toBe(newSecond);
+    expect(invalidated).toStrictEqual(newSecond);
+  });
 });

@@ -668,13 +668,26 @@ export default function subagentsExtension(
     } else {
       context.ui.setWidget(
         'tau-subagents',
-        (_tui, theme) => ({
-          // eslint-disable-next-line eslint/no-empty-function -- The rows are replaced on each refresh.
-          invalidate() {},
-          render(width) {
-            return renderWorkerWidget(rows, width, Date.now(), theme);
-          },
-        }),
+        (_tui, theme) => {
+          // Pi renders every frame, but the lines change only with the width and elapsed seconds.
+          let cached: { width: number; second: number; lines: string[] } | undefined;
+
+          return {
+            invalidate() {
+              cached = undefined;
+            },
+            render(width) {
+              const now = Date.now();
+              const second = Math.floor(now / millisecondsPerSecond);
+
+              if (cached?.width !== width || cached.second !== second) {
+                cached = { width, second, lines: renderWorkerWidget(rows, width, now, theme) };
+              }
+
+              return cached.lines;
+            },
+          };
+        },
         { placement: 'aboveEditor' },
       );
     }
