@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
@@ -5,6 +6,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { CommandRuntime } from '../../command.js';
 import { confirmWithUser } from '../../dialog/dialog.js';
 import { errorMessage } from '../../errors.js';
+import { withFileLock } from '../../fileLock/fileLock.js';
 import type { Repository } from '../../github/github.js';
 import {
   postIssueComment,
@@ -116,14 +118,18 @@ const postedRecord = (write: PlannedWrite, commentId: number | null): PostedWrit
   earlierCommentIds: [],
 });
 
+// An uncertain write keeps the IDs its target held before the write, so a retry does not take one
+// of them for it.
+const uncertainRecord = (write: PlannedWrite, feedback: PullRequestFeedback): PostedWrite => ({
+  ...summarize(write),
+  state: 'uncertain',
+  commentId: null,
+  earlierCommentIds: targetCommentIds(write, feedback),
+});
+
 // A write whose output gh printed but the tool could not read counts as posted, without an ID. A
-// write whose gh call failed is uncertain, since GitHub may have taken it before gh stopped. It
-// keeps the IDs its target held before the write, so a retry does not take one of them for it.
-const postWrite = async (
-  target: WriteTarget,
-  write: PlannedWrite,
-  feedback: PullRequestFeedback,
-) => {
+// write whose gh call failed is uncertain, since GitHub may have taken it before gh stopped.
+const postWrite = async (target: WriteTarget, write: PlannedWrite, uncertain: PostedWrite) => {
   try {
     const commentId = await makeWrite(target, write);
 
@@ -134,14 +140,7 @@ const postWrite = async (
     }
 
     if (error instanceof UncertainWriteError) {
-      const record: PostedWrite = {
-        ...summarize(write),
-        state: 'uncertain',
-        commentId: null,
-        earlierCommentIds: targetCommentIds(write, feedback),
-      };
-
-      return { record, error };
+      return { record: uncertain, error };
     }
 
     throw error;
@@ -160,14 +159,14 @@ const uncertainPost = (directory: string, failure: PostFailure, error: unknown) 
     { cause: error },
   );
 
-const unsavedUncertainPost = (
+const unsavedBeforeWrite = (
   directory: string,
   failure: PostFailure,
-  unsaved: PostedWrite,
+  unsent: PostedWrite,
   error: unknown,
 ) =>
   new Error(
-    `A pr_feedback write failed, and its outcome is uncertain: GitHub may have it. Saving ${directory}/posted.json then failed: ${errorMessage(error)}\n${describeWrite(unsaved)}\nCheck the pull request for it before a retry, or the retry may post it again.\nPosted:\n${bulletList(failure.posted)}\nNot posted:\n${bulletList(failure.notPosted)}\nposted.json records the posted writes, and a retry skips them.`,
+    `Saving ${directory}/posted.json before a write failed, so the write was not sent: ${errorMessage(error)}\n${describeWrite(unsent)}\nPosted:\n${bulletList(failure.posted)}\nNot posted:\n${bulletList(failure.notPosted)}\nposted.json records the posted writes, and a retry skips them.`,
     { cause: error },
   );
 
@@ -178,32 +177,25 @@ const unsavedPost = (
   error: unknown,
 ) =>
   new Error(
-    `GitHub has this write, but saving ${directory}/posted.json failed: ${errorMessage(error)}\n${describeWrite(unsaved)}\nAdd it to posted.json before a retry, or the retry posts it again.\nPosted:\n${bulletList(failure.posted)}\nNot posted:\n${bulletList(failure.notPosted)}\nposted.json records the other posted writes, and a retry skips them.`,
+    `GitHub has this write, but saving ${directory}/posted.json failed: ${errorMessage(error)}\n${describeWrite(unsaved)}\nposted.json records it as uncertain, so a retry checks GitHub for it and does not post it again.\nPosted:\n${bulletList(failure.posted)}\nNot posted:\n${bulletList(failure.notPosted)}\nposted.json records the other posted writes, and a retry skips them.`,
     { cause: error },
   );
 
 const summarizeFrom = (writes: readonly PlannedWrite[], start: number) =>
   writes.slice(start).map((write) => summarize(write));
 
-const saveUncertain = async (
-  directory: string,
-  recorded: readonly PostedWrite[],
-  failure: PostFailure,
-  outcome: { record: PostedWrite; error: unknown },
-) => {
-  const uncertainFailure = { ...failure, uncertain: [outcome.record] };
-
+// GitHub does not have a write whose gh call failed for sure, so its uncertain record goes. When
+// that save fails, the record stays uncertain and the next post settles it from the feedback.
+const dropUncertain = async (directory: string, writes: readonly PostedWrite[]) => {
   try {
-    await writePosted(directory, [...recorded, ...failure.posted, outcome.record]);
-  } catch (error) {
-    throw unsavedUncertainPost(directory, uncertainFailure, outcome.record, error);
+    await writePosted(directory, writes);
+  } catch {
+    // The failed write is the error to report.
   }
-
-  return uncertainPost(directory, uncertainFailure, outcome.error);
 };
 
-// Records each write as soon as GitHub has it, so a retry skips it, and each write GitHub may have,
-// so a retry checks for it.
+// Records each write as uncertain before it is sent, so a post that stops before the next save
+// leaves a write that a retry checks for. A write GitHub has is recorded as posted right after.
 const makeWrites = async (
   target: WriteTarget,
   directory: string,
@@ -214,20 +206,36 @@ const makeWrites = async (
   const posted: PostedWrite[] = [];
 
   for (const [index, write] of writes.entries()) {
+    const uncertain = uncertainRecord(write, feedback);
+    const notSent = summarizeFrom(writes, index);
+
+    try {
+      // oxlint-disable-next-line no-await-in-loop -- Each write is recorded before it is sent.
+      await writePosted(directory, [...recorded, ...posted, uncertain]);
+    } catch (error) {
+      throw unsavedBeforeWrite(directory, { posted, notPosted: notSent }, uncertain, error);
+    }
+
     let outcome: Awaited<ReturnType<typeof postWrite>>;
 
     try {
       // oxlint-disable-next-line no-await-in-loop -- Writes run in file order and stop at the first failure.
-      outcome = await postWrite(target, write, feedback);
+      outcome = await postWrite(target, write, uncertain);
     } catch (error) {
-      throw failedPost(directory, { posted, notPosted: summarizeFrom(writes, index) }, error);
+      // oxlint-disable-next-line no-await-in-loop -- The post stops after this write.
+      await dropUncertain(directory, [...recorded, ...posted]);
+
+      throw failedPost(directory, { posted, notPosted: notSent }, error);
     }
 
     const notPosted = summarizeFrom(writes, index + 1);
 
     if (outcome.record.state === 'uncertain') {
-      // oxlint-disable-next-line no-await-in-loop -- The post stops after this write.
-      throw await saveUncertain(directory, recorded, { posted, notPosted }, outcome);
+      throw uncertainPost(
+        directory,
+        { posted, notPosted, uncertain: [outcome.record] },
+        outcome.error,
+      );
     }
 
     posted.push(outcome.record);
@@ -335,7 +343,7 @@ const planFromFeedback = (saved: SavedWork, feedback: PullRequestFeedback) =>
 
 const changedPlan = (reason: string, options?: ErrorOptions) =>
   new Error(
-    `The pull request changed during the confirm, so the writes differ from the confirmed ones: ${reason}. Call read again. Nothing was posted.`,
+    `The pull request or posted.json changed after the plan, so the writes differ from the planned ones: ${reason}. Call read again. Nothing was posted.`,
     options,
   );
 
@@ -360,8 +368,8 @@ const readRecorded = async (directory: string, feedback: PullRequestFeedback) =>
 };
 
 // A thread can be resolved, a permission can change, or another session can post the round,
-// without changing the token or the head. Returns the fresh feedback and the writes posted.json
-// records now.
+// without changing the token or the head. Runs under the round lock. Returns the fresh feedback and
+// the writes posted.json records now.
 const rejectChangedPlan = async (
   target: WriteTarget,
   directory: string,
@@ -399,8 +407,43 @@ const saveSettled = async (directory: string, feedback: PullRequestFeedback) => 
   }
 };
 
-// Posts only the writes the read checked. The feedback and posted.json are read again after the
-// confirm, since the user can take any time to answer.
+const lockFileName = 'post.lock';
+
+// The poll runs only when two sessions link the lock at once. The loser then finds the winner.
+const lockPollMilliseconds = 50;
+
+const busyRound = (directory: string) =>
+  new Error(
+    `Another pr_feedback post is posting ${directory}. Call read again after it finishes. Nothing was posted.`,
+  );
+
+// Holds the round directory from the final read of posted.json through its last save, so two
+// sessions never send the same write or save over each other's records. A post refuses instead of
+// waiting: the round the other post finishes no longer matches this plan.
+const withRoundLock = <Value>(
+  runtime: CommandRuntime,
+  directory: string,
+  run: () => Promise<Value>,
+): Promise<Value> =>
+  withFileLock(
+    {
+      lockPath: join(directory, lockFileName),
+      checkout: directory,
+      signal: runtime.signal,
+      pollMilliseconds: lockPollMilliseconds,
+      cancelled: () =>
+        new Error('The post was cancelled before it took the round. Nothing was posted.'),
+      // Throwing here refuses before the lock is taken.
+      onWaiting: () => {
+        throw busyRound(directory);
+      },
+    },
+    run,
+  );
+
+// Posts only the writes the read checked. The user answers the confirm before the post takes the
+// round lock, since the answer can take any time. Under the lock, the feedback and posted.json are
+// read again.
 export const postReplies = async (
   runtime: CommandRuntime,
   context: ExtensionContext,
@@ -415,10 +458,9 @@ export const postReplies = async (
   const recorded = await readRecorded(directory, feedback);
   const writes = planFromFeedback({ replies, recorded }, feedback);
   const skipped = recorded;
-  let round = { feedback, recorded };
 
   if (writes.length === 0) {
-    await saveSettled(directory, feedback);
+    await withRoundLock(runtime, directory, () => saveSettled(directory, feedback));
 
     return { status: 'unchanged', posted: [], skipped };
   }
@@ -437,12 +479,13 @@ export const postReplies = async (
     }
 
     await checkDirectory();
-    round = await rejectChangedPlan(target, directory, input, replies, writes);
   }
 
-  return {
-    status: 'posted',
-    posted: await makeWrites(target, directory, writes, round.feedback, round.recorded),
-    skipped,
-  };
+  const posted = await withRoundLock(runtime, directory, async () => {
+    const round = await rejectChangedPlan(target, directory, input, replies, writes);
+
+    return makeWrites(target, directory, writes, round.feedback, round.recorded);
+  });
+
+  return { status: 'posted', posted, skipped };
 };
