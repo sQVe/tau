@@ -5,7 +5,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { hasErrorCode, isMissingFile } from '../errors.js';
 import { groupState, processState } from '../process/process.js';
 import { isRecord } from '../schema.js';
-import { holderIsGone } from './lockHolderDecision.js';
+import { holderIsGone, recordNeedsRereading } from './lockHolderDecision.js';
 import type { LockHolderFacts } from './lockHolderDecision.js';
 
 interface LockOwner {
@@ -201,6 +201,21 @@ const findHolder = async (
   return { highest, holder: await readOwner(generationPath(lockPath, highest)) };
 };
 
+// Reads the holder's record again after its session is seen dead, so a command that the session
+// recorded after the first read keeps the lock.
+const findCurrentHolder = async (lockPath: string) => {
+  const { highest, holder } = await findHolder(lockPath);
+  const facts = await readHolderFacts(holder);
+
+  if (highest === undefined || !recordNeedsRereading(facts)) {
+    return { highest, holder, facts };
+  }
+
+  const current = await readOwner(generationPath(lockPath, highest));
+
+  return { highest, holder: current, facts: await readHolderFacts(current) };
+};
+
 // Links generation `next`, and keeps it only if no higher generation exists. A stalled session can
 // link a number that was deleted while a higher generation is live.
 const claimGeneration = async (
@@ -242,10 +257,7 @@ const acquireLock = async (options: FileLockOptions, owner: LockOwner): Promise<
     }
 
     // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
-    const { highest, holder } = await findHolder(lockPath);
-
-    // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
-    const facts = await readHolderFacts(holder);
+    const { highest, holder, facts } = await findCurrentHolder(lockPath);
 
     if (highest === undefined || holderIsGone(facts)) {
       const next = (highest ?? 0) + 1;

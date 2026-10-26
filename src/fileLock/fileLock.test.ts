@@ -8,7 +8,11 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { withFileLock } from './fileLock.js';
 
-const fileFaults = vi.hoisted(() => ({ storageFull: false, truncateFails: false }));
+const fileFaults = vi.hoisted(() => ({
+  storageFull: false,
+  truncateFails: false,
+  afterOwnerRead: undefined as (() => Promise<void>) | undefined,
+}));
 
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const original = await importOriginal();
@@ -29,12 +33,24 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
     await original.truncate(path, length);
   };
 
-  return {
-    ...original,
+  // Runs the hook once, after a session reads an owner record and before it acts on the record.
+  const pausingReadFile = (async (...readArguments: Parameters<typeof original.readFile>) => {
+    const text = await original.readFile(...readArguments);
+    const afterOwnerRead = fileFaults.afterOwnerRead;
+
+    fileFaults.afterOwnerRead = undefined;
+    await afterOwnerRead?.();
+
+    return text;
+  }) as typeof original.readFile;
+
+  const faults = {
     writeFile: faultyWriteFile,
     truncate: faultyTruncate,
-    default: { ...original, writeFile: faultyWriteFile, truncate: faultyTruncate },
+    readFile: pausingReadFile,
   };
+
+  return { ...original, ...faults, default: { ...original, ...faults } };
 });
 
 const fixture = () => {
@@ -685,4 +701,61 @@ it('takes over a lock whose command group holds only zombies', async () => {
 
   expect(ran).toBe('ran');
   expect(parent.exitCode).toBeNull();
+});
+
+it('keeps the lock when its session records a command and dies after another session read the record', async () => {
+  const { lockPath } = fixture();
+  const session = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
+
+  await new Promise((resolve) => {
+    session.once('close', resolve);
+  });
+
+  const command = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+    stdio: 'ignore',
+    detached: true,
+  });
+
+  onTestFinished(() => {
+    command.kill('SIGKILL');
+  });
+
+  const heldPath = `${lockPath}.1`;
+
+  const owner = {
+    pid: session.pid,
+    checkout: '/gone',
+    startedAt: new Date().toISOString(),
+    token: 'dead-session',
+  };
+
+  await mkdir(dirname(lockPath), { recursive: true });
+  await writeFile(heldPath, JSON.stringify(owner));
+
+  fileFaults.afterOwnerRead = async () => {
+    await writeFile(heldPath, JSON.stringify({ ...owner, commandGroup: command.pid }));
+  };
+
+  onTestFinished(() => {
+    fileFaults.afterOwnerRead = undefined;
+  });
+
+  const run = vi.fn<() => Promise<undefined>>(async () => undefined);
+
+  const outcome = withFileLock(
+    {
+      lockPath,
+      checkout: '/second',
+      signal: undefined,
+      pollMilliseconds: 10,
+      cancelled,
+      onWaiting: () => {
+        throw new Error('Another session holds the lock.');
+      },
+    },
+    run,
+  );
+
+  await expect(outcome).rejects.toThrow('Another session holds the lock.');
+  expect(run).not.toHaveBeenCalled();
 });
