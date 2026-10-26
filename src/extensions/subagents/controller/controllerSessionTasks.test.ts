@@ -14,7 +14,6 @@ vi.mock(import('node:fs'), { spy: true });
 
 const foreignTaskCount = 2000;
 
-// A root unchanged for a minute counts as settled.
 const settledTime = () => new Date(Date.now() - 60_000);
 
 const savedTask = join(import.meta.dirname, '..', 'fixtures', 'taskRecords', 'current-pi.json');

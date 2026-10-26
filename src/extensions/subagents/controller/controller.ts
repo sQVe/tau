@@ -233,7 +233,6 @@ export class WorkerController {
     }
   }
 
-  // The parent session's own tasks stay while it runs, so its status and follow-ups keep their records.
   async deleteExpiredTasks(parentSessionId: string, now: number): Promise<string[]> {
     return deleteExpiredWorkers(this.root, this.sessionTaskIndex.taskIds(parentSessionId), now);
   }
@@ -609,7 +608,6 @@ export class WorkerController {
       task.name = name;
       validateTask(task);
 
-      // A partly prepared directory still belongs to the session; an unpublished task reads as absent.
       this.sessionTaskIndex.add(input.parentSessionId, taskId);
       prepareTaskDirectory(directory, task, Boolean(source));
       this.live.add(taskId);

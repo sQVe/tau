@@ -31,7 +31,6 @@ const taskReads = (directory: string): number =>
 
 const abandonedAt = new Date(0);
 
-// A root unchanged for a minute counts as settled.
 const settle = (root: string) => {
   const settledAt = new Date(Date.now() - 60_000);
 
@@ -176,7 +175,6 @@ it('stops reading a pending directory once the publication window passes', () =>
   index.taskIds('parent');
   expect(taskReads(directory)).toBe(1);
 
-  // The directory was created after the start time, so the window passes a little later.
   now = start + decisions.publicationWindow + 60_000;
   index.taskIds('parent');
   index.taskIds('parent');

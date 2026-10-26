@@ -14,8 +14,6 @@ interface TaskRecordRead {
   links: SavedWorker['links'];
 }
 
-// A missing record has known links: an unpublished task points to nothing yet. Any other read
-// error leaves the links unknown, unlike text that was read but does not parse.
 const readTaskRecord = async (path: string): Promise<TaskRecordRead> => {
   let text: string;
 
@@ -39,7 +37,6 @@ export const readLastWrite = (directory: string): number => {
   return Math.max(...paths.map((path) => lstatSync(path).mtimeMs));
 };
 
-// A file can vanish or fail to read while another process writes, so any failure leaves no age.
 const scanLastWrite = (directory: string): number | undefined => {
   try {
     return readLastWrite(directory);
@@ -48,7 +45,6 @@ const scanLastWrite = (directory: string): number | undefined => {
   }
 };
 
-// Only a cleanup record the shared reader accepts proves a stop.
 const confirmsStop = (directory: string, taskId: string): boolean => {
   try {
     return readEvent(directory, taskId, 'cleanup')?.stopped === true;
@@ -63,8 +59,6 @@ const savedText = (task: unknown, key: string): string | undefined => {
   return typeof value === 'string' ? value : undefined;
 };
 
-// Retired task records still count; only their readable fields become facts. The age is read last,
-// so a record published during the other reads makes the worker recent.
 const savedWorker = async (
   root: string,
   taskId: string,
@@ -76,7 +70,6 @@ const savedWorker = async (
   const stopped = confirmsStop(directory, taskId);
   const lastWrite = scanLastWrite(directory);
   const task = record.value;
-  // A missing record in a directory that also vanished may have held links.
   const vanishedRecord = lastWrite === undefined && task === undefined;
   const nativeSessionFile = savedText(task, 'nativeSessionFile');
   const nativeDirectory = nativeSessionFile === undefined ? undefined : dirname(nativeSessionFile);
@@ -108,7 +101,6 @@ const directoryNames = async (directory: string): Promise<string[]> => {
   }
 };
 
-// Reads one directory at a time so a large store does not hold many files open at once.
 const savedWorkers = async (
   root: string,
   sessionTaskIds: ReadonlySet<string>,
@@ -125,8 +117,6 @@ const savedWorkers = async (
   return workers;
 };
 
-// A follow-up refuses a source older than the follow-up age limit, which is one day shorter than
-// retention, so a source this pass deletes cannot gain a new follow-up.
 export const deleteExpiredWorkers = async (
   root: string,
   sessionTaskIds: ReadonlySet<string>,
@@ -138,7 +128,6 @@ export const deleteExpiredWorkers = async (
   for (const taskId of expired) {
     const lastWrite = scanLastWrite(join(root, taskId));
 
-    // A write after the scan makes the decision stale for the tasks it links too, so the pass ends.
     if (lastWrite === undefined || !pastRetention(lastWrite, now)) {
       break;
     }

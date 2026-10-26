@@ -80,8 +80,6 @@ it.each(['task record', 'native session file'] as const)(
   },
 );
 
-// Retention in another process moves an expired source out of the root right after the follow-up
-// published its task.
 it('does not start a follow-up whose source left the root after the follow-up was published', async () => {
   const fixture = await completed();
   const publish = records.publishRecord;

@@ -141,7 +141,6 @@ it('refuses when the worker root cannot be listed', async () => {
   await expect(deleteExpiredWorkers(root, new Set(), now)).rejects.toThrow('ENOTDIR');
 });
 
-// Runs before retention reads the metadata of one path, as another process would.
 const beforeMetadataRead = async (path: string, change: () => void) => {
   const actual = await vi.importActual<typeof fs>('node:fs');
   let changed = false;
@@ -160,7 +159,6 @@ const beforeMetadataRead = async (path: string, change: () => void) => {
   });
 };
 
-// Runs before or after retention reads one task record, as another process would.
 const onTaskRead = async (path: string, timing: 'before' | 'after', change: () => void) => {
   const actual = await vi.importActual<typeof promises>('node:fs/promises');
   let changed = false;
@@ -268,7 +266,6 @@ it.each([
   expect(existsSync(join(root, 'old-stopped'))).toBe(true);
 });
 
-// Another process confirms the stop of an old worker while retention reads its task record.
 it('keeps a worker whose stop is confirmed during the scan', async () => {
   const root = temporaryDirectory(onTestFinished, 'tau-retention-');
   const nativeSessionFile = join(root, 'old-running', 'native.jsonl');
@@ -299,7 +296,6 @@ it('stops the pass when a worker it decided to delete is written before deletion
 
   vi.mocked(fs.readdirSync).mockImplementation(
     (...parameters: Parameters<typeof fs.readdirSync>) => {
-      // The second listing of each directory is the check just before deletion.
       if (String(parameters[0]).startsWith(root) && ++listings === 3) {
         writeFileSync(join(root, 'old-a', 'report.json'), '{}');
         writeFileSync(join(root, 'old-b', 'report.json'), '{}');
@@ -317,7 +313,6 @@ it('stops the pass when a worker it decided to delete is written before deletion
   expect(readdirSync(root).toSorted()).toEqual(['old-a', 'old-b']);
 });
 
-// A task record cut off by a crash, as found in a real store, without a cleanup record.
 it.each([
   {
     case: 'deletes an unparseable record older than 14 days',
@@ -336,7 +331,6 @@ it.each([
   expect(removed.toSorted()).toEqual(deleted);
 });
 
-// A permission change on a valid record is a read error, not a malformed record.
 it('deletes nothing while an old task record cannot be read', async () => {
   const root = temporaryDirectory(onTestFinished, 'tau-retention-');
   const nativeSessionFile = join(root, 'old-source', 'native.jsonl');
@@ -358,7 +352,6 @@ it('deletes nothing while an old task record cannot be read', async () => {
   expect(existsSync(nativeSessionFile)).toBe(true);
 });
 
-// The follow-up was written after the scan, so the decision about its old source is stale too.
 it('keeps the old source when the follow-up it decided to delete is written before deletion', async () => {
   const root = temporaryDirectory(onTestFinished, 'tau-retention-');
   const nativeSessionFile = join(root, 'old-b', 'native.jsonl');
@@ -377,7 +370,6 @@ it('keeps the old source when the follow-up it decided to delete is written befo
 
   vi.mocked(fs.readdirSync).mockImplementation(
     (...parameters: Parameters<typeof fs.readdirSync>) => {
-      // The second listing of the follow-up is the check just before its deletion.
       if (parameters[0] === join(root, 'old-a') && ++followUpListings === 2) {
         writeFileSync(join(root, 'old-a', 'report.json'), '{}');
       }
@@ -394,7 +386,6 @@ it('keeps the old source when the follow-up it decided to delete is written befo
   expect(existsSync(nativeSessionFile)).toBe(true);
 });
 
-// Another startup pass removes the same directory after this pass checked its age.
 it('deletes a directory that another pass removed after the age check', async () => {
   const root = temporaryDirectory(onTestFinished, 'tau-retention-');
 

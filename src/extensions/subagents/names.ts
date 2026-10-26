@@ -6,7 +6,6 @@ import { namePrefix } from './records.js';
 import type { Loadout } from './types.js';
 
 export interface NameAllocation {
-  // Names of the parent session's saved tasks; names are unique within one parent session.
   retained: string[];
   loadout: Loadout;
   live: unknown;

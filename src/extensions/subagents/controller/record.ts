@@ -224,7 +224,6 @@ export const taskRecordStatus = (
   directory: string,
   task: Task,
   controlled: boolean,
-  // The parent session's tasks; a successor always belongs to its predecessor's parent session.
   entries: { directory: string; task: Task }[],
 ): TaskStatus => {
   const facts = readWorkerFacts(directory, task.taskId);

@@ -20,7 +20,6 @@ const listTaskNames = (root: string): string[] => {
   }
 };
 
-// Returns undefined when the path is missing.
 const changedAt = (path: string): number | undefined =>
   statSync(path, { throwIfNoEntry: false })?.mtimeMs;
 
@@ -38,15 +37,10 @@ const readTaskRecord = (directory: string): TaskRecordFact => {
   }
 };
 
-// Finds each parent session's tasks, including tasks that other processes publish later. A read
-// lists the root only after it changed, and each task record is parsed once to learn its session.
-// A root change costs one listing and an in-memory visit per name; it opens no file for a name
-// already seen.
 export class SessionTaskIndex {
   private readonly root: string;
   private readonly clock: () => number;
   private readonly classified = new Set<string>();
-  // Directories without a task record, by their last change; read again on each refresh.
   private readonly pending = new Map<string, number>();
   private readonly abandoned = new Set<string>();
   private listed: RootListing | undefined;
@@ -73,7 +67,6 @@ export class SessionTaskIndex {
   private classify(taskId: string, now: number): void {
     const discovery = discoverTask(taskId, readTaskRecord(join(this.root, taskId)), now);
 
-    // Updating a pending entry in place keeps it from being visited twice in retryPending.
     if (discovery.kind === 'pending') {
       this.pending.set(taskId, discovery.changedAt);
 
@@ -104,7 +97,6 @@ export class SessionTaskIndex {
     }
   }
 
-  // Forgets tasks whose directories are gone.
   private prune(names: ReadonlySet<string>): void {
     for (const taskId of [...this.classified, ...this.pending.keys(), ...this.abandoned]) {
       if (names.has(taskId)) {
@@ -125,7 +117,6 @@ export class SessionTaskIndex {
     return this.classified.has(taskId) || this.pending.has(taskId) || this.abandoned.has(taskId);
   }
 
-  // Lists the root only when its entries may have changed since the last listing.
   private refresh(): void {
     const change = changedAt(this.root);
     const now = this.clock();
@@ -155,7 +146,6 @@ export class SessionTaskIndex {
     return this.identities(parentSessionId);
   }
 
-  // An unreadable task stays out of the list, as it does in a full scan.
   tasks(parentSessionId: string): { directory: string; task: Task }[] {
     return [...this.taskIds(parentSessionId)].flatMap((taskId) => {
       const directory = join(this.root, taskId);
