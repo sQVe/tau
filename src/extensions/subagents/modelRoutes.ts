@@ -12,8 +12,6 @@ export interface ModelRoute {
   classifier: string;
   question: string;
   labels: ReadonlyMap<string, RouteLabel>;
-  // Share of confident picks that differ from the profile model and launch on the routed model.
-  canary: number;
   confidence: number;
 }
 
@@ -30,14 +28,6 @@ export interface RouteFacts {
   outcome: ClassifierOutcome;
 }
 
-export interface CanaryFacts {
-  pick: RoutePick | undefined;
-  profileModel: string;
-  share: number;
-  // A random draw in [0, 1) from the caller.
-  draw: number;
-}
-
 type FallbackReason = 'lowConfidence' | 'error' | 'timeout' | 'noRoute' | 'unknownLabel';
 
 export interface RoutePick {
@@ -48,7 +38,7 @@ export interface RoutePick {
   confidenceCutoff: number;
 }
 
-export type RoutedLaunch = RoutePick & { canary: boolean; ticketSent: boolean };
+export type RoutedLaunch = RoutePick & { ticketSent: boolean };
 
 export const defaultRouteConfidence = 0.7;
 
@@ -88,14 +78,4 @@ export const pickRoutedModel = (facts: RouteFacts): RoutePick | undefined => {
   }
 
   return { shadowPick: routed.model, label, confidence, confidenceCutoff: route.confidence };
-};
-
-export const decideCanary = (facts: CanaryFacts): boolean => {
-  const { pick, profileModel, share, draw } = facts;
-
-  if (pick === undefined || pick.fallbackReason !== undefined) {
-    return false;
-  }
-
-  return pick.shadowPick !== profileModel && draw < share;
 };

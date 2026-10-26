@@ -115,25 +115,39 @@ it('reads a profile route and keeps the profile model', ({ onTestFinished }) => 
     classifier: scoutRoute.classifier,
     question: scoutRoute.question,
     labels: new Map(Object.entries(scoutRoute.labels)),
-    canary: 0,
     confidence: defaultRouteConfidence,
   });
 
   expect(readProfileRoute(location, 'plain', uiFixture())).toBeUndefined();
 });
 
-it.for<[number, number]>([
-  [0, 0],
-  [0.25, 0.25],
-  [1, 1],
-])('reads a route canary of %s', ([canary, expected], { onTestFinished }) => {
-  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
+it('warns about a leftover canary key as unknown and still loads the route', ({
+  onTestFinished,
+}) => {
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-profile-models-',
+  );
 
   writeUser({
-    profiles: { scout: { model: 'a/scout', route: { ...scoutRoute, canary } } },
+    profiles: { scout: { model: 'a/scout', route: { ...scoutRoute, canary: 0.1 } } },
   });
 
-  expect(readProfileRoute(location, 'scout', uiFixture())?.canary).toBe(expected);
+  const ui = uiFixture();
+
+  expect(readProfileRoute(location, 'scout', ui)).toEqual({
+    classifier: scoutRoute.classifier,
+    question: scoutRoute.question,
+    labels: new Map(Object.entries(scoutRoute.labels)),
+    confidence: defaultRouteConfidence,
+  });
+
+  expect(ui.notify).toHaveBeenCalledTimes(1);
+
+  expect(ui.notify).toHaveBeenCalledWith(
+    expect.stringContaining(`${userFile}: profiles.scout.route.canary `),
+    'warning',
+  );
 });
 
 it.for<[number, number]>([
@@ -151,10 +165,6 @@ it.for<[number, number]>([
 });
 
 it.for<[string, string, unknown, string]>([
-  ['a text canary', 'canary', '0.5', 'must be a number from 0 to 1'],
-  ['a null canary', 'canary', null, 'must be a number from 0 to 1'],
-  ['a canary above 1', 'canary', 1.5, 'outside the range 0 to 1'],
-  ['a negative canary', 'canary', -0.1, 'outside the range 0 to 1'],
   ['a text confidence', 'confidence', '0.5', 'must be a number from 0 to 1'],
   ['a null confidence', 'confidence', null, 'must be a number from 0 to 1'],
   ['a confidence above 1', 'confidence', 1.5, 'outside the range 0 to 1'],
@@ -341,7 +351,7 @@ it('reads a profile with unknown keys at any depth and reports each key path onc
   const ui = uiFixture();
 
   expect(readProfileModel(location, 'worker', ui)).toBe('a/worker');
-  expect(readProfileRoute(location, 'worker', ui)?.canary).toBe(0);
+  expect(readProfileRoute(location, 'worker', ui)?.confidence).toBe(defaultRouteConfidence);
   expect(readProfileModel(location, 'worker', ui)).toBe('a/worker');
 
   const warnings = ui.notify.mock.calls.map(([message, level]) => ({ message, level }));

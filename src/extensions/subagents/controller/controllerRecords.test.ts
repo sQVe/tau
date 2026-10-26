@@ -38,7 +38,6 @@ it('saves the routing decision of a routed launch', async ({ onTestFinished }) =
   const routing = {
     shadowPick: 'faux/test',
     confidenceCutoff: 0.5,
-    canary: false,
     ticketSent: true,
   };
 

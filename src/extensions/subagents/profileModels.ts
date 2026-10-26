@@ -113,8 +113,6 @@ const parseRoute = (source: string, field: string, entry: unknown): ModelRoute =
     names.map((name) => [name, parseLabel(source, `${field}.labels.${name}`, labelEntries[name])]),
   );
 
-  const canary = parseRatio(source, `${field}.canary`, entry.canary, 0);
-
   const confidence = parseRatio(
     source,
     `${field}.confidence`,
@@ -122,7 +120,7 @@ const parseRoute = (source: string, field: string, entry: unknown): ModelRoute =
     defaultRouteConfidence,
   );
 
-  return { classifier, question, labels, canary, confidence };
+  return { classifier, question, labels, confidence };
 };
 
 const knownProfileKeys: KnownKeys = {
@@ -131,7 +129,6 @@ const knownProfileKeys: KnownKeys = {
   route: {
     classifier: true,
     question: true,
-    canary: true,
     confidence: true,
     labels: { [anyKey]: { criterion: true, model: true } },
   },

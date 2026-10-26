@@ -1,6 +1,6 @@
 import { StringEnum } from '@earendil-works/pi-ai';
 import { Type } from 'typebox';
-import type { Static } from 'typebox';
+import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { modelReferencePattern } from '../../config/models.js';
@@ -100,11 +100,13 @@ const taskProperties = {
 };
 
 // Bump for any change to the saved fields, including a new optional field.
-export const taskVersion = 12;
+export const taskVersion = 13;
 
 export const oldestReadableTaskVersion = 11;
 
-const routingWithoutConfidenceCutoffTaskVersion = 11;
+export const routingWithoutConfidenceCutoffTaskVersion = 11;
+
+export const routingWithConfidenceCutoffTaskVersion = 12;
 
 const routingFields = {
   shadowPick: text,
@@ -113,8 +115,16 @@ const routingFields = {
   fallbackReason: Type.Optional(
     StringEnum(['lowConfidence', 'error', 'timeout', 'noRoute', 'unknownLabel']),
   ),
-  canary: Type.Boolean(),
   ticketSent: Type.Boolean(),
+};
+
+const confidenceCutoffField = {
+  confidenceCutoff: Type.Number({ minimum: 0, maximum: 1 }),
+};
+
+// Versions 11 and 12 saved a canary flag. Readers drop it before the in-memory check.
+const canaryField = {
+  canary: Type.Boolean(),
 };
 
 const routingWithoutConfidenceCutoffSchema = Type.Object(routingFields, {
@@ -122,10 +132,17 @@ const routingWithoutConfidenceCutoffSchema = Type.Object(routingFields, {
 });
 
 const routingSchema = Type.Object(
-  {
-    ...routingFields,
-    confidenceCutoff: Type.Number({ minimum: 0, maximum: 1 }),
-  },
+  { ...routingFields, ...confidenceCutoffField },
+  { additionalProperties: false },
+);
+
+const retiredCanaryRoutingSchema = Type.Object(
+  { ...routingFields, ...canaryField },
+  { additionalProperties: false },
+);
+
+const retiredCanaryRoutingWithCutoffSchema = Type.Object(
+  { ...routingFields, ...canaryField, ...confidenceCutoffField },
   { additionalProperties: false },
 );
 
@@ -136,19 +153,25 @@ const taskFields = {
   loadout: loadoutSchema,
 };
 
+const taskWithRouting = <Version extends number, Routing extends TSchema>(
+  version: Version,
+  routing: Routing,
+) =>
+  Type.Object(
+    { ...taskFields, version: Type.Literal(version), routing: Type.Optional(routing) },
+    { additionalProperties: false },
+  );
+
+// Version 11 has no confidence cutoff. Version 12 has the cutoff, and version 13 has no canary.
 export const taskSchema = Type.Union([
-  Type.Object(
-    {
-      ...taskFields,
-      version: Type.Literal(routingWithoutConfidenceCutoffTaskVersion),
-      routing: Type.Optional(routingWithoutConfidenceCutoffSchema),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    { ...taskFields, version: Type.Literal(taskVersion), routing: Type.Optional(routingSchema) },
-    { additionalProperties: false },
-  ),
+  taskWithRouting(routingWithoutConfidenceCutoffTaskVersion, routingWithoutConfidenceCutoffSchema),
+  taskWithRouting(routingWithConfidenceCutoffTaskVersion, routingSchema),
+  taskWithRouting(taskVersion, routingSchema),
+]);
+
+export const retiredCanaryTaskSchema = Type.Union([
+  taskWithRouting(routingWithoutConfidenceCutoffTaskVersion, retiredCanaryRoutingSchema),
+  taskWithRouting(routingWithConfidenceCutoffTaskVersion, retiredCanaryRoutingWithCutoffSchema),
 ]);
 
 // Version 2: the Pi worker is its pane's own process, so shellPid equals processId.

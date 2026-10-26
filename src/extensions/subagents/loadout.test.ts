@@ -897,7 +897,6 @@ const classifierReference = `${classifierProvider}/${classifierId}`;
 
 const routedFixture = async (
   onTestFinished: (callback: () => void) => void,
-  canary?: number,
   confidence?: number,
 ) => {
   const fixture = await workerFixture(onTestFinished);
@@ -907,7 +906,6 @@ const routedFixture = async (
   const route = {
     classifier: classifierReference,
     question: 'How wide is this brief?',
-    ...(canary === undefined ? {} : { canary }),
     ...(confidence === undefined ? {} : { confidence }),
     labels: {
       narrow: { criterion: 'A lookup about known code.', model: haiku },
@@ -944,10 +942,10 @@ const routedFixture = async (
   return { ...fixture, context, classify, findOfType, hasClassifier, profileModel };
 };
 
-it('records the shadow pick of a scout launch and keeps the profile model', async ({
+it('records the shadow pick of a scout launch and runs on the routed model', async ({
   onTestFinished,
 }) => {
-  const { context, classify, profileModel } = await routedFixture(onTestFinished);
+  const { context, classify } = await routedFixture(onTestFinished);
   classify.mockResolvedValue(answered('narrow', 0.9));
 
   const { loadout, routing } = await resolveRoutedLoadout(
@@ -955,14 +953,13 @@ it('records the shadow pick of a scout launch and keeps the profile model', asyn
     context,
   );
 
-  expect(loadout.model).toBe(profileModel);
+  expect(loadout.model).toBe(haiku);
 
   expect(routing).toEqual({
     shadowPick: haiku,
     label: 'narrow',
     confidence: 0.9,
     confidenceCutoff: 0.7,
-    canary: false,
     ticketSent: false,
   });
 
@@ -983,31 +980,8 @@ it('records the shadow pick of a scout launch and keeps the profile model', asyn
   });
 });
 
-it('launches a confident pick on the routed model when the canary share is 1', async ({
-  onTestFinished,
-}) => {
-  const { context, classify } = await routedFixture(onTestFinished, 1);
-  classify.mockResolvedValue(answered('narrow', 0.9));
-
-  const { loadout, routing } = await resolveRoutedLoadout(
-    { profile: 'scout', task: 'Find the parser.' },
-    context,
-  );
-
-  expect(loadout.model).toBe(haiku);
-
-  expect(routing).toEqual({
-    shadowPick: haiku,
-    label: 'narrow',
-    confidence: 0.9,
-    confidenceCutoff: 0.7,
-    canary: true,
-    ticketSent: false,
-  });
-});
-
 it('uses the route confidence cutoff and records it on the pick', async ({ onTestFinished }) => {
-  const { context, classify, profileModel } = await routedFixture(onTestFinished, undefined, 0.5);
+  const { context, classify, profileModel } = await routedFixture(onTestFinished, 0.5);
 
   const brief = { profile: 'scout', task: 'Find it.' };
 
@@ -1018,7 +992,6 @@ it('uses the route confidence cutoff and records it on the pick', async ({ onTes
     label: 'narrow',
     confidence: 0.5,
     confidenceCutoff: 0.5,
-    canary: false,
     ticketSent: false,
   });
 
@@ -1030,7 +1003,6 @@ it('uses the route confidence cutoff and records it on the pick', async ({ onTes
     confidence: 0.49,
     fallbackReason: 'lowConfidence',
     confidenceCutoff: 0.5,
-    canary: false,
     ticketSent: false,
   });
 });
@@ -1146,7 +1118,6 @@ it.for([
     shadowPick: profileModel,
     fallbackReason: 'error',
     confidenceCutoff: 0.7,
-    canary: false,
     ticketSent: false,
   });
 });
@@ -1180,7 +1151,6 @@ it('launches on the profile model when the classifier never answers within 5 sec
     shadowPick: profileModel,
     fallbackReason: 'timeout',
     confidenceCutoff: 0.7,
-    canary: false,
     ticketSent: false,
   });
 
@@ -1250,7 +1220,6 @@ it('sends the ticket a relative path names and records that it was sent', async 
     label: 'narrow',
     confidence: 0.9,
     confidenceCutoff: 0.7,
-    canary: false,
     ticketSent: true,
   });
 });
@@ -1420,7 +1389,6 @@ it('classifies nothing when allowedModels excludes the classifier', async ({ onT
     shadowPick: profileModel,
     fallbackReason: 'noRoute',
     confidenceCutoff: 0.7,
-    canary: false,
     ticketSent: false,
   });
 
@@ -1441,7 +1409,6 @@ it('records a low confidence answer and a missing classifier model as fallbacks'
     confidence: 0.5,
     fallbackReason: 'lowConfidence',
     confidenceCutoff: 0.7,
-    canary: false,
     ticketSent: false,
   });
 
@@ -1452,7 +1419,6 @@ it('records a low confidence answer and a missing classifier model as fallbacks'
     shadowPick: profileModel,
     fallbackReason: 'noRoute',
     confidenceCutoff: 0.7,
-    canary: false,
     ticketSent: false,
   });
 
@@ -1464,26 +1430,21 @@ it.for([
   ['an unknown label', () => Promise.resolve(answered('medium', 0.95))],
   ['an error result', () => Promise.resolve({ stopReason: 'error', answers: {} })],
   ['a rejection', () => Promise.reject(new Error('offline'))],
-] as const)(
-  'keeps the profile model after %s even when the canary share is 1',
-  async ([, outcome], { onTestFinished }) => {
-    const { context, classify, profileModel } = await routedFixture(onTestFinished, 1);
-    classify.mockImplementation(outcome);
+] as const)('keeps the profile model after %s', async ([, outcome], { onTestFinished }) => {
+  const { context, classify, profileModel } = await routedFixture(onTestFinished);
+  classify.mockImplementation(outcome);
 
-    const { loadout, routing } = await resolveRoutedLoadout(
-      { profile: 'scout', task: 'Find it.' },
-      context,
-    );
+  const { loadout, routing } = await resolveRoutedLoadout(
+    { profile: 'scout', task: 'Find it.' },
+    context,
+  );
 
-    expect(loadout.model).toBe(profileModel);
-    expect(routing?.canary).toBe(false);
-  },
-);
+  expect(loadout.model).toBe(profileModel);
+  expect(routing?.fallbackReason).toBeDefined();
+});
 
-it('keeps the profile model when no route applies even with a canary share of 1', async ({
-  onTestFinished,
-}) => {
-  const { context, classify, hasClassifier, profileModel } = await routedFixture(onTestFinished, 1);
+it('keeps the profile model when no route applies', async ({ onTestFinished }) => {
+  const { context, classify, hasClassifier, profileModel } = await routedFixture(onTestFinished);
 
   hasClassifier.value = false;
 
@@ -1498,15 +1459,14 @@ it('keeps the profile model when no route applies even with a canary share of 1'
     shadowPick: profileModel,
     fallbackReason: 'noRoute',
     confidenceCutoff: 0.7,
-    canary: false,
     ticketSent: false,
   });
 
   expect(classify).not.toHaveBeenCalled();
 });
 
-it('never runs an explicit launch model as a canary', async ({ onTestFinished }) => {
-  const { context, classify, request } = await routedFixture(onTestFinished, 1);
+it('keeps an explicit launch model and skips routing', async ({ onTestFinished }) => {
+  const { context, classify, request } = await routedFixture(onTestFinished);
 
   const { loadout, routing } = await resolveRoutedLoadout(
     { ...request, profile: 'scout', task: 'Find it.' },
@@ -1518,44 +1478,13 @@ it('never runs an explicit launch model as a canary', async ({ onTestFinished })
   expect(classify).not.toHaveBeenCalled();
 });
 
-it('draws once and keeps the profile model when the draw reaches the share', async ({
+it('refuses a routed model outside allowedModels or missing from the registry', async ({
   onTestFinished,
 }) => {
-  const { context, classify, profileModel } = await routedFixture(onTestFinished, 0.5);
-  classify.mockResolvedValue(answered('narrow', 0.9));
-  const random = vi.spyOn(Math, 'random').mockReturnValue(0.5);
-
-  onTestFinished(() => {
-    random.mockRestore();
-  });
-
-  const brief = { profile: 'scout', task: 'Find it.' };
-  const missed = await resolveRoutedLoadout(brief, context);
-
-  expect(missed.loadout.model).toBe(profileModel);
-
-  expect(missed.routing).toEqual({
-    shadowPick: haiku,
-    label: 'narrow',
-    confidence: 0.9,
-    confidenceCutoff: 0.7,
-    canary: false,
-    ticketSent: false,
-  });
-
-  random.mockReturnValue(0.49);
-  const hit = await resolveRoutedLoadout(brief, context);
-
-  expect(hit.loadout.model).toBe(haiku);
-  expect(hit.routing?.canary).toBe(true);
-});
-
-it('refuses a canary model outside allowedModels or missing from the registry', async ({
-  onTestFinished,
-}) => {
-  const { directory, context, classify, profileModel } = await routedFixture(onTestFinished, 1);
+  const { directory, context, classify, profileModel } = await routedFixture(onTestFinished);
   classify.mockResolvedValue(answered('narrow', 0.9));
   const configPath = join(directory, 'tau.json');
+  const entriesBefore = readdirSync(directory).toSorted();
 
   const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
     profiles: { scout: { route: { labels: { narrow: { model: string } } } } };
@@ -1572,6 +1501,7 @@ it('refuses a canary model outside allowedModels or missing from the registry', 
   );
 
   await expect(resolveRoutedLoadout(brief, context)).rejects.toThrow(haiku);
+  expect(readdirSync(directory).toSorted()).toEqual(entriesBefore);
 
   config.profiles.scout.route.labels.narrow.model = 'tau-worker-fixture/missing';
   writeFileSync(configPath, JSON.stringify(config));
@@ -1579,6 +1509,8 @@ it('refuses a canary model outside allowedModels or missing from the registry', 
   await expect(resolveRoutedLoadout(brief, context)).rejects.toThrow(
     'Worker model unavailable: tau-worker-fixture/missing',
   );
+
+  expect(readdirSync(directory).toSorted()).toEqual(entriesBefore);
 });
 
 it('fails only the launch whose own profile entry is bad', async ({ onTestFinished }) => {
@@ -1633,7 +1565,7 @@ it('reports an unchanged broken route once per session and still launches on the
 
   writeFileSync(
     join(directory, 'tau.json'),
-    JSON.stringify({ profiles: { scout: { model: profileModel, route: { canary: 5 } } } }),
+    JSON.stringify({ profiles: { scout: { model: profileModel, route: { question: 5 } } } }),
   );
 
   const sessionContext = { ...context, ui: { notify } };

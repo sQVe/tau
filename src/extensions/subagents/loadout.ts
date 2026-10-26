@@ -23,7 +23,7 @@ import {
 } from '../../config/models.js';
 import { skillTools } from '../../skillTools.js';
 import { acceptanceRefusal } from './acceptanceRefusal.js';
-import { decideCanary, pickRoutedModel } from './modelRoutes.js';
+import { pickRoutedModel } from './modelRoutes.js';
 import type { ClassifierOutcome, ModelRoute, RoutedLaunch } from './modelRoutes.js';
 import { readProfileModel, readProfileRoute } from './profileModels.js';
 import { resolveProfile } from './profiles.js';
@@ -422,25 +422,20 @@ export const resolveRoutedLoadout = async (
     outcome,
   });
 
-  const canary = decideCanary({
-    pick,
-    profileModel: loadout.model,
-    share: route.canary,
-    draw: Math.random(),
-  });
-
   if (pick === undefined) {
     return { loadout, routing: undefined };
   }
 
-  if (!canary) {
-    return { loadout, routing: { ...pick, canary, ticketSent } };
+  const routing = { ...pick, ticketSent };
+
+  if (pick.shadowPick === loadout.model) {
+    return { loadout, routing };
   }
 
   // The routed model passes the same checks as an explicit launch model.
-  const canaryLoadout = resolveLoadout({ ...input, model: pick.shadowPick }, context, commands);
+  const routedLoadout = resolveLoadout({ ...input, model: pick.shadowPick }, context, commands);
 
-  return { loadout: canaryLoadout, routing: { ...pick, canary, ticketSent } };
+  return { loadout: routedLoadout, routing };
 };
 
 const requireSavedWorkerDirectory = (loadout: Loadout, context: { cwd: string }): void => {
