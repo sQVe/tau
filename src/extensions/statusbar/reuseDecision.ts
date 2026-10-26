@@ -1,6 +1,3 @@
-// Decides which footer readings may be reused from facts the caller read. tests/structure.test.ts
-// keeps this module pure.
-
 export interface SessionKey {
   sessionId: string;
   leafId: string | null;

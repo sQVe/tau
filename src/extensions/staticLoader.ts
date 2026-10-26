@@ -1,7 +1,6 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Loader } from '@earendil-works/pi-tui';
 
-// Pi declares these fields private, so the patched methods read them through this shape.
 interface LoaderFields {
   renderIndicatorVerbatim: boolean;
   spinnerColorFn: (text: string) => string;

@@ -13,7 +13,6 @@ const spinnerDisplay = loaderPrototype.updateDisplay;
 const plain = (text: string) => text;
 const spinnerColor = (text: string) => `<spin>${text}</spin>`;
 
-// Pi declares getRenderedIndicator protected, which the border fallback calls on the loader.
 const indicatorOf = (loader: Loader): string =>
   (loader as unknown as { getRenderedIndicator: () => string }).getRenderedIndicator();
 
