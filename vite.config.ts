@@ -7,6 +7,7 @@ interface TestProject {
   name: string;
   include: string[];
   exclude: string[];
+  globalSetup?: string[];
 }
 
 const testHelperImports = {
@@ -48,6 +49,7 @@ const testProjects: TestProject[] = [
     name: 'integration',
     include: ['tests/*.integration.test.ts'],
     exclude: subagentIntegrationTests,
+    globalSetup: [join(import.meta.dirname, 'tests', 'tauExtensionCacheHarness.ts')],
   },
 ];
 
@@ -132,9 +134,14 @@ export default defineConfig({
       TZ: 'UTC',
     },
     // tests/lint.test.ts writes probe folders under src/ while other projects collect their tests.
-    projects: testProjects.map(({ name, include, exclude }) => ({
+    projects: testProjects.map(({ name, include, exclude, globalSetup }) => ({
       extends: true,
-      test: { name, include, exclude: [...exclude, '**/tau-lint-*/**'] },
+      test: {
+        name,
+        include,
+        exclude: [...exclude, '**/tau-lint-*/**'],
+        ...(globalSetup === undefined ? {} : { globalSetup }),
+      },
     })),
     coverage: {
       provider: 'v8',
