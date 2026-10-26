@@ -1303,6 +1303,150 @@ describe('slice tool draft directory', () => {
   );
 });
 
+const setUpContainerWithChildren = async (sliceIdentifier: string | null) => {
+  const setup = await setUp();
+
+  setup.fake.addIssue({ identifier: 'ME-1', title: 'Container' });
+  setup.fake.addIssue({ identifier: 'ME-2', title: 'Slice one', parent: 'ME-1' });
+  setup.fake.addIssue({ identifier: 'ME-3', title: 'Slice two', parent: 'ME-1' });
+
+  await writeFile(
+    join(setup.directory, 'plan.json'),
+    JSON.stringify({
+      version: 1,
+      route: { team: 'ME', project: 'Tau' },
+      container: { identifier: 'ME-1', title: 'Container', file: 'container.md' },
+      slices: [
+        { identifier: sliceIdentifier, title: 'Slice two', file: 'slice-2.md', blockedBy: [] },
+      ],
+    }),
+  );
+
+  return setup;
+};
+
+// Reads a state token on complete lists, then imposes the page limit. The returned apply uses that
+// token, so it runs the apply action instead of failing in its own read.
+const limitAfterRead = async (
+  setup: Awaited<ReturnType<typeof setUpContainerWithChildren>>,
+  limitPages: () => void,
+) => {
+  const { fake, context, directory } = setup;
+  const { stateToken } = await run(fake, context, { action: 'read', directory });
+
+  limitPages();
+
+  return () => run(fake, context, { action: 'apply', directory, stateToken: String(stateToken) });
+};
+
+describe('slice tool Linear pages', () => {
+  it('refuses to create a slice whose title matches a child on a later page', async () => {
+    const setup = await setUpContainerWithChildren(null);
+
+    const applyAfterLimit = await limitAfterRead(setup, () => {
+      setup.fake.limitChildren(1);
+    });
+
+    await expect(setup.read()).rejects.toThrow('more than one Linear page');
+    await expect(applyAfterLimit()).rejects.toThrow('more than one Linear page');
+    expect(setup.fake.writes()).toEqual([]);
+  });
+
+  it('refuses a recorded child on a later page with the page message', async () => {
+    const setup = await setUpContainerWithChildren('ME-3');
+
+    const applyAfterLimit = await limitAfterRead(setup, () => {
+      setup.fake.limitChildren(1);
+    });
+
+    await expect(setup.read()).rejects.toThrow('more than one Linear page');
+    await expect(applyAfterLimit()).rejects.toThrow('more than one Linear page');
+    expect(setup.fake.writes()).toEqual([]);
+  });
+
+  it('refuses when the container has more attachments than one page', async () => {
+    const setup = await setUpContainerWithChildren(null);
+
+    setup.fake.issues.get('ME-1')!.pullRequests = [
+      'https://github.com/sQVe/tau/pull/1',
+      'https://github.com/sQVe/tau/pull/2',
+    ];
+
+    const applyAfterLimit = await limitAfterRead(setup, () => {
+      setup.fake.limitAttachments(1);
+    });
+
+    await expect(setup.read()).rejects.toThrow('more than one Linear page');
+    await expect(applyAfterLimit()).rejects.toThrow('more than one Linear page');
+    expect(setup.fake.writes()).toEqual([]);
+  });
+
+  it('refuses when a child has more attachments than one page', async () => {
+    const setup = await setUpContainerWithChildren(null);
+
+    setup.fake.issues.get('ME-3')!.pullRequests = [
+      'https://github.com/sQVe/tau/pull/1',
+      'https://github.com/sQVe/tau/pull/2',
+    ];
+
+    const applyAfterLimit = await limitAfterRead(setup, () => {
+      setup.fake.limitAttachments(1);
+    });
+
+    await expect(setup.read()).rejects.toThrow('more than one Linear page');
+    await expect(applyAfterLimit()).rejects.toThrow('more than one Linear page');
+    expect(setup.fake.writes()).toEqual([]);
+  });
+
+  it('refuses when a child has more relations than one page', async () => {
+    const setup = await setUpContainerWithChildren(null);
+
+    setup.fake.issues.get('ME-3')!.blockedBy = ['ME-2', 'ME-4'];
+
+    const applyAfterLimit = await limitAfterRead(setup, () => {
+      setup.fake.limitRelations(1);
+    });
+
+    await expect(setup.read()).rejects.toThrow('more than one Linear page');
+    await expect(applyAfterLimit()).rejects.toThrow('more than one Linear page');
+    expect(setup.fake.writes()).toEqual([]);
+  });
+});
+
+describe('slice tool Linear pages after writes', () => {
+  it('reports the applied steps when the order check finds another page', async () => {
+    const { fake, directory, apply } = await setUp();
+
+    fake.addIssue({ identifier: 'ME-1', title: 'Container' });
+    fake.addIssue({ identifier: 'ME-2', title: 'Slice one', parent: 'ME-1' });
+
+    await writeFile(
+      join(directory, 'plan.json'),
+      JSON.stringify({
+        version: 1,
+        route: { team: 'ME', project: 'Tau' },
+        container: { identifier: 'ME-1', title: 'Container', file: 'container.md' },
+        slices: [
+          { identifier: 'ME-2', title: 'Slice one', file: 'slice-1.md', blockedBy: [] },
+          { identifier: null, title: 'Slice two', file: 'slice-2.md', blockedBy: [] },
+        ],
+      }),
+    );
+
+    fake.limitChildren(1);
+
+    const message = await apply().then(
+      () => undefined,
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    );
+
+    expect(message).toContain('more than one Linear page');
+    expect(message).toContain('Applied:');
+    expect(message).not.toContain('Nothing was written');
+    expect(fake.writes()).not.toEqual([]);
+  });
+});
+
 describe('slice tool bare repository root', () => {
   it('prepares, reads, and applies a draft in the bare root', async () => {
     const { root, directory, read, apply } = await setUp('version-1.json', () =>

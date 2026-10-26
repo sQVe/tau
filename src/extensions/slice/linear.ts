@@ -19,7 +19,7 @@ interface IssueInput {
 }
 
 const containerQuery =
-  'query($id: String!) { issue(id: $id) { id identifier title description url state { type } attachments { nodes { url } } team { id key } project { id name } children { nodes { identifier title description url team { id } subIssueSortOrder state { type } attachments { nodes { url } } inverseRelations { nodes { type issue { identifier } } } } } } }';
+  'query($id: String!) { issue(id: $id) { id identifier title description url state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } team { id key } project { id name } children(first: 100) { pageInfo { hasNextPage } nodes { identifier title description url team { id } subIssueSortOrder state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } inverseRelations(first: 100) { pageInfo { hasNextPage } nodes { type issue { identifier } } } } } } }';
 
 const issuesQuery =
   'query($filter: IssueFilter!) { issues(first: 50, filter: $filter) { nodes { identifier } } }';
@@ -36,6 +36,8 @@ const createMutation =
 const updateMutation =
   'mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }';
 
+const pageInfoSchema = Type.Object({ hasNextPage: Type.Boolean() });
+
 const childSchema = Type.Object({
   identifier: Type.String(),
   title: Type.String(),
@@ -44,8 +46,12 @@ const childSchema = Type.Object({
   subIssueSortOrder: Type.Number(),
   team: Type.Object({ id: Type.String() }),
   state: Type.Object({ type: Type.String() }),
-  attachments: Type.Object({ nodes: Type.Array(Type.Object({ url: Type.String() })) }),
+  attachments: Type.Object({
+    pageInfo: pageInfoSchema,
+    nodes: Type.Array(Type.Object({ url: Type.String() })),
+  }),
   inverseRelations: Type.Object({
+    pageInfo: pageInfoSchema,
     nodes: Type.Array(
       Type.Object({ type: Type.String(), issue: Type.Object({ identifier: Type.String() }) }),
     ),
@@ -61,10 +67,13 @@ const containerSchema = Type.Object({
       description: Type.Union([Type.String(), Type.Null()]),
       url: Type.String(),
       state: Type.Object({ type: Type.String() }),
-      attachments: Type.Object({ nodes: Type.Array(Type.Object({ url: Type.String() })) }),
+      attachments: Type.Object({
+        pageInfo: pageInfoSchema,
+        nodes: Type.Array(Type.Object({ url: Type.String() })),
+      }),
       team: Type.Object({ id: Type.String(), key: Type.String() }),
       project: Type.Union([Type.Object({ id: Type.String(), name: Type.String() }), Type.Null()]),
-      children: Type.Object({ nodes: Type.Array(childSchema) }),
+      children: Type.Object({ pageInfo: pageInfoSchema, nodes: Type.Array(childSchema) }),
     }),
     Type.Null(),
   ]),
@@ -144,6 +153,20 @@ export const readContainer = async (
 
   if (issue === null) {
     return undefined;
+  }
+
+  const connections = [
+    issue.attachments,
+    issue.children,
+    ...issue.children.nodes.flatMap((child) => [child.attachments, child.inverseRelations]),
+  ];
+
+  const hasAnotherPage = connections.some((connection) => connection.pageInfo.hasNextPage);
+
+  if (hasAnotherPage) {
+    throw new Error(
+      `${identifier} has more than one Linear page of children, attachments, or relations, so a write could be planned from a partial list.`,
+    );
   }
 
   const nodes = issue.children.nodes
