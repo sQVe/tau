@@ -15,14 +15,13 @@ evidence about the same inputs.
 
 ## Decision
 
-Treat one full check as satisfying both TDD verification and the repository gate, and reuse
-worker-reported checks unless a concrete reason says otherwise. This keeps diff review and targeted
-reproduction, which are the checks that find defects.
+Run one full check per work state, at the PR step, and reuse worker-reported focused checks unless a
+concrete reason says otherwise. TDD verification uses the affected tests. This keeps diff review and
+targeted reproduction, which are the checks that find defects.
 
-A full check that already ran the suite on the current inputs satisfies full verification, whether
-it came from `run_tests` or the repository's own full check such as `pnpm check`. One worker
-execution can satisfy a required shared check. Do not run a second equivalent full suite only for
-bookkeeping.
+A full check that already ran the suite on the current inputs satisfies the repository gate, whether
+it came from `run_tests` or the repository's own full check such as `pnpm check`. One PR-step
+execution satisfies the gate. Do not run a second equivalent full suite only for bookkeeping.
 
 ### Reuse and rerun reasons
 
@@ -43,7 +42,7 @@ an unrun check passed or that an old result covers changed inputs.
 
 ### Positive
 
-- One full suite can satisfy TDD verification and the repository gate on the same inputs.
+- One full suite at the PR step satisfies the repository gate on the same inputs.
 - Worker-reported evidence is trusted by default, so a simple reporting gap is closed by reading the
   saved output or asking the worker.
 

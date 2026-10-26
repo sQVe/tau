@@ -131,7 +131,7 @@ it.for(['edit', 'write'] as const)(
 
     const tested = await application.run(cwd);
 
-    expect(JSON.stringify(tested.content)).toContain('Hint:');
+    expect(JSON.stringify(tested.content)).not.toContain('Hint:');
     expect(application.notify).toHaveBeenCalledTimes(1);
   },
 );
@@ -246,8 +246,10 @@ it.for(['ordinary', 'long'] as const)(
 
     const hint =
       size === 'ordinary'
-        ? 'Hint: Focused tests passed; verify the full suite with the repository full check or run_tests scope "full".'
+        ? undefined
         : 'Hint: Test results are stale; rerun run_tests on the current inputs.';
+
+    const hintLines = hint === undefined ? [] : [hint];
 
     const parameters = {
       behavior: 'value',
@@ -270,9 +272,14 @@ it.for(['ordinary', 'long'] as const)(
     expect(details.inputs.after).toMatch(/^[a-f0-9]{64}$/);
     expect(details.report).toBe(report);
 
+    expect(JSON.stringify(result.content).includes('Hint:')).toBe(hint !== undefined);
+
+    for (const expectedHint of hintLines) {
+      expect(result.content).toContainEqual({ type: 'text', text: expectedHint });
+    }
+
     expect(result.content).toEqual(
       expect.arrayContaining([
-        { type: 'text', text: hint },
         { type: 'text', text: summarize(cwd, details) },
         { type: 'text', text: runContext(parameters, details) },
         {
@@ -287,7 +294,7 @@ it.for(['ordinary', 'long'] as const)(
       ]),
     );
 
-    expect(result.content).toHaveLength(4);
+    expect(result.content).toHaveLength(3 + hintLines.length);
     expect(application.tool?.renderResult).toBeUndefined();
     initTheme('dark', false);
 
@@ -310,7 +317,12 @@ it.for(['ordinary', 'long'] as const)(
         .join('\n')
         .replace(/\s+/g, ' ');
 
-      expect(collapsed).toContain(hint);
+      expect(collapsed.includes('Hint:')).toBe(hint !== undefined);
+
+      for (const expectedHint of hintLines) {
+        expect(collapsed).toContain(expectedHint);
+      }
+
       expect(collapsed).toContain(`${report.kind} · focused · ${details.freshness}`);
       expect(collapsed).toContain('Files (1): value.test.ts');
       expect(collapsed).toContain('Exact names (1): works');

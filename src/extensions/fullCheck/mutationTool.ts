@@ -367,7 +367,7 @@ export const createMutationCheckTool = (
   defineTool({
     name: 'mutation_check',
     label: 'Mutation check',
-    description: `Run the repository's mutation script and list the mutants that survived. Call it after the full check passes.
+    description: `Run the repository's mutation script and list the mutants that survived.
 - Mode "changed" mutates the lines changed since base (optional; defaults to the origin remote's default branch). Mode "audit" mutates the whole files in paths (non-empty). Optional maxMutants caps the mutants.
 - Survivors are advice: a run with survivors passes. Fails on an error report, unmutated files, or a script that writes no output for 10 minutes.
 - Returns pass or fail, the log path, the error text, the unmutated files, and the covered survivors grouped by <file>:<line>, apart from no-coverage mutants.

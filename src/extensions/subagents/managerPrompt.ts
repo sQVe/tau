@@ -6,7 +6,7 @@ const leadingDelegationGuidelines = [
   'Without waiting to be asked, send larger implementation or work that needs new tests to a `worker`, and open questions that need wide reading or running commands to a `scout`.',
   'Send a finished worker change to a `reviewer` before you accept or commit it.',
   'Follow any explicit user instruction about delegation.',
-  "Pass a reviewer the worker's check log path and a diff hash, such as `git hash-object` of the diff, so it reuses the checks.",
+  'Pass a reviewer a diff hash, such as `git hash-object` of the diff, so it reuses the checks.',
   'Use one reviewer; a large or risky change gets at most two, split by area.',
   'For a refactor whose tests do not change, the reviewer confirms behavior is unchanged.',
   'Every `worker` launch and follow-up needs `acceptance` criteria.',

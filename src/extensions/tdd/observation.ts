@@ -152,7 +152,6 @@ const selectedThrownErrorType = (cwd: string, behavior: Behavior, report: Runner
 
 const hints = {
   red: 'No RED observed for this behavior; start the next behavior with a failing focused test.',
-  full: 'Focused tests passed; verify the full suite with the repository full check or run_tests scope "full".',
   stale: 'Test results are stale; rerun run_tests on the current inputs.',
   unknown: 'Test freshness is unknown; rerun run_tests when inputs can be read.',
   thrown:
@@ -246,7 +245,7 @@ const runHint = (
   scope: TestScope,
   report: RunnerResult,
   freshness: Freshness,
-): 'stale' | 'unknown' | 'full' | undefined => {
+): 'stale' | 'unknown' | undefined => {
   if (freshness !== 'fresh') {
     return freshness;
   }
@@ -255,8 +254,6 @@ const runHint = (
     state.active = null;
     state.observedRed = false;
     state.shownHints.clear();
-  } else if (scope === 'focused' && report.kind === 'pass') {
-    return 'full';
   }
 
   return undefined;

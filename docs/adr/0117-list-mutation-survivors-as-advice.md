@@ -23,10 +23,10 @@ survivors, a signal, and the idle stop. It saves a passing run with survivors fo
 reused run lists the same survivors from the saved report. It counts survivors that tests cover
 apart from mutants with no coverage, and groups each set by file and line.
 
-The `tdd` skill runs the tool once after the full check passes. It allows one fix round of at most 3
-behaviors, a test that kills the survivor or a simplification of redundant code, and at most one
-rerun of the full check and the tool. It then lists what is left as open, with file and line, and
-gives no reason per mutant. The `pr` skill does not run the tool and does not report survivors.
+The `tdd` skill runs the tool once after the affected tests pass. It allows one fix round of at most
+3 behaviors, a test that kills the survivor or a simplification of redundant code, and at most one
+rerun of the affected tests and the tool. It then lists what is left as open, with file and line,
+and gives no reason per mutant. The `pr` skill does not run the tool and does not report survivors.
 
 A test that kills a survivor joins the owner's existing behavior test file, or adds a row to its
 decision table. No test file is named after a campaign or a test technique, such as

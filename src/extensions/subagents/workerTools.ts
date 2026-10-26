@@ -14,13 +14,16 @@ export const workerTools = (
     return Object.hasOwn(skillTools, skillName) ? (skillTools[skillName] ?? []) : [];
   });
 
-  return [
-    ...new Set([
-      ...loadout.tools,
-      'subagent_progress',
-      'subagent_report',
-      'subagent_question',
-      ...loadedSkillTools,
-    ]),
-  ];
+  const tools = new Set([
+    ...loadout.tools,
+    'subagent_progress',
+    'subagent_report',
+    'subagent_question',
+    ...loadedSkillTools,
+  ]);
+
+  // Only the manager's PR step runs the full check, even when a worker loads the pr skill.
+  tools.delete('full_check');
+
+  return [...tools];
 };

@@ -25,7 +25,7 @@ interface ObservationTracker {
 
 const runTestsDescription = [
   'Runs Vitest only; use the project runner for other test frameworks.',
-  'Run a failing focused test (RED), implement, rerun the same selection (GREEN), then verify the full suite once with scope "full" or the repository full check.',
+  'Run a failing focused test (RED), implement, and rerun the same selection (GREEN). The PR step runs the full suite.',
   'RED and GREEN are observations, never edit permissions. Duplicate, skipped, and missing tests cannot establish RED.',
   'Returns the runner report, input freshness (fresh, stale, or unknown), and at most one hint. Bash test runs do not update these observations.',
 ].join(' ');

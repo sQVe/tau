@@ -1,7 +1,7 @@
 ---
 name: tdd
 description:
-  Change behavior test-first with Tau's run_tests tool, then verify with one full check and a
+  Change behavior test-first with Tau's run_tests tool, then verify the affected tests and a
   mutation check. Use it when changing behavior. Covers the cycle and survivor handling, not test
   design.
 ---
@@ -28,15 +28,14 @@ Use this skill when you change behavior and `run_tests` is available.
    the tool run.
 3. Read the runner report. Implement the change. Rerun focused with the same files and names until
    it passes. You may change the label, but keep the selection.
-4. Refactor and format. Then verify the whole suite once: with `full_check`, with the repository's
-   own check when it has no `full_check` entry, or with a full `run_tests` pass when no repository
-   check will run. One pass on the current inputs is enough. Do not rerun an equivalent suite.
-5. After the full check passes, run `mutation_check` with `mode: "changed"` and no `base` once. Skip
-   this step, and say so, when the repository has no `mutation.argv`. Report a tool error on its own
-   line and stop the step. Survivors are advice. Fix at most 3 behaviors in one round: write a test
-   that kills the survivor, or simplify redundant code it points at. After that round, rerun the
-   full check and `mutation_check` at most once. Then list what is left as open, with file and line.
-   Give no reason per mutant.
+4. Refactor and format. Then run the affected tests with `run_tests` once on the current inputs. Do
+   not run the repository's full check; the PR step runs it.
+5. After the affected tests pass, run `mutation_check` with `mode: "changed"` and no `base` once.
+   Skip this step, and say so, when the repository has no `mutation.argv`. Report a tool error on
+   its own line and stop the step. Survivors are advice. Fix at most 3 behaviors in one round: write
+   a test that kills the survivor, or simplify redundant code it points at. After that round, rerun
+   the affected tests and `mutation_check` at most once. Then list what is left as open, with file
+   and line. Give no reason per mutant.
 
    Place a killing test in the owner's existing behavior test file, or add a row to its decision
    table. When the owner has no test file yet, use its normal test file next to it, as step 1 says.

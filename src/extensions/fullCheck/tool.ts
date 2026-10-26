@@ -143,7 +143,7 @@ export const createFullCheckTool = (
   defineTool({
     name: 'full_check',
     label: 'Full check',
-    description: `Run the repository's configured full check and save its output. Call it once on the final work state, instead of running the check by hand.
+    description: `Run the repository's configured full check and save its output. Call it once on the final work state. After a failure, fix with focused tests and the failing stage before you call it again.
 - Optional base: the ref or commit the change is based on. Without it, the origin remote's default branch.
 - Returns pass or fail, the exit status, the log path, and the last lines of the output. A failed check is a result, not an error.
 - A later call for the same command, head, base, and uncommitted changes returns the saved passing log without a run, and says so.
