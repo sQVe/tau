@@ -37,7 +37,12 @@ export const moduleList: readonly ModuleDeclaration[] = [
   {
     name: 'config',
     entry: 'config/config',
-    publicFiles: ['config/models', 'config/repositoryEntry', 'config/repositorySection'],
+    publicFiles: [
+      'config/fullCheck',
+      'config/models',
+      'config/repositoryEntry',
+      'config/repositorySection',
+    ],
   },
   { name: 'dialog', entry: 'dialog/dialog', publicFiles: ['dialog/box', 'dialog/keys'] },
   { name: 'errors', entry: 'errors', publicFiles: [] },

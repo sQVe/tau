@@ -4,6 +4,7 @@ import { Type } from 'typebox';
 
 import { readCheckIdentity } from '../../checkRecord/identity.js';
 import type { Exec } from '../../command.js';
+import { readFullCheckArgv } from '../../config/fullCheck.js';
 import { configRepositoryKey } from '../../github/repositoryTargetDecisions.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import type { Recorded } from './checkFlow.js';
@@ -14,7 +15,6 @@ import {
   runAndRecord,
   withRepositoryLock,
 } from './checkFlow.js';
-import { readFullCheckArgv } from './config.js';
 import type { CheckResult } from './run.js';
 
 export type FullCheckDetails = Recorded<CheckResult>;
@@ -26,14 +26,7 @@ export interface FullCheckToolOptions {
   idleLimitMilliseconds?: number;
 }
 
-const parameters = Type.Object({
-  base: Type.Optional(
-    Type.String({
-      description:
-        "Ref or commit the change is based on. Defaults to the origin remote's default branch.",
-    }),
-  ),
-});
+const parameters = Type.Object({});
 
 const defaultChecksPath = 'checks';
 const defaultPollMilliseconds = 500;
@@ -73,7 +66,6 @@ const toToolResult = (result: FullCheckDetails) => ({
 
 const execute = async (
   options: FullCheckToolOptions,
-  base: string | undefined,
   signal: AbortSignal | undefined,
   notifyWaiting: (message: string) => void,
   context: Pick<ExtensionToolContext, 'cwd' | 'isProjectTrusted' | 'ui'>,
@@ -95,7 +87,7 @@ const execute = async (
     throw new Error(notConfiguredMessage(configKey));
   }
 
-  const waiting = await readCheckIdentity(root, argv, base);
+  const waiting = await readCheckIdentity(root, argv);
   const reusedBeforeWaiting = await findReusedLog(root, waiting, defaultChecksPath);
 
   if (reusedBeforeWaiting !== undefined) {
@@ -112,7 +104,7 @@ const execute = async (
       notifyWaiting,
     },
     async (recordCommandGroup) => {
-      const identity = await readCheckIdentity(root, argv, base);
+      const identity = await readCheckIdentity(root, argv);
       const reused = await findReusedLog(root, identity, defaultChecksPath);
 
       return (
@@ -120,7 +112,7 @@ const execute = async (
         runAndRecord(
           root,
           identity,
-          () => readCheckIdentity(root, argv, base),
+          () => readCheckIdentity(root, argv),
           {
             signal,
             recordCommandGroup,
@@ -144,20 +136,19 @@ export const createFullCheckTool = (
     name: 'full_check',
     label: 'Full check',
     description: `Run the repository's configured full check and save its output. Call it once on the final work state. After a failure, fix with focused tests and the failing stage before you call it again.
-- Optional base: the ref or commit the change is based on. Without it, the origin remote's default branch.
 - Returns pass or fail, the exit status, the log path, and the last lines of the output. A failed check is a result, not an error.
-- A later call for the same command, head, base, and uncommitted changes returns the saved passing log without a run, and says so.
+- A later call for the same command and file content returns the saved passing log without a run, and says so. A commit or amend that changes no files keeps the file content.
 - Full checks of one repository run one at a time across its checkouts. A waiting call sends an update that names the checkout that holds the lock.
 - With no configured entry, the tool errors. Run the repository's check as before.`,
     promptSnippet:
       'Run the repository full check, queued per repository across checkouts, with a saved log.',
     parameters,
     executionMode: 'sequential',
-    async execute(_toolCallId, toolParameters, signal, onUpdate, context) {
+    async execute(_toolCallId, _toolParameters, signal, onUpdate, context) {
       const notifyWaiting = (message: string) => {
         onUpdate?.({ content: [{ type: 'text', text: message }], details: undefined });
       };
 
-      return execute(options, toolParameters.base, signal, notifyWaiting, context);
+      return execute(options, signal, notifyWaiting, context);
     },
   });

@@ -1,6 +1,6 @@
-import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
-import { readRepositorySection } from '../../config/repositorySection.js';
-import { isRecord } from '../../schema.js';
+import { isRecord } from '../schema.js';
+import type { ConfigLocation, ConfigWarnings } from './config.js';
+import { readRepositorySection } from './repositorySection.js';
 
 export const readArgv = (source: string, field: string, value: unknown): string[] => {
   const expected = `${field} must be a non-empty array of non-empty strings, such as ["pnpm", "check"].`;

@@ -263,7 +263,7 @@ it.each([
   expect(selectLatestChecks(logs)).toEqual(selected);
 });
 
-const state = { head: 'h1', base: 'b1', fingerprint: 'f1' };
+const state = { tree: 't1' };
 const argv = ['pnpm', 'check'];
 
 const savedRecord = (
@@ -276,7 +276,7 @@ const savedRecord = (
   logExists,
   read: {
     status: 'valid',
-    record: { version: 2, ...state, argv, fingerprint: 'f1', passed, ...overrides },
+    record: { version: 3, ...state, argv, tree: 't1', passed, ...overrides },
   },
 });
 
@@ -284,49 +284,63 @@ it.each([
   {
     name: 'a saved success',
     current: state,
+    configured: argv,
     saved: [savedRecord('a.log', true)],
     expected: { status: 'passed', logPath: 'a.log', argv },
   },
   {
     name: 'a saved failure',
     current: state,
+    configured: argv,
     saved: [savedRecord('a.log', false)],
     expected: { status: 'failed', logPath: 'a.log', argv },
   },
   {
     name: 'the newest matching record when an older one differs',
     current: state,
+    configured: argv,
     saved: [savedRecord('c.log', false), savedRecord('b.log', true)],
     expected: { status: 'failed', logPath: 'c.log', argv },
   },
   {
-    name: 'a record for another fingerprint',
+    name: 'a record for another tree',
     current: state,
-    saved: [savedRecord('a.log', true, { fingerprint: 'f2' })],
+    configured: argv,
+    saved: [savedRecord('a.log', true, { tree: 't2' })],
     expected: { status: 'missing' },
   },
   {
     name: 'a record whose log is gone',
     current: state,
+    configured: argv,
     saved: [savedRecord('a.log', true, {}, false)],
     expected: { status: 'missing' },
   },
-  { name: 'no records', current: state, saved: [], expected: { status: 'missing' } },
+  {
+    name: 'no records',
+    current: state,
+    configured: argv,
+    saved: [],
+    expected: { status: 'missing' },
+  },
   {
     name: 'a missing record',
     current: state,
+    configured: argv,
     saved: [{ logPath: 'a.log', logExists: true, read: { status: 'missing' } }],
     expected: { status: 'missing' },
   },
   {
     name: 'a malformed record',
     current: state,
+    configured: argv,
     saved: [{ logPath: 'a.log', logExists: true, read: { status: 'malformed' } }],
     expected: { status: 'malformed' },
   },
   {
     name: 'a malformed record beside a matching one',
     current: state,
+    configured: argv,
     saved: [
       { logPath: 'b.log', logExists: true, read: { status: 'malformed' } },
       savedRecord('a.log', true),
@@ -334,16 +348,49 @@ it.each([
     expected: { status: 'passed', logPath: 'a.log', argv },
   },
   {
-    name: 'a current state without a fingerprint',
-    current: { ...state, fingerprint: null },
+    name: 'a current state without a tree',
+    current: { ...state, tree: null },
+    configured: argv,
+    saved: [savedRecord('a.log', true)],
+    expected: { status: 'missing' },
+  },
+  {
+    name: 'a passing record of another command',
+    current: state,
+    configured: argv,
+    saved: [savedRecord('a.log', true, { argv: ['pnpm', 'other'] })],
+    expected: { status: 'missing' },
+  },
+  {
+    name: 'a failing record of another command',
+    current: state,
+    configured: argv,
+    saved: [savedRecord('a.log', false, { argv: ['pnpm', 'other'] })],
+    expected: { status: 'missing' },
+  },
+  {
+    name: 'a newer record of another command beside a matching one',
+    current: state,
+    configured: argv,
+    saved: [savedRecord('b.log', true, { argv: ['pnpm', 'other'] }), savedRecord('a.log', true)],
+    expected: { status: 'missing' },
+  },
+  {
+    name: 'an undefined configured command',
+    current: state,
+    configured: undefined,
     saved: [savedRecord('a.log', true)],
     expected: { status: 'missing' },
   },
 ] satisfies {
   name: string;
   current: CheckState;
+  configured: string[] | undefined;
   saved: SavedLog[];
   expected: FullCheckDecision;
-}[])('decides the full check record from $name', ({ current: currentState, saved, expected }) => {
-  expect(decideFullCheck(currentState, saved)).toEqual(expected);
-});
+}[])(
+  'decides the full check record from $name',
+  ({ current: currentState, configured, saved, expected }) => {
+    expect(decideFullCheck(currentState, configured, saved)).toEqual(expected);
+  },
+);

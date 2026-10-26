@@ -68,8 +68,13 @@ it('reports passed to the pr evidence after the first command runs again over an
   expect(third.details).toMatchObject({ passed: true, reused: false });
   expect(await runCount()).toBe(3);
 
-  const state = await readCheckState(root, undefined);
-  const decision = decideFullCheck(state, await listSavedLogs(join(root, '.tau', 'checks')));
+  const state = await readCheckState(root);
+
+  const decision = decideFullCheck(
+    state,
+    countingArgv(counter),
+    await listSavedLogs(join(root, '.tau', 'checks')),
+  );
 
   expect(decision).toMatchObject({ status: 'passed', logPath: third.details?.logPath });
 });

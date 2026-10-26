@@ -8,21 +8,19 @@ import { isMissingFile } from '../errors.js';
 import { parseVersionedRecord, readOptionalText, writeRecord } from '../record.js';
 import type { CheckIdentity, RecordRead, SavedLog } from './reuseDecision.js';
 
-const checkRecordVersion = 2;
+const checkRecordVersion = 3;
 
 const checkRecordSchema = Type.Object(
   {
     version: Type.Literal(checkRecordVersion),
-    head: Type.String({ minLength: 1 }),
-    base: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
+    tree: Type.String({ minLength: 1 }),
     argv: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
-    fingerprint: Type.String({ minLength: 1 }),
     passed: Type.Boolean(),
   },
   { additionalProperties: false },
 );
 
-type CheckRecord = Static<typeof checkRecordSchema>;
+export type CheckRecord = Static<typeof checkRecordSchema>;
 
 export const recordPathFor = (logPath: string): string => logPath.replace(/\.log$/u, '.json');
 
@@ -54,18 +52,13 @@ export const saveCheckRecord = async (
   identity: CheckIdentity,
   passed: boolean,
 ): Promise<void> => {
-  const { fingerprint } = identity;
+  const { tree, argv } = identity;
 
-  if (fingerprint === null) {
+  if (tree === null) {
     throw new Error('A state with changes inside a submodule cannot be saved for reuse.');
   }
 
-  const record: CheckRecord = {
-    version: checkRecordVersion,
-    ...identity,
-    fingerprint,
-    passed,
-  };
+  const record: CheckRecord = { version: checkRecordVersion, tree, argv, passed };
 
   const recordPath = recordPathFor(logPath);
 

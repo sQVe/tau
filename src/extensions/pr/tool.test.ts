@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 
 import { validateToolArguments } from '@earendil-works/pi-ai';
 import type { ToolCall } from '@earendil-works/pi-ai';
+import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
@@ -33,11 +34,19 @@ const createBareRemote = async (url: string, checkout: string) => {
   return directory;
 };
 
+const toolContext = (root: string) =>
+  ({
+    ...noUiContext(root),
+    isProjectTrusted: () => false,
+    ui: { notify: () => undefined },
+  }) as unknown as ExtensionToolContext;
+
 // A checkout whose origin is github.com/<origin>, with main pushed and the feature branch checked
 // out. forkPoint is the SHA where feature leaves main.
 const setUp = async (origin = 'sQVe/tau') => {
   const root = await createTemporaryRepository(onTestFinished);
   const fake = createGhFake();
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-pr-tool-agent-');
 
   await git(root, 'config', 'maintenance.auto', 'false');
   await git(root, 'config', 'gc.auto', '0');
@@ -54,8 +63,8 @@ const setUp = async (origin = 'sQVe/tau') => {
   fake.repositories[`github.com/${origin}`] = { defaultBranch: 'main' };
 
   const run = async (input: PrInput) => {
-    const tool = createPrTool(fake.exec);
-    const result = await tool.execute('call', input, undefined, undefined, noUiContext(root));
+    const tool = createPrTool(fake.exec, { agentDirectory });
+    const result = await tool.execute('call', input, undefined, undefined, toolContext(root));
 
     return result.details;
   };

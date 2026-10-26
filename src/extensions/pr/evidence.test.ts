@@ -1,10 +1,10 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { promisify } from 'node:util';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createSavedReview } from '../../../tests/savedReview.js';
@@ -29,13 +29,43 @@ const commitFile = async (root: string, text: string) => {
   return git(root, 'rev-parse', 'HEAD');
 };
 
+const githubOrigin = 'git@github.com:sQVe/tau.git';
+
+// Serves the origin's SSH transport from the local bare remote, so the origin keeps its GitHub URL.
+// Git reads that URL with `remote get-url`, which an insteadOf rewrite would replace with a path.
+// GIT_SSH_COMMAND overrides core.sshCommand, and the environment may set it to a real SSH wrapper,
+// so the test replaces the variable for its duration. It also allows only the SSH protocol and drops
+// inherited command-line config, so no URL rewrite can reach the real GitHub over another protocol.
+const serveOriginFrom = async (remote: string) => {
+  const shimDirectory = temporaryDirectory(onTestFinished, 'tau-pr-evidence-ssh-');
+  const shim = join(shimDirectory, 'ssh');
+  const serve = `exec git receive-pack '${remote}'`;
+  const fetch = `exec git upload-pack '${remote}'`;
+
+  await writeFile(
+    shim,
+    `#!/bin/sh\ncase "$*" in *git-receive-pack*) ${serve} ;; *) ${fetch} ;; esac\n`,
+  );
+
+  await chmod(shim, 0o755);
+
+  vi.stubEnv('GIT_SSH_COMMAND', shim);
+  vi.stubEnv('GIT_ALLOW_PROTOCOL', 'ssh');
+  vi.stubEnv('GIT_CONFIG_COUNT', '0');
+  vi.stubEnv('GIT_CONFIG_PARAMETERS', '');
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+};
+
 const setUp = async (kind: 'range' | 'workingTree' = 'range') => {
   const root = await createTemporaryRepository(onTestFinished);
   const remote = temporaryDirectory(onTestFinished, 'tau-pr-evidence-');
 
   await git(remote, 'init', '--quiet', '--bare', '--initial-branch=main');
-  await git(root, 'config', `url.${remote}.insteadOf`, 'https://github.com/sQVe/tau.git');
-  await git(root, 'remote', 'add', 'origin', 'https://github.com/sQVe/tau.git');
+  await serveOriginFrom(remote);
+  await git(root, 'remote', 'add', 'origin', githubOrigin);
 
   const mergeBase = await commitFile(root, 'one\n');
 
@@ -51,10 +81,27 @@ const setUp = async (kind: 'range' | 'workingTree' = 'range') => {
 
   fake.repositories['github.com/sQVe/tau'] = { defaultBranch: 'main' };
 
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-pr-evidence-agent-');
+
+  await writeFile(
+    join(agentDirectory, 'tau.json'),
+    JSON.stringify({ fullCheck: { repositories: { 'sQVe/tau': { argv: ['pnpm', 'check'] } } } }),
+  );
+
+  const config = {
+    location: { cwd: root, agentDirectory, projectTrusted: true },
+    ui: { notify: () => undefined },
+  };
+
   const defaultRequest = { remote: 'origin', review: directory };
 
   const run = (request: PublicationRequest = defaultRequest) =>
-    readPublicationEvidence({ exec: fake.exec, cwd: root, signal: undefined }, root, request);
+    readPublicationEvidence(
+      { exec: fake.exec, cwd: root, signal: undefined },
+      root,
+      request,
+      config,
+    );
 
   return { root, directory, mergeBase, fake, run };
 };
@@ -81,7 +128,7 @@ const outputHash = async (root: string, commandArguments: string[]) => {
   return createHash('sha256').update(stdout).digest('hex');
 };
 
-const saveFullCheck = async (root: string, mergeBase: string, passed: boolean) => {
+const saveFullCheck = async (root: string, passed: boolean, argv = ['pnpm', 'check']) => {
   const directory = join(root, '.tau', 'checks');
   const logPath = join(directory, '2026-01-01T00-00-00.log');
 
@@ -89,9 +136,9 @@ const saveFullCheck = async (root: string, mergeBase: string, passed: boolean) =
   await writeFile(join(root, '.git', 'info', 'exclude'), '.tau/\n', { flag: 'a' });
   await writeFile(logPath, 'compiling\nall done\n');
 
-  const state = await readCheckState(root, mergeBase);
+  const state = await readCheckState(root);
 
-  await saveCheckRecord(logPath, { ...state, argv: ['pnpm', 'check'] }, passed);
+  await saveCheckRecord(logPath, { ...state, argv }, passed);
 
   return logPath;
 };
@@ -527,17 +574,17 @@ it('adds a markers read failure and keeps the rest of the evidence when the diff
 it.each([
   {
     name: 'passed',
-    prepare: (root: string, mergeBase: string) => saveFullCheck(root, mergeBase, true),
+    passed: true,
     gaps: [],
   },
   {
     name: 'failed',
-    prepare: (root: string, mergeBase: string) => saveFullCheck(root, mergeBase, false),
+    passed: false,
     gaps: [{ kind: 'fullCheck', status: 'failed' }],
   },
-])('reads a $name full check record with its log excerpt', async ({ name, prepare, gaps }) => {
-  const { root, mergeBase, run } = await setUp();
-  const logPath = await prepare(root, mergeBase);
+])('reads a $name full check record with its log excerpt', async ({ name, passed, gaps }) => {
+  const { root, run } = await setUp();
+  const logPath = await saveFullCheck(root, passed);
   const evidence = await run();
 
   expect(evidence.fullCheck).toEqual({
@@ -553,9 +600,9 @@ it.each([
 });
 
 it('reports a missing full check record when the tree changed after the run', async () => {
-  const { root, mergeBase, run } = await setUp();
+  const { root, run } = await setUp();
 
-  await saveFullCheck(root, mergeBase, true);
+  await saveFullCheck(root, true);
   await writeFile(join(root, 'feature.txt'), 'edited\n');
 
   const evidence = await run();
@@ -564,9 +611,20 @@ it('reports a missing full check record when the tree changed after the run', as
   expect(evidence.gaps).toContainEqual({ kind: 'fullCheck', status: 'missing' });
 });
 
+it('reports a missing full check record for a passing record of another command', async () => {
+  const { root, run } = await setUp();
+
+  await saveFullCheck(root, true, ['pnpm', 'other']);
+
+  const evidence = await run();
+
+  expect(evidence.fullCheck).toEqual({ status: 'missing' });
+  expect(evidence.gaps).toContainEqual({ kind: 'fullCheck', status: 'missing' });
+});
+
 it('reports a malformed full check record', async () => {
-  const { root, mergeBase, run } = await setUp();
-  const logPath = await saveFullCheck(root, mergeBase, true);
+  const { root, run } = await setUp();
+  const logPath = await saveFullCheck(root, true);
 
   await writeFile(logPath.replace(/\.log$/u, '.json'), '{');
 

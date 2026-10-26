@@ -376,6 +376,8 @@ it.each<{ name: string; parameters: RunParameters }>([
   { name: 'an option as a path', parameters: { mode: 'audit', paths: ['--config'] } },
   { name: 'a base in audit mode', parameters: { mode: 'audit', base: 'HEAD', paths: ['a'] } },
   { name: 'no base without origin/HEAD', parameters: { mode: 'changed' } },
+  { name: 'a base that names no commit', parameters: { mode: 'changed', base: 'no-such-ref' } },
+  { name: 'an option as a base', parameters: { mode: 'changed', base: '--output=x' } },
 ])('rejects $name and runs no script', async ({ parameters }) => {
   const { configure, run, runCount } = await fixture();
 
