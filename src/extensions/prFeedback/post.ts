@@ -8,6 +8,7 @@ import { confirmWithUser } from '../../dialog/dialog.js';
 import { errorMessage } from '../../errors.js';
 import { withFileLock } from '../../fileLock/fileLock.js';
 import type { Repository } from '../../github/github.js';
+import type { GroupExec } from '../../process/process.js';
 import {
   postIssueComment,
   postReply,
@@ -22,6 +23,10 @@ import type { PostedWrite, Replies } from './replies.js';
 import type { Thread } from './threads.js';
 import { planWrites, settleWrites, targetCommentIds } from './writes.js';
 import type { PlannedWrite } from './writes.js';
+
+export interface PostRuntime extends CommandRuntime {
+  execInGroup: GroupExec;
+}
 
 export interface PostInput {
   stateToken: string;
@@ -409,7 +414,7 @@ const busyRound = (directory: string) =>
 const withRoundLock = <Value>(
   runtime: CommandRuntime,
   directory: string,
-  run: () => Promise<Value>,
+  run: (recordCommandGroup: (groupId: number) => Promise<void>) => Promise<Value>,
 ): Promise<Value> =>
   withFileLock(
     {
@@ -426,8 +431,24 @@ const withRoundLock = <Value>(
     run,
   );
 
+// Runs each write in a process group that the round lock records, so the lock stays held while a
+// write runs, even after this session dies.
+const lockedWrites = (
+  runtime: PostRuntime,
+  recordCommandGroup: (groupId: number) => Promise<void>,
+): CommandRuntime => ({
+  cwd: runtime.cwd,
+  signal: runtime.signal,
+  exec: (command, commandArguments) =>
+    runtime.execInGroup(command, commandArguments, {
+      cwd: runtime.cwd,
+      signal: runtime.signal,
+      onStarted: recordCommandGroup,
+    }),
+});
+
 export const postReplies = async (
-  runtime: CommandRuntime,
+  runtime: PostRuntime,
   context: ExtensionContext,
   checkDirectory: () => Promise<string>,
   input: PostInput,
@@ -463,10 +484,11 @@ export const postReplies = async (
     await checkDirectory();
   }
 
-  const posted = await withRoundLock(runtime, directory, async () => {
+  const posted = await withRoundLock(runtime, directory, async (recordCommandGroup) => {
     const round = await rejectChangedPlan(target, directory, input, replies, writes);
+    const writeTarget = { ...target, runtime: lockedWrites(runtime, recordCommandGroup) };
 
-    return makeWrites(target, directory, writes, round.feedback, round.recorded);
+    return makeWrites(writeTarget, directory, writes, round.feedback, round.recorded);
   });
 
   return { status: 'posted', posted, skipped };

@@ -1,6 +1,7 @@
 import { createExecFake, failedResult, succeededResult } from '../../../../tests/execFake.js';
 import type { ExecCall, ExecResult } from '../../../../tests/execFake.js';
 import type { Exec } from '../../../command.js';
+import type { GroupExec } from '../../../process/process.js';
 
 interface FakeAuthor {
   login: string;
@@ -61,6 +62,9 @@ type FakeWrite =
 
 export interface GhFake {
   exec: Exec;
+  execInGroup: GroupExec;
+  // The process group a command run in its own group reports. Undefined reports none.
+  commandGroup: number | undefined;
   calls: ExecCall[];
   viewer: string;
   pullRequest: FakePullRequest | undefined;
@@ -147,6 +151,19 @@ const commandKey = (commandArguments: readonly string[]): CommandKey | undefined
 
 const isWriteKey = (key: CommandKey): key is WriteKey =>
   key === 'reply' || key === 'resolve' || key === 'issue comment';
+
+// Runs the command through exec after it reports the group from commandGroupOf.
+export const groupExecOf =
+  (exec: Exec, commandGroupOf: () => number | undefined): GroupExec =>
+  async (command, commandArguments, { cwd, signal, onStarted }) => {
+    const commandGroup = commandGroupOf();
+
+    if (commandGroup !== undefined) {
+      await onStarted(commandGroup);
+    }
+
+    return exec(command, commandArguments, { cwd, ...(signal === undefined ? {} : { signal }) });
+  };
 
 export const createGhFake = (): GhFake => {
   const failingWrites = new Set<number>();
@@ -343,6 +360,8 @@ export const createGhFake = (): GhFake => {
 
   const fake: GhFake = {
     exec: shared.exec,
+    execInGroup: groupExecOf(shared.exec, () => fake.commandGroup),
+    commandGroup: undefined,
     calls: shared.calls,
     viewer: 'sqve',
     pullRequest: { number: 7, state: 'OPEN', author: 'sqve', headRefOid: 'abc123' },

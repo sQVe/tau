@@ -33,7 +33,7 @@ const setUp = async () => {
   const fake = createGhFake();
 
   const readChecks = async (input: Partial<PrFeedbackInput> = {}) => {
-    const tool = createPrFeedbackTool(fake.exec);
+    const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
 
     const result = await tool.execute(
       'call',
@@ -83,7 +83,7 @@ describe('checks', () => {
     fake.checks = [failingCheck];
     fake.jobLogs['21'] = { log: 'boom' };
 
-    const tool = createPrFeedbackTool(fake.exec);
+    const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
 
     await tool.execute(
       'call',
@@ -119,7 +119,7 @@ describe('checks', () => {
         fake.jobLogs[String(21 + index)] = log === undefined ? { code: 1, stderr } : { log };
       }
 
-      const tool = createPrFeedbackTool(fake.exec);
+      const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
 
       const response = await tool.execute(
         'call',
@@ -648,7 +648,7 @@ describe('checks input', () => {
     const { repository, pr, error } = row;
     const head = 'head' in row ? row.head : 'abc123';
     const { fake } = await setUp();
-    const tool = createPrFeedbackTool(fake.exec);
+    const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
     const root = await createTemporaryRepository(onTestFinished);
 
     const input = {

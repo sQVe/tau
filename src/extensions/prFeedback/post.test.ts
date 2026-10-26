@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { copyFile, cp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -9,7 +10,7 @@ import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js'
 import { confirmContext, noUiContext } from '../../../tests/toolContext.js';
 import type { Exec } from '../../command.js';
 import { isMissingFile } from '../../errors.js';
-import { createGhFake } from './fixtures/ghFake.js';
+import { createGhFake, groupExecOf } from './fixtures/ghFake.js';
 import type { FakeThread, GhFake } from './fixtures/ghFake.js';
 import { createPrFeedbackTool } from './tool.js';
 import type { PrFeedbackInput } from './tool.js';
@@ -115,7 +116,10 @@ const pausedSession = (fake: GhFake) => {
   };
 
   return {
-    tool: createPrFeedbackTool(exec),
+    tool: createPrFeedbackTool(
+      exec,
+      groupExecOf(exec, () => fake.commandGroup),
+    ),
     entered: entered.promise,
     open: () => {
       gate.resolve(undefined);
@@ -126,7 +130,7 @@ const pausedSession = (fake: GhFake) => {
 const setUp = async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const fake = createGhFake();
-  const tool = createPrFeedbackTool(fake.exec);
+  const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
 
   const read = async () =>
     (await run(
@@ -561,7 +565,7 @@ describe('post', () => {
 
   it('passes --hostname and the pull request to every write', async () => {
     const { root, fake } = await setUp();
-    const tool = createPrFeedbackTool(fake.exec);
+    const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
 
     fake.threads = [botThread()];
 
@@ -1396,6 +1400,44 @@ describe('post settled writes', () => {
   });
 });
 
+const exitedProcessId = async () => {
+  const session = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
+
+  await new Promise((resolve) => {
+    session.once('close', resolve);
+  });
+
+  return session.pid ?? 0;
+};
+
+const runningGroup = () => {
+  const command = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+    stdio: 'ignore',
+    detached: true,
+  });
+
+  onTestFinished(() => {
+    command.kill('SIGKILL');
+  });
+
+  return command.pid ?? 0;
+};
+
+// Makes the round lock look as if its session process died.
+const killLockSession = async (directory: string) => {
+  const names = await readdir(directory);
+  const lockName = names.find((name) => /^post\.lock\.\d+$/u.test(name));
+
+  if (lockName === undefined) {
+    throw new Error(`${directory} holds no round lock.`);
+  }
+
+  const path = join(directory, lockName);
+  const owner = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
+
+  await writeFile(path, JSON.stringify({ ...owner, pid: await exitedProcessId() }));
+};
+
 describe('post from two sessions', () => {
   const botReplies = {
     version: 1,
@@ -1429,6 +1471,33 @@ describe('post from two sessions', () => {
       version: 2,
       writes: [recordedWrite('reply', 'thread-bot', 'Added.', 1000)],
     });
+  });
+
+  it('sends nothing while a write of a session that died still runs', async () => {
+    const { root, fake, read, post } = await setUp();
+
+    fake.threads = [botThread()];
+
+    const details = await read();
+
+    await writeReplies(details.directory, botReplies);
+    fake.commandGroup = runningGroup();
+
+    const sessionA = pausedSession(fake);
+    const postA = postFailure(post(details, noUiContext(root), {}, sessionA.tool));
+
+    await sessionA.entered;
+    await killLockSession(details.directory);
+
+    const failureB = await postFailure(post(details));
+
+    expect(failureB).toBeInstanceOf(Error);
+    expect(fake.writes).toEqual([]);
+
+    sessionA.open();
+
+    expect(await postA).toBeUndefined();
+    expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 201, body: 'Added.' }]);
   });
 
   it('lets another session post while the user answers the confirm', async () => {

@@ -90,7 +90,7 @@ const runEvidenceScript = async (fake: GhFake, activate = true) => {
   const provider = fauxProvider({ provider: 'tau-pr-feedback-codemode' });
 
   const registerTools = (pi: ExtensionAPI) => {
-    pi.registerTool(createPrFeedbackTool(fake.exec));
+    pi.registerTool(createPrFeedbackTool(fake.exec, fake.execInGroup));
     tauSkillsExtension(pi, skillsDirectory);
   };
 
