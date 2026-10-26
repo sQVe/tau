@@ -8,6 +8,7 @@ import type { GitResult, runGit } from '../../git.js';
 import {
   currentHead,
   decodeOutput,
+  HeadReadError,
   isCommitAncestor,
   readIndex,
   readIndexEntries,
@@ -71,6 +72,7 @@ interface CleanupCheck {
   prefix: string;
   stagedBefore: StagedBefore;
   snapshot: StagedSnapshot | null;
+  headUnread: boolean;
 }
 
 const buildCancelledResult = (
@@ -249,6 +251,10 @@ const snapshotChanged = async (
 };
 
 const assertCleanupOwnership = async (check: CleanupCheck): Promise<void> => {
+  if (check.headUnread) {
+    throw new Error('HEAD could not be read. Staging was left untouched.');
+  }
+
   if (check.snapshot === null) {
     // Before the candidate snapshot, unexpected entries may belong to another writer.
     const staged = await listStagedPaths(check.runner, check.cwd);
@@ -382,6 +388,7 @@ export const executeGroup = async (execution: GroupExecution): Promise<GroupOutc
         prefix,
         stagedBefore,
         snapshot: run.snapshot,
+        headUnread: groupError instanceof HeadReadError,
       };
 
       await cleanUpGroup(check, execution.parameters.files).catch((cleanupError: unknown) => {

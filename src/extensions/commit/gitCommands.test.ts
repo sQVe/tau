@@ -4,6 +4,7 @@ import { runGit } from '../../git.js';
 import type { GitResult } from '../../git.js';
 import { createTemporaryRepository } from './fixtures/commitTool.js';
 import {
+  currentHead,
   listCommitPaths,
   listStagedPaths,
   readIndexEntries,
@@ -93,6 +94,50 @@ describe('slow index operations', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+const failingHeadRead =
+  (result: Pick<GitResult, 'exitCode' | 'stderr'>): typeof runGit =>
+  async () => ({ ...result, stdout: Buffer.from('partial') });
+
+const unresolvedHeadGit: typeof runGit = async () => ({
+  exitCode: 1,
+  stdout: Buffer.alloc(0),
+  stderr: '',
+});
+
+describe('currentHead', () => {
+  it('reads the HEAD commit', async () => {
+    const repositoryDirectory = await createTemporaryRepository();
+    await runGit(repositoryDirectory, ['commit', '--allow-empty', '-m', 'chore: seed']);
+
+    const expected = await runGit(repositoryDirectory, ['rev-parse', 'HEAD']);
+
+    expect(await currentHead(runGit, repositoryDirectory)).toBe(
+      expected.stdout.toString('utf8').trim(),
+    );
+  });
+
+  it('reads no HEAD on an unborn branch', async () => {
+    const repositoryDirectory = await createTemporaryRepository();
+
+    expect(await currentHead(runGit, repositoryDirectory)).toBeNull();
+  });
+
+  it.each([
+    { name: 'a failed read', exitCode: 128, stderr: 'fatal: Permission denied' },
+    { name: 'a killed read', exitCode: null, stderr: 'git was killed' },
+  ])('reports $name with Git stderr', async ({ exitCode, stderr }) => {
+    await expect(currentHead(failingHeadRead({ exitCode, stderr }), '/repo')).rejects.toThrow(
+      stderr,
+    );
+  });
+
+  it('reports a HEAD that names neither a commit nor a branch', async () => {
+    await expect(currentHead(unresolvedHeadGit, '/repo')).rejects.toThrow(
+      'git symbolic-ref --quiet HEAD failed: HEAD names no branch or commit',
+    );
   });
 });
 

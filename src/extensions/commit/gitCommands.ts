@@ -304,16 +304,42 @@ export const repositoryPathPrefix = async (
   return prefixLines.join('\n').replace(/\n$/, '');
 };
 
-// HEAD is unresolved before the first commit.
+export class HeadReadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'HeadReadError';
+  }
+}
+
+const headReadError = (commandArguments: string[], result: GitResult): HeadReadError =>
+  new HeadReadError(
+    `git ${commandArguments.join(' ')} failed: ${failureText(result) || 'HEAD names no branch or commit'}`,
+  );
+
+// Only an unborn branch has no HEAD commit: HEAD names a branch that does not resolve yet.
 export const currentHead = async (
   runner: GitRunner,
   workingDirectory: string,
 ): Promise<string | null> => {
-  const result = await runner(workingDirectory, ['rev-parse', 'HEAD'], {
-    timeoutMilliseconds: null,
-  });
+  const verifyArguments = ['rev-parse', '--verify', '--quiet', 'HEAD'];
+  const verified = await runner(workingDirectory, verifyArguments, { timeoutMilliseconds: null });
 
-  return result.exitCode === 0 ? decodeOutput(result).trim() : null;
+  if (verified.exitCode === 0) {
+    return decodeOutput(verified).trim();
+  }
+
+  if (verified.exitCode !== 1) {
+    throw headReadError(verifyArguments, verified);
+  }
+
+  const branchArguments = ['symbolic-ref', '--quiet', 'HEAD'];
+  const branch = await runner(workingDirectory, branchArguments, { timeoutMilliseconds: null });
+
+  if (branch.exitCode !== 0) {
+    throw headReadError(branchArguments, branch);
+  }
+
+  return null;
 };
 
 export const listCommitPaths = async (
