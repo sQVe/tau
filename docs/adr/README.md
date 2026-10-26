@@ -44,6 +44,7 @@ and the numbers that its status names.
 - [0055: Record Tau coding conventions in `AGENTS.md`](./0055-record-tau-coding-conventions-in-agents-md.md)
 - [0109: Keep action behavior out of extension roots and name one concept one way](./0109-keep-action-behavior-out-of-extension-roots.md)
 - [0120: Capability modules with an enforced import table](./0120-capability-modules-with-an-enforced-import-table.md)
+- [0123: Patch Pi loaders to show no spinner](./0123-patch-pi-loaders-to-show-no-spinner.md)
 
 ## Documentation and writing
 
