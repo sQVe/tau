@@ -111,8 +111,6 @@ const isOutsideWorktree = (file: string): boolean =>
 
 export const validatePaths = (files: string[]): void => {
   for (const rawFile of files) {
-    // Validate the name as if `\` were a separator, so a traversal or sensitive name hidden behind
-    // one is rejected, while staging keeps the literal name.
     const file = posix.normalize(rawFile.replaceAll('\\', '/')).replace(/\/+$/, '');
 
     if (isInvalidPath(rawFile, file)) {

@@ -23,7 +23,6 @@ const ignoreEverything = '*';
 
 const isNameSegment = (segment: string) => !['', '.', '..'].includes(segment);
 
-// A tool that reads `\` as a separator could step out of `.tau` through a segment with one.
 const hasBackslash = (text: string) => text.includes('\\');
 
 const parseSegments = (path: string) => {
