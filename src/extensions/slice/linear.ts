@@ -165,7 +165,7 @@ export const readContainer = async (
 
   if (hasAnotherPage) {
     throw new Error(
-      `${identifier} has more than one Linear page of children, attachments, or relations, so a write could be planned from a partial list. Nothing was written.`,
+      `${identifier} has more than one Linear page of children, attachments, or relations, so a write could be planned from a partial list.`,
     );
   }
 
