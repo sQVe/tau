@@ -8,6 +8,37 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { withFileLock } from './fileLock.js';
 
+// While storageFull is set, every new file write fails as on a full disk. While truncateFails is
+// set, emptying a file fails too. Every other file operation is real.
+const fileFaults = vi.hoisted(() => ({ storageFull: false, truncateFails: false }));
+
+vi.mock(import('node:fs/promises'), async (importOriginal) => {
+  const original = await importOriginal();
+
+  const faultyWriteFile: typeof original.writeFile = async (path, data, options) => {
+    if (fileFaults.storageFull) {
+      throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+    }
+
+    await original.writeFile(path, data, options);
+  };
+
+  const faultyTruncate: typeof original.truncate = async (path, length) => {
+    if (fileFaults.truncateFails) {
+      throw Object.assign(new Error('EIO: i/o error'), { code: 'EIO' });
+    }
+
+    await original.truncate(path, length);
+  };
+
+  return {
+    ...original,
+    writeFile: faultyWriteFile,
+    truncate: faultyTruncate,
+    default: { ...original, writeFile: faultyWriteFile, truncate: faultyTruncate },
+  };
+});
+
 const fixture = () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-file-lock-');
 
@@ -42,6 +73,146 @@ const ownerJson = (token: string, released = false) =>
     token,
     ...(released ? { released: true } : {}),
   });
+
+const clearFileFaults = () => {
+  fileFaults.storageFull = false;
+  fileFaults.truncateFails = false;
+};
+
+it('releases the lock when storage refuses new files, so the next caller acquires it without waiting', async () => {
+  const { lockPath } = fixture();
+
+  onTestFinished(clearFileFaults);
+
+  const options = {
+    lockPath,
+    checkout: '/holder',
+    signal: undefined,
+    pollMilliseconds: 60_000,
+    cancelled,
+    onWaiting: () => undefined,
+  };
+
+  const result = await withFileLock(options, async () => {
+    fileFaults.storageFull = true;
+
+    return 'ran';
+  });
+
+  clearFileFaults();
+
+  const controller = new AbortController();
+  const waitedFor: unknown[] = [];
+
+  const next = await withFileLock(
+    {
+      ...options,
+      checkout: '/next',
+      signal: controller.signal,
+      onWaiting: (holder) => {
+        waitedFor.push(holder);
+        controller.abort();
+      },
+    },
+    async () => 'next ran',
+  );
+
+  expect(result).toBe('ran');
+  expect(next).toBe('next ran');
+  expect(waitedFor).toEqual([]);
+  expect(await heldLocks(lockPath)).toEqual([]);
+});
+
+it.each([
+  { name: 'replaced by another owner', replacement: ownerJson('other') },
+  { name: 'removed', replacement: undefined },
+])('leaves a lock file $name alone when storage refuses the release', async ({ replacement }) => {
+  const { lockPath } = fixture();
+  const heldPath = `${lockPath}.1`;
+
+  onTestFinished(clearFileFaults);
+
+  const result = await withFileLock(
+    {
+      lockPath,
+      checkout: '/holder',
+      signal: undefined,
+      pollMilliseconds: 60_000,
+      cancelled,
+      onWaiting: () => undefined,
+    },
+    async () => {
+      await (replacement === undefined ? rm(heldPath) : writeFile(heldPath, replacement));
+      fileFaults.storageFull = true;
+
+      return 'ran';
+    },
+  );
+
+  const text = await readFile(heldPath, 'utf8').catch(() => undefined);
+
+  expect(result).toBe('ran');
+  expect(text).toBe(replacement);
+});
+
+it.each([
+  { name: 'in the held lock file', replacement: undefined, recorded: { commandGroup: 4242 } },
+  {
+    name: 'only while the file is its own',
+    replacement: ownerJson('other'),
+    recorded: { token: 'other' },
+  },
+])('records the command group $name', async ({ replacement, recorded }) => {
+  const { lockPath } = fixture();
+  const heldPath = `${lockPath}.1`;
+
+  const text = await withFileLock(
+    {
+      lockPath,
+      checkout: '/holder',
+      signal: undefined,
+      pollMilliseconds: 60_000,
+      cancelled,
+      onWaiting: () => undefined,
+    },
+    async (recordCommandGroup) => {
+      if (replacement !== undefined) {
+        await writeFile(heldPath, replacement);
+      }
+
+      await recordCommandGroup(4242);
+
+      return readFile(heldPath, 'utf8');
+    },
+  );
+
+  expect(JSON.parse(text)).toMatchObject(recorded);
+});
+
+it('rejects with the error of the run when the release fails too', async () => {
+  const { lockPath } = fixture();
+
+  onTestFinished(clearFileFaults);
+
+  const outcome = withFileLock(
+    {
+      lockPath,
+      checkout: '/holder',
+      signal: undefined,
+      pollMilliseconds: 60_000,
+      cancelled,
+      onWaiting: () => undefined,
+    },
+    async () => {
+      fileFaults.storageFull = true;
+      fileFaults.truncateFails = true;
+
+      throw new Error('The run failed.');
+    },
+  );
+
+  await expect(outcome).rejects.toThrow('The run failed.');
+});
 
 it.each([
   {
