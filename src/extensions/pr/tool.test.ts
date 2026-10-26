@@ -34,7 +34,6 @@ const createBareRemote = async (url: string, checkout: string) => {
   return directory;
 };
 
-// The context a Pi tool call gets, with a trust callback and a UI that accepts notices.
 const toolContext = (root: string) =>
   ({
     ...noUiContext(root),

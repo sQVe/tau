@@ -13,7 +13,6 @@ import type { CheckIdentity, SavedLog } from './reuseDecision.js';
 
 type RegisterCleanup = (cleanup: () => Promise<void>) => void;
 
-// Only copyFile is replaced, and by default it passes through, so a test can fail the index copy.
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const actual = await importOriginal();
 

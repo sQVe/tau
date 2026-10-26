@@ -32,8 +32,6 @@ const resolveCommit = async (root: string, reference: string): Promise<string | 
   return result.exitCode === 0 ? result.stdout.toString('utf8').trim() : undefined;
 };
 
-// Resolves base, a ref or commit, to a commit. Without base, the origin remote's default branch, or
-// null when the checkout has none.
 export const readBase = async (root: string, base: string | undefined): Promise<string | null> => {
   if (base === undefined) {
     return (await resolveCommit(root, 'origin/HEAD')) ?? null;
@@ -52,8 +50,6 @@ export const readBase = async (root: string, base: string | undefined): Promise<
   return commit;
 };
 
-// A submodule with modified content or untracked files keeps its commit in the tree, so two
-// different edits would give the same tree ID.
 const hasDirtySubmodule = async (root: string): Promise<boolean> => {
   const status = await runGit(root, ['status', '--porcelain=v2', '-z', '--ignore-submodules=none']);
 
@@ -73,8 +69,6 @@ const isAttributeRule = (line: string): boolean => {
   return text !== '' && !text.startsWith('#');
 };
 
-// Git still reads $GIT_DIR/info/attributes when content conversion is off, so a rule there could
-// change the bytes it stages. Comment and blank lines are not rules.
 const hasInfoAttributeRules = async (root: string): Promise<boolean> => {
   const path = resolve(root, await readGit(root, ['rev-parse', '--git-path', 'info/attributes']));
   const text = (await readOptionalText(path)) ?? '';
@@ -82,8 +76,6 @@ const hasInfoAttributeRules = async (root: string): Promise<boolean> => {
   return text.split('\n').some(isAttributeRule);
 };
 
-// Stages with no attributes, no filters, and no line-ending conversion, so the tree holds the raw
-// bytes of each file. The empty tree has no attributes, and /dev/null is an empty attributes file.
 const rawContentArguments = (emptyTree: string): string[] => [
   '-c',
   'core.autocrlf=false',
@@ -92,8 +84,6 @@ const rawContentArguments = (emptyTree: string): string[] => [
   `--attr-source=${emptyTree}`,
 ];
 
-// Writes every file Git does not ignore into a copy of the index, so the tree ID changes with each
-// tracked or untracked file's path, raw content, and mode. The real index stays as it is.
 const writeWorkingTree = async (root: string): Promise<string> => {
   const indexPath = resolve(root, await readGit(root, ['rev-parse', '--git-path', 'index']));
   const directory = await mkdtemp(join(tmpdir(), 'tau-check-index-'));
@@ -113,8 +103,6 @@ const writeWorkingTree = async (root: string): Promise<string> => {
   }
 };
 
-// Reads the tree ID of the working state, or null when the tree ID cannot show every change, so the
-// state is never reusable: a submodule has changes, or info/attributes sets rules.
 export const readCheckState = async (root: string): Promise<CheckState> => {
   const cannotSeeChanges = (await hasDirtySubmodule(root)) || (await hasInfoAttributeRules(root));
 

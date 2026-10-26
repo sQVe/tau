@@ -1,7 +1,6 @@
 import type { CheckRecord } from './checkRecord.js';
 
 export interface CheckIdentity {
-  // null when a submodule has changes the tree ID cannot see, so the state is never reusable.
   tree: string | null;
   argv: string[];
 }
@@ -29,7 +28,6 @@ export const sameArgv = (left: string[], right: string[]): boolean =>
 
 const sameState = (left: CheckState, right: CheckState): boolean => left.tree === right.tree;
 
-// A result may be reused or saved for reuse only when the state has a tree.
 export const sameReusableState = (before: CheckIdentity, after: CheckIdentity): boolean =>
   before.tree !== null && sameState(before, after);
 

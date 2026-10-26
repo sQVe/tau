@@ -190,8 +190,6 @@ export const checkLogGaps = (
   });
 };
 
-// Takes the newest record for the current state. It reports missing when no command is configured
-// or when that record ran another command, whether it passed or failed.
 export const decideFullCheck = (
   current: CheckState,
   configuredArgv: string[] | undefined,

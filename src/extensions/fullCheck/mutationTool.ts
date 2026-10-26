@@ -97,8 +97,6 @@ const readAuditPaths = (request: MutationRequest): string[] => {
 const withLimit = (argv: string[], maxMutants: number | undefined): string[] =>
   maxMutants === undefined ? argv : [...argv, '--max-mutants', String(maxMutants)];
 
-// Plans the argv of a run. In changed mode it holds the resolved base commit, so the argv and the
-// tree ID identify the run.
 const planArgv = async (
   root: string,
   configured: string[],
