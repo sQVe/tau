@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { runGit } from '../../git.js';
 import type { GitResult } from '../../git.js';
-import { createTemporaryRepository } from './fixtures/commitTool.js';
+import { createTemporaryRepository, writeRepositoryFile } from './fixtures/commitTool.js';
 import {
+  currentHead,
   listCommitPaths,
   listStagedPaths,
   readIndexEntries,
@@ -93,6 +94,65 @@ describe('slow index operations', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+const failingHeadRead =
+  (result: Pick<GitResult, 'exitCode' | 'stderr'>): typeof runGit =>
+  async () => ({ ...result, stdout: Buffer.from('partial') });
+
+const unresolvedHeadGit: typeof runGit = async () => ({
+  exitCode: 1,
+  stdout: Buffer.alloc(0),
+  stderr: '',
+});
+
+describe('currentHead', () => {
+  it('reads the HEAD commit', async () => {
+    const repositoryDirectory = await createTemporaryRepository();
+    await runGit(repositoryDirectory, ['commit', '--allow-empty', '-m', 'chore: seed']);
+
+    const expected = await runGit(repositoryDirectory, ['rev-parse', 'HEAD']);
+
+    expect(await currentHead(runGit, repositoryDirectory)).toBe(
+      expected.stdout.toString('utf8').trim(),
+    );
+  });
+
+  it('reads no HEAD on an unborn branch', async () => {
+    const repositoryDirectory = await createTemporaryRepository();
+
+    expect(await currentHead(runGit, repositoryDirectory)).toBeNull();
+  });
+
+  const emptyTree = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+  const missingObject = '1234567890123456789012345678901234567890';
+
+  it.each([
+    { name: 'a detached HEAD at a tree', path: '.git/HEAD', content: emptyTree },
+    { name: 'a branch at a tree', path: '.git/refs/heads/main', content: emptyTree },
+    { name: 'a branch at a missing object', path: '.git/refs/heads/main', content: missingObject },
+  ])('reports $name as no commit', async ({ path, content }) => {
+    const repositoryDirectory = await createTemporaryRepository();
+    await runGit(repositoryDirectory, ['write-tree']);
+    await writeRepositoryFile(repositoryDirectory, path, `${content}\n`);
+
+    await expect(currentHead(runGit, repositoryDirectory)).rejects.toThrow(/HEAD/);
+  });
+
+  it.each([
+    { name: 'a failed read', exitCode: 128, stderr: 'fatal: Permission denied' },
+    { name: 'a killed read', exitCode: null, stderr: 'git was killed' },
+  ])('reports $name with Git stderr', async ({ exitCode, stderr }) => {
+    await expect(currentHead(failingHeadRead({ exitCode, stderr }), '/repo')).rejects.toThrow(
+      stderr,
+    );
+  });
+
+  it('reports a HEAD that names neither a commit nor a branch', async () => {
+    await expect(currentHead(unresolvedHeadGit, '/repo')).rejects.toThrow(
+      'git symbolic-ref --quiet HEAD failed: HEAD names no branch or commit',
+    );
   });
 });
 

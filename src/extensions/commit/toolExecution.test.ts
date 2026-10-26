@@ -258,7 +258,7 @@ describe('cancellation', () => {
 
     const tool = createObservedCommitTool({
       afterCommand: async (commandArguments) => {
-        if (commandArguments.join(' ') === 'rev-parse HEAD') {
+        if (commandArguments.join(' ') === 'rev-parse --verify --quiet HEAD^{commit}') {
           controller.abort();
         }
       },
@@ -317,7 +317,7 @@ describe('changes after the snapshot', () => {
 
     const tool = createObservedCommitTool({
       afterCommand: async (commandArguments) => {
-        if (commandArguments.join(' ') === 'rev-parse HEAD') {
+        if (commandArguments.join(' ') === 'rev-parse --verify --quiet HEAD^{commit}') {
           controller.abort();
           await change(directory);
         }
