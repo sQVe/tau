@@ -24,7 +24,6 @@ type Category = 'uncertain' | 'posted' | 'notPosted';
 
 type PrFeedbackTool = ReturnType<typeof createPrFeedbackTool>;
 
-// Lets a test act as another session right after post reads posted.json, or fail a save of it.
 const postedHooks = vi.hoisted(() => ({
   afterRead: undefined as (() => Promise<void>) | undefined,
   beforeWrite: undefined as ((writes: readonly { state: string }[]) => void) | undefined,
@@ -76,7 +75,6 @@ const run = async (
   return result.details;
 };
 
-// Holds the first GitHub write of a session until the test opens the gate.
 const pausedSession = (fake: GhFake) => {
   const entered = Promise.withResolvers<undefined>();
   const gate = Promise.withResolvers<undefined>();

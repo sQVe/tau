@@ -118,8 +118,6 @@ const postedRecord = (write: PlannedWrite, commentId: number | null): PostedWrit
   earlierCommentIds: [],
 });
 
-// An uncertain write keeps the IDs its target held before the write, so a retry does not take one
-// of them for it.
 const uncertainRecord = (write: PlannedWrite, feedback: PullRequestFeedback): PostedWrite => ({
   ...summarize(write),
   state: 'uncertain',
@@ -127,8 +125,6 @@ const uncertainRecord = (write: PlannedWrite, feedback: PullRequestFeedback): Po
   earlierCommentIds: targetCommentIds(write, feedback),
 });
 
-// A write whose output gh printed but the tool could not read counts as posted, without an ID. A
-// write whose gh call failed is uncertain, since GitHub may have taken it before gh stopped.
 const postWrite = async (target: WriteTarget, write: PlannedWrite, uncertain: PostedWrite) => {
   try {
     const commentId = await makeWrite(target, write);
@@ -184,8 +180,6 @@ const unsavedPost = (
 const summarizeFrom = (writes: readonly PlannedWrite[], start: number) =>
   writes.slice(start).map((write) => summarize(write));
 
-// GitHub does not have a write whose gh call failed for sure, so its uncertain record goes. When
-// that save fails, the record stays uncertain and the next post settles it from the feedback.
 const dropUncertain = async (directory: string, writes: readonly PostedWrite[]) => {
   try {
     await writePosted(directory, writes);
@@ -194,8 +188,6 @@ const dropUncertain = async (directory: string, writes: readonly PostedWrite[]) 
   }
 };
 
-// Records each write as uncertain before it is sent, so a post that stops before the next save
-// leaves a write that a retry checks for. A write GitHub has is recorded as posted right after.
 const makeWrites = async (
   target: WriteTarget,
   directory: string,
@@ -367,9 +359,6 @@ const readRecorded = async (directory: string, feedback: PullRequestFeedback) =>
   return settleFrom(posted.writes, feedback, 'drop');
 };
 
-// A thread can be resolved, a permission can change, or another session can post the round,
-// without changing the token or the head. Runs under the round lock. Returns the fresh feedback and
-// the writes posted.json records now.
 const rejectChangedPlan = async (
   target: WriteTarget,
   directory: string,
@@ -417,9 +406,6 @@ const busyRound = (directory: string) =>
     `Another pr_feedback post is posting ${directory}. Call read again after it finishes. Nothing was posted.`,
   );
 
-// Holds the round directory from the final read of posted.json through its last save, so two
-// sessions never send the same write or save over each other's records. A post refuses instead of
-// waiting: the round the other post finishes no longer matches this plan.
 const withRoundLock = <Value>(
   runtime: CommandRuntime,
   directory: string,
@@ -433,7 +419,6 @@ const withRoundLock = <Value>(
       pollMilliseconds: lockPollMilliseconds,
       cancelled: () =>
         new Error('The post was cancelled before it took the round. Nothing was posted.'),
-      // Throwing here refuses before the lock is taken.
       onWaiting: () => {
         throw busyRound(directory);
       },
@@ -441,9 +426,6 @@ const withRoundLock = <Value>(
     run,
   );
 
-// Posts only the writes the read checked. The user answers the confirm before the post takes the
-// round lock, since the answer can take any time. Under the lock, the feedback and posted.json are
-// read again.
 export const postReplies = async (
   runtime: CommandRuntime,
   context: ExtensionContext,
