@@ -316,7 +316,6 @@ const headReadError = (commandArguments: string[], result: GitResult): HeadReadE
     `git ${commandArguments.join(' ')} failed: ${failureText(result) || 'HEAD names no branch or commit'}`,
   );
 
-// Only an unborn branch has no HEAD commit: HEAD names a branch that does not resolve yet.
 export const currentHead = async (
   runner: GitRunner,
   workingDirectory: string,
