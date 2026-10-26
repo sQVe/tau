@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { runGit } from '../../git.js';
 import type { GitResult } from '../../git.js';
-import { createTemporaryRepository } from './fixtures/commitTool.js';
+import { createTemporaryRepository, writeRepositoryFile } from './fixtures/commitTool.js';
 import {
   currentHead,
   listCommitPaths,
@@ -123,6 +123,21 @@ describe('currentHead', () => {
     const repositoryDirectory = await createTemporaryRepository();
 
     expect(await currentHead(runGit, repositoryDirectory)).toBeNull();
+  });
+
+  const emptyTree = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+  const missingObject = '1234567890123456789012345678901234567890';
+
+  it.each([
+    { name: 'a detached HEAD at a tree', path: '.git/HEAD', content: emptyTree },
+    { name: 'a branch at a tree', path: '.git/refs/heads/main', content: emptyTree },
+    { name: 'a branch at a missing object', path: '.git/refs/heads/main', content: missingObject },
+  ])('reports $name as no commit', async ({ path, content }) => {
+    const repositoryDirectory = await createTemporaryRepository();
+    await runGit(repositoryDirectory, ['write-tree']);
+    await writeRepositoryFile(repositoryDirectory, path, `${content}\n`);
+
+    await expect(currentHead(runGit, repositoryDirectory)).rejects.toThrow(/HEAD/);
   });
 
   it.each([

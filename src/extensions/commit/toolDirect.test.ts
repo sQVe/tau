@@ -53,7 +53,8 @@ describe('direct commit staging', () => {
     }
 
     const headCalls = runner.mock.calls.filter(
-      ([, argumentsList]) => argumentsList[0] === 'rev-parse' && argumentsList.at(-1) === 'HEAD',
+      ([, argumentsList]) =>
+        argumentsList[0] === 'rev-parse' && argumentsList.at(-1)?.startsWith('HEAD') === true,
     );
 
     const hookDiff = runner.mock.calls.find(

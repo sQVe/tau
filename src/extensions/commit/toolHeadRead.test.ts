@@ -22,7 +22,8 @@ const deniedRead: GitResult = {
 };
 
 const readsHead = (commandArguments: string[]): boolean =>
-  commandArguments[0] === 'rev-parse' && commandArguments.includes('HEAD');
+  commandArguments[0] === 'rev-parse' &&
+  commandArguments.some((argument) => argument.startsWith('HEAD'));
 
 describe('a failed HEAD read', () => {
   it('leaves staging untouched when the group fails after its snapshot', async () => {
@@ -45,7 +46,7 @@ describe('a failed HEAD read', () => {
 
     await expect(
       tool.execute('call', singleGroup, controller.signal, undefined, commitContext(directory)),
-    ).rejects.toThrow(/rev-parse.*HEAD failed: fatal: unable to read HEAD: Permission denied/);
+    ).rejects.toThrow(/rev-parse.*HEAD.* failed: fatal: unable to read HEAD: Permission denied/);
 
     expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('a.txt\n');
     expect(await git(directory, ['rev-list', '--count', 'HEAD'])).toBe('1\n');
@@ -69,7 +70,7 @@ describe('a failed HEAD read', () => {
 
     await expect(
       tool.execute('call', singleGroup, undefined, undefined, commitContext(directory)),
-    ).rejects.toThrow(/rev-parse.*HEAD failed: fatal: unable to read HEAD: Permission denied/);
+    ).rejects.toThrow(/rev-parse.*HEAD.* failed: fatal: unable to read HEAD: Permission denied/);
 
     expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('a.txt\n');
   });

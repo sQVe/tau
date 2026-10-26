@@ -320,7 +320,7 @@ export const currentHead = async (
   runner: GitRunner,
   workingDirectory: string,
 ): Promise<string | null> => {
-  const verifyArguments = ['rev-parse', '--verify', '--quiet', 'HEAD'];
+  const verifyArguments = ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'];
   const verified = await runner(workingDirectory, verifyArguments, { timeoutMilliseconds: null });
 
   if (verified.exitCode === 0) {
@@ -336,6 +336,21 @@ export const currentHead = async (
 
   if (branch.exitCode !== 0) {
     throw headReadError(branchArguments, branch);
+  }
+
+  const branchName = decodeOutput(branch).trim();
+  const referenceArguments = ['rev-parse', '--verify', '--quiet', branchName];
+
+  const reference = await runner(workingDirectory, referenceArguments, {
+    timeoutMilliseconds: null,
+  });
+
+  if (reference.exitCode === 0) {
+    throw new HeadReadError(`HEAD names ${branchName}, which does not point to a commit`);
+  }
+
+  if (reference.exitCode !== 1) {
+    throw headReadError(referenceArguments, reference);
   }
 
   return null;
