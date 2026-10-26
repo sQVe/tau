@@ -40,10 +40,33 @@ workers a full run uses.
 ### Environment
 
 Each project task lists every environment variable whose value can change a test result, such as
-`CI`, `PATH`, `HOME`, the temporary directory variables, and `TAU_COLLECTION_TIMEOUT_MS`. A change
-to one of them reruns the task. The list leaves out the herdr, Pi, Tau worker, and Git variables.
-The tests set those themselves, and they differ per pane or Git hook. A test fails when test code
-reads a variable that is neither listed nor known to be set by the tests.
+`CI`, `HOME`, the temporary directory variables, and `TAU_COLLECTION_TIMEOUT_MS`. A change to one of
+them reruns the task. The list leaves out the herdr, Pi, Tau worker, and Git variables. The tests
+set those themselves, and they differ per pane or Git hook. A test fails when test code reads a
+variable that is neither listed nor known to be set by the tests.
+
+`PATH` works differently. Vite+ does not track files outside the workspace, so a fingerprint of the
+`PATH` text cannot see a change to the file `node` or `pnpm` resolves to. `pnpm check` runs
+`scripts/runTestProjects.ts`, which passes a SHA-256 digest of the executables on `PATH`. The digest
+covers, for each command name, every executable file with that name in `PATH` order. Shadowed
+executables count because some tests drop the package bin directories from `PATH` and run the
+command behind them, such as the installed `pi`. The tasks fingerprint that digest in place of
+`PATH`.
+
+A reorder or a duplicate directory leaves the digest the same only while each command name keeps the
+same files in the same order. A new executable, or a different file for an existing name, changes
+it. A file counts only when the caller can execute it, as checked by `accessSync` with `X_OK`. A
+directory does not count. A file counts by its device, inode, size, modification time, and change
+time, not its content. The script reads them as `bigint` values, so a large inode number keeps every
+digit. Every write updates the change time, and normal tools cannot set it back, so a rewrite that
+restores size and modification time still changes the digest.
+
+When a `PATH` directory exists but cannot be listed, the script cannot know its commands. It passes
+a random value in place of the digest, so every project runs, and it prints one line to stderr that
+names the directory.
+
+A task run outside `pnpm check`, such as `vp run vitest:core`, has no digest, so it fingerprints the
+raw `PATH` text.
 
 ## Consequences
 
@@ -62,6 +85,13 @@ reads a variable that is neither listed nor known to be set by the tests.
 - Adding or removing any file under `src/` reruns the projects that list those directories.
 - The environment test sees only direct reads in test code. A variable read inside a dependency or a
   child process must be added to the list by hand.
+- Each `pnpm check` reads every `PATH` directory and checks each entry before the tasks start.
+- Adding, removing, or changing any executable on `PATH` reruns every project, even one that no test
+  runs.
+- A `PATH` directory that cannot be listed, such as one with execute but no read permission, makes
+  every check run every project.
+- A check that does not run through `pnpm check` misses the cache after a `PATH` reorder or
+  duplicate, because it fingerprints the raw `PATH` text.
 - An aborted check can leave Vite+ runtime files in the repository root, which make the next check
   rerun the projects that list the root.
 
@@ -87,6 +117,12 @@ integration tests failed under that load.
 Pass and fingerprint every variable, including herdr and Git ones. Rejected because the pane
 variables differ in every herdr pane, so the cache would miss in each one. Git hook variables would
 also reach the tests' own Git calls.
+
+### Fingerprint the raw `PATH` when a directory cannot be listed
+
+Fall back to the `PATH` text when the script cannot list a `PATH` directory. Rejected because the
+fallback also drops the file check for every directory it could list, so a changed `node` or `pi`
+there would replay a stale result.
 
 ### Cache tests in CI
 

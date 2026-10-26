@@ -11,7 +11,7 @@
     "changeset": "changeset",
     "changeset:check": "changeset status --since=origin/main",
     "changeset:version": "changeset version && vp fmt",
-    "check": "pnpm pi-version:check && pnpm run \"/^check:static:/\" && vp run --concurrency-limit 2 vitest:all",
+    "check": "pnpm pi-version:check && pnpm run \"/^check:static:/\" && node scripts/runTestProjects.ts",
     "check:static:format": "pnpm format:check",
     "check:static:knip": "pnpm knip",
     "check:static:style": "pnpm style:check",
