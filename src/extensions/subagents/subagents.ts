@@ -669,7 +669,6 @@ export default function subagentsExtension(
       context.ui.setWidget(
         'tau-subagents',
         (_tui, theme) => {
-          // Pi renders every frame, but the lines change only with the width and elapsed seconds.
           let cached: { width: number; second: number; lines: string[] } | undefined;
 
           return {

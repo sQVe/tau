@@ -62,8 +62,6 @@ const getSessionCost = (context: ExtensionContext): number => {
   return cost;
 };
 
-// Pi passes its full session manager, which counts entries without copying them, but the
-// extension type leaves the method out.
 const countEntries = (
   sessionManager: ExtensionContext['sessionManager'] | SessionManager,
 ): number => {
@@ -85,10 +83,6 @@ const isFreshUsage = (
 ): cached is ContextUsageReading =>
   cached !== undefined && now - cached.readAt < contextUsageLifetimeMilliseconds;
 
-// The footer renders on every frame, and both values scan the whole session. Entries are
-// append-only and every append moves the leaf, so the cost changes only with the session, leaf, or
-// entry count. Context usage also depends on the routed model's limits, which extensions cannot
-// see, so it also expires after a second.
 const readSessionStats = (
   context: ExtensionContext,
   cached: SessionStats | undefined,
@@ -194,7 +188,6 @@ const createFooter = (
         stats = undefined;
       },
       render(width) {
-        // A monotonic clock, so a wall-clock rollback cannot keep context usage beyond its lifetime.
         stats = readSessionStats(context, stats, performance.now());
         const usage = stats.contextUsage.contextUsage;
 
