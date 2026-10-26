@@ -33,13 +33,13 @@ it.each([
   ]);
 });
 
-it('gives a worker that loads the pr skill the full_check tool', () => {
-  const loadout = { tools: ['read'], skills: ['/skills/pr/SKILL.md'] };
+it('does not give a worker the full_check tool that its profile lists', () => {
+  const loadout = { tools: ['read', 'full_check'], skills: [] };
 
-  expect(workerTools(loadout, bundledSkillTools)).toContain('full_check');
+  expect(workerTools(loadout, bundledSkillTools)).not.toContain('full_check');
 });
 
-it.each(['tdd', 'fix-bug'])(
+it.each(['tdd', 'fix-bug', 'pr'])(
   'does not give a worker that loads the %s skill the full_check tool',
   (skill) => {
     const loadout = { tools: ['read'], skills: [`/skills/${skill}/SKILL.md`] };

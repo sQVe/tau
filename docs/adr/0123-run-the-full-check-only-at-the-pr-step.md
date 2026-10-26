@@ -16,7 +16,8 @@ content.
 
 The PR step runs the only local full check. Workers have no `full_check` tool, and no skill tells a
 worker to run the full check. Workers verify with focused tests and the check stage that failed. The
-`pr` skill keeps the `full_check` tool.
+`pr` skill keeps the `full_check` tool for the manager. A worker's tool list drops `full_check` even
+when its profile lists the tool or it loads the `pr` skill.
 
 ## Consequences
 
