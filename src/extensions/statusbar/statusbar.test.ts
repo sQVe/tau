@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { promisify, stripVTControlCharacters } from 'node:util';
 
 import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { initializeRepository } from '../../../tests/gitRepository.js';
@@ -16,12 +16,18 @@ const executeFile = promisify(execFile);
 const setup = (directory: string, mode = 'tui') => {
   const fake = fakeExtensionApi({ getThinkingLevel: () => 'high' });
   const setFooter = vi.fn<ExtensionContext['ui']['setFooter']>();
+  const session = { id: 'session-1', leafId: 'entry-1' as string | null, entryCount: 1 };
 
   const context = {
     cwd: directory,
     mode,
     ui: { setFooter },
-    sessionManager: { getEntries: () => [] },
+    sessionManager: {
+      getSessionId: () => session.id,
+      getLeafId: () => session.leafId,
+      getEntryCount: () => session.entryCount,
+      getEntries: () => [],
+    },
     getContextUsage: () => undefined,
   } as unknown as ExtensionContext;
 
@@ -73,10 +79,14 @@ const setup = (directory: string, mode = 'tui') => {
 
   statusbarExtension(fake.pi);
 
-  return { context, emit, mount, setFooter };
+  return { context, session, emit, mount, setFooter };
 };
 
 describe('statusbar extension', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('shows a clean checkout as clean when Pi inherits a missing index', async ({
     onTestFinished,
   }) => {
@@ -235,6 +245,8 @@ describe('statusbar extension', () => {
       contextWindow: 200000,
     });
 
+    application.session.entryCount += 1;
+
     expect(footer.rawRender(100)[0]).toContain('\x1b[38;2;128;96;16m75.0%/200k\x1b[39m');
 
     application.context.getContextUsage = () => ({
@@ -242,6 +254,8 @@ describe('statusbar extension', () => {
       percent: 95,
       contextWindow: 200000,
     });
+
+    application.session.entryCount += 1;
 
     expect(footer.rawRender(100)[0]).toContain('\x1b[38;2;184;37;48m95.0%/200k\x1b[39m');
 
@@ -508,6 +522,173 @@ describe('statusbar extension', () => {
     expect(footer.render(100)[0]).toMatch(/\?\/0  no-model$/);
     expect(footer.render(100)).toHaveLength(1);
     expect(application.setFooter).toHaveBeenCalledOnce();
+
+    footer.dispose?.();
+  });
+
+  const mountCountingFooter = async () => {
+    vi.useFakeTimers({ now: 10_000 });
+
+    const application = setup('/missing/tau/abu-347');
+    const getEntries = vi.fn<() => never[]>(() => []);
+    const getContextUsage = vi.fn<() => undefined>(() => undefined);
+
+    application.context.sessionManager.getEntries = getEntries;
+    application.context.getContextUsage = getContextUsage;
+    application.context.model = { id: 'model', contextWindow: 200000 } as never;
+
+    await application.emit('session_start');
+
+    const footer = application.mount().component;
+
+    return { application, footer, getEntries, getContextUsage };
+  };
+
+  it('reads session cost and context usage once within a second of an unchanged session', async () => {
+    const { footer, getEntries, getContextUsage } = await mountCountingFooter();
+
+    footer.render(100);
+    vi.advanceTimersByTime(999);
+    footer.render(100);
+    footer.render(80);
+
+    expect(getEntries).toHaveBeenCalledOnce();
+    expect(getContextUsage).toHaveBeenCalledOnce();
+
+    footer.dispose?.();
+  });
+
+  it('reads context usage again after a second but keeps the session cost', async () => {
+    const { footer, getEntries, getContextUsage } = await mountCountingFooter();
+
+    footer.render(100);
+    vi.advanceTimersByTime(1000);
+    footer.render(100);
+
+    expect(getEntries).toHaveBeenCalledOnce();
+    expect(getContextUsage).toHaveBeenCalledTimes(2);
+
+    footer.dispose?.();
+  });
+
+  it('reads context usage again after a second when the wall clock moves back', async () => {
+    const { footer, getContextUsage } = await mountCountingFooter();
+
+    footer.render(100);
+    vi.setSystemTime(Date.now() - 5000);
+    vi.advanceTimersByTime(1000);
+    footer.render(100);
+
+    expect(getContextUsage).toHaveBeenCalledTimes(2);
+
+    footer.dispose?.();
+  });
+
+  it('reads session cost and context usage again after invalidation', async () => {
+    const { footer, getEntries, getContextUsage } = await mountCountingFooter();
+
+    footer.render(100);
+    footer.invalidate();
+    footer.render(100);
+
+    expect(getEntries).toHaveBeenCalledTimes(2);
+    expect(getContextUsage).toHaveBeenCalledTimes(2);
+
+    footer.dispose?.();
+  });
+
+  it.each([
+    [
+      'a new session',
+      2,
+      (application: ReturnType<typeof setup>) => {
+        application.session.id = 'session-2';
+      },
+    ],
+    [
+      'a new leaf',
+      2,
+      (application: ReturnType<typeof setup>) => {
+        application.session.leafId = 'entry-2';
+      },
+    ],
+    [
+      'a new entry',
+      2,
+      (application: ReturnType<typeof setup>) => {
+        application.session.entryCount += 1;
+      },
+    ],
+    [
+      'a new model',
+      1,
+      (application: ReturnType<typeof setup>) => {
+        application.context.model = { id: 'other', contextWindow: 100000 } as never;
+      },
+    ],
+  ])('reads context usage again after %s', async (_change, costReads, change) => {
+    const { application, footer, getEntries, getContextUsage } = await mountCountingFooter();
+
+    footer.render(100);
+    change(application);
+    footer.render(100);
+
+    expect(getEntries).toHaveBeenCalledTimes(costReads);
+    expect(getContextUsage).toHaveBeenCalledTimes(2);
+
+    footer.dispose?.();
+  });
+
+  it('counts entries from the entry list when the session manager cannot count them', async () => {
+    const application = setup('/missing/tau/abu-347');
+    const entries: never[] = [];
+    const getContextUsage = vi.fn<() => undefined>(() => undefined);
+
+    Reflect.deleteProperty(application.context.sessionManager, 'getEntryCount');
+    application.context.sessionManager.getEntries = () => entries;
+    application.context.getContextUsage = getContextUsage;
+
+    await application.emit('session_start');
+
+    const footer = application.mount().component;
+
+    footer.render(100);
+    footer.render(100);
+    entries.push({ type: 'message', message: { role: 'user' } } as never);
+    footer.render(100);
+
+    expect(getContextUsage).toHaveBeenCalledTimes(2);
+
+    footer.dispose?.();
+  });
+
+  it('shows changed routed model limits within a second', async () => {
+    vi.useFakeTimers({ now: 10_000 });
+
+    const application = setup('/missing/tau/abu-347');
+    const routed = { contextWindow: 100000 };
+
+    application.context.model = { id: 'smart', api: 'pi-virtual', contextWindow: 0 } as never;
+
+    application.context.getContextUsage = () => ({
+      tokens: 10000,
+      percent: (10000 / routed.contextWindow) * 100,
+      contextWindow: routed.contextWindow,
+    });
+
+    await application.emit('session_start');
+
+    const footer = application.mount().component;
+
+    expect(footer.render(100)[0]).toContain('10.0%/100k');
+
+    routed.contextWindow = 200000;
+
+    expect(footer.render(100)[0]).toContain('10.0%/100k');
+
+    vi.advanceTimersByTime(1000);
+
+    expect(footer.render(100)[0]).toContain('5.0%/200k');
 
     footer.dispose?.();
   });
