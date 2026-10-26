@@ -526,6 +526,21 @@ describe('statusbar extension', () => {
     footer.dispose?.();
   });
 
+  it('counts cache warmer usage entries in the session cost', async () => {
+    const application = setup('/missing/tau/abu-347');
+
+    application.context.sessionManager.getEntries = () =>
+      [{ type: 'usage', kind: 'cache_warm', usage: { cost: { total: 0.25 } } }] as never;
+
+    await application.emit('session_start');
+
+    const footer = application.mount().component;
+
+    expect(footer.render(100)[0]).toMatch(/main +\$0\.250 /);
+
+    footer.dispose?.();
+  });
+
   const mountCountingFooter = async () => {
     vi.useFakeTimers({ now: 10_000 });
 

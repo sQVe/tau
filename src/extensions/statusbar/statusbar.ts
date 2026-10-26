@@ -9,14 +9,10 @@ import type {
 
 import { runGit } from '../../git.js';
 import { footerTheme, renderFooterLine } from './render.js';
+import { decideReuse } from './reuseDecision.js';
+import type { SessionKey } from './reuseDecision.js';
 
 type FooterFactory = NonNullable<Parameters<ExtensionContext['ui']['setFooter']>[0]>;
-
-interface SessionKey {
-  sessionId: string;
-  leafId: string | null;
-  entryCount: number;
-}
 
 interface CostReading extends SessionKey {
   cost: number;
@@ -44,7 +40,6 @@ interface StatusbarState {
 // Bound background Git work. Failures leave the dirty marker hidden.
 const gitTimeoutMilliseconds = 5000;
 const shownDirectoryDepth = 2;
-const contextUsageLifetimeMilliseconds = 1000;
 
 const getSessionCost = (context: ExtensionContext): number => {
   let cost = 0;
@@ -54,6 +49,8 @@ const getSessionCost = (context: ExtensionContext): number => {
       if (entry.message.role === 'assistant' || entry.message.role === 'toolResult') {
         cost += entry.message.usage?.cost.total ?? 0;
       }
+    } else if (entry.type === 'usage') {
+      cost += entry.usage.cost.total;
     } else if (entry.type === 'compaction' || entry.type === 'branch_summary') {
       cost += entry.usage?.cost.total ?? 0;
     }
@@ -72,17 +69,6 @@ const countEntries = (
   return sessionManager.getEntries().length;
 };
 
-const sameSession = (cached: SessionKey | undefined, key: SessionKey): cached is SessionKey =>
-  cached?.sessionId === key.sessionId &&
-  cached.leafId === key.leafId &&
-  cached.entryCount === key.entryCount;
-
-const isFreshUsage = (
-  cached: ContextUsageReading | undefined,
-  now: number,
-): cached is ContextUsageReading =>
-  cached !== undefined && now - cached.readAt < contextUsageLifetimeMilliseconds;
-
 const readSessionStats = (
   context: ExtensionContext,
   cached: SessionStats | undefined,
@@ -96,15 +82,22 @@ const readSessionStats = (
     entryCount: countEntries(sessionManager),
   };
 
-  const cost = sameSession(cached?.cost, key)
-    ? cached.cost
-    : { ...key, cost: getSessionCost(context) };
-
   const cachedUsage = cached?.contextUsage;
-  const reusable = isFreshUsage(cachedUsage, now) && sameSession(cachedUsage, key);
+  const usageAgeMilliseconds = cachedUsage === undefined ? undefined : now - cachedUsage.readAt;
+
+  const decision = decideReuse({
+    current: key,
+    cachedCost: cached?.cost,
+    cachedUsage,
+    usageAgeMilliseconds,
+    modelUnchanged: cachedUsage?.model === context.model,
+  });
+
+  const cost =
+    decision.cost && cached !== undefined ? cached.cost : { ...key, cost: getSessionCost(context) };
 
   const contextUsage =
-    reusable && cachedUsage.model === context.model
+    decision.contextUsage && cachedUsage !== undefined
       ? cachedUsage
       : { ...key, model: context.model, readAt: now, contextUsage: context.getContextUsage() };
 
