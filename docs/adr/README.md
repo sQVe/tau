@@ -85,7 +85,8 @@ and the numbers that its status names.
 - [0012: Shared TDD state](./0012-shared-tdd-state.md), superseded by 0023
 - [0023: Use advisory TDD observations instead of edit permissions](./0023-advisory-tdd-observations.md)
 - [0039: Reuse reported checks and run one full suite per work state](./0039-reuse-reported-checks-and-run-one-full-suite.md)
-- [0105: Queue full checks per repository and reuse passing logs](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md)
+- [0105: Queue full checks per repository and reuse passing logs](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md),
+  partly superseded by 0124
 - [0106: Replay unchanged test projects in `pnpm check`](./0106-replay-unchanged-test-projects-in-pnpm-check.md)
 - [0113: Run diff-scoped mutation testing by hand](./0113-run-diff-scoped-mutation-testing-by-hand.md),
   partly superseded by 0115
@@ -97,6 +98,7 @@ and the numbers that its status names.
 - [0119: Share the mutation script as one npm package](./0119-share-the-mutation-script-as-one-npm-package.md)
 - [0121: Test architecture rules for placement, naming, fakes, and fixtures](./0121-test-architecture-rules.md)
 - [0123: Run the full check only at the PR step](./0123-run-the-full-check-only-at-the-pr-step.md)
+- [0124: Key full check reuse by tree content and command](./0124-key-full-check-reuse-by-tree-content.md)
 
 ## Commits
 
@@ -237,7 +239,8 @@ and the numbers that its status names.
 - [0089: Capture review targets with a code_review tool](./0089-capture-review-targets-with-a-code-review-tool.md),
   partly superseded by 0091
 - [0091: Return review evidence from the code_review tool](./0091-return-review-evidence-from-the-code-review-tool.md)
-- [0094: Compose PR publication evidence](./0094-compose-pr-publication-evidence.md)
+- [0094: Compose PR publication evidence](./0094-compose-pr-publication-evidence.md), partly
+  superseded by 0124
 - [0096: Create and keep linear stacks with gh stack](./0096-create-and-keep-linear-stacks-with-gh-stack.md)
 - [0104: Capture fix reviews from a review snapshot](./0104-capture-fix-reviews-from-a-review-snapshot.md)
 - [0111: Request review bots from config and skip the preview for a named change](./0111-request-review-bots-from-config-and-skip-named-changes-in-pr.md)

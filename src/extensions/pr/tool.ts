@@ -4,6 +4,7 @@ import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
 import type { Exec, CommandRuntime } from '../../command.js';
+import type { ConfigLocation } from '../../config/config.js';
 import { findCheckoutRoot } from '../../git.js';
 import { createFreshTauDirectory } from '../../tauDirectory.js';
 import { readCheckHeader, readPublicationEvidence } from './evidence.js';
@@ -71,7 +72,7 @@ const description = `Gather publication facts for a pull request, verify the pub
 - target {remote?, base?}: resolves where the current branch's pull request goes. Returns {host, repository, head: {remote, repository, owner, branch, sha}, base: {remote, branch}, mergeBase, pr, closedPrs}. repository is <host>/<owner>/<name>. head.sha is the local HEAD. pr is the open pull request or null. closedPrs lists merged and closed ones, each with number, url, state, title, body, baseRefName, isDraft, headRefOid. base wins over the open pull request's base, which wins over the default branch. Fails for no unique head remote; pass remote.
 - evidence {remote?, base?, review?}: gathers target, reuse, and code_review facts. remote and base work as in target. review is a .tau/workers/review-* directory. Returns {target, branch, subjects, reuse, review, markers, checks, fullCheck, gaps}. subjects lists commit subjects in <mergeBase>..HEAD. markers lists {path, line, marker, text} for added skip or suppression markers. Target errors become gaps.
   - checks holds the newest log per file name in .tau/pr/run-*/checks/*.log, each {path, matches, reasons, excerpt, truncated}. matches is true only when HEAD, Status, and Diff equal the current values. A match is not a pass: read the excerpt. A nonmatching excerpt is null.
-  - fullCheck is the saved full_check record for this tree and the merge base: {status, logPath, argv, excerpt, truncated}. status is passed, failed, missing, or malformed; all but passed are gaps.
+  - fullCheck is the newest saved full_check record for this tree: {status, logPath, argv, excerpt, truncated}. status is passed, failed, missing, or malformed; all but passed are gaps. missing also means no configured command, or a record of another command.
   - gaps lists what is missing or unreadable. Unavailable objects are null.
 - checkHeader {mergeBase}: call before a check other than full_check. Returns {lines}: HEAD: <sha>, Status: <sha256>, Diff: <sha256>. Join them with newlines and a final newline.
 - reuse {directory, mergeBase}: compares the saved code review in directory (.tau/workers/review-*) with git diff <mergeBase> HEAD. Returns {status, reasons, recordedBase, paths: {differing, missing, extra}, reports}. status is match when reasons is empty, else mismatch. reports lists the existing reviewer.md, finder.md, and checker.md.
@@ -101,6 +102,16 @@ const verify = async (runtime: CommandRuntime, parameters: PrInput) => {
   return { ...result };
 };
 
+const readConfigLocation = (
+  root: string,
+  options: PrToolOptions,
+  context: PrContext,
+): ConfigLocation => ({
+  cwd: root,
+  agentDirectory: options.agentDirectory ?? getAgentDir(),
+  projectTrusted: context.isProjectTrusted(),
+});
+
 const reviewBots = async (
   runtime: CommandRuntime,
   options: PrToolOptions,
@@ -108,12 +119,7 @@ const reviewBots = async (
   context: PrContext,
 ) => {
   const root = await findCheckoutRoot(runtime.cwd, 'pr');
-
-  const location = {
-    cwd: root,
-    agentDirectory: options.agentDirectory ?? getAgentDir(),
-    projectTrusted: context.isProjectTrusted(),
-  };
+  const location = readConfigLocation(root, options, context);
 
   return { ...(await readReviewBotStatuses(runtime, location, context.ui, parameters)) };
 };
@@ -152,8 +158,9 @@ const runAction = async (
 
   if (parameters.action === 'evidence') {
     const root = await findCheckoutRoot(cwd, 'pr');
+    const config = { location: readConfigLocation(root, options, context), ui: context.ui };
 
-    return { ...(await readPublicationEvidence(runtime, root, parameters)) };
+    return { ...(await readPublicationEvidence(runtime, root, parameters, config)) };
   }
 
   return { ...(await readTarget(runtime, { remote: parameters.remote, base: parameters.base })) };

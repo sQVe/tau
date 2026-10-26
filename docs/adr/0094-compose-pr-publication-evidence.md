@@ -1,8 +1,10 @@
 # ADR 0094: Compose PR publication evidence
 
 **Date**: 2026-10-06\
-**Status**: Accepted\
-**Related**: [ADR 0091 (Return review evidence from the code_review tool)](./0091-return-review-evidence-from-the-code-review-tool.md)
+**Status**: Accepted; the full check identity superseded by
+[ADR 0124 (Key full check reuse by tree content and command)](./0124-key-full-check-reuse-by-tree-content.md)\
+**Related**:
+[ADR 0091 (Return review evidence from the code_review tool)](./0091-return-review-evidence-from-the-code-review-tool.md)
 
 ## Context
 

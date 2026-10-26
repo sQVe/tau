@@ -5,9 +5,9 @@ import {
   warnUnknownKeys,
 } from '../../config/config.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
+import { readArgv } from '../../config/fullCheck.js';
 import { isRecord } from '../../schema.js';
 import type { KnownKeys } from '../../schema.js';
-import { readArgv } from './config.js';
 
 const knownMutationKeys: KnownKeys = { argv: true };
 

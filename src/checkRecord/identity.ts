@@ -1,19 +1,25 @@
-import { createHash } from 'node:crypto';
-import { lstat, readFile, readlink } from 'node:fs/promises';
-import { join } from 'node:path';
+import { copyFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 import { isMissingFile } from '../errors.js';
-import { runGit } from '../git.js';
+import { readGit, runGit } from '../git.js';
+import { readOptionalText } from '../record.js';
 import type { CheckIdentity } from './reuseDecision.js';
 
 export interface CheckState {
-  head: string;
-  base: string | null;
-  // null when a submodule has changes the fingerprint cannot see, so the state is never reusable.
-  fingerprint: string | null;
+  tree: string | null;
 }
 
-const hashText = (text: Buffer | string): string => createHash('sha256').update(text).digest('hex');
+const copyIndex = async (indexPath: string, temporaryIndex: string): Promise<void> => {
+  try {
+    await copyFile(indexPath, temporaryIndex);
+  } catch (error) {
+    if (!isMissingFile(error)) {
+      throw error;
+    }
+  }
+};
 
 const resolveCommit = async (root: string, reference: string): Promise<string | undefined> => {
   const commandArguments = ['rev-parse', '--verify', '--quiet', `${reference}^{commit}`];
@@ -26,7 +32,9 @@ const resolveCommit = async (root: string, reference: string): Promise<string | 
   return result.exitCode === 0 ? result.stdout.toString('utf8').trim() : undefined;
 };
 
-const readBase = async (root: string, base: string | undefined): Promise<string | null> => {
+// Resolves base, a ref or commit, to a commit. Without base, the origin remote's default branch, or
+// null when the checkout has none.
+export const readBase = async (root: string, base: string | undefined): Promise<string | null> => {
   if (base === undefined) {
     return (await resolveCommit(root, 'origin/HEAD')) ?? null;
   }
@@ -44,34 +52,8 @@ const readBase = async (root: string, base: string | undefined): Promise<string 
   return commit;
 };
 
-const executableBits = 0o111;
-
-const hashUntrackedFile = async (root: string, path: string): Promise<string> => {
-  try {
-    const stats = await lstat(join(root, path));
-
-    if (stats.isSymbolicLink()) {
-      return `link:${hashText(await readlink(join(root, path)))}`;
-    }
-
-    if (!stats.isFile()) {
-      return 'not-a-file';
-    }
-
-    const executable = (stats.mode & executableBits) === 0 ? 'plain' : 'executable';
-
-    return `file:${executable}:${hashText(await readFile(join(root, path)))}`;
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return 'missing';
-    }
-
-    throw error;
-  }
-};
-
-// A submodule with modified content, new commits, or untracked files shows only as "dirty" in
-// the diff, so two different edits would hash alike.
+// A submodule with modified content or untracked files keeps its commit in the tree, so two
+// different edits would give the same tree ID.
 const hasDirtySubmodule = async (root: string): Promise<boolean> => {
   const status = await runGit(root, ['status', '--porcelain=v2', '-z', '--ignore-submodules=none']);
 
@@ -85,71 +67,65 @@ const hasDirtySubmodule = async (root: string): Promise<boolean> => {
     .some((entry) => /^[12] \S+ S(?!\.\.\.)[C.][M.][U.] /u.test(entry));
 };
 
-// Hashes the tracked changes against HEAD, staged or not, and the path and content of each
-// untracked file that Git does not ignore.
-const readFingerprint = async (root: string): Promise<string | null> => {
-  if (await hasDirtySubmodule(root)) {
-    return null;
-  }
+const isAttributeRule = (line: string): boolean => {
+  const text = line.trim();
 
-  const diff = await runGit(root, [
-    'diff',
-    '--binary',
-    '--no-textconv',
-    '--no-ext-diff',
-    '--no-color',
-    'HEAD',
-  ]);
-
-  if (diff.exitCode !== 0) {
-    throw new Error(`git diff failed in ${root}: ${diff.stderr.trim()}`);
-  }
-
-  const listing = await runGit(root, ['ls-files', '--others', '--exclude-standard', '-z']);
-
-  if (listing.exitCode !== 0) {
-    throw new Error(`git ls-files failed in ${root}: ${listing.stderr.trim()}`);
-  }
-
-  const paths = listing.stdout
-    .toString('utf8')
-    .split('\0')
-    .filter((path) => path !== '')
-    .toSorted();
-
-  const contentHashes = await Promise.all(paths.map((path) => hashUntrackedFile(root, path)));
-  const hash = createHash('sha256');
-
-  hash.update(`${hashText(diff.stdout)}\0`);
-
-  paths.forEach((path, index) => {
-    hash.update(`${path}\0${contentHashes[index]}\0`);
-  });
-
-  return hash.digest('hex');
+  return text !== '' && !text.startsWith('#');
 };
 
-// Reads the commit and changes a check result depends on. base is a ref or commit; without it,
-// the origin remote's default branch, or null when the checkout has none.
-export const readCheckState = async (
-  root: string,
-  base: string | undefined,
-): Promise<CheckState> => {
-  const head = await resolveCommit(root, 'HEAD');
+// Git still reads $GIT_DIR/info/attributes when content conversion is off, so a rule there could
+// change the bytes it stages. Comment and blank lines are not rules.
+const hasInfoAttributeRules = async (root: string): Promise<boolean> => {
+  const path = resolve(root, await readGit(root, ['rev-parse', '--git-path', 'info/attributes']));
+  const text = (await readOptionalText(path)) ?? '';
 
-  if (head === undefined) {
-    throw new Error(`The full_check tool needs a commit at HEAD in ${root}.`);
-  }
-
-  return {
-    head,
-    base: await readBase(root, base),
-    fingerprint: await readFingerprint(root),
-  };
+  return text.split('\n').some(isAttributeRule);
 };
 
-export const readCheckIdentity = async (
-  root: string,
-  argv: string[],
-  base: string | undefined,
-): Promise<CheckIdentity> => ({ ...(await readCheckState(root, base)), argv });
+// Stages with no attributes, no filters, and no line-ending conversion, so the tree holds the raw
+// bytes of each file. The empty tree has no attributes, and /dev/null is an empty attributes file.
+const rawContentArguments = (emptyTree: string): string[] => [
+  '-c',
+  'core.autocrlf=false',
+  '-c',
+  'core.attributesFile=/dev/null',
+  `--attr-source=${emptyTree}`,
+];
+
+// Writes every file Git does not ignore into a copy of the index, so the tree ID changes with each
+// tracked or untracked file's path, raw content, and mode. The real index stays as it is.
+const writeWorkingTree = async (root: string): Promise<string> => {
+  const indexPath = resolve(root, await readGit(root, ['rev-parse', '--git-path', 'index']));
+  const directory = await mkdtemp(join(tmpdir(), 'tau-check-index-'));
+  const temporaryIndex = join(directory, 'index');
+
+  try {
+    await copyIndex(indexPath, temporaryIndex);
+
+    const emptyTree = await readGit(root, ['hash-object', '-t', 'tree', '/dev/null']);
+    const environment = { GIT_INDEX_FILE: temporaryIndex, GIT_ATTR_NOSYSTEM: '1' };
+
+    await readGit(root, [...rawContentArguments(emptyTree), 'add', '--all'], { environment });
+
+    return await readGit(root, ['write-tree'], { environment });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+};
+
+// Reads the tree ID of the working state, or null when the tree ID cannot show every change, so the
+// state is never reusable: a submodule has changes, or info/attributes sets rules.
+export const readCheckState = async (root: string): Promise<CheckState> => {
+  const cannotSeeChanges = (await hasDirtySubmodule(root)) || (await hasInfoAttributeRules(root));
+
+  if (cannotSeeChanges) {
+    return { tree: null };
+  }
+
+  return { tree: await writeWorkingTree(root) };
+};
+
+export const readCheckIdentity = async (root: string, argv: string[]): Promise<CheckIdentity> => ({
+  ...(await readCheckState(root)),
+  argv,
+});

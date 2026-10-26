@@ -10,15 +10,13 @@ import { decideReuse } from './reuseDecision.js';
 const fixturePath = (name: string) => new URL(`fixtures/checkRecords/${name}`, import.meta.url);
 
 const identity = {
-  head: '1111111111111111111111111111111111111111',
-  base: '2222222222222222222222222222222222222222',
+  tree: '1111111111111111111111111111111111111111',
   argv: ['pnpm', 'check'],
-  fingerprint: '3333333333333333333333333333333333333333333333333333333333333333',
 };
 
 const validRecord = {
   status: 'valid',
-  record: { version: 2, ...identity, passed: true },
+  record: { version: 3, ...identity, passed: true },
 };
 
 it('reads the current record fixture and a record it saved', async () => {
@@ -29,16 +27,16 @@ it('reads the current record fixture and a record it saved', async () => {
 
   expect(await readCheckRecord(fixturePath('current.json').pathname)).toEqual({
     status: 'valid',
-    record: { version: 2, ...identity, passed: true },
+    record: { version: 3, ...identity, passed: true },
   });
 
   expect(await readCheckRecord(recordPathFor(logPath))).toEqual({
     status: 'valid',
-    record: { version: 2, ...identity, passed: true },
+    record: { version: 3, ...identity, passed: true },
   });
 
   expect(JSON.parse(await readFile(fixturePath('current.json'), 'utf8'))).toEqual({
-    version: 2,
+    version: 3,
     passed: true,
     ...identity,
   });
@@ -61,7 +59,7 @@ it('reports malformed records as malformed', async () => {
   });
 
   expect(await readCheckRecord(notJson)).toEqual({ status: 'malformed' });
-  expect(await readCheckRecord(fixturePath('v3.json').pathname)).toEqual({ status: 'malformed' });
+  expect(await readCheckRecord(fixturePath('v4.json').pathname)).toEqual({ status: 'malformed' });
 });
 
 it('lists logs newest first and keeps a malformed record from hiding the others', async () => {
@@ -74,12 +72,12 @@ it('lists logs newest first and keeps a malformed record from hiding the others'
   await writeFile(join(checks, 'b.log'), 'bad');
   await writeFile(join(checks, 'b.json'), '{ broken');
 
-  await copyFile(fixturePath('v3.json'), join(checks, 'd.json'));
+  await copyFile(fixturePath('v4.json'), join(checks, 'd.json'));
   await writeFile(join(checks, 'd.log'), 'newer');
 
   await writeFile(
     join(checks, 'c.json'),
-    JSON.stringify({ version: 2, ...identity, passed: true }),
+    JSON.stringify({ version: 3, ...identity, passed: true }),
   );
 
   const saved = await listSavedLogs(checks);
@@ -107,7 +105,7 @@ it('reports a record with an extra field as malformed', async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
   const path = join(directory, 'extra.json');
 
-  await writeFile(path, JSON.stringify({ version: 2, ...identity, passed: true, extra: true }));
+  await writeFile(path, JSON.stringify({ version: 3, ...identity, passed: true, extra: true }));
 
   expect(await readCheckRecord(path)).toEqual({ status: 'malformed' });
 });
@@ -136,7 +134,7 @@ it('throws when a log cannot be checked for existence', async () => {
 
   await writeFile(
     join(directory, 'loop.json'),
-    JSON.stringify({ version: 2, ...identity, passed: true }),
+    JSON.stringify({ version: 3, ...identity, passed: true }),
   );
 
   await symlink('loop.log', join(directory, 'loop.log'));
@@ -174,16 +172,14 @@ it('keeps a directory name that ends in .json out of the log path', async () => 
 });
 
 it.each([
-  { name: 'an empty head', change: { head: '' } },
-  { name: 'an empty base', change: { base: '' } },
-  { name: 'an empty fingerprint', change: { fingerprint: '' } },
+  { name: 'an empty tree', change: { tree: '' } },
   { name: 'an empty command', change: { argv: [] } },
   { name: 'an empty command word', change: { argv: ['pnpm', ''] } },
 ])('reports a record with $name as malformed', async ({ change }) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
   const path = join(directory, 'empty.json');
 
-  await writeFile(path, JSON.stringify({ version: 2, ...identity, passed: true, ...change }));
+  await writeFile(path, JSON.stringify({ version: 3, ...identity, passed: true, ...change }));
 
   expect(await readCheckRecord(path)).toEqual({ status: 'malformed' });
 });
@@ -196,31 +192,22 @@ it('reads a failing record as valid with passed false', async () => {
 
   expect(await readCheckRecord(recordPathFor(logPath))).toEqual({
     status: 'valid',
-    record: { version: 2, ...identity, passed: false },
+    record: { version: 3, ...identity, passed: false },
   });
 });
 
-it('reads a version 1 record as malformed so it is never reused', async () => {
-  expect(await readCheckRecord(fixturePath('v1.json').pathname)).toEqual({ status: 'malformed' });
-});
+it.each(['v1.json', 'v2.json'])(
+  'reads the older record %s as malformed so it is never reused',
+  async (name) => {
+    expect(await readCheckRecord(fixturePath(name).pathname)).toEqual({ status: 'malformed' });
+  },
+);
 
-it('reads a record with no base commit', async () => {
-  const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
-  const path = join(directory, 'null.json');
-
-  await writeFile(path, JSON.stringify({ version: 2, ...identity, passed: true, base: null }));
-
-  expect(await readCheckRecord(path)).toEqual({
-    status: 'valid',
-    record: { version: 2, ...identity, passed: true, base: null },
-  });
-});
-
-it('refuses to save a state without a fingerprint and writes no record', async () => {
+it('refuses to save a state without a tree and writes no record', async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-check-record-');
   const logPath = join(directory, 'run.log');
 
-  await expect(saveCheckRecord(logPath, { ...identity, fingerprint: null }, true)).rejects.toThrow(
+  await expect(saveCheckRecord(logPath, { ...identity, tree: null }, true)).rejects.toThrow(
     'submodule',
   );
 

@@ -3,16 +3,14 @@ import { expect, it } from 'vitest';
 import { decideReuse, sameReusableState } from './reuseDecision.js';
 import type { CheckIdentity, SavedLog } from './reuseDecision.js';
 
-type SavedRecord = Partial<Omit<CheckIdentity, 'fingerprint'>> & {
-  fingerprint?: string;
+type SavedRecord = Partial<Omit<CheckIdentity, 'tree'>> & {
+  tree?: string;
   passed?: boolean;
 };
 
 const current: CheckIdentity = {
-  head: 'head-one',
-  base: 'base-one',
+  tree: 'tree-one',
   argv: ['pnpm', 'check'],
-  fingerprint: 'fingerprint-one',
 };
 
 const saved = (record: SavedRecord | undefined, logPath = 'a.log', logExists = true) =>
@@ -24,9 +22,9 @@ const saved = (record: SavedRecord | undefined, logPath = 'a.log', logExists = t
         : {
             status: 'valid' as const,
             record: {
-              version: 2 as const,
+              version: 3 as const,
               ...current,
-              fingerprint: 'fingerprint-one',
+              tree: 'tree-one',
               passed: true,
               ...record,
             },
@@ -53,14 +51,7 @@ it.each([
     logs: [saved({}, 'a.log', false)],
     expected: { status: 'run' },
   },
-  { name: 'another head', logs: [saved({ head: 'head-two' })], expected: { status: 'run' } },
-  { name: 'another base', logs: [saved({ base: 'base-two' })], expected: { status: 'run' } },
-  { name: 'no base on one side', logs: [saved({ base: null })], expected: { status: 'run' } },
-  {
-    name: 'another fingerprint',
-    logs: [saved({ fingerprint: 'fingerprint-two' })],
-    expected: { status: 'run' },
-  },
+  { name: 'another tree', logs: [saved({ tree: 'tree-two' })], expected: { status: 'run' } },
   { name: 'another argv', logs: [saved({ argv: ['pnpm', 'test'] })], expected: { status: 'run' } },
   {
     name: 'a longer argv',
@@ -79,7 +70,7 @@ it.each([
   },
   {
     name: 'a mismatch before a match',
-    logs: [saved({ head: 'head-two' }, 'new.log'), saved({}, 'old.log')],
+    logs: [saved({ tree: 'tree-two' }, 'new.log'), saved({}, 'old.log')],
     expected: { status: 'reuse', logPath: 'old.log' },
   },
   {
@@ -101,8 +92,8 @@ it.each([
   expect(decideReuse(current, logs)).toEqual(expected);
 });
 
-it('never reuses a state without a fingerprint', () => {
-  const dirty = { ...current, fingerprint: null };
+it('never reuses a state without a tree', () => {
+  const dirty = { ...current, tree: null };
 
   expect(decideReuse(dirty, [saved({})])).toEqual({ status: 'run' });
   expect(sameReusableState(dirty, dirty)).toBe(false);

@@ -43,13 +43,13 @@ const fixture = async () => {
 
   await configure(countingArgv(counter));
 
-  const run = (base?: string, idleLimitMilliseconds?: number) =>
+  const run = (idleLimitMilliseconds?: number) =>
     createFullCheckTool({
       agentDirectory: directory,
       exec: declinedExec,
       pollMilliseconds: 10,
       ...(idleLimitMilliseconds === undefined ? {} : { idleLimitMilliseconds }),
-    }).execute('call', base === undefined ? {} : { base }, undefined, undefined, {
+    }).execute('call', {}, undefined, undefined, {
       cwd: root,
       isProjectTrusted: () => true,
       ui: { notify: () => undefined },
@@ -69,6 +69,23 @@ it('returns the saved passing log for an unchanged state without running the com
   expect(first.details?.reused).toBe(false);
   expect(second.details).toMatchObject({ passed: true, reused: true, idle: false });
   expect(second.details?.logPath).toBe(first.details?.logPath);
+  expect(await runCount()).toBe(1);
+});
+
+it('returns the saved passing log after a commit and an amend that change no files', async () => {
+  const { root, run, runCount } = await fixture();
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+
+  const first = await run();
+
+  await git(root, 'commit', '--quiet', '-am', 'second');
+  const committed = await run();
+  await git(root, 'commit', '--quiet', '--amend', '-m', 'other');
+  const amended = await run();
+
+  expect(committed.details).toMatchObject({ reused: true, logPath: first.details?.logPath });
+  expect(amended.details).toMatchObject({ reused: true, logPath: first.details?.logPath });
   expect(await runCount()).toBe(1);
 });
 
@@ -100,28 +117,6 @@ it.each([
 
   expect(second.details).toMatchObject({ passed: true, reused: false });
   expect(await state.runCount()).toBe(2);
-});
-
-it('runs the command again for a different base', async () => {
-  const state = await fixture();
-
-  await writeFile(join(state.root, 'tracked.txt'), 'two\n');
-  await git(state.root, 'commit', '--quiet', '-am', 'second');
-
-  await state.run('HEAD');
-  const sameBase = await state.run('HEAD');
-  const otherBase = await state.run('HEAD~1');
-
-  expect(sameBase.details?.reused).toBe(true);
-  expect(otherBase.details?.reused).toBe(false);
-  expect(await state.runCount()).toBe(2);
-});
-
-it('rejects a base that names no commit and runs no command', async () => {
-  const { run, runCount } = await fixture();
-
-  await expect(run('no-such-ref')).rejects.toThrow('no-such-ref');
-  expect(await runCount()).toBe(0);
 });
 
 it('saves a failing record next to the log and runs the command again', async () => {
@@ -251,35 +246,14 @@ it('runs the command for each different dirty edit inside a submodule', async ()
 it('returns a passing result when its record cannot be saved', async () => {
   const { configure, counter, run, root } = await fixture();
 
-  await git(root, 'branch', 'vanishing');
+  const index = JSON.stringify(join(root, '.git', 'index'));
+  const corrupt = `require('node:fs').writeFileSync(${index}, 'corrupt');`;
+  await configure(countingArgv(counter, corrupt));
 
-  const remove = `require('node:child_process').execFileSync('git', ['update-ref', '-d', 'refs/heads/vanishing']);`;
-  await configure(countingArgv(counter, remove));
-
-  const result = await run('vanishing');
+  const result = await run();
 
   expect(result.details).toMatchObject({ passed: true, reused: false });
-  expect(result.details?.recordError).toContain('vanishing');
-
-  const saved = await readdir(join(root, '.tau', 'checks'));
-
-  expect(saved.filter((name) => name.endsWith('.json'))).toEqual([]);
-});
-
-it('saves no reusable record when the base ref moves during the run', async () => {
-  const { configure, counter, run, runCount, root } = await fixture();
-
-  await writeFile(join(root, 'tracked.txt'), 'two\n');
-  await git(root, 'commit', '--quiet', '-am', 'second');
-  await git(root, 'branch', 'moving');
-
-  const move = `require('node:child_process').execFileSync('git', ['update-ref', 'refs/heads/moving', 'HEAD~1']);`;
-  await configure(countingArgv(counter, move));
-
-  const first = await run('moving');
-
-  expect(first.details).toMatchObject({ passed: true, reused: false });
-  expect(await runCount()).toBe(1);
+  expect(result.details?.recordError).toContain('index');
 
   const saved = await readdir(join(root, '.tau', 'checks'));
 
@@ -291,8 +265,8 @@ it('reports a silent command as stopped after the idle limit and saves no record
 
   await configure(countingArgv(counter, 'setInterval(() => {}, 1000)'));
 
-  const first = await run(undefined, 300);
-  const second = await run(undefined, 300);
+  const first = await run(300);
+  const second = await run(300);
 
   const text = first.content[0]?.type === 'text' ? first.content[0].text : '';
 

@@ -5,8 +5,12 @@ import { basename, join } from 'node:path';
 import { listSavedLogs } from '../../checkRecord/checkRecord.js';
 import { readCheckState } from '../../checkRecord/identity.js';
 import type { CommandRuntime } from '../../command.js';
+import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
+import { readFullCheckArgv } from '../../config/fullCheck.js';
 import { errorMessage, isMissingFile } from '../../errors.js';
 import { readGit, runGit } from '../../git.js';
+import { readOriginRepository } from '../../github/repositoryTarget.js';
+import { configRepositoryKey } from '../../github/repositoryTargetDecisions.js';
 import { readReviewEvidence, scanMarkers } from '../../reviewCapture/evidence.js';
 import type { MarkerLine, ReviewEvidence } from '../../reviewCapture/evidence.js';
 import { checkReviewDirectory } from '../../reviewCapture/reviewCapture.js';
@@ -33,6 +37,11 @@ export interface PublicationRequest {
   remote?: string;
   base?: string;
   review?: string;
+}
+
+export interface PublicationConfig {
+  location: ConfigLocation;
+  ui: ConfigWarnings;
 }
 
 type FullCheckEvidence = FullCheckDecision & { excerpt?: string; truncated?: boolean };
@@ -293,15 +302,30 @@ const readLogExcerpt = async (logPath: string) => {
   return excerptBody(body);
 };
 
-const readFullCheck = async (root: string, evidence: PublicationEvidence) => {
+const readFullCheckCommand = async (runtime: CommandRuntime, config: PublicationConfig) => {
+  const origin = await readOriginRepository(runtime);
+
+  const repositoryKey =
+    origin.status === 'named' ? configRepositoryKey(origin.repository) : undefined;
+
+  return readFullCheckArgv(config.location, config.ui, repositoryKey);
+};
+
+const readFullCheck = async (
+  runtime: CommandRuntime,
+  root: string,
+  evidence: PublicationEvidence,
+  config: PublicationConfig,
+) => {
   if (evidence.target === null) {
     return;
   }
 
   try {
-    const state = await readCheckState(root, evidence.target.mergeBase);
+    const state = await readCheckState(root);
     const saved = await listSavedLogs(join(root, '.tau', 'checks'));
-    const decision = decideFullCheck(state, saved);
+    const argv = await readFullCheckCommand({ ...runtime, cwd: root }, config);
+    const decision = decideFullCheck(state, argv, saved);
 
     evidence.fullCheck = decision;
 
@@ -321,6 +345,7 @@ export const readPublicationEvidence = async (
   runtime: CommandRuntime,
   root: string,
   request: PublicationRequest,
+  config: PublicationConfig,
 ): Promise<PublicationEvidence> => {
   const evidence: PublicationEvidence = {
     target: null,
@@ -368,7 +393,7 @@ export const readPublicationEvidence = async (
   }
 
   await readReview(root, request, evidence);
-  await readFullCheck(root, evidence);
+  await readFullCheck(runtime, root, evidence, config);
   await readChecks(root, evidence);
 
   return evidence;

@@ -3,9 +3,9 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import type { ConfigWarnings } from '../../config/config.js';
-import { readFullCheckArgv } from './config.js';
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
+import type { ConfigWarnings } from './config.js';
+import { readFullCheckArgv } from './fullCheck.js';
 
 const fixture = () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-full-check-config-');

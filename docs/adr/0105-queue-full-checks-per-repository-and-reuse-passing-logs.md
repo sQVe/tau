@@ -1,8 +1,10 @@
 # ADR 0105: Queue full checks per repository and reuse passing logs
 
 **Date**: 2026-10-12\
-**Status**: Accepted\
-**Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
+**Status**: Accepted; the identity of a full check superseded by
+[ADR 0124 (Key full check reuse by tree content and command)](./0124-key-full-check-reuse-by-tree-content.md)\
+**Related**:
+[ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
 [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md)
 
 ## Context
@@ -12,6 +14,9 @@ for shared resources, such as Docker ports, and fail or slow each other down. Wo
 check on a state that already passed.
 
 ## Decision
+
+The identity parts of this decision are superseded by ADR 0124. The key is the tree ID and the
+command, with no head commit and no base. The rest still holds.
 
 The `full_check` tool runs one full check at a time for each repository, and returns a saved passing
 log when the state has not changed. Checks of different repositories run at once.

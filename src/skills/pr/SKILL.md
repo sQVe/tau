@@ -133,9 +133,8 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
      Stop if the action fails.
    - When the repository has a configured full check, read `fullCheck` from the evidence script.
      When it is `passed`, reuse it. When it is `failed`, `missing`, or `malformed`, run the
-     `full_check` tool with the pinned merge base as `base`. Then rerun the evidence script, and
-     report any `fullCheck` status other than `passed` as a gap. The log stays in `.tau/checks/`; do
-     not copy it or add header lines.
+     `full_check` tool. Then rerun the evidence script, and report any `fullCheck` status other than
+     `passed` as a gap. The log stays in `.tau/checks/`; do not copy it or add header lines.
    - When the change has user-visible behavior, also send it to a `qa` worker on the committed tree
      before the preview.
    - Leave the app URL, test account, and data writes to Tau, which fills them from the user's

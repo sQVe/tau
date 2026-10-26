@@ -4,7 +4,7 @@ import { defineTool, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionToolContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
-import { readCheckIdentity } from '../../checkRecord/identity.js';
+import { readBase, readCheckIdentity } from '../../checkRecord/identity.js';
 import type { CheckIdentity } from '../../checkRecord/reuseDecision.js';
 import type { Exec } from '../../command.js';
 import { findTauRoot } from '../../tauDirectory.js';
@@ -44,11 +44,6 @@ interface MutationRequest {
   base?: string;
   paths?: string[];
   maxMutants?: number;
-}
-
-interface Plan {
-  argv: string[];
-  base: string | null;
 }
 
 const parameters = Type.Object({
@@ -99,36 +94,27 @@ const readAuditPaths = (request: MutationRequest): string[] => {
   return paths;
 };
 
-// The identity of a run: the full argv, and a base that is null in audit mode.
-const readMutationIdentity = async (
-  root: string,
-  argv: string[],
-  base: string | null,
-): Promise<CheckIdentity> => {
-  const identity = await readCheckIdentity(root, argv, base ?? undefined);
-
-  return base === null ? { ...identity, base: null } : identity;
-};
-
 const withLimit = (argv: string[], maxMutants: number | undefined): string[] =>
   maxMutants === undefined ? argv : [...argv, '--max-mutants', String(maxMutants)];
 
-const planRun = async (
+// Plans the argv of a run. In changed mode it holds the resolved base commit, so the argv and the
+// tree ID identify the run.
+const planArgv = async (
   root: string,
   configured: string[],
   request: MutationRequest,
-): Promise<Plan> => {
+): Promise<string[]> => {
   if (request.mode === 'audit') {
     const paths = readAuditPaths(request);
 
-    return { argv: withLimit([...configured, 'audit', ...paths], request.maxMutants), base: null };
+    return withLimit([...configured, 'audit', ...paths], request.maxMutants);
   }
 
   if (request.paths !== undefined) {
     throw new Error('The paths parameter belongs to audit mode, not changed mode.');
   }
 
-  const { base } = await readCheckIdentity(root, configured, request.base);
+  const base = await readBase(root, request.base);
 
   if (base === null) {
     throw new Error(
@@ -136,7 +122,7 @@ const planRun = async (
     );
   }
 
-  return { argv: withLimit([...configured, 'changed', base], request.maxMutants), base };
+  return withLimit([...configured, 'changed', base], request.maxMutants);
 };
 
 const readReport = async (stdoutPath: string, logPath: string): Promise<MutationReport> => {
@@ -316,8 +302,8 @@ const execute = async (
     );
   }
 
-  const plan = await planRun(root, configured, request);
-  const readIdentity = () => readMutationIdentity(root, plan.argv, plan.base);
+  const argv = await planArgv(root, configured, request);
+  const readIdentity = () => readCheckIdentity(root, argv);
   const identity = await readIdentity();
   const reusedBeforeWaiting = await reuseSaved(root, identity);
 
@@ -371,7 +357,7 @@ export const createMutationCheckTool = (
 - Mode "changed" mutates the lines changed since base (optional; defaults to the origin remote's default branch). Mode "audit" mutates the whole files in paths (non-empty). Optional maxMutants caps the mutants.
 - Survivors are advice: a run with survivors passes. Fails on an error report, unmutated files, or a script that writes no output for 10 minutes.
 - Returns pass or fail, the log path, the error text, the unmutated files, and the covered survivors grouped by <file>:<line>, apart from no-coverage mutants.
-- A later call for the same arguments, head, base, and uncommitted changes returns the saved passing report without a run, and says so.
+- A later call for the same arguments and file content returns the saved passing report without a run, and says so.
 - Shares the lock of full_check, so the two run one at a time per repository. A waiting call sends an update that names the checkout that holds the lock.
 - Requires mutation.argv in .pi/tau.json; without it the tool errors.`,
     promptSnippet:

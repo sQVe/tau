@@ -1,15 +1,15 @@
+import type { CheckRecord } from './checkRecord.js';
+
 export interface CheckIdentity {
-  head: string;
-  base: string | null;
+  // null when a submodule has changes the tree ID cannot see, so the state is never reusable.
+  tree: string | null;
   argv: string[];
-  // null when a submodule has changes the fingerprint cannot see, so the state is never reusable.
-  fingerprint: string | null;
 }
 
 export type RecordRead =
   | {
       status: 'valid';
-      record: CheckIdentity & { version: 2; fingerprint: string; passed: boolean };
+      record: CheckRecord;
     }
   | { status: 'missing' }
   | { status: 'malformed' };
@@ -20,19 +20,18 @@ export interface SavedLog {
   logExists: boolean;
 }
 
-type CheckState = Pick<CheckIdentity, 'head' | 'base' | 'fingerprint'>;
+type CheckState = Pick<CheckIdentity, 'tree'>;
 
 export type ReuseDecision = { status: 'reuse'; logPath: string } | { status: 'run' };
 
-const sameArgv = (left: string[], right: string[]): boolean =>
+export const sameArgv = (left: string[], right: string[]): boolean =>
   left.length === right.length && left.every((argument, index) => argument === right[index]);
 
-const sameState = (left: CheckState, right: CheckState): boolean =>
-  left.head === right.head && left.base === right.base && left.fingerprint === right.fingerprint;
+const sameState = (left: CheckState, right: CheckState): boolean => left.tree === right.tree;
 
-// A result may be reused or saved for reuse only when the state has a fingerprint.
+// A result may be reused or saved for reuse only when the state has a tree.
 export const sameReusableState = (before: CheckIdentity, after: CheckIdentity): boolean =>
-  before.fingerprint !== null && sameState(before, after);
+  before.tree !== null && sameState(before, after);
 
 // Finds the newest saved log of the state, passed or failed. A log whose file is gone is skipped.
 export const findStateRecord = (current: CheckState, saved: SavedLog[]): SavedLog | undefined =>
@@ -47,7 +46,7 @@ const matchesPassingRecord = (current: CheckIdentity, read: RecordRead): boolean
 // command. A newer failing record or another command runs the check again, so the run saves a
 // newer record that readers of the newest record see.
 export const decideReuse = (current: CheckIdentity, saved: SavedLog[]): ReuseDecision => {
-  if (current.fingerprint === null) {
+  if (current.tree === null) {
     return { status: 'run' };
   }
 
