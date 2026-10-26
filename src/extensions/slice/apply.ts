@@ -321,9 +321,6 @@ const readSlots = async (runtime: Runtime, progress: ApplyProgress) => {
 const isSlotsInPlanOrder = (slots: readonly (OrderedSlice | undefined)[]) =>
   isInPlanOrder(slots.filter((slot) => slot !== undefined));
 
-// Linear can change a sort order during an update that sent none, so the planned writes can leave
-// an open slice out of plan order. Only the viewer's own slices are repaired. Another person's
-// slice stays out of place, so the caller reports orderInPlace as false.
 const repairSteps = (
   runtime: Runtime,
   progress: ApplyProgress,
