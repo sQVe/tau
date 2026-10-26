@@ -97,6 +97,7 @@ const pureModules = [
   'src/extensions/stack/checkDecisions.ts',
   'src/extensions/stack/historyDecisions.ts',
   'src/extensions/stack/readResult.ts',
+  'src/extensions/statusbar/reuseDecision.ts',
   'src/extensions/subagents/acceptanceRefusal.ts',
   'src/extensions/subagents/bashOutputCap.ts',
   'src/extensions/subagents/capacityRefusal.ts',

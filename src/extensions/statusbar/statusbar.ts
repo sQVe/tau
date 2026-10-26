@@ -1,11 +1,33 @@
 import { sep } from 'node:path';
 
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type {
+  ContextUsage,
+  ExtensionAPI,
+  ExtensionContext,
+  SessionManager,
+} from '@earendil-works/pi-coding-agent';
 
 import { runGit } from '../../git.js';
 import { footerTheme, renderFooterLine } from './render.js';
+import { decideReuse } from './reuseDecision.js';
+import type { SessionKey } from './reuseDecision.js';
 
 type FooterFactory = NonNullable<Parameters<ExtensionContext['ui']['setFooter']>[0]>;
+
+interface CostReading extends SessionKey {
+  cost: number;
+}
+
+interface ContextUsageReading extends SessionKey {
+  model: ExtensionContext['model'];
+  readAt: number;
+  contextUsage: ContextUsage | undefined;
+}
+
+interface SessionStats {
+  cost: CostReading;
+  contextUsage: ContextUsageReading;
+}
 
 interface StatusbarState {
   dirty: boolean;
@@ -27,12 +49,59 @@ const getSessionCost = (context: ExtensionContext): number => {
       if (entry.message.role === 'assistant' || entry.message.role === 'toolResult') {
         cost += entry.message.usage?.cost.total ?? 0;
       }
+    } else if (entry.type === 'usage') {
+      cost += entry.usage.cost.total;
     } else if (entry.type === 'compaction' || entry.type === 'branch_summary') {
       cost += entry.usage?.cost.total ?? 0;
     }
   }
 
   return cost;
+};
+
+const countEntries = (
+  sessionManager: ExtensionContext['sessionManager'] | SessionManager,
+): number => {
+  if ('getEntryCount' in sessionManager) {
+    return sessionManager.getEntryCount();
+  }
+
+  return sessionManager.getEntries().length;
+};
+
+const readSessionStats = (
+  context: ExtensionContext,
+  cached: SessionStats | undefined,
+  now: number,
+): SessionStats => {
+  const { sessionManager } = context;
+
+  const key: SessionKey = {
+    sessionId: sessionManager.getSessionId(),
+    leafId: sessionManager.getLeafId(),
+    entryCount: countEntries(sessionManager),
+  };
+
+  const cachedUsage = cached?.contextUsage;
+  const usageAgeMilliseconds = cachedUsage === undefined ? undefined : now - cachedUsage.readAt;
+
+  const decision = decideReuse({
+    current: key,
+    cachedCost: cached?.cost,
+    cachedUsage,
+    usageAgeMilliseconds,
+    modelUnchanged: cachedUsage?.model === context.model,
+  });
+
+  const cost =
+    decision.cost && cached !== undefined ? cached.cost : { ...key, cost: getSessionCost(context) };
+
+  const contextUsage =
+    decision.contextUsage && cachedUsage !== undefined
+      ? cachedUsage
+      : { ...key, model: context.model, readAt: now, contextUsage: context.getContextUsage() };
+
+  return { cost, contextUsage };
 };
 
 const readDirty = async (context: ExtensionContext): Promise<boolean> => {
@@ -99,6 +168,8 @@ const createFooter = (
     // Pi disposes the old footer before calling this factory. Start after that disposal.
     startRefresh(state, context);
 
+    let stats: SessionStats | undefined;
+
     return {
       dispose() {
         unsubscribe();
@@ -107,10 +178,11 @@ const createFooter = (
         state.footerGeneration += 1;
       },
       invalidate() {
-        // No render cache: session values are read on every render.
+        stats = undefined;
       },
       render(width) {
-        const usage = context.getContextUsage();
+        stats = readSessionStats(context, stats, performance.now());
+        const usage = stats.contextUsage.contextUsage;
 
         return [
           renderFooterLine(
@@ -119,7 +191,7 @@ const createFooter = (
                 context.cwd.split(sep).filter(Boolean).slice(-shownDirectoryDepth).join(sep) || sep,
               branch: footerData.getGitBranch(),
               dirty: state.dirty,
-              cost: getSessionCost(context),
+              cost: stats.cost.cost,
               contextPercent: usage?.percent ?? null,
               contextWindow: usage?.contextWindow ?? context.model?.contextWindow ?? 0,
               modelId: context.model?.id ?? 'no-model',
