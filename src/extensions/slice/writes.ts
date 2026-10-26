@@ -10,10 +10,13 @@ export interface LinearChild {
   canceled: boolean;
   merged: boolean;
   blockedBy: string[];
+  assignee: string | null;
+  creator: string | null;
 }
 
 export interface LinearContainer {
   id: string;
+  viewer: string;
   identifier: string;
   completed: boolean;
   merged: boolean;

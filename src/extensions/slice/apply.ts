@@ -15,10 +15,11 @@ import {
   updateIssue,
 } from './linear.js';
 import type { CreatedIssue } from './linear.js';
+import { isViewersTicket } from './ownership.js';
 import { readState, slicesPath } from './state.js';
 import type { Runtime, SliceState } from './state.js';
 import { describeWrite, isInPlanOrder, plannedSortOrders } from './writes.js';
-import type { LinearContainer, OrderedSlice, SliceWrite } from './writes.js';
+import type { LinearChild, LinearContainer, OrderedSlice, SliceWrite } from './writes.js';
 
 type StepSummary = (
   | SliceWrite
@@ -310,27 +311,31 @@ const readSlots = async (runtime: Runtime, progress: ApplyProgress) => {
 
   const children = new Map(container.children.map((child) => [child.identifier, child]));
 
-  return progress.plan.slices.map((slice) =>
+  const slots = progress.plan.slices.map((slice) =>
     slice.identifier === null ? undefined : children.get(slice.identifier),
   );
+
+  return { viewer: container.viewer, slots };
 };
 
 const isSlotsInPlanOrder = (slots: readonly (OrderedSlice | undefined)[]) =>
   isInPlanOrder(slots.filter((slot) => slot !== undefined));
 
 // Linear can change a sort order during an update that sent none, so the planned writes can leave
-// an open slice out of plan order.
+// an open slice out of plan order. Only the viewer's own slices are repaired. Another person's
+// slice stays out of place, so the caller reports orderInPlace as false.
 const repairSteps = (
   runtime: Runtime,
   progress: ApplyProgress,
-  slots: readonly (OrderedSlice | undefined)[],
+  viewer: string,
+  slots: readonly (LinearChild | undefined)[],
 ) => {
   const steps: Step[] = [];
 
   for (const [index, sortOrder] of plannedSortOrders(slots).entries()) {
     const slot = slots[index];
 
-    if (slot === undefined || sortOrder === undefined) {
+    if (slot === undefined || sortOrder === undefined || !isViewersTicket(viewer, slot)) {
       continue;
     }
 
@@ -363,13 +368,13 @@ const checkOrder = async (
   progress: ApplyProgress,
   applied: readonly StepSummary[],
 ) => {
-  const slots = await readSlotsAfter(runtime, progress, applied);
+  const { viewer, slots } = await readSlotsAfter(runtime, progress, applied);
 
   if (isSlotsInPlanOrder(slots)) {
     return { applied, orderInPlace: true };
   }
 
-  const repairs = repairSteps(runtime, progress, slots);
+  const repairs = repairSteps(runtime, progress, viewer, slots);
   const all = [...applied, ...repairs.map((step) => step.summary)];
 
   for (const [index, step] of repairs.entries()) {
@@ -387,7 +392,7 @@ const checkOrder = async (
 
   const repaired = await readSlotsAfter(runtime, progress, all);
 
-  return { applied: all, orderInPlace: isSlotsInPlanOrder(repaired) };
+  return { applied: all, orderInPlace: isSlotsInPlanOrder(repaired.slots) };
 };
 
 const summary = (progress: ApplyProgress, container: LinearContainer | undefined) => {

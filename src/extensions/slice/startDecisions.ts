@@ -1,3 +1,4 @@
+import { isViewersTicket } from './ownership.js';
 import { sameDescription } from './writes.js';
 
 export interface TicketFact {
@@ -141,11 +142,6 @@ export const decideStartPlan = (facts: StartFacts): StartPlan => {
 
   return { writes, problems };
 };
-
-// A ticket is the viewer's own when the viewer is its assignee, or when it has no assignee and the
-// viewer created it. Unknown ownership counts as another person's.
-const isViewersTicket = (viewer: string, child: ChildFact) =>
-  child.assignee === null ? child.creator === viewer : child.assignee === viewer;
 
 export const decideForeignUpdates = (
   viewer: string,

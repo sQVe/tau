@@ -19,7 +19,7 @@ interface IssueInput {
 }
 
 const containerQuery =
-  'query($id: String!) { issue(id: $id) { id identifier title description url state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } team { id key } project { id name } children(first: 100) { pageInfo { hasNextPage } nodes { identifier title description url team { id } subIssueSortOrder state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } inverseRelations(first: 100) { pageInfo { hasNextPage } nodes { type issue { identifier } } } } } } }';
+  'query($id: String!) { viewer { id } issue(id: $id) { id identifier title description url state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } team { id key } project { id name } children(first: 100) { pageInfo { hasNextPage } nodes { identifier title description url team { id } subIssueSortOrder assignee { id } creator { id } state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } inverseRelations(first: 100) { pageInfo { hasNextPage } nodes { type issue { identifier } } } } } } }';
 
 const issuesQuery =
   'query($filter: IssueFilter!) { issues(first: 50, filter: $filter) { nodes { identifier } } }';
@@ -38,12 +38,16 @@ const updateMutation =
 
 const pageInfoSchema = Type.Object({ hasNextPage: Type.Boolean() });
 
+const userSchema = Type.Union([Type.Object({ id: Type.String() }), Type.Null()]);
+
 const childSchema = Type.Object({
   identifier: Type.String(),
   title: Type.String(),
   description: Type.Union([Type.String(), Type.Null()]),
   url: Type.String(),
   subIssueSortOrder: Type.Number(),
+  assignee: userSchema,
+  creator: userSchema,
   team: Type.Object({ id: Type.String() }),
   state: Type.Object({ type: Type.String() }),
   attachments: Type.Object({
@@ -59,6 +63,7 @@ const childSchema = Type.Object({
 });
 
 const containerSchema = Type.Object({
+  viewer: Type.Object({ id: Type.String() }),
   issue: Type.Union([
     Type.Object({
       id: Type.String(),
@@ -136,6 +141,8 @@ const toChild = async (exec: Exec, cwd: string, node: ChildNode): Promise<Linear
     cwd,
     node.attachments.nodes.map((attachment) => attachment.url),
   ),
+  assignee: node.assignee?.id ?? null,
+  creator: node.creator?.id ?? null,
   // Linear saves "A blocked by B" as a `blocks` relation on B.
   blockedBy: node.inverseRelations.nodes
     .filter((relation) => relation.type === 'blocks')
@@ -149,7 +156,13 @@ export const readContainer = async (
   cwd: string,
   identifier: string,
 ): Promise<LinearContainer | undefined> => {
-  const { issue } = await api(exec, cwd, containerQuery, { id: identifier }, containerSchema);
+  const { viewer, issue } = await api(
+    exec,
+    cwd,
+    containerQuery,
+    { id: identifier },
+    containerSchema,
+  );
 
   if (issue === null) {
     return undefined;
@@ -178,6 +191,7 @@ export const readContainer = async (
 
   return {
     id: issue.id,
+    viewer: viewer.id,
     identifier: issue.identifier,
     completed: issue.state.type === 'completed',
     merged: await readMerged(exec, cwd, attachmentUrls),
