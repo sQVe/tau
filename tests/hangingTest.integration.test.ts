@@ -75,7 +75,7 @@ const hangs = (run: NestedRun, name: string) => {
 };
 
 const passes = (run: NestedRun) => {
-  expect(run.failed).toBe(false);
+  expect(run.failed, run.output).toBe(false);
   expect(run.output).not.toContain('Hang in');
 };
 
@@ -203,15 +203,257 @@ it('runs', () => {});`,
     passes(run);
   });
 
-  it('does not kill a beforeAll with its own longer timeout', async ({ onTestFinished }) => {
+  it('does not kill a blocking beforeEach within its own timeout', async ({ onTestFinished }) => {
     const run = await runNested(
       onTestFinished,
-      `import { beforeAll, it } from 'vitest'; import { setTimeout } from 'node:timers/promises';
-beforeAll(async () => { await setTimeout(2500); }, 5000);
+      `import { beforeEach, it } from 'vitest'; ${blockingSleep}
+beforeEach(() => { execFileSync('sleep', ['3']); }, 5000);
 it('runs', () => {});`,
     );
 
     passes(run);
+  });
+
+  it('does not kill a file-level blocking beforeEach within its own timeout', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeEach, describe, it } from 'vitest'; ${blockingSleep}
+beforeEach(() => { execFileSync('sleep', ['3']); }, 5000);
+describe('nested', () => {
+  it('runs', () => {});
+});`,
+    );
+
+    passes(run);
+  });
+
+  it('does not kill a blocking beforeAll within its own timeout', async ({ onTestFinished }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, it } from 'vitest'; ${blockingSleep}
+beforeAll(() => { execFileSync('sleep', ['3']); }, 5000);
+it('runs', () => {});`,
+    );
+
+    passes(run);
+  });
+
+  it('does not kill a nested blocking beforeAll that starts after a test', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, describe, it } from 'vitest'; ${blockingSleep}
+it('runs first', () => {});
+describe('nested', () => {
+  beforeAll(() => { execFileSync('sleep', ['3']); }, 5000);
+  it('runs', () => {});
+});`,
+    );
+
+    passes(run);
+  });
+
+  it('kills a blocking beforeAll that runs past its own timeout', async ({ onTestFinished }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, it } from 'vitest'; ${blockingSleep}
+beforeAll(() => { execFileSync('sleep', ['4']); }, 1500);
+it('unreached', () => {});`,
+    );
+
+    hangs(run, 'hanging.test.ts (beforeAll hooks)');
+  });
+
+  it('kills a blocking beforeAll before an unlimited hook in the same suite', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, describe, it } from 'vitest'; ${blockingSleep}
+describe('same suite', () => {
+  beforeAll(() => { execFileSync('sleep', ['4']); }, 1500);
+  beforeAll(() => {}, 0);
+  it('unreached', () => {});
+});`,
+    );
+
+    hangs(run, 'hanging.test.ts (beforeAll hooks)');
+  });
+
+  it('kills a blocked test after an unlimited beforeEach finishes', async ({ onTestFinished }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeEach, it } from 'vitest'; ${blockingSleep}
+beforeEach(() => {}, 0);
+it('blocks after setup', () => { execFileSync('sleep', ['4']); }, 1000);`,
+    );
+
+    hangs(run, 'hanging.test.ts > blocks after setup');
+  });
+
+  it.for(['stack', 'list'])(
+    'kills a file-level beforeAll before an unlimited hook with %s ordering',
+    async (sequence, { onTestFinished }) => {
+      const run = await runNested(
+        onTestFinished,
+        `import { beforeAll, it, vi } from 'vitest'; ${blockingSleep}
+vi.setConfig({ sequence: { hooks: '${sequence}' } });
+beforeAll(() => { execFileSync('sleep', ['4']); }, 1500);
+beforeAll(() => {}, 0);
+it('unreached', () => {});`,
+      );
+
+      hangs(run, 'hanging.test.ts (beforeAll hooks)');
+    },
+  );
+
+  it('keeps equal parallel hook budgets until each hook finishes', async ({ onTestFinished }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, beforeEach, describe, it, vi } from 'vitest';
+import { setTimeout } from 'node:timers/promises'; ${blockingSleep}
+vi.setConfig({ sequence: { hooks: 'parallel' } });
+const early = async () => { await setTimeout(100); };
+const late = async () => { await setTimeout(300); execFileSync('sleep', ['3']); };
+beforeAll(early, 5000);
+beforeAll(late, 5000);
+describe('nested', () => {
+  beforeEach(early, 5000);
+  beforeEach(late, 5000);
+  it('runs', () => {});
+});`,
+    );
+
+    passes(run);
+  });
+
+  it.for(['stack', 'list', 'parallel'])(
+    'preserves hook fixtures, suite arguments, and cleanup returns with %s ordering',
+    async (sequence, { onTestFinished }) => {
+      const run = await runNested(
+        onTestFinished,
+        `import { expect, it, vi } from 'vitest';
+vi.setConfig({ sequence: { hooks: '${sequence}' } });
+const test = it.extend({ fileValue: [42, { scope: 'file' }], testValue: 23 });
+let setup = false;
+let cleaned = false;
+test.beforeAll(({ fileValue }, suite) => {
+  expect(fileValue).toBe(42);
+  expect(suite.type).toBe('suite');
+  return () => { expect(cleaned).toBe(true); };
+});
+test.beforeEach(async ({ testValue, task }) => {
+  expect(testValue).toBe(23);
+  expect(task.name).toBe('uses setup');
+  setup = true;
+  return async () => { cleaned = true; };
+});
+test('uses setup', () => { expect(setup).toBe(true); });`,
+      );
+
+      passes(run);
+    },
+  );
+
+  it('restores the hook budget only while its returned cleanup runs', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, beforeEach, it } from 'vitest'; ${blockingSleep}
+const cleanup = () => { execFileSync('sleep', ['3']); };
+beforeAll(() => cleanup, 5000);
+beforeEach(async () => cleanup, 5000);
+it('runs', () => {});`,
+    );
+
+    passes(run);
+  });
+
+  it('does not kill a concurrent beforeAll that blocks after a sibling test finishes', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, describe, it } from 'vitest'; import { setTimeout } from 'node:timers/promises'; ${blockingSleep}
+describe.concurrent('both', () => {
+  describe('slow', () => {
+    beforeAll(async () => { await setTimeout(500); execFileSync('sleep', ['3']); }, 5000);
+    it('slow', () => {});
+  });
+  describe('fast', () => {
+    it('fast', async () => { await setTimeout(100); });
+  });
+});`,
+    );
+
+    passes(run);
+  });
+
+  it('kills a blocked test before a suite with no hook timeout', async ({ onTestFinished }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, describe, it } from 'vitest'; ${blockingSleep}
+it('blocks', () => { execFileSync('sleep', ['4']); });
+describe('later', () => {
+  beforeAll(() => {}, 0);
+  it('runs', () => {});
+});`,
+    );
+
+    hangs(run, 'hanging.test.ts > blocks');
+  });
+
+  it('kills a blocked test after a file-level beforeAll with no timeout', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, describe, it } from 'vitest'; ${blockingSleep}
+beforeAll(() => {}, 0);
+describe('nested', () => {
+  it('blocks', () => { execFileSync('sleep', ['4']); }, 1000);
+});`,
+    );
+
+    hangs(run, 'hanging.test.ts > blocks');
+  });
+
+  it('kills a blocked test after a throwing beforeAll and afterAll', async ({ onTestFinished }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { afterAll, beforeAll, describe, it } from 'vitest'; ${blockingSleep}
+describe('failed setup', () => {
+  beforeAll(() => { throw new Error('setup failed'); }, 0);
+  afterAll(() => { throw new Error('cleanup failed'); });
+  it('skipped', () => {});
+});
+describe('next suite', () => {
+  it('blocks beyond timeout', () => { execFileSync('sleep', ['4']); }, 1000);
+});`,
+    );
+
+    hangs(run, 'hanging.test.ts > blocks beyond timeout');
+  });
+
+  it('kills a blocking beforeAll when a skipped suite has no timeout', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { beforeAll, describe, it } from 'vitest'; ${blockingSleep}
+beforeAll(() => { execFileSync('sleep', ['4']); }, 1500);
+describe.skip('skipped', () => {
+  beforeAll(() => {}, 0);
+  it('unreached', () => {});
+});
+it('unreached', () => {});`,
+    );
+
+    hangs(run, 'hanging.test.ts (beforeAll hooks)');
   });
 
   it('does not kill two healthy concurrent tests', async ({ onTestFinished }) => {
@@ -238,6 +480,46 @@ describe.concurrent('both', () => {
     );
 
     passes(run);
+  });
+
+  it('kills a blocked test after a sibling suite ends and names the live test', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { describe, it } from 'vitest'; import { setTimeout } from 'node:timers/promises'; ${blockingSleep}
+describe.concurrent('both', () => {
+  describe('short', () => {
+    it('short', async () => { await setTimeout(100); });
+  });
+  describe('live', () => {
+    it('blocks after the sibling ends', async () => {
+      await setTimeout(500);
+      execFileSync('sleep', ['4']);
+    });
+  });
+});`,
+    );
+
+    hangs(run, 'blocks after the sibling ends');
+  });
+
+  it('kills a blocked test after an unlimited concurrent sibling finishes', async ({
+    onTestFinished,
+  }) => {
+    const run = await runNested(
+      onTestFinished,
+      `import { describe, it } from 'vitest'; import { setTimeout } from 'node:timers/promises'; ${blockingSleep}
+describe.concurrent('both', () => {
+  it('finished unlimited sibling', async () => { await setTimeout(100); }, 0);
+  it('blocks after sibling finishes', async () => {
+    await setTimeout(500);
+    execFileSync('sleep', ['4']);
+  }, 1000);
+});`,
+    );
+
+    hangs(run, 'blocks after sibling finishes');
   });
 
   it('does not kill a slow concurrent test after a short sibling finishes', async ({

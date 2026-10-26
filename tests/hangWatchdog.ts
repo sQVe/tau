@@ -2,13 +2,19 @@ import { url } from 'node:inspector';
 import { setInterval } from 'node:timers';
 import { Worker } from 'node:worker_threads';
 
-import { afterAll, beforeAll, beforeEach, expect, onTestFinished } from 'vitest';
+import type { RunnerTestSuite } from 'vitest';
+import { beforeAll, beforeEach, expect, TestRunner } from 'vitest';
 
 import { watchdogSource } from './hangWatchdogSource.js';
 
 interface WorkerState {
-  config: { testTimeout: number; hookTimeout: number };
+  config: {
+    testTimeout: number;
+    hookTimeout: number;
+  };
 }
+
+type SuiteHook = 'beforeAll' | 'beforeEach';
 
 // Vitest fails async hangs through its own timeouts. It cannot stop a blocked event loop or a file
 // whose collection never finishes, so a watchdog thread kills the worker in those two cases.
@@ -38,12 +44,25 @@ const readConfig = (): WorkerState['config'] => {
   return worker?.config ?? { testTimeout: 0, hookTimeout: 0 };
 };
 
+const hookTimeoutKey: unique symbol = Symbol.for('VITEST_CLEANUP_TIMEOUT');
+
+type TimedHook = ((...args: never[]) => unknown) & Partial<Record<typeof hookTimeoutKey, unknown>>;
+
+const hookTimeout = (hook: TimedHook) => {
+  const timeout = hook[hookTimeoutKey];
+
+  return typeof timeout === 'number' ? timeout : readConfig().hookTimeout;
+};
+
+const activeHooks = new Set<{ name: SuiteHook | 'cleanup'; timeout: number }>();
 const runningTests = new Map<string, { name: string; timeout: number }>();
 
-// A timeout of 0 on any running test disables the deadline while it runs.
 const blockingBudget = () => {
+  const activeTimeouts = [...activeHooks].map((hook) => hook.timeout);
   const testTimeouts = [...runningTests.values()].map((test) => test.timeout);
-  const timeouts = [readConfig().hookTimeout, ...testTimeouts];
+
+  const timeouts = [readConfig().hookTimeout, ...activeTimeouts, ...testTimeouts];
+
   const longest = Math.max(...timeouts);
 
   return timeouts.includes(0) ? 0 : Math.min(longest + slackMilliseconds, maxMilliseconds);
@@ -88,44 +107,86 @@ if (!isInspecting()) {
 
   heartbeat.unref();
 
-  const applyRunning = () => {
+  const applyBudget = () => {
     Atomics.store(state, 1, blockingBudget());
 
     const names = [...runningTests.values()].map((test) => test.name).join(', ');
+    const hasBeforeAll = [...activeHooks].some((hook) => hook.name === 'beforeAll');
 
-    setLabel(`${testPath()} > ${names}`);
+    if (names) {
+      setLabel(`${testPath()} > ${names}`);
+    } else if (hasBeforeAll) {
+      setLabel(`${testPath()} (beforeAll hooks)`);
+    } else {
+      setLabel(`${testPath()} (cleanup)`);
+    }
+
     beat();
   };
 
-  beforeAll(() => {
+  const wrapHook = <Arguments extends unknown[]>(
+    hook: (...hookArguments: Arguments) => unknown,
+    name: SuiteHook | 'cleanup',
+    timeout: number,
+  ): ((...hookArguments: Arguments) => Promise<unknown>) => {
+    const wrapped = async (...hookArguments: Arguments) => {
+      const active = { name, timeout };
+
+      activeHooks.add(active);
+      applyBudget();
+
+      try {
+        const result = await hook(...hookArguments);
+
+        if (typeof result === 'function') {
+          return wrapHook(result as TimedHook, 'cleanup', timeout);
+        }
+
+        return result;
+      } finally {
+        activeHooks.delete(active);
+        applyBudget();
+      }
+    };
+
+    // Vitest stores cleanup timeouts and stack traces on the registered fixture-aware hook.
+    return Object.assign(wrapped, hook);
+  };
+
+  const installHookWrappers = (suite: Readonly<RunnerTestSuite>) => {
+    const hooks = TestRunner.getSuiteHooks(suite);
+
+    // Mutate entries in place: Vitest's beforeAll iterator (or parallel map) holds this array.
+    // This setup hook installs wrappers synchronously before the iterator visits later entries.
+    hooks.beforeAll.forEach((hook, index) => {
+      hooks.beforeAll[index] = wrapHook(hook, 'beforeAll', hookTimeout(hook));
+    });
+
+    hooks.beforeEach.forEach((hook, index) => {
+      hooks.beforeEach[index] = wrapHook(hook, 'beforeEach', hookTimeout(hook));
+    });
+
+    for (const task of suite.tasks) {
+      if (task.type === 'suite' && task.mode === 'run') {
+        installHookWrappers(task);
+      }
+    }
+  };
+
+  // oxlint-disable-next-line no-empty-pattern -- Vitest passes the suite only when the first parameter destructures, even with no properties.
+  beforeAll(({}, suite) => {
     Atomics.store(state, 2, 0);
-    Atomics.store(state, 1, blockingBudget());
-    setLabel(`${testPath()} (beforeAll hooks)`);
-    beat();
+    installHookWrappers(suite);
+    applyBudget();
   });
 
-  beforeEach((context) => {
-    const { task } = context;
-
+  beforeEach(({ task, onTestFinished }) => {
     runningTests.set(task.id, { name: task.name, timeout: task.timeout });
-    applyRunning();
+    applyBudget();
 
     onTestFinished(() => {
       runningTests.delete(task.id);
-
-      if (runningTests.size > 0) {
-        applyRunning();
-
-        return;
-      }
-
-      Atomics.store(state, 1, blockingBudget());
-      setLabel(`${testPath()} (cleanup)`);
-      beat();
+      applyBudget();
     });
-  });
-
-  afterAll(() => {
-    setLabel(`${testPath()} (afterAll hooks and cleanup)`);
   });
 }
