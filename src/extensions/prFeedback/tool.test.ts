@@ -33,7 +33,7 @@ const setUp = async () => {
   const fake = createGhFake();
 
   const read = async (input: Partial<PrFeedbackInput> = {}) => {
-    const tool = createPrFeedbackTool(fake.exec);
+    const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
 
     const result = await tool.execute(
       'call',
@@ -521,7 +521,7 @@ describe('tool arguments', () => {
     { call: { action: 'checks', head: {} } },
   ])('refuses the arguments $call before anything runs', async ({ call }) => {
     const { root, fake } = await setUp();
-    const tool = createPrFeedbackTool(fake.exec);
+    const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
 
     expect(() => validated(tool, call)).toThrow(Error);
     expect(fake.calls).toEqual([]);
@@ -530,7 +530,7 @@ describe('tool arguments', () => {
 
   it('accepts the arguments of a read and runs it', async () => {
     const { root, fake } = await setUp();
-    const tool = createPrFeedbackTool(fake.exec);
+    const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
 
     const parameters = validated(tool, {
       action: 'read',

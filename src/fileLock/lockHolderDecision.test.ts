@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { holderIsGone } from './lockHolderDecision.js';
+import { holderIsGone, recordNeedsRereading } from './lockHolderDecision.js';
 import type { LockHolderFacts } from './lockHolderDecision.js';
 
 const facts = (overrides: Partial<LockHolderFacts>): LockHolderFacts => ({
@@ -41,4 +41,22 @@ it.each([
   },
 ])('decides whether the holder is gone for $name', ({ facts: holderFacts, expected }) => {
   expect(holderIsGone(holderFacts)).toBe(expected);
+});
+
+it.each([
+  { name: 'dead session with no command', facts: facts({ sessionAlive: false }), expected: true },
+  {
+    name: 'dead session with a live command',
+    facts: facts({ sessionAlive: false, commandAlive: true }),
+    expected: false,
+  },
+  { name: 'live session', facts: facts({}), expected: false },
+  { name: 'released', facts: facts({ released: true, sessionAlive: false }), expected: false },
+  {
+    name: 'missing holder',
+    facts: facts({ recorded: false, sessionAlive: false }),
+    expected: false,
+  },
+])('decides whether to read the record again for $name', ({ facts: holderFacts, expected }) => {
+  expect(recordNeedsRereading(holderFacts)).toBe(expected);
 });

@@ -16,3 +16,8 @@ export const holderIsGone = (facts: LockHolderFacts): boolean => {
 
   return !facts.sessionAlive && !facts.commandAlive;
 };
+
+// A record read before the session was seen dead can miss a command that the session recorded
+// later. Only the session writes its record, so a record read after its death is final.
+export const recordNeedsRereading = (facts: LockHolderFacts): boolean =>
+  facts.recorded && !facts.released && holderIsGone(facts);

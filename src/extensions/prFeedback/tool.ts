@@ -9,10 +9,12 @@ import { Type } from 'typebox';
 import type { Exec, CommandRuntime } from '../../command.js';
 import { findCheckoutRoot } from '../../git.js';
 import { parseRepository } from '../../github/github.js';
+import type { GroupExec } from '../../process/process.js';
 import { checkTauDirectory, createFreshTauDirectory, requireTauChild } from '../../tauDirectory.js';
 import { readChecks } from './checks.js';
 import { boundFeedback, chunkFeedbackBodies } from './feedbackBounds.js';
 import { postReplies } from './post.js';
+import type { PostRuntime } from './post.js';
 import { readFeedback } from './read.js';
 import { writePullRequestRecord } from './replies.js';
 import { threadsToShow } from './threads.js';
@@ -80,7 +82,7 @@ const feedbackDirectory = async (root: string, directory: string | undefined) =>
 };
 
 const post = async (
-  runtime: CommandRuntime,
+  runtime: PostRuntime,
   context: ExtensionContext,
   parameters: PrFeedbackInput,
 ) => {
@@ -139,12 +141,12 @@ const checks = async (runtime: CommandRuntime, parameters: PrFeedbackInput) => {
 };
 
 const runAction = (
-  exec: Exec,
+  commands: { exec: Exec; execInGroup: GroupExec },
   context: ExtensionContext,
   parameters: PrFeedbackInput,
   signal: AbortSignal | undefined,
 ): Promise<Record<string, unknown>> => {
-  const runtime = { exec, cwd: context.cwd, signal };
+  const runtime = { ...commands, cwd: context.cwd, signal };
 
   if (parameters.action === 'read') {
     return read(runtime, parameters);
@@ -157,6 +159,7 @@ const runAction = (
 
 export const createPrFeedbackTool = (
   exec: Exec,
+  execInGroup: GroupExec,
 ): ToolDefinition<typeof prFeedbackToolParameters, Record<string, unknown>> =>
   defineTool({
     name: 'pr_feedback',
@@ -166,7 +169,7 @@ export const createPrFeedbackTool = (
     parameters: prFeedbackToolParameters,
     executionMode: 'sequential',
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
-      const details = await runAction(exec, context, parameters, signal);
+      const details = await runAction({ exec, execInGroup }, context, parameters, signal);
 
       return {
         content: [{ type: 'text', text: JSON.stringify(details, null, 2) }],

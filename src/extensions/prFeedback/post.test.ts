@@ -1,4 +1,5 @@
-import { chmod, copyFile, cp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { copyFile, cp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
@@ -7,8 +8,9 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { confirmContext, noUiContext } from '../../../tests/toolContext.js';
+import type { Exec } from '../../command.js';
 import { isMissingFile } from '../../errors.js';
-import { createGhFake } from './fixtures/ghFake.js';
+import { createGhFake, groupExecOf } from './fixtures/ghFake.js';
 import type { FakeThread, GhFake } from './fixtures/ghFake.js';
 import { createPrFeedbackTool } from './tool.js';
 import type { PrFeedbackInput } from './tool.js';
@@ -21,10 +23,40 @@ interface ReadDetails {
 
 type Category = 'uncertain' | 'posted' | 'notPosted';
 
-// Lets a test act as another session right after post reads posted.json.
+type PrFeedbackTool = ReturnType<typeof createPrFeedbackTool>;
+
 const postedHooks = vi.hoisted(() => ({
   afterRead: undefined as (() => Promise<void>) | undefined,
 }));
+
+const fileFaults = vi.hoisted(() => ({
+  failPostedSave: undefined as ((writes: readonly { state: string }[]) => boolean) | undefined,
+}));
+
+vi.mock(import('node:fs/promises'), async (importOriginal) => {
+  const original = await importOriginal();
+
+  const faultyWriteFile: typeof original.writeFile = async (path, data, options) => {
+    const failPostedSave = fileFaults.failPostedSave;
+    const isPostedSave = typeof path === 'string' && /\/\.posted\.json\.[^/]+$/u.test(path);
+
+    if (isPostedSave && failPostedSave !== undefined && typeof data === 'string') {
+      const saved = JSON.parse(data) as { writes: { state: string }[] };
+
+      if (failPostedSave(saved.writes)) {
+        throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+      }
+    }
+
+    await original.writeFile(path, data, options);
+  };
+
+  return {
+    ...original,
+    writeFile: faultyWriteFile,
+    default: { ...original, writeFile: faultyWriteFile },
+  };
+});
 
 vi.mock(import('./replies.js'), async (importOriginal) => {
   const original = await importOriginal();
@@ -58,19 +90,51 @@ const thread = (overrides: Partial<FakeThread> & { id: string }): FakeThread => 
   ...overrides,
 });
 
+const run = async (
+  session: PrFeedbackTool,
+  input: PrFeedbackInput,
+  context: ExtensionToolContext,
+) => {
+  const result = await session.execute('call', input, undefined, undefined, context);
+
+  return result.details;
+};
+
+const pausedSession = (fake: GhFake) => {
+  const entered = Promise.withResolvers<undefined>();
+  const gate = Promise.withResolvers<undefined>();
+  let paused = false;
+
+  const exec: Exec = async (command, commandArguments, options) => {
+    if (!paused && commandArguments.includes('POST')) {
+      paused = true;
+      entered.resolve(undefined);
+      await gate.promise;
+    }
+
+    return fake.exec(command, commandArguments, options);
+  };
+
+  return {
+    tool: createPrFeedbackTool(
+      exec,
+      groupExecOf(exec, () => fake.commandGroup),
+    ),
+    entered: entered.promise,
+    open: () => {
+      gate.resolve(undefined);
+    },
+  };
+};
+
 const setUp = async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const fake = createGhFake();
-  const tool = createPrFeedbackTool(fake.exec);
-
-  const run = async (input: PrFeedbackInput, context: ExtensionToolContext) => {
-    const result = await tool.execute('call', input, undefined, undefined, context);
-
-    return result.details;
-  };
+  const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
 
   const read = async () =>
     (await run(
+      tool,
       { action: 'read', repository: 'github.com/sQVe/tau', pr: 7 },
       noUiContext(root),
     )) as unknown as ReadDetails;
@@ -79,8 +143,10 @@ const setUp = async () => {
     details: ReadDetails,
     context: ExtensionToolContext = noUiContext(root),
     input: Partial<PrFeedbackInput> = {},
+    session = tool,
   ) =>
     run(
+      session,
       {
         action: 'post',
         directory: details.directory,
@@ -158,6 +224,14 @@ const recordedWrite = (
   commentId,
   earlierCommentIds: [],
 });
+
+const failSaves = (predicate: (writes: readonly { state: string }[]) => boolean) => {
+  fileFaults.failPostedSave = predicate;
+
+  onTestFinished(() => {
+    fileFaults.failPostedSave = undefined;
+  });
+};
 
 const postFailure = (promise: Promise<unknown>) =>
   promise.then(
@@ -491,7 +565,7 @@ describe('post', () => {
 
   it('passes --hostname and the pull request to every write', async () => {
     const { root, fake } = await setUp();
-    const tool = createPrFeedbackTool(fake.exec);
+    const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
 
     fake.threads = [botThread()];
 
@@ -743,7 +817,7 @@ describe('post', () => {
 });
 
 describe('post save failure', () => {
-  it('names the write that posted.json could not record', async () => {
+  it('names the write that posted.json could not record as posted', async () => {
     const { root, fake, read, post } = await setUp();
 
     fake.threads = [personThread()];
@@ -756,81 +830,31 @@ describe('post save failure', () => {
       comment: null,
     });
 
-    // A read-only round directory makes every save of posted.json fail, and reads still work.
-    const { context } = recordingConfirm(root, true, async () => {
-      await chmod(details.directory, 0o500);
-      onTestFinished(() => chmod(details.directory, 0o700));
-    });
+    failSaves((writes) => writes.some((write) => write.state === 'posted'));
 
-    const failure = await postFailure(post(details, context));
+    const failure = await postFailure(post(details, recordingConfirm(root, true).context));
 
     expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 101, body: 'Renamed.' }]);
 
     expect(failure?.message).toContain(
-      'Reply to https://github.com/sQVe/tau/pull/7#discussion_r101:\nRenamed.\nAdd it to posted.json before a retry',
+      'Reply to https://github.com/sQVe/tau/pull/7#discussion_r101:\nRenamed.\nposted.json records it as uncertain',
     );
 
-    expect(failure?.message).not.toContain('posted.json records the posted writes');
-
-    expect(await readPosted(details.directory)).toBeUndefined();
     expect(fake.threads[0]?.isResolved).toBe(false);
 
-    await chmod(details.directory, 0o700);
-
-    await writeFile(
-      join(details.directory, 'posted.json'),
-      JSON.stringify({
-        version: 2,
-        writes: [recordedWrite('reply', 'thread-person', 'Renamed.', 1000)],
-      }),
-    );
+    fileFaults.failPostedSave = undefined;
 
     const retry = await post(details, recordingConfirm(root, true).context);
 
     expect(retry).toMatchObject({
       posted: [{ kind: 'resolve', thread: 'thread-person' }],
-      skipped: [{ kind: 'reply', thread: 'thread-person' }],
+      skipped: [{ kind: 'reply', thread: 'thread-person', commentId: 1000 }],
     });
 
     expect(fake.writes).toEqual([
       { kind: 'reply', replyTo: 101, body: 'Renamed.' },
       { kind: 'resolve', threadId: 'thread-person' },
     ]);
-  });
-});
-
-describe('post uncertain save failure', () => {
-  it('names the uncertain write that posted.json could not record', async () => {
-    const { root, fake, read, post } = await setUp();
-
-    fake.threads = [personThread()];
-
-    const details = await read();
-
-    await writeReplies(details.directory, {
-      version: 1,
-      threads: [replyTo('thread-person', 'Renamed.')],
-      comment: null,
-    });
-
-    fake.loseWriteResponse(1);
-
-    const { context } = recordingConfirm(root, true, async () => {
-      await chmod(details.directory, 0o500);
-      onTestFinished(() => chmod(details.directory, 0o700));
-    });
-
-    const failure = await postFailure(post(details, context));
-
-    expect(failure?.message).toContain(
-      'Reply to https://github.com/sQVe/tau/pull/7#discussion_r101:\nRenamed.\nCheck the pull request for it before a retry',
-    );
-
-    expect(failure?.message).toMatch(/uncertain/u);
-    expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 101, body: 'Renamed.' }]);
-    expect(fake.threads[0]?.isResolved).toBe(false);
-
-    expect(await readPosted(details.directory)).toBeUndefined();
   });
 });
 
@@ -1372,6 +1396,215 @@ describe('post settled writes', () => {
 
     expect(await readPosted(details.directory)).toMatchObject({
       writes: [{ kind: 'reply', state: 'posted', commentId: 1000 }, otherSession],
+    });
+  });
+});
+
+const exitedProcessId = async () => {
+  const session = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
+
+  await new Promise((resolve) => {
+    session.once('close', resolve);
+  });
+
+  return session.pid ?? 0;
+};
+
+const runningGroup = () => {
+  const command = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+    stdio: 'ignore',
+    detached: true,
+  });
+
+  onTestFinished(() => {
+    command.kill('SIGKILL');
+  });
+
+  return command.pid ?? 0;
+};
+
+// Makes the round lock look as if its session process died.
+const killLockSession = async (directory: string) => {
+  const names = await readdir(directory);
+  const lockName = names.find((name) => /^post\.lock\.\d+$/u.test(name));
+
+  if (lockName === undefined) {
+    throw new Error(`${directory} holds no round lock.`);
+  }
+
+  const path = join(directory, lockName);
+  const owner = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
+
+  await writeFile(path, JSON.stringify({ ...owner, pid: await exitedProcessId() }));
+};
+
+describe('post from two sessions', () => {
+  const botReplies = {
+    version: 1,
+    threads: [replyTo('thread-bot', 'Added.', false)],
+    comment: null,
+  };
+
+  it('sends a write once when another session posts the round during the write', async () => {
+    const { root, fake, read, post } = await setUp();
+
+    fake.threads = [botThread()];
+
+    const details = await read();
+
+    await writeReplies(details.directory, botReplies);
+
+    const sessionA = pausedSession(fake);
+    const postA = postFailure(post(details, noUiContext(root), {}, sessionA.tool));
+
+    await sessionA.entered;
+
+    const failureB = await postFailure(post(details));
+
+    sessionA.open();
+
+    expect(await postA).toBeUndefined();
+    expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 201, body: 'Added.' }]);
+    expect(failureB).toBeInstanceOf(Error);
+
+    expect(await readPosted(details.directory)).toEqual({
+      version: 2,
+      writes: [recordedWrite('reply', 'thread-bot', 'Added.', 1000)],
+    });
+  });
+
+  it('sends nothing while a write of a session that died still runs', async () => {
+    const { root, fake, read, post } = await setUp();
+
+    fake.threads = [botThread()];
+
+    const details = await read();
+
+    await writeReplies(details.directory, botReplies);
+    fake.commandGroup = runningGroup();
+
+    const sessionA = pausedSession(fake);
+    const postA = postFailure(post(details, noUiContext(root), {}, sessionA.tool));
+
+    await sessionA.entered;
+    await killLockSession(details.directory);
+
+    const failureB = await postFailure(post(details));
+
+    expect(failureB).toBeInstanceOf(Error);
+    expect(fake.writes).toEqual([]);
+
+    sessionA.open();
+
+    expect(await postA).toBeUndefined();
+    expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 201, body: 'Added.' }]);
+  });
+
+  it('lets another session post while the user answers the confirm', async () => {
+    const { root, fake, read, post } = await setUp();
+
+    fake.threads = [personThread()];
+
+    const details = await read();
+
+    await writeReplies(details.directory, {
+      version: 1,
+      threads: [replyTo('thread-person', 'Renamed.', false)],
+      comment: null,
+    });
+
+    let resultB: unknown;
+
+    const { context } = recordingConfirm(root, true, async () => {
+      resultB = await post(details, recordingConfirm(root, true).context);
+    });
+
+    const failureA = await postFailure(post(details, context));
+
+    expect(resultB).toMatchObject({ status: 'posted' });
+    expect(failureA?.message).toMatch(/read again/u);
+    expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 101, body: 'Renamed.' }]);
+    expect(await post(details)).toMatchObject({ status: 'unchanged' });
+  });
+
+  it('leaves the round to the next post after the user declines', async () => {
+    const { root, fake, read, post } = await setUp();
+
+    fake.threads = [personThread()];
+
+    const details = await read();
+
+    await writeReplies(details.directory, {
+      version: 1,
+      threads: [replyTo('thread-person', 'Renamed.', false)],
+      comment: null,
+    });
+
+    expect(await post(details, recordingConfirm(root, false).context)).toMatchObject({
+      status: 'declined',
+    });
+
+    expect(await post(details, recordingConfirm(root, true).context)).toMatchObject({
+      status: 'posted',
+    });
+
+    expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 101, body: 'Renamed.' }]);
+  });
+
+  it('sends nothing when saving the uncertain record before a write fails', async () => {
+    const { fake, read, post } = await setUp();
+
+    fake.threads = [botThread()];
+
+    const details = await read();
+
+    await writeReplies(details.directory, botReplies);
+    failSaves(() => true);
+
+    const failure = await postFailure(post(details));
+
+    expect(failure?.message).toContain('ENOSPC');
+    expect(fake.writes).toEqual([]);
+    expect(await readPosted(details.directory)).toBeUndefined();
+
+    fileFaults.failPostedSave = undefined;
+
+    expect(await post(details)).toMatchObject({ status: 'posted' });
+    expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 201, body: 'Added.' }]);
+  });
+
+  it('settles a write whose save after the send failed without sending it again', async () => {
+    const { fake, read, post } = await setUp();
+
+    fake.threads = [botThread()];
+
+    const details = await read();
+
+    await writeReplies(details.directory, botReplies);
+    failSaves((writes) => writes.some((write) => write.state === 'posted'));
+
+    const failure = await postFailure(post(details));
+
+    expect(failure).toBeInstanceOf(Error);
+
+    expect(await readPosted(details.directory)).toEqual({
+      version: 2,
+      writes: [
+        {
+          ...recordedWrite('reply', 'thread-bot', 'Added.', null),
+          state: 'uncertain',
+          earlierCommentIds: [201],
+        },
+      ],
+    });
+
+    fileFaults.failPostedSave = undefined;
+
+    expect(await post(details)).toMatchObject({ status: 'unchanged' });
+    expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 201, body: 'Added.' }]);
+
+    expect(await readPosted(details.directory)).toMatchObject({
+      writes: [{ kind: 'reply', state: 'posted', commentId: 1000 }],
     });
   });
 });

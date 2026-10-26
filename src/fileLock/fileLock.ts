@@ -1,11 +1,11 @@
-import { link, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { link, mkdir, readdir, readFile, rename, rm, truncate, writeFile } from 'node:fs/promises';
 import { basename, dirname } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import { hasErrorCode, isMissingFile } from '../errors.js';
 import { groupState, processState } from '../process/process.js';
 import { isRecord } from '../schema.js';
-import { holderIsGone } from './lockHolderDecision.js';
+import { holderIsGone, recordNeedsRereading } from './lockHolderDecision.js';
 import type { LockHolderFacts } from './lockHolderDecision.js';
 
 interface LockOwner {
@@ -151,18 +151,38 @@ const removeOlderGenerations = async (lockPath: string, generation: number): Pro
   );
 };
 
-// Rewrites the owner's own file. Only the owner rewrites a live file.
-const rewriteOwnFile = async (path: string, owner: LockOwner, next: LockOwner): Promise<void> => {
+const ownsFile = async (path: string, owner: LockOwner): Promise<boolean> => {
   const current = await readOwner(path);
 
-  if (current?.token !== owner.token) {
-    return;
-  }
+  return current?.token === owner.token;
+};
 
+const replaceFile = async (path: string, owner: LockOwner, next: LockOwner): Promise<void> => {
   const staging = `${path}.${owner.token}.rewrite`;
 
   await writeFile(staging, JSON.stringify(next));
   await rename(staging, path);
+};
+
+const rewriteOwnFile = async (path: string, owner: LockOwner, next: LockOwner): Promise<void> => {
+  if (await ownsFile(path, owner)) {
+    await replaceFile(path, owner, next);
+  }
+};
+
+// Releases the owner's file. When storage refuses the new file that a rewrite needs, empties the
+// file in place instead. An empty file reads as a holder that left no record, and it keeps its
+// generation, so the highest generation never goes down.
+const releaseOwnFile = async (path: string, owner: LockOwner): Promise<void> => {
+  if (!(await ownsFile(path, owner))) {
+    return;
+  }
+
+  try {
+    await replaceFile(path, owner, { ...owner, released: true });
+  } catch {
+    await truncate(path, 0);
+  }
 };
 
 const newToken = (): string =>
@@ -179,6 +199,21 @@ const findHolder = async (
   }
 
   return { highest, holder: await readOwner(generationPath(lockPath, highest)) };
+};
+
+// Reads the holder's record again after its session is seen dead, so a command that the session
+// recorded after the first read keeps the lock.
+const findCurrentHolder = async (lockPath: string) => {
+  const { highest, holder } = await findHolder(lockPath);
+  const facts = await readHolderFacts(holder);
+
+  if (highest === undefined || !recordNeedsRereading(facts)) {
+    return { highest, holder, facts };
+  }
+
+  const current = await readOwner(generationPath(lockPath, highest));
+
+  return { highest, holder: current, facts: await readHolderFacts(current) };
 };
 
 // Links generation `next`, and keeps it only if no higher generation exists. A stalled session can
@@ -222,10 +257,7 @@ const acquireLock = async (options: FileLockOptions, owner: LockOwner): Promise<
     }
 
     // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
-    const { highest, holder } = await findHolder(lockPath);
-
-    // oxlint-disable-next-line no-await-in-loop -- Each attempt depends on the previous one.
-    const facts = await readHolderFacts(holder);
+    const { highest, holder, facts } = await findCurrentHolder(lockPath);
 
     if (highest === undefined || holderIsGone(facts)) {
       const next = (highest ?? 0) + 1;
@@ -266,13 +298,23 @@ export const withFileLock = async <T>(
   await mkdir(dirname(lockPath), { recursive: true });
   const path = await acquireLock(options, owner);
 
+  let result: T;
+
   try {
     if (options.signal?.aborted === true) {
       throw cancelled();
     }
 
-    return await run((groupId) => rewriteOwnFile(path, owner, { ...owner, commandGroup: groupId }));
-  } finally {
-    await rewriteOwnFile(path, owner, { ...owner, released: true });
+    result = await run((groupId) =>
+      rewriteOwnFile(path, owner, { ...owner, commandGroup: groupId }),
+    );
+  } catch (error) {
+    await releaseOwnFile(path, owner).catch(() => undefined);
+
+    throw error;
   }
+
+  await releaseOwnFile(path, owner);
+
+  return result;
 };
