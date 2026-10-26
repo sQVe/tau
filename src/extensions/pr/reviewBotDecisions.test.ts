@@ -4,7 +4,8 @@ import { decideReviewBots } from './reviewBotDecisions.js';
 import type { ReviewBotFacts } from './reviewBotDecisions.js';
 
 const bot = { login: 'codex[bot]', comment: '@codex review' };
-const headCommittedAt = '2026-10-14T10:00:00Z';
+const timeOf = (date: string) => Date.parse(date);
+const headCommittedAt = timeOf('2026-10-14T10:00:00Z');
 
 const facts = (overrides: Partial<ReviewBotFacts> = {}): ReviewBotFacts => ({
   bots: [bot],
@@ -71,61 +72,74 @@ it.each([
   },
   {
     name: 'the request came after the head commit',
-    overrides: { comments: [{ body: '@codex review', createdAt: '2026-10-14T10:05:00Z' }] },
+    overrides: {
+      comments: [{ body: '@codex review', createdAt: timeOf('2026-10-14T10:05:00Z') }],
+    },
     status: 'requested',
   },
   {
     name: 'the request came at the head commit time',
-    overrides: { comments: [{ body: '@codex review', createdAt: headCommittedAt }] },
+    overrides: {
+      comments: [{ body: '@codex review', createdAt: headCommittedAt }],
+    },
     status: 'requested',
   },
   {
     name: 'the request came before the head commit',
-    overrides: { comments: [{ body: '@codex review', createdAt: '2026-10-14T09:00:00Z' }] },
+    overrides: {
+      comments: [{ body: '@codex review', createdAt: timeOf('2026-10-14T09:00:00Z') }],
+    },
     status: 'request',
   },
   {
     name: 'the request predates the check suite',
     overrides: {
-      headCheckSuiteAt: '2026-10-14T10:10:00Z',
-      comments: [{ body: '@codex review', createdAt: '2026-10-14T10:05:00Z' }],
+      headCheckSuiteAt: timeOf('2026-10-14T10:10:00Z'),
+      comments: [{ body: '@codex review', createdAt: timeOf('2026-10-14T10:05:00Z') }],
     },
     status: 'request',
   },
   {
     name: 'the request came after the check suite',
     overrides: {
-      headCheckSuiteAt: '2026-10-14T10:10:00Z',
-      comments: [{ body: '@codex review', createdAt: '2026-10-14T10:11:00Z' }],
+      headCheckSuiteAt: timeOf('2026-10-14T10:10:00Z'),
+      comments: [{ body: '@codex review', createdAt: timeOf('2026-10-14T10:11:00Z') }],
     },
     status: 'requested',
   },
   {
     name: 'the request came at the check suite time',
     overrides: {
-      headCheckSuiteAt: '2026-10-14T10:10:00Z',
-      comments: [{ body: '@codex review', createdAt: '2026-10-14T10:10:00Z' }],
+      headCheckSuiteAt: timeOf('2026-10-14T10:10:00Z'),
+      comments: [{ body: '@codex review', createdAt: timeOf('2026-10-14T10:10:00Z') }],
     },
     status: 'requested',
   },
   {
     name: 'the check suite is older than the head commit',
     overrides: {
-      headCheckSuiteAt: '2026-10-14T09:00:00Z',
-      comments: [{ body: '@codex review', createdAt: '2026-10-14T10:05:00Z' }],
+      headCheckSuiteAt: timeOf('2026-10-14T09:00:00Z'),
+      comments: [{ body: '@codex review', createdAt: timeOf('2026-10-14T10:05:00Z') }],
     },
     status: 'requested',
   },
   {
     name: 'a comment has other text',
-    overrides: { comments: [{ body: '@codex review please', createdAt: '2026-10-14T10:05:00Z' }] },
+    overrides: {
+      comments: [
+        {
+          body: '@codex review please',
+          createdAt: timeOf('2026-10-14T10:05:00Z'),
+        },
+      ],
+    },
     status: 'request',
   },
   {
     name: 'the head was reviewed and requested',
     overrides: {
       reviews: [{ login: 'codex[bot]', commit: 'new' }],
-      comments: [{ body: '@codex review', createdAt: '2026-10-14T10:05:00Z' }],
+      comments: [{ body: '@codex review', createdAt: timeOf('2026-10-14T10:05:00Z') }],
     },
     status: 'reviewed',
   },
@@ -137,7 +151,10 @@ it('decides each bot on its own and keeps the order', () => {
   const second = { login: 'other[bot]', comment: '/review' };
 
   const decisions = decideReviewBots(
-    facts({ bots: [bot, second], reviews: [{ login: 'other[bot]', commit: 'new' }] }),
+    facts({
+      bots: [bot, second],
+      reviews: [{ login: 'other[bot]', commit: 'new' }],
+    }),
   );
 
   expect(decisions).toEqual([

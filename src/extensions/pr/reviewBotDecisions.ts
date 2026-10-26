@@ -4,11 +4,12 @@ export type ReviewBotStatus = 'request' | 'reviewed' | 'requested';
 
 export interface ReviewBotFacts {
   bots: ReviewBot[];
-  headCommittedAt: string;
+  // Milliseconds since the epoch.
+  headCommittedAt: number;
   // When GitHub created the earliest check suite of the head, if it created any.
-  headCheckSuiteAt?: string | undefined;
+  headCheckSuiteAt?: number | undefined;
   reviews: { login: string; commit: string | undefined }[];
-  comments: { body: string; createdAt: string }[];
+  comments: { body: string; createdAt: number }[];
   head: string;
 }
 
@@ -28,15 +29,11 @@ const sameLogin = (first: string, second: string) =>
 // suite, which GitHub creates on push. A repository with no check apps has no suite, and a request
 // made after the commit but before the push then still counts for the head.
 const requestedForHead = (facts: ReviewBotFacts, bot: ReviewBot) => {
-  const committedTime = Date.parse(facts.headCommittedAt);
-
-  const suiteTime =
-    facts.headCheckSuiteAt === undefined ? committedTime : Date.parse(facts.headCheckSuiteAt);
-
-  const headTime = Math.max(committedTime, suiteTime);
+  const suiteTime = facts.headCheckSuiteAt ?? facts.headCommittedAt;
+  const headTime = Math.max(facts.headCommittedAt, suiteTime);
 
   return facts.comments.some(
-    (comment) => comment.body === bot.comment && Date.parse(comment.createdAt) >= headTime,
+    (comment) => comment.body === bot.comment && comment.createdAt >= headTime,
   );
 };
 

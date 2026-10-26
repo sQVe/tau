@@ -41,6 +41,16 @@ const requirePullRequest = (pr: number | undefined) => {
   return pr;
 };
 
+const readTime = (commandArguments: readonly string[], text: string, field: string) => {
+  const time = Date.parse(text);
+
+  if (Number.isNaN(time)) {
+    throw new TypeError(`${label(commandArguments)} printed ${field} that is not a date.`);
+  }
+
+  return time;
+};
+
 const readPublished = async (runtime: CommandRuntime, repository: string, pr: number) => {
   const commandArguments = [
     'pr',
@@ -56,7 +66,13 @@ const readPublished = async (runtime: CommandRuntime, repository: string, pr: nu
 
   checkOutput(commandArguments, pullRequestSchema, view);
 
-  return view;
+  return {
+    ...view,
+    comments: view.comments.map((comment) => ({
+      body: comment.body,
+      createdAt: readTime(commandArguments, comment.createdAt, 'a comment createdAt'),
+    })),
+  };
 };
 
 const readHeadDate = async (runtime: CommandRuntime, repository: Repository, head: string) => {
@@ -76,7 +92,7 @@ const readHeadDate = async (runtime: CommandRuntime, repository: Repository, hea
     throw new Error(`${label(commandArguments)} printed no committer date.`);
   }
 
-  return date;
+  return readTime(commandArguments, date, 'a committer date');
 };
 
 // The earliest check suite approximates the push time, since gh does not report it. It is
@@ -98,13 +114,12 @@ const readHeadCheckSuiteDate = async (
 
   const stdout = await run(runtime, commandArguments);
   const lines = stdout.split('\n').map((line) => line.trim());
-  const times = lines.filter((line) => line !== '');
 
-  if (times.some((time) => Number.isNaN(Date.parse(time)))) {
-    throw new Error(`${label(commandArguments)} printed a check suite time that is not a date.`);
-  }
+  const times = lines
+    .filter((line) => line !== '')
+    .map((line) => readTime(commandArguments, line, 'a check suite time'));
 
-  return times.toSorted((first, second) => Date.parse(first) - Date.parse(second))[0];
+  return times.length === 0 ? undefined : Math.min(...times);
 };
 
 // Reads the configured review bots of the base repository and what each did on the pull request's
