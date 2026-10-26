@@ -19,7 +19,7 @@ interface Run {
 
 const script = join(import.meta.dirname, 'runTestProjects.ts');
 
-// Whole seconds keep mtimeMs exact, so a rewrite that restores the time matches the first run.
+// Whole seconds keep the modification time exact, so a rewrite that restores the time matches the first run.
 const fixedTime = new Date('2001-09-09T01:46:40Z');
 
 const nodeDirectory = dirname(process.execPath);

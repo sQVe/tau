@@ -31,13 +31,13 @@ const readEntry = (directory: string, name: string): PathEntry | undefined => {
   const path = join(directory, name);
 
   try {
-    const stats = statSync(path);
+    const stats = statSync(path, { bigint: true });
 
     return {
       name,
       isFile: stats.isFile(),
       executable: stats.isFile() && canExecute(path),
-      identity: `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}`,
+      identity: `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeNs}:${stats.ctimeNs}`,
     };
   } catch {
     return undefined;
