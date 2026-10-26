@@ -14,6 +14,8 @@ import { EvidenceUnavailableError, taskStatus } from './record.js';
 
 vi.mock(import('node:fs'), { spy: true });
 
+const savedTask = join(import.meta.dirname, '..', 'fixtures', 'taskRecords', 'current-pi.json');
+
 it('reports stopped without recovery once the parent confirmed the worker stopped', async ({
   onTestFinished,
 }) => {
@@ -83,7 +85,7 @@ it('reports corrupt launch evidence without stopping dispatched work until cance
   expect(readFileSync(join(recordDirectory, 'report.json'), 'utf8')).toBe('{');
 });
 
-it('reads the worker directory once per widget refresh', async ({ onTestFinished }) => {
+it('lists the task root at most once per widget refresh', async ({ onTestFinished }) => {
   const { controller, input } = setup(onTestFinished);
   const launched = await controller.launch(input);
   await controller.launch(input);
@@ -269,7 +271,7 @@ it('preserves incomplete output and malformed evidence without retrying startup'
   expect(calls.map((call) => call[1])).toEqual(['list', 'current']);
   expect(readdirSync(status.directory)).toContain('task.json');
   writeFileSync(join(status.directory, 'report.json'), '{');
-  expect(() => taskStatus(status.directory)).toThrow(/JSON|property/);
+  expect(() => taskStatus(status.directory, false, [])).toThrow(/JSON|property/);
 });
 
 it('distinguishes settled missing handover and cancellation from success', async ({
@@ -283,7 +285,7 @@ it('distinguishes settled missing handover and cancellation from success', async
     stopped: true,
   });
 
-  expect(taskStatus(launched.directory)).toMatchObject({
+  expect(taskStatus(launched.directory, false, [])).toMatchObject({
     outcome: 'incomplete',
     state: 'cleanupUnconfirmed',
   });
@@ -414,8 +416,11 @@ it.each([
 
 it('refreshes current-session worker rows after cleanup', async ({ onTestFinished }) => {
   const fixture = setup(onTestFinished);
-  const launched = await fixture.controller.launch(fixture.input);
-  const task = readTask(launched.directory);
+
+  const task = {
+    ...(JSON.parse(readFileSync(savedTask, 'utf8')) as object),
+    parentSessionId: fixture.input.parentSessionId,
+  };
 
   for (let index = 0; index < 3; index++) {
     const historical = { ...task, taskId: `history-${index}`, name: `worker-${index}0` };
@@ -425,6 +430,7 @@ it('refreshes current-session worker rows after cleanup', async ({ onTestFinishe
     recordEvent(directory, historical.taskId, 'cleanup', { stopped: true, detail: 'Stopped.' });
   }
 
+  const launched = await fixture.controller.launch(fixture.input);
   const rows = fixture.controller.widgetRows(fixture.input.parentSessionId);
 
   expect(rows).toHaveLength(4);

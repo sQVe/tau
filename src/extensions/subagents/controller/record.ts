@@ -14,7 +14,6 @@ import {
   readOptionalRecord,
   readReport,
   readTask,
-  readTasks,
 } from '../records.js';
 import { ownedWorkerSchema } from '../types.js';
 import type { Report, Task, TaskEvent, WorkerState } from '../types.js';
@@ -224,9 +223,9 @@ export const readWorkerFacts = (directory: string, taskId: string): WorkerFacts 
 export const taskRecordStatus = (
   directory: string,
   task: Task,
-  controlled = false,
-  // A caller that builds many statuses passes one snapshot so each status skips its own scan.
-  entries: { directory: string; task: Task }[] = readTasks(dirname(directory)),
+  controlled: boolean,
+  // The parent session's tasks; a successor always belongs to its predecessor's parent session.
+  entries: { directory: string; task: Task }[],
 ): TaskStatus => {
   const facts = readWorkerFacts(directory, task.taskId);
   const { events, report } = facts;
@@ -276,8 +275,12 @@ export const taskRecordStatus = (
   };
 };
 
-export const taskStatus = (directory: string, controlled = false): TaskStatus => {
+export const taskStatus = (
+  directory: string,
+  controlled: boolean,
+  entries: { directory: string; task: Task }[],
+): TaskStatus => {
   const task = readTask(directory);
 
-  return taskRecordStatus(directory, task, controlled);
+  return taskRecordStatus(directory, task, controlled, entries);
 };

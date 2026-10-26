@@ -1182,7 +1182,7 @@ it('ignores a notified event saved by an earlier Tau', () => {
     at: 1000,
   });
 
-  expect(taskRecordStatus(directory, records.readTask(directory))).toMatchObject({
+  expect(taskRecordStatus(directory, records.readTask(directory), false, [])).toMatchObject({
     taskId: task.taskId,
     state: 'stopped',
   });

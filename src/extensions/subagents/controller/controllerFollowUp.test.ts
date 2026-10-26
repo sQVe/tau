@@ -10,7 +10,6 @@ import * as records from '../records.js';
 import { oldestReadableTaskVersion, taskVersion } from '../types.js';
 import { WorkerController } from './controller.js';
 import { completed, savedFiles, setup } from './fixtures/controllerFixture.js';
-import { taskStatus } from './record.js';
 
 vi.mock(import('node:fs'), { spy: true });
 
@@ -429,7 +428,11 @@ it('refuses another follow-up when cleanup cannot verify the worker', async () =
 
   expect(failed.state).toBe('cleanupUnconfirmed');
   expect(readEvent(failed.directory, failed.taskId, 'cleanup')?.stopped).toBe(false);
-  expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBe(failed.taskId);
+
+  expect(
+    fixture.controller.status(fixture.source.taskId, fixture.input.parentSessionId).successorTaskId,
+  ).toBe(failed.taskId);
+
   expect(fixture.calls.some((call) => call[1] === 'close')).toBe(false);
   const saved = savedFiles(fixture.directory);
 
@@ -457,7 +460,11 @@ it('allows follow-up retry after the worker exits before readiness', async () =>
 
   expect(failed.state).toBe('stopped');
   expect(failed.failure).toContain('Worker exited before readiness');
-  expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBeUndefined();
+
+  expect(
+    fixture.controller.status(fixture.source.taskId, fixture.input.parentSessionId).successorTaskId,
+  ).toBeUndefined();
+
   expect(readdirSync(failed.directory)).not.toContain('dispatch.json');
   expect(readEvent(failed.directory, failed.taskId, 'accepted')).toBeUndefined();
   expect(records.readReport(failed.directory, failed.taskId)).toBeUndefined();
@@ -468,7 +475,10 @@ it('allows follow-up retry after the worker exits before readiness', async () =>
 
   expect(retried.state).toBe('starting');
   expect(retried.taskId).not.toBe(failed.taskId);
-  expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBe(retried.taskId);
+
+  expect(
+    fixture.controller.status(fixture.source.taskId, fixture.input.parentSessionId).successorTaskId,
+  ).toBe(retried.taskId);
 });
 
 it('follows up a current-session task whose native header names another parent session', async () => {
@@ -538,7 +548,7 @@ it('follows up a completed native task with new identity and unchanged saved evi
     predecessorName: fixture.source.name,
   });
 
-  expect(taskStatus(next.directory)).toMatchObject({
+  expect(fixture.controller.status(next.taskId, fixture.input.parentSessionId)).toMatchObject({
     predecessorTaskId: fixture.source.taskId,
     predecessorName: fixture.source.name,
   });
@@ -657,7 +667,10 @@ it('allows only one competing follow-up and preserves the native session across 
   }
 
   expect(fixture.calls.filter((call) => call[0] === 'layout')).toHaveLength(1);
-  expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBe(next.taskId);
+
+  expect(
+    fixture.controller.status(fixture.source.taskId, fixture.input.parentSessionId).successorTaskId,
+  ).toBe(next.taskId);
 
   await expect(
     fixture.controller.followUp({ ...request, sourceTaskId: next.taskId }, fixture.context),
@@ -728,7 +741,12 @@ it.each(['cancelled', 'missing before launch'] as const)(
     const next = await fixture.controller.followUp(fixture.input, fixture.context, abort.signal);
     expect(next.outcome).toBe(failure === 'cancelled' ? 'cancelled' : 'failure');
     expect(next.state).toBe('stopped');
-    expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBeUndefined();
+
+    expect(
+      fixture.controller.status(fixture.source.taskId, fixture.input.parentSessionId)
+        .successorTaskId,
+    ).toBeUndefined();
+
     expect(records.readReport(next.directory, next.taskId)).toBeUndefined();
     following = false;
 
@@ -746,7 +764,11 @@ it.each(['cancelled', 'missing before launch'] as const)(
     const retry = await fixture.controller.followUp(fixture.input, fixture.context);
 
     expect(retry.state).toBe('starting');
-    expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBe(retry.taskId);
+
+    expect(
+      fixture.controller.status(fixture.source.taskId, fixture.input.parentSessionId)
+        .successorTaskId,
+    ).toBe(retry.taskId);
   },
 );
 
@@ -773,7 +795,10 @@ it('refuses another follow-up when a lost launch response leaves an unconfirmed 
   );
 
   expect(savedFiles(fixture.directory)).toEqual(saved);
-  expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBe(failed.taskId);
+
+  expect(
+    fixture.controller.status(fixture.source.taskId, fixture.input.parentSessionId).successorTaskId,
+  ).toBe(failed.taskId);
 });
 
 it('refuses known live native writers and preserves validation time in the original follow-up budget', async () => {
@@ -832,7 +857,9 @@ it('refuses full-cap native follow-up before publishing an attempt', async () =>
     'capacity full',
   );
 
-  expect(taskStatus(fixture.sourceDirectory).successorTaskId).toBeUndefined();
+  expect(
+    fixture.controller.status(fixture.source.taskId, fixture.input.parentSessionId).successorTaskId,
+  ).toBeUndefined();
 
   expect(
     records

@@ -29,7 +29,7 @@ const stopTime = async (records: readonly (readonly [TaskEvent['kind'], number])
     });
   }
 
-  return taskStatus(launched.directory);
+  return taskStatus(launched.directory, false, []);
 };
 
 it.each([

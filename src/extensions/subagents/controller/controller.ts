@@ -20,7 +20,9 @@ import { WorkerPlacement } from '../placement.js';
 import type { Visibility } from '../placement.js';
 import type { WorkerNotice } from '../presentation.js';
 import { readAcknowledgement, readQuestion, readReply } from '../questionRecords.js';
-import { readEvent, readTask, readTasks, namePrefix, publish, validateTask } from '../records.js';
+import { readEvent, readTask, namePrefix, publish, validateTask } from '../records.js';
+import { deleteExpiredWorkers, readLastWrite } from '../retention.js';
+import { followUpRefusal } from '../retentionDecision.js';
 import { skillToolsRefusal } from '../skillToolsRefusal.js';
 import { isTaskId, taskVersion } from '../types.js';
 import type { Acknowledgement, Loadout, Question, Reply, Task } from '../types.js';
@@ -51,6 +53,7 @@ import { removeSnapshotDirectory, snapshotDirectoryFor } from './packageSnapshot
 import { piPackageManager } from './piPackageManager.js';
 import { EvidenceUnavailableError, handleRecovery, savedRecovery, taskStatus } from './record.js';
 import type { TaskStatus } from './record.js';
+import { SessionTaskIndex } from './sessionTasks.js';
 import { createHandle, savedHandle, TaskController } from './task.js';
 import type { ReplyReceipt, TaskContext } from './task.js';
 import type { Handle } from './types.js';
@@ -97,6 +100,7 @@ export class WorkerController {
   private readonly workers = new Map<string, TaskController>();
   private readonly capacity: number;
   private readonly live = new Set<string>();
+  private readonly sessionTaskIndex: SessionTaskIndex;
   private readonly lifetime = new AbortController();
   private readonly placement = new WorkerPlacement();
   private readonly taskContext: TaskContext;
@@ -111,6 +115,7 @@ export class WorkerController {
   ) {
     this.capacity = capacity;
     this.root = root;
+    this.sessionTaskIndex = new SessionTaskIndex(root);
     this.client = client;
     this.packageManager = packageManager;
 
@@ -122,23 +127,23 @@ export class WorkerController {
       lifetime: this.lifetime.signal,
       closed: () => this.closed,
       owns: (taskId) => this.owns(taskId),
+      sessionTasks: (parentSessionId) => this.sessionTasks(parentSessionId),
       release: (taskId) => {
         this.live.delete(taskId);
       },
     };
   }
 
+  private sessionTasks(parentSessionId: string): { directory: string; task: Task }[] {
+    return this.sessionTaskIndex.tasks(parentSessionId);
+  }
+
   widgetRows(parentSessionId: string): WorkerWidgetRow[] {
-    const rows: WorkerWidgetRow[] = [];
-    const entries = readTasks(this.root);
+    const entries = this.sessionTasks(parentSessionId);
 
-    for (const { directory, task } of entries) {
-      if (task.parentSessionId !== parentSessionId) {
-        continue;
-      }
-
-      rows.push(widgetRow(directory, task, this.owns(task.taskId), entries));
-    }
+    const rows = entries.map(({ directory, task }) =>
+      widgetRow(directory, task, this.owns(task.taskId), entries),
+    );
 
     return rows.toSorted((left, right) => right.createdAt - left.createdAt);
   }
@@ -156,7 +161,7 @@ export class WorkerController {
         throw new Error(handle.cleanup.recordErrors.join('; '));
       }
 
-      return taskStatus(directory, this.owns(taskId));
+      return taskStatus(directory, this.owns(taskId), this.sessionTasks(parentSessionId));
     } catch (error) {
       return this.statusFailure({ taskId, directory, handle, task, error });
     }
@@ -208,11 +213,10 @@ export class WorkerController {
   }
 
   async resume(parentSessionId: string): Promise<void> {
-    for (const { directory, task } of readTasks(this.root)) {
-      const foreign = task.parentSessionId !== parentSessionId || this.workers.has(task.taskId);
+    for (const { directory, task } of this.sessionTasks(parentSessionId)) {
       const unavailable = this.closed || this.live.size >= this.capacity;
 
-      if (foreign || unavailable) {
+      if (this.workers.has(task.taskId) || unavailable) {
         continue;
       }
 
@@ -227,6 +231,11 @@ export class WorkerController {
         // A task without readable ownership stays as saved evidence; the other tasks still resume.
       }
     }
+  }
+
+  // The parent session's own tasks stay while it runs, so its status and follow-ups keep their records.
+  async deleteExpiredTasks(parentSessionId: string, now: number): Promise<string[]> {
+    return deleteExpiredWorkers(this.root, this.sessionTaskIndex.taskIds(parentSessionId), now);
   }
 
   private async resumeSaved(directory: string, task: Task): Promise<void> {
@@ -475,6 +484,12 @@ export class WorkerController {
       return;
     }
 
+    const ageRefusal = followUpRefusal(readLastWrite(source.directory), Date.now());
+
+    if (ageRefusal !== undefined) {
+      throw new Error(ageRefusal);
+    }
+
     requireUnclaimed(this.root, source);
     refuseLiveNativeWriter(agents, source.task);
 
@@ -580,9 +595,12 @@ export class WorkerController {
 
       // Synchronous allocation and publication after listing coordinate launches in this process's event loop,
       // not launches in independent processes.
+      const retained = this.sessionTasks(input.parentSessionId).flatMap(
+        ({ task: saved }) => saved.name ?? [],
+      );
+
       const name = allocateName({
-        root: this.root,
-        parentSessionId: input.parentSessionId,
+        retained,
         loadout: input.loadout,
         live: agents,
         suffix: nameSuffix,
@@ -591,6 +609,8 @@ export class WorkerController {
       task.name = name;
       validateTask(task);
 
+      // A partly prepared directory still belongs to the session; an unpublished task reads as absent.
+      this.sessionTaskIndex.add(input.parentSessionId, taskId);
       prepareTaskDirectory(directory, task, Boolean(source));
       this.live.add(taskId);
 

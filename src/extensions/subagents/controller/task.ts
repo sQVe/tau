@@ -41,6 +41,7 @@ export interface TaskContext {
   lifetime: AbortSignal;
   closed: () => boolean;
   owns: (taskId: string) => boolean;
+  sessionTasks: (parentSessionId: string) => { directory: string; task: Task }[];
   release: (taskId: string) => void;
 }
 
@@ -278,7 +279,11 @@ export class TaskController {
       throw new Error(handle.cleanup.recordErrors.join('; '));
     }
 
-    const status = taskStatus(handle.directory, this.context.owns(handle.task.taskId));
+    const status = taskStatus(
+      handle.directory,
+      this.context.owns(handle.task.taskId),
+      this.context.sessionTasks(handle.task.parentSessionId),
+    );
 
     if (handle.cleanup.detail !== undefined) {
       status.cleanup = handle.cleanup.detail;

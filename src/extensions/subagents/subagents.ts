@@ -713,6 +713,14 @@ export default function subagentsExtension(
       } catch (error) {
         context.ui.notify(`Saved workers could not be reattached: ${String(error)}`, 'error');
       }
+
+      // Tool calls wait only for the resume, so deletion stays off their path and the widget's.
+      created.deleteExpiredTasks(sessionId, Date.now()).catch((error: unknown) => {
+        context.ui.notify(
+          `Expired worker records could not be deleted: ${String(error)}`,
+          'warning',
+        );
+      });
     })();
 
     return created;
