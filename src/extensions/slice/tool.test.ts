@@ -413,6 +413,78 @@ describe('slice tool apply', () => {
     expect(result['orderInPlace']).toBe(true);
   });
 
+  it('does not repair the order of a slice another person is assigned', async () => {
+    const { fake, directory, apply } = await appliedPlan();
+
+    fake.issues.get('ME-3')!.assigneeId = 'user-other';
+    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
+    fake.moveOnUpdate('ME-2', 1000);
+    const sortOrderBefore = fake.issues.get('ME-3')!.sortOrder;
+    const writesBefore = fake.writes().length;
+
+    const result = await apply(undefined, directory);
+    const applied = result['applied'] as { kind: string }[];
+
+    const writesToSlice = fake
+      .writes()
+      .slice(writesBefore)
+      .filter((call) => call.commandArguments.join(' ').includes('ME-3'));
+
+    expect(applied.map((step) => step.kind)).toEqual(['updateSlice']);
+    expect(fake.issues.get('ME-3')!.sortOrder).toBe(sortOrderBefore);
+    expect(result['orderInPlace']).toBe(false);
+    expect(writesToSlice).toEqual([]);
+  });
+
+  it('repairs the order of a slice the viewer is assigned', async () => {
+    const { fake, directory, apply } = await appliedPlan();
+
+    fake.issues.get('ME-3')!.assigneeId = 'user-viewer';
+    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
+    fake.moveOnUpdate('ME-2', 1000);
+
+    const result = await apply(undefined, directory);
+    const applied = result['applied'] as { kind: string }[];
+
+    expect(applied.map((step) => step.kind)).toEqual(['updateSlice', 'moveSlice']);
+    expect(fake.issues.get('ME-2')!.sortOrder).toBeLessThan(fake.issues.get('ME-3')!.sortOrder);
+    expect(result['orderInPlace']).toBe(true);
+  });
+
+  it('does not repair the order of a slice with no assignee that another person created', async () => {
+    const { fake, directory, apply } = await appliedPlan();
+
+    fake.issues.get('ME-3')!.assigneeId = null;
+    fake.issues.get('ME-3')!.creatorId = 'user-other';
+    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
+    fake.moveOnUpdate('ME-2', 1000);
+    const sortOrderBefore = fake.issues.get('ME-3')!.sortOrder;
+
+    const result = await apply(undefined, directory);
+    const applied = result['applied'] as { kind: string }[];
+
+    expect(applied.map((step) => step.kind)).toEqual(['updateSlice']);
+    expect(fake.issues.get('ME-3')!.sortOrder).toBe(sortOrderBefore);
+    expect(result['orderInPlace']).toBe(false);
+  });
+
+  it('does not repair the order of a slice whose creator is unknown', async () => {
+    const { fake, directory, apply } = await appliedPlan();
+
+    fake.issues.get('ME-3')!.assigneeId = null;
+    fake.issues.get('ME-3')!.creatorId = null;
+    await writeFile(join(directory, 'slice-1.md'), 'Slice one, revised.\n');
+    fake.moveOnUpdate('ME-2', 1000);
+    const sortOrderBefore = fake.issues.get('ME-3')!.sortOrder;
+
+    const result = await apply(undefined, directory);
+    const applied = result['applied'] as { kind: string }[];
+
+    expect(applied.map((step) => step.kind)).toEqual(['updateSlice']);
+    expect(fake.issues.get('ME-3')!.sortOrder).toBe(sortOrderBefore);
+    expect(result['orderInPlace']).toBe(false);
+  });
+
   it('stops before a repair move when the call is aborted', async () => {
     const { root, fake, directory } = await appliedPlan();
 

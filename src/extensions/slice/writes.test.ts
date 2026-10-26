@@ -30,6 +30,8 @@ const child = (number: number, change: Partial<LinearChild> = {}): LinearChild =
   canceled: false,
   merged: false,
   blockedBy: [],
+  assignee: null,
+  creator: 'viewer',
   ...change,
 });
 
@@ -38,6 +40,7 @@ const container = (
   change: Partial<LinearContainer> = {},
 ): LinearContainer => ({
   id: 'id-ME-1',
+  viewer: 'viewer',
   identifier: 'ME-1',
   completed: false,
   merged: false,
