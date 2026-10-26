@@ -122,7 +122,6 @@ const confidenceCutoffField = {
   confidenceCutoff: Type.Number({ minimum: 0, maximum: 1 }),
 };
 
-// Versions 11 and 12 saved a canary flag. Readers drop it before the in-memory check.
 const canaryField = {
   canary: Type.Boolean(),
 };
@@ -162,7 +161,6 @@ const taskWithRouting = <Version extends number, Routing extends TSchema>(
     { additionalProperties: false },
   );
 
-// Version 11 has no confidence cutoff. Version 12 has the cutoff, and version 13 has no canary.
 export const taskSchema = Type.Union([
   taskWithRouting(routingWithoutConfidenceCutoffTaskVersion, routingWithoutConfidenceCutoffSchema),
   taskWithRouting(routingWithConfidenceCutoffTaskVersion, routingSchema),
