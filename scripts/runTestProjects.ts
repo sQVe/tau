@@ -37,7 +37,7 @@ const readEntry = (directory: string, name: string): PathEntry | undefined => {
       name,
       isFile: stats.isFile(),
       executable: stats.isFile() && canExecute(path),
-      identity: `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}`,
+      identity: `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}`,
     };
   } catch {
     return undefined;

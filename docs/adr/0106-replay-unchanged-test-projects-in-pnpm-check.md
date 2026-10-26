@@ -56,8 +56,9 @@ command behind them, such as the installed `pi`. The tasks fingerprint that dige
 A reorder or a duplicate directory leaves the digest the same only while every command still
 resolves to the same file. A new executable, or a different file for an existing name, changes it. A
 file counts only when the caller can execute it, as checked by `accessSync` with `X_OK`. A directory
-does not count. A file counts by its device, inode, size, and modification time, not its content, so
-a rewrite that keeps all four leaves the digest the same.
+does not count. A file counts by its device, inode, size, modification time, and change time, not
+its content. Every write updates the change time, and normal tools cannot set it back, so a rewrite
+that restores size and modification time still changes the digest.
 
 When a `PATH` directory exists but cannot be listed, the script cannot know its commands. It passes
 a random value in place of the digest, so every project runs, and it prints one line to stderr that
