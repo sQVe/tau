@@ -21,10 +21,12 @@ import type { ExtensionAPI, SlashCommandInfo } from '@earendil-works/pi-coding-a
 import { expect, it, vi } from 'vitest';
 
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { skillTools } from '../../skillTools.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import * as loadoutModule from './loadout.js';
 import { checkWorkerRuntime, validateSavedLoadout } from './loadout.js';
 import { listProfiles, resolveProfile, parseProfile } from './profiles.js';
+import { workerTools } from './workerTools.js';
 
 const profile = (body: string) => `---\nname: worker\nrole: editing\nthinking: off\n---\n${body}`;
 
@@ -581,6 +583,16 @@ it('loads the tdd skill in the bundled worker profile', async ({ onTestFinished 
   ]);
 
   expect(() => resolveLoadout(request, context, [])).toThrow('Worker profile skill not found: tdd');
+});
+
+it('gives the bundled worker the run_tests and mutation_check tools without full_check', async ({
+  onTestFinished,
+}) => {
+  const { context, request } = await workerFixture(onTestFinished);
+  const tools = workerTools(resolveLoadout(request, context), skillTools);
+
+  expect(tools).toEqual(expect.arrayContaining(['run_tests', 'mutation_check']));
+  expect(tools).not.toContain('full_check');
 });
 
 const parseSettings = (settings: string) =>

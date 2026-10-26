@@ -3,8 +3,8 @@
 Pi extensions and skills. Read [the development guide](docs/development.md) for local setup and
 verification.
 
-- Run `pnpm check` before finishing changes. It includes typechecking, lint, formatting, and tests.
-  Tests use temporary directories and need no model API.
+- The PR step runs `pnpm check`. It includes typechecking, lint, formatting, and tests. Tests use
+  temporary directories and need no model API.
 - Format with `pnpm format`; configuration lives in `vite.config.ts`.
 - Follow the structure and naming decisions in [docs/adr](docs/adr/README.md), and record new
   decisions there. Read that guide before adding an ADR. Do not write documents that explain how a
@@ -15,8 +15,8 @@ verification.
 - Follow the [workflow instructions](src/instructions/workflow.md) for how you run commands and
   scope work.
 - Before finishing a document, verify the commands it gives against the repository.
-- Before finishing a document, check that its local links resolve. `tests/markdownFiles.test.ts` in
-  `pnpm check` checks them.
+- Before finishing a document, check that its local links resolve. `tests/markdownFiles.test.ts`
+  checks them.
 - A pull request that touches `src/` needs a changeset, except the release pull request from
   `changeset-release/main` or titled `chore: release version packages`. Add it with
   `pnpm changeset`; `.github/workflows/changeset.yml` requires it.

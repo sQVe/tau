@@ -76,7 +76,7 @@ it('observes RED and focused passes, then accepts full verification after format
   const green = await run();
 
   expect(green.details.kind).toBe('pass');
-  expect(green.content[0]?.text).toContain('scope "full"');
+  expect(green.content).toHaveLength(3);
   expect((await run()).content).toHaveLength(3);
 
   await call('bash', { command: "printf '\n' >> behavior.test.ts" });
@@ -125,7 +125,7 @@ it('keeps advice separate from real Vitest failure evidence for production TypeE
   expect(await readFile(join(cwd, 'src/value.js'), 'utf8')).toContain('return 2;');
 });
 
-it('recommends full verification for regression checks across Pi session handovers', async ({
+it('gives no hint for regression checks across Pi session handovers', async ({
   onTestFinished,
 }) => {
   const first = await createHarness(onTestFinished);
@@ -138,13 +138,13 @@ it('recommends full verification for regression checks across Pi session handove
   const regression = await first.run();
 
   expect(regression.details).toMatchObject({ kind: 'pass', freshness: 'fresh' });
-  expect(regression.content[0]?.text).toContain('scope "full"');
+  expect(regression.content).toHaveLength(3);
   expect(JSON.stringify(regression.content)).not.toContain('RED');
   const second = await createHarness(onTestFinished, [], first.cwd);
   const handover = await second.run();
 
   expect(handover.details).toMatchObject({ kind: 'pass', freshness: 'fresh' });
-  expect(handover.content[0]?.text).toContain('scope "full"');
+  expect(handover.content).toHaveLength(3);
   expect(JSON.stringify(handover.content)).not.toContain('RED');
   expect((await second.run()).content).toHaveLength(3);
 });

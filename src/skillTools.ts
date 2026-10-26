@@ -13,8 +13,7 @@ export const skillTools: Readonly<Record<string, readonly string[]>> = {
   stack: ['stack'],
   'update-branch': ['stack'],
   pr: ['pr', 'full_check', 'stack', 'draft_review'],
-  tdd: ['full_check', 'mutation_check'],
-  'fix-bug': ['full_check'],
+  tdd: ['mutation_check'],
   'pr-feedback': ['pr_feedback'],
   tracker: ['tracker_evidence', 'tracker_draft', 'draft_review'],
 };

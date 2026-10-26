@@ -95,6 +95,7 @@ and the numbers that its status names.
 - [0118: List equivalent mutants instead of adding disable comments](./0118-list-equivalent-mutants-instead-of-disable-comments.md)
 - [0119: Share the mutation script as one npm package](./0119-share-the-mutation-script-as-one-npm-package.md)
 - [0121: Test architecture rules for placement, naming, fakes, and fixtures](./0121-test-architecture-rules.md)
+- [0123: Run the full check only at the PR step](./0123-run-the-full-check-only-at-the-pr-step.md)
 
 ## Commits
 
