@@ -21,7 +21,7 @@ import {
   wholeFileList,
 } from './capture.js';
 import type { Capture, DirectTarget, Gap, Part } from './capture.js';
-import { readQuoted } from './gitQuotedName.js';
+import { shownBlobs } from './patchBlobs.js';
 import { readCaptureRecord, recordFileName } from './record.js';
 import type { Snapshot } from './record.js';
 import { checkReviewDirectory, existingEntry } from './reviewDirectory.js';
@@ -53,13 +53,6 @@ interface FixContext {
   scratch: string;
   target: SnapshotTarget;
   snapshot: Snapshot;
-}
-
-interface ShownFile {
-  // The blob after the change, from the index line. Undefined for a mode-only change or a 100% rename.
-  blob: string | undefined;
-  // The path whose base blob the saved copy matches when no index line shows one.
-  source: string;
 }
 
 interface EarlierReview {
@@ -195,76 +188,6 @@ const blobAt = async (root: string, base: string, path: string) => {
   }
 
   return { sha, mode };
-};
-
-// `a/`, ` b/` and the two slashes around the repeated path.
-const separatorLength = 5;
-
-const headerPrefix = 'diff --git ';
-
-// The new-side path of a `diff --git a/<path> b/<path>` header, quoted or not. Undefined for a
-// header that names two different paths, such as a rename.
-const headerPath = (line: string): string | undefined => {
-  const text = line.slice(headerPrefix.length);
-
-  if (text.startsWith('"')) {
-    const first = readQuoted(text);
-    const second = first.rest.slice(1);
-    const secondName = second.startsWith('"') ? readQuoted(second).name : second;
-
-    return first.name.slice(2) === secondName.slice(2) ? secondName.slice(2) : undefined;
-  }
-
-  const pathLength = (text.length - separatorLength) / 2;
-  const path = text.slice(text.length - pathLength);
-
-  return Number.isInteger(pathLength) && text === `a/${path} b/${path}` ? path : undefined;
-};
-
-const indexBlob = /^index [0-9a-f]+\.\.([0-9a-f]+)/;
-
-// The blob each captured file section shows for the new side. Undefined for a section with no
-// index line, such as a mode-only change.
-const parseName = (text: string) => (text.startsWith('"') ? readQuoted(text).name : text);
-
-const renameTarget = /^(?:rename|copy) to (.*)$/;
-
-const renameSource = /^(?:rename|copy) from (.*)$/;
-
-const applyLine = (shown: Map<string, ShownFile>, entry: ShownFile, line: string) => {
-  const fromName = renameSource.exec(line)?.[1];
-  const toName = renameTarget.exec(line)?.[1];
-
-  if (fromName !== undefined) {
-    entry.source = parseName(fromName);
-  } else if (toName !== undefined) {
-    shown.set(parseName(toName), entry);
-  } else {
-    entry.blob ??= indexBlob.exec(line)?.[1];
-  }
-};
-
-// The new-side file each section of the captured diff shows, keyed by its path. A rename or copy
-// header names two paths, so its section is keyed by the `rename to` or `copy to` line.
-const shownBlobs = (text: string) => {
-  const shown = new Map<string, ShownFile>();
-  let entry: ShownFile | undefined;
-
-  for (const line of text.split('\n')) {
-    if (line.startsWith(headerPrefix)) {
-      const path = headerPath(line);
-
-      entry = { blob: undefined, source: path ?? '' };
-
-      if (path !== undefined) {
-        shown.set(path, entry);
-      }
-    } else if (entry !== undefined) {
-      applyLine(shown, entry, line);
-    }
-  }
-
-  return shown;
 };
 
 // The diff shows the blob after Git's check-in filters for the path, so the copy is hashed the same
