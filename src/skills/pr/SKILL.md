@@ -73,7 +73,7 @@ to ready. Neither choice completes a required action.
    - After the script, when a slice ticket has no audit comment, or its audited commit differs from
      `HEAD`, ask with `ask_user_question`: run a new audit with the
      [finish-slice skill](../finish-slice/SKILL.md), recommended, or continue with the missing or
-     old audit, whose items no step 5 check covers count as not run.
+     old audit. Then each slice or agent ticket acceptance item no step 5 check covers is not run.
    - Print the target's head, base, merge base, repository, open PR fields, and closed PRs; ticket
      intent; reuse status, reasons, and available reports; review freshness and evidence gaps; added
      skip or suppression markers; matching check-log paths with their bounded excerpts, and
@@ -103,8 +103,8 @@ to ready. Neither choice completes a required action.
    - It commits its own removals. Do not commit them here.
    - Later commits that add comments before the preview: run it again on those commits only.
    - Report each removal in the session report, not the PR body.
-   - A failed run, including a missing skill or worker tools, is a gap in the session report. It
-     does not change the draft status in step 6. Go on.
+   - Note a failed run, including a missing skill or worker tools, in the session report. It does
+     not change the draft status in step 6. Go on.
 
 4. Review `<merge base>..HEAD`, with both ends pinned. Rerun step 1's evidence script if the branch
    or saved evidence changed since collection. Reuse an earlier review only if:
@@ -240,7 +240,8 @@ to ready. Neither choice completes a required action.
      report. Drop test counts. List deferred audit items under the template's deferred verification
      section, such as `##### Deferred verification`.
    - Issues: link Linear tickets as the [tracker skill](../tracker/SKILL.md) says. For other issues,
-     use `Fixes <issue>` only for issues this PR completes; use `Related to <issue>` for others.
+     use `Fixes <issue>` only for issues this PR completes; use `Related to <issue>` for others. A
+     slice with an open acceptance item gets `Related to`, since `Fixes` closes it on merge.
    - Repository template: apply the same rules inside it. Map the lead, context, parts, decisions,
      and verification to the template's matching sections. Leave out an optional section with
      nothing to say. Keep a required heading and write the shortest true content under it, such as
