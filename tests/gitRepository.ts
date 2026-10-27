@@ -6,8 +6,6 @@ import { promisify } from 'node:util';
 
 type RegisterCleanup = (cleanup: () => Promise<void>) => void;
 
-// Rejects with the execFile error when Git exits nonzero. Trailing newlines are removed, but a
-// leading space is kept because porcelain output depends on it.
 export const git = async (cwd: string, ...commandArguments: string[]): Promise<string> => {
   const { stdout } = await promisify(execFile)('git', commandArguments, { cwd });
 

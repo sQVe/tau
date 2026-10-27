@@ -8,7 +8,6 @@ import { onTestFinished, vi } from 'vitest';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 interface CommandAnswer {
-  // Matches a call whose arguments, joined by spaces, start with this text. The longest prefix wins.
   prefix: string;
   code?: number;
   stdout?: string;
@@ -16,24 +15,17 @@ interface CommandAnswer {
 }
 
 export interface CommandOverride {
-  // A text that the call's arguments, joined with spaces and padded with one space on each side,
-  // hold.
   match: string;
-  // Shell lines that run in the shim's own process, so `exec`, `trap`, and `kill -9 $$` act on the
-  // process the code under test started. $real is the path of the real program. The call ends with
-  // exit 0 unless the script exits first.
   script: string;
 }
 
 export interface CommandShimOptions {
-  // What a call that matches no override or answer does: run the real program, or exit 128.
   otherCalls: 'real' | 'fail';
   answers?: CommandAnswer[];
   overrides?: CommandOverride[];
 }
 
 export interface CommandShim {
-  // Adds an answer, or replaces the answer that has the same prefix.
   answer: (answer: CommandAnswer) => void;
 }
 
@@ -76,8 +68,6 @@ const shimScript = (
   return `${lines.join('\n')}\n`;
 };
 
-// Puts a script named `program` first on PATH until the test ends. A call runs the first override
-// it matches, else the answer with the longest matching prefix, else `otherCalls`.
 export const installCommandShim = async (
   program: string,
   options: CommandShimOptions,
