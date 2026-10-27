@@ -71,4 +71,4 @@ export const readQaSettings = (
     example: '{"repositories": {"sQVe/cape": {"urlCommand": "./scripts/dev-url"}}}',
     repository,
     readEntry,
-  });
+  })?.entry;

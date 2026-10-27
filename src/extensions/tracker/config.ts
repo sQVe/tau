@@ -1,4 +1,4 @@
-import { readTauConfig, readUserOnlyKey, requireKnownKey } from '../../config/config.js';
+import { readTauConfig, requireKnownKey } from '../../config/config.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { readRepositorySection } from '../../config/repositorySection.js';
 import { errorMessage } from '../../errors.js';
@@ -83,9 +83,8 @@ const readRoute = (source: string, field: string, value: unknown): TrackerRoute 
   };
 };
 
-// `section` is the parsed `tracker` block, already checked by the section reader.
-const readAgentTeam = (source: string, section: unknown): string | undefined => {
-  if (!isRecord(section) || section.agentTeam === undefined) {
+const readAgentTeam = (source: string, section: Record<string, unknown>): string | undefined => {
+  if (section.agentTeam === undefined) {
     return undefined;
   }
 
@@ -101,13 +100,7 @@ const readTrackerConfig = (
 ): TrackerSetup => {
   rejectSliceKey(location);
 
-  const user = readUserOnlyKey(location, 'tracker');
-
-  if (user === undefined) {
-    return { status: 'unset' };
-  }
-
-  const route = readRepositorySection(location, ui, {
+  const tracker = readRepositorySection(location, ui, {
     key: 'tracker',
     knownSectionKeys: { agentTeam: true },
     knownEntryKeys: { team: true, project: true },
@@ -116,7 +109,15 @@ const readTrackerConfig = (
     readEntry: readRoute,
   });
 
-  return { status: 'read', agentTeam: readAgentTeam(user.source, user.value), route };
+  if (tracker === undefined) {
+    return { status: 'unset' };
+  }
+
+  return {
+    status: 'read',
+    agentTeam: readAgentTeam(tracker.source, tracker.section),
+    route: tracker.entry,
+  };
 };
 
 // Prompt building cannot report an error, so an invalid config becomes a fact the prompt states.

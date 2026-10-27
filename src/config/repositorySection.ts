@@ -17,10 +17,20 @@ export interface RepositorySectionReader<Entry> {
   readEntry: (source: string, field: string, value: unknown) => Entry;
 }
 
+export interface RepositorySection<Entry> {
+  // The user config file the section came from, named in errors.
+  source: string;
+  // The checked section, including keys beside `repositories`.
+  section: Record<string, unknown>;
+  // Undefined when no entry names the repository.
+  entry: Entry | undefined;
+}
+
 const repositoryKeyPattern = /^[^\s/]+\/[^\s/]+$/u;
 
-// Reads the entry for `repository` from a section of the user file keyed by owner/name. Entries for
-// other repositories are never read. Resolves undefined when the section has no such entry.
+// Reads the section of the user file keyed by owner/name, and the entry for `repository` in it.
+// Entries for other repositories are never read. Resolves undefined when the user file has no such
+// section.
 export const readRepositorySection = <Entry>(
   location: ConfigLocation,
   ui: ConfigWarnings,
@@ -32,7 +42,7 @@ export const readRepositorySection = <Entry>(
     repository,
     readEntry,
   }: RepositorySectionReader<Entry>,
-): Entry | undefined => {
+): RepositorySection<Entry> | undefined => {
   const user = readUserOnlyKey(location, key);
 
   if (user === undefined) {
@@ -56,7 +66,7 @@ export const readRepositorySection = <Entry>(
   const { repositories } = section;
 
   if (repositories === undefined) {
-    return undefined;
+    return { source, section, entry: undefined };
   }
 
   if (!isRecord(repositories)) {
@@ -66,13 +76,13 @@ export const readRepositorySection = <Entry>(
   }
 
   if (repository === undefined) {
-    return undefined;
+    return { source, section, entry: undefined };
   }
 
   const match = findRepositoryEntry(source, `${key}.repositories`, repositories, repository);
 
   if (match === undefined) {
-    return undefined;
+    return { source, section, entry: undefined };
   }
 
   const [entryKey, entry] = match;
@@ -83,5 +93,9 @@ export const readRepositorySection = <Entry>(
     );
   }
 
-  return readEntry(source, `${key}.repositories.${entryKey}`, entry);
+  return {
+    source,
+    section,
+    entry: readEntry(source, `${key}.repositories.${entryKey}`, entry),
+  };
 };

@@ -93,4 +93,4 @@ export const readReviewBots = (
     example: '{"repositories": {"sQVe/tau": {"bots": []}}}',
     repository,
     readEntry: (source, field, value) => readEntry(source, ui, field, value),
-  });
+  })?.entry;
