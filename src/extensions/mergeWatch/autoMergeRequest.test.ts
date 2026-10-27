@@ -82,6 +82,53 @@ const table: { name: string; command: string; requests: AutoMergeRequest[] }[] =
     requests: [],
   },
   {
+    name: 'ignores a merge inside a heredoc body',
+    command: 'cat <<EOF > notes.md\ngh pr merge --auto\nEOF',
+    requests: [],
+  },
+  {
+    name: 'ignores a merge on a later line of a heredoc body',
+    command: 'cat <<EOF > notes.md\n# Notes\ngh pr merge --auto\nEOF',
+    requests: [],
+  },
+  {
+    name: 'ignores a merge inside a heredoc body with a dash and tabs',
+    command: 'cat <<-EOF\n\tgh pr merge --auto\n\tEOF',
+    requests: [],
+  },
+  {
+    name: 'ignores a merge inside heredoc bodies with quoted delimiters',
+    command: 'cat <<\'EOF\'\ngh pr merge --auto 1\nEOF\ncat << "END"\ngh pr merge --auto 2\nEND',
+    requests: [],
+  },
+  {
+    name: 'reads a merge after a heredoc ends',
+    command: 'cat <<EOF > notes.md\ngh pr merge --auto 1\nEOF\ngh pr merge --auto 2',
+    requests: [{ selector: '2', repository: undefined }],
+  },
+  {
+    name: 'reads a merge after heredoc text inside quotes',
+    command:
+      'echo \'<<EOF\' && gh pr merge --auto --squash\necho "cat <<EOF"\ngh pr merge --auto 4',
+    requests: [currentBranch, { selector: '4', repository: undefined }],
+  },
+  {
+    name: 'reads a merge after heredoc text inside a comment',
+    command: 'git push # then cat <<EOF\ngh pr merge --auto 5',
+    requests: [{ selector: '5', repository: undefined }],
+  },
+  {
+    name: 'ignores a merge inside a heredoc whose quoted delimiter holds spaces',
+    command:
+      'cat <<\'END OF NOTES\'\ngh pr merge --auto 1\nEND OF NOTES\ncat <<- "END DOC"\n\tgh pr merge --auto 2\n\tEND DOC\ngh pr merge --auto 6',
+    requests: [{ selector: '6', repository: undefined }],
+  },
+  {
+    name: 'reads a merge after a here-string',
+    command: 'cat <<<EOF\ngh pr merge --auto 3',
+    requests: [{ selector: '3', repository: undefined }],
+  },
+  {
     name: 'ignores auto in a later command',
     command: 'gh pr merge 42 --squash && echo --auto',
     requests: [],

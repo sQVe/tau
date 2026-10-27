@@ -3,8 +3,19 @@ export interface AutoMergeRequest {
   repository: string | undefined;
 }
 
+interface Heredoc {
+  stripsTabs: boolean;
+  delimiter: string;
+}
+
 const tokenPattern = /&&|\|\||[;|&\n]|(?:"[^"]*"|'[^']*'|[^\s"';|&])+/gu;
 const separatorPattern = /^(?:&&|\|\||[;|&\n])$/u;
+
+// Reads a line in order, so quoted text and a comment hide the << inside them. Group 1 marks <<-
+// and group 2 holds the whole delimiter word. The here-string <<< is not a heredoc.
+const heredocScanPattern =
+  /"[^"]*"|'[^']*'|(?<![^\s;&|(])#.*|<<<|<<(-?)[ \t]*((?:"[^"]*"|'[^']*'|[^\s"'<>;|&()])+)|[^"'#<]+|./gu;
+
 const assignmentPattern = /^[A-Za-z_]\w*=/u;
 const commandWrappers = new Set(['command', 'env', 'exec', 'nohup', 'time']);
 const repositoryFlags = new Set(['-R', '--repo']);
@@ -24,10 +35,40 @@ const valueFlags = new Set([
 
 const unquote = (word: string) => word.replaceAll(/"([^"]*)"|'([^']*)'/gu, '$1$2');
 
+const heredocsOf = (line: string): Heredoc[] =>
+  [...line.matchAll(heredocScanPattern)].flatMap(([, dash, word]) =>
+    word === undefined ? [] : [{ stripsTabs: dash === '-', delimiter: unquote(word) }],
+  );
+
+const endsHeredoc = (line: string, heredoc: Heredoc) => {
+  const text = heredoc.stripsTabs ? line.replace(/^\t+/u, '') : line;
+
+  return text === heredoc.delimiter;
+};
+
+// Drops each heredoc body up to its delimiter line, so text fed to a command is not read as one.
+const withoutHeredocBodies = (command: string): string => {
+  const kept: string[] = [];
+  let open: Heredoc[] = [];
+
+  for (const line of command.split('\n')) {
+    const [heredoc, ...later] = open;
+
+    if (heredoc === undefined) {
+      kept.push(line);
+      open = heredocsOf(line);
+    } else if (endsHeredoc(line, heredoc)) {
+      open = later;
+    }
+  }
+
+  return kept.join('\n');
+};
+
 const simpleCommands = (command: string): string[][] => {
   const commands: string[][] = [[]];
 
-  for (const token of command.match(tokenPattern) ?? []) {
+  for (const token of withoutHeredocBodies(command).match(tokenPattern) ?? []) {
     if (separatorPattern.test(token)) {
       commands.push([]);
     } else {
