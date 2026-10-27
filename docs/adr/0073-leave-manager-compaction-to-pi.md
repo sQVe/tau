@@ -53,7 +53,7 @@ start a new session. Workers keep Pi's defaults.
 ### Positive
 
 - Pi's `session_compact` hooks, compaction UI, and file-list carry-over run on every compaction.
-- The user decides when a compaction runs, so no compaction aborts work in progress.
+- Tau never starts a compaction, so no compaction of Tau's interrupts work in progress.
 - The worker ledger reaches the model after every compaction, whoever wrote the summary.
 
 ### Negative
