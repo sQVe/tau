@@ -16,7 +16,6 @@ const blockedSleepSeconds = 30;
 
 const unitSeconds: Record<string, number> = { '': 1, s: 1, m: 60, h: 3600, d: 86_400 };
 
-// Sleep reads its operands as floating-point numbers, so `60.`, `.5m`, `3e1`, and `infinity` count.
 const sleepOperand = /^((?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|inf|infinity)([smhd]?)$/;
 
 // A shell can run any text it reads, through a pipe, a heredoc, a here-string, or a script file.
@@ -35,16 +34,12 @@ const shellNames = new Set([
 
 const assignment = /^\w+=/;
 
-// Commands that only print their arguments, so a `sleep` among them is text.
 const printingNames = new Set(['echo', 'printf']);
 
-// The parser keeps these keywords in the words of the command they start, as in `do sleep 10`.
 const keywords = new Set(['!', '{', 'do', 'elif', 'else', 'if', 'then', 'until', 'while']);
 
-// Fail closed when nested scripts exceed the inspection budget.
 const maximumScriptDepth = 8;
 
-// The raw patterns apply only when the source does not parse, so the guard fails closed.
 const rawLoopWithSleep =
   /\b(?:until|while(?!\s+(?:\w+=\S*\s+)*read\b))(?:(?!\bdone\b)[\s\S])*?\bdo\b(?:(?!\bdone\b)[\s\S])*?\bsleep\b/;
 
@@ -72,15 +67,12 @@ const operandSeconds = (word: string): number | undefined => {
   return value * (unitSeconds[match[2] ?? ''] ?? 1);
 };
 
-// The command's name is its first word after keywords and assignments.
 const printsOnly = ({ words }: ShellCommand) => {
   const name = words.find((word) => !keywords.has(word) && !assignment.test(word)) ?? '';
 
   return printingNames.has(commandName(name));
 };
 
-// Sleep sums its operands, and chained sleeps add up, so count every operand in the command. A
-// `sleep` word anywhere counts, so wrappers and redirections before it never hide it.
 const sleepSecondsOf = (command: ShellCommand): number => {
   let total = 0;
   let sleeping = false;
@@ -184,8 +176,6 @@ const rawWaitFacts = (source: string): WaitFacts => {
   return { waitsPassively: waitsInRawLoop || waitsOnWatcher, sleepSeconds };
 };
 
-// When a command runs a shell, every word and heredoc body may be the script it runs, such as
-// `echo 'sleep 600' | bash`, so each is checked as a script too.
 const waitFactsOf = (source: string, depth: number): WaitFacts => {
   if (depth > maximumScriptDepth) {
     return { waitsPassively: true, sleepSeconds: Number.POSITIVE_INFINITY };

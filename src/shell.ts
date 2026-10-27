@@ -23,7 +23,6 @@ const blankCharacters = new Set([' ', '\t']);
 const separatorCharacters = new Set([';', '&', '|', '\n', '(', ')']);
 const longestRedirection = '<<<';
 
-// With extglob on, a `(` after one of these opens a pattern, so a `#` right after it is text.
 const extendedGlobOperators = new Set(['?', '*', '+', '@', '!']);
 
 const ansiCCharacters: Record<string, string> = {
