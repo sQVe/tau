@@ -31,20 +31,25 @@ them, and cancellations, ask first. Code-review posts without asking only when b
 ownership rule and the ticket rule find the work the user's own.
 
 A handover does not add approval rules. The receiver's skills decide, and a handover tightens them
-only when it quotes the user. A test reads every skill and fails when one grants "without asking"
-for a write the list does not cover.
+only when it quotes the user.
+
+The tracker skill's hard rules are the one approval policy. Other skills link to
+`tracker/SKILL.md#hard-rules` instead of restating it. Tools enforce approval where they make
+writes. A change to approval prose is reviewed as a policy change, because a check over English
+prose cannot decide what a rule allows.
 
 ## Consequences
 
 ### Positive
 
 - Review and audit findings reach the ticket without a prompt.
-- One list changes in one place, and the test catches skills that drift.
+- One list changes in one place, and skills link to it instead of keeping their own.
 
 ### Negative
 
 - A wrong ticket or comment reaches Linear before the user sees it. The user fixes it in Linear.
 - A ticket with an unclear owner makes agents ask, because they treat it as another person's.
+- No test catches a skill whose prose grants a write the list does not cover. Review catches it.
 
 ## Alternatives considered
 

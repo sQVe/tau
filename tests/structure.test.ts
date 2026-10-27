@@ -136,7 +136,6 @@ const pureModules = [
   'src/reviewCapture/gitQuotedName.ts',
   'src/schema.ts',
   'tests/adrIndexMark.ts',
-  'tests/approvalRule.ts',
 ];
 
 const pureAdvice =
