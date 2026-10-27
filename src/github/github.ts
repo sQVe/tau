@@ -20,6 +20,20 @@ export type CheckOutput = <Schema extends TSchema>(
   value: unknown,
 ) => asserts value is Static<Schema>;
 
+export interface GhOutcome {
+  exitCode: number;
+  cancelled: boolean;
+  stdout: string;
+  stderr: string;
+}
+
+export interface PullRequestListQuery {
+  repository: string;
+  filter: readonly string[];
+  state: string;
+  fields: string;
+}
+
 const repositoryPart = /^[\w.-]+$/u;
 const hostPattern = /^[\w.-]+(?::\d+)?$/u;
 
@@ -48,6 +62,23 @@ export const run = (runtime: CommandRuntime, commandArguments: string[]): Promis
   return runCommand(runtime, 'gh', commandArguments, commandLabel);
 };
 
+export const runOutcome = async (
+  runtime: CommandRuntime,
+  commandArguments: string[],
+): Promise<GhOutcome> => {
+  const result = await runtime.exec('gh', commandArguments, {
+    cwd: runtime.cwd,
+    ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
+  });
+
+  return {
+    exitCode: result.code,
+    cancelled: result.killed,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
+};
+
 export const parseJson = (commandArguments: readonly string[], stdout: string): unknown =>
   parseCommandJson(label(commandArguments), stdout);
 
@@ -60,3 +91,37 @@ export const readJson = async (
 export const checkOutput: CheckOutput = (commandArguments, schema, value) => {
   checkCommandOutput(label(commandArguments), schema, value);
 };
+
+export const readChecked = async <Schema extends TSchema>(
+  runtime: CommandRuntime,
+  commandArguments: string[],
+  schema: Schema,
+): Promise<Static<Schema>> => {
+  const value = await readJson(runtime, commandArguments);
+
+  checkOutput(commandArguments, schema, value);
+
+  // oxlint-disable-next-line typescript/no-unsafe-return -- the generic schema type cannot narrow the checked value.
+  return value;
+};
+
+const listLimit = 100;
+
+export const pullRequestListArguments = (query: PullRequestListQuery): string[] => [
+  'pr',
+  'list',
+  '--repo',
+  query.repository,
+  ...query.filter,
+  '--state',
+  query.state,
+  '--limit',
+  String(listLimit),
+  '--json',
+  query.fields,
+];
+
+export const incompleteListProblem = (listed: readonly unknown[]): string | undefined =>
+  listed.length >= listLimit
+    ? `printed ${listed.length} pull requests, the limit, so the list may be incomplete.`
+    : undefined;

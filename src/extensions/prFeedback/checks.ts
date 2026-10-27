@@ -2,16 +2,18 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import type { CommandRuntime } from '../../command.js';
+import { runOutcome } from '../../github/github.js';
 import type { Repository } from '../../github/github.js';
+import { formatRepository } from '../../github/repositoryTargetDecisions.js';
 import { describeSchemaProblem } from '../../schema.js';
 import {
   boundChecks,
   checkListEvidence,
+  commandResult,
   failedLogEvidence,
   isFailing,
   jobOf,
   logCharacterBudget,
-  repositoryName,
   unreadableLinkGap,
 } from './checkEvidence.js';
 import type {
@@ -19,7 +21,6 @@ import type {
   CheckGap,
   CheckItem,
   CheckListValidation,
-  CommandResult,
   LogExcerpt,
   PullRequestChecks,
 } from './checkEvidence.js';
@@ -46,30 +47,18 @@ const validateCheckList: CheckListValidation = (value) =>
     ? { checks: value }
     : { problem: `printed unexpected output: ${describeSchemaProblem(checkListSchema, value)}` };
 
-const runGh = async (
-  runtime: CommandRuntime,
-  commandArguments: string[],
-): Promise<CommandResult> => {
-  const result = await runtime.exec('gh', commandArguments, {
-    cwd: runtime.cwd,
-    ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
-  });
-
-  return { command: ['gh', ...commandArguments].join(' '), ...result };
-};
-
 const readCheckList = async (runtime: CommandRuntime, repository: Repository, pr: number) => {
   const commandArguments = [
     'pr',
     'checks',
     String(pr),
     '--repo',
-    repositoryName(repository),
+    formatRepository(repository),
     '--json',
     'name,bucket,link,workflow,state',
   ];
 
-  const result = await runGh(runtime, commandArguments);
+  const result = commandResult(commandArguments, await runOutcome(runtime, commandArguments));
 
   return checkListEvidence(result, validateCheckList);
 };
@@ -91,13 +80,13 @@ const readFailedLog = async (
     'view',
     job.run,
     '--repo',
-    repositoryName(repository),
+    formatRepository(repository),
     '--job',
     job.job,
     '--log-failed',
   ];
 
-  const result = await runGh(runtime, commandArguments);
+  const result = commandResult(commandArguments, await runOutcome(runtime, commandArguments));
 
   return failedLogEvidence(check, result, remainingCharacters);
 };

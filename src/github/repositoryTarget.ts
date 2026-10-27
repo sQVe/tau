@@ -2,7 +2,7 @@ import { Type } from 'typebox';
 
 import type { CommandRuntime } from '../command.js';
 import { readGit, runGit } from '../git.js';
-import { checkOutput, parseRepository, readJson } from './github.js';
+import { parseRepository, readChecked } from './github.js';
 import type { Repository } from './github.js';
 import {
   formatRepository,
@@ -331,11 +331,7 @@ const readRepositoryView = async (runtime: CommandRuntime, repository: Repositor
     'isFork,parent,defaultBranchRef',
   ];
 
-  const view = await readJson(runtime, commandArguments);
-
-  checkOutput(commandArguments, repositoryViewSchema, view);
-
-  return view;
+  return readChecked(runtime, commandArguments, repositoryViewSchema);
 };
 
 export const resolveHead = async (

@@ -1,4 +1,5 @@
 import type { GitResult } from '../../git.js';
+import type { GhOutcome } from '../../github/github.js';
 
 export interface FailedRead {
   ok: false;
@@ -21,6 +22,12 @@ export const gitCommandOutput = (result: GitResult): CommandOutput => ({
   exitCode: result.exitCode,
   stdout: result.stdout.toString('utf8'),
   stderr: result.stderr,
+});
+
+export const ghCommandOutput = (outcome: GhOutcome): CommandOutput => ({
+  exitCode: outcome.cancelled ? null : outcome.exitCode,
+  stdout: outcome.stdout,
+  stderr: outcome.stderr,
 });
 
 export const readOk = <Value>(value: Value): Read<Value> => ({ ok: true, value });
