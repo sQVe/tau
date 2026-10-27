@@ -765,6 +765,26 @@ it('hints after an edit through a symlinked folder that points outside the proje
   expect(patch).toMatchObject({ content: [{ text: 'Written' }, { text: staleHint }] });
 });
 
+it('hints after an edit through an outside link that points back into the project', async ({
+  onTestFinished,
+}) => {
+  const root = temporaryDirectory(onTestFinished, 'tau-link-alias-');
+  const cwd = join(root, 'project');
+  await mkdir(join(cwd, 'src'), { recursive: true });
+  await writeFile(join(cwd, 'value.test.ts'), 'test');
+  await writeFile(join(cwd, 'src/value.ts'), 'before');
+  await symlink(cwd, join(root, 'alias'));
+
+  const patch = await passAndEditThrough(
+    setup(),
+    join(root, 'alias/src/value.ts'),
+    cwd,
+    join(cwd, 'src/value.ts'),
+  );
+
+  expect(patch).toMatchObject({ content: [{ text: 'Written' }, { text: staleHint }] });
+});
+
 it('hints after a production edit when the session directory is a symlinked path', async ({
   onTestFinished,
 }) => {

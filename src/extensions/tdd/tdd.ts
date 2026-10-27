@@ -120,7 +120,8 @@ const handleToolResult = async (
   const path = typeof event.input.path === 'string' ? event.input.path.replace(/^@/, '') : '';
   const target = resolve(context.cwd, path);
   const editablePath = event.toolName !== 'bash' && path.length > 0;
-  const editedPath = worktreePath(relative(context.cwd, target), relative(cwd, target));
+  const canonicalTarget = await observationDirectory(target);
+  const editedPath = worktreePath(relative(context.cwd, target), relative(cwd, canonicalTarget));
 
   const productionEdit =
     !event.isError && editablePath && classifyPath(loaded.config, editedPath) === 'production';
