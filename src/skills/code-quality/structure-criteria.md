@@ -107,8 +107,7 @@ Compare the target with the established patterns of the project:
 - Report a divergence in structure, error handling, test shape, or file layout only when it has a
   structural cost, such as a second way to do one job that readers must learn. Show the cost and why
   the examples face the same constraints as the target.
-- When the target's way is better, say so, and propose aligning the older code as a `restructure`
-  finding.
+- When the target's way is better, say so, and propose aligning the older code as a finding.
 - Leave violations of written project rules to code-review.
 
 ## Plan questions
