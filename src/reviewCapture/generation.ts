@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
@@ -7,6 +7,7 @@ import { rejectLinkedFile } from '../tauDirectory.js';
 import { hashBytes, pinTarget, readHead } from './capture.js';
 import type { Capture, Gap } from './capture.js';
 import { pinFixTarget, saveVerifiedSnapshot, snapshotFolder } from './fixCapture.js';
+import type { FixReviewTarget } from './fixCapture.js';
 import { decideFixScope } from './fixScope.js';
 import type { FixScope } from './fixScope.js';
 import { decideGeneration } from './generationDecision.js';
@@ -20,7 +21,7 @@ import {
   parseCaptureRecord,
   recordFileName,
 } from './record.js';
-import type { CaptureRecord } from './record.js';
+import type { CaptureRecord, Snapshot } from './record.js';
 import { existingEntry } from './reviewDirectory.js';
 import type { PinnedTarget, ReviewTarget } from './target.js';
 
@@ -38,6 +39,11 @@ export interface CapturedGeneration extends Partial<FixScope> {
 interface Owned {
   snapshot: boolean;
   recordText: string | undefined;
+}
+
+interface ReadRecord {
+  saved: SavedRecord;
+  snapshot: Snapshot | undefined;
 }
 
 const hashOf = async (root: string, bytes: Buffer): Promise<string> => {
@@ -73,11 +79,66 @@ const readArtifactBytes = async (path: string): Promise<Buffer | undefined> => {
 const hashArtifact = async (root: string, bytes: Buffer | undefined) =>
   bytes === undefined ? undefined : hashOf(root, bytes);
 
-const savedRecord = async (root: string, path: string, bytes: Buffer): Promise<SavedRecord> => {
+const ownerExecutableBit = 0o100;
+
+// Git's no-index diff reads only the owner's executable bit, so a fix capture sees no other mode.
+const copyMode = async (path: string) => {
+  const { mode } = await stat(path);
+
+  return (mode & ownerExecutableBit) === 0 ? '100644' : '100755';
+};
+
+const copyLine = async (root: string, folder: string, path: string) => {
+  const file = join(folder, path);
+  const hash = await hashArtifact(root, await readArtifactBytes(file));
+
+  if (hash === undefined) {
+    return undefined;
+  }
+
+  return `${await copyMode(file)} ${hash} ${JSON.stringify(path)}`;
+};
+
+// One line per saved copy in path order with its mode and the blob hash of its bytes, then the
+// absent and skipped lists. Undefined when a copy is missing or unreadable.
+const snapshotManifest = async (
+  root: string,
+  directory: string,
+  snapshot: Snapshot,
+): Promise<Buffer | undefined> => {
+  const folder = join(directory, snapshotFolder);
+
+  const copyLines = await Promise.all(
+    snapshot.present.toSorted().map((path) => copyLine(root, folder, path)),
+  );
+
+  if (copyLines.includes(undefined)) {
+    return undefined;
+  }
+
+  const lines = [
+    ...copyLines,
+    `absent ${JSON.stringify(snapshot.absent)}`,
+    `skipped ${JSON.stringify(snapshot.skipped)}`,
+  ];
+
+  return Buffer.from(`${lines.join('\n')}\n`);
+};
+
+const hashSnapshot = async (root: string, directory: string, snapshot: Snapshot | undefined) =>
+  snapshot === undefined
+    ? undefined
+    : hashArtifact(root, await snapshotManifest(root, directory, snapshot));
+
+const readSavedRecord = async (root: string, path: string, bytes: Buffer): Promise<ReadRecord> => {
   const record = parseCaptureRecord(path, bytes.toString('utf8'));
   const recorded = 'original' in record ? record.original : undefined;
+  const snapshot = 'snapshot' in record ? record.snapshot : undefined;
 
-  return { version: record.version, identity: await hashOf(root, bytes), recorded };
+  return {
+    saved: { version: record.version, identity: await hashOf(root, bytes), recorded },
+    snapshot,
+  };
 };
 
 export const readCompletedCapture = async (
@@ -98,7 +159,7 @@ export const readCompletedCapture = async (
   }
 
   const record =
-    recordBytes === undefined ? undefined : await savedRecord(root, recordPath, recordBytes);
+    recordBytes === undefined ? undefined : await readSavedRecord(root, recordPath, recordBytes);
 
   const patchBytes = await readArtifactBytes(join(folder, generationPatchFileName));
   const inputBytes = await readArtifactBytes(join(folder, generationInputFileName));
@@ -106,9 +167,10 @@ export const readCompletedCapture = async (
   const observed = {
     patch: await hashArtifact(root, patchBytes),
     input: await hashArtifact(root, inputBytes),
+    snapshot: await hashSnapshot(root, directory, record?.snapshot),
   };
 
-  return decideGeneration({ record, observed, expectedIdentity });
+  return decideGeneration({ record: record?.saved, observed, expectedIdentity });
 };
 
 const captureHeading = '## Capture';
@@ -198,8 +260,30 @@ const baseOf = (target: PinnedTarget) => {
   return target.base;
 };
 
+// A fix capture diffs against the earlier review's saved files, so they must still be the ones
+// its record names. A legacy record names none and keeps the earlier behavior.
+const rejectChangedReview = async (root: string, review: string) => {
+  const decision = await readCompletedCapture(root, review);
+
+  if (decision.status === 'completed' || decision.status === 'legacy') {
+    return;
+  }
+
+  throw new Error(
+    `The capture in ${review} is ${decision.status}, so a fix review cannot compare against it. Nothing was written.\n- ${decision.reasons.join('\n- ')}`,
+  );
+};
+
+const pinFix = async (root: string, target: FixReviewTarget) => {
+  const pinned = await pinFixTarget(root, target);
+
+  await rejectChangedReview(root, pinned.review);
+
+  return pinned;
+};
+
 const pin = (root: string, target: ReviewTarget) =>
-  target.kind === 'fix' ? pinFixTarget(root, target) : pinTarget(root, target);
+  target.kind === 'fix' ? pinFix(root, target) : pinTarget(root, target);
 
 const hasSnapshot = (
   target: PinnedTarget,
@@ -341,6 +425,12 @@ const publishGeneration = async (
   await appendFile(join(directory, inputFileName), appended);
   await verifyArtifacts(folder, captured.bytes, input);
 
+  const snapshotHash = await hashSnapshot(root, directory, snapshot);
+
+  if (snapshot !== undefined && snapshotHash === undefined) {
+    throw new Error(`A saved copy in ${join(directory, snapshotFolder)} could not be read.`);
+  }
+
   const record: CaptureRecord = {
     version: 3,
     target: pinned,
@@ -349,7 +439,11 @@ const publishGeneration = async (
     hash: captured.hash,
     ...(snapshot === undefined ? {} : { snapshot }),
     gaps: captured.gaps,
-    original: { patch: await hashOf(root, captured.bytes), input: await hashOf(root, input) },
+    original: {
+      patch: await hashOf(root, captured.bytes),
+      input: await hashOf(root, input),
+      ...(snapshotHash === undefined ? {} : { snapshot: snapshotHash }),
+    },
   };
 
   const recordText = `${JSON.stringify(record, null, 2)}\n`;

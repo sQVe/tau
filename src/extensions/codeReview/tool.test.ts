@@ -157,6 +157,22 @@ it('appends the capture and its gaps after the Capture heading and saves the rec
   const patch = await git(root, 'hash-object', join(directory, 'capture', 'patch.diff'));
   const saved = await git(root, 'hash-object', join(directory, 'capture', 'input.md'));
 
+  const copyLines = await Promise.all(
+    ['tracked.txt', 'untracked.txt'].map(async (path) => {
+      const copy = join(directory, 'snapshot', path);
+      const blob = await git(root, ['hash-object', '--no-filters', copy]);
+      const mode = ((await stat(copy)).mode & 0o100) === 0 ? '100644' : '100755';
+
+      return `${mode} ${blob.trim()} ${JSON.stringify(path)}`;
+    }),
+  );
+
+  const manifest = join(temporaryDirectory(onTestFinished, 'tau-snapshot-manifest-'), 'manifest');
+
+  await writeFile(manifest, `${copyLines.join('\n')}\nabsent []\nskipped []\n`);
+
+  const snapshot = await git(root, ['hash-object', '--no-filters', manifest]);
+
   expect(result['hash']).toMatch(/^[0-9a-f]{40}$/);
 
   expect(result).toEqual({
@@ -185,7 +201,7 @@ it('appends the capture and its gaps after the Capture heading and saves the rec
     hash: result['hash'],
     snapshot: { present: ['tracked.txt', 'untracked.txt'], absent: [], skipped: [] },
     gaps: [{ kind: 'excluded', path: 'generated.txt' }],
-    original: { patch: patch.trim(), input: saved.trim() },
+    original: { patch: patch.trim(), input: saved.trim(), snapshot: snapshot.trim() },
   });
 });
 
@@ -693,6 +709,29 @@ it('refuses a fix review of a version 1 record and writes nothing', async () => 
 
   expect(await failureOf(root, { action: 'capture', directory, target })).toContain('version 1');
   expect(await readdir(directory)).toEqual(['input.md']);
+});
+
+it('refuses a fix review of an earlier capture whose saved input changed and writes nothing', async () => {
+  const { root, review, directory } = await reviewedThenFixed();
+
+  await writeFile(join(review, 'capture', 'input.md'), 'changed\n');
+
+  const target = { kind: 'fix' as const, review, findingPaths: [] };
+
+  expect(await failureOf(root, { action: 'capture', directory, target })).toContain('altered');
+  expect(await readdir(directory)).toEqual(['input.md']);
+});
+
+it('captures a fix against an earlier version 2 capture', async () => {
+  const { root, review, directory } = await reviewedThenFixed();
+  const saved = JSON.parse(await readFile(join(review, 'capture.json'), 'utf8')) as object;
+  const { gaps: _gaps, original: _original, ...rest } = saved as Record<string, unknown>;
+
+  await writeFile(join(review, 'capture.json'), JSON.stringify({ ...rest, version: 2 }));
+
+  const result = await captureFix(root, directory, review, ['src/math.ts']);
+
+  expect(result).toMatchObject({ empty: false, fixPaths: ['src/math.ts'], scope: 'fix' });
 });
 
 it('refuses a fix review of a fix capture', async () => {

@@ -1,7 +1,10 @@
 interface ArtifactHashes {
   patch: string;
   input: string;
+  snapshot?: string;
 }
+
+type ArtifactName = keyof ArtifactHashes;
 
 export interface SavedRecord {
   version: number;
@@ -11,7 +14,7 @@ export interface SavedRecord {
 
 export interface GenerationFacts {
   record: SavedRecord | undefined;
-  observed: { patch: string | undefined; input: string | undefined };
+  observed: Record<ArtifactName, string | undefined>;
   expectedIdentity: string | undefined;
 }
 
@@ -21,10 +24,12 @@ export type GenerationDecision =
   | { status: 'completed'; identity: string; reasons: [] }
   | { status: Exclude<GenerationStatus, 'completed'>; reasons: string[] };
 
-const artifactNames = ['patch', 'input'] as const;
+// A record without a snapshot hash saved no snapshot, so only the patch and input are checked.
+const recordedNames = (recorded: ArtifactHashes): ArtifactName[] =>
+  recorded.snapshot === undefined ? ['patch', 'input'] : ['patch', 'input', 'snapshot'];
 
 const changedReasons = (recorded: ArtifactHashes, observed: GenerationFacts['observed']) =>
-  artifactNames.flatMap((name) => {
+  recordedNames(recorded).flatMap((name) => {
     const hash = observed[name];
 
     return hash === undefined || hash === recorded[name]
@@ -37,8 +42,8 @@ const identityReasons = (identity: string, expectedIdentity: string | undefined)
     ? []
     : [`The capture record identity is ${identity}, not the expected ${expectedIdentity}.`];
 
-const missingReasons = (observed: GenerationFacts['observed']) =>
-  artifactNames
+const missingReasons = (recorded: ArtifactHashes, observed: GenerationFacts['observed']) =>
+  recordedNames(recorded)
     .filter((name) => observed[name] === undefined)
     .map((name) => `The ${name} artifact is missing or unreadable.`);
 
@@ -63,7 +68,7 @@ export const decideGeneration = ({
     ...identityReasons(record.identity, expectedIdentity),
   ];
 
-  const missing = missingReasons(observed);
+  const missing = missingReasons(record.recorded, observed);
 
   if (changed.length > 0) {
     return { status: 'altered', reasons: [...changed, ...missing] };

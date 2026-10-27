@@ -9,7 +9,13 @@ import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget, readHead } from './capture.js';
 import type { DirectReviewTarget } from './capture.js';
 import { readReviewEvidence } from './evidence.js';
-import { recordFileName } from './record.js';
+import { captureGeneration } from './generation.js';
+import {
+  generationFolderName,
+  generationPatchFileName,
+  inputFileName,
+  recordFileName,
+} from './record.js';
 
 const isRoot = process.getuid?.() === 0;
 
@@ -239,6 +245,65 @@ it('reports a stale capture as a gap and still returns the evidence', async () =
     status: 'stale',
     reasons: evidence.freshness.reasons,
   });
+});
+
+it('reports an altered capture generation as a gap and still returns the evidence', async () => {
+  const { root, from, to } = await rangeRepository();
+  const directory = temporaryDirectory(onTestFinished, 'tau-review-evidence-');
+
+  await writeFile(join(directory, inputFileName), inputText('None.', 'none'));
+  await captureGeneration(root, directory, { kind: 'range', from, to });
+  await writeFile(join(directory, generationFolderName, generationPatchFileName), 'changed\n');
+
+  const evidence = await readReviewEvidence(root, directory);
+  const generationGaps = evidence.gaps.filter((gap) => gap.kind === 'generation');
+
+  expect(evidence.paths).toEqual(['src/math.test.ts', 'src/math.ts', 'src/use.ts']);
+
+  expect(generationGaps).toEqual([
+    { kind: 'generation', status: 'altered', reasons: [expect.stringContaining('patch')] },
+  ]);
+});
+
+it('reports a missing capture artifact as a generation gap and still returns the evidence', async () => {
+  const { root, from, to } = await rangeRepository();
+  const directory = temporaryDirectory(onTestFinished, 'tau-review-evidence-');
+
+  await writeFile(join(directory, inputFileName), inputText('None.', 'none'));
+  await captureGeneration(root, directory, { kind: 'range', from, to });
+  await rm(join(directory, generationFolderName, generationPatchFileName));
+
+  const evidence = await readReviewEvidence(root, directory);
+  const generationGaps = evidence.gaps.filter((gap) => gap.kind === 'generation');
+
+  expect(evidence.paths).toEqual(['src/math.test.ts', 'src/math.ts', 'src/use.ts']);
+
+  expect(generationGaps).toEqual([
+    { kind: 'generation', status: 'missing', reasons: [expect.stringContaining('patch')] },
+  ]);
+});
+
+it('refuses evidence for an interrupted capture and names the incomplete status', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const directory = temporaryDirectory(onTestFinished, 'tau-review-evidence-');
+
+  await writeFile(join(directory, inputFileName), inputText('None.', 'none'));
+  await mkdir(join(directory, generationFolderName));
+
+  const evidence = readReviewEvidence(root, directory);
+
+  await expect(evidence).rejects.toThrow(/incomplete[\s\S]*capture\.json is missing/);
+  await expect(evidence).rejects.toThrow('Prepare a new review');
+  expect((await readdir(directory)).toSorted()).toEqual([generationFolderName, inputFileName]);
+});
+
+it('reports no generation gap for a version 2 capture', async () => {
+  const { root, from, to } = await rangeRepository();
+  const directory = await savedCapture(root, { kind: 'range', from, to });
+
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.gaps.filter((gap) => gap.kind === 'generation')).toEqual([]);
 });
 
 it('marks named rule and check paths readable or missing', async () => {

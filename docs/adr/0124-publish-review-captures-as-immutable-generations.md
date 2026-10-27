@@ -23,13 +23,17 @@ A review capture publishes one immutable generation, and one capture owns each r
 owner claims the directory by creating the `capture` folder, and it refuses a directory that already
 has that folder. The owner saves the original patch and input in that folder, reads the saved bytes
 back, and writes `capture.json` last. The record names the saved artifacts by their Git blob hashes,
-so a reader can check them.
+so a reader can check them. A working tree or files capture also saves a snapshot that a later fix
+capture diffs against. The record names it by the Git blob hash of a manifest that lists the mode
+and blob hash of each saved copy and the snapshot's absent and skipped paths.
 
 The identity of a completed capture is the Git blob hash of its saved `capture.json`. Reads never
 change the saved files. A read reports one of five states: completed, legacy, incomplete, altered,
 or missing. Only a completed capture with the expected identity counts as evidence. Version 1 and
 version 2 records saved no original artifacts, so they read as legacy and never count for strict
-chains.
+chains. The evidence read reports an altered or missing capture as a gap, and it refuses an
+incomplete capture, which has no record to report. A fix capture refuses an earlier review in any of
+those states.
 
 A failed capture removes what it created and restores the live input. It leaves no record, so the
 directory cannot be read as complete. The next step is a new review directory, not a retry in place.

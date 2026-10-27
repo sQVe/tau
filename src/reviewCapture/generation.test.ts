@@ -1,12 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
-import { readCompletedCapture } from './generation.js';
+import { snapshotFolder } from './fixCapture.js';
+import { captureGeneration, readCompletedCapture } from './generation.js';
 import {
   generationFolderName,
   generationInputFileName,
@@ -190,4 +191,72 @@ it('refuses a malformed capture record and changes no saved file', async () => {
 
   await expect(readCompletedCapture(root, directory)).rejects.toThrow(recordPath(directory));
   expect(await readSavedFiles(directory)).toEqual(before);
+});
+
+const capturedWorkingTree = async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const directory = temporaryDirectory(onTestFinished, 'tau-review-generation-');
+
+  await writeFile(join(root, 'a.txt'), 'one\n');
+  execFileSync('git', ['add', 'a.txt'], { cwd: root });
+  execFileSync('git', ['commit', '--quiet', '-m', 'first'], { cwd: root });
+  await writeFile(join(root, 'a.txt'), 'two\n');
+  await writeFile(join(directory, inputFileName), '# Review input\n\n## Capture\n');
+  await captureGeneration(root, directory, { kind: 'workingTree', base: 'HEAD' });
+
+  return { root, directory, copy: join(directory, snapshotFolder, 'a.txt') };
+};
+
+it('returns completed for an untouched working tree capture with a snapshot', async () => {
+  const { root, directory } = await capturedWorkingTree();
+
+  expect((await readCompletedCapture(root, directory)).status).toBe('completed');
+});
+
+it('returns altered when one byte of a saved snapshot copy changes', async () => {
+  const { root, directory, copy } = await capturedWorkingTree();
+
+  await writeFile(copy, 'twO\n');
+
+  expect((await readCompletedCapture(root, directory)).status).toBe('altered');
+});
+
+it('returns missing when a saved snapshot copy is deleted', async () => {
+  const { root, directory, copy } = await capturedWorkingTree();
+
+  await rm(copy);
+
+  expect((await readCompletedCapture(root, directory)).status).toBe('missing');
+});
+
+it('returns altered when only the mode of a saved snapshot copy changes', async () => {
+  const { root, directory, copy } = await capturedWorkingTree();
+
+  await chmod(copy, 0o644);
+  const completed = await readCompletedCapture(root, directory);
+
+  await chmod(copy, 0o755);
+
+  expect(completed.status).toBe('completed');
+  expect((await readCompletedCapture(root, directory)).status).toBe('altered');
+});
+
+it('records no snapshot hash for a range capture', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const directory = temporaryDirectory(onTestFinished, 'tau-review-generation-');
+
+  await writeFile(join(root, 'a.txt'), 'one\n');
+  execFileSync('git', ['add', 'a.txt'], { cwd: root });
+  execFileSync('git', ['commit', '--quiet', '-m', 'first'], { cwd: root });
+  await writeFile(join(root, 'a.txt'), 'two\n');
+  execFileSync('git', ['commit', '--quiet', '-am', 'second'], { cwd: root });
+  await writeFile(join(directory, inputFileName), '# Review input\n\n## Capture\n');
+  await captureGeneration(root, directory, { kind: 'range', from: 'HEAD~1', to: 'HEAD' });
+
+  const record = JSON.parse(await readFile(recordPath(directory), 'utf8')) as {
+    original: Record<string, string>;
+  };
+
+  expect(Object.keys(record.original)).toEqual(['patch', 'input']);
+  expect((await readCompletedCapture(root, directory)).status).toBe('completed');
 });

@@ -23,6 +23,7 @@
   "gaps": [{ "kind": "binary", "path": "logo.png" }],
   "original": {
     "patch": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
-    "input": "d00491fd7e5bb6fa28c517a0bb32b8b506539d4d"
+    "input": "d00491fd7e5bb6fa28c517a0bb32b8b506539d4d",
+    "snapshot": "8b137891791fe96927ad78e64b0aad7bded08bdc"
   }
 }
