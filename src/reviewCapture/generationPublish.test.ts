@@ -48,6 +48,13 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 
       return actual.appendFile(...parameters);
     },
+    copyFile: async (...parameters: Parameters<typeof actual.copyFile>) => {
+      if (fails('copyFile', parameters[0])) {
+        await actual.writeFile(parameters[0], 'changed after the patch\n');
+      }
+
+      return actual.copyFile(...parameters);
+    },
     readFile: (async (path: PathLike, options?: BufferEncoding) => {
       if (fails('readFile', path)) {
         return Buffer.from('changed on disk');
@@ -87,6 +94,8 @@ vi.mock(import('node:fs'), async (importOriginal) => {
 });
 
 const inputHeader = '# Review input\n\n## Capture\n';
+
+const endpointRefs = (root: string) => git(root, 'for-each-ref', 'refs/tau/');
 
 const blobHash = (root: string, bytes: Buffer) =>
   execFileSync('git', ['hash-object', '--stdin'], { cwd: root, input: bytes })
@@ -142,9 +151,26 @@ it.each([
 
     expect(await readdir(directory)).toEqual(['input.md']);
     expect(await readFile(join(directory, 'input.md'), 'utf8')).toBe(inputHeader);
+    expect(await endpointRefs(root)).toBe('');
     await expect(readCompletedCapture(root, directory)).rejects.toThrow(recordFileName);
   },
 );
+
+it('publishes no endpoint when a file changes between the patch and the snapshot', async () => {
+  const { root, directory } = await changedRepository();
+
+  failure.call = 'copyFile';
+  failure.path = 'tracked.txt';
+
+  await expect(captureGeneration(root, directory, workingTree)).rejects.toThrow(
+    'does not match the capture',
+  );
+
+  failure.call = '';
+
+  expect(await readdir(directory)).toEqual(['input.md']);
+  expect(await endpointRefs(root)).toBe('');
+});
 
 it('removes the linked capture.json when the directory fsync after the link fails', async () => {
   const { root, directory } = await changedRepository();
@@ -215,7 +241,7 @@ it('lets one of two captures started at once publish a record of its own artifac
   expect(published).toEqual([expect.objectContaining({ identity })]);
 
   expect(record).toMatchObject({
-    version: 3,
+    version: 4,
     original: { patch: blobHash(root, patch), input: blobHash(root, input) },
   });
 
@@ -225,5 +251,6 @@ it('lets one of two captures started at once publish a record of its own artifac
     status: 'completed',
     identity,
     reasons: [],
+    endpoint: 'complete',
   });
 });

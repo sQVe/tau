@@ -194,7 +194,7 @@ it('appends the capture and its gaps after the Capture heading and saves the rec
   expect(input).toContain('generated.txt');
 
   expect(record).toEqual({
-    version: 3,
+    version: 4,
     target: { kind: 'workingTree', base: head, exclude: ['generated.txt'] },
     base: head,
     head,
@@ -202,6 +202,7 @@ it('appends the capture and its gaps after the Capture heading and saves the rec
     snapshot: { present: ['tracked.txt', 'untracked.txt'], absent: [], skipped: [] },
     gaps: [{ kind: 'excluded', path: 'generated.txt' }],
     original: { patch: patch.trim(), input: saved.trim(), snapshot: snapshot.trim() },
+    endpoint: { status: 'unsupported', reasons: [expect.stringContaining('generated.txt')] },
   });
 });
 
@@ -564,11 +565,11 @@ it('captures only the diff since the reviewed capture and lists the callers of t
   expect(evidence.callers.map((caller) => caller.path)).toEqual(['src/use.ts']);
 });
 
-it('captures a fix against an earlier version 3 capture and leaves that capture unchanged', async () => {
+it('captures a fix against an earlier version 4 capture and leaves that capture unchanged', async () => {
   const { root, review, directory } = await reviewedThenFixed();
   const earlier = await readFile(join(review, 'capture.json'), 'utf8');
 
-  expect(JSON.parse(earlier)).toMatchObject({ version: 3 });
+  expect(JSON.parse(earlier)).toMatchObject({ version: 4 });
 
   const result = await captureFix(root, directory, review, ['src/math.ts']);
 
@@ -650,7 +651,7 @@ it('records the fix capture with the earlier base and no snapshot', async () => 
   const record = JSON.parse(await readFile(join(directory, 'capture.json'), 'utf8')) as object;
 
   expect(record).toEqual({
-    version: 3,
+    version: 4,
     target: {
       kind: 'fix',
       review,
@@ -665,6 +666,7 @@ it('records the fix capture with the earlier base and no snapshot', async () => 
       patch: expect.stringMatching(/^[0-9a-f]{40}$/) as string,
       input: expect.stringMatching(/^[0-9a-f]{40}$/) as string,
     },
+    endpoint: { status: 'unsupported', reasons: [expect.any(String)] },
   });
 
   expect(await readdir(directory)).not.toContain('snapshot');
@@ -725,7 +727,13 @@ it('refuses a fix review of an earlier capture whose saved input changed and wri
 it('captures a fix against an earlier version 2 capture', async () => {
   const { root, review, directory } = await reviewedThenFixed();
   const saved = JSON.parse(await readFile(join(review, 'capture.json'), 'utf8')) as object;
-  const { gaps: _gaps, original: _original, ...rest } = saved as Record<string, unknown>;
+
+  const {
+    gaps: _gaps,
+    original: _original,
+    endpoint: _endpoint,
+    ...rest
+  } = saved as Record<string, unknown>;
 
   await writeFile(join(review, 'capture.json'), JSON.stringify({ ...rest, version: 2 }));
 

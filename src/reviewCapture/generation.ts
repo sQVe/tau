@@ -6,6 +6,9 @@ import { publishTextSync } from '../record.js';
 import { rejectLinkedFile } from '../tauDirectory.js';
 import { hashBytes, pinTarget, readHead } from './capture.js';
 import type { Capture, Gap } from './capture.js';
+import { observeEndpoint } from './endpoint.js';
+import { publishEndpoint, releaseEndpoint } from './endpointRetention.js';
+import type { RetainedEndpoint } from './endpointRetention.js';
 import {
   isRepositoryPath,
   pinFixTarget,
@@ -26,7 +29,7 @@ import {
   parseCaptureRecord,
   recordFileName,
 } from './record.js';
-import type { CaptureRecord, Snapshot } from './record.js';
+import type { CaptureRecord, RecordedEndpoint, Snapshot } from './record.js';
 import { existingEntry } from './reviewDirectory.js';
 import type { PinnedTarget, ReviewTarget } from './target.js';
 
@@ -43,12 +46,14 @@ export interface CapturedGeneration extends Partial<FixScope> {
 
 interface Owned {
   snapshot: boolean;
+  endpoint: RetainedEndpoint | undefined;
   recordText: string | undefined;
 }
 
 interface ReadRecord {
   saved: SavedRecord;
   snapshot: Snapshot | undefined;
+  endpoint: RecordedEndpoint | undefined;
 }
 
 const hashOf = async (root: string, bytes: Buffer): Promise<string> => {
@@ -144,12 +149,17 @@ const readSavedRecord = async (root: string, path: string, bytes: Buffer): Promi
   const record = parseCaptureRecord(path, bytes.toString('utf8'));
   const recorded = 'original' in record ? record.original : undefined;
   const snapshot = 'snapshot' in record ? record.snapshot : undefined;
+  const endpoint = 'endpoint' in record ? record.endpoint : undefined;
 
   return {
     saved: { version: record.version, identity: await hashOf(root, bytes), recorded },
     snapshot,
+    endpoint,
   };
 };
+
+const observeSavedEndpoint = (root: string, record: ReadRecord | undefined, patch?: Buffer) =>
+  record?.endpoint === undefined ? undefined : observeEndpoint(root, record.endpoint, patch);
 
 export const readCompletedCapture = async (
   root: string,
@@ -180,7 +190,11 @@ export const readCompletedCapture = async (
     snapshot: await hashSnapshot(root, directory, record?.snapshot),
   };
 
-  return decideGeneration({ record: record?.saved, observed, expectedIdentity });
+  // An altered patch already decides the result, and its transition would only repeat that.
+  const originalPatch = observed.patch === record?.saved.recorded?.patch ? patchBytes : undefined;
+  const endpoint = await observeSavedEndpoint(root, record, originalPatch);
+
+  return decideGeneration({ record: record?.saved, observed, endpoint, expectedIdentity });
 };
 
 const captureHeading = '## Capture';
@@ -359,6 +373,7 @@ const removeOwnRecord = async (path: string, text: string | undefined) => {
 };
 
 const rollback = async (
+  root: string,
   directory: string,
   originalInput: Buffer,
   owned: Owned,
@@ -367,11 +382,15 @@ const rollback = async (
     ? rm(join(directory, snapshotFolder), { recursive: true, force: true })
     : Promise.resolve();
 
+  const removeEndpoint =
+    owned.endpoint === undefined ? Promise.resolve() : releaseEndpoint(root, owned.endpoint);
+
   const results = await Promise.allSettled([
     writeFile(join(directory, inputFileName), originalInput),
     removeSnapshot,
     rm(join(directory, generationFolderName), { recursive: true, force: true }),
     removeOwnRecord(join(directory, recordFileName), owned.recordText),
+    removeEndpoint,
   ]);
 
   const steps = [
@@ -379,6 +398,7 @@ const rollback = async (
     'removing the snapshot',
     'removing the capture folder',
     `removing ${recordFileName}`,
+    'deleting the endpoint ref',
   ];
 
   return results.flatMap((result, index) =>
@@ -439,8 +459,18 @@ const publishGeneration = async (
     throw new Error(`A saved copy in ${join(directory, snapshotFolder)} could not be read.`);
   }
 
+  const { endpoint, retained } = await publishEndpoint(root, {
+    directory,
+    target: pinned,
+    gaps: captured.gaps,
+    patch: captured.bytes,
+    snapshot,
+  });
+
+  owned.endpoint = retained;
+
   const record: CaptureRecord = {
-    version: 3,
+    version: 4,
     target: pinned,
     base,
     head,
@@ -452,6 +482,7 @@ const publishGeneration = async (
       input: await hashOf(root, input),
       ...(snapshotHash === undefined ? {} : { snapshot: snapshotHash }),
     },
+    endpoint,
   };
 
   const recordText = `${JSON.stringify(record, null, 2)}\n`;
@@ -474,12 +505,12 @@ export const captureGeneration = async (
 
   await claimDirectory(join(directory, generationFolderName));
 
-  const owned: Owned = { snapshot: false, recordText: undefined };
+  const owned: Owned = { snapshot: false, endpoint: undefined, recordText: undefined };
 
   try {
     return await publishGeneration(root, directory, target, originalInput, owned);
   } catch (error) {
-    const failedCleanups = await rollback(directory, originalInput, owned);
+    const failedCleanups = await rollback(root, directory, originalInput, owned);
 
     if (failedCleanups.length > 0) {
       throw rollbackError(error, failedCleanups);

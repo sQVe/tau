@@ -16,7 +16,8 @@ export const generationFolderName = 'capture';
 export const generationPatchFileName = 'patch.diff';
 export const generationInputFileName = 'input.md';
 
-const currentVersion = 3;
+const versionThree = 3;
+const currentVersion = 4;
 
 // What a fix review compares against: the working tree files an earlier capture saved in the
 // review directory's snapshot folder, and the paths it could not save.
@@ -79,13 +80,42 @@ const originalSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const versionThreeFields = {
+  ...savedFields,
+  gaps: Type.Array(gapSchema),
+  original: originalSchema,
+};
+
 const versionThreeRecordSchema = Type.Object(
-  {
-    version: Type.Literal(currentVersion),
-    ...savedFields,
-    gaps: Type.Array(gapSchema),
-    original: originalSchema,
-  },
+  { version: Type.Literal(versionThree), ...versionThreeFields },
+  { additionalProperties: false },
+);
+
+// The tree a commit of the reviewed content would have, and the ref that keeps it from `git gc`.
+// A capture that cannot prove that tree names its reasons instead.
+const endpointSchema = Type.Union([
+  Type.Object(
+    {
+      status: Type.Literal('complete'),
+      baseTree: objectNameSchema,
+      tree: objectNameSchema,
+      ref: Type.String({ minLength: 1 }),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      status: Type.Union([Type.Literal('unsupported'), Type.Literal('incomplete')]),
+      reasons: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
+    },
+    { additionalProperties: false },
+  ),
+]);
+
+export type RecordedEndpoint = Static<typeof endpointSchema>;
+
+const versionFourRecordSchema = Type.Object(
+  { version: Type.Literal(currentVersion), ...versionThreeFields, endpoint: endpointSchema },
   { additionalProperties: false },
 );
 
@@ -109,7 +139,8 @@ const versionOneRecordSchema = Type.Object(
 export type CaptureRecord =
   | Static<typeof versionOneRecordSchema>
   | Static<typeof versionTwoRecordSchema>
-  | Static<typeof versionThreeRecordSchema>;
+  | Static<typeof versionThreeRecordSchema>
+  | Static<typeof versionFourRecordSchema>;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -139,7 +170,11 @@ const recordSchema = (value: unknown) => {
     return versionOneRecordSchema;
   }
 
-  return claimsVersion(value, currentVersion) ? versionThreeRecordSchema : versionTwoRecordSchema;
+  if (claimsVersion(value, versionThree)) {
+    return versionThreeRecordSchema;
+  }
+
+  return claimsVersion(value, currentVersion) ? versionFourRecordSchema : versionTwoRecordSchema;
 };
 
 export const parseCaptureRecord = (path: string, text: string): CaptureRecord =>

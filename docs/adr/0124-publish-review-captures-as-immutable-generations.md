@@ -26,9 +26,25 @@ so a reader can check them. A working tree or files capture also saves a snapsho
 capture diffs against. The record names it by the Git blob hash of a manifest that lists the mode
 and blob hash of each saved copy and the snapshot's absent and skipped paths.
 
+A range or working tree capture with no gaps also records its endpoint: the tree a commit of the
+reviewed content would have, and the base tree it starts from. A range names both trees. A working
+tree capture lays its verified snapshot over the base tree in a temporary index. Before it publishes
+the record, the capture checks the transition: the raw diff from the base tree to the endpoint tree
+must list exactly the paths the saved patch shows, with the blob and mode the patch shows for each.
+A mismatch fails the capture. The capture then writes a commit of the endpoint tree on its base and
+points `refs/tau/review-captures/<review directory name>` at it, so `git gc` keeps both trees. The
+record names that ref. A rollback deletes the ref only while it still points at the capture's
+commit. A files, root commit, or fix capture, and any capture with gaps, records its endpoint as
+unsupported or incomplete with the reasons, and otherwise works as before.
+
 The identity of a completed capture is the Git blob hash of its saved `capture.json`. Reads never
-change the saved files. A read reports one of five states: completed, legacy, incomplete, altered,
-or missing. Only a completed capture with the expected identity counts as evidence. Version 1 and
+change the saved files, apart from the Git objects the transition check reads. A read reports one of
+five states: completed, legacy, incomplete, altered, or missing. Only a completed capture with the
+expected identity counts as evidence. A read of a record with a complete endpoint checks that Git
+still has both trees and runs the transition check against the saved patch again. A missing tree
+makes the capture missing, and a transition that differs from the patch makes it altered. A
+completed result names its endpoint status separately, so a capture with an unsupported or
+incomplete endpoint still reads as completed. A version 3 record has no endpoint. Version 1 and
 version 2 records saved no original artifacts, so they read as legacy and never count for strict
 chains. The evidence read reports an altered or missing capture as a gap, and it refuses an
 incomplete capture, which has no record to report. A fix capture refuses an earlier review in any of
@@ -45,6 +61,7 @@ directory cannot be read as complete. The next step is a new review directory, n
   bytes, so a reviewer can compare any later result with the capture it used.
 - A reader can prove that the saved files match the record, and it names the file that differs.
 - Two captures on one directory cannot both publish. At most one record matches its own artifacts.
+- A complete endpoint lets a later step compare the reviewed content with a commit by its tree.
 
 ### Negative
 
@@ -52,6 +69,8 @@ directory cannot be read as complete. The next step is a new review directory, n
   the old folder stays on disk until someone removes it.
 - Every new capture needs a new review directory, so a repeated capture costs one `prepare` call.
 - Old records read as legacy. Strict chains that need the original artifacts refuse them.
+- Each complete capture adds a ref under `refs/tau/review-captures/`. Its objects stay until someone
+  deletes the ref, and a deleted ref plus `git gc` turns the capture missing.
 
 ## Alternatives considered
 

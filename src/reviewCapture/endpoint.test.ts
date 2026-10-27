@@ -9,7 +9,7 @@ import { expect, it, onTestFinished } from 'vitest';
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget } from './capture.js';
-import { buildEndpoint, compareEndpoint } from './endpoint.js';
+import { buildEndpoint, checkTransition, compareEndpoint } from './endpoint.js';
 import { saveVerifiedSnapshot } from './fixCapture.js';
 import { generationFolderName } from './record.js';
 
@@ -233,4 +233,128 @@ it('takes the trees of a range from its commits', async () => {
 
   expect(await compareEndpoint(root, endpoint, to)).toBe('equal');
   expect(await compareEndpoint(root, endpoint, from)).toBe('different');
+});
+
+// Commits each named variant of a shared first commit, so a test can pair the trees of one variant
+// with the patch of another.
+const transitionRepository = async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await writeAt(root, 'kept.ts', 'one\n');
+  await writeAt(root, 'moved.ts', 'a\nb\nc\n');
+  await writeAt(root, 'removed.ts', 'gone\n');
+  await writeAt(root, 'run.sh', 'echo\n');
+
+  const first = await commitAll(root, 'first');
+
+  const variant = async (change: () => Promise<void>) => {
+    await git(root, 'checkout', '--quiet', '--detach', first);
+    await change();
+
+    return commitAll(root, 'variant');
+  };
+
+  const commits = {
+    first,
+    renamed: await variant(async () => {
+      await writeAt(root, 'kept.ts', 'two\n');
+      await git(root, 'mv', 'moved.ts', 'renamed.ts');
+      await rm(join(root, 'removed.ts'));
+      await chmod(join(root, 'run.sh'), 0o755);
+    }),
+    edited: await variant(() => writeAt(root, 'run.sh', 'echo two\n')),
+    editedAgain: await variant(() => writeAt(root, 'run.sh', 'echo three\n')),
+    editedExecutable: await variant(async () => {
+      await writeAt(root, 'run.sh', 'echo two\n');
+      await chmod(join(root, 'run.sh'), 0o755);
+    }),
+    deleted: await variant(() => rm(join(root, 'removed.ts'))),
+    rewritten: await variant(() => writeAt(root, 'removed.ts', 'still here\n')),
+  };
+
+  return { root, commits };
+};
+
+type Variant = keyof Awaited<ReturnType<typeof transitionRepository>>['commits'];
+
+it.each([
+  { name: 'the patch of the same change', tree: 'renamed', patch: 'renamed', options: [] },
+  {
+    name: 'the same change with renames shown as deletions',
+    tree: 'renamed',
+    patch: 'renamed',
+    options: ['--no-renames'],
+  },
+  { name: 'a content change', tree: 'edited', patch: 'edited', options: [] },
+  {
+    name: 'a patch that leaves out a deletion',
+    tree: 'renamed',
+    patch: 'renamed',
+    options: ['--', ':!removed.ts'],
+    mismatches: ['removed.ts'],
+  },
+  {
+    name: 'a patch that leaves out a mode change',
+    tree: 'renamed',
+    patch: 'renamed',
+    options: ['--', ':!run.sh'],
+    mismatches: ['run.sh'],
+  },
+  {
+    name: 'a patch of a path the trees keep',
+    tree: 'first',
+    patch: 'edited',
+    mismatches: ['run.sh'],
+  },
+  {
+    name: 'a patch with the same blob and another mode',
+    tree: 'editedExecutable',
+    patch: 'edited',
+    mismatches: ['run.sh'],
+  },
+  {
+    name: 'a patch with another blob',
+    tree: 'edited',
+    patch: 'editedAgain',
+    mismatches: ['run.sh'],
+  },
+  {
+    name: 'a patch that changes a path the trees delete',
+    tree: 'deleted',
+    patch: 'rewritten',
+    mismatches: ['removed.ts'],
+  },
+] satisfies {
+  name: string;
+  tree: Variant;
+  patch: Variant;
+  options?: string[];
+  mismatches?: string[];
+}[])('checks the transition against $name', async ({ tree, patch, options, mismatches: paths }) => {
+  const { root, commits } = await transitionRepository();
+
+  const patchText = await promisify(execFile)(
+    'git',
+    [
+      'diff',
+      '--src-prefix=a/',
+      '--dst-prefix=b/',
+      '-M',
+      commits.first,
+      commits[patch],
+      ...(options ?? []),
+    ],
+    { cwd: root },
+  );
+
+  const endpoint = {
+    status: 'complete' as const,
+    baseTree: await git(root, 'rev-parse', `${commits.first}^{tree}`),
+    tree: await git(root, 'rev-parse', `${commits[tree]}^{tree}`),
+  };
+
+  const mismatches = await checkTransition(root, endpoint, patchText.stdout);
+  const expected = (paths ?? []).map((path) => expect.stringContaining(path) as string);
+
+  expect(mismatches).toEqual(expected);
 });

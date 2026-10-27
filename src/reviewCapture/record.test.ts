@@ -55,7 +55,7 @@ it('reads a version 1 record', async () => {
   expect(await readUnchanged(directory)).toEqual(saved);
 });
 
-it.each(['version-2.json', 'version-2-fix.json', 'version-3.json'])(
+it.each(['version-2.json', 'version-2-fix.json', 'version-3.json', 'version-4.json'])(
   'reads the %s record',
   async (fixture) => {
     const directory = await reviewDirectory(fixture);
@@ -160,6 +160,8 @@ it('reads a record that holds a snapshot', async () => {
 
 describe('refuses a saved record', () => {
   const fix = savedRecord('version-2-fix.json');
+  const versionFour = savedRecord('version-4.json');
+  const completeEndpoint = versionFour['endpoint'] as Record<string, unknown>;
 
   const invalidRecords = {
     'with a field it does not define': { ...fix, extra: 1 },
@@ -180,6 +182,23 @@ describe('refuses a saved record', () => {
     'with an empty skipped path': {
       ...fix,
       snapshot: { ...savedSnapshot, skipped: [{ ...savedSnapshot.skipped[0], path: '' }] },
+    },
+    'of version 4 with no endpoint': { ...versionFour, endpoint: undefined },
+    'of version 3 with an endpoint': {
+      ...savedRecord('version-3.json'),
+      endpoint: completeEndpoint,
+    },
+    'with a complete endpoint that names no ref': {
+      ...versionFour,
+      endpoint: { ...completeEndpoint, ref: undefined },
+    },
+    'with a complete endpoint that names no tree': {
+      ...versionFour,
+      endpoint: { ...completeEndpoint, tree: undefined },
+    },
+    'with an unsupported endpoint that names no reason': {
+      ...versionFour,
+      endpoint: { status: 'unsupported', reasons: [] },
     },
   };
 

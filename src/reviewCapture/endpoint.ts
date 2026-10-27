@@ -3,7 +3,10 @@ import { join } from 'node:path';
 
 import { errorMessage } from '../errors.js';
 import { readGit, runGit } from '../git.js';
+import { readRawRecords } from './capture.js';
+import type { RawRecord } from './capture.js';
 import { snapshotFolder } from './fixCapture.js';
+import type { EndpointFacts } from './generationDecision.js';
 import { isSupportedMode, shownBlobs } from './patchBlobs.js';
 import type { ShownFile, ShownMode, SupportedMode } from './patchBlobs.js';
 import { generationFolderName } from './record.js';
@@ -25,6 +28,8 @@ export type Endpoint =
   | { status: 'unsupported' | 'incomplete'; reasons: string[] };
 
 export type EndpointComparison = 'equal' | 'different' | 'unknown';
+
+type CompleteEndpoint = Extract<Endpoint, { status: 'complete' }>;
 
 type SnapshotInput = Extract<EndpointInput, { kind: 'workingTree' }>;
 
@@ -80,14 +85,20 @@ const snapshotLimits = (snapshot: Snapshot, shown: Map<string, ShownFile>): Limi
   return limits;
 };
 
-const baseMode = async (root: string, baseTree: string, path: string) => {
+const baseEntry = async (root: string, baseTree: string, path: string) => {
   const result = await runGit(root, ['ls-tree', '-z', '--full-tree', baseTree, '--', path]);
 
   if (result.exitCode !== 0) {
     throw new Error(`git ls-tree failed: ${result.stderr.trim()}`);
   }
 
-  const [mode] = result.stdout.toString('utf8').split(' ');
+  const [mode = '', , blob = ''] = result.stdout.toString('utf8').split('\t')[0]?.split(' ') ?? [];
+
+  return { mode, blob };
+};
+
+const baseMode = async (root: string, baseTree: string, path: string) => {
+  const { mode } = await baseEntry(root, baseTree, path);
 
   return mode === '100644' || mode === '100755' ? mode : undefined;
 };
@@ -256,4 +267,150 @@ export const compareEndpoint = async (
   const tree = await readTree(root, commit);
 
   return tree === endpoint.tree ? 'equal' : 'different';
+};
+
+const shownModeText: Record<ShownMode, string> = {
+  '100644': '100644',
+  '100755': '100755',
+  symlink: '120000',
+  gitlink: '160000',
+  unreadable: 'unreadable',
+};
+
+const deletedBlob = /^0+$/;
+
+const treeChanges = async (root: string, endpoint: CompleteEndpoint): Promise<RawRecord[]> => {
+  const result = await runGit(root, [
+    'diff-tree',
+    '-r',
+    '-z',
+    '--no-renames',
+    endpoint.baseTree,
+    endpoint.tree,
+  ]);
+
+  if (result.exitCode !== 0) {
+    throw new Error(`git diff-tree failed: ${result.stderr.trim()}`);
+  }
+
+  return readRawRecords(result.stdout).records;
+};
+
+// A section with no index line or no mode keeps that part of its source in the base tree.
+const shownPostImage = async (root: string, baseTree: string, file: ShownFile) => {
+  const base =
+    file.blob === undefined || file.mode === undefined
+      ? await baseEntry(root, baseTree, file.source)
+      : undefined;
+
+  const mode = file.mode === undefined ? base?.mode : shownModeText[file.mode];
+
+  return { blob: file.blob ?? base?.blob ?? '', mode };
+};
+
+// A rename shows only its new path, so its old path is deleted in the trees without its own section.
+const renamedSources = (shown: Map<string, ShownFile>) =>
+  new Set([...shown].flatMap(([path, file]) => (file.source === path ? [] : [file.source])));
+
+const deletionMismatch = (path: string, file: ShownFile | undefined, sources: Set<string>) => {
+  if (file === undefined) {
+    return sources.has(path)
+      ? undefined
+      : `The endpoint deletes ${path}, which the captured patch does not show.`;
+  }
+
+  return deletedBlob.test(file.blob ?? '')
+    ? undefined
+    : `The endpoint deletes ${path}, which the captured patch does not delete.`;
+};
+
+const postImageMismatch = async (
+  root: string,
+  baseTree: string,
+  file: ShownFile | undefined,
+  change: RawRecord,
+) => {
+  const path = change.paths[0] ?? '';
+
+  if (file === undefined) {
+    return `The endpoint changes ${path}, which the captured patch does not show.`;
+  }
+
+  const expected = await shownPostImage(root, baseTree, file);
+  const sameBlob = expected.blob !== '' && change.blob.startsWith(expected.blob);
+
+  return sameBlob && change.newMode === expected.mode
+    ? undefined
+    : `The endpoint holds ${change.newMode} ${change.blob} at ${path}, not what the captured patch shows.`;
+};
+
+// Checks that the change from baseTree to tree is the change the saved patch shows: the same paths,
+// and each new blob and mode as the patch shows them. Returns each difference.
+export const checkTransition = async (
+  root: string,
+  endpoint: CompleteEndpoint,
+  patch: string,
+): Promise<string[]> => {
+  const shown = shownBlobs(patch);
+  const sources = renamedSources(shown);
+  const changes = await treeChanges(root, endpoint);
+  const changedPaths = new Set(changes.map((change) => change.paths[0] ?? ''));
+  const mismatches: (string | undefined)[] = [];
+
+  for (const change of changes) {
+    const path = change.paths[0] ?? '';
+    const file = shown.get(path);
+
+    if (change.status === 'D') {
+      mismatches.push(deletionMismatch(path, file, sources));
+    } else {
+      // oxlint-disable-next-line no-await-in-loop -- one Git process at a time.
+      mismatches.push(await postImageMismatch(root, endpoint.baseTree, file, change));
+    }
+  }
+
+  for (const path of shown.keys()) {
+    if (!changedPaths.has(path)) {
+      mismatches.push(`The captured patch shows ${path}, which the endpoint does not change.`);
+    }
+  }
+
+  return mismatches.filter((mismatch) => mismatch !== undefined);
+};
+
+const missingTrees = async (root: string, endpoint: CompleteEndpoint) => {
+  const trees = [endpoint.baseTree, endpoint.tree];
+  const present = await Promise.all(trees.map((tree) => objectExists(root, tree)));
+
+  return trees.flatMap((tree, index) =>
+    present[index] === true ? [] : [`Git no longer has the endpoint tree ${tree}.`],
+  );
+};
+
+// What Git shows of a saved endpoint now. The transition is checked only when both trees exist
+// and the saved patch could be read.
+export const observeEndpoint = async (
+  root: string,
+  endpoint: Endpoint,
+  patch: Buffer | undefined,
+): Promise<EndpointFacts> => {
+  const observation: EndpointFacts = { status: endpoint.status, missing: [], mismatches: [] };
+
+  if (endpoint.status !== 'complete') {
+    return observation;
+  }
+
+  observation.missing = await missingTrees(root, endpoint);
+
+  if (observation.missing.length > 0 || patch === undefined) {
+    return observation;
+  }
+
+  try {
+    observation.mismatches = await checkTransition(root, endpoint, patch.toString('utf8'));
+  } catch (error) {
+    observation.missing = [`Git could not compare the endpoint trees: ${errorMessage(error)}`];
+  }
+
+  return observation;
 };
