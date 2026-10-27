@@ -181,7 +181,7 @@ it('refuses to launch a bundled profile without a launch or configured model', a
 
   writeConfig(userFile, { profiles: { scout: { model: request.model } } });
 
-  for (const name of ['worker', 'reviewer', 'qa']) {
+  for (const name of ['worker', 'reviewer', 'checker', 'qa']) {
     const missing = () => resolveLoadout({ profile: name }, context);
     expect(missing).toThrow(`profiles.default.model in ${userFile}`);
     expect(missing).toThrow(`Configured models: ${request.model}.`);
