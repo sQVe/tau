@@ -12,6 +12,7 @@ import {
 } from './pullRequestReads.js';
 import { decideWatchOutcome, describeWatchOutcome } from './watchOutcome.js';
 import type { WatchOutcome } from './watchOutcome.js';
+import { decideWatchStart } from './watchStart.js';
 
 type WatchContext = Pick<ExtensionContext, 'cwd' | 'isIdle' | 'signal'>;
 
@@ -34,7 +35,7 @@ const pollInterval = 60_000;
 const watchDuration = 7_200_000;
 
 const autoMergeRequests = (event: ToolResultEvent): AutoMergeRequest[] => {
-  if (!isBashToolResult(event) || event.isError) {
+  if (!isBashToolResult(event)) {
     return [];
   }
 
@@ -122,17 +123,19 @@ export const createMergeWatches = (exec: Exec, deliver: Deliver): MergeWatches =
     watches.add(watch);
 
     const runtime = { exec, cwd: context.cwd, signal: watch.reads.signal };
-    const url = await resolvePullRequest(runtime, request);
+    const pullRequest = await resolvePullRequest(runtime, request);
 
     if (watch.reads.signal.aborted) {
       return;
     }
 
-    if (url === undefined || isWatched(url)) {
+    if (pullRequest === undefined || !decideWatchStart(pullRequest) || isWatched(pullRequest.url)) {
       end(watch);
 
       return;
     }
+
+    const { url } = pullRequest;
 
     watch.url = url;
     schedule(watch, url);

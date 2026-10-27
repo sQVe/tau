@@ -5,8 +5,13 @@ import { checkOutput, parseJson, runCommand } from '../../command.js';
 import type { CommandRuntime } from '../../command.js';
 import type { AutoMergeRequest } from './autoMergeRequest.js';
 import type { WatchFacts } from './watchOutcome.js';
+import type { WatchStartFacts } from './watchStart.js';
 
-const resolvedSchema = Type.Object({ url: Type.String({ minLength: 1 }) });
+const resolvedSchema = Type.Object({
+  url: Type.String({ minLength: 1 }),
+  state: Type.String(),
+  autoMergeRequest: Type.Union([Type.Object({}), Type.Null()]),
+});
 
 const stateSchema = Type.Object({
   state: Type.String(),
@@ -30,7 +35,7 @@ const readJson = async (runtime: CommandRuntime, commandArguments: string[]) => 
 export const resolvePullRequest = async (
   runtime: CommandRuntime,
   request: AutoMergeRequest,
-): Promise<string | undefined> => {
+): Promise<(WatchStartFacts & { url: string }) | undefined> => {
   const commandArguments = ['pr', 'view'];
 
   if (request.selector !== undefined) {
@@ -42,11 +47,19 @@ export const resolvePullRequest = async (
   }
 
   try {
-    const { label, value } = await readJson(runtime, [...commandArguments, '--json', 'url']);
+    const { label, value } = await readJson(runtime, [
+      ...commandArguments,
+      '--json',
+      'url,state,autoMergeRequest',
+    ]);
 
     checkOutput(label, resolvedSchema, value);
 
-    return value.url;
+    return {
+      url: value.url,
+      state: value.state,
+      autoMergeEnabled: value.autoMergeRequest !== null,
+    };
   } catch {
     return undefined;
   }

@@ -26,6 +26,12 @@ const pending = checksOutput([{ name: 'test', bucket: 'pending' }]);
 const open = stateOutput('OPEN');
 const merged = stateOutput('MERGED', '2026-10-27T10:00:00Z');
 
+const resolvedOutput = (autoMergeRequest: { mergeMethod: string } | null, state = 'OPEN') =>
+  succeededResult(JSON.stringify({ url, state, autoMergeRequest }));
+
+const autoMergeOn = resolvedOutput({ mergeMethod: 'SQUASH' });
+const autoMergeOff = resolvedOutput(null);
+
 const keyOf = (_command: string, commandArguments: readonly string[]): Key | undefined => {
   if (commandArguments[1] === 'checks') {
     return 'checks';
@@ -36,7 +42,7 @@ const keyOf = (_command: string, commandArguments: readonly string[]): Key | und
 
 const setup = (options: { idle?: boolean } = {}) => {
   const handlers: Record<Key, ExecHandler> = {
-    resolve: () => succeededResult(JSON.stringify({ url })),
+    resolve: () => autoMergeOn,
     state: () => open,
     checks: () => pending,
   };
@@ -221,7 +227,7 @@ it('starts no watcher for a pull request resolved after session shutdown', async
   handlers.resolve = () => resolved.promise;
   await runBash('gh pr merge --auto');
   await emit('session_shutdown', { reason: 'quit' });
-  resolved.resolve(succeededResult(JSON.stringify({ url })));
+  resolved.resolve(autoMergeOn);
   await vi.advanceTimersByTimeAsync(3 * hours);
 
   expect(fake.sendMessage).not.toHaveBeenCalled();
@@ -282,7 +288,7 @@ it('resolves the pull request argument and repository of the merge command', asy
     '--repo',
     'owner/repo',
     '--json',
-    'url',
+    'url,state,autoMergeRequest',
   ]);
 });
 
@@ -323,10 +329,39 @@ it('watches a pull request again after its watch ended', async () => {
   expect(fake.sendMessage).toHaveBeenCalledTimes(2);
 });
 
-it('watches nothing after a failed or plain merge', async () => {
+it('watches nothing after a merge that left auto-merge off, whatever the bash status', async () => {
+  const { handlers, runBash, polls } = setup();
+
+  handlers.resolve = () => autoMergeOff;
+  await runBash('gh pr merge --auto; echo done');
+  await vi.advanceTimersByTimeAsync(hours);
+
+  expect(polls()).toHaveLength(0);
+});
+
+it('watches a pull request with auto-merge on when a later command failed', async () => {
+  const { runBash, polls } = setup();
+
+  await runBash('gh pr merge --auto; false', true);
+  await vi.advanceTimersByTimeAsync(minute);
+
+  expect(polls()).toHaveLength(1);
+});
+
+it('watches a pull request that merged before the resolve read', async () => {
+  const { fake, handlers, runBash } = setup();
+
+  handlers.resolve = () => resolvedOutput(null, 'MERGED');
+  handlers.state = () => merged;
+  await runBash('gh pr merge --auto');
+  await vi.advanceTimersByTimeAsync(minute);
+
+  expect(fake.sendMessage).toHaveBeenCalledTimes(1);
+});
+
+it('watches nothing after a plain merge or another tool', async () => {
   const { execFake, runBash, emit } = setup();
 
-  await runBash('gh pr merge --auto', true);
   await runBash('gh pr merge --squash');
 
   await emit('tool_result', {
