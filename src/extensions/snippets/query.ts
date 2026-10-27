@@ -27,7 +27,12 @@ const containerPrefix = String.raw`^(?:[\t ]*>|[\t ]*(?:[-*+]|\d{1,9}[.)])[\t ]+
 const closePrefix = String.raw`^(?:[\t ]*>)*[\t ]*`;
 const fenceOpenPattern = new RegExp(`${containerPrefix}(\`{3,}|~{3,})`);
 const fenceClosePattern = new RegExp(`${closePrefix}(\`{3,}|~{3,})[\\t ]*$`);
+const quoteMarkersPattern = /^(?:[\t ]*>)*/;
 const backtickRunPattern = /`+/g;
+
+const countQuoteMarkers = (prefix: string) => prefix.split('>').length - 1;
+
+const quoteDepth = (line: string) => countQuoteMarkers(quoteMarkersPattern.exec(line)?.[0] ?? '');
 
 const closesFence = (line: string, fence: string) => {
   const close = fenceClosePattern.exec(line)?.[1];
@@ -39,6 +44,7 @@ const splitFences = (text: string): Fences => {
   const fenced: Range[] = [];
   const prose: Range[] = [];
   let fence: string | undefined;
+  let fenceQuoteDepth = 0;
   let blockStart = 0;
   let proseStart = 0;
   let lineStart = 0;
@@ -46,11 +52,18 @@ const splitFences = (text: string): Fences => {
   for (const line of text.split('\n')) {
     const lineEnd = lineStart + line.length;
 
-    if (fence === undefined) {
-      const open = fenceOpenPattern.exec(line)?.[1];
+    if (fence !== undefined && quoteDepth(line) < fenceQuoteDepth) {
+      fence = undefined;
+      fenced.push({ start: blockStart, end: lineStart - 1 });
+      proseStart = lineStart - 1;
+    }
 
-      if (open !== undefined) {
-        fence = open;
+    if (fence === undefined) {
+      const open = fenceOpenPattern.exec(line);
+
+      if (open?.[1] !== undefined) {
+        fence = open[1];
+        fenceQuoteDepth = countQuoteMarkers(open[0]);
         blockStart = lineStart;
         prose.push({ start: proseStart, end: lineStart });
       }
