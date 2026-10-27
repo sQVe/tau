@@ -13,6 +13,7 @@ import fullCheckExtension from './extensions/fullCheck/fullCheck.js';
 import handoverExtension from './extensions/handover/handover.js';
 import herdrBlockedExtension from './extensions/herdrBlocked.js';
 import instructionsExtension from './extensions/instructions.js';
+import mergeWatchExtension from './extensions/mergeWatch/mergeWatch.js';
 import prExtension from './extensions/pr/pr.js';
 import prFeedbackExtension from './extensions/prFeedback/prFeedback.js';
 import sliceExtension from './extensions/slice/slice.js';
@@ -48,6 +49,7 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   trackerExtension(pi);
   prExtension(pi);
   prFeedbackExtension(pi);
+  mergeWatchExtension(pi);
   stackExtension(pi);
   codeReviewExtension(pi);
   staticLoaderExtension(pi);
