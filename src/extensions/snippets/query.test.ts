@@ -24,6 +24,9 @@ describe('snippetQueryAt', () => {
     { text: '`a\n```\ncode\n```\n#sim `b', offset: 20, query: 'sim' },
     { text: 'Ship ``x` #sim', offset: 14, query: 'sim' },
     { text: '#\n```\ncode\n```', offset: 1, query: '' },
+    { text: '> ```\n> code\n\n#simplify', offset: 23, query: 'simplify' },
+    { text: '> ```\n> code\n#simplify', offset: 22, query: 'simplify' },
+    { text: '> > ```\n> > code\n> #simplify', offset: 28, query: 'simplify' },
   ])('reads $query from $text', ({ text, offset, query }) => {
     expect(snippetQueryAt(text, offset)).toBe(query);
   });
@@ -36,6 +39,10 @@ describe('snippetQueryAt', () => {
     { text: '`#sim` here', offset: 5 },
     { text: '```\n#sim', offset: 8 },
     { text: '> ```sh\n> #push', offset: 15 },
+    { text: '> ```\n> code\n> #simplify', offset: 24 },
+    { text: '> ```\n> code\n\n```\n#simplify', offset: 27 },
+    { text: '> ```\n> #push\nafter', offset: 13 },
+    { text: '> ```\n> code\n`#sim` x', offset: 18 },
     { text: '- Step:\n\n    ```sh\n    #push', offset: 28 },
     { text: '1. ```\n   #push', offset: 15 },
     { text: '- ```\n  run\n- ```\n  #push', offset: 25 },
