@@ -44,10 +44,21 @@ inside herdr. Without them, tell the user and stop. For defects, use the
    - A branch diff: a `workingTree` from `git merge-base <default> HEAD`. Named files: a `files`
      target, which reviews them even without changes.
    - Never use a `fix` target.
+   - Resolve the ticket under review before capture: the one the user or a calling skill names.
+     Otherwise, for the branch's own work, use the branch's issue as the last bullet of step 1 of
+     [code-review](../code-review/SKILL.md#procedure) says. A `files` target with no named ticket
+     has none. Keep the ticket for steps 2 and 7.
 
 2. Prepare and capture as in
    [Handle the capture result](../code-review/phases.md#handle-the-capture-result), with the mode
-   `quality` in `input.md`.
+   `quality` in `input.md`. Write the planned structure into `## Intent` of `input.md` before the
+   `capture` call.
+   - With a ticket, read it and its children as step 3 of
+     [finish-slice](../finish-slice/SKILL.md#procedure) does. Treat the ticket as the slice, and
+     never walk up to a parent.
+   - The planned structure is the structure rules in the ticket's `## Design` and each child's
+     `## Files`.
+   - Without a ticket, or without structure rules, write that the planned structure is unavailable.
 
 3. Gather evidence as in [Gather evidence](../code-review/phases.md#gather-evidence).
 
@@ -65,10 +76,8 @@ inside herdr. Without them, tell the user and stop. For defects, use the
 
 6. Save the worker reports and `$dir/report.md` with the [report template](report.md).
 
-7. Post `$dir/report.md` to the ticket, before any fixing. Skip this step without a ticket.
-   - Find the ticket as the last bullet of step 1 of
-     [code-review](../code-review/SKILL.md#procedure) says. For a `files` target with no ticket
-     named by the user or a calling skill, there is no ticket.
+7. Post `$dir/report.md` to the ticket from step 1, before any fixing. Skip this step without a
+   ticket.
    - Start `$dir/report.md` with the line `# Code quality: <ticket>` when it lacks one.
    - Call `tracker_draft` `prepare` with the ticket identifier in lower case. Find the earlier
      report with the tracker skill's comment list command: the comment with ID
@@ -86,6 +95,8 @@ inside herdr. Without them, tell the user and stop. For defects, use the
 
 8. Reply with the [report template](report.md). Name the comment URL, or say the report stays local.
    Name any Linear edits the update replaced.
+   - Give triage-findings only the findings. Plan-correction notes stay in the report and reply, and
+     triage does not act on them.
    - Findings on the user's own work, without a request for a read-only review or "no changes":
      continue with the [triage-findings](../triage-findings/SKILL.md) skill without asking. Then ask
      about any gap, failure, or stale result that needs a decision.

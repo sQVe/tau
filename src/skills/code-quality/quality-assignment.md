@@ -66,6 +66,18 @@ Each finding gives:
 Before you propose a deletion, read the history of that code with `git log -L` or
 `git log --follow`, and name why the code exists.
 
+Compare the target with the planned structure in `## Intent` of `input.md`. It lists the structure
+rules the slice follows and the files each agent ticket names. Use it as follows:
+
+- A harmful departure from the plan joins the finding it causes. Name the plan item in that
+  finding's evidence, such as a bespoke helper where the plan named one to reuse (criterion 6).
+- A departure that improves on the plan is a plan-correction note, not a finding. Give each note its
+  `file:line`, the plan item, and why the change is better. Report notes after the findings, under
+  their own heading, and keep them out of the findings.
+- A touched file missing from the plan's files is not a departure.
+- When `## Intent` says the planned structure is unavailable, make no plan comparison. A missing
+  plan is never a departure.
+
 Do not search for defects. List a defect you meet in a separate Defects list, not as a structure
 finding.
 ```
@@ -79,6 +91,8 @@ finding.
   constraints as the target.
 - Confirm each label against its definition in the quality lens. Report a wrong label as refuting
   that part of the finding.
-- Mark each finding supported, refuted, or uncertain, with a reason drawn only from what you or the
-  evidence returned.
+- For each plan-correction note, confirm that the plan item says what the note claims, and that the
+  code departs from it and improves on it.
+- Mark each finding and each plan-correction note supported, refuted, or uncertain, with a reason
+  drawn only from what you or the evidence returned.
 ```
