@@ -1,12 +1,10 @@
-import { execFile } from 'node:child_process';
 import { appendFile, chmod, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { declinedExec } from '../../../tests/declinedExecFake.js';
-import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { createMutationCheckTool } from './mutationTool.js';
 import { createFullCheckTool } from './tool.js';
@@ -17,13 +15,6 @@ interface RunParameters {
   paths?: string[];
   maxMutants?: number;
 }
-
-const git = (cwd: string, ...commandArguments: string[]) =>
-  promisify(execFile)(
-    'git',
-    ['-c', 'user.name=Tau', '-c', 'user.email=tau@example.com', ...commandArguments],
-    { cwd },
-  );
 
 const changedParameters: RunParameters = { mode: 'changed', base: 'HEAD' };
 
@@ -485,12 +476,12 @@ it('waits on the lock of a running full check for a mutation check of the same r
 
 it('passes the resolved base commit to the script in changed mode', async () => {
   const { root, configure, run, receivedArguments } = await fixture();
-  const { stdout } = await git(root, 'rev-parse', 'HEAD');
+  const head = await git(root, 'rev-parse', 'HEAD');
 
   await configure(passReport, 0);
   await run({ mode: 'changed', base: 'HEAD' });
 
-  expect(await receivedArguments()).toEqual([['changed', stdout.trim()]]);
+  expect(await receivedArguments()).toEqual([['changed', head]]);
 });
 
 it('passes the paths to the script in audit mode', async () => {

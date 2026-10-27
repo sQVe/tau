@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget } from './capture.js';
 import { saveVerifiedSnapshot, verifySnapshot } from './fixCapture.js';
@@ -144,16 +144,13 @@ it('verifies a mode-only change against the base blob', async () => {
 const renamedRepository = async (edit: boolean) => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  const git = (...commandArguments: string[]) =>
-    promisify(execFile)('git', commandArguments, { cwd: root });
-
   await writeFile(join(root, 'old.ts'), 'one\ntwo\nthree\nfour\nfive\nsix\n');
-  await git('add', '.');
-  await git('commit', '--quiet', '-m', 'first');
+  await git(root, 'add', '.');
+  await git(root, 'commit', '--quiet', '-m', 'first');
 
-  const base = (await git('rev-parse', 'HEAD')).stdout.trim();
+  const base = await git(root, 'rev-parse', 'HEAD');
 
-  await git('mv', 'old.ts', 'new.ts');
+  await git(root, 'mv', 'old.ts', 'new.ts');
 
   if (edit) {
     await writeFile(join(root, 'new.ts'), 'one\ntwo\nthree\nfour\nfive\nseven\n');

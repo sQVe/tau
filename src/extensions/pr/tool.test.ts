@@ -8,7 +8,7 @@ import type { ToolCall } from '@earendil-works/pi-ai';
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { runGit } from '../../git.js';
@@ -18,12 +18,6 @@ import { createPrTool } from './tool.js';
 import type { PrInput } from './tool.js';
 
 const githubUrl = (repository: string) => `https://github.com/${repository}.git`;
-
-const git = async (cwd: string, ...commandArguments: string[]) => {
-  const { stdout } = await promisify(execFile)('git', commandArguments, { cwd });
-
-  return stdout.trim();
-};
 
 const createBareRemote = async (url: string, checkout: string) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-pr-remote-');

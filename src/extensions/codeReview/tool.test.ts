@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { Value } from 'typebox/value';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { codeReviewToolParameters, createCodeReviewTool } from './tool.js';
@@ -60,12 +60,6 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
   };
 });
 
-const git = async (root: string, commandArguments: string[]) => {
-  const { stdout } = await promisify(execFile)('git', commandArguments, { cwd: root });
-
-  return stdout;
-};
-
 const run = async (root: string, input: CodeReviewInput) => {
   const tool = createCodeReviewTool();
   const result = await tool.execute('call', input, undefined, undefined, noUiContext(root));
@@ -85,8 +79,8 @@ const committedRepository = async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
   await writeFile(join(root, 'tracked.txt'), 'one\n');
-  await git(root, ['add', 'tracked.txt']);
-  await git(root, ['commit', '--quiet', '-m', 'first']);
+  await git(root, 'add', 'tracked.txt');
+  await git(root, 'commit', '--quiet', '-m', 'first');
 
   return root;
 };
@@ -120,7 +114,7 @@ it('prepares a fresh review directory that Git ignores', async () => {
 
   expect(first.directory).toMatch(/\/\.tau\/workers\/review-[^/]+$/);
   expect(second.directory).not.toBe(first.directory);
-  expect(await git(root, ['status', '--porcelain'])).toBe('');
+  expect(await git(root, 'status', '--porcelain')).toBe('');
 });
 
 it('refuses to prepare through a symlinked .tau/workers', async () => {
@@ -146,7 +140,7 @@ it('appends the capture and its gaps after the Capture heading and saves the rec
     target: { kind: 'workingTree', base: 'HEAD', exclude: ['generated.txt'] },
   });
 
-  const head = (await git(root, ['rev-parse', 'HEAD'])).trim();
+  const head = (await git(root, 'rev-parse', 'HEAD')).trim();
   const input = await readFile(join(directory, 'input.md'), 'utf8');
   const record = JSON.parse(await readFile(join(directory, 'capture.json'), 'utf8')) as unknown;
 
@@ -311,7 +305,7 @@ it('reports fresh for an unchanged tree and saves the recapture as recheck.diff'
 
   const captured = await captureWorkingTree(root, directory);
   const freshness = await run(root, { action: 'freshness', directory });
-  const recheckHash = await git(root, ['hash-object', join(directory, 'recheck.diff')]);
+  const recheckHash = await git(root, 'hash-object', join(directory, 'recheck.diff'));
 
   expect(freshness).toEqual({ status: 'fresh', reasons: [] });
   expect(recheckHash.trim()).toBe(captured['hash']);
@@ -334,7 +328,7 @@ it('reports stale after a new commit with the same content', async () => {
 
   await writeFile(join(root, 'tracked.txt'), 'two\n');
   await captureWorkingTree(root, directory);
-  await git(root, ['commit', '--quiet', '--allow-empty', '-m', 'empty']);
+  await git(root, 'commit', '--quiet', '--allow-empty', '-m', 'empty');
 
   const freshness = await run(root, { action: 'freshness', directory });
 
@@ -414,8 +408,8 @@ const linkedDirectoryReview = async () => {
 
   await mkdir(join(root, 'src'));
   await writeFile(join(root, 'src', 'a.test.ts'), 'tracked\n');
-  await git(root, ['add', '--all']);
-  await git(root, ['commit', '--quiet', '-m', 'src']);
+  await git(root, 'add', '--all');
+  await git(root, 'commit', '--quiet', '-m', 'src');
   await writeFile(join(outside, 'a.test.ts'), 'outside secret\n');
   await rm(join(root, 'src'), { recursive: true });
   await symlink(outside, join(root, 'src'));
@@ -452,8 +446,8 @@ const fixRepository = async () => {
   await writeFile(join(root, 'src', 'math.ts'), 'export const add = (a, b) => a + b;\n');
   await writeFile(join(root, 'src', 'use.ts'), "import { add } from './math.js';\nadd(1, 2);\n");
   await writeFile(join(root, 'src', 'other.ts'), 'export const other = 1;\n');
-  await git(root, ['add', '--all']);
-  await git(root, ['commit', '--quiet', '-m', 'first']);
+  await git(root, 'add', '--all');
+  await git(root, 'commit', '--quiet', '-m', 'first');
 
   return root;
 };
@@ -566,7 +560,7 @@ it('captures the diff since a reviewed range from the working tree', async () =>
   const review = await prepareDirectory(root);
 
   await writeFile(join(root, 'src', 'math.ts'), 'export const add = 3;\n');
-  await git(root, ['commit', '--quiet', '-am', 'second']);
+  await git(root, 'commit', '--quiet', '-am', 'second');
 
   await run(root, {
     action: 'capture',
@@ -842,8 +836,8 @@ it('counts a skipped binary restored to its base value as an outside change', as
   const root = await fixRepository();
 
   await writeFile(join(root, 'logo.bin'), Buffer.from([0, 1, 2]));
-  await git(root, ['add', 'logo.bin']);
-  await git(root, ['commit', '--quiet', '-m', 'logo']);
+  await git(root, 'add', 'logo.bin');
+  await git(root, 'commit', '--quiet', '-m', 'logo');
 
   const review = await reviewOf(root, { 'logo.bin': '\0\u0009' }, workingTreeTarget);
 
@@ -877,8 +871,8 @@ it.skipIf(process.getuid?.() === 0)(
 
     await mkdir(join(root, 'locked'));
     await writeFile(join(root, 'locked', 'a.ts'), 'export const a = 1;\n');
-    await git(root, ['add', '--all']);
-    await git(root, ['commit', '--quiet', '-m', 'locked']);
+    await git(root, 'add', '--all');
+    await git(root, 'commit', '--quiet', '-m', 'locked');
     await writeFile(join(root, 'locked', 'a.ts'), 'export const a = 2;\n');
     await writeFile(join(root, 'src', 'math.ts'), 'export const add = 9;\n');
     await chmod(join(root, 'locked'), 0o000);
@@ -943,7 +937,7 @@ it('gives the model the result as JSON text in the tool content', async () => {
 
 it('captures a root commit with a null base in the result and the saved record', async () => {
   const { root, directory } = await preparedReview();
-  const commit = (await git(root, ['rev-parse', 'HEAD'])).trim();
+  const commit = (await git(root, 'rev-parse', 'HEAD')).trim();
 
   const result = await run(root, {
     action: 'capture',
@@ -1097,7 +1091,7 @@ it.each([
 
 it('keeps a snapshot folder it did not create when a capture without a snapshot fails', async () => {
   const { root, directory } = await preparedReview();
-  const commit = (await git(root, ['rev-parse', 'HEAD'])).trim();
+  const commit = (await git(root, 'rev-parse', 'HEAD')).trim();
 
   await mkdir(join(directory, 'snapshot'));
   await writeFile(join(directory, 'snapshot', 'unrelated.txt'), 'keep\n');

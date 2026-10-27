@@ -1,19 +1,11 @@
-import { execFile } from 'node:child_process';
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { captureTarget, pinTarget } from './capture.js';
 import { installFakeGit } from './fixtures/fakeGit.js';
-
-const git = async (root: string, ...commandArguments: string[]) => {
-  const { stdout } = await promisify(execFile)('git', commandArguments, { cwd: root });
-
-  return stdout;
-};
 
 const defaultFiles = { 'tracked.txt': 'one\n' };
 

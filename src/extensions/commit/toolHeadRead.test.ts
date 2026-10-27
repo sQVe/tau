@@ -1,14 +1,16 @@
+import { execFile } from 'node:child_process';
 import { chmod } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 import { describe, expect, it } from 'vitest';
 
+import { git } from '../../../tests/gitRepository.js';
 import type { GitResult } from '../../git.js';
 import {
   commitContext,
   createObservedCommitTool,
   createTemporaryRepository,
-  git,
   writeRepositoryFile,
 } from './fixtures/commitTool.js';
 import type { CommitInput } from './validation.js';
@@ -29,8 +31,8 @@ describe('a failed HEAD read', () => {
   it('leaves staging untouched when the group fails after its snapshot', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'a.txt', 'one\n');
-    await git(directory, ['add', 'a.txt']);
-    await git(directory, ['commit', '-m', 'chore: seed']);
+    await git(directory, 'add', 'a.txt');
+    await git(directory, 'commit', '-m', 'chore: seed');
     await writeRepositoryFile(directory, 'a.txt', 'two\n');
 
     const controller = new AbortController();
@@ -48,8 +50,15 @@ describe('a failed HEAD read', () => {
       tool.execute('call', singleGroup, controller.signal, undefined, commitContext(directory)),
     ).rejects.toThrow(/rev-parse.*HEAD.* failed: fatal: unable to read HEAD: Permission denied/);
 
-    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('a.txt\n');
-    expect(await git(directory, ['rev-list', '--count', 'HEAD'])).toBe('1\n');
+    expect(
+      (await promisify(execFile)('git', ['diff', '--cached', '--name-only'], { cwd: directory }))
+        .stdout,
+    ).toBe('a.txt\n');
+
+    expect(
+      (await promisify(execFile)('git', ['rev-list', '--count', 'HEAD'], { cwd: directory }))
+        .stdout,
+    ).toBe('1\n');
   });
 
   it('leaves staging untouched after a failed first commit', async () => {
@@ -72,6 +81,9 @@ describe('a failed HEAD read', () => {
       tool.execute('call', singleGroup, undefined, undefined, commitContext(directory)),
     ).rejects.toThrow(/rev-parse.*HEAD.* failed: fatal: unable to read HEAD: Permission denied/);
 
-    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('a.txt\n');
+    expect(
+      (await promisify(execFile)('git', ['diff', '--cached', '--name-only'], { cwd: directory }))
+        .stdout,
+    ).toBe('a.txt\n');
   });
 });

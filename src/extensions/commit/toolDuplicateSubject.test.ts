@@ -1,9 +1,12 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
 import { expect, it } from 'vitest';
 
+import { git } from '../../../tests/gitRepository.js';
 import {
   createTemporaryRepository,
   executeCommit,
-  git,
   runCommand,
   writeRepositoryFile,
 } from './fixtures/commitTool.js';
@@ -11,18 +14,18 @@ import {
 it('folds a duplicate-subject fix into the later target', async () => {
   const directory = await createTemporaryRepository();
 
-  await git(directory, ['commit', '--allow-empty', '-m', 'base']);
+  await git(directory, 'commit', '--allow-empty', '-m', 'base');
 
-  const base = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+  const base = (await git(directory, 'rev-parse', 'HEAD')).trim();
 
   await writeRepositoryFile(directory, 'first.txt', 'first\n');
-  await git(directory, ['add', 'first.txt']);
-  await git(directory, ['commit', '-m', 'fix: same subject']);
+  await git(directory, 'add', 'first.txt');
+  await git(directory, 'commit', '-m', 'fix: same subject');
   await writeRepositoryFile(directory, 'second.txt', 'second\n');
-  await git(directory, ['add', 'second.txt']);
-  await git(directory, ['commit', '-m', 'fix: same subject']);
+  await git(directory, 'add', 'second.txt');
+  await git(directory, 'commit', '-m', 'fix: same subject');
 
-  const target = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+  const target = (await git(directory, 'rev-parse', 'HEAD')).trim();
 
   await writeRepositoryFile(directory, 'first.txt', 'corrected\n');
 
@@ -37,34 +40,40 @@ it('folds a duplicate-subject fix into the later target', async () => {
   );
 
   expect(result.code, result.stderr).toBe(0);
-  expect((await git(directory, ['rev-list', '--count', `${base}..HEAD`])).trim()).toBe('2');
-  expect(await git(directory, ['show', 'HEAD~1:first.txt'])).toBe('first\n');
-  expect(await git(directory, ['show', 'HEAD:first.txt'])).toBe('corrected\n');
+  expect((await git(directory, 'rev-list', '--count', `${base}..HEAD`)).trim()).toBe('2');
+
+  expect(
+    (await promisify(execFile)('git', ['show', 'HEAD~1:first.txt'], { cwd: directory })).stdout,
+  ).toBe('first\n');
+
+  expect(
+    (await promisify(execFile)('git', ['show', 'HEAD:first.txt'], { cwd: directory })).stdout,
+  ).toBe('corrected\n');
 });
 
 it('folds a duplicate-subject fix into the merged sibling target', async () => {
   const directory = await createTemporaryRepository();
 
   await writeRepositoryFile(directory, 'shared.txt', 'original\n');
-  await git(directory, ['add', 'shared.txt']);
-  await git(directory, ['commit', '-m', 'base']);
+  await git(directory, 'add', 'shared.txt');
+  await git(directory, 'commit', '-m', 'base');
 
-  const base = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+  const base = (await git(directory, 'rev-parse', 'HEAD')).trim();
 
-  await git(directory, ['branch', 'side']);
+  await git(directory, 'branch', 'side');
   await writeRepositoryFile(directory, 'main.txt', 'main\n');
-  await git(directory, ['add', 'main.txt']);
-  await git(directory, ['commit', '-m', 'fix: [same]\ncontinued subject']);
-  await git(directory, ['checkout', 'side']);
+  await git(directory, 'add', 'main.txt');
+  await git(directory, 'commit', '-m', 'fix: [same]\ncontinued subject');
+  await git(directory, 'checkout', 'side');
   await writeRepositoryFile(directory, 'side.txt', 'side\n');
-  await git(directory, ['add', 'side.txt']);
-  await git(directory, ['commit', '-m', 'fix: [same]\ncontinued subject']);
+  await git(directory, 'add', 'side.txt');
+  await git(directory, 'commit', '-m', 'fix: [same]\ncontinued subject');
 
-  const target = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+  const target = (await git(directory, 'rev-parse', 'HEAD')).trim();
 
-  await git(directory, ['checkout', 'main']);
-  await git(directory, ['merge', '--no-ff', 'side', '-m', 'merge']);
-  await git(directory, ['config', 'grep.patternType', 'extended']);
+  await git(directory, 'checkout', 'main');
+  await git(directory, 'merge', '--no-ff', 'side', '-m', 'merge');
+  await git(directory, 'config', 'grep.patternType', 'extended');
   await writeRepositoryFile(directory, 'shared.txt', 'corrected\n');
 
   await executeCommit(directory, {
@@ -78,10 +87,19 @@ it('folds a duplicate-subject fix into the merged sibling target', async () => {
   );
 
   expect(result.code, result.stderr).toBe(0);
-  expect((await git(directory, ['rev-list', '--count', `${base}..HEAD`])).trim()).toBe('2');
-  expect(await git(directory, ['show', 'HEAD~1:shared.txt'])).toBe('original\n');
-  expect(await git(directory, ['show', 'HEAD:side.txt'])).toBe('side\n');
-  expect(await git(directory, ['show', 'HEAD:shared.txt'])).toBe('corrected\n');
+  expect((await git(directory, 'rev-list', '--count', `${base}..HEAD`)).trim()).toBe('2');
+
+  expect(
+    (await promisify(execFile)('git', ['show', 'HEAD~1:shared.txt'], { cwd: directory })).stdout,
+  ).toBe('original\n');
+
+  expect(
+    (await promisify(execFile)('git', ['show', 'HEAD:side.txt'], { cwd: directory })).stdout,
+  ).toBe('side\n');
+
+  expect(
+    (await promisify(execFile)('git', ['show', 'HEAD:shared.txt'], { cwd: directory })).stdout,
+  ).toBe('corrected\n');
 });
 
 it.each([
@@ -92,21 +110,22 @@ it.each([
   const directory = await createTemporaryRepository();
 
   await writeRepositoryFile(directory, 'shared.txt', 'original\n');
-  await git(directory, ['add', 'shared.txt']);
-  await git(directory, ['commit', '-m', 'base']);
+  await git(directory, 'add', 'shared.txt');
+  await git(directory, 'commit', '-m', 'base');
 
-  const base = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+  const base = (await git(directory, 'rev-parse', 'HEAD')).trim();
 
-  await git(directory, ['commit', '--allow-empty', '-m', earlier]);
+  await git(directory, 'commit', '--allow-empty', '-m', earlier);
 
-  await git(directory, [
+  await git(
+    directory,
     'commit',
     '--allow-empty',
     '--allow-empty-message',
     '--cleanup=verbatim',
     '-m',
     targetMessage,
-  ]);
+  );
 
   await writeRepositoryFile(directory, 'shared.txt', 'corrected\n');
 
@@ -121,9 +140,15 @@ it.each([
   );
 
   expect(result.code, result.stderr).toBe(0);
-  expect((await git(directory, ['rev-list', '--count', `${base}..HEAD`])).trim()).toBe('2');
-  expect(await git(directory, ['show', 'HEAD~1:shared.txt'])).toBe('original\n');
-  expect(await git(directory, ['show', 'HEAD:shared.txt'])).toBe('corrected\n');
+  expect((await git(directory, 'rev-list', '--count', `${base}..HEAD`)).trim()).toBe('2');
+
+  expect(
+    (await promisify(execFile)('git', ['show', 'HEAD~1:shared.txt'], { cwd: directory })).stdout,
+  ).toBe('original\n');
+
+  expect(
+    (await promisify(execFile)('git', ['show', 'HEAD:shared.txt'], { cwd: directory })).stdout,
+  ).toBe('corrected\n');
 });
 
 it.each(['fixup', 'squash', 'amend'])(
@@ -131,15 +156,15 @@ it.each(['fixup', 'squash', 'amend'])(
   async (prefix) => {
     const directory = await createTemporaryRepository();
 
-    await git(directory, ['commit', '--allow-empty', '-m', 'base']);
+    await git(directory, 'commit', '--allow-empty', '-m', 'base');
 
-    const base = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+    const base = (await git(directory, 'rev-parse', 'HEAD')).trim();
 
     await writeRepositoryFile(directory, 'target.txt', 'target\n');
-    await git(directory, ['add', 'target.txt']);
-    await git(directory, ['commit', '-m', `${prefix}! missing`]);
+    await git(directory, 'add', 'target.txt');
+    await git(directory, 'commit', '-m', `${prefix}! missing`);
 
-    const target = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+    const target = (await git(directory, 'rev-parse', 'HEAD')).trim();
 
     await writeRepositoryFile(directory, 'target.txt', 'corrected\n');
 
@@ -154,7 +179,10 @@ it.each(['fixup', 'squash', 'amend'])(
     );
 
     expect(result.code, result.stderr).toBe(0);
-    expect((await git(directory, ['rev-list', '--count', `${base}..HEAD`])).trim()).toBe('1');
-    expect(await git(directory, ['show', 'HEAD:target.txt'])).toBe('corrected\n');
+    expect((await git(directory, 'rev-list', '--count', `${base}..HEAD`)).trim()).toBe('1');
+
+    expect(
+      (await promisify(execFile)('git', ['show', 'HEAD:target.txt'], { cwd: directory })).stdout,
+    ).toBe('corrected\n');
   },
 );

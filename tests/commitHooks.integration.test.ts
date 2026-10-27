@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
-import { createTemporaryRepository } from './gitRepository.js';
+import { createTemporaryRepository, git } from './gitRepository.js';
 import { createHarness } from './tddHarness.js';
 
 vi.setConfig({ testTimeout: 125_000 });
@@ -18,11 +18,9 @@ it('rejects unformatted files in the real hook without rewriting them', async ({
   onTestFinished,
 }) => {
   const cwd = await createTemporaryRepository(onTestFinished, 'tau-staged-hook-');
-  const git = (argumentsList: string[]) => promisify(execFile)('git', argumentsList, { cwd });
-
   await symlink(join(repositoryRoot, 'node_modules'), join(cwd, 'node_modules'), 'dir');
   await writeFile(join(cwd, 'package.json'), '{"type":"module"}');
-  await git(['config', 'core.hooksPath', '.vite-hooks']);
+  await git(cwd, 'config', 'core.hooksPath', '.vite-hooks');
   await mkdir(join(cwd, '.vite-hooks'));
 
   await writeFile(
@@ -38,9 +36,9 @@ it('rejects unformatted files in the real hook without rewriting them', async ({
   );
 
   await writeFile(join(cwd, 'value.json'), '{"value":1}');
-  await git(['add', '--', 'value.json']);
+  await git(cwd, 'add', '--', 'value.json');
 
-  const commit = git(['commit', '-m', 'test: add value']);
+  const commit = git(cwd, 'commit', '-m', 'test: add value');
 
   await expect(commit).rejects.toHaveProperty(
     'stderr',
@@ -48,18 +46,16 @@ it('rejects unformatted files in the real hook without rewriting them', async ({
   );
 
   expect(await readFile(join(cwd, 'value.json'), 'utf8')).toBe('{"value":1}');
-  expect((await git(['rev-list', '--all', '--count'])).stdout.trim()).toBe('0');
+  expect(await git(cwd, 'rev-list', '--all', '--count')).toBe('0');
 });
 
 it('runs commit hooks through Pi without approval or TDD notices', async ({ onTestFinished }) => {
   const { cwd, session, call } = await createHarness(onTestFinished);
-  const git = (argumentsList: string[]) => promisify(execFile)('git', argumentsList, { cwd });
-
   await writeFile(join(cwd, '.git/info/exclude'), 'node_modules\n');
-  await git(['config', 'user.name', 'Tau Test']);
-  await git(['config', 'user.email', 'tau@example.com']);
-  await git(['config', 'commit.gpgsign', 'false']);
-  await git(['config', 'core.hooksPath', '.vite-hooks']);
+  await git(cwd, 'config', 'user.name', 'Tau Test');
+  await git(cwd, 'config', 'user.email', 'tau@example.com');
+  await git(cwd, 'config', 'commit.gpgsign', 'false');
+  await git(cwd, 'config', 'core.hooksPath', '.vite-hooks');
   await mkdir(join(cwd, '.vite-hooks'));
 
   await writeFile(
@@ -92,5 +88,8 @@ it('runs commit hooks through Pi without approval or TDD notices', async ({ onTe
   expect(JSON.stringify(committed.result)).toContain('Git hooks: run');
   expect(JSON.stringify(committed.result)).not.toContain('TDD');
   expect(await readFile(join(cwd, 'src/value.ts'), 'utf8')).toBe('export const value = 1;\n');
-  expect((await git(['show', 'HEAD:src/value.ts'])).stdout).toBe('export const value = 1;\n');
+
+  expect((await promisify(execFile)('git', ['show', 'HEAD:src/value.ts'], { cwd })).stdout).toBe(
+    'export const value = 1;\n',
+  );
 });

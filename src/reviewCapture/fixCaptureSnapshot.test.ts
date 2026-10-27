@@ -1,20 +1,15 @@
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmod, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget } from './capture.js';
 import { saveVerifiedSnapshot, verifySnapshot } from './fixCapture.js';
 
 const isRoot = process.getuid?.() === 0;
-
-const git = (root: string, ...commandArguments: string[]) =>
-  promisify(execFile)('git', commandArguments, { cwd: root });
 
 const writeAt = async (root: string, path: string, content: string) => {
   await mkdir(dirname(join(root, path)), { recursive: true });
@@ -113,7 +108,7 @@ it('records a changed binary file as skipped and does not copy it', async () => 
   );
 
   const snapshot = await saveVerifiedSnapshot(review, root, pinned, captured);
-  const identity = (await git(root, 'hash-object', 'a.bin')).stdout.trim();
+  const identity = await git(root, 'hash-object', 'a.bin');
 
   expect(snapshot).toEqual({
     present: ['b.txt'],

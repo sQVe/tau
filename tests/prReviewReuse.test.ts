@@ -10,15 +10,9 @@ import type { CodeReviewInput } from '../src/extensions/codeReview/tool.js';
 import { createGhFake } from '../src/extensions/pr/fixtures/ghFake.js';
 import { createPrTool } from '../src/extensions/pr/tool.js';
 import type { PrInput } from '../src/extensions/pr/tool.js';
-import { createTemporaryRepository } from './gitRepository.js';
+import { createTemporaryRepository, git } from './gitRepository.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 import { noUiContext } from './toolContext.js';
-
-const git = async (cwd: string, ...commandArguments: string[]) => {
-  const { stdout } = await promisify(execFile)('git', commandArguments, { cwd });
-
-  return stdout.trim();
-};
 
 const runCodeReview = async (root: string, input: CodeReviewInput) => {
   const tool = createCodeReviewTool();

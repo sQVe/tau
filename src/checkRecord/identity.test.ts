@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { readCheckIdentity } from './identity.js';
 import { decideReuse } from './reuseDecision.js';
 import type { CheckIdentity, SavedLog } from './reuseDecision.js';
@@ -20,9 +20,6 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 });
 
 const argv = ['pnpm', 'check'];
-
-const git = async (cwd: string, ...commandArguments: string[]): Promise<string> =>
-  (await promisify(execFile)('git', commandArguments, { cwd })).stdout;
 
 const committedRepository = async (registerCleanup: RegisterCleanup): Promise<string> => {
   const root = await createTemporaryRepository(registerCleanup);
@@ -144,7 +141,10 @@ it('leaves the real index unchanged when it reads an untracked file', async () =
   await readCheckIdentity(root, argv);
 
   expect(await git(root, 'diff', '--cached', '--name-only')).toBe('');
-  expect(await git(root, 'status', '--porcelain')).toBe('?? new.txt\n');
+
+  expect((await promisify(execFile)('git', ['status', '--porcelain'], { cwd: root })).stdout).toBe(
+    '?? new.txt\n',
+  );
 });
 
 it('gives a new identity when an untracked text file changes from LF to CRLF under an eol attribute', async () => {

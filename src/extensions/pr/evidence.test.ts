@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
 import { createSavedReview } from '../../../tests/savedReview.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { saveCheckRecord } from '../../checkRecord/checkRecord.js';
@@ -14,12 +14,6 @@ import { readCheckState } from '../../checkRecord/identity.js';
 import { readPublicationEvidence } from './evidence.js';
 import type { PublicationEvidence, PublicationRequest } from './evidence.js';
 import { createGhFake } from './fixtures/ghFake.js';
-
-const git = async (cwd: string, ...commandArguments: string[]) => {
-  const { stdout } = await promisify(execFile)('git', commandArguments, { cwd });
-
-  return stdout.trim();
-};
 
 const commitFile = async (root: string, text: string) => {
   await writeFile(join(root, 'feature.txt'), text);

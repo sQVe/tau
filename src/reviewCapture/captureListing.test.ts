@@ -1,22 +1,14 @@
-import { execFile } from 'node:child_process';
 import { chmod, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget } from './capture.js';
 import type { DirectReviewTarget } from './capture.js';
 import { installFakeGit } from './fixtures/fakeGit.js';
 import type { GitOverride } from './fixtures/fakeGit.js';
-
-const git = async (root: string, ...commandArguments: string[]) => {
-  const { stdout } = await promisify(execFile)('git', commandArguments, { cwd: root });
-
-  return stdout;
-};
 
 const isRoot = process.getuid?.() === 0;
 

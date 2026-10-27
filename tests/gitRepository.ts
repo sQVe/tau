@@ -6,6 +6,14 @@ import { promisify } from 'node:util';
 
 type RegisterCleanup = (cleanup: () => Promise<void>) => void;
 
+// Rejects with the execFile error when Git exits nonzero. Trailing newlines are removed, but a
+// leading space is kept because porcelain output depends on it.
+export const git = async (cwd: string, ...commandArguments: string[]): Promise<string> => {
+  const { stdout } = await promisify(execFile)('git', commandArguments, { cwd });
+
+  return stdout.trimEnd();
+};
+
 // vite.config.ts sets the Git environment for every test process. The repository and the Git calls
 // of the code under test then ignore the developer's configuration.
 export const initializeRepository = async (directory: string): Promise<void> => {

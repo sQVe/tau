@@ -1,7 +1,5 @@
-import { execFile } from 'node:child_process';
 import { link, mkdir, readdir, readFile, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
 import { Value } from 'typebox/value';
 import { expect, it, onTestFinished } from 'vitest';
@@ -9,6 +7,7 @@ import { expect, it, onTestFinished } from 'vitest';
 import {
   createTemporaryBareRoot,
   createTemporaryRepository,
+  git,
 } from '../../../tests/gitRepository.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { createHandoverTool } from './tool.js';
@@ -23,12 +22,6 @@ const prepare = async (root: string) => {
   );
 
   return result.details;
-};
-
-const git = async (root: string, ...commandArguments: string[]) => {
-  const { stdout } = await promisify(execFile)('git', commandArguments, { cwd: root });
-
-  return stdout.trim();
 };
 
 const repositories = [

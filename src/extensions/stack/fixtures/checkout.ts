@@ -1,18 +1,9 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-
 import { onTestFinished } from 'vitest';
 
-import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 
 type RegisterCleanup = (cleanup: () => Promise<void>) => void;
-
-export const git = async (cwd: string, ...commandArguments: string[]): Promise<string> => {
-  const { stdout } = await promisify(execFile)('git', commandArguments, { cwd });
-
-  return stdout.trim();
-};
 
 // A checkout whose origin is github.com/sQVe/tau, backed by a local bare repository, with main
 // pushed and checked out.
