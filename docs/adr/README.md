@@ -55,11 +55,8 @@ and the numbers that its status names.
 
 ## Prompts and instructions
 
-- [0009: Prompt snippets](./0009-prompt-snippets.md), partly superseded by 0080 and 0081
-- [0013: Snippet placement](./0013-snippet-placement.md), superseded by 0080
 - [0066: Add Tau's prompt text to Pi's append section](./0066-add-taus-prompt-text-to-pis-append-section.md)
-- [0080: Insert prompt snippets through autocomplete](./0080-insert-prompt-snippets-through-autocomplete.md)
-- [0081: Sort prompt snippets by id](./0081-sort-prompt-snippets-by-id.md)
+- [0080: Store prompt snippets as files and insert them through autocomplete](./0080-insert-prompt-snippets-through-autocomplete.md)
 
 ## Skills and tools
 
@@ -144,7 +141,9 @@ and the numbers that its status names.
 | 0001 | Application structure                                                          | [0120](./0120-capability-modules-with-an-enforced-import-table.md)                                                                                 | `a859a7bb`  |
 | 0002 | File and directory naming conventions                                          | [0120](./0120-capability-modules-with-an-enforced-import-table.md)                                                                                 | `a859a7bb`  |
 | 0008 | Coding instructions                                                            | [0006](./0006-default-writing-policy.md)                                                                                                           | `b0980b75`  |
+| 0009 | Prompt snippets                                                                | [0080](./0080-insert-prompt-snippets-through-autocomplete.md)                                                                                      | `b0980b75`  |
 | 0011 | Commit preapproval at startup                                                  | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
+| 0013 | Snippet placement                                                              | [0080](./0080-insert-prompt-snippets-through-autocomplete.md)                                                                                      | `b0980b75`  |
 | 0014 | Delegate model for bulk reads                                                  | [0087](./0087-gather-evidence-with-codemode.md)                                                                                                    | `b0980b75`  |
 | 0015 | Explicit repository commit commands                                            | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
 | 0016 | Prepare each commit with separate staging                                      | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
@@ -187,6 +186,7 @@ and the numbers that its status names.
 | 0072 | Keep model defaults out of code                                                | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
 | 0078 | Remind managers to compact and restore the worker ledger after each compaction | [0073](./0073-leave-manager-compaction-to-pi.md)                                                                                                   | `b0980b75`  |
 | 0079 | Grow modules from flat files                                                   | [0120](./0120-capability-modules-with-an-enforced-import-table.md)                                                                                 | `a859a7bb`  |
+| 0081 | Sort prompt snippets by id                                                     | [0080](./0080-insert-prompt-snippets-through-autocomplete.md)                                                                                      | `b0980b75`  |
 | 0084 | Keep the diagram skill out of worker profiles                                  | [0067](./0067-give-workers-only-their-profile-tools-and-skills.md)                                                                                 | `b0980b75`  |
 | 0085 | Group per-repository settings in the user config                               | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
 | 0086 | Post to GitHub bots without a confirm                                          | [0108](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)                                                                          | `b0980b75`  |

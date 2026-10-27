@@ -1,14 +1,16 @@
-# ADR 0080: Insert prompt snippets through autocomplete
+# ADR 0080: Store prompt snippets as files and insert them through autocomplete
 
 **Date**: 2026-10-01\
 **Status**: Accepted\
-**Supersedes**: the toggling rules, the `placement` field, and the reading of snippets before each
-send in [ADR 0009 (Prompt snippets)](./0009-prompt-snippets.md), and
-[ADR 0013 (Snippet placement)](./0013-snippet-placement.md)\
-**Related**: [ADR 0009 (Prompt snippets)](./0009-prompt-snippets.md),
-[ADR 0013 (Snippet placement)](./0013-snippet-placement.md)
+**Supersedes**: [ADR 0009 (Prompt snippets)](./README.md#retired),
+[ADR 0013 (Snippet placement)](./README.md#retired),
+[ADR 0081 (Sort prompt snippets by id)](./README.md#retired)
 
 ## Context
+
+Some instructions apply to one message only, such as asking for a review instead of a change. The
+system prompt applies to every run, and the user cannot turn off one of its instructions for a
+single message. A skill is a procedure that the model loads, which is more than a short instruction.
 
 Turning on a snippet took a menu and many key presses for each message.
 
@@ -26,15 +28,35 @@ whether the list is open.
 
 ## Decision
 
-The user types `#` and picks a snippet from the autocomplete list. Tau replaces the `#query` with
-the snippet body. Tau does not change the text on send. Snippets have no `placement` field. The
-editor then shows exactly what Pi sends, so Pi's own history is correct without any hidden state.
+Tau stores each prompt snippet as a markdown file. The user types `#` and picks a snippet from the
+autocomplete list. Tau replaces the `#query` with the snippet body. Tau does not change the text on
+send. Snippets have no `placement` or `order` field. The editor then shows exactly what Pi sends, so
+Pi's own history is correct without any hidden state.
+
+### Snippet files
+
+- Snippets live in `src/extensions/snippets/snippets/`, one markdown file each. The file name
+  without `.md` is the snippet id, which the user types after `#`.
+- A file starts with a frontmatter block. Every field is optional, and an empty value counts as
+  absent:
+
+| Field         | Default        | Meaning                           |
+| ------------- | -------------- | --------------------------------- |
+| `name`        | The snippet id | Shown in the list and the preview |
+| `description` | Empty          | Shown after the name in the list  |
+
+- The body is the text after the block. Tau trims whitespace at its start and end, and it turns CRLF
+  line endings into LF.
+- A file without a frontmatter block, or without body text, is skipped.
+- Snippets sort by id. A bare `#` lists them in that order, and matches with equal scores keep that
+  order.
 
 ### Autocomplete
 
-- `#` opens a list of all snippets, and each letter after it narrows the list by id, name, and
-  description. A space after the query closes the list, so a heading such as `# Notes` leaves it
-  closed. Other queries and Tab go to Pi's own autocomplete.
+- `#` opens a list of all snippets. Each letter after it narrows the list by id, name, and
+  description. A space after the query closes the list, so a heading such as `# Notes` opens none.
+  Text that is not a snippet query goes to Pi's own autocomplete, and so does Tab after a finished
+  query.
 - The list follows the token boundary of Pi's editor and stays closed inside inline code and fenced
   code blocks.
 - Tau reads the snippets once at session start. A read failure shows a warning, and the list stays
@@ -47,9 +69,10 @@ editor then shows exactly what Pi sends, so Pi's own history is correct without 
   after a pick, and when the selected item is not a snippet. The widget is a component that wraps
   the whole body, because Pi cuts a widget given as lines after ten lines.
 - Tau wraps the editor and reads the selected item from pi-tui's private `autocompleteList` field
-  after each render. Suggestions arrive after a debounce and an async lookup, so no key press marks
-  when the list changes, but pi-tui renders the editor after each change. Tau sets the widget only
-  when the previewed snippet changes.
+  after each render. Until Pi ships a public API for it, Tau keeps this workaround. Suggestions
+  arrive after a debounce and an async lookup, so no key press marks when the list changes, but
+  pi-tui renders the editor after each change. Tau sets the widget only when the previewed snippet
+  changes.
 - Tau builds its editor from the previous editor factory, or from Pi's `CustomEditor` when there is
   none.
 
@@ -66,8 +89,11 @@ editor then shows exactly what Pi sends, so Pi's own history is correct without 
 
 - What the editor shows is what Pi sends and what history recalls, also after `/resume`, a fork, or
   `/reload`.
-- The user can edit the snippet text for one message before sending it.
+- The user decides which instruction applies to each message. The user can edit the snippet text for
+  one message before sending it.
 - The user sees the snippet text before picking it.
+- Snippet wording stays stable and is edited as ordinary markdown.
+- A new snippet needs no number, and the list order follows the id that the user types.
 - Tau keeps no session entries or send handler for snippets.
 - The `ctrl+q` shortcut and the `/snippets` command are gone, so no terminal key binding can hide
   snippets.
@@ -75,7 +101,10 @@ editor then shows exactly what Pi sends, so Pi's own history is correct without 
 ### Negative
 
 - Long snippet text fills the preview, the editor, and each history entry.
+- Snippets ship inside Tau, so a user's own snippet is a change to the repository.
+- Snippets load only in the terminal UI, so RPC and print mode have no list.
 - A hand-typed `#id` stays plain text. Only a pick from the list inserts a snippet.
+- The author cannot put the most used snippets first.
 - A snippet edited on disk applies only after the next session start or `/reload`.
 - Tau copies Pi's token boundary because pi-tui does not export it. A change in Pi can make them
   differ.
@@ -103,3 +132,23 @@ not show what the model receives.
 
 Update the preview after each key press. Rejected because suggestions arrive later, so the preview
 misses the first list and each list that changes while the user types.
+
+### Skills
+
+Use skills. Rejected because, although users can invoke them explicitly, a procedure is more than a
+short instruction added to a message.
+
+### Paste the text each time
+
+Let users paste the text each time. Rejected because, although it needs no code, the wording drifts
+and long instructions are tiring to retype.
+
+### Keep the `order` field
+
+Keep the `order` field. Rejected because, although it lets the author put common snippets first, the
+user types letters to find a snippet, and every new snippet needs a number.
+
+### Sort by name
+
+Sort snippets by name. Rejected because the user types the id, so the list would not match what they
+type.
