@@ -95,12 +95,14 @@ A key in the wrong file is an error. The error names the file and the file the k
 - Web answers use `pi-web-access`'s own `fetch.answerModel`, unless the caller passes one.
 - `allowedModels` limits every model Tau selects or passes on. Each file that sets it may only
   remove models from the list before it. Tau refuses a model outside the list, names the list and
-  its files, and never falls back to another model.
+  its files, and never falls back to another model. A route's classifier outside the list is skipped
+  instead, because a shadow pick never blocks a launch, and the profile's own model runs.
 
 ### Unknown, removed, and bad keys
 
 - Tau ignores an unknown key at any depth. It warns once per session with the file and the full key
-  path.
+  path: unknown top-level keys at session start, and unknown keys inside a block when that block's
+  reader runs.
 - A removed or renamed key fails the feature that owned it. The error names the replacement.
 - A wrong type or a missing required field fails only the entry being read. A bad `profiles.scout`
   blocks only `scout` launches.

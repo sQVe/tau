@@ -1,6 +1,7 @@
 # Documentation
 
 - [Vision](./vision.md): project goals and limits.
+- [Configuration](./configuration.md): every `tau.json` key, with its file, type, and default.
 - [Development](./development.md): local setup, trying Tau, verification, and versioning.
 - [Skill authoring](./skill-authoring.md): a checklist and [template](./skill-template.md) for
   writing skills and the tools they call.
