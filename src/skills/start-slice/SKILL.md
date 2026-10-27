@@ -124,10 +124,17 @@ or Git. Workers then carry out the agent tickets.
    `git rev-parse --verify --quiet refs/heads/<branchName>` finds it, otherwise the base. The
    current checkout may differ, so read without switching: `git ls-tree -r --name-only <tree>` and
    `git show <tree>:<path>`. Agent tickets name real files and tests in that tree.
+   - Answer the plan questions in the [structure criteria](../code-quality/structure-criteria.md)
+     for the slice's files. Record where each change goes, which existing helper it reuses, and
+     which files would grow past 500 lines.
+   - When the slice has no structure rules, such as a ticket that never went through brainstorm,
+     also answer the module-level questions: which module owns the concept, what would delete
+     branches or layers, and which code gets more tangled.
 
 6. Write the draft in `$slicedir`, one body file per agent ticket.
    - `agent-<n>.md`, numbered in work order, with the agent ticket template in the
      [tracker skill](../tracker/SKILL.md). Keep each ticket to one worker task.
+   - Put the step 5 answers that apply to the ticket in its `## Files` section.
    - `start.json`:
      `{"version": 1, "slice": "<identifier>", "branch": "<name>", "base": "<ref>", "tickets": [...]}`,
      with one ticket per agent ticket in work order. Each ticket is
@@ -149,13 +156,18 @@ or Git. Workers then carry out the agent tickets.
 8. Check that each new agent ticket is ready for a worker who knows only the ticket. A ticket is new
    when its entry in `start.json` has a `null` identifier. In one turn, launch one fresh `scout` per
    new ticket with the profile's default model. Brief each scout with the path of its body file and
-   the tree from step 5. Tell it to read only that file, with `read`, and the files the ticket
-   names, with `git show <tree>:<path>`. It lists each question it would ask before starting the
-   work, or says it has none.
+   the tree from step 5, and the plan questions in the
+   [structure criteria](../code-quality/structure-criteria.md). Tell it to read its body file with
+   `read` and the files the ticket names with `git show <tree>:<path>`. Tell it to search the tree
+   with `git grep` and `git ls-tree` for an existing helper the ticket does not name. It lists each
+   question it would ask before starting the work, and its answers to the plan questions for the
+   ticket's files, or says it has none.
    - For each question, revise the body file to answer it, or proceed when the ticket or the code
      already answers it. The scout's answer never blocks the start.
+   - For each plan answer that names a helper or file the ticket does not, revise its `## Files`
+     section.
    - After a revision, check the draft again as step 7 says.
-   - A ticket with no questions goes on to step 9 unchanged.
+   - A ticket with no questions and no plan answer to record goes on to step 9 unchanged.
    - A scout that fails to launch or stops without a report does not stop the start. Its ticket goes
      on to step 9 unchanged, and the step 10 report names the failure.
 
