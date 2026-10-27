@@ -138,14 +138,14 @@ export const loadTddConfig = (location: ConfigLocation, ui: ConfigWarnings): Loa
 
 export const classifyPath = (config: TddConfig, path: string): 'test' | 'production' | 'other' => {
   const normalizedPath = path.replaceAll('\\', '/');
-  const testRules = createInputRules(config.testGlobs, config.excludedGlobs, true);
+  const testRules = createInputRules(config.testGlobs, config.excludedGlobs);
   const isTest = testRules.isInput(normalizedPath);
 
   if (isTest) {
     return 'test';
   }
 
-  const production = createInputRules(config.productionGlobs, config.excludedGlobs, true);
+  const production = createInputRules(config.productionGlobs, config.excludedGlobs);
 
   return production.isInput(normalizedPath) ? 'production' : 'other';
 };

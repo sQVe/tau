@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 
+import { defaultTddConfig } from './config.js';
 import { closesLoop, createInputRules, unsupportedGlobReason } from './inputGlob.js';
 
 it.each([
@@ -41,12 +42,25 @@ const rules = (includeGlobs: string[], excludedGlobs: string[] = []) =>
   createInputRules(includeGlobs, excludedGlobs);
 
 it.each([
-  { globs: ['**/*.test.ts'], excludes: [], path: 'src/.test.ts', input: false },
+  { globs: ['**/*.test.ts'], excludes: [], path: 'src/.test.ts', input: true },
   { globs: ['**/*.test.ts'], excludes: [], path: 'src/a.test.ts', input: true },
-  { globs: ['**/foo.hidden/**/*.ts'], excludes: [], path: 'foo.hidden/.hidden/a.ts', input: false },
+  { globs: ['**/foo.hidden/**/*.ts'], excludes: [], path: 'foo.hidden/.hidden/a.ts', input: true },
   { globs: ['{src,.config}/**'], excludes: [], path: '.config/a.ts', input: true },
   { globs: ['**/.env*'], excludes: [], path: 'src/.env.local', input: true },
-  { globs: ['**/*.ts'], excludes: [], path: '.hidden/a.ts', input: false },
+  { globs: ['**/*.ts'], excludes: [], path: '.hidden/a.ts', input: true },
+  { globs: ['src/**/*.ts'], excludes: [], path: 'src/.dir/value.ts', input: true },
+  {
+    globs: ['**/*.ts'],
+    excludes: defaultTddConfig.excludedGlobs,
+    path: '.git/hooks/a.ts',
+    input: false,
+  },
+  {
+    globs: ['**/*.ts'],
+    excludes: defaultTddConfig.excludedGlobs,
+    path: 'src/.cache/a.ts',
+    input: false,
+  },
   { globs: ['./src/**/*.ts'], excludes: [], path: 'src/a.ts', input: true },
   { globs: ['././src/**/*.ts'], excludes: [], path: 'src/a.ts', input: true },
   { globs: ['{a,{b,c}}/x.ts'], excludes: [], path: 'a/x.ts', input: true },
@@ -79,22 +93,20 @@ it.each([
 });
 
 it.each([
-  { excludes: ['**/x'], name: 'src', path: 'src', enters: true },
-  { excludes: ['src'], name: 'src', path: 'src', enters: false },
-  { excludes: ['**/node_modules/**'], name: 'node_modules', path: 'a/node_modules', enters: false },
-  { excludes: [], name: '.git', path: '.git', enters: false },
-  { excludes: [], name: '.pi', path: '.pi', enters: true },
-  {
-    excludes: ['**/node_modules/**'],
-    name: 'node_modules',
-    path: '.cache/node_modules',
-    enters: false,
-  },
-  { excludes: ['**/vendor'], name: 'vendor', path: '.cache/vendor', enters: false },
+  { excludes: ['**/x'], path: 'src', enters: true },
+  { excludes: ['src'], path: 'src', enters: false },
+  { excludes: ['**/node_modules/**'], path: 'a/node_modules', enters: false },
+  { excludes: [], path: '.git', enters: true },
+  { excludes: defaultTddConfig.excludedGlobs, path: '.git', enters: false },
+  { excludes: defaultTddConfig.excludedGlobs, path: 'a/.git', enters: false },
+  { excludes: [], path: '.pi', enters: true },
+  { excludes: [], path: '.github/workflows', enters: true },
+  { excludes: ['**/node_modules/**'], path: '.cache/node_modules', enters: false },
+  { excludes: ['**/vendor'], path: '.cache/vendor', enters: false },
 ])('decides entering $path with excludes $excludes: $enters', (fact) => {
   const walk = rules(['.pi/tau.json', '**/*.ts'], fact.excludes);
 
-  expect(walk.entersDirectory(fact.name, fact.path)).toBe(fact.enters);
+  expect(walk.entersDirectory(fact.path)).toBe(fact.enters);
 });
 
 it.each([

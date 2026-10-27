@@ -87,15 +87,20 @@ const fingerprintAfter = async (cwd: string, change: () => Promise<void>) => {
   return { before, after: await fingerprintInputs(cwd, defaultTddConfig, []) };
 };
 
-it('ignores a file under a dot directory', async ({ onTestFinished }) => {
+it('changes when a file under a dot directory changes or a dot file appears', async ({
+  onTestFinished,
+}) => {
   const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   await writeFiles(cwd, { 'src/value.ts': 'value', '.hidden/value.test.ts': 'one' });
 
-  const { before, after } = await fingerprintAfter(cwd, () =>
-    writeFiles(cwd, { '.hidden/value.test.ts': 'two', 'src/.dot.ts': 'dot' }),
+  const changed = await fingerprintAfter(cwd, () =>
+    writeFiles(cwd, { '.hidden/value.test.ts': 'two' }),
   );
 
-  expect(after).toBe(before);
+  const added = await fingerprintAfter(cwd, () => writeFiles(cwd, { 'src/.dot.ts': 'dot' }));
+
+  expect(changed.after).not.toBe(changed.before);
+  expect(added.after).not.toBe(added.before);
 });
 
 it('fingerprints an explicit dot path from the configuration globs', async ({ onTestFinished }) => {
@@ -115,6 +120,17 @@ it('ignores a file under an excluded directory', async ({ onTestFinished }) => {
 
   const { before, after } = await fingerprintAfter(cwd, () =>
     writeFiles(cwd, { 'node_modules/pkg/value.test.ts': 'two', 'src/generated/value.ts': 'new' }),
+  );
+
+  expect(after).toBe(before);
+});
+
+it('ignores a file under a default excluded dot directory', async ({ onTestFinished }) => {
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
+  await writeFiles(cwd, { 'src/value.ts': 'value', '.git/hooks/value.test.ts': 'one' });
+
+  const { before, after } = await fingerprintAfter(cwd, () =>
+    writeFiles(cwd, { '.git/hooks/value.test.ts': 'two', '.git/hooks/new.ts': 'new' }),
   );
 
   expect(after).toBe(before);
@@ -153,7 +169,7 @@ const rewriteChangesFingerprint = async (
   return before !== (await fingerprintInputs(cwd, config, []));
 };
 
-it('matches a dot segment only against a pattern segment that starts with a dot', async ({
+it('matches a dot segment with the same wildcard rules as any other segment', async ({
   onTestFinished,
 }) => {
   const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
@@ -172,11 +188,11 @@ it('matches a dot segment only against a pattern segment that starts with a dot'
 
   expect(await rewriteChangesFingerprint(cwd, braces, '.config/a.ts')).toBe(true);
   expect(await rewriteChangesFingerprint(cwd, wildcard, 'src/.env.local')).toBe(true);
-  expect(await rewriteChangesFingerprint(cwd, plain, 'src/.test.ts')).toBe(false);
+  expect(await rewriteChangesFingerprint(cwd, plain, 'src/.test.ts')).toBe(true);
 
   const hidden = await rewriteChangesFingerprint(cwd, hiddenDirectory, 'foo.hidden/.hidden/a.ts');
 
-  expect(hidden).toBe(false);
+  expect(hidden).toBe(true);
 });
 
 it('prunes an excluded directory by its own path and no other', async ({ onTestFinished }) => {
@@ -190,16 +206,29 @@ it('prunes an excluded directory by its own path and no other', async ({ onTestF
   expect(await rewriteChangesFingerprint(cwd, directoryExclude, 'src/a.ts')).toBe(false);
 });
 
-it('skips an unreadable directory and fingerprints the other inputs', async ({
-  onTestFinished,
-}) => {
+it('fails to fingerprint when an included directory cannot be read', async ({ onTestFinished }) => {
   const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   await writeFiles(cwd, { 'src/a.ts': 'one', 'denied/b.ts': 'one' });
   await chmod(join(cwd, 'denied'), 0);
   onTestFinished(() => chmod(join(cwd, 'denied'), 0o755));
 
-  const config = onlyProduction('**/*.ts');
-  expect(await rewriteChangesFingerprint(cwd, config, 'src/a.ts')).toBe(true);
+  await expect(fingerprintInputs(cwd, onlyProduction('**/*.ts'), [])).rejects.toThrow(
+    join(cwd, 'denied'),
+  );
+});
+
+it('fails to fingerprint a symlink to an unreadable directory', async ({ onTestFinished }) => {
+  const base = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
+  const cwd = join(base, 'repo');
+  await writeFiles(cwd, { 'src/a.ts': 'one' });
+  await writeFiles(base, { 'outside/value.ts': 'one' });
+  await chmod(join(base, 'outside'), 0);
+  onTestFinished(() => chmod(join(base, 'outside'), 0o755));
+  await symlink('../../outside', join(cwd, 'src/shared'));
+
+  await expect(fingerprintInputs(cwd, onlyProduction('**/*.ts'), [])).rejects.toThrow(
+    join(cwd, 'src/shared'),
+  );
 });
 
 it('hashes a file under a symlinked directory reached through a wildcard', async ({
@@ -230,6 +259,28 @@ it('finishes when symlinked directories form a loop', async ({ onTestFinished })
   await symlink('../a', join(cwd, 'b'));
 
   expect(await rewriteChangesFingerprint(cwd, onlyProduction('**/*.ts'), 'a/x.ts')).toBe(true);
+});
+
+it('lists a regular file named like an excluded directory root', async ({ onTestFinished }) => {
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
+  await writeFiles(cwd, { 'src/a.ts': 'one', 'src/generated': 'one' });
+
+  const config = { ...onlyProduction('src/**'), excludedGlobs: ['**/generated/**'] };
+
+  expect(await rewriteChangesFingerprint(cwd, config, 'src/generated')).toBe(true);
+});
+
+it('does not enter an excluded directory whose path an include glob matches', async ({
+  onTestFinished,
+}) => {
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
+  await writeFiles(cwd, { 'src/a.ts': 'one', 'src/generated/b.ts': 'one' });
+  await chmod(join(cwd, 'src/generated'), 0);
+  onTestFinished(() => chmod(join(cwd, 'src/generated'), 0o755));
+
+  const config = { ...onlyProduction('src/**'), excludedGlobs: ['**/generated/**'] };
+
+  expect(await rewriteChangesFingerprint(cwd, config, 'src/a.ts')).toBe(true);
 });
 
 it('does not enter an excluded symlinked directory', async ({ onTestFinished }) => {
@@ -344,6 +395,8 @@ const hasDotDirectory = (path: string) =>
 
 const hasRangeBrace = (glob: string) => /\{-?\d+\.\.-?\d+\}/u.test(glob);
 
+const hasWildcard = (glob: string) => /[*?]/u.test(glob);
+
 const excludedWithCurrentDirectory = (entry: ParityResult, path: string) =>
   entry.excludedGlobs.includes(`./${path}`);
 
@@ -354,13 +407,14 @@ const walkOnlyDifferences: Difference[] = [
     allows: (_entry, path) => path === '.pi/tau.json',
   },
   {
-    reason: 'Bun glob never enters a dot directory; the walk does when a pattern names it',
+    reason: 'Bun glob never enters a dot directory; the walk does',
     allows: (_entry, path) => hasDotDirectory(path),
   },
   {
-    reason: 'Bun glob does not match a dot file through a wildcard such as **/.*',
+    reason:
+      'Bun glob does not match a dot file through a wildcard such as * or **/.*; the walk does',
     allows: (entry, path) =>
-      entry.include.includes('/.*') && path.split('/').at(-1)?.startsWith('.') === true,
+      hasWildcard(entry.include) && path.split('/').at(-1)?.startsWith('.') === true,
   },
   {
     reason: 'Bun glob does not expand a numeric range such as {1..3}; the walk does',
@@ -475,6 +529,25 @@ it('lists a symlink to a file as an input and walks a symlink loop once', async 
     'b/real.ts',
     'b/x.ts',
     'top.ts',
+  ]);
+});
+
+it('lists dangling, self-looping, and through-a-file symlinks as inputs', async ({
+  onTestFinished,
+}) => {
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
+  await writeFiles(cwd, { 'src/a.ts': 'one' });
+  await symlink('missing.ts', join(cwd, 'src/dangling.ts'));
+  await symlink('loop.ts', join(cwd, 'src/loop.ts'));
+  await symlink('a.ts/child.ts', join(cwd, 'src/through.ts'));
+
+  const inputs = await listInputs(cwd, onlyProduction('**/*.ts'));
+
+  expect(inputs.toSorted()).toEqual([
+    'src/a.ts',
+    'src/dangling.ts',
+    'src/loop.ts',
+    'src/through.ts',
   ]);
 });
 

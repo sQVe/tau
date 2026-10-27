@@ -8,17 +8,28 @@ import { configurationGlobs } from './config.js';
 import type { TddConfig } from './config.js';
 import { closesLoop, createInputRules } from './inputGlob.js';
 
-const unreadableDirectoryCodes = ['EACCES', 'EPERM', 'ENOTDIR', 'ELOOP'];
+const isVanishedEntry = (error: unknown) => isMissingFile(error) || hasErrorCode(error, 'ENOTDIR');
 
-const isUnreadableDirectory = (error: unknown) =>
-  isMissingFile(error) || unreadableDirectoryCodes.some((code) => hasErrorCode(error, code));
+const isDanglingLink = (error: unknown) => isVanishedEntry(error) || hasErrorCode(error, 'ELOOP');
 
 const readDirectory = async (directory: string) => {
   try {
     return await readdir(directory, { withFileTypes: true });
   } catch (error) {
-    if (isUnreadableDirectory(error)) {
+    if (isVanishedEntry(error)) {
       return [];
+    }
+
+    throw error;
+  }
+};
+
+const readLink = async <Result>(read: () => Promise<Result>): Promise<Result | null> => {
+  try {
+    return await read();
+  } catch (error) {
+    if (isDanglingLink(error)) {
+      return null;
     }
 
     throw error;
@@ -46,8 +57,8 @@ export const listInputs = async (cwd: string, config: TddConfig): Promise<string
       return null;
     }
 
-    const target = await realpath(resolve(cwd, directory, entry.name)).catch(() => null);
-    const info = target === null ? null : await stat(target).catch(() => null);
+    const target = await readLink(() => realpath(resolve(cwd, directory, entry.name)));
+    const info = target === null ? null : await readLink(() => stat(target));
 
     return info?.isDirectory() === true ? target : null;
   };
@@ -62,13 +73,20 @@ export const listInputs = async (cwd: string, config: TddConfig): Promise<string
     await Promise.all(
       entries.map(async (entry) => {
         const path = directory === '' ? entry.name : `${directory}/${entry.name}`;
+
+        // A path that is neither listed nor entered is not resolved, so its link cannot fail the
+        // walk on a target it does not need.
+        if (!rules.isInput(path) && !rules.entersDirectory(path)) {
+          return;
+        }
+
         const childReal = await realDirectory(directory, entry, real);
 
         if (childReal === null) {
           if (rules.isInput(path)) {
             inputs.push(path);
           }
-        } else if (rules.entersDirectory(entry.name, path) && !closesLoop(childReal, ancestors)) {
+        } else if (rules.entersDirectory(path) && !closesLoop(childReal, ancestors)) {
           await visit(path, new Set([...ancestors, childReal]), childReal);
         }
       }),

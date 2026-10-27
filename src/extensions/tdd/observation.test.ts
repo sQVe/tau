@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import { beforeEach, expect, it, onTestFinished as registerCleanup, vi } from 'vitest';
@@ -883,6 +883,71 @@ it('keeps reports and successful edits when fingerprints fail', async ({ onTestF
   expect(observed.report).toBe(report);
   expect(observed.hint).toContain('unknown');
   await expect(observation.checkpoint(true)).resolves.toBeUndefined();
+});
+
+it('reports unknown freshness and the path when an included directory cannot be read', async ({
+  onTestFinished,
+}) => {
+  const { cwd, observation } = await setup(onTestFinished);
+  const locked = join(cwd, 'src/locked');
+  const report = result('passed');
+
+  await mkdir(locked);
+  await writeFile(join(locked, 'value.ts'), 'locked');
+  await chmod(locked, 0);
+  onTestFinished(() => chmod(locked, 0o755));
+  vi.mocked(runTests).mockResolvedValueOnce(report);
+
+  const observed = await observation.run(behavior, 'full');
+
+  expect(observed).toMatchObject({ kind: 'pass', freshness: 'unknown' });
+  expect(observed.report).toBe(report);
+  expect(observed.inputs.error).toContain(locked);
+});
+
+it('keeps fresh freshness when an excluded symlink points behind an unreadable parent', async ({
+  onTestFinished,
+}) => {
+  const base = temporaryDirectory(onTestFinished, 'tau-observation-');
+  const cwd = join(base, 'repo');
+  await mkdir(join(cwd, 'src'), { recursive: true });
+  await writeFile(join(cwd, 'value.test.ts'), 'test');
+  await writeFile(join(cwd, 'src/value.ts'), 'before');
+  await mkdir(join(base, 'locked/dependency'), { recursive: true });
+  await symlink(join(base, 'locked/dependency'), join(cwd, 'node_modules'));
+  await chmod(join(base, 'locked'), 0);
+  onTestFinished(() => chmod(join(base, 'locked'), 0o755));
+  const observation = createTestObservation(cwd);
+  vi.mocked(runTests).mockResolvedValueOnce(result('passed'));
+
+  const observed = await observation.run(behavior, 'focused');
+
+  expect(observed).toMatchObject({ kind: 'pass', freshness: 'fresh' });
+});
+
+it('reports unknown freshness and the path when an included symlink points to an unreadable directory', async ({
+  onTestFinished,
+}) => {
+  const base = temporaryDirectory(onTestFinished, 'tau-observation-');
+  const cwd = join(base, 'repo');
+  const report = result('passed');
+
+  await mkdir(join(cwd, 'src'), { recursive: true });
+  await writeFile(join(cwd, 'value.test.ts'), 'test');
+  await writeFile(join(cwd, 'src/value.ts'), 'before');
+  await mkdir(join(base, 'locked'));
+  await writeFile(join(base, 'locked/value.ts'), 'locked');
+  await symlink(join(base, 'locked'), join(cwd, 'src/linked'));
+  await chmod(join(base, 'locked'), 0);
+  onTestFinished(() => chmod(join(base, 'locked'), 0o755));
+  const observation = createTestObservation(cwd);
+  vi.mocked(runTests).mockResolvedValueOnce(report);
+
+  const observed = await observation.run(behavior, 'full');
+
+  expect(observed).toMatchObject({ kind: 'pass', freshness: 'unknown' });
+  expect(observed.report).toBe(report);
+  expect(observed.inputs.error).toContain(join(cwd, 'src/linked'));
 });
 
 it('reports why input hashing failed', async ({ onTestFinished }) => {
