@@ -5,18 +5,13 @@ interface ArtifactHashes {
 
 export interface SavedRecord {
   version: number;
-  // The Git blob hash of the saved capture.json bytes.
   identity: string;
-  // Undefined for a version 1 or 2 record, which saved no original artifacts.
   recorded: ArtifactHashes | undefined;
 }
 
 export interface GenerationFacts {
-  // Undefined when capture.json is missing.
   record: SavedRecord | undefined;
-  // Undefined for an artifact that is missing or unreadable.
   observed: { patch: string | undefined; input: string | undefined };
-  // Undefined when the caller expects no particular identity.
   expectedIdentity: string | undefined;
 }
 
@@ -47,7 +42,6 @@ const missingReasons = (observed: GenerationFacts['observed']) =>
     .filter((name) => observed[name] === undefined)
     .map((name) => `The ${name} artifact is missing or unreadable.`);
 
-// A proven difference outranks a missing artifact, so the altered result names both.
 export const decideGeneration = ({
   record,
   observed,

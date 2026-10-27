@@ -19,7 +19,6 @@ const failures = vi.hoisted(() => ({
   restore: false,
 }));
 
-// The input.md that capture appends to, not the copy saved under capture/.
 const isLiveInput = (path: string) =>
   path.endsWith('input.md') && !path.endsWith(join('capture', 'input.md'));
 

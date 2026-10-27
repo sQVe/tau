@@ -22,7 +22,6 @@ const blobHash = (root: string, bytes: Buffer) =>
     .toString('utf8')
     .trim();
 
-// Saves a version 3 generation the way a capture folder holds it, and returns its record bytes.
 const saveGeneration = async (root: string, directory: string) => {
   const patch = Buffer.from('diff --git a/src/a.ts b/src/a.ts\n');
   const input = Buffer.from('# Review input\n');
@@ -58,7 +57,6 @@ const savedFilePaths = (directory: string) => [
   join(directory, inputFileName),
 ];
 
-// The bytes of each saved file. A missing file reads as undefined, so a read that creates it shows.
 const readSavedFiles = (directory: string) =>
   Promise.all(savedFilePaths(directory).map((path) => readFile(path).catch(() => undefined)));
 

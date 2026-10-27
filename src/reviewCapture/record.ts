@@ -55,7 +55,6 @@ const savedFields = {
   snapshot: Type.Optional(snapshotSchema),
 };
 
-// Version 2 saved no original artifacts. It is read so earlier reviews stay usable.
 const versionTwoRecordSchema = Type.Object(
   { version: Type.Literal(2), ...savedFields },
   { additionalProperties: false },
@@ -75,7 +74,6 @@ const gapSchema = Type.Object(
   { additionalProperties: false },
 );
 
-// The Git blob hashes of the saved capture/patch.diff and capture/input.md.
 const originalSchema = Type.Object(
   { patch: objectNameSchema, input: objectNameSchema },
   { additionalProperties: false },

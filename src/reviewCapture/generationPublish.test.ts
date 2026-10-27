@@ -16,7 +16,6 @@ import {
   recordFileName,
 } from './record.js';
 
-// The step to fail, named by the call and the end of the path it touches.
 const failure = vi.hoisted(() => ({ call: '', path: '' }));
 
 const fails = (call: string, path: unknown) =>
@@ -98,7 +97,6 @@ const blobHash = (root: string, bytes: Buffer) =>
     .toString('utf8')
     .trim();
 
-// A repository with one uncommitted edit and a review directory outside it.
 const changedRepository = async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const directory = temporaryDirectory(onTestFinished, 'tau-generation-publish-');

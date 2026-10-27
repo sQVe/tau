@@ -32,14 +32,11 @@ export interface CapturedGeneration extends Partial<FixScope> {
   gaps: Gap[];
   fixPaths?: string[];
   empty: boolean;
-  // The Git blob hash of capture.json. An empty capture writes no record, so it has none.
   identity?: string;
 }
 
-// What a failed capture must undo. It grows as each step changes the review directory.
 interface Owned {
   snapshot: boolean;
-  // The capture.json text this capture tried to publish.
   recordText: string | undefined;
 }
 
@@ -67,7 +64,6 @@ const readOptionalBytes = async (path: string): Promise<Buffer | undefined> => {
   }
 };
 
-// An artifact that cannot be read counts as missing, so the decision names it as missing.
 const readArtifactBytes = async (path: string): Promise<Buffer | undefined> => {
   await rejectLinkedFile(path, 'read');
 
@@ -84,7 +80,6 @@ const savedRecord = async (root: string, path: string, bytes: Buffer): Promise<S
   return { version: record.version, identity: await hashOf(root, bytes), recorded };
 };
 
-// Reads a saved generation without changing it. The identity is the Git blob hash of capture.json.
 export const readCompletedCapture = async (
   root: string,
   directory: string,
@@ -143,7 +138,6 @@ const rejectSavedCapture = async (directory: string) => {
   }
 };
 
-// The non-recursive mkdir is the claim: only one capture can create the folder.
 const claimDirectory = async (folder: string) => {
   try {
     await mkdir(folder);
@@ -260,7 +254,6 @@ const verifyArtifacts = async (folder: string, patch: Buffer, input: Buffer) => 
   await verifyArtifact(join(folder, generationInputFileName), input);
 };
 
-// Removes capture.json only when it holds the text this capture published.
 const removeOwnRecord = async (path: string, text: string | undefined) => {
   if (text === undefined) {
     return;
@@ -273,8 +266,6 @@ const removeOwnRecord = async (path: string, text: string | undefined) => {
   }
 };
 
-// Each cleanup runs even when another fails. Returns one line per failed cleanup, so the caller can
-// report them next to the capture error.
 const rollback = async (
   directory: string,
   originalInput: Buffer,
@@ -370,9 +361,6 @@ const publishGeneration = async (
   return { ...summary, empty: false, identity };
 };
 
-// Publishes a complete generation or nothing. The capture that claims the directory saves the
-// original patch and input, checks the saved bytes, and writes capture.json last. Only that capture
-// rolls back; a capture whose claim was refused changes nothing.
 export const captureGeneration = async (
   root: string,
   directory: string,

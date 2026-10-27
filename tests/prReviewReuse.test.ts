@@ -55,7 +55,6 @@ const setUpReview = async () => {
   return { root, directory, forkPoint, run };
 };
 
-// The path and bytes of each file in the review directory and its folders.
 const readEvidence = async (directory: string) =>
   Promise.all(
     (await readdir(directory, { recursive: true, withFileTypes: true }))
@@ -210,7 +209,6 @@ it('refuses reuse when recheck.diff is replaced after reuse reads it', async () 
   await commitFile(root, 'feature.txt', 'three\n');
   await runCodeReview(root, { action: 'freshness', directory });
 
-  // reuse reads recheck.diff, then hashBytes runs rev-parse --show-object-format before it decides.
   await installCommandShim('git', {
     otherCalls: 'real',
     overrides: [

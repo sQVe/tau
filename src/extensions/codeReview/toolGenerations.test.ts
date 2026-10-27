@@ -35,7 +35,6 @@ const readRecord = async (directory: string) =>
 const freshness = (root: string, directory: string) =>
   run(root, { action: 'freshness', directory });
 
-// Commits tracked.txt twice. The first commit is returned, so a test can pin it as a base.
 const repositoryWithReview = async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
