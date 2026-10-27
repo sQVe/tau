@@ -478,14 +478,23 @@ const parseImportTable = (markdown: string) => {
   const table: Record<string, string[]> = {};
   const problems: string[] = [];
 
+  let tableLineCount = 0;
+
   for (const [index, line] of lines.entries()) {
-    if (!line.startsWith('| `')) {
+    if (!line.startsWith('|')) {
       continue;
     }
 
     if (index < start || index >= end) {
       problems.push(`row outside the table section: ${line}`);
 
+      continue;
+    }
+
+    tableLineCount += 1;
+
+    // The first two table lines are the header and the separator.
+    if (tableLineCount <= 2) {
       continue;
     }
 
@@ -563,6 +572,26 @@ it.each([
     name: 'a missing section',
     markdown: '## Decision\n\nNo table here.\n',
     problems: ['missing table section'],
+  },
+  {
+    name: 'a row without a backticked module',
+    markdown: tableSection(['| linear | `schema` |']),
+    problems: ['malformed row: | linear | `schema` |'],
+  },
+  {
+    name: 'a row without a space after the pipe',
+    markdown: tableSection(['|`linear` | `schema` |']),
+    problems: ['malformed row: |`linear` | `schema` |'],
+  },
+  {
+    name: 'a row without a closing pipe',
+    markdown: tableSection(['| `linear` | nothing']),
+    problems: ['malformed row: | `linear` | nothing'],
+  },
+  {
+    name: 'a row with a missing dependency cell',
+    markdown: tableSection(['| `linear` |']),
+    problems: ['malformed row: | `linear` |'],
   },
 ])('ADR table check reports problems for $name', ({ markdown, problems }) => {
   expect(parseImportTable(markdown).problems).toEqual(problems);
