@@ -52,7 +52,6 @@ const splitFences = (text: string): Fences => {
   for (const line of text.split('\n')) {
     const lineEnd = lineStart + line.length;
 
-    // A fenced block cannot continue lazily, so it ends with the block quote that holds it.
     if (fence !== undefined && quoteDepth(line) < fenceQuoteDepth) {
       fence = undefined;
       fenced.push({ start: blockStart, end: lineStart - 1 });
