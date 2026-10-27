@@ -10,10 +10,7 @@ import {
   readTauConfig,
   warnUnknownTopLevelKeys,
 } from '../../config/config.js';
-import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { errorMessage } from '../../errors.js';
-import { readOriginRepository } from '../../github/repositoryTarget.js';
-import { configRepositoryKey } from '../../github/repositoryTargetDecisions.js';
 import { herdrPaneId, herdrSocketPath, insideHerdr } from '../../herdr.js';
 import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
 import { isRecord } from '../../schema.js';
@@ -46,8 +43,6 @@ import {
   renderStatusResult,
   shortId,
 } from './render.js';
-import { readTrackerSetup } from './trackerConfig.js';
-import { trackerLines } from './trackerRouting.js';
 import { taskIdSchema } from './types.js';
 import type { WorkerState } from './types.js';
 import { renderWorkerWidget } from './widget.js';
@@ -582,18 +577,6 @@ const registerSubagentTools = (runtime: SubagentRuntime): void => {
   registerCancelTool(runtime);
 };
 
-const trackerGuidelines = async (
-  pi: ExtensionAPI,
-  location: ConfigLocation,
-  ui: ConfigWarnings,
-) => {
-  const origin = await readOriginRepository({ exec: piExec(pi), cwd: location.cwd });
-  const repository = origin.status === 'named' ? configRepositoryKey(origin.repository) : undefined;
-  const setup = readTrackerSetup(location, ui, repository);
-
-  return trackerLines({ setup, origin });
-};
-
 export const registerCapacityRefusal = (pi: ExtensionAPI): CapacityRefusal => {
   if (isWorkerProcess()) {
     return { refuse: () => undefined };
@@ -638,17 +621,9 @@ export default function subagentsExtension(
   const delegating = hasHerdrParentPane();
   let guidelines = delegationGuidelines(undefined);
 
-  // Any Linear write follows the tracker skill, with or without delegation, so every manager
-  // session gets the tracker lines.
-  let tracker: string[] = [];
-
   pi.on('before_agent_start', (event) => {
     if (delegating && event.systemPromptOptions.selectedTools.includes('subagent')) {
       appendSystemPrompt(event, guidelines.map((guideline) => `- ${guideline}`).join('\n'));
-    }
-
-    if (tracker.length > 0) {
-      appendSystemPrompt(event, tracker.map((line) => `- ${line}`).join('\n'));
     }
   });
 
@@ -752,7 +727,7 @@ export default function subagentsExtension(
 
   registerSubagentTools(runtime);
 
-  pi.on('session_start', async (_event, context) => {
+  pi.on('session_start', (_event, context) => {
     shuttingDown = false;
     sessionContext = context;
     forgetReportedWarnings(context.ui);
@@ -781,14 +756,6 @@ export default function subagentsExtension(
     }
 
     refreshWidget(context);
-
-    const location = {
-      cwd: context.cwd,
-      agentDirectory: getAgentDir(),
-      projectTrusted: context.isProjectTrusted(),
-    };
-
-    tracker = await trackerGuidelines(pi, location, context.ui);
   });
 
   pi.on('tool_result', (_event, context) => {

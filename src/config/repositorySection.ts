@@ -7,6 +7,8 @@ import { findRepositoryEntry } from './repositoryEntry.js';
 export interface RepositorySectionReader<Entry> {
   // The user-only config key that holds the section, such as `qa`.
   key: string;
+  // Known keys beside `repositories` in the section, such as `agentTeam`.
+  knownSectionKeys?: KnownKeys;
   knownEntryKeys: KnownKeys;
   // An example section body for the "must be an object" error.
   example: string;
@@ -22,7 +24,14 @@ const repositoryKeyPattern = /^[^\s/]+\/[^\s/]+$/u;
 export const readRepositorySection = <Entry>(
   location: ConfigLocation,
   ui: ConfigWarnings,
-  { key, knownEntryKeys, example, repository, readEntry }: RepositorySectionReader<Entry>,
+  {
+    key,
+    knownSectionKeys = {},
+    knownEntryKeys,
+    example,
+    repository,
+    readEntry,
+  }: RepositorySectionReader<Entry>,
 ): Entry | undefined => {
   const user = readUserOnlyKey(location, key);
 
@@ -36,7 +45,13 @@ export const readRepositorySection = <Entry>(
     throw new Error(`Invalid Tau config ${source}: ${key} must be an object such as ${example}.`);
   }
 
-  warnUnknownKeys(ui, source, section, { repositories: { [anyKey]: knownEntryKeys } }, key);
+  warnUnknownKeys(
+    ui,
+    source,
+    section,
+    { ...knownSectionKeys, repositories: { [anyKey]: knownEntryKeys } },
+    key,
+  );
 
   const { repositories } = section;
 

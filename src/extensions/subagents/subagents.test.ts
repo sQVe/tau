@@ -18,7 +18,7 @@ import { Value } from 'typebox/value';
 import { expect, it, vi, onTestFinished as finishTest } from 'vitest';
 
 import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { createTemporaryRepository, initializeRepository } from '../../../tests/gitRepository.js';
+import { initializeRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { workerNoticeChannel } from '../../worker.js';
 import { WorkerCapacityFullError, WorkerController } from './controller/controller.js';
@@ -157,7 +157,6 @@ const sessionGuidelines = async (
     repository?: unknown;
     originUrl?: string;
     herdr?: boolean;
-    inheritedGitDirectory?: string;
   },
 ) => {
   const directory = temporaryDirectory(finishTest, 'tau-browser-guideline-');
@@ -179,10 +178,6 @@ const sessionGuidelines = async (
   if (config.originUrl !== undefined) {
     await initializeRepository(directory);
     await addOrigin(directory, config.originUrl);
-  }
-
-  if (config.inheritedGitDirectory !== undefined) {
-    vi.stubEnv('GIT_DIR', config.inheritedGitDirectory);
   }
 
   if (config.repository !== undefined) {
@@ -284,31 +279,13 @@ it.each([
   },
 );
 
-it('names the agent team and the repository team and project in the manager prompt', async ({
-  onTestFinished,
-}) => {
-  const { appended } = await sessionGuidelines(onTestFinished, {
-    user: {
-      tracker: { agentTeam: 'AI', repositories: { 'sQVe/tau': { team: 'ME', project: 'Tau' } } },
-    },
-    originUrl: 'git@github.com:sQVe/tau.git',
-  });
-
-  expect(appended).toContain('Tracker agent team: `AI`.');
-  expect(appended).toContain('Tracker repository: `sQVe/tau` uses team `ME` and project `Tau`.');
-});
-
-it('names the tracker route outside herdr and without the subagent tool', async ({
+it('leaves delegation guidelines out outside herdr and without the subagent tool', async ({
   onTestFinished,
 }) => {
   const { appendedWithoutTools } = await sessionGuidelines(onTestFinished, {
-    user: { tracker: { agentTeam: 'AI', repositories: { 'sQVe/tau': { team: 'ME' } } } },
     originUrl: 'https://github.com/sQVe/tau.git',
     herdr: false,
   });
-
-  expect(appendedWithoutTools).toContain('Tracker agent team: `AI`.');
-  expect(appendedWithoutTools).toContain('Tracker repository: `sQVe/tau` uses team `ME`');
 
   for (const guideline of delegationGuidelines(undefined)) {
     expect(appendedWithoutTools).not.toContain(guideline);
@@ -318,63 +295,16 @@ it('names the tracker route outside herdr and without the subagent tool', async 
 it('starts the session and reports once when the worker capacity is invalid', async ({
   onTestFinished,
 }) => {
-  const { appendedWithoutTools, notify } = await sessionGuidelines(onTestFinished, {
-    user: {
-      subagents: { capacity: 0 },
-      tracker: { agentTeam: 'AI', repositories: { 'sQVe/tau': { team: 'ME' } } },
-    },
+  const { notify } = await sessionGuidelines(onTestFinished, {
+    user: { subagents: { capacity: 0 } },
     originUrl: 'https://github.com/sQVe/tau.git',
     herdr: false,
   });
 
   const errors = notify.mock.calls.filter(([, level]) => level === 'error');
 
-  expect(appendedWithoutTools).toContain('Tracker agent team: `AI`.');
   expect(errors).toHaveLength(1);
   expect(String(errors[0]?.[0])).toContain('subagents.capacity');
-});
-
-it('reads the origin of the session directory when Pi inherits GIT_DIR for another repository', async ({
-  onTestFinished,
-}) => {
-  const other = await createTemporaryRepository((cleanup) => {
-    onTestFinished(cleanup);
-  });
-
-  await addOrigin(other, 'git@github.com:sQVe/other.git');
-
-  const { appended } = await sessionGuidelines(onTestFinished, {
-    user: { tracker: { agentTeam: 'AI', repositories: { 'sQVe/tau': { team: 'ME' } } } },
-    originUrl: 'git@github.com:sQVe/tau.git',
-    inheritedGitDirectory: join(other, '.git'),
-  });
-
-  expect(appended).toContain('Tracker repository: `sQVe/tau` uses team `ME`');
-});
-
-it('states a missing origin remote in the manager prompt', async ({ onTestFinished }) => {
-  const { appended } = await sessionGuidelines(onTestFinished, {
-    user: { tracker: { agentTeam: 'AI', repositories: { 'sQVe/tau': { team: 'ME' } } } },
-  });
-
-  expect(appended).toContain('Tracker setup needed: this checkout has no origin remote');
-  expect(appended).not.toContain('Tracker repository:');
-});
-
-it('states an invalid tracker config in the manager prompt instead of dropping it', async ({
-  onTestFinished,
-}) => {
-  const { appended } = await sessionGuidelines(onTestFinished, {
-    user: { slice: { agentTeam: 'AI' } },
-    originUrl: 'git@github.com:sQVe/tau.git',
-  });
-
-  expect(appended).toContain('Tracker setup needed:');
-  expect(appended).toContain('tracker.agentTeam');
-
-  for (const guideline of delegationGuidelines(undefined)) {
-    expect(appended).toContain(guideline);
-  }
 });
 
 it('leaves delegation guidelines out when a manager runs outside herdr', ({ onTestFinished }) => {
@@ -1982,45 +1912,18 @@ it('lists profile names in order and gives a reason when the list is unreadable'
   expect(unreadable).not.toContain('worker,');
 });
 
-it('puts each manager guideline and tracker line on its own prompt line', async ({
-  onTestFinished,
-}) => {
+it('puts each manager guideline on its own prompt line', async ({ onTestFinished }) => {
   const { appended } = await sessionGuidelines(onTestFinished, {
-    user: { tracker: { agentTeam: 'AI', repositories: { 'sQVe/tau': { team: 'ME' } } } },
     originUrl: 'git@github.com:sQVe/tau.git',
   });
 
   const lines = appended.split('\n').filter((line) => line !== '');
 
-  expect(lines.length).toBeGreaterThan(delegationGuidelines(undefined).length);
   expect(lines.every((line) => line.startsWith('- '))).toBe(true);
 
   for (const guideline of delegationGuidelines(undefined)) {
     expect(lines).toContain(`- ${guideline}`);
   }
-
-  expect(lines).toContain('- Tracker agent team: `AI`.');
-});
-
-it('reports a bad tracker entry only for the repository the checkout is cloned from', async ({
-  onTestFinished,
-}) => {
-  const user = { tracker: { agentTeam: 'AI', repositories: { 'sQVe/tau': { team: 5 } } } };
-
-  const own = await sessionGuidelines(onTestFinished, {
-    user,
-    originUrl: 'git@github.com:sQVe/tau.git',
-  });
-
-  expect(own.appended).toContain('tracker.repositories.sQVe/tau.team must be a string');
-
-  const other = await sessionGuidelines(onTestFinished, {
-    user,
-    originUrl: 'git@github.com:sQVe/other.git',
-  });
-
-  expect(other.appended).not.toContain('must be a string');
-  expect(other.appended).toContain('no entry for `sQVe/other`');
 });
 
 it('reports a config problem again in each new session', async ({ onTestFinished }) => {
