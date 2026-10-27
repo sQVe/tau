@@ -47,6 +47,8 @@ const hexRadix = 16;
 const byteMask = 0xff;
 const controlMask = 0x1f;
 const deleteCode = 0x7f;
+const lastCodePoint = 0x10ffff;
+const byteDigits = 2;
 
 const decodeAnsiCNumber = (code: string): string => {
   if (/^[0-7]/u.test(code)) {
@@ -54,9 +56,16 @@ const decodeAnsiCNumber = (code: string): string => {
   }
 
   const digits = code.slice(1).replaceAll(/[{}]/gu, '');
-  const value = Number.parseInt(`0${digits}`, hexRadix);
 
-  return String.fromCodePoint(code.startsWith('x') ? value & byteMask : value);
+  // Bash keeps only the low byte of `\x{...}`, which may hold more digits than a number can.
+  if (code.startsWith('x')) {
+    return String.fromCodePoint(Number.parseInt(`0${digits.slice(-byteDigits)}`, hexRadix));
+  }
+
+  const value = Number.parseInt(digits, hexRadix);
+
+  // Bash writes no ASCII character for a value past Unicode, so a stand-in keeps parsing going.
+  return value > lastCodePoint ? '\uFFFD' : String.fromCodePoint(value);
 };
 
 const decodeAnsiCControl = (character: string): string => {

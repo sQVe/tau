@@ -297,6 +297,7 @@ describe('guardToolCall', () => {
     "bash -c $'git\\x20commit -m x'",
     "git $'com\\x6dit' -m x",
     "$'g\\x69t' commit -m x",
+    "echo $'\\U00110000'; git $'com\\x6dit' -m x",
     'bash -c $"git commit -m x"',
     `git \${x} commit`,
     'git --config-env=alias.ab=NAME status',

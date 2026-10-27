@@ -126,6 +126,7 @@ describe('parseShellCommands', () => {
     ["$'\\x'", '\\x'],
     ["$'com\\x{6d}it'", 'commit'],
     ["$'com\\x{06Dit'", 'commit'],
+    ["$'com\\x{2000000000006d}it'", 'commit'],
     ["$'com\\155it'", 'commit'],
     ["$'\\0'", ''],
     ["$'\\1555'", 'm5'],
