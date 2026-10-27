@@ -18,20 +18,17 @@ type WatchContext = Pick<ExtensionContext, 'cwd' | 'isIdle' | 'signal'>;
 interface Watch {
   url: string;
   context: WatchContext;
-  // Aborted at the deadline and at shutdown, so a hung read cannot keep the watch alive.
   reads: AbortController;
   pollTimer: ReturnType<typeof setTimeout> | undefined;
   deadlineTimer: ReturnType<typeof setTimeout> | undefined;
 }
 
 export interface MergeWatches {
-  // Starts a watch for each auto-merge a successful bash call turned on. Returns before gh runs.
   observe: (event: ToolResultEvent, context: WatchContext) => void;
   stopAll: () => void;
 }
 
 const pollInterval = 60_000;
-// Two hours.
 const watchDuration = 7_200_000;
 
 const autoMergeRequests = (event: ToolResultEvent): AutoMergeRequest[] => {
@@ -63,10 +60,8 @@ const stop = (watch: Watch) => {
 
 export const createMergeWatches = (exec: Exec, deliver: Deliver): MergeWatches => {
   const watches = new Map<string, Watch>();
-  // Aborted at shutdown, so a resolve that finishes later starts nothing.
   let session = new AbortController();
 
-  // Ends the watch on a final outcome. Returns whether the watch keeps waiting.
   const settle = (watch: Watch, outcome: WatchOutcome): boolean => {
     if (outcome.kind === 'waiting') {
       return true;
@@ -79,7 +74,6 @@ export const createMergeWatches = (exec: Exec, deliver: Deliver): MergeWatches =
     return false;
   };
 
-  // The deadline timer ends the watch, so no poll starts at or after the deadline.
   const schedule = (watch: Watch, deadline: number) => {
     if (Date.now() + pollInterval >= deadline) {
       return;

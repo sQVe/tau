@@ -9,7 +9,6 @@ export default function mergeWatchExtension(pi: ExtensionAPI): void {
     createDelivery(pi),
   );
 
-  // Pi awaits tool_result handlers, so the watch reads gh in the background.
   pi.on('tool_result', (event, context) => {
     watches.observe(event, context);
   });

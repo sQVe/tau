@@ -15,7 +15,6 @@ const stateSchema = Type.Object({
 
 const checksSchema = Type.Array(Type.Object({ name: Type.String(), bucket: Type.String() }));
 
-// gh pr checks exits 1 while a check fails and 8 while one is pending, and still prints the list.
 const failingChecksExitCode = 1;
 const pendingChecksExitCode = 8;
 const listedExitCodes = new Set([0, failingChecksExitCode, pendingChecksExitCode]);
@@ -28,7 +27,6 @@ const readJson = async (runtime: CommandRuntime, commandArguments: string[]) => 
   return { label, value: parseJson(label, stdout) };
 };
 
-// Returns the URL of the pull request a merge command named, or undefined when gh cannot read it.
 export const resolvePullRequest = async (
   runtime: CommandRuntime,
   request: AutoMergeRequest,
@@ -85,7 +83,6 @@ const parseChecks = (stdout: string): WatchFacts['checks'] => {
   }
 };
 
-// Returns an empty list when the pull request has no required checks.
 export const readRequiredChecks = async (
   runtime: CommandRuntime,
   url: string,

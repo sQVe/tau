@@ -1,14 +1,8 @@
-// Finds the gh pr merge --auto calls in a bash command at the level of words. Quotes keep spaces and
-// separators inside one word; other shell syntax is not parsed. tests/structure.test.ts keeps this
-// module pure.
-
 export interface AutoMergeRequest {
-  // The pull request argument, or undefined for the current branch.
   selector: string | undefined;
   repository: string | undefined;
 }
 
-// A token is a separator outside quotes or a word whose quoted parts may hold spaces and separators.
 const tokenPattern = /&&|\|\||[;|&\n]|(?:"[^"]*"|'[^']*'|[^\s"';|&])+/gu;
 const separatorPattern = /^(?:&&|\|\||[;|&\n])$/u;
 const assignmentPattern = /^[A-Za-z_]\w*=/u;
@@ -30,7 +24,6 @@ const valueFlags = new Set([
 
 const unquote = (word: string) => word.replaceAll(/"([^"]*)"|'([^']*)'/gu, '$1$2');
 
-// Splits a command into simple commands, each a list of unquoted words.
 const simpleCommands = (command: string): string[][] => {
   const commands: string[][] = [[]];
 
@@ -49,7 +42,6 @@ const isCommandPrefix = (word: string) => assignmentPattern.test(word) || comman
 
 const mergeCommand = ['gh', 'pr', 'merge'];
 
-// Returns the arguments of gh pr merge when gh is the executable, after assignments and wrappers.
 const mergeArguments = (words: string[]): string[] | undefined => {
   const start = words.findIndex((word) => !isCommandPrefix(word));
   const executable = words.slice(start, start + mergeCommand.length);
@@ -60,7 +52,6 @@ const mergeArguments = (words: string[]): string[] | undefined => {
   return runsMerge ? words.slice(start + mergeCommand.length) : undefined;
 };
 
-// Splits --flag=value into two words, so a flag reads its value the same way in both forms.
 const splitInlineValues = (words: string[]) =>
   words.flatMap((word) => {
     const separator = word.indexOf('=');

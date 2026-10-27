@@ -1,8 +1,4 @@
-// Decides whether the reads of one poll end a merge watch, and what the new turn says.
-// tests/structure.test.ts keeps this module pure.
-
 export interface WatchFacts {
-  // Undefined when the read failed, so the next poll retries it.
   pullRequest: { state: string; mergedAt: string | null } | undefined;
   checks: { name: string; bucket: string }[] | undefined;
 }
@@ -16,7 +12,6 @@ export type WatchOutcome =
 
 export type FinalOutcome = Exclude<WatchOutcome, { kind: 'waiting' }>;
 
-// The outcomes the reads of one poll can show. The deadline comes from a timer.
 type PollOutcome = Exclude<WatchOutcome, { kind: 'deadline' }>;
 
 const failedBuckets = new Set(['fail', 'cancel']);
