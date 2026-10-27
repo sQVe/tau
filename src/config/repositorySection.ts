@@ -7,6 +7,7 @@ import { findRepositoryEntry } from './repositoryEntry.js';
 export interface RepositorySectionReader<Entry> {
   // The user-only config key that holds the section, such as `qa`.
   key: string;
+  knownSectionKeys?: KnownKeys;
   knownEntryKeys: KnownKeys;
   // An example section body for the "must be an object" error.
   example: string;
@@ -15,15 +16,26 @@ export interface RepositorySectionReader<Entry> {
   readEntry: (source: string, field: string, value: unknown) => Entry;
 }
 
+export interface RepositorySection<Entry> {
+  source: string;
+  section: Record<string, unknown>;
+  entry: Entry | undefined;
+}
+
 const repositoryKeyPattern = /^[^\s/]+\/[^\s/]+$/u;
 
-// Reads the entry for `repository` from a section of the user file keyed by owner/name. Entries for
-// other repositories are never read. Resolves undefined when the section has no such entry.
 export const readRepositorySection = <Entry>(
   location: ConfigLocation,
   ui: ConfigWarnings,
-  { key, knownEntryKeys, example, repository, readEntry }: RepositorySectionReader<Entry>,
-): Entry | undefined => {
+  {
+    key,
+    knownSectionKeys = {},
+    knownEntryKeys,
+    example,
+    repository,
+    readEntry,
+  }: RepositorySectionReader<Entry>,
+): RepositorySection<Entry> | undefined => {
   const user = readUserOnlyKey(location, key);
 
   if (user === undefined) {
@@ -36,12 +48,18 @@ export const readRepositorySection = <Entry>(
     throw new Error(`Invalid Tau config ${source}: ${key} must be an object such as ${example}.`);
   }
 
-  warnUnknownKeys(ui, source, section, { repositories: { [anyKey]: knownEntryKeys } }, key);
+  warnUnknownKeys(
+    ui,
+    source,
+    section,
+    { ...knownSectionKeys, repositories: { [anyKey]: knownEntryKeys } },
+    key,
+  );
 
   const { repositories } = section;
 
   if (repositories === undefined) {
-    return undefined;
+    return { source, section, entry: undefined };
   }
 
   if (!isRecord(repositories)) {
@@ -51,13 +69,13 @@ export const readRepositorySection = <Entry>(
   }
 
   if (repository === undefined) {
-    return undefined;
+    return { source, section, entry: undefined };
   }
 
   const match = findRepositoryEntry(source, `${key}.repositories`, repositories, repository);
 
   if (match === undefined) {
-    return undefined;
+    return { source, section, entry: undefined };
   }
 
   const [entryKey, entry] = match;
@@ -68,5 +86,9 @@ export const readRepositorySection = <Entry>(
     );
   }
 
-  return readEntry(source, `${key}.repositories.${entryKey}`, entry);
+  return {
+    source,
+    section,
+    entry: readEntry(source, `${key}.repositories.${entryKey}`, entry),
+  };
 };

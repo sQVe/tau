@@ -1,6 +1,6 @@
 import type { OriginRepository } from '../../github/repositoryTarget.js';
 import { configRepositoryKey } from '../../github/repositoryTargetDecisions.js';
-import type { TrackerConfig, TrackerSetup } from './trackerConfig.js';
+import type { TrackerRoute, TrackerSetup } from './config.js';
 
 export interface TrackerFacts {
   setup: TrackerSetup;
@@ -12,16 +12,22 @@ const agentTeamPrefix = 'Tracker agent team:';
 const repositoryPrefix = 'Tracker repository:';
 const setupPrefix = 'Tracker setup needed:';
 
-const agentTeamLine = ({ agentTeam }: TrackerConfig): string =>
+const agentTeamLine = (agentTeam: string | undefined): string =>
   agentTeam === undefined
     ? `${setupPrefix} tracker.agentTeam is not set.`
     : `${agentTeamPrefix} \`${agentTeam}\`.`;
 
-// GitHub treats owner and repository names without regard to case.
-const findRepository = ({ repositories }: TrackerConfig, repository: string) =>
-  [...repositories].find(([key]) => key.toLowerCase() === repository.toLowerCase())?.[1];
+const routeLine = (repository: string, route: TrackerRoute | undefined): string => {
+  if (route === undefined) {
+    return `${setupPrefix} tracker.repositories has no entry for \`${repository}\`.`;
+  }
 
-const repositoryLine = (config: TrackerConfig, origin: OriginRepository): string => {
+  const project = route.project === undefined ? 'no project' : `project \`${route.project}\``;
+
+  return `${repositoryPrefix} \`${repository}\` uses team \`${route.team}\` and ${project}.`;
+};
+
+const repositoryLine = (route: TrackerRoute | undefined, origin: OriginRepository): string => {
   if (origin.status === 'missing') {
     return `${setupPrefix} this checkout has no origin remote, so no tracker.repositories entry applies.`;
   }
@@ -36,15 +42,7 @@ const repositoryLine = (config: TrackerConfig, origin: OriginRepository): string
     return `${setupPrefix} the origin remote is not on github.com, so no tracker.repositories entry applies.`;
   }
 
-  const entry = findRepository(config, repository);
-
-  if (entry === undefined) {
-    return `${setupPrefix} tracker.repositories has no entry for \`${repository}\`.`;
-  }
-
-  const project = entry.project === undefined ? 'no project' : `project \`${entry.project}\``;
-
-  return `${repositoryPrefix} \`${repository}\` uses team \`${entry.team}\` and ${project}.`;
+  return routeLine(repository, route);
 };
 
 export const trackerLines = ({ setup, origin }: TrackerFacts): string[] => {
@@ -58,5 +56,5 @@ export const trackerLines = ({ setup, origin }: TrackerFacts): string[] => {
     return [`${setupPrefix} ${message}`];
   }
 
-  return [agentTeamLine(setup.config), repositoryLine(setup.config, origin)];
+  return [agentTeamLine(setup.agentTeam), repositoryLine(setup.route, origin)];
 };

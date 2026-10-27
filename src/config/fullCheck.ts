@@ -42,4 +42,4 @@ export const readFullCheckArgv = (
     example: '{"repositories": {"sQVe/tau": {"argv": ["pnpm", "check"]}}}',
     repository,
     readEntry,
-  });
+  })?.entry;

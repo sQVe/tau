@@ -1,21 +1,16 @@
 import { expect, it } from 'vitest';
 
 import type { OriginRepository } from '../../github/repositoryTarget.js';
-import type { TrackerRepository, TrackerSetup } from './trackerConfig.js';
-import { trackerLines } from './trackerRouting.js';
+import type { TrackerRoute, TrackerSetup } from './config.js';
+import { trackerLines } from './promptLines.js';
 
-const repositories = (entries: Record<string, TrackerRepository>) =>
-  new Map(Object.entries(entries));
+const tau: TrackerRoute = { team: 'ME', project: 'Tau' };
 
-const read = (
-  agentTeam: string | undefined,
-  entries: Record<string, TrackerRepository>,
-): TrackerSetup => ({
+const read = (agentTeam: string | undefined, route: TrackerRoute | undefined): TrackerSetup => ({
   status: 'read',
-  config: { agentTeam, repositories: repositories(entries) },
+  agentTeam,
+  route,
 });
-
-const tau = { team: 'ME', project: 'Tau' };
 
 const named = (host: string): OriginRepository => ({
   status: 'named',
@@ -45,7 +40,7 @@ it.each<{ condition: string; setup: TrackerSetup; origin: OriginRepository; line
   },
   {
     condition: 'a configured repository',
-    setup: read('AI', { 'sQVe/tau': tau }),
+    setup: read('AI', tau),
     origin,
     lines: [
       'Tracker agent team: `AI`.',
@@ -54,7 +49,7 @@ it.each<{ condition: string; setup: TrackerSetup; origin: OriginRepository; line
   },
   {
     condition: 'a configured repository without a project',
-    setup: read('AI', { 'sQVe/tau': { team: 'ME', project: undefined } }),
+    setup: read('AI', { team: 'ME', project: undefined }),
     origin,
     lines: [
       'Tracker agent team: `AI`.',
@@ -62,17 +57,8 @@ it.each<{ condition: string; setup: TrackerSetup; origin: OriginRepository; line
     ],
   },
   {
-    condition: 'an entry whose owner/name differs only in case',
-    setup: read('AI', { 'sqve/Tau': tau }),
-    origin,
-    lines: [
-      'Tracker agent team: `AI`.',
-      'Tracker repository: `sQVe/tau` uses team `ME` and project `Tau`.',
-    ],
-  },
-  {
     condition: 'no agent team',
-    setup: read(undefined, { 'sQVe/tau': tau }),
+    setup: read(undefined, tau),
     origin,
     lines: [
       'Tracker setup needed: tracker.agentTeam is not set.',
@@ -81,7 +67,7 @@ it.each<{ condition: string; setup: TrackerSetup; origin: OriginRepository; line
   },
   {
     condition: 'a repository without an entry',
-    setup: read('AI', { 'sQVe/other': tau }),
+    setup: read('AI', undefined),
     origin,
     lines: [
       'Tracker agent team: `AI`.',
@@ -90,7 +76,7 @@ it.each<{ condition: string; setup: TrackerSetup; origin: OriginRepository; line
   },
   {
     condition: 'no origin remote',
-    setup: read('AI', { 'sQVe/tau': tau }),
+    setup: read('AI', tau),
     origin: { status: 'missing' },
     lines: [
       'Tracker agent team: `AI`.',
@@ -98,8 +84,8 @@ it.each<{ condition: string; setup: TrackerSetup; origin: OriginRepository; line
     ],
   },
   {
-    condition: 'an origin on another host with a github.com entry of the same name',
-    setup: read('AI', { 'sQVe/tau': tau }),
+    condition: 'an origin on another host',
+    setup: read('AI', undefined),
     origin: named('gitlab.com'),
     lines: [
       'Tracker agent team: `AI`.',
@@ -108,7 +94,7 @@ it.each<{ condition: string; setup: TrackerSetup; origin: OriginRepository; line
   },
   {
     condition: 'an origin that names no owner/name',
-    setup: read('AI', { 'sQVe/tau': tau }),
+    setup: read('AI', tau),
     origin: { status: 'unnamed' },
     lines: [
       'Tracker agent team: `AI`.',

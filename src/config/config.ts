@@ -82,7 +82,7 @@ const topLevelKeys: Readonly<Record<string, string>> = {
   reviews: 'pr',
   subagents: 'subagents',
   tdd: 'tdd',
-  tracker: 'subagents',
+  tracker: 'tracker',
   slice: 'subagents',
 };
 

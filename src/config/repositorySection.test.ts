@@ -57,12 +57,30 @@ it.each(['fullCheck', 'qa', 'reviews'])(
   },
 );
 
+it('returns the checked section beside the matched entry', () => {
+  const { location, write, userFile } = fixture();
+  const section = { agentTeam: 'AI', repositories: { 'sQVe/tau': { setting: 1 } } };
+
+  write({ tracker: section });
+
+  expect(
+    readRepositorySection(location, ui, {
+      ...reader('tracker', 'sQVe/tau'),
+      knownSectionKeys: { agentTeam: true },
+    }),
+  ).toEqual({
+    source: userFile,
+    section,
+    entry: { field: 'tracker.repositories.sQVe/tau', value: { setting: 1 } },
+  });
+});
+
 it('reads the matched entry with its field name', () => {
   const { location, write, userFile } = fixture();
 
   write({ qa: { repositories: { 'sQVe/tau': { setting: 1 } } } });
 
-  expect(readRepositorySection(location, ui, reader('qa', 'sqve/tau'))).toEqual({
+  expect(readRepositorySection(location, ui, reader('qa', 'sqve/tau'))?.entry).toEqual({
     field: 'qa.repositories.sQVe/tau',
     value: { setting: 1 },
   });
@@ -71,8 +89,20 @@ it('reads the matched entry with its field name', () => {
 });
 
 it.each([
-  { condition: 'the user file is missing', user: undefined, repository: 'sQVe/tau' },
-  { condition: 'the section is unset', user: { other: 1 }, repository: 'sQVe/tau' },
+  { condition: 'the user file is missing', user: undefined },
+  { condition: 'the section is unset', user: { other: 1 } },
+])('reads no section when $condition', ({ user }) => {
+  const { location, write } = fixture();
+
+  if (user !== undefined) {
+    write(user);
+  }
+
+  expect(readRepositorySection(location, ui, reader('qa', 'sQVe/tau'))).toBeUndefined();
+  expect(readEntry).not.toHaveBeenCalled();
+});
+
+it.each([
   { condition: 'repositories is unset', user: { qa: {} }, repository: 'sQVe/tau' },
   {
     condition: 'the repository is unknown',
@@ -92,11 +122,9 @@ it.each([
 ])('reads no entry when $condition', ({ user, repository }) => {
   const { location, write } = fixture();
 
-  if (user !== undefined) {
-    write(user);
-  }
+  write(user);
 
-  expect(readRepositorySection(location, ui, reader('qa', repository))).toBeUndefined();
+  expect(readRepositorySection(location, ui, reader('qa', repository))?.entry).toBeUndefined();
   expect(readEntry).not.toHaveBeenCalled();
 });
 

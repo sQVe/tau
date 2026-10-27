@@ -3,8 +3,8 @@ import { expect, it } from 'vitest';
 import { readAllowedModels } from '../src/config/models.js';
 import { readBrowserLoginCommand } from '../src/extensions/subagents/browserLogin.js';
 import { readProfileModels } from '../src/extensions/subagents/profileModels.js';
-import { readTrackerConfig } from '../src/extensions/subagents/trackerConfig.js';
 import { loadTddConfig } from '../src/extensions/tdd/config.js';
+import { readTrackerSetup } from '../src/extensions/tracker/config.js';
 import { temporaryTauConfig } from './tauConfigHarness.js';
 
 it('leaves TDD config, profiles, and allowed models readable when bulkRead is broken', ({
@@ -85,9 +85,10 @@ it('keeps every reader working when each block holds unknown keys', ({ onTestFin
   expect(readAllowedModels(location)?.models).toEqual(['a/one']);
   expect(readProfileModels(location, ui)).toEqual(new Map([['scout', 'a/one']]));
 
-  expect(readTrackerConfig(location, ui, 'sQVe/tau')?.repositories.get('sQVe/tau')?.team).toBe(
-    'ME',
-  );
+  expect(readTrackerSetup(location, ui, 'sQVe/tau')).toMatchObject({
+    status: 'read',
+    route: { team: 'ME' },
+  });
 
   expect(readBrowserLoginCommand(location, ui)).toBe('open-browser');
   expect(loadTddConfig(location, ui).config.productionGlobs).toEqual(['lib/**']);
