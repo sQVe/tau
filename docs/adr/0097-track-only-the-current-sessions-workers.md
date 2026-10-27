@@ -7,7 +7,7 @@
 the history recovery guidance in
 [ADR 0073 (Leave manager compaction to Pi)](./0073-leave-manager-compaction-to-pi.md), the history
 tool references in
-[ADR 0078 (Remind managers to compact and restore the worker ledger after each compaction)](./0078-remind-managers-to-compact-and-restore-the-worker-ledger.md)
+[ADR 0078 (Remind managers to compact and restore the worker ledger after each compaction)](./README.md#retired)
 and
 [ADR 0087 (Use codemode to batch or filter evidence within an output budget)](./0087-gather-evidence-with-codemode.md),
 and the task record retirement policy in
