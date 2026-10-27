@@ -123,7 +123,7 @@ pi install git:github.com/sqve/tau@v1.0.0
 Answer-mode `fetch_content` uses `fetch.answerProvider` and `fetch.answerModel` in pi-web-access's
 `web-search.json`, or the session model without them. Tau checks only an `answerModel` passed on the
 call against `allowedModels`. See the
-[model defaults decision](adr/0072-keep-model-defaults-out-of-code.md).
+[config decision](adr/0061-layer-tau-config-from-user-and-repository-files.md).
 
 ### Workers
 
@@ -142,7 +142,7 @@ Without either, the launch fails. To choose a model per profile, add `profiles`:
 `default` applies to every profile without its own entry. A launch `model` overrides both. Only the
 user file may set `profiles`, and profile files may not set `model:`. Worker launch refuses a model
 that is unavailable or outside `allowedModels`; it never falls back to another model. See the
-[worker model decision](adr/0071-set-worker-models-in-the-user-config.md).
+[config decision](adr/0061-layer-tau-config-from-user-and-repository-files.md).
 
 A profile's `tools:` setting lists registered tool names, separated by commas, for example
 `tools: read, bash`. Its `skills:` setting lists skill names, separated by commas, for example

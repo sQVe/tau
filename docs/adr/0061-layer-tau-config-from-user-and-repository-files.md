@@ -1,124 +1,140 @@
-# ADR 0061: Layer Tau config from user and repository files
+# ADR 0061: Keep Tau config in a user file and a trusted repository file
 
-**Date**: 2026-09-28\
-**Status**: Accepted; unknown key handling superseded by
-[ADR 0099 (Warn on unknown config keys and fail only the entry in use)](./0099-warn-on-unknown-config-keys-and-fail-only-the-entry-in-use.md)\
+**Date**: 2026-10-19\
+**Status**: Accepted\
+**Supersedes**: [ADR 0027 (Share one delegate model across bounded tool tasks)](./README.md#retired),
+[ADR 0041 (Default the delegate to gpt-6-luna)](./README.md#retired),
+[ADR 0044 (Restore gpt-5.6-luna as the delegate default)](./README.md#retired),
+[ADR 0047 (Default bundled worker profiles to Opus 5.5)](./README.md#retired),
+[ADR 0063 (Narrow allowed models from the user file to the repository file)](./README.md#retired),
+[ADR 0071 (Set worker models in the user config)](./README.md#retired),
+[ADR 0072 (Keep model defaults out of code)](./README.md#retired),
+[ADR 0085 (Group per-repository settings in the user config)](./README.md#retired),
+[ADR 0095 (Keep repository routing in tracker config)](./README.md#retired),
+[ADR 0099 (Warn on unknown config keys and fail only the entry in use)](./README.md#retired),
+[ADR 0110 (Keep QA settings in a per-feature repository map)](./README.md#retired), the config parts
+of
+[ADR 0111 (Request review bots from config and skip the preview for a named change)](./0111-request-review-bots-from-config-and-skip-named-changes-in-pr.md)
+and
+[ADR 0116 (Name the mutation command in the repository file)](./0116-name-the-mutation-command-in-the-repository-file.md)\
 **Related**:
-[ADR 0023 (Use advisory TDD observations instead of edit permissions)](./0023-advisory-tdd-observations.md),
-[ADR 0027 (Share one delegate model across bounded tool tasks)](./0027-share-one-delegate-model.md),
-[ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
-[ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md)
+[ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md)
 
 ## Context
 
-Advisory TDD uses globs hardcoded for TypeScript and JavaScript under a few root folders
-([ADR 0023](./0023-advisory-tdd-observations.md)). In a Go repository such as Grove, hints and
-`run_tests` freshness see no code. Other repositories want to exclude part of `src/`, such as
-`src/components/**`.
+Tau needs settings that a user sets once for every repository, and settings that a repository checks
+in. Pi already layers its own settings this way, with `~/.pi/agent/settings.json` and a
+`.pi/settings.json` that Pi reads only in a trusted project.
 
-Tau needs settings a user sets once for every repository, and settings a repository checks in that
-override them. TDD is the first consumer. The formatter table, a bash allowlist, and model settings
-may follow.
+Every Tau checkout reads the same user file, including older checkouts in other worktrees. A newer
+Tau must be able to add a key without breaking an older one.
 
-Pi layers its own settings the same way: `~/.pi/agent/settings.json`, overridden by
-`.pi/settings.json`. Pi's extension guide puts project config in `.pi/` and reads it only in a
-trusted project. pi-claude-bridge follows that guide.
-
-`.tau/` holds state that stays out of version control, and Tau's own `.gitignore` ignores the whole
-folder.
+A trusted repository may run code, but other people write its checked-in config for every user of
+the repository. Models cost the user money and receive the user's data. Commands from config run on
+the user's machine. Routes decide where Tau writes. The user must own those choices.
 
 ## Decision
 
-Read Tau config from `<agentDir>/tau.json` and `<cwd>/.pi/tau.json`. Built-in defaults apply first,
-the user file overrides them, and the repository file overrides both. `<agentDir>` is Pi's
-`getAgentDir()`, and `.pi` is Pi's `CONFIG_DIR_NAME`. This is the layout Pi and its extensions use,
-so the files sit where Pi users look, and the repository file follows Pi's project trust.
+Tau reads `<agentDir>/tau.json` and, in a project Pi trusts, `<cwd>/.pi/tau.json`. Each feature owns
+one top-level key and validates it where it reads it. The user file owns every model, route, and
+command from user config. The repository file holds only what belongs with the code.
 
-### Format and precedence
+### Files and trust
 
-- Both files share one schema. Each consumer owns a top-level key. TDD owns `tdd`, which may set
-  `productionGlobs`, `testGlobs`, `testSupportGlobs`, `excludedGlobs`, and `verificationArgv`.
-- Precedence works per field. A list replaces the earlier one instead of extending it, so excluding
-  `src/components/**` means listing the default exclusions too.
-- `verificationArgv` must start with `vitest` until other runners exist (ME-353, ME-354).
+- `<agentDir>` is Pi's `getAgentDir()`, and `.pi` is Pi's `CONFIG_DIR_NAME`.
+- Built-in defaults apply first, then the user file, then the repository file.
+- Tau skips the repository file of an untrusted project, and the status output names the file.
 - A missing file contributes nothing.
 
-### Repository entries
+### Who may set each key
 
-A config section keyed `owner/name`, such as `fullCheck.repositories`, applies to the repository
-that `origin` names. Only an `origin` on the GitHub host, `github.com`, names one. A repository with
-the same `owner/name` on another host never gets another repository's entry.
+| Key             | User file | Repository file | Rule                                                           |
+| --------------- | --------- | --------------- | -------------------------------------------------------------- |
+| `tdd`           | yes       | yes             | Per field; a list replaces the earlier list                    |
+| `allowedModels` | yes       | yes             | Each file may only remove models from the list before it       |
+| `mutation`      | no        | yes             | `argv` is the mutation command, beside the script it runs      |
+| `subagents`     | yes       | no              | `capacity`, the live workers at once: an integer from 1 to 256 |
+| `profiles`      | yes       | no              | Worker models and model routes                                 |
+| `browser`       | yes       | no              | `loginCommand`, which the manager asks the user to run         |
+| `tracker`       | yes       | no              | `agentTeam`, and `repositories` with a Linear route per entry  |
+| `qa`            | yes       | no              | `repositories` with URL and test-account commands per entry    |
+| `reviews`       | yes       | no              | `repositories` with the review bots per entry                  |
+| `fullCheck`     | yes       | no              | `repositories` with the full check command per entry           |
 
-### Trust
+A key in the wrong file is an error. The error names the file and the file the key belongs in.
+`tdd.verificationArgv` must start with `vitest`, the only runner Tau supports.
 
-Tau reads `.pi/tau.json` only when Pi trusts the project, as Pi does for `.pi/settings.json`. An
-untrusted project's file is skipped, and the status output names it.
+### Per-repository settings
 
-### Validation
+- A feature that needs per-repository settings keeps its own map, `<feature>.repositories`, keyed by
+  `owner/name`.
+- The repository is the one that the `origin` remote names. Only an `origin` on the GitHub host,
+  `github.com`, names one. A repository with the same `owner/name` on another host never gets
+  another repository's entry.
+- Matching ignores case. Two keys for one repository that differ only in case are an error.
+- A `reviews` bot's `login` is its GitHub login. It matches without regard to case or a trailing
+  `[bot]`. Its `comment` is the exact body of the review request.
+- One helper finds the entry for every feature, so the matching rules cannot drift.
 
-- One loader reads and validates both files at the tool boundary. A pure function merges the layers,
-  and the parsed values go into classification, fingerprints, and the runner.
-- The schema rejects unknown keys inside `tdd`, so a misspelled field fails instead of being
-  ignored. It ignores unknown top-level keys, because every Tau checkout reads the same user file
-  and an older one must not reject a key a newer consumer added.
-- Invalid JSON, a wrong type, an unknown `tdd` key, or an unreadable file is an error that names the
-  file and the failing field. Tau never skips the broken layer or falls back to defaults.
-- A config error pauses hints and appends the error once to the tool result. It never blocks an
-  edit. `run_tests` fails with the error instead of running with another config.
-- Config changes hints and test execution only. Commit checks stay unchanged.
+### Models
 
-### Status
+- Tau's code names no model. Each model comes from a call argument or from the user file.
+- A worker launch uses the launch `model`, then `profiles.<name>.model`, then
+  `profiles.default.model`. Without any of them, the launch fails and names
+  `profiles.default.model`. Profile files may not set `model:`.
+- A profile may have a `route`. It has a `question`, two `labels` that each hold a `criterion` and a
+  `model`, and a `classifier` as `provider/model-id`. An optional `confidence` sets the least
+  confidence that keeps the classifier's label. Otherwise the launch uses the model it would use
+  without a route.
+- Web answers use `pi-web-access`'s own `fetch.answerModel`, unless the caller passes one.
+- `allowedModels` limits every model Tau selects or passes on. Each file that sets it may only
+  remove models from the list before it. Tau refuses a model outside the list, names the list and
+  its files, and never falls back to another model.
 
-Each `run_tests` result shows every effective value and the file, or built-in default, it came from.
+### Unknown, removed, and bad keys
 
-### Future consumer: model selection
-
-When model settings join this config, the precedence is: an explicit per-call override, then a
-task-specific setting, then the shared delegate setting
-([ADR 0027](./0027-share-one-delegate-model.md)), then the built-in default. The user and repository
-layers decide the task and shared settings. An invalid setting or unavailable model is an error and
-never falls through to another model. Model settings are not part of this decision.
+- Tau ignores an unknown key at any depth. It warns once per session with the file and the full key
+  path.
+- A removed or renamed key fails the feature that owned it. The error names the replacement.
+- A wrong type or a missing required field fails only the entry being read. A bad `profiles.scout`
+  blocks only `scout` launches.
+- The config has no version field. The user writes it by hand, and an older checkout cannot read a
+  newer version anyway.
 
 ## Consequences
 
 ### Positive
 
-- A user sets defaults once, and a repository overrides only what differs.
-- Grove and other non-Node repositories can set their layout without editing Tau.
-- The files sit where Pi users already look, and the repository file follows Pi's trust prompt.
-- A typo fails loudly, and the error says which file to fix.
+- A user sets defaults once, and a repository overrides only what belongs to its code.
+- A repository cannot choose a model, a route, or a user command for the user.
+- A newer Tau adds keys without breaking older checkouts, and one bad entry blocks only its own
+  work.
+- Each error names the file and the field to fix.
 
 ### Negative
 
-- Replacing a whole list means copying the earlier value to extend it. The status output shows what
-  applies.
-- A misspelled top-level key, such as `tddd`, is ignored. Tau warns once per session with the file
-  and the key.
-- In an untrusted project, the repository file has no effect beyond a note in the status output.
-- A `verificationArgv` without `--reporter=json` makes every run fail as an unreadable report.
-- Changing either file starts a new observation and forgets RED in the current cycle.
+- A misspelled key only warns, so the feature runs without it until the user reads the warning.
+- A new user must set a launch `model`, or write `profiles.default.model`, before a worker starts.
+- Each per-repository feature repeats `owner/name` keys in its own map.
+- A team cannot share QA, review, or check settings through the repository.
+- Replacing a `tdd` list means copying the earlier value to extend it.
 
 ## Alternatives considered
 
-### XDG config folder for the user file
+### Reject unknown keys
 
-Use `$XDG_CONFIG_HOME/tau/` for the user file. Rejected because it ignores `PI_CODING_AGENT_DIR`, so
-separate Pi setups and the integration tests would share one file, the reason
+Reject unknown keys inside each block, or at every depth. Rejected because each new key would break
+every older checkout that shares the user file.
+
+### Let the repository file set models or commands
+
+Let a repository file set `profiles` or `fullCheck`. Rejected because other people write that file,
+and the user pays for the models and runs the commands.
+
+### XDG folder, root `tau.json`, or `package.json`
+
+Rejected because the XDG folder ignores `PI_CODING_AGENT_DIR`, so separate Pi setups and the
+integration tests would share one file, the reason
 [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md) rejected XDG for records. XDG suits
-tools that run under several agents, and Tau runs only in Pi.
-
-### Root `tau.json` or `.tau/tdd.json`
-
-Use a root `tau.json` or `.tau/tdd.json` for the repository file. Rejected because the first departs
-from Pi's extension convention and skips project trust. The second sits among ignored state and
-needs ignore-rule changes before Git tracks it.
-
-### Block in `package.json`
-
-Use a `tau.tdd` block in `package.json`. Rejected because Go and Lua repositories have none.
-
-### Config-loading library
-
-Use a config-loading library such as cosmiconfig or lilconfig. Rejected because Tau reads two fixed
-paths, and validation and error wording would still be ours. Many of them can load JS config, which
-runs repository code.
+tools that run under several agents, and Tau runs only in Pi. A root file skips Pi's project trust,
+and repositories in Go or Lua have no `package.json`.

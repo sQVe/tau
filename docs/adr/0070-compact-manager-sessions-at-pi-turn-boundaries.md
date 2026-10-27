@@ -4,7 +4,7 @@
 **Status**: Superseded\
 **Superseded by**:
 [ADR 0073 (Leave manager compaction to Pi)](./0073-leave-manager-compaction-to-pi.md)\
-**Related**: [ADR 0061 (Layer Tau config from user and repository files)](./0061-layer-tau-config-from-user-and-repository-files.md),
+**Related**: [ADR 0061 (Keep Tau config in a user file and a trusted repository file)](./0061-layer-tau-config-from-user-and-repository-files.md),
 [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md)
 
 ## Context

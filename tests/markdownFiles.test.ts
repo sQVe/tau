@@ -11,10 +11,6 @@ const repositoryRoot = join(import.meta.dirname, '..');
 // name them: paths in projects that use Pi, herdr source files, and the layout that older records
 // describe. Remove a document when it stops naming the path.
 const allowedPaths: AllowedPaths = {
-  '.pi/agents/': [
-    'docs/adr/0047-default-bundled-worker-profiles-to-opus-5-5.md',
-    'docs/adr/0071-set-worker-models-in-the-user-config.md',
-  ],
   '.pi/settings.json': [
     'docs/adr/0061-layer-tau-config-from-user-and-repository-files.md',
     'docs/development.md',
@@ -37,7 +33,6 @@ const allowedPaths: AllowedPaths = {
   'scripts/mutationScope.ts': [
     'docs/adr/0115-copy-mutation-script-per-repository-and-fail-on-survivors.md',
   ],
-  'src/tauConfig/': ['docs/adr/0063-narrow-allowed-models-from-user-to-repository.md'],
 };
 
 const root = '/repository';

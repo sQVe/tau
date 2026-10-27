@@ -6,18 +6,16 @@
 history tool references superseded by
 [ADR 0097 (Track only the current session's workers)](./0097-track-only-the-current-sessions-workers.md)\
 **Supersedes**:
-[ADR 0014 (Delegate model for bulk reads)](./0014-delegate-model-for-bulk-reads.md),
-[ADR 0022 (Gate the clamped read hint on the remainder)](./0022-gate-the-clamped-read-hint-on-the-remainder.md),
-the bundled tool lists in
+[ADR 0014 (Delegate model for bulk reads)](./README.md#retired),
+[ADR 0022 (Gate the clamped read hint on the remainder)](./README.md#retired), the bundled tool
+lists in
 [ADR 0067 (Give each worker profile one loadout of tools, skills, instruction sets, and packages)](./0067-give-workers-only-their-profile-tools-and-skills.md),
-the `bulk_read` section in
-[ADR 0072 (Keep model defaults out of code)](./0072-keep-model-defaults-out-of-code.md), and the
-`bulkRead` key handling in
-[ADR 0085 (Group per-repository settings in the user config)](./0085-group-per-repository-settings-in-the-user-config.md)\
-**Related**:
-[ADR 0067 (Give each worker profile one loadout of tools, skills, instruction sets, and packages)](./0067-give-workers-only-their-profile-tools-and-skills.md)
+the `bulk_read` section in [ADR 0072 (Keep model defaults out of code)](./README.md#retired), and
+the `bulkRead` key handling in
+[ADR 0085 (Group per-repository settings in the user config)](./README.md#retired)\
+**Related**: [ADR 0067 (Give each worker profile one loadout of tools, skills, instruction sets, and packages)](./0067-give-workers-only-their-profile-tools-and-skills.md)
 for profile tool allowlists,
-[ADR 0095 (Keep repository routing in tracker config)](./0095-keep-repository-routing-in-tracker-config.md)
+[ADR 0061 (Keep Tau config in a user file and a trusted repository file)](./0061-layer-tau-config-from-user-and-repository-files.md)
 for config placement and validation
 
 ## Context
