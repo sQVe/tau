@@ -104,8 +104,11 @@ or Git. Workers then carry out the agent tickets.
    ```
 
    When the body file of a ticket that `start.json` records is missing, save the ticket's
-   description as the body file. Keep a body file that differs from the description: it holds edits
-   that never reached Linear, and the `start_slice` tool sends them in step 9.
+   description as the body file. When it differs from the description, either side may hold the
+   newer edit: a local edit that never reached Linear, or a Linear edit made after the last start.
+   Show the difference and ask with `ask_user_question` which to keep. A kept body file goes to
+   Linear through the `start_slice` tool in step 9. To keep Linear's text, save the description as
+   the body file.
 
 4. Choose the base. Run `git fetch origin`, then find the remote's default branch.
    `git symbolic-ref --short refs/remotes/origin/HEAD` prints it with the remote prefix, such as
