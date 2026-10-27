@@ -29,7 +29,6 @@ export interface GhOutcome {
 
 export interface PullRequestListQuery {
   repository: string;
-  // Flags that select the pull requests, such as ['--head', branch].
   filter: readonly string[];
   state: string;
   fields: string;
@@ -63,7 +62,6 @@ export const run = (runtime: CommandRuntime, commandArguments: string[]): Promis
   return runCommand(runtime, 'gh', commandArguments, commandLabel);
 };
 
-// Unlike run, never throws on a nonzero exit, so the caller decides what each exit code means.
 export const runOutcome = async (
   runtime: CommandRuntime,
   commandArguments: string[],
@@ -107,7 +105,6 @@ export const readChecked = async <Schema extends TSchema>(
   return value;
 };
 
-// gh pr list prints at most --limit pull requests and does not say when it left some out.
 const listLimit = 100;
 
 export const pullRequestListArguments = (query: PullRequestListQuery): string[] => [
@@ -124,7 +121,6 @@ export const pullRequestListArguments = (query: PullRequestListQuery): string[] 
   query.fields,
 ];
 
-// Returns the problem with a list that reached the limit, or undefined when it is complete.
 export const incompleteListProblem = (listed: readonly unknown[]): string | undefined =>
   listed.length >= listLimit
     ? `printed ${listed.length} pull requests, the limit, so the list may be incomplete.`
