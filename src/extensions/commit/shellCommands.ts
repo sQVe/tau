@@ -23,6 +23,78 @@ const blankCharacters = new Set([' ', '\t']);
 const separatorCharacters = new Set([';', '&', '|', '\n', '(', ')']);
 const longestRedirection = '<<<';
 
+const ansiCCharacters: Record<string, string> = {
+  a: '\u0007',
+  b: '\b',
+  e: '\u001B',
+  E: '\u001B',
+  f: '\f',
+  n: '\n',
+  r: '\r',
+  t: '\t',
+  v: '\v',
+  '\\': '\\',
+  "'": "'",
+  '"': '"',
+  '?': '?',
+};
+
+const ansiCEscape =
+  /\\(?:(x\{[\dA-Fa-f]*\}?|x[\dA-Fa-f]{1,2}|u[\dA-Fa-f]{1,4}|U[\dA-Fa-f]{1,8}|[0-7]{1,3})|c(\\\\|.)|(.))/gsu;
+
+const octalRadix = 8;
+const hexRadix = 16;
+const byteMask = 0xff;
+const controlMask = 0x1f;
+const deleteCode = 0x7f;
+const lastCodePoint = 0x10ffff;
+const byteDigits = 2;
+
+const decodeAnsiCNumber = (code: string): string => {
+  if (/^[0-7]/u.test(code)) {
+    return String.fromCodePoint(Number.parseInt(code, octalRadix) & byteMask);
+  }
+
+  const digits = code.slice(1).replaceAll(/[{}]/gu, '');
+
+  if (code.startsWith('x')) {
+    return String.fromCodePoint(Number.parseInt(`0${digits.slice(-byteDigits)}`, hexRadix));
+  }
+
+  const value = Number.parseInt(digits, hexRadix);
+
+  return value > lastCodePoint ? '\uFFFD' : String.fromCodePoint(value);
+};
+
+const decodeAnsiCControl = (character: string): string => {
+  const code = character === '?' ? deleteCode : character.charCodeAt(0) & controlMask;
+
+  return String.fromCodePoint(code);
+};
+
+const decodeAnsiCEscape = (
+  escape: string,
+  number: string | undefined,
+  control: string | undefined,
+  other: string | undefined,
+): string => {
+  if (number !== undefined) {
+    return decodeAnsiCNumber(number);
+  }
+
+  if (control !== undefined) {
+    return decodeAnsiCControl(control);
+  }
+
+  return ansiCCharacters[other ?? ''] ?? escape;
+};
+
+const decodeAnsiCText = (body: string): string => {
+  const decoded = body.replaceAll(ansiCEscape, decodeAnsiCEscape);
+
+  return decoded.split('\u0000', 1)[0] ?? '';
+};
+
 // Split shell source into simple commands after quote removal. Commands inside `$(...)`,
 // backticks, process substitutions, and expanding heredoc bodies are listed as well, because the
 // shell runs them. Parameter expansions stay unexpanded, and substitutions keep their source text.
@@ -64,7 +136,9 @@ class ShellParser {
   }
 
   // Read text with double-quote rules until `terminator`, or to the end when it is undefined.
-  readExpandingText(terminator: string | undefined): string {
+  // `dollarQuotes` is false inside double quotes and heredoc bodies, where `$'` and `$"` are plain
+  // text.
+  readExpandingText(terminator: string | undefined, dollarQuotes: boolean): string {
     let text = '';
 
     while (this.position < this.source.length) {
@@ -79,7 +153,7 @@ class ShellParser {
       if (character === '\\') {
         text += this.readDoubleQuotedEscape();
       } else if (character === '$') {
-        text += this.readDollar().text;
+        text += this.readExpandingDollar(dollarQuotes);
       } else if (character === '`') {
         text += this.readBacktick();
       } else {
@@ -148,11 +222,11 @@ class ShellParser {
     if (character === '"') {
       this.position += 1;
 
-      return { text: this.readExpandingText('"'), quoted: true };
+      return { text: this.readExpandingText('"', false), quoted: true };
     }
 
     if (character === '$') {
-      return this.readDollar();
+      return this.readDollar(true);
     }
 
     if (character === '`') {
@@ -257,7 +331,20 @@ class ShellParser {
     return text;
   }
 
-  private readDollar(): { text: string; quoted: boolean } {
+  private readExpandingDollar(dollarQuotes: boolean): string {
+    const next = this.source.charAt(this.position + 1);
+    const startsQuote = next === "'" || next === '"';
+
+    if (startsQuote && !dollarQuotes) {
+      this.position += 1;
+
+      return '$';
+    }
+
+    return this.readDollar(dollarQuotes).text;
+  }
+
+  private readDollar(dollarQuotes: boolean): { text: string; quoted: boolean } {
     const start = this.position;
     const next = this.source[this.position + 1];
 
@@ -270,7 +357,7 @@ class ShellParser {
     }
 
     if (next === '{') {
-      return { text: `\${${this.readExpandingText('}')}}`, quoted: false };
+      return { text: `\${${this.readExpandingText('}', dollarQuotes)}}`, quoted: false };
     }
 
     if (next === "'") {
@@ -278,7 +365,7 @@ class ShellParser {
     }
 
     if (next === '"') {
-      return { text: this.readExpandingText('"'), quoted: true };
+      return { text: this.readExpandingText('"', false), quoted: true };
     }
 
     this.position = start + 1;
@@ -299,7 +386,7 @@ class ShellParser {
 
     this.position += 1;
 
-    return this.source.slice(start, this.position - 1);
+    return decodeAnsiCText(this.source.slice(start, this.position - 1));
   }
 
   private readBacktick(): string {
@@ -373,7 +460,7 @@ class ShellParser {
       if (heredoc.expands) {
         const bodyParser = new ShellParser(body);
 
-        bodyParser.readExpandingText(undefined);
+        bodyParser.readExpandingText(undefined, false);
         this.commands.push(...bodyParser.commands);
       }
     }
