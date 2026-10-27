@@ -213,6 +213,7 @@ const hasCodemodeGuidelines = (systemPrompt: string | undefined): boolean =>
 it.for([
   ['scout', true],
   ['reviewer', true],
+  ['checker', true],
   ['worker', true],
   ['qa', false],
   ['browser', false],

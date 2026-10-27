@@ -102,8 +102,8 @@ pick below it falls back to `model`. Without `confidence`, the cutoff is 0.7:
 }
 ```
 
-The bundled `scout`, `reviewer`, and `worker` profiles gather evidence with `codemode` scripts and
-cite only what a script returned. The `qa` and `browser` profiles do not get `codemode`.
+The bundled `scout`, `reviewer`, `checker`, and `worker` profiles gather evidence with `codemode`
+scripts and cite only what a script returned. The `qa` and `browser` profiles do not get `codemode`.
 
 The `tracker` skill writes Linear tickets. It sends agent tickets to the team that
 `tracker.agentTeam` names in `~/.pi/agent/tau.json`. Other tickets go to the team and optional

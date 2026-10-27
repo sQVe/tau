@@ -33,9 +33,10 @@ named files. It needs the `subagent` tools inside herdr. Without them, tell the 
   one reviewer. Deep launches a finder, then a fresh checker.
 - A first review covers the whole target. A fix review captures only the fix, its callers, and the
   findings it closes. Never reuse earlier findings or verdicts.
-- Launch workers with the `reviewer` profile and the [review assignment](review-assignment.md). Omit
-  `model` unless the user names one. Omit `timeoutSeconds` unless the user names a cheap model; then
-  set a shorter one.
+- Launch the fast reviewer and the deep finder with the `reviewer` profile, and the deep checker
+  with the `checker` profile. Give each the [review assignment](review-assignment.md). Omit `model`
+  unless the user names one. Omit `timeoutSeconds` unless the user names a cheap model; then set a
+  shorter one.
 - If a launch fails, report it. When it failed before the worker made a model call and its pane and
   task are gone, retry it once with the same profile and model. Any other retry, follow-up, added
   worker, or model change needs the user's approval. Never switch model or provider silently.
@@ -65,7 +66,7 @@ named files. It needs the `subagent` tools inside herdr. Without them, tell the 
 4. Run the mode, with the rules of [Run the workers](phases.md#run-the-workers).
    - Fast: one reviewer. Add "Try to disprove each finding before you report it."
    - Deep: a finder, with "Report every plausible material candidate; the checker tests them." Then
-     a fresh checker, with the `## Checker` lines of the review assignment and the finder's
+     a fresh `checker` worker, with the `## Checker` lines of the review assignment and the finder's
      candidates, or the path `$dir/finder.md` holding its report. Launch the checker even when the
      finder found nothing.
 

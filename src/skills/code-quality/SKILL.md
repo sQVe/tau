@@ -26,8 +26,8 @@ inside herdr. Without them, tell the user and stop. For defects, use the
   [code-review](../code-review/SKILL.md#hard-rules). Anything unclear is not the user's own.
 - The report gives the target no approval, no verdict, and no clean result. Never call an incomplete
   or stale review clean.
-- Launch workers with the `reviewer` profile and the [quality assignment](quality-assignment.md).
-  Omit `model` unless the user names one.
+- Launch the finder with the `reviewer` profile and the checker with the `checker` profile. Give
+  each the [quality assignment](quality-assignment.md). Omit `model` unless the user names one.
 - If a launch fails, follow the retry rule of [code-review](../code-review/SKILL.md#hard-rules). Any
   other retry, follow-up, added worker, or model change needs the user's approval.
 - Aim for about 10 minutes, or about 10 minutes per part in a repo run, and follow the rules for the
@@ -55,7 +55,7 @@ inside herdr. Without them, tell the user and stop. For defects, use the
    [Run the workers](../code-review/phases.md#run-the-workers).
    - Finder: the `reviewer` profile with
      [quality-assignment.md#quality-lens](quality-assignment.md#quality-lens).
-   - Checker: a fresh `reviewer` worker with `#quality-lens` and
+   - Checker: a fresh `checker` worker with `#quality-lens` and
      [quality-assignment.md#checker](quality-assignment.md#checker), plus the finder's report or the
      path `$dir/finder.md`. Launch it even when the finder found nothing.
 

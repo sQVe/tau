@@ -181,7 +181,7 @@ it('refuses to launch a bundled profile without a launch or configured model', a
 
   writeConfig(userFile, { profiles: { scout: { model: request.model } } });
 
-  for (const name of ['worker', 'reviewer', 'qa']) {
+  for (const name of ['worker', 'reviewer', 'checker', 'qa']) {
     const missing = () => resolveLoadout({ profile: name }, context);
     expect(missing).toThrow(`profiles.default.model in ${userFile}`);
     expect(missing).toThrow(`Configured models: ${request.model}.`);
@@ -529,7 +529,7 @@ it('refuses worker startup without the saved model, cwd, CC Safety Net, or profi
   ]);
 });
 
-it.for(['reviewer', 'qa'])(
+it.for(['reviewer', 'checker', 'qa'])(
   'launches the bundled %s without editing responsibility',
   async (name, { onTestFinished }) => {
     const { context, request } = await workerFixture(onTestFinished);
@@ -614,6 +614,7 @@ it('saves the profile instruction sets, or all but browser without the setting',
   expect(resolve('qa').instructionSets).toEqual(['writing', 'workflow', 'browser']);
   expect(resolve('browser').instructionSets).toEqual(['writing', 'workflow', 'browser']);
   expect(resolve('reviewer').instructionSets).toEqual(['writing', 'coding', 'workflow']);
+  expect(resolve('checker').instructionSets).toEqual(['writing', 'coding', 'workflow']);
   expect(resolve('worker').instructionSets).toEqual(['writing', 'coding', 'workflow']);
 });
 
@@ -628,7 +629,7 @@ it('rejects an unknown or empty profile instruction set', () => {
 });
 
 it('defaults bundled roles to medium effort without effort settings in markdown', () => {
-  for (const name of ['scout', 'worker', 'reviewer', 'qa', 'browser']) {
+  for (const name of ['scout', 'worker', 'reviewer', 'checker', 'qa', 'browser']) {
     const source = new URL(`./profiles/${name}.md`, import.meta.url);
     const content = readFileSync(source, 'utf8');
 
@@ -794,6 +795,7 @@ it('lists bundled, user, and trusted project profiles without changing profile f
 
   const bundled = [
     { name: 'browser', description },
+    { name: 'checker' },
     { name: 'qa', description },
     ...['reviewer', 'scout', 'worker'].map((name) => ({ name })),
   ];
@@ -828,6 +830,7 @@ it('lists bundled, user, and trusted project profiles without changing profile f
 
   expect(listProfiles(directory, directory, true)).toEqual([
     { name: 'browser', description },
+    { name: 'checker' },
     { name: 'qa', description },
     { name: 'reviewer' },
     { name: 'scout' },
@@ -1057,7 +1060,7 @@ it.for([
   },
 );
 
-it.for(['scout', 'reviewer', 'qa', 'browser'])(
+it.for(['scout', 'reviewer', 'checker', 'qa', 'browser'])(
   'launches the bundled %s without acceptance criteria',
   async (name, { onTestFinished }) => {
     const { context, request } = await workerFixture(onTestFinished);
