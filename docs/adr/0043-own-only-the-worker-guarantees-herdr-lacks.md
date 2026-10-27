@@ -59,10 +59,29 @@ user's saved Pi configuration. Do not reconstruct or fingerprint the parent's ru
 worker refuses to start when its model does not resolve or CC Safety Net is not loaded. It never
 falls back to another model.
 
+### Launch boundary
+
+A launch needs a trusted project. The worker's cwd must be the parent session's cwd, after links
+resolve. Work in another checkout goes to the agent already running there, or to a new session
+started there. Full-tool permission and CC Safety Net do not grant project trust or a second cwd.
+
 ### Nesting and capacity
 
 Workers do not launch workers; they ask the parent. Each parent caps its own live workers in
 process. There is no cross-process lock or durable reservation.
+
+### Coordinator and task controllers
+
+`WorkerController` is the coordinator. It keeps what spans workers: the registry of live workers,
+capacity, launch allocation, follow-up checks, placement, status reads, resume, the cancellation
+entry, and shutdown. Each worker has one `TaskController`, which owns that worker's handle, startup,
+dispatch, replies, polling, stop, and cleanup. Both share one context of client, notifier,
+placement, lifetime signal, closed check, ownership check, and capacity release.
+
+There is no per-task queue. Pane changes wait in the placement queue, and package installs take
+their own lock. Add a per-task queue only when a same-worker race appears, because a queue for one
+worker would make cancellation wait behind the work it must abort. Keeping each worker's lifecycle
+in its own controller keeps changes to one worker out of the coordinator.
 
 ### Process and pane
 
@@ -79,7 +98,9 @@ process. There is no cross-process lock or durable reservation.
 
 - Editing workers default to foreground. Investigation workers default to background.
 - A parent shows at most one foreground worker. Further launches go to the background worker tab,
-  even when they ask for foreground.
+  even when they ask for foreground. The count covers only workers that the current controller
+  placed. After a parent reload, the new controller does not know the foreground worker, and resume
+  does not restore it, so the next foreground launch can add a second pane beside the parent.
 - A foreground worker splits beside the parent when both panes stay useful. A zoomed or too small
   parent pane sends it to a background tab instead.
 - Placement is serialized. Herdr owns the layout after placement, and Tau does not rebalance it.
@@ -87,8 +108,9 @@ process. There is no cross-process lock or durable reservation.
 
 ### Ownership, cleanup, and follow-ups
 
-- Ownership is saved in the task record. A restarted parent session reattaches to a live worker
-  after herdr reports the recorded session identity. One controller acts per task.
+- Ownership is saved in the task record. A parent session can act only on tasks it launched. A
+  restarted parent session reattaches to a live worker after herdr reports the recorded session
+  identity. One `TaskController` acts per task.
 - When cleanup cannot be confirmed, show the worker as needing manual cleanup and free its capacity.
 - A follow-up needs a saved report on its source task, confirmed cleanup of that task, and no
   successor. A successor that Tau confirmed stopped before dispatch does not count. Herdr must also
@@ -119,6 +141,8 @@ Each checkout reads only its own folder, so a branch that changes the record for
 - A worker does not inherit runtime-only parent settings, such as a `--model` flag.
 - An unconfirmed worker may keep running outside the cap until the user stops it.
 - A Pi process started by hand on a saved session can race a follow-up.
+- After a parent reload, the one-foreground limit does not hold, so a second worker can sit beside
+  the parent.
 - Delegation from a worker goes through the parent.
 - Herdr has no CLI for `layout.apply`, so Tau uses its socket, and a new tab can flash during
   placement.
