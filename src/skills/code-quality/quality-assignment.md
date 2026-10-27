@@ -91,6 +91,8 @@ finding.
   constraints as the target.
 - Confirm each label against its definition in the quality lens. Report a wrong label as refuting
   that part of the finding.
-- Mark each finding supported, refuted, or uncertain, with a reason drawn only from what you or the
-  evidence returned.
+- For each plan-correction note, confirm that the plan item says what the note claims, and that the
+  code departs from it and improves on it.
+- Mark each finding and each plan-correction note supported, refuted, or uncertain, with a reason
+  drawn only from what you or the evidence returned.
 ```

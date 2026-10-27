@@ -32,9 +32,9 @@ Use this shape for the files in `$dir` and for the reply.
   and name each in one line. Show refuted candidates only when one affects a decision.
 - Defects: a separate section that lists each defect the workers met, with its `file:line`. Never
   put a defect in the findings table. Point to code-review for a defect review.
-- Plan-correction notes: a list after the findings table, with `file:line`, the plan item, and why
-  the change improves on the plan. Say that triage-findings does not act on them. Write None when
-  there are none.
+- Plan-correction notes: a list after the findings table, with `file:line`, the plan item, why the
+  change improves on the plan, and the checker's status. Leave out refuted notes. Say that
+  triage-findings does not act on them. Write None when there are none.
 - Gaps: list every gap from the capture and the evidence, areas workers left unread, worker
   failures, and stale or unknown freshness. Do not infer read coverage from citations.
 - Notes: areas workers read only shallowly. They are not gaps.
