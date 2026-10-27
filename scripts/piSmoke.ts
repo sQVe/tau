@@ -1,13 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import { smokeCommitFile, smokeCommitSubject, smokeFailures } from './piSmokeChecks.ts';
 import type { GitFacts } from './piSmokeChecks.ts';
-import { installedPiPath } from './piVersionDrift.ts';
+import { createScratchRepository, git, piChildEnvironment } from './piSmokeSetup.ts';
 
 const usage = `Usage: node scripts/piSmoke.ts [--pi <binary>] [--tau <checkout>] [--model <pattern>]
 
@@ -24,49 +24,6 @@ const prompt = `This is an automated smoke test. Make exactly these tool calls, 
 3. Call commit with one group: files ["${smokeCommitFile}"], subject "${smokeCommitSubject}".
 4. Call codemode with this script: const result = await tools.bash({ command: "printf tau-smoke-%s $((7000+431))" }); return result.output;
 After step 4, reply with the word done.`;
-
-const git = (cwd: string, args: string[]) => {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
-
-  if (result.status !== 0) {
-    throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
-  }
-
-  return result.stdout;
-};
-
-const createScratchRepository = (tau: string): string => {
-  const directory = mkdtempSync(join(tmpdir(), 'tau-pi-smoke-repo-'));
-
-  mkdirSync(join(directory, 'src'));
-  writeFileSync(join(directory, '.gitignore'), 'node_modules\n');
-  writeFileSync(join(directory, 'package.json'), '{ "name": "smoke", "type": "module" }\n');
-  writeFileSync(join(directory, 'src', 'answer.ts'), 'export const answer = () => 41;\n');
-
-  writeFileSync(
-    join(directory, 'src', 'answer.test.ts'),
-    [
-      "import { expect, test } from 'vitest';",
-      '',
-      "import { answer } from './answer.ts';",
-      '',
-      "test('answer returns 41', () => {",
-      '  expect(answer()).toBe(41);',
-      '});',
-      '',
-    ].join('\n'),
-  );
-
-  symlinkSync(join(tau, 'node_modules'), join(directory, 'node_modules'));
-  git(directory, ['init', '--quiet', '--initial-branch', 'main']);
-  git(directory, ['config', 'user.name', 'Smoke']);
-  git(directory, ['config', 'user.email', 'smoke@example.com']);
-  git(directory, ['config', 'commit.gpgsign', 'false']);
-  git(directory, ['add', '.']);
-  git(directory, ['commit', '--quiet', '--message', 'chore: initial']);
-
-  return directory;
-};
 
 const readGitFacts = (repository: string): GitFacts => {
   const log = git(repository, ['log', '--format=%x00%s', '--name-only']);
@@ -127,8 +84,8 @@ const run = (): number => {
     encoding: 'utf8',
     maxBuffer: outputLimitBytes,
     timeout: piTimeoutMilliseconds,
-    // oxlint-disable-next-line node/no-process-env -- pi reads its credentials and PATH from the caller's environment.
-    env: { ...process.env, PATH: installedPiPath(process.env.PATH ?? '', delimiter) },
+    // oxlint-disable-next-line node/no-process-env -- the child environment starts from the caller's PATH.
+    env: piChildEnvironment(process.env.PATH ?? ''),
   });
 
   const failures: string[] = [];
