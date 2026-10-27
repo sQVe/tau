@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-02\
 **Status**: Accepted; the ban on other status changes superseded by
-[ADR 0100 (Let agents cancel Linear tickets after approval)](./0100-let-agents-cancel-linear-tickets-after-approval.md)\
+[ADR 0108 (Ask only before writes that other people see)](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)\
 **Related**:
 [ADR 0075 (Plan work as PR-sized slices in Linear)](./0075-plan-work-as-pr-sized-slices-in-linear.md),
 [ADR 0061 (Keep Tau config in a user file and a trusted repository file)](./0061-layer-tau-config-from-user-and-repository-files.md)

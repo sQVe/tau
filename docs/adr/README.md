@@ -67,7 +67,7 @@ and the numbers that its status names.
 - [0074: Let skills declare the actions they must own](./0074-let-skills-declare-the-actions-they-must-own.md)
 - [0077: Keep a skill authoring guide in docs](./0077-keep-a-skill-authoring-guide-in-docs.md)
 - [0083: Turn on skill tools when the skill runs, and confirm outside writes](./0083-turn-on-skill-tools-when-the-skill-runs-and-confirm-outside-writes.md),
-  partly superseded by 0093 and 0103
+  partly superseded by 0093 and 0108
 - [0087: Gather evidence with codemode](./0087-gather-evidence-with-codemode.md), partly superseded
   by 0092 and 0097
 - [0088: Grow skills into tools and templates](./0088-grow-skills-into-tools-and-templates.md)
@@ -132,22 +132,17 @@ and the numbers that its status names.
 
 ## Linear and slices
 
-- [0075: Plan work as PR-sized slices in Linear](./0075-plan-work-as-pr-sized-slices-in-linear.md),
-  partly superseded by 0103
+- [0075: Plan work as PR-sized slices in Linear](./0075-plan-work-as-pr-sized-slices-in-linear.md)
 - [0082: Own Linear conventions in one tracker skill](./0082-own-linear-conventions-in-one-tracker-skill.md),
-  partly superseded by 0100
-- [0100: Let agents cancel Linear tickets after approval](./0100-let-agents-cancel-linear-tickets-after-approval.md)
+  partly superseded by 0108
 - [0101: Treat `.tau/` files as the working copy and trackers as the saved copy](./0101-treat-tau-files-as-the-working-copy-and-trackers-as-the-saved-copy.md)
-- [0103: Write slice flow Linear changes without approval](./0103-write-slice-flow-linear-changes-without-approval.md),
-  superseded by 0108
-- [0108: Make Linear writes on the user's own work without asking](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)
+- [0108: Ask only before writes that other people see](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)
 - [0112: Review collaborative drafts as files in tuicr](./0112-review-collaborative-drafts-as-files-in-tuicr.md)
 
 ## Code review and pull requests
 
 - [0060: Keep local code review in a skill](./0060-keep-local-code-review-in-a-skill.md), partly
   superseded by 0089
-- [0086: Post to GitHub bots without a confirm](./0086-post-to-github-bots-without-a-confirm.md)
 - [0089: Capture review targets with a code_review tool](./0089-capture-review-targets-with-a-code-review-tool.md),
   partly superseded by 0091
 - [0091: Return review evidence from the code_review tool](./0091-return-review-evidence-from-the-code-review-tool.md)
@@ -207,6 +202,9 @@ and the numbers that its status names.
 | 0079 | Grow modules from flat files                                          | [0120](./0120-capability-modules-with-an-enforced-import-table.md)                                                                                 | `a859a7bb`  |
 | 0084 | Keep the diagram skill out of worker profiles                         | [0067](./0067-give-workers-only-their-profile-tools-and-skills.md)                                                                                 | `b0980b75`  |
 | 0085 | Group per-repository settings in the user config                      | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
+| 0086 | Post to GitHub bots without a confirm                                 | [0108](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)                                                                          | `b0980b75`  |
 | 0095 | Keep repository routing in tracker config                             | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
 | 0099 | Warn on unknown config keys and fail only the entry in use            | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
+| 0100 | Let agents cancel Linear tickets after approval                       | [0108](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)                                                                          | `b0980b75`  |
+| 0103 | Write slice flow Linear changes without approval                      | [0108](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)                                                                          | `b0980b75`  |
 | 0110 | Keep QA settings in a per-feature repository map                      | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |

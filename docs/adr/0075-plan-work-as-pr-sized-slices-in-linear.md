@@ -1,8 +1,8 @@
 # ADR 0075: Plan work as PR-sized slices in Linear
 
 **Date**: 2026-09-30\
-**Status**: Accepted; approval of the split and of each slice start superseded by
-[ADR 0103 (Write slice flow Linear changes without approval)](./0103-write-slice-flow-linear-changes-without-approval.md)
+**Status**: Accepted\
+**Related**: [ADR 0108 (Ask only before writes that other people see)](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)
 
 ## Context
 
@@ -21,10 +21,10 @@ branch or one worker task, and each detailed plan meets the current code.
 ### Lifecycle
 
 1. The user and the manager agree on a design.
-2. The manager splits the design into slice tickets under a container. The user approves the split
-   in one preview before anything is written to Linear.
+2. The manager splits the design into slice tickets under a container. The user reviews the split in
+   one preview before anything is written to Linear.
 3. The manager starts one slice at a time: it creates the slice branch and the slice's agent
-   tickets. The user approves each slice start once.
+   tickets, then reports the start. The user reads that report.
 4. Workers do the agent tickets, and the slice goes through review, a PR, and merge. Then the next
    slice starts, unless it already started stacked on this one.
 
@@ -62,7 +62,7 @@ branch or one worker task, and each detailed plan meets the current code.
 
 - The plan survives the session in Linear, and each PR maps to exactly one ticket.
 - Detailed plans stay current, because agent tickets are written just before the work.
-- The user approves at two fixed points: the split and each slice start.
+- The user reviews the split before it is written, and reads a report of each slice start.
 
 ### Negative
 
