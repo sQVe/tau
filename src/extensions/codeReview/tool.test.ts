@@ -1,12 +1,11 @@
-import { execFile } from 'node:child_process';
 import type { PathLike } from 'node:fs';
 import { chmod, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
 import { Value } from 'typebox/value';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { installCommandShim } from '../../../tests/commandShimFake.js';
 import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';
@@ -887,21 +886,9 @@ it.skipIf(process.getuid?.() === 0)(
 
 // Puts a git wrapper first on PATH that fails the commands whose arguments contain `failing`.
 const failGitCommand = async (failing: string) => {
-  const directory = temporaryDirectory(onTestFinished, 'tau-review-git-');
-
-  const { stdout } = await promisify(execFile)('sh', ['-c', 'command -v git']);
-
-  const script = [
-    '#!/bin/sh',
-    `case " $* " in *" ${failing} "*) echo 'forced failure' >&2; exit 2;; esac`,
-    `exec '${stdout.trim()}' "$@"`,
-  ].join('\n');
-
-  await writeFile(join(directory, 'git'), `${script}\n`, { mode: 0o755 });
-  vi.stubEnv('PATH', `${directory}:${process.env['PATH'] ?? ''}`);
-
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [{ match: ` ${failing} `, script: "echo 'forced failure' >&2; exit 2" }],
   });
 };
 

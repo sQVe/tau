@@ -1,11 +1,11 @@
 import { execFile } from 'node:child_process';
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { chmod, copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { installCommandShim } from '../../tests/commandShimFake.js';
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { readCheckIdentity } from './identity.js';
 import { decideReuse } from './reuseDecision.js';
@@ -193,30 +193,13 @@ it('rejects with a copy error that is not a missing index, and leaves the real i
   expect(await readFile(indexPath)).toEqual(indexBefore);
 });
 
-// Puts a `git` script first on PATH. `intercept` is a shell case arm over " $* "; other calls run
-// the real Git.
-const shimGit = async (intercept: string): Promise<void> => {
-  const shims = await mkdtemp(join(tmpdir(), 'tau-identity-shim-'));
-  const realGit = (await promisify(execFile)('which', ['git'])).stdout.trim();
-
-  onTestFinished(async () => {
-    vi.unstubAllEnvs();
-    await rm(shims, { recursive: true, force: true });
-  });
-
-  await writeFile(
-    join(shims, 'git'),
-    `#!/bin/sh\ncase " $* " in ${intercept};; esac\nexec '${realGit}' "$@"\n`,
-  );
-
-  await chmod(join(shims, 'git'), 0o755);
-  vi.stubEnv('PATH', `${shims}${delimiter}${process.env['PATH'] ?? ''}`);
-};
-
 it('fails with the Git error when Git is killed', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  await shimGit('*" rev-parse "*) kill -9 $$');
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [{ match: ' rev-parse ', script: 'kill -9 $$' }],
+  });
 
   await expect(readCheckIdentity(root, argv)).rejects.toThrow('git rev-parse');
 });
@@ -224,7 +207,10 @@ it('fails with the Git error when Git is killed', async () => {
 it('gives no tree when Git is older than 2.41, so the check runs', async () => {
   const root = await committedRepository(onTestFinished);
 
-  await shimGit(`*" version "*) echo 'git version 2.40.1'; exit 0`);
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [{ match: ' version ', script: "echo 'git version 2.40.1'" }],
+  });
 
   const identity = await readCheckIdentity(root, argv);
 
@@ -240,7 +226,10 @@ it.each([
 ])('reads a tree only from Git 2.41 on: $version', async ({ version, hasTree }) => {
   const root = await committedRepository(onTestFinished);
 
-  await shimGit(`*" version "*) echo '${version}'; exit 0`);
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [{ match: ' version ', script: `echo '${version}'` }],
+  });
 
   expect((await readCheckIdentity(root, argv)).tree !== null).toBe(hasTree);
 });

@@ -1,8 +1,8 @@
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it } from 'vitest';
 
+import { installCommandShim } from '../../../tests/commandShimFake.js';
+import type { CommandShim } from '../../../tests/commandShimFake.js';
 import { noUiContext } from '../../../tests/toolContext.js';
-import { createGitFake } from './fixtures/gitFake.js';
-import type { GitFake } from './fixtures/gitFake.js';
 import { createStackFake } from './fixtures/stackFake.js';
 import { createStackTool } from './tool.js';
 
@@ -24,15 +24,20 @@ const layer = (name: string) => ({
 });
 
 const setUp = async () => {
-  const gitFake = await createGitFake(onTestFinished);
+  const gitFake = await installCommandShim('git', { otherCalls: 'fail' });
   const fake = createStackFake();
   const view = { trunk: 'main', currentBranch: 'a', branches: [layer('a')] };
 
   fake.stackView = { code: 0, stdout: JSON.stringify(view), stderr: '' };
-  gitFake.answer('remote', { stdout: 'origin\n' });
-  gitFake.answer('rev-parse --verify --quiet refs/remotes/origin/a', { stdout: `${sha}\n` });
-  gitFake.answer('log --oneline', { stdout: 'abc1234 remote commit\n' });
-  gitFake.answer('merge-base --is-ancestor', { code: 1 });
+  gitFake.answer({ prefix: 'remote', stdout: 'origin\n' });
+
+  gitFake.answer({
+    prefix: 'rev-parse --verify --quiet refs/remotes/origin/a',
+    stdout: `${sha}\n`,
+  });
+
+  gitFake.answer({ prefix: 'log --oneline', stdout: 'abc1234 remote commit\n' });
+  gitFake.answer({ prefix: 'merge-base --is-ancestor', code: 1 });
 
   const run = async () => {
     const result = await createStackTool(fake.exec).execute(
@@ -49,9 +54,9 @@ const setUp = async () => {
   return { gitFake, fake, run };
 };
 
-const answerCherry = (gitFake: GitFake, newOutput: string, oldOutput: string) => {
-  gitFake.answer('cherry refs/heads/a refs/remotes/origin/a', { stdout: newOutput });
-  gitFake.answer('cherry refs/remotes/origin/a refs/heads/a', { stdout: oldOutput });
+const answerCherry = (gitFake: CommandShim, newOutput: string, oldOutput: string) => {
+  gitFake.answer({ prefix: 'cherry refs/heads/a refs/remotes/origin/a', stdout: newOutput });
+  gitFake.answer({ prefix: 'cherry refs/remotes/origin/a refs/heads/a', stdout: oldOutput });
 };
 
 it('reads well-formed git output as a rewritten layer', async () => {
@@ -67,7 +72,7 @@ it('reads well-formed git output as a rewritten layer', async () => {
 it('reads a missing remote branch as unpublished', async () => {
   const { gitFake, run } = await setUp();
 
-  gitFake.answer('rev-parse --verify --quiet refs/remotes/origin/a', { code: 1 });
+  gitFake.answer({ prefix: 'rev-parse --verify --quiet refs/remotes/origin/a', code: 1 });
 
   expect((await run()).layers).toMatchObject([{ status: 'unpublished', remoteTip: null }]);
 });
@@ -88,8 +93,8 @@ it.each([
 ])('decides unknown for $name', async ({ first, second }) => {
   const { gitFake, run } = await setUp();
 
-  gitFake.answer('cherry refs/heads/a refs/remotes/origin/a', first);
-  gitFake.answer('cherry refs/remotes/origin/a refs/heads/a', second);
+  gitFake.answer({ prefix: 'cherry refs/heads/a refs/remotes/origin/a', ...first });
+  gitFake.answer({ prefix: 'cherry refs/remotes/origin/a refs/heads/a', ...second });
 
   expect((await run()).layers).toMatchObject([{ status: 'unknown', remoteTip: sha }]);
 });
@@ -101,7 +106,7 @@ it.each([
 ])('decides unknown for $name', async ({ answer }) => {
   const { gitFake, run } = await setUp();
 
-  gitFake.answer('rev-parse --verify --quiet refs/remotes/origin/a', answer);
+  gitFake.answer({ prefix: 'rev-parse --verify --quiet refs/remotes/origin/a', ...answer });
 
   expect((await run()).layers).toMatchObject([{ status: 'unknown', remoteTip: null }]);
 });
@@ -109,7 +114,7 @@ it.each([
 it('decides unknown when git log fails', async () => {
   const { gitFake, run } = await setUp();
 
-  gitFake.answer('log --oneline', { code: 128, stderr: 'fatal: bad revision' });
+  gitFake.answer({ prefix: 'log --oneline', code: 128, stderr: 'fatal: bad revision' });
 
   const { layers } = await run();
 
@@ -120,7 +125,8 @@ it('decides unknown when git log fails', async () => {
 it('leaves the published facts out of the evidence when the remote tip read fails', async () => {
   const { gitFake, run } = await setUp();
 
-  gitFake.answer('rev-parse --verify --quiet refs/remotes/origin/a', {
+  gitFake.answer({
+    prefix: 'rev-parse --verify --quiet refs/remotes/origin/a',
     code: 128,
     stderr: 'fatal: boom',
   });
@@ -134,7 +140,7 @@ it('leaves the published facts out of the evidence when the remote tip read fail
 it('leaves the published facts out of the evidence when the remote branch is missing', async () => {
   const { gitFake, run } = await setUp();
 
-  gitFake.answer('rev-parse --verify --quiet refs/remotes/origin/a', { code: 1 });
+  gitFake.answer({ prefix: 'rev-parse --verify --quiet refs/remotes/origin/a', code: 1 });
 
   const { evidence } = await run();
 

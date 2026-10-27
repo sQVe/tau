@@ -3,12 +3,12 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
+import { installCommandShim } from '../../tests/commandShimFake.js';
+import type { CommandOverride } from '../../tests/commandShimFake.js';
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget } from './capture.js';
 import type { DirectReviewTarget } from './capture.js';
-import { installFakeGit } from './fixtures/fakeGit.js';
-import type { GitOverride } from './fixtures/fakeGit.js';
 
 const isRoot = process.getuid?.() === 0;
 
@@ -28,10 +28,14 @@ const committedRepository = async (files: Record<string, string> = defaultFiles)
   return root;
 };
 
-const capture = async (root: string, target: DirectReviewTarget, overrides: GitOverride[] = []) => {
+const capture = async (
+  root: string,
+  target: DirectReviewTarget,
+  overrides: CommandOverride[] = [],
+) => {
   const pinned = await pinTarget(root, target);
 
-  await installFakeGit(overrides);
+  await installCommandShim('git', { otherCalls: 'real', overrides: overrides });
 
   return captureTarget(root, pinned);
 };
@@ -144,7 +148,7 @@ it('does not read a Git link of the base tree as the text of a file with the sam
 
 const warning = (directory: string) =>
   `echo "warning: could not open directory '${directory}/': Permission denied" >&2; ` +
-  `"$git" "$@"`;
+  `"$real" "$@"`;
 
 const lockedDirectory = async (root: string) => {
   await mkdir(join(root, 'locked'));
@@ -181,7 +185,7 @@ it.skipIf(isRoot)('reports two unopened directories that the user cannot read', 
   const script = [
     `echo "warning: could not open directory 'locked/': Permission denied" >&2`,
     `echo "warning: could not open directory 'locked-two/': Permission denied" >&2`,
-    'exec "$git" "$@"',
+    'exec "$real" "$@"',
   ].join('; ');
 
   const result = await capture(root, workingTree, [{ match: ' ls-files -z -o ', script }]);
@@ -216,7 +220,7 @@ it('keeps a readable directory as an error even when another warning names a loc
   const script = [
     `echo "warning: could not open directory 'locked/': Permission denied" >&2`,
     `echo "warning: could not open directory 'open/': Permission denied" >&2`,
-    'exec "$git" "$@"',
+    'exec "$real" "$@"',
   ].join('; ');
 
   const result = await capture(root, workingTree, [{ match: ' ls-files -z -o ', script }]);
@@ -226,24 +230,24 @@ it('keeps a readable directory as an error even when another warning names a loc
 });
 
 it.each([
-  { name: 'another message', script: 'echo "fatal: something else" >&2; exec "$git" "$@"' },
+  { name: 'another message', script: 'echo "fatal: something else" >&2; exec "$real" "$@"' },
   {
     name: 'another message beside a warning',
     script:
       `echo "warning: could not open directory 'locked/': Permission denied" >&2; ` +
-      'echo "something else" >&2; exec "$git" "$@"',
+      'echo "something else" >&2; exec "$real" "$@"',
   },
   {
     name: 'a warning with text around it',
     script:
       `echo "note: warning: could not open directory 'locked/': Permission denied" >&2; ` +
-      'exec "$git" "$@"',
+      'exec "$real" "$@"',
   },
   {
     name: 'a warning that holds more text',
     script:
       `echo "warning: could not open directory 'locked/': Permission denied (again)" >&2; ` +
-      'exec "$git" "$@"',
+      'exec "$real" "$@"',
   },
 ])('keeps $name on stderr as an error', async ({ script }) => {
   const root = await committedRepository();
@@ -271,7 +275,7 @@ it('keeps the message when ls-files exits 0 and prints to stderr', async () => {
   const root = await committedRepository();
 
   const result = await capture(root, workingTree, [
-    { match: ' ls-files -z -o ', script: 'echo "  noise  " >&2; exec "$git" "$@"' },
+    { match: ' ls-files -z -o ', script: 'echo "  noise  " >&2; exec "$real" "$@"' },
   ]);
 
   expect(result.errors).toHaveLength(1);
@@ -284,7 +288,7 @@ it('accepts ls-files that prints only whitespace to stderr', async () => {
   await writeFile(join(root, 'new.txt'), 'new\n');
 
   const result = await capture(root, workingTree, [
-    { match: ' ls-files -z -o ', script: 'echo >&2; exec "$git" "$@"' },
+    { match: ' ls-files -z -o ', script: 'echo >&2; exec "$real" "$@"' },
   ]);
 
   expect(result.errors).toEqual([]);

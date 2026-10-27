@@ -1,10 +1,9 @@
-import { execFile } from 'node:child_process';
 import { chmod, mkdir, readdir, rm, symlink, writeFile } from 'node:fs/promises';
-import { delimiter, join } from 'node:path';
-import { promisify } from 'node:util';
+import { join } from 'node:path';
 
-import { expect, it, onTestFinished, vi } from 'vitest';
+import { expect, it, onTestFinished } from 'vitest';
 
+import { installCommandShim } from '../../tests/commandShimFake.js';
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget, readHead } from './capture.js';
@@ -644,18 +643,11 @@ it('lists a marker a files target adds once, and none from unchanged tracked fil
 it('reports a gap when Git is killed while it checks a committed test file', async () => {
   const { root, from, to } = await rangeRepository();
   const directory = await savedCapture(root, { kind: 'range', from, to });
-  const shims = temporaryDirectory(onTestFinished, 'tau-evidence-shim-');
-  const realGit = (await promisify(execFile)('which', ['git'])).stdout.trim();
 
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [{ match: ' cat-file -e ', script: 'kill -9 $$' }],
   });
-
-  const script = `#!/bin/sh\ncase " $* " in *" cat-file -e "*) kill -9 $$;; esac\nexec '${realGit}' "$@"\n`;
-
-  await writeFile(join(shims, 'git'), script);
-  await chmod(join(shims, 'git'), 0o755);
-  vi.stubEnv('PATH', `${shims}${delimiter}${process.env['PATH'] ?? ''}`);
 
   const evidence = await readReviewEvidence(root, directory);
 

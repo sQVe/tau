@@ -4,12 +4,12 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
+import { installCommandShim } from '../../tests/commandShimFake.js';
+import type { CommandOverride } from '../../tests/commandShimFake.js';
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget } from './capture.js';
 import type { DirectReviewTarget } from './capture.js';
-import { installFakeGit } from './fixtures/fakeGit.js';
-import type { GitOverride } from './fixtures/fakeGit.js';
 
 const committedRepository = async (files: Record<string, string>) => {
   const root = await createTemporaryRepository(onTestFinished);
@@ -35,15 +35,15 @@ const unindexedRepository = async (files: Record<string, string>) => {
   return root;
 };
 
-const capture = async (root: string, target: DirectReviewTarget, overrides: GitOverride[]) => {
+const capture = async (root: string, target: DirectReviewTarget, overrides: CommandOverride[]) => {
   const pinned = await pinTarget(root, target);
 
-  await installFakeGit(overrides);
+  await installCommandShim('git', { otherCalls: 'real', overrides: overrides });
 
   return captureTarget(root, pinned);
 };
 
-const failing = (match: string, script = 'echo "  broken  " >&2; exit 3'): GitOverride => ({
+const failing = (match: string, script = 'echo "  broken  " >&2; exit 3'): CommandOverride => ({
   match,
   script,
 });
@@ -152,7 +152,7 @@ it.each([
   },
   {
     name: 'cat-file prints to stderr and exits 0',
-    overrides: [failing(' cat-file ', 'echo noise >&2; exec "$git" "$@"')],
+    overrides: [failing(' cat-file ', 'echo noise >&2; exec "$real" "$@"')],
     error: 'git cat-file --batch failed: exit 0: noise',
   },
 ])('fails the capture once when $name', async ({ overrides, error }) => {
@@ -232,7 +232,7 @@ it('accepts cat-file output with only whitespace on stderr', async () => {
   const root = await unindexedRepository({ 'a.txt': 'one\n' });
 
   const result = await capture(root, files(['a.txt']), [
-    failing(' cat-file ', 'echo >&2; exec "$git" "$@"'),
+    failing(' cat-file ', 'echo >&2; exec "$real" "$@"'),
   ]);
 
   expect(result.errors).toEqual([]);

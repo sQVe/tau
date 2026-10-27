@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { installCommandShim } from '../../tests/commandShimFake.js';
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget } from './capture.js';
@@ -71,24 +72,16 @@ it('reads the repository index even when the caller names another one', async ()
 // command `change`, as if the working tree changed during the capture.
 const changeTreeAfterFirstDiff = async (change: string) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-capture-race-');
-
-  const { stdout } = await promisify(execFile)('sh', ['-c', 'command -v git']);
   const marker = join(directory, 'changed');
 
   const script = [
-    '#!/bin/sh',
-    `'${stdout.trim()}' "$@"`,
+    '"$real" "$@"',
     'status=$?',
-    `case " $* " in *" diff "*) if [ ! -e '${marker}' ]; then : > '${marker}'; ${change}; fi;; esac`,
+    `if [ ! -e '${marker}' ]; then : > '${marker}'; ${change}; fi`,
     'exit $status',
   ].join('\n');
 
-  await writeFile(join(directory, 'git'), `${script}\n`, { mode: 0o755 });
-  vi.stubEnv('PATH', `${directory}:${process.env['PATH'] ?? ''}`);
-
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
+  await installCommandShim('git', { otherCalls: 'real', overrides: [{ match: ' diff ', script }] });
 };
 
 it('fails the capture when an unchanged named file disappears after the diff', async () => {
