@@ -63,8 +63,9 @@ return.
 - `bash` stays callable, because it is the main way scripts read evidence. Tau does not sandbox
   `bash`, so a script can still change state through it. The guidelines forbid that, but nothing
   enforces it.
-- A hook that cuts the model-facing text of a tool result keeps its structured result, so a script
-  still reads the whole `bash` output. The worker's `bash` output cap follows this rule.
+- A hook that cuts the model-facing text of a tool result keeps its structured result unchanged, so
+  a script reads what the tool returned. The worker's `bash` output cap follows this rule. That
+  result may itself be truncated by the tool and name a saved output file.
 
 ### Output is bounded by whole items
 
@@ -77,6 +78,8 @@ return.
   keeps the script the model wrote.
 - Over the budget, Tau keeps whole `text()` items in order while they fit. A gap item names each cut
   item by number and first line, up to a fixed count, and names the rest as a range.
+- A budget smaller than the room the gap item needs counts as that room, so the list of cut items
+  never outgrows the output it replaces.
 - Tau saves the full output to a private file and names its path. When the save fails, Tau says so.
 - A result within the budget is returned as Pi made it.
 - Tau finds item boundaries in Pi's joined text by its numbered `==> text N/M <==` headers. Pi joins
