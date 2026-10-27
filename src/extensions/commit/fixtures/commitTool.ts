@@ -96,6 +96,16 @@ export const writeRepositoryFile = async (
   await writeFile(fullPath, content);
 };
 
+// Returns the object's exact bytes, so a test sees whitespace the commit tool added or dropped.
+export const readGitBlob = async (
+  repositoryDirectory: string,
+  objectName: string,
+): Promise<string> => {
+  const { stdout } = await execFileAsync('git', ['show', objectName], { cwd: repositoryDirectory });
+
+  return stdout;
+};
+
 export const getStoredCommitMessage = async (repositoryDirectory: string): Promise<string> => {
   const { stdout: commitObject } = await execFileAsync('git', ['cat-file', '-p', 'HEAD'], {
     cwd: repositoryDirectory,

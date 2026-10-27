@@ -16,6 +16,7 @@ import {
   commitContext,
   executeCommit,
   fakeCommit,
+  readGitBlob,
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
 import { commitFailedError, validatePaths, validateSubject } from './validation.js';
@@ -227,7 +228,7 @@ describe('commitTool.execute', () => {
       commitContext(repositoryDirectory),
     );
 
-    expect(await git(repositoryDirectory, 'show', 'HEAD:three.txt')).toBe('rewritten by a hook');
+    expect(await readGitBlob(repositoryDirectory, 'HEAD:three.txt')).toBe('rewritten by a hook');
     expect((await git(repositoryDirectory, 'rev-list', '--count', 'HEAD')).trim()).toBe('4');
   });
 

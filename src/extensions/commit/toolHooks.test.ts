@@ -11,6 +11,7 @@ import {
   commitContext,
   createTemporaryRepository,
   executeCommit,
+  readGitBlob,
   writeRepositoryFile,
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
@@ -81,7 +82,7 @@ describe('hook outcomes', () => {
         .stdout,
     ).toBe('4\n');
 
-    expect(await git(directory, 'show', 'HEAD:second')).toBe('second');
+    expect(await readGitBlob(directory, 'HEAD:second')).toBe('second');
   });
 
   it('rejects an empty candidate before hooks', async () => {
@@ -152,8 +153,8 @@ describe('hook outcomes', () => {
         (await promisify(execFile)('git', ['rev-parse', 'HEAD'], { cwd: directory })).stdout,
       ).toBe(`${concurrentHead}\n`);
 
-      expect(await git(directory, 'show', ':other')).toBe('staged edit');
-      expect(await git(directory, 'show', 'HEAD^:requested')).toBe('value');
+      expect(await readGitBlob(directory, ':other')).toBe('staged edit');
+      expect(await readGitBlob(directory, 'HEAD^:requested')).toBe('value');
     },
   );
 
@@ -221,7 +222,7 @@ describe('hook outcomes', () => {
     ).toBe('extra\n');
 
     expect(await readFile(join(directory, 'requested'), 'utf8')).toBe('formatted');
-    expect(await git(directory, 'show', ':extra')).toBe('generated');
+    expect(await readGitBlob(directory, ':extra')).toBe('generated');
 
     expect(
       (await promisify(execFile)('git', ['rev-list', '--all', '--count'], { cwd: directory }))
@@ -313,7 +314,7 @@ describe('hook outcomes', () => {
         failingCommand === 'rev-parse' || failingCommand === 'cat-file' ? head.slice(0, 7) : head,
       );
 
-      expect(await git(directory, 'show', 'HEAD:requested')).toBe('value');
+      expect(await readGitBlob(directory, 'HEAD:requested')).toBe('value');
       expect(await git(directory, 'diff', '--cached', '--name-only')).toBe('');
     },
   );
@@ -329,7 +330,7 @@ describe('hook outcomes', () => {
 
     expect(result.details.groups[0]!.files).toEqual(['.env', 'requested']);
     expect(JSON.stringify(result.content)).toContain('Warning: committed sensitive paths: .env');
-    expect(await git(directory, 'show', 'HEAD:.env')).toBe('private');
+    expect(await readGitBlob(directory, 'HEAD:.env')).toBe('private');
 
     expect(
       (await promisify(execFile)('git', ['rev-list', '--all', '--count'], { cwd: directory }))
@@ -356,7 +357,7 @@ describe('hook outcomes', () => {
       hookChanges: { files: ['extra', 'requested'], message: false },
     });
 
-    expect(await git(directory, 'show', 'HEAD:extra')).toBe('generated');
+    expect(await readGitBlob(directory, 'HEAD:extra')).toBe('generated');
     expect(await readFile(join(directory, 'requested'), 'utf8')).toBe('value');
     expect(await git(directory, 'diff', '--cached', '--name-only')).toBe('');
   });
@@ -402,7 +403,7 @@ describe('hook outcomes', () => {
       (await promisify(execFile)('git', ['rev-parse', 'HEAD'], { cwd: directory })).stdout,
     ).toBe(`${concurrentHead}\n`);
 
-    expect(await git(directory, 'show', ':other')).toBe('staged edit');
+    expect(await readGitBlob(directory, ':other')).toBe('staged edit');
   });
 
   it('stops remaining groups when an earlier hook fully consumed the next group', async () => {
@@ -436,7 +437,7 @@ describe('hook outcomes', () => {
         .stdout,
     ).toBe('1\n');
 
-    expect(await git(directory, 'show', 'HEAD:second')).toBe('second');
+    expect(await readGitBlob(directory, 'HEAD:second')).toBe('second');
     expect(await readFile(join(directory, 'generated'), 'utf8')).toBe('invocation\n');
     expect(await readFile(join(directory, 'third'), 'utf8')).toBe('third');
     expect(await git(directory, 'diff', '--cached', '--name-only')).toBe('');
@@ -480,7 +481,7 @@ describe('hook outcomes', () => {
         .stdout,
     ).toBe('2\n');
 
-    expect(await git(directory, 'show', 'HEAD:unchanged')).toBe('baseline');
+    expect(await readGitBlob(directory, 'HEAD:unchanged')).toBe('baseline');
     expect(await readFile(join(directory, 'generated'), 'utf8')).toBe('invocation\n');
     expect(await readFile(join(directory, 'third'), 'utf8')).toBe('third');
     expect(await git(directory, 'diff', '--cached', '--name-only')).toBe('');
@@ -515,8 +516,8 @@ describe('hook outcomes', () => {
       });
 
       expect(result.details.groups).toHaveLength(2);
-      expect(await git(directory, 'show', 'HEAD:second')).toBe('new');
-      expect(await git(directory, 'show', 'HEAD^:second')).toBe('second');
+      expect(await readGitBlob(directory, 'HEAD:second')).toBe('new');
+      expect(await readGitBlob(directory, 'HEAD^:second')).toBe('second');
 
       expect(result.details.groups[1]!.files).toEqual(
         partialOverlap ? ['second', 'third'] : ['second'],
@@ -559,7 +560,7 @@ describe('hook outcomes', () => {
 
     expect(failure).toContain(`Group 1/2: ${head} feat: first`);
     expect(failure).toContain('Hook changed paths: extra');
-    expect(await git(directory, 'show', 'HEAD:extra')).toBe('generated');
+    expect(await readGitBlob(directory, 'HEAD:extra')).toBe('generated');
     expect(await git(directory, 'diff', '--cached', '--name-only')).toBe('');
   });
 });

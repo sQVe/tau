@@ -12,6 +12,7 @@ import {
   createTemporaryRepository,
   executeCommit,
   fakeCommit,
+  readGitBlob,
   writeRepositoryFile,
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
@@ -117,7 +118,7 @@ describe('direct commit staging', () => {
         .stdout,
     ).toBe('other\n');
 
-    expect(await git(directory, 'show', ':other')).toBe('staged bytes');
+    expect(await readGitBlob(directory, ':other')).toBe('staged bytes');
     expect(await readFile(join(directory, 'other'), 'utf8')).toBe('working bytes');
 
     expect(
@@ -205,7 +206,7 @@ describe('direct commit staging', () => {
         .stdout,
     ).toBe('other\nrequested\n');
 
-    expect(await git(directory, 'show', ':other')).toBe('staged bytes');
+    expect(await readGitBlob(directory, ':other')).toBe('staged bytes');
     expect(await readFile(join(directory, 'other'), 'utf8')).toBe('working bytes');
     expect((await git(directory, 'rev-list', '--all', '--count')).trim()).toBe('0');
   });
@@ -252,9 +253,9 @@ describe('direct commit staging', () => {
       'Hook changed paths: root.txt, sibling/extra, sub/extra',
     );
 
-    expect(await git(directory, 'show', 'HEAD:root.txt')).toBe('root');
-    expect(await git(directory, 'show', 'HEAD:sibling/extra')).toBe('sibling');
-    expect(await git(directory, 'show', 'HEAD:sub/extra')).toBe('local');
+    expect(await readGitBlob(directory, 'HEAD:root.txt')).toBe('root');
+    expect(await readGitBlob(directory, 'HEAD:sibling/extra')).toBe('sibling');
+    expect(await readGitBlob(directory, 'HEAD:sub/extra')).toBe('local');
     expect(await readFile(join(directory, 'root.txt'), 'utf8')).toBe('root');
     expect(await readFile(join(directory, 'sibling/extra'), 'utf8')).toBe('sibling');
     expect(await readFile(join(directory, 'sub/extra'), 'utf8')).toBe('local');
