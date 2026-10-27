@@ -16,9 +16,9 @@
 
 A worker loads the parent's whole Pi configuration, so it kept every extension tool and listed every
 skill. It also got every instruction set and every package. The tool schemas, the skill list, and
-the instructions are sent again on every turn. In one measured bundled worker, tools and the skill
-list took over half of a 66k-character first request. Saved worker sessions show that workers use
-few of those tools and skills. Only scouts used the web tools often.
+the instructions are sent again on every turn, and tools and the skill list made up most of a
+worker's first request. Saved worker sessions show that workers use few of those tools and skills.
+Only scouts used the web tools often.
 
 Every extension must still load. The worker refuses to start without CC Safety Net from Tau's
 bundled file, [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md) rejects restricted
@@ -149,8 +149,8 @@ The profile's `model` stays the fallback. Routing works like this:
 
 ### Positive
 
-- A bundled worker's fixed prompt is about half the size it had when workers loaded the parent's
-  whole loadout, so every worker request costs fewer tokens.
+- A bundled worker's fixed prompt holds only what its profile uses, so every worker request costs
+  fewer tokens.
 - Scouts and QA workers no longer receive the coding instructions on each turn.
 - A tool that disappears from the configuration stops the worker at startup, and the error names it.
 - A new profile adds no package tools or skills to the parent's prompt. It still adds its name and
@@ -175,8 +175,8 @@ The profile's `model` stays the fallback. Routing works like this:
 
 ### Keep every tool and skill
 
-Keep every tool and skill. Rejected because this costs about 9k tokens per worker turn for tools and
-skills that workers do not use.
+Keep every tool and skill. Rejected because every worker turn then pays for tools and skills that
+workers do not use.
 
 ### Restrict which extensions load
 
@@ -190,8 +190,8 @@ as the questionnaire does.
 
 ### Every instruction set for every worker
 
-Keep every set for every worker. Rejected because this costs about 4.4k characters per turn for
-scouts and QA.
+Keep every set for every worker. Rejected because scouts and QA workers then pay for the coding
+instructions on every turn without using them.
 
 ### Instruction sets by role
 
