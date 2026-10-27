@@ -7,4 +7,4 @@
 | ---------------------------------- | --------------- | ---------------------------------- | -------------------------------------------------------- |
 | <slice or agent ticket identifier> | <item text>     | met, deferred, not met, or not run | <passing test, command result, or demonstrated behavior> |
 
-Result: <ready for the PR, draft suggested (not run items), or stopped (not met items)>
+Result: <ready for the PR, or draft suggested (not met or not run items)>

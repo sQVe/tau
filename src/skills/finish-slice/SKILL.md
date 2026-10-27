@@ -31,7 +31,7 @@ for the workspace.
 - Verdicts are:
   - met: a passing test, a command result, or demonstrated behavior shows it.
   - deferred: the check can run only after deployment, as the pr skill defines it.
-  - not met: the evidence shows the item fails.
+  - not met: the evidence shows the item fails. It makes draft the suggested PR status.
   - not run: any other check that did not run. It makes draft the suggested PR status.
 
 ## Procedure
@@ -58,9 +58,10 @@ for the workspace.
    - Save the real output of each check you run in `$slicedir`, in a file named for the check, never
      a summary. Cite that path as the evidence.
 
-5. If any item is not met, stop the flow before any PR. When the fix fits inside the slice outcome,
-   create an agent ticket for it as "Changes after the start" in the start-slice skill says.
-   Otherwise report that the fix needs a new slice.
+5. For each item that is not met, create a fix agent ticket when the fix fits inside the slice
+   outcome, as "Changes after the start" in the start-slice skill says. Otherwise report that the
+   fix needs a new slice. Then go on to step 6. The audit is always saved and posted, and a not-met
+   item makes draft the suggested PR status.
 
 6. Find an earlier audit comment before you write a new one. Run the tracker skill's comment list
    command on the slice, even when `finish.md` records a comment ID. Pick the comment with the
@@ -74,6 +75,6 @@ for the workspace.
    comment when one exists, and never add a second one. After adding a new comment, record its ID in
    `finish.md` at once.
 
-9. Report the verdict counts, the comment link, and whether the suggested PR status is ready or
-   draft, or the PR is blocked. When you updated an earlier comment, name each edit made in Linear
-   that the new audit dropped.
+9. Report the verdict counts, the comment link, and the suggested PR status: draft when any item is
+   not met or not run, otherwise ready. When you updated an earlier comment, name each edit made in
+   Linear that the new audit dropped.
