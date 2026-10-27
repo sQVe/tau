@@ -120,6 +120,7 @@ describe('guardToolCall', () => {
     "echo $(git commit -m 'x')",
     "(git commit -m 'x')",
     "git-commit -m 'feat: add'",
+    'echo @(#foo); git commit',
   ])('blocks commands that create commits: %s', (command) => {
     expect(guardToolCall(makeBashEvent(command))).toEqual({
       block: true,

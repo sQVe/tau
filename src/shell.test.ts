@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseShellCommands } from './shellCommands.js';
+import { parseShellCommands } from './shell.js';
 
 const wordsOf = (source: string) =>
   parseShellCommands(source)
@@ -29,6 +29,8 @@ describe('parseShellCommands', () => {
     ['ls a#b', [['ls', 'a#b']]],
     ['ls "#x" ; echo', [['ls', '#x'], ['echo']]],
     ['ls # trailing', [['ls']]],
+    ['echo @(#foo); ls', [['echo', '@'], ['#foo'], ['ls']]],
+    ['(# one\nls)', [['ls']]],
   ])('skips comments only at the start of a word: %s', (source, expected) => {
     expect(wordsOf(source)).toEqual(expected);
   });

@@ -141,6 +141,7 @@ const pureModules = [
   'src/reviewCapture/freshness.ts',
   'src/reviewCapture/gitQuotedName.ts',
   'src/schema.ts',
+  'src/shell.ts',
   'tests/adrIndexMark.ts',
 ];
 

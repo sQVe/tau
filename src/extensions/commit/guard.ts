@@ -1,8 +1,8 @@
 import { isToolCallEventType } from '@earendil-works/pi-coding-agent';
 import type { ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
 
-import { parseShellCommands } from './shellCommands.js';
-import type { ShellCommand } from './shellCommands.js';
+import { parseShellCommands } from '../../shell.js';
+import type { ShellCommand } from '../../shell.js';
 
 export const commitGuardReason =
   'Blocked git commit via bash. Use the `commit` tool instead. To amend the last commit when it is not a merge or root commit, run `git reset --soft HEAD~1`, then call `commit` with the files of both changes. To fix up an older commit, call `commit` with the `fixup` field (kind `fixup`, `squash`, or `amend`) for the fix, then run `GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash <base>`.';

@@ -23,6 +23,8 @@ const blankCharacters = new Set([' ', '\t']);
 const separatorCharacters = new Set([';', '&', '|', '\n', '(', ')']);
 const longestRedirection = '<<<';
 
+const extendedGlobOperators = new Set(['?', '*', '+', '@', '!']);
+
 const ansiCCharacters: Record<string, string> = {
   a: '\u0007',
   b: '\b',
@@ -174,7 +176,7 @@ class ShellParser {
     const character = this.source.charAt(this.position);
     const next = this.source.charAt(this.position + 1);
 
-    if (character === '#' && state.word === undefined) {
+    if (character === '#' && state.word === undefined && !this.opensExtendedGlob()) {
       this.skipComment();
     } else if (blankCharacters.has(character)) {
       this.finishWord(state);
@@ -192,6 +194,13 @@ class ShellParser {
     }
 
     return false;
+  }
+
+  private opensExtendedGlob(): boolean {
+    const opener = this.source.charAt(this.position - 1);
+    const operator = this.source.charAt(this.position - 2);
+
+    return opener === '(' && extendedGlobOperators.has(operator);
   }
 
   private readWordPiece(state: ListState, character: string): void {
