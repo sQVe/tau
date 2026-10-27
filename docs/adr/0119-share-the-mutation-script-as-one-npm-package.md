@@ -2,9 +2,9 @@
 
 **Date**: 2026-10-19\
 **Status**: Accepted\
-**Supersedes**: [ADR 0115 (Copy the mutation script into each repository and fail on survivors)](./0115-copy-mutation-script-per-repository-and-fail-on-survivors.md):
+**Supersedes**: [ADR 0115 (Copy the mutation script into each repository and fail on survivors)](./README.md#retired):
 the copy of the script in each repository\
-**Related**: [ADR 0116 (Name the mutation command in the repository file)](./0116-name-the-mutation-command-in-the-repository-file.md)
+**Related**: [ADR 0113 (Mutation-test changed lines and list survivors as advice)](./0113-run-diff-scoped-mutation-testing-by-hand.md)
 
 ## Context
 
@@ -36,7 +36,8 @@ leaves out, timeouts, and the runner. `mutation.argv` in `.pi/tau.json` names th
 `mutation` command. The command has no mutant cap by default, so a change of any size runs every
 mutant on its changed lines; a CI job bounds its time with `timeout-minutes`.
 
-The pinned version keeps ADR 0116's reason: the lockfile changes with the command in one commit.
+The pinned version keeps the reason of ADR 0113: the command and the pinned version change in one
+commit.
 
 ## Consequences
 

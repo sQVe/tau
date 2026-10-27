@@ -20,19 +20,6 @@ const allowedPaths: AllowedPaths = {
     'docs/adr/0004-skill-authoring-style.md',
     'docs/adr/0077-keep-a-skill-authoring-guide-in-docs.md',
   ],
-  'scripts/mutation.md': [
-    'docs/adr/0115-copy-mutation-script-per-repository-and-fail-on-survivors.md',
-  ],
-  'scripts/mutation.ts': [
-    'docs/adr/0115-copy-mutation-script-per-repository-and-fail-on-survivors.md',
-    'docs/adr/0116-name-the-mutation-command-in-the-repository-file.md',
-  ],
-  'scripts/mutationReport.ts': [
-    'docs/adr/0115-copy-mutation-script-per-repository-and-fail-on-survivors.md',
-  ],
-  'scripts/mutationScope.ts': [
-    'docs/adr/0115-copy-mutation-script-per-repository-and-fail-on-survivors.md',
-  ],
 };
 
 const root = '/repository';

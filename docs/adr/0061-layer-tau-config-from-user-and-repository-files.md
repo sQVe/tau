@@ -15,10 +15,8 @@
 [ADR 0110 (Keep QA settings in a per-feature repository map)](./README.md#retired), the config parts
 of
 [ADR 0111 (Request review bots from config and skip the preview for a named change)](./0111-request-review-bots-from-config-and-skip-named-changes-in-pr.md)
-and
-[ADR 0116 (Name the mutation command in the repository file)](./0116-name-the-mutation-command-in-the-repository-file.md)\
-**Related**:
-[ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md)
+and [ADR 0116 (Name the mutation command in the repository file)](./README.md#retired)\
+**Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md)
 
 ## Context
 

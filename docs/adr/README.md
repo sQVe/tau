@@ -83,13 +83,7 @@ and the numbers that its status names.
 - [0039: Reuse reported checks and run one full suite per work state](./0039-reuse-reported-checks-and-run-one-full-suite.md)
 - [0105: Queue full checks per repository and reuse passing logs](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md)
 - [0106: Replay unchanged test projects in `pnpm check`](./0106-replay-unchanged-test-projects-in-pnpm-check.md)
-- [0113: Run diff-scoped mutation testing by hand](./0113-run-diff-scoped-mutation-testing-by-hand.md),
-  partly superseded by 0115
-- [0115: Copy the mutation script into each repository and fail on survivors](./0115-copy-mutation-script-per-repository-and-fail-on-survivors.md),
-  partly superseded by 0117, 0118, and 0119
-- [0116: Name the mutation command in the repository file](./0116-name-the-mutation-command-in-the-repository-file.md)
-- [0117: List mutation survivors as advice instead of a gate](./0117-list-mutation-survivors-as-advice.md)
-- [0118: List equivalent mutants instead of adding disable comments](./0118-list-equivalent-mutants-instead-of-disable-comments.md)
+- [0113: Mutation-test changed lines and list survivors as advice](./0113-run-diff-scoped-mutation-testing-by-hand.md)
 - [0119: Share the mutation script as one npm package](./0119-share-the-mutation-script-as-one-npm-package.md)
 - [0121: Test architecture rules for placement, naming, fakes, and fixtures](./0121-test-architecture-rules.md)
 - [0123: Run the full check only at the PR step](./0123-run-the-full-check-only-at-the-pr-step.md)
@@ -208,3 +202,7 @@ and the numbers that its status names.
 | 0100 | Let agents cancel Linear tickets after approval                       | [0108](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)                                                                          | `b0980b75`  |
 | 0103 | Write slice flow Linear changes without approval                      | [0108](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)                                                                          | `b0980b75`  |
 | 0110 | Keep QA settings in a per-feature repository map                      | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
+| 0115 | Copy the mutation script into each repository and fail on survivors   | [0113](./0113-run-diff-scoped-mutation-testing-by-hand.md)                                                                                         | `b0980b75`  |
+| 0116 | Name the mutation command in the repository file                      | [0113](./0113-run-diff-scoped-mutation-testing-by-hand.md)                                                                                         | `b0980b75`  |
+| 0117 | List mutation survivors as advice instead of a gate                   | [0113](./0113-run-diff-scoped-mutation-testing-by-hand.md)                                                                                         | `b0980b75`  |
+| 0118 | List equivalent mutants instead of adding disable comments            | [0113](./0113-run-diff-scoped-mutation-testing-by-hand.md)                                                                                         | `b0980b75`  |
