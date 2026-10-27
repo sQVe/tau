@@ -111,6 +111,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0096: Create and keep linear stacks with gh stack](./0096-create-and-keep-linear-stacks-with-gh-stack.md)
 - [0111: Request review bots from config](./0111-request-review-bots-from-config-and-skip-named-changes-in-pr.md)
 - [0122: Prune comments with a delete-only skill](./0122-prune-comments-with-a-delete-only-skill.md)
+- [0124: Publish review captures as immutable generations](./0124-publish-review-captures-as-immutable-generations.md)
 
 ## Retired
 
