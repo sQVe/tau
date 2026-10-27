@@ -38,8 +38,6 @@ const printingNames = new Set(['echo', 'printf']);
 
 const keywords = new Set(['!', '{', 'do', 'elif', 'else', 'if', 'then', 'until', 'while']);
 
-const maximumScriptDepth = 8;
-
 const rawLoopWithSleep =
   /\b(?:until|while(?!\s+(?:\w+=\S*\s+)*read\b))(?:(?!\bdone\b)[\s\S])*?\bdo\b(?:(?!\bdone\b)[\s\S])*?\bsleep\b/;
 
@@ -158,9 +156,6 @@ const waitsInLoop = (commands: ShellCommand[]) => {
 const runsShell = ({ words }: ShellCommand) =>
   words.some((word) => shellNames.has(commandName(word)));
 
-const scriptsOf = (commands: ShellCommand[]) =>
-  commands.flatMap(({ words, heredocs }) => [...words, ...heredocs]);
-
 const rawWaitFacts = (source: string): WaitFacts => {
   let sleepSeconds = 0;
 
@@ -176,11 +171,9 @@ const rawWaitFacts = (source: string): WaitFacts => {
   return { waitsPassively: waitsInRawLoop || waitsOnWatcher, sleepSeconds };
 };
 
-const waitFactsOf = (source: string, depth: number): WaitFacts => {
-  if (depth > maximumScriptDepth) {
-    return { waitsPassively: true, sleepSeconds: Number.POSITIVE_INFINITY };
-  }
-
+// A shell may run any text in the source, so a source that runs one is also scanned whole. One scan
+// cannot count a sleep twice or split it across words.
+const waitFactsOf = (source: string): WaitFacts => {
   const commands = parseShellCommands(source);
 
   if (commands === undefined) {
@@ -188,24 +181,19 @@ const waitFactsOf = (source: string, depth: number): WaitFacts => {
   }
 
   const waitsOnWatcher = commands.some(watches);
+  const waitsPassively = waitsInLoop(commands) || waitsOnWatcher;
   const sleepSeconds = commands.reduce((total, command) => total + sleepSecondsOf(command), 0);
 
-  const facts: WaitFacts = {
-    waitsPassively: waitsInLoop(commands) || waitsOnWatcher,
-    sleepSeconds,
-  };
-
-  const scripts = commands.some(runsShell) ? scriptsOf(commands) : [];
-  const nestedScripts = scripts.filter((script) => script !== source);
-
-  for (const script of nestedScripts) {
-    const scriptFacts = waitFactsOf(script, depth + 1);
-
-    facts.waitsPassively ||= scriptFacts.waitsPassively;
-    facts.sleepSeconds += scriptFacts.sleepSeconds;
+  if (!commands.some(runsShell)) {
+    return { waitsPassively, sleepSeconds };
   }
 
-  return facts;
+  const rawFacts = rawWaitFacts(source);
+
+  return {
+    waitsPassively: waitsPassively || rawFacts.waitsPassively,
+    sleepSeconds: Math.max(sleepSeconds, rawFacts.sleepSeconds),
+  };
 };
 
 const refusalReason = (delegating: boolean): string => {
@@ -226,7 +214,7 @@ const refusalReason = (delegating: boolean): string => {
 
 // A running tool call holds worker notices back, so a long sleep delays the notice it waits for.
 export const passiveWaitRefusal = (input: string, facts: PassiveWaitFacts): string | undefined => {
-  const { waitsPassively, sleepSeconds } = waitFactsOf(input, 0);
+  const { waitsPassively, sleepSeconds } = waitFactsOf(input);
   const delaysWorkers = facts.hasActiveWorkers && sleepSeconds >= blockedSleepSeconds;
 
   if (!waitsPassively && !delaysWorkers) {
