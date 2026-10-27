@@ -18,7 +18,8 @@ Use this skill for the branch in this session's worktree.
 ## Goal
 
 Publish a PR that matches the approved preview and the pushed commits, with the draft status the
-user chose. Step 6 suggests a status; the user may publish as ready while gaps are open.
+user chose. Step 6 suggests a status. The user may publish as draft, or override a draft suggestion
+to ready. Neither choice completes a required action.
 
 ## Hard rules
 
@@ -60,19 +61,19 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
      over an open PR's base, so the target and merge base follow the stack. Pass the newest
      `.tau/workers/review-*` directory saved for this branch as `review`, when one exists. Check
      that the review directory belongs to this branch, from its saved input or session evidence.
-     Report unclear ownership as a gap.
+     Report unclear ownership as evidence that could not be read, in the session report.
    - In the same script, find ticket IDs in the user's links, `branch`, commit `subjects`, and
      `target.pr.body`. Read each distinct ticket with its service's CLI, such as
      `linear issue view <id> --json --no-pager --no-download`. Use returned issue IDs, not branch
      aliases. Keep only each ticket's title and `## Acceptance` section as intent.
-   - For a slice ticket found this way, also read its audit comment with
-     `linear issue comment list <slice> --json --no-pager`. The audit is the comment whose first
-     line is `# Slice audit: <slice>`, the filled first line of the
-     [audit template](../finish-slice/audit.md). Print its audited commit and rows.
+   - For a slice ticket found this way, also keep the acceptance of its agent tickets as intent,
+     read as the [start-slice skill](../start-slice/SKILL.md) reads children. Its audit is the
+     `# Slice audit: <slice>` comment in `linear issue comment list <slice> --json --no-pager`.
+     Print its audited commit and rows.
    - After the script, when a slice ticket has no audit comment, or its audited commit differs from
      `HEAD`, ask with `ask_user_question`: run a new audit with the
      [finish-slice skill](../finish-slice/SKILL.md), recommended, or continue with the missing or
-     old audit as a gap.
+     old audit. Then each slice or agent ticket acceptance item no step 5 check covers is not run.
    - Print the target's head, base, merge base, repository, open PR fields, and closed PRs; ticket
      intent; reuse status, reasons, and available reports; review freshness and evidence gaps; added
      skip or suppression markers; matching check-log paths with their bounded excerpts, and
@@ -102,22 +103,34 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
    - It commits its own removals. Do not commit them here.
    - Later commits that add comments before the preview: run it again on those commits only.
    - Report each removal in the session report, not the PR body.
-   - A failed run, including a missing skill or worker tools, is a gap in the session report. It
-     does not change the draft status in step 6. Go on.
+   - Note a failed run, including a missing skill or worker tools, in the session report. It does
+     not change the draft status in step 6. Go on.
 
 4. Review `<merge base>..HEAD`, with both ends pinned. Rerun step 1's evidence script if the branch
    or saved evidence changed since collection. Reuse an earlier review only if:
    - The session or saved `.tau/workers/review-*/` files show every worker reported (`reviewer.md`,
-     or `finder.md` and `checker.md`), and no gaps remain besides areas a worker read shallowly.
-     Unstated status is unknown; do not reuse it.
+     or `finder.md` and `checker.md`), and no evidence is unreadable or cut, besides areas a worker
+     read shallowly. Unstated status is unknown; do not reuse it.
    - The script's `reuse.status` is `match` for that review and the current merge base.
    - The script's review freshness passed. A changed head or stale capture blocks reuse, even when
      the branch diff matches. A missing or unknown result is not a pass.
    - Callers and rules outside the capture have no relevant changes.
 
-   Otherwise run the [code-review skill](../code-review/SKILL.md) in fast mode on the range. If the
-   skill or worker tools are missing, report a gap; do not review in their place. Follow that
-   skill's ownership, fix, and approval flow.
+   When reuse fails and a saved review exists, ask with `ask_user_question`: assess the saved
+   reviews manually, or run a fast rereview. Recommend the manual assessment when every worker of
+   those reviews reported, and the diff since the newest is small and touches no outside caller or
+   rule. Otherwise recommend the fast rereview.
+   - Manual assessment: read every saved review the chain needs, such as the full review and each
+     later fix review, and the diff since the newest one. The evidence script gets only the newest
+     `.tau/workers/review-*` directory, so read the earlier reports from their saved paths. Record
+     the evidence you inspected and your judgment in the session report. Never report the assessment
+     as a tool match or as fresh. Missing required review evidence stays a required action in
+     step 6.
+
+   When no saved review exists, or when the user chooses the fast rereview, run the
+   [code-review skill](../code-review/SKILL.md) in fast mode on the range. If the skill or worker
+   tools are missing, that is missing review coverage: a required action in step 6. Do not review in
+   their place. Follow that skill's ownership, fix, and approval flow.
 
 5. Run checks. Rerun the evidence script first. Reuse a required pre-merge check only when the
    script lists its log as matching and reading its result shows it passed. The full check is the
@@ -134,7 +147,8 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
    - When the repository has a configured full check, read `fullCheck` from the evidence script.
      When it is `passed`, reuse it. When it is `failed`, `missing`, or `malformed`, run the
      `full_check` tool. Then rerun the evidence script, and report any `fullCheck` status other than
-     `passed` as a gap. The log stays in `.tau/checks/`; do not copy it or add header lines.
+     `passed` as a required action for step 6. The log stays in `.tau/checks/`; do not copy it or
+     add header lines.
    - When the change has user-visible behavior, also send it to a `qa` worker on the committed tree
      before the preview.
    - Leave the app URL, test account, and data writes to Tau, which fills them from the user's
@@ -142,26 +156,40 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
    - When the QA worker asks a blocking question, pass it to the user.
    - Record what QA tested and found for step 6 and the preview.
 
-6. Suggest a draft status. Any gap makes draft the suggested status; otherwise suggest ready. A gap
-   is one of:
-   - A required check that failed or did not run. Only checks that can run solely after deployment
-     are deferred instead of gaps.
-   - An audit item with the verdict not run. It closes when it names a check that step 5 ran and
-     that check passed. A not-met item stops the flow before publication. A deferred item is not a
-     gap.
-   - A review that does not cover the pushed content. A checked fix counts as covered: it changes
-     only what its finding or failing check needs, and the checks that cover it passed after it.
-   - User-visible behavior that QA did not test, or that QA found failing. Untested behavior gets a
-     `[ ]` verification line in the body.
-   - An open finding. A finding closes when its fix is checked as above or reviewed again, or when
-     the user dismisses it as not a defect. Record the dismissal reason in the session report.
-     Deferred, Blocked, or unfixed findings stay open.
+6. Suggest a draft status. Any open required action makes draft the suggested status; otherwise
+   suggest ready. A required action needs a basis and a completion condition. Name both in the
+   preview. A basis is one of:
+   - Agreed acceptance: an acceptance item of the ticket that the change does not meet, or that no
+     check has shown.
+   - An applicable project check or support contract that failed or did not run. Only checks that
+     can run solely after deployment are deferred instead.
+   - Review coverage that is genuinely missing for the pushed content. A checked fix counts as
+     covered: it changes only what its finding or failing check needs, and the checks that cover it
+     passed after it.
+   - A concrete risk that this change introduced, exposed, or worsened. An open finding is one, and
+     so is user-visible behavior that QA found failing.
+   - An audit item with the verdict not met or not run, and each uncovered item of a missing or old
+     audit. It closes when a check that step 5 ran passes for it. A deferred item is not a required
+     action.
 
-   Areas a worker read shallowly are session-report notes, not gaps. Accept checked fixes without
-   asking, and list them in the session report. If other post-review commits make review coverage
-   the only gap, such as a fix that changes behavior beyond its finding, ask once: run a new fast
-   review or continue with the gap. Run a new review when the user asks for one. After a new review,
-   suggest a status again.
+   These alone do not establish a required action: a coverage number, a missing assertion, an
+   untested platform, or a record-format mismatch. Missing evidence for a promised behavior can
+   still require a test or review, without a reproduced defect.
+
+   An unrelated pre-existing issue is not a required action. A pre-existing issue counts as exposed
+   only when this change makes it newly reachable or worsens its effect. Another way into behavior
+   users could already reach does not count; mention it as a plain limitation when it affects use,
+   otherwise in the session report. An accepted follow-up is not one either, but only when it waives
+   no promised behavior or mandatory check. A finding closes when its fix is checked as above or
+   reviewed again, or when the user dismisses it as not a defect. Record the dismissal reason in the
+   session report. Deferred, Blocked, or unfixed findings stay open unless the user accepts them as
+   such a follow-up.
+
+   Areas a worker read shallowly are session-report notes, not required actions. Accept checked
+   fixes without asking, and list them in the session report. If other post-review commits make
+   review coverage the only open required action, such as a fix that changes behavior beyond its
+   finding, ask once: run a new fast review or continue with that action open. Run a new review when
+   the user asks for one. After a new review, suggest a status again.
 
 7. Write the title and body. Save the title as `$prdir/title.md` and the body as `$prdir/body.md`.
    Publish with the title from `title.md`.
@@ -195,30 +223,33 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
      types.
    - Code names: use one only where a reviewer must search for it, such as a flag, an environment
      variable, or a route. Explain it at first use. Never put one in the lead.
-   - Unfinished work: when the PR adds code that nothing uses yet, say what stays disconnected. Name
-     the follow-up ticket only when it exists. Never promise a delivery time.
+   - Unfinished work: when the PR adds code that nothing uses yet, say what stays disconnected. Link
+     any follow-up ticket in Verification. Never promise a delivery time.
    - Decisions: optional. List only consequential choices, each with the option you rejected and
      why. Put code-local reasons in a code comment allowed by the coding rules, or in a commit
      message. Leave draft upstream issues and similar attachments out of the body.
-   - Verification: outcomes and gaps only, in the template's verification section, such as
-     Validation, Testing, or How to test. Keep that section even if optional for low-risk changes.
-     If the template has no such section, put Verification after the summary. Give one line to each
-     check or scenario that ran, naming the behavior it exercised and its outcome. Name test
+   - Verification: outcomes and required actions only, in the template's verification section, such
+     as Validation, Testing, or How to test. Keep that section even if optional for low-risk
+     changes. If the template has no such section, put Verification after the summary. Give one line
+     to each check or scenario that ran, naming the behavior it exercised and its outcome. Name test
      machinery, such as React StrictMode, or setup only when a reviewer needs it to judge coverage
-     or repeat a check. Give one line to the review result. Add a `[ ]` line for each untested
-     behavior, failed or missing required check, open finding, and not-run audit item that step 6
-     did not close. Add a `[ ]` line for fixes that no review covered only when that changes
-     confidence. Drop test counts. List deferred audit items under the template's deferred
-     verification section, such as `##### Deferred verification`.
+     or repeat a check. Give one line to the review result. Add a `[ ]` line only for each required
+     action that step 6 left open, with its action and completion condition. Write decision-relevant
+     limitations as plain lines, then accepted follow-ups as links, in the template's Limitations
+     and follow-up slots. Bookkeeping, record matching, and unrelated issues go to the session
+     report. Drop test counts. List deferred audit items under the template's deferred verification
+     section, such as `##### Deferred verification`.
    - Issues: link Linear tickets as the [tracker skill](../tracker/SKILL.md) says. For other issues,
-     use `Fixes <issue>` only for issues this PR completes; use `Related to <issue>` for others.
+     use `Fixes <issue>` only for issues this PR completes; use `Related to <issue>` for others. A
+     slice with an open acceptance item gets `Related to`, since `Fixes` closes it on merge.
    - Repository template: apply the same rules inside it. Map the lead, context, parts, decisions,
      and verification to the template's matching sections. Leave out an optional section with
      nothing to say. Keep a required heading and write the shortest true content under it, such as
      "None". A Changes section holds only parts, decisions, and unrelated changes. Keep the
-     template's checklist items. Never state one fact in two sections.
+     template's own checklist items as the template has them; the required-action rule covers only
+     the verification lines this skill adds. Never state one fact in two sections.
    - Keep SHAs, worker names, local paths, and everything step 8 lists for the session report out of
-     the body, except the verification outcomes and gaps above.
+     the body, except the verification outcomes and required actions above.
    - Self-review comments: optional, and most PRs have none. Draft an inline comment only for a hunk
      that looks wrong but is deliberate, or where a reviewer would likely suggest an alternative
      that was rejected for a reason the diff cannot show. Never draft a routine explanation, a
@@ -240,7 +271,8 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
    - Include the session report: commits made, comment removals, review and check sources, review
      history, reviewed commits, fixes accepted without a new review and what each fixes, rebase
      notes, machine-local failures that do not block relevant coverage, reviewer notes, dismissed
-     findings with their reasons, and gaps.
+     findings with their reasons, every open required action with its basis, next action, and
+     completion condition, and evidence that could not be read or was cut.
    - For a self-review, show the review's top-level body and each comment's text, file, line, and
      the head SHA it anchors to. A change to the body, a text, or an anchor needs a new preview,
      unless the user's answer named that exact change and you apply it as stated. The anchor's side
@@ -251,14 +283,16 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
      with these options in this order: Publish as draft, Publish as ready, Change something. Publish
      as draft and Publish as ready are Accept. Change something is Request changes. Put the title
      and full body in the question-level `preview`.
-   - Put the other preview items and the session report in visible text before the question, or in
-     the question-level `preview`.
+   - Before the question, show every required action with its basis, next action, and completion
+     condition. Put the other preview items and the session report in visible text before the
+     question, or in the question-level `preview`.
    - Keep `problem` to one or two sentences on the branch state, within the tool's length limit.
    - In the publish option descriptions, mark the status step 6 suggests. For a draft suggestion,
-     give the number of gaps and point to the session report, which lists them, so the user sees
-     what ready leaves open. For an existing PR, say whether each option keeps or changes its
-     current draft status. Keep each description within the tool's length limit.
-   - Publishing as ready with open gaps keeps their `[ ]` verification lines in the body.
+     give the number of open required actions and point to the session report, which lists them, so
+     the user sees what ready leaves open. For an existing PR, say whether each option keeps or
+     changes its current draft status. Keep each description within the tool's length limit.
+   - Publishing as ready keeps open required actions as `[ ]` lines in the body. Approval does not
+     complete them.
    - Closing the dialog publishes nothing. Report that and stop.
    - A publish answer with only applied tuicr edits publishes the edited files without a new
      preview, because the user made those edits. After a comment or a conflict on a publish answer,

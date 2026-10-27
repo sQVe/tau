@@ -79,5 +79,6 @@ changing and within the requested scope. Explain the rest.
      tool's question limit, ask the rest in as many further calls as the limit requires.
    - On this branch, fix it, run step 4 again, and report it under Fixed. On follow-up, file the
      ticket with acceptance criteria with the [tracker skill](../tracker/SKILL.md). Keep the finding
-     under Blocked, with the ticket identifier in place of what you need to continue.
+     under Blocked, with the ticket identifier in place of what you need to continue. A follow-up is
+     not Fixed. It is a scope decision only when it waives no promised behavior or mandatory check.
 6. End with a Checks section. It holds no findings. List the commands you ran and their results.
