@@ -190,16 +190,29 @@ it('prunes an excluded directory by its own path and no other', async ({ onTestF
   expect(await rewriteChangesFingerprint(cwd, directoryExclude, 'src/a.ts')).toBe(false);
 });
 
-it('skips an unreadable directory and fingerprints the other inputs', async ({
-  onTestFinished,
-}) => {
+it('fails to fingerprint when an included directory cannot be read', async ({ onTestFinished }) => {
   const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   await writeFiles(cwd, { 'src/a.ts': 'one', 'denied/b.ts': 'one' });
   await chmod(join(cwd, 'denied'), 0);
   onTestFinished(() => chmod(join(cwd, 'denied'), 0o755));
 
-  const config = onlyProduction('**/*.ts');
-  expect(await rewriteChangesFingerprint(cwd, config, 'src/a.ts')).toBe(true);
+  await expect(fingerprintInputs(cwd, onlyProduction('**/*.ts'), [])).rejects.toThrow(
+    join(cwd, 'denied'),
+  );
+});
+
+it('fails to fingerprint a symlink to an unreadable directory', async ({ onTestFinished }) => {
+  const base = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
+  const cwd = join(base, 'repo');
+  await writeFiles(cwd, { 'src/a.ts': 'one' });
+  await writeFiles(base, { 'outside/value.ts': 'one' });
+  await chmod(join(base, 'outside'), 0);
+  onTestFinished(() => chmod(join(base, 'outside'), 0o755));
+  await symlink('../../outside', join(cwd, 'src/shared'));
+
+  await expect(fingerprintInputs(cwd, onlyProduction('**/*.ts'), [])).rejects.toThrow(
+    join(cwd, 'src/shared'),
+  );
 });
 
 it('hashes a file under a symlinked directory reached through a wildcard', async ({
@@ -230,6 +243,28 @@ it('finishes when symlinked directories form a loop', async ({ onTestFinished })
   await symlink('../a', join(cwd, 'b'));
 
   expect(await rewriteChangesFingerprint(cwd, onlyProduction('**/*.ts'), 'a/x.ts')).toBe(true);
+});
+
+it('lists a regular file named like an excluded directory root', async ({ onTestFinished }) => {
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
+  await writeFiles(cwd, { 'src/a.ts': 'one', 'src/generated': 'one' });
+
+  const config = { ...onlyProduction('src/**'), excludedGlobs: ['**/generated/**'] };
+
+  expect(await rewriteChangesFingerprint(cwd, config, 'src/generated')).toBe(true);
+});
+
+it('does not enter an excluded directory whose path an include glob matches', async ({
+  onTestFinished,
+}) => {
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
+  await writeFiles(cwd, { 'src/a.ts': 'one', 'src/generated/b.ts': 'one' });
+  await chmod(join(cwd, 'src/generated'), 0);
+  onTestFinished(() => chmod(join(cwd, 'src/generated'), 0o755));
+
+  const config = { ...onlyProduction('src/**'), excludedGlobs: ['**/generated/**'] };
+
+  expect(await rewriteChangesFingerprint(cwd, config, 'src/a.ts')).toBe(true);
 });
 
 it('does not enter an excluded symlinked directory', async ({ onTestFinished }) => {
@@ -476,6 +511,17 @@ it('lists a symlink to a file as an input and walks a symlink loop once', async 
     'b/x.ts',
     'top.ts',
   ]);
+});
+
+it('lists a dangling symlink and a self-looping symlink as inputs', async ({ onTestFinished }) => {
+  const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
+  await writeFiles(cwd, { 'src/a.ts': 'one' });
+  await symlink('missing.ts', join(cwd, 'src/dangling.ts'));
+  await symlink('loop.ts', join(cwd, 'src/loop.ts'));
+
+  const inputs = await listInputs(cwd, onlyProduction('**/*.ts'));
+
+  expect(inputs.toSorted()).toEqual(['src/a.ts', 'src/dangling.ts', 'src/loop.ts']);
 });
 
 it('does not enter an excluded directory, even when it is a symlink to a directory elsewhere', async ({
