@@ -175,29 +175,47 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
      imply different requirements. Without one, use the [fallback template](fallback-template.md).
      Show any restructuring it needs in the preview.
    - Title: match the repository's convention.
-   - Length: aim for 100 to 150 words of text you write this session, and never pass 200. Kept text
-     and the template's own headings and checklist items do not count. Do not repeat the diff or
-     commit messages anywhere in the body, such as "Every production caller passes `context.ui`".
-   - Lead: one bold sentence on what the PR changes. Then one or two sentences on the cause or
-     constraint the diff cannot show. Give each unrelated change one line.
+   - Reader: write for a reviewer who knows the product but has not read the ticket, the plan, or
+     the code. Name each part by what it does, not by its type, function, hook, or file name.
+   - Length: aim for 100 to 150 words of text you write this session, and never pass 200. Kept text,
+     the template's own headings and checklist items, and the verification lines below do not count.
+     Remove repeated facts before you add length. Do not repeat the diff or commit messages anywhere
+     in the body, such as "Every production caller passes `context.ui`".
+   - Lead: one bold sentence, led by the PR type. A feature says what the user gets. A bug fix gives
+     the symptom, then the cause. A refactor says "no behavior change" and why. A tooling change
+     says what a developer can now do.
+   - Context: after the lead, one or two sentences on the cause or constraint the diff cannot show.
+   - Scope limits: state one only where a reader would assume more, such as "It adds no UI and makes
+     no AI call."
+   - Example: add a concrete one, such as "my overdue high-priority items", only when it makes the
+     purpose clearer. Do not force a user story.
+   - Unrelated changes: give each one line.
+   - Parts: optional, at most four bullets. Each names a behavior in plain words and its effect for
+     the user or reviewer. Cut a bullet with no effect. Never list files, functions, hooks, or
+     types.
+   - Code names: use one only where a reviewer must search for it, such as a flag, an environment
+     variable, or a route. Explain it at first use. Never put one in the lead.
+   - Unfinished work: when the PR adds code that nothing uses yet, say what stays disconnected. Name
+     the follow-up ticket only when it exists. Never promise a delivery time.
    - Decisions: optional. List only consequential choices, each with the option you rejected and
      why. Put code-local reasons in a code comment allowed by the coding rules, or in a commit
      message. Leave draft upstream issues and similar attachments out of the body.
    - Verification: outcomes and gaps only, in the template's verification section, such as
      Validation, Testing, or How to test. Keep that section even if optional for low-risk changes.
      If the template has no such section, put Verification after the summary. Give one line to each
-     check or scenario that ran, naming the behavior it exercised, and its setup only when a
-     reviewer must repeat it. Give one line to the review result. Add a `[ ]` line for each untested
+     check or scenario that ran, naming the behavior it exercised and its outcome. Name test
+     machinery, such as React StrictMode, or setup only when a reviewer needs it to judge coverage
+     or repeat a check. Give one line to the review result. Add a `[ ]` line for each untested
      behavior, failed or missing required check, open finding, and not-run audit item that step 6
      did not close. Add a `[ ]` line for fixes that no review covered only when that changes
      confidence. Drop test counts. List deferred audit items under the template's deferred
      verification section, such as `##### Deferred verification`.
    - Issues: link Linear tickets as the [tracker skill](../tracker/SKILL.md) says. For other issues,
      use `Fixes <issue>` only for issues this PR completes; use `Related to <issue>` for others.
-   - Repository template: apply the same rules inside it. Map the lead, context, decisions, and
-     verification to the template's matching sections. Leave out an optional section with nothing to
-     say. Keep a required heading and write the shortest true content under it, such as "None". A
-     Changes section holds only decisions and unrelated changes, never a list of the diff. Keep the
+   - Repository template: apply the same rules inside it. Map the lead, context, parts, decisions,
+     and verification to the template's matching sections. Leave out an optional section with
+     nothing to say. Keep a required heading and write the shortest true content under it, such as
+     "None". A Changes section holds only parts, decisions, and unrelated changes. Keep the
      template's checklist items. Never state one fact in two sections.
    - Keep SHAs, worker names, local paths, and everything step 8 lists for the session report out of
      the body, except the verification outcomes and gaps above.
@@ -206,6 +224,11 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
      that was rejected for a reason the diff cannot show. Never draft a routine explanation, a
      narration of the diff, or a fix receipt. There is no fixed limit, but a need for many comments
      means the reasons belong in code comments or the PR is too large.
+   - Self-test before the preview: without the ticket, can a reviewer explain the purpose, what
+     changes now, what is left out, and the evidence? Check that the reader knows every word;
+     internal terms such as "slice" or "state logic" fail. Check that a test or the diff backs each
+     claim, such as "the board never shows more items than asked". Weaken or cut a claim without
+     that backing.
 
 8. Preview and ask for approval. Show title, full body, base repository and branch, head, draft
    status, commits to push, and push command. The review requests of step 11 need no preview.

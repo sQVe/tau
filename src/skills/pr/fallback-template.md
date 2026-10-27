@@ -1,12 +1,19 @@
 # Fallback pull request body
 
 Use this shape when the repository has no pull request template. Leave out optional sections that
-have nothing to say. Aim for 100 to 150 words of text you write, and never pass 200.
+have nothing to say. Aim for 100 to 150 words of text you write, and never pass 200. Verification
+lines do not count.
 
 ```markdown
-**One sentence that states what the PR changes.**
+**One sentence, in product words, that states what the PR changes for its type.**
 
 One or two sentences of cause or constraint that the diff cannot show.
+
+Optional parts list:
+
+- A behavior in plain words, and its effect for the user or reviewer.
+
+Optional: what stays disconnected, and the follow-up ticket when it exists.
 
 #### Decisions
 
