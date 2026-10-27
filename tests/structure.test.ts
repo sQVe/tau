@@ -506,7 +506,7 @@ it('refuses index files, one-file folders, and missing entries but allows flat f
     'src/extensions/commit/fixtures/repository.ts',
     'src/extensions/snippets/snippets.ts',
     'src/extensions/snippets/menu.ts',
-    'src/extensions/snippets/snippets/simplify.md',
+    'src/extensions/snippets/snippets/verify.md',
     'src/extensions/subagents/subagents.ts',
     'src/extensions/subagents/profiles/scout.md',
     'src/extensions/subagents/controller/controller.ts',
