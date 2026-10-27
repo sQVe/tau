@@ -39,41 +39,40 @@ every agent the same answer to "where does this go" and "may this import that".
 
 The target shared modules and the modules each may import:
 
-| Module          | May import                                |
-| --------------- | ----------------------------------------- |
-| `errors`        | nothing                                   |
-| `schema`        | nothing                                   |
-| `command`       | `schema`                                  |
-| `instructions`  | nothing                                   |
-| `herdr`         | nothing                                   |
-| `codemode`      | nothing                                   |
-| `shell`         | nothing                                   |
-| `skillTools`    | nothing                                   |
-| `worker`        | `schema`                                  |
-| `dialog`        | `worker`                                  |
-| `process`       | `errors`                                  |
-| `git`           | `errors`                                  |
-| `config`        | `errors`, `schema`                        |
-| `linear`        | `command`, `errors`, `schema`             |
-| `github`        | `command`, `errors`, `git`, `schema`      |
-| `tauDirectory`  | `errors`, `git`                           |
-| `record`        | `errors`, `schema`, `tauDirectory`        |
-| `checkRecord`   | `errors`, `record`, `schema`              |
-| `reviewCapture` | `errors`, `git`, `schema`, `tauDirectory` |
+| Module          | May import                                          |
+| --------------- | --------------------------------------------------- |
+| `errors`        | nothing                                             |
+| `schema`        | nothing                                             |
+| `command`       | `schema`                                            |
+| `instructions`  | nothing                                             |
+| `herdr`         | nothing                                             |
+| `codemode`      | nothing                                             |
+| `shell`         | nothing                                             |
+| `skillTools`    | nothing                                             |
+| `worker`        | `schema`                                            |
+| `dialog`        | `worker`                                            |
+| `process`       | `errors`                                            |
+| `fileLock`      | `errors`, `process`, `schema`                       |
+| `git`           | `errors`                                            |
+| `config`        | `errors`, `schema`                                  |
+| `linear`        | `command`, `errors`                                 |
+| `github`        | `command`, `errors`, `git`, `schema`                |
+| `tauDirectory`  | `errors`, `git`                                     |
+| `record`        | `errors`, `schema`, `tauDirectory`                  |
+| `checkRecord`   | `errors`, `git`, `record`                           |
+| `reviewCapture` | `errors`, `git`, `record`, `schema`, `tauDirectory` |
 
 `skillTools`, `tauDirectory`, and `reviewCapture` keep the edges they have today, renamed to the
 target modules. Shared modules never import extensions, and no module imports `src/tau.ts`.
 Extensions import shared modules and never import each other.
 
-The rule's table starts from today's flat files and shrinks as modules form. Each slice that merges
-flat files into a target module replaces their rows with the module's row. When the last flat file
-is gone, only the target modules remain.
+The rule's table lists only these modules, so a new flat file under `src/` needs a new row.
 
 ### Changing the table
 
-An edge that keeps the table's directions is an edit to the rule's table and nothing else. An edge
-that reverses a listed direction needs a new ADR. When the rule reports an import, change the table
-or the module list instead of silencing the rule.
+An edge that keeps the table's directions is an edit to the rule's table and this ADR's table, which
+a structure test keeps equal. An edge that reverses a listed direction needs a new ADR. When the
+rule reports an import, change the table or the module list instead of silencing the rule.
 
 ### Placement and structure
 
@@ -138,7 +137,6 @@ or the module list instead of silencing the rule.
 
 - A new shared file needs a module and a table row, which adds a step for small helpers.
 - A module's second file moves its first file, which touches every import of it.
-- Until the flat files merge, the table is long and lists modules that will disappear.
 - Which noun names a concept still needs judgment in review. Only registry order is checked.
 
 ## Alternatives considered

@@ -439,6 +439,34 @@ it('keeps the module list and import table sorted, free of duplicates, and close
   }
 });
 
+const sortedImportTable = (table: Readonly<Record<string, readonly string[]>>) =>
+  Object.fromEntries(Object.entries(table).map(([row, allowed]) => [row, [...allowed].toSorted()]));
+
+it('keeps the import table in ADR 0120 equal to the rule import table', () => {
+  const adr = readFileSync(
+    join(root, 'docs/adr/0120-capability-modules-with-an-enforced-import-table.md'),
+    'utf8',
+  );
+
+  const section = adr.split('### Target modules and import table')[1]?.split('\n### ')[0] ?? '';
+
+  const adrRows = section
+    .split('\n')
+    .filter((line) => line.startsWith('| `'))
+    .map((line) => line.split('|').map((cell) => cell.trim()));
+
+  const adrTable = Object.fromEntries(
+    adrRows.map(([, moduleCell, allowedCell]) => [
+      moduleCell.replace(/`/g, ''),
+      allowedCell === 'nothing'
+        ? []
+        : [...allowedCell.matchAll(/`([^`]+)`/g)].map((match) => match[1]),
+    ]),
+  );
+
+  expect(sortedImportTable(adrTable)).toEqual(sortedImportTable(importTable));
+});
+
 it.each([
   { entries: ['a', 'b', 'c'], problems: [] },
   { entries: ['a', 'c', 'b'], problems: ['b sorts before c'] },
