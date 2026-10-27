@@ -48,18 +48,18 @@ command from user config. The repository file holds only what belongs with the c
 
 ### Who may set each key
 
-| Key             | User file | Repository file | Rule                                                           |
-| --------------- | --------- | --------------- | -------------------------------------------------------------- |
-| `tdd`           | yes       | yes             | Per field; a list replaces the earlier list                    |
-| `allowedModels` | yes       | yes             | Each file may only remove models from the list before it       |
-| `mutation`      | no        | yes             | `argv` is the mutation command, beside the script it runs      |
-| `subagents`     | yes       | no              | `capacity`, the live workers at once: an integer from 1 to 256 |
-| `profiles`      | yes       | no              | Worker models and model routes                                 |
-| `browser`       | yes       | no              | `loginCommand`, which the manager asks the user to run         |
-| `tracker`       | yes       | no              | `agentTeam`, and `repositories` with a Linear route per entry  |
-| `qa`            | yes       | no              | `repositories` with URL and test-account commands per entry    |
-| `reviews`       | yes       | no              | `repositories` with the review bots per entry                  |
-| `fullCheck`     | yes       | no              | `repositories` with the full check command per entry           |
+| Key             | User file | Repository file | Rule                                                                |
+| --------------- | --------- | --------------- | ------------------------------------------------------------------- |
+| `tdd`           | yes       | yes             | Per field; a list replaces the earlier list                         |
+| `allowedModels` | yes       | yes             | Each file may only remove models from the list before it            |
+| `mutation`      | no        | yes             | `argv` is the mutation command, beside the script it runs           |
+| `subagents`     | yes       | no              | `capacity`, the live workers at once: an integer from 1 to 256      |
+| `profiles`      | yes       | no              | Worker models and model routes                                      |
+| `browser`       | yes       | no              | `loginCommand`, which the manager asks the user to run              |
+| `tracker`       | yes       | no              | `agentTeam`, and `repositories` with a Linear route per entry       |
+| `qa`            | yes       | no              | `repositories` with URL and test-account commands, and `dataWrites` |
+| `reviews`       | yes       | no              | `repositories` with the review bots per entry                       |
+| `fullCheck`     | yes       | no              | `repositories` with the full check command per entry                |
 
 A key in the wrong file is an error. The error names the file and the file the key belongs in.
 `tdd.verificationArgv` must start with `vitest`, the only runner Tau supports.
@@ -68,9 +68,13 @@ A key in the wrong file is an error. The error names the file and the file the k
 
 - A feature that needs per-repository settings keeps its own map, `<feature>.repositories`, keyed by
   `owner/name`.
-- The repository is the one that the `origin` remote names. Only an `origin` on the GitHub host,
-  `github.com`, names one. A repository with the same `owner/name` on another host never gets
-  another repository's entry.
+- A checkout's own features find their repository from the `origin` remote. Only an `origin` on the
+  GitHub host, `github.com`, names one. A repository with the same `owner/name` on another host
+  never gets another repository's entry.
+- `reviews` is the exception. Its entries are keyed by the PR's base repository, not by `origin`.
+- `qa.repositories.<owner/name>.dataWrites` is a boolean that defaults to false.
+- Tau never runs `testAccountCommand`. The brief tells the worker to run it, so the password stays
+  out of the manager context.
 - Matching ignores case. Two keys for one repository that differ only in case are an error.
 - A `reviews` bot's `login` is its GitHub login. It matches without regard to case or a trailing
   `[bot]`. Its `comment` is the exact body of the review request.
@@ -82,10 +86,14 @@ A key in the wrong file is an error. The error names the file and the file the k
 - A worker launch uses the launch `model`, then `profiles.<name>.model`, then
   `profiles.default.model`. Without any of them, the launch fails and names
   `profiles.default.model`. Profile files may not set `model:`.
+- A worker's model is chosen once at launch. The `subagent` tool's model line is fixed for the
+  session, so the prompt cache holds. The manager guidance says to use the profile default unless
+  the user asks for another model or a multi-model discussion.
 - A profile may have a `route`. It has a `question`, two `labels` that each hold a `criterion` and a
   `model`, and a `classifier` as `provider/model-id`. An optional `confidence` sets the least
-  confidence that keeps the classifier's label. Otherwise the launch uses the model it would use
-  without a route.
+  confidence that keeps the classifier's label.
+- A profile with a `route` still needs its own `profiles.<name>.model`. That model runs when the
+  classifier gives no confident answer.
 - Web answers use `pi-web-access`'s own `fetch.answerModel`, unless the caller passes one.
 - `allowedModels` limits every model Tau selects or passes on. Each file that sets it may only
   remove models from the list before it. Tau refuses a model outside the list, names the list and

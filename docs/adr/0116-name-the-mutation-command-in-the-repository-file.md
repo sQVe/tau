@@ -24,8 +24,8 @@ cannot make Tau run a command. The error for a missing key says whether trust hi
 
 The tool lives in the `fullCheck` extension and shares the lock, log, and reuse code of
 `full_check`. A full check and a mutation check of one repository never run at once, since both use
-the same test resources. Only a run whose report says `pass` or `nothing` is saved for reuse, so an
-audit run with survivors that exits 0 is never reused.
+the same test resources. A passing run is saved for reuse, including a run with survivors, and a
+reused run lists the same survivors. A failing run is never saved.
 
 ## Consequences
 
