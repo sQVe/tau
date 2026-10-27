@@ -61,6 +61,8 @@ describe('parseShellCommands', () => {
     ['echo "a\\\\b"', [['echo', 'a\\b']]],
     ['echo "a\\nb"', [['echo', 'a\\nb']]],
     ['echo "a\\\nb"', [['echo', 'ab']]],
+    ['echo "a$\'x\'b"', [['echo', "a$'x'b"]]],
+    ['echo "a$"b', [['echo', 'a$b']]],
   ])('reads double-quoted text: %s', (source, expected) => {
     expect(wordsOf(source)).toEqual(expected);
   });

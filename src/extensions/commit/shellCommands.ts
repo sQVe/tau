@@ -153,7 +153,7 @@ class ShellParser {
       if (character === '\\') {
         text += this.readDoubleQuotedEscape();
       } else if (character === '$') {
-        text += this.readDollar().text;
+        text += this.readExpandingDollar();
       } else if (character === '`') {
         text += this.readBacktick();
       } else {
@@ -329,6 +329,19 @@ class ShellParser {
     this.position = end + 1;
 
     return text;
+  }
+
+  // Inside double quotes and heredoc bodies, `$'` and `$"` are plain text.
+  private readExpandingDollar(): string {
+    const next = this.source.charAt(this.position + 1);
+
+    if (next === "'" || next === '"') {
+      this.position += 1;
+
+      return '$';
+    }
+
+    return this.readDollar().text;
   }
 
   private readDollar(): { text: string; quoted: boolean } {
