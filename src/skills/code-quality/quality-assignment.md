@@ -55,8 +55,11 @@ Each finding gives:
 - A sketch of the simpler structure.
 - What it deletes and what it adds.
 - The contracts, callers, order, errors, and state that stay the same.
-- The label `restructure` when the fix moves code or ownership between modules, changes a contract
-  that other modules use, or edits files outside the target. Otherwise the label `local`.
+- The label `restructure` when the fix needs a design decision of its own, changes a contract that
+  code outside the repository uses, or grows the change a lot. Take about 100 added lines or about 3
+  more files as guidance for a large fix, not a cutoff, and do not decide by file count alone.
+  Otherwise the label `local`, even when the fix moves a helper between modules and updates its
+  callers in the repository.
 - `major` when it matches a Major line in the structure criteria, and its level in the priority
   order.
 
