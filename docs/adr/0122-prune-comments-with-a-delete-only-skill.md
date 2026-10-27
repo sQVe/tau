@@ -2,14 +2,15 @@
 
 **Date**: 2026-10-22\
 **Status**: Accepted\
-**Related**: [ADR 0042 (Remove commit comment review)](./0042-remove-commit-comment-review.md)
+**Related**: [ADR 0024 (Commit through Git hooks, without approval or Tau checks)](./0024-commit-without-human-approval.md)
 
 ## Context
 
 Agents add comments that restate names, types, and tests. The coding instructions already say to
 comment only what the code cannot say, but nothing enforces the rule after the code is written.
-[ADR 0042](./0042-remove-commit-comment-review.md) removed the commit gate that judged comments,
-because a model can always find a new objection to wording and the gate blocked passing commits.
+[ADR 0024 (Commit through Git hooks, without approval or Tau checks)](./0024-commit-without-human-approval.md)
+removed the commit gate that judged comments, because a model can always find a new objection to
+wording and the gate blocked passing commits.
 
 ## Decision
 
@@ -43,7 +44,8 @@ On other work it asks first.
 ### Restore a commit-time gate
 
 Judge comments again when the `commit` tool runs. Rejected because
-[ADR 0042](./0042-remove-commit-comment-review.md) showed that such a gate blocks passing commits.
+[ADR 0024 (Commit through Git hooks, without approval or Tau checks)](./0024-commit-without-human-approval.md)
+showed that such a gate blocks passing commits.
 
 ### Reword weak comments
 
