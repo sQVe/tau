@@ -1,8 +1,14 @@
-type HeredocReplacement = (span: string, quote: string, rest: string) => string;
+import { parseShellCommands } from '../../shell.js';
+import type { ShellCommand } from '../../shell.js';
 
 export interface PassiveWaitFacts {
   hasActiveWorkers: boolean;
   delegating: boolean;
+}
+
+interface WaitFacts {
+  waitsPassively: boolean;
+  sleepSeconds: number;
 }
 
 // A sleep this long while workers run waits on them, so the call is refused.
@@ -10,166 +16,206 @@ const blockedSleepSeconds = 30;
 
 const unitSeconds: Record<string, number> = { '': 1, s: 1, m: 60, h: 3600, d: 86_400 };
 
-// A while loop that reads input ends with the input, so only other conditions count as waiting.
-const loopWithSleep =
+// Sleep reads its operands as floating-point numbers, so `60.`, `.5m`, `3e1`, and `infinity` count.
+const sleepOperand = /^((?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|inf|infinity)([smhd]?)$/;
+
+// A shell can run any text it reads, through a pipe, a heredoc, a here-string, or a script file.
+const shellNames = new Set([
+  'sh',
+  'bash',
+  'zsh',
+  'dash',
+  'ksh',
+  'fish',
+  'eval',
+  'source',
+  '$shell',
+  `\${shell}`,
+]);
+
+const assignment = /^\w+=/;
+
+// Commands that only print their arguments, so a `sleep` among them is text.
+const printingNames = new Set(['echo', 'printf']);
+
+// The parser keeps these keywords in the words of the command they start, as in `do sleep 10`.
+const keywords = new Set(['!', '{', 'do', 'elif', 'else', 'if', 'then', 'until', 'while']);
+
+// Fail closed when nested scripts exceed the inspection budget.
+const maximumScriptDepth = 8;
+
+// The raw patterns apply only when the source does not parse, so the guard fails closed.
+const rawLoopWithSleep =
   /\b(?:until|while(?!\s+(?:\w+=\S*\s+)*read\b))(?:(?!\bdone\b)[\s\S])*?\bdo\b(?:(?!\bdone\b)[\s\S])*?\bsleep\b/;
 
-const passiveWaitPatterns = [
+const rawWatcherPatterns = [
   /\bgh\s+run\s+watch\b/,
   /\bgh\s+pr\s+checks\b[^;&|\n]*\s--watch\b/,
   /\baws\s+logs\s+tail\b[^;&|\n]*(?:\s--follow\b|\s-f\b)/,
   /(?:^|[;&|(\n])\s*watch\s/,
 ];
 
-const shellScriptPrefix = /\b(?:sh|bash|zsh)(?:\s+-[a-z]+)*\s+-[a-z]*c\s+$/;
+const rawSleep = /\bsleep((?:\s+\d+(?:\.\d+)?[smhd]?\b)+)/g;
 
-// An escaped character is matched first, so an escaped quote never opens a quoted span.
-const quotedText = /\\[\s\S]|'[^']*'|"(?:[^"\\]|\\[\s\S])*"/g;
+const commandName = (word: string) => word.slice(word.lastIndexOf('/') + 1).toLowerCase();
 
-const escapedCharacter = /\\[\s\S]/g;
+const operandSeconds = (word: string): number | undefined => {
+  const match = sleepOperand.exec(word);
 
-// Quoted text is prose unless it is the script a shell runs.
-const withoutQuotedText = (command: string): string =>
-  command.replace(quotedText, (span: string, offset: number) => {
-    const isEscape = span.startsWith('\\');
-    const isScript = shellScriptPrefix.test(command.slice(0, offset));
-
-    return isEscape || isScript ? span : "''";
-  });
-
-const withoutSingleQuotedText = (command: string): string =>
-  command.replace(quotedText, (span: string) => (span.startsWith("'") ? "''" : span));
-
-// A heredoc body is text up to its delimiter line. With a quoted delimiter, nothing in it expands.
-const heredocSource = String.raw`(?<!<)<<-?[ \t]*(['"]?)([A-Za-z_][\w.-]*)\1([^\n]*)(?:\n(?:[\s\S]*?\n)??\t*\2(?=\n|$)|[\s\S]*$)`;
-
-const heredoc = new RegExp(heredocSource, 'g');
-
-// One left-to-right scan, so a heredoc marker inside a single-quoted span is text and a heredoc body
-// is consumed before its contents are scanned. Each alternative matches a text in one way.
-const quotedOrHeredoc = new RegExp(
-  String.raw`\\[\s\S]|'[^']*'|"(?:\\[\s\S]|[^"\\])*"|${heredocSource}`,
-  'g',
-);
-
-// A double-quoted span may hold a heredoc in a command substitution.
-const replaceHeredocs = (command: string, replacement: HeredocReplacement): string =>
-  command.replace(quotedOrHeredoc, (span: string) => {
-    if (span.startsWith('\\') || span.startsWith("'")) {
-      return span;
-    }
-
-    return span.replace(heredoc, (inner, quote: string, _delimiter, rest: string) =>
-      replacement(inner, quote, rest),
-    );
-  });
-
-const quotedOrHeredocAt = new RegExp(quotedOrHeredoc.source, 'y');
-
-const wordSeparator = /[ \t\n;&|()<>]/;
-
-// With extglob on, a ( after one of these opens a pattern, so a # in it is text.
-const extendedGlobOperator = /[?*+@!]/;
-
-const opensExtendedGlob = (command: string, offset: number): boolean =>
-  command.charAt(offset - 1) === '(' && extendedGlobOperator.test(command.charAt(offset - 2));
-
-const followsSeparator = (command: string, offset: number): boolean =>
-  wordSeparator.test(command.charAt(offset - 1)) && !opensExtendedGlob(command, offset);
-
-const startsWord = (command: string, offset: number): boolean =>
-  offset === 0 || followsSeparator(command, offset);
-
-const splitHeredocOpener = (heredocSpan: string, rest: string): [string, string] => {
-  const [opener = ''] = heredocSpan.split('\n', 1);
-
-  return [heredocSpan.slice(0, opener.length - rest.length), heredocSpan.slice(opener.length)];
-};
-
-const commentEnd = (command: string, offset: number): number => {
-  const lineEnd = command.indexOf('\n', offset);
-
-  return lineEnd === -1 ? command.length : lineEnd;
-};
-
-const joinedWordEnd = (
-  command: string,
-  span: string,
-  offset: number,
-  joinedWordOffset: number,
-): number => {
-  if (!span.startsWith('\\')) {
-    return joinedWordOffset;
+  if (match === null) {
+    return undefined;
   }
 
-  const continuesWord = offset === joinedWordOffset || !startsWord(command, offset);
-  const joinsWord = span !== '\\\n' || continuesWord;
+  const amount = match[1] ?? '';
+  const value = amount.startsWith('inf') ? Infinity : Number(amount);
 
-  return joinsWord ? offset + span.length : -1;
+  return value * (unitSeconds[match[2] ?? ''] ?? 1);
 };
 
-const withoutComments = (command: string): string => {
-  let text = '';
-  let joinedWordOffset = -1;
-  let offset = 0;
+// The command's name is its first word after keywords and assignments.
+const printsOnly = ({ words }: ShellCommand) => {
+  const name = words.find((word) => !keywords.has(word) && !assignment.test(word)) ?? '';
 
-  while (offset < command.length) {
-    quotedOrHeredocAt.lastIndex = offset;
-
-    const match = quotedOrHeredocAt.exec(command);
-    const span = match?.[0] ?? command.charAt(offset);
-    const rest = match?.[3];
-    const isComment = span === '#' && startsWord(command, offset) && offset !== joinedWordOffset;
-
-    joinedWordOffset = joinedWordEnd(command, span, offset, joinedWordOffset);
-
-    if (isComment) {
-      offset = commentEnd(command, offset);
-    } else if (rest !== undefined && !rest.startsWith('#')) {
-      const [marker, body] = splitHeredocOpener(span, rest);
-
-      text += marker + withoutComments(rest) + body;
-      offset += span.length;
-    } else {
-      text += span;
-      offset += span.length;
-    }
-  }
-
-  return text;
+  return printingNames.has(commandName(name));
 };
 
-const withoutHeredocText = (command: string): string =>
-  replaceHeredocs(command, (_span, _quote, rest) => `<<EOF${rest}`);
-
-const withoutLiteralHeredocText = (command: string): string =>
-  replaceHeredocs(command, (span, quote, rest) => (quote === '' ? span : `<<EOF${rest}`));
-
-const shellNames = String.raw`(?:sh|bash|zsh|dash|ksh|fish|eval|source|\$\{?SHELL\}?)`;
-
-// A shell can run any text it reads, through a pipe, a heredoc, a here-string, or a script file.
-const runsShell = new RegExp(String.raw`(?:^|[\s;&|(/])${shellNames}(?=[\s<>;&|)]|$)`);
-
-const quotedShellName = new RegExp(String.raw`(['"])(?:[^'"\s]*/)?${shellNames}\1`);
-
-const commandSubstitution = /\$\(|`/;
-
-// Escapes are removed in order, so a backslash pair never hides the substitution after it.
-const hasCommandSubstitution = (text: string): boolean =>
-  commandSubstitution.test(text.replace(escapedCharacter, ''));
-
-// A running tool call holds worker notices back, so a long sleep delays the notice it waits for.
-// Sleep sums its operands, and chained sleeps add up, so count every operand in the command.
-const totalSleepSeconds = (command: string): number => {
+// Sleep sums its operands, and chained sleeps add up, so count every operand in the command. A
+// `sleep` word anywhere counts, so wrappers and redirections before it never hide it.
+const sleepSecondsOf = (command: ShellCommand): number => {
   let total = 0;
+  let sleeping = false;
 
-  for (const [, operands] of command.matchAll(/\bsleep((?:\s+\d+(?:\.\d+)?[smhd]?\b)+)/g)) {
-    for (const [, amount, unit] of (operands ?? '').matchAll(/(\d+(?:\.\d+)?)([smhd]?)/g)) {
-      total += Number(amount) * (unitSeconds[unit ?? ''] ?? 1);
-    }
+  if (printsOnly(command)) {
+    return total;
+  }
+
+  for (const word of command.words) {
+    const seconds: number | undefined = sleeping ? operandSeconds(word) : undefined;
+
+    sleeping = seconds !== undefined || commandName(word) === 'sleep';
+    total += seconds ?? 0;
   }
 
   return total;
+};
+
+const sleeps = (command: ShellCommand) => {
+  const hasSleep = command.words.some((word) => commandName(word) === 'sleep');
+
+  return hasSleep && !printsOnly(command);
+};
+
+const followsWords = (words: string[], index: number, expected: string[]) =>
+  expected.every((word, offset) => words[index + 1 + offset] === word);
+
+const watchesWithGh = (words: string[], index: number) => {
+  const checks = followsWords(words, index, ['pr', 'checks']);
+  const watchesChecks = checks && words.includes('--watch');
+
+  return followsWords(words, index, ['run', 'watch']) || watchesChecks;
+};
+
+const tailsAwsLogs = (words: string[], index: number) => {
+  const tails = followsWords(words, index, ['logs', 'tail']);
+  const follows = words.includes('--follow') || words.includes('-f');
+
+  return tails && follows;
+};
+
+const watchesAt = (words: string[], index: number) => {
+  const name = commandName(words[index] ?? '');
+
+  if (name === 'gh') {
+    return watchesWithGh(words, index);
+  }
+
+  return name === 'aws' && tailsAwsLogs(words, index);
+};
+
+const watches = ({ words }: ShellCommand) => {
+  const runsWatch = words[0] === 'watch' && words.length > 1;
+
+  return runsWatch || words.some((_word, index) => watchesAt(words, index));
+};
+
+// A while loop that reads input ends with the input, so only other conditions count as waiting.
+const opensWaitingLoop = ({ words }: ShellCommand) => {
+  const [keyword, ...condition] = words;
+  const test = condition.find((word) => !assignment.test(word));
+  const whileNotReading = keyword === 'while' && test !== 'read';
+
+  return keyword === 'until' || whileNotReading;
+};
+
+const waitsInLoop = (commands: ShellCommand[]) => {
+  let inLoop = false;
+
+  for (const command of commands) {
+    if (opensWaitingLoop(command)) {
+      inLoop = true;
+    } else if (command.words[0] === 'done') {
+      inLoop = false;
+    } else if (inLoop && sleeps(command)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const runsShell = ({ words }: ShellCommand) =>
+  words.some((word) => shellNames.has(commandName(word)));
+
+const scriptsOf = (commands: ShellCommand[]) =>
+  commands.flatMap(({ words, heredocs }) => [...words, ...heredocs]);
+
+const rawWaitFacts = (source: string): WaitFacts => {
+  let sleepSeconds = 0;
+
+  for (const [, operands] of source.matchAll(rawSleep)) {
+    for (const operand of (operands ?? '').split(/\s+/)) {
+      sleepSeconds += operandSeconds(operand) ?? 0;
+    }
+  }
+
+  const waitsInRawLoop = rawLoopWithSleep.test(source);
+  const waitsOnWatcher = rawWatcherPatterns.some((pattern) => pattern.test(source));
+
+  return { waitsPassively: waitsInRawLoop || waitsOnWatcher, sleepSeconds };
+};
+
+// When a command runs a shell, every word and heredoc body may be the script it runs, such as
+// `echo 'sleep 600' | bash`, so each is checked as a script too.
+const waitFactsOf = (source: string, depth: number): WaitFacts => {
+  if (depth > maximumScriptDepth) {
+    return { waitsPassively: true, sleepSeconds: Number.POSITIVE_INFINITY };
+  }
+
+  const commands = parseShellCommands(source);
+
+  if (commands === undefined) {
+    return rawWaitFacts(source);
+  }
+
+  const waitsOnWatcher = commands.some(watches);
+  const sleepSeconds = commands.reduce((total, command) => total + sleepSecondsOf(command), 0);
+
+  const facts: WaitFacts = {
+    waitsPassively: waitsInLoop(commands) || waitsOnWatcher,
+    sleepSeconds,
+  };
+
+  const scripts = commands.some(runsShell) ? scriptsOf(commands) : [];
+  const nestedScripts = scripts.filter((script) => script !== source);
+
+  for (const script of nestedScripts) {
+    const scriptFacts = waitFactsOf(script, depth + 1);
+
+    facts.waitsPassively ||= scriptFacts.waitsPassively;
+    facts.sleepSeconds += scriptFacts.sleepSeconds;
+  }
+
+  return facts;
 };
 
 const refusalReason = (delegating: boolean): string => {
@@ -188,29 +234,10 @@ const refusalReason = (delegating: boolean): string => {
   return lines.join(' ');
 };
 
+// A running tool call holds worker notices back, so a long sleep delays the notice it waits for.
 export const passiveWaitRefusal = (input: string, facts: PassiveWaitFacts): string | undefined => {
-  // A substitution or an ANSI-C quote can hold quotes that this guard does not parse, so their
-  // comments stay text.
-  const keepsComments = hasCommandSubstitution(input) || input.includes("$'");
-  const command = keepsComments ? input : withoutComments(input);
-  const prose = withoutQuotedText(withoutHeredocText(command));
-  const expandable = withoutLiteralHeredocText(command);
-  const shellRuns = runsShell.test(prose) || quotedShellName.test(expandable);
-  // A substitution can run text whose quotes this guard does not parse, so its sleeps count.
-  const substitutedText = withoutSingleQuotedText(expandable);
-  const substitutes = hasCommandSubstitution(substitutedText);
-
-  const runnable = substitutes ? expandable : prose;
-  const sleepText = shellRuns ? command : runnable;
-  const loopText = substitutes ? substitutedText : prose;
-  const waitText = shellRuns ? withoutQuotedText(command) : loopText;
-
-  const waitsInLoop = loopWithSleep.test(waitText);
-  const waitsOnWatcher = passiveWaitPatterns.some((pattern) => pattern.test(waitText));
-  const waitsPassively = waitsInLoop || waitsOnWatcher;
-
-  const sleepsLong = totalSleepSeconds(sleepText) >= blockedSleepSeconds;
-  const delaysWorkers = facts.hasActiveWorkers && sleepsLong;
+  const { waitsPassively, sleepSeconds } = waitFactsOf(input, 0);
+  const delaysWorkers = facts.hasActiveWorkers && sleepSeconds >= blockedSleepSeconds;
 
   if (!waitsPassively && !delaysWorkers) {
     return undefined;
