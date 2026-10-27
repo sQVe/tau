@@ -1,8 +1,9 @@
 import { constants, existsSync, realpathSync } from 'node:fs';
-import { open } from 'node:fs/promises';
+import type { BigIntStats } from 'node:fs';
+import { open, realpath, stat } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { clampThinkingLevel } from '@earendil-works/pi-ai';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
@@ -53,6 +54,11 @@ interface ClassifierState {
 interface Classification {
   outcome: ClassifierOutcome;
   ticketSent: boolean;
+}
+
+interface TicketPath {
+  path: string;
+  slices: string;
 }
 
 export interface RoutedLoadout {
@@ -244,22 +250,53 @@ const fillBuffer = async (file: FileHandle, buffer: Buffer, filled: number): Pro
   return fillBuffer(file, buffer, filled + bytesRead);
 };
 
-// O_NONBLOCK keeps a named pipe from blocking the open.
-const readTicket = async (path: string): Promise<string | undefined> => {
+const escapesDirectory = (path: string, directory: string): boolean => {
+  const relation = relative(directory, path);
+
+  return isAbsolute(relation) || relation.split(sep)[0] === '..';
+};
+
+const isSameFile = (first: BigIntStats, second: BigIntStats): boolean =>
+  first.dev === second.dev && first.ino === second.ino;
+
+const readOpenedTicket = async (
+  file: FileHandle,
+  ticket: TicketPath,
+): Promise<string | undefined> => {
+  const stats = await file.stat({ bigint: true });
+
+  if (!stats.isFile()) {
+    return undefined;
+  }
+
+  const realPath = await realpath(ticket.path);
+  const realSlices = await realpath(ticket.slices);
+
+  if (escapesDirectory(realPath, realSlices)) {
+    return undefined;
+  }
+
+  const named = await stat(realPath, { bigint: true });
+
+  if (!isSameFile(stats, named)) {
+    return undefined;
+  }
+
+  const buffer = Buffer.alloc(ticketByteLimit);
+  const filled = await fillBuffer(file, buffer, 0);
+
+  return buffer.toString('utf8', 0, filled).slice(0, ticketCharacterLimit);
+};
+
+// The text comes only from the opened descriptor. Its real path, checked after the open, must stay
+// inside the slices root and name the same file. This refuses a symlink swapped into a parent
+// directory. O_NONBLOCK keeps a named pipe from blocking the open.
+const readTicket = async (ticket: TicketPath): Promise<string | undefined> => {
   try {
-    const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
+    const file = await open(ticket.path, constants.O_RDONLY | constants.O_NONBLOCK);
 
     try {
-      const stats = await file.stat();
-
-      if (!stats.isFile()) {
-        return undefined;
-      }
-
-      const buffer = Buffer.alloc(ticketByteLimit);
-      const filled = await fillBuffer(file, buffer, 0);
-
-      return buffer.toString('utf8', 0, filled).slice(0, ticketCharacterLimit);
+      return await readOpenedTicket(file, ticket);
     } finally {
       await file.close();
     }
@@ -268,9 +305,13 @@ const readTicket = async (path: string): Promise<string | undefined> => {
   }
 };
 
+const ticketSlicesMarker = '/.tau/slices/';
+
 // The file text leaves the machine, so `..` must not lead out of the slices directory. This also
-// rejects a lookalike directory such as `x.tau/slices`.
-const resolveTicketPath = (brief: string, cwd: string): string | undefined => {
+// rejects a lookalike directory such as `x.tau/slices`. The real path check in `readTicket` covers
+// symlinks. The root is the outermost slices directory, so a nested `.tau/slices` symlink cannot
+// move it.
+const resolveTicketPath = (brief: string, cwd: string): TicketPath | undefined => {
   const written = findTicketPath(brief);
 
   if (written === undefined) {
@@ -278,12 +319,13 @@ const resolveTicketPath = (brief: string, cwd: string): string | undefined => {
   }
 
   const path = resolve(cwd, written);
+  const markerIndex = path.indexOf(ticketSlicesMarker);
 
-  if (!path.includes('/.tau/slices/')) {
+  if (markerIndex === -1) {
     return undefined;
   }
 
-  return path;
+  return { path, slices: path.slice(0, markerIndex + ticketSlicesMarker.length - 1) };
 };
 
 const classifyRoute = async (

@@ -1686,6 +1686,56 @@ it('sends no text from a special file that a ticket path names', async ({ onTest
   expect(routing?.ticketSent).toBe(false);
 });
 
+it('sends no text from an outside file that a ticket symlink names', async ({ onTestFinished }) => {
+  const { context, classify, directory } = await routedFixture(onTestFinished);
+  writeFileSync(join(directory, 'notes.md'), 'Private notes.');
+  linkTicket(directory, join(directory, 'notes.md'));
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  const brief = 'Carry out the task in .tau/slices/ME-1/agent-1.md';
+  const { routing } = await resolveRoutedLoadout({ profile: 'scout', task: brief }, context);
+
+  expect(classifiedState(classify)).toEqual({ brief, profile: 'scout' });
+  expect(routing?.ticketSent).toBe(false);
+});
+
+it('sends no text from a ticket whose directory links outside the slices directory', async ({
+  onTestFinished,
+}) => {
+  const { context, classify, directory } = await routedFixture(onTestFinished);
+  const outside = join(directory, 'outside');
+  mkdirSync(outside);
+  writeFileSync(join(outside, 'agent-1.md'), 'Private notes.');
+  mkdirSync(join(directory, '.tau', 'slices'), { recursive: true });
+  symlinkSync(outside, join(directory, '.tau', 'slices', 'ME-1'));
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  const brief = 'Carry out the task in .tau/slices/ME-1/agent-1.md';
+  const { routing } = await resolveRoutedLoadout({ profile: 'scout', task: brief }, context);
+
+  expect(classifiedState(classify)).toEqual({ brief, profile: 'scout' });
+  expect(routing?.ticketSent).toBe(false);
+});
+
+it('sends no text from a nested slices directory that links outside', async ({
+  onTestFinished,
+}) => {
+  const { context, classify, directory } = await routedFixture(onTestFinished);
+  const outside = join(directory, 'outside');
+  const nested = join(directory, '.tau', 'slices', 'ME-1', '.tau');
+  mkdirSync(outside);
+  writeFileSync(join(outside, 'agent-1.md'), 'Private notes.');
+  mkdirSync(nested, { recursive: true });
+  symlinkSync(outside, join(nested, 'slices'));
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  const brief = 'Carry out the task in .tau/slices/ME-1/.tau/slices/agent-1.md';
+  const { routing } = await resolveRoutedLoadout({ profile: 'scout', task: brief }, context);
+
+  expect(classifiedState(classify)).toEqual({ brief, profile: 'scout' });
+  expect(routing?.ticketSent).toBe(false);
+});
+
 const hasProcessDescriptors = existsSync('/proc/self/fd');
 
 it.skipIf(!hasProcessDescriptors).for([
