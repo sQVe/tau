@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import type { CommandRuntime } from '../../command.js';
 import type { Repository } from '../../github/github.js';
-import { repositoryName } from './checkEvidence.js';
+import { formatRepository } from '../../github/repositoryTargetDecisions.js';
 import {
   readIssueComments,
   readPullRequest,
@@ -50,7 +50,7 @@ export const readFeedback = async (
 
   const feedback = { viewer, threads: threadNodes, reviews: reviewItems, comments: commentItems };
 
-  const name = repositoryName(repository);
+  const name = formatRepository(repository);
   const text = stateText(`${name}#${pr}`, feedback);
   const token = createHash('sha256').update(text).digest('hex');
 

@@ -5,7 +5,7 @@ import type { CommandRuntime } from '../../command.js';
 import { errorMessage } from '../../errors.js';
 import { checkOutput, label, parseJson, readJson, run } from '../../github/github.js';
 import type { CheckOutput, Repository } from '../../github/github.js';
-import { repositoryName } from './checkEvidence.js';
+import { formatRepository } from '../../github/repositoryTargetDecisions.js';
 
 const threadsQuery = `query ($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
@@ -171,7 +171,7 @@ export const readPullRequest = async (
     'view',
     String(pr),
     '--repo',
-    repositoryName(repository),
+    formatRepository(repository),
     '--json',
     'number,url,state,author,headRefOid',
   ];

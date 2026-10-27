@@ -1,6 +1,6 @@
 import type { CommandRuntime } from '../../command.js';
 import type { Repository } from '../../github/github.js';
-import { sameRepository } from '../../github/repositoryTargetDecisions.js';
+import { formatRepository, sameRepository } from '../../github/repositoryTargetDecisions.js';
 import { decideChain, parsePullRequestUrl, pickParent } from './chainDecisions.js';
 import type {
   BlockerFacts,
@@ -111,7 +111,7 @@ export const readChain = async (
   request: ChainRequest,
 ): Promise<ChainResult> => {
   const { repository, blockers: parsed, slice } = parseRequest(request);
-  const repositoryName = `${repository.host}/${repository.owner}/${repository.name}`;
+  const repositoryName = formatRepository(repository);
 
   const blockers = await Promise.all(
     parsed.map((blocker) => readBlocker(runtime, repository, blocker)),

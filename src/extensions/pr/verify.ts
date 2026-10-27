@@ -6,6 +6,7 @@ import { Type } from 'typebox';
 import type { CommandRuntime } from '../../command.js';
 import { readGit } from '../../git.js';
 import { checkOutput, parseRepository, readJson } from '../../github/github.js';
+import { formatRepository } from '../../github/repositoryTargetDecisions.js';
 import { existingEntry } from '../../reviewCapture/reviewCapture.js';
 import { checkTauDirectory, rejectLinkedFile, requireTauChild } from '../../tauDirectory.js';
 import { comparePullRequest } from './verifyDecisions.js';
@@ -129,8 +130,7 @@ export const readVerify = async (
   const head = await readGit(root, ['rev-parse', 'HEAD']);
   const expected: PullRequestFields = { title, body, base, draft, head };
 
-  const repositoryName = `${repository.host}/${repository.owner}/${repository.name}`;
-  const { url, ...published } = await readPublished(runtime, repositoryName, pr);
+  const { url, ...published } = await readPublished(runtime, formatRepository(repository), pr);
   const { differences } = comparePullRequest(expected, published);
 
   return { url, matches: differences.length === 0, differences };

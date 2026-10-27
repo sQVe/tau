@@ -1,4 +1,5 @@
 import type { GhOutcome, Repository } from '../../github/github.js';
+import { formatRepository } from '../../github/repositoryTargetDecisions.js';
 
 export interface CheckItem {
   name: string;
@@ -75,9 +76,6 @@ export const commandResult = (
   stdout: outcome.stdout,
   stderr: outcome.stderr,
 });
-
-export const repositoryName = (repository: Repository): string =>
-  `${repository.host}/${repository.owner}/${repository.name}`;
 
 const commandGap = (check: string | null, result: CommandResult, reason: string): CheckGap => {
   const stderr = result.stderr.trim();
@@ -243,7 +241,7 @@ export const isFailing = (check: CheckItem): boolean =>
   check.bucket === 'fail' || check.bucket === 'cancel';
 
 const sameRepository = (repository: Repository, host: string, owner: string, name: string) =>
-  repositoryName(repository).toLowerCase() === `${host}/${owner}/${name}`.toLowerCase();
+  formatRepository(repository).toLowerCase() === `${host}/${owner}/${name}`.toLowerCase();
 
 export const jobOf = (
   repository: Repository,
@@ -259,7 +257,7 @@ export const unreadableLinkGap = (repository: Repository, check: CheckItem): Che
   command: null,
   code: null,
   stderr: null,
-  reason: `The link "${check.link}" is not a GitHub Actions job of ${repositoryName(repository)}, so its log was not read.`,
+  reason: `The link "${check.link}" is not a GitHub Actions job of ${formatRepository(repository)}, so its log was not read.`,
 });
 
 export const failedLogEvidence = (

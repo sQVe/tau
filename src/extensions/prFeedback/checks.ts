@@ -4,6 +4,7 @@ import { Value } from 'typebox/value';
 import type { CommandRuntime } from '../../command.js';
 import { runOutcome } from '../../github/github.js';
 import type { Repository } from '../../github/github.js';
+import { formatRepository } from '../../github/repositoryTargetDecisions.js';
 import { describeSchemaProblem } from '../../schema.js';
 import {
   boundChecks,
@@ -13,7 +14,6 @@ import {
   isFailing,
   jobOf,
   logCharacterBudget,
-  repositoryName,
   unreadableLinkGap,
 } from './checkEvidence.js';
 import type {
@@ -53,7 +53,7 @@ const readCheckList = async (runtime: CommandRuntime, repository: Repository, pr
     'checks',
     String(pr),
     '--repo',
-    repositoryName(repository),
+    formatRepository(repository),
     '--json',
     'name,bucket,link,workflow,state',
   ];
@@ -80,7 +80,7 @@ const readFailedLog = async (
     'view',
     job.run,
     '--repo',
-    repositoryName(repository),
+    formatRepository(repository),
     '--job',
     job.job,
     '--log-failed',
