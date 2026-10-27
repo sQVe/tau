@@ -66,10 +66,10 @@ to ready. Neither choice completes a required action.
      `target.pr.body`. Read each distinct ticket with its service's CLI, such as
      `linear issue view <id> --json --no-pager --no-download`. Use returned issue IDs, not branch
      aliases. Keep only each ticket's title and `## Acceptance` section as intent.
-   - For a slice ticket found this way, also read its audit comment with
-     `linear issue comment list <slice> --json --no-pager`. The audit is the comment whose first
-     line is `# Slice audit: <slice>`, the filled first line of the
-     [audit template](../finish-slice/audit.md). Print its audited commit and rows.
+   - For a slice ticket found this way, also keep the acceptance of its agent tickets as intent,
+     read as the [start-slice skill](../start-slice/SKILL.md) reads children. Its audit is the
+     `# Slice audit: <slice>` comment in `linear issue comment list <slice> --json --no-pager`.
+     Print its audited commit and rows.
    - After the script, when a slice ticket has no audit comment, or its audited commit differs from
      `HEAD`, ask with `ask_user_question`: run a new audit with the
      [finish-slice skill](../finish-slice/SKILL.md), recommended, or continue with the missing or
