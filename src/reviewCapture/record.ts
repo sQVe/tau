@@ -74,7 +74,6 @@ const gapSchema = Type.Object(
   { additionalProperties: false },
 );
 
-// snapshot is the blob hash of the snapshot manifest, present only when the capture saved one.
 const originalSchema = Type.Object(
   { patch: objectNameSchema, input: objectNameSchema, snapshot: Type.Optional(objectNameSchema) },
   { additionalProperties: false },

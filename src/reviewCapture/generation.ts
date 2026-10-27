@@ -99,8 +99,6 @@ const copyLine = async (root: string, folder: string, path: string) => {
   return `${await copyMode(file)} ${hash} ${JSON.stringify(path)}`;
 };
 
-// One line per saved copy in path order with its mode and the blob hash of its bytes, then the
-// absent and skipped lists. Undefined when a copy is missing or unreadable.
 const snapshotManifest = async (
   root: string,
   directory: string,
@@ -260,8 +258,6 @@ const baseOf = (target: PinnedTarget) => {
   return target.base;
 };
 
-// A fix capture diffs against the earlier review's saved files, so they must still be the ones
-// its record names. A legacy record names none and keeps the earlier behavior.
 const rejectChangedReview = async (root: string, review: string) => {
   const decision = await readCompletedCapture(root, review);
 

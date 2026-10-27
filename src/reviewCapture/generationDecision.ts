@@ -24,7 +24,6 @@ export type GenerationDecision =
   | { status: 'completed'; identity: string; reasons: [] }
   | { status: Exclude<GenerationStatus, 'completed'>; reasons: string[] };
 
-// A record without a snapshot hash saved no snapshot, so only the patch and input are checked.
 const recordedNames = (recorded: ArtifactHashes): ArtifactName[] =>
   recorded.snapshot === undefined ? ['patch', 'input'] : ['patch', 'input', 'snapshot'];
 

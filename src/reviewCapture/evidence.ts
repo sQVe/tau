@@ -374,8 +374,6 @@ const readNamedPaths = async (
   return { rules, checks, gaps: [] };
 };
 
-// A legacy record saved no artifacts to check, so it reports no generation gap. An incomplete
-// capture has no record, so evidence has no target to report.
 const generationGaps = async (root: string, directory: string): Promise<EvidenceGap[]> => {
   const decision = await readCompletedCapture(root, directory);
 
