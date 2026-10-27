@@ -114,12 +114,14 @@ design it follows in its Design section. The container has one sub-ticket per sl
      `plan.md` first, then the container body, then the slice files in plan order. After a review,
      carry `plan.md` changes into the draft as step 4 says, call `read` again, and resolve its
      `problems`. Judge each acceptance item the review added or changed as step 5 says.
-   - Then read the ownership of the existing container and of each existing slice that the read's
-     `writes` change, as the tracker skill's [Hard rules](../tracker/SKILL.md#hard-rules) say. When
-     another person owns one, show those writes and ask with `ask_user_question` before you apply,
-     under the same approval rule.
+   - When `apply` would write to a container or slice another person owns, it asks the user first
+     and writes nothing if the user declines. Do not ask again with `ask_user_question` for those
+     writes; the tool's confirm is the approval the tracker skill's
+     [Hard rules](../tracker/SKILL.md#hard-rules) require.
    - When it says the state changed, call `read` again, resolve its `problems` as in step 2, and
      apply again.
+   - When it returns `declined`, the user refused the writes or no user could answer: stop, and
+     report that nothing was written.
    - When it returns `unchanged`, report that Linear already matches the plan.
    - When `orderInPlace` is false, report that the slice order is still wrong.
 

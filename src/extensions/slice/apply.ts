@@ -1,11 +1,13 @@
 import { rename } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
+
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../errors.js';
 import { ensureTauDirectory } from '../../tauDirectory.js';
+import { approveForeignWrites, rejectChangedDraft } from './applyApproval.js';
 import type { Draft, Plan } from './draft.js';
-import { planFileName, readDraft, writePlan } from './draft.js';
+import { planFileName, writePlan } from './draft.js';
 import {
   changeBlockedBy,
   createIssue,
@@ -426,27 +428,24 @@ const startProgress = (state: SliceState, draft: Draft): ApplyProgress => ({
   urls: new Map(),
 });
 
-// The draft or its directory can change while readState awaits Linear.
-const rejectChangedDraft = async (state: SliceState, checkDirectory: () => Promise<unknown>) => {
-  await checkDirectory();
-  const current = await readDraft(state.directory);
-
-  if (!isDeepStrictEqual(current, state.draft)) {
-    throw new Error('The draft changed since the read. Call read again. Nothing was written.');
-  }
-};
-
 // Writes only the draft contents and Linear state that the read checked.
 export const applySlicePlan = async (
   runtime: Runtime,
-  directory: string,
-  stateToken: string | undefined,
+  context: ExtensionContext,
+  request: { directory: string; stateToken: string | undefined },
   checkDirectory: () => Promise<unknown>,
 ): Promise<Record<string, unknown>> => {
+  const { directory, stateToken } = request;
   const state = await readState(runtime, directory, undefined);
   const draft = rejectChangedState(state, stateToken);
 
   await rejectChangedDraft(state, checkDirectory);
+
+  const approval = await approveForeignWrites(runtime, context, { state, draft }, checkDirectory);
+
+  if (approval === 'declined') {
+    return { status: 'declined', directory, applied: [] };
+  }
 
   const progress = startProgress(state, draft);
   const steps = buildSteps(runtime, progress, state.writePlan.writes);

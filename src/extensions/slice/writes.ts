@@ -23,6 +23,8 @@ export interface LinearContainer {
   title: string;
   description: string;
   url: string;
+  assignee: string | null;
+  creator: string | null;
   team: { id: string; key: string };
   project: { id: string; name: string } | null;
   children: LinearChild[];

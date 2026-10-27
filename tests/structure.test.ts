@@ -88,6 +88,7 @@ const pureModules = [
   'src/extensions/prFeedback/threads.ts',
   'src/extensions/prFeedback/writes.ts',
   'src/extensions/slice/blockers.ts',
+  'src/extensions/slice/foreignWrites.ts',
   'src/extensions/slice/ownership.ts',
   'src/extensions/slice/startDecisions.ts',
   'src/extensions/slice/writes.ts',
@@ -137,7 +138,6 @@ const pureModules = [
   'src/reviewCapture/gitQuotedName.ts',
   'src/schema.ts',
   'tests/adrIndexMark.ts',
-  'tests/approvalRule.ts',
 ];
 
 const pureAdvice =
