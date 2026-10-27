@@ -478,7 +478,7 @@ it('lists allowed scoped models and each profile default in the launch descripti
     ['a/one', 'a/hidden', 'a/two'],
   );
 
-  expect(description).toContain('a/one (browser, qa, reviewer, worker), a/two (scout).');
+  expect(description).toContain('a/one (browser, checker, qa, reviewer, worker), a/two (scout).');
   expect(description).not.toContain('a/hidden');
 });
 
@@ -1964,7 +1964,7 @@ it('lists profile names in order and gives a reason when the list is unreadable'
 }) => {
   const listed = await launchDescription(onTestFinished, () => undefined);
 
-  const names = ['browser', 'qa', 'reviewer', 'scout', 'worker'];
+  const names = ['browser', 'checker', 'qa', 'reviewer', 'scout', 'worker'];
   const positions = names.map((name) => listed.indexOf(name, listed.indexOf('Profiles:')));
 
   expect(positions.every((position) => position >= 0)).toBe(true);

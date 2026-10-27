@@ -40,8 +40,8 @@ commit another worktree from your session, even over bash.
 
 1. Find the target. Ask the user when the target is ambiguous. Do not guess.
    - Run `herdr agent list` and keep the agents in the target workspace or whose `cwd` is the target
-     worktree. Drop agents named `worker-*`, `scout-*`, `reviewer-*`, `qa-*`, `browser-*`, or
-     `investigator-*`: they are Tau subagents working for a parent.
+     worktree. Drop agents named `worker-*`, `scout-*`, `reviewer-*`, `checker-*`, `qa-*`,
+     `browser-*`, or `investigator-*`: they are Tau subagents working for a parent.
    - One match is the target. With several matches, ask the user.
    - With no match, the target is not ambiguous: start Pi in the workspace's manager pane. That pane
      is in the first tab, which has the lowest `number` in `herdr tab list --workspace <workspace>`.

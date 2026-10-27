@@ -52,7 +52,7 @@ it('retains friendly names and avoids retained and live collisions', async ({ on
   recovered.close();
 });
 
-it.for(['reviewer', 'qa'])(
+it.for(['reviewer', 'checker', 'qa'])(
   'names a %s launch after its profile',
   async (profile, { onTestFinished }) => {
     vi.spyOn(names, 'nameSuffix').mockReturnValue('aa');
