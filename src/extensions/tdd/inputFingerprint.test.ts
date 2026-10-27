@@ -532,15 +532,23 @@ it('lists a symlink to a file as an input and walks a symlink loop once', async 
   ]);
 });
 
-it('lists a dangling symlink and a self-looping symlink as inputs', async ({ onTestFinished }) => {
+it('lists dangling, self-looping, and through-a-file symlinks as inputs', async ({
+  onTestFinished,
+}) => {
   const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-');
   await writeFiles(cwd, { 'src/a.ts': 'one' });
   await symlink('missing.ts', join(cwd, 'src/dangling.ts'));
   await symlink('loop.ts', join(cwd, 'src/loop.ts'));
+  await symlink('a.ts/child.ts', join(cwd, 'src/through.ts'));
 
   const inputs = await listInputs(cwd, onlyProduction('**/*.ts'));
 
-  expect(inputs.toSorted()).toEqual(['src/a.ts', 'src/dangling.ts', 'src/loop.ts']);
+  expect(inputs.toSorted()).toEqual([
+    'src/a.ts',
+    'src/dangling.ts',
+    'src/loop.ts',
+    'src/through.ts',
+  ]);
 });
 
 it('does not enter an excluded directory, even when it is a symlink to a directory elsewhere', async ({

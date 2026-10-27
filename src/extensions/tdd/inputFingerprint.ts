@@ -10,7 +10,7 @@ import { closesLoop, createInputRules } from './inputGlob.js';
 
 const isVanishedEntry = (error: unknown) => isMissingFile(error) || hasErrorCode(error, 'ENOTDIR');
 
-const isDanglingLink = (error: unknown) => isMissingFile(error) || hasErrorCode(error, 'ELOOP');
+const isDanglingLink = (error: unknown) => isVanishedEntry(error) || hasErrorCode(error, 'ELOOP');
 
 const readDirectory = async (directory: string) => {
   try {
