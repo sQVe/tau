@@ -9,7 +9,7 @@ import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget, readHead } from './capture.js';
 import type { DirectReviewTarget } from './capture.js';
 import { readReviewEvidence } from './evidence.js';
-import { writeCaptureRecord } from './record.js';
+import { recordFileName } from './record.js';
 
 const isRoot = process.getuid?.() === 0;
 
@@ -45,13 +45,10 @@ const savedCapture = async (
 
   await writeFile(join(directory, 'input.md'), `${input}\n${captured.bytes.toString('utf8')}`);
 
-  await writeCaptureRecord(directory, {
-    version: 2,
-    target: pinned,
-    base,
-    head: head ?? '',
-    hash: captured.hash,
-  });
+  await writeFile(
+    join(directory, recordFileName),
+    JSON.stringify({ version: 2, target: pinned, base, head: head ?? '', hash: captured.hash }),
+  );
 
   return directory;
 };

@@ -55,12 +55,14 @@ const setUpReview = async () => {
   return { root, directory, forkPoint, run };
 };
 
-// The name and bytes of each file in the review directory.
+// The path and bytes of each file in the review directory and its folders.
 const readEvidence = async (directory: string) =>
   Promise.all(
-    (await readdir(directory))
+    (await readdir(directory, { recursive: true, withFileTypes: true }))
+      .filter((entry) => entry.isFile())
+      .map((entry) => join(entry.parentPath, entry.name))
       .toSorted()
-      .map(async (name) => [name, await readFile(join(directory, name))] as const),
+      .map(async (path) => [path, await readFile(path)] as const),
   );
 
 // Captures changes from forkPoint and writes recheck.diff with freshness.
@@ -90,6 +92,30 @@ const editRecord = async (directory: string, changes: Record<string, unknown>) =
 };
 
 const noPaths = { differing: [], missing: [], extra: [] };
+
+it('reuses a version 3 capture the same way it reuses that capture saved as version 2', async () => {
+  const { root, directory, forkPoint, run } = await setUpReview();
+
+  await captureReview(root, directory, forkPoint);
+
+  const record = JSON.parse(await readFile(join(directory, 'capture.json'), 'utf8')) as Record<
+    string,
+    unknown
+  >;
+
+  const versionThree = await run({ action: 'reuse', directory, mergeBase: forkPoint });
+
+  expect(record['version']).toBe(3);
+  expect(versionThree).toMatchObject({ status: 'match', paths: noPaths });
+
+  const versionTwo: Record<string, unknown> = { ...record, version: 2 };
+
+  delete versionTwo['gaps'];
+  delete versionTwo['original'];
+  await writeFile(join(directory, 'capture.json'), JSON.stringify(versionTwo));
+
+  expect(await run({ action: 'reuse', directory, mergeBase: forkPoint })).toEqual(versionThree);
+});
 
 it('reuses a review after a rebase onto a base that changes other files', async () => {
   const { root, directory, forkPoint, run } = await setUpReview();
@@ -184,11 +210,12 @@ it('refuses reuse when recheck.diff is replaced after reuse reads it', async () 
   await commitFile(root, 'feature.txt', 'three\n');
   await runCodeReview(root, { action: 'freshness', directory });
 
+  // reuse reads recheck.diff, then hashBytes runs rev-parse --show-object-format before it decides.
   await installCommandShim('git', {
     otherCalls: 'real',
     overrides: [
       {
-        match: ' hash-object ',
+        match: ' rev-parse --show-object-format ',
         script: `cp '${reviewedPath}' '${recheckPath}'; exec "$real" "$@"`,
       },
     ],
@@ -196,8 +223,11 @@ it('refuses reuse when recheck.diff is replaced after reuse reads it', async () 
 
   const record = await readFile(join(directory, 'capture.json'));
   const head = await git(root, 'rev-parse', 'HEAD');
+  const recheckBeforeReuse = await readFile(recheckPath);
   const details = await run({ action: 'reuse', directory, mergeBase: forkPoint });
 
+  expect(recheckBeforeReuse).not.toEqual(reviewedBytes);
+  expect(await readFile(recheckPath)).toEqual(reviewedBytes);
   expect(details).toMatchObject({ status: 'mismatch', paths: noPaths });
   expect(await readFile(join(directory, 'capture.json'))).toEqual(record);
   expect(await git(root, 'rev-parse', 'HEAD')).toBe(head);

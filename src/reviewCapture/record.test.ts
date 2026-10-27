@@ -6,7 +6,7 @@ import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { errorMessage } from '../errors.js';
-import { readCaptureRecord, recordFileName, writeCaptureRecord } from './record.js';
+import { readCaptureRecord, recordFileName } from './record.js';
 
 const fixtures = join(import.meta.dirname, 'fixtures', 'records');
 
@@ -55,12 +55,15 @@ it('reads a version 1 record', async () => {
   expect(await readUnchanged(directory)).toEqual(saved);
 });
 
-it.each(['version-2.json', 'version-2-fix.json'])('reads the %s record', async (fixture) => {
-  const directory = await reviewDirectory(fixture);
-  const saved = JSON.parse(await readFile(join(fixtures, fixture), 'utf8')) as unknown;
+it.each(['version-2.json', 'version-2-fix.json', 'version-3.json'])(
+  'reads the %s record',
+  async (fixture) => {
+    const directory = await reviewDirectory(fixture);
+    const saved = JSON.parse(await readFile(join(fixtures, fixture), 'utf8')) as unknown;
 
-  expect(await readUnchanged(directory)).toEqual(saved);
-});
+    expect(await readUnchanged(directory)).toEqual(saved);
+  },
+);
 
 it('refuses a version 1 record that holds a fix target', async () => {
   const directory = await reviewDirectory();
@@ -71,7 +74,7 @@ it('refuses a version 1 record that holds a fix target', async () => {
   await expect(readCaptureRecord(directory)).rejects.toThrow('/target');
 });
 
-it('reads back the record it writes', async () => {
+it('reads a version 2 record', async () => {
   const directory = await reviewDirectory();
 
   const record = {
@@ -82,7 +85,7 @@ it('reads back the record it writes', async () => {
     hash: 'd'.repeat(40),
   };
 
-  await writeCaptureRecord(directory, record);
+  await writeFile(join(directory, recordFileName), JSON.stringify(record));
 
   expect(await readCaptureRecord(directory)).toEqual(record);
 });
@@ -187,6 +190,15 @@ describe('refuses a saved record', () => {
 
     await expect(readUnchanged(directory)).rejects.toThrow('Malformed capture record');
   });
+});
+
+it('refuses a version 3 record that names no original artifact', async () => {
+  const directory = await reviewDirectory();
+  const record = { ...savedRecord('version-3.json'), original: undefined };
+
+  await writeRecord(directory, record);
+
+  await expect(readUnchanged(directory)).rejects.toThrow('Malformed capture record');
 });
 
 it.each(['null', '7', '"text"', '[]'])('refuses the JSON value %s as malformed', async (text) => {
