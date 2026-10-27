@@ -805,3 +805,37 @@ it('hints after a production edit when the session directory is a symlinked path
 
   expect(patch).toMatchObject({ content: [{ text: 'Written' }, { text: staleHint }] });
 });
+
+it.for(['src/value.ts', 'src/.hidden.ts', 'src/.dir/value.ts'])(
+  'hints stale after an edit to %s following a passing focused run',
+  async (path, { onTestFinished }) => {
+    const cwd = temporaryDirectory(onTestFinished, 'tau-dot-input-');
+    await mkdir(join(cwd, 'src/.dir'), { recursive: true });
+    await writeFile(join(cwd, path), 'export const value = 1;');
+
+    await writeFile(
+      join(cwd, 'value.test.ts'),
+      `import { expect, it } from 'vitest';\nimport { value } from './${path}';\nit('works', () => expect(value).toBe(1));`,
+    );
+
+    const application = setup();
+
+    vi.mocked(runTests).mockResolvedValueOnce({
+      kind: 'pass',
+      tests: [{ file: 'value.test.ts', fullname: 'works', status: 'passed' }],
+    });
+
+    const result = await application.run(cwd);
+    expect(result.details).toMatchObject({ freshness: 'fresh' });
+    await writeFile(join(cwd, path), 'export const value = 2;');
+
+    const patch = await application.emit('tool_result', cwd, {
+      toolName: 'edit',
+      input: { path },
+      isError: false,
+      content: [{ type: 'text', text: 'Edited' }],
+    });
+
+    expect(patch).toMatchObject({ content: [{ text: 'Edited' }, { text: staleHint }] });
+  },
+);

@@ -11,7 +11,7 @@ interface Segment {
 type Pattern = Segment[];
 
 export interface InputRules {
-  entersDirectory: (name: string, path: string) => boolean;
+  entersDirectory: (path: string) => boolean;
   isInput: (path: string) => boolean;
 }
 
@@ -263,11 +263,9 @@ const compileGlobs = (globs: string[]): Pattern[] =>
       alternative.replace(leadingCurrentDirectory, '').split('/').map(compileSegment),
     );
 
-// `**` matches zero or more segments, but never crosses a dot segment unless `matchesDots` is
-// set. `first` is the fewest segments it must consume.
+// `**` matches zero or more segments. `first` is the fewest segments it must consume.
 const matchesGlobstar = (
   path: string[],
-  matchesDots: boolean,
   first: number,
   matchesRest: (remaining: string[]) => boolean,
 ): boolean => {
@@ -277,20 +275,13 @@ const matchesGlobstar = (
     if (canStop) {
       return true;
     }
-
-    const crossesDot = !matchesDots && path[skipped]?.startsWith('.') === true;
-
-    if (crossesDot) {
-      return false;
-    }
   }
 
   return false;
 };
 
-// A dot segment matches only a pattern segment that starts with a literal dot, unless
-// `matchesDots` is set. A trailing `**` needs at least one segment.
-const matchesSegments = (pattern: Pattern, path: string[], matchesDots: boolean): boolean => {
+// Dot segments match like any other segment. A trailing `**` needs at least one segment.
+const matchesSegments = (pattern: Pattern, path: string[]): boolean => {
   const [head, ...rest] = pattern;
 
   if (head === undefined) {
@@ -298,9 +289,9 @@ const matchesSegments = (pattern: Pattern, path: string[], matchesDots: boolean)
   }
 
   if (head.text === '**') {
-    const matchesRest = (remaining: string[]) => matchesSegments(rest, remaining, matchesDots);
+    const matchesRest = (remaining: string[]) => matchesSegments(rest, remaining);
 
-    return matchesGlobstar(path, matchesDots, rest.length === 0 ? 1 : 0, matchesRest);
+    return matchesGlobstar(path, rest.length === 0 ? 1 : 0, matchesRest);
   }
 
   const [name, ...remaining] = path;
@@ -309,9 +300,7 @@ const matchesSegments = (pattern: Pattern, path: string[], matchesDots: boolean)
     return false;
   }
 
-  const dotAllowed = matchesDots || !name.startsWith('.') || head.text.startsWith('.');
-
-  return dotAllowed && head.test(name) && matchesSegments(rest, remaining, matchesDots);
+  return head.test(name) && matchesSegments(rest, remaining);
 };
 
 // A pattern ending in `/**` also excludes the directory it names, and so every descendant.
@@ -320,9 +309,9 @@ const excludesDirectory = (excludes: Pattern[], segments: string[]) =>
     const isTree = pattern.at(-1)?.text === '**';
     const treeRoot = pattern.slice(0, -1);
 
-    const matchesTree = isTree && matchesSegments(treeRoot, segments, true);
+    const matchesTree = isTree && matchesSegments(treeRoot, segments);
 
-    return matchesSegments(pattern, segments, true) || matchesTree;
+    return matchesSegments(pattern, segments) || matchesTree;
   });
 
 // A directory whose real path is one of its own ancestors would repeat the walk forever.
@@ -330,37 +319,22 @@ export const closesLoop = (realPath: string, ancestorRealPaths: ReadonlySet<stri
   ancestorRealPaths.has(realPath);
 
 // Builds the decisions of one directory walk. Assumes every glob passed `unsupportedGlobReason`.
-// With `matchesDots`, a dot path matches like `node:path` `matchesGlob`; the walk leaves it off.
-export const createInputRules = (
-  includeGlobs: string[],
-  excludedGlobs: string[],
-  matchesDots = false,
-): InputRules => {
+// Dot paths match like any other path, so the walk and classification agree.
+export const createInputRules = (includeGlobs: string[], excludedGlobs: string[]): InputRules => {
   const patterns = compileGlobs(includeGlobs);
   const excludes = compileGlobs(excludedGlobs);
 
-  const dotSegments = patterns
-    .flat()
-    .filter((segment) => segment.text.startsWith('.') && segment.text !== '.');
-
-  const namesDot = (name: string) => dotSegments.some((segment) => segment.test(name));
-
-  const namesDirectory = (name: string) => !name.startsWith('.') || namesDot(name);
-
   return {
-    entersDirectory: (name, path) =>
-      namesDirectory(name) && !excludesDirectory(excludes, path.split('/')),
+    entersDirectory: (path) => !excludesDirectory(excludes, path.split('/')),
     isInput: (path) => {
       const segments = path.split('/');
       const directories = segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1));
 
       const isExcluded =
-        excludes.some((pattern) => matchesSegments(pattern, segments, true)) ||
+        excludes.some((pattern) => matchesSegments(pattern, segments)) ||
         directories.some((directory) => excludesDirectory(excludes, directory));
 
-      return (
-        !isExcluded && patterns.some((pattern) => matchesSegments(pattern, segments, matchesDots))
-      );
+      return !isExcluded && patterns.some((pattern) => matchesSegments(pattern, segments));
     },
   };
 };

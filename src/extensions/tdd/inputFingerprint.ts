@@ -76,7 +76,7 @@ export const listInputs = async (cwd: string, config: TddConfig): Promise<string
 
         // A path that is neither listed nor entered is not resolved, so its link cannot fail the
         // walk on a target it does not need.
-        if (!rules.isInput(path) && !rules.entersDirectory(entry.name, path)) {
+        if (!rules.isInput(path) && !rules.entersDirectory(path)) {
           return;
         }
 
@@ -86,7 +86,7 @@ export const listInputs = async (cwd: string, config: TddConfig): Promise<string
           if (rules.isInput(path)) {
             inputs.push(path);
           }
-        } else if (rules.entersDirectory(entry.name, path) && !closesLoop(childReal, ancestors)) {
+        } else if (rules.entersDirectory(path) && !closesLoop(childReal, ancestors)) {
           await visit(path, new Set([...ancestors, childReal]), childReal);
         }
       }),
