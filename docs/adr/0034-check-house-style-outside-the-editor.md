@@ -6,7 +6,7 @@
 
 ## Context
 
-[ADR 0008](./0008-coding-instructions.md) left code layout to prompt instructions, which cannot
+[ADR 0006](./0006-default-writing-policy.md) left code layout to prompt instructions, which cannot
 guarantee consistent style. Mechanical checks can enforce a useful subset, but showing every style
 violation while typing would crowd out correctness diagnostics.
 
@@ -18,7 +18,7 @@ linter. Its plugin interface remains alpha.
 Enforce house style through explicit commands, project checks, and staged-file hooks, not live
 editor diagnostics. Enabling house-style rules only in explicit commands and required checks keeps
 the existing runner and separates style enforcement from live diagnostics. This replaces
-[ADR 0008](./0008-coding-instructions.md)'s decision against mechanical layout checks. Its coding
+[ADR 0006](./0006-default-writing-policy.md)'s decision against mechanical layout checks. Its coding
 instructions still cover judgments that lint cannot make, including where logical steps begin.
 
 Prefer native Oxlint rules, then compatible plugins, then local rules. Local rules are needed for

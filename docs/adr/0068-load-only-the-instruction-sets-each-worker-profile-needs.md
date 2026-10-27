@@ -5,7 +5,7 @@
 [ADR 0076 (Give browser workers one shared set of browser rules)](./0076-give-browser-workers-one-shared-set-of-browser-rules.md)\
 **Related**:
 [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
-[ADR 0056 (Load workflow rules apart from coding and writing)](./0056-load-workflow-rules-apart-from-coding-and-writing.md),
+[ADR 0006 (Load Tau's instruction sets into every prompt)](./0006-default-writing-policy.md),
 [ADR 0066 (Add Tau's prompt text to Pi's append section)](./0066-add-taus-prompt-text-to-pis-append-section.md),
 [ADR 0067 (Give workers only their profile's tools and skills)](./0067-give-workers-only-their-profile-tools-and-skills.md)
 

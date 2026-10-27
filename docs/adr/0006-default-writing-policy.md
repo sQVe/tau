@@ -1,86 +1,95 @@
-# ADR 0006: Default writing policy
+# ADR 0006: Load Tau's instruction sets into every prompt
 
 **Date**: 2026-09-07\
 **Status**: Accepted\
-**Related**: [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md),
-[ADR 0004 (Skill authoring style)](./0004-skill-authoring-style.md),
-[ADR 0008 (Coding instructions)](./0008-coding-instructions.md), which amends the scope above and
-moves the rules about which comments to keep,
-[Agent writing instructions](../../src/instructions/writing.md),
-[ADR 0010 (Documentation scope)](./0010-documentation-scope.md)
+**Supersedes**: [ADR 0008 (Coding instructions)](./README.md#retired),
+[ADR 0056 (Load workflow rules apart from coding and writing)](./README.md#retired)\
+**Related**: [ADR 0066 (Add Tau's prompt text to Pi's append section)](./0066-add-taus-prompt-text-to-pis-append-section.md),
+[ADR 0067 (Give workers only their profile's tools and skills)](./0067-give-workers-only-their-profile-tools-and-skills.md),
+[ADR 0076 (Give browser workers one shared set of browser rules)](./0076-give-browser-workers-one-shared-set-of-browser-rules.md)
 
 ## Context
 
-Tau needs clear, consistent writing in replies and documents. Pi loads a skill when needed, so its
-full rules may be missing from an ordinary reply.
+Tau wants the same rules for prose, code, and ways of working in every ordinary agent run. Pi loads
+a skill only when a task calls for it, so rules kept in a skill are missing from an ordinary reply.
 
-[ADR 0004](./0004-skill-authoring-style.md) puts rules in ADRs or code, and task instructions in
-skills. Writing defaults must respect the task and repository rules.
+Rules about different things drift into one file when only one file exists. Comment rules mixed how
+a comment reads with whether it should exist. Workflow rules, such as staying out of other
+worktrees, landed in the coding and writing files because nothing else loaded.
+
+Lint cannot make most of these judgments. It can check layout, but not where a logical step begins
+or whether a comment earns its place.
 
 ## Decision
 
-Use a Pi extension to load one writing policy from the Tau package into every ordinary agent run.
-The extension includes the same rules in each ordinary agent run.
+Tau keeps its rules in instruction sets, one Markdown file per concern under `src/instructions/`,
+and appends them to the system prompt before each ordinary agent run. One file per concern keeps a
+code rule from being read as a prose rule, and loading by default means no skill has to be loaded
+first.
 
-### Policy ownership and scope
+### The sets
 
-Keep the agent instructions beside the writing extension in
-[`src/instructions/writing.md`](../../src/instructions/writing.md). Load this same file into the
-agent prompt. It addresses the agent directly; contributor docs may link to it when the same rules
-apply. This ADR records the decision and does not restate the rules.
+- `writing.md` governs text the agent writes: replies, commit and PR text, tickets, docs, and the
+  wording of code comments.
+- `coding.md` governs code the agent writes, including whether a comment should exist.
+- `workflow.md` governs how the agent carries out a task: the commands it runs, the checkouts it
+  touches, the scope it keeps, and when it stops.
+- `browser.md` is opt-in for workers that drive a browser
+  ([ADR 0076](./0076-give-browser-workers-one-shared-set-of-browser-rules.md)).
 
-The rules cover replies, progress updates, commit and PR text, tickets, docs, and code comments.
-They ask for plain language aimed at readers who use English as a second language, and they keep the
-meaning, sources, and required formats unchanged. The task and repository rules come first. The
-policy guides the agent; it cannot guarantee good writing.
+A rule goes in exactly one set. The task and repository rules come before the sets.
 
-### Runtime integration
+### Loading
 
-Include the complete writing guidance in the system prompt before each ordinary agent run. Keep the
-existing prompt and include the guidance once, so it does not build up across runs. Reloading the
-extension picks up changes to the guidance.
+- One extension, `src/extensions/instructions.ts`, loads the three default sets (`writing`,
+  `coding`, and `workflow`) and appends each one through Pi's append section
+  ([ADR 0066](./0066-add-taus-prompt-text-to-pis-append-section.md)). The text is added once per
+  run, so it does not build up.
+- A worker appends the sets its profile lists instead
+  ([ADR 0067](./0067-give-workers-only-their-profile-tools-and-skills.md)).
+- Reject a missing, unreadable, or blank default set when Tau loads. A visible load failure is
+  better than a session that runs without its rules. A worker's selected sets, including `browser`,
+  are read on its first `before_agent_start`, so a missing, unreadable, or blank one fails that
+  hook.
 
-The rules stay available while the agent uses tools or handles messages during a run. Compaction and
-branch summaries use separate prompts and are outside this decision. Other extensions may replace
-the prompt.
+### Not covered
 
-Reject missing, unreadable, or blank guidance when loading Tau. Accept a visible load failure
-instead of silently running without the writing rules. In Pi 0.66.1, this prevents CLI startup and
-discards all Tau features; reload and SDK callers may handle the error differently.
-
-This extension defines no types of its own and may omit `types.ts`, an exception to
-[ADR 0120](./0120-capability-modules-with-an-enforced-import-table.md).
-
-### Editing skill
-
-Defer a separate editing skill until editing requests need a shared procedure. It will link to the
-writing guidance without copying the rules. Loading the default policy does not depend on a skill.
+Compaction and branch summaries use their own prompts and do not receive the sets. Other extensions
+may replace the prompt.
 
 ## Consequences
 
 ### Positive
 
-- One file supplies the instructions for the agent and a reference for contributors.
-- Ordinary replies receive the rules without loading a skill.
+- Ordinary runs get the rules without loading a skill.
+- Each concern has one file, and contributors can read the same file the agent reads.
 
 ### Negative
 
-- The policy uses space in the prompt on each run.
-- Prompt instructions cannot guarantee good writing, and other extensions can replace them.
-- The package must include the policy file. A load error disables Tau and blocks CLI startup.
-- Compaction and branch summaries do not receive the policy.
+- Each loaded set costs prompt space on every run.
+- Prompt rules cannot guarantee good writing or readable code.
+- A broken or blank default set stops Tau from loading.
+- A broken or blank worker set fails that worker's first `before_agent_start`.
+- Rules near a boundary, such as comments, can drift between two sets.
 
 ## Alternatives considered
 
-### Keep current behavior
+### One combined policy file
 
-Keep current behavior. Rejected because it sets no default writing rules.
+Put all rules in one file. Rejected because prose, code, and workflow rules then govern each other's
+subjects, and agents read a code rule as a prose rule.
 
-### Only an unslop skill
+### Rules in a skill
 
-Ship only an unslop skill. Rejected because, although it helps with editing requests, it must be
-loaded first.
+Ship the rules as a skill, such as an unslop skill. Rejected because the model must load the skill
+first, so ordinary replies miss the rules.
+
+### Lint for code layout
+
+Enforce code layout with lint only. Rejected because lint cannot see logical steps or judge whether
+a comment is needed. Mechanical style is checked separately, outside the editor.
 
 ### Automatic rewriting
 
-Rewrite responses automatically. Rejected because it takes more time and risks changing meaning.
+Rewrite responses after the model writes them. Rejected because it takes more time and risks
+changing meaning.

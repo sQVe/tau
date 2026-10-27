@@ -3,7 +3,7 @@
 **Date**: 2026-09-09\
 **Status**: Accepted\
 **Related**: [ADR 0004 (Skill authoring style)](./0004-skill-authoring-style.md),
-[ADR 0006 (Default writing policy)](./0006-default-writing-policy.md),
+[ADR 0006 (Load Tau's instruction sets into every prompt)](./0006-default-writing-policy.md),
 [ADR 0077 (Keep a skill authoring guide in docs)](./0077-keep-a-skill-authoring-guide-in-docs.md)
 
 ## Context

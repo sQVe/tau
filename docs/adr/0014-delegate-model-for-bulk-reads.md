@@ -8,7 +8,8 @@ the `TAU_BULK_READ_MODEL` setting was replaced by the shared delegate setting in
 [ADR 0027 (Share one delegate model across bounded tool tasks)](./0027-share-one-delegate-model.md)\
 **Related**: [ADR 0027 (Share one delegate model across bounded tool tasks)](./0027-share-one-delegate-model.md)
 replaces the environment setting and the restriction on delegating comment review,
-[Vision](../vision.md), [ADR 0008 (Coding instructions)](./0008-coding-instructions.md),
+[Vision](../vision.md),
+[ADR 0006 (Load Tau's instruction sets into every prompt)](./0006-default-writing-policy.md),
 [ADR 0005 (Integration testing against a real Pi session)](./0005-integration-testing-with-pi.md),
 [ADR 0022 (Gate the clamped read hint on the remainder)](./0022-gate-the-clamped-read-hint-on-the-remainder.md)
 

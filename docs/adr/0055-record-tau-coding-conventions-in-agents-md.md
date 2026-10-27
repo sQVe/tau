@@ -3,7 +3,7 @@
 **Date**: 2026-09-27\
 **Status**: Accepted\
 **Related**: [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md),
-[ADR 0008 (Coding instructions)](./0008-coding-instructions.md),
+[ADR 0006 (Load Tau's instruction sets into every prompt)](./0006-default-writing-policy.md),
 [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
 [ADR 0035 (Use size thresholds as review guidance)](./0035-use-size-thresholds-as-review-guidance.md),
 [ADR 0036 (Allowlist worker content and label states from one table)](./0036-allowlist-worker-content-and-label-states-from-one-table.md),
@@ -13,12 +13,12 @@
 ## Context
 
 Agents write nearly all of Tau's code. They copy nearby patterns and follow the coding instructions
-Tau loads into every session ([ADR 0008](./0008-coding-instructions.md)).
+Tau loads into every session ([ADR 0006](./0006-default-writing-policy.md)).
 
 An instruction alone fails when nothing makes the rule the easy path. "Parse untrusted values once"
 was already an instruction, and agents still wrote four task ID parsers. Agents game proxy checks
 such as size thresholds ([ADR 0035](./0035-use-size-thresholds-as-review-guidance.md)). Every
-instruction line costs context in every session ([ADR 0008](./0008-coding-instructions.md)).
+instruction line costs context in every session ([ADR 0006](./0006-default-writing-policy.md)).
 
 A review proposed conventions for module ownership, queries, failures, and mappings. It kept only
 short semantic rules and put the details in ADRs, lint messages, and code examples.
