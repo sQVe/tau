@@ -100,7 +100,7 @@ and the numbers that its status names.
 
 ## Commits
 
-- [0024: Commit through Git hooks, without approval or Tau checks](./0024-commit-without-human-approval.md)
+- [0024: Commit through Git hooks without human approval](./0024-commit-without-human-approval.md)
 
 ## Models
 

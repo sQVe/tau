@@ -2,12 +2,12 @@
 
 **Date**: 2026-09-09\
 **Status**: Accepted; the duplicated comment rules were removed by
-[ADR 0024 (Commit through Git hooks, without approval or Tau checks)](./0024-commit-without-human-approval.md)\
+[ADR 0024 (Commit through Git hooks without human approval)](./0024-commit-without-human-approval.md)\
 **Related**:
 [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md),
 [ADR 0006 (Default writing policy)](./0006-default-writing-policy.md),
 [Agent coding instructions](../../src/instructions/coding.md),
-[ADR 0024 (Commit through Git hooks, without approval or Tau checks)](./0024-commit-without-human-approval.md)
+[ADR 0024 (Commit through Git hooks without human approval)](./0024-commit-without-human-approval.md)
 
 [ADR 0034](./0034-check-house-style-outside-the-editor.md) replaces the decision against mechanical
 layout checks. The remaining decisions below still apply.
@@ -56,7 +56,7 @@ resolve. Extract the loader only together with a test setup that does not copy t
 ### The comment rules are stated once
 
 This section first kept a second copy of the comment rules in the commit comment review policy.
-[ADR 0024 (Commit through Git hooks, without approval or Tau checks)](./0024-commit-without-human-approval.md)
+[ADR 0024 (Commit through Git hooks without human approval)](./0024-commit-without-human-approval.md)
 removed that review, so the coding instructions are the only statement.
 
 ### Types

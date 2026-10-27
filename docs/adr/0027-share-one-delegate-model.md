@@ -7,7 +7,7 @@
 earlier superseded by
 [ADR 0044 (Restore gpt-5.6-luna as the delegate default)](./0044-restore-gpt-5-6-luna-as-the-delegate-default.md);
 comment review removed from the delegate by
-[ADR 0024 (Commit through Git hooks, without approval or Tau checks)](./0024-commit-without-human-approval.md)\
+[ADR 0024 (Commit through Git hooks without human approval)](./0024-commit-without-human-approval.md)\
 **Related**:
 [ADR 0014 (Delegate model for bulk reads)](./0014-delegate-model-for-bulk-reads.md),
 [Development](../development.md)

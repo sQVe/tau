@@ -1,4 +1,4 @@
-# ADR 0024: Commit through Git hooks, without approval or Tau checks
+# ADR 0024: Commit through Git hooks without human approval
 
 **Date**: 2026-09-15\
 **Status**: Accepted\
@@ -35,7 +35,7 @@ block commands that only mention a commit in data, such as a `gh pr create` body
 
 Tau commits through installed Git hooks on the real index, with no human approval, no Tau-run
 project checks, and no model review. The hooks run the repository's checks, so Tau and human commits
-pass the same hook policy. Every failure returns one error and one retry path.
+pass the same hook policy. Every failure before the commit returns one error and one retry path.
 
 Commits stay in the local repository. They are outside the approval rule in ADR 0108 for writes that
 other people see.
@@ -65,6 +65,9 @@ Tau runs no other checks of its own.
 
 A failed hook or message check returns a tool error. The agent fixes the request and makes a new
 call. There is no approval overlay, message editor, startup flag, or review waiver.
+
+When Git commits but Tau cannot read or verify the new commit, the error says the commit stands and
+tells the agent not to retry the group. A retry would make a second commit.
 
 ### Comments
 
