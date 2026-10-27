@@ -18,10 +18,15 @@ for each key that allows both.
 - A wrong type or a missing required field fails the feature that reads it. The error names the file
   and field.
 - A bad entry for another repository does not affect the current repository.
+- A key that is absent from its file is unset. So is a repository with no entry. Each section says
+  what an unset key does.
+- A present entry with a missing required field is an error. It is not an unset entry.
 
 Repository entries use an `owner/name` key, such as `sQVe/tau`. Matching ignores case. Two keys that
 differ only in case are an error. Features that need the current repository find it from the
-`origin` remote.
+`origin` remote. Only an `origin` on `github.com` names a repository. For any other host, Tau finds
+no entry, even when the map has the same `owner/name`. Review bots are the exception: they use the
+base repository of the pull request.
 
 ## TDD hints
 
@@ -57,6 +62,9 @@ non-empty array of non-empty strings.
 { "fullCheck": { "repositories": { "sQVe/tau": { "argv": ["pnpm", "check"] } } } }
 ```
 
+If the current repository has no entry, `full_check` refuses to run and names the key to add. An
+entry without `argv` fails the call with the error.
+
 ### `mutation` (repository file)
 
 `mutation.argv` is the command that the `mutation_check` tool runs. It has the same format as the
@@ -66,6 +74,10 @@ file.
 ```json
 { "mutation": { "argv": ["pnpm", "exec", "mutation"] } }
 ```
+
+Without a `mutation` key in the repository file, `mutation_check` refuses to run. In an untrusted
+project, Tau ignores the file, so the same refusal applies. A `mutation` object without `argv` fails
+the call. A `mutation` key in the user file fails the call.
 
 ## Models
 
@@ -133,9 +145,9 @@ these keys:
 the answer is below `confidence`, or when `allowedModels` excludes the classifier. Tau does not
 refuse the launch in those cases. A label's `model` outside `allowedModels` fails the launch.
 
-A route that fails these rules turns routing off for its profile and shows an error. The profile
-model still runs. Use `route`, not `routes`. A `routes` key is the same case: routing is off, and
-the error names `route`.
+Without `route`, the profile runs on `model` alone. A route that fails these rules turns routing off
+for its profile and shows an error. The profile model still runs. Use `route`, not `routes`. A
+`routes` key is the same case: routing is off, and the error names `route`.
 
 ```json
 {
@@ -214,6 +226,9 @@ needs a login. It names the command that opens the browser package's Chrome prof
 { "browser": { "loginCommand": "google-chrome-stable --profile-directory=\"Agent profile\"" } }
 ```
 
+If `browser.loginCommand` is unset, the manager's guidelines leave out the command, and Tau shows no
+error. An empty or non-string value shows an error, and the command is left out the same way.
+
 ## QA (`qa`, user file)
 
 `qa.repositories.<owner/name>` holds settings for `qa` workers in that repository. Each key is
@@ -252,6 +267,10 @@ Two bots with the same login fail.
 }
 ```
 
+Without a `reviews` key, or with no entry for the base repository, Tau requests no bot. An entry
+with `bots: []` does the same. An entry without a `bots` list fails the call. So does a bot without
+a non-empty `login` or `comment`.
+
 ## Tracker (`tracker`, user file)
 
 - `agentTeam`: a Linear team key, such as `AI`. The `tracker` skill sends agent tickets to this
@@ -268,6 +287,15 @@ Two bots with the same login fail.
   }
 }
 ```
+
+Without a `tracker` key, Tau adds no setup line to the session prompt. With a `tracker` key, the
+prompt reports each setting:
+
+- No `agentTeam`: the prompt says `tracker.agentTeam is not set.`
+- No entry for the current repository: the prompt says `tracker.repositories` has no entry for it.
+- An entry without `team`: the prompt shows only a setup error that names the field. The entry gives
+  no route.
+- An entry without `project`: the route has no project.
 
 ## Removed settings
 
