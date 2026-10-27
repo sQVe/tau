@@ -112,6 +112,7 @@ describe('parseShellCommands', () => {
     ["echo $'a\\\\' b", ['echo', 'a\\', 'b']],
     ['echo $"a b"', ['echo', 'a b']],
     ['echo $"a $b"', ['echo', 'a $b']],
+    ['echo $"a$\'b\'"', ['echo', "a$'b'"]],
     ['echo $ b', ['echo', '$', 'b']],
     ['echo $', ['echo', '$']],
     ['echo a$', ['echo', 'a$']],
