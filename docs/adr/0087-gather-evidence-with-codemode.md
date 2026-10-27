@@ -44,12 +44,11 @@ return.
   batches several calls or filters output before it returns.
 - A skill's script step applies when the skill asks for one. Target resolution, approvals, writes,
   and review judgment stay outside the script.
-- A script plans one evidence set. It discovers paths first, batches independent bounded reads with
-  `Promise.allSettled`, and names failed reads and omitted evidence as gaps.
-- A script prints strings and returns line-numbered excerpts with their file. It prints no result
-  objects, and it adds a result's status fields only when they are not the default.
-- Scripts never `JSON.parse` the text of `read`, which may be capped. They query data files with a
-  bounded command such as `jq`.
+- A script plans one evidence set. It discovers paths first, batches independent bounded reads so
+  one failure does not hide the others, and names failed reads and omitted evidence as gaps.
+- A script returns filtered, located excerpts, not whole result objects.
+- A script never treats capped text as complete data. It queries data files with a bounded command.
+- The codemode guidelines state the exact calls and commands that follow these rules.
 - Agents cite only what a script or a direct tool call returned. A fact that the script filtered out
   must be gathered again before an agent cites it.
 
