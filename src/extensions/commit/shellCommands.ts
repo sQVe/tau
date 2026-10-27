@@ -57,14 +57,12 @@ const decodeAnsiCNumber = (code: string): string => {
 
   const digits = code.slice(1).replaceAll(/[{}]/gu, '');
 
-  // Bash keeps only the low byte of `\x{...}`, which may hold more digits than a number can.
   if (code.startsWith('x')) {
     return String.fromCodePoint(Number.parseInt(`0${digits.slice(-byteDigits)}`, hexRadix));
   }
 
   const value = Number.parseInt(digits, hexRadix);
 
-  // Bash writes no ASCII character for a value past Unicode, so a stand-in keeps parsing going.
   return value > lastCodePoint ? '\uFFFD' : String.fromCodePoint(value);
 };
 
@@ -331,7 +329,6 @@ class ShellParser {
     return text;
   }
 
-  // Inside double quotes and heredoc bodies, `$'` and `$"` are plain text.
   private readExpandingDollar(): string {
     const next = this.source.charAt(this.position + 1);
 
