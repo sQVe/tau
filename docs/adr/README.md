@@ -68,12 +68,9 @@ and the numbers that its status names.
 - [0077: Keep a skill authoring guide in docs](./0077-keep-a-skill-authoring-guide-in-docs.md)
 - [0083: Turn on skill tools when the skill runs, and confirm outside writes](./0083-turn-on-skill-tools-when-the-skill-runs-and-confirm-outside-writes.md),
   partly superseded by 0093 and 0108
-- [0087: Gather evidence with codemode](./0087-gather-evidence-with-codemode.md), partly superseded
-  by 0092 and 0097
+- [0087: Use codemode to batch or filter evidence within an output budget](./0087-gather-evidence-with-codemode.md)
 - [0088: Grow skills into tools and templates](./0088-grow-skills-into-tools-and-templates.md)
-- [0092: Use codemode only to batch or filter evidence](./0092-use-codemode-only-to-batch-or-filter-evidence.md)
 - [0093: Enable skill tools from session start](./0093-enable-skill-tools-from-session-start.md)
-- [0098: Bound codemode output by whole items](./0098-bound-codemode-output-by-whole-items.md)
 
 ## Tests and checks
 
@@ -197,7 +194,9 @@ and the numbers that its status names.
 | 0084 | Keep the diagram skill out of worker profiles                         | [0067](./0067-give-workers-only-their-profile-tools-and-skills.md)                                                                                 | `b0980b75`  |
 | 0085 | Group per-repository settings in the user config                      | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
 | 0086 | Post to GitHub bots without a confirm                                 | [0108](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)                                                                          | `b0980b75`  |
+| 0092 | Use codemode only to batch or filter evidence                         | [0087](./0087-gather-evidence-with-codemode.md)                                                                                                    | `b0980b75`  |
 | 0095 | Keep repository routing in tracker config                             | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
+| 0098 | Bound codemode output by whole items                                  | [0087](./0087-gather-evidence-with-codemode.md)                                                                                                    | `b0980b75`  |
 | 0099 | Warn on unknown config keys and fail only the entry in use            | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
 | 0100 | Let agents cancel Linear tickets after approval                       | [0108](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)                                                                          | `b0980b75`  |
 | 0103 | Write slice flow Linear changes without approval                      | [0108](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)                                                                          | `b0980b75`  |

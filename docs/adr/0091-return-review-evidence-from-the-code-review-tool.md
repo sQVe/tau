@@ -5,7 +5,7 @@
 **Supersedes**: the scope "capture and freshness mechanics" in
 [ADR 0089 (Capture review targets with a code_review tool)](./0089-capture-review-targets-with-a-code-review-tool.md)\
 **Related**:
-[ADR 0087 (Gather evidence with codemode)](./0087-gather-evidence-with-codemode.md)
+[ADR 0087 (Use codemode to batch or filter evidence within an output budget)](./0087-gather-evidence-with-codemode.md)
 
 ## Context
 

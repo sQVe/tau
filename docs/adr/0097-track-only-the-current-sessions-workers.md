@@ -8,8 +8,10 @@ the history recovery guidance in
 [ADR 0073 (Leave manager compaction to Pi)](./0073-leave-manager-compaction-to-pi.md), the history
 tool references in
 [ADR 0078 (Remind managers to compact and restore the worker ledger after each compaction)](./0078-remind-managers-to-compact-and-restore-the-worker-ledger.md)
-and [ADR 0087 (Gather evidence with codemode)](./0087-gather-evidence-with-codemode.md), and the
-task record retirement policy in [ADR 0058 (Run subagents only as Pi workers)](./README.md#retired)\
+and
+[ADR 0087 (Use codemode to batch or filter evidence within an output budget)](./0087-gather-evidence-with-codemode.md),
+and the task record retirement policy in
+[ADR 0058 (Run subagents only as Pi workers)](./README.md#retired)\
 **Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
 [ADR 0123 (Delete stopped worker records 14 days after their last write)](./0123-delete-stopped-worker-records-14-days-after-their-last-write.md)
 
