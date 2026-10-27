@@ -14,7 +14,7 @@ This is the goal. Tau is under active development, so parts of it are not there 
 
 ## Principles
 
-- One install. Everything a Tau skill depends on ships inside Tau.
+- One install. Everything a Tau skill depends on ships in Tau or loads in the worker that uses it.
 - Prefer a maintained package over our own code. Write our own only when the behavior is part of
   Tau's flow and no package fits.
 - Enforce with code where it matters. Instructions guide; guards and evidence checks decide.
@@ -30,6 +30,7 @@ This is the goal. Tau is under active development, so parts of it are not there 
 - model selection for Tau's tools and subagents, including delegation to cheaper models.
 - agent behavior: writing rules, prompt snippets, skills for commit, brainstorm, bug fixing, and
   pull requests.
+- planning and delivery: slices and Linear tickets, stacked branches, full checks.
 - gates with evidence: commits through installed Git hooks.
 - test-driven development guided by truthful test outcomes and nonblocking hints.
 - Pi user interface pieces those flows need, such as overlays and footers.
@@ -39,8 +40,3 @@ This is the goal. Tau is under active development, so parts of it are not there 
 - Pi's own runtime, SDK, and terminal interface.
 - safety guards that other packages already provide, such as destructive command blocking.
 - tools that another agent runs better than Pi. Tau hands those off.
-
-## See also
-
-- [Development](./development.md)
-- [Documentation index](./README.md)
