@@ -177,8 +177,8 @@ to ready. Neither choice completes a required action.
    still require a test or review, without a reproduced defect.
 
    An unrelated pre-existing issue is not a required action. A pre-existing issue counts as exposed
-   only when this change makes it newly reachable or worsens its effect. A new entry point to the
-   same existing behavior does not count; mention it as a plain limitation when it affects use,
+   only when this change makes it newly reachable or worsens its effect. Another way into behavior
+   users could already reach does not count; mention it as a plain limitation when it affects use,
    otherwise in the session report. An accepted follow-up is not one either, but only when it waives
    no promised behavior or mandatory check. A finding closes when its fix is checked as above or
    reviewed again, or when the user dismisses it as not a defect. Record the dismissal reason in the
