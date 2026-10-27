@@ -50,7 +50,7 @@ command from user config. The repository file holds only what belongs with the c
 | --------------- | --------- | --------------- | ------------------------------------------------------------------- |
 | `tdd`           | yes       | yes             | Per field; a list replaces the earlier list                         |
 | `allowedModels` | yes       | yes             | Each file may only remove models from the list before it            |
-| `mutation`      | no        | yes             | `argv` is the mutation command, beside the script it runs           |
+| `mutation`      | no        | yes             | `argv` is the mutation command, beside the package pin it runs      |
 | `subagents`     | yes       | no              | `capacity`, the live workers at once: an integer from 1 to 256      |
 | `profiles`      | yes       | no              | Worker models and model routes                                      |
 | `browser`       | yes       | no              | `loginCommand`, which the manager asks the user to run              |

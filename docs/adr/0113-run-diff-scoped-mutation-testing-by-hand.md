@@ -49,6 +49,7 @@ comments.
 - The `mutation_check` tool lives in the `fullCheck` extension and shares its lock. A full check and
   a mutation check of one repository never run at once.
 - `mutation_check` fails a run that stops, reports an error, or leaves a file unmutated.
+- The tool counts covered and no-coverage survivors apart, and groups each set by file and line.
 - A passing run is saved for reuse, including a run with survivors. A later call with the same
   arguments and file content returns the saved report and lists the same survivors. A failing run is
   never saved.
@@ -70,8 +71,9 @@ comments.
   and Stryker still honor comments that already exist.
 - The `pr` skill does not run `mutation_check` and does not report survivors.
 - The `Mutation` CI job runs on pull requests in `changed` mode. It accepts exit codes 0 and 2,
-  writes each survivor to the job summary, and fails on any other exit code or a malformed report.
-  It is not a required status check.
+  writes each survivor to the job summary, and fails on any other exit code, a status other than
+  `pass`, `nothing`, or `survivors`, or a report without a `survivors` array. It does not check the
+  fields of each survivor. It is not a required status check.
 
 ## Consequences
 

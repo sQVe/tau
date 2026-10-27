@@ -42,6 +42,8 @@ prose cannot decide what a rule allows.
 
 - Every Linear write on a ticket the user owns: new tickets, edits, comments, relations, and the
   move to In Progress when a slice starts.
+- A code-review report on a ticket. It needs no approval only when both its branch and its ticket
+  are the user's own, as the code-review skill defines them.
 - Replies and review requests to GitHub bots, such as the `@codex review` comment. GitHub marks an
   author as a bot. A deleted account counts as a person.
 
