@@ -83,25 +83,31 @@ tools, and the worker reads only the listed skills.
   leave the tool conflict to Pi's load order.
 - The worker loads each remaining package with `-e`, after Tau's worker extensions. It still loads
   every extension the parent loads, so a package never removes CC Safety Net or a model provider.
+- Trim the parent's prompt with evidence:
+  - Count parent tool calls and skill reads from saved sessions before cutting a package.
+  - Move a package the parent rarely uses to a profile that does that work, or filter it out in the
+    user's settings.
+  - When the cost sits in a package's own prompt text, file an issue with that package.
 
 ### Bundled profiles
 
-| Profile    | Tools                                                                                    | Skills | Instruction sets                 | Packages                            |
-| ---------- | ---------------------------------------------------------------------------------------- | ------ | -------------------------------- | ----------------------------------- |
-| `worker`   | `read`, `bash`, `edit`, `write`, `codemode`, `run_tests`, `commit`                       | `tdd`  | default                          | none                                |
-| `scout`    | `read`, `bash`, `write`, `codemode`, `web_search`, `fetch_content`, `get_search_content` | none   | `writing`, `workflow`            | none                                |
-| `reviewer` | `read`, `bash`, `write`, `codemode`                                                      | none   | default                          | none                                |
-| `checker`  | `read`, `bash`, `write`, `codemode`                                                      | none   | default                          | none                                |
-| `browser`  | `read`, `bash`, `write`, `agent_browser`, `agent_browser_code`                           | none   | `writing`, `workflow`, `browser` | `npm:pi-agent-browser-native@0.9.3` |
-| `qa`       | `read`, `bash`, `write`, `agent_browser`, `agent_browser_code`                           | none   | `writing`, `workflow`, `browser` | `npm:pi-agent-browser-native@0.9.3` |
+| Profile    | Tools                                                                                    | Skills | Instruction sets                 | Packages                      |
+| ---------- | ---------------------------------------------------------------------------------------- | ------ | -------------------------------- | ----------------------------- |
+| `worker`   | `read`, `bash`, `edit`, `write`, `codemode`, `run_tests`, `commit`                       | `tdd`  | default                          | none                          |
+| `scout`    | `read`, `bash`, `write`, `codemode`, `web_search`, `fetch_content`, `get_search_content` | none   | `writing`, `workflow`            | none                          |
+| `reviewer` | `read`, `bash`, `write`, `codemode`                                                      | none   | default                          | none                          |
+| `checker`  | `read`, `bash`, `write`, `codemode`                                                      | none   | default                          | none                          |
+| `browser`  | `read`, `bash`, `write`, `agent_browser`, `agent_browser_code`                           | none   | `writing`, `workflow`, `browser` | `npm:pi-agent-browser-native` |
+| `qa`       | `read`, `bash`, `write`, `agent_browser`, `agent_browser_code`                           | none   | `writing`, `workflow`, `browser` | `npm:pi-agent-browser-native` |
 
 - `scout`, `reviewer`, `checker`, and `worker` list `codemode` by name. `browser` and `qa` do not.
   They act in a browser and do not gather repository evidence in bulk.
 - `bulk_read` is removed. A custom profile that still names it fails at startup. Tau does not
   substitute another tool.
-- Workers report structure as prose with file and line evidence. No bundled profile loads the
-  `diagram` skill. The manager draws any diagram from that evidence in its own reply, where Pi and
-  GitHub render Mermaid.
+- Workers report structure as prose with file and line evidence. The manager draws any diagram from
+  that evidence in its own reply, where Pi and GitHub render Mermaid.
+- Worker profiles do not load the `diagram` skill, custom profiles included. This is a rule for
+  profile authors, and no runtime check enforces it. No bundled profile loads it.
 
 ### Saved tasks
 
@@ -143,9 +149,8 @@ The profile's `model` stays the fallback. Routing works like this:
 
 ### Positive
 
-- The measured fixed prompt of a bundled worker drops from 66k characters to 24k to 34k.
-- On bridged Claude workers with Pi 0.87.1, the first request of a scout drops from 13,581 to 12,172
-  tokens, and of a QA worker from 10,786 to 9,378. Each system prompt drops by 4,421 characters.
+- A bundled worker's fixed prompt is about half the size it had when workers loaded the parent's
+  whole loadout, so every worker request costs fewer tokens.
 - Scouts and QA workers no longer receive the coding instructions on each turn.
 - A tool that disappears from the configuration stops the worker at startup, and the error names it.
 - A new profile adds no package tools or skills to the parent's prompt. It still adds its name and
