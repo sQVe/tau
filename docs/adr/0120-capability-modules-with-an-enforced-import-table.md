@@ -135,7 +135,7 @@ rule reports an import, change the table or the module list instead of silencing
 
 ### Negative
 
-- A new shared file needs a module and a table row, which adds a step for small helpers.
+- A new shared module needs a table row, which adds a step for small helpers.
 - A module's second file moves its first file, which touches every import of it.
 - Which noun names a concept still needs judgment in review. Only registry order is checked.
 
