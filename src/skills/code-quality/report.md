@@ -9,14 +9,16 @@ Use this shape for the files in `$dir` and for the reply.
   list of corrections of earlier parts follows the groups. Each part directory keeps `finder.md`,
   `checker.md`, and `checked.md` instead of its own `report.md`.
 - `report.md`: with a ticket, it starts with `# Code quality: <ticket>` and keeps a `Comment ID:`
-  line once the comment exists. Then the base and HEAD SHAs, the capture `hash`, every finding in
-  full, the Defects, and refuted candidates with the checker's reason.
+  line once the comment exists. Then the base and HEAD SHAs, the capture `hash`, the planned
+  structure as its source (the ticket and its children) or as unavailable, every finding in full,
+  the Plan-correction notes, the Defects, and refuted candidates with the checker's reason.
 
 ## Reply
 
-- Header: the target, elapsed time when you observed it, freshness (fresh, stale, or unknown), and a
-  link to `report.md`. Say once that a fresh checker tested the finder's candidates, or, when the
-  checker gave no report, that they are unverified.
+- Header: the target, elapsed time when you observed it, freshness (fresh, stale, or unknown),
+  whether the planned structure was compared or unavailable, and a link to `report.md`. Say once
+  that a fresh checker tested the finder's candidates, or, when the checker gave no report, that
+  they are unverified.
 - Findings: one table in the priority order of the quality assignment, with the columns `#`, `Kind`,
   `Problem and evidence`, `Sketch`, `Deletes and adds`, `Keeps`, and `Status`. Put long text in
   numbered notes after it.
@@ -30,6 +32,9 @@ Use this shape for the files in `$dir` and for the reply.
   and name each in one line. Show refuted candidates only when one affects a decision.
 - Defects: a separate section that lists each defect the workers met, with its `file:line`. Never
   put a defect in the findings table. Point to code-review for a defect review.
+- Plan-correction notes: a list after the findings table, with `file:line`, the plan item, and why
+  the change improves on the plan. Say that triage-findings does not act on them. Write None when
+  there are none.
 - Gaps: list every gap from the capture and the evidence, areas workers left unread, worker
   failures, and stale or unknown freshness. Do not infer read coverage from citations.
 - Notes: areas workers read only shallowly. They are not gaps.
