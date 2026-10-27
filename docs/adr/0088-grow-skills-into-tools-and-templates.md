@@ -2,9 +2,9 @@
 
 **Date**: 2026-10-05\
 **Status**: Accepted\
-**Supersedes**: [ADR 0004 (Skill authoring style)](./README.md#retired),
-[ADR 0077 (Keep a skill authoring guide in docs)](./README.md#retired), and the skill and tool split
-in
+**Supersedes**: [ADR 0004 (Skill authoring style)](./README.md#retired), the authoring guide
+decision in [ADR 0077 (Keep a skill authoring guide in docs)](./README.md#retired), and the skill
+and tool split in
 [ADR 0083 (Turn on skill tools when the skill runs, and confirm outside writes)](./README.md#retired)\
 **Related**:
 [Skill authoring guide](../skill-authoring.md),
@@ -41,10 +41,8 @@ keeps only judgment and order.
 - A body uses only these `##` headings: `When to use`, `Goal`, `Hard rules`, `Procedure`, and
   `Checklist`. Not every skill needs every section.
 - Skills have no `## See also` section.
-- Until those skills change, `tests/skillFiles.test.ts` lists these exceptions by name: a `Replies`
-  heading in `pr-feedback`, a `Changes after the start` heading in `start-slice`, and one
-  multi-command shell block in `handover`. An entry is removed when its skill changes, and no entry
-  is added.
+- `tests/skillFiles.test.ts` lists the skills that still break these rules, by name. An entry is
+  removed when its skill changes, and no entry is added.
 
 ### Authoring guide and template
 
