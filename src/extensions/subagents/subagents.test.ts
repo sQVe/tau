@@ -1,9 +1,7 @@
-import { execFile } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
 import type {
   ExtensionAPI,
@@ -18,7 +16,6 @@ import { Value } from 'typebox/value';
 import { expect, it, vi, onTestFinished as finishTest } from 'vitest';
 
 import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { initializeRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { workerNoticeChannel } from '../../worker.js';
 import { WorkerCapacityFullError, WorkerController } from './controller/controller.js';
@@ -146,16 +143,11 @@ it('appends delegation guidelines for a manager inside herdr', ({ onTestFinished
 
 const loginCommand = 'google-chrome-stable --profile-directory="Agent profile"';
 
-const addOrigin = async (directory: string, originUrl: string) => {
-  await promisify(execFile)('git', ['remote', 'add', 'origin', originUrl], { cwd: directory });
-};
-
 const sessionGuidelines = async (
   onTestFinished: typeof finishTest,
   config: {
     user?: unknown;
     repository?: unknown;
-    originUrl?: string;
     herdr?: boolean;
   },
 ) => {
@@ -173,11 +165,6 @@ const sessionGuidelines = async (
 
   if (config.user !== undefined) {
     writeFileSync(join(directory, 'tau.json'), JSON.stringify(config.user));
-  }
-
-  if (config.originUrl !== undefined) {
-    await initializeRepository(directory);
-    await addOrigin(directory, config.originUrl);
   }
 
   if (config.repository !== undefined) {
@@ -283,7 +270,6 @@ it('leaves delegation guidelines out outside herdr and without the subagent tool
   onTestFinished,
 }) => {
   const { appendedWithoutTools } = await sessionGuidelines(onTestFinished, {
-    originUrl: 'https://github.com/sQVe/tau.git',
     herdr: false,
   });
 
@@ -297,7 +283,6 @@ it('starts the session and reports once when the worker capacity is invalid', as
 }) => {
   const { notify } = await sessionGuidelines(onTestFinished, {
     user: { subagents: { capacity: 0 } },
-    originUrl: 'https://github.com/sQVe/tau.git',
     herdr: false,
   });
 
@@ -1913,9 +1898,7 @@ it('lists profile names in order and gives a reason when the list is unreadable'
 });
 
 it('puts each manager guideline on its own prompt line', async ({ onTestFinished }) => {
-  const { appended } = await sessionGuidelines(onTestFinished, {
-    originUrl: 'git@github.com:sQVe/tau.git',
-  });
+  const { appended } = await sessionGuidelines(onTestFinished, {});
 
   const lines = appended.split('\n').filter((line) => line !== '');
 
