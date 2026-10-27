@@ -4,7 +4,7 @@
 **Status**: Accepted\
 **Related**: [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md),
 [ADR 0008 (Coding instructions)](./0008-coding-instructions.md),
-[ADR 0033 (Use one generic native worker workflow)](./0033-use-one-generic-native-worker-workflow.md),
+[ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
 [ADR 0035 (Use size thresholds as review guidance)](./0035-use-size-thresholds-as-review-guidance.md),
 [ADR 0036 (Allowlist worker content and label states from one table)](./0036-allowlist-worker-content-and-label-states-from-one-table.md),
 [ADR 0052 (Drop backwards compatibility by default)](./0052-drop-backwards-compatibility-by-default.md),
@@ -89,7 +89,7 @@ without asking the user.
 - Branded IDs, for now. Reopen when a concrete signature shows a misuse risk.
 - `assertNever()`. The exhaustive-switch lint already covers it.
 - An effects-returning state machine, a type per `Handle` phase, and per-harness adapters
-  ([ADR 0033](./0033-use-one-generic-native-worker-workflow.md)).
+  ([ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)).
 - `*Decision.ts` naming as enforcement, a `node:fs` import denylist, and count thresholds. Agents
   satisfy such proxies without meeting the rule behind them
   ([ADR 0035](./0035-use-size-thresholds-as-review-guidance.md)).

@@ -1,11 +1,9 @@
 # ADR 0101: Treat `.tau/` files as the working copy and trackers as the saved copy
 
 **Date**: 2026-10-10\
-**Status**: Accepted; approval before slice flow saves superseded by
-[ADR 0103 (Write slice flow Linear changes without approval)](./0103-write-slice-flow-linear-changes-without-approval.md)\
-**Extends**:
-[ADR 0045 (Keep worker records per Tau checkout and worktree files in `.tau/`)](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md),
-the worktree files part
+**Status**: Accepted\
+**Related**: [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
+[ADR 0108 (Make Linear writes on the user's own work without asking)](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)
 
 ## Context
 
@@ -14,23 +12,27 @@ as `slices/`, `pr/`, and `pr-feedback/`. Linear and GitHub hold the same items a
 Two copies of one item can disagree, and nothing says which one a reader should trust.
 
 Run state, such as a worker's session or a handover message, is short lived. A decision that exists
-only there is lost when the session ends. ADR 0045 says Tau writes nothing else in a worktree, which
-no longer matches these folders.
+only there is lost when the session ends. Earlier, Tau wrote nothing else in a worktree, which no
+longer matches these folders.
 
 ## Decision
 
 Files in `.tau/` are the working copy, and Linear and GitHub hold the saved copy.
 
-A tool saves the working copy to a tracker only after the user approves a preview of what it will
-save. A tool reads the saved copy before it plans a write. Once a saved copy exists, it wins over a
-working copy the user has not approved. An approved preview may change it, and the preview names
-each field it changes, so edits made in the tracker are never lost unseen.
+Writes on the user's own work need no preview, as
+[ADR 0108](./0108-make-linear-writes-on-the-users-own-work-without-asking.md) sets. Any other write
+needs an approved preview of what it will save. A tool reads the saved copy before it plans a write.
+Once a saved copy exists, it wins over a working copy the user has not approved. An approved preview
+may change it, and the preview names each field it changes, so edits made in the tracker are never
+lost unseen.
 
 Run state is never the only copy of a decision. A decision goes into a working copy or a tracker. A
 handover links to working copies or tickets and is not a record itself.
 
-This updates ADR 0045. Its claim that Tau writes nothing else in a worktree is out of date, because
-`.tau/` also holds the folders named above.
+Each worktree keeps its files in a `.tau/` folder at the checkout root. Before Tau writes there, it
+makes sure `.tau/.gitignore` ends with a `*` line, so Git ignores the folder without edits to the
+repository's `.gitignore`, `.git/info/exclude`, or the user's global excludes. Tau refuses a `.tau/`
+path that is a symbolic link, so a write never leaves the worktree.
 
 ## Consequences
 

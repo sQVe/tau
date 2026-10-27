@@ -3,7 +3,7 @@
 **Date**: 2026-10-14\
 **Status**: Accepted\
 **Related**: [ADR 0035 (Use size thresholds as review guidance)](./0035-use-size-thresholds-as-review-guidance.md),
-[ADR 0050 (Split worker control into a coordinator and one controller per worker)](./0050-split-worker-control-into-a-coordinator-and-one-controller-per-worker.md),
+[ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
 [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md)
 
 ## Context

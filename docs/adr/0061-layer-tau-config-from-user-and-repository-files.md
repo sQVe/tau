@@ -6,7 +6,7 @@
 **Related**:
 [ADR 0023 (Use advisory TDD observations instead of edit permissions)](./0023-advisory-tdd-observations.md),
 [ADR 0027 (Share one delegate model across bounded tool tasks)](./0027-share-one-delegate-model.md),
-[ADR 0045 (Keep worker records per Tau checkout and worktree files in `.tau/`)](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md),
+[ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
 [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md)
 
 ## Context
@@ -104,8 +104,8 @@ never falls through to another model. Model settings are not part of this decisi
 
 Use `$XDG_CONFIG_HOME/tau/` for the user file. Rejected because it ignores `PI_CODING_AGENT_DIR`, so
 separate Pi setups and the integration tests would share one file, the reason
-[ADR 0045](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md) rejected XDG for
-records. XDG suits tools that run under several agents, and Tau runs only in Pi.
+[ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md) rejected XDG for records. XDG suits
+tools that run under several agents, and Tau runs only in Pi.
 
 ### Root `tau.json` or `.tau/tdd.json`
 

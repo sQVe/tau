@@ -122,33 +122,8 @@ and the numbers that its status names.
 
 ## Workers
 
-- [0028: Keep worker control in the parent](./0028-keep-worker-control-in-the-parent.md), partly
-  superseded by 0043 and 0059
-- [0029: Version worker provider fingerprints](./0029-version-worker-provider-fingerprints.md),
-  superseded by 0043
-- [0030: Claim native follow-ups before opening](./0030-claim-native-follow-ups-before-opening.md),
-  superseded by 0043
-- [0031: Reserve worker capacity under one tree lock](./0031-reserve-worker-capacity-under-one-tree-lock.md),
-  superseded by 0043
-- [0032: Run Claude workers through a parent-owned channel](./0032-run-claude-workers-through-a-parent-owned-channel.md),
-  superseded by 0033 and 0058
-- [0033: Use one generic native worker workflow](./0033-use-one-generic-native-worker-workflow.md),
-  superseded by 0058, 0037, 0045, and 0043
 - [0036: Allowlist worker content and label states from one table](./0036-allowlist-worker-content-and-label-states-from-one-table.md)
-- [0037: Launch native workers without parent approval](./0037-launch-native-workers-without-parent-approval.md),
-  superseded by 0058 and 0045
-- [0040: Release undispatched follow-up claims after confirmed cleanup](./0040-release-undispatched-follow-up-claims-after-cleanup.md),
-  superseded by 0043
-- [0043: Own only the worker guarantees herdr lacks](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
-  partly superseded by 0054, 0058, and 0059
-- [0045: Keep worker records per Tau checkout and worktree files in `.tau/`](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md),
-  partly superseded by 0058 and 0097
-- [0050: Split worker control into a coordinator and one controller per worker](./0050-split-worker-control-into-a-coordinator-and-one-controller-per-worker.md),
-  partly superseded by 0058
-- [0054: Show one foreground worker per parent](./0054-show-one-foreground-worker-per-parent.md)
-- [0058: Run subagents only as Pi workers](./0058-run-subagents-only-as-pi-workers.md), partly
-  superseded by 0097
-- [0059: Run each Pi worker as its pane's own process](./0059-run-each-pi-worker-as-its-panes-own-process.md)
+- [0043: Run subagents as Pi workers with a thin task layer over herdr](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
 - [0062: Put worker instructions in the system prompt](./0062-put-worker-instructions-in-the-system-prompt.md),
   superseded by 0066
 - [0064: Deliver worker replies through records](./0064-deliver-worker-replies-through-records.md)
@@ -198,8 +173,7 @@ and the numbers that its status names.
 - [0082: Own Linear conventions in one tracker skill](./0082-own-linear-conventions-in-one-tracker-skill.md),
   partly superseded by 0100
 - [0100: Let agents cancel Linear tickets after approval](./0100-let-agents-cancel-linear-tickets-after-approval.md)
-- [0101: Treat `.tau/` files as the working copy and trackers as the saved copy](./0101-treat-tau-files-as-the-working-copy-and-trackers-as-the-saved-copy.md),
-  partly superseded by 0103
+- [0101: Treat `.tau/` files as the working copy and trackers as the saved copy](./0101-treat-tau-files-as-the-working-copy-and-trackers-as-the-saved-copy.md)
 - [0103: Write slice flow Linear changes without approval](./0103-write-slice-flow-linear-changes-without-approval.md),
   superseded by 0108
 - [0108: Make Linear writes on the user's own work without asking](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)
@@ -221,22 +195,35 @@ and the numbers that its status names.
 
 ## Retired
 
-| ADR  | Title                                               | Replaced by                                                        | Last commit |
-| ---- | --------------------------------------------------- | ------------------------------------------------------------------ | ----------- |
-| 0001 | Application structure                               | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |
-| 0002 | File and directory naming conventions               | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |
-| 0011 | Commit preapproval at startup                       | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
-| 0015 | Explicit repository commit commands                 | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
-| 0016 | Prepare each commit with separate staging           | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
-| 0017 | Ask before adding generated files                   | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
-| 0018 | Repository owners choose commit checks and hooks    | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
-| 0019 | Verify backups before hiding working edits          | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
-| 0020 | Run staged checks in the existing checkout          | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
-| 0021 | Prune recovery snapshots after verified restoration | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
-| 0025 | Use Git hooks without preparation                   | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
-| 0026 | Let Git hooks own commit checks                     | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
-| 0038 | Block commits only on comment inaccuracies          | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
-| 0042 | Remove commit comment review                        | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
-| 0049 | Treat the bash commit guard as guidance             | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
-| 0057 | Enforce pure decision modules from a registry       | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |
-| 0079 | Grow modules from flat files                        | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |
+| ADR  | Title                                                                 | Replaced by                                                        | Last commit |
+| ---- | --------------------------------------------------------------------- | ------------------------------------------------------------------ | ----------- |
+| 0001 | Application structure                                                 | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |
+| 0002 | File and directory naming conventions                                 | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |
+| 0011 | Commit preapproval at startup                                         | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0015 | Explicit repository commit commands                                   | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0016 | Prepare each commit with separate staging                             | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0017 | Ask before adding generated files                                     | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0018 | Repository owners choose commit checks and hooks                      | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0019 | Verify backups before hiding working edits                            | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0020 | Run staged checks in the existing checkout                            | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0021 | Prune recovery snapshots after verified restoration                   | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0025 | Use Git hooks without preparation                                     | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0026 | Let Git hooks own commit checks                                       | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0028 | Keep worker control in the parent                                     | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)       | `b0980b75`  |
+| 0029 | Version worker provider fingerprints                                  | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)       | `b0980b75`  |
+| 0030 | Claim native follow-ups before opening                                | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)       | `b0980b75`  |
+| 0031 | Reserve worker capacity under one tree lock                           | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)       | `b0980b75`  |
+| 0032 | Run Claude workers through a parent-owned channel                     | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)       | `b0980b75`  |
+| 0033 | Use one generic native worker workflow                                | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)       | `b0980b75`  |
+| 0037 | Launch native workers without parent approval                         | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)       | `b0980b75`  |
+| 0038 | Block commits only on comment inaccuracies                            | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0040 | Release undispatched follow-up claims after confirmed cleanup         | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)       | `b0980b75`  |
+| 0042 | Remove commit comment review                                          | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0045 | Keep worker records per Tau checkout and worktree files in `.tau/`    | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)       | `b0980b75`  |
+| 0049 | Treat the bash commit guard as guidance                               | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0050 | Split worker control into a coordinator and one controller per worker | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)       | `b0980b75`  |
+| 0054 | Show one foreground worker per parent                                 | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)       | `b0980b75`  |
+| 0057 | Enforce pure decision modules from a registry                         | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |
+| 0058 | Run subagents only as Pi workers                                      | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)       | `b0980b75`  |
+| 0059 | Run each Pi worker as its pane's own process                          | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)       | `b0980b75`  |
+| 0079 | Grow modules from flat files                                          | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |

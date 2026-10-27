@@ -2,13 +2,13 @@
 
 **Date**: 2026-09-27\
 **Status**: Accepted\
-**Related**: [ADR 0045 (Keep worker records per Tau checkout and worktree files in `.tau/`)](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md),
+**Related**: [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
 [ADR 0052 (Drop backwards compatibility by default)](./0052-drop-backwards-compatibility-by-default.md)
 
 ## Context
 
 Worker records outlive the Tau that wrote them. An open session and a newer session can share one
-records folder ([ADR 0045](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md)).
+records folder ([ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)).
 
 Every record schema rejects unknown fields, so an older reader fails on any new field. An older
 session once refused every follow-up because a newer Tau had saved a name it rejected.

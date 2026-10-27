@@ -3,9 +3,8 @@
 **Date**: 2026-09-29\
 **Status**: Accepted; bundled tool lists superseded by
 [ADR 0087 (Gather evidence with codemode)](./0087-gather-evidence-with-codemode.md)\
-**Related**: [ADR 0028 (Keep worker control in the parent)](./0028-keep-worker-control-in-the-parent.md),
+**Related**: [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
 [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
-[ADR 0058 (Run subagents only as Pi workers)](./0058-run-subagents-only-as-pi-workers.md),
 [ADR 0069 (Load each Pi package where its tools are used)](./0069-load-each-pi-package-where-its-tools-are-used.md)
 
 ## Context
@@ -16,8 +15,8 @@ worker, tools and the skill list took over half of a 66k-character first request
 sessions show that workers use few of those tools and skills. Only scouts used the web tools often.
 
 Every extension must still load. The worker refuses to start without CC Safety Net from Tau's
-bundled file, [ADR 0028](./0028-keep-worker-control-in-the-parent.md) rejects restricted extension
-loadouts, and reloading extensions once left the Claude bridge provider unregistered.
+bundled file, [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md) rejects restricted
+extension loadouts, and reloading extensions once left the Claude bridge provider unregistered.
 
 Activating tools after startup does not hold. Some extensions, such as the questionnaire, activate
 their tool again before every prompt.
