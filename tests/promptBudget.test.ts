@@ -28,7 +28,7 @@ const sessionCeilings: Readonly<Record<string, number>> = {
   manager: 58_900, // target 38,000
   worker: 19_200, // target 14,000
   reviewer: 14_600, // target 11,000
-  checker: 14_800, // target 11,000
+  checker: 14_800,
   qa: 12_600, // target 9,000
   browser: 11_400, // target 9,000
   scout: 9700, // target 9,000
