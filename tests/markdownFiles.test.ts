@@ -15,11 +15,7 @@ const allowedPaths: AllowedPaths = {
     'docs/adr/0061-layer-tau-config-from-user-and-repository-files.md',
     'docs/development.md',
   ],
-  'skills/': [
-    'docs/adr/0003-externally-observable-identifiers.md',
-    'docs/adr/0004-skill-authoring-style.md',
-    'docs/adr/0077-keep-a-skill-authoring-guide-in-docs.md',
-  ],
+  'skills/': ['docs/adr/0003-externally-observable-identifiers.md'],
 };
 
 const root = '/repository';

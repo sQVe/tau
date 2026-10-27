@@ -4,11 +4,14 @@
 **Status**: Accepted\
 **Supersedes**: [ADR 0086 (Post to GitHub bots without a confirm)](./README.md#retired),
 [ADR 0100 (Let agents cancel Linear tickets after approval)](./README.md#retired),
-[ADR 0103 (Write slice flow Linear changes without approval)](./README.md#retired)\
-**Related**: [ADR 0024 (Commit through Git hooks without human approval)](./0024-commit-without-human-approval.md),
+[ADR 0103 (Write slice flow Linear changes without approval)](./README.md#retired), and the write
+confirm in
+[ADR 0083 (Turn on skill tools when the skill runs, and confirm outside writes)](./README.md#retired)\
+**Related**:
+[ADR 0024 (Commit through Git hooks without human approval)](./0024-commit-without-human-approval.md),
 [ADR 0075 (Plan work as PR-sized slices in Linear)](./0075-plan-work-as-pr-sized-slices-in-linear.md),
 [ADR 0082 (Own Linear conventions in one tracker skill)](./0082-own-linear-conventions-in-one-tracker-skill.md),
-[ADR 0083 (Turn on skill tools when the skill runs, and confirm outside writes)](./0083-turn-on-skill-tools-when-the-skill-runs-and-confirm-outside-writes.md),
+[ADR 0088 (Write skills in Markdown, with a guide, tools, and templates)](./0088-grow-skills-into-tools-and-templates.md),
 [ADR 0093 (Enable skill tools from session start)](./0093-enable-skill-tools-from-session-start.md),
 [ADR 0101 (Treat `.tau/` files as the working copy and trackers as the saved copy)](./0101-treat-tau-files-as-the-working-copy-and-trackers-as-the-saved-copy.md),
 [ADR 0111 (Request review bots from config and skip the preview for a named change)](./0111-request-review-bots-from-config-and-skip-named-changes-in-pr.md)

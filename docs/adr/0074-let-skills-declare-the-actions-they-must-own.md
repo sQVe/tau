@@ -25,7 +25,8 @@ the rule lives with the skill.
 ### Field rules
 
 - The field lives under `metadata`, because the Agent Skills spec allows custom data only there.
-  [ADR 0004](./0004-skill-authoring-style.md) requires valid Agent Skills frontmatter.
+  [ADR 0088 (Write skills in Markdown, with a guide, tools, and templates)](./0088-grow-skills-into-tools-and-templates.md)
+  requires valid Agent Skills frontmatter.
 - Tau appends one line to the system prompt for each skill with `metadata.required-for`.
 - Tau reads the field once at load. It refuses to load when a value is empty or not a string, and it
   names the skill file.

@@ -2,9 +2,8 @@
 
 **Date**: 2026-09-09\
 **Status**: Accepted\
-**Related**: [ADR 0004 (Skill authoring style)](./0004-skill-authoring-style.md),
-[ADR 0006 (Load Tau's instruction sets into every prompt)](./0006-default-writing-policy.md),
-[ADR 0077 (Keep a skill authoring guide in docs)](./0077-keep-a-skill-authoring-guide-in-docs.md)
+**Related**: [ADR 0006 (Load Tau's instruction sets into every prompt)](./0006-default-writing-policy.md),
+[ADR 0088 (Write skills in Markdown, with a guide, tools, and templates)](./0088-grow-skills-into-tools-and-templates.md)
 
 ## Context
 
@@ -29,8 +28,9 @@ and code and tests state behavior.
 - ADRs record lasting decisions and their reasons, such as why Tau uses a particular file format or
   key binding. Include only the details needed to understand or follow the decision.
 - Code and tests state behavior.
-- `docs/` holds only what no feature owns: the vision, the development guide, the authoring guides,
-  and the ADRs.
+- `docs/` holds only what no feature owns. It holds `README.md`, the documentation index;
+  `development.md`; `skill-authoring.md`, the skill guide, which also covers the tools a skill
+  calls; `skill-template.md`; `vision.md`; and the `adr/` folder.
 - The root README introduces the project and links to the rest. Topic details go in `docs/` and are
   linked from the documentation index.
 - Agent instructions stay beside the extension that loads them.
@@ -84,5 +84,5 @@ distance, it still asks every feature change to update prose that repeats the co
 ### A new ADR for every changed rule
 
 Record each rule change in a new ADR that supersedes the old one, and leave the old ADR as written.
-Rejected because it builds chains of partly superseded ADRs, and a reader must combine several files
-to find the current rule.
+Rejected because it builds chains of ADRs that each partly replace an older one, and a reader must
+combine several files to find the current rule.
