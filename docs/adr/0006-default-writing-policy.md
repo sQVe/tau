@@ -5,7 +5,7 @@
 **Supersedes**: [ADR 0008 (Coding instructions)](./README.md#retired),
 [ADR 0056 (Load workflow rules apart from coding and writing)](./README.md#retired)\
 **Related**: [ADR 0066 (Add Tau's prompt text to Pi's append section)](./0066-add-taus-prompt-text-to-pis-append-section.md),
-[ADR 0067 (Give workers only their profile's tools and skills)](./0067-give-workers-only-their-profile-tools-and-skills.md),
+[ADR 0067 (Give each worker profile one loadout of tools, skills, instruction sets, and packages)](./0067-give-workers-only-their-profile-tools-and-skills.md),
 [ADR 0076 (Give browser workers one shared set of browser rules)](./0076-give-browser-workers-one-shared-set-of-browser-rules.md)
 
 ## Context

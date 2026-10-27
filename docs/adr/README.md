@@ -123,13 +123,8 @@ and the numbers that its status names.
 - [0036: Allowlist worker content and label states from one table](./0036-allowlist-worker-content-and-label-states-from-one-table.md)
 - [0043: Run subagents as Pi workers with a thin task layer over herdr](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
 - [0064: Deliver worker replies through records](./0064-deliver-worker-replies-through-records.md)
-- [0067: Give workers only their profile's tools and skills](./0067-give-workers-only-their-profile-tools-and-skills.md),
-  partly superseded by 0087
-- [0068: Load only the instruction sets each worker profile needs](./0068-load-only-the-instruction-sets-each-worker-profile-needs.md),
-  partly superseded by 0076
-- [0069: Load each Pi package where its tools are used](./0069-load-each-pi-package-where-its-tools-are-used.md)
+- [0067: Give each worker profile one loadout of tools, skills, instruction sets, and packages](./0067-give-workers-only-their-profile-tools-and-skills.md)
 - [0076: Give browser workers one shared set of browser rules](./0076-give-browser-workers-one-shared-set-of-browser-rules.md)
-- [0084: Keep the diagram skill out of worker profiles](./0084-keep-the-diagram-skill-out-of-worker-profiles.md)
 - [0097: Track only the current session's workers](./0097-track-only-the-current-sessions-workers.md)
 - [0102: Require acceptance criteria on editing worker launches](./0102-require-acceptance-criteria-on-editing-worker-launches.md)
 - [0123: Delete stopped worker records 14 days after their last write](./0123-delete-stopped-worker-records-14-days-after-their-last-write.md)
@@ -225,4 +220,7 @@ and the numbers that its status names.
 | 0058 | Run subagents only as Pi workers                                      | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                       | `b0980b75`  |
 | 0059 | Run each Pi worker as its pane's own process                          | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                       | `b0980b75`  |
 | 0062 | Put worker instructions in the system prompt                          | [0066](./0066-add-taus-prompt-text-to-pis-append-section.md)                                                                                       | `b0980b75`  |
+| 0068 | Load only the instruction sets each worker profile needs              | [0067](./0067-give-workers-only-their-profile-tools-and-skills.md)                                                                                 | `b0980b75`  |
+| 0069 | Load each Pi package where its tools are used                         | [0067](./0067-give-workers-only-their-profile-tools-and-skills.md)                                                                                 | `b0980b75`  |
 | 0079 | Grow modules from flat files                                          | [0120](./0120-capability-modules-with-an-enforced-import-table.md)                                                                                 | `a859a7bb`  |
+| 0084 | Keep the diagram skill out of worker profiles                         | [0067](./0067-give-workers-only-their-profile-tools-and-skills.md)                                                                                 | `b0980b75`  |

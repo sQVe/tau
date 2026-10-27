@@ -3,11 +3,9 @@
 **Date**: 2026-10-01\
 **Status**: Accepted\
 **Supersedes**: the set names, `qa` sets, and delivery order in
-[ADR 0068 (Load only the instruction sets each worker profile needs)](./0068-load-only-the-instruction-sets-each-worker-profile-needs.md)\
-**Related**:
-[ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
-[ADR 0068 (Load only the instruction sets each worker profile needs)](./0068-load-only-the-instruction-sets-each-worker-profile-needs.md),
-[ADR 0069 (Load each Pi package where its tools are used)](./0069-load-each-pi-package-where-its-tools-are-used.md),
+[ADR 0068 (Load only the instruction sets each worker profile needs)](./README.md#retired)\
+**Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
+[ADR 0067 (Give each worker profile one loadout of tools, skills, instruction sets, and packages)](./0067-give-workers-only-their-profile-tools-and-skills.md),
 [Vision](../vision.md)
 
 ## Context

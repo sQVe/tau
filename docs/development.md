@@ -152,7 +152,7 @@ A profile's `tools:` setting lists registered tool names, separated by commas, f
 A profile's `packages:` setting lists Pi packages its worker loads, separated by commas. Each entry
 is a source that `pi -e` accepts, such as `npm:name`, `npm:name@1.2.3`, `git:host/path`, a URL, or a
 local path. For example, set `packages: npm:pi-agent-browser-native@0.9.3`. See the
-[package decision](adr/0069-load-each-pi-package-where-its-tools-are-used.md).
+[package decision](adr/0067-give-workers-only-their-profile-tools-and-skills.md).
 
 The bundled `browser` and `qa` profiles set `packages: npm:pi-agent-browser-native@0.9.3` for their
 browser tools. Its `agent_browser_code` tool needs Node on `PATH` when Pi runs as the compiled
@@ -173,8 +173,8 @@ manager's guidelines and shows an error when the session starts.
 A profile's `instruction-sets:` setting lists the Tau instruction sets its worker loads, from
 `writing`, `coding`, `workflow`, and `browser`, separated by commas. For example, set
 `instruction-sets: writing, workflow`. See the
-[instruction set decision](adr/0068-load-only-the-instruction-sets-each-worker-profile-needs.md) and
-the [browser decision](adr/0076-give-browser-workers-one-shared-set-of-browser-rules.md).
+[instruction set decision](adr/0067-give-workers-only-their-profile-tools-and-skills.md) and the
+[browser decision](adr/0076-give-browser-workers-one-shared-set-of-browser-rules.md).
 
 To limit how many live workers each parent controller runs at once, set `subagents.capacity` in
 `~/.pi/agent/tau.json`. It takes an integer from 1 to 256 and defaults to 12:

@@ -19,7 +19,7 @@ worker record location in
 **Related**: [ADR 0036 (Allowlist worker content and label states from one table)](./0036-allowlist-worker-content-and-label-states-from-one-table.md),
 [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
 [ADR 0064 (Deliver worker replies through records)](./0064-deliver-worker-replies-through-records.md),
-[ADR 0067 (Give workers only their profile's tools and skills)](./0067-give-workers-only-their-profile-tools-and-skills.md),
+[ADR 0067 (Give each worker profile one loadout of tools, skills, instruction sets, and packages)](./0067-give-workers-only-their-profile-tools-and-skills.md),
 [ADR 0071 (Set worker models in the user config)](./0071-set-worker-models-in-the-user-config.md),
 [ADR 0097 (Track only the current session's workers)](./0097-track-only-the-current-sessions-workers.md),
 [ADR 0102 (Require acceptance criteria on editing worker launches)](./0102-require-acceptance-criteria-on-editing-worker-launches.md)
