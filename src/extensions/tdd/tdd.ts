@@ -15,6 +15,7 @@ import type { LoadedTddConfig } from './config.js';
 import { createTestObservation, observationDirectory } from './observation.js';
 import { configSummary, runContext, selectionSummary, summarize } from './render.js';
 import type { TestObservation } from './types.js';
+import { worktreePath } from './worktreePath.js';
 
 interface ObservationTracker {
   current:
@@ -117,13 +118,13 @@ const handleToolResult = async (
   tracker.reportedConfigError = undefined;
   const { cwd, loaded, observation } = current;
   const path = typeof event.input.path === 'string' ? event.input.path.replace(/^@/, '') : '';
-  const target = await observationDirectory(resolve(context.cwd, path));
+  const target = resolve(context.cwd, path);
   const editablePath = event.toolName !== 'bash' && path.length > 0;
+  const canonicalTarget = await observationDirectory(target);
+  const editedPath = worktreePath(relative(context.cwd, target), relative(cwd, canonicalTarget));
 
   const productionEdit =
-    !event.isError &&
-    editablePath &&
-    classifyPath(loaded.config, relative(cwd, target)) === 'production';
+    !event.isError && editablePath && classifyPath(loaded.config, editedPath) === 'production';
 
   const hint = await observation.checkpoint(productionEdit);
 
