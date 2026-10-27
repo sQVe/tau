@@ -61,7 +61,7 @@ to ready. Neither choice completes a required action.
      over an open PR's base, so the target and merge base follow the stack. Pass the newest
      `.tau/workers/review-*` directory saved for this branch as `review`, when one exists. Check
      that the review directory belongs to this branch, from its saved input or session evidence.
-     Report unclear ownership as a gap.
+     Report unclear ownership as evidence that could not be read, in the session report.
    - In the same script, find ticket IDs in the user's links, `branch`, commit `subjects`, and
      `target.pr.body`. Read each distinct ticket with its service's CLI, such as
      `linear issue view <id> --json --no-pager --no-download`. Use returned issue IDs, not branch
@@ -73,7 +73,7 @@ to ready. Neither choice completes a required action.
    - After the script, when a slice ticket has no audit comment, or its audited commit differs from
      `HEAD`, ask with `ask_user_question`: run a new audit with the
      [finish-slice skill](../finish-slice/SKILL.md), recommended, or continue with the missing or
-     old audit as a gap.
+     old audit, whose items no step 5 check covers count as not run.
    - Print the target's head, base, merge base, repository, open PR fields, and closed PRs; ticket
      intent; reuse status, reasons, and available reports; review freshness and evidence gaps; added
      skip or suppression markers; matching check-log paths with their bounded excerpts, and
@@ -109,25 +109,28 @@ to ready. Neither choice completes a required action.
 4. Review `<merge base>..HEAD`, with both ends pinned. Rerun step 1's evidence script if the branch
    or saved evidence changed since collection. Reuse an earlier review only if:
    - The session or saved `.tau/workers/review-*/` files show every worker reported (`reviewer.md`,
-     or `finder.md` and `checker.md`), and no gaps remain besides areas a worker read shallowly.
-     Unstated status is unknown; do not reuse it.
+     or `finder.md` and `checker.md`), and no evidence is unreadable or cut, besides areas a worker
+     read shallowly. Unstated status is unknown; do not reuse it.
    - The script's `reuse.status` is `match` for that review and the current merge base.
    - The script's review freshness passed. A changed head or stale capture blocks reuse, even when
      the branch diff matches. A missing or unknown result is not a pass.
    - Callers and rules outside the capture have no relevant changes.
 
-   When reuse fails and a saved review exists, ask with `ask_user_question`: assess the old review
-   manually, or run a fast rereview. Recommend the manual assessment when the diff since that review
-   is small and touches no caller or rule outside its capture. Otherwise recommend the fast
-   rereview.
-   - Manual assessment: read the saved reports and the diff since them. Record the evidence you
-     inspected and your judgment in the session report. Never report the assessment as a tool match
-     or as fresh. Missing required review evidence stays a required action in step 6.
+   When reuse fails and a saved review exists, ask with `ask_user_question`: assess the saved
+   reviews manually, or run a fast rereview. Recommend the manual assessment when the diff since the
+   newest review is small and touches no caller or rule outside its capture. Otherwise recommend the
+   fast rereview.
+   - Manual assessment: read every saved review the chain needs, such as the full review and each
+     later fix review, and the diff since the newest one. The evidence script gets only the newest
+     `.tau/workers/review-*` directory, so read the earlier reports from their saved paths. Record
+     the evidence you inspected and your judgment in the session report. Never report the assessment
+     as a tool match or as fresh. Missing required review evidence stays a required action in
+     step 6.
 
-   Otherwise, or when the user chooses the fast rereview, run the
+   When no saved review exists, or when the user chooses the fast rereview, run the
    [code-review skill](../code-review/SKILL.md) in fast mode on the range. If the skill or worker
-   tools are missing, report a gap; do not review in their place. Follow that skill's ownership,
-   fix, and approval flow.
+   tools are missing, that is missing review coverage: a required action in step 6. Do not review in
+   their place. Follow that skill's ownership, fix, and approval flow.
 
 5. Run checks. Rerun the evidence script first. Reuse a required pre-merge check only when the
    script lists its log as matching and reading its result shows it passed. The full check is the
@@ -144,7 +147,8 @@ to ready. Neither choice completes a required action.
    - When the repository has a configured full check, read `fullCheck` from the evidence script.
      When it is `passed`, reuse it. When it is `failed`, `missing`, or `malformed`, run the
      `full_check` tool. Then rerun the evidence script, and report any `fullCheck` status other than
-     `passed` as a gap. The log stays in `.tau/checks/`; do not copy it or add header lines.
+     `passed` as a required action for step 6. The log stays in `.tau/checks/`; do not copy it or
+     add header lines.
    - When the change has user-visible behavior, also send it to a `qa` worker on the committed tree
      before the preview.
    - Leave the app URL, test account, and data writes to Tau, which fills them from the user's
@@ -163,19 +167,23 @@ to ready. Neither choice completes a required action.
      covered: it changes only what its finding or failing check needs, and the checks that cover it
      passed after it.
    - A concrete risk that this change introduced, exposed, or worsened. An open finding is one, and
-     so is user-visible behavior that QA did not test or found failing.
-   - An audit item with the verdict not met or not run. It closes when a check that step 5 ran
-     passes for it. A deferred item is not a required action.
+     so is user-visible behavior that QA found failing.
+   - An audit item with the verdict not met or not run, and each uncovered item of a missing or old
+     audit. It closes when a check that step 5 ran passes for it. A deferred item is not a required
+     action.
 
    These alone do not establish a required action: a coverage number, a missing assertion, an
    untested platform, or a record-format mismatch. Missing evidence for a promised behavior can
    still require a test or review, without a reproduced defect.
 
-   An unrelated pre-existing issue is not a required action. An accepted follow-up is not one
-   either, but only when it waives no promised behavior or mandatory check. A finding closes when
-   its fix is checked as above or reviewed again, or when the user dismisses it as not a defect.
-   Record the dismissal reason in the session report. Deferred, Blocked, or unfixed findings stay
-   open unless the user accepts them as such a follow-up.
+   An unrelated pre-existing issue is not a required action. A pre-existing issue counts as exposed
+   only when this change makes it newly reachable or worsens its effect. A new entry point to the
+   same existing behavior does not count; mention it as a plain limitation when it affects use,
+   otherwise in the session report. An accepted follow-up is not one either, but only when it waives
+   no promised behavior or mandatory check. A finding closes when its fix is checked as above or
+   reviewed again, or when the user dismisses it as not a defect. Record the dismissal reason in the
+   session report. Deferred, Blocked, or unfixed findings stay open unless the user accepts them as
+   such a follow-up.
 
    Areas a worker read shallowly are session-report notes, not required actions. Accept checked
    fixes without asking, and list them in the session report. If other post-review commits make
@@ -215,8 +223,8 @@ to ready. Neither choice completes a required action.
      types.
    - Code names: use one only where a reviewer must search for it, such as a flag, an environment
      variable, or a route. Explain it at first use. Never put one in the lead.
-   - Unfinished work: when the PR adds code that nothing uses yet, say what stays disconnected. Name
-     the follow-up ticket only when it exists. Never promise a delivery time.
+   - Unfinished work: when the PR adds code that nothing uses yet, say what stays disconnected. Link
+     any follow-up ticket in Verification. Never promise a delivery time.
    - Decisions: optional. List only consequential choices, each with the option you rejected and
      why. Put code-local reasons in a code comment allowed by the coding rules, or in a commit
      message. Leave draft upstream issues and similar attachments out of the body.
@@ -227,9 +235,10 @@ to ready. Neither choice completes a required action.
      machinery, such as React StrictMode, or setup only when a reviewer needs it to judge coverage
      or repeat a check. Give one line to the review result. Add a `[ ]` line only for each required
      action that step 6 left open, with its action and completion condition. Write decision-relevant
-     limitations as plain lines, and accepted follow-ups as links. Bookkeeping, record matching, and
-     unrelated issues go to the session report. Drop test counts. List deferred audit items under
-     the template's deferred verification section, such as `##### Deferred verification`.
+     limitations as plain lines, then accepted follow-ups as links, in the template's Limitations
+     and follow-up slots. Bookkeeping, record matching, and unrelated issues go to the session
+     report. Drop test counts. List deferred audit items under the template's deferred verification
+     section, such as `##### Deferred verification`.
    - Issues: link Linear tickets as the [tracker skill](../tracker/SKILL.md) says. For other issues,
      use `Fixes <issue>` only for issues this PR completes; use `Related to <issue>` for others.
    - Repository template: apply the same rules inside it. Map the lead, context, parts, decisions,
@@ -239,7 +248,7 @@ to ready. Neither choice completes a required action.
      template's own checklist items as the template has them; the required-action rule covers only
      the verification lines this skill adds. Never state one fact in two sections.
    - Keep SHAs, worker names, local paths, and everything step 8 lists for the session report out of
-     the body, except the verification outcomes and gaps above.
+     the body, except the verification outcomes and required actions above.
    - Self-review comments: optional, and most PRs have none. Draft an inline comment only for a hunk
      that looks wrong but is deliberate, or where a reviewer would likely suggest an alternative
      that was rejected for a reason the diff cannot show. Never draft a routine explanation, a
@@ -261,7 +270,8 @@ to ready. Neither choice completes a required action.
    - Include the session report: commits made, comment removals, review and check sources, review
      history, reviewed commits, fixes accepted without a new review and what each fixes, rebase
      notes, machine-local failures that do not block relevant coverage, reviewer notes, dismissed
-     findings with their reasons, and gaps.
+     findings with their reasons, every open required action with its basis, next action, and
+     completion condition, and evidence that could not be read or was cut.
    - For a self-review, show the review's top-level body and each comment's text, file, line, and
      the head SHA it anchors to. A change to the body, a text, or an anchor needs a new preview,
      unless the user's answer named that exact change and you apply it as stated. The anchor's side

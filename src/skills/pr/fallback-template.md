@@ -13,7 +13,7 @@ Optional parts list:
 
 - A behavior in plain words, and its effect for the user or reviewer.
 
-Optional: what stays disconnected, and the follow-up ticket when it exists.
+Optional: what stays disconnected.
 
 #### Decisions
 
@@ -30,6 +30,10 @@ skill.
 Limitations, only when they affect reviewing, using, or deploying this change:
 
 - A limitation in plain words.
+
+Accepted follow-ups, only when a scope decision explains them:
+
+- A link to the follow-up, with the decision it explains.
 
 ##### Deferred verification
 

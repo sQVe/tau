@@ -217,7 +217,9 @@ or Git. Workers then carry out the agent tickets.
       only the code-quality fixes. When its ownership rule finds the slice branch the user's own,
       let the review continue into fixing its findings without asking. This applies to a reused
       branch too.
-    - Then audit the slice with the [finish-slice skill](../finish-slice/SKILL.md).
+    - Then audit the slice with the [finish-slice skill](../finish-slice/SKILL.md). When that audit
+      created fix agent tickets, delegate each one as the first bullet above says, then audit again.
+      Items still not met go on to the pr skill, which shows them as required actions.
     - Then open the PR with the [pr skill](../pr/SKILL.md). Link the slice from the PR as the
       tracker skill says.
 
