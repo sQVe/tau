@@ -75,8 +75,8 @@ changing and within the requested scope. Explain the rest.
    - After the safe fixes, ask about the held findings in one `ask_user_question` call, with one
      question per finding: fix it in this branch, or file a follow-up ticket. Give the size and risk
      of each fix. Recommend fixing it in this branch, except when code outside the repository uses
-     the contract it changes; then recommend the follow-up ticket. Use a second call only when the
-     tool's question limit forces it.
+     the contract it changes; then recommend the follow-up ticket. When the held findings exceed the
+     tool's question limit, ask the rest in as many further calls as the limit requires.
    - On this branch, fix it, run step 4 again, and report it under Fixed. On follow-up, file the
      ticket with acceptance criteria with the [tracker skill](../tracker/SKILL.md). Keep the finding
      under Blocked, with the ticket identifier in place of what you need to continue.
