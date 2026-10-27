@@ -450,7 +450,6 @@ const importTableRowPattern = /^\| `([^`]+)`\s*\|\s*(.*?)\s*\|$/;
 
 const dependencyListPattern = /^`[^`]+`(, `[^`]+`)*$/;
 
-// Returns undefined for a cell that is neither `nothing` nor a list of backticked names.
 const parseDependencies = (cell: string): string[] | undefined => {
   if (cell === 'nothing') {
     return [];
@@ -463,8 +462,6 @@ const parseDependencies = (cell: string): string[] | undefined => {
   return cell.split(', ').map((item) => item.slice(1, -1));
 };
 
-// Reads the rows of the table under the import table heading. A row outside that section, or a
-// malformed or duplicated row, is reported as a problem instead of being read.
 const parseImportTable = (markdown: string) => {
   const lines = markdown.split('\n');
   const start = lines.indexOf(importTableHeading);
@@ -493,7 +490,6 @@ const parseImportTable = (markdown: string) => {
 
     tableLineCount += 1;
 
-    // The first two table lines are the header and the separator.
     if (tableLineCount <= 2) {
       continue;
     }
