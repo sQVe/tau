@@ -19,7 +19,7 @@ interface IssueInput {
 }
 
 const containerQuery =
-  'query($id: String!) { viewer { id } issue(id: $id) { id identifier title description url state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } team { id key } project { id name } children(first: 100) { pageInfo { hasNextPage } nodes { identifier title description url team { id } subIssueSortOrder assignee { id } creator { id } state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } inverseRelations(first: 100) { pageInfo { hasNextPage } nodes { type issue { identifier } } } } } } }';
+  'query($id: String!) { viewer { id } issue(id: $id) { id identifier title description url assignee { id } creator { id } state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } team { id key } project { id name } children(first: 100) { pageInfo { hasNextPage } nodes { identifier title description url team { id } subIssueSortOrder assignee { id } creator { id } state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } inverseRelations(first: 100) { pageInfo { hasNextPage } nodes { type issue { identifier } } } } } } }';
 
 const issuesQuery =
   'query($filter: IssueFilter!) { issues(first: 50, filter: $filter) { nodes { identifier } } }';
@@ -76,6 +76,8 @@ const containerSchema = Type.Object({
         pageInfo: pageInfoSchema,
         nodes: Type.Array(Type.Object({ url: Type.String() })),
       }),
+      assignee: userSchema,
+      creator: userSchema,
       team: Type.Object({ id: Type.String(), key: Type.String() }),
       project: Type.Union([Type.Object({ id: Type.String(), name: Type.String() }), Type.Null()]),
       children: Type.Object({ pageInfo: pageInfoSchema, nodes: Type.Array(childSchema) }),
@@ -198,6 +200,8 @@ export const readContainer = async (
     title: issue.title,
     description: issue.description ?? '',
     url: issue.url,
+    assignee: issue.assignee?.id ?? null,
+    creator: issue.creator?.id ?? null,
     team: issue.team,
     project: issue.project,
     children,

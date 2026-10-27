@@ -47,6 +47,8 @@ const container = (
   title: 'Container',
   description: 'Design',
   url: '',
+  assignee: null,
+  creator: 'viewer',
   team: { id: 'team', key: 'ME' },
   project: { id: 'project', name: 'Tau' },
   children,
