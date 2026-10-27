@@ -106,8 +106,8 @@ describe('parseShellCommands', () => {
 
   it.each([
     ["echo $'a b'", ['echo', 'a b']],
-    ["echo $'a\\'b'", ['echo', "a\\'b"]],
-    ["echo $'a\\\\' b", ['echo', 'a\\\\', 'b']],
+    ["echo $'a\\'b'", ['echo', "a'b"]],
+    ["echo $'a\\\\' b", ['echo', 'a\\', 'b']],
     ['echo $"a b"', ['echo', 'a b']],
     ['echo $"a $b"', ['echo', 'a $b']],
     ['echo $ b', ['echo', '$', 'b']],
@@ -118,6 +118,30 @@ describe('parseShellCommands', () => {
     ['echo $(a)b', ['echo', '$(a)b']],
   ])('reads dollar forms: %s', (source, expected) => {
     expect(wordsOf(source)?.[0]).toEqual(expected);
+  });
+
+  it.each([
+    ["$'com\\x6dit'", 'commit'],
+    ["$'\\x6'", '\u0006'],
+    ["$'\\x'", '\\x'],
+    ["$'com\\x{6d}it'", 'commit'],
+    ["$'com\\x{06Dit'", 'commit'],
+    ["$'com\\155it'", 'commit'],
+    ["$'\\0'", ''],
+    ["$'\\1555'", 'm5'],
+    ["$'com\\u006dit'", 'commit'],
+    ["$'\\U0001F600'", '\u{1F600}'],
+    ["$'\\cA\\c?'", '\u0001\u007F'],
+    ["$'\\ca\\c1\\c\\\\x'", '\u0001\u0011\u001Cx'],
+    ["$'\\c'", '\\c'],
+    ["$'com\\0x'mit", 'commit'],
+    ["$'com\\x{}x'mit", 'commit'],
+    ["$'\\u'", '\\u'],
+    ["$'\\a\\b\\e\\E\\f\\n\\r\\t\\v'", '\u0007\b\u001B\u001B\f\n\r\t\v'],
+    ["$'\\\\\\'\\\"\\?'", '\\\'"?'],
+    ["$'\\q'", '\\q'],
+  ])('decodes ANSI-C escapes: %s', (source, expected) => {
+    expect(wordsOf(source)).toEqual([[expected]]);
   });
 
   it.each([

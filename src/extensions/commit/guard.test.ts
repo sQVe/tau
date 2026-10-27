@@ -163,10 +163,6 @@ describe('guardToolCall', () => {
     });
   });
 
-  it('allows encoded command names as a known limit of the guidance guard', () => {
-    expect(guardToolCall(makeBashEvent("bash -c $'git\\x20commit -m x'"))).toBeUndefined();
-  });
-
   it('does not block pipe-to-grep patterns mentioning commit', () => {
     expect(guardToolCall(makeBashEvent('git log | grep commit'))).toBeUndefined();
   });
@@ -298,6 +294,9 @@ describe('guardToolCall', () => {
     'cat <<EOF | sh\ngit commit -m x\nEOF',
     'cat <<`EOF`\n$(git commit)\n`EOF`',
     "bash -c $'git commit -m x'",
+    "bash -c $'git\\x20commit -m x'",
+    "git $'com\\x6dit' -m x",
+    "$'g\\x69t' commit -m x",
     'bash -c $"git commit -m x"',
     `git \${x} commit`,
     'git --config-env=alias.ab=NAME status',
@@ -344,6 +343,10 @@ describe('guardToolCall', () => {
     'git -C x status',
   ])('allows data that only mentions git commit: %s', (command) => {
     expect(guardToolCall(makeBashEvent(command))).toBeUndefined();
+  });
+
+  it('allows ANSI-C quoted text without a commit', () => {
+    expect(guardToolCall(makeBashEvent("echo $'a\\tb'"))).toBeUndefined();
   });
 
   it('blocks git commit in backticks inside an unquoted heredoc body', () => {

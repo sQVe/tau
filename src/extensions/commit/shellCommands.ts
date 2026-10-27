@@ -23,6 +23,74 @@ const blankCharacters = new Set([' ', '\t']);
 const separatorCharacters = new Set([';', '&', '|', '\n', '(', ')']);
 const longestRedirection = '<<<';
 
+const ansiCCharacters: Record<string, string> = {
+  a: '\u0007',
+  b: '\b',
+  e: '\u001B',
+  E: '\u001B',
+  f: '\f',
+  n: '\n',
+  r: '\r',
+  t: '\t',
+  v: '\v',
+  '\\': '\\',
+  "'": "'",
+  '"': '"',
+  '?': '?',
+};
+
+// Groups: a numeric escape, the character after `\c`, or any other escaped character.
+const ansiCEscape =
+  /\\(?:(x\{[\dA-Fa-f]*\}?|x[\dA-Fa-f]{1,2}|u[\dA-Fa-f]{1,4}|U[\dA-Fa-f]{1,8}|[0-7]{1,3})|c(\\\\|.)|(.))/gsu;
+
+const octalRadix = 8;
+const hexRadix = 16;
+const byteMask = 0xff;
+const controlMask = 0x1f;
+const deleteCode = 0x7f;
+
+const decodeAnsiCNumber = (code: string): string => {
+  if (/^[0-7]/u.test(code)) {
+    return String.fromCodePoint(Number.parseInt(code, octalRadix) & byteMask);
+  }
+
+  const digits = code.slice(1).replaceAll(/[{}]/gu, '');
+  const value = Number.parseInt(`0${digits}`, hexRadix);
+
+  return String.fromCodePoint(code.startsWith('x') ? value & byteMask : value);
+};
+
+const decodeAnsiCControl = (character: string): string => {
+  const code = character === '?' ? deleteCode : character.charCodeAt(0) & controlMask;
+
+  return String.fromCodePoint(code);
+};
+
+const decodeAnsiCEscape = (
+  escape: string,
+  number: string | undefined,
+  control: string | undefined,
+  other: string | undefined,
+): string => {
+  if (number !== undefined) {
+    return decodeAnsiCNumber(number);
+  }
+
+  if (control !== undefined) {
+    return decodeAnsiCControl(control);
+  }
+
+  return ansiCCharacters[other ?? ''] ?? escape;
+};
+
+// Decode the body of `$'...'` as Bash does. A NUL character ends the string, so Bash drops the
+// rest of the body.
+const decodeAnsiCText = (body: string): string => {
+  const decoded = body.replaceAll(ansiCEscape, decodeAnsiCEscape);
+
+  return decoded.split('\u0000', 1)[0] ?? '';
+};
+
 // Split shell source into simple commands after quote removal. Commands inside `$(...)`,
 // backticks, process substitutions, and expanding heredoc bodies are listed as well, because the
 // shell runs them. Parameter expansions stay unexpanded, and substitutions keep their source text.
@@ -299,7 +367,7 @@ class ShellParser {
 
     this.position += 1;
 
-    return this.source.slice(start, this.position - 1);
+    return decodeAnsiCText(this.source.slice(start, this.position - 1));
   }
 
   private readBacktick(): string {
