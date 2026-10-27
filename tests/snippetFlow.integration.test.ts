@@ -44,15 +44,15 @@ const shippedSnippets = resolve(import.meta.dirname, '../src/extensions/snippets
 const enter = '\r';
 const historyPrevious = '\u001B[A';
 
-const interviewBody = async () => {
+const babysitBody = async () => {
   const snippets = await loadSnippets(shippedSnippets);
-  const interview = snippets.find((snippet) => snippet.id === 'interview');
+  const babysit = snippets.find((snippet) => snippet.id === 'babysit');
 
-  if (interview === undefined) {
-    throw new Error('The shipped interview snippet is missing.');
+  if (babysit === undefined) {
+    throw new Error('The shipped babysit snippet is missing.');
   }
 
-  return interview.body;
+  return babysit.body;
 };
 
 // A custom UI context makes Pi report hasUI=true. Like Pi's interactive mode, it wraps the base
@@ -196,9 +196,9 @@ it('sends exactly the editor text after a snippet is picked and recalls it from 
 }) => {
   const harness = await createHarness(onTestFinished);
   const contexts = recordReplies(harness.faux, 1);
-  const shown = `Add the retry policy\n\n${await interviewBody()}`;
+  const shown = `Add the retry policy\n\n${await babysitBody()}`;
 
-  harness.type('Add the retry policy #interview');
+  harness.type('Add the retry policy #babysit');
 
   await vi.waitFor(() => {
     expect(harness.isShowingAutocomplete()).toBe(true);
@@ -222,9 +222,9 @@ it('sends a typed snippet id as plain text', async ({ onTestFinished }) => {
   const { session, faux } = await createHarness(onTestFinished);
   const contexts = recordReplies(faux, 1);
 
-  await session.prompt('Add the retry policy #interview');
+  await session.prompt('Add the retry policy #babysit');
 
-  expect(contexts.map(promptTextOf)).toEqual(['Add the retry policy #interview']);
+  expect(contexts.map(promptTextOf)).toEqual(['Add the retry policy #babysit']);
 });
 
 // Pi's renderInitialMessages adds the text of each user message to history.

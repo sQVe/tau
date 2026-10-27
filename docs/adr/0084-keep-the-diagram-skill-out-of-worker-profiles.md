@@ -8,7 +8,7 @@
 
 The `diagram` skill draws Mermaid diagrams. Pi renders only top-level `mermaid` blocks in assistant
 replies, and GitHub renders them in pull requests and documents. Skills that explain structure, such
-as `slice` and `pr`, and the `explain` and `simplify` snippets now ask for diagrams.
+as `slice` and `pr`, and the `explain` snippet now ask for diagrams.
 
 A worker report reaches the manager as notice text. Mermaid in that text does not render, so the
 user would see raw source.
