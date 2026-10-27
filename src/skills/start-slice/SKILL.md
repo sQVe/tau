@@ -103,9 +103,9 @@ or Git. Workers then carry out the agent tickets.
    linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title description team { key } project { name } } } } }' --variable id=<slice>
    ```
 
-   Linear holds the body of each agent ticket that exists. When the body file of a ticket that
-   `start.json` records is missing or differs, save its description as the body file, so the worker
-   gets the same task as the ticket.
+   When the body file of a ticket that `start.json` records is missing, save the ticket's
+   description as the body file. Keep a body file that differs from the description: it holds edits
+   that never reached Linear, and the `start_slice` tool sends them in step 9.
 
 4. Choose the base. Run `git fetch origin`, then find the remote's default branch.
    `git symbolic-ref --short refs/remotes/origin/HEAD` prints it with the remote prefix, such as
