@@ -16,8 +16,10 @@ import type { WatchOutcome } from './watchOutcome.js';
 type WatchContext = Pick<ExtensionContext, 'cwd' | 'isIdle' | 'signal'>;
 
 interface Watch {
-  url: string;
+  // Undefined until the resolve read returns.
+  url: string | undefined;
   context: WatchContext;
+  deadline: number;
   reads: AbortController;
   pollTimer: ReturnType<typeof setTimeout> | undefined;
   deadlineTimer: ReturnType<typeof setTimeout> | undefined;
@@ -41,12 +43,12 @@ const autoMergeRequests = (event: ToolResultEvent): AutoMergeRequest[] => {
   return typeof command === 'string' ? parseAutoMergeRequests(command) : [];
 };
 
-const readOutcome = async (exec: Exec, watch: Watch) => {
+const readOutcome = async (exec: Exec, watch: Watch, url: string) => {
   const runtime = { exec, cwd: watch.context.cwd, signal: watch.reads.signal };
 
   const [pullRequest, checks] = await Promise.all([
-    readPullRequestState(runtime, watch.url),
-    readRequiredChecks(runtime, watch.url),
+    readPullRequestState(runtime, url),
+    readRequiredChecks(runtime, url),
   ]);
 
   return decideWatchOutcome({ pullRequest, checks });
@@ -59,31 +61,34 @@ const stop = (watch: Watch) => {
 };
 
 export const createMergeWatches = (exec: Exec, deliver: Deliver): MergeWatches => {
-  const watches = new Map<string, Watch>();
-  let session = new AbortController();
+  const watches = new Set<Watch>();
 
-  const settle = (watch: Watch, outcome: WatchOutcome): boolean => {
+  const end = (watch: Watch) => {
+    stop(watch);
+    watches.delete(watch);
+  };
+
+  const settle = (watch: Watch, url: string, outcome: WatchOutcome): boolean => {
     if (outcome.kind === 'waiting') {
       return true;
     }
 
-    stop(watch);
-    watches.delete(watch.url);
-    deliver(watch.context, describeWatchOutcome(watch.url, outcome));
+    end(watch);
+    deliver(watch.context, describeWatchOutcome(url, outcome));
 
     return false;
   };
 
-  const schedule = (watch: Watch, deadline: number) => {
-    if (Date.now() + pollInterval >= deadline) {
+  const schedule = (watch: Watch, url: string) => {
+    if (Date.now() + pollInterval >= watch.deadline) {
       return;
     }
 
     const poll = async () => {
-      const outcome = await readOutcome(exec, watch);
+      const outcome = await readOutcome(exec, watch, url);
 
-      if (!watch.reads.signal.aborted && settle(watch, outcome)) {
-        schedule(watch, deadline);
+      if (!watch.reads.signal.aborted && settle(watch, url, outcome)) {
+        schedule(watch, url);
       }
     };
 
@@ -93,28 +98,44 @@ export const createMergeWatches = (exec: Exec, deliver: Deliver): MergeWatches =
     }, pollInterval);
   };
 
-  const start = async (context: WatchContext, request: AutoMergeRequest) => {
-    const { signal } = session;
-    const url = await resolvePullRequest({ exec, cwd: context.cwd, signal }, request);
+  const isWatched = (url: string) => [...watches].some((watch) => watch.url === url);
 
-    if (url === undefined || signal.aborted || watches.has(url)) {
+  // The time limit runs from before the resolve read, so a resolve that never returns is aborted too.
+  const start = async (context: WatchContext, request: AutoMergeRequest) => {
+    const expire = () => {
+      if (watch.url === undefined) {
+        end(watch);
+      } else {
+        settle(watch, watch.url, { kind: 'deadline' });
+      }
+    };
+
+    const watch: Watch = {
+      url: undefined,
+      context,
+      deadline: Date.now() + watchDuration,
+      reads: new AbortController(),
+      pollTimer: undefined,
+      deadlineTimer: setTimeout(expire, watchDuration),
+    };
+
+    watches.add(watch);
+
+    const runtime = { exec, cwd: context.cwd, signal: watch.reads.signal };
+    const url = await resolvePullRequest(runtime, request);
+
+    if (watch.reads.signal.aborted) {
       return;
     }
 
-    const watch: Watch = {
-      url,
-      context,
-      reads: new AbortController(),
-      pollTimer: undefined,
-      deadlineTimer: undefined,
-    };
+    if (url === undefined || isWatched(url)) {
+      end(watch);
 
-    watch.deadlineTimer = setTimeout(() => {
-      settle(watch, { kind: 'deadline' });
-    }, watchDuration);
+      return;
+    }
 
-    watches.set(url, watch);
-    schedule(watch, Date.now() + watchDuration);
+    watch.url = url;
+    schedule(watch, url);
   };
 
   return {
@@ -125,14 +146,9 @@ export const createMergeWatches = (exec: Exec, deliver: Deliver): MergeWatches =
       }
     },
     stopAll: () => {
-      session.abort();
-      session = new AbortController();
-
-      for (const watch of watches.values()) {
-        stop(watch);
+      for (const watch of watches) {
+        end(watch);
       }
-
-      watches.clear();
     },
   };
 };

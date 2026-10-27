@@ -228,6 +228,33 @@ it('starts no watcher for a pull request resolved after session shutdown', async
   expect(polls()).toHaveLength(0);
 });
 
+it('aborts a resolve read that never finishes at the time limit', async () => {
+  const { fake, handlers, execFake, runBash } = setup();
+
+  handlers.resolve = () => Promise.withResolvers<ExecResult>().promise;
+  await runBash('gh pr merge --auto');
+  await vi.advanceTimersByTimeAsync(2 * hours - 1);
+
+  expect(execFake.calls[0]?.signal?.aborted).toBe(false);
+
+  await vi.advanceTimersByTimeAsync(1);
+
+  expect(execFake.calls[0]?.signal?.aborted).toBe(true);
+  expect(fake.sendMessage).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('aborts a pending resolve read at session shutdown', async () => {
+  const { handlers, execFake, runBash, emit } = setup();
+
+  handlers.resolve = () => Promise.withResolvers<ExecResult>().promise;
+  await runBash('gh pr merge --auto');
+  await emit('session_shutdown', { reason: 'quit' });
+
+  expect(execFake.calls[0]?.signal?.aborted).toBe(true);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
 it('keeps one watcher when auto-merge runs again on a watched pull request', async () => {
   const { fake, handlers, runBash, polls } = setup();
 
