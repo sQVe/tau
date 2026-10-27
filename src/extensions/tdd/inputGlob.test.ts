@@ -64,6 +64,7 @@ it.each([
   { globs: ['src/**/*.ts'], excludes: ['src'], path: 'src/a.ts', input: false },
   { globs: ['**/*.ts'], excludes: ['src/a'], path: 'src/a/b/c.ts', input: false },
   { globs: ['**/*.ts'], excludes: ['src/a'], path: 'src/ab/c.ts', input: true },
+  { globs: ['src/**'], excludes: ['src/a/**'], path: 'src/a', input: true },
   { globs: ['**/*.ts'], excludes: ['**/a.ts'], path: 'src/a.ts', input: false },
   { globs: ['.hidden/**/*.ts'], excludes: [], path: '.hidden/value.ts', input: true },
   { globs: ['.hidden/**/*.ts'], excludes: ['**/*.ts'], path: '.hidden/value.ts', input: false },
