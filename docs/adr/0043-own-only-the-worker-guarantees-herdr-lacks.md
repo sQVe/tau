@@ -9,7 +9,8 @@
 [ADR 0032 (Run Claude workers through a parent-owned channel)](./README.md#retired),
 [ADR 0033 (Use one generic native worker workflow)](./README.md#retired),
 [ADR 0037 (Launch native workers without parent approval)](./README.md#retired),
-[ADR 0040 (Release undispatched follow-up claims after confirmed cleanup)](./README.md#retired),
+[ADR 0040 (Release undispatched follow-up claims after confirmed cleanup)](./README.md#retired), the
+worker record location in
 [ADR 0045 (Keep worker records per Tau checkout and worktree files in `.tau/`)](./README.md#retired),
 [ADR 0050 (Split worker control into a coordinator and one controller per worker)](./README.md#retired),
 [ADR 0054 (Show one foreground worker per parent)](./README.md#retired),
