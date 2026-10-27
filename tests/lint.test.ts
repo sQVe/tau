@@ -223,20 +223,13 @@ it('keeps private controller files out of the rest of the subagents extension', 
     ].join('\n'),
   );
 
-  const result = spawnSync('pnpm', ['lint', directory], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: 20_000,
-  });
-
-  const diagnostics = result.stdout
-    .split('\n')
-    .filter((line) => line.includes('no-restricted-imports'));
+  const { result, diagnostics } = lintModuleBoundaries([join(directory, 'probe.ts')]);
 
   expect(result.error).toBeUndefined();
   expect(result.status).toBe(1);
   expect(diagnostics).toHaveLength(1);
-  expect(diagnostics[0]).toContain("'../controller/stop.js'");
+  expect(diagnostics[0]).toContain('probe.ts:4:1: error tau(module-boundaries)');
+  expect(diagnostics[0]).toContain('private file "stop"');
 }, 30_000);
 
 it('ignores an unrelated src folder above the project root', async ({ onTestFinished }) => {

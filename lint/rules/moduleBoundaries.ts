@@ -55,6 +55,15 @@ export const moduleList: readonly ModuleDeclaration[] = [
       'extensions/subagents/controller/record',
     ],
   },
+  {
+    name: 'extensions/tdd/runner',
+    entry: 'extensions/tdd/runner/vitest',
+    publicFiles: [
+      'extensions/tdd/runner/retention',
+      'extensions/tdd/runner/types',
+      'extensions/tdd/runner/vitest',
+    ],
+  },
   { name: 'fileLock', entry: 'fileLock/fileLock', publicFiles: [] },
   { name: 'git', entry: 'git', publicFiles: [] },
   {
