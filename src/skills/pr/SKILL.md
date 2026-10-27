@@ -183,11 +183,13 @@ user chose. Step 6 suggests a status; the user may publish as ready while gaps a
      in the body, such as "Every production caller passes `context.ui`".
    - Lead: one bold sentence, led by the PR type. A feature says what the user gets. A bug fix gives
      the symptom, then the cause. A refactor says "no behavior change" and why. A tooling change
-     says what a developer can now do. State a scope limit only where a reader would assume more,
-     such as "It adds no UI and makes no AI call." Then one or two sentences on the cause or
-     constraint the diff cannot show. Add a concrete example, such as "my overdue high-priority
-     items", only when it makes the purpose clearer. Do not force a user story. Give each unrelated
-     change one line.
+     says what a developer can now do.
+   - Context: after the lead, one or two sentences on the cause or constraint the diff cannot show.
+   - Scope limits: state one only where a reader would assume more, such as "It adds no UI and makes
+     no AI call."
+   - Example: add a concrete one, such as "my overdue high-priority items", only when it makes the
+     purpose clearer. Do not force a user story.
+   - Unrelated changes: give each one line.
    - Parts: optional, at most four bullets. Each names a behavior in plain words and its effect for
      the user or reviewer. Cut a bullet with no effect. Never list files, functions, hooks, or
      types.
