@@ -117,9 +117,9 @@ to ready. Neither choice completes a required action.
    - Callers and rules outside the capture have no relevant changes.
 
    When reuse fails and a saved review exists, ask with `ask_user_question`: assess the saved
-   reviews manually, or run a fast rereview. Recommend the manual assessment when the diff since the
-   newest review is small and touches no caller or rule outside its capture. Otherwise recommend the
-   fast rereview.
+   reviews manually, or run a fast rereview. Recommend the manual assessment when every worker of
+   those reviews reported, and the diff since the newest is small and touches no outside caller or
+   rule. Otherwise recommend the fast rereview.
    - Manual assessment: read every saved review the chain needs, such as the full review and each
      later fix review, and the diff since the newest one. The evidence script gets only the newest
      `.tau/workers/review-*` directory, so read the earlier reports from their saved paths. Record
