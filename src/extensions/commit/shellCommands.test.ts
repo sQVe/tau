@@ -117,6 +117,8 @@ describe('parseShellCommands', () => {
     ['echo a$', ['echo', 'a$']],
     [`echo \${a:-commit}`, ['echo', `\${a:-commit}`]],
     [`echo \${a}b`, ['echo', `\${a}b`]],
+    [`echo \${a:-$'\\x41'}`, ['echo', `\${a:-A}`]],
+    [`echo "\${a:-$'b'}"`, ['echo', `\${a:-$'b'}`]],
     ['echo $(a)b', ['echo', '$(a)b']],
   ])('reads dollar forms: %s', (source, expected) => {
     expect(wordsOf(source)?.[0]).toEqual(expected);

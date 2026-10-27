@@ -136,7 +136,9 @@ class ShellParser {
   }
 
   // Read text with double-quote rules until `terminator`, or to the end when it is undefined.
-  readExpandingText(terminator: string | undefined): string {
+  // `dollarQuotes` is false inside double quotes and heredoc bodies, where `$'` and `$"` are plain
+  // text.
+  readExpandingText(terminator: string | undefined, dollarQuotes: boolean): string {
     let text = '';
 
     while (this.position < this.source.length) {
@@ -151,7 +153,7 @@ class ShellParser {
       if (character === '\\') {
         text += this.readDoubleQuotedEscape();
       } else if (character === '$') {
-        text += this.readExpandingDollar();
+        text += this.readExpandingDollar(dollarQuotes);
       } else if (character === '`') {
         text += this.readBacktick();
       } else {
@@ -220,11 +222,11 @@ class ShellParser {
     if (character === '"') {
       this.position += 1;
 
-      return { text: this.readExpandingText('"'), quoted: true };
+      return { text: this.readExpandingText('"', false), quoted: true };
     }
 
     if (character === '$') {
-      return this.readDollar();
+      return this.readDollar(true);
     }
 
     if (character === '`') {
@@ -329,19 +331,20 @@ class ShellParser {
     return text;
   }
 
-  private readExpandingDollar(): string {
+  private readExpandingDollar(dollarQuotes: boolean): string {
     const next = this.source.charAt(this.position + 1);
+    const startsQuote = next === "'" || next === '"';
 
-    if (next === "'" || next === '"') {
+    if (startsQuote && !dollarQuotes) {
       this.position += 1;
 
       return '$';
     }
 
-    return this.readDollar().text;
+    return this.readDollar(dollarQuotes).text;
   }
 
-  private readDollar(): { text: string; quoted: boolean } {
+  private readDollar(dollarQuotes: boolean): { text: string; quoted: boolean } {
     const start = this.position;
     const next = this.source[this.position + 1];
 
@@ -354,7 +357,7 @@ class ShellParser {
     }
 
     if (next === '{') {
-      return { text: `\${${this.readExpandingText('}')}}`, quoted: false };
+      return { text: `\${${this.readExpandingText('}', dollarQuotes)}}`, quoted: false };
     }
 
     if (next === "'") {
@@ -362,7 +365,7 @@ class ShellParser {
     }
 
     if (next === '"') {
-      return { text: this.readExpandingText('"'), quoted: true };
+      return { text: this.readExpandingText('"', false), quoted: true };
     }
 
     this.position = start + 1;
@@ -457,7 +460,7 @@ class ShellParser {
       if (heredoc.expands) {
         const bodyParser = new ShellParser(body);
 
-        bodyParser.readExpandingText(undefined);
+        bodyParser.readExpandingText(undefined, false);
         this.commands.push(...bodyParser.commands);
       }
     }

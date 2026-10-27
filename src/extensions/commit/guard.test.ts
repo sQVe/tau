@@ -300,6 +300,7 @@ describe('guardToolCall', () => {
     "echo $'\\U00110000'; git $'com\\x6dit' -m x",
     'echo "$\'$(git commit -m x)\'"',
     "cat <<EOF\n$'$(git commit -m x)'\nEOF",
+    `echo "\${x:-$'$(git commit -m x)'}"`,
     'bash -c $"git commit -m x"',
     `git \${x} commit`,
     'git --config-env=alias.ab=NAME status',
@@ -344,6 +345,7 @@ describe('guardToolCall', () => {
     'git -c alias.commit=status status',
     'commit git status',
     'git -C x status',
+    `echo \${x:-$'$(git commit)'}`,
   ])('allows data that only mentions git commit: %s', (command) => {
     expect(guardToolCall(makeBashEvent(command))).toBeUndefined();
   });
