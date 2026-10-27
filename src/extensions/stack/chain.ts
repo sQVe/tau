@@ -50,7 +50,7 @@ const parseRequest = (request: ChainRequest) => {
   for (const reference of [...references, ...(slice === undefined ? [] : [slice])]) {
     if (!sameRepository(first, reference)) {
       throw new Error(
-        `Pull request ${reference.number} is not in ${first.host}/${first.owner}/${first.name}. Pass pull requests of one repository.`,
+        `Pull request ${reference.number} is not in ${formatRepository(first)}. Pass pull requests of one repository.`,
       );
     }
   }
