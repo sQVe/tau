@@ -39,7 +39,6 @@ const ansiCCharacters: Record<string, string> = {
   '?': '?',
 };
 
-// Groups: a numeric escape, the character after `\c`, or any other escaped character.
 const ansiCEscape =
   /\\(?:(x\{[\dA-Fa-f]*\}?|x[\dA-Fa-f]{1,2}|u[\dA-Fa-f]{1,4}|U[\dA-Fa-f]{1,8}|[0-7]{1,3})|c(\\\\|.)|(.))/gsu;
 
@@ -83,8 +82,6 @@ const decodeAnsiCEscape = (
   return ansiCCharacters[other ?? ''] ?? escape;
 };
 
-// Decode the body of `$'...'` as Bash does. A NUL character ends the string, so Bash drops the
-// rest of the body.
 const decodeAnsiCText = (body: string): string => {
   const decoded = body.replaceAll(ansiCEscape, decodeAnsiCEscape);
 
