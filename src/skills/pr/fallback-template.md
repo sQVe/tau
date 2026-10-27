@@ -25,10 +25,11 @@ skill.
 
 - [x] A check or scenario that ran, and the behavior it exercised.
 - [x] The review result, in one line.
-- [ ] Untested: a behavior the checks and review did not cover, with why.
-- [ ] Failed or not run: a required check, with what failed or why it is missing.
-- [ ] Open finding: a review finding that is not closed, with what it is.
-- [ ] Fixes after the review were not reviewed, only when this changes confidence.
+- [ ] <Required action>. Done when <completion condition>.
+
+Limitations, only when they affect reviewing, using, or deploying this change:
+
+- A limitation in plain words.
 
 ##### Deferred verification
 
