@@ -158,10 +158,10 @@ or Git. Workers then carry out the agent tickets.
    new ticket with the profile's default model. Brief each scout with the path of its body file and
    the tree from step 5, and the plan questions in the
    [structure criteria](../code-quality/structure-criteria.md). Tell it to read its body file with
-   `read` and the files the ticket names with `git show <tree>:<path>`. Tell it to search the tree
-   with `git grep` and `git ls-tree` for an existing helper the ticket does not name. It lists each
-   question it would ask before starting the work, and its answers to the plan questions for the
-   ticket's files, or says it has none.
+   `read` and the files the ticket names with `git show <tree>:<path>`. Tell it to search that tree
+   with `git grep <pattern> <tree>` and `git ls-tree -r --name-only <tree>` for an existing helper
+   the ticket does not name. It lists each question it would ask before starting the work, and its
+   answers to the plan questions for the ticket's files, or says it has none.
    - For each question, revise the body file to answer it, or proceed when the ticket or the code
      already answers it. The scout's answer never blocks the start.
    - For each plan answer that names a helper or file the ticket does not, revise its `## Files`
