@@ -14,9 +14,7 @@ export type TrackerSetup =
   | { status: 'invalid'; message: string }
   | { status: 'read'; agentTeam: string | undefined; route: TrackerRoute | undefined };
 
-// Team keys and project names become part of prompt lines, so neither may hold a line break.
 const teamKeyPattern = /^\S+$/u;
-// Control characters and the Unicode line and paragraph separators all break a line.
 const projectPattern = /^[^\p{Cc}\p{Zl}\p{Zp}]+$/u;
 
 const rejectSliceKey = (location: ConfigLocation): void => {
@@ -44,7 +42,6 @@ const readTeamKey = (source: string, field: string, value: unknown): string => {
     );
   }
 
-  // Linear stores team keys in upper case, and its key filters compare case-sensitively.
   return value.toUpperCase();
 };
 
@@ -91,8 +88,6 @@ const readAgentTeam = (source: string, section: Record<string, unknown>): string
   return readTeamKey(source, 'tracker.agentTeam', section.agentTeam);
 };
 
-// The tracker names Linear teams the manager writes to, so only the user file may set it. Only the
-// entry for `repository`, the checkout's own repository, is read.
 const readTrackerConfig = (
   location: ConfigLocation,
   ui: ConfigWarnings,
@@ -120,7 +115,6 @@ const readTrackerConfig = (
   };
 };
 
-// Prompt building cannot report an error, so an invalid config becomes a fact the prompt states.
 export const readTrackerSetup = (
   location: ConfigLocation,
   ui: ConfigWarnings,

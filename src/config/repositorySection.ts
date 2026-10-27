@@ -7,7 +7,6 @@ import { findRepositoryEntry } from './repositoryEntry.js';
 export interface RepositorySectionReader<Entry> {
   // The user-only config key that holds the section, such as `qa`.
   key: string;
-  // Known keys beside `repositories` in the section, such as `agentTeam`.
   knownSectionKeys?: KnownKeys;
   knownEntryKeys: KnownKeys;
   // An example section body for the "must be an object" error.
@@ -18,19 +17,13 @@ export interface RepositorySectionReader<Entry> {
 }
 
 export interface RepositorySection<Entry> {
-  // The user config file the section came from, named in errors.
   source: string;
-  // The checked section, including keys beside `repositories`.
   section: Record<string, unknown>;
-  // Undefined when no entry names the repository.
   entry: Entry | undefined;
 }
 
 const repositoryKeyPattern = /^[^\s/]+\/[^\s/]+$/u;
 
-// Reads the section of the user file keyed by owner/name, and the entry for `repository` in it.
-// Entries for other repositories are never read. Resolves undefined when the user file has no such
-// section.
 export const readRepositorySection = <Entry>(
   location: ConfigLocation,
   ui: ConfigWarnings,

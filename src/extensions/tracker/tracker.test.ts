@@ -15,7 +15,6 @@ const addOrigin = async (directory: string, originUrl: string) => {
   await promisify(execFile)('git', ['remote', 'add', 'origin', originUrl], { cwd: directory });
 };
 
-// Starts a manager session in a checkout whose user tau.json holds `user`, and returns the prompt.
 const sessionPrompt = async (
   onTestFinished: (cleanup: () => void) => void,
   config: { user: unknown; originUrl?: string; inheritedGitDirectory?: string },
