@@ -164,8 +164,8 @@ or Git. Workers then carry out the agent tickets.
    answers to the plan questions for the ticket's files, or says it has none.
    - For each question, revise the body file to answer it, or proceed when the ticket or the code
      already answers it. The scout's answer never blocks the start.
-   - For each plan answer that names a helper or file the ticket does not, revise its `## Files`
-     section.
+   - For each plan answer that changes the ticket's structure, such as a helper to reuse, a file to
+     split, or writes that must succeed together, revise its `## Files` section.
    - After a revision, check the draft again as step 7 says.
    - A ticket with no questions and no plan answer to record goes on to step 9 unchanged.
    - A scout that fails to launch or stops without a report does not stop the start. Its ticket goes
