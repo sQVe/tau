@@ -12,6 +12,11 @@ const brainstorm = readFileSync(
   'utf8',
 );
 
+const startSlice = readFileSync(
+  resolve(import.meta.dirname, '../src/skills/start-slice/SKILL.md'),
+  'utf8',
+);
+
 const lensStart = '## Quality lens\n\n```markdown\n';
 
 const lensBlock = (markdown: string): string => {
@@ -45,4 +50,8 @@ it('links structure-criteria.md for the manager, outside the worker lens', () =>
 
 it('links structure-criteria.md from the brainstorm skill', () => {
   expect(brainstorm).toContain('](../code-quality/structure-criteria.md)');
+});
+
+it('links structure-criteria.md from the start-slice skill', () => {
+  expect(startSlice).toContain('](../code-quality/structure-criteria.md)');
 });
