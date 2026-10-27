@@ -263,7 +263,6 @@ const compileGlobs = (globs: string[]): Pattern[] =>
       alternative.replace(leadingCurrentDirectory, '').split('/').map(compileSegment),
     );
 
-// `**` matches zero or more segments. `first` is the fewest segments it must consume.
 const matchesGlobstar = (
   path: string[],
   first: number,
@@ -280,7 +279,6 @@ const matchesGlobstar = (
   return false;
 };
 
-// Dot segments match like any other segment. A trailing `**` needs at least one segment.
 const matchesSegments = (pattern: Pattern, path: string[]): boolean => {
   const [head, ...rest] = pattern;
 
@@ -318,8 +316,6 @@ const excludesDirectory = (excludes: Pattern[], segments: string[]) =>
 export const closesLoop = (realPath: string, ancestorRealPaths: ReadonlySet<string>): boolean =>
   ancestorRealPaths.has(realPath);
 
-// Builds the decisions of one directory walk. Assumes every glob passed `unsupportedGlobReason`.
-// Dot paths match like any other path, so the walk and classification agree.
 export const createInputRules = (includeGlobs: string[], excludedGlobs: string[]): InputRules => {
   const patterns = compileGlobs(includeGlobs);
   const excludes = compileGlobs(excludedGlobs);
