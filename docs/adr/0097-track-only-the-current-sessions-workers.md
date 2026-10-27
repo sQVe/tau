@@ -3,13 +3,7 @@
 **Date**: 2026-10-09\
 **Status**: Accepted\
 **Supersedes**: the worker history scope in
-[ADR 0045 (Keep worker records per Tau checkout and worktree files in `.tau/`)](./README.md#retired),
-the history recovery guidance in
-[ADR 0073 (Leave manager compaction to Pi)](./0073-leave-manager-compaction-to-pi.md), the history
-tool references in
-[ADR 0078 (Remind managers to compact and restore the worker ledger after each compaction)](./README.md#retired)
-and
-[ADR 0087 (Use codemode to batch or filter evidence within an output budget)](./0087-gather-evidence-with-codemode.md),
+[ADR 0045 (Keep worker records per Tau checkout and worktree files in `.tau/`)](./README.md#retired)
 and the task record retirement policy in
 [ADR 0058 (Run subagents only as Pi workers)](./README.md#retired)\
 **Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
