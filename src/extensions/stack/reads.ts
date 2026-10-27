@@ -1,20 +1,22 @@
 import { Type } from 'typebox';
-import type { Static, TSchema } from 'typebox';
+import type { Static, TArray, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
 import type { CommandRuntime } from '../../command.js';
-import { label } from '../../github/github.js';
+import {
+  incompleteListProblem,
+  label,
+  pullRequestListArguments,
+  runOutcome,
+} from '../../github/github.js';
 import type { Repository } from '../../github/github.js';
 import { formatRepository } from '../../github/repositoryTargetDecisions.js';
 import { describeSchemaProblem } from '../../schema.js';
 import type { PullView } from './chainDecisions.js';
 import { readStacksResponse } from './checkDecisions.js';
 import type { BasedPull, HeadPull, StackedPullRequests, StackViewRead } from './checkDecisions.js';
-import { failedExit, malformedOutput, readFailed, readOk } from './readResult.js';
+import { failedExit, ghCommandOutput, malformedOutput, readFailed, readOk } from './readResult.js';
 import type { CommandOutput, Read } from './readResult.js';
-
-// gh pr list prints at most --limit pull requests and does not say when it left some out.
-const listLimit = 100;
 
 const headPullFields = 'number,url,baseRefName,headRepositoryOwner,headRepository';
 
@@ -64,21 +66,8 @@ const pullViewSchema = Type.Object({
 
 const defaultBranchSchema = Type.Object({ defaultBranchRef: Type.Object({ name: Type.String() }) });
 
-const runGh = async (
-  runtime: CommandRuntime,
-  commandArguments: string[],
-): Promise<CommandOutput> => {
-  const result = await runtime.exec('gh', commandArguments, {
-    cwd: runtime.cwd,
-    ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
-  });
-
-  return {
-    exitCode: result.killed ? null : result.code,
-    stdout: result.stdout,
-    stderr: result.stderr,
-  };
-};
+const readGh = async (runtime: CommandRuntime, commandArguments: string[]) =>
+  ghCommandOutput(await runOutcome(runtime, commandArguments));
 
 export const gitLabel = (commandArguments: readonly string[]): string =>
   ['git', ...commandArguments].join(' ');
@@ -110,27 +99,22 @@ const parseJsonOutput = <Schema extends TSchema>(
   return readOk(parsed);
 };
 
-const listPulls = async <Schema extends TSchema>(
+const listPulls = async <Schema extends TArray>(
   runtime: CommandRuntime,
   commandArguments: string[],
   schema: Schema,
 ): Promise<Read<Static<Schema>>> => {
   const command = label(commandArguments);
-  const read = parseJsonOutput(command, await runGh(runtime, commandArguments), schema);
+  const read = parseJsonOutput(command, await readGh(runtime, commandArguments), schema);
 
-  if (read.ok && Array.isArray(read.value) && read.value.length >= listLimit) {
-    return readFailed(
-      command,
-      `printed ${read.value.length} pull requests, the limit, so the list may be incomplete.`,
-    );
-  }
+  const problem = read.ok ? incompleteListProblem(read.value) : undefined;
 
-  return read;
+  return problem === undefined ? read : readFailed(command, problem);
 };
 
 // Only an exit 0 run has output to read. Any other exit code is a result in itself.
 export const readStackViewFacts = async (runtime: CommandRuntime): Promise<StackViewRead> => {
-  const output = await runGh(runtime, ['stack', 'view', '--json']);
+  const output = await readGh(runtime, ['stack', 'view', '--json']);
 
   if (output.exitCode !== 0) {
     return { exitCode: output.exitCode, view: null };
@@ -146,20 +130,12 @@ export const readHeadPulls = (
 ): Promise<Read<HeadPull[]>> =>
   listPulls(
     runtime,
-    [
-      'pr',
-      'list',
-      '--repo',
-      formatRepository(repository),
-      '--head',
-      branch,
-      '--state',
-      'open',
-      '--limit',
-      String(listLimit),
-      '--json',
-      headPullFields,
-    ],
+    pullRequestListArguments({
+      repository: formatRepository(repository),
+      filter: ['--head', branch],
+      state: 'open',
+      fields: headPullFields,
+    }),
     headPullSchema,
   );
 
@@ -170,20 +146,12 @@ export const readBasedOnPulls = (
 ): Promise<Read<BasedPull[]>> =>
   listPulls(
     runtime,
-    [
-      'pr',
-      'list',
-      '--repo',
-      formatRepository(repository),
-      '--base',
-      branch,
-      '--state',
-      'open',
-      '--limit',
-      String(listLimit),
-      '--json',
-      'number,url,headRefName',
-    ],
+    pullRequestListArguments({
+      repository: formatRepository(repository),
+      filter: ['--base', branch],
+      state: 'open',
+      fields: 'number,url,headRefName',
+    }),
     basedPullSchema,
   );
 
@@ -199,7 +167,7 @@ export const readStacks = async (
     `repos/${repository.owner}/${repository.name}/stacks?pull_request=${number}`,
   ];
 
-  return readStacksResponse(label(commandArguments), await runGh(runtime, commandArguments));
+  return readStacksResponse(label(commandArguments), await readGh(runtime, commandArguments));
 };
 
 export const readPullView = (
@@ -217,7 +185,7 @@ export const readPullView = (
     'number,headRefName,baseRefName,state',
   ];
 
-  return runGh(runtime, commandArguments).then((output) =>
+  return readGh(runtime, commandArguments).then((output) =>
     parseJsonOutput(label(commandArguments), output, pullViewSchema),
   );
 };
@@ -236,7 +204,7 @@ export const readDefaultBranch = async (
 
   const read = parseJsonOutput(
     label(commandArguments),
-    await runGh(runtime, commandArguments),
+    await readGh(runtime, commandArguments),
     defaultBranchSchema,
   );
 

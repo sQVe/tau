@@ -1,4 +1,4 @@
-import type { Repository } from '../../github/github.js';
+import type { GhOutcome, Repository } from '../../github/github.js';
 
 export interface CheckItem {
   name: string;
@@ -64,6 +64,17 @@ const pendingChecksExitCode = 8;
 const listedExitCodes = new Set([0, failingChecksExitCode, pendingChecksExitCode]);
 
 const jobLinkPattern = /^https:\/\/([^/]+)\/([^/]+)\/([^/]+)\/actions\/runs\/(\d+)\/job\/(\d+)$/u;
+
+export const commandResult = (
+  commandArguments: readonly string[],
+  outcome: GhOutcome,
+): CommandResult => ({
+  command: ['gh', ...commandArguments].join(' '),
+  code: outcome.exitCode,
+  killed: outcome.cancelled,
+  stdout: outcome.stdout,
+  stderr: outcome.stderr,
+});
 
 export const repositoryName = (repository: Repository): string =>
   `${repository.host}/${repository.owner}/${repository.name}`;

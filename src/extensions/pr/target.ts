@@ -2,7 +2,13 @@ import { Type } from 'typebox';
 
 import type { CommandRuntime } from '../../command.js';
 import { readGit } from '../../git.js';
-import { checkOutput, label, readJson, run } from '../../github/github.js';
+import {
+  incompleteListProblem,
+  label,
+  pullRequestListArguments,
+  readChecked,
+  run,
+} from '../../github/github.js';
 import type { Repository } from '../../github/github.js';
 import { resolveBaseRepository, resolveHead } from '../../github/repositoryTarget.js';
 import { formatRepository } from '../../github/repositoryTargetDecisions.js';
@@ -44,39 +50,27 @@ const pullRequestListSchema = Type.Array(
   }),
 );
 
-const pullRequestListLimit = 100;
-
 const pullRequestFields =
   'number,url,state,title,body,baseRefName,isDraft,headRefOid,headRepositoryOwner,headRepository';
 
-// gh pr list prints at most --limit pull requests and does not say when it left some out.
 const readPullRequestList = async (
   runtime: CommandRuntime,
   repository: Repository,
   branch: string,
 ) => {
-  const commandArguments = [
-    'pr',
-    'list',
-    '--repo',
-    formatRepository(repository),
-    '--head',
-    branch,
-    '--state',
-    'all',
-    '--limit',
-    String(pullRequestListLimit),
-    '--json',
-    pullRequestFields,
-  ];
+  const commandArguments = pullRequestListArguments({
+    repository: formatRepository(repository),
+    filter: ['--head', branch],
+    state: 'all',
+    fields: pullRequestFields,
+  });
 
-  const listed = await readJson(runtime, commandArguments);
+  const listed = await readChecked(runtime, commandArguments, pullRequestListSchema);
+  const problem = incompleteListProblem(listed);
 
-  checkOutput(commandArguments, pullRequestListSchema, listed);
-
-  if (listed.length >= pullRequestListLimit) {
+  if (problem !== undefined) {
     throw new Error(
-      `${label(commandArguments)} printed ${listed.length} pull requests, the limit, so the list may be incomplete. Check the pull requests for this branch on GitHub.`,
+      `${label(commandArguments)} ${problem} Check the pull requests for this branch on GitHub.`,
     );
   }
 
