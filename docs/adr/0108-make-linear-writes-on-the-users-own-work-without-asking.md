@@ -81,7 +81,7 @@ Tracker writes keep the rule that any change after approval needs a new preview.
 
 - A ticket is the user's own when the Linear viewer is its assignee, or when it has no assignee and
   the viewer created it. A ticket an agent creates for the user's work is the user's own. When the
-  read fails, the ticket counts as another person's.
+  read fails or the IDs do not settle ownership, the ticket counts as another person's.
 - Agents make only two status changes: In Progress at a slice start, and an approved cancellation.
   Linear moves a ticket to Done when its pull request merges.
 
