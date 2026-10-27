@@ -3,7 +3,7 @@ import type { BigIntStats } from 'node:fs';
 import { open, realpath, stat } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { clampThinkingLevel } from '@earendil-works/pi-ai';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
@@ -253,7 +253,7 @@ const fillBuffer = async (file: FileHandle, buffer: Buffer, filled: number): Pro
 const escapesDirectory = (path: string, directory: string): boolean => {
   const relation = relative(directory, path);
 
-  return isAbsolute(relation) || relation.split(sep)[0] === '..';
+  return relation.split(sep)[0] === '..';
 };
 
 const isSameFile = (first: BigIntStats, second: BigIntStats): boolean =>
@@ -307,10 +307,6 @@ const readTicket = async (ticket: TicketPath): Promise<string | undefined> => {
 
 const ticketSlicesMarker = '/.tau/slices/';
 
-// The file text leaves the machine, so `..` must not lead out of the slices directory. This also
-// rejects a lookalike directory such as `x.tau/slices`. The real path check in `readTicket` covers
-// symlinks. The root is the outermost slices directory, so a nested `.tau/slices` symlink cannot
-// move it.
 const resolveTicketPath = (brief: string, cwd: string): TicketPath | undefined => {
   const written = findTicketPath(brief);
 
