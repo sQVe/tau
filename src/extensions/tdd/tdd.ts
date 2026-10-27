@@ -15,6 +15,7 @@ import type { LoadedTddConfig } from './config.js';
 import { createTestObservation, observationDirectory } from './observation.js';
 import { configSummary, runContext, selectionSummary, summarize } from './render.js';
 import type { TestObservation } from './types.js';
+import { worktreePath } from './worktreePath.js';
 
 interface ObservationTracker {
   current:
@@ -89,14 +90,6 @@ const withNotice = (
   };
 };
 
-// Keeps the path as it sits in the worktree, so a symlinked folder is not followed out of it.
-// An absolute path may name the worktree by either its session or its canonical directory.
-const worktreePath = (sessionDirectory: string, canonicalDirectory: string, target: string) => {
-  const fromSession = relative(sessionDirectory, target);
-
-  return fromSession.startsWith('..') ? relative(canonicalDirectory, target) : fromSession;
-};
-
 const handleToolResult = async (
   tracker: ObservationTracker,
   event: ToolResultEvent,
@@ -127,11 +120,10 @@ const handleToolResult = async (
   const path = typeof event.input.path === 'string' ? event.input.path.replace(/^@/, '') : '';
   const target = resolve(context.cwd, path);
   const editablePath = event.toolName !== 'bash' && path.length > 0;
+  const editedPath = worktreePath(relative(context.cwd, target), relative(cwd, target));
 
   const productionEdit =
-    !event.isError &&
-    editablePath &&
-    classifyPath(loaded.config, worktreePath(context.cwd, cwd, target)) === 'production';
+    !event.isError && editablePath && classifyPath(loaded.config, editedPath) === 'production';
 
   const hint = await observation.checkpoint(productionEdit);
 

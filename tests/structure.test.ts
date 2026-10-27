@@ -126,6 +126,7 @@ const pureModules = [
   'src/extensions/tauSkills/requiredFor.ts',
   'src/extensions/tdd/configLayers.ts',
   'src/extensions/tdd/inputGlob.ts',
+  'src/extensions/tdd/worktreePath.ts',
   'src/extensions/tracker/candidateFit.ts',
   'src/fileLock/lockHolderDecision.ts',
   'src/github/repositoryTargetDecisions.ts',
