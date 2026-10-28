@@ -217,6 +217,11 @@ description: Finds where the code handles a feature.
 Find the files that handle the brief, and cite the lines you read.
 ```
 
+The bundled `browser` and `qa` profiles load `npm:pi-agent-browser-native` for their browser tools.
+Its `agent_browser_code` tool needs Node on `PATH` when Pi runs as the compiled binary. If the
+parent session does not use the browser itself, remove `npm:pi-agent-browser-native` from the
+`packages` list in `~/.pi/agent/settings.json`, because the workers load it on their own.
+
 ### `browser.loginCommand` (user file)
 
 `browser.loginCommand` is the non-empty command that the manager gives you when a browser worker
