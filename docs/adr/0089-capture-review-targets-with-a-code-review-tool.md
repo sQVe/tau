@@ -45,6 +45,8 @@ the reviewer, or bind verdicts to workers.
 - `prepare` creates a fresh review directory.
 - A capture appends its bytes and gaps to `input.md` and writes `capture.json`. An empty capture
   writes nothing.
+- `capture.json` is the capture's identity: the pinned target, its base, HEAD, and the hash of the
+  captured content.
 - A `workingTree` or `files` capture saves verified copies of its files in `snapshot/`. The saved
   copies must match the bytes in `input.md`. A copy that does not match is removed, and the capture
   fails.
@@ -54,7 +56,8 @@ the reviewer, or bind verdicts to workers.
 
 ### Freshness
 
-- `freshness` recaptures the target and compares it, and HEAD, with the record.
+- `freshness` recaptures the target and compares the content hash and HEAD with the record. Either
+  change makes the capture stale.
 - A successful recapture overwrites `recheck.diff` in the review directory.
 - A failed recapture or HEAD read removes `recheck.diff`.
 - The tool writes no other review file, except that `evidence` also recaptures in the same way.
