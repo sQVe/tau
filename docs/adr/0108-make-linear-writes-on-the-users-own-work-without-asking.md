@@ -14,7 +14,7 @@ confirm in
 [ADR 0088 (Write skills in Markdown, with a guide, tools, and templates)](./0088-grow-skills-into-tools-and-templates.md),
 [ADR 0093 (Enable skill tools from session start)](./0093-enable-skill-tools-from-session-start.md),
 [ADR 0101 (Treat `.tau/` files as the working copy and trackers as the saved copy)](./0101-treat-tau-files-as-the-working-copy-and-trackers-as-the-saved-copy.md),
-[ADR 0111 (Request review bots from config and skip the preview for a named change)](./0111-request-review-bots-from-config-and-skip-named-changes-in-pr.md)
+[ADR 0111 (Request review bots from config)](./0111-request-review-bots-from-config-and-skip-named-changes-in-pr.md)
 
 ## Context
 

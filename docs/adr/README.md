@@ -38,7 +38,7 @@ and the numbers that its status names.
 - [0052: Drop backwards compatibility by default](./0052-drop-backwards-compatibility-by-default.md)
 - [0053: Version each saved record format](./0053-version-each-saved-record-format.md)
 - [0055: Record Tau coding conventions in `AGENTS.md`](./0055-record-tau-coding-conventions-in-agents-md.md)
-- [0109: Keep action behavior out of extension roots and name one concept one way](./0109-keep-action-behavior-out-of-extension-roots.md)
+- [0109: Keep action behavior out of extension roots](./0109-keep-action-behavior-out-of-extension-roots.md)
 - [0120: Capability modules with an enforced import table](./0120-capability-modules-with-an-enforced-import-table.md)
 - [0123: Patch Pi loaders to show no spinner](./0123-patch-pi-loaders-to-show-no-spinner.md)
 
@@ -46,9 +46,7 @@ and the numbers that its status names.
 
 - [0006: Load Tau's instruction sets into every prompt](./0006-default-writing-policy.md)
 - [0010: Documentation scope](./0010-documentation-scope.md)
-- [0065: Put user decisions first in replies](./0065-put-user-decisions-first-in-replies.md), partly
-  superseded by 0107
-- [0107: State the problem and keep option order stable in questions](./0107-state-the-problem-and-keep-option-order-stable-in-questions.md)
+- [0107: Put user decisions first with stated problems and stable options](./0107-state-the-problem-and-keep-option-order-stable-in-questions.md)
 
 ## Prompts and instructions
 
@@ -106,8 +104,7 @@ and the numbers that its status names.
 ## Linear and slices
 
 - [0075: Plan work as PR-sized slices in Linear](./0075-plan-work-as-pr-sized-slices-in-linear.md)
-- [0082: Own Linear conventions in one tracker skill](./0082-own-linear-conventions-in-one-tracker-skill.md),
-  partly superseded by 0108
+- [0082: Own Linear conventions in one tracker skill](./0082-own-linear-conventions-in-one-tracker-skill.md)
 - [0101: Treat `.tau/` files as the working copy and trackers as the saved copy](./0101-treat-tau-files-as-the-working-copy-and-trackers-as-the-saved-copy.md)
 - [0108: Ask only before writes that other people see](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)
 - [0112: Review collaborative drafts as files in tuicr](./0112-review-collaborative-drafts-as-files-in-tuicr.md)
@@ -122,7 +119,7 @@ and the numbers that its status names.
 - [0094: Compose PR publication evidence](./0094-compose-pr-publication-evidence.md)
 - [0096: Create and keep linear stacks with gh stack](./0096-create-and-keep-linear-stacks-with-gh-stack.md)
 - [0104: Capture fix reviews from a review snapshot](./0104-capture-fix-reviews-from-a-review-snapshot.md)
-- [0111: Request review bots from config and skip the preview for a named change](./0111-request-review-bots-from-config-and-skip-named-changes-in-pr.md)
+- [0111: Request review bots from config](./0111-request-review-bots-from-config-and-skip-named-changes-in-pr.md)
 - [0122: Prune comments with a delete-only skill](./0122-prune-comments-with-a-delete-only-skill.md)
 
 ## Retired
@@ -174,6 +171,7 @@ and the numbers that its status names.
 | 0059 | Run each Pi worker as its pane's own process                                   | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                                                                                                      | `b0980b75`  |
 | 0062 | Put worker instructions in the system prompt                                   | [0066](./0066-add-taus-prompt-text-to-pis-append-section.md)                                                                                                                                                                      | `b0980b75`  |
 | 0063 | Narrow allowed models from the user file to the repository file                | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                                                                                                 | `b0980b75`  |
+| 0065 | Put user decisions first in replies                                            | [0107](./0107-state-the-problem-and-keep-option-order-stable-in-questions.md)                                                                                                                                                     | `b0980b75`  |
 | 0068 | Load only the instruction sets each worker profile needs                       | [0067](./0067-give-workers-only-their-profile-tools-and-skills.md)                                                                                                                                                                | `b0980b75`  |
 | 0069 | Load each Pi package where its tools are used                                  | [0067](./0067-give-workers-only-their-profile-tools-and-skills.md)                                                                                                                                                                | `b0980b75`  |
 | 0070 | Compact manager sessions at Pi turn boundaries                                 | [0073](./0073-leave-manager-compaction-to-pi.md)                                                                                                                                                                                  | `b0980b75`  |
