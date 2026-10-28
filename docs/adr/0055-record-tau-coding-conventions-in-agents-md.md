@@ -4,7 +4,7 @@
 **Status**: Accepted\
 **Related**: [ADR 0006 (Load Tau's instruction sets into every prompt)](./0006-default-writing-policy.md),
 [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
-[ADR 0035 (Use size thresholds as review guidance)](./0035-use-size-thresholds-as-review-guidance.md),
+[ADR 0034 (Check house style outside the editor)](./0034-check-house-style-outside-the-editor.md),
 [ADR 0036 (Allowlist worker content and label states from one table)](./0036-allowlist-worker-content-and-label-states-from-one-table.md),
 [ADR 0052 (Drop backwards compatibility by default)](./0052-drop-backwards-compatibility-by-default.md),
 [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
@@ -17,7 +17,7 @@ Tau loads into every session ([ADR 0006](./0006-default-writing-policy.md)).
 
 An instruction alone fails when nothing makes the rule the easy path. "Parse untrusted values once"
 was already an instruction, and agents still wrote four task ID parsers. Agents game proxy checks
-such as size thresholds ([ADR 0035](./0035-use-size-thresholds-as-review-guidance.md)). Every
+such as size thresholds ([ADR 0034](./0034-check-house-style-outside-the-editor.md)). Every
 instruction line costs context in every session ([ADR 0006](./0006-default-writing-policy.md)).
 
 A review proposed conventions for queries, failures, and mappings. It kept only short semantic rules
@@ -78,7 +78,7 @@ without asking the user.
   ([ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)).
 - `*Decision.ts` naming as enforcement, a `node:fs` import denylist, and count thresholds. Agents
   satisfy such proxies without meeting the rule behind them
-  ([ADR 0035](./0035-use-size-thresholds-as-review-guidance.md)).
+  ([ADR 0034](./0034-check-house-style-outside-the-editor.md)).
 - Contract tests only for new tools and widgets. Internal read paths also reach saved records and
   workers, so the requirement covers every public read path.
 

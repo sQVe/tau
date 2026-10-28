@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-14\
 **Status**: Accepted\
-**Related**: [ADR 0035 (Use size thresholds as review guidance)](./0035-use-size-thresholds-as-review-guidance.md),
+**Related**: [ADR 0034 (Check house style outside the editor)](./0034-check-house-style-outside-the-editor.md),
 [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
 [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md)
 
@@ -33,7 +33,7 @@ and `verifyDecisions.ts`. Testing a strict owner-first rule on ten real names ma
 ## Decision
 
 Extension registration roots wire and order; action behavior lives in behavior owners; each module
-names one concept one way. Size stays a review signal under ADR 0035.
+names one concept one way. Size stays a review signal under ADR 0034.
 
 ### Extension registration roots
 
@@ -112,7 +112,7 @@ names one concept one way. Size stays a review signal under ADR 0035.
 
 ### A hard line limit in lint
 
-Rejected. ADR 0035 already chose review signals, and the measured prompt conflict happened in a
+Rejected. ADR 0034 already chose review signals, and the measured prompt conflict happened in a
 33-line file. A count does not show which behavior belongs where.
 
 ### Owner noun first in every private file name
