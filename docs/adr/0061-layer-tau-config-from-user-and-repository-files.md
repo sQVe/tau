@@ -15,10 +15,8 @@
 [ADR 0110 (Keep QA settings in a per-feature repository map)](./README.md#retired), the config parts
 of
 [ADR 0111 (Request review bots from config and skip the preview for a named change)](./0111-request-review-bots-from-config-and-skip-named-changes-in-pr.md)
-and
-[ADR 0116 (Name the mutation command in the repository file)](./0116-name-the-mutation-command-in-the-repository-file.md)\
-**Related**:
-[ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md)
+and [ADR 0116 (Name the mutation command in the repository file)](./README.md#retired)\
+**Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md)
 
 ## Context
 
@@ -52,7 +50,7 @@ command from user config. The repository file holds only what belongs with the c
 | --------------- | --------- | --------------- | ------------------------------------------------------------------- |
 | `tdd`           | yes       | yes             | Per field; a list replaces the earlier list                         |
 | `allowedModels` | yes       | yes             | Each file may only remove models from the list before it            |
-| `mutation`      | no        | yes             | `argv` is the mutation command, beside the script it runs           |
+| `mutation`      | no        | yes             | `argv` is the mutation command, beside the package pin it runs      |
 | `subagents`     | yes       | no              | `capacity`, the live workers at once: an integer from 1 to 256      |
 | `profiles`      | yes       | no              | Worker models and model routes                                      |
 | `browser`       | yes       | no              | `loginCommand`, which the manager asks the user to run              |

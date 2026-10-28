@@ -15,7 +15,7 @@
 [ADR 0038 (Block commits only on comment inaccuracies)](./README.md#retired),
 [ADR 0042 (Remove commit comment review)](./README.md#retired),
 [ADR 0049 (Treat the bash commit guard as guidance)](./README.md#retired)\
-**Related**: [ADR 0108 (Make Linear writes on the user's own work without asking)](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)
+**Related**: [ADR 0108 (Ask only before writes that other people see)](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)
 
 ## Context
 

@@ -4,7 +4,7 @@
 **Status**: Accepted\
 **Extends**: [ADR 0061 (Keep Tau config in a user file and a trusted repository file)](./0061-layer-tau-config-from-user-and-repository-files.md)\
 **Related**:
-[ADR 0086 (Post to GitHub bots without a confirm)](./0086-post-to-github-bots-without-a-confirm.md)
+[ADR 0108 (Ask only before writes that other people see)](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)
 
 ## Context
 
