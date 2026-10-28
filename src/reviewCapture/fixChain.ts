@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { errorMessage } from '../errors.js';
-import { readGit } from '../git.js';
-import { captureTarget } from './capture.js';
+import { readGit, runGit } from '../git.js';
+import { captureTarget, uniqueGaps } from './capture.js';
 import type { Capture } from './capture.js';
 import { hashOf, readCompletedCapture, readOptionalBytes } from './completedCapture.js';
 import type { ChainedTrees, Endpoint, EndpointCapture } from './endpoint.js';
@@ -35,6 +35,11 @@ type ChainedFixTarget = Extract<PinnedTarget, { kind: 'fix' }> & {
 // content the patch shows.
 export interface ReviewCapture extends Capture {
   chain?: ChainedTrees;
+}
+
+interface WorkingTree {
+  tree: string;
+  dirtySubmodules: string[];
 }
 
 const refuseMissingRecord = async (root: string, review: string): Promise<never> => {
@@ -79,18 +84,73 @@ export const pinPredecessor = async (root: string, review: string): Promise<Pinn
   return { status: decision.status, review, identity, endpointTree, target, base, snapshot };
 };
 
-// The tree of the working tree, written through a temporary index that starts from the chain
-// base, so the user's index is never read or written. Excluded paths keep their base content.
-const writeWorkingTree = async (root: string, base: string, exclude: readonly string[]) => {
+const statusPathStart: Record<string, number | undefined> = { '1': 8, '2': 9, u: 10 };
+
+// A submodule whose checked-out commit is unchanged but whose files are not: `git status` marks it
+// with `S.M.` or `S..U`. Each record is `<type> <XY> <sub> ...`; a rename record has one more path.
+const dirtySubmodules = (status: string): string[] => {
+  const fields = status.split('\0');
+  const paths: string[] = [];
+
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index] ?? '';
+    const parts = field.split(' ');
+    const pathStart = statusPathStart[parts[0] ?? ''];
+    const submodule = parts[2] ?? '';
+
+    if (pathStart !== undefined && /^S.(M.|.U)$/.test(submodule)) {
+      paths.push(parts.slice(pathStart).join(' '));
+    }
+
+    if (parts[0] === '2') {
+      index += 1;
+    }
+  }
+
+  return paths;
+};
+
+// The tree `git add -A && git commit` would write, built in a temporary index that starts from the
+// entries of the user's index, so a tracked file stays even when .gitignore matches it. The
+// user's index is never written. Excluded paths keep their staged content.
+const writeWorkingTree = async (root: string, exclude: readonly string[]): Promise<WorkingTree> => {
   const folder = await mkdtemp(join(tmpdir(), 'tau-fix-chain-'));
   const environment = { GIT_INDEX_FILE: join(folder, 'index') };
-  const excluded = exclude.map((path) => `:(exclude)${path}`);
+  const spec = ['--', '.', ...exclude.map((path) => `:(exclude)${path}`)];
 
   try {
-    await readGit(root, ['read-tree', base], { environment });
-    await readGit(root, ['add', '-A', '--', '.', ...excluded], { environment });
+    const staged = await runGit(root, ['--no-optional-locks', 'ls-files', '-s', '-z']);
 
-    return await readGit(root, ['write-tree'], { environment });
+    if (staged.exitCode !== 0) {
+      throw new Error(`git ls-files -s failed: ${staged.stderr.trim()}`);
+    }
+
+    const entries = staged.stdout.toString('utf8');
+
+    await readGit(root, ['update-index', '-z', '--index-info'], { environment, input: entries });
+    await readGit(root, ['add', '-A', ...spec], { environment });
+
+    const tree = await readGit(root, ['write-tree'], { environment });
+
+    const status = await runGit(
+      root,
+      [
+        '--no-optional-locks',
+        'status',
+        '--porcelain=v2',
+        '-z',
+        '--untracked-files=no',
+        '--ignore-submodules=none',
+        ...spec,
+      ],
+      { environment },
+    );
+
+    if (status.exitCode !== 0) {
+      throw new Error(`git status failed: ${status.stderr.trim()}`);
+    }
+
+    return { tree, dirtySubmodules: dirtySubmodules(status.stdout.toString('utf8')) };
   } finally {
     await rm(folder, { recursive: true, force: true });
   }
@@ -116,7 +176,7 @@ export const captureChainedFix = async (
 
   try {
     const exclude = fix.exclude ?? [];
-    const tree = await writeWorkingTree(root, fix.base, exclude);
+    const { tree, dirtySubmodules: dirty } = await writeWorkingTree(root, exclude);
     const baseTree = fix.predecessor.endpointTree;
 
     const captured = await captureTarget(root, {
@@ -127,8 +187,11 @@ export const captureChainedFix = async (
     });
 
     const { addedBytes: _addedBytes, ...patch } = captured;
+    const submoduleGaps = dirty.map((path) => ({ kind: 'submodule' as const, path }));
+    const gaps = uniqueGaps([...captured.gaps, ...submoduleGaps]);
+    const changed = [...new Set([...captured.paths, ...dirty])].toSorted();
 
-    return { ...patch, changed: captured.paths, chain: { baseTree, tree } };
+    return { ...patch, gaps, changed, chain: { baseTree, tree } };
   } catch (error) {
     return failedCapture(errorMessage(error));
   }

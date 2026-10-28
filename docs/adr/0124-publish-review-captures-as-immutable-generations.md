@@ -40,11 +40,13 @@ otherwise work as before.
 
 A fix capture may name a working tree, range, or fix capture with a complete endpoint as its
 predecessor. The fix record then names the predecessor's identity and endpoint tree, and the capture
-is chained. A chained fix capture writes the tree of the working tree in a temporary index that
-starts from the base commit of the chain. Its patch is the diff from the predecessor's endpoint tree
-to that tree, so a fix of a fix shows only its own change. With no gaps, that tree is its endpoint,
-the predecessor's endpoint tree is its base tree, and its ref commit sits on the base commit of the
-chain. A fix capture without a complete endpoint cannot be a predecessor.
+is chained. A chained fix capture writes the tree that `git add -A` and a commit would give, in a
+temporary index that starts from the entries of the user's index. A tracked file stays even when
+`.gitignore` matches it. A submodule with uncommitted changes is a gap. Its patch is the diff from
+the predecessor's endpoint tree to that tree, so a fix of a fix shows only its own change. With no
+gaps, that tree is its endpoint, the predecessor's endpoint tree is its base tree, and its ref
+commit sits on the base commit of the chain. A fix capture without a complete endpoint cannot be a
+predecessor.
 
 The identity of a completed capture is the Git blob hash of its saved `capture.json`. Reads never
 change the saved files, apart from the Git objects the transition check reads. A read reports one of

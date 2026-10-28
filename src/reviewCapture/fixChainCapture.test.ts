@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -16,6 +16,7 @@ import type { ReviewTarget } from './target.js';
 
 interface SavedRecord {
   target: { predecessor?: { review: string } };
+  gaps: { kind: string; path: string }[];
   endpoint: { status: string; tree?: string; ref?: string };
 }
 
@@ -128,4 +129,71 @@ it('keeps the base commit of the chain in the endpoint ref of a chained fix', as
   const { endpoint } = await readRecord(await fixOf(root, firstFix));
 
   expect(await git(root, 'rev-parse', `${endpoint.ref ?? ''}^@`)).toBe(base);
+});
+
+it('keeps a force-tracked ignored file in the working tree of a chained fix', async () => {
+  const root = await reviewedRepository();
+
+  await writeFile(join(root, '.gitignore'), 'ignored.ts\n');
+  await git(root, 'add', '.gitignore');
+  await git(root, 'commit', '--quiet', '-m', 'ignore');
+  await writeFile(join(root, 'ignored.ts'), 'reviewed\n');
+  await git(root, 'add', '-f', 'ignored.ts');
+
+  const review = await capturedReview(root, { kind: 'workingTree', base: 'HEAD' });
+
+  await writeFile(join(root, 'ignored.ts'), 'fixed\n');
+
+  const index = await readFile(join(root, '.git', 'index'));
+  const fix = await fixOf(root, review);
+  const indexAfter = await readFile(join(root, '.git', 'index'));
+  const patch = await readPatch(fix);
+  const { endpoint } = await readRecord(fix);
+
+  await git(root, 'add', '-A');
+  await git(root, 'commit', '--quiet', '-m', 'fixed');
+
+  expect(patch).toContain('-reviewed\n+fixed\n');
+  expect(patch).not.toContain('deleted file');
+  expect(endpoint.tree).toBe(await git(root, 'rev-parse', 'HEAD^{tree}'));
+  expect(indexAfter.equals(index)).toBe(true);
+});
+
+const withDirtySubmodule = async (name: string) => {
+  const root = await reviewedRepository();
+  const submodule = join(root, name);
+
+  await mkdir(submodule);
+  await git(submodule, 'init', '--quiet');
+  await writeFile(join(submodule, 'inner.ts'), 'inner one\n');
+  await git(submodule, 'add', 'inner.ts');
+  await git(submodule, 'commit', '--quiet', '-m', 'inner');
+  await git(root, 'add', name);
+  await git(root, 'commit', '--quiet', '-m', 'sub');
+
+  const review = await capturedReview(root, { kind: 'workingTree', base: 'HEAD' });
+
+  await writeFile(join(submodule, 'inner.ts'), 'inner two\n');
+  await writeFile(join(root, 'a.ts'), 'a three\n');
+
+  return { root, review };
+};
+
+it.each(['sub', 'my sub'])(
+  'reports an uncommitted edit inside the submodule %s as a gap of a chained fix',
+  async (name) => {
+    const { root, review } = await withDirtySubmodule(name);
+    const record = await readRecord(await fixOf(root, review));
+
+    expect(record.gaps).toContainEqual({ kind: 'submodule', path: name });
+    expect(record.endpoint.status).not.toBe('complete');
+  },
+);
+
+it('reports no submodule gap for an excluded dirty submodule of a chained fix', async () => {
+  const { root, review } = await withDirtySubmodule('sub');
+  const target: ReviewTarget = { kind: 'fix', review, findingPaths: ['a.ts'], exclude: ['sub'] };
+  const record = await readRecord(await capturedReview(root, target));
+
+  expect(record.gaps).toEqual([{ kind: 'excluded', path: 'sub' }]);
 });
