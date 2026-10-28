@@ -1,11 +1,9 @@
-import { execFile } from 'node:child_process';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
-import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { createFreshTauDirectory } from '../tauDirectory.js';
 import { captureGeneration } from './generation.js';
 import {
@@ -37,12 +35,6 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 });
 
 const inputHeader = '# Review input\n\n## Capture\n';
-
-const git = async (root: string, ...commandArguments: string[]) => {
-  const { stdout } = await promisify(execFile)('git', commandArguments, { cwd: root });
-
-  return stdout.trim();
-};
 
 const writeAt = async (root: string, path: string, content: string) => {
   await mkdir(dirname(join(root, path)), { recursive: true });
