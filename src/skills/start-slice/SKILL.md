@@ -203,13 +203,21 @@ or Git. Workers then carry out the agent tickets.
     - Delegate each agent ticket to a worker, and pass the path of its body file, such as
       `$slicedir/agent-1.md`, in the task. Copy each item of its `## Acceptance` word for word, in
       order, into the launch's `acceptance` array.
-    - After the last worker reports, ask once with `ask_user_question` whether to run code-quality
-      before code-review.
-    - On yes, run the [code-quality skill](../code-quality/SKILL.md) on the slice branch, and pass
-      it the slice as the ticket under review. Then go on to code-review. On no, go on to
-      code-review.
-    - For a stacked slice, give code-quality a branch diff from `git merge-base <base> HEAD`, with
-      the base from step 4, so it reviews only this slice's diff.
+    - After the last worker reports, decide whether to run code-quality before code-review. Do not
+      ask the user. Measure the slice diff from `git merge-base <base> HEAD` to the working tree,
+      with the base from step 4. Count untracked new files as added lines, because workers may leave
+      their changes uncommitted.
+    - Skip code-quality when the diff touches no source code, only docs, config, or tests.
+    - Skip code-quality when the source files in the diff have fewer than 100 changed lines, added
+      and deleted lines together.
+    - Skip code-quality when the source change is mechanical, such as a rename or a moved file with
+      no logic change.
+    - Otherwise, run the [code-quality skill](../code-quality/SKILL.md) on the slice branch, and
+      pass it the slice as the ticket under review. Then go on to code-review.
+    - Tell the user "ran code-quality" or "skipped: <reason>" before code-review starts. After a
+      skip, run code-quality when the user asks for it.
+    - For a stacked slice, give code-quality a branch diff from `git merge-base <base> HEAD`, so it
+      reviews only this slice's diff.
     - When the code-review skill's ownership rule finds the slice branch the user's own, let
       code-quality continue into its triage without asking. This applies to a reused branch too.
     - Review the change with the [code-review skill](../code-review/SKILL.md), and pass it the slice
