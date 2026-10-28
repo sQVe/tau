@@ -37,7 +37,6 @@ const pinnedCommits = (target: PinnedTarget) => {
     return [target.base];
   }
 
-  // A chained fix keeps the commit its chain started from.
   if (target.kind === 'fix' && target.predecessor !== undefined && target.base !== null) {
     return [target.base];
   }

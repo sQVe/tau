@@ -139,8 +139,6 @@ const pin = async (root: string, target: ReviewTarget) => {
   return { pinned: fix.target, predecessor: fix.predecessor };
 };
 
-// The predecessor's capture.json may be replaced while the fix capture runs, so it is read again
-// right before the fix record is published, also when the record does not name the predecessor.
 const recheckPredecessor = async (root: string, predecessor: PredecessorIdentity | undefined) => {
   if (predecessor === undefined) {
     return;

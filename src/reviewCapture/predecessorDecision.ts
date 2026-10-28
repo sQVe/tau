@@ -7,7 +7,6 @@ export interface PredecessorFacts {
   target: PinnedTarget['kind'];
   hasSnapshot: boolean;
   generation: GenerationDecision;
-  // The endpoint tree when the record holds a complete endpoint.
   endpointTree: string | undefined;
 }
 
@@ -24,8 +23,6 @@ const refused = (reason: string): PredecessorDecision => ({ status: 'refused', r
 export const statusRefusal = (review: string, generation: GenerationDecision): string =>
   `The capture in ${review} is ${generation.status}, so a fix review cannot compare against it. Nothing was written.\n- ${generation.reasons.join('\n- ')}`;
 
-// What a fix capture may compare against. A completed full or fix capture with a complete endpoint
-// is chained. An older full capture keeps the snapshot or pinned-commit comparison.
 export const decidePredecessor = ({
   review,
   version,

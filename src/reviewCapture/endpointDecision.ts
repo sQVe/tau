@@ -12,7 +12,6 @@ export interface SnapshotFacts {
 
 export interface EligibilityFacts {
   target: PinnedTarget['kind'];
-  // A fix capture compared with the complete endpoint of its predecessor.
   chainedFix: boolean;
   gaps: Gap[];
   snapshot: SnapshotFacts | undefined;

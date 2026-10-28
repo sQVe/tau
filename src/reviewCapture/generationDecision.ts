@@ -72,7 +72,6 @@ export const decideGeneration = ({
 
   const otherIdentity = identityReasons(record.identity, expectedIdentity);
 
-  // A record swapped for an older version must not pass as legacy where one identity is expected.
   if (otherIdentity.length > 0 && record.recorded === undefined) {
     return { status: 'altered', reasons: otherIdentity };
   }

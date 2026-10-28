@@ -293,8 +293,6 @@ const pinnedFixTarget = (target: FixReviewTarget, pinned: PinnedPredecessor): Fi
   return { ...target, review, base, predecessor: { review, identity, endpointTree } };
 };
 
-// Resolves the earlier review and keeps its base, so the fix capture reports the same base. The
-// predecessor's review and identity come back for every fix, even when the target cannot name them.
 export const pinFixTarget = async (
   root: string,
   target: FixReviewTarget,

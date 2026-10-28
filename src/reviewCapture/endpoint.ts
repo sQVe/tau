@@ -23,7 +23,6 @@ export interface EndpointCapture {
   chain?: ChainedTrees | undefined;
 }
 
-// A chained fix capture's diff runs from its predecessor's endpoint tree to the working tree's tree.
 export interface ChainedTrees {
   baseTree: string;
   tree: string;

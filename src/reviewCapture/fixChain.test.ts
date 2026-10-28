@@ -14,11 +14,8 @@ import {
 } from './record.js';
 import type { ReviewTarget } from './target.js';
 
-// Runs once when the capture appends to the new review's input.md, after pinning and before
-// capture.json is published.
 const beforeAppend = vi.hoisted(() => ({ run: undefined as (() => Promise<void>) | undefined }));
 
-// Runs once right after the file at path is first read.
 const afterRead = vi.hoisted(() => ({
   path: '',
   run: undefined as (() => Promise<void>) | undefined,
@@ -240,7 +237,6 @@ const versionTwoRecord = async (review: string) => {
   return JSON.stringify({ ...rest, version: 2 });
 };
 
-// Returns what the refused fix capture left in its new review directory.
 const refusedFixDirectory = async (root: string, review: string) => {
   const directory = await prepareDirectory(root);
 

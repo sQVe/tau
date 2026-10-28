@@ -15,8 +15,6 @@ import type { CaptureRecord, Snapshot } from './record.js';
 import { existingEntry } from './reviewDirectory.js';
 import type { PinnedTarget } from './target.js';
 
-// Every fix capture keeps the predecessor's identity, read once at pinning, so publication can check
-// that the same record is still there.
 export interface PinnedPredecessor {
   status: 'chained' | 'legacy';
   review: string;
@@ -31,8 +29,6 @@ type ChainedFixTarget = Extract<PinnedTarget, { kind: 'fix' }> & {
   predecessor: NonNullable<Extract<PinnedTarget, { kind: 'fix' }>['predecessor']>;
 };
 
-// A chained fix capture also returns the trees it compared, so the endpoint holds exactly the
-// content the patch shows.
 export interface ReviewCapture extends Capture {
   chain?: ChainedTrees;
 }
@@ -164,8 +160,6 @@ const failedCapture = (message: string): ReviewCapture => ({
   errors: [message],
 });
 
-// The diff from the predecessor's endpoint tree to the working tree. The patch is made from the
-// tree written once, so the returned trees hold the content the patch shows.
 export const captureChainedFix = async (
   root: string,
   fix: ChainedFixTarget,
@@ -197,7 +191,6 @@ export const captureChainedFix = async (
   }
 };
 
-// The endpoint of a chained fix capture. Undefined for any other capture.
 export const buildChainedEndpoint = ({ gaps, chain }: EndpointCapture): Endpoint | undefined => {
   if (chain === undefined) {
     return undefined;
