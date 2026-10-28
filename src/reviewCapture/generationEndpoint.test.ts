@@ -7,6 +7,7 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
+import { compareEndpoint } from './endpoint.js';
 import { captureGeneration, readCompletedCapture } from './generation.js';
 import { inputFileName, recordFileName } from './record.js';
 import type { ReviewTarget } from './target.js';
@@ -153,6 +154,28 @@ it('reads a record whose endpoint tree belongs to another capture as altered', a
   expect(decision.reasons).toEqual([expect.stringContaining('src/kept.ts')]);
 });
 
+it('keeps a range capture completed after its topic branch is deleted and pruned', async () => {
+  const root = await committedRepository();
+  const trunk = await git(root, 'branch', '--show-current');
+
+  await git(root, 'switch', '--quiet', '-c', 'topic');
+  await writeAt(root, 'src/kept.ts', 'two\n');
+
+  const from = await git(root, 'rev-parse', 'HEAD');
+  const to = await commitAll(root, 'topic change');
+  const { directory } = await capturedRecord(root, { kind: 'range', from, to });
+
+  await git(root, 'switch', '--quiet', trunk);
+  await git(root, 'branch', '--quiet', '-D', 'topic');
+  await git(root, 'reflog', 'expire', '--expire=now', '--all');
+  await git(root, 'gc', '--quiet', '--prune=now');
+
+  expect(await readCompletedCapture(root, directory)).toMatchObject({
+    status: 'completed',
+    endpoint: 'complete',
+  });
+});
+
 it('reads a capture whose endpoint ref was deleted and objects pruned as missing', async () => {
   const root = await committedRepository();
 
@@ -168,6 +191,103 @@ it('reads a capture whose endpoint ref was deleted and objects pruned as missing
 
   expect(decision.status).toBe('missing');
   expect(decision.reasons).toEqual([expect.stringContaining(endpoint['tree'] ?? '')]);
+});
+
+it('reads a capture whose endpoint lost a blob object as missing', async () => {
+  const root = await committedRepository();
+
+  await writeAt(root, 'src/added.ts', 'only in the endpoint\n');
+
+  const { directory, record } = await capturedRecord(root, { kind: 'workingTree', base: 'HEAD' });
+  const endpoint = record['endpoint'] as { status: 'complete'; baseTree: string; tree: string };
+  const blob = await git(root, 'rev-parse', `${endpoint.tree}:src/added.ts`);
+
+  await rm(join(root, '.git', 'objects', blob.slice(0, 2), blob.slice(2)));
+
+  const decision = await readCompletedCapture(root, directory);
+
+  expect(decision.status).toBe('missing');
+  expect(decision.reasons).toEqual([expect.stringContaining(blob)]);
+  expect(await compareEndpoint(root, endpoint, 'HEAD')).toBe('unknown');
+});
+
+// Commits a base and a change on it, and returns their trees.
+const committedPair = async (root: string, kept: string) => {
+  await git(root, 'checkout', '--quiet', '--orphan', `pair-${kept}`);
+  await writeAt(root, 'src/kept.ts', `${kept}\n`);
+  await writeAt(root, 'src/changed.ts', 'one\n');
+
+  const base = await commitAll(root, 'pair base');
+
+  await writeAt(root, 'src/changed.ts', 'two\n');
+
+  const tip = await commitAll(root, 'pair tip');
+
+  return {
+    base,
+    tip,
+    baseTree: await git(root, 'rev-parse', `${base}^{tree}`),
+    tree: await git(root, 'rev-parse', `${tip}^{tree}`),
+  };
+};
+
+it('reads a record whose endpoint trees make the same change to other content as altered', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const foreign = await committedPair(root, 'unreviewed');
+  const reviewed = await committedPair(root, 'safe');
+
+  await git(root, 'checkout', '--quiet', reviewed.base);
+  await writeAt(root, 'src/changed.ts', 'two\n');
+
+  const { directory, record } = await capturedRecord(root, { kind: 'workingTree', base: 'HEAD' });
+
+  const replaced = {
+    ...record,
+    endpoint: {
+      ...(record['endpoint'] as object),
+      baseTree: foreign.baseTree,
+      tree: foreign.tree,
+    },
+  };
+
+  await writeFile(join(directory, recordFileName), JSON.stringify(replaced));
+
+  const decision = await readCompletedCapture(root, directory);
+
+  expect(decision.status).toBe('altered');
+  expect(decision.reasons).toEqual([expect.stringContaining(foreign.baseTree)]);
+});
+
+it('reads a range record whose endpoint trees make the same change to other content as altered', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const foreign = await committedPair(root, 'unreviewed');
+  const reviewed = await committedPair(root, 'safe');
+
+  const { directory, record } = await capturedRecord(root, {
+    kind: 'range',
+    from: reviewed.base,
+    to: reviewed.tip,
+  });
+
+  const replaced = {
+    ...record,
+    endpoint: {
+      ...(record['endpoint'] as object),
+      baseTree: foreign.baseTree,
+      tree: foreign.tree,
+    },
+  };
+
+  await writeFile(join(directory, recordFileName), JSON.stringify(replaced));
+
+  const decision = await readCompletedCapture(root, directory);
+
+  expect(decision.status).toBe('altered');
+
+  expect(decision.reasons).toEqual([
+    expect.stringContaining(foreign.baseTree),
+    expect.stringContaining(foreign.tree),
+  ]);
 });
 
 const isRoot = process.getuid?.() === 0;

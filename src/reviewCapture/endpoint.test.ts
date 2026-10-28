@@ -64,15 +64,9 @@ const snapshotInput = async (
 
   await mkdir(join(directory, generationFolderName));
 
-  const input = {
-    kind: 'workingTree' as const,
-    directory,
-    base: pinned.base,
-    snapshot,
-    patch: captured.bytes.toString('utf8'),
-  };
+  const input = { directory, target: pinned, gaps: [], patch: captured.bytes, snapshot };
 
-  return { root, input };
+  return { root, input, base: pinned.base, snapshot };
 };
 
 it('finds the commit of the snapshot equal to its endpoint', async () => {
@@ -98,18 +92,21 @@ it('finds the commit of the snapshot equal to its endpoint', async () => {
 });
 
 it('finds a commit that changes the same paths differently from the endpoint', async () => {
-  const { root, input } = await snapshotInput({ 'a.txt': 'one\ntwo\n' }, async (directory) => {
-    await writeFile(join(directory, 'a.txt'), 'one\nchanged\n');
-  });
+  const { root, input, base, snapshot } = await snapshotInput(
+    { 'a.txt': 'one\ntwo\n' },
+    async (directory) => {
+      await writeFile(join(directory, 'a.txt'), 'one\nchanged\n');
+    },
+  );
 
   const endpoint = await buildEndpoint(root, input);
 
   await writeFile(join(root, 'a.txt'), 'one\nedited again\n');
 
   const commit = await commitAll(root, 'second');
-  const committedPaths = await git(root, 'diff', '--name-only', input.base, commit);
+  const committedPaths = await git(root, 'diff', '--name-only', base, commit);
 
-  expect(committedPaths.split('\n')).toEqual(input.snapshot.present);
+  expect(committedPaths.split('\n')).toEqual(snapshot.present);
   expect(await compareEndpoint(root, endpoint, commit)).toBe('different');
 });
 
@@ -147,13 +144,16 @@ it('builds the endpoint without touching the index and keeps unchanged blobs', a
 });
 
 it('refuses a complete endpoint for a snapshot that skipped a binary file', async () => {
-  const { root, input } = await snapshotInput({ 'a.bin': 'one\0\n' }, async (directory) => {
-    await writeFile(join(directory, 'a.bin'), 'two\0\n');
-  });
+  const { root, input, snapshot } = await snapshotInput(
+    { 'a.bin': 'one\0\n' },
+    async (directory) => {
+      await writeFile(join(directory, 'a.bin'), 'two\0\n');
+    },
+  );
 
   const endpoint = await buildEndpoint(root, input);
 
-  expect(input.snapshot.skipped).toMatchObject([{ kind: 'binary', path: 'a.bin' }]);
+  expect(snapshot.skipped).toMatchObject([{ kind: 'binary', path: 'a.bin' }]);
   expect(endpoint.status).toBe('unsupported');
   expect(await compareEndpoint(root, endpoint, 'HEAD')).toBe('unknown');
 });
@@ -161,14 +161,17 @@ it('refuses a complete endpoint for a snapshot that skipped a binary file', asyn
 it.skipIf(isRoot)(
   'reports an endpoint as incomplete when the snapshot skipped an unreadable file',
   async () => {
-    const { root, input } = await snapshotInput({ 'a.txt': 'one\n' }, async (directory) => {
-      await writeFile(join(directory, 'secret.txt'), 'hidden\n');
-      await chmod(join(directory, 'secret.txt'), 0o000);
-    });
+    const { root, input, snapshot } = await snapshotInput(
+      { 'a.txt': 'one\n' },
+      async (directory) => {
+        await writeFile(join(directory, 'secret.txt'), 'hidden\n');
+        await chmod(join(directory, 'secret.txt'), 0o000);
+      },
+    );
 
     const endpoint = await buildEndpoint(root, input);
 
-    expect(input.snapshot.skipped).toMatchObject([{ kind: 'unreadable', path: 'secret.txt' }]);
+    expect(snapshot.skipped).toMatchObject([{ kind: 'unreadable', path: 'secret.txt' }]);
     expect(endpoint.status).toBe('incomplete');
   },
 );
@@ -183,7 +186,7 @@ it('keeps the base mode of a file renamed without a content change', async () =>
   const endpoint = await buildEndpoint(root, input);
   const commit = await commitAll(root, 'renamed');
 
-  expect(input.patch).toContain('rename to tool.sh');
+  expect(input.patch.toString('utf8')).toContain('rename to tool.sh');
   expect(await compareEndpoint(root, endpoint, commit)).toBe('equal');
 });
 
@@ -223,7 +226,14 @@ it('takes the trees of a range from its commits', async () => {
   await writeAt(root, 'a.txt', 'two\n');
 
   const to = await commitAll(root, 'second');
-  const endpoint = await buildEndpoint(root, { kind: 'range', from, to });
+
+  const endpoint = await buildEndpoint(root, {
+    directory: root,
+    target: { kind: 'range', from, to },
+    gaps: [],
+    patch: Buffer.from(''),
+    snapshot: undefined,
+  });
 
   expect(endpoint).toEqual({
     status: 'complete',

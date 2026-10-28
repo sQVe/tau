@@ -4,24 +4,24 @@ import { join } from 'node:path';
 import { errorMessage } from '../errors.js';
 import { readGit, runGit } from '../git.js';
 import { readRawRecords } from './capture.js';
-import type { RawRecord } from './capture.js';
+import type { Gap, RawRecord } from './capture.js';
+import { decideEndpoint } from './endpointDecision.js';
+import type { SnapshotFacts } from './endpointDecision.js';
 import { snapshotFolder } from './fixCapture.js';
 import type { EndpointFacts } from './generationDecision.js';
 import { isSupportedMode, shownBlobs } from './patchBlobs.js';
 import type { ShownFile, ShownMode, SupportedMode } from './patchBlobs.js';
 import { generationFolderName } from './record.js';
 import type { Snapshot } from './record.js';
+import type { PinnedTarget } from './target.js';
 
-// A working tree input covers every capture with a verified snapshot, files targets included.
-export type EndpointInput =
-  | { kind: 'range'; from: string; to: string }
-  | {
-      kind: 'workingTree';
-      directory: string;
-      base: string;
-      snapshot: Snapshot;
-      patch: string;
-    };
+export interface EndpointCapture {
+  directory: string;
+  target: PinnedTarget;
+  gaps: Gap[];
+  patch: Buffer;
+  snapshot: Snapshot | undefined;
+}
 
 export type Endpoint =
   | { status: 'complete'; baseTree: string; tree: string }
@@ -29,13 +29,18 @@ export type Endpoint =
 
 export type EndpointComparison = 'equal' | 'different' | 'unknown';
 
+export interface SavedEndpoint {
+  target: PinnedTarget;
+  endpoint: Endpoint | undefined;
+}
+
 type CompleteEndpoint = Extract<Endpoint, { status: 'complete' }>;
 
-type SnapshotInput = Extract<EndpointInput, { kind: 'workingTree' }>;
+type WorkingTreeTarget = Extract<PinnedTarget, { kind: 'workingTree' }>;
 
-interface Limits {
-  unsupported: string[];
-  incomplete: string[];
+interface SnapshotBase extends SnapshotFacts {
+  baseTree: string;
+  snapshot: Snapshot;
 }
 
 interface IndexEntry {
@@ -45,45 +50,6 @@ interface IndexEntry {
 
 const readTree = (root: string, revision: string) =>
   readGit(root, ['rev-parse', '--verify', `${revision}^{tree}`]);
-
-const modeReason = (path: string, mode: ShownMode) => {
-  if (mode === 'symlink') {
-    return `${path} is a symbolic link, which the snapshot does not save.`;
-  }
-
-  if (mode === 'gitlink') {
-    return `${path} is a submodule, which the snapshot does not save.`;
-  }
-
-  return `The captured patch shows a mode for ${path} that Tau cannot read.`;
-};
-
-// Skipped content the snapshot never held. An unreadable file may be saved by a later capture; a
-// binary file, a submodule, a symbolic link, or an unknown mode cannot be.
-const snapshotLimits = (snapshot: Snapshot, shown: Map<string, ShownFile>): Limits => {
-  const limits: Limits = { unsupported: [], incomplete: [] };
-  const skippedPaths = snapshot.skipped.map((entry) => entry.path);
-
-  for (const entry of snapshot.skipped) {
-    const reason = `The snapshot skipped ${entry.path} (${entry.kind}).`;
-
-    if (entry.kind === 'unreadable') {
-      limits.incomplete.push(reason);
-    } else {
-      limits.unsupported.push(reason);
-    }
-  }
-
-  for (const path of [...snapshot.present, ...skippedPaths]) {
-    const mode = shown.get(path)?.mode;
-
-    if (mode !== undefined && !isSupportedMode(mode)) {
-      limits.unsupported.push(modeReason(path, mode));
-    }
-  }
-
-  return limits;
-};
 
 const baseEntry = async (root: string, baseTree: string, path: string) => {
   const result = await runGit(root, ['ls-tree', '-z', '--full-tree', baseTree, '--', path]);
@@ -120,27 +86,44 @@ const presentMode = async (
   return baseMode(root, baseTree, file?.source ?? path);
 };
 
-const presentEntries = async (
+const shownModes = (snapshot: Snapshot, shown: Map<string, ShownFile>) => {
+  const skippedPaths = snapshot.skipped.map((entry) => entry.path);
+
+  return [...snapshot.present, ...skippedPaths].flatMap((path) => {
+    const mode = shown.get(path)?.mode;
+
+    return mode === undefined ? [] : [{ path, mode }];
+  });
+};
+
+// Only a working tree target lays its snapshot over the base, so only its snapshot is read.
+const readSnapshotBase = async (
   root: string,
-  baseTree: string,
-  input: SnapshotInput,
-  limits: Limits,
-): Promise<IndexEntry[]> => {
-  const shown = shownBlobs(input.patch);
-  const entries: IndexEntry[] = [];
+  target: WorkingTreeTarget,
+  capture: EndpointCapture,
+): Promise<SnapshotBase | undefined> => {
+  const { snapshot } = capture;
 
-  for (const path of input.snapshot.present) {
-    // oxlint-disable-next-line no-await-in-loop -- one Git process at a time.
-    const mode = await presentMode(root, baseTree, shown, path);
-
-    if (mode === undefined) {
-      limits.unsupported.push(`Neither the captured patch nor the base shows a mode for ${path}.`);
-    } else {
-      entries.push({ mode, path });
-    }
+  if (snapshot === undefined) {
+    return undefined;
   }
 
-  return entries;
+  const baseTree = await readTree(root, target.base);
+  const shown = shownBlobs(capture.patch.toString('utf8'));
+  const presentModes: SnapshotFacts['presentModes'] = [];
+
+  for (const path of snapshot.present) {
+    // oxlint-disable-next-line no-await-in-loop -- one Git process at a time.
+    presentModes.push({ path, mode: await presentMode(root, baseTree, shown, path) });
+  }
+
+  return {
+    baseTree,
+    snapshot,
+    skipped: snapshot.skipped,
+    shownModes: shownModes(snapshot, shown),
+    presentModes,
+  };
 };
 
 // Hashes the saved copy as if it were checked in at its path, so Git applies the same check-in
@@ -154,18 +137,17 @@ const writeBlob = (root: string, directory: string, path: string) =>
     join(directory, snapshotFolder, path),
   ]);
 
-const indexInfo = async (
-  root: string,
-  input: SnapshotInput,
-  baseTree: string,
-  entries: IndexEntry[],
-) => {
-  const removedObject = '0'.repeat(baseTree.length);
-  const lines = input.snapshot.absent.map((path) => `0 ${removedObject}\t${path}\0`);
+const indexInfo = async (root: string, directory: string, base: SnapshotBase) => {
+  const removedObject = '0'.repeat(base.baseTree.length);
+  const lines = base.snapshot.absent.map((path) => `0 ${removedObject}\t${path}\0`);
+
+  const entries: IndexEntry[] = base.presentModes.flatMap(({ path, mode }) =>
+    mode === undefined ? [] : [{ path, mode }],
+  );
 
   for (const entry of entries) {
     // oxlint-disable-next-line no-await-in-loop -- one Git process at a time.
-    const blob = await writeBlob(root, input.directory, entry.path);
+    const blob = await writeBlob(root, directory, entry.path);
 
     lines.push(`${entry.mode} ${blob}\t${entry.path}\0`);
   }
@@ -194,45 +176,53 @@ const writeEndpointTree = async (
   }
 };
 
-const limitedEndpoint = (limits: Limits): Endpoint | undefined => {
-  if (limits.unsupported.length > 0) {
-    return { status: 'unsupported', reasons: [...limits.unsupported, ...limits.incomplete] };
-  }
+const writeSnapshotEndpoint = async (
+  root: string,
+  directory: string,
+  base: SnapshotBase,
+): Promise<Endpoint> => {
+  const info = await indexInfo(root, directory, base);
+  const tree = await writeEndpointTree(root, directory, base.baseTree, info);
 
-  if (limits.incomplete.length > 0) {
-    return { status: 'incomplete', reasons: limits.incomplete };
-  }
-
-  return undefined;
+  return { status: 'complete', baseTree: base.baseTree, tree };
 };
 
-const buildSnapshotEndpoint = async (root: string, input: SnapshotInput): Promise<Endpoint> => {
-  const baseTree = await readTree(root, input.base);
-  const limits = snapshotLimits(input.snapshot, shownBlobs(input.patch));
-  const entries = await presentEntries(root, baseTree, input, limits);
-  const limited = limitedEndpoint(limits);
+const writeEndpoint = async (
+  root: string,
+  capture: EndpointCapture,
+  base: SnapshotBase | undefined,
+): Promise<Endpoint> => {
+  const { target } = capture;
 
-  if (limited !== undefined) {
-    return limited;
+  if (base !== undefined) {
+    return writeSnapshotEndpoint(root, capture.directory, base);
   }
 
-  const info = await indexInfo(root, input, baseTree, entries);
-  const tree = await writeEndpointTree(root, input.directory, baseTree, info);
+  if (target.kind !== 'range') {
+    throw new Error(`A ${target.kind} capture without a snapshot records no endpoint.`);
+  }
 
-  return { status: 'complete', baseTree, tree };
+  const baseTree = await readTree(root, target.from);
+
+  return { status: 'complete', baseTree, tree: await readTree(root, target.to) };
 };
 
 // The tree Git would commit for the reviewed content, and the tree it started from. A range names
 // both trees already; a snapshot is laid over the base tree in a temporary index.
-export const buildEndpoint = async (root: string, input: EndpointInput): Promise<Endpoint> => {
-  try {
-    if (input.kind === 'range') {
-      const baseTree = await readTree(root, input.from);
+export const buildEndpoint = async (root: string, capture: EndpointCapture): Promise<Endpoint> => {
+  const { target } = capture;
 
-      return { status: 'complete', baseTree, tree: await readTree(root, input.to) };
+  try {
+    const base =
+      target.kind === 'workingTree' ? await readSnapshotBase(root, target, capture) : undefined;
+
+    const eligibility = decideEndpoint({ target: target.kind, gaps: capture.gaps, snapshot: base });
+
+    if (eligibility.status !== 'eligible') {
+      return eligibility;
     }
 
-    return await buildSnapshotEndpoint(root, input);
+    return await writeEndpoint(root, capture, base);
   } catch (error) {
     return { status: 'incomplete', reasons: [errorMessage(error)] };
   }
@@ -242,31 +232,6 @@ const objectExists = async (root: string, object: string) => {
   const result = await runGit(root, ['cat-file', '-e', object]);
 
   return result.exitCode === 0;
-};
-
-// Whether the commit holds exactly the endpoint content. Unknown when the endpoint is not complete
-// or Git no longer has either tree.
-export const compareEndpoint = async (
-  root: string,
-  endpoint: Endpoint,
-  commit: string,
-): Promise<EndpointComparison> => {
-  if (endpoint.status !== 'complete') {
-    return 'unknown';
-  }
-
-  const commitTree = `${commit}^{tree}`;
-
-  const treesExist =
-    (await objectExists(root, endpoint.tree)) && (await objectExists(root, commitTree));
-
-  if (!treesExist) {
-    return 'unknown';
-  }
-
-  const tree = await readTree(root, commit);
-
-  return tree === endpoint.tree ? 'equal' : 'different';
 };
 
 const shownModeText: Record<ShownMode, string> = {
@@ -387,11 +352,113 @@ const missingTrees = async (root: string, endpoint: CompleteEndpoint) => {
   );
 };
 
-// What Git shows of a saved endpoint now. The transition is checked only when both trees exist
-// and the saved patch could be read.
-export const observeEndpoint = async (
+const missingBlobs = async (root: string, blobs: string[]) => {
+  const result = await runGit(root, ['cat-file', '--batch-check'], {
+    input: blobs.map((blob) => `${blob}\n`).join(''),
+  });
+
+  if (result.exitCode !== 0) {
+    throw new Error(`git cat-file failed: ${result.stderr.trim()}`);
+  }
+
+  return result.stdout
+    .toString('utf8')
+    .split('\n')
+    .filter((line) => line.endsWith(' missing'))
+    .map((line) => `Git no longer has the endpoint blob ${line.split(' ')[0] ?? ''}.`);
+};
+
+// A raw tree diff reads no blob, so each blob the endpoint adds or changes is checked on its own.
+const missingObjects = async (root: string, endpoint: CompleteEndpoint): Promise<string[]> => {
+  const trees = await missingTrees(root, endpoint);
+
+  if (trees.length > 0) {
+    return trees;
+  }
+
+  try {
+    const changes = await treeChanges(root, endpoint);
+
+    const blobs = changes.filter((change) => change.status !== 'D').map((change) => change.blob);
+
+    return await missingBlobs(root, blobs);
+  } catch (error) {
+    return [`Git could not compare the endpoint trees: ${errorMessage(error)}`];
+  }
+};
+
+// Whether the commit holds exactly the endpoint content. Unknown when the endpoint is not complete
+// or Git no longer has its objects or the commit tree.
+export const compareEndpoint = async (
   root: string,
   endpoint: Endpoint,
+  commit: string,
+): Promise<EndpointComparison> => {
+  if (endpoint.status !== 'complete') {
+    return 'unknown';
+  }
+
+  const commitTreeExists = await objectExists(root, `${commit}^{tree}`);
+
+  if (!commitTreeExists) {
+    return 'unknown';
+  }
+
+  const missing = await missingObjects(root, endpoint);
+
+  if (missing.length > 0) {
+    return 'unknown';
+  }
+
+  const tree = await readTree(root, commit);
+
+  return tree === endpoint.tree ? 'equal' : 'different';
+};
+
+const treeMismatch = (name: string, recorded: string, pinned: string, commit: string) =>
+  recorded === pinned
+    ? []
+    : [
+        `The endpoint ${name} is ${recorded}, not the tree ${pinned} of the pinned commit ${commit}.`,
+      ];
+
+// Checks that the endpoint starts from the tree of the target's pinned base and, for a range, ends
+// at the tree of its pinned end. Another pair with the same change would hide other content.
+export const checkBinding = async (
+  root: string,
+  endpoint: CompleteEndpoint,
+  target: PinnedTarget,
+): Promise<string[]> => {
+  if (target.kind === 'range') {
+    return [
+      ...treeMismatch(
+        'base tree',
+        endpoint.baseTree,
+        await readTree(root, target.from),
+        target.from,
+      ),
+      ...treeMismatch('tree', endpoint.tree, await readTree(root, target.to), target.to),
+    ];
+  }
+
+  if (target.kind === 'workingTree') {
+    return treeMismatch(
+      'base tree',
+      endpoint.baseTree,
+      await readTree(root, target.base),
+      target.base,
+    );
+  }
+
+  return [`A ${target.kind} capture records no complete endpoint.`];
+};
+
+// What Git shows of a saved endpoint now. The transition is checked only when Git has every object
+// of the endpoint and the saved patch could be read.
+const observeEndpoint = async (
+  root: string,
+  endpoint: Endpoint,
+  target: PinnedTarget,
   patch: Buffer | undefined,
 ): Promise<EndpointFacts> => {
   const observation: EndpointFacts = { status: endpoint.status, missing: [], mismatches: [] };
@@ -400,17 +467,32 @@ export const observeEndpoint = async (
     return observation;
   }
 
-  observation.missing = await missingTrees(root, endpoint);
+  observation.missing = await missingObjects(root, endpoint);
 
-  if (observation.missing.length > 0 || patch === undefined) {
+  if (observation.missing.length > 0) {
     return observation;
   }
 
   try {
-    observation.mismatches = await checkTransition(root, endpoint, patch.toString('utf8'));
+    observation.mismatches = await checkBinding(root, endpoint, target);
+
+    if (patch !== undefined) {
+      observation.mismatches.push(
+        ...(await checkTransition(root, endpoint, patch.toString('utf8'))),
+      );
+    }
   } catch (error) {
     observation.missing = [`Git could not compare the endpoint trees: ${errorMessage(error)}`];
   }
 
   return observation;
 };
+
+export const observeSavedEndpoint = async (
+  root: string,
+  saved: SavedEndpoint | undefined,
+  patch: Buffer | undefined,
+): Promise<EndpointFacts | undefined> =>
+  saved?.endpoint === undefined
+    ? undefined
+    : observeEndpoint(root, saved.endpoint, saved.target, patch);

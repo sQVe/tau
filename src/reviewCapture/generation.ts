@@ -6,7 +6,7 @@ import { publishTextSync } from '../record.js';
 import { rejectLinkedFile } from '../tauDirectory.js';
 import { hashBytes, pinTarget, readHead } from './capture.js';
 import type { Capture, Gap } from './capture.js';
-import { observeEndpoint } from './endpoint.js';
+import { observeSavedEndpoint } from './endpoint.js';
 import { publishEndpoint, releaseEndpoint } from './endpointRetention.js';
 import type { RetainedEndpoint } from './endpointRetention.js';
 import {
@@ -52,6 +52,7 @@ interface Owned {
 
 interface ReadRecord {
   saved: SavedRecord;
+  target: PinnedTarget;
   snapshot: Snapshot | undefined;
   endpoint: RecordedEndpoint | undefined;
 }
@@ -153,13 +154,11 @@ const readSavedRecord = async (root: string, path: string, bytes: Buffer): Promi
 
   return {
     saved: { version: record.version, identity: await hashOf(root, bytes), recorded },
+    target: record.target,
     snapshot,
     endpoint,
   };
 };
-
-const observeSavedEndpoint = (root: string, record: ReadRecord | undefined, patch?: Buffer) =>
-  record?.endpoint === undefined ? undefined : observeEndpoint(root, record.endpoint, patch);
 
 export const readCompletedCapture = async (
   root: string,
