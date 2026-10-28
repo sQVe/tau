@@ -1,8 +1,9 @@
 import { basename } from 'node:path';
 
 import { readGit } from '../git.js';
-import { buildEndpoint, checkBinding, checkTransition } from './endpoint.js';
+import { buildEndpoint, checkBinding } from './endpoint.js';
 import type { Endpoint, EndpointCapture } from './endpoint.js';
+import { checkTransition } from './endpointTransition.js';
 import { buildChainedEndpoint } from './fixChain.js';
 import type { RecordedEndpoint } from './record.js';
 import type { PinnedTarget } from './target.js';

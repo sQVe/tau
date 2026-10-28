@@ -22,6 +22,7 @@ import {
 } from './capture.js';
 import type { Capture, DirectTarget, Gap, Part } from './capture.js';
 import { pinPredecessor } from './fixChain.js';
+import type { PinnedPredecessor } from './fixChain.js';
 import { shownBlobs } from './patchBlobs.js';
 import { isRepositoryPath, snapshotFolder } from './record.js';
 import type { Snapshot } from './record.js';
@@ -31,6 +32,11 @@ import type { PinnedTarget } from './target.js';
 export type FixTarget = Extract<PinnedTarget, { kind: 'fix' }>;
 
 export type FixReviewTarget = Omit<FixTarget, 'base' | 'predecessor'>;
+
+export interface PredecessorIdentity {
+  review: string;
+  identity: string;
+}
 
 type SnapshotTarget = Extract<DirectTarget, { kind: 'workingTree' | 'files' }>;
 
@@ -277,20 +283,31 @@ const rejectUnsafeSnapshot = async (review: string, snapshot: Snapshot | undefin
   }
 };
 
-// Resolves the earlier review and keeps its base, so the fix capture reports the same base.
-export const pinFixTarget = async (root: string, target: FixReviewTarget): Promise<FixTarget> => {
+const pinnedFixTarget = (target: FixReviewTarget, pinned: PinnedPredecessor): FixTarget => {
+  const { review, identity, endpointTree, base } = pinned;
+
+  if (endpointTree === undefined) {
+    return { ...target, review, base };
+  }
+
+  return { ...target, review, base, predecessor: { review, identity, endpointTree } };
+};
+
+// Resolves the earlier review and keeps its base, so the fix capture reports the same base. The
+// predecessor's review and identity come back for every fix, even when the target cannot name them.
+export const pinFixTarget = async (
+  root: string,
+  target: FixReviewTarget,
+): Promise<{ target: FixTarget; predecessor: PredecessorIdentity }> => {
   const review = await checkReviewDirectory(root, target.review);
   const pinned = await pinPredecessor(root, review);
 
   await rejectUnsafeSnapshot(review, pinned.snapshot);
 
-  if (pinned.status === 'legacy') {
-    return { ...target, review, base: pinned.base };
-  }
-
-  const { identity, endpointTree } = pinned;
-
-  return { ...target, review, base: pinned.base, predecessor: { review, identity, endpointTree } };
+  return {
+    target: pinnedFixTarget(target, pinned),
+    predecessor: { review, identity: pinned.identity },
+  };
 };
 
 const nameOnlyPaths = async (root: string, target: SnapshotTarget) => {

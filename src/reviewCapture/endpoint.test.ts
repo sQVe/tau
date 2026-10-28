@@ -9,7 +9,8 @@ import { expect, it, onTestFinished } from 'vitest';
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget } from './capture.js';
-import { buildEndpoint, checkBinding, checkTransition, compareEndpoint } from './endpoint.js';
+import { buildEndpoint, checkBinding, compareEndpoint } from './endpoint.js';
+import { checkTransition } from './endpointTransition.js';
 import { saveVerifiedSnapshot } from './fixCapture.js';
 import { generationFolderName } from './record.js';
 

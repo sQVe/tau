@@ -5,30 +5,27 @@ import { join } from 'node:path';
 import { errorMessage } from '../errors.js';
 import { readGit } from '../git.js';
 import { captureTarget } from './capture.js';
-import type { Capture, DirectTarget } from './capture.js';
+import type { Capture } from './capture.js';
 import { hashOf, readCompletedCapture, readOptionalBytes } from './completedCapture.js';
 import type { ChainedTrees, Endpoint, EndpointCapture } from './endpoint.js';
 import { decideEndpoint } from './endpointDecision.js';
-import type { GenerationDecision } from './generationDecision.js';
+import { decidePredecessor, statusRefusal } from './predecessorDecision.js';
 import { generationFolderName, parseCaptureRecord, recordFileName } from './record.js';
 import type { CaptureRecord, Snapshot } from './record.js';
 import { existingEntry } from './reviewDirectory.js';
 import type { PinnedTarget } from './target.js';
 
-interface EarlierCapture<Target extends PinnedTarget> {
-  target: Target;
+// Every fix capture keeps the predecessor's identity, read once at pinning, so publication can check
+// that the same record is still there.
+export interface PinnedPredecessor {
+  status: 'chained' | 'legacy';
+  review: string;
+  identity: string;
+  endpointTree: string | undefined;
+  target: PinnedTarget;
   base: string | null;
   snapshot: Snapshot | undefined;
 }
-
-export type PinnedPredecessor =
-  | ({
-      status: 'chained';
-      review: string;
-      identity: string;
-      endpointTree: string;
-    } & EarlierCapture<PinnedTarget>)
-  | ({ status: 'legacy' } & EarlierCapture<DirectTarget>);
 
 type ChainedFixTarget = Extract<PinnedTarget, { kind: 'fix' }> & {
   predecessor: NonNullable<Extract<PinnedTarget, { kind: 'fix' }>['predecessor']>;
@@ -40,61 +37,17 @@ export interface ReviewCapture extends Capture {
   chain?: ChainedTrees;
 }
 
-const versionOneMessage = (review: string) =>
-  `${review} holds a version 1 capture record, which saved no snapshot. Capture the review again, then name that review.`;
-
-const refuseStatus = (review: string, decision: GenerationDecision): never => {
-  throw new Error(
-    `The capture in ${review} is ${decision.status}, so a fix review cannot compare against it. Nothing was written.\n- ${decision.reasons.join('\n- ')}`,
-  );
-};
-
 const refuseMissingRecord = async (root: string, review: string): Promise<never> => {
   if ((await existingEntry(join(review, generationFolderName))) === undefined) {
     throw new Error(`${review} holds no capture record, so a fix review has nothing to compare.`);
   }
 
-  return refuseStatus(review, await readCompletedCapture(root, review));
-};
-
-const isSnapshotTarget = (target: PinnedTarget) =>
-  target.kind === 'workingTree' || target.kind === 'files';
-
-const earlierCapture = (review: string, record: CaptureRecord): EarlierCapture<PinnedTarget> => {
-  if (record.version === 1) {
-    throw new Error(versionOneMessage(review));
-  }
-
-  const { target, snapshot, base } = record;
-
-  if (isSnapshotTarget(target) && snapshot === undefined) {
-    throw new Error(`${review} holds a capture record with no snapshot.`);
-  }
-
-  return { target, base, snapshot };
-};
-
-const legacyCapture = (
-  review: string,
-  earlier: EarlierCapture<PinnedTarget>,
-): EarlierCapture<DirectTarget> => {
-  const { target } = earlier;
-
-  if (target.kind === 'fix') {
-    throw new Error(
-      `${review} holds a fix capture with no complete endpoint, so a fix capture cannot compare against it.`,
-    );
-  }
-
-  return { ...earlier, target };
+  throw new Error(statusRefusal(review, await readCompletedCapture(root, review)));
 };
 
 const completeEndpointTree = (record: CaptureRecord) =>
   'endpoint' in record && record.endpoint.status === 'complete' ? record.endpoint.tree : undefined;
 
-// The one owner of what a fix capture may compare against. A full or fix capture whose endpoint is
-// complete is chained by its record identity and endpoint tree; an older full capture keeps the
-// snapshot or pinned-commit comparison.
 export const pinPredecessor = async (root: string, review: string): Promise<PinnedPredecessor> => {
   const recordPath = join(review, recordFileName);
   const bytes = await readOptionalBytes(recordPath);
@@ -104,21 +57,26 @@ export const pinPredecessor = async (root: string, review: string): Promise<Pinn
   }
 
   const record = parseCaptureRecord(recordPath, bytes.toString('utf8'));
-  const earlier = earlierCapture(review, record);
   const identity = await hashOf(root, bytes);
-  const decision = await readCompletedCapture(root, review, identity);
+  const snapshot = 'snapshot' in record ? record.snapshot : undefined;
 
-  if (decision.status !== 'completed' && decision.status !== 'legacy') {
-    return refuseStatus(review, decision);
+  const decision = decidePredecessor({
+    review,
+    version: record.version,
+    target: record.target.kind,
+    hasSnapshot: snapshot !== undefined,
+    generation: await readCompletedCapture(root, review, identity),
+    endpointTree: completeEndpointTree(record),
+  });
+
+  if (decision.status === 'refused') {
+    throw new Error(decision.reason);
   }
 
-  const endpointTree = completeEndpointTree(record);
+  const endpointTree = decision.status === 'chained' ? decision.endpointTree : undefined;
+  const { target, base } = record;
 
-  if (decision.status === 'legacy' || endpointTree === undefined) {
-    return { status: 'legacy', ...legacyCapture(review, earlier) };
-  }
-
-  return { status: 'chained', review, identity, endpointTree, ...earlier };
+  return { status: decision.status, review, identity, endpointTree, target, base, snapshot };
 };
 
 // The tree of the working tree, written through a temporary index that starts from the chain

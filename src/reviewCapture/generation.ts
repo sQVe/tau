@@ -9,6 +9,7 @@ import { hashOf, hashSnapshot, readCompletedCapture } from './completedCapture.j
 import { publishEndpoint, releaseEndpoint } from './endpointRetention.js';
 import type { RetainedEndpoint } from './endpointRetention.js';
 import { pinFixTarget, saveVerifiedSnapshot } from './fixCapture.js';
+import type { PredecessorIdentity } from './fixCapture.js';
 import { decideFixScope } from './fixScope.js';
 import type { FixScope } from './fixScope.js';
 import { captureReview } from './pinnedCapture.js';
@@ -128,21 +129,26 @@ const baseOf = (target: PinnedTarget) => {
   return target.base;
 };
 
-const pin = (root: string, target: ReviewTarget) =>
-  target.kind === 'fix' ? pinFixTarget(root, target) : pinTarget(root, target);
+const pin = async (root: string, target: ReviewTarget) => {
+  if (target.kind !== 'fix') {
+    return { pinned: await pinTarget(root, target), predecessor: undefined };
+  }
+
+  const fix = await pinFixTarget(root, target);
+
+  return { pinned: fix.target, predecessor: fix.predecessor };
+};
 
 // The predecessor's capture.json may be replaced while the fix capture runs, so it is read again
-// right before the fix record that names it is published.
-const recheckPredecessor = async (root: string, target: PinnedTarget) => {
-  const predecessor = target.kind === 'fix' ? target.predecessor : undefined;
-
+// right before the fix record is published, also when the record does not name the predecessor.
+const recheckPredecessor = async (root: string, predecessor: PredecessorIdentity | undefined) => {
   if (predecessor === undefined) {
     return;
   }
 
   const decision = await readCompletedCapture(root, predecessor.review, predecessor.identity);
 
-  if (decision.status !== 'completed') {
+  if (decision.status !== 'completed' && decision.status !== 'legacy') {
     throw new Error(
       `The capture in ${predecessor.review} became ${decision.status} during the fix capture. Nothing was written.\n- ${decision.reasons.join('\n- ')}`,
     );
@@ -168,7 +174,7 @@ const fixSummary = (target: PinnedTarget, paths: string[]) => {
 };
 
 const captureTarget = async (root: string, target: ReviewTarget) => {
-  const pinned = await pin(root, target);
+  const { pinned, predecessor } = await pin(root, target);
   const captured = await captureReview(root, pinned);
 
   if (captured.errors.length > 0) {
@@ -181,7 +187,7 @@ const captureTarget = async (root: string, target: ReviewTarget) => {
     throw new Error(`${headError} Nothing was written.`);
   }
 
-  return { pinned, captured, head };
+  return { pinned, predecessor, captured, head };
 };
 
 const saveArtifacts = async (folder: string, patch: Buffer, input: Buffer) => {
@@ -264,7 +270,7 @@ const publishGeneration = async (
   owned: Owned,
 ): Promise<CapturedGeneration> => {
   const folder = join(directory, generationFolderName);
-  const { pinned, captured, head } = await captureTarget(root, target);
+  const { pinned, predecessor, captured, head } = await captureTarget(root, target);
   const base = baseOf(pinned);
 
   const summary = {
@@ -331,7 +337,7 @@ const publishGeneration = async (
   const recordText = `${JSON.stringify(record, null, 2)}\n`;
   const identity = await hashOf(root, Buffer.from(recordText));
 
-  await recheckPredecessor(root, pinned);
+  await recheckPredecessor(root, predecessor);
 
   owned.recordText = recordText;
   publishTextSync(join(directory, recordFileName), recordText, { mode: recordMode });

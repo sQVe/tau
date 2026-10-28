@@ -70,6 +70,13 @@ export const decideGeneration = ({
     return { status: 'incomplete', reasons: ['capture.json is missing.'] };
   }
 
+  const otherIdentity = identityReasons(record.identity, expectedIdentity);
+
+  // A record swapped for an older version must not pass as legacy where one identity is expected.
+  if (otherIdentity.length > 0 && record.recorded === undefined) {
+    return { status: 'altered', reasons: otherIdentity };
+  }
+
   if (record.recorded === undefined) {
     return {
       status: 'legacy',
@@ -79,7 +86,7 @@ export const decideGeneration = ({
 
   const changed = [
     ...changedReasons(record.recorded, observed),
-    ...identityReasons(record.identity, expectedIdentity),
+    ...otherIdentity,
     ...(endpoint?.mismatches ?? []),
   ];
 

@@ -18,11 +18,28 @@ import type { ReviewTarget } from './target.js';
 // capture.json is published.
 const beforeAppend = vi.hoisted(() => ({ run: undefined as (() => Promise<void>) | undefined }));
 
+// Runs once right after the file at path is first read.
+const afterRead = vi.hoisted(() => ({
+  path: '',
+  run: undefined as (() => Promise<void>) | undefined,
+}));
+
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const actual = await importOriginal();
 
   return {
     ...actual,
+    readFile: (async (...parameters: Parameters<typeof actual.readFile>) => {
+      const bytes = await actual.readFile(...parameters);
+      const run = parameters[0] === afterRead.path ? afterRead.run : undefined;
+
+      if (run !== undefined) {
+        afterRead.run = undefined;
+        await run();
+      }
+
+      return bytes;
+    }) as typeof actual.readFile,
     appendFile: async (...parameters: Parameters<typeof actual.appendFile>) => {
       const run = beforeAppend.run;
 
@@ -210,4 +227,96 @@ it('refuses a fix capture of a files predecessor that saved no snapshot', async 
   await writeAt(root, 'src/kept.ts', 'three\n');
 
   expect(await refusal(root, review)).toContain('no snapshot');
+});
+
+const versionTwoRecord = async (review: string) => {
+  const {
+    gaps: _gaps,
+    original: _original,
+    endpoint: _endpoint,
+    ...rest
+  } = await readRecord(review);
+
+  return JSON.stringify({ ...rest, version: 2 });
+};
+
+// Returns what the refused fix capture left in its new review directory.
+const refusedFixDirectory = async (root: string, review: string) => {
+  const directory = await prepareDirectory(root);
+
+  await expect(captureGeneration(root, directory, fixTarget(review))).rejects.toThrow(
+    'Nothing was written',
+  );
+
+  return readdir(directory);
+};
+
+it('refuses a fix capture whose predecessor turns into a version 2 record while it is pinned', async () => {
+  const root = await changedRepository();
+  const review = await capturedReview(root, { kind: 'workingTree', base: 'HEAD' });
+  const recordPath = join(review, recordFileName);
+  const downgraded = await versionTwoRecord(review);
+
+  await writeAt(root, 'src/kept.ts', 'three\n');
+
+  afterRead.path = recordPath;
+  afterRead.run = () => writeFile(recordPath, downgraded);
+
+  expect(await refusedFixDirectory(root, review)).toEqual([inputFileName]);
+});
+
+it('refuses a fix capture whose predecessor turns into a version 2 record before publishing', async () => {
+  const root = await changedRepository();
+  const review = await capturedReview(root, { kind: 'workingTree', base: 'HEAD' });
+  const recordPath = join(review, recordFileName);
+  const downgraded = await versionTwoRecord(review);
+
+  await writeAt(root, 'src/kept.ts', 'three\n');
+
+  beforeAppend.run = () => writeFile(recordPath, downgraded);
+
+  expect(await refusedFixDirectory(root, review)).toEqual([inputFileName]);
+});
+
+it.each([
+  { change: 'removed', run: (recordPath: string) => rm(recordPath) },
+  {
+    change: 'replaced',
+    run: async (recordPath: string) =>
+      writeFile(recordPath, JSON.stringify(JSON.parse(await readFile(recordPath, 'utf8')))),
+  },
+])(
+  'refuses a fix capture whose version 3 predecessor record is $change before publishing',
+  async ({ run }) => {
+    const root = await changedRepository();
+    const review = await capturedReview(root, { kind: 'workingTree', base: 'HEAD' });
+    const recordPath = join(review, recordFileName);
+    const { endpoint: _endpoint, ...saved } = await readRecord(review);
+
+    await writeFile(recordPath, `${JSON.stringify({ ...saved, version: 3 }, null, 2)}\n`);
+    await writeAt(root, 'src/kept.ts', 'three\n');
+
+    beforeAppend.run = () => run(recordPath);
+
+    expect(await refusedFixDirectory(root, review)).toEqual([inputFileName]);
+  },
+);
+
+it('names a complete version 4 predecessor in the published fix record', async () => {
+  const root = await changedRepository();
+  const review = await capturedReview(root, { kind: 'workingTree', base: 'HEAD' });
+  const recordPath = join(review, recordFileName);
+  const saved = await readRecord(review);
+  const { endpoint } = saved as { endpoint: { tree: string } };
+
+  await writeFile(recordPath, `${JSON.stringify({ ...saved, version: 4 }, null, 2)}\n`);
+  await writeAt(root, 'src/kept.ts', 'three\n');
+
+  const identity = await git(root, 'hash-object', recordPath);
+  const fix = await capturedReview(root, fixTarget(review));
+
+  expect(await readRecord(fix)).toMatchObject({
+    version: 5,
+    target: { kind: 'fix', review, predecessor: { review, identity, endpointTree: endpoint.tree } },
+  });
 });
