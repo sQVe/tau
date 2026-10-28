@@ -54,10 +54,8 @@ interface LinkContext {
   facts: CoverageFacts;
 }
 
-// A proven difference outranks missing evidence, so the order runs from strongest to weakest.
 const failedStatuses: FailedStatus[] = ['mismatch', 'unsupported', 'unknown'];
 
-// Records up to this version save no endpoint, so no later capture can chain on them.
 const lastUnchainedVersion = 3;
 
 const rootTargets = new Set<PinnedTarget['kind']>(['range', 'workingTree']);

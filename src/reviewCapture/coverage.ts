@@ -19,7 +19,6 @@ export interface CoverageRequest {
   head: string;
 }
 
-// A partial clone must not fetch a missing object, so a pruned capture reads as unknown.
 const noLazyFetch = { GIT_NO_LAZY_FETCH: '1' };
 
 const linkRecord = (record: CaptureRecord): LinkRecord => ({
@@ -63,8 +62,6 @@ const readLink = async (
 const optionalTree = (root: string, revision: string) =>
   readTree(root, revision).catch(() => undefined);
 
-// A revision that does not resolve is an input error. The no-fetch scope keeps a partial clone from
-// fetching it.
 const resolveCommit = (root: string, revision: string) =>
   readGit(root, ['rev-parse', '--verify', '--end-of-options', `${revision}^{commit}`]).catch(
     (error: unknown) => {
@@ -91,6 +88,5 @@ const readChain = async (root: string, request: CoverageRequest) => {
   });
 };
 
-// Reads whether the chain covers the head on the merge base and writes no file, ref, or object.
 export const readCoverage = (root: string, request: CoverageRequest): Promise<CoverageDecision> =>
   withGitEnvironment(noLazyFetch, () => readChain(root, request));

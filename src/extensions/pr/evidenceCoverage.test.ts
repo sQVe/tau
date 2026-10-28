@@ -23,8 +23,6 @@ const commitFeature = async (root: string, text: string) => {
   return git(root, 'rev-parse', 'HEAD');
 };
 
-// A feature branch with a saved range review of its one commit, then a fix capture committed
-// unchanged. The branch head moves past the review, so the review's own freshness is stale.
 const setUp = async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const remote = temporaryDirectory(onTestFinished, 'tau-pr-coverage-');

@@ -52,7 +52,6 @@ const linkOf = async (root: string, directory: string) => ({
 const linksOf = (root: string, directories: string[]) =>
   Promise.all(directories.map((directory) => linkOf(root, directory)));
 
-// A range review of one commit, then a fix capture that is committed unchanged.
 const rangeChain = async () => {
   const { root, base } = await committedRepository();
 
@@ -69,7 +68,6 @@ const rangeChain = async () => {
   return { root, base, reviewed, head, review, fix };
 };
 
-// A working tree review, then two chained fix captures, committed together.
 const workingTreeChain = async () => {
   const { root, base } = await committedRepository();
 

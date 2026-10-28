@@ -22,8 +22,6 @@ const listFiles = async (directory: string): Promise<string[]> => {
 
 const hashOf = (bytes: Buffer | string): string => createHash('sha256').update(bytes).digest('hex');
 
-// Captures every file under the directories, the refs, the index, and the object counts, so a test
-// can compare them before and after a read.
 export const repositorySnapshot = async (
   root: string,
   directories: string[],

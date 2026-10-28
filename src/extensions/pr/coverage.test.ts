@@ -17,7 +17,6 @@ const commitAll = async (root: string, message: string) => {
   return git(root, 'rev-parse', 'HEAD');
 };
 
-// A range review of one commit, then a fix capture of a working tree change, committed unchanged.
 const setUpChain = async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
@@ -47,7 +46,6 @@ const runPr = async (root: string, input: PrInput) => {
   return result.details;
 };
 
-// A shallow clone that lists its source as a promisor remote, so a missing commit could be fetched.
 const partialClone = async () => {
   const source = await createTemporaryRepository(onTestFinished, 'tau-coverage-source-');
 

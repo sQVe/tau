@@ -17,7 +17,6 @@ export interface GitOptions {
 
 const scopedEnvironment = new AsyncLocalStorage<Record<string, string>>();
 
-// Every Git call that `run` starts, directly or through shared helpers, gets these variables.
 export const withGitEnvironment = <Value>(
   environment: Record<string, string>,
   run: () => Promise<Value>,

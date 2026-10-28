@@ -52,7 +52,6 @@ export const createSavedFix = async (
   return directory;
 };
 
-// The chain link of a saved review: its directory and the Git blob hash of its capture.json.
 export const savedReviewLink = async (
   root: string,
   directory: string,

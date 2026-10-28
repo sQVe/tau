@@ -115,7 +115,6 @@ const readReview = async (
   }
 };
 
-// Coverage is read-only, so it runs after reuse and freshness have read the review.
 const readCoverageEvidence = async (
   root: string,
   evidence: PublicationEvidence,
