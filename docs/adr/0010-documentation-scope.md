@@ -29,7 +29,8 @@ and code and tests state behavior.
   key binding. Include only the details needed to understand or follow the decision.
 - Code and tests state behavior.
 - `docs/` holds only what no feature owns. It holds `README.md`, the documentation index;
-  `development.md`; `skill-authoring.md`, the skill guide, which also covers the tools a skill
+  `development.md`; `configuration.md`, the one reference for every `tau.json` key, because no tool
+  description shows them; `skill-authoring.md`, the skill guide, which also covers the tools a skill
   calls; `skill-template.md`; `vision.md`; and the `adr/` folder.
 - The root README introduces the project and links to the rest. Topic details go in `docs/` and are
   linked from the documentation index.
