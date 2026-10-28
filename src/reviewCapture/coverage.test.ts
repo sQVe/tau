@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto';
-import { appendFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
+import { repositorySnapshot } from '../../tests/repositorySnapshot.js';
 import { createFreshTauDirectory } from '../tauDirectory.js';
 import { readCoverage } from './coverage.js';
 import { captureGeneration } from './generation.js';
@@ -230,19 +230,7 @@ it('reads a capture with an excluded path as unsupported', async () => {
   const coverage = await readCoverage(root, { links, mergeBase: base, head });
 
   expect(coverage).toMatchObject({ status: 'unsupported', link: 1 });
-});
-
-it('reads a review directory with no capture as unknown', async () => {
-  const { root, base } = await committedRepository();
-  const directory = await createFreshTauDirectory(root, 'workers', 'review-');
-
-  const coverage = await readCoverage(root, {
-    links: [{ directory, identity: base }],
-    mergeBase: base,
-    head: base,
-  });
-
-  expect(coverage).toMatchObject({ status: 'unknown', link: 1 });
+  expect(coverage.reasons.join('\n')).toContain('b.ts');
 });
 
 it('refuses a review directory outside .tau/workers', async () => {
@@ -260,38 +248,46 @@ it('refuses a review directory outside .tau/workers', async () => {
   await expect(reading).rejects.toThrow('.tau/workers');
 });
 
-const listFiles = async (directory: string): Promise<string[]> => {
-  const entries = await readdir(directory, { withFileTypes: true, recursive: true });
-
-  return entries
-    .filter((entry) => entry.isFile())
-    .map((entry) => join(entry.parentPath, entry.name))
-    .toSorted();
-};
-
-const hashOf = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
-
-const repositoryState = async (root: string, directories: string[]) => {
-  const files = (await Promise.all(directories.map(listFiles))).flat();
-  const hashes = await Promise.all(files.map(async (file) => hashOf(await readFile(file))));
-
-  return {
-    files: Object.fromEntries(files.map((file, index) => [file, hashes[index]])),
-    refs: await git(root, 'for-each-ref'),
-    index: hashOf(await readFile(join(root, '.git', 'index'))),
-    objects: await git(root, 'count-objects', '-v'),
-  };
-};
-
 it('changes no review file, ref, index, or object', async () => {
   const { root, base, head, review, firstFix, secondFix } = await workingTreeChain();
   const directories = [review, firstFix, secondFix];
   const links = await linksOf(root, directories);
-  const before = await repositoryState(root, directories);
+  const before = await repositorySnapshot(root, directories);
 
   await readCoverage(root, { links, mergeBase: base, head });
   await readCoverage(root, { links: links.toReversed(), mergeBase: base, head });
   await readCoverage(root, { links, mergeBase: head, head: base });
 
-  expect(await repositoryState(root, directories)).toEqual(before);
+  expect(await repositorySnapshot(root, directories)).toEqual(before);
+});
+
+it('reads a review directory with no capture as unknown and changes nothing', async () => {
+  const { root, base } = await committedRepository();
+  const directory = await createFreshTauDirectory(root, 'workers', 'review-');
+  const links = [{ directory, identity: base }];
+  const before = await repositorySnapshot(root, [directory]);
+
+  const coverage = await readCoverage(root, { links, mergeBase: base, head: base });
+
+  expect(coverage).toMatchObject({ status: 'unknown', link: 1 });
+  expect(await repositorySnapshot(root, [directory])).toEqual(before);
+});
+
+it('reads a malformed capture record as unknown and changes nothing', async () => {
+  const { root, base } = await committedRepository();
+
+  await writeFile(join(root, 'a.ts'), 'a two\n');
+
+  const reviewed = await commitAll(root, 'reviewed');
+  const review = await capturedReview(root, { kind: 'range', from: base, to: reviewed });
+
+  await writeFile(join(review, recordFileName), '{"version": 5, "target":');
+
+  const links = await linksOf(root, [review]);
+  const before = await repositorySnapshot(root, [review]);
+
+  const coverage = await readCoverage(root, { links, mergeBase: base, head: reviewed });
+
+  expect(coverage).toMatchObject({ status: 'unknown', link: 1 });
+  expect(await repositorySnapshot(root, [review])).toEqual(before);
 });

@@ -2,6 +2,7 @@ import type { CheckState } from '../../checkRecord/identity.js';
 import { findStateRecord, sameArgv } from '../../checkRecord/reuseDecision.js';
 import type { SavedLog } from '../../checkRecord/reuseDecision.js';
 import type { ReviewEvidence } from '../../reviewCapture/evidence.js';
+import type { CoverageStatus } from '../../reviewCapture/reviewCapture.js';
 
 export interface CheckHeaderIdentity {
   head: string;
@@ -33,10 +34,19 @@ type TimedCheckLog = ModifiedCheckLog & { modifiedAt: number };
 export type PublicationGap =
   | { kind: 'noReview' | 'noChecks' }
   | {
-      kind: 'target' | 'branch' | 'subjects' | 'reuse' | 'review' | 'markers' | 'checks';
+      kind:
+        | 'target'
+        | 'branch'
+        | 'subjects'
+        | 'reuse'
+        | 'review'
+        | 'markers'
+        | 'checks'
+        | 'coverage';
       reason: string;
     }
   | { kind: 'reuseMismatch'; reasons: string[] }
+  | { kind: 'coverageMismatch'; status: Exclude<CoverageStatus, 'match'>; reasons: string[] }
   | { kind: 'reviewEvidence'; gap: ReviewEvidence['gaps'][number] }
   | { kind: 'check'; path: string; reasons: CheckReason[] }
   | { kind: 'checkExcerpt'; path: string }

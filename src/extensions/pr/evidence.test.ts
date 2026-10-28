@@ -1,11 +1,12 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmod, mkdir, readFile, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { promisify } from 'node:util';
 
-import { expect, it, onTestFinished, vi } from 'vitest';
+import { expect, it, onTestFinished } from 'vitest';
 
+import { githubOrigin, serveGithubOriginFrom } from '../../../tests/githubOriginFake.js';
 import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
 import { createSavedReview } from '../../../tests/savedReview.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
@@ -23,42 +24,12 @@ const commitFile = async (root: string, text: string) => {
   return git(root, 'rev-parse', 'HEAD');
 };
 
-const githubOrigin = 'git@github.com:sQVe/tau.git';
-
-// Serves the origin's SSH transport from the local bare remote, so the origin keeps its GitHub URL.
-// Git reads that URL with `remote get-url`, which an insteadOf rewrite would replace with a path.
-// GIT_SSH_COMMAND overrides core.sshCommand, and the environment may set it to a real SSH wrapper,
-// so the test replaces the variable for its duration. It also allows only the SSH protocol and drops
-// inherited command-line config, so no URL rewrite can reach the real GitHub over another protocol.
-const serveOriginFrom = async (remote: string) => {
-  const shimDirectory = temporaryDirectory(onTestFinished, 'tau-pr-evidence-ssh-');
-  const shim = join(shimDirectory, 'ssh');
-  const serve = `exec git receive-pack '${remote}'`;
-  const fetch = `exec git upload-pack '${remote}'`;
-
-  await writeFile(
-    shim,
-    `#!/bin/sh\ncase "$*" in *git-receive-pack*) ${serve} ;; *) ${fetch} ;; esac\n`,
-  );
-
-  await chmod(shim, 0o755);
-
-  vi.stubEnv('GIT_SSH_COMMAND', shim);
-  vi.stubEnv('GIT_ALLOW_PROTOCOL', 'ssh');
-  vi.stubEnv('GIT_CONFIG_COUNT', '0');
-  vi.stubEnv('GIT_CONFIG_PARAMETERS', '');
-
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-};
-
 const setUp = async (kind: 'range' | 'workingTree' = 'range') => {
   const root = await createTemporaryRepository(onTestFinished);
   const remote = temporaryDirectory(onTestFinished, 'tau-pr-evidence-');
 
   await git(remote, 'init', '--quiet', '--bare', '--initial-branch=main');
-  await serveOriginFrom(remote);
+  await serveGithubOriginFrom(remote, onTestFinished);
   await git(root, 'remote', 'add', 'origin', githubOrigin);
 
   const mergeBase = await commitFile(root, 'one\n');

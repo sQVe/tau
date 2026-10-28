@@ -162,6 +162,12 @@ it('passes a scoped environment to every Git call inside the scope only', async 
   const root = await createTemporaryRepository(onTestFinished);
   const printLazyFetch = ['-c', 'alias.lazy=!printenv GIT_NO_LAZY_FETCH', 'lazy'];
 
+  vi.stubEnv('GIT_NO_LAZY_FETCH', '0');
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
   const inside = await withGitEnvironment({ GIT_NO_LAZY_FETCH: '1' }, () =>
     readGit(root, printLazyFetch),
   );
@@ -169,7 +175,7 @@ it('passes a scoped environment to every Git call inside the scope only', async 
   const outside = await runGit(root, printLazyFetch);
 
   expect(inside).toBe('1');
-  expect(outside.stdout.toString('utf8')).toBe('');
+  expect(outside.stdout.toString('utf8').trim()).toBe('0');
 });
 
 it('resolves a null exit code when Git runs past the timeout', async ({ onTestFinished }) => {

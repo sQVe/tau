@@ -28,7 +28,7 @@ export interface CoverageFacts {
   headTree: string | undefined;
 }
 
-export interface CoverageLink {
+interface CoverageLink {
   link: number;
   directory: string;
   head: string | undefined;
