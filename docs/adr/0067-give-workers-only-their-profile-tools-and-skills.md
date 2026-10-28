@@ -9,7 +9,7 @@
 [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
 [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
 [ADR 0076 (Give browser workers one shared set of browser rules)](./0076-give-browser-workers-one-shared-set-of-browser-rules.md),
-[ADR 0087 (Gather evidence with codemode)](./0087-gather-evidence-with-codemode.md),
+[ADR 0087 (Use codemode to batch or filter evidence within an output budget)](./0087-gather-evidence-with-codemode.md),
 [ADR 0061 (Keep Tau config in a user file and a trusted repository file)](./0061-layer-tau-config-from-user-and-repository-files.md)
 
 ## Context
