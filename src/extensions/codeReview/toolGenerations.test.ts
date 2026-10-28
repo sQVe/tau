@@ -1,23 +1,15 @@
-import { execFile } from 'node:child_process';
 import { readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { readCompletedCapture } from '../../reviewCapture/reviewCapture.js';
 import { createCodeReviewTool } from './tool.js';
 import type { CodeReviewInput } from './tool.js';
 
 const savedFiles = ['capture/patch.diff', 'capture/input.md', 'capture.json'];
-
-const git = async (root: string, commandArguments: string[]) => {
-  const { stdout } = await promisify(execFile)('git', commandArguments, { cwd: root });
-
-  return stdout.trim();
-};
 
 const run = async (root: string, input: CodeReviewInput) => {
   const tool = createCodeReviewTool();
@@ -39,13 +31,13 @@ const repositoryWithReview = async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
   await writeFile(join(root, 'tracked.txt'), 'one\n');
-  await git(root, ['add', 'tracked.txt']);
-  await git(root, ['commit', '--quiet', '-m', 'first']);
+  await git(root, 'add', 'tracked.txt');
+  await git(root, 'commit', '--quiet', '-m', 'first');
 
-  const firstCommit = await git(root, ['rev-parse', 'HEAD']);
+  const firstCommit = await git(root, 'rev-parse', 'HEAD');
 
   await writeFile(join(root, 'tracked.txt'), 'two\n');
-  await git(root, ['commit', '--quiet', '-am', 'second']);
+  await git(root, 'commit', '--quiet', '-am', 'second');
 
   const { directory } = (await run(root, { action: 'prepare' })) as { directory: string };
 
@@ -56,7 +48,7 @@ const repositoryWithReview = async () => {
 
 it('keeps the saved capture bytes through repeated freshness and evidence after edits', async () => {
   const { root, directory } = await repositoryWithReview();
-  const originalHead = await git(root, ['rev-parse', 'HEAD']);
+  const originalHead = await git(root, 'rev-parse', 'HEAD');
 
   await writeFile(join(root, 'tracked.txt'), 'three\n');
 

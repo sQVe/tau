@@ -160,7 +160,7 @@ it('appends the capture and its gaps after the Capture heading and saves the rec
   const copyLines = await Promise.all(
     ['tracked.txt', 'untracked.txt'].map(async (path) => {
       const copy = join(directory, 'snapshot', path);
-      const blob = await git(root, ['hash-object', '--no-filters', copy]);
+      const blob = await git(root, 'hash-object', '--no-filters', copy);
       const mode = ((await stat(copy)).mode & 0o100) === 0 ? '100644' : '100755';
 
       return `${mode} ${blob.trim()} ${JSON.stringify(path)}`;
@@ -171,7 +171,7 @@ it('appends the capture and its gaps after the Capture heading and saves the rec
 
   await writeFile(manifest, `${copyLines.join('\n')}\nabsent []\nskipped []\n`);
 
-  const snapshot = await git(root, ['hash-object', '--no-filters', manifest]);
+  const snapshot = await git(root, 'hash-object', '--no-filters', manifest);
 
   expect(result['hash']).toMatch(/^[0-9a-f]{40}$/);
 

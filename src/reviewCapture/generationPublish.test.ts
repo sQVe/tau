@@ -1,12 +1,11 @@
-import { execFile, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import type { PathLike } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureGeneration, readCompletedCapture } from './generation.js';
 import {
@@ -89,9 +88,6 @@ vi.mock(import('node:fs'), async (importOriginal) => {
 
 const inputHeader = '# Review input\n\n## Capture\n';
 
-const git = (root: string, commandArguments: string[]) =>
-  promisify(execFile)('git', commandArguments, { cwd: root });
-
 const blobHash = (root: string, bytes: Buffer) =>
   execFileSync('git', ['hash-object', '--stdin'], { cwd: root, input: bytes })
     .toString('utf8')
@@ -102,8 +98,8 @@ const changedRepository = async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-generation-publish-');
 
   await writeFile(join(root, 'tracked.txt'), 'one\n');
-  await git(root, ['add', 'tracked.txt']);
-  await git(root, ['commit', '--quiet', '-m', 'first']);
+  await git(root, 'add', 'tracked.txt');
+  await git(root, 'commit', '--quiet', '-m', 'first');
   await writeFile(join(root, 'tracked.txt'), 'two\n');
   await writeFile(join(directory, 'input.md'), inputHeader);
 
