@@ -6,14 +6,17 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { isMissingFile } from '../errors.js';
-import { parseVersionedRecord, writeRecord } from '../record.js';
+import { parseVersionedRecord } from '../record.js';
 import { objectNameSchema, pinnedTargetSchema, pinnedTargetSchemas } from './target.js';
 
 export const recordFileName = 'capture.json';
 export const inputFileName = 'input.md';
 export const recheckFileName = 'recheck.diff';
+export const generationFolderName = 'capture';
+export const generationPatchFileName = 'patch.diff';
+export const generationInputFileName = 'input.md';
 
-const currentVersion = 2;
+const currentVersion = 3;
 
 // What a fix review compares against: the working tree files an earlier capture saved in the
 // review directory's snapshot folder, and the paths it could not save.
@@ -44,14 +47,44 @@ const snapshotSchema = Type.Object(
 
 export type Snapshot = Static<typeof snapshotSchema>;
 
-const captureRecordSchema = Type.Object(
+const savedFields = {
+  target: pinnedTargetSchema,
+  base: Type.Union([objectNameSchema, Type.Null()]),
+  head: objectNameSchema,
+  hash: objectNameSchema,
+  snapshot: Type.Optional(snapshotSchema),
+};
+
+const versionTwoRecordSchema = Type.Object(
+  { version: Type.Literal(2), ...savedFields },
+  { additionalProperties: false },
+);
+
+const gapSchema = Type.Object(
+  {
+    kind: Type.Union([
+      Type.Literal('binary'),
+      Type.Literal('unreadable'),
+      Type.Literal('excluded'),
+      Type.Literal('unmatched'),
+      Type.Literal('submodule'),
+    ]),
+    path: Type.String({ minLength: 1 }),
+  },
+  { additionalProperties: false },
+);
+
+const originalSchema = Type.Object(
+  { patch: objectNameSchema, input: objectNameSchema, snapshot: Type.Optional(objectNameSchema) },
+  { additionalProperties: false },
+);
+
+const versionThreeRecordSchema = Type.Object(
   {
     version: Type.Literal(currentVersion),
-    target: pinnedTargetSchema,
-    base: Type.Union([objectNameSchema, Type.Null()]),
-    head: objectNameSchema,
-    hash: objectNameSchema,
-    snapshot: Type.Optional(snapshotSchema),
+    ...savedFields,
+    gaps: Type.Array(gapSchema),
+    original: originalSchema,
   },
   { additionalProperties: false },
 );
@@ -74,10 +107,9 @@ const versionOneRecordSchema = Type.Object(
 );
 
 export type CaptureRecord =
-  | Static<typeof captureRecordSchema>
-  | Static<typeof versionOneRecordSchema>;
-
-export type CurrentCaptureRecord = Static<typeof captureRecordSchema>;
+  | Static<typeof versionOneRecordSchema>
+  | Static<typeof versionTwoRecordSchema>
+  | Static<typeof versionThreeRecordSchema>;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -99,12 +131,18 @@ const targetProblem = (value: unknown) => {
   return error === undefined ? undefined : `/target${error.instancePath} ${error.message}`;
 };
 
-const isVersionOne = (value: unknown) => isObject(value) && value['version'] === 1;
+const claimsVersion = (value: unknown, version: number) =>
+  isObject(value) && value['version'] === version;
 
-const recordSchema = (value: unknown) =>
-  isVersionOne(value) ? versionOneRecordSchema : captureRecordSchema;
+const recordSchema = (value: unknown) => {
+  if (claimsVersion(value, 1)) {
+    return versionOneRecordSchema;
+  }
 
-const parseRecord = (path: string, text: string) =>
+  return claimsVersion(value, currentVersion) ? versionThreeRecordSchema : versionTwoRecordSchema;
+};
+
+export const parseCaptureRecord = (path: string, text: string): CaptureRecord =>
   parseVersionedRecord(path, text, {
     label: 'capture record',
     version: currentVersion,
@@ -126,12 +164,5 @@ export const readCaptureRecord = async (directory: string): Promise<CaptureRecor
     throw error;
   }
 
-  return parseRecord(path, text);
-};
-
-export const writeCaptureRecord = async (
-  directory: string,
-  record: CurrentCaptureRecord,
-): Promise<void> => {
-  await writeRecord(join(directory, recordFileName), record);
+  return parseCaptureRecord(path, text);
 };

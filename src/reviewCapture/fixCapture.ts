@@ -77,7 +77,7 @@ const regularMode = 0o644;
 const isSnapshotTarget = (target: DirectTarget): target is SnapshotTarget =>
   target.kind === 'workingTree' || target.kind === 'files';
 
-const isRepositoryPath = (path: string) => {
+export const isRepositoryPath = (path: string): boolean => {
   const segments = path.split('/');
 
   return !isAbsolute(path) && !segments.includes('..') && !segments.includes('');

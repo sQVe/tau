@@ -1,16 +1,8 @@
-export { fixedPrefixes, hashBytes, pinTarget, readHead } from './capture.js';
-export type { Gap } from './capture.js';
-export { pinFixTarget, saveVerifiedSnapshot, snapshotFolder } from './fixCapture.js';
-export { decideFixScope } from './fixScope.js';
-export { captureReview, checkFreshness } from './pinnedCapture.js';
+export { fixedPrefixes, hashBytes } from './capture.js';
+export { captureGeneration, readCompletedCapture } from './generation.js';
+export { checkFreshness } from './pinnedCapture.js';
 
-export {
-  inputFileName,
-  readCaptureRecord,
-  recheckFileName,
-  recordFileName,
-  writeCaptureRecord,
-} from './record.js';
+export { readCaptureRecord, recheckFileName } from './record.js';
 
 export {
   checkReviewDirectory,
@@ -20,4 +12,4 @@ export {
 } from './reviewDirectory.js';
 
 export { reviewTargetSchema } from './target.js';
-export type { PinnedTarget, ReviewTarget } from './target.js';
+export type { ReviewTarget } from './target.js';

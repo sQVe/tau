@@ -4,7 +4,14 @@ import { join } from 'node:path';
 
 import { isMissingFile } from '../errors.js';
 import { checkTauDirectory, rejectLinkedFile, requireTauChild } from '../tauDirectory.js';
-import { inputFileName, recheckFileName, recordFileName } from './record.js';
+import {
+  generationFolderName,
+  generationInputFileName,
+  generationPatchFileName,
+  inputFileName,
+  recheckFileName,
+  recordFileName,
+} from './record.js';
 
 export const workersPath = 'workers';
 export const reviewPrefix = 'review-';
@@ -34,8 +41,19 @@ export const checkReviewDirectory = async (root: string, directory: string): Pro
     throw new Error(`The review directory ${path} does not exist. Run prepare first.`);
   }
 
-  for (const file of [inputFileName, recordFileName, recheckFileName]) {
-    // oxlint-disable-next-line no-await-in-loop -- three lstat calls; order keeps the first error stable.
+  // The capture folder comes before its artifacts, so a linked folder is refused before an lstat
+  // follows it.
+  const files = [
+    inputFileName,
+    recordFileName,
+    recheckFileName,
+    generationFolderName,
+    join(generationFolderName, generationPatchFileName),
+    join(generationFolderName, generationInputFileName),
+  ];
+
+  for (const file of files) {
+    // oxlint-disable-next-line no-await-in-loop -- a few lstat calls; order keeps the first error stable.
     await rejectLinkedFile(join(path, file), 'write');
   }
 

@@ -139,6 +139,7 @@ const pureModules = [
   'src/reviewCapture/evidenceDecisions.ts',
   'src/reviewCapture/fixScope.ts',
   'src/reviewCapture/freshness.ts',
+  'src/reviewCapture/generationDecision.ts',
   'src/reviewCapture/gitQuotedName.ts',
   'src/schema.ts',
   'src/shell.ts',

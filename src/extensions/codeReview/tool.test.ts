@@ -14,10 +14,13 @@ import type { CodeReviewInput } from './tool.js';
 
 const failures = vi.hoisted(() => ({
   append: false,
-  rename: false,
+  publish: false,
   remove: false,
   restore: false,
 }));
+
+const isLiveInput = (path: string) =>
+  path.endsWith('input.md') && !path.endsWith(join('capture', 'input.md'));
 
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const actual = await importOriginal();
@@ -33,17 +36,10 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 
       return actual.appendFile(...parameters);
     },
-    rename: async (from: PathLike, to: PathLike) => {
-      if (failures.rename && String(to).endsWith('capture.json')) {
-        throw new Error('rename failed');
-      }
-
-      return actual.rename(from, to);
-    },
     writeFile: async (...parameters: Parameters<typeof actual.writeFile>) => {
       const [target] = parameters;
 
-      if (failures.restore && typeof target === 'string' && target.endsWith('input.md')) {
+      if (failures.restore && typeof target === 'string' && isLiveInput(target)) {
         throw new Error('restore failed');
       }
 
@@ -55,6 +51,21 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
       }
 
       return actual.rm(...parameters);
+    },
+  };
+});
+
+vi.mock(import('node:fs'), async (importOriginal) => {
+  const actual = await importOriginal();
+
+  return {
+    ...actual,
+    linkSync: (existingPath: PathLike, newPath: PathLike) => {
+      if (failures.publish && String(newPath).endsWith('capture.json')) {
+        throw new Error('link failed');
+      }
+
+      actual.linkSync(existingPath, newPath);
     },
   };
 });
@@ -142,6 +153,25 @@ it('appends the capture and its gaps after the Capture heading and saves the rec
   const head = (await git(root, 'rev-parse', 'HEAD')).trim();
   const input = await readFile(join(directory, 'input.md'), 'utf8');
   const record = JSON.parse(await readFile(join(directory, 'capture.json'), 'utf8')) as unknown;
+  const identity = await git(root, 'hash-object', join(directory, 'capture.json'));
+  const patch = await git(root, 'hash-object', join(directory, 'capture', 'patch.diff'));
+  const saved = await git(root, 'hash-object', join(directory, 'capture', 'input.md'));
+
+  const copyLines = await Promise.all(
+    ['tracked.txt', 'untracked.txt'].map(async (path) => {
+      const copy = join(directory, 'snapshot', path);
+      const blob = await git(root, 'hash-object', '--no-filters', copy);
+      const mode = ((await stat(copy)).mode & 0o100) === 0 ? '100644' : '100755';
+
+      return `${mode} ${blob.trim()} ${JSON.stringify(path)}`;
+    }),
+  );
+
+  const manifest = join(temporaryDirectory(onTestFinished, 'tau-snapshot-manifest-'), 'manifest');
+
+  await writeFile(manifest, `${copyLines.join('\n')}\nabsent []\nskipped []\n`);
+
+  const snapshot = await git(root, 'hash-object', '--no-filters', manifest);
 
   expect(result['hash']).toMatch(/^[0-9a-f]{40}$/);
 
@@ -152,7 +182,10 @@ it('appends the capture and its gaps after the Capture heading and saves the rec
     empty: false,
     paths: ['tracked.txt', 'untracked.txt'],
     gaps: [{ kind: 'excluded', path: 'generated.txt' }],
+    identity: identity.trim(),
   });
+
+  expect(await readFile(join(directory, 'capture', 'input.md'), 'utf8')).toBe(input);
 
   expect(input.startsWith(inputHeader)).toBe(true);
   expect(input).toContain('+two');
@@ -161,12 +194,14 @@ it('appends the capture and its gaps after the Capture heading and saves the rec
   expect(input).toContain('generated.txt');
 
   expect(record).toEqual({
-    version: 2,
+    version: 3,
     target: { kind: 'workingTree', base: head, exclude: ['generated.txt'] },
     base: head,
     head,
     hash: result['hash'],
     snapshot: { present: ['tracked.txt', 'untracked.txt'], absent: [], skipped: [] },
+    gaps: [{ kind: 'excluded', path: 'generated.txt' }],
+    original: { patch: patch.trim(), input: saved.trim(), snapshot: snapshot.trim() },
   });
 });
 
@@ -195,6 +230,7 @@ it('returns empty for an empty capture and writes nothing', async () => {
   const result = await captureWorkingTree(root, directory);
 
   expect(result['empty']).toBe(true);
+  expect(result).not.toHaveProperty('identity');
   expect(await listDirectory(directory)).toEqual(before);
 });
 
@@ -295,6 +331,26 @@ it('refuses a review directory that is a symlink', async () => {
   ).toContain('symlink');
 
   expect(await readFile(join(outside, 'input.md'), 'utf8')).toBe(inputHeader);
+});
+
+it.each([
+  { entry: 'capture', folder: false },
+  { entry: 'capture/patch.diff', folder: true },
+  { entry: 'capture/input.md', folder: true },
+])('refuses a review directory whose $entry is a symlink', async ({ entry, folder }) => {
+  const { root, directory } = await preparedReview();
+  const outside = temporaryDirectory(onTestFinished, 'tau-review-outside-');
+
+  if (folder) {
+    await mkdir(join(directory, 'capture'));
+  }
+
+  await symlink(outside, join(directory, entry));
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+
+  expect(await failureOf(root, { action: 'freshness', directory })).toContain('symlink');
+  expect(await readFile(join(directory, 'input.md'), 'utf8')).toBe(inputHeader);
+  expect(await readdir(outside)).toEqual([]);
 });
 
 it('reports fresh for an unchanged tree and saves the recapture as recheck.diff', async () => {
@@ -508,6 +564,18 @@ it('captures only the diff since the reviewed capture and lists the callers of t
   expect(evidence.callers.map((caller) => caller.path)).toEqual(['src/use.ts']);
 });
 
+it('captures a fix against an earlier version 3 capture and leaves that capture unchanged', async () => {
+  const { root, review, directory } = await reviewedThenFixed();
+  const earlier = await readFile(join(review, 'capture.json'), 'utf8');
+
+  expect(JSON.parse(earlier)).toMatchObject({ version: 3 });
+
+  const result = await captureFix(root, directory, review, ['src/math.ts']);
+
+  expect(result).toMatchObject({ empty: false, fixPaths: ['src/math.ts'], scope: 'fix' });
+  expect(await readFile(join(review, 'capture.json'), 'utf8')).toBe(earlier);
+});
+
 it('returns the whole target scope and the outside file when the fix leaves the findings', async () => {
   const { root, review, directory } = await reviewedThenFixed();
 
@@ -582,7 +650,7 @@ it('records the fix capture with the earlier base and no snapshot', async () => 
   const record = JSON.parse(await readFile(join(directory, 'capture.json'), 'utf8')) as object;
 
   expect(record).toEqual({
-    version: 2,
+    version: 3,
     target: {
       kind: 'fix',
       review,
@@ -592,6 +660,11 @@ it('records the fix capture with the earlier base and no snapshot', async () => 
     base: result['base'],
     head: result['head'],
     hash: result['hash'],
+    gaps: [],
+    original: {
+      patch: expect.stringMatching(/^[0-9a-f]{40}$/) as string,
+      input: expect.stringMatching(/^[0-9a-f]{40}$/) as string,
+    },
   });
 
   expect(await readdir(directory)).not.toContain('snapshot');
@@ -627,14 +700,38 @@ it('refuses a fix review of a record with no snapshot and writes nothing', async
 it('refuses a fix review of a version 1 record and writes nothing', async () => {
   const { root, review, directory } = await reviewedThenFixed();
   const saved = JSON.parse(await readFile(join(review, 'capture.json'), 'utf8')) as object;
-  const { snapshot: _snapshot, ...record } = saved as { snapshot?: unknown };
+  const { base, head, hash, ...rest } = saved as Record<string, unknown>;
+  const record = { version: 1, target: rest['target'], base, head, hash };
 
-  await writeFile(join(review, 'capture.json'), JSON.stringify({ ...record, version: 1 }));
+  await writeFile(join(review, 'capture.json'), JSON.stringify(record));
 
   const target = { kind: 'fix' as const, review, findingPaths: [] };
 
   expect(await failureOf(root, { action: 'capture', directory, target })).toContain('version 1');
   expect(await readdir(directory)).toEqual(['input.md']);
+});
+
+it('refuses a fix review of an earlier capture whose saved input changed and writes nothing', async () => {
+  const { root, review, directory } = await reviewedThenFixed();
+
+  await writeFile(join(review, 'capture', 'input.md'), 'changed\n');
+
+  const target = { kind: 'fix' as const, review, findingPaths: [] };
+
+  expect(await failureOf(root, { action: 'capture', directory, target })).toContain('altered');
+  expect(await readdir(directory)).toEqual(['input.md']);
+});
+
+it('captures a fix against an earlier version 2 capture', async () => {
+  const { root, review, directory } = await reviewedThenFixed();
+  const saved = JSON.parse(await readFile(join(review, 'capture.json'), 'utf8')) as object;
+  const { gaps: _gaps, original: _original, ...rest } = saved as Record<string, unknown>;
+
+  await writeFile(join(review, 'capture.json'), JSON.stringify({ ...rest, version: 2 }));
+
+  const result = await captureFix(root, directory, review, ['src/math.ts']);
+
+  expect(result).toMatchObject({ empty: false, fixPaths: ['src/math.ts'], scope: 'fix' });
 });
 
 it('refuses a fix review of a fix capture', async () => {
@@ -1046,7 +1143,7 @@ it.each(['capture', 'freshness', 'evidence'] as const)(
 
 it.each([
   { step: 'the append to input.md', failing: 'append', message: 'append failed' },
-  { step: 'the capture.json write', failing: 'rename', message: 'rename failed' },
+  { step: 'the capture.json write', failing: 'publish', message: 'link failed' },
 ] as const)('restores the review directory when $step fails, so a retry succeeds', async (row) => {
   const { root, directory } = await preparedReview();
 
@@ -1073,7 +1170,13 @@ it.each([
   failures[row.failing] = false;
 
   expect(await captureWorkingTree(root, directory)).toMatchObject({ empty: false });
-  expect(await readdir(directory)).toEqual(['capture.json', 'input.md', 'snapshot']);
+
+  expect((await readdir(directory)).toSorted()).toEqual([
+    'capture',
+    'capture.json',
+    'input.md',
+    'snapshot',
+  ]);
 });
 
 it('keeps a snapshot folder it did not create when a capture without a snapshot fails', async () => {
@@ -1083,15 +1186,15 @@ it('keeps a snapshot folder it did not create when a capture without a snapshot 
   await mkdir(join(directory, 'snapshot'));
   await writeFile(join(directory, 'snapshot', 'unrelated.txt'), 'keep\n');
 
-  failures.rename = true;
+  failures.publish = true;
 
   onTestFinished(() => {
-    failures.rename = false;
+    failures.publish = false;
   });
 
   expect(
     await failureOf(root, { action: 'capture', directory, target: { kind: 'rootCommit', commit } }),
-  ).toContain('rename failed');
+  ).toContain('link failed');
 
   expect(await readFile(join(directory, 'snapshot', 'unrelated.txt'), 'utf8')).toBe('keep\n');
 });
@@ -1101,11 +1204,11 @@ it('removes the snapshot, names both failures, and keeps the cause when restorin
 
   await writeFile(join(root, 'tracked.txt'), 'two\n');
 
-  failures.rename = true;
+  failures.publish = true;
   failures.restore = true;
 
   onTestFinished(() => {
-    failures.rename = false;
+    failures.publish = false;
     failures.restore = false;
   });
 
@@ -1124,10 +1227,10 @@ it('removes the snapshot, names both failures, and keeps the cause when restorin
       (error: unknown) => error as Error,
     );
 
-  expect(failure.message.startsWith('rename failed')).toBe(true);
+  expect(failure.message.startsWith('link failed')).toBe(true);
   expect(failure.message).toContain('restoring input.md: restore failed');
   expect(failure.message).not.toContain('removing the snapshot');
-  expect(failure.cause).toMatchObject({ message: 'rename failed' });
+  expect(failure.cause).toMatchObject({ message: 'link failed' });
   expect(await readdir(directory)).toEqual(['input.md']);
 });
 
@@ -1136,12 +1239,12 @@ it('names every failed cleanup step when restoring input.md and removing the sna
 
   await writeFile(join(root, 'tracked.txt'), 'two\n');
 
-  failures.rename = true;
+  failures.publish = true;
   failures.restore = true;
   failures.remove = true;
 
   onTestFinished(() => {
-    failures.rename = false;
+    failures.publish = false;
     failures.restore = false;
     failures.remove = false;
   });
@@ -1152,7 +1255,7 @@ it('names every failed cleanup step when restoring input.md and removing the sna
     target: { kind: 'workingTree', base: 'HEAD' },
   });
 
-  expect(message).toContain('rename failed');
+  expect(message).toContain('link failed');
   expect(message).toContain('restoring input.md: restore failed');
   expect(message).toContain('removing the snapshot: remove failed');
 });
@@ -1163,11 +1266,11 @@ it('restores input.md and throws the capture error when removing the snapshot fa
 
   await writeFile(join(root, 'tracked.txt'), 'two\n');
 
-  failures.rename = true;
+  failures.publish = true;
   failures.remove = true;
 
   onTestFinished(() => {
-    failures.rename = false;
+    failures.publish = false;
     failures.remove = false;
   });
 
@@ -1177,7 +1280,7 @@ it('restores input.md and throws the capture error when removing the snapshot fa
       directory,
       target: { kind: 'workingTree', base: 'HEAD' },
     }),
-  ).toContain('rename failed');
+  ).toContain('link failed');
 
   expect(await readFile(join(directory, 'input.md'))).toEqual(input);
 });

@@ -16,6 +16,7 @@ export type EvidenceGap =
   | Gap
   | { kind: 'freshness'; status: 'stale' | 'unknown'; reasons: string[] }
   | { kind: 'incompleteCapture'; reasons: string[] }
+  | { kind: 'generation'; status: 'incomplete' | 'altered' | 'missing'; reasons: string[] }
   | { kind: 'evidenceMismatch'; recordedHash: string; evidenceHash: string }
   | { kind: 'truncatedList'; list: EvidenceList; path?: string; kept: number; total: number }
   | {
