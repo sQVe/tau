@@ -204,8 +204,9 @@ or Git. Workers then carry out the agent tickets.
       `$slicedir/agent-1.md`, in the task. Copy each item of its `## Acceptance` word for word, in
       order, into the launch's `acceptance` array.
     - After the last worker reports, decide whether to run code-quality before code-review. Do not
-      ask the user. Measure the slice diff from `git merge-base <base> HEAD`, with the base from
-      step 4.
+      ask the user. Measure the slice diff from `git merge-base <base> HEAD` to the working tree,
+      with the base from step 4. Count untracked new files as added lines, because workers may leave
+      their changes uncommitted.
     - Skip code-quality when the diff touches no source code, only docs, config, or tests.
     - Skip code-quality when the source files in the diff have fewer than 100 changed lines, added
       and deleted lines together.
