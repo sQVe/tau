@@ -64,8 +64,6 @@ and the numbers that its status names.
 ## Skills and tools
 
 - [0004: Skill authoring style](./0004-skill-authoring-style.md), partly superseded by 0120 and 0088
-- [0022: Gate the clamped read hint on the remainder](./0022-gate-the-clamped-read-hint-on-the-remainder.md),
-  superseded by 0087
 - [0074: Let skills declare the actions they must own](./0074-let-skills-declare-the-actions-they-must-own.md)
 - [0077: Keep a skill authoring guide in docs](./0077-keep-a-skill-authoring-guide-in-docs.md)
 - [0083: Turn on skill tools when the skill runs, and confirm outside writes](./0083-turn-on-skill-tools-when-the-skill-runs-and-confirm-outside-writes.md),
@@ -100,24 +98,6 @@ and the numbers that its status names.
 
 - [0024: Commit through Git hooks without human approval](./0024-commit-without-human-approval.md)
 
-## Models
-
-- [0014: Delegate model for bulk reads](./0014-delegate-model-for-bulk-reads.md), superseded by 0087
-  and 0027
-- [0027: Share one delegate model across bounded tool tasks](./0027-share-one-delegate-model.md),
-  superseded by 0072, 0044, and 0024
-- [0041: Default the delegate to gpt-6-luna](./0041-default-the-delegate-to-gpt-6-luna.md),
-  superseded by 0044 and 0024
-- [0044: Restore gpt-5.6-luna as the delegate default](./0044-restore-gpt-5-6-luna-as-the-delegate-default.md),
-  superseded by 0072
-- [0047: Default bundled worker profiles to Opus 5.5](./0047-default-bundled-worker-profiles-to-opus-5-5.md),
-  superseded by 0071
-- [0063: Narrow allowed models from the user file to the repository file](./0063-narrow-allowed-models-from-user-to-repository.md)
-- [0071: Set worker models in the user config](./0071-set-worker-models-in-the-user-config.md),
-  partly superseded by 0072 and 0099
-- [0072: Keep model defaults out of code](./0072-keep-model-defaults-out-of-code.md), partly
-  superseded by 0087
-
 ## Workers
 
 - [0036: Allowlist worker content and label states from one table](./0036-allowlist-worker-content-and-label-states-from-one-table.md)
@@ -141,14 +121,7 @@ and the numbers that its status names.
 
 ## Configuration
 
-- [0061: Layer Tau config from user and repository files](./0061-layer-tau-config-from-user-and-repository-files.md),
-  partly superseded by 0099
-- [0085: Group per-repository settings in the user config](./0085-group-per-repository-settings-in-the-user-config.md),
-  superseded by 0095 and 0087
-- [0095: Keep repository routing in tracker config](./0095-keep-repository-routing-in-tracker-config.md),
-  partly superseded by 0099
-- [0099: Warn on unknown config keys and fail only the entry in use](./0099-warn-on-unknown-config-keys-and-fail-only-the-entry-in-use.md)
-- [0110: Keep QA settings in a per-feature repository map](./0110-keep-qa-settings-in-a-per-feature-repository-map.md)
+- [0061: Keep Tau config in a user file and a trusted repository file](./0061-layer-tau-config-from-user-and-repository-files.md)
 
 ## Checkouts and worktrees
 
@@ -192,6 +165,7 @@ and the numbers that its status names.
 | 0002 | File and directory naming conventions                                 | [0120](./0120-capability-modules-with-an-enforced-import-table.md)                                                                                 | `a859a7bb`  |
 | 0008 | Coding instructions                                                   | [0006](./0006-default-writing-policy.md)                                                                                                           | `b0980b75`  |
 | 0011 | Commit preapproval at startup                                         | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
+| 0014 | Delegate model for bulk reads                                         | [0087](./0087-gather-evidence-with-codemode.md)                                                                                                    | `b0980b75`  |
 | 0015 | Explicit repository commit commands                                   | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
 | 0016 | Prepare each commit with separate staging                             | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
 | 0017 | Ask before adding generated files                                     | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
@@ -199,8 +173,10 @@ and the numbers that its status names.
 | 0019 | Verify backups before hiding working edits                            | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
 | 0020 | Run staged checks in the existing checkout                            | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
 | 0021 | Prune recovery snapshots after verified restoration                   | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
+| 0022 | Gate the clamped read hint on the remainder                           | [0087](./0087-gather-evidence-with-codemode.md)                                                                                                    | `b0980b75`  |
 | 0025 | Use Git hooks without preparation                                     | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
 | 0026 | Let Git hooks own commit checks                                       | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
+| 0027 | Share one delegate model across bounded tool tasks                    | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
 | 0028 | Keep worker control in the parent                                     | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                       | `b0980b75`  |
 | 0029 | Version worker provider fingerprints                                  | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                       | `b0980b75`  |
 | 0030 | Claim native follow-ups before opening                                | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                       | `b0980b75`  |
@@ -210,8 +186,11 @@ and the numbers that its status names.
 | 0037 | Launch native workers without parent approval                         | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                       | `b0980b75`  |
 | 0038 | Block commits only on comment inaccuracies                            | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
 | 0040 | Release undispatched follow-up claims after confirmed cleanup         | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                       | `b0980b75`  |
+| 0041 | Default the delegate to gpt-6-luna                                    | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
 | 0042 | Remove commit comment review                                          | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
+| 0044 | Restore gpt-5.6-luna as the delegate default                          | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
 | 0045 | Keep worker records per Tau checkout and worktree files in `.tau/`    | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md), [0101](./0101-treat-tau-files-as-the-working-copy-and-trackers-as-the-saved-copy.md) | `b0980b75`  |
+| 0047 | Default bundled worker profiles to Opus 5.5                           | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
 | 0049 | Treat the bash commit guard as guidance                               | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
 | 0050 | Split worker control into a coordinator and one controller per worker | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                       | `b0980b75`  |
 | 0054 | Show one foreground worker per parent                                 | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                       | `b0980b75`  |
@@ -220,7 +199,14 @@ and the numbers that its status names.
 | 0058 | Run subagents only as Pi workers                                      | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                       | `b0980b75`  |
 | 0059 | Run each Pi worker as its pane's own process                          | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                       | `b0980b75`  |
 | 0062 | Put worker instructions in the system prompt                          | [0066](./0066-add-taus-prompt-text-to-pis-append-section.md)                                                                                       | `b0980b75`  |
+| 0063 | Narrow allowed models from the user file to the repository file       | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
 | 0068 | Load only the instruction sets each worker profile needs              | [0067](./0067-give-workers-only-their-profile-tools-and-skills.md)                                                                                 | `b0980b75`  |
 | 0069 | Load each Pi package where its tools are used                         | [0067](./0067-give-workers-only-their-profile-tools-and-skills.md)                                                                                 | `b0980b75`  |
+| 0071 | Set worker models in the user config                                  | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
+| 0072 | Keep model defaults out of code                                       | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
 | 0079 | Grow modules from flat files                                          | [0120](./0120-capability-modules-with-an-enforced-import-table.md)                                                                                 | `a859a7bb`  |
 | 0084 | Keep the diagram skill out of worker profiles                         | [0067](./0067-give-workers-only-their-profile-tools-and-skills.md)                                                                                 | `b0980b75`  |
+| 0085 | Group per-repository settings in the user config                      | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
+| 0095 | Keep repository routing in tracker config                             | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
+| 0099 | Warn on unknown config keys and fail only the entry in use            | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |
+| 0110 | Keep QA settings in a per-feature repository map                      | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                  | `b0980b75`  |

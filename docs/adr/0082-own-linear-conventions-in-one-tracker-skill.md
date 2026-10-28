@@ -5,7 +5,7 @@
 [ADR 0100 (Let agents cancel Linear tickets after approval)](./0100-let-agents-cancel-linear-tickets-after-approval.md)\
 **Related**:
 [ADR 0075 (Plan work as PR-sized slices in Linear)](./0075-plan-work-as-pr-sized-slices-in-linear.md),
-[ADR 0095 (Keep repository routing in tracker config)](./0095-keep-repository-routing-in-tracker-config.md)
+[ADR 0061 (Keep Tau config in a user file and a trusted repository file)](./0061-layer-tau-config-from-user-and-repository-files.md)
 
 ## Context
 

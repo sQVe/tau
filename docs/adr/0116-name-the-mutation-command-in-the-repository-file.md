@@ -4,7 +4,7 @@
 **Status**: Accepted\
 **Extends**: [ADR 0115 (Copy the mutation script into each repository and fail on survivors)](./0115-copy-mutation-script-per-repository-and-fail-on-survivors.md)\
 **Related**:
-[ADR 0110 (Keep QA settings in a per-feature repository map)](./0110-keep-qa-settings-in-a-per-feature-repository-map.md)
+[ADR 0061 (Keep Tau config in a user file and a trusted repository file)](./0061-layer-tau-config-from-user-and-repository-files.md)
 
 ## Context
 
@@ -15,8 +15,8 @@ the script and the command that runs it change together in one commit.
 
 ## Decision
 
-The `mutation_check` tool reads its command from `mutation.argv` in `.pi/tau.json` in the
-repository, and refuses the key in the user file.
+The `mutation_check` tool reads its command from the repository file, as ADR 0061 defines the
+`mutation` key, and refuses the key in the user file.
 
 The command lives beside the script it runs, so a branch that changes the script changes the command
 in the same commit. The key is read through the project trust gate, so an untrusted repository
@@ -24,8 +24,8 @@ cannot make Tau run a command. The error for a missing key says whether trust hi
 
 The tool lives in the `fullCheck` extension and shares the lock, log, and reuse code of
 `full_check`. A full check and a mutation check of one repository never run at once, since both use
-the same test resources. Only a run whose report says `pass` or `nothing` is saved for reuse, so an
-audit run with survivors that exits 0 is never reused.
+the same test resources. A passing run is saved for reuse, including a run with survivors, and a
+reused run lists the same survivors. A failing run is never saved.
 
 ## Consequences
 

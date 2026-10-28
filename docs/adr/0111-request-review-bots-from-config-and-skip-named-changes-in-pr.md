@@ -2,10 +2,9 @@
 
 **Date**: 2026-10-14\
 **Status**: Accepted\
-**Extends**: [ADR 0110 (Keep QA settings in a per-feature repository map)](./0110-keep-qa-settings-in-a-per-feature-repository-map.md)\
+**Extends**: [ADR 0061 (Keep Tau config in a user file and a trusted repository file)](./0061-layer-tau-config-from-user-and-repository-files.md)\
 **Related**:
-[ADR 0086 (Post to GitHub bots without a confirm)](./0086-post-to-github-bots-without-a-confirm.md),
-[ADR 0099 (Warn on unknown config keys and fail only the entry in use)](./0099-warn-on-unknown-config-keys-and-fail-only-the-entry-in-use.md)
+[ADR 0086 (Post to GitHub bots without a confirm)](./0086-post-to-github-bots-without-a-confirm.md)
 
 ## Context
 
@@ -16,14 +15,9 @@ a line saying X". The user then approved the same text twice.
 
 ## Decision
 
-Read the review bots from `reviews.repositories` in the user config, keyed by the base repository's
-`owner/name`, and let `pr` request them without asking.
-
-Each entry holds `bots`, a list of `{login, comment}`. `login` is the bot's GitHub login as `gh`
-prints it, such as `chatgpt-codex-connector`, which finds its reviews. Matching ignores case and a
-trailing `[bot]`. `comment` is the exact body of the request. Only the user file may set `reviews`,
-and the other rules follow ADR 0110 and ADR 0099. A repository with no entry gets no request,
-because Tau cannot know which bots the user trusts.
+Read the review bots from the user config, as ADR 0061 defines the `reviews` key, and let `pr`
+request them without asking. A repository with no entry gets no request, because Tau cannot know
+which bots the user trusts.
 
 A read-only `reviewBots` action of the `pr` tool gives each bot one status, from a pure decision
 function: `reviewed` when the bot's login reviewed the current head, `requested` when a comment with
