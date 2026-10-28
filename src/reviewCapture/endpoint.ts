@@ -52,7 +52,14 @@ const readTree = (root: string, revision: string) =>
   readGit(root, ['rev-parse', '--verify', `${revision}^{tree}`]);
 
 const baseEntry = async (root: string, baseTree: string, path: string) => {
-  const result = await runGit(root, ['ls-tree', '-z', '--full-tree', baseTree, '--', path]);
+  const result = await runGit(root, [
+    'ls-tree',
+    '-z',
+    '--full-tree',
+    baseTree,
+    '--',
+    `:(literal)${path}`,
+  ]);
 
   if (result.exitCode !== 0) {
     throw new Error(`git ls-tree failed: ${result.stderr.trim()}`);

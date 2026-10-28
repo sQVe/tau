@@ -173,7 +173,14 @@ const saveSnapshot = async (
 };
 
 const blobAt = async (root: string, base: string, path: string) => {
-  const result = await runGit(root, ['ls-tree', '-z', '--full-tree', base, '--', path]);
+  const result = await runGit(root, [
+    'ls-tree',
+    '-z',
+    '--full-tree',
+    base,
+    '--',
+    `:(literal)${path}`,
+  ]);
 
   if (result.exitCode === null) {
     throw new Error(`git ls-tree failed: ${result.stderr.trim()}`);

@@ -188,6 +188,20 @@ it('keeps the base mode of a file renamed without a content change', async () =>
   expect(await compareEndpoint(root, endpoint, commit)).toBe('equal');
 });
 
+it('reads the base mode of a renamed file whose name looks like pathspec magic', async () => {
+  const { root, input } = await snapshotInput(
+    { ':(glob)run.sh': 'echo run\n' },
+    async (directory) => {
+      await git(directory, 'mv', '--', ':(glob)run.sh', 'tool.sh');
+    },
+  );
+
+  const endpoint = await buildEndpoint(root, input);
+  const commit = await commitAll(root, 'renamed');
+
+  expect(await compareEndpoint(root, endpoint, commit)).toBe('equal');
+});
+
 it('refuses a complete endpoint for a changed symbolic link', async () => {
   const { root, input } = await snapshotInput({ 'a.txt': 'one\n' }, async (directory) => {
     await symlink('a.txt', join(directory, 'link'));
