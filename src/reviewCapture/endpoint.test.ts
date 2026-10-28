@@ -9,7 +9,8 @@ import { expect, it, onTestFinished } from 'vitest';
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget } from './capture.js';
-import { buildEndpoint, checkTransition, compareEndpoint } from './endpoint.js';
+import { buildEndpoint, checkBinding, compareEndpoint } from './endpoint.js';
+import { checkTransition } from './endpointTransition.js';
 import { saveVerifiedSnapshot } from './fixCapture.js';
 import { generationFolderName } from './record.js';
 
@@ -249,6 +250,30 @@ it('takes the trees of a range from its commits', async () => {
 
   expect(await compareEndpoint(root, endpoint, to)).toBe('equal');
   expect(await compareEndpoint(root, endpoint, from)).toBe('different');
+});
+
+it.each([
+  { name: 'the predecessor endpoint tree', baseTree: 'b'.repeat(40), mismatches: [] },
+  {
+    name: 'another tree',
+    baseTree: 'd'.repeat(40),
+    mismatches: [expect.stringContaining(`not the endpoint ${'b'.repeat(40)}`) as string],
+  },
+])('binds a chained fix endpoint whose base tree is $name', async ({ baseTree, mismatches }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const predecessor = { review: 'review', identity: 'a'.repeat(40), endpointTree: 'b'.repeat(40) };
+
+  const target = {
+    kind: 'fix' as const,
+    review: 'review',
+    findingPaths: [],
+    base: null,
+    predecessor,
+  };
+
+  const endpoint = { status: 'complete' as const, baseTree, tree: 'c'.repeat(40) };
+
+  expect(await checkBinding(root, endpoint, target)).toEqual(mismatches);
 });
 
 const transitionRepository = async () => {

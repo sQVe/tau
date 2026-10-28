@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
@@ -15,9 +15,17 @@ export const recheckFileName = 'recheck.diff';
 export const generationFolderName = 'capture';
 export const generationPatchFileName = 'patch.diff';
 export const generationInputFileName = 'input.md';
+export const snapshotFolder = 'snapshot';
+
+export const isRepositoryPath = (path: string): boolean => {
+  const segments = path.split('/');
+
+  return !isAbsolute(path) && !segments.includes('..') && !segments.includes('');
+};
 
 const versionThree = 3;
-const currentVersion = 4;
+const versionFour = 4;
+const currentVersion = 5;
 
 // What a fix review compares against: the working tree files an earlier capture saved in the
 // review directory's snapshot folder, and the paths it could not save.
@@ -112,8 +120,15 @@ const endpointSchema = Type.Union([
 
 export type RecordedEndpoint = Static<typeof endpointSchema>;
 
+const versionFourFields = { ...versionThreeFields, endpoint: endpointSchema };
+
 const versionFourRecordSchema = Type.Object(
-  { version: Type.Literal(currentVersion), ...versionThreeFields, endpoint: endpointSchema },
+  { version: Type.Literal(versionFour), ...versionFourFields },
+  { additionalProperties: false },
+);
+
+const versionFiveRecordSchema = Type.Object(
+  { version: Type.Literal(currentVersion), ...versionFourFields },
   { additionalProperties: false },
 );
 
@@ -138,7 +153,8 @@ export type CaptureRecord =
   | Static<typeof versionOneRecordSchema>
   | Static<typeof versionTwoRecordSchema>
   | Static<typeof versionThreeRecordSchema>
-  | Static<typeof versionFourRecordSchema>;
+  | Static<typeof versionFourRecordSchema>
+  | Static<typeof versionFiveRecordSchema>;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -163,6 +179,17 @@ const targetProblem = (value: unknown) => {
 const claimsVersion = (value: unknown, version: number) =>
   isObject(value) && value['version'] === version;
 
+const predecessorProblem = (value: unknown) => {
+  const target = isObject(value) ? value['target'] : undefined;
+  const named = isObject(target) && Object.hasOwn(target, 'predecessor');
+
+  return named && !claimsVersion(value, currentVersion)
+    ? `/target/predecessor needs version ${currentVersion}`
+    : undefined;
+};
+
+const recordProblem = (value: unknown) => targetProblem(value) ?? predecessorProblem(value);
+
 const recordSchema = (value: unknown) => {
   if (claimsVersion(value, 1)) {
     return versionOneRecordSchema;
@@ -172,7 +199,11 @@ const recordSchema = (value: unknown) => {
     return versionThreeRecordSchema;
   }
 
-  return claimsVersion(value, currentVersion) ? versionFourRecordSchema : versionTwoRecordSchema;
+  if (claimsVersion(value, versionFour)) {
+    return versionFourRecordSchema;
+  }
+
+  return claimsVersion(value, currentVersion) ? versionFiveRecordSchema : versionTwoRecordSchema;
 };
 
 export const parseCaptureRecord = (path: string, text: string): CaptureRecord =>
@@ -180,7 +211,7 @@ export const parseCaptureRecord = (path: string, text: string): CaptureRecord =>
     label: 'capture record',
     version: currentVersion,
     schema: recordSchema,
-    check: targetProblem,
+    check: recordProblem,
   });
 
 export const readCaptureRecord = async (directory: string): Promise<CaptureRecord> => {

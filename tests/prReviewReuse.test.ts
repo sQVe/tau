@@ -92,7 +92,7 @@ const editRecord = async (directory: string, changes: Record<string, unknown>) =
 
 const noPaths = { differing: [], missing: [], extra: [] };
 
-it('reuses a version 4 capture the same way it reuses that capture saved as version 2', async () => {
+it('reuses a version 5 capture the same way it reuses that capture saved as version 2', async () => {
   const { root, directory, forkPoint, run } = await setUpReview();
 
   await captureReview(root, directory, forkPoint);
@@ -102,10 +102,10 @@ it('reuses a version 4 capture the same way it reuses that capture saved as vers
     unknown
   >;
 
-  const versionFour = await run({ action: 'reuse', directory, mergeBase: forkPoint });
+  const versionFive = await run({ action: 'reuse', directory, mergeBase: forkPoint });
 
-  expect(record['version']).toBe(4);
-  expect(versionFour).toMatchObject({ status: 'match', paths: noPaths });
+  expect(record['version']).toBe(5);
+  expect(versionFive).toMatchObject({ status: 'match', paths: noPaths });
 
   const versionTwo: Record<string, unknown> = { ...record, version: 2 };
 
@@ -114,7 +114,7 @@ it('reuses a version 4 capture the same way it reuses that capture saved as vers
   delete versionTwo['endpoint'];
   await writeFile(join(directory, 'capture.json'), JSON.stringify(versionTwo));
 
-  expect(await run({ action: 'reuse', directory, mergeBase: forkPoint })).toEqual(versionFour);
+  expect(await run({ action: 'reuse', directory, mergeBase: forkPoint })).toEqual(versionFive);
 });
 
 it('reuses a review after a rebase onto a base that changes other files', async () => {

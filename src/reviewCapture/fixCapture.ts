@@ -1,6 +1,6 @@
 import { copyFile, lstat, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
 import { runGit } from '../git.js';
@@ -21,15 +21,22 @@ import {
   wholeFileList,
 } from './capture.js';
 import type { Capture, DirectTarget, Gap, Part } from './capture.js';
+import { pinPredecessor } from './fixChain.js';
+import type { PinnedPredecessor } from './fixChain.js';
 import { shownBlobs } from './patchBlobs.js';
-import { readCaptureRecord, recordFileName } from './record.js';
+import { isRepositoryPath, snapshotFolder } from './record.js';
 import type { Snapshot } from './record.js';
 import { checkReviewDirectory, existingEntry } from './reviewDirectory.js';
 import type { PinnedTarget } from './target.js';
 
 export type FixTarget = Extract<PinnedTarget, { kind: 'fix' }>;
 
-export type FixReviewTarget = Omit<FixTarget, 'base'>;
+export type FixReviewTarget = Omit<FixTarget, 'base' | 'predecessor'>;
+
+export interface PredecessorIdentity {
+  review: string;
+  identity: string;
+}
 
 type SnapshotTarget = Extract<DirectTarget, { kind: 'workingTree' | 'files' }>;
 
@@ -55,26 +62,12 @@ interface FixContext {
   snapshot: Snapshot;
 }
 
-interface EarlierReview {
-  target: DirectTarget;
-  base: string | null;
-  snapshot: Snapshot | undefined;
-}
-
-export const snapshotFolder = 'snapshot';
-
 const executableMode = 0o755;
 
 const regularMode = 0o644;
 
 const isSnapshotTarget = (target: DirectTarget): target is SnapshotTarget =>
   target.kind === 'workingTree' || target.kind === 'files';
-
-export const isRepositoryPath = (path: string): boolean => {
-  const segments = path.split('/');
-
-  return !isAbsolute(path) && !segments.includes('..') && !segments.includes('');
-};
 
 const readWorkingFile = async (root: string, path: string): Promise<WorkingFile> => {
   const file = join(root, path);
@@ -268,35 +261,6 @@ export const saveVerifiedSnapshot = async (
   }
 };
 
-const versionOneMessage = (review: string) =>
-  `${review} holds a version 1 capture record, which saved no snapshot. Capture the review again, then name that review.`;
-
-const readEarlierReview = async (review: string): Promise<EarlierReview> => {
-  if ((await existingEntry(join(review, recordFileName))) === undefined) {
-    throw new Error(`${review} holds no capture record, so a fix review has nothing to compare.`);
-  }
-
-  const record = await readCaptureRecord(review);
-
-  if (record.version === 1) {
-    throw new Error(versionOneMessage(review));
-  }
-
-  const { target, snapshot, base } = record;
-
-  if (target.kind === 'fix') {
-    throw new Error(
-      `${review} holds a fix capture. Name the review that the fix capture was made against.`,
-    );
-  }
-
-  if (isSnapshotTarget(target) && snapshot === undefined) {
-    throw new Error(`${review} holds a capture record with no snapshot.`);
-  }
-
-  return { target, base, snapshot };
-};
-
 const snapshotPaths = (snapshot: Snapshot) => [
   ...snapshot.present,
   ...snapshot.absent,
@@ -319,14 +283,29 @@ const rejectUnsafeSnapshot = async (review: string, snapshot: Snapshot | undefin
   }
 };
 
-// Resolves the earlier review and keeps its base, so the fix capture reports the same base.
-export const pinFixTarget = async (root: string, target: FixReviewTarget): Promise<FixTarget> => {
+const pinnedFixTarget = (target: FixReviewTarget, pinned: PinnedPredecessor): FixTarget => {
+  const { review, identity, endpointTree, base } = pinned;
+
+  if (endpointTree === undefined) {
+    return { ...target, review, base };
+  }
+
+  return { ...target, review, base, predecessor: { review, identity, endpointTree } };
+};
+
+export const pinFixTarget = async (
+  root: string,
+  target: FixReviewTarget,
+): Promise<{ target: FixTarget; predecessor: PredecessorIdentity }> => {
   const review = await checkReviewDirectory(root, target.review);
-  const earlier = await readEarlierReview(review);
+  const pinned = await pinPredecessor(root, review);
 
-  await rejectUnsafeSnapshot(review, earlier.snapshot);
+  await rejectUnsafeSnapshot(review, pinned.snapshot);
 
-  return { ...target, review, base: earlier.base };
+  return {
+    target: pinnedFixTarget(target, pinned),
+    predecessor: { review, identity: pinned.identity },
+  };
 };
 
 const nameOnlyPaths = async (root: string, target: SnapshotTarget) => {
@@ -649,7 +628,11 @@ const unsnapshottedBase = (earlier: Exclude<DirectTarget, SnapshotTarget>) =>
 // snapshot: its pinned commit is the earlier content.
 export const captureFixTarget = async (root: string, fix: FixTarget): Promise<Capture> => {
   try {
-    const { target: earlier, snapshot } = await readEarlierReview(fix.review);
+    const { target: earlier, snapshot } = await pinPredecessor(root, fix.review);
+
+    if (earlier.kind === 'fix') {
+      throw new Error(`${fix.review} holds a fix capture, and this fix target names no endpoint.`);
+    }
 
     if (isSnapshotTarget(earlier)) {
       if (snapshot === undefined) {

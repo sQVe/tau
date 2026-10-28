@@ -5,8 +5,9 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
+import { readCompletedCapture } from './completedCapture.js';
 import { compareEndpoint } from './endpoint.js';
-import { captureGeneration, readCompletedCapture } from './generation.js';
+import { captureGeneration } from './generation.js';
 import { inputFileName, recordFileName } from './record.js';
 import type { ReviewTarget } from './target.js';
 
@@ -60,7 +61,7 @@ it('records the tree a commit of the captured working tree would have', async ()
   await commitAll(root, 'second');
 
   expect(record).toMatchObject({
-    version: 4,
+    version: 5,
     endpoint: { status: 'complete', tree: await git(root, 'rev-parse', 'HEAD^{tree}') },
   });
 });

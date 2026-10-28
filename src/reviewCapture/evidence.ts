@@ -5,6 +5,7 @@ import { errorMessage, isMissingFile } from '../errors.js';
 import { runGit } from '../git.js';
 import { climbsOut } from '../tauDirectory.js';
 import { isInsideRoot } from './capture.js';
+import { readCompletedCapture } from './completedCapture.js';
 import {
   boundList,
   callerText,
@@ -33,7 +34,6 @@ import type {
   NumberedLine,
 } from './evidenceDecisions.js';
 import type { Freshness } from './freshness.js';
-import { readCompletedCapture } from './generation.js';
 import { captureReview, checkFreshness } from './pinnedCapture.js';
 import {
   generationFolderName,

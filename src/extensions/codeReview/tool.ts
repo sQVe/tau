@@ -44,7 +44,7 @@ const description = `Capture a code review target, check that it is still fresh,
   - {kind: "range", from, to}: the diff between two commits only.
   - {kind: "rootCommit", commit}: a commit with no parent, in full.
   - {kind: "files", paths, base?}: the diff of the named paths from base (HEAD by default), plus each file they list in full, unchanged ones included.
-  - {kind: "fix", review, findingPaths}: the diff since the earlier capture in the review directory review. That capture must be a workingTree, files, range, or rootCommit capture; only a workingTree or files capture saves a snapshot for this.
+  - {kind: "fix", review, findingPaths}: the diff since the earlier capture in the directory review: a workingTree, files, range, rootCommit, or fix capture. A fix capture needs a complete endpoint; only workingTree and files save a snapshot.
   Each target takes exclude: paths to leave out.
   Returns {hash, head, base, empty, paths, gaps, identity}. base is null for a root commit. empty is true when nothing was captured; then nothing is written. identity is capture.json's Git blob hash. gaps lists {kind, path} with kind binary, unreadable, excluded, unmatched (a named path that lists no file), or submodule (contents not captured). A fix target also returns {fixPaths, scope, outsidePaths}: scope is "wholeTarget" when outsidePaths is not empty, else "fix".
 - freshness {directory}: captures the saved target again and compares its hash and HEAD with capture.json. Returns {status, reasons}: fresh when both match, stale when either differs, unknown when the recapture fails. reasons says what changed or failed.

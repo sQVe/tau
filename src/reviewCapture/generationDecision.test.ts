@@ -75,6 +75,24 @@ it.each([
     reasonCount: 2,
   },
   {
+    name: 'legacy version 2 with an expected identity that differs',
+    facts: facts({
+      record: { version: 2, identity: 'identity-one', recorded: undefined },
+      expectedIdentity: 'identity-two',
+    }),
+    status: 'altered',
+    reasonCount: 1,
+  },
+  {
+    name: 'expected identity that differs and an altered patch',
+    facts: facts({
+      expectedIdentity: 'identity-two',
+      observed: { patch: 'patch-two', input: 'input-one', snapshot: undefined },
+    }),
+    status: 'altered',
+    reasonCount: 2,
+  },
+  {
     name: 'expected identity that differs',
     facts: facts({ expectedIdentity: 'identity-two' }),
     status: 'altered',

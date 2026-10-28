@@ -143,6 +143,7 @@ const pureModules = [
   'src/reviewCapture/generationDecision.ts',
   'src/reviewCapture/gitQuotedName.ts',
   'src/reviewCapture/patchBlobs.ts',
+  'src/reviewCapture/predecessorDecision.ts',
   'src/schema.ts',
   'src/shell.ts',
   'tests/adrIndexMark.ts',

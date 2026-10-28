@@ -89,6 +89,16 @@ export const pinnedTargetSchemas = {
       findingPaths: Type.Array(Type.String({ minLength: 1 })),
       base: Type.Union([objectNameSchema, Type.Null()]),
       exclude: excludeSchema,
+      predecessor: Type.Optional(
+        Type.Object(
+          {
+            review: Type.String({ minLength: 1 }),
+            identity: objectNameSchema,
+            endpointTree: objectNameSchema,
+          },
+          { additionalProperties: false },
+        ),
+      ),
     },
     { additionalProperties: false },
   ),

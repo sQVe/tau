@@ -55,15 +55,19 @@ it('reads a version 1 record', async () => {
   expect(await readUnchanged(directory)).toEqual(saved);
 });
 
-it.each(['version-2.json', 'version-2-fix.json', 'version-3.json', 'version-4.json'])(
-  'reads the %s record',
-  async (fixture) => {
-    const directory = await reviewDirectory(fixture);
-    const saved = JSON.parse(await readFile(join(fixtures, fixture), 'utf8')) as unknown;
+it.each([
+  'version-2.json',
+  'version-2-fix.json',
+  'version-3.json',
+  'version-4.json',
+  'version-5.json',
+  'version-5-fix.json',
+])('reads the %s record', async (fixture) => {
+  const directory = await reviewDirectory(fixture);
+  const saved = JSON.parse(await readFile(join(fixtures, fixture), 'utf8')) as unknown;
 
-    expect(await readUnchanged(directory)).toEqual(saved);
-  },
-);
+  expect(await readUnchanged(directory)).toEqual(saved);
+});
 
 it('refuses a version 1 record that holds a fix target', async () => {
   const directory = await reviewDirectory();
@@ -162,6 +166,9 @@ describe('refuses a saved record', () => {
   const fix = savedRecord('version-2-fix.json');
   const versionFour = savedRecord('version-4.json');
   const completeEndpoint = versionFour['endpoint'] as Record<string, unknown>;
+  const chainedFix = savedRecord('version-5-fix.json');
+  const chainedTarget = chainedFix['target'] as Record<string, unknown>;
+  const predecessor = chainedTarget['predecessor'] as Record<string, unknown>;
 
   const invalidRecords = {
     'with a field it does not define': { ...fix, extra: 1 },
@@ -195,6 +202,15 @@ describe('refuses a saved record', () => {
     'with a complete endpoint that names no tree': {
       ...versionFour,
       endpoint: { ...completeEndpoint, tree: undefined },
+    },
+    'of version 4 with a predecessor': { ...chainedFix, version: 4 },
+    'with a predecessor that names no endpoint tree': {
+      ...chainedFix,
+      target: { ...chainedTarget, predecessor: { ...predecessor, endpointTree: undefined } },
+    },
+    'with a predecessor field it does not define': {
+      ...chainedFix,
+      target: { ...chainedTarget, predecessor: { ...predecessor, extra: 1 } },
     },
     'with an unsupported endpoint that names no reason': {
       ...versionFour,

@@ -7,7 +7,8 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
-import { captureGeneration, readCompletedCapture } from './generation.js';
+import { readCompletedCapture } from './completedCapture.js';
+import { captureGeneration } from './generation.js';
 import {
   generationFolderName,
   generationInputFileName,
@@ -241,7 +242,7 @@ it('lets one of two captures started at once publish a record of its own artifac
   expect(published).toEqual([expect.objectContaining({ identity })]);
 
   expect(record).toMatchObject({
-    version: 4,
+    version: 5,
     original: { patch: blobHash(root, patch), input: blobHash(root, input) },
   });
 

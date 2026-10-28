@@ -12,6 +12,7 @@ const snapshot = (facts: Partial<SnapshotFacts>): SnapshotFacts => ({
 
 const facts = (given: Partial<EligibilityFacts>): EligibilityFacts => ({
   target: 'workingTree',
+  chainedFix: false,
   gaps: [],
   snapshot: snapshot({}),
   ...given,
@@ -27,6 +28,10 @@ const skipped = (kind: 'binary' | 'unreadable' | 'submodule', path: string) => (
 it.each([
   { name: 'a range', facts: facts({ target: 'range', snapshot: undefined }) },
   {
+    name: 'a chained fix',
+    facts: facts({ target: 'fix', chainedFix: true, snapshot: undefined }),
+  },
+  {
     name: 'a working tree of supported modes',
     facts: facts({ snapshot: snapshot({ shownModes: [{ path: 'a.ts', mode: '100755' }] }) }),
   },
@@ -40,7 +45,17 @@ it.each([
 it.each([
   { name: 'a files target', facts: facts({ target: 'files' }), reasons: ['files capture'] },
   { name: 'a root commit target', facts: facts({ target: 'rootCommit' }), reasons: ['rootCommit'] },
-  { name: 'a fix target', facts: facts({ target: 'fix' }), reasons: ['fix capture'] },
+  { name: 'a fix target', facts: facts({ target: 'fix' }), reasons: ['no complete endpoint'] },
+  {
+    name: 'a chained fix with a binary gap',
+    facts: facts({
+      target: 'fix',
+      chainedFix: true,
+      snapshot: undefined,
+      gaps: [{ kind: 'binary', path: 'a.bin' }],
+    }),
+    reasons: ['a.bin (binary)'],
+  },
   {
     name: 'a range with an excluded gap',
     facts: facts({ target: 'range', gaps: [{ kind: 'excluded', path: 'b.ts' }] }),
