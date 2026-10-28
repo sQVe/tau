@@ -439,6 +439,160 @@ it('keeps the module list and import table sorted, free of duplicates, and close
   }
 });
 
+const sortedImportTable = (table: Readonly<Record<string, readonly string[]>>) =>
+  Object.fromEntries(Object.entries(table).map(([row, allowed]) => [row, [...allowed].toSorted()]));
+
+const importTableHeading = '### Target modules and import table';
+
+const headingPattern = /^#{1,6} /;
+
+const importTableRowPattern = /^\| `([^`]+)`\s*\|\s*(.*?)\s*\|$/;
+
+const dependencyListPattern = /^`[^`]+`(, `[^`]+`)*$/;
+
+const parseDependencies = (cell: string): string[] | undefined => {
+  if (cell === 'nothing') {
+    return [];
+  }
+
+  if (!dependencyListPattern.test(cell)) {
+    return undefined;
+  }
+
+  return cell.split(', ').map((item) => item.slice(1, -1));
+};
+
+const parseImportTable = (markdown: string) => {
+  const lines = markdown.split('\n');
+  const start = lines.indexOf(importTableHeading);
+
+  if (start === -1) {
+    return { table: {}, problems: ['missing table section'] };
+  }
+
+  const nextHeading = lines.findIndex((line, index) => index > start && headingPattern.test(line));
+  const end = nextHeading === -1 ? lines.length : nextHeading;
+  const table: Record<string, string[]> = {};
+  const problems: string[] = [];
+
+  let tableLineCount = 0;
+
+  for (const [index, line] of lines.entries()) {
+    if (!line.startsWith('|')) {
+      continue;
+    }
+
+    if (index < start || index >= end) {
+      problems.push(`row outside the table section: ${line}`);
+
+      continue;
+    }
+
+    tableLineCount += 1;
+
+    if (tableLineCount <= 2) {
+      continue;
+    }
+
+    const match = importTableRowPattern.exec(line);
+
+    if (match === null) {
+      problems.push(`malformed row: ${line}`);
+
+      continue;
+    }
+
+    const [, moduleName = '', cell = ''] = match;
+    const dependencies = parseDependencies(cell);
+
+    if (Object.hasOwn(table, moduleName)) {
+      problems.push(`duplicate row: ${moduleName}`);
+    } else if (dependencies === undefined) {
+      problems.push(`malformed dependencies for ${moduleName}: ${cell}`);
+    } else {
+      table[moduleName] = dependencies;
+    }
+  }
+
+  return { table, problems };
+};
+
+it('keeps the import table in ADR 0120 equal to the rule import table', () => {
+  const adr = readFileSync(
+    join(root, 'docs/adr/0120-capability-modules-with-an-enforced-import-table.md'),
+    'utf8',
+  );
+
+  const parsed = parseImportTable(adr);
+
+  expect(parsed.problems).toEqual([]);
+  expect(sortedImportTable(parsed.table)).toEqual(sortedImportTable(importTable));
+});
+
+const tableSection = (rows: string[], after: string[] = []) =>
+  [
+    '### Target modules and import table',
+    '',
+    '| Module | May import |',
+    '| --- | --- |',
+    ...rows,
+    '',
+    ...after,
+  ].join('\n');
+
+it.each([
+  {
+    name: 'a valid table',
+    markdown: tableSection(['| `errors` | nothing |', '| `linear` | `command`, `errors` |']),
+    problems: [],
+  },
+  {
+    name: 'a duplicated row',
+    markdown: tableSection(['| `linear` | `command`, `errors` |', '| `linear` | `errors` |']),
+    problems: ['duplicate row: linear'],
+  },
+  {
+    name: 'a plain-text dependency',
+    markdown: tableSection(['| `linear` | `command`, errors |']),
+    problems: ['malformed dependencies for linear: `command`, errors'],
+  },
+  {
+    name: 'a row after a later heading',
+    markdown: tableSection(
+      ['| `linear` | `command` |'],
+      ['## Consequences', '', '| `errors` | nothing |'],
+    ),
+    problems: ['row outside the table section: | `errors` | nothing |'],
+  },
+  {
+    name: 'a missing section',
+    markdown: '## Decision\n\nNo table here.\n',
+    problems: ['missing table section'],
+  },
+  {
+    name: 'a row without a backticked module',
+    markdown: tableSection(['| linear | `schema` |']),
+    problems: ['malformed row: | linear | `schema` |'],
+  },
+  {
+    name: 'a row without a space after the pipe',
+    markdown: tableSection(['|`linear` | `schema` |']),
+    problems: ['malformed row: |`linear` | `schema` |'],
+  },
+  {
+    name: 'a row without a closing pipe',
+    markdown: tableSection(['| `linear` | nothing']),
+    problems: ['malformed row: | `linear` | nothing'],
+  },
+  {
+    name: 'a row with a missing dependency cell',
+    markdown: tableSection(['| `linear` |']),
+    problems: ['malformed row: | `linear` |'],
+  },
+])('ADR table check reports problems for $name', ({ markdown, problems }) => {
+  expect(parseImportTable(markdown).problems).toEqual(problems);
+});
+
 it.each([
   { entries: ['a', 'b', 'c'], problems: [] },
   { entries: ['a', 'c', 'b'], problems: ['b sorts before c'] },
