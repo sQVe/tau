@@ -29,6 +29,9 @@ const reviewName = (root: string, directory: string) =>
   requireTauChild(root, workersPath, reviewPrefix, directory, 'The review directory');
 
 // Refuses a review directory that a link could send outside the checkout, and changes nothing.
+export const reviewDirectoryPath = (root: string, directory: string): string =>
+  join(root, '.tau', workersPath, reviewName(root, directory));
+
 export const checkReviewDirectory = async (root: string, directory: string): Promise<string> => {
   const name = reviewName(root, directory);
   const path = join(root, '.tau', workersPath, name);

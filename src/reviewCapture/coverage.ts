@@ -6,7 +6,7 @@ import type { CoverageDecision, CoverageLinkFacts, LinkRecord } from './coverage
 import { readTree } from './endpoint.js';
 import { readCaptureRecord } from './record.js';
 import type { CaptureRecord } from './record.js';
-import { checkReviewDirectory } from './reviewDirectory.js';
+import { checkReviewDirectory, existingEntry, reviewDirectoryPath } from './reviewDirectory.js';
 
 export interface CoverageLinkRequest {
   directory: string;
@@ -34,6 +34,17 @@ const readLink = async (
   root: string,
   { directory, identity }: CoverageLinkRequest,
 ): Promise<CoverageLinkFacts> => {
+  const expected = reviewDirectoryPath(root, directory);
+
+  if ((await existingEntry(expected)) === undefined) {
+    return {
+      status: 'unreadable',
+      directory,
+      expectedIdentity: identity,
+      reason: `The review directory ${expected} does not exist.`,
+    };
+  }
+
   const path = await checkReviewDirectory(root, directory);
   let record: CaptureRecord;
 

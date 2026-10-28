@@ -304,3 +304,15 @@ it('reads a chain whose head tree object is gone as unknown and changes nothing 
   expect(JSON.stringify(coverage)).toContain('Git cannot read the head tree.');
   expect(await repositorySnapshot(root, [review, fix])).toEqual(before);
 });
+
+it('reads a chain whose saved review directory is gone as unknown', async () => {
+  const { root, base, head, review, fix } = await rangeChain();
+  const links = await linksOf(root, [review, fix]);
+
+  await rm(fix, { recursive: true, force: true });
+
+  const coverage = await readCoverage(root, { links, mergeBase: base, head });
+
+  expect(coverage).toMatchObject({ status: 'unknown', link: 2 });
+  expect(JSON.stringify(coverage)).toContain(basename(fix));
+});
