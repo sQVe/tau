@@ -14,7 +14,7 @@ extension's registration root may hold.
 Agents build most features as slices in parallel branches. The busiest integration files held action
 behavior next to registration. `subagents.ts` resolved paths, probed HTTP, and refused launches.
 `workerExtension.ts`, which Pi loads as the worker's extension, owned report acceptance and reminder
-policy. ADR 0050 fixed the same problem for worker control only.
+policy. ADR 0043's coordinator and task controllers fixed the same problem for worker control only.
 
 Conflicts come from shared blocks, not from size. Replaying PR #340 and PR #350 on one base
 conflicts in `managerPrompt.ts` because a login policy and a URL policy share one template string.
@@ -38,9 +38,10 @@ review signal under ADR 0034.
   refusal, may stay in the root.
 - Keep coupled state changes together. Report acceptance keeps saving, marking, and deadline cleanup
   in one owner.
+- An action that still lives in a root moves to a behavior owner when a feature changes it.
 - Keep pure decisions apart from effectful steps, as ADR 0120 says.
 - This rule does not split a flat module or a shared module's entry. ADR 0120 still starts modules
-  flat. ADR 0050's coordinator keeps its stated duties.
+  flat. ADR 0043's coordinator keeps its stated duties.
 
 ### Prompt and guidance lists
 
@@ -61,7 +62,7 @@ review signal under ADR 0034.
 
 - Parallel slices that change different actions edit different behavior owners, and different lines
   of the root and prompt lists.
-- The rule extends ADR 0050 and keeps ADR 0120's flat start.
+- The rule extends ADR 0043's worker control split and keeps ADR 0120's flat start.
 
 ### Negative
 
