@@ -1,16 +1,20 @@
-# ADR 0107: State the problem and keep option order stable in questions
+# ADR 0107: Put user decisions first with stated problems and stable options
 
 **Date**: 2026-10-14\
 **Status**: Accepted\
-**Supersedes**: [ADR 0065 (Put user decisions first in replies)](./0065-put-user-decisions-first-in-replies.md),
-its option order rule only
+**Supersedes**: [ADR 0065 (Put user decisions first in replies)](./README.md#retired)\
+**Related**: [ADR 0006 (Load Tau's instruction sets into every prompt)](./0006-default-writing-policy.md)
 
 ## Context
 
-Users often cannot decide from an `ask_user_question` dialog alone. In Pi sessions since September,
-about one in seven answers was typed or the dialog was closed, and many typed answers asked what the
-issue was instead of choosing. The single `context` field named the decision and its effect, but
-rarely the problem behind it. Longer contexts did not lower that share.
+Long replies put the first user decision near the end, below long status reports. Options did not
+say what was at stake, decisions referred to earlier turns, and several decisions were bundled into
+one sentence. Some turns ended without the question.
+
+Users often cannot decide from an `ask_user_question` dialog alone. In Pi sessions, some answers
+were typed or the dialog was closed, and many typed answers asked what the issue was instead of
+choosing. The single `context` field named the decision and its effect, but rarely the problem
+behind it. Longer contexts did not change that.
 
 The tool also required the recommended option to come first, because the dialog opened on the first
 option. Options therefore changed order when the recommendation changed, so the same question looked
@@ -19,8 +23,22 @@ option disappeared when the user moved to another.
 
 ## Decision
 
-Each question states its problem and its impact in two required fields, and options keep a natural,
-stable order with the recommendation marked wherever it sits.
+A reply that needs a user decision starts with one sentence of status, then the decisions, then the
+report and evidence. Each question states its problem and its impact in two required fields. Options
+keep a natural, stable order, with the recommendation marked wherever it sits.
+
+### Reply rules
+
+- Each decision has a number, one question, and one sentence on what it changes or blocks. It must
+  read without earlier messages.
+- Options use letters, and each option says in one line what happens. `ask_user_question` uses
+  labels and `recommended: true` instead of letters.
+- A yes or no question states the default the agent uses without an answer.
+- A skill's own reply or question format takes precedence over these rules, so skills such as
+  code-review and pr keep their reports and `ask_user_question` prompts.
+- A turn that waits for the user states the question. This rule sits in the workflow instructions
+  because it governs when the agent stops, following [ADR 0006](./0006-default-writing-policy.md).
+  The other rules sit in the writing instructions.
 
 ### Question fields
 
@@ -40,13 +58,17 @@ stable order with the recommendation marked wherever it sits.
 
 ### Positive
 
+- The user sees what to decide without reading the report first.
 - The user sees why a decision exists before the options.
+- Each decision can be answered by number and letter.
 - A repeated question, such as a PR approval, keeps the same labels in the same order.
 - Content that every option acts on, such as a PR title and body, stays visible on every option.
 
 ### Negative
 
 - Every call needs two fields instead of one, so questions get longer.
+- The report comes after the decisions, so a user who wants the evidence first must scroll.
+- Short replies with one decision carry more structure than they need.
 - On a short terminal, options above the recommended one can scroll out of view when the dialog
   opens.
 - The tool cannot check that the problem is explained well, only that it is present and distinct.
@@ -63,3 +85,14 @@ must stand alone for a user who returns cold, and a check on free chat text is u
 Keep reordering options so the dialog opens on the recommendation. Rejected because the order then
 changes with the recommendation, and opening the dialog on the recommended option gives the same
 focus without moving options.
+
+### End with the decision
+
+Keep the rule to end with the decision. Rejected because long replies keep hiding decisions below
+the report.
+
+### `ask_user_question` for every decision
+
+Require `ask_user_question` for every decision. Rejected because the dialog has a problem, an
+impact, and options, but no field for the status or the report. A reply that needs the evidence
+first keeps its decisions in the chat.

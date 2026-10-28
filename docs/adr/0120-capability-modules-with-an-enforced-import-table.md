@@ -7,7 +7,7 @@
 [ADR 0057 (Enforce pure decision modules from a registry)](./README.md#retired),
 [ADR 0079 (Grow modules from flat files)](./README.md#retired)\
 **Related**: [ADR 0055 (Record Tau coding conventions in `AGENTS.md`)](./0055-record-tau-coding-conventions-in-agents-md.md),
-[ADR 0109 (Keep action behavior out of extension roots and name one concept one way)](./0109-keep-action-behavior-out-of-extension-roots.md)
+[ADR 0109 (Keep action behavior out of extension roots)](./0109-keep-action-behavior-out-of-extension-roots.md)
 
 ## Context
 
@@ -20,6 +20,12 @@ The earlier rules were spread over several records: where code lives, how files 
 modules stay pure, and which extensions may not import each other. None of them named the shared
 modules or the direction of their imports. A rule that no check enforces drifts, because agents copy
 nearby code.
+
+File names once mixed word orders inside some modules. `reviewCapture/` held `reviewCapture.ts`
+beside `captureReview.ts`, so a reader could not tell which file was the entry. Most modules used
+one local pattern, often verb and decision pairs such as `verify.ts` and `verifyDecisions.ts`. A
+strict owner-first rule made several real names worse. `incompleteReport` became `reportIncomplete`,
+and `passiveWait` became `waitPassive`.
 
 ## Decision
 
@@ -98,15 +104,25 @@ or the module list instead of silencing the rule.
 
 - Use camelCase for `.ts` files. Use PascalCase only when a file mainly exports one class with the
   same name.
+- Use one noun for one concept inside a module, and keep files about the same concept in one local
+  family, such as `report*` or `verify` with `verifyDecisions`.
+- No file reverses its module's name, such as `captureReview.ts` beside `reviewCapture.ts`. This
+  covers private files and extra public files.
+- A noun alone names what the file holds, such as `record.ts`. A plural noun alone names a
+  collection.
+- Keep an established domain phrase when it matches a config key or exported concept, such as
+  `allowedModels.ts` or `requiredFor.ts`.
 - Name a unit test `foo.test.ts` beside `foo.ts`. Split a large test file by behavior and keep the
   source name first. Cross-module tests live in `tests/`. Mark tests that run a real Pi session or
   herdr with `.integration.test.ts`.
+- Rename an existing file only for a real ambiguity, in its own small change, after checking active
+  unlanded work and the file's importers. Squash-merged branch refs are not active work.
 - Use kebab-case under `docs/`. ADRs use the `NNNN-kebab.md` form.
 - Use uppercase file names only when an external convention requires them, such as `LICENSE`,
   `README.md`, `SKILL.md`, and `TEMPLATE.md`.
-- Naming inside a module, and the lists that must stay sorted, follow
-  [ADR 0109](./0109-keep-action-behavior-out-of-extension-roots.md) and
-  [ADR 0055](./0055-record-tau-coding-conventions-in-agents-md.md).
+- Keep `pureModules` in `tests/structure.test.ts` and the module list and each module's public files
+  in `lint/rules/moduleBoundaries.ts` sorted and free of duplicates, as
+  [ADR 0109](./0109-keep-action-behavior-out-of-extension-roots.md) says.
 
 ## Consequences
 
@@ -115,12 +131,15 @@ or the module list instead of silencing the rule.
 - One list and one table answer where shared code goes and which modules may depend on it.
 - The rule reports a wrong import at lint time, so the structure does not rely on review.
 - The path shows a module's size, and each file name says which module it belongs to.
+- A reader can tell the entry of a module from its other files, and finds one concept under one
+  noun.
 
 ### Negative
 
 - A new shared file needs a module and a table row, which adds a step for small helpers.
 - A module's second file moves its first file, which touches every import of it.
 - Until the flat files merge, the table is long and lists modules that will disappear.
+- Which noun names a concept still needs judgment in review. Only registry order is checked.
 
 ## Alternatives considered
 
@@ -134,3 +153,15 @@ files kept importing each other in any direction.
 
 Describe the allowed edges in a document and rely on review. Rejected because agents copy nearby
 code, and a rule without a check drifts.
+
+### Owner noun first in every private file name
+
+Rejected. It fixed the mixed modules but made established names worse, and the owner of a file such
+as `compactionWorkers.ts` is unclear without reading it. Phi uses this rule because its files belong
+to a few user-facing nouns, such as pane and tab. Tau's modules own tools, workers, records, and
+profiles.
+
+### Rename on touch
+
+Rejected. A rename changes importers, tests, and registry entries, so it widens the merge surface of
+the very feature work that overlaps other branches.

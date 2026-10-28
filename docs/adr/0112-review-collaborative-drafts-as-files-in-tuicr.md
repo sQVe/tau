@@ -3,7 +3,7 @@
 **Date**: 2026-10-15\
 **Status**: Accepted\
 **Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
-[ADR 0107 (State the problem and keep option order stable in questions)](./0107-state-the-problem-and-keep-option-order-stable-in-questions.md)
+[ADR 0107 (Put user decisions first with stated problems and stable options)](./0107-state-the-problem-and-keep-option-order-stable-in-questions.md)
 
 ## Context
 

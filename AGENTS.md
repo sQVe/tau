@@ -37,7 +37,7 @@ verification.
   ([ADR 0109](docs/adr/0109-keep-action-behavior-out-of-extension-roots.md)).
 - Give a prompt or guidance list one policy per item.
 - Name one concept with one noun inside a module. No file reverses its module's name
-  ([ADR 0109](docs/adr/0109-keep-action-behavior-out-of-extension-roots.md)).
+  ([ADR 0120](docs/adr/0120-capability-modules-with-an-enforced-import-table.md)).
 
 ## Architecture
 

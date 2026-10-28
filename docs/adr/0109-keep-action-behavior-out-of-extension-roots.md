@@ -1,4 +1,4 @@
-# ADR 0109: Keep action behavior out of extension roots and name one concept one way
+# ADR 0109: Keep action behavior out of extension roots
 
 **Date**: 2026-10-14\
 **Status**: Accepted\
@@ -8,32 +8,24 @@
 
 ## Context
 
-ADR 0120 decides where modules and files live and the case of file names. It does not say what an
-extension's registration root may hold, or how a module names one concept.
+ADR 0120 decides where modules and files live and how files are named. It does not say what an
+extension's registration root may hold.
 
-Agents build most features as slices in parallel branches. Over the 90 days to 2026-10-14, 71 of 309
-merged PRs edited the subagents entry (`subagents.ts`, before that `index.ts`). The busiest
-integration files hold action behavior next to registration. `subagents.ts` (933 lines) resolves
-paths, probes HTTP, and refuses launches in `checkLaunchEnvironment`. `workerExtension.ts` (1,002
-lines), which Pi loads as the worker's extension, owns report acceptance and reminder policy. ADR
-0050 fixed the same problem for worker control only.
+Agents build most features as slices in parallel branches. The busiest integration files held action
+behavior next to registration. `subagents.ts` resolved paths, probed HTTP, and refused launches.
+`workerExtension.ts`, which Pi loads as the worker's extension, owned report acceptance and reminder
+policy. ADR 0050 fixed the same problem for worker control only.
 
 Conflicts come from shared blocks, not from size. Replaying PR #340 and PR #350 on one base
-conflicts in `managerPrompt.ts`, a 33-line file, because a login policy and a URL policy share one
-template string. Additions to the `pureModules` registry conflict when they land in the same place.
-Sorting spreads unrelated additions apart, but two additions in the same gap still conflict: PR #294
-and PR #316 conflict whether the list is sorted or not.
-
-File names mix word orders inside some modules. `reviewCapture/` holds `reviewCapture.ts` beside
-`captureReview.ts`, so a reader cannot tell which is the entry. Two of 17 folder modules show clear
-mixed patterns. The rest use one local pattern, often verb and decision pairs such as `verify.ts`
-and `verifyDecisions.ts`. Testing a strict owner-first rule on ten real names made several worse:
-`incompleteReport` becomes `reportIncomplete`, and `passiveWait` becomes `waitPassive`.
+conflicts in `managerPrompt.ts` because a login policy and a URL policy share one template string.
+Additions to the `pureModules` registry conflict when they land in the same place. Sorting spreads
+unrelated additions apart, but two additions in the same gap still conflict: PR #294 and PR #316
+conflict whether the list is sorted or not.
 
 ## Decision
 
-Extension registration roots wire and order; action behavior lives in behavior owners; each module
-names one concept one way. Size stays a review signal under ADR 0034.
+Extension registration roots wire and order; action behavior lives in behavior owners. Size stays a
+review signal under ADR 0034.
 
 ### Extension registration roots
 
@@ -63,48 +55,18 @@ names one concept one way. Size stays a review signal under ADR 0034.
 - Sorting lowers conflicts only for additions in different places. It does not apply to ordered
   lists such as lint overrides in `vite.config.ts`.
 
-### File names
-
-- Use one noun for one concept inside a module, and keep files about the same concept in one local
-  family, such as `report*` or `verify` with `verifyDecisions`.
-- No file reverses its module's name, such as `captureReview.ts` beside `reviewCapture.ts`. This
-  covers private files and extra public files.
-- A noun alone names what the file holds, such as `record.ts`. A plural noun alone names a
-  collection.
-- Keep an established domain phrase when it matches a config key or exported concept, such as
-  `allowedModels.ts` or `requiredFor.ts`.
-- Tests keep their source name, as ADR 0120 says.
-
-### Existing code
-
-- One refactor moves the measured hotspots: launch behavior out of `subagents.ts` and report
-  behavior out of `workerExtension.ts`. It also renames `captureReview.ts`, sorts and checks the two
-  registries, splits each multi-policy item in `managerPrompt.ts`, and splits
-  `controller/controller.test.ts` (4,475 lines) by behavior, as ADR 0120 already requires. Tests
-  stay at the public boundary they already defend.
-- Other actions still live in the roots, such as follow-up, status, reply, and cancel in
-  `subagents.ts`, and worker questions, input, startup, and activity in `workerExtension.ts`. Move
-  such an action into a behavior owner when a feature changes it.
-- After the refactor, apply the rules to new files. Rename an existing file only for a real
-  ambiguity, in its own small change, after checking active unlanded work and the file's importers.
-  Squash-merged branch refs are not active work.
-
 ## Consequences
 
 ### Positive
 
 - Parallel slices that change different actions edit different behavior owners, and different lines
   of the root and prompt lists.
-- A reader can tell the entry of a module from its other files, and finds one concept under one
-  noun.
 - The rule extends ADR 0050 and keeps ADR 0120's flat start.
 
 ### Negative
 
 - A feature spans more files, and the root still changes once per new action.
 - The conflict reduction is not measured. It rests on replayed merges, not on a conflict rate.
-- Which noun names a concept still needs judgment in review. Only registry order is checked.
-- The refactor blocks other subagents work while it runs.
 - `loadout.ts` and the shared question UI keep mixed responsibilities. They change only when a
   feature gives a reason.
 
@@ -112,20 +74,8 @@ names one concept one way. Size stays a review signal under ADR 0034.
 
 ### A hard line limit in lint
 
-Rejected. ADR 0034 already chose review signals, and the measured prompt conflict happened in a
-33-line file. A count does not show which behavior belongs where.
-
-### Owner noun first in every private file name
-
-Rejected. It fixed the two mixed modules but made established names worse, and the owner of a file
-such as `compactionWorkers.ts` is unclear without reading it. Phi uses this rule because its files
-belong to a few user-facing nouns, such as pane and tab. Tau's modules own tools, workers, records,
-and profiles.
-
-### Rename on touch
-
-Rejected. A rename changes importers, tests, and registry entries, so it widens the merge surface of
-the very feature work that overlaps other branches.
+Rejected. ADR 0034 already chose review signals, and the prompt conflict came from shared blocks,
+not from file size. A count does not show which behavior belongs where.
 
 ### Discover pure modules instead of listing them
 
