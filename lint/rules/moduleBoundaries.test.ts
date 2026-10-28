@@ -84,6 +84,10 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
       filename: '/repository/src/extensions/subagents/subagents.ts',
     },
     {
+      code: "import { runTests } from './runner/vitest.js';\n\nexport const value = runTests;",
+      filename: '/repository/src/extensions/tdd/observation.ts',
+    },
+    {
       code: "import { snippet } from './asset.js';\n\nexport const value = snippet;",
       filename: '/repository/src/extensions/snippets/snippets/loader.ts',
     },
@@ -113,6 +117,13 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
       filename: '/repository/src/extensions/subagents/subagents.ts',
       errors: [
         { messageId: 'private', data: { folder: 'extensions/subagents/controller', file: 'stop' } },
+      ],
+    },
+    {
+      code: "import { defaultSpawn } from './runner/process.js';\n\nexport const value = defaultSpawn;",
+      filename: '/repository/src/extensions/tdd/observation.ts',
+      errors: [
+        { messageId: 'private', data: { folder: 'extensions/tdd/runner', file: 'process' } },
       ],
     },
     {
