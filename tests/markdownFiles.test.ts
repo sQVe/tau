@@ -37,10 +37,6 @@ const allowedPaths: AllowedPaths = {
   'scripts/mutationScope.ts': [
     'docs/adr/0115-copy-mutation-script-per-repository-and-fail-on-survivors.md',
   ],
-  'src/extensions/coding/': ['docs/adr/0008-coding-instructions.md'],
-  'src/extensions/workflow/': [
-    'docs/adr/0056-load-workflow-rules-apart-from-coding-and-writing.md',
-  ],
   'src/tauConfig/': ['docs/adr/0063-narrow-allowed-models-from-user-to-repository.md'],
 };
 

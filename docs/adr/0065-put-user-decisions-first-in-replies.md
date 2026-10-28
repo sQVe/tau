@@ -4,8 +4,8 @@
 **Status**: Accepted; option order superseded by
 [ADR 0107 (State the problem and keep option order stable in questions)](./0107-state-the-problem-and-keep-option-order-stable-in-questions.md)\
 **Related**:
-[ADR 0006 (Default writing policy)](./0006-default-writing-policy.md),
-[ADR 0056 (Load workflow rules apart from coding and writing)](./0056-load-workflow-rules-apart-from-coding-and-writing.md)
+[ADR 0006 (Load Tau's instruction sets into every prompt)](./0006-default-writing-policy.md),
+[ADR 0006 (Load Tau's instruction sets into every prompt)](./0006-default-writing-policy.md)
 
 ## Context
 
@@ -33,9 +33,8 @@ recommendation, the user sees what to decide first and can answer by number and 
 - A skill's own reply or question format takes precedence over these rules, so skills such as
   code-review and pr keep their reports and `ask_user_question` prompts.
 - A turn that waits for the user states the question. This rule sits in the workflow instructions
-  because it governs when the agent stops, following
-  [ADR 0056](./0056-load-workflow-rules-apart-from-coding-and-writing.md). The other rules sit in
-  the writing instructions.
+  because it governs when the agent stops, following [ADR 0006](./0006-default-writing-policy.md).
+  The other rules sit in the writing instructions.
 
 ## Consequences
 

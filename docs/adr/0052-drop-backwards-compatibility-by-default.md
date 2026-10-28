@@ -3,7 +3,7 @@
 **Date**: 2026-09-27\
 **Status**: Accepted\
 **Related**: [ADR 0003 (Stability of externally observable identifiers)](./0003-externally-observable-identifiers.md),
-[ADR 0008 (Coding instructions)](./0008-coding-instructions.md),
+[ADR 0006 (Load Tau's instruction sets into every prompt)](./0006-default-writing-policy.md),
 [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
 [Agent coding instructions](../../src/instructions/coding.md)
 

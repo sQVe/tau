@@ -34,7 +34,6 @@ and the numbers that its status names.
 
 - [0003: Stability of externally observable identifiers](./0003-externally-observable-identifiers.md)
 - [0007: Vim keys in interactive components](./0007-vim-keys-in-interactive-components.md)
-- [0008: Coding instructions](./0008-coding-instructions.md), partly superseded by 0024
 - [0034: Check house style outside the editor](./0034-check-house-style-outside-the-editor.md),
   partly superseded by 0035
 - [0035: Use size thresholds as review guidance](./0035-use-size-thresholds-as-review-guidance.md)
@@ -48,7 +47,7 @@ and the numbers that its status names.
 
 ## Documentation and writing
 
-- [0006: Default writing policy](./0006-default-writing-policy.md)
+- [0006: Load Tau's instruction sets into every prompt](./0006-default-writing-policy.md)
 - [0010: Documentation scope](./0010-documentation-scope.md)
 - [0065: Put user decisions first in replies](./0065-put-user-decisions-first-in-replies.md), partly
   superseded by 0107
@@ -58,7 +57,6 @@ and the numbers that its status names.
 
 - [0009: Prompt snippets](./0009-prompt-snippets.md), partly superseded by 0080 and 0081
 - [0013: Snippet placement](./0013-snippet-placement.md), superseded by 0080
-- [0056: Load workflow rules apart from coding and writing](./0056-load-workflow-rules-apart-from-coding-and-writing.md)
 - [0066: Add Tau's prompt text to Pi's append section](./0066-add-taus-prompt-text-to-pis-append-section.md)
 - [0080: Insert prompt snippets through autocomplete](./0080-insert-prompt-snippets-through-autocomplete.md)
 - [0081: Sort prompt snippets by id](./0081-sort-prompt-snippets-by-id.md)
@@ -124,16 +122,9 @@ and the numbers that its status names.
 
 - [0036: Allowlist worker content and label states from one table](./0036-allowlist-worker-content-and-label-states-from-one-table.md)
 - [0043: Run subagents as Pi workers with a thin task layer over herdr](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
-- [0062: Put worker instructions in the system prompt](./0062-put-worker-instructions-in-the-system-prompt.md),
-  superseded by 0066
 - [0064: Deliver worker replies through records](./0064-deliver-worker-replies-through-records.md)
-- [0067: Give workers only their profile's tools and skills](./0067-give-workers-only-their-profile-tools-and-skills.md),
-  partly superseded by 0087
-- [0068: Load only the instruction sets each worker profile needs](./0068-load-only-the-instruction-sets-each-worker-profile-needs.md),
-  partly superseded by 0076
-- [0069: Load each Pi package where its tools are used](./0069-load-each-pi-package-where-its-tools-are-used.md)
+- [0067: Give each worker profile one loadout of tools, skills, instruction sets, and packages](./0067-give-workers-only-their-profile-tools-and-skills.md)
 - [0076: Give browser workers one shared set of browser rules](./0076-give-browser-workers-one-shared-set-of-browser-rules.md)
-- [0084: Keep the diagram skill out of worker profiles](./0084-keep-the-diagram-skill-out-of-worker-profiles.md)
 - [0097: Track only the current session's workers](./0097-track-only-the-current-sessions-workers.md)
 - [0102: Require acceptance criteria on editing worker launches](./0102-require-acceptance-criteria-on-editing-worker-launches.md)
 - [0123: Delete stopped worker records 14 days after their last write](./0123-delete-stopped-worker-records-14-days-after-their-last-write.md)
@@ -199,6 +190,7 @@ and the numbers that its status names.
 | ---- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
 | 0001 | Application structure                                                 | [0120](./0120-capability-modules-with-an-enforced-import-table.md)                                                                                 | `a859a7bb`  |
 | 0002 | File and directory naming conventions                                 | [0120](./0120-capability-modules-with-an-enforced-import-table.md)                                                                                 | `a859a7bb`  |
+| 0008 | Coding instructions                                                   | [0006](./0006-default-writing-policy.md)                                                                                                           | `b0980b75`  |
 | 0011 | Commit preapproval at startup                                         | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
 | 0015 | Explicit repository commit commands                                   | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
 | 0016 | Prepare each commit with separate staging                             | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
@@ -223,7 +215,12 @@ and the numbers that its status names.
 | 0049 | Treat the bash commit guard as guidance                               | [0024](./0024-commit-without-human-approval.md)                                                                                                    | `b0980b75`  |
 | 0050 | Split worker control into a coordinator and one controller per worker | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                       | `b0980b75`  |
 | 0054 | Show one foreground worker per parent                                 | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                       | `b0980b75`  |
+| 0056 | Load workflow rules apart from coding and writing                     | [0006](./0006-default-writing-policy.md)                                                                                                           | `b0980b75`  |
 | 0057 | Enforce pure decision modules from a registry                         | [0120](./0120-capability-modules-with-an-enforced-import-table.md)                                                                                 | `a859a7bb`  |
 | 0058 | Run subagents only as Pi workers                                      | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                       | `b0980b75`  |
 | 0059 | Run each Pi worker as its pane's own process                          | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                       | `b0980b75`  |
+| 0062 | Put worker instructions in the system prompt                          | [0066](./0066-add-taus-prompt-text-to-pis-append-section.md)                                                                                       | `b0980b75`  |
+| 0068 | Load only the instruction sets each worker profile needs              | [0067](./0067-give-workers-only-their-profile-tools-and-skills.md)                                                                                 | `b0980b75`  |
+| 0069 | Load each Pi package where its tools are used                         | [0067](./0067-give-workers-only-their-profile-tools-and-skills.md)                                                                                 | `b0980b75`  |
 | 0079 | Grow modules from flat files                                          | [0120](./0120-capability-modules-with-an-enforced-import-table.md)                                                                                 | `a859a7bb`  |
+| 0084 | Keep the diagram skill out of worker profiles                         | [0067](./0067-give-workers-only-their-profile-tools-and-skills.md)                                                                                 | `b0980b75`  |

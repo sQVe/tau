@@ -2,7 +2,7 @@
 
 **Date**: 2026-09-29\
 **Status**: Accepted\
-**Related**: [ADR 0062 (Put worker instructions in the system prompt)](./0062-put-worker-instructions-in-the-system-prompt.md),
+**Related**: [ADR 0062 (Put worker instructions in the system prompt)](./README.md#retired),
 [elidickinson/pi-claude-bridge#135](https://github.com/elidickinson/pi-claude-bridge/issues/135)
 
 ## Context
@@ -30,6 +30,8 @@ Tau appends every system prompt addition to `systemPromptOptions.appendSystemPro
 - Tools do not declare `promptGuidelines`. Tau appends a tool's guidelines while the tool is active.
 - A worker reads its instructions from its saved task and appends them the same way as a parent, so
   a follow-up gets them without resending.
+- Worker instructions state only what no tool description or guard already states, because the
+  worker already sees those tool descriptions and guards.
 - A turn that Tau starts while Pi is idle may use `triggerTurn`. Since Pi 1.2.0, an idle
   `triggerTurn` runs `before_agent_start`, so the turn's prompt has the append section. Earlier Pi
   versions skipped the hook ([pi#5581](https://github.com/earendil-works/pi/issues/5581)), and the
