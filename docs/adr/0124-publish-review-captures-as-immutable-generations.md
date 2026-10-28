@@ -61,6 +61,12 @@ chains. The evidence read reports an altered or missing capture as a gap, and it
 incomplete capture, which has no record to report. A fix capture refuses an earlier review in any of
 those states.
 
+The chain coverage read checks a list of saved reviews, root first, against a merge base and a head.
+It reads each record and its generation, and it compares the last endpoint tree with the head tree.
+It writes nothing. It reports `match` when every link is readable and chains on the one before,
+`mismatch` with the affected link when a link differs from the chain, `unsupported` when a link
+cannot take part, and `unknown` when evidence is missing or unreadable.
+
 A failed capture removes what it created and restores the live input. It leaves no record, so the
 directory cannot be read as complete. The next step is a new review directory, not a retry in place.
 

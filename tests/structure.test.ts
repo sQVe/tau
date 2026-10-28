@@ -136,6 +136,7 @@ const pureModules = [
   'src/fileLock/lockHolderDecision.ts',
   'src/github/repositoryTargetDecisions.ts',
   'src/process/stateDecision.ts',
+  'src/reviewCapture/coverageDecision.ts',
   'src/reviewCapture/endpointDecision.ts',
   'src/reviewCapture/evidenceDecisions.ts',
   'src/reviewCapture/fixScope.ts',

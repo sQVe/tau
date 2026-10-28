@@ -13,7 +13,9 @@ import { readOriginRepository } from '../../github/repositoryTarget.js';
 import { configRepositoryKey } from '../../github/repositoryTargetDecisions.js';
 import { readReviewEvidence, scanMarkers } from '../../reviewCapture/evidence.js';
 import type { MarkerLine, ReviewEvidence } from '../../reviewCapture/evidence.js';
+import type { CoverageDecision, CoverageLinkRequest } from '../../reviewCapture/reviewCapture.js';
 import { checkReviewDirectory } from '../../reviewCapture/reviewCapture.js';
+import { readChainCoverage } from './coverage.js';
 import {
   checkLogGaps,
   decideFullCheck,
@@ -37,6 +39,7 @@ export interface PublicationRequest {
   remote?: string;
   base?: string;
   review?: string;
+  chain?: CoverageLinkRequest[];
 }
 
 export interface PublicationConfig {
@@ -52,6 +55,7 @@ export interface PublicationEvidence {
   subjects: string[];
   reuse: ReuseResult | null;
   review: ReviewEvidence | null;
+  coverage?: CoverageDecision | null;
   markers: MarkerLine[];
   checks: CheckLog[];
   fullCheck: FullCheckEvidence | null;
@@ -59,7 +63,7 @@ export interface PublicationEvidence {
 }
 
 const readFailure = (
-  kind: 'target' | 'branch' | 'subjects' | 'reuse' | 'review' | 'markers' | 'checks',
+  kind: 'target' | 'branch' | 'subjects' | 'reuse' | 'review' | 'markers' | 'checks' | 'coverage',
   error: unknown,
 ): PublicationGap => ({
   kind,
@@ -108,6 +112,38 @@ const readReview = async (
     );
   } catch (error) {
     evidence.gaps.push(readFailure('review', error));
+  }
+};
+
+const readCoverageEvidence = async (
+  root: string,
+  evidence: PublicationEvidence,
+  chain: CoverageLinkRequest[],
+) => {
+  if (evidence.target === null) {
+    evidence.coverage = null;
+
+    return;
+  }
+
+  try {
+    const coverage = await readChainCoverage(root, {
+      chain,
+      mergeBase: evidence.target.mergeBase,
+    });
+
+    evidence.coverage = coverage;
+
+    if (coverage.status !== 'match') {
+      evidence.gaps.push({
+        kind: 'coverageMismatch',
+        status: coverage.status,
+        reasons: coverage.reasons,
+      });
+    }
+  } catch (error) {
+    evidence.coverage = null;
+    evidence.gaps.push(readFailure('coverage', error));
   }
 };
 
@@ -393,6 +429,11 @@ export const readPublicationEvidence = async (
   }
 
   await readReview(root, request, evidence);
+
+  if (request.chain !== undefined) {
+    await readCoverageEvidence(root, evidence, request.chain);
+  }
+
   await readFullCheck(runtime, root, evidence, config);
   await readChecks(root, evidence);
 
