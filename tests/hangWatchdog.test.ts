@@ -34,9 +34,6 @@ const configSource = (directory: string) =>
     '};',
   ].join('\n');
 
-// Each file in a shared worker starts a watchdog thread. A thread left from an earlier file adds
-// one to the count of every later file.
-// Threads are counted through /proc.
 it.skipIf(process.platform !== 'linux')(
   'keeps one watchdog thread alive while files share a worker',
   async ({ onTestFinished }) => {

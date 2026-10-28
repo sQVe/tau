@@ -40,7 +40,6 @@ const readsRealModule = (index: number): CaseFile => ({
   ),
 });
 
-// Each case leaks state from one test file and checks it in a later file of the same worker.
 const cases: IsolationCase[] = [
   {
     leak: 'a module loaded under vi.mock',
