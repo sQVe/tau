@@ -211,7 +211,6 @@ it('reads a capture whose endpoint lost a blob object as missing', async () => {
   expect(await compareEndpoint(root, endpoint, 'HEAD')).toBe('unknown');
 });
 
-// Commits a base and a change on it, and returns their trees.
 const committedPair = async (root: string, kept: string) => {
   await git(root, 'checkout', '--quiet', '--orphan', `pair-${kept}`);
   await writeAt(root, 'src/kept.ts', `${kept}\n`);

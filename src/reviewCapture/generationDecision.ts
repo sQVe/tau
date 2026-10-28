@@ -14,8 +14,6 @@ export interface SavedRecord {
 
 type EndpointStatus = 'complete' | 'unsupported' | 'incomplete';
 
-// What Git shows of the saved endpoint: why it can no longer show the trees, and how the change
-// between them differs from the saved patch.
 export interface EndpointFacts {
   status: EndpointStatus;
   missing: string[];

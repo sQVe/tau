@@ -57,7 +57,6 @@ interface DiffEntry {
 export interface RawRecord {
   oldMode: string;
   newMode: string;
-  // The blob after the change.
   blob: string;
   status: string;
   paths: string[];
@@ -241,8 +240,6 @@ const readPaths = (output: Buffer, offset: number, count: number) => {
 
 const gitLinkMode = '160000';
 
-// Raw records: `:<old mode> <new mode> <old> <new> <status>`, then one path, or two for a rename or
-// copy. Returns the records and the offset of the first field after them.
 export const readRawRecords = (output: Buffer): { records: RawRecord[]; next: number } => {
   const records: RawRecord[] = [];
   let next = 0;
@@ -260,7 +257,6 @@ export const readRawRecords = (output: Buffer): { records: RawRecord[]; next: nu
   return { records, next };
 };
 
-// Collects the paths whose mode is a Git link on either side, and the deleted paths.
 const readRawSection = (output: Buffer, summary: DiffSummary) => {
   const { records, next } = readRawRecords(output);
 

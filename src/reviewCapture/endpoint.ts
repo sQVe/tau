@@ -69,7 +69,6 @@ const baseMode = async (root: string, baseTree: string, path: string) => {
   return mode === '100644' || mode === '100755' ? mode : undefined;
 };
 
-// A section that keeps the mode of a renamed file shows none, so the mode comes from the base.
 const presentMode = async (
   root: string,
   baseTree: string,
@@ -96,7 +95,6 @@ const shownModes = (snapshot: Snapshot, shown: Map<string, ShownFile>) => {
   });
 };
 
-// Only a working tree target lays its snapshot over the base, so only its snapshot is read.
 const readSnapshotBase = async (
   root: string,
   target: WorkingTreeTarget,
@@ -126,8 +124,6 @@ const readSnapshotBase = async (
   };
 };
 
-// Hashes the saved copy as if it were checked in at its path, so Git applies the same check-in
-// conversions a commit of the working tree file would.
 const writeBlob = (root: string, directory: string, path: string) =>
   readGit(root, [
     'hash-object',
@@ -207,8 +203,6 @@ const writeEndpoint = async (
   return { status: 'complete', baseTree, tree: await readTree(root, target.to) };
 };
 
-// The tree Git would commit for the reviewed content, and the tree it started from. A range names
-// both trees already; a snapshot is laid over the base tree in a temporary index.
 export const buildEndpoint = async (root: string, capture: EndpointCapture): Promise<Endpoint> => {
   const { target } = capture;
 
@@ -261,7 +255,6 @@ const treeChanges = async (root: string, endpoint: CompleteEndpoint): Promise<Ra
   return readRawRecords(result.stdout).records;
 };
 
-// A section with no index line or no mode keeps that part of its source in the base tree.
 const shownPostImage = async (root: string, baseTree: string, file: ShownFile) => {
   const base =
     file.blob === undefined || file.mode === undefined
@@ -273,7 +266,6 @@ const shownPostImage = async (root: string, baseTree: string, file: ShownFile) =
   return { blob: file.blob ?? base?.blob ?? '', mode };
 };
 
-// A rename shows only its new path, so its old path is deleted in the trees without its own section.
 const renamedSources = (shown: Map<string, ShownFile>) =>
   new Set([...shown].flatMap(([path, file]) => (file.source === path ? [] : [file.source])));
 
@@ -309,8 +301,6 @@ const postImageMismatch = async (
     : `The endpoint holds ${change.newMode} ${change.blob} at ${path}, not what the captured patch shows.`;
 };
 
-// Checks that the change from baseTree to tree is the change the saved patch shows: the same paths,
-// and each new blob and mode as the patch shows them. Returns each difference.
 export const checkTransition = async (
   root: string,
   endpoint: CompleteEndpoint,
@@ -368,7 +358,6 @@ const missingBlobs = async (root: string, blobs: string[]) => {
     .map((line) => `Git no longer has the endpoint blob ${line.split(' ')[0] ?? ''}.`);
 };
 
-// A raw tree diff reads no blob, so each blob the endpoint adds or changes is checked on its own.
 const missingObjects = async (root: string, endpoint: CompleteEndpoint): Promise<string[]> => {
   const trees = await missingTrees(root, endpoint);
 
@@ -387,8 +376,6 @@ const missingObjects = async (root: string, endpoint: CompleteEndpoint): Promise
   }
 };
 
-// Whether the commit holds exactly the endpoint content. Unknown when the endpoint is not complete
-// or Git no longer has its objects or the commit tree.
 export const compareEndpoint = async (
   root: string,
   endpoint: Endpoint,
@@ -422,8 +409,6 @@ const treeMismatch = (name: string, recorded: string, pinned: string, commit: st
         `The endpoint ${name} is ${recorded}, not the tree ${pinned} of the pinned commit ${commit}.`,
       ];
 
-// Checks that the endpoint starts from the tree of the target's pinned base and, for a range, ends
-// at the tree of its pinned end. Another pair with the same change would hide other content.
 export const checkBinding = async (
   root: string,
   endpoint: CompleteEndpoint,
@@ -453,8 +438,6 @@ export const checkBinding = async (
   return [`A ${target.kind} capture records no complete endpoint.`];
 };
 
-// What Git shows of a saved endpoint now. The transition is checked only when Git has every object
-// of the endpoint and the saved patch could be read.
 const observeEndpoint = async (
   root: string,
   endpoint: Endpoint,

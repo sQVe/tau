@@ -189,7 +189,6 @@ export const readCompletedCapture = async (
     snapshot: await hashSnapshot(root, directory, record?.snapshot),
   };
 
-  // An altered patch already decides the result, and its transition would only repeat that.
   const originalPatch = observed.patch === record?.saved.recorded?.patch ? patchBytes : undefined;
   const endpoint = await observeSavedEndpoint(root, record, originalPatch);
 

@@ -5,11 +5,8 @@ export type SupportedMode = '100644' | '100755';
 export type ShownMode = SupportedMode | 'symlink' | 'gitlink' | 'unreadable';
 
 export interface ShownFile {
-  // The blob after the change, from the index line. Undefined for a mode-only change or a 100% rename.
   blob: string | undefined;
-  // The path whose base blob the saved copy matches when no index line shows one.
   source: string;
-  // The mode after the change. Undefined for a deletion or a rename that keeps the mode.
   mode: ShownMode | undefined;
 }
 
@@ -25,13 +22,10 @@ const parseMode = (text: string): ShownMode => shownModes.get(text) ?? 'unreadab
 export const isSupportedMode = (mode: ShownMode): mode is SupportedMode =>
   mode === '100644' || mode === '100755';
 
-// `a/`, ` b/` and the two slashes around the repeated path.
 const separatorLength = 5;
 
 const headerPrefix = 'diff --git ';
 
-// The new-side path of a `diff --git a/<path> b/<path>` header, quoted or not. Undefined for a
-// header that names two different paths, such as a rename.
 const headerPath = (line: string): string | undefined => {
   const text = line.slice(headerPrefix.length);
 
@@ -49,9 +43,6 @@ const headerPath = (line: string): string | undefined => {
   return Number.isInteger(pathLength) && text === `a/${path} b/${path}` ? path : undefined;
 };
 
-// The blob each captured file section shows for the new side. Undefined for a section with no
-// index line, such as a mode-only change. The index line also shows the mode when the change keeps
-// it.
 const indexLine = /^index [0-9a-f]+\.\.([0-9a-f]+)(?: (\S+))?$/;
 
 const newModeLine = /^new (?:file )?mode (\S+)$/;
@@ -82,8 +73,6 @@ const applyLine = (shown: Map<string, ShownFile>, entry: ShownFile, line: string
   }
 };
 
-// The new-side file each section of the captured diff shows, keyed by its path. A rename or copy
-// header names two paths, so its section is keyed by the `rename to` or `copy to` line.
 export const shownBlobs = (text: string): Map<string, ShownFile> => {
   const shown = new Map<string, ShownFile>();
   let entry: ShownFile | undefined;

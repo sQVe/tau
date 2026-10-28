@@ -91,8 +91,6 @@ const versionThreeRecordSchema = Type.Object(
   { additionalProperties: false },
 );
 
-// The tree a commit of the reviewed content would have, and the ref that keeps it from `git gc`.
-// A capture that cannot prove that tree names its reasons instead.
 const endpointSchema = Type.Union([
   Type.Object(
     {

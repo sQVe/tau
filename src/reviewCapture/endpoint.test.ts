@@ -33,8 +33,6 @@ const commitAll = async (root: string, message: string) => {
   return git(root, 'rev-parse', 'HEAD');
 };
 
-// Commits the files, lets the caller change the working tree, then captures it and saves the
-// verified snapshot the way a working tree review does.
 const snapshotInput = async (
   files: Record<string, string>,
   change: (root: string) => Promise<void>,
@@ -245,8 +243,6 @@ it('takes the trees of a range from its commits', async () => {
   expect(await compareEndpoint(root, endpoint, from)).toBe('different');
 });
 
-// Commits each named variant of a shared first commit, so a test can pair the trees of one variant
-// with the patch of another.
 const transitionRepository = async () => {
   const root = await createTemporaryRepository(onTestFinished);
 

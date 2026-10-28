@@ -26,7 +26,6 @@ const commitEnvironment = {
   GIT_COMMITTER_EMAIL: 'tau@localhost',
 };
 
-// Reads check every pinned commit of the target, so the retention commit keeps all of them.
 const pinnedCommits = (target: PinnedTarget) => {
   if (target.kind === 'range') {
     return [target.from, target.to];
@@ -77,8 +76,6 @@ const retainEndpoint = async (
   return { ref, commit };
 };
 
-// Builds the endpoint of a verified capture. A complete endpoint must match the saved patch and is
-// kept by a ref; a mismatch fails the capture.
 export const publishEndpoint = async (
   root: string,
   capture: EndpointCapture,

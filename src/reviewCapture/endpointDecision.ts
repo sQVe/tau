@@ -4,8 +4,6 @@ import type { ShownMode, SupportedMode } from './patchBlobs.js';
 import type { Snapshot } from './record.js';
 import type { PinnedTarget } from './target.js';
 
-// What a working tree snapshot shows: the paths it skipped, the mode the captured patch shows for
-// each present or skipped path, and the mode each present path takes from the patch or the base.
 export interface SnapshotFacts {
   skipped: Snapshot['skipped'];
   shownModes: { path: string; mode: ShownMode }[];
@@ -15,7 +13,6 @@ export interface SnapshotFacts {
 export interface EligibilityFacts {
   target: PinnedTarget['kind'];
   gaps: Gap[];
-  // Undefined when the capture saved no snapshot.
   snapshot: SnapshotFacts | undefined;
 }
 
@@ -30,8 +27,6 @@ interface Limits {
 
 const gapReason = (gap: Gap) => `The capture has a gap at ${gap.path} (${gap.kind}).`;
 
-// An unreadable path may be read by a later capture. Every other gap is content the patch never
-// shows, so no capture of that target can prove its endpoint.
 const gapEligibility = (gaps: Gap[]): EndpointEligibility => {
   const reasons = gaps.map((gap) => gapReason(gap));
   const unsupported = gaps.some((gap) => gap.kind !== 'unreadable');
@@ -51,8 +46,6 @@ const modeReason = (path: string, mode: ShownMode) => {
   return `The captured patch shows a mode for ${path} that Tau cannot read.`;
 };
 
-// Skipped content the snapshot never held. An unreadable file may be saved by a later capture; a
-// binary file, a submodule, a symbolic link, or an unknown mode cannot be.
 const snapshotLimits = (snapshot: SnapshotFacts): Limits => {
   const limits: Limits = { unsupported: [], incomplete: [] };
 
@@ -93,8 +86,6 @@ const limitedEligibility = (limits: Limits): EndpointEligibility => {
   return { status: 'eligible' };
 };
 
-// Whether a capture can record a complete endpoint. Only a range or a working tree can, and only
-// when nothing it reviewed is missing from the patch or the snapshot.
 export const decideEndpoint = ({
   target,
   gaps,
