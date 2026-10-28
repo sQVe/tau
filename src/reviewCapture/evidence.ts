@@ -35,7 +35,14 @@ import type {
 import type { Freshness } from './freshness.js';
 import { readCompletedCapture } from './generation.js';
 import { captureReview, checkFreshness } from './pinnedCapture.js';
-import { inputFileName, readCaptureRecord, recheckFileName } from './record.js';
+import {
+  generationFolderName,
+  generationInputFileName,
+  inputFileName,
+  readCaptureRecord,
+  recheckFileName,
+} from './record.js';
+import type { CaptureRecord } from './record.js';
 import type { PinnedTarget } from './target.js';
 
 export { scanMarkers } from './evidenceDecisions.js';
@@ -353,10 +360,9 @@ const checkNamedPaths = async (
 const readNamedPaths = async (
   root: string,
   revision: string | undefined,
-  directory: string,
+  inputPath: string,
   limits: EvidenceLimits,
 ): Promise<NamedPaths> => {
-  const inputPath = join(directory, inputFileName);
   let input: string;
 
   try {
@@ -390,6 +396,14 @@ const generationGaps = async (root: string, directory: string): Promise<Evidence
   return [{ kind: 'generation', status: decision.status, reasons: decision.reasons }];
 };
 
+// A version 3 or later capture saved the input it reviewed; the live input.md can change after.
+const firstVersionWithSavedInput = 3;
+
+const reviewedInputPath = (directory: string, record: CaptureRecord) =>
+  record.version >= firstVersionWithSavedInput
+    ? join(directory, generationFolderName, generationInputFileName)
+    : join(directory, inputFileName);
+
 // Reads the evidence for the capture saved in directory. Writes only the freshness recapture.
 export const readReviewEvidence = async (
   root: string,
@@ -405,7 +419,7 @@ export const readReviewEvidence = async (
   const tests = await readTests(root, revision, paths.items, limits);
   const markers = scanMarkers((captured.addedBytes ?? captured.bytes).toString('utf8'), limits);
   const callers = await findCallers(root, revision, paths.items, limits);
-  const named = await readNamedPaths(root, revision, directory, limits);
+  const named = await readNamedPaths(root, revision, reviewedInputPath(directory, record), limits);
 
   const captureErrors: EvidenceGap[] =
     captured.errors.length > 0 ? [{ kind: 'incompleteCapture', reasons: captured.errors }] : [];

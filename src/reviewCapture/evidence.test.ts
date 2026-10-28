@@ -306,6 +306,24 @@ it('reports no generation gap for a version 2 capture', async () => {
   expect(evidence.gaps.filter((gap) => gap.kind === 'generation')).toEqual([]);
 });
 
+it('reads named rules from the saved input of a completed capture', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const base = await commit(root, { ...sourceFiles, 'AGENTS.md': '# Rules\n' }, 'first');
+  const directory = temporaryDirectory(onTestFinished, 'tau-review-evidence-');
+
+  await writeFiles(root, {
+    'src/math.ts': 'export const add = (a: number, b: number) => b + a;\n',
+  });
+
+  await writeFile(join(directory, inputFileName), inputText('- `AGENTS.md`', 'none'));
+  await captureGeneration(root, directory, { kind: 'workingTree', base });
+  await writeFile(join(directory, inputFileName), inputText('- `OTHER.md`', 'none'));
+
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.rules).toEqual([{ path: 'AGENTS.md', status: 'readable' }]);
+});
+
 it('marks named rule and check paths readable or missing', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const base = await commit(root, { ...sourceFiles, 'AGENTS.md': '# Rules\n' }, 'first');

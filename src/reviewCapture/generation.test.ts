@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
@@ -15,6 +15,23 @@ import {
   inputFileName,
   recordFileName,
 } from './record.js';
+
+const statFailure = vi.hoisted(() => ({ suffix: '' }));
+
+vi.mock(import('node:fs/promises'), async (importOriginal) => {
+  const actual = await importOriginal();
+
+  return {
+    ...actual,
+    stat: (async (...parameters: Parameters<typeof actual.stat>) => {
+      if (statFailure.suffix !== '' && String(parameters[0]).endsWith(statFailure.suffix)) {
+        throw Object.assign(new Error('gone'), { code: 'ENOENT' });
+      }
+
+      return actual.stat(...parameters);
+    }) as typeof actual.stat,
+  };
+});
 
 const sha = 'a'.repeat(40);
 
@@ -227,6 +244,32 @@ it('returns missing when a saved snapshot copy is deleted', async () => {
   await rm(copy);
 
   expect((await readCompletedCapture(root, directory)).status).toBe('missing');
+});
+
+it('returns missing when a saved snapshot copy goes away between its read and its mode', async () => {
+  const { root, directory } = await capturedWorkingTree();
+
+  statFailure.suffix = join(snapshotFolder, 'a.txt');
+
+  onTestFinished(() => {
+    statFailure.suffix = '';
+  });
+
+  expect((await readCompletedCapture(root, directory)).status).toBe('missing');
+});
+
+it('refuses a capture record that names a snapshot path outside the repository', async () => {
+  const { root, directory } = await capturedWorkingTree();
+  const recordFile = recordPath(directory);
+
+  const record = JSON.parse(await readFile(recordFile, 'utf8')) as {
+    snapshot: { present: string[] };
+  };
+
+  record.snapshot.present = ['../outside.txt'];
+  await writeFile(recordFile, JSON.stringify(record));
+
+  await expect(readCompletedCapture(root, directory)).rejects.toThrow('../outside.txt');
 });
 
 it('returns altered when only the mode of a saved snapshot copy changes', async () => {

@@ -6,7 +6,12 @@ import { publishTextSync } from '../record.js';
 import { rejectLinkedFile } from '../tauDirectory.js';
 import { hashBytes, pinTarget, readHead } from './capture.js';
 import type { Capture, Gap } from './capture.js';
-import { pinFixTarget, saveVerifiedSnapshot, snapshotFolder } from './fixCapture.js';
+import {
+  isRepositoryPath,
+  pinFixTarget,
+  saveVerifiedSnapshot,
+  snapshotFolder,
+} from './fixCapture.js';
 import type { FixReviewTarget } from './fixCapture.js';
 import { decideFixScope } from './fixScope.js';
 import type { FixScope } from './fixScope.js';
@@ -96,7 +101,9 @@ const copyLine = async (root: string, folder: string, path: string) => {
     return undefined;
   }
 
-  return `${await copyMode(file)} ${hash} ${JSON.stringify(path)}`;
+  const mode = await copyMode(file).catch(() => undefined);
+
+  return mode === undefined ? undefined : `${mode} ${hash} ${JSON.stringify(path)}`;
 };
 
 const snapshotManifest = async (
@@ -105,6 +112,11 @@ const snapshotManifest = async (
   snapshot: Snapshot,
 ): Promise<Buffer | undefined> => {
   const folder = join(directory, snapshotFolder);
+  const unsafe = snapshot.present.find((path) => !isRepositoryPath(path));
+
+  if (unsafe !== undefined) {
+    throw new Error(`The snapshot of ${directory} names a path outside the repository: ${unsafe}`);
+  }
 
   const copyLines = await Promise.all(
     snapshot.present.toSorted().map((path) => copyLine(root, folder, path)),
