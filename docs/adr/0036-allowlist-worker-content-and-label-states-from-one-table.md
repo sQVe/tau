@@ -2,8 +2,7 @@
 
 **Date**: 2026-09-21\
 **Status**: Accepted\
-**Related**: [ADR 0028 (Keep worker control in the parent)](./0028-keep-worker-control-in-the-parent.md),
-[ADR 0033 (Use one generic native worker workflow)](./0033-use-one-generic-native-worker-workflow.md)
+**Related**: [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
 
 ## Context
 
@@ -13,9 +12,9 @@ The parent model needs a small, stable set of fields to choose its next call. Wo
 gaining fields, and many are paths or audit data the model should not read.
 
 The pilot needs a short line per step and details on demand.
-[ADR 0028](./0028-keep-worker-control-in-the-parent.md) keeps worker control in the parent, so only
-parent records prove a stop or an acknowledgement. A label that says "stopped" or shows a check mark
-without that record misleads the pilot.
+[ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md) keeps worker control in the parent,
+so only parent records prove a stop or an acknowledgement. A label that says "stopped" or shows a
+check mark without that record misleads the pilot.
 
 Nothing enforces a size target for worker reports, and each notice and status result repeats the
 report. Across 356 saved reports, summary and evidence together have a median of about 5,000

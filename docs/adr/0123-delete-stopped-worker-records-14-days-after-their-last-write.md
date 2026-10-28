@@ -3,7 +3,7 @@
 **Date**: 2026-10-26\
 **Status**: Accepted\
 **Related**: [ADR 0097 (Track only the current session's workers)](./0097-track-only-the-current-sessions-workers.md),
-[ADR 0045 (Keep worker records per Tau checkout and worktree files in `.tau/`)](./0045-keep-worker-records-per-checkout-and-worktree-files-in-tau.md)
+[ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
 
 ## Context
 

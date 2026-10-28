@@ -2,8 +2,7 @@
 
 **Date**: 2026-09-28\
 **Status**: Accepted\
-**Related**: [ADR 0028 (Keep worker control in the parent)](./0028-keep-worker-control-in-the-parent.md),
-[ADR 0059 (Run each Pi worker as its pane's own process)](./0059-run-each-pi-worker-as-its-panes-own-process.md)
+**Related**: [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
 
 ## Context
 

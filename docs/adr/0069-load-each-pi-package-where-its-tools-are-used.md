@@ -3,7 +3,7 @@
 **Date**: 2026-09-29\
 **Status**: Accepted\
 **Related**: [ADR 0067 (Give workers only their profile's tools and skills)](./0067-give-workers-only-their-profile-tools-and-skills.md),
-[ADR 0028 (Keep worker control in the parent)](./0028-keep-worker-control-in-the-parent.md)
+[ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
 
 ## Context
 
