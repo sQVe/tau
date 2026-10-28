@@ -7,7 +7,7 @@
 the rule "Add no review tools or review state" in
 [ADR 0060 (Keep local code review in a skill)](./0060-keep-local-code-review-in-a-skill.md)\
 **Related**: [ADR 0060 (Keep local code review in a skill)](./0060-keep-local-code-review-in-a-skill.md),
-[ADR 0088 (Grow skills into tools and templates)](./0088-grow-skills-into-tools-and-templates.md)
+[ADR 0088 (Write skills in Markdown, with a guide, tools, and templates)](./0088-grow-skills-into-tools-and-templates.md)
 
 ## Context
 

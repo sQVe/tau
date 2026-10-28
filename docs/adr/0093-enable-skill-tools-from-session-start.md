@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-06\
 **Status**: Accepted\
-**Supersedes**: [ADR 0083 (Turn on skill tools when the skill runs, and confirm outside writes)](./0083-turn-on-skill-tools-when-the-skill-runs-and-confirm-outside-writes.md),
+**Supersedes**: [ADR 0083 (Turn on skill tools when the skill runs, and confirm outside writes)](./README.md#retired),
 activation only
 
 ## Context
@@ -26,8 +26,9 @@ SKILL.md paths and use the same tool list for launch and runtime checks. The sav
 stays unchanged.
 
 This replaces only
-[ADR 0083](./0083-turn-on-skill-tools-when-the-skill-runs-and-confirm-outside-writes.md)'s
-activation policy. Its confirm rule still holds, with the existing exception for GitHub bot writes.
+[ADR 0083 (Turn on skill tools when the skill runs, and confirm outside writes)](./README.md#retired)'s
+activation policy. Its confirm rule now lives in
+[ADR 0108 (Ask only before writes that other people see)](./0108-make-linear-writes-on-the-users-own-work-without-asking.md).
 A step that needs the user's confirmation refuses in a worker, even though a worker's pane has UI,
 before any remote write or local record change. The user does not watch a worker's pane, so a
 confirm there could approve a write that nobody saw.
