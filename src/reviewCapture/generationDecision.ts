@@ -12,16 +12,25 @@ export interface SavedRecord {
   recorded: ArtifactHashes | undefined;
 }
 
+type EndpointStatus = 'complete' | 'unsupported' | 'incomplete';
+
+export interface EndpointFacts {
+  status: EndpointStatus;
+  missing: string[];
+  mismatches: string[];
+}
+
 export interface GenerationFacts {
   record: SavedRecord | undefined;
   observed: Record<ArtifactName, string | undefined>;
+  endpoint: EndpointFacts | undefined;
   expectedIdentity: string | undefined;
 }
 
 export type GenerationStatus = 'completed' | 'legacy' | 'incomplete' | 'altered' | 'missing';
 
 export type GenerationDecision =
-  | { status: 'completed'; identity: string; reasons: [] }
+  | { status: 'completed'; identity: string; reasons: []; endpoint?: EndpointStatus }
   | { status: Exclude<GenerationStatus, 'completed'>; reasons: string[] };
 
 const recordedNames = (recorded: ArtifactHashes): ArtifactName[] =>
@@ -46,9 +55,15 @@ const missingReasons = (recorded: ArtifactHashes, observed: GenerationFacts['obs
     .filter((name) => observed[name] === undefined)
     .map((name) => `The ${name} artifact is missing or unreadable.`);
 
+const completed = (identity: string, endpoint: EndpointFacts | undefined): GenerationDecision =>
+  endpoint === undefined
+    ? { status: 'completed', identity, reasons: [] }
+    : { status: 'completed', identity, reasons: [], endpoint: endpoint.status };
+
 export const decideGeneration = ({
   record,
   observed,
+  endpoint,
   expectedIdentity,
 }: GenerationFacts): GenerationDecision => {
   if (record === undefined) {
@@ -65,9 +80,10 @@ export const decideGeneration = ({
   const changed = [
     ...changedReasons(record.recorded, observed),
     ...identityReasons(record.identity, expectedIdentity),
+    ...(endpoint?.mismatches ?? []),
   ];
 
-  const missing = missingReasons(record.recorded, observed);
+  const missing = [...missingReasons(record.recorded, observed), ...(endpoint?.missing ?? [])];
 
   if (changed.length > 0) {
     return { status: 'altered', reasons: [...changed, ...missing] };
@@ -77,5 +93,5 @@ export const decideGeneration = ({
     return { status: 'missing', reasons: missing };
   }
 
-  return { status: 'completed', identity: record.identity, reasons: [] };
+  return completed(record.identity, endpoint);
 };

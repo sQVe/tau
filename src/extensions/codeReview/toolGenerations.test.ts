@@ -88,6 +88,7 @@ it('keeps the saved capture bytes through repeated freshness and evidence after 
     status: 'completed',
     identity: captured['identity'],
     reasons: [],
+    endpoint: 'complete',
   });
 });
 
