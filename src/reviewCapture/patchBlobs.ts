@@ -7,6 +7,8 @@ export type ShownMode = SupportedMode | 'symlink' | 'gitlink' | 'unreadable';
 export interface ShownFile {
   blob: string | undefined;
   source: string;
+  // A copy leaves its source in place, so only a rename source may disappear.
+  copied: boolean;
   mode: ShownMode | undefined;
 }
 
@@ -51,25 +53,30 @@ const parseName = (text: string) => (text.startsWith('"') ? readQuoted(text).nam
 
 const renameTarget = /^(?:rename|copy) to (.*)$/;
 
-const renameSource = /^(?:rename|copy) from (.*)$/;
+const renameSource = /^(rename|copy) from (.*)$/;
+
+const applyBlobLine = (entry: ShownFile, line: string) => {
+  const index = indexLine.exec(line);
+  const modeText = newModeLine.exec(line)?.[1] ?? index?.[2];
+
+  entry.blob ??= index?.[1];
+
+  if (modeText !== undefined) {
+    entry.mode ??= parseMode(modeText);
+  }
+};
 
 const applyLine = (shown: Map<string, ShownFile>, entry: ShownFile, line: string) => {
-  const fromName = renameSource.exec(line)?.[1];
+  const source = renameSource.exec(line);
   const toName = renameTarget.exec(line)?.[1];
 
-  if (fromName !== undefined) {
-    entry.source = parseName(fromName);
+  if (source !== null) {
+    entry.source = parseName(source[2] ?? '');
+    entry.copied = source[1] === 'copy';
   } else if (toName !== undefined) {
     shown.set(parseName(toName), entry);
   } else {
-    const index = indexLine.exec(line);
-    const modeText = newModeLine.exec(line)?.[1] ?? index?.[2];
-
-    entry.blob ??= index?.[1];
-
-    if (modeText !== undefined) {
-      entry.mode ??= parseMode(modeText);
-    }
+    applyBlobLine(entry, line);
   }
 };
 
@@ -81,7 +88,7 @@ export const shownBlobs = (text: string): Map<string, ShownFile> => {
     if (line.startsWith(headerPrefix)) {
       const path = headerPath(line);
 
-      entry = { blob: undefined, source: path ?? '', mode: undefined };
+      entry = { blob: undefined, source: path ?? '', copied: false, mode: undefined };
 
       if (path !== undefined) {
         shown.set(path, entry);

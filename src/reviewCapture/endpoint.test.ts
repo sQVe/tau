@@ -289,6 +289,11 @@ const transitionRepository = async () => {
       await chmod(join(root, 'run.sh'), 0o755);
     }),
     deleted: await variant(() => rm(join(root, 'removed.ts'))),
+    copied: await variant(() => writeAt(root, 'copy.ts', 'gone\n')),
+    copiedAndDeleted: await variant(async () => {
+      await writeAt(root, 'copy.ts', 'gone\n');
+      await rm(join(root, 'removed.ts'));
+    }),
     rewritten: await variant(() => writeAt(root, 'removed.ts', 'still here\n')),
   };
 
@@ -342,6 +347,13 @@ it.each([
     name: 'a patch that changes a path the trees delete',
     tree: 'deleted',
     patch: 'rewritten',
+    mismatches: ['removed.ts'],
+  },
+  {
+    name: 'a patch that copies a file the trees delete',
+    tree: 'copiedAndDeleted',
+    patch: 'copied',
+    options: ['-C', '--find-copies-harder'],
     mismatches: ['removed.ts'],
   },
 ] satisfies {

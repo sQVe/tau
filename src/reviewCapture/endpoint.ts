@@ -274,7 +274,11 @@ const shownPostImage = async (root: string, baseTree: string, file: ShownFile) =
 };
 
 const renamedSources = (shown: Map<string, ShownFile>) =>
-  new Set([...shown].flatMap(([path, file]) => (file.source === path ? [] : [file.source])));
+  new Set(
+    [...shown].flatMap(([path, file]) =>
+      file.source === path || file.copied ? [] : [file.source],
+    ),
+  );
 
 const deletionMismatch = (path: string, file: ShownFile | undefined, sources: Set<string>) => {
   if (file === undefined) {
