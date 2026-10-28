@@ -46,6 +46,9 @@ reason and a credible alternative.
 - An ADR states the current decision. When its details change, edit the ADR in place.
 - Supersede an ADR only when its core choice reverses. The new ADR then states the whole current
   rule, so a reader never has to combine two ADRs.
+- When several ADRs hold parts of one decision, merge them into one ADR that states the whole
+  current rule, even when their choices still hold. Its Supersedes line names each merged ADR, and
+  the merged files leave the tree like superseded ones.
 - The only status is Accepted. A retired ADR leaves the tree. The metadata is Date, Status, and at
   most one Supersedes line and one Related line.
 - Do not write ticket IDs, benchmark tables, version numbers, or file lists that go stale. Name a
