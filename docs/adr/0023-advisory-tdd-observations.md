@@ -2,7 +2,7 @@
 
 **Date**: 2026-09-13\
 **Status**: Accepted\
-**Supersedes**: [ADR 0012 (Shared TDD state)](./0012-shared-tdd-state.md)
+**Supersedes**: [ADR 0012 (Shared TDD state)](./README.md#retired)
 
 ## Context
 

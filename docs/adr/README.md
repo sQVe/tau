@@ -21,14 +21,11 @@ An ADR is not a feature summary, implementation plan, or acceptance checklist.
 ## Keeping ADRs current
 
 A new ADR is Accepted, and Accepted is the only status. Merging its PR is the approval, so there is
-no Proposed stage. When details of a decision change, edit its ADR in place. Supersede an ADR only
-when its core choice reverses: the new ADR states the whole current rule and names the old one on
-its Supersedes line. Delete the old file and add it to the Retired table. Numbers are never reused.
+no Proposed stage. When details of a decision change, edit its ADR in place. Supersede an ADR when
+its core choice reverses, or merge ADRs when several hold parts of one decision. Either way, the
+remaining ADR states the whole current rule and names each replaced or merged ADR on its Supersedes
+line. Delete those files and add them to the Retired table. Numbers are never reused.
 `git show <commit>:docs/adr/<file>` prints a retired ADR from its last commit.
-
-Older ADRs still have a Superseded status or name the parts that later ADRs supersede. Until those
-chains merge, the index line of each such ADR ends with "superseded by" or "partly superseded by"
-and the numbers that its status names.
 
 ## Project and code
 
@@ -63,7 +60,6 @@ and the numbers that its status names.
 ## Tests and checks
 
 - [0005: Integration testing against a real Pi session](./0005-integration-testing-with-pi.md)
-- [0012: Shared TDD state](./0012-shared-tdd-state.md), superseded by 0023
 - [0023: Use advisory TDD observations instead of edit permissions](./0023-advisory-tdd-observations.md)
 - [0105: Queue full checks per repository and reuse checks by identity](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md)
 - [0106: Replay unchanged test projects in `pnpm check`](./0106-replay-unchanged-test-projects-in-pnpm-check.md)
@@ -126,6 +122,7 @@ and the numbers that its status names.
 | 0008 | Coding instructions                                                            | [0006](./0006-default-writing-policy.md)                                                                                                                                                                                          | `b0980b75`  |
 | 0009 | Prompt snippets                                                                | [0080](./0080-insert-prompt-snippets-through-autocomplete.md)                                                                                                                                                                     | `b0980b75`  |
 | 0011 | Commit preapproval at startup                                                  | [0024](./0024-commit-without-human-approval.md)                                                                                                                                                                                   | `b0980b75`  |
+| 0012 | Shared TDD state                                                               | [0023](./0023-advisory-tdd-observations.md)                                                                                                                                                                                       | `1558d611`  |
 | 0013 | Snippet placement                                                              | [0080](./0080-insert-prompt-snippets-through-autocomplete.md)                                                                                                                                                                     | `b0980b75`  |
 | 0014 | Delegate model for bulk reads                                                  | [0087](./0087-gather-evidence-with-codemode.md)                                                                                                                                                                                   | `b0980b75`  |
 | 0015 | Explicit repository commit commands                                            | [0024](./0024-commit-without-human-approval.md)                                                                                                                                                                                   | `b0980b75`  |
