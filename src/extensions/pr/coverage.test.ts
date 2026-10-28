@@ -47,6 +47,52 @@ const runPr = async (root: string, input: PrInput) => {
   return result.details;
 };
 
+// A shallow clone that lists its source as a promisor remote, so a missing commit could be fetched.
+const partialClone = async () => {
+  const source = await createTemporaryRepository(onTestFinished, 'tau-coverage-source-');
+
+  await writeFile(join(source, 'a.ts'), 'a one\n');
+  const base = await commitAll(source, 'first');
+
+  await writeFile(join(source, 'a.ts'), 'a two\n');
+  const missing = await commitAll(source, 'second');
+
+  await git(source, 'branch', 'base', base);
+  await git(source, 'config', 'uploadpack.allowAnySHA1InWant', 'true');
+  await git(source, 'config', 'uploadpack.allowFilter', 'true');
+
+  const root = await createTemporaryRepository(onTestFinished, 'tau-coverage-partial-');
+
+  await git(root, 'config', 'core.repositoryformatversion', '1');
+  await git(root, 'config', 'remote.origin.url', `file://${source}`);
+  await git(root, 'config', 'remote.origin.promisor', 'true');
+  await git(root, 'config', 'extensions.partialClone', 'origin');
+  await git(root, 'fetch', '--quiet', '--depth=1', 'origin', 'base');
+  await git(root, 'checkout', '--quiet', base);
+
+  return { root, base, missing };
+};
+
+it('fetches no missing commit of a partial clone and refuses the revision', async () => {
+  const { root, base, missing } = await partialClone();
+  const before = await git(root, 'count-objects', '-v');
+
+  const link = {
+    directory: join(root, '.tau', 'workers', 'review-none'),
+    identity: '0'.repeat(40),
+  };
+
+  const failure = await runPr(root, {
+    action: 'coverage',
+    chain: [link],
+    mergeBase: base,
+    head: missing,
+  }).catch((error: unknown) => error);
+
+  expect(await git(root, 'count-objects', '-v')).toBe(before);
+  expect(String(failure)).toContain(missing);
+});
+
 it('reports a full review and a committed unchanged fix as match', async () => {
   const { root, base, links } = await setUpChain();
 

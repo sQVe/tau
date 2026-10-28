@@ -1,5 +1,5 @@
 import { errorMessage } from '../errors.js';
-import { withGitEnvironment } from '../git.js';
+import { readGit, withGitEnvironment } from '../git.js';
 import { readCompletedCapture } from './completedCapture.js';
 import { decideCoverage } from './coverageDecision.js';
 import type { CoverageDecision, CoverageLinkFacts, LinkRecord } from './coverageDecision.js';
@@ -63,7 +63,20 @@ const readLink = async (
 const optionalTree = (root: string, revision: string) =>
   readTree(root, revision).catch(() => undefined);
 
+// A revision that does not resolve is an input error. The no-fetch scope keeps a partial clone from
+// fetching it.
+const resolveCommit = (root: string, revision: string) =>
+  readGit(root, ['rev-parse', '--verify', '--end-of-options', `${revision}^{commit}`]).catch(
+    (error: unknown) => {
+      throw new Error(`coverage cannot resolve ${revision}: ${errorMessage(error)}`, {
+        cause: error,
+      });
+    },
+  );
+
 const readChain = async (root: string, request: CoverageRequest) => {
+  const mergeBase = await resolveCommit(root, request.mergeBase);
+  const head = await resolveCommit(root, request.head);
   const links: CoverageLinkFacts[] = [];
 
   for (const link of request.links) {
@@ -73,8 +86,8 @@ const readChain = async (root: string, request: CoverageRequest) => {
 
   return decideCoverage({
     links,
-    mergeBaseTree: await optionalTree(root, request.mergeBase),
-    headTree: await optionalTree(root, request.head),
+    mergeBaseTree: await optionalTree(root, mergeBase),
+    headTree: await optionalTree(root, head),
   });
 };
 

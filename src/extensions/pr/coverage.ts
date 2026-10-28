@@ -1,6 +1,5 @@
 import { readCoverage } from '../../reviewCapture/reviewCapture.js';
 import type { CoverageDecision, CoverageLinkRequest } from '../../reviewCapture/reviewCapture.js';
-import { resolveCommit } from './reuse.js';
 
 export interface ChainRequest {
   chain?: CoverageLinkRequest[];
@@ -29,8 +28,7 @@ export const readChainCoverage = async (
   request: ChainRequest,
 ): Promise<CoverageDecision> => {
   const links = requireChain(request.chain);
-  const mergeBase = await resolveCommit(root, requireMergeBase(request.mergeBase));
-  const head = await resolveCommit(root, request.head ?? 'HEAD');
+  const mergeBase = requireMergeBase(request.mergeBase);
 
-  return readCoverage(root, { links, mergeBase, head });
+  return readCoverage(root, { links, mergeBase, head: request.head ?? 'HEAD' });
 };

@@ -41,7 +41,7 @@ const readRecheck = async (path: string) => {
   }
 };
 
-export const resolveCommit = (root: string, revision: string): Promise<string> =>
+const resolveCommit = (root: string, revision: string): Promise<string> =>
   readGit(root, ['rev-parse', '--verify', '--end-of-options', `${revision}^{commit}`]);
 
 // Git exits with 1 when the first commit is not an ancestor of the second.

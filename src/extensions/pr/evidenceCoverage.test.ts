@@ -5,7 +5,7 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { githubOrigin, serveGithubOriginFrom } from '../../../tests/githubOriginFake.js';
 import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
-import { repositorySnapshot } from '../../../tests/repositorySnapshot.js';
+import { repositorySnapshot } from '../../../tests/repositorySnapshotHarness.js';
 import { createSavedFix, createSavedReview, savedReviewLink } from '../../../tests/savedReview.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';

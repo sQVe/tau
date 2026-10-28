@@ -1,10 +1,10 @@
-import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
-import { repositorySnapshot } from '../../tests/repositorySnapshot.js';
+import { repositorySnapshot } from '../../tests/repositorySnapshotHarness.js';
 import { createFreshTauDirectory } from '../tauDirectory.js';
 import { readCoverage } from './coverage.js';
 import { captureGeneration } from './generation.js';
@@ -290,4 +290,19 @@ it('reads a malformed capture record as unknown and changes nothing', async () =
 
   expect(coverage).toMatchObject({ status: 'unknown', link: 1 });
   expect(await repositorySnapshot(root, [review])).toEqual(before);
+});
+
+it('reads a chain whose head tree object is gone as unknown and changes nothing else', async () => {
+  const { root, base, head, review, fix } = await rangeChain();
+  const links = await linksOf(root, [review, fix]);
+  const headTree = await git(root, 'rev-parse', `${head}^{tree}`);
+
+  await rm(join(root, '.git', 'objects', headTree.slice(0, 2), headTree.slice(2)));
+
+  const before = await repositorySnapshot(root, [review, fix]);
+  const coverage = await readCoverage(root, { links, mergeBase: base, head });
+
+  expect(coverage).toMatchObject({ status: 'unknown', link: 2 });
+  expect(JSON.stringify(coverage)).toContain('Git cannot read the head tree.');
+  expect(await repositorySnapshot(root, [review, fix])).toEqual(before);
 });
