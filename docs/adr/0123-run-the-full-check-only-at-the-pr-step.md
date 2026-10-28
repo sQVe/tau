@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-26\
 **Status**: Accepted\
-**Related**: [ADR 0039 (Reuse reported checks and run one full suite per work state)](./0039-reuse-reported-checks-and-run-one-full-suite.md)
+**Related**: [ADR 0105 (Queue full checks per repository and reuse checks by identity)](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md)
 
 ## Context
 
@@ -37,7 +37,7 @@ when its profile lists the tool or it loads the `pr` skill.
 
 Let each worker run the full check before it reports. Rejected because the PR step would run the
 same suite on the same work state, which
-[ADR 0039](./0039-reuse-reported-checks-and-run-one-full-suite.md) rejected.
+[ADR 0105](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md) rejected.
 
 ### Remove the tool only from the skills
 

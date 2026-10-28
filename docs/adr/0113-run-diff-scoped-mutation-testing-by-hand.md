@@ -6,7 +6,7 @@
 [ADR 0116 (Name the mutation command in the repository file)](./README.md#retired),
 [ADR 0117 (List mutation survivors as advice instead of a gate)](./README.md#retired),
 [ADR 0118 (List equivalent mutants instead of adding disable comments)](./README.md#retired)\
-**Related**: [ADR 0105 (Queue full checks per repository and reuse passing logs)](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md),
+**Related**: [ADR 0105 (Queue full checks per repository and reuse checks by identity)](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md),
 [ADR 0119 (Share the mutation script as one npm package)](./0119-share-the-mutation-script-as-one-npm-package.md),
 mergit ADR 0023 and koja ADR 0017, which make the same choice
 

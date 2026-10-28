@@ -65,8 +65,7 @@ and the numbers that its status names.
 - [0005: Integration testing against a real Pi session](./0005-integration-testing-with-pi.md)
 - [0012: Shared TDD state](./0012-shared-tdd-state.md), superseded by 0023
 - [0023: Use advisory TDD observations instead of edit permissions](./0023-advisory-tdd-observations.md)
-- [0039: Reuse reported checks and run one full suite per work state](./0039-reuse-reported-checks-and-run-one-full-suite.md)
-- [0105: Queue full checks per repository and reuse passing logs](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md)
+- [0105: Queue full checks per repository and reuse checks by identity](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md)
 - [0106: Replay unchanged test projects in `pnpm check`](./0106-replay-unchanged-test-projects-in-pnpm-check.md)
 - [0113: Mutation-test changed lines and list survivors as advice](./0113-run-diff-scoped-mutation-testing-by-hand.md)
 - [0119: Share the mutation script as one npm package](./0119-share-the-mutation-script-as-one-npm-package.md)
@@ -149,6 +148,7 @@ and the numbers that its status names.
 | 0035 | Use size thresholds as review guidance                                         | [0034](./0034-check-house-style-outside-the-editor.md)                                                                                                                                                                            | `b0980b75`  |
 | 0037 | Launch native workers without parent approval                                  | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                                                                                                      | `b0980b75`  |
 | 0038 | Block commits only on comment inaccuracies                                     | [0024](./0024-commit-without-human-approval.md)                                                                                                                                                                                   | `b0980b75`  |
+| 0039 | Reuse reported checks and run one full suite per work state                    | [0105](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md)                                                                                                                                                         | `1558d611`  |
 | 0040 | Release undispatched follow-up claims after confirmed cleanup                  | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                                                                                                      | `b0980b75`  |
 | 0041 | Default the delegate to gpt-6-luna                                             | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                                                                                                 | `b0980b75`  |
 | 0042 | Remove commit comment review                                                   | [0024](./0024-commit-without-human-approval.md)                                                                                                                                                                                   | `b0980b75`  |
