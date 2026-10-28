@@ -3,8 +3,7 @@
 **Date**: 2026-10-27\
 **Status**: Accepted\
 **Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
-[ADR 0089 (Capture review targets with a code_review tool)](./0089-capture-review-targets-with-a-code-review-tool.md),
-[ADR 0104 (Capture fix reviews from a review snapshot)](./0104-capture-fix-reviews-from-a-review-snapshot.md)
+[ADR 0089 (Review code in a skill with a code_review tool)](./0089-capture-review-targets-with-a-code-review-tool.md)
 
 ## Context
 
