@@ -12,10 +12,6 @@ type ClassPrototype = Record<PropertyKey, unknown>;
 // loads every module fresh and leaves none behind.
 const mocksModules = (source: string) => /\bvi\.(?:mock|doMock)\(/v.test(source);
 
-// `vi.mock(import('node:fs'), { spy: true })` replaces methods on the prototypes of the real
-// classes, such as `WriteStream`, and on the prototypes they inherit from, such as `Writable`. It
-// also copies inherited methods onto them as own properties. Restoring mocks undoes neither, and
-// stacked spies from several files break the streams that Pi and other packages open.
 const prototypeChain = (prototype: ClassPrototype): ClassPrototype[] => {
   const chain: ClassPrototype[] = [];
 
