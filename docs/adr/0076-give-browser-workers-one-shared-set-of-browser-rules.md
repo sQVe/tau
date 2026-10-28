@@ -2,10 +2,7 @@
 
 **Date**: 2026-10-01\
 **Status**: Accepted\
-**Supersedes**: the set names, `qa` sets, and delivery order in
-[ADR 0068 (Load only the instruction sets each worker profile needs)](./README.md#retired)\
-**Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
-[ADR 0067 (Give each worker profile one loadout of tools, skills, instruction sets, and packages)](./0067-give-workers-only-their-profile-tools-and-skills.md),
+**Related**: [ADR 0067 (Give each worker profile one loadout of tools, skills, instruction sets, and packages)](./0067-give-workers-only-their-profile-tools-and-skills.md),
 [Vision](../vision.md)
 
 ## Context
@@ -17,26 +14,14 @@ Agents used fresh sessions, passed their own profile folders, or signed in insid
 login inside the agent browser never reaches the Chrome profile it copied, so other and later
 workers did not get it, and the user signed in again and again.
 
-Browser work other than QA had no profile, so the manager used the browser itself, and nothing told
-any agent how to keep the configured profile. The rules apply to every profile that uses the
-browser, and the manager should not pay for them on each turn.
+Nothing told agents how to keep the configured profile. The rules apply to every worker that uses
+the browser, and the manager should not pay for them on each turn.
 
 ## Decision
 
-Browser work runs in workers that load the `browser` instruction set, not in the manager. Profiles
-opt into the set with `instruction-sets:`, so the rules live in one file, only workers that name the
-set receive them, and a follow-up keeps them.
-
-### Profiles
-
-- The bundled `browser` profile does the browser work the manager delegates, such as lookups, forms,
-  page checks, and screenshots. It loads the browser package and does not edit the worktree.
-- `instruction-sets:` takes `writing`, `coding`, `workflow`, and `browser`. An unknown name makes
-  the profile invalid.
-- Profiles without `instruction-sets:` still get `writing`, `coding`, and `workflow`, not `browser`.
-- The bundled `browser` and `qa` profiles load `writing`, `workflow`, and `browser`.
-- The `browser` set has no Pi extension, so the manager never appends it. A worker appends its sets
-  in the order writing, coding, workflow, browser.
+Browser workers load one shared `browser` instruction set that holds the login rules, so each
+browser worker follows them from its first browser call. Only workers that load the set receive the
+rules.
 
 ### Logins
 
@@ -50,12 +35,6 @@ set receive them, and a follow-up keeps them.
 - `browser.loginCommand` in the user `tau.json` names the command that opens that profile. With it,
   the manager asks the user to run that exact command. Without it, the manager names no command.
   Only the user file may set it, because the manager asks the user to run it.
-
-### Records
-
-- Task record format 7 allows the `browser` name. Tasks saved in formats 5 and 6 keep the sets they
-  saved. Tasks saved in earlier formats get `writing`, `coding`, and `workflow`, which is what they
-  had.
 
 ## Consequences
 

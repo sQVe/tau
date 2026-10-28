@@ -1,11 +1,10 @@
 # ADR 0082: Own Linear conventions in one tracker skill
 
 **Date**: 2026-10-02\
-**Status**: Accepted; the ban on other status changes superseded by
-[ADR 0108 (Ask only before writes that other people see)](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)\
-**Related**:
-[ADR 0075 (Plan work as PR-sized slices in Linear)](./0075-plan-work-as-pr-sized-slices-in-linear.md),
-[ADR 0061 (Keep Tau config in a user file and a trusted repository file)](./0061-layer-tau-config-from-user-and-repository-files.md)
+**Status**: Accepted\
+**Related**: [ADR 0075 (Plan work as PR-sized slices in Linear)](./0075-plan-work-as-pr-sized-slices-in-linear.md),
+[ADR 0061 (Keep Tau config in a user file and a trusted repository file)](./0061-layer-tau-config-from-user-and-repository-files.md),
+[ADR 0108 (Ask only before writes that other people see)](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)
 
 ## Context
 
@@ -23,21 +22,6 @@ One `tracker` skill owns how Tau writes to Linear. It holds the ticket types, te
 and `linear` commands. Other skills keep only their own logic and follow it at each step that writes
 a ticket, a relation, or a status. The rules then have one place to change, and any Linear write can
 load them.
-
-### Config
-
-- A `tracker` key in the user's `tau.json` replaces `slice`. It holds `agentTeam` and
-  `repositories`, keyed by the `origin` remote's `owner/name`, each with a `team` and an optional
-  `project`. The old `slice` key is an error that names the new key; there is no alias.
-- Only the user file may set `tracker`, because it names where the manager writes.
-- Tau adds the agent team and the current repository's route to the manager prompt. A missing entry,
-  a missing origin, or an invalid config becomes a prompt line, and the skill stops with a setup
-  message.
-
-### Status
-
-- Starting a slice moves it to In Progress. Linear's GitHub integration moves a ticket to Done once
-  the PR that fixes it merges. Agents make no other status change.
 
 ## Consequences
 

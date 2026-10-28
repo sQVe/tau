@@ -12,11 +12,10 @@
 [ADR 0085 (Group per-repository settings in the user config)](./README.md#retired),
 [ADR 0095 (Keep repository routing in tracker config)](./README.md#retired),
 [ADR 0099 (Warn on unknown config keys and fail only the entry in use)](./README.md#retired),
-[ADR 0110 (Keep QA settings in a per-feature repository map)](./README.md#retired), the config parts
-of
-[ADR 0111 (Request review bots from config and skip the preview for a named change)](./0111-request-review-bots-from-config-and-skip-named-changes-in-pr.md)
-and [ADR 0116 (Name the mutation command in the repository file)](./README.md#retired)\
-**Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md)
+[ADR 0110 (Keep QA settings in a per-feature repository map)](./README.md#retired), and the config
+part of [ADR 0116 (Name the mutation command in the repository file)](./README.md#retired)\
+**Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
+[ADR 0111 (Request review bots from config)](./0111-request-review-bots-from-config-and-skip-named-changes-in-pr.md)
 
 ## Context
 

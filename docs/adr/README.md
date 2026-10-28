@@ -106,8 +106,7 @@ and the numbers that its status names.
 ## Linear and slices
 
 - [0075: Plan work as PR-sized slices in Linear](./0075-plan-work-as-pr-sized-slices-in-linear.md)
-- [0082: Own Linear conventions in one tracker skill](./0082-own-linear-conventions-in-one-tracker-skill.md),
-  partly superseded by 0108
+- [0082: Own Linear conventions in one tracker skill](./0082-own-linear-conventions-in-one-tracker-skill.md)
 - [0101: Treat `.tau/` files as the working copy and trackers as the saved copy](./0101-treat-tau-files-as-the-working-copy-and-trackers-as-the-saved-copy.md)
 - [0108: Ask only before writes that other people see](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)
 - [0112: Review collaborative drafts as files in tuicr](./0112-review-collaborative-drafts-as-files-in-tuicr.md)
@@ -122,7 +121,7 @@ and the numbers that its status names.
 - [0094: Compose PR publication evidence](./0094-compose-pr-publication-evidence.md)
 - [0096: Create and keep linear stacks with gh stack](./0096-create-and-keep-linear-stacks-with-gh-stack.md)
 - [0104: Capture fix reviews from a review snapshot](./0104-capture-fix-reviews-from-a-review-snapshot.md)
-- [0111: Request review bots from config and skip the preview for a named change](./0111-request-review-bots-from-config-and-skip-named-changes-in-pr.md)
+- [0111: Request review bots from config](./0111-request-review-bots-from-config-and-skip-named-changes-in-pr.md)
 - [0122: Prune comments with a delete-only skill](./0122-prune-comments-with-a-delete-only-skill.md)
 
 ## Retired
