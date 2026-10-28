@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-06\
 **Status**: Accepted\
-**Related**: [ADR 0091 (Return review evidence from the code_review tool)](./0091-return-review-evidence-from-the-code-review-tool.md)
+**Related**: [ADR 0089 (Review code in a skill with a code_review tool)](./0089-capture-review-targets-with-a-code-review-tool.md)
 
 ## Context
 
@@ -25,27 +25,18 @@ publication verdict. The action inherits the target reader's base fetch and the 
 freshness recapture. It writes no other worktree files.
 
 The full check has one identity, the saved record that `full_check` writes next to its log in
-`.tau/checks` (see ADR 0105). The action reads the newest record for the tree ID of the working
-state, and returns `fullCheck` as passed, failed, missing, or malformed. It reads the configured
-full check command and reports `missing` when no command is configured or the record ran another
-one. Failed, missing, and malformed records become gaps. Other checks carry header lines.
+`.tau/checks` (see [ADR 0105](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md)).
+The action reads the newest record for the tree ID of the working state, and returns `fullCheck` as
+passed, failed, missing, or malformed. It reads the configured full check command and reports
+`missing` when no command is configured or the record ran another one. Failed, missing, and
+malformed records become gaps. Other checks carry the header identity that
+[ADR 0105](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md) defines.
 
-Check logs for other checks carry three initial header lines: `HEAD: <sha>`, `Status: <hash>`, and
-`Diff: <hash>`. Status and diff hashes use SHA-256 over the exact output bytes of
-`git --no-optional-locks status --porcelain` and
-`git diff --no-ext-diff --no-textconv --no-color <mergeBase> HEAD`, including trailing newlines.
-Disabling optional locks keeps status from refreshing the index. Disabling external diff helpers,
-text conversion, and color keeps those settings out of the check identity. A caller asks the `pr`
-tool's read-only `checkHeader` action for the lines and records them before its check. Header
-production and evidence matching share one identity reader, so byte handling and Git output limits
-cannot drift. Explicit byte hashing avoids shell whitespace changes and works independently of Git's
-object format. A missing or malformed header cannot establish a match.
-
-Only the newest log for each check file name counts, selected by the file's modification time. Older
-runs are history, not missing publication evidence. A changed identity prevents reuse but is not a
-gap. Unreadable logs, missing or malformed headers, and an unavailable current identity remain gaps.
-Modification times select which log to consider; content identities still decide whether that log
-can be reused.
+For each check file name, the log with the latest modification time counts, and a tie goes to the
+greater path. Logs whose modification time cannot be read also count. Older runs are history, not
+missing publication evidence. A changed identity prevents reuse but is not a gap. Unreadable logs,
+missing or malformed headers, and an unavailable current identity remain gaps. Modification times
+select which log to consider; content identities still decide whether that log can be reused.
 
 A matching identity means the log belongs to those inputs, not that its check passed. The action
 returns bounded tails from matching logs and reports any cut. The skill keeps the publication
@@ -61,10 +52,7 @@ judgment.
 
 ### Negative
 
-- Callers must save the exact header before running a check to make its log reusable.
 - The result is not an atomic snapshot. Git or files can change between reads.
-- Porcelain status describes paths and states, not dirty file contents. Its hash cannot detect every
-  edit to an already dirty file.
 
 ## Alternatives considered
 
@@ -77,13 +65,3 @@ to repeat the same mechanics and failure handling.
 
 Use one publication-specific Git and review reader. Rejected because separate implementations can
 assign different meanings to the same saved review.
-
-### Compute headers in the skill
-
-Give the skill scripts that hash Git output. Rejected because they duplicate the reader's mechanics
-and can use different output limits, failing on diffs the evidence reader can handle.
-
-### Match logs by head or timestamp only
-
-Treat a recent log or an equal head as sufficient. Rejected because neither records worktree status
-or the branch diff against the selected merge base.
