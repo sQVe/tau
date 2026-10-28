@@ -1,22 +1,14 @@
-import { execFile } from 'node:child_process';
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { compareEndpoint } from './endpoint.js';
 import { captureGeneration, readCompletedCapture } from './generation.js';
 import { inputFileName, recordFileName } from './record.js';
 import type { ReviewTarget } from './target.js';
-
-const git = async (root: string, ...commandArguments: string[]) => {
-  const { stdout } = await promisify(execFile)('git', commandArguments, { cwd: root });
-
-  return stdout.trim();
-};
 
 const writeAt = async (root: string, path: string, content: string) => {
   await mkdir(dirname(join(root, path)), { recursive: true });

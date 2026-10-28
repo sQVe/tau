@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget } from './capture.js';
 import { buildEndpoint, checkTransition, compareEndpoint } from './endpoint.js';
@@ -14,12 +14,6 @@ import { saveVerifiedSnapshot } from './fixCapture.js';
 import { generationFolderName } from './record.js';
 
 const isRoot = process.getuid?.() === 0;
-
-const git = async (root: string, ...commandArguments: string[]) => {
-  const { stdout } = await promisify(execFile)('git', commandArguments, { cwd: root });
-
-  return stdout.trim();
-};
 
 const writeAt = async (root: string, path: string, content: string) => {
   await mkdir(dirname(join(root, path)), { recursive: true });
