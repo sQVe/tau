@@ -6,14 +6,15 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
-import { snapshotFolder } from './fixCapture.js';
-import { captureGeneration, readCompletedCapture } from './generation.js';
+import { readCompletedCapture } from './completedCapture.js';
+import { captureGeneration } from './generation.js';
 import {
   generationFolderName,
   generationInputFileName,
   generationPatchFileName,
   inputFileName,
   recordFileName,
+  snapshotFolder,
 } from './record.js';
 
 const statFailure = vi.hoisted(() => ({ suffix: '' }));

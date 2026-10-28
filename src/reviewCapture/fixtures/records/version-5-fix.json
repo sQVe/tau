@@ -1,0 +1,26 @@
+{
+  "version": 5,
+  "target": {
+    "kind": "fix",
+    "review": "/work/repository/.tau/workers/review-abc123",
+    "findingPaths": ["src/kept.ts"],
+    "base": "5e1c309dae7f45e0f39b1bf3ac3cd9db12e7d689",
+    "predecessor": {
+      "review": "/work/repository/.tau/workers/review-abc123",
+      "identity": "9daeafb9864cf43055ae93beb0afd6c7d144bfa4",
+      "endpointTree": "8b137891791fe96927ad78e64b0aad7bded08bdc"
+    }
+  },
+  "base": "5e1c309dae7f45e0f39b1bf3ac3cd9db12e7d689",
+  "head": "5e1c309dae7f45e0f39b1bf3ac3cd9db12e7d689",
+  "hash": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+  "gaps": [],
+  "original": {
+    "patch": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+    "input": "d00491fd7e5bb6fa28c517a0bb32b8b506539d4d"
+  },
+  "endpoint": {
+    "status": "unsupported",
+    "reasons": ["A fix capture has no endpoint yet."]
+  }
+}

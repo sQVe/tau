@@ -194,7 +194,7 @@ it('appends the capture and its gaps after the Capture heading and saves the rec
   expect(input).toContain('generated.txt');
 
   expect(record).toEqual({
-    version: 4,
+    version: 5,
     target: { kind: 'workingTree', base: head, exclude: ['generated.txt'] },
     base: head,
     head,
@@ -565,11 +565,11 @@ it('captures only the diff since the reviewed capture and lists the callers of t
   expect(evidence.callers.map((caller) => caller.path)).toEqual(['src/use.ts']);
 });
 
-it('captures a fix against an earlier version 4 capture and leaves that capture unchanged', async () => {
+it('captures a fix against an earlier version 5 capture and leaves that capture unchanged', async () => {
   const { root, review, directory } = await reviewedThenFixed();
   const earlier = await readFile(join(review, 'capture.json'), 'utf8');
 
-  expect(JSON.parse(earlier)).toMatchObject({ version: 4 });
+  expect(JSON.parse(earlier)).toMatchObject({ version: 5 });
 
   const result = await captureFix(root, directory, review, ['src/math.ts']);
 
@@ -651,12 +651,17 @@ it('records the fix capture with the earlier base and no snapshot', async () => 
   const record = JSON.parse(await readFile(join(directory, 'capture.json'), 'utf8')) as object;
 
   expect(record).toEqual({
-    version: 4,
+    version: 5,
     target: {
       kind: 'fix',
       review,
       findingPaths: ['src/math.ts'],
       base: result['base'],
+      predecessor: {
+        review,
+        identity: expect.stringMatching(/^[0-9a-f]{40}$/) as string,
+        endpointTree: expect.stringMatching(/^[0-9a-f]{40}$/) as string,
+      },
     },
     base: result['base'],
     head: result['head'],

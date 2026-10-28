@@ -1,0 +1,27 @@
+{
+  "version": 5,
+  "target": {
+    "kind": "workingTree",
+    "base": "5e1c309dae7f45e0f39b1bf3ac3cd9db12e7d689"
+  },
+  "base": "5e1c309dae7f45e0f39b1bf3ac3cd9db12e7d689",
+  "head": "5e1c309dae7f45e0f39b1bf3ac3cd9db12e7d689",
+  "hash": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+  "gaps": [],
+  "original": {
+    "patch": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+    "input": "d00491fd7e5bb6fa28c517a0bb32b8b506539d4d",
+    "snapshot": "3b18e512dba79e4c8300dd08aeb37f8e728b8dad"
+  },
+  "endpoint": {
+    "status": "complete",
+    "baseTree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+    "tree": "8b137891791fe96927ad78e64b0aad7bded08bdc",
+    "ref": "refs/tau/review-captures/review-a1b2c3"
+  },
+  "snapshot": {
+    "present": ["src/kept.ts"],
+    "absent": [],
+    "skipped": []
+  }
+}

@@ -7,11 +7,10 @@ import { readRawRecords } from './capture.js';
 import type { Gap, RawRecord } from './capture.js';
 import { decideEndpoint } from './endpointDecision.js';
 import type { SnapshotFacts } from './endpointDecision.js';
-import { snapshotFolder } from './fixCapture.js';
 import type { EndpointFacts } from './generationDecision.js';
 import { isSupportedMode, shownBlobs } from './patchBlobs.js';
 import type { ShownFile, ShownMode, SupportedMode } from './patchBlobs.js';
-import { generationFolderName } from './record.js';
+import { generationFolderName, snapshotFolder } from './record.js';
 import type { Snapshot } from './record.js';
 import type { PinnedTarget } from './target.js';
 
