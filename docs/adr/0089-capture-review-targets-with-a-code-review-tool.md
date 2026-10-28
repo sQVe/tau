@@ -85,7 +85,10 @@ the reviewer, or bind verdicts to workers.
   `fix`.
 - The earlier capture must be a `workingTree` or `files` capture with a snapshot, or a `range` or
   `rootCommit` capture. A fix capture refuses a record in an older format, a record without a
-  snapshot where one is needed, and a fix capture as its base.
+  snapshot where one is needed, and an earlier capture that was altered or never completed.
+- An earlier fix capture can also be the base when it recorded a complete endpoint, so fix reviews
+  can follow each other. Each one then shows only the change since the capture it names.
+  [ADR 0124](./0124-publish-review-captures-as-immutable-generations.md) owns that chain.
 
 ## Consequences
 
