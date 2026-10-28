@@ -36,30 +36,34 @@ const configSource = (directory: string) =>
 
 // Each file in a shared worker starts a watchdog thread. A thread left from an earlier file adds
 // one to the count of every later file.
-it('keeps one watchdog thread alive while files share a worker', async ({ onTestFinished }) => {
-  const directory = temporaryDirectory(onTestFinished, 'tau-hang-watchdog-');
-  const threadLog = join(directory, 'threads.log');
+// Threads are counted through /proc.
+it.skipIf(process.platform !== 'linux')(
+  'keeps one watchdog thread alive while files share a worker',
+  async ({ onTestFinished }) => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-hang-watchdog-');
+    const threadLog = join(directory, 'threads.log');
 
-  await symlink(join(repositoryRoot, 'node_modules'), join(directory, 'node_modules'), 'dir');
-  await writeFile(join(directory, 'package.json'), '{"type":"module"}');
-  await writeFile(join(directory, 'vitest.config.mjs'), configSource(directory));
+    await symlink(join(repositoryRoot, 'node_modules'), join(directory, 'node_modules'), 'dir');
+    await writeFile(join(directory, 'package.json'), '{"type":"module"}');
+    await writeFile(join(directory, 'vitest.config.mjs'), configSource(directory));
 
-  for (let index = 0; index < fileCount; index += 1) {
-    await writeFile(join(directory, `${index}.test.ts`), countingFile(threadLog));
-  }
+    for (let index = 0; index < fileCount; index += 1) {
+      await writeFile(join(directory, `${index}.test.ts`), countingFile(threadLog));
+    }
 
-  const { stdout } = await promisify(execFile)(
-    join(repositoryRoot, 'node_modules', '.bin', 'vitest'),
-    ['run', '--config', join(directory, 'vitest.config.mjs')],
-    { cwd: directory, timeout: 25_000 },
-  );
+    const { stdout } = await promisify(execFile)(
+      join(repositoryRoot, 'node_modules', '.bin', 'vitest'),
+      ['run', '--config', join(directory, 'vitest.config.mjs')],
+      { cwd: directory, timeout: 25_000 },
+    );
 
-  expect(stdout).toContain(`${fileCount} passed`);
+    expect(stdout).toContain(`${fileCount} passed`);
 
-  const counts = (await readFile(threadLog, 'utf8')).trim().split('\n').map(Number);
-  // The first file may start shared thread pools that later files reuse.
-  const laterCounts = new Set(counts.slice(1));
+    const counts = (await readFile(threadLog, 'utf8')).trim().split('\n').map(Number);
+    // The first file may start shared thread pools that later files reuse.
+    const laterCounts = new Set(counts.slice(1));
 
-  expect(counts).toHaveLength(fileCount);
-  expect(laterCounts.size).toBe(1);
-});
+    expect(counts).toHaveLength(fileCount);
+    expect(laterCounts.size).toBe(1);
+  },
+);
