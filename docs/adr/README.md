@@ -34,7 +34,7 @@ and the numbers that its status names.
 
 - [0003: Stability of externally observable identifiers](./0003-externally-observable-identifiers.md)
 - [0007: Vim keys in interactive components](./0007-vim-keys-in-interactive-components.md)
-- [0008: Coding instructions](./0008-coding-instructions.md), partly superseded by 0042
+- [0008: Coding instructions](./0008-coding-instructions.md), partly superseded by 0024
 - [0034: Check house style outside the editor](./0034-check-house-style-outside-the-editor.md),
   partly superseded by 0035
 - [0035: Use size thresholds as review guidance](./0035-use-size-thresholds-as-review-guidance.md)
@@ -100,40 +100,16 @@ and the numbers that its status names.
 
 ## Commits
 
-- [0011: Commit preapproval at startup](./0011-commit-preapproval.md), superseded by 0024
-- [0015: Explicit repository commit commands](./0015-explicit-repository-commit-commands.md),
-  superseded by 0026
-- [0016: Prepare each commit with separate staging](./0016-staged-preparation-ownership.md),
-  superseded by 0025
-- [0017: Ask before adding generated files](./0017-preparation-addition-assignment.md), superseded
-  by 0024
-- [0018: Repository owners choose commit checks and hooks](./0018-staged-message-and-hook-policy.md),
-  superseded by 0026
-- [0019: Verify backups before hiding working edits](./0019-verified-raw-recovery.md), superseded by
-  0025
-- [0020: Run staged checks in the existing checkout](./0020-checks-in-the-existing-checkout.md),
-  superseded by 0026
-- [0021: Prune recovery snapshots after verified restoration](./0021-prune-verified-recovery.md),
-  superseded by 0025
-- [0024: Commit without human approval](./0024-commit-without-human-approval.md), partly superseded
-  by 0025 and 0042
-- [0025: Use Git hooks without preparation](./0025-use-git-hooks-without-preparation.md), partly
-  superseded by 0026 and 0042
-- [0026: Let Git hooks own commit checks](./0026-let-git-hooks-own-commit-checks.md), partly
-  superseded by 0038 and 0042
-- [0038: Block commits only on comment inaccuracies](./0038-block-commits-only-on-comment-inaccuracies.md),
-  superseded by 0042
-- [0042: Remove commit comment review](./0042-remove-commit-comment-review.md)
-- [0049: Treat the bash commit guard as guidance](./0049-treat-the-bash-commit-guard-as-guidance.md)
+- [0024: Commit through Git hooks without human approval](./0024-commit-without-human-approval.md)
 
 ## Models
 
 - [0014: Delegate model for bulk reads](./0014-delegate-model-for-bulk-reads.md), superseded by 0087
   and 0027
 - [0027: Share one delegate model across bounded tool tasks](./0027-share-one-delegate-model.md),
-  superseded by 0072, 0044, and 0042
+  superseded by 0072, 0044, and 0024
 - [0041: Default the delegate to gpt-6-luna](./0041-default-the-delegate-to-gpt-6-luna.md),
-  superseded by 0044 and 0042
+  superseded by 0044 and 0024
 - [0044: Restore gpt-5.6-luna as the delegate default](./0044-restore-gpt-5-6-luna-as-the-delegate-default.md),
   superseded by 0072
 - [0047: Default bundled worker profiles to Opus 5.5](./0047-default-bundled-worker-profiles-to-opus-5-5.md),
@@ -245,9 +221,22 @@ and the numbers that its status names.
 
 ## Retired
 
-| ADR  | Title                                         | Replaced by                                                        | Last commit |
-| ---- | --------------------------------------------- | ------------------------------------------------------------------ | ----------- |
-| 0001 | Application structure                         | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |
-| 0002 | File and directory naming conventions         | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |
-| 0057 | Enforce pure decision modules from a registry | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |
-| 0079 | Grow modules from flat files                  | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |
+| ADR  | Title                                               | Replaced by                                                        | Last commit |
+| ---- | --------------------------------------------------- | ------------------------------------------------------------------ | ----------- |
+| 0001 | Application structure                               | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |
+| 0002 | File and directory naming conventions               | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |
+| 0011 | Commit preapproval at startup                       | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0015 | Explicit repository commit commands                 | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0016 | Prepare each commit with separate staging           | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0017 | Ask before adding generated files                   | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0018 | Repository owners choose commit checks and hooks    | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0019 | Verify backups before hiding working edits          | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0020 | Run staged checks in the existing checkout          | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0021 | Prune recovery snapshots after verified restoration | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0025 | Use Git hooks without preparation                   | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0026 | Let Git hooks own commit checks                     | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0038 | Block commits only on comment inaccuracies          | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0042 | Remove commit comment review                        | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0049 | Treat the bash commit guard as guidance             | [0024](./0024-commit-without-human-approval.md)                    | `b0980b75`  |
+| 0057 | Enforce pure decision modules from a registry       | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |
+| 0079 | Grow modules from flat files                        | [0120](./0120-capability-modules-with-an-enforced-import-table.md) | `a859a7bb`  |

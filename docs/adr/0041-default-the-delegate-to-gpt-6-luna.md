@@ -5,8 +5,9 @@
 **Superseded by**:
 [ADR 0044 (Restore gpt-5.6-luna as the delegate default)](./0044-restore-gpt-5-6-luna-as-the-delegate-default.md);
 comment review removed from the delegate by
-[ADR 0042 (Remove commit comment review)](./0042-remove-commit-comment-review.md)\
-**Related**: [ADR 0027 (Share one delegate model across bounded tool tasks)](./0027-share-one-delegate-model.md),
+[ADR 0024 (Commit through Git hooks without human approval)](./0024-commit-without-human-approval.md)\
+**Related**:
+[ADR 0027 (Share one delegate model across bounded tool tasks)](./0027-share-one-delegate-model.md),
 [Development](../development.md)
 
 ## Context
