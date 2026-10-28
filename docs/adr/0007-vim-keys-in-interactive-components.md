@@ -5,21 +5,13 @@
 **Related**: [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md),
 [ADR 0003 (Stability of externally observable identifiers)](./0003-externally-observable-identifiers.md)
 
-[ADR 0024](./0024-commit-without-human-approval.md) removed the commit overlay and its tests. The
-`SelectList` adapter described below was removed with the follow-up cleanup. Those details record
-the original decision; the navigation rule still applies to remaining components.
-
 ## Context
 
-Tau draws two interactive components: the snippet menu with its preview pane, and the commit overlay
-with its choice list and comment review report. Each component read its own keys, and moved on arrow
-keys, `home`, and `end` only. With no rule, each new component invented its own keys.
+Tau draws interactive components, such as the choice dialog and the question dialog. Each component
+reads its own keys. With no rule, each new component invents its own keys.
 
-An extension can read Pi's bindings but cannot register a binding that Pi lists in help or lets
-users rebind.
-
-Pi's `SelectList` reads input itself and keeps `selectedIndex` private. It has no binding for
-jumping to either end.
+Tau's navigation keys are literals in code, not Pi bindings. Users cannot rebind them through Pi's
+settings.
 
 ## Decision
 
@@ -36,8 +28,9 @@ keys, and users configure nothing.
 | `g` | Jump to the first row |
 | `G` | Jump to the last row  |
 
-The arrow keys, `home`, and `end` keep working. `esc` cancels. A component that navigates at all
-accepts all four keys, so users do not have to remember which component supports which keys.
+The arrow keys, `home`, and `end` keep working. `esc` cancels the dialog. On a full preview, `esc`
+closes the preview instead. A component that navigates at all accepts all four keys, so users do not
+have to remember which component supports which keys.
 
 Match a shifted letter with `Key.shift('g')` rather than comparing the raw byte. `matchesKey`
 resolves the plain byte, the `modifyOtherKeys` form, and the Kitty form; a raw comparison only
@@ -45,29 +38,25 @@ matches the first. Pi falls back to `modifyOtherKeys` when it cannot detect the 
 
 ### Where the keys live
 
-Key predicates live in [`src/dialog/keys.ts`](../../src/dialog/keys.ts), a primitive under the rule
-[ADR 0120](./0120-capability-modules-with-an-enforced-import-table.md) sets for code that two or
-more extensions share. Components ask `isUp`, `isDown`, `isTop`, and `isBottom` rather than testing
-keys themselves, so a change to the set reaches every component.
-
-Pi's `SelectList` cannot be driven directly, so `toCursorKey` rewrites `j` and `k` as the arrow
-sequences it reads, and callers set the ends through its `setSelectedIndex`.
+Key predicates live in [`src/dialog/keys.ts`](../../src/dialog/keys.ts), in the dialog module of
+[ADR 0120](./0120-capability-modules-with-an-enforced-import-table.md). Components ask `isUp`,
+`isDown`, `isTop`, and `isBottom` rather than testing keys themselves, so a change to the set
+reaches every component.
 
 ### Letters stay free for navigation
 
-A component that gives single letters to actions may not use `j`, `k`, `g`, or `G` for them. The
-commit overlay's Skip action moved from `k` to `x` for this reason. A letter that means "up" in one
-component and an action in another is worse than an unfamiliar letter.
+A component that gives single letters to actions may not use `j`, `k`, `g`, or `G` for them. A
+letter that means "up" in one component and an action in another is worse than an unfamiliar letter.
 
-The same applies to typed text. A component that filters by text, such as the snippet menu, takes
-the query only after the user presses `/`. Enter and `esc` end the query and return the letters to
-navigation. A query field that always listens would take `j`, `k`, `g`, and `G` as text.
+The custom-answer row of the question dialog is the exception. There the four letters type text,
+because a typed answer needs them as text. The option rows of the same dialog still navigate with
+them.
 
 ### What this decision does not cover
 
 No half-page scrolling on `ctrl+d` and `ctrl+u`: `ctrl+d` is Pi's exit binding. No `q` to quit: a
-single letter that aborts a commit is too easy to press by accident, and `esc` already cancels
-everywhere. Both could be added, but familiarity alone is not enough reason.
+single letter that cancels a dialog is too easy to press by accident, and `esc` already cancels.
+Both could be added, but familiarity alone is not enough reason.
 
 ## Consequences
 
@@ -78,13 +67,8 @@ everywhere. Both could be added, but familiarity alone is not enough reason.
 
 ### Negative
 
-- The bindings do not appear in Pi's help and users cannot rebind them. Pi accepts no new binding
-  identifiers from an extension. A user who wants different keys has to change Tau.
-- Action letters compete with navigation letters, and navigation wins. Moving `k` to `x` changed a
-  shortcut that users had already learned.
-- Driving `SelectList` through rewritten input depends on the escape sequences it reads. A Pi
-  release that changes them breaks navigation without an error. The original overlay tests covered
-  this.
+- Users cannot rebind these keys. A user who wants different keys has to change Tau.
+- Action letters compete with navigation letters, and navigation wins.
 
 ## Alternatives considered
 

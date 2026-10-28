@@ -103,8 +103,6 @@ and the numbers that its status names.
 
 ## Checkouts and worktrees
 
-- [0048: Keep the bare repository root read-only for agents](./0048-keep-the-bare-repository-root-read-only-for-agents.md),
-  superseded by 0051
 - [0051: Note the bare root rule instead of enforcing it](./0051-note-the-bare-root-rule-instead-of-enforcing-it.md)
 - [0090: Own each workstream with one worktree](./0090-own-each-workstream-with-one-worktree.md)
 
@@ -167,6 +165,7 @@ and the numbers that its status names.
 | 0044 | Restore gpt-5.6-luna as the delegate default                                   | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                                                                                                 | `b0980b75`  |
 | 0045 | Keep worker records per Tau checkout and worktree files in `.tau/`             | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md), [0101](./0101-treat-tau-files-as-the-working-copy-and-trackers-as-the-saved-copy.md)                                                                                | `b0980b75`  |
 | 0047 | Default bundled worker profiles to Opus 5.5                                    | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                                                                                                 | `b0980b75`  |
+| 0048 | Keep the bare repository root read-only for agents                             | [0051](./0051-note-the-bare-root-rule-instead-of-enforcing-it.md)                                                                                                                                                                 | `b0980b75`  |
 | 0049 | Treat the bash commit guard as guidance                                        | [0024](./0024-commit-without-human-approval.md)                                                                                                                                                                                   | `b0980b75`  |
 | 0050 | Split worker control into a coordinator and one controller per worker          | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                                                                                                      | `b0980b75`  |
 | 0054 | Show one foreground worker per parent                                          | [0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)                                                                                                                                                                      | `b0980b75`  |

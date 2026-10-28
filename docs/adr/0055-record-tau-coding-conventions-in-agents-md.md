@@ -2,13 +2,13 @@
 
 **Date**: 2026-09-27\
 **Status**: Accepted\
-**Related**: [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md),
-[ADR 0006 (Load Tau's instruction sets into every prompt)](./0006-default-writing-policy.md),
+**Related**: [ADR 0006 (Load Tau's instruction sets into every prompt)](./0006-default-writing-policy.md),
 [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
 [ADR 0035 (Use size thresholds as review guidance)](./0035-use-size-thresholds-as-review-guidance.md),
 [ADR 0036 (Allowlist worker content and label states from one table)](./0036-allowlist-worker-content-and-label-states-from-one-table.md),
 [ADR 0052 (Drop backwards compatibility by default)](./0052-drop-backwards-compatibility-by-default.md),
-[ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md)
+[ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
+[ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md)
 
 ## Context
 
@@ -20,8 +20,8 @@ was already an instruction, and agents still wrote four task ID parsers. Agents 
 such as size thresholds ([ADR 0035](./0035-use-size-thresholds-as-review-guidance.md)). Every
 instruction line costs context in every session ([ADR 0006](./0006-default-writing-policy.md)).
 
-A review proposed conventions for module ownership, queries, failures, and mappings. It kept only
-short semantic rules and put the details in ADRs, lint messages, and code examples.
+A review proposed conventions for queries, failures, and mappings. It kept only short semantic rules
+and put the details in ADRs, lint messages, and code examples.
 
 ## Decision
 
@@ -34,20 +34,6 @@ messages and examples means agents in Tau see the rules, and other repositories 
 The coding instructions stay unchanged. `AGENTS.md` links to this ADR and states the two rules an
 agent needs before designing: the contract test for read paths, and record versioning from
 [ADR 0053](./0053-version-each-saved-record-format.md).
-
-### Module ownership and dependency direction
-
-- Feature code stays in `src/extensions/<feature>/`. Extensions do not import each other.
-- Code moves under `src/` only once two extensions need it. Shared code never imports extensions.
-- `tau/module-boundaries` in `lint/rules/moduleBoundaries.ts` enforces both rules
-  ([ADR 0120](./0120-capability-modules-with-an-enforced-import-table.md)).
-- A module that grows subdirectories may mark files private. An override of
-  `eslint/no-restricted-imports` in `vite.config.ts` lists the public files, and the rest of the
-  extension imports only those. `src/extensions/subagents/controller/` is the first: other subagents
-  files import only `controller.ts`, `record.ts`, and `budget.ts`. Tests and fixtures may import any
-  file. `tests/lint.test.ts` holds an allowed and a refused fixture for each rule.
-- Tau requires no barrel files, no single entry file per subdirectory, and no interfaces for module
-  boundaries.
 
 ### Queries do not change state
 
@@ -102,13 +88,11 @@ without asking the user.
 
 - Agents working in Tau see the rules they need before designing, and sessions in other repositories
   pay nothing.
-- Private subpaths fail lint with a message that names the public files.
 - A query that writes state fails a test, whatever the function is named.
 
 ### Negative
 
 - Agents can still misname a function. Only a contract test catches the side effect.
-- The list of public controller files is kept by hand in `vite.config.ts`.
 - Agents see the other conventions only if they follow the link to this ADR.
 
 ## Alternatives considered
