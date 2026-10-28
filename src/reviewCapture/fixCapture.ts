@@ -615,6 +615,10 @@ export const captureFixTarget = async (root: string, fix: FixTarget): Promise<Ca
   try {
     const { target: earlier, snapshot } = await pinPredecessor(root, fix.review);
 
+    if (earlier.kind === 'fix') {
+      throw new Error(`${fix.review} holds a fix capture, and this fix target names no endpoint.`);
+    }
+
     if (isSnapshotTarget(earlier)) {
       if (snapshot === undefined) {
         throw new Error(`${fix.review} holds a capture record with no snapshot.`);

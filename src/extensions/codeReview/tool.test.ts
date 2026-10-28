@@ -1,6 +1,6 @@
 import type { PathLike } from 'node:fs';
 import { chmod, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { Value } from 'typebox/value';
 import { expect, it, onTestFinished, vi } from 'vitest';
@@ -9,6 +9,8 @@ import { installCommandShim } from '../../../tests/commandShimFake.js';
 import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';
+import { compareEndpoint } from '../../reviewCapture/endpoint.js';
+import type { Endpoint } from '../../reviewCapture/endpoint.js';
 import { codeReviewToolParameters, createCodeReviewTool } from './tool.js';
 import type { CodeReviewInput } from './tool.js';
 
@@ -647,6 +649,11 @@ it('captures the diff since a reviewed range from the working tree', async () =>
 
 it('records the fix capture with the earlier base and no snapshot', async () => {
   const { root, review, directory } = await reviewedThenFixed();
+
+  const earlier = JSON.parse(await readFile(join(review, 'capture.json'), 'utf8')) as {
+    endpoint: { tree: string };
+  };
+
   const result = await captureFix(root, directory, review, ['src/math.ts']);
   const record = JSON.parse(await readFile(join(directory, 'capture.json'), 'utf8')) as object;
 
@@ -660,7 +667,7 @@ it('records the fix capture with the earlier base and no snapshot', async () => 
       predecessor: {
         review,
         identity: expect.stringMatching(/^[0-9a-f]{40}$/) as string,
-        endpointTree: expect.stringMatching(/^[0-9a-f]{40}$/) as string,
+        endpointTree: earlier.endpoint.tree,
       },
     },
     base: result['base'],
@@ -671,7 +678,12 @@ it('records the fix capture with the earlier base and no snapshot', async () => 
       patch: expect.stringMatching(/^[0-9a-f]{40}$/) as string,
       input: expect.stringMatching(/^[0-9a-f]{40}$/) as string,
     },
-    endpoint: { status: 'unsupported', reasons: [expect.any(String)] },
+    endpoint: {
+      status: 'complete',
+      baseTree: earlier.endpoint.tree,
+      tree: expect.stringMatching(/^[0-9a-f]{40}$/) as string,
+      ref: `refs/tau/review-captures/${basename(directory)}`,
+    },
   });
 
   expect(await readdir(directory)).not.toContain('snapshot');
@@ -747,16 +759,42 @@ it('captures a fix against an earlier version 2 capture', async () => {
   expect(result).toMatchObject({ empty: false, fixPaths: ['src/math.ts'], scope: 'fix' });
 });
 
-it('refuses a fix review of a fix capture', async () => {
+it('refuses a fix review of a fix capture with no complete endpoint', async () => {
   const { root, review, directory } = await reviewedThenFixed();
+  const saved = JSON.parse(await readFile(join(review, 'capture.json'), 'utf8')) as object;
+  const { endpoint: _endpoint, ...rest } = saved as Record<string, unknown>;
   const fix = await prepareDirectory(root);
 
+  await writeFile(join(review, 'capture.json'), JSON.stringify({ ...rest, version: 3 }));
   await captureFix(root, fix, review, ['src/math.ts']);
 
   const target = { kind: 'fix' as const, review: fix, findingPaths: [] };
 
-  expect(await failureOf(root, { action: 'capture', directory, target })).toContain('fix capture');
+  expect(await failureOf(root, { action: 'capture', directory, target })).toContain(
+    'fix capture with no complete endpoint',
+  );
+
   expect(await readdir(directory)).toEqual(['input.md']);
+});
+
+it('keeps a committed fix capture fresh except for HEAD and its endpoint equal to the commit', async () => {
+  const { root, review, directory } = await reviewedThenFixed();
+  const fix = await prepareDirectory(root);
+
+  await captureFix(root, directory, review, ['src/math.ts']);
+  await writeFile(join(root, 'src', 'other.ts'), 'export const other = 2;\n');
+  await captureFix(root, fix, directory, ['src/other.ts']);
+  await git(root, 'add', '-A');
+  await git(root, 'commit', '--quiet', '-m', 'fixed');
+
+  const record = JSON.parse(await readFile(join(fix, 'capture.json'), 'utf8')) as {
+    endpoint: Endpoint;
+  };
+
+  const freshness = await run(root, { action: 'freshness', directory: fix });
+
+  expect(await compareEndpoint(root, record.endpoint, 'HEAD')).toBe('equal');
+  expect(freshness).toEqual({ status: 'stale', reasons: [expect.stringContaining('HEAD moved')] });
 });
 
 it('reports a fix capture fresh when nothing changed and stale after another edit', async () => {

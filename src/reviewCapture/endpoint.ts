@@ -20,6 +20,13 @@ export interface EndpointCapture {
   gaps: Gap[];
   patch: Buffer;
   snapshot: Snapshot | undefined;
+  chain?: ChainedTrees | undefined;
+}
+
+// A chained fix capture's diff runs from its predecessor's endpoint tree to the working tree's tree.
+export interface ChainedTrees {
+  baseTree: string;
+  tree: string;
 }
 
 export type Endpoint =
@@ -216,7 +223,12 @@ export const buildEndpoint = async (root: string, capture: EndpointCapture): Pro
     const base =
       target.kind === 'workingTree' ? await readSnapshotBase(root, target, capture) : undefined;
 
-    const eligibility = decideEndpoint({ target: target.kind, gaps: capture.gaps, snapshot: base });
+    const eligibility = decideEndpoint({
+      target: target.kind,
+      chainedFix: false,
+      gaps: capture.gaps,
+      snapshot: base,
+    });
 
     if (eligibility.status !== 'eligible') {
       return eligibility;
@@ -443,6 +455,14 @@ export const checkBinding = async (
       await readTree(root, target.base),
       target.base,
     );
+  }
+
+  if (target.kind === 'fix' && target.predecessor !== undefined) {
+    const { review, endpointTree } = target.predecessor;
+
+    const mismatch = `The endpoint base tree is ${endpoint.baseTree}, not the endpoint ${endpointTree} of ${review}.`;
+
+    return endpoint.baseTree === endpointTree ? [] : [mismatch];
   }
 
   return [`A ${target.kind} capture records no complete endpoint.`];

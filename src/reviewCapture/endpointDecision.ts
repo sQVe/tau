@@ -12,6 +12,8 @@ export interface SnapshotFacts {
 
 export interface EligibilityFacts {
   target: PinnedTarget['kind'];
+  // A fix capture compared with the complete endpoint of its predecessor.
+  chainedFix: boolean;
   gaps: Gap[];
   snapshot: SnapshotFacts | undefined;
 }
@@ -88,10 +90,18 @@ const limitedEligibility = (limits: Limits): EndpointEligibility => {
 
 export const decideEndpoint = ({
   target,
+  chainedFix,
   gaps,
   snapshot,
 }: EligibilityFacts): EndpointEligibility => {
-  if (target !== 'range' && target !== 'workingTree') {
+  if (target === 'fix' && !chainedFix) {
+    return {
+      status: 'unsupported',
+      reasons: ['A fix capture of a predecessor with no complete endpoint records no endpoint.'],
+    };
+  }
+
+  if (target === 'files' || target === 'rootCommit') {
     return { status: 'unsupported', reasons: [`A ${target} capture records no endpoint.`] };
   }
 
@@ -99,7 +109,7 @@ export const decideEndpoint = ({
     return gapEligibility(gaps);
   }
 
-  if (target === 'range') {
+  if (target !== 'workingTree') {
     return { status: 'eligible' };
   }
 

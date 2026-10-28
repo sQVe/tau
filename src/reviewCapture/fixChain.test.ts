@@ -149,21 +149,23 @@ it('refuses a fix capture whose predecessor record is replaced before publishing
   expect(replacedTree).toContainEqual([recordFileName, Buffer.from(replaced)]);
 });
 
-it('refuses a fix capture as a predecessor', async () => {
+const readRecord = async (directory: string) =>
+  JSON.parse(await readFile(join(directory, recordFileName), 'utf8')) as Record<string, unknown>;
+
+it('refuses a fix capture with no complete endpoint as a predecessor', async () => {
   const root = await changedRepository();
   const review = await capturedReview(root, { kind: 'workingTree', base: 'HEAD' });
+  const { endpoint: _endpoint, ...saved } = await readRecord(review);
 
+  await writeFile(join(review, recordFileName), JSON.stringify({ ...saved, version: 3 }));
   await writeAt(root, 'src/kept.ts', 'three\n');
 
   const fix = await capturedReview(root, fixTarget(review));
 
   await writeAt(root, 'src/kept.ts', 'four\n');
 
-  expect(await refusal(root, fix)).toContain('a fix capture cannot be a predecessor yet');
+  expect(await refusal(root, fix)).toContain('fix capture with no complete endpoint');
 });
-
-const readRecord = async (directory: string) =>
-  JSON.parse(await readFile(join(directory, recordFileName), 'utf8')) as Record<string, unknown>;
 
 it('names a complete predecessor in the published fix record', async () => {
   const root = await changedRepository();

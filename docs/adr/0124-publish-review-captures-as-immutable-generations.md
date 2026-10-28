@@ -34,8 +34,17 @@ must list exactly the paths the saved patch shows, with the blob and mode the pa
 A mismatch fails the capture. The capture then writes a commit of the endpoint tree on its base and
 points `refs/tau/review-captures/<review directory name>` at it, so `git gc` keeps both trees. The
 record names that ref. A rollback deletes the ref only while it still points at the capture's
-commit. A files, root commit, or fix capture, and any capture with gaps, records its endpoint as
-unsupported or incomplete with the reasons, and otherwise works as before.
+commit. A files or root commit capture, a fix capture of a predecessor with no complete endpoint,
+and any capture with gaps record the endpoint as unsupported or incomplete with the reasons, and
+otherwise work as before.
+
+A fix capture may name a working tree, range, or fix capture with a complete endpoint as its
+predecessor. The fix record then names the predecessor's identity and endpoint tree, and the capture
+is chained. A chained fix capture writes the tree of the working tree in a temporary index that
+starts from the base commit of the chain. Its patch is the diff from the predecessor's endpoint tree
+to that tree, so a fix of a fix shows only its own change. With no gaps, that tree is its endpoint,
+the predecessor's endpoint tree is its base tree, and its ref commit sits on the base commit of the
+chain. A fix capture without a complete endpoint cannot be a predecessor.
 
 The identity of a completed capture is the Git blob hash of its saved `capture.json`. Reads never
 change the saved files, apart from the Git objects the transition check reads. A read reports one of

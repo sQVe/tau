@@ -307,6 +307,7 @@ const publishGeneration = async (
     gaps: captured.gaps,
     patch: captured.bytes,
     snapshot,
+    chain: captured.chain,
   });
 
   owned.endpoint = retained;
