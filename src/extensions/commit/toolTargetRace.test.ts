@@ -1,11 +1,11 @@
 import { expect, it } from 'vitest';
 
+import { git } from '../../../tests/gitRepository.js';
 import { runGit } from '../../git.js';
 import {
   commitContext,
   createTemporaryRepository,
   executeCommit,
-  git,
   writeRepositoryFile,
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
@@ -14,18 +14,18 @@ it('rejects a target removed from history before the snapshot and restores the i
   const directory = await createTemporaryRepository();
 
   await writeRepositoryFile(directory, 'file.txt', 'original\n');
-  await git(directory, ['add', 'file.txt']);
-  await git(directory, ['commit', '-m', 'fix: target']);
+  await git(directory, 'add', 'file.txt');
+  await git(directory, 'commit', '-m', 'fix: target');
 
-  const tree = (await git(directory, ['rev-parse', 'HEAD^{tree}'])).trim();
-  const unrelated = (await git(directory, ['commit-tree', tree, '-m', 'unrelated'])).trim();
-  const index = await git(directory, ['ls-files', '--stage']);
+  const tree = (await git(directory, 'rev-parse', 'HEAD^{tree}')).trim();
+  const unrelated = (await git(directory, 'commit-tree', tree, '-m', 'unrelated')).trim();
+  const index = await git(directory, 'ls-files', '--stage');
 
   await writeRepositoryFile(directory, 'file.txt', 'corrected\n');
 
   const tool = createCommitTool(async (cwd, commandArguments, options) => {
     if (commandArguments[0] === 'write-tree') {
-      await git(directory, ['update-ref', 'HEAD', unrelated]);
+      await git(directory, 'update-ref', 'HEAD', unrelated);
     }
 
     return runGit(cwd, commandArguments, options);
@@ -43,14 +43,14 @@ it('rejects a target removed from history before the snapshot and restores the i
     ),
   ).rejects.toThrow(/target is no longer an ancestor of the snapshot HEAD/);
 
-  expect((await git(directory, ['rev-parse', 'HEAD'])).trim()).toBe(unrelated);
-  expect(await git(directory, ['ls-files', '--stage'])).toBe(index);
+  expect((await git(directory, 'rev-parse', 'HEAD')).trim()).toBe(unrelated);
+  expect(await git(directory, 'ls-files', '--stage')).toBe(index);
 });
 
 it('allows earlier groups to advance HEAD before a fixup snapshot', async () => {
   const directory = await createTemporaryRepository();
 
-  await git(directory, ['commit', '--allow-empty', '-m', 'base']);
+  await git(directory, 'commit', '--allow-empty', '-m', 'base');
   await writeRepositoryFile(directory, 'first.txt', 'first\n');
   await writeRepositoryFile(directory, 'second.txt', 'second\n');
 
@@ -62,5 +62,5 @@ it('allows earlier groups to advance HEAD before a fixup snapshot', async () => 
   });
 
   expect(result.details.groups).toHaveLength(2);
-  expect((await git(directory, ['log', '-1', '--format=%s'])).trim()).toBe('fixup! base');
+  expect((await git(directory, 'log', '-1', '--format=%s')).trim()).toBe('fixup! base');
 });

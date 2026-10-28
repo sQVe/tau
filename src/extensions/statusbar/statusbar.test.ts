@@ -1,11 +1,12 @@
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify, stripVTControlCharacters } from 'node:util';
 
 import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { installCommandShim } from '../../../tests/commandShimFake.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { initializeRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
@@ -311,8 +312,6 @@ describe('statusbar extension', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
     const log = join(directory, 'git.log');
     const finished = join(directory, 'finished.log');
-    const bin = join(directory, 'bin');
-    await mkdir(bin);
 
     const startedCount = async () => (await readFile(log, 'utf8')).split('\n').length - 1;
 
@@ -326,8 +325,6 @@ describe('statusbar extension', () => {
 
     // Releases every gate and waits for each started shim, so none outlives the directory.
     onTestFinished(async () => {
-      vi.unstubAllEnvs();
-
       for (const footer of footers) {
         footer.dispose?.();
       }
@@ -342,21 +339,16 @@ describe('statusbar extension', () => {
 
     // The first status waits for the first release and reports a change. The second waits for the
     // second release and reports a clean tree.
-    await writeFile(
-      join(bin, 'git'),
-      [
-        '#!/bin/sh',
-        `echo start >> '${log}'`,
-        `count=$(wc -l < '${log}')`,
-        `gate='${directory}'/release$count`,
-        'while [ ! -f "$gate" ]; do sleep 0.01; done',
-        `if [ "$count" = 1 ]; then echo ' M file'; fi`,
-        `echo end >> '${finished}'`,
-      ].join('\n'),
-      { mode: 0o755 },
-    );
+    const script = [
+      `echo start >> '${log}'`,
+      `count=$(wc -l < '${log}')`,
+      `gate='${directory}'/release$count`,
+      'while [ ! -f "$gate" ]; do sleep 0.01; done',
+      `if [ "$count" = 1 ]; then echo ' M file'; fi`,
+      `echo end >> '${finished}'`,
+    ].join('\n');
 
-    vi.stubEnv('PATH', `${bin}:${process.env.PATH ?? ''}`);
+    await installCommandShim('git', { otherCalls: 'fail', overrides: [{ match: ' ', script }] });
 
     const application = setup(directory);
     await application.emit('session_start');
@@ -394,20 +386,10 @@ describe('statusbar extension', () => {
     const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
     const log = join(directory, 'git.log');
     const release = join(directory, 'release');
-    const bin = join(directory, 'bin');
-    await mkdir(bin);
 
-    await writeFile(
-      join(bin, 'git'),
-      `#!/bin/sh\necho start >> '${log}'\nwhile [ ! -f '${release}' ]; do sleep 0.01; done\necho end >> '${log}'\n`,
-      { mode: 0o755 },
-    );
+    const script = `echo start >> '${log}'\nwhile [ ! -f '${release}' ]; do sleep 0.01; done\necho end >> '${log}'`;
 
-    vi.stubEnv('PATH', `${bin}:${process.env.PATH ?? ''}`);
-
-    onTestFinished(() => {
-      vi.unstubAllEnvs();
-    });
+    await installCommandShim('git', { otherCalls: 'fail', overrides: [{ match: ' ', script }] });
 
     const application = setup(directory);
     await application.emit('session_start');

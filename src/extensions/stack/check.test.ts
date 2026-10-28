@@ -3,8 +3,9 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
+import { git } from '../../../tests/gitRepository.js';
 import { noUiContext } from '../../../tests/toolContext.js';
-import { createStackCheckout, git } from './fixtures/checkout.js';
+import { createStackCheckout } from './fixtures/checkout.js';
 import { createStackFake, joinedCalls } from './fixtures/stackFake.js';
 import type { FakePull } from './fixtures/stackFake.js';
 import { createStackTool } from './tool.js';

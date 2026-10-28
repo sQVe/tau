@@ -1,12 +1,14 @@
+import { execFile } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 import { afterEach, expect, it, vi } from 'vitest';
 
+import { git } from '../../../tests/gitRepository.js';
 import {
   createTemporaryRepository,
   executeCommit,
-  git,
   writeRepositoryFile,
 } from './fixtures/commitTool.js';
 
@@ -38,7 +40,10 @@ it('keeps commit objects in the working repository when GIT_OBJECT_DIRECTORY is 
   const sortedObjectsAfter = objectsAfter.toSorted();
 
   expect.soft(sortedObjectsAfter).toEqual(sortedObjectsBefore);
-  expect(await git(repositoryA, ['show', 'HEAD:file.txt'])).toBe('content\n');
+
+  expect(
+    (await promisify(execFile)('git', ['show', 'HEAD:file.txt'], { cwd: repositoryA })).stdout,
+  ).toBe('content\n');
 });
 
 it('keeps committed content local when alternate object directories are inherited', async ({
@@ -50,7 +55,7 @@ it('keeps committed content local when alternate object directories are inherite
   const foreignObjects = join(repositoryB, '.git', 'objects');
 
   await writeRepositoryFile(repositoryB, 'seed.txt', content);
-  await git(repositoryB, ['hash-object', '-w', 'seed.txt']);
+  await git(repositoryB, 'hash-object', '-w', 'seed.txt');
   await writeRepositoryFile(repositoryA, 'file.txt', content);
 
   const entriesBefore = await readdir(foreignObjects, { recursive: true, withFileTypes: true });
@@ -70,8 +75,11 @@ it('keeps committed content local when alternate object directories are inherite
 
   vi.stubEnv('GIT_ALTERNATE_OBJECT_DIRECTORIES', undefined);
 
-  expect(await git(repositoryA, ['show', 'HEAD:file.txt'])).toBe(content);
-  await git(repositoryA, ['fsck', '--full']);
+  expect(
+    (await promisify(execFile)('git', ['show', 'HEAD:file.txt'], { cwd: repositoryA })).stdout,
+  ).toBe(content);
+
+  await git(repositoryA, 'fsck', '--full');
 
   const entriesAfter = await readdir(foreignObjects, { recursive: true, withFileTypes: true });
   const bytesAfter = await Promise.all(foreignPaths.map((path) => readFile(path)));
@@ -103,8 +111,8 @@ it('commits in the working directory when the process has another repository in 
 
   await writeRepositoryFile(repositoryA, 'file.txt', 'content\n');
 
-  const logBefore = await git(repositoryB, ['for-each-ref', '--format=%(objectname) %(refname)']);
-  const indexBefore = await git(repositoryB, ['ls-files', '--stage']);
+  const logBefore = await git(repositoryB, 'for-each-ref', '--format=%(objectname) %(refname)');
+  const indexBefore = await git(repositoryB, 'ls-files', '--stage');
 
   for (const name of inheritedNames) {
     savedValues.set(name, process.env[name]);
@@ -121,11 +129,13 @@ it('commits in the working directory when the process has another repository in 
     Reflect.deleteProperty(process.env, name);
   }
 
-  expect(await git(repositoryA, ['log', '--format=%s'])).toBe('feat: add file\n');
+  expect(
+    (await promisify(execFile)('git', ['log', '--format=%s'], { cwd: repositoryA })).stdout,
+  ).toBe('feat: add file\n');
 
-  expect(await git(repositoryB, ['for-each-ref', '--format=%(objectname) %(refname)'])).toBe(
+  expect(await git(repositoryB, 'for-each-ref', '--format=%(objectname) %(refname)')).toBe(
     logBefore,
   );
 
-  expect(await git(repositoryB, ['ls-files', '--stage'])).toBe(indexBefore);
+  expect(await git(repositoryB, 'ls-files', '--stage')).toBe(indexBefore);
 });

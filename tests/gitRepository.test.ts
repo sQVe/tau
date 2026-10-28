@@ -5,10 +5,32 @@ import { promisify } from 'node:util';
 
 import { expect, it, vi } from 'vitest';
 
-import { createTemporaryRepository } from './gitRepository.js';
+import { createTemporaryRepository, git } from './gitRepository.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 const executeFile = promisify(execFile);
+
+it('returns Git stdout with its leading space and without the trailing newline', async ({
+  onTestFinished,
+}) => {
+  const repositoryDirectory = await createTemporaryRepository(onTestFinished);
+  await writeFile(join(repositoryDirectory, 'file.txt'), 'content\n');
+  await executeFile('git', ['add', 'file.txt'], { cwd: repositoryDirectory });
+  await executeFile('git', ['commit', '-m', 'test: commit'], { cwd: repositoryDirectory });
+  await writeFile(join(repositoryDirectory, 'file.txt'), 'changed\n');
+
+  const output = await git(repositoryDirectory, 'status', '--porcelain');
+
+  expect(output).toBe(' M file.txt');
+});
+
+it('rejects when Git exits nonzero', async ({ onTestFinished }) => {
+  const repositoryDirectory = await createTemporaryRepository(onTestFinished);
+
+  await expect(git(repositoryDirectory, 'rev-parse', 'nope')).rejects.toThrow(
+    "ambiguous argument 'nope'",
+  );
+});
 
 it('ignores a hostile user Git configuration, also for Git calls the code under test makes', async ({
   onTestFinished,

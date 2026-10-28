@@ -1,12 +1,14 @@
+import { execFile } from 'node:child_process';
 import type * as fileSystem from 'node:fs/promises';
 import { chmod, rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { git } from '../../../tests/gitRepository.js';
 import { runGit } from '../../git.js';
 import {
-  git,
   createTemporaryRepository,
   writeRepositoryFile,
   getStoredCommitMessage,
@@ -54,7 +56,11 @@ describe('message policy', () => {
       groups: [{ files: ['requested'], subject: 'feat: requested' }],
     });
 
-    expect(await git(directory, ['rev-list', '--all', '--count'])).toBe('1\n');
+    expect(
+      (await promisify(execFile)('git', ['rev-list', '--all', '--count'], { cwd: directory }))
+        .stdout,
+    ).toBe('1\n');
+
     expect(await getStoredCommitMessage(directory)).toBe('fix: rewritten\n\nHook body  \n');
 
     expect(result.details.groups[0]).toMatchObject({
@@ -88,11 +94,11 @@ describe('message policy', () => {
       ],
     }).catch((error: unknown) => String(error));
 
-    const head = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+    const head = (await git(directory, 'rev-parse', 'HEAD')).trim();
 
     expect(failure).toContain(`Group 1/2: ${head} feat: first`);
     expect(failure).toContain('Group 2/2: git commit failed:\ninvalid message');
-    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
+    expect(await git(directory, 'diff', '--cached', '--name-only')).toBe('');
   });
 
   it.each(['group failure', 'cancellation'])(
@@ -146,7 +152,7 @@ describe('message policy', () => {
           commitContext(directory),
         );
 
-        const head = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+        const head = (await git(directory, 'rev-parse', 'HEAD')).trim();
 
         expect(first.details.groups[0]?.sha).toBe(head);
         expect(JSON.stringify(first.content)).toContain('cleanup denied');
@@ -170,8 +176,8 @@ describe('message policy', () => {
         );
 
         expect(report).toContain('cleanup denied');
-        expect((await git(directory, ['rev-parse', 'HEAD'])).trim()).toBe(head);
-        expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
+        expect((await git(directory, 'rev-parse', 'HEAD')).trim()).toBe(head);
+        expect(await git(directory, 'diff', '--cached', '--name-only')).toBe('');
       } finally {
         vi.mocked(rm).mockImplementation(original.rm);
       }

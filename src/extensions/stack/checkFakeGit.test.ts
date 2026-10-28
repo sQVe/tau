@@ -1,15 +1,15 @@
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it } from 'vitest';
 
+import { installCommandShim } from '../../../tests/commandShimFake.js';
 import { noUiContext } from '../../../tests/toolContext.js';
-import { createGitFake } from './fixtures/gitFake.js';
 import { createStackFake } from './fixtures/stackFake.js';
 import { createStackTool } from './tool.js';
 
 const setUp = async () => {
-  const gitFake = await createGitFake(onTestFinished);
+  const gitFake = await installCommandShim('git', { otherCalls: 'fail' });
   const fake = createStackFake();
 
-  gitFake.answer('symbolic-ref --quiet --short HEAD', { stdout: 'feature\n' });
+  gitFake.answer({ prefix: 'symbolic-ref --quiet --short HEAD', stdout: 'feature\n' });
 
   const run = async () => {
     const result = await createStackTool(fake.exec).execute(
@@ -41,7 +41,7 @@ it.each([
 ])('decides unknown, with no facts, for $name from git rev-parse', async ({ answer, detail }) => {
   const { gitFake, fake, run } = await setUp();
 
-  gitFake.answer('rev-parse --absolute-git-dir', answer);
+  gitFake.answer({ prefix: 'rev-parse --absolute-git-dir', ...answer });
 
   expect(await run()).toMatchObject({
     result: 'unknown',

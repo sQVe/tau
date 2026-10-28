@@ -1,18 +1,14 @@
-import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { promisify } from 'node:util';
 
 import type { ExtensionAPI, ToolCallEvent } from '@earendil-works/pi-coding-agent';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { initializeRepository } from '../../../tests/gitRepository.js';
+import { git, initializeRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import commitExtension from './commit.js';
 import { commitGuardReason, guardToolCall } from './guard.js';
-
-const execFileAsync = promisify(execFile);
 
 const makeReadEvent = (): ToolCallEvent => ({
   type: 'tool_call',
@@ -27,44 +23,6 @@ const makeBashEvent = (command: string): ToolCallEvent => ({
   toolName: 'bash',
   input: { command },
 });
-
-const runCommand = async (
-  command: string,
-  commandArguments: string[],
-  workingDirectory: string,
-): Promise<{ stdout: string; stderr: string; code: number; killed: boolean }> => {
-  try {
-    const { stdout, stderr } = await execFileAsync(command, commandArguments, {
-      cwd: workingDirectory,
-    });
-
-    return { stdout, stderr, code: 0, killed: false };
-  } catch (error) {
-    const failure = error as Error & {
-      stdout?: string;
-      stderr?: string;
-      code?: number;
-      killed?: boolean;
-    };
-
-    return {
-      stdout: failure.stdout ?? '',
-      stderr: failure.stderr ?? '',
-      code: failure.code ?? 1,
-      killed: failure.killed ?? false,
-    };
-  }
-};
-
-const git = async (repositoryDirectory: string, commandArguments: string[]): Promise<string> => {
-  const result = await runCommand('git', commandArguments, repositoryDirectory);
-
-  if (result.code !== 0) {
-    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr || result.stdout}`);
-  }
-
-  return result.stdout;
-};
 
 const createTemporaryRepository = async (): Promise<string> => {
   const repositoryDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
@@ -424,7 +382,7 @@ describe('commitExtension', () => {
       expect(result.details).toMatchObject({ groups: [{ files: [file] }] });
     }
 
-    expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('2');
+    expect((await git(repositoryDirectory, 'rev-list', '--all', '--count')).trim()).toBe('2');
     expect(custom).not.toHaveBeenCalled();
     expect(fakePi.getFlag).not.toHaveBeenCalled();
   });
@@ -459,7 +417,7 @@ describe('commitExtension', () => {
       } as never,
     );
 
-    const commitCountOutput = await git(repositoryDirectory, ['rev-list', '--all', '--count']);
+    const commitCountOutput = await git(repositoryDirectory, 'rev-list', '--all', '--count');
     const commitCount = commitCountOutput.trim();
 
     expect(commitCount).toBe('1');

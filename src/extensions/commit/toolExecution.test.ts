@@ -1,15 +1,17 @@
+import { execFile } from 'node:child_process';
 import { chmod } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { git } from '../../../tests/gitRepository.js';
 import {
   commitContext,
   createObservedCommitTool,
   createTemporaryRepository,
   executeCommit,
   getStoredCommitMessage,
-  git,
   writeRepositoryFile,
 } from './fixtures/commitTool.js';
 import type { CommitInput } from './validation.js';
@@ -23,8 +25,8 @@ const installHook = async (directory: string, name: string, script: string): Pro
 
 const commitTracked = async (directory: string, file: string, content: string): Promise<void> => {
   await writeRepositoryFile(directory, file, content);
-  await git(directory, ['add', file]);
-  await git(directory, ['commit', '-m', 'chore: seed']);
+  await git(directory, 'add', file);
+  await git(directory, 'commit', '-m', 'chore: seed');
 };
 
 describe('message bodies', () => {
@@ -111,7 +113,7 @@ describe('reports of hook-written messages', () => {
       groups: [{ files: ['a.txt'], subject: 'feat: a', body: 'parent abc123' }],
     }).finally(() => vi.unstubAllEnvs());
 
-    const head = (await git(directory, ['rev-parse', 'HEAD'])).trim();
+    const head = (await git(directory, 'rev-parse', 'HEAD')).trim();
 
     expect(result.details.groups[0]?.sha).toBe(head);
   });
@@ -141,8 +143,8 @@ describe('fixup ancestry check', () => {
     await commitTracked(directory, 'a.txt', 'one\n');
     await writeRepositoryFile(directory, 'a.txt', 'two\n');
 
-    const head = await git(directory, ['rev-parse', 'HEAD']);
-    const index = await git(directory, ['ls-files', '--stage']);
+    const head = await git(directory, 'rev-parse', 'HEAD');
+    const index = await git(directory, 'ls-files', '--stage');
 
     const tool = createObservedCommitTool({
       override: (commandArguments) =>
@@ -155,8 +157,8 @@ describe('fixup ancestry check', () => {
       tool.execute('call', fixupGroups, undefined, undefined, commitContext(directory)),
     ).rejects.toThrow(/Could not check fixup target ancestry: merge-base broke/);
 
-    expect(await git(directory, ['rev-parse', 'HEAD'])).toBe(head);
-    expect(await git(directory, ['ls-files', '--stage'])).toBe(index);
+    expect(await git(directory, 'rev-parse', 'HEAD')).toBe(head);
+    expect(await git(directory, 'ls-files', '--stage')).toBe(index);
   });
 });
 
@@ -165,7 +167,7 @@ describe('index restore after a failed group', () => {
     const directory = await createTemporaryRepository();
     await commitTracked(directory, 'a.txt', 'one\n');
     await writeRepositoryFile(directory, 'a.txt', 'staged\n');
-    await git(directory, ['add', 'a.txt']);
+    await git(directory, 'add', 'a.txt');
     await writeRepositoryFile(directory, 'a.txt', 'working\n');
     await installHook(directory, 'pre-commit', 'exit 1');
 
@@ -173,8 +175,14 @@ describe('index restore after a failed group', () => {
       executeCommit(directory, { groups: [{ files: ['a.txt'], subject: 'feat: a' }] }),
     ).rejects.toThrow(/git commit failed/);
 
-    expect(await git(directory, ['show', ':a.txt'])).toBe('staged\n');
-    expect(await git(directory, ['rev-list', '--count', 'HEAD'])).toBe('1\n');
+    expect((await promisify(execFile)('git', ['show', ':a.txt'], { cwd: directory })).stdout).toBe(
+      'staged\n',
+    );
+
+    expect(
+      (await promisify(execFile)('git', ['rev-list', '--count', 'HEAD'], { cwd: directory }))
+        .stdout,
+    ).toBe('1\n');
   });
 
   it('unstages a requested file that was not staged before', async () => {
@@ -187,26 +195,35 @@ describe('index restore after a failed group', () => {
       executeCommit(directory, { groups: [{ files: ['a.txt'], subject: 'feat: a' }] }),
     ).rejects.toThrow(/git commit failed/);
 
-    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
-    expect(await git(directory, ['diff', '--name-only'])).toBe('a.txt\n');
+    expect(await git(directory, 'diff', '--cached', '--name-only')).toBe('');
+
+    expect(
+      (await promisify(execFile)('git', ['diff', '--name-only'], { cwd: directory })).stdout,
+    ).toBe('a.txt\n');
   });
 
   it('stages a deletion again when staging the request undid it', async () => {
     const directory = await createTemporaryRepository();
     await commitTracked(directory, 'a.txt', 'one\n');
-    await git(directory, ['rm', '--cached', '--quiet', 'a.txt']);
+    await git(directory, 'rm', '--cached', '--quiet', 'a.txt');
 
     await expect(
       executeCommit(directory, { groups: [{ files: ['a.txt'], subject: 'feat: a' }] }),
     ).rejects.toThrow(/No staged changes/);
 
-    expect(await git(directory, ['diff', '--cached', '--name-status'])).toBe('D\ta.txt\n');
+    expect(
+      (await promisify(execFile)('git', ['diff', '--cached', '--name-status'], { cwd: directory }))
+        .stdout,
+    ).toBe('D\ta.txt\n');
   });
 });
 
 const expectUntouched = async (directory: string) => {
-  expect(await git(directory, ['rev-list', '--count', 'HEAD'])).toBe('1\n');
-  expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
+  expect(
+    (await promisify(execFile)('git', ['rev-list', '--count', 'HEAD'], { cwd: directory })).stdout,
+  ).toBe('1\n');
+
+  expect(await git(directory, 'diff', '--cached', '--name-only')).toBe('');
 };
 
 describe('cancellation', () => {
@@ -279,7 +296,7 @@ describe('cancellation', () => {
     const directory = await prepare();
     const controller = new AbortController();
     await writeRepositoryFile(directory, 'other.txt', 'other\n');
-    await git(directory, ['add', 'other.txt']);
+    await git(directory, 'add', 'other.txt');
 
     const tool = createObservedCommitTool({
       afterCommand: async (commandArguments) => {
@@ -298,7 +315,11 @@ describe('cancellation', () => {
     );
 
     expect(result.details.groups).toEqual([cancelledDetails]);
-    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('other.txt\n');
+
+    expect(
+      (await promisify(execFile)('git', ['diff', '--cached', '--name-only'], { cwd: directory }))
+        .stdout,
+    ).toBe('other.txt\n');
   });
 });
 
@@ -337,24 +358,30 @@ describe('changes after the snapshot', () => {
   it('leaves the index alone when another writer staged a file', async () => {
     const { directory, outcome } = await cancelAfterSnapshot(async (repository) => {
       await writeRepositoryFile(repository, 'other.txt', 'other\n');
-      await git(repository, ['add', 'other.txt']);
+      await git(repository, 'add', 'other.txt');
     });
 
     await expect(outcome).rejects.toThrow(/Concurrent staging was left untouched/);
 
-    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('a.txt\nother.txt\n');
+    expect(
+      (await promisify(execFile)('git', ['diff', '--cached', '--name-only'], { cwd: directory }))
+        .stdout,
+    ).toBe('a.txt\nother.txt\n');
   });
 
   it('leaves the index alone when another writer moved HEAD', async () => {
     const { directory, outcome } = await cancelAfterSnapshot(async (repository) => {
-      const moved = await git(repository, ['commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'x']);
+      const moved = await git(repository, 'commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'x');
 
-      await git(repository, ['update-ref', 'HEAD', moved.trim()]);
+      await git(repository, 'update-ref', 'HEAD', moved.trim());
     });
 
     await expect(outcome).rejects.toThrow(/Concurrent staging was left untouched/);
 
-    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('a.txt\n');
+    expect(
+      (await promisify(execFile)('git', ['diff', '--cached', '--name-only'], { cwd: directory }))
+        .stdout,
+    ).toBe('a.txt\n');
   });
 });
 
@@ -362,22 +389,22 @@ const prepareSeededRepository = async () => {
   const directory = await createTemporaryRepository();
   await writeRepositoryFile(directory, 'a.txt', 'one\n');
   await writeRepositoryFile(directory, 'other.txt', 'other\n');
-  await git(directory, ['add', 'a.txt', 'other.txt']);
-  await git(directory, ['commit', '-m', 'chore: seed']);
+  await git(directory, 'add', 'a.txt', 'other.txt');
+  await git(directory, 'commit', '-m', 'chore: seed');
 
   return directory;
 };
 
 const snapshotIndexState = async (directory: string) => ({
-  head: await git(directory, ['rev-parse', 'HEAD']),
-  index: await git(directory, ['ls-files', '--stage']),
-  flags: await git(directory, ['ls-files', '-v']),
+  head: await git(directory, 'rev-parse', 'HEAD'),
+  index: await git(directory, 'ls-files', '--stage'),
+  flags: await git(directory, 'ls-files', '-v'),
 });
 
 describe('skip-worktree flags after a failed group', () => {
   it('keeps the flag of an unrelated file when a hook rejects the commit', async () => {
     const directory = await prepareSeededRepository();
-    await git(directory, ['update-index', '--skip-worktree', 'other.txt']);
+    await git(directory, 'update-index', '--skip-worktree', 'other.txt');
     await writeRepositoryFile(directory, 'a.txt', 'two\n');
     await installHook(directory, 'pre-commit', 'exit 1');
 
@@ -393,7 +420,7 @@ describe('skip-worktree flags after a failed group', () => {
 
   it('keeps the flag of a requested file when staging it fails', async () => {
     const directory = await prepareSeededRepository();
-    await git(directory, ['update-index', '--skip-worktree', 'a.txt']);
+    await git(directory, 'update-index', '--skip-worktree', 'a.txt');
     await writeRepositoryFile(directory, 'a.txt', 'two\n');
 
     const before = await snapshotIndexState(directory);

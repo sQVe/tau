@@ -1,15 +1,18 @@
+import { execFile } from 'node:child_process';
 import { chmod, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 import { describe, expect, it } from 'vitest';
 
+import { git } from '../../../tests/gitRepository.js';
 import { runGit } from '../../git.js';
 import {
   commitContext,
   createTemporaryRepository,
   executeCommit,
   fakeCommit,
-  git,
+  readGitBlob,
   writeRepositoryFile,
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
@@ -98,10 +101,10 @@ describe('direct commit staging', () => {
 
   it('preserves unrelated staging outside nested cwd with relative diffs enabled', async () => {
     const directory = await createTemporaryRepository();
-    await git(directory, ['config', 'diff.relative', 'true']);
+    await git(directory, 'config', 'diff.relative', 'true');
     await writeRepositoryFile(directory, 'sub/requested', 'requested');
     await writeRepositoryFile(directory, 'other', 'staged bytes');
-    await git(directory, ['add', 'other']);
+    await git(directory, 'add', 'other');
     await writeRepositoryFile(directory, 'other', 'working bytes');
 
     await expect(
@@ -110,10 +113,18 @@ describe('direct commit staging', () => {
       }),
     ).rejects.toThrow('other paths are already staged: other');
 
-    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('other\n');
-    expect(await git(directory, ['show', ':other'])).toBe('staged bytes');
+    expect(
+      (await promisify(execFile)('git', ['diff', '--cached', '--name-only'], { cwd: directory }))
+        .stdout,
+    ).toBe('other\n');
+
+    expect(await readGitBlob(directory, ':other')).toBe('staged bytes');
     expect(await readFile(join(directory, 'other'), 'utf8')).toBe('working bytes');
-    expect(await git(directory, ['rev-list', '--all', '--count'])).toBe('0\n');
+
+    expect(
+      (await promisify(execFile)('git', ['rev-list', '--all', '--count'], { cwd: directory }))
+        .stdout,
+    ).toBe('0\n');
   });
 
   it('commits from a cwd whose name contains a newline', async () => {
@@ -124,7 +135,7 @@ describe('direct commit staging', () => {
       groups: [{ files: ['requested'], subject: 'feat: requested' }],
     });
 
-    expect(await git(directory, ['ls-tree', '-r', '-z', '--name-only', 'HEAD'])).toBe(
+    expect(await git(directory, 'ls-tree', '-r', '-z', '--name-only', 'HEAD')).toBe(
       'part\nrest/requested\0',
     );
   });
@@ -132,13 +143,13 @@ describe('direct commit staging', () => {
   it('refuses early when the session cwd is not a work tree', async () => {
     const source = await createTemporaryRepository();
     await writeRepositoryFile(source, 'tracked', 'tracked');
-    await git(source, ['add', 'tracked']);
-    await git(source, ['commit', '--quiet', '-m', 'initial']);
+    await git(source, 'add', 'tracked');
+    await git(source, 'commit', '--quiet', '-m', 'initial');
     const container = await createTemporaryRepository();
-    await git(container, ['clone', '--quiet', '--bare', source, '.bare']);
+    await git(container, 'clone', '--quiet', '--bare', source, '.bare');
     await rm(join(container, '.git'), { recursive: true });
     await writeFile(join(container, '.git'), 'gitdir: .bare\n');
-    await git(container, ['worktree', 'add', '--quiet', 'feature']);
+    await git(container, 'worktree', 'add', '--quiet', 'feature');
     await writeRepositoryFile(join(container, 'feature'), 'requested', 'requested');
 
     await expect(
@@ -147,8 +158,18 @@ describe('direct commit staging', () => {
       }),
     ).rejects.toThrow(`(${container})`);
 
-    expect(await git(join(container, 'feature'), ['status', '--porcelain'])).toBe('?? requested\n');
-    expect(await git(container, ['rev-list', '--all', '--count'])).toBe('1\n');
+    expect(
+      (
+        await promisify(execFile)('git', ['status', '--porcelain'], {
+          cwd: join(container, 'feature'),
+        })
+      ).stdout,
+    ).toBe('?? requested\n');
+
+    expect(
+      (await promisify(execFile)('git', ['rev-list', '--all', '--count'], { cwd: container }))
+        .stdout,
+    ).toBe('1\n');
   });
 
   it('preserves concurrent staging before the candidate snapshot', async () => {
@@ -161,7 +182,7 @@ describe('direct commit staging', () => {
 
       if (argumentsList.includes('add')) {
         await writeRepositoryFile(directory, 'other', 'staged bytes');
-        await git(directory, ['add', 'other']);
+        await git(directory, 'add', 'other');
         await writeRepositoryFile(directory, 'other', 'working bytes');
       }
 
@@ -180,19 +201,23 @@ describe('direct commit staging', () => {
       ),
     ).rejects.toThrow(/Concurrent staging was left untouched/);
 
-    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('other\nrequested\n');
-    expect(await git(directory, ['show', ':other'])).toBe('staged bytes');
+    expect(
+      (await promisify(execFile)('git', ['diff', '--cached', '--name-only'], { cwd: directory }))
+        .stdout,
+    ).toBe('other\nrequested\n');
+
+    expect(await readGitBlob(directory, ':other')).toBe('staged bytes');
     expect(await readFile(join(directory, 'other'), 'utf8')).toBe('working bytes');
-    expect((await git(directory, ['rev-list', '--all', '--count'])).trim()).toBe('0');
+    expect((await git(directory, 'rev-list', '--all', '--count')).trim()).toBe('0');
   });
 
   it('commits and reports hook-added paths outside a nested working directory', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'baseline', 'baseline');
-    await git(directory, ['add', 'baseline']);
-    await git(directory, ['commit', '-m', 'test: baseline']);
-    const head = (await git(directory, ['rev-parse', 'HEAD'])).trim();
-    await git(directory, ['config', 'diff.relative', 'true']);
+    await git(directory, 'add', 'baseline');
+    await git(directory, 'commit', '-m', 'test: baseline');
+    const head = (await git(directory, 'rev-parse', 'HEAD')).trim();
+    await git(directory, 'config', 'diff.relative', 'true');
     await writeRepositoryFile(directory, 'sub/requested', 'requested');
     await writeRepositoryFile(directory, 'root.txt', 'root');
     await writeRepositoryFile(directory, 'sibling/extra', 'sibling');
@@ -216,8 +241,8 @@ describe('direct commit staging', () => {
       commitContext(join(directory, 'sub')),
     );
 
-    expect((await git(directory, ['rev-parse', 'HEAD^'])).trim()).toBe(head);
-    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
+    expect((await git(directory, 'rev-parse', 'HEAD^')).trim()).toBe(head);
+    expect(await git(directory, 'diff', '--cached', '--name-only')).toBe('');
 
     expect(result.details.groups[0]).toMatchObject({
       files: ['root.txt', 'sibling/extra', 'sub/extra', 'sub/requested'],
@@ -228,9 +253,9 @@ describe('direct commit staging', () => {
       'Hook changed paths: root.txt, sibling/extra, sub/extra',
     );
 
-    expect(await git(directory, ['show', 'HEAD:root.txt'])).toBe('root');
-    expect(await git(directory, ['show', 'HEAD:sibling/extra'])).toBe('sibling');
-    expect(await git(directory, ['show', 'HEAD:sub/extra'])).toBe('local');
+    expect(await readGitBlob(directory, 'HEAD:root.txt')).toBe('root');
+    expect(await readGitBlob(directory, 'HEAD:sibling/extra')).toBe('sibling');
+    expect(await readGitBlob(directory, 'HEAD:sub/extra')).toBe('local');
     expect(await readFile(join(directory, 'root.txt'), 'utf8')).toBe('root');
     expect(await readFile(join(directory, 'sibling/extra'), 'utf8')).toBe('sibling');
     expect(await readFile(join(directory, 'sub/extra'), 'utf8')).toBe('local');
@@ -249,7 +274,7 @@ describe('direct commit staging', () => {
       }),
     ).rejects.toThrow(/assigned.*multiple groups/i);
 
-    expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
+    expect(await git(directory, 'diff', '--cached', '--name-only')).toBe('');
     expect(await readFile(join(directory, 'requested'), 'utf8')).toBe('working');
   });
 
@@ -286,8 +311,8 @@ describe('direct commit staging', () => {
   it('commits requested files without changing unrelated working and untracked files', async () => {
     const directory = await createTemporaryRepository();
     await writeRepositoryFile(directory, 'other', 'original\n');
-    await git(directory, ['add', 'other']);
-    await git(directory, ['commit', '-m', 'test: baseline']);
+    await git(directory, 'add', 'other');
+    await git(directory, 'commit', '-m', 'test: baseline');
     await writeRepositoryFile(directory, 'other', 'working edit\n');
     await writeRepositoryFile(directory, 'untracked', 'keep me\n');
     await writeRepositoryFile(directory, 'requested', 'requested bytes\n');
@@ -296,11 +321,12 @@ describe('direct commit staging', () => {
       groups: [{ files: ['requested'], subject: 'feat: direct staging' }],
     });
 
-    expect(result.details.groups[0]?.sha).toBe(
-      (await git(directory, ['rev-parse', 'HEAD'])).trim(),
-    );
+    expect(result.details.groups[0]?.sha).toBe((await git(directory, 'rev-parse', 'HEAD')).trim());
 
-    expect(await git(directory, ['show', 'HEAD:requested'])).toBe('requested bytes\n');
+    expect(
+      (await promisify(execFile)('git', ['show', 'HEAD:requested'], { cwd: directory })).stdout,
+    ).toBe('requested bytes\n');
+
     expect(await readFile(join(directory, 'other'), 'utf8')).toBe('working edit\n');
     expect(await readFile(join(directory, 'untracked'), 'utf8')).toBe('keep me\n');
   });

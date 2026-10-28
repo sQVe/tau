@@ -1,21 +1,12 @@
-import { execFile } from 'node:child_process';
 import { chmod, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { declinedExec } from '../../../tests/declinedExecFake.js';
-import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { createFullCheckTool } from './tool.js';
-
-const git = (cwd: string, ...commandArguments: string[]) =>
-  promisify(execFile)(
-    'git',
-    ['-c', 'user.name=Tau', '-c', 'user.email=tau@example.com', ...commandArguments],
-    { cwd },
-  );
 
 const countingArgv = (counter: string, extra = '') => [
   process.execPath,

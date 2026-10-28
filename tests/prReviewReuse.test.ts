@@ -1,24 +1,17 @@
-import { execFile } from 'node:child_process';
 import { mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
-import { expect, it, onTestFinished, vi } from 'vitest';
+import { expect, it, onTestFinished } from 'vitest';
 
 import { createCodeReviewTool } from '../src/extensions/codeReview/tool.js';
 import type { CodeReviewInput } from '../src/extensions/codeReview/tool.js';
 import { createGhFake } from '../src/extensions/pr/fixtures/ghFake.js';
 import { createPrTool } from '../src/extensions/pr/tool.js';
 import type { PrInput } from '../src/extensions/pr/tool.js';
-import { createTemporaryRepository } from './gitRepository.js';
+import { installCommandShim } from './commandShimFake.js';
+import { createTemporaryRepository, git } from './gitRepository.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 import { noUiContext } from './toolContext.js';
-
-const git = async (cwd: string, ...commandArguments: string[]) => {
-  const { stdout } = await promisify(execFile)('git', commandArguments, { cwd });
-
-  return stdout.trim();
-};
 
 const runCodeReview = async (root: string, input: CodeReviewInput) => {
   const tool = createCodeReviewTool();
@@ -191,20 +184,14 @@ it('refuses reuse when recheck.diff is replaced after reuse reads it', async () 
   await commitFile(root, 'feature.txt', 'three\n');
   await runCodeReview(root, { action: 'freshness', directory });
 
-  const { stdout } = await promisify(execFile)('sh', ['-c', 'command -v git']);
-  const realGit = stdout.trim();
-
-  const script = [
-    '#!/bin/sh',
-    `if [ "$1" = hash-object ]; then cp '${reviewedPath}' '${recheckPath}'; fi`,
-    `exec '${realGit}' "$@"`,
-  ].join('\n');
-
-  await writeFile(join(wrapperDirectory, 'git'), `${script}\n`, { mode: 0o755 });
-  vi.stubEnv('PATH', `${wrapperDirectory}:${process.env['PATH'] ?? ''}`);
-
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [
+      {
+        match: ' hash-object ',
+        script: `cp '${reviewedPath}' '${recheckPath}'; exec "$real" "$@"`,
+      },
+    ],
   });
 
   const record = await readFile(join(directory, 'capture.json'));

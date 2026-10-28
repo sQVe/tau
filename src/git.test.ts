@@ -2,10 +2,11 @@ import { once } from 'node:events';
 import { chmodSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import type { Socket } from 'node:net';
-import { delimiter, join } from 'node:path';
+import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 
+import { installCommandShim } from '../tests/commandShimFake.js';
 import { createTemporaryRepository } from '../tests/gitRepository.js';
 import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.js';
 import { findCheckoutRoot, readGit, runGit } from './git.js';
@@ -158,14 +159,11 @@ it('preserves hook diagnostics larger than a pipe buffer', async ({ onTestFinish
 it('resolves a null exit code when Git runs past the timeout', async ({ onTestFinished }) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-git-shim-');
 
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-
   // `exec` replaces the shell, so the kill reaches the process that holds the output pipe.
-  writeFileSync(join(directory, 'git'), '#!/bin/sh\nexec sleep 30\n');
-  chmodSync(join(directory, 'git'), 0o755);
-  vi.stubEnv('PATH', `${directory}${delimiter}${process.env['PATH'] ?? ''}`);
+  await installCommandShim('git', {
+    otherCalls: 'fail',
+    overrides: [{ match: ' remote get-url origin ', script: 'exec sleep 30' }],
+  });
 
   const result = await runGit(directory, ['remote', 'get-url', 'origin'], {
     timeoutMilliseconds: 50,
@@ -196,13 +194,10 @@ it('resolves the exit code when Git exits before it reads its input', async ({
 }) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-git-shim-');
 
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
+  await installCommandShim('git', {
+    otherCalls: 'fail',
+    answers: [{ prefix: 'cat-file --batch', code: 3 }],
   });
-
-  writeFileSync(join(directory, 'git'), '#!/bin/sh\nexit 3\n');
-  chmodSync(join(directory, 'git'), 0o755);
-  vi.stubEnv('PATH', `${directory}${delimiter}${process.env['PATH'] ?? ''}`);
 
   const input = 'x'.repeat(4_000_000);
   const result = await runGit(directory, ['cat-file', '--batch'], { input });
@@ -298,13 +293,10 @@ it('resolves the trimmed output of a Git command that exits 0', async ({ onTestF
 it('throws with the Git message when Git exits nonzero', async ({ onTestFinished }) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-git-shim-');
 
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
+  await installCommandShim('git', {
+    otherCalls: 'fail',
+    answers: [{ prefix: 'fsck', code: 128, stderr: 'boom\n' }],
   });
-
-  writeFileSync(join(directory, 'git'), '#!/bin/sh\necho "boom" >&2\nexit 128\n');
-  chmodSync(join(directory, 'git'), 0o755);
-  vi.stubEnv('PATH', `${directory}${delimiter}${process.env['PATH'] ?? ''}`);
 
   await expect(readGit(directory, ['fsck'])).rejects.toThrow('git fsck failed: boom');
 });
@@ -320,17 +312,12 @@ it.for([0, 1])(
   async (exitCode, { onTestFinished }) => {
     const directory = temporaryDirectory(onTestFinished, 'tau-git-shim-');
 
-    onTestFinished(() => {
-      vi.unstubAllEnvs();
+    await installCommandShim('git', {
+      otherCalls: 'fail',
+      overrides: [
+        { match: ' status ', script: `trap "exit ${exitCode}" TERM\nwhile :; do sleep 0.05; done` },
+      ],
     });
-
-    writeFileSync(
-      join(directory, 'git'),
-      `#!/bin/sh\ntrap "exit ${exitCode}" TERM\nwhile :; do sleep 0.05; done\n`,
-    );
-
-    chmodSync(join(directory, 'git'), 0o755);
-    vi.stubEnv('PATH', `${directory}${delimiter}${process.env['PATH'] ?? ''}`);
 
     const result = await runGit(directory, ['status'], { timeoutMilliseconds: 300 });
 

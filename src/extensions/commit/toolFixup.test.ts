@@ -1,10 +1,13 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
 import { expect, it } from 'vitest';
 
+import { git } from '../../../tests/gitRepository.js';
 import {
   createTemporaryRepository,
   executeCommit,
   getStoredCommitMessage,
-  git,
   runCommand,
   writeRepositoryFile,
 } from './fixtures/commitTool.js';
@@ -13,10 +16,10 @@ import type { CommitInput } from './validation.js';
 const prepareRepository = async () => {
   const directory = await createTemporaryRepository();
 
-  await git(directory, ['commit', '--allow-empty', '-m', 'base']);
+  await git(directory, 'commit', '--allow-empty', '-m', 'base');
   await writeRepositoryFile(directory, 'file.txt', 'original\n');
-  await git(directory, ['add', 'file.txt']);
-  await git(directory, ['commit', '-m', 'target subject\ncontinued subject']);
+  await git(directory, 'add', 'file.txt');
+  await git(directory, 'commit', '-m', 'target subject\ncontinued subject');
   await writeRepositoryFile(directory, 'file.txt', 'corrected\n');
 
   return directory;
@@ -24,7 +27,7 @@ const prepareRepository = async () => {
 
 it.each(['fixup', 'squash', 'amend'] as const)('creates an autosquash %s message', async (kind) => {
   const directory = await prepareRepository();
-  const targetSubject = await git(directory, ['log', '-1', '--format=%s']);
+  const targetSubject = await git(directory, 'log', '-1', '--format=%s');
   const body = 'fix: replacement\n\nExplanation';
 
   const result = await executeCommit(directory, {
@@ -47,7 +50,7 @@ it.each([
   { kind: 'amend', message: 'fix: replacement\n\nExplanation\n' },
 ] as const)('folds a $kind into its target with autosquash', async ({ kind, message }) => {
   const directory = await prepareRepository();
-  const base = (await git(directory, ['rev-parse', 'HEAD~1'])).trim();
+  const base = (await git(directory, 'rev-parse', 'HEAD~1')).trim();
 
   await executeCommit(directory, {
     groups: [
@@ -66,8 +69,12 @@ it.each([
   );
 
   expect(result.code, result.stderr).toBe(0);
-  expect((await git(directory, ['rev-list', '--count', `${base}..HEAD`])).trim()).toBe('1');
-  expect(await git(directory, ['show', 'HEAD:file.txt'])).toBe('corrected\n');
+  expect((await git(directory, 'rev-list', '--count', `${base}..HEAD`)).trim()).toBe('1');
+
+  expect(
+    (await promisify(execFile)('git', ['show', 'HEAD:file.txt'], { cwd: directory })).stdout,
+  ).toBe('corrected\n');
+
   expect(await getStoredCommitMessage(directory)).toBe(message);
 });
 
@@ -108,13 +115,13 @@ const expectUnchangedFailure = async (
   groups: CommitInput['groups'],
   error: RegExp,
 ) => {
-  const head = await git(directory, ['rev-parse', 'HEAD']);
-  const index = await git(directory, ['ls-files', '--stage']);
+  const head = await git(directory, 'rev-parse', 'HEAD');
+  const index = await git(directory, 'ls-files', '--stage');
 
   await expect(executeCommit(directory, { groups })).rejects.toThrow(error);
 
-  expect(await git(directory, ['rev-parse', 'HEAD'])).toBe(head);
-  expect(await git(directory, ['ls-files', '--stage'])).toBe(index);
+  expect(await git(directory, 'rev-parse', 'HEAD')).toBe(head);
+  expect(await git(directory, 'ls-files', '--stage')).toBe(index);
 };
 
 it.each(invalidGroups)('rejects $name without changing HEAD or index', async ({ group, error }) => {
@@ -122,7 +129,7 @@ it.each(invalidGroups)('rejects $name without changing HEAD or index', async ({ 
 
   const directory = await prepareRepository();
 
-  await git(directory, ['add', 'file.txt']);
+  await git(directory, 'add', 'file.txt');
   await expectUnchangedFailure(directory, [group], error);
 });
 
@@ -130,8 +137,8 @@ it('rejects a target outside HEAD history', async () => {
   expect.assertions(3);
 
   const directory = await prepareRepository();
-  const tree = (await git(directory, ['rev-parse', 'HEAD^{tree}'])).trim();
-  const target = (await git(directory, ['commit-tree', tree, '-m', 'other history'])).trim();
+  const tree = (await git(directory, 'rev-parse', 'HEAD^{tree}')).trim();
+  const target = (await git(directory, 'commit-tree', tree, '-m', 'other history')).trim();
 
   await expectUnchangedFailure(
     directory,
@@ -144,14 +151,14 @@ it('rejects a merge target', async () => {
   expect.assertions(3);
 
   const directory = await prepareRepository();
-  const tree = (await git(directory, ['rev-parse', 'HEAD^{tree}'])).trim();
-  const other = (await git(directory, ['commit-tree', tree, '-m', 'other history'])).trim();
+  const tree = (await git(directory, 'rev-parse', 'HEAD^{tree}')).trim();
+  const other = (await git(directory, 'commit-tree', tree, '-m', 'other history')).trim();
 
   const merge = (
-    await git(directory, ['commit-tree', tree, '-p', 'HEAD', '-p', other, '-m', 'merge'])
+    await git(directory, 'commit-tree', tree, '-p', 'HEAD', '-p', other, '-m', 'merge')
   ).trim();
 
-  await git(directory, ['update-ref', 'HEAD', merge]);
+  await git(directory, 'update-ref', 'HEAD', merge);
 
   await expectUnchangedFailure(
     directory,

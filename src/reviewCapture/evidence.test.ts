@@ -1,11 +1,10 @@
-import { execFile } from 'node:child_process';
 import { chmod, mkdir, readdir, rm, symlink, writeFile } from 'node:fs/promises';
-import { delimiter, join } from 'node:path';
-import { promisify } from 'node:util';
+import { join } from 'node:path';
 
-import { expect, it, onTestFinished, vi } from 'vitest';
+import { expect, it, onTestFinished } from 'vitest';
 
-import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { installCommandShim } from '../../tests/commandShimFake.js';
+import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget, readHead } from './capture.js';
 import type { DirectReviewTarget } from './capture.js';
@@ -13,12 +12,6 @@ import { readReviewEvidence } from './evidence.js';
 import { writeCaptureRecord } from './record.js';
 
 const isRoot = process.getuid?.() === 0;
-
-const git = async (root: string, commandArguments: string[]) => {
-  const { stdout } = await promisify(execFile)('git', commandArguments, { cwd: root });
-
-  return stdout.trim();
-};
 
 const writeFiles = async (root: string, files: Record<string, string>) => {
   for (const [path, text] of Object.entries(files)) {
@@ -29,10 +22,10 @@ const writeFiles = async (root: string, files: Record<string, string>) => {
 
 const commit = async (root: string, files: Record<string, string>, message: string) => {
   await writeFiles(root, files);
-  await git(root, ['add', '--all']);
-  await git(root, ['commit', '--quiet', '-m', message]);
+  await git(root, 'add', '--all');
+  await git(root, 'commit', '--quiet', '-m', message);
 
-  return git(root, ['rev-parse', 'HEAD']);
+  return git(root, 'rev-parse', 'HEAD');
 };
 
 const inputText = (rules: string, checks: string) =>
@@ -560,9 +553,9 @@ it('checks a rule file whose name starts with two dots at the end of a range', a
 it('reports no gap for the old path of a test file renamed in a range', async () => {
   const { root, to: from } = await rangeRepository();
 
-  await git(root, ['mv', 'src/math.test.ts', 'src/add.test.ts']);
-  await git(root, ['commit', '--quiet', '-m', 'rename']);
-  const to = await git(root, ['rev-parse', 'HEAD']);
+  await git(root, 'mv', 'src/math.test.ts', 'src/add.test.ts');
+  await git(root, 'commit', '--quiet', '-m', 'rename');
+  const to = await git(root, 'rev-parse', 'HEAD');
 
   const directory = await savedCapture(root, { kind: 'range', from, to });
   const evidence = await readReviewEvidence(root, directory);
@@ -620,10 +613,10 @@ it('lists a marker a files target adds once, and none from unchanged tracked fil
 
   await rm(join(root, 'dir'), { recursive: true });
   await writeFiles(root, { dir: `${marked}\n` });
-  await git(root, ['add', 'staged']);
+  await git(root, 'add', 'staged');
 
   await writeFiles(root, { 'edited.test.ts': `${marked}\nadd(1, 2);\n${marked}\n` });
-  await git(root, ['rm', '--cached', '--quiet', 'removed.test.ts', 'edited.test.ts']);
+  await git(root, 'rm', '--cached', '--quiet', 'removed.test.ts', 'edited.test.ts');
 
   const paths = [
     'unchanged.test.ts',
@@ -650,18 +643,11 @@ it('lists a marker a files target adds once, and none from unchanged tracked fil
 it('reports a gap when Git is killed while it checks a committed test file', async () => {
   const { root, from, to } = await rangeRepository();
   const directory = await savedCapture(root, { kind: 'range', from, to });
-  const shims = temporaryDirectory(onTestFinished, 'tau-evidence-shim-');
-  const realGit = (await promisify(execFile)('which', ['git'])).stdout.trim();
 
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [{ match: ' cat-file -e ', script: 'kill -9 $$' }],
   });
-
-  const script = `#!/bin/sh\ncase " $* " in *" cat-file -e "*) kill -9 $$;; esac\nexec '${realGit}' "$@"\n`;
-
-  await writeFile(join(shims, 'git'), script);
-  await chmod(join(shims, 'git'), 0o755);
-  vi.stubEnv('PATH', `${shims}${delimiter}${process.env['PATH'] ?? ''}`);
 
   const evidence = await readReviewEvidence(root, directory);
 

@@ -1,19 +1,11 @@
-import { execFile } from 'node:child_process';
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { installCommandShim } from '../../tests/commandShimFake.js';
+import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { captureTarget, pinTarget } from './capture.js';
-import { installFakeGit } from './fixtures/fakeGit.js';
-
-const git = async (root: string, ...commandArguments: string[]) => {
-  const { stdout } = await promisify(execFile)('git', commandArguments, { cwd: root });
-
-  return stdout;
-};
 
 const defaultFiles = { 'tracked.txt': 'one\n' };
 
@@ -119,12 +111,15 @@ it('fails the capture when a changed named file disappears after the diff', asyn
   const target = await pinTarget(root, { kind: 'files', paths: ['tracked.txt'] });
   const marker = join(root, '.git', 'changed-marker');
 
-  await installFakeGit([
-    {
-      match: ' diff ',
-      script: `"$git" "$@"; status=$?; if [ ! -e '${marker}' ]; then : > '${marker}'; rm '${join(root, 'tracked.txt')}'; fi; exit $status`,
-    },
-  ]);
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [
+      {
+        match: ' diff ',
+        script: `"$real" "$@"; status=$?; if [ ! -e '${marker}' ]; then : > '${marker}'; rm '${join(root, 'tracked.txt')}'; fi; exit $status`,
+      },
+    ],
+  });
 
   const result = await captureTarget(root, target);
 
@@ -167,7 +162,7 @@ const captureWithSummary = async (printf: string) => {
   const root = await committedRepository();
   const target = await pinTarget(root, { kind: 'workingTree', base: 'HEAD' });
 
-  await installFakeGit([summaryOutput(printf)]);
+  await installCommandShim('git', { otherCalls: 'real', overrides: [summaryOutput(printf)] });
 
   return captureTarget(root, target);
 };
@@ -236,9 +231,12 @@ it('treats a named file that the diff shows as deleted as a deletion', async () 
 
   await rm(join(root, 'gone.txt'));
 
-  await installFakeGit([
-    summaryOutput(':100644 000000 aaa 000 D\\000gone.txt\\0000\\t1\\tgone.txt\\000\\000'),
-  ]);
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [
+      summaryOutput(':100644 000000 aaa 000 D\\000gone.txt\\0000\\t1\\tgone.txt\\000\\000'),
+    ],
+  });
 
   const deletedFile = await captureTarget(root, target);
 
@@ -249,7 +247,10 @@ it('fails the capture when the diff command fails', async () => {
   const root = await committedRepository();
   const target = await pinTarget(root, { kind: 'workingTree', base: 'HEAD' });
 
-  await installFakeGit([{ match: ' --raw --numstat ', script: 'echo broken >&2; exit 3' }]);
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [{ match: ' --raw --numstat ', script: 'echo broken >&2; exit 3' }],
+  });
 
   const result = await captureTarget(root, target);
 
@@ -265,7 +266,10 @@ const untrackedFileCapture = async (script: string) => {
 
   const target = await pinTarget(root, { kind: 'workingTree', base: 'HEAD' });
 
-  await installFakeGit([{ match: ' --no-index ', script }]);
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [{ match: ' --no-index ', script }],
+  });
 
   return captureTarget(root, target);
 };
@@ -292,7 +296,7 @@ it('fails the capture of an untracked file when the diff cannot start', async ()
 });
 
 it('captures an untracked file whose diff prints only whitespace to stderr', async () => {
-  const result = await untrackedFileCapture('echo >&2; exec "$git" "$@"');
+  const result = await untrackedFileCapture('echo >&2; exec "$real" "$@"');
 
   expect(result.errors).toEqual([]);
   expect(result.paths).toEqual(['new.txt']);

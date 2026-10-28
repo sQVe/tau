@@ -1,19 +1,22 @@
+import { execFile } from 'node:child_process';
 import { chmod, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 import { describe, expect, it } from 'vitest';
 
+import { git } from '../../../tests/gitRepository.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { runGit } from '../../git.js';
 import {
   runCommand,
-  git,
   createTemporaryRepository,
   writeRepositoryFile,
   getStoredCommitMessage,
   commitContext,
   executeCommit,
   fakeCommit,
+  readGitBlob,
 } from './fixtures/commitTool.js';
 import { createCommitTool } from './tool.js';
 import { commitFailedError, validatePaths, validateSubject } from './validation.js';
@@ -188,8 +191,8 @@ const createPrefetchRepository = async () => {
   const repositoryDirectory = await createTemporaryRepository();
 
   await writeRepositoryFile(repositoryDirectory, 'base.txt', 'base\n');
-  await git(repositoryDirectory, ['add', 'base.txt']);
-  await git(repositoryDirectory, ['commit', '-m', 'chore: base']);
+  await git(repositoryDirectory, 'add', 'base.txt');
+  await git(repositoryDirectory, 'commit', '-m', 'chore: base');
 
   const groups = ['one', 'two', 'three'].map((name) => ({
     files: [`${name}.txt`],
@@ -225,8 +228,8 @@ describe('commitTool.execute', () => {
       commitContext(repositoryDirectory),
     );
 
-    expect(await git(repositoryDirectory, ['show', 'HEAD:three.txt'])).toBe('rewritten by a hook');
-    expect((await git(repositoryDirectory, ['rev-list', '--count', 'HEAD'])).trim()).toBe('4');
+    expect(await readGitBlob(repositoryDirectory, 'HEAD:three.txt')).toBe('rewritten by a hook');
+    expect((await git(repositoryDirectory, 'rev-list', '--count', 'HEAD')).trim()).toBe('4');
   });
 
   it.each([
@@ -290,7 +293,7 @@ describe('commitTool.execute', () => {
         (error: unknown) => error,
       );
 
-    const commitHashes = (await git(repositoryDirectory, ['log', '--reverse', '--format=%H']))
+    const commitHashes = (await git(repositoryDirectory, 'log', '--reverse', '--format=%H'))
       .trim()
       .split('\n');
 
@@ -310,9 +313,9 @@ describe('commitTool.execute', () => {
       }[failure]!,
     );
 
-    expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('2');
+    expect((await git(repositoryDirectory, 'rev-list', '--all', '--count')).trim()).toBe('2');
     expect(stagings).toBe(3);
-    expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
+    expect(await git(repositoryDirectory, 'diff', '--cached', '--name-only')).toBe('');
 
     if (failure === 'hook') {
       await rm(join(repositoryDirectory, '.git/hooks/pre-commit'));
@@ -329,10 +332,13 @@ describe('commitTool.execute', () => {
     expect(result.details.groups[0]!.sha).not.toBe('');
 
     expect(
-      (await git(repositoryDirectory, ['show', '--name-only', '--format=', 'HEAD'])).trim(),
+      (await git(repositoryDirectory, 'show', '--name-only', '--format=', 'HEAD')).trim(),
     ).toBe('four.txt');
 
-    expect(await git(repositoryDirectory, ['status', '--short'])).toBe('?? three.txt\n');
+    expect(
+      (await promisify(execFile)('git', ['status', '--short'], { cwd: repositoryDirectory }))
+        .stdout,
+    ).toBe('?? three.txt\n');
   });
 
   it('commits and names hook changes against the staged tree', async () => {
@@ -353,8 +359,8 @@ describe('commitTool.execute', () => {
       groups: [{ files: ['retry.ts'], subject: 'feat: add retry' }],
     });
 
-    expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('1');
-    expect(await git(repositoryDirectory, ['show', 'HEAD:retry.ts'])).toContain('// Hook comment');
+    expect((await git(repositoryDirectory, 'rev-list', '--all', '--count')).trim()).toBe('1');
+    expect(await git(repositoryDirectory, 'show', 'HEAD:retry.ts')).toContain('// Hook comment');
 
     expect(result.details.groups[0]).toMatchObject({
       files: ['retry.ts'],
@@ -379,9 +385,9 @@ describe('commitTool.execute', () => {
       ],
     });
 
-    const commitHashOutput = await git(repositoryDirectory, ['rev-parse', 'HEAD']);
-    const logOutput = await git(repositoryDirectory, ['log', '--oneline']);
-    const latestSubjectOutput = await git(repositoryDirectory, ['log', '-1', '--format=%s']);
+    const commitHashOutput = await git(repositoryDirectory, 'rev-parse', 'HEAD');
+    const logOutput = await git(repositoryDirectory, 'log', '--oneline');
+    const latestSubjectOutput = await git(repositoryDirectory, 'log', '-1', '--format=%s');
 
     const commitHash = commitHashOutput.trim();
     const logLines = logOutput.trim().split('\n');
@@ -433,7 +439,7 @@ describe('commitTool.execute', () => {
 
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
     await writeRepositoryFile(repositoryDirectory, 'notes.md', 'keep staged\n');
-    await git(repositoryDirectory, ['add', '--', 'notes.md']);
+    await git(repositoryDirectory, 'add', '--', 'notes.md');
 
     await expect(
       executeCommit(repositoryDirectory, {
@@ -486,8 +492,8 @@ describe('commitTool.execute', () => {
     await writeRepositoryFile(repositoryDirectory, 'sub/a.txt', 'hello\n');
 
     await writeRepositoryFile(repositoryDirectory, 'baseline', 'baseline\n');
-    await git(repositoryDirectory, ['add', 'baseline']);
-    await git(repositoryDirectory, ['commit', '-m', 'test: baseline']);
+    await git(repositoryDirectory, 'add', 'baseline');
+    await git(repositoryDirectory, 'commit', '-m', 'test: baseline');
 
     const commitTool = createCommitTool(runGit);
 
@@ -500,11 +506,16 @@ describe('commitTool.execute', () => {
     );
 
     expect(result.details.groups[0]?.files).toEqual(['sub/a.txt']);
-    expect(await git(repositoryDirectory, ['show', 'HEAD:sub/a.txt'])).toBe('hello\n');
-    expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('2');
 
     expect(
-      (await git(repositoryDirectory, ['show', '--name-only', '--format=', 'HEAD'])).trim(),
+      (await promisify(execFile)('git', ['show', 'HEAD:sub/a.txt'], { cwd: repositoryDirectory }))
+        .stdout,
+    ).toBe('hello\n');
+
+    expect((await git(repositoryDirectory, 'rev-list', '--all', '--count')).trim()).toBe('2');
+
+    expect(
+      (await git(repositoryDirectory, 'show', '--name-only', '--format=', 'HEAD')).trim(),
     ).toBe('sub/a.txt');
   });
 
@@ -525,7 +536,7 @@ describe('commitTool.execute', () => {
       }),
     ).rejects.toThrow(/Directory requests are not supported/i);
 
-    expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
+    expect(await git(repositoryDirectory, 'diff', '--cached', '--name-only')).toBe('');
   });
 
   it('rejects directory requests before staging their contents', async () => {
@@ -545,7 +556,7 @@ describe('commitTool.execute', () => {
       }),
     ).rejects.toThrow(/Directory requests are not supported/i);
 
-    expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
+    expect(await git(repositoryDirectory, 'diff', '--cached', '--name-only')).toBe('');
 
     const revListResult = await runCommand(
       'git',
@@ -561,12 +572,12 @@ describe('commitTool.execute', () => {
 
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
     await writeRepositoryFile(repositoryDirectory, 'link.txt', 'plain\n');
-    await git(repositoryDirectory, ['add', '--', 'README.md', 'link.txt']);
-    await git(repositoryDirectory, ['commit', '-m', 'initial']);
+    await git(repositoryDirectory, 'add', '--', 'README.md', 'link.txt');
+    await git(repositoryDirectory, 'commit', '-m', 'initial');
 
     await rm(join(repositoryDirectory, 'link.txt'));
     await symlink('/etc/hostname', join(repositoryDirectory, 'link.txt'));
-    await git(repositoryDirectory, ['add', '--', 'link.txt']);
+    await git(repositoryDirectory, 'add', '--', 'link.txt');
 
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'updated\n');
 
@@ -587,9 +598,9 @@ describe('commitTool.execute', () => {
 
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
     await writeRepositoryFile(repositoryDirectory, 'old.md', 'gone\n');
-    await git(repositoryDirectory, ['add', '--', 'README.md', 'old.md']);
-    await git(repositoryDirectory, ['commit', '-m', 'initial']);
-    await git(repositoryDirectory, ['rm', '--', 'old.md']);
+    await git(repositoryDirectory, 'add', '--', 'README.md', 'old.md');
+    await git(repositoryDirectory, 'commit', '-m', 'initial');
+    await git(repositoryDirectory, 'rm', '--', 'old.md');
 
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'updated\n');
 
@@ -610,9 +621,9 @@ describe('commitTool.execute', () => {
 
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
     await writeRepositoryFile(repositoryDirectory, 'old.md', 'gone\n');
-    await git(repositoryDirectory, ['add', '--', 'README.md', 'old.md']);
-    await git(repositoryDirectory, ['commit', '-m', 'initial']);
-    await git(repositoryDirectory, ['rm', '--', 'old.md']);
+    await git(repositoryDirectory, 'add', '--', 'README.md', 'old.md');
+    await git(repositoryDirectory, 'commit', '-m', 'initial');
+    await git(repositoryDirectory, 'rm', '--', 'old.md');
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'updated\n');
     await writeRepositoryFile(repositoryDirectory, 'new.md', 'new\n');
 
@@ -620,29 +631,44 @@ describe('commitTool.execute', () => {
       groups: [{ files: ['README.md', 'old.md', 'new.md'], subject: 'feat: replace old notes' }],
     });
 
-    expect(await git(repositoryDirectory, ['show', '--name-status', '--format=', 'HEAD'])).toBe(
-      'M\tREADME.md\nA\tnew.md\nD\told.md\n',
-    );
+    expect(
+      (
+        await promisify(execFile)('git', ['show', '--name-status', '--format=', 'HEAD'], {
+          cwd: repositoryDirectory,
+        })
+      ).stdout,
+    ).toBe('M\tREADME.md\nA\tnew.md\nD\told.md\n');
 
-    expect(await git(repositoryDirectory, ['rev-list', '--count', 'HEAD'])).toBe('2\n');
-    expect(await git(repositoryDirectory, ['status', '--short'])).toBe('');
+    expect(
+      (
+        await promisify(execFile)('git', ['rev-list', '--count', 'HEAD'], {
+          cwd: repositoryDirectory,
+        })
+      ).stdout,
+    ).toBe('2\n');
+
+    expect(await git(repositoryDirectory, 'status', '--short')).toBe('');
   });
 
   it('commits a recreated file over its staged deletion', async () => {
     const repositoryDirectory = await createTemporaryRepository();
 
     await writeRepositoryFile(repositoryDirectory, 'old.md', 'gone\n');
-    await git(repositoryDirectory, ['add', '--', 'old.md']);
-    await git(repositoryDirectory, ['commit', '-m', 'initial']);
-    await git(repositoryDirectory, ['rm', '--', 'old.md']);
+    await git(repositoryDirectory, 'add', '--', 'old.md');
+    await git(repositoryDirectory, 'commit', '-m', 'initial');
+    await git(repositoryDirectory, 'rm', '--', 'old.md');
     await writeRepositoryFile(repositoryDirectory, 'old.md', 'recreated\n');
 
     await executeCommit(repositoryDirectory, {
       groups: [{ files: ['old.md'], subject: 'feat: rewrite old notes' }],
     });
 
-    expect(await git(repositoryDirectory, ['show', 'HEAD:old.md'])).toBe('recreated\n');
-    expect(await git(repositoryDirectory, ['status', '--short'])).toBe('');
+    expect(
+      (await promisify(execFile)('git', ['show', 'HEAD:old.md'], { cwd: repositoryDirectory }))
+        .stdout,
+    ).toBe('recreated\n');
+
+    expect(await git(repositoryDirectory, 'status', '--short')).toBe('');
   });
 
   it.each([
@@ -669,11 +695,11 @@ describe('commitTool.execute', () => {
 
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
     await writeRepositoryFile(repositoryDirectory, 'old.md', 'gone\n');
-    await git(repositoryDirectory, ['add', '--', 'README.md', 'old.md']);
-    await git(repositoryDirectory, ['commit', '-m', 'initial']);
-    await git(repositoryDirectory, ['rm', '--', 'old.md']);
+    await git(repositoryDirectory, 'add', '--', 'README.md', 'old.md');
+    await git(repositoryDirectory, 'commit', '-m', 'initial');
+    await git(repositoryDirectory, 'rm', '--', 'old.md');
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'staged\n');
-    await git(repositoryDirectory, ['add', '--', 'README.md']);
+    await git(repositoryDirectory, 'add', '--', 'README.md');
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'unstaged\n');
     await writeRepositoryFile(repositoryDirectory, 'new.md', 'new\n');
 
@@ -693,12 +719,26 @@ describe('commitTool.execute', () => {
       }),
     ).rejects.toThrow(error);
 
-    expect(await git(repositoryDirectory, ['diff', '--cached', '--name-status'])).toBe(
-      'M\tREADME.md\nD\told.md\n',
-    );
+    expect(
+      (
+        await promisify(execFile)('git', ['diff', '--cached', '--name-status'], {
+          cwd: repositoryDirectory,
+        })
+      ).stdout,
+    ).toBe('M\tREADME.md\nD\told.md\n');
 
-    expect(await git(repositoryDirectory, ['show', ':README.md'])).toBe('staged\n');
-    expect(await git(repositoryDirectory, ['rev-list', '--count', 'HEAD'])).toBe('1\n');
+    expect(
+      (await promisify(execFile)('git', ['show', ':README.md'], { cwd: repositoryDirectory }))
+        .stdout,
+    ).toBe('staged\n');
+
+    expect(
+      (
+        await promisify(execFile)('git', ['rev-list', '--count', 'HEAD'], {
+          cwd: repositoryDirectory,
+        })
+      ).stdout,
+    ).toBe('1\n');
   });
 
   it('keeps an initial commit when a hook stages additional paths', async () => {
@@ -724,7 +764,10 @@ describe('commitTool.execute', () => {
       hookChanges: { files: ['sneaky.txt'], message: false },
     });
 
-    expect(await git(repositoryDirectory, ['show', 'HEAD:sneaky.txt'])).toBe('not requested\n');
+    expect(
+      (await promisify(execFile)('git', ['show', 'HEAD:sneaky.txt'], { cwd: repositoryDirectory }))
+        .stdout,
+    ).toBe('not requested\n');
 
     const revListResult = await runCommand(
       'git',
@@ -733,17 +776,17 @@ describe('commitTool.execute', () => {
     );
 
     expect(revListResult.stdout.trim()).toBe('1');
-    expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
+    expect(await git(repositoryDirectory, 'diff', '--cached', '--name-only')).toBe('');
   });
 
   it('keeps existing history when a hook stages an additional path', async () => {
     const repositoryDirectory = await createTemporaryRepository();
 
     await writeRepositoryFile(repositoryDirectory, 'base.txt', 'base\n');
-    await git(repositoryDirectory, ['add', '--', 'base.txt']);
-    await git(repositoryDirectory, ['commit', '-m', 'chore: base']);
+    await git(repositoryDirectory, 'add', '--', 'base.txt');
+    await git(repositoryDirectory, 'commit', '-m', 'chore: base');
 
-    const baseCommitHash = (await git(repositoryDirectory, ['rev-parse', 'HEAD'])).trim();
+    const baseCommitHash = (await git(repositoryDirectory, 'rev-parse', 'HEAD')).trim();
 
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
     await writeRepositoryFile(repositoryDirectory, 'sneaky.txt', 'not requested\n');
@@ -760,13 +803,16 @@ describe('commitTool.execute', () => {
       groups: [{ files: ['README.md'], subject: 'feat: add readme' }],
     });
 
-    expect((await git(repositoryDirectory, ['rev-parse', 'HEAD^'])).trim()).toBe(baseCommitHash);
+    expect((await git(repositoryDirectory, 'rev-parse', 'HEAD^')).trim()).toBe(baseCommitHash);
 
     expect(result.details.groups[0]!.sha).toBe(
-      (await git(repositoryDirectory, ['rev-parse', 'HEAD'])).trim(),
+      (await git(repositoryDirectory, 'rev-parse', 'HEAD')).trim(),
     );
 
-    expect(await git(repositoryDirectory, ['show', 'HEAD:sneaky.txt'])).toBe('not requested\n');
+    expect(
+      (await promisify(execFile)('git', ['show', 'HEAD:sneaky.txt'], { cwd: repositoryDirectory }))
+        .stdout,
+    ).toBe('not requested\n');
   });
 
   it('reports hook failure details and leaves no commits when git commit fails', async () => {
@@ -882,8 +928,8 @@ describe('commits without approvals', () => {
       ),
     ).resolves.toHaveProperty('details.groups.0.sha');
 
-    expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
-    expect((await git(repositoryDirectory, ['rev-list', '--all', '--count'])).trim()).toBe('1');
+    expect(await git(repositoryDirectory, 'diff', '--cached', '--name-only')).toBe('');
+    expect((await git(repositoryDirectory, 'rev-list', '--all', '--count')).trim()).toBe('1');
   });
 });
 

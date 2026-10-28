@@ -1,19 +1,11 @@
-import { execFile } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { installCommandShim } from '../../tests/commandShimFake.js';
+import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { pinTarget, readHead, runCaptureCommand } from './capture.js';
-import { installFakeGit } from './fixtures/fakeGit.js';
-
-const git = async (root: string, ...commandArguments: string[]) => {
-  const { stdout } = await promisify(execFile)('git', commandArguments, { cwd: root });
-
-  return stdout;
-};
 
 const committedRepository = async () => {
   const root = await createTemporaryRepository(onTestFinished);
@@ -46,7 +38,10 @@ it('reports the exit code and the trimmed message of a command that fails', asyn
 it('reports the trimmed message of a command that exits 0 and prints to stderr', async () => {
   const root = await committedRepository();
 
-  await installFakeGit([{ match: ' show ', script: 'echo "  warning text  " >&2; echo out' }]);
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [{ match: ' show ', script: 'echo "  warning text  " >&2; echo out' }],
+  });
 
   const result = await runCaptureCommand(root, ['show', 'HEAD']);
 
@@ -78,7 +73,10 @@ it('reports a repository with no commit instead of a HEAD', async () => {
 it('reports a HEAD that Git prints as empty', async () => {
   const root = await committedRepository();
 
-  await installFakeGit([{ match: ' rev-parse --verify HEAD ', script: 'exit 0' }]);
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [{ match: ' rev-parse --verify HEAD ', script: 'exit 0' }],
+  });
 
   const result = await readHead(root);
 
@@ -101,7 +99,10 @@ it('pins a branch whose name ends in a dash', async () => {
 it('refuses a revision that Git resolves to nothing', async () => {
   const root = await committedRepository();
 
-  await installFakeGit([{ match: ' rev-parse --verify ', script: 'exit 0' }]);
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [{ match: ' rev-parse --verify ', script: 'exit 0' }],
+  });
 
   await expect(pinTarget(root, { kind: 'workingTree', base: 'HEAD' })).rejects.toThrow(
     'Git cannot resolve HEAD to a commit.',
@@ -131,7 +132,10 @@ it('names the parent of a root commit target that has one', async () => {
 it('refuses a root commit target when Git cannot list its parents', async () => {
   const root = await committedRepository();
 
-  await installFakeGit([{ match: ' rev-list ', script: 'echo broken >&2; exit 3' }]);
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [{ match: ' rev-list ', script: 'echo broken >&2; exit 3' }],
+  });
 
   await expect(pinTarget(root, { kind: 'rootCommit', commit: 'HEAD' })).rejects.toThrow(
     'git rev-list --parents --max-count=1 --end-of-options',
@@ -155,7 +159,10 @@ it('refuses a revision that Git cannot find', async () => {
 it('accepts a command whose stderr holds only whitespace', async () => {
   const root = await committedRepository();
 
-  await installFakeGit([{ match: ' show ', script: 'echo >&2; echo out' }]);
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [{ match: ' show ', script: 'echo >&2; echo out' }],
+  });
 
   const result = await runCaptureCommand(root, ['show', 'HEAD']);
 

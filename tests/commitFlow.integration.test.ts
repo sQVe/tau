@@ -1,7 +1,5 @@
-import { execFile } from 'node:child_process';
 import { chmod, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { promisify } from 'node:util';
 
 import { fauxAssistantMessage, fauxToolCall, fauxProvider } from '@earendil-works/pi-ai';
 import type { FauxProviderHandle } from '@earendil-works/pi-ai';
@@ -14,7 +12,7 @@ import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
 import tauExtension from '../src/tau.js';
-import { createTemporaryRepository } from './gitRepository.js';
+import { createTemporaryRepository, git } from './gitRepository.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
@@ -32,27 +30,17 @@ interface Harness {
 // Real Pi sessions and Git commands need extra time on slow CI.
 vi.setConfig({ testTimeout: 60_000 });
 
-const execFileAsync = promisify(execFile);
-
 const bundledWebAccessExtensionPath = resolve(
   import.meta.dirname,
   '../node_modules/pi-web-access/dist/index.js',
 );
 
-const git = async (repositoryDirectory: string, commandArguments: string[]): Promise<string> => {
-  const { stdout } = await execFileAsync('git', commandArguments, {
-    cwd: repositoryDirectory,
-  });
-
-  return stdout;
-};
-
 const createCommittedRepository = async (registerCleanup: RegisterCleanup): Promise<string> => {
   const repositoryDirectory = await createTemporaryRepository(registerCleanup, 'tau-flow-repo-');
 
   await writeFile(join(repositoryDirectory, 'README.md'), '# fixture\n', 'utf8');
-  await git(repositoryDirectory, ['add', 'README.md']);
-  await git(repositoryDirectory, ['commit', '-m', 'chore: initial commit']);
+  await git(repositoryDirectory, 'add', 'README.md');
+  await git(repositoryDirectory, 'commit', '-m', 'chore: initial commit');
 
   return repositoryDirectory;
 };
@@ -118,7 +106,7 @@ describe('commit flow', () => {
     const { session, faux, repositoryDirectory, events, overlays } =
       await createHarness(onTestFinished);
 
-    await git(repositoryDirectory, ['config', 'core.hooksPath', '.git/hooks']);
+    await git(repositoryDirectory, 'config', 'core.hooksPath', '.git/hooks');
 
     await writeFile(
       join(repositoryDirectory, '.git/hooks/commit-msg'),
@@ -144,9 +132,9 @@ describe('commit flow', () => {
     expect(JSON.stringify(result.result)).toContain('git commit failed');
     expect(JSON.stringify(result.result)).toContain('invalid message');
     expect(overlays).toHaveLength(0);
-    expect(await git(repositoryDirectory, ['diff', '--cached', '--name-only'])).toBe('');
+    expect(await git(repositoryDirectory, 'diff', '--cached', '--name-only')).toBe('');
 
-    expect((await git(repositoryDirectory, ['log', '-1', '--pretty=%s'])).trim()).toBe(
+    expect((await git(repositoryDirectory, 'log', '-1', '--pretty=%s')).trim()).toBe(
       'chore: initial commit',
     );
   });
@@ -182,7 +170,7 @@ describe('commit flow', () => {
 
     expect(result.isError).toBe(false);
 
-    const log = await git(repositoryDirectory, ['log', '-1', '--pretty=%s']);
+    const log = await git(repositoryDirectory, 'log', '-1', '--pretty=%s');
 
     expect(log.trim()).toBe('feat: add feature file');
   });
@@ -206,7 +194,7 @@ describe('commit flow', () => {
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.result)).toContain('Use the `commit` tool instead');
 
-    const log = await git(repositoryDirectory, ['log', '-1', '--pretty=%s']);
+    const log = await git(repositoryDirectory, 'log', '-1', '--pretty=%s');
 
     expect(log.trim()).toBe('chore: initial commit');
   });

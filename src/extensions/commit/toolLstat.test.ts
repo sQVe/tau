@@ -1,12 +1,14 @@
+import { execFile } from 'node:child_process';
 import type { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 import { expect, it, vi } from 'vitest';
 
+import { git } from '../../../tests/gitRepository.js';
 import {
   createTemporaryRepository,
   executeCommit,
-  git,
   writeRepositoryFile,
 } from './fixtures/commitTool.js';
 
@@ -39,15 +41,15 @@ it('rejects a request whose path cannot be inspected for a reason other than abs
     executeCommit(directory, { groups: [{ files: ['file.txt/child'], subject: 'feat: a' }] }),
   ).rejects.toThrow(/ENOTDIR/);
 
-  expect(await git(directory, ['diff', '--cached', '--name-only'])).toBe('');
+  expect(await git(directory, 'diff', '--cached', '--name-only')).toBe('');
 });
 
 it('stops and restores the index when a staged deletion cannot be inspected', async () => {
   const directory = await createTemporaryRepository();
   await writeRepositoryFile(directory, 'a.txt', 'one\n');
-  await git(directory, ['add', 'a.txt']);
-  await git(directory, ['commit', '-m', 'chore: seed']);
-  await git(directory, ['rm', '--cached', '--quiet', 'a.txt']);
+  await git(directory, 'add', 'a.txt');
+  await git(directory, 'commit', '-m', 'chore: seed');
+  await git(directory, 'rm', '--cached', '--quiet', 'a.txt');
 
   Object.assign(lstatCalls, { count: 0, failAfter: 1, path: join(directory, 'a.txt') });
 
@@ -59,6 +61,12 @@ it('stops and restores the index when a staged deletion cannot be inspected', as
     lstatCalls.failAfter = Number.POSITIVE_INFINITY;
   }
 
-  expect(await git(directory, ['rev-list', '--count', 'HEAD'])).toBe('1\n');
-  expect(await git(directory, ['diff', '--cached', '--name-status'])).toBe('D\ta.txt\n');
+  expect(
+    (await promisify(execFile)('git', ['rev-list', '--count', 'HEAD'], { cwd: directory })).stdout,
+  ).toBe('1\n');
+
+  expect(
+    (await promisify(execFile)('git', ['diff', '--cached', '--name-status'], { cwd: directory }))
+      .stdout,
+  ).toBe('D\ta.txt\n');
 });
