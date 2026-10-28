@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-06\
 **Status**: Accepted\
-**Related**: [ADR 0091 (Return review evidence from the code_review tool)](./0091-return-review-evidence-from-the-code-review-tool.md)
+**Related**: [ADR 0089 (Review code in a skill with a code_review tool)](./0089-capture-review-targets-with-a-code-review-tool.md)
 
 ## Context
 
