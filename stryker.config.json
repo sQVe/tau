@@ -9,11 +9,14 @@
   "tsconfigFile": "stryker-no-tsconfig.json",
   "checkers": [],
   "plugins": ["@stryker-mutator/vitest-runner"],
-  "concurrency": 6,
+  "concurrency": "50%",
   "timeoutMS": 20000,
+  "timeoutFactor": 4,
   "fileLogLevel": "off",
   "ignorePatterns": [".tau", "docs", "CHANGELOG.md"],
   "tempDirName": ".tau/stryker-tmp",
   "cleanTempDir": true,
-  "dryRunTimeoutMinutes": 20
+  "dryRunTimeoutMinutes": 20,
+  "incremental": true,
+  "incrementalFile": ".tau/stryker-incremental.json"
 }

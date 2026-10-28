@@ -70,14 +70,25 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Stryker reuses a result while the mutated code and the tests that covered it are unchanged. It
+      # does not see helpers outside a test body, fixtures, dependencies, or config, so their hash is
+      # part of the key. A change to unmutated production code can still leave a stale result.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tau/stryker-incremental.json
+          key: mutation-incremental-${{ github.event.pull_request.number }}-${{ hashFiles('tests/**', 'src/**/*.test.ts', 'src/**/fixtures/**', 'pnpm-lock.yaml', 'vite.config.ts', 'stryker.config.json', 'stryker.vitest.config.ts') }}-${{ github.sha }}
+          restore-keys: mutation-incremental-${{ github.event.pull_request.number }}-${{ hashFiles('tests/**', 'src/**/*.test.ts', 'src/**/fixtures/**', 'pnpm-lock.yaml', 'vite.config.ts', 'stryker.config.json', 'stryker.vitest.config.ts') }}-
       - name: Mutation-test changed lines
         env:
           baseSha: ${{ github.event.pull_request.base.sha }}
         run: |
           mapfile -t command < <(jq --raw-output '.mutation.argv[]' .pi/tau.json)
           report="${RUNNER_TEMP}/mutation-report.json"
+          # The job has the runner to itself, so it uses every CPU. Local runs leave room for other work.
+          config="${RUNNER_TEMP}/stryker.config.json"
+          jq '.concurrency = "100%"' stryker.config.json > "${config}"
           status=0
-          "${command[@]}" changed "${baseSha}" > "${report}" || status=$?
+          "${command[@]}" changed "${baseSha}" --config "${config}" > "${report}" || status=$?
           if [ "${status}" -ne 0 ] && [ "${status}" -ne 2 ]; then
             cat "${report}" || true
             exit "${status}"
