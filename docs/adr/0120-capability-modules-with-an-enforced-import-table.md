@@ -73,6 +73,8 @@ or the module list instead of silencing the rule.
 
 - Application code lives under `src/`. A skill folder stays a public identifier, so moving its
   parent folder does not rename it.
+- Feature code stays in `src/extensions/<feature>/`. Code moves to shared `src/` only once two
+  extensions need it. The import rule does not enforce this threshold.
 - `src/tau.ts` is the package entry and installs every extension. `package.json` points
   `pi.extensions` at that file, because Pi loads every `.ts` file of a folder it scans. `src/` has
   no `index.*` files and no barrel files.
@@ -82,8 +84,9 @@ or the module list instead of silencing the rule.
 - `src/extensions/` and `src/skills/` group files and are not modules.
 - Other modules import a folder module through its entry file. A module may list extra public files
   that other modules already depend on, such as `controller.ts`, `record.ts`, and `budget.ts` in
-  `subagents/controller/`. Tests and fixtures may import private files. Do not add shared `types.ts`
-  files.
+  `subagents/controller/`. An `eslint/no-restricted-imports` override in `vite.config.ts` lists
+  them, and tests and fixtures may import private files. Do not add shared `types.ts` files.
+- Tau requires no interfaces for module boundaries.
 - Register a module that makes pure decisions in `pureModules` in `tests/structure.test.ts`. The
   check fails the suite when a registered module does a runtime import of an unregistered module,
   imports dynamically, or reads the clock, randomness, or the environment. The caller reads those

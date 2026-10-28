@@ -20,10 +20,11 @@ verification.
 - A pull request that touches `src/` needs a changeset, except the release pull request from
   `changeset-release/main` or titled `chore: release version packages`. Add it with
   `pnpm changeset`; `.github/workflows/changeset.yml` requires it.
-- Follow the module, query, and failure conventions in
-  [ADR 0055](docs/adr/0055-record-tau-coding-conventions-in-agents-md.md). Give each new public read
-  path over saved records or running workers a contract test for normal, missing, and malformed
-  evidence.
+- Follow the module conventions in
+  [ADR 0120](docs/adr/0120-capability-modules-with-an-enforced-import-table.md) and the query and
+  failure conventions in [ADR 0055](docs/adr/0055-record-tau-coding-conventions-in-agents-md.md).
+  Give each new public read path over saved records or running workers a contract test for normal,
+  missing, and malformed evidence.
 - Write a new decision rule as a pure function in a module registered in `tests/structure.test.ts`,
   tested with a decision table like `workerState.test.ts`. The caller reads records, the clock, and
   the environment, and passes the values in as facts
