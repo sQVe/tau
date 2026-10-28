@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { execFile } from 'node:child_process';
 import type { ChildProcess, ExecFileException } from 'node:child_process';
 
@@ -13,6 +14,14 @@ export interface GitOptions {
   signal?: AbortSignal;
   environment?: Record<string, string>;
 }
+
+const scopedEnvironment = new AsyncLocalStorage<Record<string, string>>();
+
+// Every Git call that `run` starts, directly or through shared helpers, gets these variables.
+export const withGitEnvironment = <Value>(
+  environment: Record<string, string>,
+  run: () => Promise<Value>,
+): Promise<Value> => scopedEnvironment.run(environment, run);
 
 export const gitEnvironment = (): NodeJS.ProcessEnv => {
   // oxlint-disable-next-line node/no-process-env -- Git inherits the user's environment apart from repository, index, and object-store selectors.
@@ -143,7 +152,7 @@ export const runGit = (
         commandArguments,
         {
           cwd,
-          env: { ...gitEnvironment(), ...environment },
+          env: { ...gitEnvironment(), ...scopedEnvironment.getStore(), ...environment },
           timeout: timeoutMilliseconds ?? 0,
           encoding: 'buffer',
           maxBuffer: maxOutputBytes,

@@ -1,5 +1,8 @@
 export { fixedPrefixes, hashBytes } from './capture.js';
 export { readCompletedCapture } from './completedCapture.js';
+export { readCoverage } from './coverage.js';
+export type { CoverageLinkRequest, CoverageRequest } from './coverage.js';
+export type { CoverageDecision, CoverageLink, CoverageStatus } from './coverageDecision.js';
 export { captureGeneration } from './generation.js';
 export { checkFreshness } from './pinnedCapture.js';
 

@@ -9,7 +9,7 @@ import { expect, it, vi } from 'vitest';
 import { installCommandShim } from '../tests/commandShimFake.js';
 import { createTemporaryRepository } from '../tests/gitRepository.js';
 import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.js';
-import { findCheckoutRoot, readGit, runGit } from './git.js';
+import { findCheckoutRoot, readGit, runGit, withGitEnvironment } from './git.js';
 
 const withWatchdog = async <Value>(pending: Promise<Value>): Promise<Value> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -154,6 +154,22 @@ it('preserves hook diagnostics larger than a pipe buffer', async ({ onTestFinish
   expect(result.exitCode).toBe(1);
   expect(result.stderr).toBe(diagnostic);
   expect(await readGit(root, ['rev-list', '--all', '--count'])).toBe('0');
+});
+
+it('passes a scoped environment to every Git call inside the scope only', async ({
+  onTestFinished,
+}) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const printLazyFetch = ['-c', 'alias.lazy=!printenv GIT_NO_LAZY_FETCH', 'lazy'];
+
+  const inside = await withGitEnvironment({ GIT_NO_LAZY_FETCH: '1' }, () =>
+    readGit(root, printLazyFetch),
+  );
+
+  const outside = await runGit(root, printLazyFetch);
+
+  expect(inside).toBe('1');
+  expect(outside.stdout.toString('utf8')).toBe('');
 });
 
 it('resolves a null exit code when Git runs past the timeout', async ({ onTestFinished }) => {

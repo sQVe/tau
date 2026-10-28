@@ -53,7 +53,7 @@ interface IndexEntry {
   path: string;
 }
 
-const readTree = (root: string, revision: string) =>
+export const readTree = (root: string, revision: string): Promise<string> =>
   readGit(root, ['rev-parse', '--verify', `${revision}^{tree}`]);
 
 const baseMode = async (root: string, baseTree: string, path: string) => {
