@@ -140,15 +140,18 @@ it('removes the capture ref of a deleted review when it prepares a review', asyn
   expect(await git(root, 'for-each-ref', 'refs/tau/review-captures/')).toBe('');
 });
 
-it('refuses to prepare through a symlinked .tau/workers', async () => {
+it('refuses to prepare through a symlinked .tau/workers and keeps capture refs', async () => {
   const root = await committedRepository();
   const outside = temporaryDirectory(onTestFinished, 'tau-review-outside-');
+  const ref = 'refs/tau/review-captures/review-gone';
 
+  await git(root, 'update-ref', ref, 'HEAD');
   await mkdir(join(root, '.tau'));
   await symlink(outside, join(root, '.tau', 'workers'));
 
   expect(await failureOf(root, { action: 'prepare' })).toContain('symlink');
   expect(await readdir(outside)).toEqual([]);
+  expect(await git(root, 'for-each-ref', '--format=%(refname)', ref)).toBe(ref);
 });
 
 it('appends the capture and its gaps after the Capture heading and saves the record', async () => {

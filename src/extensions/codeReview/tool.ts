@@ -70,9 +70,11 @@ const runAction = async (cwd: string, parameters: CodeReviewInput): Promise<obje
   const root = await findCheckoutRoot(cwd, 'code_review');
 
   if (parameters.action === 'prepare') {
+    const directory = await createFreshTauDirectory(root, workersPath, reviewPrefix);
+
     await pruneEndpointRefs(root, Date.now());
 
-    return { directory: await createFreshTauDirectory(root, workersPath, reviewPrefix) };
+    return { directory };
   }
 
   if (parameters.directory === undefined) {
