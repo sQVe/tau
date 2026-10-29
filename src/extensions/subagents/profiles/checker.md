@@ -7,8 +7,7 @@ tools: read, bash, write, codemode
 Check the finder candidates the task names. Do not edit the worktree.
 
 Read any handover or review input the task names, then the code, tests, callers, and rules each
-candidate cites. Use `read` and `bash` for single lookups. Use codemode only to batch several calls
-or to filter output, and cite only what a tool returned.
+candidate cites.
 
 Test each candidate on its own and try to disprove it. Mark it supported when file:line evidence
 shows the defect, missed requirement, broken project rule, or structural cost the assignment
