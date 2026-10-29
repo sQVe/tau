@@ -68,6 +68,7 @@ export const setup = (
   intercept?: HerdrClient,
   packageManager?: (loadout: Loadout) => WorkerPackageManager,
   capacity?: number,
+  registeredToolNames?: () => readonly string[],
 ): SetupFixture => {
   const directory = temporaryDirectory(afterTest, 'tau-controller-');
   const agentDirectory = temporaryDirectory(afterTest, 'tau-controller-agent-');
@@ -165,6 +166,7 @@ export const setup = (
     (notice) => notifications.push(notice),
     packageManager,
     capacity,
+    registeredToolNames,
   );
 
   onTestFinished(() => {

@@ -12,7 +12,7 @@ import { Value } from 'typebox/value';
 import { parseModelReference } from '../../../config/models.js';
 import { herdrSocketPath, listTerminals, requireObject, result } from '../../../herdr.js';
 import type { TerminalLocation } from '../../../herdr.js';
-import { skillTools } from '../../../skillTools.js';
+import type { SkillTools } from '../../../skillTools.js';
 import { matchesWorker, runClient } from '../cancellation.js';
 import type { OwnedWorker } from '../cancellation.js';
 import { publishRecord, readEvent } from '../records.js';
@@ -105,10 +105,12 @@ export const herdrClient: HerdrClient = (argumentsList, budget, signal) =>
     ? socketRequest(herdrSocketPath() ?? '', argumentsList, budget, signal)
     : runClient('herdr', argumentsList, budget, signal ? { signal } : {});
 
-// extensionPackages are the profile packages the parent installed for this start.
+// extensionPackages are the profile packages the parent installed for this start. skillTools is the
+// copy read from disk for this launch, because the worker reads its tools from disk too.
 export const workerArguments = (
   task: Task,
   extensionPackages: readonly WorkerPackage[],
+  skillTools: SkillTools,
 ): string[] => {
   const model = parseModelReference(task.loadout.model);
 
@@ -163,7 +165,8 @@ const piExecutable = (): string => {
 export const workerCommand = (
   task: Task,
   extensionPackages: readonly WorkerPackage[],
-): string[] => [piExecutable(), ...workerArguments(task, extensionPackages)];
+  skillTools: SkillTools,
+): string[] => [piExecutable(), ...workerArguments(task, extensionPackages, skillTools)];
 
 // A typed command inherited the user's shell setup, such as PATH. Pass the parent's environment,
 // which came from that shell. Herdr sets the pane's own HERDR_* identity after it.

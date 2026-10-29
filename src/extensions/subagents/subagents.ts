@@ -180,6 +180,7 @@ const createController = (
   context: ExtensionContext,
   deliver: NoticeDelivery,
   getContext: () => ExtensionContext | undefined,
+  registeredToolNames: () => readonly string[],
 ): WorkerController => {
   const capacity = readWorkerCapacity(
     { cwd: context.cwd, agentDirectory: getAgentDir(), projectTrusted: context.isProjectTrusted() },
@@ -194,6 +195,7 @@ const createController = (
     },
     undefined,
     capacity,
+    registeredToolNames,
   );
 };
 
@@ -687,7 +689,12 @@ export default function subagentsExtension(
       return controller;
     }
 
-    const created = createController(context, deliverNotice, () => sessionContext);
+    const created = createController(
+      context,
+      deliverNotice,
+      () => sessionContext,
+      () => pi.getAllTools().map((tool) => tool.name),
+    );
 
     controller = created;
 

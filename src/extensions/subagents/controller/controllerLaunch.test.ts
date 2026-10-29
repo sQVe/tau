@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 
 import { expect, it, vi, onTestFinished as afterTest } from 'vitest';
 
+import { skillTools } from '../../../skillTools.js';
 import { acceptReport, readTask, recordEvent } from '../records.js';
 import { taskVersion } from '../types.js';
 import { WorkerController } from './controller.js';
@@ -78,7 +79,7 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
   expect(task.nativeSessionId).not.toBe(task.taskId);
   expect(task.loadout).toEqual(input.loadout);
 
-  expect(workerArguments(task, []).slice(3, 9)).toEqual([
+  expect(workerArguments(task, [], skillTools).slice(3, 9)).toEqual([
     '--provider',
     'faux',
     '--model',
@@ -87,14 +88,14 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
     'off',
   ]);
 
-  expect(workerArguments(task, [])).not.toContain('--no-extensions');
+  expect(workerArguments(task, [], skillTools)).not.toContain('--no-extensions');
 
   const narrowed = {
     ...task,
     loadout: { ...task.loadout, tools: ['read'], skills: ['/skills/tracker/SKILL.md'] },
   };
 
-  expect(workerArguments(narrowed, []).slice(9, 14)).toEqual([
+  expect(workerArguments(narrowed, [], skillTools).slice(9, 14)).toEqual([
     '--tools',
     'read,subagent_progress,subagent_report,subagent_question,tracker_evidence,tracker_draft,draft_review',
     '--no-skills',
@@ -126,7 +127,7 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
   };
 
   expect(root.command[0]).toMatch(/^\/.*\/pi$/);
-  expect(root.command.slice(1)).toEqual(workerArguments(task, []));
+  expect(root.command.slice(1)).toEqual(workerArguments(task, [], skillTools));
 
   expect(root.env).toMatchObject({
     TAU_WORKER_RECORD: launched.directory,
@@ -205,7 +206,9 @@ it('recovers reports and native references without extension discovery metadata'
     report: { summary: 'Saved HEAD handover.' },
   });
 
-  expect(workerArguments(readTask(launched.directory), [])).toEqual(workerArguments(task, []));
+  expect(workerArguments(readTask(launched.directory), [], skillTools)).toEqual(
+    workerArguments(task, [], skillTools),
+  );
 });
 
 it('includes prior loadout resolution in the original task deadline', async ({

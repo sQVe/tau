@@ -241,7 +241,7 @@ it.each(['editing', 'investigation'] as const)(
     writeFileSync(join(directory, 'source.txt'), 'before\n');
     mkdirSync(join(directory, 'delete-fixture', '.git'), { recursive: true });
     writeFileSync(join(directory, 'delete-fixture', '.git', 'keep'), 'preserve');
-    const argumentsList = workerArguments(task, []);
+    const argumentsList = workerArguments(task, [], skillTools);
 
     const extensionPaths = [
       ...argumentsList.flatMap((argument, index) =>
