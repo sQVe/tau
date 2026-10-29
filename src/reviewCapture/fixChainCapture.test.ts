@@ -1,9 +1,11 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { installCommandShim } from '../../tests/commandShimFake.js';
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { createFreshTauDirectory } from '../tauDirectory.js';
 import { captureGeneration } from './generation.js';
 import {
@@ -74,6 +76,63 @@ it('captures only the change since the earlier fix capture', async () => {
     status: 'complete',
     tree: await git(root, 'rev-parse', 'HEAD^{tree}'),
   });
+});
+
+it('captures a fix against a saved copy when Git converts the CRLF working file outside the repository', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  // The repository keeps a.ts out of line-ending conversion, so only the scratch copy that the fix
+  // diffs converts. A global attributes file reaches that copy, which lies outside any repository.
+  await writeFile(join(root, '.gitattributes'), 'a.ts -text\n');
+  await writeFile(join(root, 'a.ts'), 'a one\n');
+  await git(root, 'add', '-A');
+  await git(root, 'commit', '--quiet', '-m', 'first');
+  await writeFile(join(root, 'a.ts'), 'a two\n');
+
+  // An untracked binary file is a gap, so the review has no complete endpoint and the fix compares
+  // against the saved copy.
+  await writeFile(join(root, 'image.bin'), Buffer.from([0, 1, 2]));
+
+  const review = await capturedReview(root, { kind: 'workingTree', base: 'HEAD' });
+
+  await writeFile(join(root, 'a.ts'), 'a three\r\n');
+
+  const attributesDirectory = temporaryDirectory(onTestFinished, 'tau-fix-attributes-');
+  const attributesFile = join(attributesDirectory, 'attributes');
+
+  await writeFile(attributesFile, '* text=auto eol=lf\n');
+  vi.stubEnv('GIT_CONFIG_COUNT', '1');
+  vi.stubEnv('GIT_CONFIG_KEY_0', 'core.attributesFile');
+  vi.stubEnv('GIT_CONFIG_VALUE_0', attributesFile);
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const fix = await fixOf(root, review);
+
+  expect(await readPatch(fix)).toContain('-a two\n+a three\n');
+});
+
+it('refuses a fix when the saved-copy diff exits with status 2', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await writeFile(join(root, 'a.ts'), 'a one\n');
+  await git(root, 'add', '-A');
+  await git(root, 'commit', '--quiet', '-m', 'first');
+  await writeFile(join(root, 'a.ts'), 'a two\n');
+  await writeFile(join(root, 'image.bin'), Buffer.from([0, 1, 2]));
+
+  const review = await capturedReview(root, { kind: 'workingTree', base: 'HEAD' });
+
+  await writeFile(join(root, 'a.ts'), 'a three\n');
+
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [{ match: ' --no-index ', script: 'exit 2' }],
+  });
+
+  await expect(fixOf(root, review)).rejects.toThrow('exit 2');
 });
 
 it('shows a reverted edit against the earlier fix and the whole change against the root', async () => {

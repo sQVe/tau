@@ -34,10 +34,6 @@ const snapshotInput = async (
 ) => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  // Git warns on stderr about each CRLF file it converts by default, and the capture treats a
-  // warning as a failed diff.
-  await git(root, 'config', 'core.safecrlf', 'false');
-
   for (const [path, content] of Object.entries(files)) {
     await writeAt(root, path, content);
   }

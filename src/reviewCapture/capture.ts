@@ -6,6 +6,7 @@ import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
 import { runGit } from '../git.js';
 import { climbsOut } from '../tauDirectory.js';
 import { keepAddedLines } from './evidenceDecisions.js';
+import { hasOnlyLineEndingWarnings } from './lineEndingWarning.js';
 import type { PinnedTarget, ReviewTarget } from './target.js';
 
 export interface Gap {
@@ -93,7 +94,6 @@ export const failure = (commandArguments: string[], detail: string): Part => ({
   errors: [`${describeCommand(commandArguments)} failed: ${detail}`],
 });
 
-// Runs a Git command that must exit 0 and print nothing to stderr, as a capture command must.
 export const runCaptureCommand = async (
   root: string,
   commandArguments: string[],
@@ -104,7 +104,7 @@ export const runCaptureCommand = async (
     return { error: `exit ${result.exitCode}: ${result.stderr.trim()}` };
   }
 
-  if (result.stderr.trim() !== '') {
+  if (!hasOnlyLineEndingWarnings(result.stderr)) {
     return { error: result.stderr.trim() };
   }
 
@@ -460,7 +460,7 @@ export const captureWholeFile = async (
     const result = await runGit(root, command);
 
     const succeeded =
-      result.exitCode !== null && result.exitCode <= 1 && result.stderr.trim() === '';
+      result.exitCode !== null && result.exitCode <= 1 && hasOnlyLineEndingWarnings(result.stderr);
 
     if (succeeded) {
       const gaps = isBinaryDiff(result.stdout) ? [{ kind: 'binary' as const, path }] : [];

@@ -50,6 +50,26 @@ it('captures a tracked change and an untracked file with the hash Git gives the 
   expect(capture.hash).toBe(await hashObject(capture.bytes));
 });
 
+it('captures CRLF files that text=auto normalizes, without failing on Git line-ending warnings', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  await writeFile(join(root, '.gitattributes'), '* text=auto eol=lf\n');
+  await writeFile(join(root, 'tracked.txt'), 'one\n');
+  await git(root, 'add', '-A');
+  await git(root, 'commit', '--quiet', '-m', 'first');
+  await writeFile(join(root, 'tracked.txt'), 'one\r\ntwo\r\n');
+  await writeFile(join(root, 'untracked.txt'), 'new\r\n');
+
+  const target = await pinTarget(root, { kind: 'workingTree', base: 'HEAD' });
+  const capture = await captureTarget(root, target);
+  const text = capture.bytes.toString('utf8');
+
+  expect(capture.errors).toEqual([]);
+  expect(capture.paths).toEqual(['tracked.txt', 'untracked.txt']);
+  expect(text).toContain('+two');
+  expect(text).toContain('+new');
+});
+
 it('reads the repository index even when the caller names another one', async () => {
   const root = await committedRepository();
   const directory = temporaryDirectory(onTestFinished, 'tau-capture-index-');

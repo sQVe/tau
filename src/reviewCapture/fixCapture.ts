@@ -23,6 +23,7 @@ import {
 import type { Capture, DirectTarget, Gap, Part } from './capture.js';
 import { pinPredecessor } from './fixChain.js';
 import type { PinnedPredecessor } from './fixChain.js';
+import { hasOnlyLineEndingWarnings } from './lineEndingWarning.js';
 import { shownBlobs } from './patchBlobs.js';
 import { isRepositoryPath, snapshotFolder } from './record.js';
 import type { Snapshot } from './record.js';
@@ -470,7 +471,11 @@ const writeEarlier = async (
 };
 
 const diffPart = (path: string, result: GitResult, command: string[]): Part => {
-  if (result.exitCode === null || result.exitCode > 1 || result.stderr.trim() !== '') {
+  if (
+    result.exitCode === null ||
+    result.exitCode > 1 ||
+    !hasOnlyLineEndingWarnings(result.stderr)
+  ) {
     return failure(command, `exit ${result.exitCode}: ${result.stderr.trim()}`);
   }
 
