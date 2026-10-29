@@ -178,8 +178,9 @@ const configSource = (directory: string) =>
     '};',
   ].join('\n');
 
+// The exit status also counts errors outside any test file, which the JSON report leaves out.
 const runNested = (directory: string, reportPath: string) =>
-  new Promise<void>((resolve) => {
+  new Promise<number>((resolve) => {
     // A failing file makes Vitest exit nonzero. The report holds the result of each file.
     execFile(
       join(repositoryRoot, 'node_modules', '.bin', 'vitest'),
@@ -191,13 +192,20 @@ const runNested = (directory: string, reportPath: string) =>
         `--outputFile=${reportPath}`,
       ],
       { cwd: directory, timeout: 25_000 },
-      () => {
-        resolve();
+      (error) => {
+        if (error === null) {
+          resolve(0);
+
+          return;
+        }
+
+        resolve(typeof error.code === 'number' ? error.code : 1);
       },
     );
   });
 
 let report: Report;
+let exitCode: number;
 
 beforeAll(async () => {
   const directory = temporaryDirectory(afterAll, 'tau-file-isolation-');
@@ -211,7 +219,7 @@ beforeAll(async () => {
     await writeFile(join(directory, file.name), file.source);
   }
 
-  await runNested(directory, reportPath);
+  exitCode = await runNested(directory, reportPath);
   report = JSON.parse(await readFile(reportPath, 'utf8')) as Report;
 });
 
@@ -227,4 +235,11 @@ it.for(cases)('keeps $leak from reaching a later test file', ({ files }) => {
   const expected = testFiles.map((file) => ({ file: file.name, status: 'passed', message: '' }));
 
   expect(results).toEqual(expected);
+});
+
+it('reports no error outside the test files when every file passes', () => {
+  const everyFilePassed = report.testResults.every((entry) => entry.status === 'passed');
+  const unattributedFailure = everyFilePassed && exitCode !== 0;
+
+  expect(unattributedFailure).toBe(false);
 });
