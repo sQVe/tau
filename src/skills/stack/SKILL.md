@@ -6,7 +6,7 @@ description:
   "rebase the stack", "push the stack", "stack this on ENG-123", "switch to PR 3 in the stack", or
   when a lower PR in a stack merged.
 metadata:
-  required-for: running gh stack commands, including as a step in a larger task
+  required-for: running gh stack commands
 ---
 
 # Stack

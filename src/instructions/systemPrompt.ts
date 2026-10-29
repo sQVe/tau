@@ -10,6 +10,9 @@ export const appendSystemPrompt = (event: BeforeAgentStartEvent, text: string): 
     : text;
 };
 
+export const guidelineLines = (guidelines: readonly string[]): string =>
+  guidelines.map((guideline) => `- ${guideline}`).join('\n');
+
 // Use instead of a tool's `promptGuidelines`, which Pi renders only into the default prompt.
 export const appendToolGuidelines = (
   pi: Pick<ExtensionAPI, 'on'>,
@@ -18,7 +21,7 @@ export const appendToolGuidelines = (
 ): void => {
   pi.on('before_agent_start', (event) => {
     if (guidelines.length > 0 && event.systemPromptOptions.selectedTools.includes(toolName)) {
-      appendSystemPrompt(event, guidelines.map((guideline) => `- ${guideline}`).join('\n'));
+      appendSystemPrompt(event, guidelineLines(guidelines));
     }
   });
 };

@@ -31,7 +31,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
   {
     name: 'codemode',
     entry: 'codemode/codemode',
-    publicFiles: ['codemode/controlTools', 'codemode/fullOutput'],
+    publicFiles: ['codemode/controlTools', 'codemode/fullOutput', 'codemode/guidelines'],
   },
   { name: 'command', entry: 'command', publicFiles: [] },
   {

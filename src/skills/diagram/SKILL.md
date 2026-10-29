@@ -7,7 +7,7 @@ description:
 metadata:
   required-for:
     explaining how parts of a system connect, such as control flow, a request path, states, or data
-    relations, including as a step in a larger task
+    relations
 ---
 
 # Diagram

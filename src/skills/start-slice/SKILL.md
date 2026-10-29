@@ -6,9 +6,7 @@ description:
   the branch, base, and agent tickets it created. Use it for "start the next slice", "start
   ENG-123", or "begin this ticket as a slice". It does not split a design into slices.
 metadata:
-  required-for:
-    starting a slice or creating agent tickets for a slice in Linear, including as a step in a
-    larger task
+  required-for: starting a slice or creating agent tickets for a slice in Linear
 ---
 
 # Start slice

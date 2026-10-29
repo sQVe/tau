@@ -5,7 +5,7 @@ description:
   for "rebase onto main", "fix conflicts", "the PR has conflicts", or when a rebase or merge stops
   on a conflict.
 metadata:
-  required-for: rebasing a branch or force-pushing it, including as a step in a larger task
+  required-for: rebasing a branch or force-pushing it
 ---
 
 # Update branch

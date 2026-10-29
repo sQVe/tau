@@ -2,6 +2,7 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { runGit } from '../git.js';
 import { appendSystemPrompt } from '../instructions/systemPrompt.js';
+import { isWorkerProcess } from '../worker.js';
 
 const bareRootRules = [
   'This session runs in the bare repository root, not a worktree. Use it to read, answer ' +
@@ -29,7 +30,7 @@ export default function bareRootExtension(pi: ExtensionAPI): void {
   let bareRoot = false;
 
   pi.on('session_start', async (_event, context) => {
-    bareRoot = await isBareRoot(context.cwd);
+    bareRoot = !isWorkerProcess() && (await isBareRoot(context.cwd));
   });
 
   pi.on('before_agent_start', (event) => {

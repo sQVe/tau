@@ -21,8 +21,9 @@ import {
   nestedChangeCallReason,
   nestedControlCallReason,
 } from '../../codemode/controlTools.js';
+import { codemodeGuidelines } from '../../codemode/guidelines.js';
 import { instructionSetNames, readInstructionSet } from '../../instructions/instructions.js';
-import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
+import { appendSystemPrompt, guidelineLines } from '../../instructions/systemPrompt.js';
 import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
 import type { WorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
@@ -629,10 +630,17 @@ const readLoadoutInstructionSets = (loadout: Loadout): Promise<string[]> =>
       .map((name) => readInstructionSet(name)),
   );
 
+const workerCodemodeGuidelines = (loadout: Loadout): string[] =>
+  loadout.tools.includes('codemode') ? [guidelineLines(codemodeGuidelines)] : [];
+
 export const workerSystemPrompt = async (loadout: Loadout): Promise<string> => {
   const instructionSets = await readLoadoutInstructionSets(loadout);
 
-  return [workerInstructions(loadout), ...instructionSets].join('\n\n');
+  return [
+    workerInstructions(loadout),
+    ...instructionSets,
+    ...workerCodemodeGuidelines(loadout),
+  ].join('\n\n');
 };
 
 const registerSystemPromptHandler = (pi: ExtensionAPI, state: WorkerExtensionState): void => {

@@ -83,7 +83,7 @@ describe('tauSkillsExtension', () => {
     );
 
     expect(namedSkills).toEqual(requiredSkills);
-    expect(prompt.split('\n')).toHaveLength(requiredSkills.length);
+    expect(prompt.split('\n')).toHaveLength(requiredSkills.length + 1);
 
     for (const name of requiredSkills) {
       expect(prompt).toContain(String(requiredForOf(name)));

@@ -4,8 +4,7 @@ description:
   Fix a reported defect at its root cause, test-first. Use it for "fix this bug", "this is broken",
   or "it regressed". It does not file tickets; the `tracker` skill does.
 metadata:
-  required-for:
-    fixing a defect, regression, or broken behavior, including as a step in a larger task
+  required-for: fixing a defect, regression, or broken behavior
 ---
 
 # Fix bug
