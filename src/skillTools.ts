@@ -1,22 +1,57 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-export const skillTools: Readonly<Record<string, readonly string[]>> = {
-  'code-review': ['code_review', 'tracker_draft'],
-  'code-quality': ['code_review', 'tracker_draft'],
-  'prune-comments': ['code_review'],
-  brainstorm: ['slice', 'draft_review'],
-  slice: ['slice', 'draft_review'],
-  'finish-slice': ['slice', 'start_slice'],
-  'start-slice': ['slice', 'start_slice', 'stack'],
-  handover: ['handover'],
-  stack: ['stack'],
-  'update-branch': ['stack'],
-  pr: ['pr', 'full_check', 'stack', 'draft_review'],
-  tdd: ['mutation_check'],
-  'pr-feedback': ['pr_feedback'],
-  tracker: ['tracker_evidence', 'tracker_draft', 'draft_review'],
+export type SkillTools = Readonly<Record<string, readonly string[]>>;
+
+export const skillToolsPath = fileURLToPath(new URL('./skillTools.json', import.meta.url));
+
+const parseJson = (text: string): unknown => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 };
 
-export const skillToolsPath = fileURLToPath(import.meta.url);
-export const loadedSkillToolsSource = readFileSync(skillToolsPath, 'utf8');
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isToolList = (value: unknown): value is unknown[] => Array.isArray(value);
+
+const isToolName = (value: unknown): value is string => typeof value === 'string';
+
+export const parseSkillTools = (text: string): SkillTools | undefined => {
+  const value = parseJson(text);
+
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+
+  const entries: [string, string[]][] = [];
+
+  for (const [skill, tools] of Object.entries(value)) {
+    if (!isToolList(tools)) {
+      return undefined;
+    }
+
+    if (!tools.every(isToolName)) {
+      return undefined;
+    }
+
+    entries.push([skill, tools]);
+  }
+
+  return Object.fromEntries(entries);
+};
+
+const loadSkillTools = (): SkillTools => {
+  const parsed = parseSkillTools(readFileSync(skillToolsPath, 'utf8'));
+
+  if (parsed === undefined) {
+    throw new Error(`${skillToolsPath} must map each skill name to a list of tool names.`);
+  }
+
+  return parsed;
+};
+
+export const skillTools: SkillTools = loadSkillTools();

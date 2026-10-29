@@ -56,7 +56,7 @@ the module list instead of silencing the rule.
 
 Skills live in `src/skills/<name>/SKILL.md`. A skill's tool lives in an extension under
 `src/extensions/<feature>/`, and `src/tau.ts` calls that extension. Its skill and tool names go in
-`src/skillTools.ts`. Before writing or changing a skill, or a tool that a skill calls, read the
+`src/skillTools.json`. Before writing or changing a skill, or a tool that a skill calls, read the
 [skill authoring guide](docs/skill-authoring.md).
 
 ## Tests

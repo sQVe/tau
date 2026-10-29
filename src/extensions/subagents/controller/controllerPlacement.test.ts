@@ -2,6 +2,7 @@ import { readdirSync } from 'node:fs';
 
 import { expect, it, vi } from 'vitest';
 
+import { skillTools } from '../../../skillTools.js';
 import { readTask } from '../records.js';
 import { setup } from './fixtures/controllerFixture.js';
 import { workerArguments } from './inspect.js';
@@ -211,7 +212,7 @@ it('titles the worker pane with the model ID after the provider', async ({ onTes
 
   expect(rename?.[3]).toMatch(/^worker-[a-z0-9]{2} \(meta-llama\)$/);
 
-  expect(workerArguments(readTask(launched.directory), []).slice(3, 7)).toEqual([
+  expect(workerArguments(readTask(launched.directory), [], skillTools).slice(3, 7)).toEqual([
     '--provider',
     'openrouter',
     '--model',

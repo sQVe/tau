@@ -9,7 +9,8 @@ import type { ExtensionContext, SessionShutdownEvent } from '@earendil-works/pi-
 import { errorMessage, isMissingFile } from '../../../errors.js';
 import { listTerminals, result } from '../../../herdr.js';
 import type { TerminalCall } from '../../../herdr.js';
-import { loadedSkillToolsSource, skillToolsPath } from '../../../skillTools.js';
+import { parseSkillTools, skillTools, skillToolsPath } from '../../../skillTools.js';
+import type { SkillTools } from '../../../skillTools.js';
 import { acceptanceRefusal } from '../acceptanceRefusal.js';
 import { processAbsent } from '../cancellation.js';
 import { refuseLiveNativeWriter } from '../continuations.js';
@@ -28,6 +29,7 @@ import { isTaskId, taskVersion } from '../types.js';
 import type { Acknowledgement, Loadout, Question, Reply, Task } from '../types.js';
 import type { WorkerWidgetRow } from '../widget.js';
 import { defaultWorkerCapacity } from '../workerCapacityConfig.js';
+import { workerTools } from '../workerTools.js';
 import {
   ensureReplyActive,
   workBudget,
@@ -92,6 +94,14 @@ export class WorkerCapacityFullError extends Error {
   override name = 'WorkerCapacityFullError';
 }
 
+const readCurrentSkillTools = (): SkillTools | undefined => {
+  try {
+    return parseSkillTools(readFileSync(skillToolsPath, 'utf8'));
+  } catch {
+    return undefined;
+  }
+};
+
 // Registry, capacity, launch allocation, and ownership checks for all workers; each worker runs its own lifecycle.
 export class WorkerController {
   private readonly root: string;
@@ -99,6 +109,7 @@ export class WorkerController {
   private readonly packageManager: (loadout: Loadout) => WorkerPackageManager;
   private readonly workers = new Map<string, TaskController>();
   private readonly capacity: number;
+  private readonly registeredToolNames: () => readonly string[];
   private readonly live = new Set<string>();
   private readonly sessionTaskIndex: SessionTaskIndex;
   private readonly lifetime = new AbortController();
@@ -112,8 +123,10 @@ export class WorkerController {
     notify: (notice: WorkerNotice) => void = () => undefined,
     packageManager: (loadout: Loadout) => WorkerPackageManager = piPackageManager,
     capacity = defaultWorkerCapacity,
+    registeredToolNames: () => readonly string[] = () => Object.values(skillTools).flat(),
   ) {
     this.capacity = capacity;
+    this.registeredToolNames = registeredToolNames;
     this.root = root;
     this.sessionTaskIndex = new SessionTaskIndex(root);
     this.client = client;
@@ -422,7 +435,16 @@ export class WorkerController {
     });
   }
 
-  private placeWorker(input: LaunchInput, handle: Handle, call: TerminalCall) {
+  private placeWorker(
+    input: LaunchInput,
+    handle: Handle,
+    call: TerminalCall,
+    currentSkillTools: SkillTools,
+  ) {
+    const tools = workerTools(handle.task.loadout, currentSkillTools);
+    // The worker activates this list, so its check matches --tools if skillTools.json changes.
+    const toolsEnvironment = JSON.stringify(tools);
+
     return this.placement.place(
       {
         name: handle.task.name ?? 'worker',
@@ -444,10 +466,11 @@ export class WorkerController {
           publish(handle.directory, 'pane.json', created);
         },
         cwd: handle.task.loadout.cwd,
-        command: workerCommand(handle.task, handle.startup.extensionPackages),
+        command: workerCommand(handle.task, handle.startup.extensionPackages, currentSkillTools),
         environment: {
           ...workerEnvironment(),
           TAU_WORKER_RECORD: handle.directory,
+          TAU_WORKER_TOOLS: toolsEnvironment,
           PI_CODING_AGENT_DIR: handle.task.loadout.agentDirectory,
         },
       },
@@ -506,10 +529,11 @@ export class WorkerController {
       throw new Error('Parent controller stopped.');
     }
 
-    const currentSkillToolsSource = readFileSync(skillToolsPath, 'utf8');
-    const skillToolsRefused = skillToolsRefusal(loadedSkillToolsSource, currentSkillToolsSource);
+    const currentSkillTools = readCurrentSkillTools();
+    const registeredToolNames = new Set(this.registeredToolNames());
+    const skillToolsRefused = skillToolsRefusal(currentSkillTools, registeredToolNames);
 
-    if (skillToolsRefused !== undefined) {
+    if (currentSkillTools === undefined || skillToolsRefused !== undefined) {
       throw new Error(skillToolsRefused);
     }
 
@@ -530,7 +554,7 @@ export class WorkerController {
         checkHandover(source);
       }
 
-      const location = await this.placeWorker(input, handle, call);
+      const location = await this.placeWorker(input, handle, call, currentSkillTools);
 
       placement = {
         visibility: location.visibility,

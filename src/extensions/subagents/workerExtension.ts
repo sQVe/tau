@@ -42,6 +42,7 @@ import { recordStartupFailure } from './startupFailure.js';
 import type { Loadout, Question, Task } from './types.js';
 import { hasRunningTask, isTaskActive, remainingWork } from './workerExtensionState.js';
 import type { WorkerExtensionState, WorkerPhase } from './workerExtensionState.js';
+import { parseWorkerTools } from './workerTools.js';
 
 const millisecondsPerSecond = 1000;
 const parentWatchInterval = 1000;
@@ -412,8 +413,11 @@ const startWorker = (
       return;
     }
 
+    // oxlint-disable-next-line node/no-process-env -- The parent passes the tool list it gave Pi's --tools.
+    const tools = parseWorkerTools(process.env.TAU_WORKER_TOOLS);
+
     // The parent enforces active work deadlines; the reply wait uses the saved wall-clock deadline.
-    checkWorkerRuntime(task.loadout, pi, context);
+    checkWorkerRuntime(task.loadout, pi, context, tools);
 
     recordEvent(state.directory, task.taskId, 'ready', {
       detail: 'Saved model, cwd, and CC Safety Net checked.',

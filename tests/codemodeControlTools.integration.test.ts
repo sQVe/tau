@@ -106,6 +106,7 @@ const runWorker = async (responses: FauxResponseStep[]) => {
   });
 
   publish(taskDirectory, 'task.json', task);
+  vi.stubEnv('TAU_WORKER_TOOLS', JSON.stringify(workerTools(task.loadout, skillTools)));
   seedSession(task);
   writeFileSync(join(directory, 'source.txt'), 'fixture-source');
 

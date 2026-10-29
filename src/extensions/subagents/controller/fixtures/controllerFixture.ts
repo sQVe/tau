@@ -68,6 +68,7 @@ export const setup = (
   intercept?: HerdrClient,
   packageManager?: (loadout: Loadout) => WorkerPackageManager,
   capacity?: number,
+  registeredToolNames?: () => readonly string[],
 ): SetupFixture => {
   const directory = temporaryDirectory(afterTest, 'tau-controller-');
   const agentDirectory = temporaryDirectory(afterTest, 'tau-controller-agent-');
@@ -165,6 +166,7 @@ export const setup = (
     (notice) => notifications.push(notice),
     packageManager,
     capacity,
+    registeredToolNames,
   );
 
   onTestFinished(() => {
@@ -192,6 +194,18 @@ export const savedFiles = (directory: string): { path: string; bytes: Buffer | u
 
     return { path, bytes };
   });
+};
+
+export const layoutRoot = (
+  calls: string[][],
+): { command: string[]; env: Record<string, string> } => {
+  const layout = calls.find((argumentsList) => argumentsList[0] === 'layout');
+
+  return (
+    JSON.parse(layout?.[2] ?? '') as {
+      root: { command: string[]; env: Record<string, string> };
+    }
+  ).root;
 };
 
 export const completed = async (

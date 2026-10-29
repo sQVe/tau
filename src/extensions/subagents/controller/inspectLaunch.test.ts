@@ -4,6 +4,7 @@ import { join, relative } from 'node:path';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import { skillTools } from '../../../skillTools.js';
 import { fixtureLoadout } from '../fixtures/loadout.js';
 import type { Task } from '../types.js';
 import {
@@ -37,7 +38,7 @@ const pi = (directory: string, mode: number) => {
 };
 
 it('starts the worker without waiting for an approval prompt', () => {
-  expect(workerArguments(launchTask('/tmp'), [])).toContain('--approve');
+  expect(workerArguments(launchTask('/tmp'), [], skillTools)).toContain('--approve');
 });
 
 it('runs the first executable pi found on PATH', () => {
@@ -47,7 +48,7 @@ it('runs the first executable pi found on PATH', () => {
 
   vi.stubEnv('PATH', [join(root, 'missing'), join(root, 'plain'), join(root, 'bin')].join(':'));
 
-  expect(workerCommand(launchTask(root), [])[0]).toBe(executable);
+  expect(workerCommand(launchTask(root), [], skillTools)[0]).toBe(executable);
 });
 
 it('fails when PATH holds no executable pi', () => {
@@ -56,7 +57,7 @@ it('fails when PATH holds no executable pi', () => {
 
   vi.stubEnv('PATH', join(root, 'plain'));
 
-  expect(() => workerCommand(launchTask(root), [])).toThrow('pi');
+  expect(() => workerCommand(launchTask(root), [], skillTools)).toThrow('pi');
 });
 
 it('ignores a relative PATH entry', () => {
@@ -66,7 +67,7 @@ it('ignores a relative PATH entry', () => {
 
   vi.stubEnv('PATH', relative(process.cwd(), directory));
 
-  expect(() => workerCommand(launchTask(root), [])).toThrow('pi');
+  expect(() => workerCommand(launchTask(root), [], skillTools)).toThrow('pi');
 });
 
 it("passes the parent's environment except its working-directory variables", () => {

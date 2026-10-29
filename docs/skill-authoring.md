@@ -37,8 +37,10 @@ plans. An apply takes that plan and refuses when the state has changed since the
 - Put the tool in its own extension under `src/extensions/<feature>/`, and call the extension from
   `src/tau.ts`.
 - Register a skill tool as a normal direct tool, active on registration. Add the skill name and tool
-  name to `src/skillTools.ts`. Managers get every skill tool from session start. Workers get the
+  name to `src/skillTools.json`. Managers get every skill tool from session start. Workers get the
   tools for their loaded skills through the same map.
+- A tool the parent session did not register needs `/reload` before a worker launch can use it. The
+  launch refuses until then.
 - When two skills need the same mechanics, share one tool or module. Never copy the mechanics into
   another tool or skill. Create a scratch directory inside an ignored `.tau/` with
   `src/tauDirectory.ts`.

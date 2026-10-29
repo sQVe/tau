@@ -17,6 +17,7 @@ import { expect, it, vi, onTestFinished as finishTest } from 'vitest';
 
 import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { skillTools } from '../../skillTools.js';
 import { workerNoticeChannel } from '../../worker.js';
 import { WorkerCapacityFullError, WorkerController } from './controller/controller.js';
 import { EvidenceUnavailableError } from './controller/record.js';
@@ -991,6 +992,57 @@ it('launches a Pi worker through the tool and refuses a launch outside herdr', a
   );
 
   expect(launch).toHaveBeenCalledTimes(1);
+});
+
+it('refuses a launch that needs a skill tool the parent did not register', async ({
+  onTestFinished,
+}) => {
+  const directory = temporaryDirectory(finishTest, 'tau-launch-registered-');
+
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('HERDR_ENV', '1');
+  vi.stubEnv('HERDR_PANE_ID', 'parent');
+  vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
+
+  const registered = Object.values(skillTools)
+    .flat()
+    .filter((name) => name !== 'mutation_check');
+
+  const fake = fakeExtensionApi({
+    getAllTools: () => registered.map((name) => ({ name })) as never,
+  });
+
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
+
+  const tool = fake.tools.get('subagent');
+
+  if (!tool) {
+    throw new Error('Worker launch tool missing.');
+  }
+
+  const input = {
+    profile: 'worker',
+    model: fixtureModelReference,
+    acceptance: ['Done.'],
+    task: 'Inspect fixture.',
+    timeoutSeconds: 10,
+  };
+
+  const refusal = await tool
+    .execute('pi-call', input, undefined, undefined, launchContext(directory))
+    .then(
+      () => undefined,
+      (error: unknown) => String(error),
+    );
+
+  expect(refusal).toContain('mutation_check');
+  expect(refusal).not.toContain('code_review');
 });
 
 it('defaults the launch timeout by profile role and keeps an explicit timeout', async ({

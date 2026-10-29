@@ -1,12 +1,24 @@
-// A worker loads skillTools again from disk and checks that Pi registered every tool it lists. Pi
-// registers only the tools the parent passed, so a parent with an older copy starts workers that fail.
+import type { SkillTools } from '../../skillTools.js';
+
+const reloadInstruction = 'Run /reload, then launch again.';
+
+const listedToolNames = (skillTools: SkillTools): string[] => [
+  ...new Set(Object.values(skillTools).flat()),
+];
+
 export const skillToolsRefusal = (
-  loadedSource: string,
-  currentSource: string,
+  current: SkillTools | undefined,
+  registeredToolNames: ReadonlySet<string>,
 ): string | undefined => {
-  if (currentSource === loadedSource) {
+  if (current === undefined) {
+    return 'Tau could not read src/skillTools.json. The file must be fixed before a launch.';
+  }
+
+  const missing = listedToolNames(current).filter((tool) => !registeredToolNames.has(tool));
+
+  if (missing.length === 0) {
     return undefined;
   }
 
-  return 'Tau changed on disk since this Pi session loaded it, so the worker would expect other tools. Run /reload, then launch again.';
+  return `Tau's skill tools changed on disk and need tools this Pi session did not register: ${missing.join(', ')}. ${reloadInstruction}`;
 };

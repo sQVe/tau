@@ -9,7 +9,7 @@ import { acceptReport, readEvent, readTask, recordEvent } from '../records.js';
 import * as records from '../records.js';
 import { oldestReadableTaskVersion, taskVersion } from '../types.js';
 import { WorkerController } from './controller.js';
-import { completed, savedFiles, setup } from './fixtures/controllerFixture.js';
+import { completed, layoutRoot, savedFiles, setup } from './fixtures/controllerFixture.js';
 
 vi.mock(import('node:fs'), { spy: true });
 
@@ -569,6 +569,18 @@ it('follows up a completed native task with new identity and unchanged saved evi
   );
 
   expect(savedFiles(fixture.directory)).toEqual(saved);
+});
+
+it('gives a follow-up worker the tool list that it passed to --tools', async () => {
+  const fixture = await completed();
+  const callsBefore = fixture.calls.length;
+
+  await fixture.controller.followUp(fixture.input, fixture.context);
+
+  const { command, env } = layoutRoot(fixture.calls.slice(callsBefore));
+  const toolsArgument = command[command.indexOf('--tools') + 1] ?? '';
+
+  expect(JSON.parse(env.TAU_WORKER_TOOLS ?? '')).toEqual(toolsArgument.split(','));
 });
 
 it.each(['cleanup', 'uncertain cleanup', 'handover', 'missing native', 'other parent'] as const)(
