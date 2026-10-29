@@ -156,6 +156,22 @@ it('refuses a revision that Git cannot find', async () => {
   );
 });
 
+it('accepts a command whose stderr holds only line-ending warnings', async () => {
+  const root = await committedRepository();
+
+  const warning =
+    "warning: in the working copy of 'a.txt', CRLF will be replaced by LF the next time Git touches it";
+
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [{ match: ' show ', script: `echo "${warning}" >&2; echo out` }],
+  });
+
+  const result = await runCaptureCommand(root, ['show', 'HEAD']);
+
+  expect(result.stdout?.toString('utf8')).toBe('out\n');
+});
+
 it('accepts a command whose stderr holds only whitespace', async () => {
   const root = await committedRepository();
 
