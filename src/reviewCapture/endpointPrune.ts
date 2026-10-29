@@ -15,6 +15,11 @@ interface EndpointRef {
   commit: string;
 }
 
+interface Worktree {
+  path: string;
+  locked: boolean;
+}
+
 interface ReviewDirectory {
   state: DirectoryState;
   lastWrite: number | undefined;
@@ -36,14 +41,25 @@ const listEndpointRefs = async (root: string): Promise<EndpointRef[]> => {
   });
 };
 
-const listWorktrees = async (root: string) => {
-  const output = await readGit(root, ['worktree', 'list', '--porcelain', '-z']);
+const parseWorktree = (fields: string[]): Worktree[] => {
+  const path = fields.find((field) => field.startsWith('worktree '));
+  const locked = fields.some((field) => field === 'locked' || field.startsWith('locked '));
 
-  return output
-    .split('\0')
-    .filter((field) => field.startsWith('worktree '))
-    .map((field) => field.slice('worktree '.length));
+  return path === undefined ? [] : [{ path: path.slice('worktree '.length), locked }];
 };
+
+// With -z, each field ends with NUL, and an empty field ends each worktree.
+const listWorktrees = async (root: string): Promise<Worktree[]> => {
+  const output = await readGit(root, ['worktree', 'list', '--porcelain', '-z']);
+  const records = output.split('\0\0').map((record) => record.split('\0'));
+
+  return records.flatMap(parseWorktree);
+};
+
+// A locked worktree may sit on a drive that is not mounted, and any of its captures could need any
+// ref.
+const isUnavailable = async ({ path, locked }: Worktree) =>
+  locked && (await existingEntry(path)) === undefined;
 
 const workersFolder = (worktree: string) => join(worktree, '.tau', workersPath);
 
@@ -176,7 +192,14 @@ const deleteRef = async (root: string, { ref, commit }: EndpointRef) => {
 
 export const pruneEndpointRefs = async (root: string, now: number): Promise<void> => {
   const refs = await listEndpointRefs(root);
-  const worktrees = await listWorktrees(root);
+  const listed = await listWorktrees(root);
+  const unavailable = await Promise.all(listed.map(isUnavailable));
+
+  if (unavailable.includes(true)) {
+    return;
+  }
+
+  const worktrees = listed.map(({ path }) => path);
   const predecessors = await readPredecessors(worktrees);
 
   const decided = await Promise.all(

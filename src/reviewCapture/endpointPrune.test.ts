@@ -162,6 +162,43 @@ it('keeps a ref whose review directory is in another worktree', async () => {
   expect(await git(root, 'rev-parse', ref)).toBe(commit);
 });
 
+it('keeps every ref while a locked worktree is unavailable', async () => {
+  const { root, directory, ref, commit } = await capturedReview();
+  const other = join(root, '.tau', 'other');
+
+  await git(root, 'worktree', 'add', '--quiet', '--detach', other);
+  await git(root, 'worktree', 'lock', other);
+  await rename(other, `${other}-unmounted`);
+  await rm(directory, { recursive: true });
+  await pruneEndpointRefs(root, Date.now());
+
+  expect(await git(root, 'rev-parse', ref)).toBe(commit);
+});
+
+it('prunes while a locked worktree is available', async () => {
+  const { root, directory, ref } = await capturedReview();
+  const other = join(root, '.tau', 'other');
+
+  await git(root, 'worktree', 'add', '--quiet', '--detach', other);
+  await git(root, 'worktree', 'lock', other);
+  await rm(directory, { recursive: true });
+  await pruneEndpointRefs(root, Date.now());
+
+  expect(await refExists(root, ref)).toBe(false);
+});
+
+it('prunes while an unlocked worktree folder is gone', async () => {
+  const { root, directory, ref } = await capturedReview();
+  const other = join(root, '.tau', 'other');
+
+  await git(root, 'worktree', 'add', '--quiet', '--detach', other);
+  await rm(other, { recursive: true });
+  await rm(directory, { recursive: true });
+  await pruneEndpointRefs(root, Date.now());
+
+  expect(await refExists(root, ref)).toBe(false);
+});
+
 it('keeps a ref under the prefix that names no review directory', async () => {
   const { root, commit } = await capturedReview();
   const nested = 'refs/tau/review-captures/review-one/nested';
