@@ -138,6 +138,7 @@ const pureModules = [
   'src/process/stateDecision.ts',
   'src/reviewCapture/coverageDecision.ts',
   'src/reviewCapture/endpointDecision.ts',
+  'src/reviewCapture/endpointPruneDecision.ts',
   'src/reviewCapture/evidenceDecisions.ts',
   'src/reviewCapture/fixScope.ts',
   'src/reviewCapture/freshness.ts',

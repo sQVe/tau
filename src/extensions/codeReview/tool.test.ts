@@ -129,6 +129,17 @@ it('prepares a fresh review directory that Git ignores', async () => {
   expect(await git(root, 'status', '--porcelain')).toBe('');
 });
 
+it('removes the capture ref of a deleted review when it prepares a review', async () => {
+  const { root, directory } = await preparedReview();
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+  await captureWorkingTree(root, directory);
+  await rm(directory, { recursive: true });
+  await run(root, { action: 'prepare' });
+
+  expect(await git(root, 'for-each-ref', 'refs/tau/review-captures/')).toBe('');
+});
+
 it('refuses to prepare through a symlinked .tau/workers', async () => {
   const root = await committedRepository();
   const outside = temporaryDirectory(onTestFinished, 'tau-review-outside-');

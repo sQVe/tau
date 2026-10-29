@@ -18,7 +18,7 @@ export interface PublishedEndpoint {
   retained: RetainedEndpoint | undefined;
 }
 
-const refPrefix = 'refs/tau/review-captures/';
+export const refPrefix = 'refs/tau/review-captures/';
 
 // The retention commit is internal, so it needs no user identity and no signature.
 const commitEnvironment = {
