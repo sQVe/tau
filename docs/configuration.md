@@ -53,17 +53,18 @@ other glob syntax.
 
 ## Full check and mutation
 
-### `fullCheck` (user file)
+### `fullCheck` (repository file)
 
-`fullCheck.repositories.<owner/name>.argv` is the command that the `full_check` tool runs. It is a
-non-empty array of non-empty strings.
+`fullCheck.argv` is the command that the `full_check` tool runs. It is a non-empty array of
+non-empty strings. Tau reads it only in a trusted project, the same as `mutation.argv`.
 
 ```json
-{ "fullCheck": { "repositories": { "sQVe/tau": { "argv": ["pnpm", "check"] } } } }
+{ "fullCheck": { "argv": ["pnpm", "check"] } }
 ```
 
-If the current repository has no entry, `full_check` refuses to run and names the key to add. An
-entry without `argv` fails the call with the error.
+Without a `fullCheck` key in the repository file, `full_check` refuses to run and names the key to
+add. In an untrusted project, Tau ignores the file, so the same refusal applies. A `fullCheck`
+object without `argv` fails the call. A `fullCheck` key in the user file fails the call.
 
 ### `mutation` (repository file)
 

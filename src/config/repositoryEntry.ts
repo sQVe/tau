@@ -25,7 +25,7 @@ const rejectDuplicateKeys = (
 };
 
 // Finds the `[key, value]` entry that names `repository`, ignoring case. Entries for other
-// repositories are never read. `field` names the map in errors, such as `fullCheck.repositories`.
+// repositories are never read. `field` names the map in errors, such as `qa.repositories`.
 export const findRepositoryEntry = (
   source: string,
   field: string,

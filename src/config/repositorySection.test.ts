@@ -42,20 +42,17 @@ const reader = (key: string, repository: string | undefined) => ({
   readEntry,
 });
 
-it.each(['fullCheck', 'qa', 'reviews'])(
-  'refuses an entry key that is not owner/name in %s',
-  (key) => {
-    const { location, write, userFile } = fixture();
+it.each(['qa', 'reviews'])('refuses an entry key that is not owner/name in %s', (key) => {
+  const { location, write, userFile } = fixture();
 
-    write({ [key]: { repositories: { tau: { setting: 1 } } } });
+  write({ [key]: { repositories: { tau: { setting: 1 } } } });
 
-    expect(() => readRepositorySection(location, ui, reader(key, 'tau'))).toThrow(
-      `Invalid Tau config ${userFile}: "tau" in ${key}.repositories must be an owner/name such as "sQVe/tau".`,
-    );
+  expect(() => readRepositorySection(location, ui, reader(key, 'tau'))).toThrow(
+    `Invalid Tau config ${userFile}: "tau" in ${key}.repositories must be an owner/name such as "sQVe/tau".`,
+  );
 
-    expect(readEntry).not.toHaveBeenCalled();
-  },
-);
+  expect(readEntry).not.toHaveBeenCalled();
+});
 
 it('returns the checked section beside the matched entry', () => {
   const { location, write, userFile } = fixture();

@@ -6,11 +6,9 @@ import { listSavedLogs } from '../../checkRecord/checkRecord.js';
 import { readCheckState } from '../../checkRecord/identity.js';
 import type { CommandRuntime } from '../../command.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
-import { readFullCheckArgv } from '../../config/fullCheck.js';
+import { readRepositoryArgv } from '../../config/fullCheck.js';
 import { errorMessage, isMissingFile } from '../../errors.js';
 import { readGit, runGit } from '../../git.js';
-import { readOriginRepository } from '../../github/repositoryTarget.js';
-import { configRepositoryKey } from '../../github/repositoryTargetDecisions.js';
 import { readReviewEvidence, scanMarkers } from '../../reviewCapture/evidence.js';
 import type { MarkerLine, ReviewEvidence } from '../../reviewCapture/evidence.js';
 import type { CoverageDecision, CoverageLinkRequest } from '../../reviewCapture/reviewCapture.js';
@@ -338,17 +336,7 @@ const readLogExcerpt = async (logPath: string) => {
   return excerptBody(body);
 };
 
-const readFullCheckCommand = async (runtime: CommandRuntime, config: PublicationConfig) => {
-  const origin = await readOriginRepository(runtime);
-
-  const repositoryKey =
-    origin.status === 'named' ? configRepositoryKey(origin.repository) : undefined;
-
-  return readFullCheckArgv(config.location, config.ui, repositoryKey);
-};
-
 const readFullCheck = async (
-  runtime: CommandRuntime,
   root: string,
   evidence: PublicationEvidence,
   config: PublicationConfig,
@@ -360,7 +348,7 @@ const readFullCheck = async (
   try {
     const state = await readCheckState(root);
     const saved = await listSavedLogs(join(root, '.tau', 'checks'));
-    const argv = await readFullCheckCommand({ ...runtime, cwd: root }, config);
+    const { argv } = readRepositoryArgv(config.location, config.ui, 'fullCheck');
     const decision = decideFullCheck(state, argv, saved);
 
     evidence.fullCheck = decision;
@@ -434,7 +422,7 @@ export const readPublicationEvidence = async (
     await readCoverageEvidence(root, evidence, request.chain);
   }
 
-  await readFullCheck(runtime, root, evidence, config);
+  await readFullCheck(root, evidence, config);
   await readChecks(root, evidence);
 
   return evidence;

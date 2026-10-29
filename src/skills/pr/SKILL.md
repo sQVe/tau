@@ -144,11 +144,11 @@ to ready. Neither choice completes a required action.
      the run, call the `pr` tool's `checkHeader` action with the pinned merge base as `mergeBase`.
      Write its returned lines at the top of the log, then append the check's output and exit status.
      Stop if the action fails.
-   - When the repository has a configured full check, read `fullCheck` from the evidence script.
-     When it is `passed`, reuse it. When it is `failed`, `missing`, or `malformed`, run the
-     `full_check` tool. Then rerun the evidence script, and report any `fullCheck` status other than
-     `passed` as a required action for step 6. The log stays in `.tau/checks/`; do not copy it or
-     add header lines.
+   - When the repository has a configured full check (`fullCheck.argv` in its `.pi/tau.json`), read
+     `fullCheck` from the evidence script. When it is `passed`, reuse it. When it is `failed`,
+     `missing`, or `malformed`, run the `full_check` tool. Then rerun the evidence script, and
+     report any `fullCheck` status other than `passed` as a required action for step 6. The log
+     stays in `.tau/checks/`; do not copy it or add header lines.
    - When the change has user-visible behavior, also send it to a `qa` worker on the committed tree
      before the preview.
    - Leave the app URL, test account, and data writes to Tau, which fills them from the user's

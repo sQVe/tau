@@ -301,7 +301,7 @@ export const parseRemoteUrl = (url: string): RemoteLocation | undefined => {
   }
 };
 
-// The key of a config entry such as `fullCheck.repositories.<owner/name>`. Only a repository on
+// The key of a config entry such as `qa.repositories.<owner/name>`. Only a repository on
 // the GitHub host has one, so a same-named repository elsewhere never gets another's entry.
 export const configRepositoryKey = ({ host, owner, name }: Repository): string | undefined =>
   host.toLowerCase() === 'github.com' ? `${owner}/${name}` : undefined;

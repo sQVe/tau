@@ -1,165 +1,104 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
+import { temporaryTauConfig } from '../../tests/tauConfigHarness.js';
 import type { ConfigWarnings } from './config.js';
-import { readFullCheckArgv } from './fullCheck.js';
+import { readRepositoryArgv } from './fullCheck.js';
 
-const fixture = () => {
-  const directory = temporaryDirectory(onTestFinished, 'tau-full-check-config-');
-  const agentDirectory = join(directory, 'agent');
-  const userFile = join(agentDirectory, 'tau.json');
-
-  mkdirSync(agentDirectory);
-
-  return {
-    location: { cwd: directory, agentDirectory, projectTrusted: true },
-    userFile,
-    write: (value: unknown) => {
-      writeFileSync(userFile, JSON.stringify(value));
-    },
-  };
-};
+const fixture = () => temporaryTauConfig(onTestFinished, 'tau-full-check-config-');
 
 const ui = { notify: () => undefined };
 
-it('reads the command for the current repository', () => {
-  const { location, write } = fixture();
+it('reads the command from the repository file in a trusted project', () => {
+  const { location, writeRepository } = fixture();
 
-  write({ fullCheck: { repositories: { 'sQVe/tau': { argv: ['pnpm', 'check'] } } } });
+  writeRepository({ fullCheck: { argv: ['pnpm', 'check'] } });
 
-  expect(readFullCheckArgv(location, ui, 'sqve/tau')).toEqual(['pnpm', 'check']);
-  expect(readFullCheckArgv(location, ui, 'sQVe/other')).toBeUndefined();
-  expect(readFullCheckArgv(location, ui, undefined)).toBeUndefined();
-});
-
-it('warns once about an unknown key at any depth and still reads the command', () => {
-  const { location, write, userFile } = fixture();
-  const notify = vi.fn<ConfigWarnings['notify']>();
-  const session = { notify };
-
-  write({
-    fullCheck: {
-      future: 1,
-      repositories: { 'sQVe/tau': { argv: ['pnpm', 'check'], timeout: 5 } },
-    },
+  expect(readRepositoryArgv(location, ui, 'fullCheck')).toEqual({
+    argv: ['pnpm', 'check'],
+    ignored: undefined,
   });
-
-  expect(readFullCheckArgv(location, session, 'sQVe/tau')).toEqual(['pnpm', 'check']);
-  expect(readFullCheckArgv(location, session, 'sQVe/tau')).toEqual(['pnpm', 'check']);
-
-  const messages = notify.mock.calls.map(([message]) => message);
-
-  expect(messages).toHaveLength(2);
-  expect(messages.join('\n')).toContain(userFile);
-  expect(messages.join('\n')).toContain('fullCheck.future');
-  expect(messages.join('\n')).toContain('fullCheck.repositories.sQVe/tau.timeout');
-});
-
-it('ignores a bad entry for another repository', () => {
-  const { location, write } = fixture();
-
-  write({
-    fullCheck: {
-      repositories: { 'sQVe/other': { argv: [] }, 'sQVe/tau': { argv: ['pnpm', 'check'] } },
-    },
-  });
-
-  expect(readFullCheckArgv(location, ui, 'sQVe/tau')).toEqual(['pnpm', 'check']);
 });
 
 it.each([
-  { name: 'empty argv', argv: [] },
-  { name: 'empty string', argv: ['pnpm', ''] },
-  { name: 'non-string', argv: ['pnpm', 1] },
-  { name: 'string', argv: 'pnpm check' },
-])('fails a bad entry for the current repository: $name', ({ argv }) => {
-  const { location, write, userFile } = fixture();
+  {
+    name: 'the repository file is missing',
+    value: undefined,
+    projectTrusted: true,
+    ignored: false,
+  },
+  {
+    name: 'the repository file has no fullCheck key',
+    value: { other: 1 },
+    projectTrusted: true,
+    ignored: false,
+  },
+  {
+    name: 'the project is not trusted',
+    value: { fullCheck: { argv: ['pnpm', 'check'] } },
+    projectTrusted: false,
+    ignored: true,
+  },
+  {
+    name: 'the project is not trusted and has no file',
+    value: undefined,
+    projectTrusted: false,
+    ignored: false,
+  },
+])('gives no command when $name', ({ value, projectTrusted, ignored }) => {
+  const { location, writeRepository, repositoryFile } = fixture();
 
-  write({ fullCheck: { repositories: { 'sQVe/tau': { argv } } } });
+  if (value !== undefined) {
+    writeRepository(value);
+  }
 
-  expect(() => readFullCheckArgv(location, ui, 'sQVe/tau')).toThrow(
-    `Invalid Tau config ${userFile}: fullCheck.repositories.sQVe/tau.argv`,
+  expect(readRepositoryArgv({ ...location, projectTrusted }, ui, 'fullCheck')).toEqual({
+    argv: undefined,
+    ignored: ignored ? repositoryFile : undefined,
+  });
+});
+
+it('fails a fullCheck key in the user file even when the repository file sets one', () => {
+  const { location, writeUser, writeRepository, userFile } = fixture();
+
+  writeUser({ fullCheck: { argv: ['pnpm', 'check'] } });
+  writeRepository({ fullCheck: { argv: ['pnpm', 'check'] } });
+
+  expect(() => readRepositoryArgv(location, ui, 'fullCheck')).toThrow(
+    `Invalid Tau config ${userFile}: fullCheck belongs in .pi/tau.json`,
   );
 });
 
-it('fails two keys that name the current repository', () => {
-  const { location, write } = fixture();
+it('warns once about an unknown key and still reads the command', () => {
+  const { location, writeRepository, repositoryFile } = fixture();
+  const notify = vi.fn<ConfigWarnings['notify']>();
+  const session = { notify };
 
-  write({
-    fullCheck: {
-      repositories: { 'sQVe/tau': { argv: ['a'] }, 'sqve/TAU': { argv: ['b'] } },
-    },
-  });
+  writeRepository({ fullCheck: { argv: ['pnpm', 'check'], timeout: 5 } });
 
-  expect(() => readFullCheckArgv(location, ui, 'sqve/tau')).toThrow('Keep one');
-});
+  expect(readRepositoryArgv(location, session, 'fullCheck').argv).toEqual(['pnpm', 'check']);
+  expect(readRepositoryArgv(location, session, 'fullCheck').argv).toEqual(['pnpm', 'check']);
 
-it('ignores two keys that name another repository', () => {
-  const { location, write } = fixture();
+  const messages = notify.mock.calls.map(([message]) => message);
 
-  write({
-    fullCheck: {
-      repositories: {
-        'sQVe/other': { argv: ['a'] },
-        'sqve/OTHER': { argv: ['b'] },
-        'sQVe/tau': { argv: ['pnpm', 'check'] },
-      },
-    },
-  });
-
-  expect(readFullCheckArgv(location, ui, 'sQVe/tau')).toEqual(['pnpm', 'check']);
-});
-
-it('gives no command when the user file has no fullCheck key', () => {
-  const { location, write } = fixture();
-
-  write({ other: 1 });
-
-  expect(readFullCheckArgv(location, ui, 'sQVe/tau')).toBeUndefined();
-});
-
-it('gives no command when the user file does not exist', () => {
-  const { location } = fixture();
-
-  expect(readFullCheckArgv(location, ui, 'sQVe/tau')).toBeUndefined();
-});
-
-it('gives no command when fullCheck has no repositories', () => {
-  const { location, write } = fixture();
-
-  write({ fullCheck: {} });
-
-  expect(readFullCheckArgv(location, ui, 'sQVe/tau')).toBeUndefined();
+  expect(messages).toHaveLength(1);
+  expect(messages[0]).toContain(repositoryFile);
+  expect(messages[0]).toContain('fullCheck.timeout');
 });
 
 it.each([
-  { name: 'fullCheck is not an object', value: 'pnpm check', field: 'fullCheck' },
+  { name: 'fullCheck is a string', value: 'pnpm check', field: 'fullCheck' },
   { name: 'fullCheck is null', value: null, field: 'fullCheck' },
-  {
-    name: 'repositories is not an object',
-    value: { repositories: ['sQVe/tau'] },
-    field: 'fullCheck.repositories',
-  },
-  { name: 'repositories is null', value: { repositories: null }, field: 'fullCheck.repositories' },
-  {
-    name: 'an entry is not an object',
-    value: { repositories: { 'sQVe/tau': 'pnpm check' } },
-    field: 'fullCheck.repositories.sQVe/tau',
-  },
-  {
-    name: 'an entry has no argv',
-    value: { repositories: { 'sQVe/tau': {} } },
-    field: 'fullCheck.repositories.sQVe/tau.argv',
-  },
-])('fails naming the user file and $field when $name', ({ value, field }) => {
-  const { location, write, userFile } = fixture();
+  { name: 'argv is missing', value: {}, field: 'fullCheck.argv' },
+  { name: 'argv is empty', value: { argv: [] }, field: 'fullCheck.argv' },
+  { name: 'argv has an empty string', value: { argv: ['pnpm', ''] }, field: 'fullCheck.argv' },
+  { name: 'argv has a non-string', value: { argv: ['pnpm', 1] }, field: 'fullCheck.argv' },
+  { name: 'argv is a string', value: { argv: 'pnpm check' }, field: 'fullCheck.argv' },
+])('fails naming the repository file and $field when $name', ({ value, field }) => {
+  const { location, writeRepository, repositoryFile } = fixture();
 
-  write({ fullCheck: value });
+  writeRepository({ fullCheck: value });
 
-  expect(() => readFullCheckArgv(location, ui, 'sQVe/tau')).toThrow(
-    `Invalid Tau config ${userFile}: ${field} `,
+  expect(() => readRepositoryArgv(location, ui, 'fullCheck')).toThrow(
+    `Invalid Tau config ${repositoryFile}: ${field} `,
   );
 });

@@ -48,9 +48,11 @@ const setUp = async (kind: 'range' | 'workingTree' = 'range') => {
 
   const agentDirectory = temporaryDirectory(onTestFinished, 'tau-pr-evidence-agent-');
 
+  await mkdir(join(root, '.pi'));
+
   await writeFile(
-    join(agentDirectory, 'tau.json'),
-    JSON.stringify({ fullCheck: { repositories: { 'sQVe/tau': { argv: ['pnpm', 'check'] } } } }),
+    join(root, '.pi', 'tau.json'),
+    JSON.stringify({ fullCheck: { argv: ['pnpm', 'check'] } }),
   );
 
   const config = {
@@ -60,13 +62,11 @@ const setUp = async (kind: 'range' | 'workingTree' = 'range') => {
 
   const defaultRequest = { remote: 'origin', review: directory };
 
-  const run = (request: PublicationRequest = defaultRequest) =>
-    readPublicationEvidence(
-      { exec: fake.exec, cwd: root, signal: undefined },
-      root,
-      request,
-      config,
-    );
+  const run = (request: PublicationRequest = defaultRequest, projectTrusted = true) =>
+    readPublicationEvidence({ exec: fake.exec, cwd: root, signal: undefined }, root, request, {
+      ...config,
+      location: { ...config.location, projectTrusted },
+    });
 
   return { root, directory, mergeBase, fake, run };
 };
@@ -582,6 +582,17 @@ it('reports a missing full check record for a passing record of another command'
   await saveFullCheck(root, true, ['pnpm', 'other']);
 
   const evidence = await run();
+
+  expect(evidence.fullCheck).toEqual({ status: 'missing' });
+  expect(evidence.gaps).toContainEqual({ kind: 'fullCheck', status: 'missing' });
+});
+
+it('reports a missing full check when the project is not trusted', async () => {
+  const { root, run } = await setUp();
+
+  await saveFullCheck(root, true);
+
+  const evidence = await run(undefined, false);
 
   expect(evidence.fullCheck).toEqual({ status: 'missing' });
   expect(evidence.gaps).toContainEqual({ kind: 'fullCheck', status: 'missing' });

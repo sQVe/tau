@@ -95,7 +95,7 @@ export const requireKnownKey = (key: string): void => {
   }
 };
 
-const setsKey = ({ value }: ConfigFile, key: string): boolean =>
+export const setsKey = ({ value }: ConfigFile, key: string): boolean =>
   isRecord(value) && Object.hasOwn(value, key);
 
 // The user owns which models they pay for and trust, so a repository file cannot set a model key.

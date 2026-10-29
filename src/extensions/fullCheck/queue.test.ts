@@ -83,15 +83,13 @@ const repositoryNamed = async (name: string, remote = `git@github.com:owner/${na
   return root;
 };
 
-const configure = async (
-  agentDirectory: string,
-  repositories: Record<string, { argv: string[] }>,
-) => {
-  await writeFile(
-    join(agentDirectory, 'tau.json'),
-    JSON.stringify({ fullCheck: { repositories } }),
-  );
+const writeRepositoryFile = async (root: string, value: unknown) => {
+  await mkdir(join(root, '.pi'), { recursive: true });
+  await writeFile(join(root, '.pi', 'tau.json'), JSON.stringify(value));
 };
+
+const configure = (root: string, argv: string[]) =>
+  writeRepositoryFile(root, { fullCheck: { argv } });
 
 // Lists the lock files whose owner has not released them.
 const heldLocks = async (agentDirectory: string) => {
@@ -158,14 +156,8 @@ it('runs full checks of different repositories at once without a wait', async ()
   const startedSecond = join(directory, 'started-second');
 
   // Each command ends only after both have started, so they must overlap.
-  await configure(agentDirectory, {
-    'owner/first': {
-      argv: [process.execPath, gated, record, 'first', startedFirst, startedSecond],
-    },
-    'owner/second': {
-      argv: [process.execPath, gated, record, 'second', startedFirst, startedSecond],
-    },
-  });
+  await configure(first, [process.execPath, gated, record, 'first', startedFirst, startedSecond]);
+  await configure(second, [process.execPath, gated, record, 'second', startedFirst, startedSecond]);
 
   const firstRun = runTool(agentDirectory, first);
   await waitForLine(record, 'start first');
@@ -189,9 +181,8 @@ it('queues full checks of one repository from two checkouts and reports the wait
   const first = await repositoryNamed('first');
   const second = await repositoryNamed('first', 'https://github.com/Owner/First.git');
 
-  await configure(agentDirectory, {
-    'owner/first': { argv: [process.execPath, gated, record, 'first', release] },
-  });
+  await configure(first, [process.execPath, gated, record, 'first', release]);
+  await configure(second, [process.execPath, gated, record, 'first', release]);
 
   const firstRun = runTool(agentDirectory, first);
   await waitForLine(record, 'start first');
@@ -232,9 +223,7 @@ it('takes over a lock left by a dead process', async () => {
   const { agentDirectory, record, script } = await fixture();
   const root = await repositoryNamed('first');
 
-  await configure(agentDirectory, {
-    'owner/first': { argv: [process.execPath, script, record, 'first'] },
-  });
+  await configure(root, [process.execPath, script, record, 'first']);
 
   const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
   const deadPid = child.pid ?? 0;
@@ -262,13 +251,11 @@ it('takes over a lock left by a dead process', async () => {
   expect((await readFile(record, 'utf8')).trim().split('\n')).toEqual(['start first', 'end first']);
 });
 
-it('refuses a repository with no entry and runs no command', async () => {
-  const { agentDirectory, record, script } = await fixture();
+it('refuses a checkout whose repository file sets no command and runs no command', async () => {
+  const { agentDirectory, record } = await fixture();
   const root = await repositoryNamed('first');
 
-  await configure(agentDirectory, {
-    'owner/other': { argv: [process.execPath, script, record, 'other'] },
-  });
+  await writeRepositoryFile(root, {});
 
   await expect(runTool(agentDirectory, root)).rejects.toThrow('Run your check as before');
   await expect(access(record)).rejects.toThrow('ENOENT');
@@ -279,9 +266,7 @@ it('reports a failing check as a result with its log', async () => {
   const { agentDirectory } = await fixture();
   const root = await repositoryNamed('first');
 
-  await configure(agentDirectory, {
-    'owner/first': { argv: [process.execPath, '-e', 'console.log("boom"); process.exit(3)'] },
-  });
+  await configure(root, [process.execPath, '-e', 'console.log("boom"); process.exit(3)']);
 
   const { result } = await runTool(agentDirectory, root);
 
@@ -314,9 +299,7 @@ it('starts the next check only after a cancelled command has exited', async () =
 
   await writeFile(stubborn, stubbornSource);
 
-  await configure(agentDirectory, {
-    'owner/first': { argv: [process.execPath, stubborn, record] },
-  });
+  await configure(first, [process.execPath, stubborn, record]);
 
   const controller = new AbortController();
 
@@ -329,9 +312,7 @@ it('starts the next check only after a cancelled command has exited', async () =
     expect(await readFile(record, 'utf8')).toContain('start stubborn');
   });
 
-  await configure(agentDirectory, {
-    'owner/first': { argv: [process.execPath, script, record, 'second'] },
-  });
+  await configure(second, [process.execPath, script, record, 'second']);
 
   const queued = runTool(agentDirectory, second);
 
@@ -358,9 +339,8 @@ it('lets only one of two sessions that recover the same stale lock run at a time
   const first = await repositoryNamed('first');
   const second = await repositoryNamed('second', 'git@github.com:owner/first.git');
 
-  await configure(agentDirectory, {
-    'owner/first': { argv: [process.execPath, script, record, 'first'] },
-  });
+  await configure(first, [process.execPath, script, record, 'first']);
+  await configure(second, [process.execPath, script, record, 'first']);
 
   const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
   const deadPid = child.pid ?? 0;
@@ -420,9 +400,7 @@ it('starts the next check only after a descendant of a cancelled command is gone
   await writeFile(descendant, descendantSource);
   await writeFile(launcher, launcherSource);
 
-  await configure(agentDirectory, {
-    'owner/first': { argv: [process.execPath, launcher, descendant, record] },
-  });
+  await configure(first, [process.execPath, launcher, descendant, record]);
 
   const controller = new AbortController();
 
@@ -435,9 +413,7 @@ it('starts the next check only after a descendant of a cancelled command is gone
     expect(await readFile(record, 'utf8').catch(() => '')).toContain('start descendant');
   });
 
-  await configure(agentDirectory, {
-    'owner/first': { argv: [process.execPath, script, record, 'second'] },
-  });
+  await configure(second, [process.execPath, script, record, 'second']);
 
   const queued = runTool(agentDirectory, second);
 
@@ -463,9 +439,7 @@ it('waits for the command group of a dead session before running a new check', a
   const { agentDirectory, record, script } = await fixture();
   const root = await repositoryNamed('first');
 
-  await configure(agentDirectory, {
-    'owner/first': { argv: [process.execPath, script, record, 'first'] },
-  });
+  await configure(root, [process.execPath, script, record, 'first']);
 
   const session = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
   const deadPid = session.pid ?? 0;

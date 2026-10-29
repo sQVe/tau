@@ -1,4 +1,4 @@
-import { chmod, readdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
@@ -26,15 +26,14 @@ const fixture = async () => {
   await git(root, 'commit', '--quiet', '-m', 'first');
   await git(root, 'remote', 'add', 'origin', 'git@github.com:owner/reuse.git');
 
+  await mkdir(join(root, '.pi'));
+
   const configure = (argv: string[]) =>
-    writeFile(
-      join(directory, 'tau.json'),
-      JSON.stringify({ fullCheck: { repositories: { 'owner/reuse': { argv } } } }),
-    );
+    writeFile(join(root, '.pi', 'tau.json'), JSON.stringify({ fullCheck: { argv } }));
 
   await configure(countingArgv(counter));
 
-  const run = (idleLimitMilliseconds?: number) =>
+  const run = (idleLimitMilliseconds?: number, isProjectTrusted = true) =>
     createFullCheckTool({
       agentDirectory: directory,
       exec: declinedExec,
@@ -42,13 +41,13 @@ const fixture = async () => {
       ...(idleLimitMilliseconds === undefined ? {} : { idleLimitMilliseconds }),
     }).execute('call', {}, undefined, undefined, {
       cwd: root,
-      isProjectTrusted: () => true,
+      isProjectTrusted: () => isProjectTrusted,
       ui: { notify: () => undefined },
     } as never);
 
   const runCount = async () => (await readFile(counter, 'utf8')).length;
 
-  return { root, counter, configure, run, runCount };
+  return { root, directory, counter, configure, run, runCount };
 };
 
 it('returns the saved passing log for an unchanged state without running the command', async () => {
@@ -266,4 +265,31 @@ it('reports a silent command as stopped after the idle limit and saves no record
   expect(text).toContain(first.details?.logPath);
   expect(second.details?.reused).toBe(false);
   expect(await runCount()).toBe(2);
+});
+
+it('refuses a repository file that sets no fullCheck command and names the key and file', async () => {
+  const { root, run, runCount } = await fixture();
+
+  await writeFile(join(root, '.pi', 'tau.json'), '{}');
+
+  await expect(run()).rejects.toThrow('fullCheck.argv');
+  await expect(run()).rejects.toThrow('.pi/tau.json');
+  expect(await runCount()).toBe(0);
+});
+
+it('refuses an untrusted project and names the repository file Tau ignored', async () => {
+  const { root, run, runCount } = await fixture();
+
+  await expect(run(undefined, false)).rejects.toThrow(join(root, '.pi', 'tau.json'));
+  expect(await runCount()).toBe(0);
+});
+
+it('refuses a fullCheck key in the user file and names the repository file', async () => {
+  const { directory, run, runCount } = await fixture();
+
+  await writeFile(join(directory, 'tau.json'), JSON.stringify({ fullCheck: { argv: ['x'] } }));
+
+  await expect(run()).rejects.toThrow(join(directory, 'tau.json'));
+  await expect(run()).rejects.toThrow('.pi/tau.json');
+  expect(await runCount()).toBe(0);
 });

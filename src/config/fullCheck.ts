@@ -1,8 +1,24 @@
 import { isRecord } from '../schema.js';
-import type { ConfigLocation, ConfigWarnings } from './config.js';
-import { readRepositorySection } from './repositorySection.js';
+import type { KnownKeys } from '../schema.js';
+import {
+  readTauConfig,
+  requireKnownKey,
+  setsKey,
+  userConfigPath,
+  warnUnknownKeys,
+} from './config.js';
+import type { ConfigFile, ConfigLocation, ConfigWarnings } from './config.js';
 
-export const readArgv = (source: string, field: string, value: unknown): string[] => {
+export interface RepositoryArgv {
+  // The command, or undefined when the repository file does not set the key.
+  argv: string[] | undefined;
+  // The repository file that Tau skipped because the project is not trusted.
+  ignored: string | undefined;
+}
+
+const knownSectionKeys: KnownKeys = { argv: true };
+
+const readArgv = (source: string, field: string, value: unknown): string[] => {
   const expected = `${field} must be a non-empty array of non-empty strings, such as ["pnpm", "check"].`;
 
   if (!Array.isArray(value) || value.length === 0) {
@@ -18,28 +34,51 @@ export const readArgv = (source: string, field: string, value: unknown): string[
   return items;
 };
 
-const readEntry = (source: string, field: string, value: unknown): string[] => {
+const readSection = (ui: ConfigWarnings, source: string, key: string, value: unknown): string[] => {
   if (!isRecord(value)) {
     throw new Error(
-      `Invalid Tau config ${source}: ${field} must be an object such as {"argv": ["pnpm", "check"]}.`,
+      `Invalid Tau config ${source}: ${key} must be an object such as {"argv": ["pnpm", "check"]}.`,
     );
   }
 
-  return readArgv(source, `${field}.argv`, value.argv);
+  warnUnknownKeys(ui, source, value, knownSectionKeys, key);
+
+  return readArgv(source, `${key}.argv`, value.argv);
 };
 
-// Reads the command of the entry for `repository`. A bad entry for another repository is ignored.
-// Resolves undefined when the repository has no entry.
-export const readFullCheckArgv = (
+const sectionOf = ({ value }: ConfigFile, key: string): unknown =>
+  isRecord(value) ? value[key] : undefined;
+
+// Appends why Tau skipped the repository file, so an agent can see why no command is set.
+export const withIgnoredNote = (message: string, ignored: string | undefined): string =>
+  ignored === undefined
+    ? message
+    : `${message} Tau ignored ${ignored} because the project is not trusted.`;
+
+// Reads the `key` section's command from the repository file only, since the repository owns the
+// command it runs. The user file may not set the section, and an untrusted project's file is skipped.
+export const readRepositoryArgv = (
   location: ConfigLocation,
   ui: ConfigWarnings,
-  repository: string | undefined,
-): string[] | undefined =>
-  // Only the user file may name a command, since the check runs in every checkout of the user.
-  readRepositorySection(location, ui, {
-    key: 'fullCheck',
-    knownEntryKeys: { argv: true },
-    example: '{"repositories": {"sQVe/tau": {"argv": ["pnpm", "check"]}}}',
-    repository,
-    readEntry,
-  })?.entry;
+  key: string,
+): RepositoryArgv => {
+  requireKnownKey(key);
+
+  const { files, ignored } = readTauConfig(location);
+  const userPath = userConfigPath(location.agentDirectory);
+  const user = files.find((file) => file.source === userPath);
+
+  if (user !== undefined && setsKey(user, key)) {
+    throw new Error(
+      `Invalid Tau config ${userPath}: ${key} belongs in .pi/tau.json in the repository. Move it there.`,
+    );
+  }
+
+  const project = files.find((file) => file.source !== userPath && setsKey(file, key));
+
+  if (project === undefined) {
+    return { argv: undefined, ignored };
+  }
+
+  return { argv: readSection(ui, project.source, key, sectionOf(project, key)), ignored };
+};
