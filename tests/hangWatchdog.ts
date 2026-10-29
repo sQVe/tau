@@ -1,5 +1,5 @@
 import { url } from 'node:inspector';
-import { setInterval } from 'node:timers';
+import { clearInterval, setInterval } from 'node:timers';
 import { Worker } from 'node:worker_threads';
 
 import type { RunnerTestSuite } from 'vitest';
@@ -16,6 +16,11 @@ interface WorkerState {
 
 type SuiteHook = 'beforeAll' | 'beforeEach';
 
+interface Watchdog {
+  thread: Worker;
+  heartbeat: ReturnType<typeof setInterval>;
+}
+
 // Vitest fails async hangs through its own timeouts. It cannot stop a blocked event loop or a file
 // whose collection never finishes, so a watchdog thread kills the worker in those two cases.
 // The heartbeat uses the real timer from node:timers because tests may fake the global one, and
@@ -24,6 +29,13 @@ const defaultCollectionMilliseconds = 30_000;
 const slackMilliseconds = 1000;
 const heartbeatMilliseconds = 100;
 const maxMilliseconds = 2 ** 31 - 1;
+
+// Without isolation, Vitest runs this setup again for each test file in the same worker. The
+// watchdog of the previous file still watches that file's state, so it stops before this file's
+// watchdog starts.
+const watchdogKey = Symbol.for('tau.hangWatchdog');
+
+const watchdogs = globalThis as { [watchdogKey]?: Watchdog };
 
 const state = new Int32Array(new SharedArrayBuffer(12));
 const label = new Uint8Array(new SharedArrayBuffer(1024));
@@ -90,6 +102,13 @@ const readCollectionMilliseconds = (value: string | undefined) => {
   return milliseconds;
 };
 
+const previousWatchdog = watchdogs[watchdogKey];
+
+if (previousWatchdog !== undefined) {
+  clearInterval(previousWatchdog.heartbeat);
+  await previousWatchdog.thread.terminate();
+}
+
 if (!isInspecting()) {
   const watchdog = new Worker(watchdogSource, {
     eval: true,
@@ -106,6 +125,7 @@ if (!isInspecting()) {
   const heartbeat = setInterval(beat, heartbeatMilliseconds);
 
   heartbeat.unref();
+  watchdogs[watchdogKey] = { thread: watchdog, heartbeat };
 
   const applyBudget = () => {
     Atomics.store(state, 1, blockingBudget());

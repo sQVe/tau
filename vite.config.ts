@@ -117,7 +117,11 @@ export default defineConfig({
   test: {
     // Integration tests launch Git, Node, and nested Vitest processes. Limit competing workers.
     maxWorkers: 6,
-    setupFiles: [join(import.meta.dirname, 'tests', 'hangWatchdog.ts')],
+    isolate: false,
+    setupFiles: [
+      join(import.meta.dirname, 'tests', 'hangWatchdog.ts'),
+      join(import.meta.dirname, 'tests', 'testFileIsolationHarness.ts'),
+    ],
     // Git in tests, and in the code under test, must ignore the developer's configuration.
     env: {
       // Tests must choose the worker environment themselves.
