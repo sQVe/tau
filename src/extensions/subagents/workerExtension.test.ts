@@ -1,9 +1,11 @@
-import { existsSync, readdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import type { TextContent, ToolCall } from '@earendil-works/pi-ai';
 import type {
   AgentBeforeSettleEventResult,
+  ExtensionAPI,
   ExtensionContext,
   ExtensionToolContext,
   SessionEntry,
@@ -19,18 +21,16 @@ import { readWorkerActivity, writeWorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
 import { taskRecordStatus } from './controller/record.js';
 import { assignmentContract, handoverContract } from './handover.js';
-import { checkWorkerRuntime } from './loadout.js';
 import * as questions from './questionRecords.js';
 import * as records from './records.js';
 import { publish, readEvent, readReport, readTask, recordEvent } from './records.js';
 import { readStartupFailure } from './startupFailure.js';
 import workerExtension from './workerExtension.js';
 
-vi.mock(import('./loadout.js'), () => ({
-  checkWorkerRuntime: vi.fn<typeof checkWorkerRuntime>(),
-}));
-
 const emptyEvent = { messages: [] };
+
+// Differs from the tools workerTools computes for this loadout, so the test shows the list came from the env value.
+const parentToolList = ['read', 'subagent_progress', 'subagent_report', 'subagent_question'];
 
 const sections = '\n\nChanges: None\nEvidence: None\nDecisions: None\nConcerns: None';
 
@@ -40,7 +40,7 @@ const setup = (
   parentClockLead = 0,
 ) => {
   vi.useFakeTimers();
-  const directory = temporaryDirectory(onTestFinished, 'tau-worker-clock-');
+  const directory = realpathSync(temporaryDirectory(onTestFinished, 'tau-worker-clock-'));
 
   onTestFinished(() => {
     vi.useRealTimers();
@@ -50,6 +50,8 @@ const setup = (
   });
 
   vi.stubEnv('TAU_WORKER_RECORD', directory);
+  vi.stubEnv('TAU_WORKER_TOOLS', JSON.stringify(parentToolList));
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   const createdAt = Date.now();
 
   publish(directory, 'task.json', {
@@ -82,7 +84,27 @@ const setup = (
     },
   });
 
-  const fake = fakeExtensionApi();
+  const safetyPath = realpathSync(
+    join(
+      dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
+      'dist',
+      'pi',
+      'index.js',
+    ),
+  );
+
+  const activeTools = vi.fn<(names: string[]) => void>();
+
+  const runtime = {
+    getThinkingLevel: () => 'off',
+    getCommands: () => [
+      { name: 'cc-safety-net', source: 'extension', sourceInfo: { path: safetyPath } },
+    ],
+    getAllTools: () => parentToolList.map((name) => ({ name })),
+    setActiveTools: activeTools,
+  } as unknown as Partial<ExtensionAPI>;
+
+  const fake = fakeExtensionApi(runtime);
   const shutdown = vi.fn<ExtensionContext['shutdown']>();
   const branch: SessionEntry[] = [];
 
@@ -93,6 +115,9 @@ const setup = (
       getSessionFile: () => join(directory, 'native.jsonl'),
     },
     shutdown,
+    cwd: directory,
+    model: { provider: 'faux', id: 'test' },
+    isProjectTrusted: () => true,
     ui: { notify: vi.fn<ExtensionContext['ui']['notify']>() },
   } as unknown as ExtensionToolContext;
 
@@ -131,15 +156,14 @@ const setup = (
     tools: fake.tools,
     context,
     branch,
+    activeTools,
   };
 };
 
 it('records a startup failure and shuts down when the worker runtime is refused', async () => {
   const { directory, emit, shutdown, context } = setup();
 
-  vi.mocked(checkWorkerRuntime).mockImplementationOnce(() => {
-    throw new Error('Saved model changed.');
-  });
+  Object.assign(context, { model: undefined });
 
   await emit('session_start');
 
@@ -147,7 +171,7 @@ it('records a startup failure and shuts down when the worker runtime is refused'
 
   expect(readEvent(directory, 'task', 'startupFailure')).toHaveProperty(
     'detail',
-    expect.stringContaining('Saved model changed.'),
+    expect.stringContaining('differs from the saved loadout'),
   );
 
   expect(context.ui.notify).toHaveBeenCalledWith(
@@ -158,8 +182,37 @@ it('records a startup failure and shuts down when the worker runtime is refused'
   expect(shutdown).toHaveBeenCalledOnce();
 });
 
+it('activates the tool list from TAU_WORKER_TOOLS and marks the worker ready', async () => {
+  const { directory, emit, activeTools } = setup();
+
+  await emit('session_start');
+
+  expect(activeTools).toHaveBeenCalledWith(parentToolList);
+  expect(readEvent(directory, 'task', 'ready')).toBeDefined();
+});
+
+it.each([
+  { case: 'is missing', value: '', detail: 'Worker tool list is missing.' },
+  { case: 'is malformed', value: '{', detail: 'Worker tool list is malformed.' },
+])('records a startup failure when the parent tool list $case', async ({ value, detail }) => {
+  const { directory, emit, shutdown, activeTools } = setup();
+
+  vi.stubEnv('TAU_WORKER_TOOLS', value);
+  await emit('session_start');
+
+  expect(readEvent(directory, 'task', 'ready')).toBeUndefined();
+
+  expect(readEvent(directory, 'task', 'startupFailure')).toHaveProperty(
+    'detail',
+    expect.stringContaining(detail),
+  );
+
+  expect(activeTools).not.toHaveBeenCalled();
+  expect(shutdown).toHaveBeenCalledOnce();
+});
+
 it('saves the startup failure record before it publishes the startup failure event', async () => {
-  const { directory, emit } = setup();
+  const { directory, emit, context } = setup();
   const recordExistedAtEvent: boolean[] = [];
   const recordEventOriginal = records.recordEvent;
 
@@ -171,9 +224,7 @@ it('saves the startup failure record before it publishes the startup failure eve
     recordEventOriginal(...parameters);
   });
 
-  vi.mocked(checkWorkerRuntime).mockImplementationOnce(() => {
-    throw new Error('Saved model changed.');
-  });
+  Object.assign(context, { model: undefined });
 
   await emit('session_start');
 
@@ -1477,9 +1528,7 @@ it('shuts down a refused worker whose startup failure is already saved', async (
   const worker = setup();
   recordEvent(worker.directory, 'task', 'startupFailure', 'Earlier failure.');
 
-  vi.mocked(checkWorkerRuntime).mockImplementationOnce(() => {
-    throw new Error('Saved model changed.');
-  });
+  Object.assign(worker.context, { model: undefined });
 
   await worker.emit('session_start');
 

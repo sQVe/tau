@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
 import { skillTools as bundledSkillTools } from '../../skillTools.js';
-import { workerTools } from './workerTools.js';
+import { parseWorkerTools, workerTools } from './workerTools.js';
 
 it.each([
   { skills: [], expected: [] },
@@ -68,6 +68,31 @@ it('finds the skill when the path holds a doubled slash', () => {
   expect(workerTools({ tools: [], skills }, { tracker: ['tracker_evidence'] })).toContain(
     'tracker_evidence',
   );
+});
+
+it.each([
+  {
+    case: 'is a list of names',
+    text: '["read","subagent_report"]',
+    expected: ['read', 'subagent_report'],
+  },
+])('parses the parent tool list when it $case', ({ text, expected }) => {
+  expect(parseWorkerTools(text)).toEqual(expected);
+});
+
+it.each([
+  { case: 'is missing', text: undefined, error: 'Worker tool list is missing.' },
+  { case: 'is empty', text: '', error: 'Worker tool list is missing.' },
+  { case: 'is not JSON', text: '["read"', error: 'Worker tool list is malformed.' },
+  { case: 'is not a list', text: '{"read":true}', error: 'Worker tool list is malformed.' },
+  { case: 'is an empty list', text: '[]', error: 'Worker tool list is malformed.' },
+  {
+    case: 'holds a name that is not a string',
+    text: '["read",3]',
+    error: 'Worker tool list is malformed.',
+  },
+])('refuses a parent tool list that $case', ({ text, error }) => {
+  expect(() => parseWorkerTools(text)).toThrow(error);
 });
 
 it('adds no skill tool for a skill that has none', () => {

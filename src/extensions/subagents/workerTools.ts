@@ -27,3 +27,30 @@ export const workerTools = (
 
   return [...tools];
 };
+
+const parseToolList = (text: string): unknown => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+};
+
+const isToolName = (value: unknown): value is string => typeof value === 'string';
+
+const isToolList = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.length > 0 && value.every(isToolName);
+
+export const parseWorkerTools = (text: string | undefined): string[] => {
+  if (text === undefined || text === '') {
+    throw new Error('Worker tool list is missing.');
+  }
+
+  const value = parseToolList(text);
+
+  if (!isToolList(value)) {
+    throw new Error('Worker tool list is malformed.');
+  }
+
+  return value;
+};

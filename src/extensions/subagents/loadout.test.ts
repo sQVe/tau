@@ -423,6 +423,16 @@ it('refuses worker startup without the saved model, cwd, CC Safety Net, or profi
   const { directory, model, request } = await workerFixture(onTestFinished);
   const loadout = { ...fixtureLoadout(directory), model: request.model };
 
+  const parentTools = [
+    'read',
+    'bash',
+    'edit',
+    'write',
+    'subagent_progress',
+    'subagent_report',
+    'subagent_question',
+  ];
+
   const safetyPath = join(
     dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
     'dist',
@@ -459,7 +469,7 @@ it('refuses worker startup without the saved model, cwd, CC Safety Net, or profi
     isProjectTrusted: () => true,
   };
 
-  checkWorkerRuntime(loadout, pi, worker);
+  checkWorkerRuntime(loadout, pi, worker, parentTools);
 
   expect(setActiveTools).toHaveBeenCalledWith([
     'read',
@@ -471,14 +481,30 @@ it('refuses worker startup without the saved model, cwd, CC Safety Net, or profi
     'subagent_question',
   ]);
 
-  const unregistered = startup({ ...loadout, tools: ['read', 'web_search', 'commit'] }, pi, worker);
+  const unregistered = startup(
+    { ...loadout, tools: ['read', 'web_search', 'commit'] },
+    pi,
+    worker,
+    ['read', 'web_search', 'commit'],
+  );
+
   expect(unregistered).toThrow('web_search, commit');
 
-  expect(startup(loadout, pi, { ...worker, isProjectTrusted: () => false })).toThrow('trust');
-  expect(startup(loadout, pi, { ...worker, model: undefined })).toThrow('no fallback');
-  expect(startup({ ...loadout, model: 'other/model' }, pi, worker)).toThrow('no fallback');
-  expect(startup({ ...loadout, thinking: 'high' }, pi, worker)).toThrow('no fallback');
-  expect(startup({ ...loadout, cwd: join(directory, 'wrong') }, pi, worker)).toThrow('cwd');
+  expect(startup(loadout, pi, { ...worker, isProjectTrusted: () => false }, parentTools)).toThrow(
+    'trust',
+  );
+
+  expect(startup(loadout, pi, { ...worker, model: undefined }, parentTools)).toThrow('no fallback');
+
+  expect(startup({ ...loadout, model: 'other/model' }, pi, worker, parentTools)).toThrow(
+    'no fallback',
+  );
+
+  expect(startup({ ...loadout, thinking: 'high' }, pi, worker, parentTools)).toThrow('no fallback');
+
+  expect(startup({ ...loadout, cwd: join(directory, 'wrong') }, pi, worker, parentTools)).toThrow(
+    'cwd',
+  );
 
   expect(
     startup(
@@ -491,6 +517,7 @@ it('refuses worker startup without the saved model, cwd, CC Safety Net, or profi
         ],
       } as typeof pi,
       worker,
+      parentTools,
     ),
   ).toThrow('CC Safety Net');
 
@@ -498,7 +525,10 @@ it('refuses worker startup without the saved model, cwd, CC Safety Net, or profi
 
   const withSkill = { ...loadout, skills: ['/skills/tracker/SKILL.md'] };
 
-  expect(startup(withSkill, pi, worker)).toThrow('tracker_evidence');
+  expect(startup(withSkill, pi, worker, [...parentTools, 'tracker_evidence'])).toThrow(
+    'tracker_evidence',
+  );
+
   expect(setActiveTools).toHaveBeenCalledOnce();
 
   checkWorkerRuntime(
@@ -513,6 +543,7 @@ it('refuses worker startup without the saved model, cwd, CC Safety Net, or profi
       ],
     } as typeof pi,
     worker,
+    [...parentTools, 'tracker_evidence', 'tracker_draft', 'draft_review'],
   );
 
   expect(setActiveTools).toHaveBeenLastCalledWith([
@@ -527,6 +558,10 @@ it('refuses worker startup without the saved model, cwd, CC Safety Net, or profi
     'tracker_draft',
     'draft_review',
   ]);
+
+  checkWorkerRuntime({ ...loadout, skills: ['/skills/tdd/SKILL.md'] }, pi, worker, parentTools);
+
+  expect(setActiveTools).toHaveBeenLastCalledWith(parentTools);
 });
 
 it.for(['reviewer', 'checker', 'qa'])(
@@ -1626,15 +1661,22 @@ it('accepts a suffixed Safety Net command among other commands', async ({ onTest
 
   const worker = { model, cwd: directory, isProjectTrusted: () => true };
 
+  const parentTools = [
+    ...loadout.tools,
+    'subagent_progress',
+    'subagent_report',
+    'subagent_question',
+  ];
+
   for (const name of ['cc-safety-net', 'cc-safety-net:12']) {
     expect(() => {
-      checkWorkerRuntime(loadout, pi(commandsWith(name, 'skill:tdd')), worker);
+      checkWorkerRuntime(loadout, pi(commandsWith(name, 'skill:tdd')), worker, parentTools);
     }).not.toThrow();
   }
 
   for (const name of ['cc-safety-net:0', 'cc-safety-net:x', 'x-cc-safety-net']) {
     expect(() => {
-      checkWorkerRuntime(loadout, pi(commandsWith(name, 'skill:tdd')), worker);
+      checkWorkerRuntime(loadout, pi(commandsWith(name, 'skill:tdd')), worker, parentTools);
     }).toThrow('CC Safety Net');
   }
 });

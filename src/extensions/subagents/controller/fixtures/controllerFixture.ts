@@ -196,6 +196,18 @@ export const savedFiles = (directory: string): { path: string; bytes: Buffer | u
   });
 };
 
+export const layoutRoot = (
+  calls: string[][],
+): { command: string[]; env: Record<string, string> } => {
+  const layout = calls.find((argumentsList) => argumentsList[0] === 'layout');
+
+  return (
+    JSON.parse(layout?.[2] ?? '') as {
+      root: { command: string[]; env: Record<string, string> };
+    }
+  ).root;
+};
+
 export const completed = async (
   intercept?: HerdrClient,
   packages?: { manager: (loadout: Loadout) => WorkerPackageManager; sources: string[] },

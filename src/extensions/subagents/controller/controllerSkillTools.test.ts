@@ -4,7 +4,7 @@ import type * as FileSystem from 'node:fs';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { skillTools, skillToolsPath } from '../../../skillTools.js';
-import { setup } from './fixtures/controllerFixture.js';
+import { layoutRoot, setup } from './fixtures/controllerFixture.js';
 
 vi.mock(import('node:fs'), { spy: true });
 
@@ -32,9 +32,7 @@ const changeSkillToolsOnDisk = async (result: string | Error) => {
 };
 
 const workerToolsArgument = (calls: string[][]): string => {
-  const layout = calls.find((argumentsList) => argumentsList[0] === 'layout');
-  const root = (JSON.parse(layout?.[2] ?? '') as { root: { command: string[] } }).root;
-  const command = root.command;
+  const command = layoutRoot(calls).command;
 
   return command[command.indexOf('--tools') + 1] ?? '';
 };
@@ -61,6 +59,21 @@ it('gives the worker the tools that skillTools on disk assigns to its skill', as
   });
 
   expect(workerToolsArgument(fixture.calls).split(',')).toContain('pr_feedback');
+});
+
+it('gives the worker startup check the tool list that it passed to --tools', async () => {
+  const fixture = setup(onTestFinished);
+
+  await changeSkillToolsOnDisk('{ "tdd": ["pr_feedback"] }\n');
+
+  await fixture.controller.launch({
+    ...fixture.input,
+    loadout: { ...fixture.input.loadout, skills: ['/skills/tdd/SKILL.md'] },
+  });
+
+  expect(JSON.parse(layoutRoot(fixture.calls).env.TAU_WORKER_TOOLS ?? '')).toEqual(
+    workerToolsArgument(fixture.calls).split(','),
+  );
 });
 
 it.each([

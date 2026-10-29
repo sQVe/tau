@@ -22,7 +22,6 @@ import {
   readAllowedModels,
   requireAllowedModel,
 } from '../../config/models.js';
-import { skillTools } from '../../skillTools.js';
 import { acceptanceRefusal } from './acceptanceRefusal.js';
 import { pickRoutedModel } from './modelRoutes.js';
 import type { ClassifierOutcome, ModelRoute, RoutedLaunch } from './modelRoutes.js';
@@ -32,7 +31,6 @@ import { findTicketPath } from './ticketPath.js';
 import { loadoutSchema } from './types.js';
 import type { Loadout, Profile } from './types.js';
 import { availableModels, defaultProfileName } from './workerModels.js';
-import { workerTools } from './workerTools.js';
 
 type ModelContext = Pick<ExtensionContext, 'modelRegistry' | 'scopedModels'> & {
   ui: ConfigWarnings;
@@ -518,6 +516,7 @@ export const checkWorkerRuntime = (
   loadout: Loadout,
   pi: Pick<ExtensionAPI, 'getThinkingLevel' | 'getCommands' | 'getAllTools' | 'setActiveTools'>,
   context: Pick<ExtensionContext, 'model' | 'cwd' | 'isProjectTrusted'>,
+  tools: string[],
 ): void => {
   if (!context.isProjectTrusted()) {
     throw new Error('Worker project trust was refused.');
@@ -557,7 +556,6 @@ export const checkWorkerRuntime = (
 
   // Pi's --tools skips unknown names without an error.
   const registered = new Set(pi.getAllTools().map((tool) => tool.name));
-  const tools = workerTools(loadout, skillTools);
   const missing = tools.filter((tool) => !registered.has(tool));
 
   if (missing.length > 0) {

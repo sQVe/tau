@@ -29,6 +29,7 @@ import { isTaskId, taskVersion } from '../types.js';
 import type { Acknowledgement, Loadout, Question, Reply, Task } from '../types.js';
 import type { WorkerWidgetRow } from '../widget.js';
 import { defaultWorkerCapacity } from '../workerCapacityConfig.js';
+import { workerTools } from '../workerTools.js';
 import {
   ensureReplyActive,
   workBudget,
@@ -440,6 +441,10 @@ export class WorkerController {
     call: TerminalCall,
     currentSkillTools: SkillTools,
   ) {
+    const tools = workerTools(handle.task.loadout, currentSkillTools);
+    // The worker activates this list, so its check matches --tools if skillTools.json changes.
+    const toolsEnvironment = JSON.stringify(tools);
+
     return this.placement.place(
       {
         name: handle.task.name ?? 'worker',
@@ -465,6 +470,7 @@ export class WorkerController {
         environment: {
           ...workerEnvironment(),
           TAU_WORKER_RECORD: handle.directory,
+          TAU_WORKER_TOOLS: toolsEnvironment,
           PI_CODING_AGENT_DIR: handle.task.loadout.agentDirectory,
         },
       },
