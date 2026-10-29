@@ -129,15 +129,29 @@ it('prepares a fresh review directory that Git ignores', async () => {
   expect(await git(root, 'status', '--porcelain')).toBe('');
 });
 
-it('refuses to prepare through a symlinked .tau/workers', async () => {
+it('removes the capture ref of a deleted review when it prepares a review', async () => {
+  const { root, directory } = await preparedReview();
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+  await captureWorkingTree(root, directory);
+  await rm(directory, { recursive: true });
+  await run(root, { action: 'prepare' });
+
+  expect(await git(root, 'for-each-ref', 'refs/tau/review-captures/')).toBe('');
+});
+
+it('refuses to prepare through a symlinked .tau/workers and keeps capture refs', async () => {
   const root = await committedRepository();
   const outside = temporaryDirectory(onTestFinished, 'tau-review-outside-');
+  const ref = 'refs/tau/review-captures/review-gone';
 
+  await git(root, 'update-ref', ref, 'HEAD');
   await mkdir(join(root, '.tau'));
   await symlink(outside, join(root, '.tau', 'workers'));
 
   expect(await failureOf(root, { action: 'prepare' })).toContain('symlink');
   expect(await readdir(outside)).toEqual([]);
+  expect(await git(root, 'for-each-ref', '--format=%(refname)', ref)).toBe(ref);
 });
 
 it('appends the capture and its gaps after the Capture heading and saves the record', async () => {

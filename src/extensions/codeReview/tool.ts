@@ -11,6 +11,7 @@ import {
   captureGeneration,
   checkFreshness,
   checkReviewDirectory,
+  pruneEndpointRefs,
   readCaptureRecord,
   recheckFileName,
   reviewPrefix,
@@ -69,7 +70,11 @@ const runAction = async (cwd: string, parameters: CodeReviewInput): Promise<obje
   const root = await findCheckoutRoot(cwd, 'code_review');
 
   if (parameters.action === 'prepare') {
-    return { directory: await createFreshTauDirectory(root, workersPath, reviewPrefix) };
+    const directory = await createFreshTauDirectory(root, workersPath, reviewPrefix);
+
+    await pruneEndpointRefs(root, Date.now());
+
+    return { directory };
   }
 
   if (parameters.directory === undefined) {
