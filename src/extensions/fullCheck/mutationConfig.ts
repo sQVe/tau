@@ -1,5 +1,5 @@
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
-import { readRepositoryArgv, withIgnoredNote } from '../../config/fullCheck.js';
+import { readRepositoryArgv, withIgnoredNote } from '../../config/repositoryCommand.js';
 
 const missingMessage = (ignored: string | undefined): string =>
   withIgnoredNote(

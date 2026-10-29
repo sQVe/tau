@@ -6,7 +6,7 @@ import { listSavedLogs } from '../../checkRecord/checkRecord.js';
 import { readCheckState } from '../../checkRecord/identity.js';
 import type { CommandRuntime } from '../../command.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
-import { readRepositoryArgv } from '../../config/fullCheck.js';
+import { readRepositoryArgv } from '../../config/repositoryCommand.js';
 import { errorMessage, isMissingFile } from '../../errors.js';
 import { readGit, runGit } from '../../git.js';
 import { readReviewEvidence, scanMarkers } from '../../reviewCapture/evidence.js';

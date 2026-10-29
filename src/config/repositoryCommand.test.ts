@@ -2,7 +2,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { temporaryTauConfig } from '../../tests/tauConfigHarness.js';
 import type { ConfigWarnings } from './config.js';
-import { readRepositoryArgv } from './fullCheck.js';
+import { readRepositoryArgv } from './repositoryCommand.js';
 
 const fixture = () => temporaryTauConfig(onTestFinished, 'tau-full-check-config-');
 

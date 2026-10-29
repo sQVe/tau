@@ -4,7 +4,7 @@ import { Type } from 'typebox';
 
 import { readCheckIdentity } from '../../checkRecord/identity.js';
 import type { Exec } from '../../command.js';
-import { readRepositoryArgv, withIgnoredNote } from '../../config/fullCheck.js';
+import { readRepositoryArgv, withIgnoredNote } from '../../config/repositoryCommand.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import type { Recorded } from './checkFlow.js';
 import {
