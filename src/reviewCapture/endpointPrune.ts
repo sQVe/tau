@@ -69,7 +69,6 @@ const readDirectory = async (path: string): Promise<ReviewDirectory> => {
   return { state: 'noRecord', lastWrite: Math.max(directory.mtimeMs, folderWrite) };
 };
 
-// A read that fails for any reason other than a missing path could hide a capture.
 const reviewDirectory = (worktree: string, name: string): Promise<ReviewDirectory> =>
   readDirectory(join(workersFolder(worktree), name)).catch(() => ({
     state: 'unknown' as const,
@@ -113,7 +112,6 @@ const listReviewNames = async (worktree: string) => {
   return names.filter((name) => name.startsWith(reviewPrefix));
 };
 
-// Returns undefined when a record could not be read, since any ref could be a predecessor then.
 const readPredecessors = async (worktrees: string[]): Promise<Set<string> | undefined> => {
   try {
     const found = await Promise.all(
