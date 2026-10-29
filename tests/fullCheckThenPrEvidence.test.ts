@@ -17,7 +17,6 @@ const countingArgv = (counter: string, extra = '') => [
   `require('node:fs').appendFileSync(${JSON.stringify(counter)}, 'x'); ${extra}`,
 ];
 
-// Ignoring the repository file keeps the tree the same when only its command changes.
 const setUp = async (ignoreRepositoryFile: boolean) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-full-check-pr-');
 

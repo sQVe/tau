@@ -10,9 +10,7 @@ import {
 import type { ConfigFile, ConfigLocation, ConfigWarnings } from './config.js';
 
 export interface RepositoryArgv {
-  // The command, or undefined when the repository file does not set the key.
   argv: string[] | undefined;
-  // The repository file that Tau skipped because the project is not trusted.
   ignored: string | undefined;
 }
 
@@ -49,14 +47,11 @@ const readSection = (ui: ConfigWarnings, source: string, key: string, value: unk
 const sectionOf = ({ value }: ConfigFile, key: string): unknown =>
   isRecord(value) ? value[key] : undefined;
 
-// Appends why Tau skipped the repository file, so an agent can see why no command is set.
 export const withIgnoredNote = (message: string, ignored: string | undefined): string =>
   ignored === undefined
     ? message
     : `${message} Tau ignored ${ignored} because the project is not trusted.`;
 
-// Reads the `key` section's command from the repository file only, since the repository owns the
-// command it runs. The user file may not set the section, and an untrusted project's file is skipped.
 export const readRepositoryArgv = (
   location: ConfigLocation,
   ui: ConfigWarnings,
