@@ -20,7 +20,6 @@ const isToolList = (value: unknown): value is unknown[] => Array.isArray(value);
 
 const isToolName = (value: unknown): value is string => typeof value === 'string';
 
-// A worker loads this mapping from disk, so every value must be a list of tool names.
 export const parseSkillTools = (text: string): SkillTools | undefined => {
   const value = parseJson(text);
 

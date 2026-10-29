@@ -93,7 +93,6 @@ export class WorkerCapacityFullError extends Error {
   override name = 'WorkerCapacityFullError';
 }
 
-// A file that cannot be read is treated like one that cannot be parsed, so both refuse the launch.
 const readCurrentSkillTools = (): SkillTools | undefined => {
   try {
     return parseSkillTools(readFileSync(skillToolsPath, 'utf8'));
@@ -524,7 +523,6 @@ export class WorkerController {
       throw new Error('Parent controller stopped.');
     }
 
-    // The worker reads skillTools from disk, so the launch uses the same copy for its --tools list.
     const currentSkillTools = readCurrentSkillTools();
     const registeredToolNames = new Set(this.registeredToolNames());
     const skillToolsRefused = skillToolsRefusal(currentSkillTools, registeredToolNames);

@@ -105,8 +105,6 @@ export const herdrClient: HerdrClient = (argumentsList, budget, signal) =>
     ? socketRequest(herdrSocketPath() ?? '', argumentsList, budget, signal)
     : runClient('herdr', argumentsList, budget, signal ? { signal } : {});
 
-// extensionPackages are the profile packages the parent installed for this start. skillTools is the
-// copy read from disk for this launch, because the worker reads its tools from disk too.
 export const workerArguments = (
   task: Task,
   extensionPackages: readonly WorkerPackage[],

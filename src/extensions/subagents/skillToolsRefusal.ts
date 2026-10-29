@@ -6,7 +6,6 @@ const listedToolNames = (skillTools: SkillTools): string[] => [
   ...new Set(Object.values(skillTools).flat()),
 ];
 
-// A worker loads skillTools from disk and needs every tool it lists. Pi registers only the tools the parent registered, so a worker would fail on a missing one.
 export const skillToolsRefusal = (
   current: SkillTools | undefined,
   registeredToolNames: ReadonlySet<string>,

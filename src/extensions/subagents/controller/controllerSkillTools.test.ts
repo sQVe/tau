@@ -10,7 +10,6 @@ vi.mock(import('node:fs'), { spy: true });
 
 const bundledToolNames = Object.values(skillTools).flat();
 
-// Only the skillTools file changes; every other read stays real.
 const changeSkillToolsOnDisk = async (result: string | Error) => {
   const actualFileSystem = await vi.importActual<typeof FileSystem>('node:fs');
   const readActual = actualFileSystem.readFileSync as (...values: unknown[]) => unknown;
