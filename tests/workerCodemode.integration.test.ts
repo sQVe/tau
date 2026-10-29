@@ -16,7 +16,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { nestedChangeCallReason } from '../src/codemode/controlTools.js';
 import { codemodeGuidelines } from '../src/codemode/guidelines.js';
-import codemodeExtension, { managerCodemodeGuidelines } from '../src/extensions/codemode.js';
+import codemodeExtension from '../src/extensions/codemode.js';
 import fullCheckExtension from '../src/extensions/fullCheck/fullCheck.js';
 import instructionsExtension from '../src/extensions/instructions.js';
 import {
@@ -212,9 +212,6 @@ const captureSystemPrompt = () => {
 const hasCodemodeGuidelines = (systemPrompt: string | undefined): boolean =>
   codemodeGuidelines.every((guideline) => systemPrompt?.includes(guideline) === true);
 
-const hasManagerCodemodeGuidelines = (systemPrompt: string | undefined): boolean =>
-  managerCodemodeGuidelines.some((guideline) => systemPrompt?.includes(guideline) === true);
-
 const guidelineLineCounts = (systemPrompt: string | undefined, guidelines: readonly string[]) => {
   const lines = (systemPrompt ?? '').split('\n');
 
@@ -278,7 +275,7 @@ it.for([
       codemodeGuidelines.map(() => (expected ? 1 : 0)),
     );
 
-    expect(hasManagerCodemodeGuidelines(captured.systemPrompt)).toBe(false);
+    expect(captured.systemPrompt).not.toContain('Launch independent workers');
   },
 );
 
@@ -315,8 +312,6 @@ it.for([
     expect(guidelineLineCounts(captured.systemPrompt, codemodeGuidelines)).toEqual(
       codemodeGuidelines.map(() => (expected ? 1 : 0)),
     );
-
-    expect(hasManagerCodemodeGuidelines(captured.systemPrompt)).toBe(expected);
   },
 );
 

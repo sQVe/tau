@@ -6,10 +6,8 @@ import { codemodeGuidelines } from '../codemode/guidelines.js';
 import { appendToolGuidelines } from '../instructions/systemPrompt.js';
 import { isWorkerProcess } from '../worker.js';
 
-export const managerCodemodeGuidelines = ['Launch independent workers in one turn.'];
-
 export default function codemodeExtension(pi: ExtensionAPI): void {
-  const guidelines = isWorkerProcess() ? [] : [...codemodeGuidelines, ...managerCodemodeGuidelines];
+  const guidelines = isWorkerProcess() ? [] : codemodeGuidelines;
 
   appendToolGuidelines(pi, 'codemode', guidelines);
 
