@@ -59,6 +59,7 @@ it('gives the worker the tools that skillTools on disk assigns to its skill', as
   });
 
   expect(workerToolsArgument(fixture.calls).split(',')).toContain('pr_feedback');
+  expect(workerToolsArgument(fixture.calls).split(',')).not.toContain('mutation_check');
 });
 
 it('gives the worker startup check the tool list that it passed to --tools', async () => {
