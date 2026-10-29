@@ -94,8 +94,6 @@ export const failure = (commandArguments: string[], detail: string): Part => ({
   errors: [`${describeCommand(commandArguments)} failed: ${detail}`],
 });
 
-// Runs a Git command that must exit 0 and print nothing to stderr apart from line-ending warnings.
-// Git prints those warnings for CRLF files that .gitattributes normalizes. They do not change output.
 export const runCaptureCommand = async (
   root: string,
   commandArguments: string[],
