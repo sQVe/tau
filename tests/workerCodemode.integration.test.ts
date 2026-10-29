@@ -215,7 +215,6 @@ const hasCodemodeGuidelines = (systemPrompt: string | undefined): boolean =>
 const hasManagerCodemodeGuidelines = (systemPrompt: string | undefined): boolean =>
   managerCodemodeGuidelines.some((guideline) => systemPrompt?.includes(guideline) === true);
 
-// Counts the lines that carry each guideline, so a guideline sent twice fails.
 const guidelineLineCounts = (systemPrompt: string | undefined, guidelines: readonly string[]) => {
   const lines = (systemPrompt ?? '').split('\n');
 

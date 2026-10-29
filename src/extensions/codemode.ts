@@ -9,7 +9,6 @@ import { isWorkerProcess } from '../worker.js';
 export const managerCodemodeGuidelines = ['Launch independent workers in one turn.'];
 
 export default function codemodeExtension(pi: ExtensionAPI): void {
-  // A worker gets the shared guidelines from its own system prompt, so Tau adds none in a worker.
   const guidelines = isWorkerProcess() ? [] : [...codemodeGuidelines, ...managerCodemodeGuidelines];
 
   appendToolGuidelines(pi, 'codemode', guidelines);

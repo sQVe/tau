@@ -630,8 +630,6 @@ const readLoadoutInstructionSets = (loadout: Loadout): Promise<string[]> =>
       .map((name) => readInstructionSet(name)),
   );
 
-// A launched worker may run without Tau's codemode extension, so the worker prompt
-// carries the shared guidelines itself.
 const workerCodemodeGuidelines = (loadout: Loadout): string[] =>
   loadout.tools.includes('codemode') ? [guidelineLines(codemodeGuidelines)] : [];
 
