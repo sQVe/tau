@@ -38,8 +38,8 @@ export const moduleList: readonly ModuleDeclaration[] = [
     name: 'config',
     entry: 'config/config',
     publicFiles: [
-      'config/fullCheck',
       'config/models',
+      'config/repositoryCommand',
       'config/repositoryEntry',
       'config/repositorySection',
     ],

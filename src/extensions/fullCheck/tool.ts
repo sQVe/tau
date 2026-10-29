@@ -4,8 +4,7 @@ import { Type } from 'typebox';
 
 import { readCheckIdentity } from '../../checkRecord/identity.js';
 import type { Exec } from '../../command.js';
-import { readFullCheckArgv } from '../../config/fullCheck.js';
-import { configRepositoryKey } from '../../github/repositoryTargetDecisions.js';
+import { readRepositoryArgv, withIgnoredNote } from '../../config/repositoryCommand.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import type { Recorded } from './checkFlow.js';
 import {
@@ -31,12 +30,14 @@ const parameters = Type.Object({});
 const defaultChecksPath = 'checks';
 const defaultPollMilliseconds = 500;
 
-const notConfiguredMessage = (repository: string | undefined): string => {
-  const unnamed = 'this checkout, whose origin remote does not name a github.com repository,';
-  const subject = repository ?? unnamed;
+const noLockMessage =
+  'This checkout has an origin remote that does not name an owner/name repository, so the full check has no lock to share with other checkouts of the repository.';
 
-  return `No full check is configured for ${subject}. Run your check as before, with the command the repository documents. To configure one, add fullCheck.repositories.<owner/name>.argv to the user tau.json.`;
-};
+const notConfiguredMessage = (ignored: string | undefined): string =>
+  withIgnoredNote(
+    'No full check is configured. Run your check as before, with the command the repository documents. To configure one, add fullCheck.argv to .pi/tau.json in the repository, such as {"fullCheck": {"argv": ["pnpm", "check"]}}.',
+    ignored,
+  );
 
 const describeResult = (result: FullCheckDetails): string => {
   const status =
@@ -72,7 +73,6 @@ const execute = async (
 ) => {
   const root = await findTauRoot(context.cwd, 'full_check');
   const agentDirectory = options.agentDirectory ?? getAgentDir();
-  const repository = await readRepository({ exec: options.exec, cwd: root, signal });
 
   const location = {
     cwd: root,
@@ -80,11 +80,16 @@ const execute = async (
     projectTrusted: context.isProjectTrusted(),
   };
 
-  const configKey = repository === undefined ? undefined : configRepositoryKey(repository);
-  const argv = readFullCheckArgv(location, context.ui, configKey);
+  const { argv, ignored } = readRepositoryArgv(location, context.ui, 'fullCheck');
 
-  if (repository === undefined || configKey === undefined || argv === undefined) {
-    throw new Error(notConfiguredMessage(configKey));
+  if (argv === undefined) {
+    throw new Error(notConfiguredMessage(ignored));
+  }
+
+  const repository = await readRepository({ exec: options.exec, cwd: root, signal });
+
+  if (repository === undefined) {
+    throw new Error(noLockMessage);
   }
 
   const waiting = await readCheckIdentity(root, argv);
@@ -139,7 +144,7 @@ export const createFullCheckTool = (
 - Returns pass or fail, the exit status, the log path, and the last lines of the output. A failed check is a result, not an error.
 - A later call for the same command and file content returns the saved passing log without a run, and says so. A commit or amend that changes no files keeps the file content.
 - Full checks of one repository run one at a time across its checkouts. A waiting call sends an update that names the checkout that holds the lock.
-- With no configured entry, the tool errors. Run the repository's check as before.`,
+- Without fullCheck.argv in .pi/tau.json, it errors. Run the check as before.`,
     promptSnippet:
       'Run the repository full check, queued per repository across checkouts, with a saved log.',
     parameters,

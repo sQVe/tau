@@ -4,5 +4,8 @@
   },
   "mutation": {
     "argv": ["pnpm", "exec", "mutation"]
+  },
+  "fullCheck": {
+    "argv": ["pnpm", "check"]
   }
 }

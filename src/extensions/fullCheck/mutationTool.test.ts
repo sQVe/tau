@@ -91,6 +91,13 @@ const fixture = async () => {
       JSON.stringify({ mutation: { argv: scriptArgv(report, code, gated, ending) } }),
     );
 
+  const configureFullCheck = async (argv: string[]) => {
+    const path = join(root, '.pi', 'tau.json');
+    const current = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
+
+    await writeFile(path, JSON.stringify({ ...current, fullCheck: { argv } }));
+  };
+
   const context = { cwd: root, isProjectTrusted: () => true, ui: { notify: () => undefined } };
 
   const run = (
@@ -125,6 +132,7 @@ const fixture = async () => {
   return {
     directory,
     root,
+    configureFullCheck,
     gate,
     configure,
     scriptArgv,
@@ -379,16 +387,12 @@ it.each<{ name: string; parameters: RunParameters }>([
 });
 
 it('waits on the lock of a running mutation check for a full check of the same repository', async () => {
-  const { directory, gate, configure, context, run, runCount } = await fixture();
+  const { directory, gate, configure, configureFullCheck, context, run, runCount } =
+    await fixture();
 
   await configure(passReport, 0, true);
 
-  await writeFile(
-    join(directory, 'tau.json'),
-    JSON.stringify({
-      fullCheck: { repositories: { 'owner/mutation': { argv: [process.execPath, '-e', '0'] } } },
-    }),
-  );
+  await configureFullCheck([process.execPath, '-e', '0']);
 
   const mutation = run();
 
@@ -422,28 +426,17 @@ it('waits on the lock of a running mutation check for a full check of the same r
 });
 
 it('waits on the lock of a running full check for a mutation check of the same repository', async () => {
-  const { directory, gate, configure, context, run } = await fixture();
+  const { directory, gate, configure, configureFullCheck, context, run } = await fixture();
 
   await configure(passReport, 0);
 
-  await writeFile(
-    join(directory, 'tau.json'),
-    JSON.stringify({
-      fullCheck: {
-        repositories: {
-          'owner/mutation': {
-            argv: [
-              process.execPath,
-              '-e',
-              "const fs = require('node:fs'); const [started, gate] = process.argv.slice(1); fs.writeFileSync(started, ''); setInterval(() => { if (fs.existsSync(gate)) process.exit(0); }, 10);",
-              join(directory, 'started'),
-              gate,
-            ],
-          },
-        },
-      },
-    }),
-  );
+  await configureFullCheck([
+    process.execPath,
+    '-e',
+    "const fs = require('node:fs'); const [started, gate] = process.argv.slice(1); fs.writeFileSync(started, ''); setInterval(() => { if (fs.existsSync(gate)) process.exit(0); }, 10);",
+    join(directory, 'started'),
+    gate,
+  ]);
 
   const fullCheck = createFullCheckTool({
     agentDirectory: directory,
@@ -507,20 +500,12 @@ it('passes the mutant cap to the script only when it is set', async () => {
 });
 
 it('does not reuse the passing record of a full check with the same command', async () => {
-  const { directory, scriptArgv, configure, context, run, runCount } = await fixture();
+  const { directory, scriptArgv, configure, configureFullCheck, context, run, runCount } =
+    await fixture();
 
   await configure(survivorReport, 0);
 
-  await writeFile(
-    join(directory, 'tau.json'),
-    JSON.stringify({
-      fullCheck: {
-        repositories: {
-          'owner/mutation': { argv: [...scriptArgv(survivorReport, 0), 'audit', 'src/a.ts'] },
-        },
-      },
-    }),
-  );
+  await configureFullCheck([...scriptArgv(survivorReport, 0), 'audit', 'src/a.ts']);
 
   const full = await createFullCheckTool({
     agentDirectory: directory,

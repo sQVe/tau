@@ -28,13 +28,16 @@ Tau must be able to add a key without breaking an older one.
 
 A trusted repository may run code, but other people write its checked-in config for every user of
 the repository. Models cost the user money and receive the user's data. Commands from config run on
-the user's machine. Routes decide where Tau writes. The user must own those choices.
+the user's machine. Routes decide where Tau writes. The user must own those choices, except a
+command that checks the repository's own code. That command runs the repository's scripts, which
+already run on the user's machine, so Pi's project trust already guards it.
 
 ## Decision
 
 Tau reads `<agentDir>/tau.json` and, in a project Pi trusts, `<cwd>/.pi/tau.json`. Each feature owns
 one top-level key and validates it where it reads it. The user file owns every model, route, and
-command from user config. The repository file holds only what belongs with the code.
+user command. The repository file holds only what belongs with the code, including the commands that
+check that code.
 
 ### Files and trust
 
@@ -56,7 +59,7 @@ command from user config. The repository file holds only what belongs with the c
 | `tracker`       | yes       | no              | `agentTeam`, and `repositories` with a Linear route per entry       |
 | `qa`            | yes       | no              | `repositories` with URL and test-account commands, and `dataWrites` |
 | `reviews`       | yes       | no              | `repositories` with the review bots per entry                       |
-| `fullCheck`     | yes       | no              | `repositories` with the full check command per entry                |
+| `fullCheck`     | no        | yes             | `argv` is the full check command, read only in a trusted project    |
 
 A key in the wrong file is an error. The error names the file and the file the key belongs in.
 `tdd.verificationArgv` must start with `vitest`, the only runner Tau supports.
@@ -113,7 +116,7 @@ A key in the wrong file is an error. The error names the file and the file the k
 ### Positive
 
 - A user sets defaults once, and a repository overrides only what belongs to its code.
-- A repository cannot choose a model, a route, or a user command for the user.
+- A repository cannot choose a model or a route for the user.
 - A newer Tau adds keys without breaking older checkouts, and one bad entry blocks only its own
   work.
 - Each error names the file and the field to fix.
@@ -123,7 +126,9 @@ A key in the wrong file is an error. The error names the file and the file the k
 - A misspelled key only warns, so the feature runs without it until the user reads the warning.
 - A new user must set a launch `model`, or write `profiles.default.model`, before a worker starts.
 - Each per-repository feature repeats `owner/name` keys in its own map.
-- A team cannot share QA, review, or check settings through the repository.
+- A team cannot share QA or review settings through the repository.
+- A repository file chooses the full check command that runs on the user's machine. Pi's project
+  trust is the only guard.
 - Replacing a `tdd` list means copying the earlier value to extend it.
 
 ## Alternatives considered
@@ -133,10 +138,21 @@ A key in the wrong file is an error. The error names the file and the file the k
 Reject unknown keys inside each block, or at every depth. Rejected because each new key would break
 every older checkout that shares the user file.
 
-### Let the repository file set models or commands
+### Let the repository file set models
 
-Let a repository file set `profiles` or `fullCheck`. Rejected because other people write that file,
-and the user pays for the models and runs the commands.
+Let a repository file set `profiles`. Rejected because other people write that file, and the user
+pays for the models.
+
+### Keep the full check command in the user file
+
+Keep `fullCheck` as a `repositories` map in the user file. Rejected because the user then writes a
+command for every repository, a new checkout has none, and the command lives apart from the code it
+checks. `mutation.argv` already runs the same kind of script from the repository file.
+
+### Let the user file override the repository file for the full check
+
+Rejected because two sources give two answers to which command runs. A `fullCheck` key in the user
+file is an error, like any key in the wrong file.
 
 ### XDG folder, root `tau.json`, or `package.json`
 

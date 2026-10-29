@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -17,7 +17,7 @@ const countingArgv = (counter: string, extra = '') => [
   `require('node:fs').appendFileSync(${JSON.stringify(counter)}, 'x'); ${extra}`,
 ];
 
-it('reports passed to the pr evidence after the first command runs again over another command that failed', async () => {
+const setUp = async (ignoreRepositoryFile: boolean) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-full-check-pr-');
 
   const root = await createTemporaryRepository(onTestFinished, 'tau-full-check-pr-repo-');
@@ -25,15 +25,19 @@ it('reports passed to the pr evidence after the first command runs again over an
 
   await writeFile(counter, '');
   await writeFile(join(root, 'tracked.txt'), 'one\n');
+
+  if (ignoreRepositoryFile) {
+    await writeFile(join(root, '.gitignore'), '.pi/tau.json\n');
+  }
+
   await git(root, 'add', '.');
   await git(root, 'commit', '--quiet', '-m', 'first');
   await git(root, 'remote', 'add', 'origin', 'git@github.com:owner/reuse.git');
 
+  await mkdir(join(root, '.pi'));
+
   const configure = (argv: string[]) =>
-    writeFile(
-      join(directory, 'tau.json'),
-      JSON.stringify({ fullCheck: { repositories: { 'owner/reuse': { argv } } } }),
-    );
+    writeFile(join(root, '.pi', 'tau.json'), JSON.stringify({ fullCheck: { argv } }));
 
   const run = () =>
     createFullCheckTool({
@@ -48,6 +52,12 @@ it('reports passed to the pr evidence after the first command runs again over an
 
   const runCount = async () => (await readFile(counter, 'utf8')).length;
 
+  return { root, counter, configure, run, runCount };
+};
+
+it('reports passed to the pr evidence after a changed repository file fails and the first file reuses its log', async () => {
+  const { root, counter, configure, run, runCount } = await setUp(false);
+
   await configure(countingArgv(counter));
   await run();
   await configure(countingArgv(counter, 'process.exit(1)'));
@@ -56,6 +66,36 @@ it('reports passed to the pr evidence after the first command runs again over an
 
   const third = await run();
 
+  expect(third.details).toMatchObject({ passed: true, reused: true });
+  expect(await runCount()).toBe(2);
+
+  const state = await readCheckState(root);
+
+  const decision = decideFullCheck(
+    state,
+    countingArgv(counter),
+    await listSavedLogs(join(root, '.tau', 'checks')),
+  );
+
+  expect(decision).toMatchObject({ status: 'passed', logPath: third.details?.logPath });
+});
+
+it('reruns and reports passed to the pr evidence after a newer failed record of another command on the same tree', async () => {
+  const { root, counter, configure, run, runCount } = await setUp(true);
+
+  await configure(countingArgv(counter));
+  await run();
+
+  const treeBefore = await readCheckState(root);
+
+  await configure(countingArgv(counter, 'process.exit(1)'));
+  const failed = await run();
+
+  await configure(countingArgv(counter));
+  const third = await run();
+
+  expect(failed.details).toMatchObject({ passed: false });
+  expect(await readCheckState(root)).toEqual(treeBefore);
   expect(third.details).toMatchObject({ passed: true, reused: false });
   expect(await runCount()).toBe(3);
 
