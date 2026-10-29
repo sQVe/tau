@@ -15,10 +15,8 @@ import { Type } from 'typebox';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { nestedChangeCallReason } from '../src/codemode/controlTools.js';
-import codemodeExtension, {
-  codemodeGuidelines,
-  managerCodemodeGuidelines,
-} from '../src/extensions/codemode.js';
+import { codemodeGuidelines } from '../src/codemode/guidelines.js';
+import codemodeExtension, { managerCodemodeGuidelines } from '../src/extensions/codemode.js';
 import fullCheckExtension from '../src/extensions/fullCheck/fullCheck.js';
 import instructionsExtension from '../src/extensions/instructions.js';
 import {
@@ -217,6 +215,13 @@ const hasCodemodeGuidelines = (systemPrompt: string | undefined): boolean =>
 const hasManagerCodemodeGuidelines = (systemPrompt: string | undefined): boolean =>
   managerCodemodeGuidelines.some((guideline) => systemPrompt?.includes(guideline) === true);
 
+// Counts the lines that carry each guideline, so a guideline sent twice fails.
+const guidelineLineCounts = (systemPrompt: string | undefined, guidelines: readonly string[]) => {
+  const lines = (systemPrompt ?? '').split('\n');
+
+  return guidelines.map((guideline) => lines.filter((line) => line === `- ${guideline}`).length);
+};
+
 it.for([
   ['scout', true],
   ['reviewer', true],
@@ -252,19 +257,28 @@ it('refuses a scout script call to a tool the profile does not list', async () =
 });
 
 it.for([
-  ['scout', true],
-  ['qa', false],
+  ['scout', true, true],
+  ['scout', false, true],
+  ['worker', true, true],
+  ['worker', false, true],
+  ['qa', true, false],
+  ['qa', false, false],
 ] as const)(
-  'adds the codemode guidelines to the %s worker prompt: %s',
-  async ([profileName, expected]) => {
+  'adds the codemode guidelines to the %s worker prompt with workflow %s: %s',
+  async ([profileName, workflow, expected]) => {
     const directory = piAgentDirectory('tau-worker-guidelines-');
-    const worker = await startProfileWorker(directory, profileName);
+    const worker = await startProfileWorker(directory, profileName, { workflow });
     const { captured, step } = captureSystemPrompt();
 
     await runTask(worker, [step, ...stopWithoutReport]);
 
     expect(captured.systemPrompt).toContain('# Tau workflow instructions');
     expect(hasCodemodeGuidelines(captured.systemPrompt)).toBe(expected);
+
+    expect(guidelineLineCounts(captured.systemPrompt, codemodeGuidelines)).toEqual(
+      codemodeGuidelines.map(() => (expected ? 1 : 0)),
+    );
+
     expect(hasManagerCodemodeGuidelines(captured.systemPrompt)).toBe(false);
   },
 );
@@ -298,6 +312,11 @@ it.for([
 
     expect(captured.systemPrompt).toContain('# Tau workflow instructions');
     expect(hasCodemodeGuidelines(captured.systemPrompt)).toBe(expected);
+
+    expect(guidelineLineCounts(captured.systemPrompt, codemodeGuidelines)).toEqual(
+      codemodeGuidelines.map(() => (expected ? 1 : 0)),
+    );
+
     expect(hasManagerCodemodeGuidelines(captured.systemPrompt)).toBe(expected);
   },
 );
