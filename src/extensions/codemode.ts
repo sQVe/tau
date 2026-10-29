@@ -12,15 +12,20 @@ export const codemodeGuidelines = [
   '`searchTools()`, `describeTool()`, and `describeNamespace()` return promises. Always `await` them: `const found = await searchTools("linear");`.',
   'Print strings, not result objects: `text(result.output)`. Add `exit_code`, `truncated`, and `full_output_path` only when they are not the default.',
   'Filter before printing. Return line-numbered excerpts with their file. Name what the script dropped as a gap.',
-  'A script has an output budget of 4,000 tokens. To raise it, set `max_output_tokens` on the first line and add the reason on a second line: `// @budget: <reason>`. Tau refuses a raise without a reason. Over the budget, Tau cuts whole `text()` items and names each cut item.',
+  'A script has an output budget of 4,000 tokens. To raise it, set `max_output_tokens` on the first line and add the reason on a second line: `// @budget: <reason>`.',
   'Discover paths first, then batch independent reads in one script. Use `Promise.allSettled` and print each failed path as a gap. Read bounded ranges with `offset` and `limit`. Read a document that must be whole in its own call.',
   'Never `JSON.parse` the text of `read`, which may be capped. Query data files with a bounded command such as `jq`.',
-  'Launch independent workers in one turn.',
   'Cite only what a script or a direct tool call returned.',
 ];
 
+export const managerCodemodeGuidelines = ['Launch independent workers in one turn.'];
+
 export default function codemodeExtension(pi: ExtensionAPI): void {
-  appendToolGuidelines(pi, 'codemode', codemodeGuidelines);
+  const guidelines = isWorkerProcess()
+    ? codemodeGuidelines
+    : [...codemodeGuidelines, ...managerCodemodeGuidelines];
+
+  appendToolGuidelines(pi, 'codemode', guidelines);
 
   // The worker extension refuses nested change calls in a worker, because a launched worker may run
   // without Tau.

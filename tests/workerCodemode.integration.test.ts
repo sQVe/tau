@@ -15,7 +15,10 @@ import { Type } from 'typebox';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { nestedChangeCallReason } from '../src/codemode/controlTools.js';
-import codemodeExtension, { codemodeGuidelines } from '../src/extensions/codemode.js';
+import codemodeExtension, {
+  codemodeGuidelines,
+  managerCodemodeGuidelines,
+} from '../src/extensions/codemode.js';
 import fullCheckExtension from '../src/extensions/fullCheck/fullCheck.js';
 import instructionsExtension from '../src/extensions/instructions.js';
 import {
@@ -211,6 +214,9 @@ const captureSystemPrompt = () => {
 const hasCodemodeGuidelines = (systemPrompt: string | undefined): boolean =>
   codemodeGuidelines.every((guideline) => systemPrompt?.includes(guideline) === true);
 
+const hasManagerCodemodeGuidelines = (systemPrompt: string | undefined): boolean =>
+  managerCodemodeGuidelines.some((guideline) => systemPrompt?.includes(guideline) === true);
+
 it.for([
   ['scout', true],
   ['reviewer', true],
@@ -259,6 +265,7 @@ it.for([
 
     expect(captured.systemPrompt).toContain('# Tau workflow instructions');
     expect(hasCodemodeGuidelines(captured.systemPrompt)).toBe(expected);
+    expect(hasManagerCodemodeGuidelines(captured.systemPrompt)).toBe(false);
   },
 );
 
@@ -291,6 +298,7 @@ it.for([
 
     expect(captured.systemPrompt).toContain('# Tau workflow instructions');
     expect(hasCodemodeGuidelines(captured.systemPrompt)).toBe(expected);
+    expect(hasManagerCodemodeGuidelines(captured.systemPrompt)).toBe(expected);
   },
 );
 

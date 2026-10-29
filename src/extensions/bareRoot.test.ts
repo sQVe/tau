@@ -61,6 +61,13 @@ describe('bare repository root guard', () => {
     expect(await startSession(join(root, 'main'))).toBe('user append');
   });
 
+  it('leaves a worker session in a bare root alone', async () => {
+    const root = await createTemporaryBareRoot((cleanup) => cleanups.push(cleanup));
+    vi.stubEnv('TAU_WORKER_RECORD', '/records/task-one');
+
+    expect(await startSession(root)).toBe('user append');
+  });
+
   it('leaves a session outside any repository alone', async ({ onTestFinished }) => {
     const directory = temporaryDirectory(onTestFinished, 'tau-bare-root-none-');
 

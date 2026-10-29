@@ -23,15 +23,16 @@ const multiActionBudget = 3000;
 // Tools over budget today, each with its current description length as its own ceiling.
 const descriptionExceptions: Readonly<Record<string, number>> = { pr: 3300 };
 
-// Today's measured size rounded up to the next 100 characters. The target is beside each ceiling.
+// Each ceiling caps a session at about its measured size, so a cut must lower it. The target is
+// beside each ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
-  manager: 59_530, // target 38,000
-  worker: 19_200, // target 14,000
-  reviewer: 14_600, // target 11,000
-  checker: 14_800,
-  qa: 12_600, // target 9,000
-  browser: 11_400, // target 9,000
-  scout: 9700, // target 9,000
+  manager: 57_975, // target 38,000
+  worker: 18_728, // target 14,000
+  reviewer: 14_128, // target 11,000
+  checker: 14_468,
+  qa: 12_268, // target 9,000
+  browser: 11_068, // target 9,000
+  scout: 9227, // target 9,000
 };
 
 const profileNames = ['worker', 'reviewer', 'checker', 'qa', 'browser', 'scout'];

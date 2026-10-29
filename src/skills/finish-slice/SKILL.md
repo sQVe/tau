@@ -6,9 +6,7 @@ description:
   "finish the slice", "audit ENG-123", or "check the slice before the PR". It does not run the full
   check or open the PR.
 metadata:
-  required-for:
-    auditing a finished slice against its acceptance criteria before its PR, including as a step in
-    a larger task
+  required-for: auditing a finished slice against its acceptance criteria before its PR
 ---
 
 # Finish slice

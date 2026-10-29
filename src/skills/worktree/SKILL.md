@@ -4,7 +4,7 @@ description:
   Create or open a Git worktree for a ticket or task with Grove and open it in Herdr. Use it when
   asked to create, add, start, or open a worktree, optionally followed by a handover.
 metadata:
-  required-for: creating a Git worktree, including as a step in a larger task
+  required-for: creating a Git worktree
 ---
 
 # Worktree

@@ -6,9 +6,7 @@ description:
   and the two allowed status changes. Use it for "file a bug", "create a ticket", "write this up in
   Linear", or "add a follow-up ticket". It does not split a design into slices or start a slice.
 metadata:
-  required-for:
-    creating or updating a Linear ticket, its relations, or its status, including as a step in a
-    larger task
+  required-for: creating or updating a Linear ticket, its relations, or its status
 ---
 
 # Tracker
