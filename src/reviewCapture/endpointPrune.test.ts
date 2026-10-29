@@ -10,6 +10,7 @@ import { captureGeneration } from './generation.js';
 import { generationFolderName, recordFileName } from './record.js';
 
 const day = 24 * 60 * 60 * 1000;
+const isRoot = process.getuid?.() === 0;
 
 const commitFile = async (root: string, text: string) => {
   await writeFile(join(root, 'tracked.txt'), text);
@@ -118,7 +119,7 @@ it('keeps the ref of a deleted review that a fix capture compares against', asyn
   });
 });
 
-it('keeps every ref while another capture record cannot be read', async () => {
+it.skipIf(isRoot)('keeps every ref while another capture record cannot be read', async () => {
   const { root, directory, ref, commit } = await capturedReview();
   const unreadable = await reviewDirectory(root, 'review-two');
 
