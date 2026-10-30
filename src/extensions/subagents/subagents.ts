@@ -4,7 +4,6 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
 import { isNestedControlCall, nestedControlCallReason } from '../../codemode/controlTools.js';
-import type { Exec } from '../../command.js';
 import {
   forgetReportedWarnings,
   readTauConfig,
@@ -21,8 +20,7 @@ import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.j
 import { hasParentTrackedWorkers, compactionWorkerList } from './compactionWorkers.js';
 import { WorkerController } from './controller/controller.js';
 import { evidenceResult, launchErrorResult } from './errorResult.js';
-import { executeLaunch, millisecondsPerSecond } from './launch.js';
-import { checkLaunchEnvironment } from './launchCheck.js';
+import { executeInitialLaunch, millisecondsPerSecond } from './launch.js';
 import { launchParameters, visibility } from './launchParameters.js';
 import type { LaunchParameters } from './launchParameters.js';
 import { launchModels, requireTrustedProject } from './loadout.js';
@@ -217,11 +215,6 @@ const launchTitle = (profile: string | undefined): string => {
   return `Launch ${name}`;
 };
 
-const piExec =
-  (pi: ExtensionAPI): Exec =>
-  (command, commandArguments, options) =>
-    pi.exec(command, commandArguments, options);
-
 const launchWorker = async (
   runtime: SubagentRuntime,
   parameters: LaunchParameters,
@@ -242,14 +235,8 @@ const launchWorker = async (
   }
 
   requireTrustedProject(context);
-  const resolved = await checkLaunchEnvironment(parameters, signal, context, piExec(runtime.pi));
 
-  return executeLaunch(
-    runtime,
-    { parameters: resolved, startedAt, parentSession },
-    signal,
-    context,
-  );
+  return executeInitialLaunch(runtime, { parameters, startedAt, parentSession }, signal, context);
 };
 
 const followUpWorker = async (
