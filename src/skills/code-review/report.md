@@ -6,9 +6,13 @@ Use this shape for the files in `$dir` and for the reply.
 
 - Each worker report: `reviewer.md`, or `finder.md` and `checker.md`.
 - `report.md`, the comment body. With a ticket, start it with `# Code review: <ticket>` and keep a
-  `Comment ID:` line once the comment exists. Include the base and HEAD SHAs, the capture `hash`,
-  the source of any check result, every finding in full, and refuted candidates with the checker's
-  reason.
+  `Comment ID:` line once the comment exists. Include the target kind, the base and HEAD SHAs, the
+  capture `hash`, the capture `identity`, the source of any check result, every finding in full, and
+  refuted candidates with the checker's reason.
+- For a fix review, also include the predecessor review directory (`target.review` in
+  `capture.json`) and its identity (`target.predecessor.identity`). When `capture.json` has no
+  `target.predecessor`, as for a fix on a legacy review, write the identity as `unavailable`. Never
+  guess it.
 
 ## Reply
 

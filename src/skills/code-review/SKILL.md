@@ -49,9 +49,10 @@ named files. It needs the `subagent` tools inside herdr. Without them, tell the 
 
 1. Resolve the target as in [Resolve the target](phases.md#resolve-the-target).
    - After an earlier review of this target in this session whose findings were fixed: a `fix`
-     target, with that review's directory as `review` and the paths of the closed findings as
-     `findingPaths`. Capture the whole target instead when the user asks for a full review or the
-     earlier review left no usable snapshot.
+     target. Its `review` is the newest completed review in this target's chain: the full review or
+     an earlier fix review, never an older link. Its `findingPaths` are the paths of the closed
+     findings. Capture the whole target instead when the user asks for a full review or the earlier
+     review left no usable snapshot.
    - The ticket under review is the one the user or a calling skill names. Otherwise, only for the
      branch's own work (merge base to `HEAD` or the working tree, or uncommitted work), use the
      branch's issue from `linear issue view --json --no-pager`. With no ticket, or a failed read,
@@ -60,6 +61,7 @@ named files. It needs the `subagent` tools inside herdr. Without them, tell the 
 2. Prepare and capture as in [Handle the capture result](phases.md#handle-the-capture-result).
    - After the `unmatched` gaps and before the `empty` check, a `fix` capture with
      `scope: "wholeTarget"` widened the change: capture the whole target fresh.
+   - Keep the capture result's `identity` for `report.md`.
 
 3. Gather evidence as in [Gather evidence](phases.md#gather-evidence).
 
@@ -71,9 +73,11 @@ named files. It needs the `subagent` tools inside herdr. Without them, tell the 
      finder found nothing.
 
 5. Call `code_review` `freshness` with `$dir`. Report `fresh` as fresh. The check is not atomic, and
-   covers only the captured target, not callers or rules outside it. Label `stale` with its reasons
-   and ask whether to review again. Report `unknown`, or a failed call, as unknown. Keep the
-   finished results in every case.
+   covers only the captured target, not callers or rules outside it. When `stale` has only a HEAD
+   move as its reason, with the same capture `hash`, report it as stale with that reason and say
+   that content coverage is checked at the PR step. Do not ask to review again for that case. Label
+   any other `stale` with its reasons and ask whether to review again. Report `unknown`, or a failed
+   call, as unknown. Keep the finished results in every case.
 
 6. Save the worker reports and `$dir/report.md` with the [report template](report.md).
 

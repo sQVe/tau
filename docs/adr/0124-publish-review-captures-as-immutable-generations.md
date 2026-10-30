@@ -49,17 +49,18 @@ commit sits on the base commit of the chain. A fix capture without a complete en
 predecessor.
 
 The identity of a completed capture is the Git blob hash of its saved `capture.json`. Reads never
-change the saved files, apart from the Git objects the transition check reads. A read reports one of
-five states: completed, legacy, incomplete, altered, or missing. Only a completed capture with the
-expected identity counts as evidence. A read of a record with a complete endpoint checks that Git
-still has both trees and runs the transition check against the saved patch again. A missing tree
-makes the capture missing, and a transition that differs from the patch makes it altered. A
-completed result names its endpoint status separately, so a capture with an unsupported or
-incomplete endpoint still reads as completed. A version 3 record has no endpoint. Version 1 and
-version 2 records saved no original artifacts, so they read as legacy and never count for strict
-chains. The evidence read reports an altered or missing capture as a gap, and it refuses an
-incomplete capture, which has no record to report. A fix capture refuses an earlier review in any of
-those states.
+change the saved capture files, apart from the Git objects the transition check reads. A freshness
+read may replace `recheck.diff`, which holds the current target for comparison and is not part of a
+generation. A read reports one of five states: completed, legacy, incomplete, altered, or missing.
+Only a completed capture with the expected identity counts as evidence. A read of a record with a
+complete endpoint checks that Git still has both trees and runs the transition check against the
+saved patch again. A missing tree makes the capture missing, and a transition that differs from the
+patch makes it altered. A completed result names its endpoint status separately, so a capture with
+an unsupported or incomplete endpoint still reads as completed. A version 3 record has no endpoint.
+Version 1 and version 2 records saved no original artifacts, so they read as legacy and never count
+for strict chains. The evidence read reports an altered or missing capture as a gap, and it refuses
+an incomplete capture, which has no record to report. A fix capture refuses an earlier review in any
+of those states.
 
 The chain coverage read checks a list of saved reviews, root first, against a merge base and a head.
 It reads each record and its generation, and it compares the last endpoint tree with the head tree.

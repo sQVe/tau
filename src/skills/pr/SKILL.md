@@ -57,10 +57,17 @@ to ready. Neither choice completes a required action.
    updates. Start it with `// @options: {"max_output_tokens": 4000}`.
    - Call the `pr` tool's `evidence` action. Pass the user-named remote as `remote`, when given.
      Pass the stack parent for a tracked branch, otherwise the user-named base, as `base`. It wins
-     over an open PR's base, so the target and merge base follow the stack. Pass the newest
-     `.tau/workers/review-*` directory saved for this branch as `review`, when one exists. Check
-     that the review directory belongs to this branch, from its saved input or session evidence.
-     Report unclear ownership as evidence that could not be read, in the session report.
+     over an open PR's base, so the target and merge base follow the stack. Select the newest
+     `.tau/workers/review-*` for this branch from its saved input or session evidence. Read its
+     `report.md` target kind and identity. For a fix, follow its recorded predecessor directory back
+     to the full root, checking `capture.json` `target.review` at each link. Take each earlier
+     identity from its successor's recorded predecessor identity (`target.predecessor.identity`),
+     not from a fresh hash of that earlier capture. For the newest identity only, use
+     `git hash-object <directory>/capture.json` if its report has none. Pass `chain` as
+     `[{directory, identity}]`, root first, and the root directory as `review` together. Report
+     unclear ownership, missing links, or unavailable identities as evidence gaps; never invent a
+     link or identity. When these prevent selecting a chain, pass the available root as `review` and
+     assess the saved evidence manually in step 4.
    - In the same script, find ticket IDs in the user's links, `branch`, commit `subjects`, and
      `target.pr.body`. Read each distinct ticket with its service's CLI, such as
      `linear issue view <id> --json --no-pager --no-download`. Use returned issue IDs, not branch
@@ -74,11 +81,11 @@ to ready. Neither choice completes a required action.
      [finish-slice skill](../finish-slice/SKILL.md), recommended, or continue with the missing or
      old audit. Then each slice or agent ticket acceptance item no step 5 check covers is not run.
    - Print the target's head, base, merge base, repository, open PR fields, and closed PRs; ticket
-     intent; reuse status, reasons, and available reports; review freshness and evidence gaps; added
-     skip or suppression markers; matching check-log paths with their bounded excerpts, and
-     `fullCheck` with its status, log path, and excerpt. Print one combined list of gaps from the
-     tool, failed or skipped reads, missing ticket intent, and anything omitted to fit the limit.
-     Read omitted evidence through its returned path when needed.
+     intent; coverage status, reasons, and links; reuse status and available reports; review
+     freshness and evidence gaps; added skip or suppression markers; matching check-log paths with
+     their bounded excerpts, and `fullCheck` with its status, log path, and excerpt. Print one
+     combined list of gaps from the tool, failed or skipped reads, missing ticket intent, and
+     anything omitted to fit the limit. Read omitted evidence through its returned path when needed.
    - The script gathers evidence only. It never calls `prepare` or `verify`, and writes nothing
      itself. Target questions, rebases, review runs, previews, and approvals stay outside it.
    - If `target` is null because no head remote or several were found, ask which remote to use and
@@ -105,31 +112,37 @@ to ready. Neither choice completes a required action.
    - Note a failed run, including a missing skill or worker tools, in the session report. It does
      not change the draft status in step 6. Go on.
 
-4. Review `<merge base>..HEAD`, with both ends pinned. Rerun step 1's evidence script if the branch
-   or saved evidence changed since collection. Reuse an earlier review only if:
-   - The session or saved `.tau/workers/review-*/` files show every worker reported (`reviewer.md`,
-     or `finder.md` and `checker.md`), and no evidence is unreadable or cut, besides areas a worker
-     read shallowly. Unstated status is unknown; do not reuse it.
-   - The script's `reuse.status` is `match` for that review and the current merge base.
-   - The script's review freshness passed. A changed head or stale capture blocks reuse, even when
-     the branch diff matches. A missing or unknown result is not a pass.
-   - Callers and rules outside the capture have no relevant changes.
-
-   When reuse fails and a saved review exists, ask with `ask_user_question`: assess the saved
-   reviews manually, or run a fast rereview. Recommend the manual assessment when every worker of
-   those reviews reported, and the diff since the newest is small and touches no outside caller or
-   rule. Otherwise recommend the fast rereview.
-   - Manual assessment: read every saved review the chain needs, such as the full review and each
-     later fix review, and the diff since the newest one. The evidence script gets only the newest
-     `.tau/workers/review-*` directory, so read the earlier reports from their saved paths. Record
-     the evidence you inspected and your judgment in the session report. Never report the assessment
-     as a tool match or as fresh. Missing required review evidence stays a required action in
-     step 6.
+4. Review `<merge base>..HEAD`, with both ends pinned. Rerun step 1's evidence script after commits
+   or saved evidence changes. Coverage compares committed HEAD, not the working tree.
+   - With `coverage.status: match`, accept the chain's content coverage without a new full review. A
+     moved HEAD or stale freshness alone does not invalidate it when reviewed content was committed
+     unchanged. Keep freshness and single-review reuse facts separate from coverage.
+   - For every selected link, read `report.md` and every worker report (`reviewer.md`, or
+     `finder.md` and `checker.md`). Check completion, verdicts, findings and their dispositions,
+     whether each fix stays within its findings, and relevant caller or rule changes outside the
+     captures. Unstated completion is unknown. Content identity is not a clean verdict.
+   - An unfinished reviewer, unreadable required report, fix beyond its findings, or relevant
+     outside change leaves a named required action, even with coverage `match`. State the missing
+     review evidence or unreviewed scope and what would complete it. Step 6 recommends draft while
+     it remains open; shallow reading alone stays a note.
+   - For `mismatch` or `unknown`, inspect `reasons` and `links` to identify the missing link,
+     artifact, or changed content. Restore available evidence or review only the uncovered scope.
+     Carry genuinely missing evidence into step 6 as a named required action, never a generic
+     mismatch item. Recheck coverage after repairs; neither result is a pass.
+   - For `unsupported`, or saved evidence that cannot form a tool chain, offer manual assessment
+     before a fast rereview with `ask_user_question`. Recommend assessment for old records, not a
+     new review merely because their format is unsupported.
+   - Manual assessment: read the full review, each later fix review, and the diff since the newest.
+     Apply the same per-link checks above. Record the paths inspected and your coverage judgment in
+     the session report, never as a tool match or as fresh. Missing required evidence stays a named
+     required action in step 6. If assessment cannot establish coverage, offer a fast rereview of
+     the uncovered scope or continuation with the action open.
 
    When no saved review exists, or when the user chooses the fast rereview, run the
-   [code-review skill](../code-review/SKILL.md) in fast mode on the range. If the skill or worker
-   tools are missing, that is missing review coverage: a required action in step 6. Do not review in
-   their place. Follow that skill's ownership, fix, and approval flow.
+   [code-review skill](../code-review/SKILL.md) in fast mode on the uncovered scope (the pinned
+   range when none is covered). If the skill or worker tools are missing, name the missing review
+   coverage as a required action in step 6. Do not review in their place. Follow that skill's
+   ownership, fix, and approval flow.
 
 5. Run checks. Rerun the evidence script first. Reuse a required pre-merge check only when the
    script lists its log as matching and reading its result shows it passed. The full check is the
@@ -183,6 +196,9 @@ to ready. Neither choice completes a required action.
    reviewed again, or when the user dismisses it as not a defect. Record the dismissal reason in the
    session report. Deferred, Blocked, or unfixed findings stay open unless the user accepts them as
    such a follow-up.
+
+   Keep every link's report path, verdict, and fix-scope assessment in the session report. A
+   coverage match does not close findings or replace this readiness judgment.
 
    Areas a worker read shallowly are session-report notes, not required actions. Accept checked
    fixes without asking, and list them in the session report. If other post-review commits make
@@ -268,10 +284,11 @@ to ready. Neither choice completes a required action.
    - In a stack, list each branch to push with its local SHA and explain that each is force-pushed
      with a lease. Show the `gh stack link` command, or why step 9 cannot link.
    - Include the session report: commits made, comment removals, review and check sources, review
-     history, reviewed commits, fixes accepted without a new review and what each fixes, rebase
-     notes, machine-local failures that do not block relevant coverage, reviewer notes, dismissed
-     findings with their reasons, every open required action with its basis, next action, and
-     completion condition, and evidence that could not be read or was cut.
+     history with each link's report path, verdict, and scope assessment, coverage results and any
+     manual judgment, reviewed commits, fixes accepted without a new review and what each fixes,
+     rebase notes, machine-local failures that do not block relevant coverage, reviewer notes,
+     dismissed findings with their reasons, every open required action with its basis, next action,
+     and completion condition, and evidence that could not be read or was cut.
    - For a self-review, show the review's top-level body and each comment's text, file, line, and
      the head SHA it anchors to. A change to the body, a text, or an anchor needs a new preview,
      unless the user's answer named that exact change and you apply it as stated. The anchor's side
