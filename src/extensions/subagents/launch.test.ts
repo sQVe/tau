@@ -1,9 +1,10 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, vi } from 'vitest';
 
+import { declinedExec } from '../../../tests/declinedExecFake.js';
 import type { WorkerController } from './controller/controller.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
-import { executeLaunch } from './launch.js';
+import { executeInitialLaunch } from './launch.js';
 import type { LaunchParameters } from './launchParameters.js';
 import * as loadouts from './loadout.js';
 
@@ -37,15 +38,19 @@ const launchWith = async (parameters: LaunchParameters, routed: typeof routing |
 
   vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: routed });
 
-  const result = await executeLaunch(
+  const result = await executeInitialLaunch(
     {
-      pi: { getCommands: () => [] },
+      pi: { getCommands: () => [], exec: declinedExec },
       getController: () => Promise.resolve(controller),
       refuseCapacity: () => {},
     },
     { parameters, startedAt: { wall: 1, monotonic: 2 }, parentSession: '/work/parent.jsonl' },
     undefined,
-    { sessionManager: { getSessionId: () => 'parent-one' } } as unknown as ExtensionContext,
+    {
+      cwd: '/work',
+      isProjectTrusted: () => true,
+      sessionManager: { getSessionId: () => 'parent-one' },
+    } as unknown as ExtensionContext,
   );
 
   return { result, inputs };
@@ -59,6 +64,57 @@ const launchInput = {
   parentSession: '/work/parent.jsonl',
   parentSessionId: 'parent-one',
 };
+
+it('cancels the launch wait without cancelling shared controller resume', async () => {
+  const resumed = Promise.withResolvers<WorkerController>();
+  const resuming = Promise.withResolvers<undefined>();
+  const abort = new AbortController();
+  const launch = vi.fn<WorkerController['launch']>();
+  const commands = vi.fn<() => []>(() => []);
+  let failure: unknown;
+
+  const pending = executeInitialLaunch(
+    {
+      pi: { getCommands: commands, exec: declinedExec },
+      getController: () => {
+        resuming.resolve(undefined);
+
+        return resumed.promise;
+      },
+      refuseCapacity: () => {},
+    },
+    {
+      parameters: { task: 'Inspect.', profile: 'scout', timeoutSeconds: 10 },
+      startedAt: { wall: Date.now(), monotonic: performance.now() },
+      parentSession: '/work/parent.jsonl',
+    },
+    abort.signal,
+    { cwd: '/work' } as ExtensionContext,
+  ).catch((error: unknown) => {
+    failure = error;
+  });
+
+  const reason = new Error('Caller cancelled the launch.');
+
+  await resuming.promise;
+  abort.abort(reason);
+
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+
+  expect(failure).toBe(reason);
+  await pending;
+
+  resumed.resolve({ launch } as unknown as WorkerController);
+
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+
+  expect(commands).not.toHaveBeenCalled();
+  expect(launch).not.toHaveBeenCalled();
+});
 
 it('passes the caller settings and route to the controller', async () => {
   const { inputs } = await launchWith(

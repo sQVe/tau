@@ -345,14 +345,16 @@ it('does not run the command for a launch the caller already aborted', async () 
 
   writeUser(settingsFor(`sleep 0.3; touch ran; echo http://localhost:1`));
 
+  const signal = AbortSignal.abort(new Error('Caller cancelled.'));
+
   const refusal = applyQaSettings(
     launch(worktree),
-    AbortSignal.abort(),
+    signal,
     context(worktree) as never,
     declinedExec,
   );
 
-  await expect(refusal).rejects.toThrow('qa.repositories');
+  await expect(refusal).rejects.toBe(signal.reason);
 
   await new Promise<void>((resolve) => {
     setTimeout(resolve, 700);
@@ -428,7 +430,11 @@ it.each([
       declinedExec,
     );
 
-    await expect(refusal).rejects.toThrow('failed or timed out');
+    const expectedFailure = alreadyAborted
+      ? (controller.signal.reason as Error)
+      : /failed or timed out/u;
+
+    await expect(refusal).rejects.toThrow(expectedFailure);
 
     // Node delivers a failed spawn's error after spawn returns, even when the caller has aborted.
     expect(() => {

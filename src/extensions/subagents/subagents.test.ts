@@ -1,7 +1,9 @@
+import { ChildProcess, execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
+import { PassThrough } from 'node:stream';
 
 import type {
   ExtensionAPI,
@@ -16,6 +18,7 @@ import { Value } from 'typebox/value';
 import { expect, it, vi, onTestFinished as finishTest } from 'vitest';
 
 import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
+import { initializeRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { skillTools } from '../../skillTools.js';
 import { workerNoticeChannel } from '../../worker.js';
@@ -26,6 +29,14 @@ import { delegationGuidelines } from './managerPrompt.js';
 import type { WorkerNotice } from './presentation.js';
 import subagentsExtension, { createNoticeDelivery, registerCapacityRefusal } from './subagents.js';
 import type { WorkerWidgetRow } from './widget.js';
+
+vi.mock(import('node:child_process'), async (importOriginal) => {
+  const original = await importOriginal();
+
+  const spawnFake = vi.fn<typeof original.spawn>(original.spawn);
+
+  return { ...original, spawn: spawnFake as unknown as typeof original.spawn };
+});
 
 const emitEvent = async (
   handlers: ReturnType<typeof fakeExtensionApi>['handlers'],
@@ -61,8 +72,8 @@ const emitToolCall = async (
   return result;
 };
 
-const registerTools = () => {
-  const fake = fakeExtensionApi();
+const registerTools = (overrides: Partial<ExtensionAPI> = {}) => {
+  const fake = fakeExtensionApi(overrides);
   subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
 
   return fake.tools;
@@ -1116,7 +1127,10 @@ const listeningServer = async () => {
   };
 };
 
-const environmentLaunch = (onTestFinished: (cleanup: () => void) => void) => {
+const environmentLaunch = (
+  onTestFinished: (cleanup: () => void) => void,
+  overrides: Partial<ExtensionAPI> = {},
+) => {
   const directory = temporaryDirectory(finishTest, 'tau-environment-tool-');
 
   onTestFinished(() => {
@@ -1129,7 +1143,7 @@ const environmentLaunch = (onTestFinished: (cleanup: () => void) => void) => {
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
-  const tool = registerTools().get('subagent');
+  const tool = registerTools(overrides).get('subagent');
 
   if (!tool) {
     throw new Error('Missing launch tool.');
@@ -1139,17 +1153,378 @@ const environmentLaunch = (onTestFinished: (cleanup: () => void) => void) => {
     .spyOn(WorkerController.prototype, 'launch')
     .mockResolvedValue({} as Awaited<ReturnType<WorkerController['launch']>>);
 
-  const execute = (input: Record<string, unknown>, context: Record<string, unknown> = {}) =>
+  const execute = (
+    input: Record<string, unknown>,
+    context: Record<string, unknown> = {},
+    signal?: AbortSignal,
+  ) =>
     tool.execute(
       'call',
       { model: fixtureModelReference, task: 'Test the form.', ...input },
+      signal,
       undefined,
-      undefined,
-      { ...launchContext(directory), ...context },
+      {
+        ...launchContext(directory),
+        ui: { notify: () => {} },
+        ...context,
+      } as unknown as ExtensionToolContext,
     );
 
   return { directory, launch, execute, parameters: tool.parameters };
 };
+
+const pendingUntilAborted = (signal: AbortSignal): Promise<never> => {
+  const pending = Promise.withResolvers<never>();
+
+  signal.addEventListener(
+    'abort',
+    () => {
+      pending.reject(signal.reason);
+    },
+    { once: true },
+  );
+
+  return pending.promise;
+};
+
+it('initial launch preparation stops at the original work deadline', async ({ onTestFinished }) => {
+  const { launch, execute } = environmentLaunch(onTestFinished);
+  const requested = Promise.withResolvers<undefined>();
+  let requestSignal: AbortSignal | undefined;
+  let failure: unknown;
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  vi.stubGlobal('fetch', (_url: string, options: { signal: AbortSignal }) => {
+    requestSignal = options.signal;
+    requested.resolve(undefined);
+
+    return pendingUntilAborted(options.signal);
+  });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const pending = execute({
+    profile: 'browser',
+    url: 'http://localhost:3000',
+    timeoutSeconds: 10,
+  }).catch((error: unknown) => {
+    failure = error;
+  });
+
+  await requested.promise;
+  await vi.advanceTimersByTimeAsync(7_499);
+  expect(failure).toBeUndefined();
+  await vi.advanceTimersByTimeAsync(1);
+
+  expect(failure).toBeInstanceOf(Error);
+  expect(String(failure)).toContain('work budget expired');
+  expect(requestSignal?.aborted).toBe(true);
+  expect(launch).not.toHaveBeenCalled();
+  await pending;
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(launch).not.toHaveBeenCalled();
+});
+
+it('hands deadline ownership to the controller while preserving caller cancellation', async ({
+  onTestFinished,
+}) => {
+  const { execute, launch } = environmentLaunch(onTestFinished);
+  const caller = new AbortController();
+  const starting = Promise.withResolvers<undefined>();
+  const launched = Promise.withResolvers<Awaited<ReturnType<WorkerController['launch']>>>();
+  let workerSignal: AbortSignal | undefined;
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  launch.mockImplementation((_input, signal) => {
+    workerSignal = signal;
+    starting.resolve(undefined);
+
+    return launched.promise;
+  });
+
+  const pending = execute({ profile: 'scout', timeoutSeconds: 10 }, {}, caller.signal);
+
+  await starting.promise;
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(workerSignal?.aborted).toBe(false);
+  launched.resolve({} as Awaited<ReturnType<WorkerController['launch']>>);
+  await pending;
+
+  const reason = new Error('Caller cancelled after startup.');
+
+  caller.abort(reason);
+  expect(workerSignal?.reason).toBe(reason);
+});
+
+it('bounds SSH origin resolution by the initial work deadline', async ({ onTestFinished }) => {
+  const entered = Promise.withResolvers<undefined>();
+  let originSignal: AbortSignal | undefined;
+
+  const { directory, execute, launch } = environmentLaunch(onTestFinished, {
+    exec: (_command, _argumentsList, options) => {
+      originSignal = options?.signal;
+      entered.resolve(undefined);
+
+      if (originSignal === undefined) {
+        throw new Error('Missing origin cancellation signal.');
+      }
+
+      return pendingUntilAborted(originSignal);
+    },
+  });
+
+  await initializeRepository(directory);
+  execFileSync('git', ['remote', 'add', 'origin', 'git@work:sQVe/tau.git'], { cwd: directory });
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  let failure: unknown;
+
+  const pending = execute({ profile: 'qa', timeoutSeconds: 10 }).catch((error: unknown) => {
+    failure = error;
+  });
+
+  await Promise.race([entered.promise, pending]);
+  expect(failure).toBeUndefined();
+  await vi.advanceTimersByTimeAsync(7_500);
+  expect(String(failure)).toContain('work budget expired');
+  await pending;
+  expect(originSignal?.aborted).toBe(true);
+  expect(launch).not.toHaveBeenCalled();
+});
+
+it('stops waiting for shared controller resume at the original work deadline', async ({
+  onTestFinished,
+}) => {
+  const { execute, launch } = environmentLaunch(onTestFinished);
+  const started = Promise.withResolvers<undefined>();
+  const resumed = Promise.withResolvers<undefined>();
+  let failure: unknown;
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  vi.spyOn(WorkerController.prototype, 'resume').mockImplementation(() => {
+    started.resolve(undefined);
+
+    return resumed.promise;
+  });
+
+  const pending = execute({ profile: 'scout', timeoutSeconds: 10 }).catch((error: unknown) => {
+    failure = error;
+  });
+
+  await started.promise;
+  await vi.advanceTimersByTimeAsync(7_500);
+  expect(String(failure)).toContain('work budget expired');
+  await pending;
+  resumed.resolve(undefined);
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(launch).not.toHaveBeenCalled();
+});
+
+const delayedQaCommand = async (
+  onTestFinished: (cleanup: () => void) => void,
+  commandDelay: number,
+) => {
+  const fixture = environmentLaunch(onTestFinished);
+  const { directory } = fixture;
+
+  await initializeRepository(directory);
+
+  execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/sQVe/tau.git'], {
+    cwd: directory,
+  });
+
+  const configuration = {
+    qa: { repositories: { 'sQVe/tau': { urlCommand: 'fixture-command' } } },
+    profiles: {
+      qa: {
+        model: fixtureModelReference,
+        route: {
+          classifier: 'fixture/router',
+          question: 'Which model?',
+          labels: {
+            selected: { criterion: 'A small task.', model: fixtureModelReference },
+            other: { criterion: 'A large task.', model: fixtureModelReference },
+          },
+        },
+      },
+    },
+  };
+
+  const agentDirectory = join(directory, 'agent');
+
+  mkdirSync(agentDirectory);
+  vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
+  writeFileSync(join(agentDirectory, 'tau.json'), JSON.stringify(configuration));
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  const started = Promise.withResolvers<undefined>();
+  const child = new ChildProcess();
+  const output = new PassThrough();
+  const killed: NodeJS.Signals[] = [];
+
+  child.stdout = output;
+  Object.defineProperty(child, 'pid', { value: 99_999_999 });
+
+  vi.mocked(spawn).mockImplementationOnce(() => {
+    const timer = setTimeout(() => {
+      output.end('http://localhost:3000');
+      child.emit('close', 0);
+    }, commandDelay);
+
+    vi.spyOn(process, 'kill').mockImplementation((_processId, signal) => {
+      killed.push(signal as NodeJS.Signals);
+      clearTimeout(timer);
+      child.emit('close', null);
+
+      return true;
+    });
+
+    started.resolve(undefined);
+
+    return child;
+  });
+
+  return { ...fixture, started: started.promise, killed };
+};
+
+it.for([
+  { stage: 'HTTP after the command', commandDelay: 6_000, requestCount: 1, killCount: 0 },
+  { stage: 'the command', commandDelay: 18_000, requestCount: 0, killCount: 1 },
+])(
+  'bounds $stage with the same initial work budget',
+  async ({ commandDelay, requestCount, killCount }, { onTestFinished }) => {
+    const { execute, launch, started, killed } = await delayedQaCommand(
+      onTestFinished,
+      commandDelay,
+    );
+
+    const requests: AbortSignal[] = [];
+    let failure: unknown;
+
+    vi.stubGlobal('fetch', (_url: string, options: { signal: AbortSignal }) => {
+      requests.push(options.signal);
+
+      return pendingUntilAborted(options.signal);
+    });
+
+    const pending = execute({ profile: 'qa', timeoutSeconds: 10 }).catch((error: unknown) => {
+      failure = error;
+    });
+
+    await Promise.race([started, pending]);
+    expect(failure).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(7_499);
+    expect(failure).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(String(failure)).toContain('work budget expired');
+    await pending;
+    expect(requests).toHaveLength(requestCount);
+    expect(requests.every((signal) => signal.aborted)).toBe(true);
+    expect(killed).toHaveLength(killCount);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(launch).not.toHaveBeenCalled();
+  },
+);
+
+it.for([
+  { stage: 'command', elapsed: 300, killCount: 1 },
+  { stage: 'HTTP', elapsed: 6_300, killCount: 0 },
+])(
+  'keeps caller cancellation effective during $stage preparation',
+  async ({ elapsed, killCount }, { onTestFinished }) => {
+    const { execute, launch, started, killed } = await delayedQaCommand(onTestFinished, 6_000);
+    const controller = new AbortController();
+    const reason = new Error('Caller cancelled.');
+    const requests: AbortSignal[] = [];
+    let failure: unknown;
+
+    vi.stubGlobal('fetch', (_url: string, options: { signal: AbortSignal }) => {
+      requests.push(options.signal);
+
+      return pendingUntilAborted(options.signal);
+    });
+
+    const pending = execute({ profile: 'qa', timeoutSeconds: 10 }, {}, controller.signal).catch(
+      (error: unknown) => {
+        failure = error;
+      },
+    );
+
+    await Promise.race([started, pending]);
+    expect(failure).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(elapsed);
+    controller.abort(reason);
+    await pending;
+    expect(failure).toBe(reason);
+    expect(killed).toHaveLength(killCount);
+    expect(requests.every((signal) => signal.aborted)).toBe(true);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(launch).not.toHaveBeenCalled();
+  },
+);
+
+it('bounds routing by the work time left after QA preparation', async ({ onTestFinished }) => {
+  const { execute, launch, started } = await delayedQaCommand(onTestFinished, 6_000);
+  const classification = Promise.withResolvers<undefined>();
+  let classificationSignal: AbortSignal | undefined;
+  let failure: unknown;
+
+  const modelRegistry = {
+    find: () => fixtureModel,
+    findOfType: () => ({ id: 'router' }),
+    classify: (_model: unknown, _request: unknown, options: { signal: AbortSignal }) => {
+      classificationSignal = options.signal;
+      classification.resolve(undefined);
+
+      return pendingUntilAborted(options.signal);
+    },
+  };
+
+  vi.stubGlobal('fetch', () => Promise.resolve({ status: 200 }));
+
+  const pending = execute(
+    { profile: 'qa', timeoutSeconds: 10, model: undefined },
+    { modelRegistry },
+  ).catch((error: unknown) => {
+    failure = error;
+  });
+
+  await Promise.race([started, pending]);
+  expect(failure).toBeUndefined();
+  await vi.advanceTimersByTimeAsync(6_000);
+  await classification.promise;
+  await vi.advanceTimersByTimeAsync(1_499);
+  expect(failure).toBeUndefined();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(String(failure)).toContain('work budget expired');
+  expect(classificationSignal?.aborted).toBe(true);
+  await pending;
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(launch).not.toHaveBeenCalled();
+});
 
 it('starts a QA launch with a reachable app and gives the worker its URL', async ({
   onTestFinished,
