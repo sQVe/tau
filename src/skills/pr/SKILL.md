@@ -26,6 +26,9 @@ to ready. Neither choice completes a required action.
   change after approval needs a new preview, unless the approved option or the user's answer already
   named that exact change and you apply it as stated, or the user made it in tuicr during that
   approval.
+- Apply the [decision evidence publication gate](../shared/decision-evidence.md#publication-gate)
+  independently of readiness and slice audits, including updates, ready transitions, retries, and
+  continue paths. Neither a draft choice nor a ready override bypasses it.
 - Ask every question with `ask_user_question`, including review approval and preview approval. Never
   ask in prose.
 - Follow the push rules in the [update-branch skill](../update-branch/SKILL.md). Never force-push
@@ -144,6 +147,13 @@ to ready. Neither choice completes a required action.
    coverage as a required action in step 6. Do not review in their place. Follow that skill's
    ownership, fix, and approval flow.
 
+   Assess [decision evidence](../shared/decision-evidence.md) from the selected reports for the
+   current change, including ordinary changes without tickets. Fill gaps from source evidence or
+   request the missing review assessment; do not infer compliance from coverage or a clean verdict.
+   Keep the assessment and its sources in the session report. Resolve contradictions before
+   publication. For remaining evidence gaps, stop or obtain the explicit change-specific exception
+   the shared guidance requires; continuing with review actions open is not that exception.
+
 5. Run checks. Rerun the evidence script first. Reuse a required pre-merge check only when the
    script lists its log as matching and reading its result shows it passed. The full check is the
    exception below. A match does not detect every edit to an already dirty file. Otherwise run it
@@ -240,9 +250,13 @@ to ready. Neither choice completes a required action.
      variable, or a route. Explain it at first use. Never put one in the lead.
    - Unfinished work: when the PR adds code that nothing uses yet, say what stays disconnected. Link
      any follow-up ticket in Verification. Never promise a delivery time.
-   - Decisions: optional. List only consequential choices, each with the option you rejected and
-     why. Put code-local reasons in a code comment allowed by the coding rules, or in a commit
+   - Decisions: list consequential choices, each with the option you rejected and why, when there
+     are any. Put code-local reasons in a code comment allowed by the coding rules, or in a commit
      message. Leave draft upstream issues and similar attachments out of the body.
+   - Decision evidence: give the change-specific conclusion and its supporting evidence in the
+     matching template section, or Verification. Include any explicitly approved gap exception and
+     its risk, without claiming compliance. Keep detailed local evidence references in the session
+     report; no new document is needed for a supported no-change conclusion.
    - Verification: outcomes and required actions only, in the template's verification section, such
      as Validation, Testing, or How to test. Keep that section even if optional for low-risk
      changes. If the template has no such section, put Verification after the summary. Give one line
@@ -299,6 +313,10 @@ to ready. Neither choice completes a required action.
      with these options in this order: Publish as draft, Publish as ready, Change something. Publish
      as draft and Publish as ready are Accept. Change something is Request changes. Put the title
      and full body in the question-level `preview`.
+   - Before the question, apply the
+     [publication gate](../shared/decision-evidence.md#publication-gate). Show the decision
+     conclusion and any explicitly approved gap exception in the preview, matching the body. Obtain
+     separate explicit gap approval before offering publication with that gap.
    - Before the question, show every required action with its basis, next action, and completion
      condition. Put the other preview items and the session report in visible text before the
      question, or in the question-level `preview`.
@@ -316,6 +334,12 @@ to ready. Neither choice completes a required action.
      approval.
 
 9. Publish.
+   - Recheck [decision evidence](../shared/decision-evidence.md#reuse-and-recheck) and its
+     publication gate after user edits, including tuicr edits and release-note commits. Read the
+     final preview files and relevant supporting sources, including policy and callers outside
+     captures. If an edit changes the conclusion or gap, or removes its disclosure, refresh the
+     evidence and preview again. Obtain new exception approval when needed. The user-edit approval
+     shortcuts do not bypass this gate; harmless edits retain those shortcuts.
    - Compare HEAD, local status, and commits to push with the preview; read the PR again. In a
      stack, compare each branch's SHA too. If anything changed, stop, refresh affected evidence, and
      preview again without losing new edits. A commit that only applies the user's tuicr edits of

@@ -63,7 +63,10 @@ named files. It needs the `subagent` tools inside herdr. Without them, tell the 
      `scope: "wholeTarget"` widened the change: capture the whole target fresh.
    - Keep the capture result's `identity` for `report.md`.
 
-3. Gather evidence as in [Gather evidence](phases.md#gather-evidence).
+3. Gather evidence as in [Gather evidence](phases.md#gather-evidence). Include the applicable
+   policy, design records, and affected callers needed by
+   [decision evidence](../shared/decision-evidence.md). Record missing sources as gaps, including
+   when there is no ticket.
 
 4. Run the mode, with the rules of [Run the workers](phases.md#run-the-workers).
    - Fast: one reviewer. Add "Try to disprove each finding before you report it."
@@ -79,7 +82,9 @@ named files. It needs the `subagent` tools inside herdr. Without them, tell the 
    any other `stale` with its reasons and ask whether to review again. Report `unknown`, or a failed
    call, as unknown. Keep the finished results in every case.
 
-6. Save the worker reports and `$dir/report.md` with the [report template](report.md).
+6. Save the worker reports and `$dir/report.md` with the [report template](report.md). Apply the
+   [decision evidence recheck rules](../shared/decision-evidence.md#reuse-and-recheck) to relevant
+   sources outside the capture too; tool freshness alone does not check them.
 
 7. Post `$dir/report.md` to the ticket, before any fixing. Skip this step without a ticket.
    - Call `tracker_draft` `prepare` with the ticket identifier in lower case. Find the earlier

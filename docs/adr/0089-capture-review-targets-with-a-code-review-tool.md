@@ -39,6 +39,13 @@ the reviewer, or bind verdicts to workers.
   looks for omissions.
 - The skill gathers the evidence once and passes it to the reviewers. Reviewer workers do not have
   the `code_review` tool, so the manager reads the evidence for them.
+- Existing reviewers assess change-specific decision evidence under shared skill guidance. Their
+  reports identify applicable repository policy, lasting choices, needed record changes, and
+  evidence that implementation follows the decisions. Supported no-change conclusions stay in the
+  report rather than create documents without a lasting choice.
+- Gaps and known contradictions remain distinct. The skill rechecks relevant policy and callers
+  outside the capture before reusing decision evidence; capture freshness cannot cover those reads.
+  This assessment adds no capture fields and does not change review-chain content coverage.
 
 ### Capture
 
@@ -124,6 +131,12 @@ review, and it cannot prove a verdict true.
 
 Keep evidence gathering in each manager's codemode script. Rejected because the reads are untested,
 and each script can read the wrong revision or drop files silently.
+
+### A separate decision reviewer or record format
+
+Add a reviewer or persisted record solely for decision compliance. Rejected because the existing
+reviewer already reads the change and its rules. Shared guidance and the existing reports carry the
+judgment without turning capture identity into a compliance verdict.
 
 ### A separate evidence tool
 
