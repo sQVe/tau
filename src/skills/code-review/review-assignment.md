@@ -1,7 +1,10 @@
 # Review assignment
 
 Give every worker `## Common` and `## Defect lens`, with `$dir` replaced by the review directory.
-Give a checker `## Checker` too.
+Give a checker `## Checker` too. Give every worker the
+[decision evidence guidance](../shared/decision-evidence.md) and ask for its change-specific
+assessment in the report. A fix review reassesses affected conclusions without reusing earlier
+verdicts. A checker checks the finder's decision evidence as well as its findings.
 
 ## Common
 

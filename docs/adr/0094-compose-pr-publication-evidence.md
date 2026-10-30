@@ -44,6 +44,21 @@ A matching identity means the log belongs to those inputs, not that its check pa
 returns bounded tails from matching logs and reports any cut. The skill keeps the publication
 judgment.
 
+The skill requires current, change-specific decision evidence for draft and ready publication,
+updates, and ready transitions, including changes without tickets. Shared skill guidance owns the
+assessment used by review and publication. Existing review reports carry its sources and conclusion;
+the PR preview and body carry the publication conclusion. This requirement is separate from slice
+audits and readiness suggestions, because choosing draft does not establish decision compliance.
+
+Missing evidence blocks publication unless the user explicitly approves the named change-specific
+gap. The preview and body disclose that exception without claiming compliance. A known contradiction
+cannot use an exception. Relevant changes invalidate affected evidence and exceptions, including
+policy or caller changes outside captures and user edits to publication claims. Unchanged evidence
+remains reusable under the existing freshness and review-chain content-coverage rules.
+
+This remains skill judgment, not a runtime lock or a new saved record format. A capture identity
+proves which bytes were reviewed, not whether a decision is justified or followed.
+
 ## Consequences
 
 ### Positive
@@ -55,6 +70,8 @@ judgment.
 ### Negative
 
 - The result is not an atomic snapshot. Git or files can change between reads.
+- Decision evidence depends on following the skill. Structural document checks cannot prove that a
+  reviewer or publisher followed it.
 
 ## Alternatives considered
 
@@ -62,6 +79,18 @@ judgment.
 
 Keep orchestration and log matching in the skill. Rejected because every publication run would need
 to repeat the same mechanics and failure handling.
+
+### Treat decision evidence as readiness advice only
+
+Allow a draft choice or ready override to bypass missing decision evidence. Rejected because those
+choices do not show which decision or compliance claim lacks support. A named gap exception keeps
+that uncertainty visible without treating a known contradiction as acceptable evidence.
+
+### Enforce decision judgment in the publication tool
+
+Add a runtime gate and structured decision records. Rejected because record presence cannot prove
+that the reasons or compliance claims hold. Existing reports preserve the evidence while the skill
+owns the judgment, without duplicating capture or review-chain mechanics.
 
 ### Reimplement the readers for publication
 

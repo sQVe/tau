@@ -14,6 +14,15 @@ Use this shape for the files in `$dir` and for the reply.
   `target.predecessor`, as for a fix on a legacy review, write the identity as `unavailable`. Never
   guess it.
 
+## Decision evidence
+
+Include a Decision evidence section in each worker report and `report.md`, and summarize it in the
+reply. Follow [decision evidence](../shared/decision-evidence.md): name the applicable policy and
+decisions, lasting choices and required record changes, compliance evidence, and the change-specific
+reason for any no-change conclusion. Identify the checked scope and supporting content, including
+sources outside the capture. List gaps and contradictions separately; a clean findings table does
+not replace this assessment.
+
 ## Reply
 
 - Header: the target, mode, elapsed time when you observed it, freshness (fresh, stale, or unknown),
