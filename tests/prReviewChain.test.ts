@@ -18,7 +18,6 @@ const commitFeature = async (root: string, text: string) => {
   return git(root, 'rev-parse', 'HEAD');
 };
 
-// A feature branch with a full review of its one commit, then two fixes, each committed unchanged.
 const setUpChain = async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const remote = temporaryDirectory(onTestFinished, 'tau-pr-chain-');
