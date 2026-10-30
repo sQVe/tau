@@ -19,10 +19,12 @@ Compose publication evidence in one `pr` action, and bind saved check logs to ex
 identities rather than their timestamps.
 
 The action calls the existing readers without replacing their results or rules. It reads reuse
-before review evidence because freshness recapture can replace the saved diff that reuse compares.
-Failures and missing evidence remain gaps; they do not hide independent evidence or become a
-publication verdict. The action inherits the target reader's base fetch and the review reader's
-freshness recapture. It writes no other worktree files.
+before review evidence because freshness recapture replaces `recheck.diff`, the copy of the current
+target that reuse compares. The saved capture files never change; see
+[ADR 0124](./0124-publish-review-captures-as-immutable-generations.md). Failures and missing
+evidence remain gaps; they do not hide independent evidence or become a publication verdict. The
+action inherits the target reader's base fetch and the review reader's freshness recapture. It
+writes no other worktree files.
 
 The full check has one identity, the saved record that `full_check` writes next to its log in
 `.tau/checks` (see [ADR 0105](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md)).
