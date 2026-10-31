@@ -287,6 +287,20 @@ it('names the record directory when another herdr call fails', async () => {
   );
 });
 
+it('names the record directory and keeps it when a herdr call fails during collect', async () => {
+  const herdr = herdrFake();
+  const { run } = await fixture(herdr);
+
+  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
+  const { directory } = opened.details as { directory: string };
+
+  herdr.failCall('pane process-info', socketClosed());
+
+  await expect(run({ action: 'collect', directory })).rejects.toThrow(directory);
+
+  expect(existsSync(directory)).toBe(true);
+});
+
 it('ignores a pane that is already gone on close but names the record when close fails', async () => {
   const herdr = herdrFake();
   herdr.failCall('pane run', socketClosed());
@@ -828,7 +842,7 @@ it('fails naming the record when the tuicr process never exits, and deletes noth
 
   const directory = (opened.details as { directory: string }).directory;
 
-  await expect(run({ action: 'collect', directory })).rejects.toThrow(directory);
+  await expect(run({ action: 'collect', directory })).rejects.toThrow(/to try again\.$/);
 
   expect(await deleted()).toEqual([]);
   expect(await records()).toHaveLength(1);
