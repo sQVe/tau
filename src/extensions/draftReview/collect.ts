@@ -198,9 +198,10 @@ const writeBack = async (review: Review, record: CollectedRecord): Promise<void>
 
     // A file that disappears before the write is a conflict, like one missing at the read.
     const written =
+      current !== undefined &&
       decision === 'apply' &&
       // oxlint-disable-next-line no-await-in-loop -- Each write follows its own recheck.
-      (await writeDestination(review.tauDirectory, edit.path, edit.staged).catch(
+      (await writeDestination(review.tauDirectory, edit.path, edit.staged, current).catch(
         (error: unknown) => {
           throw refusalWithProgress(error, record);
         },
