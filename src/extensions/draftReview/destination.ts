@@ -22,8 +22,6 @@ const refusals: Record<Exclude<DestinationDecision, 'writable'>, string> = {
 
 const readChunkBytes = 65536;
 
-// Reads from byte 0 to the end of the file, whatever its size was at the stat. Each read names its
-// position, so the file position stays at 0 for the write that follows.
 const readHeldContent = async (handle: FileHandle): Promise<string> => {
   const chunks: Buffer[] = [];
   let position = 0;

@@ -124,7 +124,6 @@ const collect = async (
       isProcessRunning: runtime.isProcessRunning,
       recordDirectory: record.recordDirectory,
     }).catch((error: unknown) => {
-      // The exit timeout already names the record directory.
       if (error instanceof TuicrExitTimeoutError) {
         throw error;
       }
