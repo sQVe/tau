@@ -1,16 +1,8 @@
-import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { isMissingFile } from '../../errors.js';
 import { readGit, runGit } from '../../git.js';
-import {
-  checkReviewDirectory,
-  existingEntry,
-  fixedPrefixes,
-  hashBytes,
-  readCaptureRecord,
-  recheckFileName,
-} from '../../reviewCapture/reviewCapture.js';
+import { fixedPrefixes, readSavedRecapture } from '../../reviewCapture/reviewCapture.js';
+import { existingEntry } from '../../tauDirectory.js';
 import { compareDiffs, decideReuse } from './reuseDecisions.js';
 import type { DiffComparison, Reuse } from './reuseDecisions.js';
 
@@ -26,20 +18,6 @@ export interface ReuseResult extends Reuse {
 }
 
 const reportFileNames = ['reviewer.md', 'finder.md', 'checker.md'];
-
-const readRecheck = async (path: string) => {
-  try {
-    return await readFile(path);
-  } catch (error) {
-    if (isMissingFile(error)) {
-      throw new Error(`No recheck.diff at ${path}. Run code_review freshness first.`, {
-        cause: error,
-      });
-    }
-
-    throw error;
-  }
-};
 
 const resolveCommit = (root: string, revision: string): Promise<string> =>
   readGit(root, ['rev-parse', '--verify', '--end-of-options', `${revision}^{commit}`]);
@@ -102,29 +80,26 @@ export const readReuse = async (root: string, request: ReuseRequest): Promise<Re
     throw new Error('reuse needs mergeBase.');
   }
 
-  const directory = await checkReviewDirectory(root, request.directory);
-  const record = await readCaptureRecord(directory);
-  const recheckPath = join(directory, recheckFileName);
-  const recheck = await readRecheck(recheckPath);
-  const hashed = await hashBytes(root, recheck);
-
-  if (hashed.error !== undefined) {
-    throw new Error(hashed.error);
-  }
+  const saved = await readSavedRecapture(root, request.directory);
 
   const mergeBase = await resolveCommit(root, request.mergeBase);
-  const recordedBase = record.base;
+  const recordedBase = saved.recordedBase;
   const baseIsAncestor = recordedBase !== null && (await isAncestor(root, recordedBase, mergeBase));
-  const comparison = compareDiffs(recheck, await readBranchDiff(root, mergeBase));
+  const comparison = compareDiffs(saved.recheck, await readBranchDiff(root, mergeBase));
 
   const decision = decideReuse({
-    recordedHash: record.hash,
-    recheckHash: hashed.hash,
+    recordedHash: saved.recordedHash,
+    recheckHash: saved.recheckHash,
     recordedBase,
     mergeBase,
     baseIsAncestor,
     comparison,
   });
 
-  return { ...decision, recordedBase, paths: comparison, reports: await listReports(directory) };
+  return {
+    ...decision,
+    recordedBase,
+    paths: comparison,
+    reports: await listReports(saved.directory),
+  };
 };

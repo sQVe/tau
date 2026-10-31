@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { errorMessage, hasErrorCode, isMissingFile } from '../errors.js';
 import { runGit } from '../git.js';
 import type { GitResult } from '../git.js';
+import { existingEntry } from '../tauDirectory.js';
 import {
   captureTarget,
   captureWholeFile,
@@ -27,7 +28,7 @@ import { hasOnlyLineEndingWarnings } from './lineEndingWarning.js';
 import { shownBlobs } from './patchBlobs.js';
 import { isRepositoryPath, snapshotFolder } from './record.js';
 import type { Snapshot } from './record.js';
-import { checkReviewDirectory, existingEntry } from './reviewDirectory.js';
+import { checkReviewDirectory } from './reviewDirectory.js';
 import type { PinnedTarget } from './target.js';
 
 export type FixTarget = Extract<PinnedTarget, { kind: 'fix' }>;

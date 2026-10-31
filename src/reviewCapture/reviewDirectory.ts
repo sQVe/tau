@@ -1,9 +1,11 @@
-import type { Stats } from 'node:fs';
-import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { isMissingFile } from '../errors.js';
-import { checkTauDirectory, rejectLinkedFile, requireTauChild } from '../tauDirectory.js';
+import {
+  checkTauDirectory,
+  existingEntry,
+  rejectLinkedFile,
+  requireTauChild,
+} from '../tauDirectory.js';
 import {
   generationFolderName,
   generationInputFileName,
@@ -15,15 +17,6 @@ import {
 
 export const workersPath = 'workers';
 export const reviewPrefix = 'review-';
-
-export const existingEntry = (path: string): Promise<Stats | undefined> =>
-  lstat(path).catch((error: unknown) => {
-    if (isMissingFile(error)) {
-      return undefined;
-    }
-
-    throw error;
-  });
 
 const reviewName = (root: string, directory: string) =>
   requireTauChild(root, workersPath, reviewPrefix, directory, 'The review directory');

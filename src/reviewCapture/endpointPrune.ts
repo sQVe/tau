@@ -3,11 +3,12 @@ import { basename, join } from 'node:path';
 
 import { isMissingFile } from '../errors.js';
 import { readGit, runGit } from '../git.js';
+import { existingEntry } from '../tauDirectory.js';
 import { decideEndpointPrune } from './endpointPruneDecision.js';
 import type { DirectoryState } from './endpointPruneDecision.js';
 import { refPrefix } from './endpointRetention.js';
 import { generationFolderName, parseCaptureRecord, recordFileName } from './record.js';
-import { existingEntry, reviewPrefix, workersPath } from './reviewDirectory.js';
+import { reviewPrefix, workersPath } from './reviewDirectory.js';
 
 interface EndpointRef {
   ref: string;

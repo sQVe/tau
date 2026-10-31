@@ -7,8 +7,12 @@ import type { CommandRuntime } from '../../command.js';
 import { readGit } from '../../git.js';
 import { checkOutput, parseRepository, readJson } from '../../github/github.js';
 import { formatRepository } from '../../github/repositoryTargetDecisions.js';
-import { existingEntry } from '../../reviewCapture/reviewCapture.js';
-import { checkTauDirectory, rejectLinkedFile, requireTauChild } from '../../tauDirectory.js';
+import {
+  existingEntry,
+  checkTauDirectory,
+  rejectLinkedFile,
+  requireTauChild,
+} from '../../tauDirectory.js';
 import { comparePullRequest } from './verifyDecisions.js';
 import type { Difference, PullRequestFields } from './verifyDecisions.js';
 

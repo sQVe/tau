@@ -1,20 +1,12 @@
-export { fixedPrefixes, hashBytes } from './capture.js';
-export { readCompletedCapture } from './completedCapture.js';
+export { fixedPrefixes } from './capture.js';
 export { readCoverage } from './coverage.js';
 export type { CoverageLinkRequest } from './coverage.js';
 export type { CoverageDecision, CoverageStatus } from './coverageDecision.js';
-export { pruneEndpointRefs } from './endpointPrune.js';
-export { captureGeneration } from './generation.js';
-export { checkFreshness } from './pinnedCapture.js';
-
-export { readCaptureRecord, recheckFileName } from './record.js';
-
-export {
-  checkReviewDirectory,
-  existingEntry,
-  reviewPrefix,
-  workersPath,
-} from './reviewDirectory.js';
+export { captureReviewDirectory } from './generation.js';
+export { checkReviewFreshness } from './pinnedCapture.js';
+export { prepareReviewDirectory } from './reviewPrepare.js';
+export { checkReviewDirectory } from './reviewDirectory.js';
+export { readSavedRecapture } from './savedRecapture.js';
 
 export { reviewTargetSchema } from './target.js';
 export type { ReviewTarget } from './target.js';

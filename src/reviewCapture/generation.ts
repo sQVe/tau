@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { errorMessage, hasErrorCode } from '../errors.js';
 import { publishTextSync } from '../record.js';
+import { existingEntry } from '../tauDirectory.js';
 import { pinTarget, readHead } from './capture.js';
 import type { Capture, Gap } from './capture.js';
 import { hashOf, hashSnapshot, readCompletedCapture } from './completedCapture.js';
@@ -22,7 +23,7 @@ import {
   snapshotFolder,
 } from './record.js';
 import type { CaptureRecord } from './record.js';
-import { existingEntry } from './reviewDirectory.js';
+import { checkReviewDirectory } from './reviewDirectory.js';
 import type { PinnedTarget, ReviewTarget } from './target.js';
 
 export interface CapturedGeneration extends Partial<FixScope> {
@@ -367,4 +368,15 @@ export const captureGeneration = async (
 
     throw error;
   }
+};
+
+// Checks that directory is a review directory before any capture writes to it.
+export const captureReviewDirectory = async (
+  root: string,
+  directory: string,
+  target: ReviewTarget,
+): Promise<CapturedGeneration> => {
+  const checked = await checkReviewDirectory(root, directory);
+
+  return captureGeneration(root, checked, target);
 };

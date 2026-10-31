@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { errorMessage } from '../errors.js';
 import { readGit, runGit } from '../git.js';
+import { existingEntry } from '../tauDirectory.js';
 import { captureTarget, uniqueGaps } from './capture.js';
 import type { Capture } from './capture.js';
 import { hashOf, readCompletedCapture, readOptionalBytes } from './completedCapture.js';
@@ -12,7 +13,6 @@ import { decideEndpoint } from './endpointDecision.js';
 import { decidePredecessor, statusRefusal } from './predecessorDecision.js';
 import { generationFolderName, parseCaptureRecord, recordFileName } from './record.js';
 import type { CaptureRecord, Snapshot } from './record.js';
-import { existingEntry } from './reviewDirectory.js';
 import type { PinnedTarget } from './target.js';
 
 export interface PinnedPredecessor {
