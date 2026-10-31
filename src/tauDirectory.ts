@@ -49,7 +49,6 @@ const writtenPaths = (segments: readonly string[]) => [
   '.tau/.gitignore',
 ];
 
-// Reports the entry itself, not the file a link points to. Other errors still throw.
 export const existingEntry = (path: string): Promise<Stats | undefined> =>
   lstat(path).catch((error: unknown) => {
     if (isMissingFile(error)) {

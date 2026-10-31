@@ -370,7 +370,6 @@ export const captureGeneration = async (
   }
 };
 
-// Checks that directory is a review directory before any capture writes to it.
 export const captureReviewDirectory = async (
   root: string,
   directory: string,

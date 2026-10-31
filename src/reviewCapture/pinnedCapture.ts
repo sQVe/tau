@@ -54,7 +54,6 @@ export const checkFreshness = async (
   return decideFreshness({ recorded, current: currentState, captureErrors: [] });
 };
 
-// Checks that directory is a review directory, then compares its saved target with the current tree.
 export const checkReviewFreshness = async (root: string, directory: string): Promise<Freshness> => {
   const checked = await checkReviewDirectory(root, directory);
   const record = await readCaptureRecord(checked);

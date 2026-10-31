@@ -18,7 +18,6 @@ const committedRepository = async () => {
   return root;
 };
 
-// Saves a capture of a working-tree edit in a new review directory and returns that directory.
 const capturedReview = async (root: string, text: string) => {
   const directory = await prepareReviewDirectory(root, Date.now());
 

@@ -28,7 +28,6 @@ const readRecheck = async (path: string) => {
   }
 };
 
-// Reads the recapture that freshness saved. It never recaptures or repairs a missing file.
 export const readSavedRecapture = async (
   root: string,
   directory: string,

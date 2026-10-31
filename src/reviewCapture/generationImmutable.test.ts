@@ -15,7 +15,6 @@ const savedFiles = ['capture/patch.diff', 'capture/input.md', 'capture.json'];
 const readSavedFiles = (directory: string) =>
   Promise.all(savedFiles.map((name) => readFile(join(directory, name))));
 
-// Every saved snapshot file with its text and permission bits, so a changed mode shows.
 const readSnapshot = async (directory: string) => {
   const snapshotDirectory = join(directory, 'snapshot');
 
@@ -38,7 +37,6 @@ const readSnapshot = async (directory: string) => {
   );
 };
 
-// The saved bytes, the snapshot, and the endpoint refs that a capture leaves behind.
 const readSavedState = async (root: string, directory: string) => ({
   files: await readSavedFiles(directory),
   snapshot: await readSnapshot(directory),

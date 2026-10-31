@@ -264,7 +264,6 @@ it('names the missing heading when input.md has no heading at all', async () => 
   expect(await listDirectory(directory)).toEqual(before);
 });
 
-// Commits src/a.test.ts, then replaces src with a link to an outside folder with its own a.test.ts.
 const linkedDirectoryReview = async () => {
   const { root, directory } = await preparedReview();
   const outside = temporaryDirectory(onTestFinished, 'tau-review-outside-');

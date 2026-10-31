@@ -16,7 +16,6 @@ import { readSavedRecapture } from './savedRecapture.js';
 
 const execFileAsync = promisify(execFile);
 
-// Captures a working-tree edit with CRLF line endings, then saves the recapture by checking freshness.
 const savedReview = async (root: string) => {
   const directory = await prepareReviewDirectory(root, Date.now());
 
@@ -46,8 +45,6 @@ const committedRepository = async () => {
 const readRecheckOrNull = (directory: string) =>
   readFile(join(directory, 'recheck.diff')).catch(() => null);
 
-// Every saved artifact in the review directory, with nested captures and snapshots, and the capture
-// refs. A read must leave both unchanged.
 const savedState = async (root: string, directory: string) => ({
   artifacts: await savedArtifactState(directory),
   refs: await git(root, 'for-each-ref', 'refs/tau/review-captures/'),

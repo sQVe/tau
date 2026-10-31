@@ -49,9 +49,6 @@ export const listDirectory = async (directory: string): Promise<string[][]> =>
     }),
   );
 
-// Every file, folder, and link under directory, sorted by path. A file holds its bytes and mode, a
-// folder its mode, and a link its target and mode. Links are read with lstat and readlink, never
-// followed, so a link to outside state shows as the link itself.
 export const savedArtifactState = async (directory: string): Promise<unknown[][]> => {
   const entries = await readdir(directory, { recursive: true, withFileTypes: true });
   const paths = entries.map((entry) => join(entry.parentPath, entry.name)).toSorted();
@@ -83,7 +80,6 @@ export const prepareDirectory = async (root: string): Promise<string> => {
   return directory;
 };
 
-// Puts a git wrapper first on PATH that fails the commands whose arguments contain `failing`.
 export const failGitCommand = async (failing: string): Promise<void> => {
   await installCommandShim('git', {
     otherCalls: 'real',

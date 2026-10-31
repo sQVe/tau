@@ -18,7 +18,6 @@ import { captureReviewDirectory } from './generation.js';
 import { checkReviewFreshness } from './pinnedCapture.js';
 import type { ReviewTarget } from './target.js';
 
-// Reviews an uncommitted edit of src/math.ts, then edits src/math.ts again.
 const reviewedThenFixed = async () => {
   const root = await fixRepository();
   const review = await prepareDirectory(root);

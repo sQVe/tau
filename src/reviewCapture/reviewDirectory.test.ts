@@ -32,8 +32,6 @@ const repositoryWithEdit = async () => {
   return root;
 };
 
-// The listing and text of a directory or file, or null when it is absent. stat follows a link, so a
-// link to a folder shows the folder it names.
 const stateOf = async (path: string): Promise<string[][] | string | null> => {
   const entry = await stat(path).catch(() => undefined);
 
@@ -52,7 +50,6 @@ const operations = {
   savedRecapture: (root: string, directory: string) => readSavedRecapture(root, directory),
 };
 
-// Each case names a directory that the public operations must refuse before they read or write it.
 const refusedDirectories: [string, DirectoryOf, RegExp][] = [
   [
     'a directory outside .tau/workers',
