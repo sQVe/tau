@@ -295,7 +295,6 @@ class ShellParser {
     if (heredocOperator === undefined) {
       state.command.words.push(word);
     } else {
-      // The shell does not run substitutions in a heredoc delimiter, so their commands are dropped.
       this.commands.splice(state.wordCommandStart);
 
       this.pendingHeredocs.push({
