@@ -9,7 +9,7 @@ import {
   failureOf,
   preparedReview,
   captureWorkingTree,
-  listDirectory,
+  savedArtifactState,
 } from './fixtures/reviewDirectoryHarness.js';
 import { captureReviewDirectory } from './generation.js';
 
@@ -79,7 +79,7 @@ it.each([
 
   await writeFile(join(root, 'tracked.txt'), 'two\n');
 
-  const before = await listDirectory(directory);
+  const before = await savedArtifactState(directory);
 
   failures[row.failing] = true;
 
@@ -93,7 +93,7 @@ it.each([
     ),
   ).toContain(row.message);
 
-  expect(await listDirectory(directory)).toEqual(before);
+  expect(await savedArtifactState(directory)).toEqual(before);
 
   failures[row.failing] = false;
 

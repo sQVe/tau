@@ -10,7 +10,7 @@ import { readReviewEvidence } from './evidence.js';
 import {
   failureOf,
   captureWorkingTree,
-  listDirectory,
+  savedArtifactState,
   prepareDirectory,
   fixRepository,
 } from './fixtures/reviewDirectoryHarness.js';
@@ -188,7 +188,7 @@ it('records the fix capture with the earlier base and no snapshot', async () => 
 it('refuses a fix review of a directory with no capture record and writes nothing', async () => {
   const { root, directory } = await reviewedThenFixed();
   const empty = await prepareDirectory(root);
-  const before = await listDirectory(directory);
+  const before = await savedArtifactState(directory);
 
   const target = { kind: 'fix' as const, review: empty, findingPaths: [] };
 
@@ -196,7 +196,7 @@ it('refuses a fix review of a directory with no capture record and writes nothin
     'holds no capture record',
   );
 
-  expect(await listDirectory(directory)).toEqual(before);
+  expect(await savedArtifactState(directory)).toEqual(before);
 });
 
 it('refuses a fix review of a record with no snapshot and writes nothing', async () => {

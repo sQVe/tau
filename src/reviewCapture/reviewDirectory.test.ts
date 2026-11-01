@@ -9,7 +9,7 @@ import { readReviewEvidence } from './evidence.js';
 import {
   failureOf,
   inputHeader,
-  listDirectory,
+  savedArtifactState,
   preparedReview,
 } from './fixtures/reviewDirectoryHarness.js';
 import { captureReviewDirectory } from './generation.js';
@@ -32,14 +32,14 @@ const repositoryWithEdit = async () => {
   return root;
 };
 
-const stateOf = async (path: string): Promise<string[][] | string | null> => {
+const stateOf = async (path: string): Promise<unknown[][] | string | null> => {
   const entry = await stat(path).catch(() => undefined);
 
   if (entry === undefined) {
     return null;
   }
 
-  return entry.isDirectory() ? listDirectory(path) : readFile(path, 'utf8');
+  return entry.isDirectory() ? savedArtifactState(path) : readFile(path, 'utf8');
 };
 
 const operations = {
@@ -169,10 +169,10 @@ it.each([
   await symlink(outside, join(directory, entry));
   await writeFile(join(root, 'tracked.txt'), 'two\n');
 
-  const before = await listDirectory(directory);
+  const before = await savedArtifactState(directory);
 
   expect(await failureOf(() => checkReviewFreshness(root, directory))).toContain('symlink');
-  expect(await listDirectory(directory)).toEqual(before);
+  expect(await savedArtifactState(directory)).toEqual(before);
   expect(await readFile(join(directory, 'input.md'), 'utf8')).toBe(inputHeader);
   expect(await readdir(outside)).toEqual([]);
 });

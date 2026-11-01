@@ -1,4 +1,4 @@
-import { lstat, mkdir, readdir, readFile, readlink, stat, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, readlink, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
 import { onTestFinished } from 'vitest';
@@ -38,16 +38,6 @@ export const preparedReview = async (): Promise<{ root: string; directory: strin
 
 export const captureWorkingTree = (root: string, directory: string): Promise<CapturedGeneration> =>
   captureReviewDirectory(root, directory, { kind: 'workingTree', base: 'HEAD' });
-
-export const listDirectory = async (directory: string): Promise<string[][]> =>
-  Promise.all(
-    (await readdir(directory)).toSorted().map(async (name) => {
-      const path = join(directory, name);
-      const text = (await stat(path)).isDirectory() ? 'directory' : await readFile(path, 'utf8');
-
-      return [name, text];
-    }),
-  );
 
 export const savedArtifactState = async (directory: string): Promise<unknown[][]> => {
   const entries = await readdir(directory, { recursive: true, withFileTypes: true });

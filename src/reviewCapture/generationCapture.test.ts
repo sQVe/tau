@@ -10,7 +10,7 @@ import {
   inputHeader,
   preparedReview,
   captureWorkingTree,
-  listDirectory,
+  savedArtifactState,
   prepareDirectory,
   failGitCommand,
   fixRepository,
@@ -106,12 +106,12 @@ it('writes a gap path with a newline and a backtick on one list line', async () 
 
 it('returns empty for an empty capture and writes nothing', async () => {
   const { root, directory } = await preparedReview();
-  const before = await listDirectory(directory);
+  const before = await savedArtifactState(directory);
   const result = await captureWorkingTree(root, directory);
 
   expect(result['empty']).toBe(true);
   expect(result).not.toHaveProperty('identity');
-  expect(await listDirectory(directory)).toEqual(before);
+  expect(await savedArtifactState(directory)).toEqual(before);
 });
 
 it('refuses an input.md without the Capture heading and writes nothing', async () => {
@@ -120,7 +120,7 @@ it('refuses an input.md without the Capture heading and writes nothing', async (
   await writeFile(join(directory, 'input.md'), '# Review input\n');
   await writeFile(join(root, 'tracked.txt'), 'two\n');
 
-  const before = await listDirectory(directory);
+  const before = await savedArtifactState(directory);
 
   expect(
     await failureOf(() =>
@@ -128,7 +128,7 @@ it('refuses an input.md without the Capture heading and writes nothing', async (
     ),
   ).toContain('## Capture');
 
-  expect(await listDirectory(directory)).toEqual(before);
+  expect(await savedArtifactState(directory)).toEqual(before);
 });
 
 it('refuses a second capture into the same directory', async () => {
@@ -137,26 +137,31 @@ it('refuses a second capture into the same directory', async () => {
   await writeFile(join(root, 'tracked.txt'), 'two\n');
   await captureWorkingTree(root, directory);
 
-  const before = await listDirectory(directory);
+  const before = await savedArtifactState(directory);
+  const savedNames = before.map(([name]) => name);
+
+  expect(savedNames).toEqual(
+    expect.arrayContaining(['capture/patch.diff', 'capture/input.md', 'snapshot/tracked.txt']),
+  );
 
   const failure = await failureOf(() =>
     captureReviewDirectory(root, directory, { kind: 'workingTree', base: 'HEAD' }),
   );
 
   expect(failure).toContain('capture.json');
-  expect(await listDirectory(directory)).toEqual(before);
+  expect(await savedArtifactState(directory)).toEqual(before);
 });
 
 it('fails the capture on a Git error and writes nothing', async () => {
   const { root, directory } = await preparedReview();
-  const before = await listDirectory(directory);
+  const before = await savedArtifactState(directory);
 
   const failure = await failureOf(() =>
     captureReviewDirectory(root, directory, { kind: 'workingTree', base: 'no-such-branch' }),
   );
 
   expect(failure).toContain('no-such-branch');
-  expect(await listDirectory(directory)).toEqual(before);
+  expect(await savedArtifactState(directory)).toEqual(before);
 });
 
 it.skipIf(process.getuid?.() === 0)(
@@ -201,7 +206,7 @@ it('refuses an incomplete capture and writes nothing', async () => {
   await writeFile(join(root, 'tracked.txt'), 'two\n');
   await writeFile(join(root, 'untracked.txt'), 'new\n');
 
-  const before = await listDirectory(directory);
+  const before = await savedArtifactState(directory);
 
   await failGitCommand('diff');
 
@@ -211,7 +216,7 @@ it('refuses an incomplete capture and writes nothing', async () => {
     ),
   ).toContain('forced failure');
 
-  expect(await listDirectory(directory)).toEqual(before);
+  expect(await savedArtifactState(directory)).toEqual(before);
 });
 
 it('refuses a capture when HEAD cannot be read and writes nothing', async () => {
@@ -219,7 +224,7 @@ it('refuses a capture when HEAD cannot be read and writes nothing', async () => 
 
   await writeFile(join(root, 'tracked.txt'), 'two\n');
 
-  const before = await listDirectory(directory);
+  const before = await savedArtifactState(directory);
 
   await failGitCommand('--verify HEAD');
 
@@ -229,7 +234,7 @@ it('refuses a capture when HEAD cannot be read and writes nothing', async () => 
     ),
   ).toContain('forced failure');
 
-  expect(await listDirectory(directory)).toEqual(before);
+  expect(await savedArtifactState(directory)).toEqual(before);
 });
 
 it.each(['## Capture \n', '## Capture\r\n'])(
@@ -253,7 +258,7 @@ it('names the missing heading when input.md has no heading at all', async () => 
   await writeFile(join(directory, 'input.md'), 'plain text\n');
   await writeFile(join(root, 'tracked.txt'), 'two\n');
 
-  const before = await listDirectory(directory);
+  const before = await savedArtifactState(directory);
 
   expect(
     await failureOf(() =>
@@ -261,7 +266,7 @@ it('names the missing heading when input.md has no heading at all', async () => 
     ),
   ).toContain('## Capture');
 
-  expect(await listDirectory(directory)).toEqual(before);
+  expect(await savedArtifactState(directory)).toEqual(before);
 });
 
 const linkedDirectoryReview = async () => {
