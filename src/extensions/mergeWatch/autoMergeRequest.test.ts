@@ -198,6 +198,36 @@ const table: { name: string; command: string; requests: AutoMergeRequest[] }[] =
     command: 'gh pr merge --auto 7\necho "x',
     requests: [],
   },
+  {
+    name: 'reads auto-merge on the current branch when stderr goes to stdout',
+    command: 'gh pr merge --auto 2>&1',
+    requests: [currentBranch],
+  },
+  {
+    name: 'reads auto-merge on the current branch when stderr goes to a file',
+    command: 'gh pr merge --auto 2>/dev/null',
+    requests: [currentBranch],
+  },
+  {
+    name: 'ignores a merge whose --auto is an output filename',
+    command: 'gh pr merge 7 >--auto',
+    requests: [],
+  },
+  {
+    name: 'reads the pull request when the output goes to a command substitution',
+    command: 'gh pr merge --auto 7 > $(echo out)',
+    requests: [{ selector: '7', repository: undefined }],
+  },
+  {
+    name: 'reads a merge inside a command substitution in an output target',
+    command: 'gh pr merge 7 > $(gh pr merge --auto 8)',
+    requests: [{ selector: '8', repository: undefined }],
+  },
+  {
+    name: 'ignores a merge when the heredoc operator has no delimiter',
+    command: 'gh pr merge --auto <<',
+    requests: [],
+  },
 ];
 
 it.each(table.map((row) => [row.name, row] as const))('%s', (_name, { command, requests }) => {

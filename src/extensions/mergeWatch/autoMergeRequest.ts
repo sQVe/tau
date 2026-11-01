@@ -70,7 +70,7 @@ const readRequest = (commandArguments: string[]): AutoMergeRequest | undefined =
 export const parseAutoMergeRequests = (command: string): AutoMergeRequest[] => {
   const commands = parseShellCommands(command) ?? [];
 
-  return commands.flatMap(({ words }) => {
+  return commands.flatMap(({ arguments: words }) => {
     const commandArguments = mergeArguments(words);
     const request = commandArguments === undefined ? undefined : readRequest(commandArguments);
 

@@ -7,6 +7,11 @@ const wordsOf = (source: string) =>
     ?.map(({ words }) => words)
     .filter((words) => words.length > 0);
 
+const argumentsOf = (source: string) =>
+  parseShellCommands(source)
+    ?.map(({ arguments: commandArguments }) => commandArguments)
+    .filter((commandArguments) => commandArguments.length > 0);
+
 describe('parseShellCommands', () => {
   it.each([
     ['git commit>out', [['git', 'commit', 'out']]],
@@ -21,6 +26,30 @@ describe('parseShellCommands', () => {
     ['a&&b', [['a'], ['b']]],
   ])('splits redirections from words: %s', (source, expected) => {
     expect(wordsOf(source)).toEqual(expected);
+  });
+
+  it.each([
+    ['git 2>&1 commit', [['git', 'commit']]],
+    ['git 2>/dev/null commit', [['git', 'commit']]],
+    ['git commit>out', [['git', 'commit']]],
+    ['git>/dev/null commit', [['git', 'commit']]],
+    ['git commit&>/dev/null', [['git', 'commit']]],
+    ['git commit<<<msg', [['git', 'commit']]],
+    ["echo '2'>out", [['echo', '2']]],
+    ['a 2 >out', [['a', '2']]],
+    ['git 12>out commit', [['git', 'commit']]],
+    ['git tag v2>out', [['git', 'tag', 'v2']]],
+    ['echo 2a>out', [['echo', '2a']]],
+    ['cat <<EOF arg\nbody\nEOF', [['cat', 'arg']]],
+    [
+      'git commit > $(git push)',
+      [
+        ['git', 'commit'],
+        ['git', 'push'],
+      ],
+    ],
+  ])('keeps only the arguments bash passes: %s', (source, expected) => {
+    expect(argumentsOf(source)).toEqual(expected);
   });
 
   it.each([
@@ -175,10 +204,17 @@ describe('parseShellCommands', () => {
     },
   );
 
+  it.each(['cat <<', 'cat <<-'])(
+    'rejects a heredoc operator with no delimiter at the end of the source: %s',
+    (source) => {
+      expect(parseShellCommands(source)).toBeUndefined();
+    },
+  );
+
   it('reads a heredoc body after the line ends', () => {
     expect(parseShellCommands('cat <<EOF\nbody\nEOF\nnext')).toEqual([
-      { words: ['cat'], heredocs: ['body\n'] },
-      { words: ['next'], heredocs: [] },
+      { words: ['cat'], arguments: ['cat'], heredocs: ['body\n'] },
+      { words: ['next'], arguments: ['next'], heredocs: [] },
     ]);
   });
 
@@ -192,8 +228,8 @@ describe('parseShellCommands', () => {
 
   it('does not treat <<< as a heredoc', () => {
     expect(parseShellCommands('cat <<< word\nnext')).toEqual([
-      { words: ['cat', 'word'], heredocs: [] },
-      { words: ['next'], heredocs: [] },
+      { words: ['cat', 'word'], arguments: ['cat'], heredocs: [] },
+      { words: ['next'], arguments: ['next'], heredocs: [] },
     ]);
   });
 
@@ -245,7 +281,9 @@ describe('parseShellCommands', () => {
   });
 
   it('reads an empty heredoc when the source ends after the operator', () => {
-    expect(parseShellCommands('cat <<EOF')).toEqual([{ words: ['cat'], heredocs: [''] }]);
+    expect(parseShellCommands('cat <<EOF')).toEqual([
+      { words: ['cat'], arguments: ['cat'], heredocs: [''] },
+    ]);
   });
 
   it('keeps the heredoc body free of a phantom line at the end of the source', () => {
