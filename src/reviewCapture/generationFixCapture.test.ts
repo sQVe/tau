@@ -282,7 +282,7 @@ it('refuses a fix review of a fix capture with no complete endpoint', async () =
   expect(await readdir(directory)).toEqual(['input.md']);
 });
 
-it('keeps a committed fix capture fresh except for HEAD and its endpoint equal to the commit', async () => {
+it('reports a committed fix capture stale after HEAD moves while its endpoint equals the commit', async () => {
   const { root, review, directory } = await reviewedThenFixed();
   const fix = await prepareDirectory(root);
 
@@ -459,7 +459,7 @@ it('captures the deletion of a saved file that now lies under a regular file', a
   expect(await readFile(join(directory, 'input.md'), 'utf8')).toContain('deleted file mode');
 });
 
-it('applies an exclude when a file replaces a directory with the same name', async () => {
+it('captures a file replacing a directory when an unrelated exclude is set', async () => {
   const root = await fixRepository();
 
   await mkdir(join(root, 'module'));
