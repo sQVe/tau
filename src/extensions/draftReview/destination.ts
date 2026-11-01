@@ -22,14 +22,18 @@ const refusals: Record<Exclude<DestinationDecision, 'writable'>, string> = {
 
 const readChunkBytes = 65536;
 
-const readHeldContent = async (handle: FileHandle): Promise<string> => {
+// Reads at most one byte past expectedByteLength. A longer file then cannot match, and a file that
+// keeps growing cannot keep the read going.
+const readHeldContent = async (handle: FileHandle, expectedByteLength: number): Promise<string> => {
   const chunks: Buffer[] = [];
+  const readLimit = expectedByteLength + 1;
   let position = 0;
 
-  for (;;) {
-    const buffer = Buffer.alloc(readChunkBytes);
+  while (position < readLimit) {
+    const chunkBytes = Math.min(readChunkBytes, readLimit - position);
+    const buffer = Buffer.alloc(chunkBytes);
     // oxlint-disable-next-line no-await-in-loop -- Each read starts where the previous one ended.
-    const { bytesRead } = await handle.read(buffer, 0, readChunkBytes, position);
+    const { bytesRead } = await handle.read(buffer, 0, chunkBytes, position);
 
     if (bytesRead === 0) {
       break;
@@ -160,7 +164,7 @@ export const writeDestination = async (
       refuse(target, decision);
     }
 
-    const currentContent = await readHeldContent(handle);
+    const currentContent = await readHeldContent(handle, Buffer.byteLength(expectedContent));
 
     if (currentContent !== expectedContent) {
       return false;

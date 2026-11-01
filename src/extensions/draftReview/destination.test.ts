@@ -7,8 +7,9 @@ import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js'
 
 const hooks: {
   beforeOpen: (() => Promise<void>) | undefined;
+  beforeRead: (() => Promise<void>) | undefined;
   beforeRealpath: (() => Promise<void>) | undefined;
-} = { beforeOpen: undefined, beforeRealpath: undefined };
+} = { beforeOpen: undefined, beforeRead: undefined, beforeRealpath: undefined };
 
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const original = await importOriginal();
@@ -18,7 +19,16 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
     open: async (...parameters: Parameters<typeof original.open>) => {
       await hooks.beforeOpen?.();
 
-      return original.open(...parameters);
+      const handle = await original.open(...parameters);
+      const read = handle.read.bind(handle);
+
+      handle.read = async (...readParameters: Parameters<typeof read>) => {
+        await hooks.beforeRead?.();
+
+        return read(...readParameters);
+      };
+
+      return handle;
     },
     realpath: (async (...parameters: Parameters<typeof original.realpath>) => {
       await hooks.beforeRealpath?.();
@@ -122,6 +132,39 @@ it('writes nothing when the file grows by an append after the open and before th
   ).resolves.toBe(false);
 
   expect(await readFile(target, 'utf8')).toBe('original\nagent append\n');
+});
+
+it('writes nothing and stops reading when the file grows on every read', async () => {
+  const base = temporaryDirectory(onTestFinished, 'tau-destination-');
+
+  const tauDirectory = join(base, '.tau');
+  const target = join(tauDirectory, 'slices/a.md');
+  const safetyCap = 200;
+  let readCalls = 0;
+  let appendCount = 0;
+
+  await mkdir(join(tauDirectory, 'slices'), { recursive: true });
+  await writeFile(target, 'original\n');
+
+  hooks.beforeRead = async () => {
+    readCalls += 1;
+
+    if (readCalls <= safetyCap) {
+      appendCount += 1;
+      await appendFile(target, 'agent append\n');
+    }
+  };
+
+  onTestFinished(() => {
+    hooks.beforeRead = undefined;
+  });
+
+  await expect(
+    writeDestination(tauDirectory, 'slices/a.md', 'edited\n', 'original\n'),
+  ).resolves.toBe(false);
+
+  expect(readCalls).toBeLessThanOrEqual(3);
+  expect(await readFile(target, 'utf8')).toBe(`original\n${'agent append\n'.repeat(appendCount)}`);
 });
 
 it('writes the edit when the expected content spans several read chunks', async () => {
