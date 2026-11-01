@@ -1,12 +1,13 @@
 import { errorMessage } from '../errors.js';
 import { readGit, withGitEnvironment } from '../git.js';
+import { existingEntry } from '../tauDirectory.js';
 import { readCompletedCapture } from './completedCapture.js';
 import { decideCoverage } from './coverageDecision.js';
 import type { CoverageDecision, CoverageLinkFacts, LinkRecord } from './coverageDecision.js';
 import { readTree } from './endpoint.js';
 import { readCaptureRecord } from './record.js';
 import type { CaptureRecord } from './record.js';
-import { checkReviewDirectory, existingEntry, reviewDirectoryPath } from './reviewDirectory.js';
+import { checkReviewDirectory, reviewDirectoryPath } from './reviewDirectory.js';
 
 export interface CoverageLinkRequest {
   directory: string;

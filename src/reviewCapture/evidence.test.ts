@@ -9,6 +9,7 @@ import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget, readHead } from './capture.js';
 import type { DirectReviewTarget } from './capture.js';
 import { readReviewEvidence } from './evidence.js';
+import { captureWorkingTree, preparedReview } from './fixtures/reviewDirectoryHarness.js';
 import { captureGeneration } from './generation.js';
 import {
   generationFolderName,
@@ -16,6 +17,7 @@ import {
   inputFileName,
   recordFileName,
 } from './record.js';
+import { prepareReviewDirectory } from './reviewPrepare.js';
 
 const isRoot = process.getuid?.() === 0;
 
@@ -42,7 +44,7 @@ const savedCapture = async (
   target: DirectReviewTarget,
   input = inputText('None.', 'none'),
 ) => {
-  const directory = temporaryDirectory(onTestFinished, 'tau-review-evidence-');
+  const directory = await prepareReviewDirectory(root, Date.now());
 
   const pinned = await pinTarget(root, target);
   const captured = await captureTarget(root, pinned);
@@ -207,7 +209,7 @@ it('writes nothing to the review directory except the freshness recapture', asyn
 
 it('refuses a review directory without capture.json', async () => {
   const root = await createTemporaryRepository(onTestFinished);
-  const directory = temporaryDirectory(onTestFinished, 'tau-review-evidence-');
+  const directory = await prepareReviewDirectory(root, Date.now());
 
   await expect(readReviewEvidence(root, directory)).rejects.toThrow('No capture record');
   expect(await readdir(directory)).toEqual([]);
@@ -249,7 +251,7 @@ it('reports a stale capture as a gap and still returns the evidence', async () =
 
 it('reports an altered capture generation as a gap and still returns the evidence', async () => {
   const { root, from, to } = await rangeRepository();
-  const directory = temporaryDirectory(onTestFinished, 'tau-review-evidence-');
+  const directory = await prepareReviewDirectory(root, Date.now());
 
   await writeFile(join(directory, inputFileName), inputText('None.', 'none'));
   await captureGeneration(root, directory, { kind: 'range', from, to });
@@ -267,7 +269,7 @@ it('reports an altered capture generation as a gap and still returns the evidenc
 
 it('reports a missing capture artifact as a generation gap and still returns the evidence', async () => {
   const { root, from, to } = await rangeRepository();
-  const directory = temporaryDirectory(onTestFinished, 'tau-review-evidence-');
+  const directory = await prepareReviewDirectory(root, Date.now());
 
   await writeFile(join(directory, inputFileName), inputText('None.', 'none'));
   await captureGeneration(root, directory, { kind: 'range', from, to });
@@ -285,7 +287,7 @@ it('reports a missing capture artifact as a generation gap and still returns the
 
 it('refuses evidence for an interrupted capture and names the incomplete status', async () => {
   const root = await createTemporaryRepository(onTestFinished);
-  const directory = temporaryDirectory(onTestFinished, 'tau-review-evidence-');
+  const directory = await prepareReviewDirectory(root, Date.now());
 
   await writeFile(join(directory, inputFileName), inputText('None.', 'none'));
   await mkdir(join(directory, generationFolderName));
@@ -309,7 +311,7 @@ it('reports no generation gap for a version 2 capture', async () => {
 it('reads named rules from the saved input of a completed capture', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const base = await commit(root, { ...sourceFiles, 'AGENTS.md': '# Rules\n' }, 'first');
-  const directory = temporaryDirectory(onTestFinished, 'tau-review-evidence-');
+  const directory = await prepareReviewDirectory(root, Date.now());
 
   await writeFiles(root, {
     'src/math.ts': 'export const add = (a: number, b: number) => b + a;\n',
@@ -744,4 +746,22 @@ it('treats a missing committed test path that holds a newline as absent, not unr
 
   expect(evidence.tests).toEqual([]);
   expect(evidence.gaps).not.toContainEqual(expect.objectContaining({ kind: 'unreadable' }));
+});
+
+it('returns the evidence for a saved capture', async () => {
+  const { root, directory } = await preparedReview();
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+
+  const captured = await captureWorkingTree(root, directory);
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence).toMatchObject({
+    hash: captured['hash'],
+    head: captured['head'],
+    base: captured['base'],
+    freshness: { status: 'fresh', reasons: [] },
+    paths: ['tracked.txt'],
+    gaps: [],
+  });
 });

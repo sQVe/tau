@@ -2,7 +2,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { isMissingFile } from '../errors.js';
-import { rejectLinkedFile } from '../tauDirectory.js';
+import { existingEntry, rejectLinkedFile } from '../tauDirectory.js';
 import { hashBytes } from './capture.js';
 import { observeSavedEndpoint } from './endpoint.js';
 import { decideGeneration } from './generationDecision.js';
@@ -17,7 +17,6 @@ import {
   snapshotFolder,
 } from './record.js';
 import type { RecordedEndpoint, Snapshot } from './record.js';
-import { existingEntry } from './reviewDirectory.js';
 import type { PinnedTarget } from './target.js';
 
 interface ReadRecord {

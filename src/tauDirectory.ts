@@ -1,3 +1,4 @@
+import type { Stats } from 'node:fs';
 import {
   appendFile,
   lstat,
@@ -47,6 +48,15 @@ const writtenPaths = (segments: readonly string[]) => [
   ),
   '.tau/.gitignore',
 ];
+
+export const existingEntry = (path: string): Promise<Stats | undefined> =>
+  lstat(path).catch((error: unknown) => {
+    if (isMissingFile(error)) {
+      return undefined;
+    }
+
+    throw error;
+  });
 
 export const isSymlink = async (path: string): Promise<boolean> => {
   try {

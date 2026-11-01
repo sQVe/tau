@@ -1,5 +1,3 @@
-import { join } from 'node:path';
-
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
@@ -8,18 +6,12 @@ import { Type } from 'typebox';
 import { findCheckoutRoot } from '../../git.js';
 import { readReviewEvidence } from '../../reviewCapture/evidence.js';
 import {
-  captureGeneration,
-  checkFreshness,
-  checkReviewDirectory,
-  pruneEndpointRefs,
-  readCaptureRecord,
-  recheckFileName,
-  reviewPrefix,
+  captureReviewDirectory,
+  checkReviewFreshness,
+  prepareReviewDirectory,
   reviewTargetSchema,
-  workersPath,
 } from '../../reviewCapture/reviewCapture.js';
 import type { ReviewTarget } from '../../reviewCapture/reviewCapture.js';
-import { createFreshTauDirectory } from '../../tauDirectory.js';
 
 export const codeReviewToolParameters = Type.Object({
   action: Type.Union([
@@ -57,41 +49,29 @@ const capture = async (root: string, directory: string, target: ReviewTarget | u
     throw new Error('capture needs target.');
   }
 
-  return captureGeneration(root, directory, target);
-};
-
-const freshness = async (root: string, directory: string) => {
-  const record = await readCaptureRecord(directory);
-
-  return checkFreshness(root, record, join(directory, recheckFileName));
+  return captureReviewDirectory(root, directory, target);
 };
 
 const runAction = async (cwd: string, parameters: CodeReviewInput): Promise<object> => {
   const root = await findCheckoutRoot(cwd, 'code_review');
 
   if (parameters.action === 'prepare') {
-    const directory = await createFreshTauDirectory(root, workersPath, reviewPrefix);
-
-    await pruneEndpointRefs(root, Date.now());
-
-    return { directory };
+    return { directory: await prepareReviewDirectory(root, Date.now()) };
   }
 
   if (parameters.directory === undefined) {
     throw new Error('capture, freshness, and evidence need the directory that prepare returned.');
   }
 
-  const directory = await checkReviewDirectory(root, parameters.directory);
-
   if (parameters.action === 'capture') {
-    return capture(root, directory, parameters.target);
+    return capture(root, parameters.directory, parameters.target);
   }
 
   if (parameters.action === 'evidence') {
-    return readReviewEvidence(root, directory);
+    return readReviewEvidence(root, parameters.directory);
   }
 
-  return freshness(root, directory);
+  return checkReviewFreshness(root, parameters.directory);
 };
 
 export const createCodeReviewTool = (): ToolDefinition<

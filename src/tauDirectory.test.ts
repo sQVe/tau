@@ -22,6 +22,7 @@ import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.js';
 import {
   checkTauDirectory,
   climbsOut,
+  existingEntry,
   createFreshTauDirectory,
   ensureTauDirectory,
   findTauRoot,
@@ -610,4 +611,43 @@ it('rejectLinkedEntries refuses a symlinked entry', async () => {
   await symlink(directory, join(directory, 'loop'));
 
   await expect(rejectLinkedEntries(directory)).rejects.toThrow(/symlink: .*loop$/);
+});
+
+it('existingEntry reports a missing path as undefined', async () => {
+  const directory = temporaryDirectory(afterThisTest, 'tau-entry-');
+
+  expect(await existingEntry(join(directory, 'absent'))).toBeUndefined();
+});
+
+it('existingEntry reports a file and a directory as they are', async () => {
+  const directory = temporaryDirectory(afterThisTest, 'tau-entry-');
+
+  await writeFile(join(directory, 'file.txt'), 'text\n');
+  await mkdir(join(directory, 'folder'));
+
+  expect((await existingEntry(join(directory, 'file.txt')))?.isFile()).toBe(true);
+  expect((await existingEntry(join(directory, 'folder')))?.isDirectory()).toBe(true);
+});
+
+it('existingEntry reports a symbolic link itself and does not follow it', async () => {
+  const directory = temporaryDirectory(afterThisTest, 'tau-entry-');
+  const target = join(directory, 'target');
+
+  await writeFile(target, 'text\n');
+  await symlink(target, join(directory, 'link'));
+
+  const entry = await existingEntry(join(directory, 'link'));
+
+  expect(entry?.isSymbolicLink()).toBe(true);
+  expect(entry?.isFile()).toBe(false);
+});
+
+it('existingEntry throws an error that is not a missing file', async () => {
+  const directory = temporaryDirectory(afterThisTest, 'tau-entry-');
+
+  await writeFile(join(directory, 'file.txt'), 'text\n');
+
+  await expect(existingEntry(join(directory, 'file.txt', 'child'))).rejects.toMatchObject({
+    code: 'ENOTDIR',
+  });
 });

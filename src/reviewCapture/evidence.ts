@@ -43,6 +43,7 @@ import {
   recheckFileName,
 } from './record.js';
 import type { CaptureRecord } from './record.js';
+import { checkReviewDirectory } from './reviewDirectory.js';
 import type { PinnedTarget } from './target.js';
 
 export { scanMarkers } from './evidenceDecisions.js';
@@ -407,9 +408,10 @@ const reviewedInputPath = (directory: string, record: CaptureRecord) =>
 // Reads the evidence for the capture saved in directory. Writes only the freshness recapture.
 export const readReviewEvidence = async (
   root: string,
-  directory: string,
+  requestedDirectory: string,
   limits = defaultEvidenceLimits,
 ): Promise<ReviewEvidence> => {
+  const directory = await checkReviewDirectory(root, requestedDirectory);
   const generation = await generationGaps(root, directory);
   const record = await readCaptureRecord(directory);
   const freshness = await checkFreshness(root, record, join(directory, recheckFileName));
