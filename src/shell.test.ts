@@ -261,6 +261,30 @@ describe('parseShellCommands', () => {
     expect(commands?.map(({ words }) => words)).toContainEqual(['next']);
   });
 
+  it.each([
+    ['an unquoted $(...) delimiter', 'cat <<$(git commit)\nbody\n$(git commit)\n', [['cat']]],
+    ['a quoted $(...) delimiter', 'cat <<"$(git commit)"\nbody\n$(git commit)\n', [['cat']]],
+    ['an unquoted backtick delimiter', 'cat <<`git commit`\nbody\n`git commit`\n', [['cat']]],
+    ['a double-quoted backtick delimiter', 'cat <<"`git commit`"\nbody\n`git commit`\n', [['cat']]],
+    [
+      'an unquoted $(...) delimiter with a body that expands',
+      'cat <<$(git commit)\n$(git push)\n',
+      [['cat'], ['git', 'push']],
+    ],
+    [
+      'a quoted $(...) delimiter with a body that does not expand',
+      'cat <<"$(git commit)"\n$(git push)\n',
+      [['cat']],
+    ],
+    [
+      'several unquoted substitutions in one delimiter',
+      'cat <<$(git commit)$(git push)\nbody\n',
+      [['cat']],
+    ],
+  ])('adds no commands from %s', (_label, source, expected) => {
+    expect(wordsOf(source)).toEqual(expected);
+  });
+
   it.each(['`EOF`', '$(echo EOF)', `\${E}`, '$'])(
     'parses the body of a heredoc whose delimiter is %s',
     (delimiter) => {

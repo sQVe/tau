@@ -14,6 +14,7 @@ interface ListState {
   command: ShellCommand;
   word: string | undefined;
   wordQuoted: boolean;
+  wordCommandStart: number;
   heredocOperator: { stripsTabs: boolean } | undefined;
   depth: number;
   closesSubstitution: boolean;
@@ -116,6 +117,7 @@ class ShellParser {
       command: this.startCommand(),
       word: undefined,
       wordQuoted: false,
+      wordCommandStart: 0,
       heredocOperator: undefined,
       depth: 0,
       closesSubstitution,
@@ -204,10 +206,15 @@ class ShellParser {
   }
 
   private readWordPiece(state: ListState, character: string): void {
+    const commandCount = this.commands.length;
     const piece = this.readWordPieceText(character);
 
     if (piece === undefined) {
       return;
+    }
+
+    if (state.word === undefined) {
+      state.wordCommandStart = commandCount;
     }
 
     state.word = (state.word ?? '') + piece.text;
@@ -288,6 +295,9 @@ class ShellParser {
     if (heredocOperator === undefined) {
       state.command.words.push(word);
     } else {
+      // The shell does not run substitutions in a heredoc delimiter, so their commands are dropped.
+      this.commands.splice(state.wordCommandStart);
+
       this.pendingHeredocs.push({
         command: state.command,
         delimiter: word,
