@@ -1,5 +1,6 @@
 import { constants } from 'node:fs';
 import { lstat, open, realpath } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
 import { isMissingFile } from '../../errors.js';
@@ -17,6 +18,32 @@ const refusals: Record<Exclude<DestinationDecision, 'writable'>, string> = {
   'not-file': 'is no longer a regular file',
   'hard-linked': 'has another hard link',
   outside: 'resolves outside the .tau directory',
+};
+
+const readChunkBytes = 65536;
+
+// Reads at most one byte past expectedByteLength. A longer file then cannot match, and a file that
+// keeps growing cannot keep the read going.
+const readHeldContent = async (handle: FileHandle, expectedByteLength: number): Promise<string> => {
+  const chunks: Buffer[] = [];
+  const readLimit = expectedByteLength + 1;
+  let position = 0;
+
+  while (position < readLimit) {
+    const chunkBytes = Math.min(readChunkBytes, readLimit - position);
+    const buffer = Buffer.alloc(chunkBytes);
+    // oxlint-disable-next-line no-await-in-loop -- Each read starts where the previous one ended.
+    const { bytesRead } = await handle.read(buffer, 0, chunkBytes, position);
+
+    if (bytesRead === 0) {
+      break;
+    }
+
+    chunks.push(buffer.subarray(0, bytesRead));
+    position += bytesRead;
+  }
+
+  return Buffer.concat(chunks).toString('utf8');
 };
 
 export class DestinationRefusalError extends Error {
@@ -91,12 +118,15 @@ export const requireWritableDestination = async (
 
 // Checks before the open, so a special file such as a FIFO is never opened. After the open, checks
 // the path again and requires it to name the opened file, because the same file can leave .tau
-// when a parent directory moves. Both happen before anything is truncated. Returns false, and
-// writes nothing, when the file is gone.
+// when a parent directory moves. Then reads the opened file and requires it to hold expectedContent,
+// the content the caller decided on, because a file can be replaced by rename after the caller read
+// it. All of this happens before anything is truncated. Returns false, and writes nothing, when the
+// file is gone or no longer holds expectedContent.
 export const writeDestination = async (
   tauDirectory: string,
   path: string,
   content: string,
+  expectedContent: string,
 ): Promise<boolean> => {
   const target = join(tauDirectory, path);
   const checked = await requireWritableDestination(tauDirectory, path);
@@ -105,7 +135,7 @@ export const writeDestination = async (
     return false;
   }
 
-  const handle = await open(target, constants.O_WRONLY | constants.O_NOFOLLOW).catch(
+  const handle = await open(target, constants.O_RDWR | constants.O_NOFOLLOW).catch(
     (error: unknown) => {
       if (isMissingFile(error)) {
         return undefined;
@@ -132,6 +162,12 @@ export const writeDestination = async (
 
     if (decision !== 'writable') {
       refuse(target, decision);
+    }
+
+    const currentContent = await readHeldContent(handle, Buffer.byteLength(expectedContent));
+
+    if (currentContent !== expectedContent) {
+      return false;
     }
 
     await handle.truncate(0);

@@ -1,4 +1,4 @@
-import { rm, writeFile } from 'node:fs/promises';
+import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
@@ -56,4 +56,35 @@ it('reports a conflict, and writes nothing, when the real file disappears after 
 
   await expect(context.records()).resolves.toHaveLength(0);
   await expect(rm(realFile)).rejects.toThrow(/ENOENT/);
+});
+
+it('reports a conflict and keeps the replacement when a real file is renamed over after collect reads it', async () => {
+  const context = await fixture();
+  const opened = await context.run({ action: 'open', paths: ['.tau/slices/a.md'] });
+
+  if (opened.details.status !== 'manual') {
+    throw new Error('Expected a manual review.');
+  }
+
+  const realFile = context.real('slices/a.md');
+  const replacementFile = `${realFile}.replacement`;
+
+  await writeFile(join(stagingOf(opened.details.command), '01-slices/1-a.md'), 'edited\n');
+
+  hooks.afterRead = async (path) => {
+    if (path === realFile) {
+      hooks.afterRead = undefined;
+      await writeFile(replacementFile, 'agent edit\n');
+      await rename(replacementFile, realFile);
+    }
+  };
+
+  const collected = await context.run({ action: 'collect', directory: opened.details.directory });
+
+  expect(collected.details).toMatchObject({
+    status: 'reviewed',
+    edits: [{ path: realFile, status: 'conflict' }],
+  });
+
+  await expect(readFile(realFile, 'utf8')).resolves.toBe('agent edit\n');
 });

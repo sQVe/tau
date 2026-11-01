@@ -240,6 +240,10 @@ const anyRunning = async (
   return states.includes(true);
 };
 
+export class TuicrExitTimeoutError extends Error {
+  override name = 'TuicrExitTimeoutError';
+}
+
 // tuicr saves its session when it exits, so deleting a comment before then could be undone.
 const waitForExit = async (request: CloseRequest, processIds: number[]): Promise<void> => {
   const { signal, isProcessRunning, recordDirectory } = request;
@@ -258,7 +262,7 @@ const waitForExit = async (request: CloseRequest, processIds: number[]): Promise
     await sleep(exitPollMilliseconds, signal);
   }
 
-  throw new Error(
+  throw new TuicrExitTimeoutError(
     `tuicr did not exit, so no comment was deleted. The review record is ${recordDirectory}; call collect with it to try again.`,
   );
 };
