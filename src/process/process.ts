@@ -128,12 +128,15 @@ const spawnGated = (command: string, commandArguments: string[], cwd: string) =>
 const collectOutput = (child: ReturnType<typeof spawnGated>) => {
   const output = { stdout: '', stderr: '' };
 
-  child.stdout.on('data', (data: Buffer) => {
-    output.stdout += data.toString();
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+
+  child.stdout.on('data', (data: string) => {
+    output.stdout += data;
   });
 
-  child.stderr.on('data', (data: Buffer) => {
-    output.stderr += data.toString();
+  child.stderr.on('data', (data: string) => {
+    output.stderr += data;
   });
 
   return output;

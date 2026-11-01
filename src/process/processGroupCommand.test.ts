@@ -9,6 +9,10 @@ import { execInGroup, groupState } from './process.js';
 
 const startDelayMilliseconds = 200;
 
+// Three bytes per character. A full pipe read is 64 KiB, which is not a multiple of 3, so a large
+// output almost always splits characters across reads.
+const multibyteRepeatCount = 300000;
+
 const markingCommand = (marker: string) => [
   '-e',
   "require('node:fs').writeFileSync(process.argv[1], '')",
@@ -25,6 +29,25 @@ it('returns the output and exit status of the command', async () => {
   );
 
   expect(result).toEqual({ stdout: 'out', stderr: 'err', code: 3, killed: false });
+});
+
+it('keeps a multibyte character that spans two output chunks', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-group-command-');
+
+  const script = [
+    `process.stdout.write('€'.repeat(${multibyteRepeatCount}));`,
+    `process.stderr.write('漢'.repeat(${multibyteRepeatCount}));`,
+  ].join('\n');
+
+  const result = await execInGroup(process.execPath, ['-e', script], {
+    cwd: directory,
+    onStarted: async () => undefined,
+  });
+
+  expect(result.code).toBe(0);
+  expect(result.killed).toBe(false);
+  expect(result.stdout).toBe('€'.repeat(multibyteRepeatCount));
+  expect(result.stderr).toBe('漢'.repeat(multibyteRepeatCount));
 });
 
 it('starts the command only after its group is recorded', async () => {
