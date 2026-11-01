@@ -18,9 +18,7 @@ const readSavedFiles = (directory: string) =>
 const readSnapshot = async (directory: string) => {
   const snapshotDirectory = join(directory, 'snapshot');
 
-  const entries = await readdir(snapshotDirectory, { recursive: true, withFileTypes: true }).catch(
-    () => [],
-  );
+  const entries = await readdir(snapshotDirectory, { recursive: true, withFileTypes: true });
 
   const files = entries.filter((entry) => entry.isFile());
 
