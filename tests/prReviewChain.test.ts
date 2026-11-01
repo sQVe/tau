@@ -1,14 +1,33 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { afterAll, beforeAll, beforeEach, expect, it, onTestFinished } from 'vitest';
 
 import { createGhFake } from '../src/extensions/pr/fixtures/ghFake.js';
 import { createPrTool } from '../src/extensions/pr/tool.js';
 import { githubOrigin, serveGithubOriginFrom } from './githubOriginFake.js';
 import { createTemporaryRepository, git } from './gitRepository.js';
+import {
+  printDiagnostics,
+  startDiagnostics,
+  timePhase,
+  traceTestGit,
+  trackCleanup,
+} from './prReviewChainDiagnostics.js';
 import { createSavedFix, createSavedReview, savedReviewLink } from './savedReview.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
+
+beforeAll(() => {
+  startDiagnostics();
+});
+
+beforeEach(() => {
+  traceTestGit();
+});
+
+afterAll(() => {
+  printDiagnostics();
+});
 
 const commitFeature = async (root: string, text: string) => {
   await writeFile(join(root, 'feature.txt'), text);
@@ -83,9 +102,12 @@ const readEvidence = async (
 };
 
 it('matches a committed two-fix chain while the root freshness is stale', async () => {
-  const { root, review, links, fake } = await setUpChain();
+  const markCleanupStart = trackCleanup();
+  const { root, review, links, fake } = await timePhase('setup', () => setUpChain());
 
-  const details = await readEvidence(root, fake, review, links);
+  const details = await timePhase('evidence', () => readEvidence(root, fake, review, links));
+
+  markCleanupStart();
 
   expect(details).toMatchObject({
     coverage: { status: 'match' },
@@ -94,19 +116,25 @@ it('matches a committed two-fix chain while the root freshness is stale', async 
 });
 
 it('reports a mismatch when a committed edit lies outside every review', async () => {
-  const { root, review, links, fake } = await setUpChain();
+  const markCleanupStart = trackCleanup();
+  const { root, review, links, fake } = await timePhase('setup', () => setUpChain());
 
-  await writeFile(join(root, 'other.txt'), 'other\n');
-  await git(root, 'add', 'other.txt');
-  await git(root, 'commit', '--quiet', '-m', 'unreviewed edit');
+  await timePhase('mutation', async () => {
+    await writeFile(join(root, 'other.txt'), 'other\n');
+    await git(root, 'add', 'other.txt');
+    await git(root, 'commit', '--quiet', '-m', 'unreviewed edit');
+  });
 
-  const details = await readEvidence(root, fake, review, links);
+  const details = await timePhase('evidence', () => readEvidence(root, fake, review, links));
+
+  markCleanupStart();
 
   expect(details).toMatchObject({ coverage: { status: 'mismatch', link: 3 } });
 });
 
 it('reports unsupported when the root is a version 2 record', async () => {
-  const { root, review, fake } = await setUpChain();
+  const markCleanupStart = trackCleanup();
+  const { root, review, fake } = await timePhase('setup', () => setUpChain());
   const recordPath = join(review, 'capture.json');
   const record = JSON.parse(await readFile(recordPath, 'utf8')) as Record<string, unknown>;
 
@@ -115,7 +143,11 @@ it('reports unsupported when the root is a version 2 record', async () => {
   delete record['endpoint'];
   await writeFile(recordPath, JSON.stringify({ ...record, version: 2 }));
 
-  const details = await readEvidence(root, fake, review, [await savedReviewLink(root, review)]);
+  const details = await timePhase('evidence', async () =>
+    readEvidence(root, fake, review, [await savedReviewLink(root, review)]),
+  );
+
+  markCleanupStart();
 
   expect(details).toMatchObject({ coverage: { status: 'unsupported', link: 1 } });
 });

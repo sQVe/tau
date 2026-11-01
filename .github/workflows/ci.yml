@@ -54,6 +54,50 @@ jobs:
           chmod +x "${RUNNER_TEMP}/herdr/herdr"
           echo "${RUNNER_TEMP}/herdr" >> "${GITHUB_PATH}"
       - run: pnpm test
+      # Temporary diagnostics for the prReviewChain timeout investigation. This step prints a Git
+      # subprocess summary even when the test step fails. Remove it with the test instrumentation.
+      - name: Summarize prReviewChain diagnostics
+        if: always()
+        run: |
+          diagnostics="$(node -p 'require("node:path").join(require("node:os").tmpdir(), "tau-pr-review-chain-diagnostics")')"
+          if [ ! -d "${diagnostics}" ]; then
+            echo "No prReviewChain diagnostics directory at ${diagnostics}."
+            exit 0
+          fi
+
+          mapfile -d '' summaries < <(find "${diagnostics}" -type f -name 'summary.json' -print0)
+          for summary in "${summaries[@]}"; do
+            echo "prReviewChain phase/resource diagnostics:"
+            cat "${summary}"
+            echo
+          done
+
+          mapfile -d '' traceFiles < <(find "${diagnostics}" -type f ! -name 'summary.json' -print0)
+          echo "prReviewChain git trace files: ${#traceFiles[@]}"
+          if [ "${#traceFiles[@]}" -eq 0 ]; then
+            exit 0
+          fi
+
+          jq --null-input '
+            [inputs | . + {traceId: (input_filename | split("/") | last)}]
+            | group_by(.traceId)
+            | map({
+                traceId: .[0].traceId,
+                argv: (map(select(.event == "start"))[0].argv),
+                startTime: (map(select(.event == "start"))[0].time),
+                seconds: (map(select(.event == "exit"))[0].t_abs),
+                code: (map(select(.event == "exit"))[0].code)
+              })
+            | {
+                processes: length,
+                totalSeconds: (map(.seconds) | add),
+                maxSeconds: (map(.seconds) | max),
+                nonzeroExits: (map(select(.code != null and .code != 0)) | length),
+                incomplete: (map(select(.seconds == null)) | length),
+                incompleteCommands: (map(select(.seconds == null)) | .[0:10]),
+                slowest: (map(select(.seconds != null)) | sort_by(.seconds) | reverse | .[0:10])
+              }
+          ' "${traceFiles[@]}" || echo "Could not summarize every prReviewChain trace file."
 
   mutation:
     name: Mutation
