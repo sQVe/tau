@@ -141,6 +141,24 @@ it('writes the edit when the expected content spans several read chunks', async 
   expect(await readFile(target, 'utf8')).toBe('edited\n');
 });
 
+it('writes nothing when only bytes past the first read chunk changed', async () => {
+  const base = temporaryDirectory(onTestFinished, 'tau-destination-');
+
+  const tauDirectory = join(base, '.tau');
+  const target = join(tauDirectory, 'slices/a.md');
+  const expectedContent = 'original line\n'.repeat(10_000);
+  const lateChange = `${expectedContent.slice(0, -'original line\n'.length)}modified line\n`;
+
+  await mkdir(join(tauDirectory, 'slices'), { recursive: true });
+  await writeFile(target, lateChange);
+
+  await expect(
+    writeDestination(tauDirectory, 'slices/a.md', 'edited\n', expectedContent),
+  ).resolves.toBe(false);
+
+  expect(await readFile(target, 'utf8')).toBe(lateChange);
+});
+
 it('refuses when the checked folder is moved outside .tau and linked back before the open', async () => {
   const base = temporaryDirectory(onTestFinished, 'tau-destination-');
 

@@ -296,7 +296,10 @@ it('names the record directory and keeps it when a herdr call fails during colle
 
   herdr.failCall('pane process-info', socketClosed());
 
-  await expect(run({ action: 'collect', directory })).rejects.toThrow(directory);
+  const failure = run({ action: 'collect', directory });
+
+  await expect(failure).rejects.toThrow('socket closed');
+  await expect(failure).rejects.toThrow(directory);
 
   expect(existsSync(directory)).toBe(true);
 });
