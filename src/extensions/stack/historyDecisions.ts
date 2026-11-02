@@ -30,12 +30,12 @@ export interface PublishedReads {
   oldCherry: Read<CherryMark[]>;
 }
 
-export interface LayerFacts {
-  // The remote tip, or null when the remote has no such branch.
-  remoteTip: Read<string | null>;
-  // null when the remote has no such branch.
-  published: PublishedReads | null;
-}
+// One layer is exactly one of: the remote tip read failed, the remote has no such branch, or the
+// remote branch exists with its tip and reads.
+export type LayerFacts =
+  | { kind: 'tipFailed'; read: FailedRead }
+  | { kind: 'missing' }
+  | { kind: 'published'; tip: string; reads: PublishedReads };
 
 type LayerStatus = 'unpublished' | 'current' | 'behind' | 'rewritten' | 'diverged' | 'unknown';
 
@@ -183,17 +183,15 @@ const decidePublished = (tip: string, reads: PublishedReads): LayerDecision => {
 // The remote-history check of one active branch. The reads are the ones the stack skill names, in
 // its order. A read counts only when the decision reaches it.
 export const decideLayer = (facts: LayerFacts): LayerDecision => {
-  const { remoteTip, published } = facts;
-
-  if (!remoteTip.ok) {
-    return unknownFromRead(null, remoteTip);
+  if (facts.kind === 'tipFailed') {
+    return unknownFromRead(null, facts.read);
   }
 
-  if (remoteTip.value === null || published === null) {
+  if (facts.kind === 'missing') {
     return { status: 'unpublished', remoteTip: null, reason: null };
   }
 
-  return decidePublished(remoteTip.value, published);
+  return decidePublished(facts.tip, facts.reads);
 };
 
 // The remote-history check needs the branches of `gh stack view --json`. Any other result stops it.

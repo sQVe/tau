@@ -134,7 +134,11 @@ it('leaves the published facts out of the evidence when the remote tip read fail
   const { evidence } = await run();
 
   expect(evidence.layers).toHaveLength(1);
-  expect(evidence.layers[0]?.facts).toMatchObject({ remoteTip: { ok: false }, published: null });
+
+  expect(evidence.layers[0]?.facts).toMatchObject({
+    kind: 'tipFailed',
+    read: { ok: false },
+  });
 });
 
 it('leaves the published facts out of the evidence when the remote branch is missing', async () => {
@@ -144,10 +148,7 @@ it('leaves the published facts out of the evidence when the remote branch is mis
 
   const { evidence } = await run();
 
-  expect(evidence.layers[0]?.facts).toMatchObject({
-    remoteTip: { ok: true, value: null },
-    published: null,
-  });
+  expect(evidence.layers[0]?.facts).toEqual({ kind: 'missing' });
 });
 
 it.each(['abcdef1x', 'abcdef', 'x abcdef1', 'abcdef1\n--all'])(

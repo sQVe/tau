@@ -66,7 +66,7 @@ const setUp = async () => {
         startTip: string | null;
       }[];
       stop: string | null;
-      evidence: { layers: { branch: string; facts: { published: unknown } }[] };
+      evidence: { layers: { branch: string; facts: { kind: string } }[] };
     };
   };
 
@@ -92,7 +92,7 @@ it('reports current for branches level with their remote, with the noted remote 
   expect(details.stop).toBeNull();
   expect(details.layers.map((entry) => entry.startTip)).toEqual([null, null]);
   expect(details.evidence.layers.map((entry) => entry.branch)).toEqual(['lower', 'upper']);
-  expect(details.evidence.layers.every((entry) => entry.facts.published !== null)).toBe(true);
+  expect(details.evidence.layers.every((entry) => entry.facts.kind === 'published')).toBe(true);
 });
 
 it('reports behind for a branch named like an object property without a start tip', async () => {
