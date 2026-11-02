@@ -238,7 +238,8 @@ describe('slice tool apply', () => {
       url: 'https://linear.app/me/issue/ME-1',
     });
 
-    expect(details.notApplied[0]?.text).toContain('ME-1');
+    expect(details.applied).toMatchObject([{ kind: 'createContainer' }]);
+    expect(details.notApplied[0]).toMatchObject({ kind: 'saveIdentifier', identifier: 'ME-1' });
     expect(fake.issues.get('ME-1')).toMatchObject({ parent: null, title: 'Add PR-sized planning' });
     expect(fake.writes()).toHaveLength(1);
 

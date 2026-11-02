@@ -334,7 +334,12 @@ describe('slice tool apply', () => {
     );
 
     expect(failure.isError).toBe(true);
-    expect(JSON.stringify(failure.details)).toContain('network error');
+
+    const details = failureDetails(failure.details);
+
+    expect(details.error).toContain('network error');
+    expect(details.applied).toMatchObject([{ kind: 'moveSlice', identifier: 'ME-3' }]);
+    expect(details.notApplied).toEqual([]);
 
     expect(fake.issues.get('ME-2')?.sortOrder).toBe(5);
     expect(fake.issues.get('ME-3')?.sortOrder).toBeGreaterThan(5);

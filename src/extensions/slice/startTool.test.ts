@@ -376,7 +376,10 @@ describe('start_slice', () => {
       url: 'https://linear.app/me/issue/ME-701',
     });
 
-    expect(details.notApplied[0]).toContain('ME-701');
+    expect(details.applied).toHaveLength(1);
+    expect(details.applied[0]).toContain('Create ticket 1');
+    expect(details.notApplied[0]).toContain('Save the identifier ME-701');
+    expect(details.notApplied.join('\n')).not.toContain('Create ticket 1');
     expect(children(fake)).toHaveLength(2);
   });
 
