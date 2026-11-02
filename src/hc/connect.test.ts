@@ -263,6 +263,25 @@ it('rejects malformed output once the child closes', async () => {
   expect(failure).toMatchObject({ name: 'HcError', kind: 'malformed' });
 });
 
+it('spawns the child with only the environment the caller passes', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-hc-environment-');
+  const outputPath = join(directory, 'environment');
+
+  vi.stubEnv('TAU_ABSENT', 'from-process-env');
+
+  await installStub(
+    script(
+      'while read -r _line; do :; done',
+      `printf '%s' "\${TAU_ABSENT-unset}" > ${shellQuote(outputPath)}`,
+      'exit 0',
+    ),
+  );
+
+  await connect([helloLine], { env: { PATH: process.env['PATH'] ?? '' } });
+
+  expect(readFileSync(outputPath, 'utf8')).toBe('unset');
+});
+
 it('has no running child when an aborted call settles', async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-hc-abort-');
   const processIdFile = join(directory, 'pid');

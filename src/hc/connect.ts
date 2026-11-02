@@ -15,6 +15,7 @@ import {
 import type { HcTerminal } from './replies.js';
 
 export interface ConnectOptions {
+  // The complete child environment. Omit it to inherit the caller's environment.
   env?: Readonly<Record<string, string>> | undefined;
   signal?: AbortSignal | undefined;
 }
@@ -118,8 +119,8 @@ export const connect: Connect = (lines, options = {}) => {
 
   try {
     child = spawn('hc', ['connect'], {
-      // oxlint-disable-next-line node/no-process-env -- hc connect inherits the caller's environment.
-      ...(options.env === undefined ? {} : { env: { ...process.env, ...options.env } }),
+      // The caller passes the complete child environment; the default inherits process.env.
+      ...(options.env === undefined ? {} : { env: options.env }),
       stdio: ['pipe', 'pipe', 'pipe'],
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });

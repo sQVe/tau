@@ -53,6 +53,20 @@ jobs:
           echo "${herdrSha256}  ${RUNNER_TEMP}/herdr/herdr" | sha256sum --check
           chmod +x "${RUNNER_TEMP}/herdr/herdr"
           echo "${RUNNER_TEMP}/herdr" >> "${GITHUB_PATH}"
+      - name: Install hc
+        env:
+          hcVersion: 0.1.16
+          hcSha256: 58d6861176dc6fe905b58880d5bff07a9959be613a98e5d66b4583b04b6cfa45
+        run: |
+          mkdir -p "${RUNNER_TEMP}/hc"
+          curl --fail --silent --show-error --location \
+            --output "${RUNNER_TEMP}/hc/herdr-core.tar.gz" \
+            "https://releases.herdr.dev/core/${hcVersion}/herdr-core-linux-x86_64.tar.gz"
+          echo "${hcSha256}  ${RUNNER_TEMP}/hc/herdr-core.tar.gz" | sha256sum --check
+          tar --extract --file "${RUNNER_TEMP}/hc/herdr-core.tar.gz" --directory "${RUNNER_TEMP}/hc"
+          chmod +x "${RUNNER_TEMP}/hc/herdr-core"
+          ln -s "${RUNNER_TEMP}/hc/herdr-core" "${RUNNER_TEMP}/hc/hc"
+          echo "${RUNNER_TEMP}/hc" >> "${GITHUB_PATH}"
       - run: pnpm test
 
   mutation:

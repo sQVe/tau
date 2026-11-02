@@ -2,5 +2,11 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": ["src/tau.ts", "scripts/*.ts", "stryker.vitest.config.ts"],
   "ignoreDependencies": ["pi-web-access", "jiti"],
-  "ignoreBinaries": ["herdr"]
+  "ignoreBinaries": ["herdr", "hc"],
+  "ignoreIssues": {
+    "src/hc/connect.ts": ["exports", "types"],
+    "src/hc/hc.ts": ["exports", "types"],
+    "src/hc/replies.ts": ["exports", "types"],
+    "tests/hcFake.ts": ["exports", "types"]
+  }
 }
