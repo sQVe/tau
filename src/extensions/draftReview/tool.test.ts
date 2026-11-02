@@ -648,6 +648,98 @@ it('kills the started address and removes the record when open is aborted while 
   expect(await context.staging()).toEqual([]);
 });
 
+it('fails and keeps the starting record when hc run stalls past the launch limit', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  const context = await fixture({ space: 'space-a' });
+  const gate = context.holdHcRun({ ignoresAbort: true });
+
+  const failure = context.run({ action: 'open', paths: ['.tau/slices/a.md'] }).then(
+    () => undefined,
+    (error: unknown) => (error instanceof Error ? error : new Error(String(error))),
+  );
+
+  await gate.started;
+  await vi.advanceTimersByTimeAsync(15_000);
+
+  const error = await failure;
+
+  if (error === undefined) {
+    throw new Error('Expected the open to fail.');
+  }
+
+  const [name] = await context.records();
+  const directory = join(context.repository, '.tau/draft-review', name ?? '');
+
+  expect(error.message).toContain(directory);
+
+  const manifest = JSON.parse(await readFile(join(directory, 'review.json'), 'utf8')) as {
+    terminal: unknown;
+  };
+
+  expect(manifest.terminal).toEqual({ state: 'starting' });
+});
+
+it('names the retained record and keeps it starting when the caller aborts before the launch limit', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  const context = await fixture({ space: 'space-a' });
+  const controller = new AbortController();
+  const gate = context.holdHcRun();
+
+  const failure = context
+    .run({ action: 'open', paths: ['.tau/slices/a.md'] }, controller.signal)
+    .then(
+      () => undefined,
+      (error: unknown) => (error instanceof Error ? error : new Error(String(error))),
+    );
+
+  await gate.started;
+  controller.abort();
+  await vi.advanceTimersByTimeAsync(15_000);
+
+  const error = await failure;
+
+  if (error === undefined) {
+    throw new Error('Expected the open to fail.');
+  }
+
+  const [name] = await context.records();
+  const directory = join(context.repository, '.tau/draft-review', name ?? '');
+
+  expect(error.message).toContain(directory);
+  expect(commandCalls(context.hc.calls, 'hc', 'kill')).toEqual([]);
+  expect(await context.records()).toHaveLength(1);
+
+  const manifest = JSON.parse(await readFile(join(directory, 'review.json'), 'utf8')) as {
+    terminal: unknown;
+  };
+
+  expect(manifest.terminal).toEqual({ state: 'starting' });
+});
+
+it('leaves no pending timer when hc run returns before the launch limit', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  const context = await fixture({ space: 'space-a' });
+
+  await context.run({ action: 'open', paths: ['.tau/slices/a.md'] });
+
+  expect(vi.getTimerCount()).toBe(0);
+});
+
 it('keeps the starting record and names the terminal when saving the address and hc kill both fail', async () => {
   const context = await fixture({ space: 'space-a' });
 

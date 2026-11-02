@@ -30,6 +30,10 @@ interface HcWaitGate {
   release: () => void;
 }
 
+interface HoldOptions {
+  ignoresAbort?: boolean;
+}
+
 export interface ReviewFixture {
   exec: Exec;
   calls: ExecCall[];
@@ -43,7 +47,7 @@ export interface ReviewFixture {
   setSession: (comments: unknown) => Promise<void>;
   setWait: (result: { ended: boolean; reason: string }) => void;
   holdHcWait: () => HcWaitGate;
-  holdHcRun: () => HcWaitGate;
+  holdHcRun: (options?: HoldOptions) => HcWaitGate;
   deleted: () => Promise<string[]>;
   records: () => Promise<string[]>;
   staging: () => Promise<string[]>;
@@ -173,6 +177,7 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
   let heldHc:
     | {
         command: string;
+        ignoresAbort: boolean;
         started: () => void;
         released: Promise<void>;
         release: () => void;
@@ -197,18 +202,21 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
         throw Object.assign(new Error('aborted'), { name: 'AbortError' });
       }
 
-      await Promise.race([
-        held.released,
-        new Promise<void>((resolve) => {
-          signal?.addEventListener(
-            'abort',
-            () => {
-              resolve();
-            },
-            { once: true },
-          );
-        }),
-      ]);
+      const abortWakes = new Promise<void>((resolve) => {
+        if (held.ignoresAbort) {
+          return;
+        }
+
+        signal?.addEventListener(
+          'abort',
+          () => {
+            resolve();
+          },
+          { once: true },
+        );
+      });
+
+      await Promise.race([held.released, abortWakes]);
 
       if (isAborted(signal)) {
         throw Object.assign(new Error('aborted'), { name: 'AbortError' });
@@ -222,12 +230,13 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
     return hc.exec(command, argumentsList, execOptions);
   };
 
-  const holdHcCommand = (command: string): HcWaitGate => {
+  const holdHcCommand = (command: string, holdOptions: HoldOptions = {}): HcWaitGate => {
     const started = deferred();
     const released = deferred();
 
     heldHc = {
       command,
+      ignoresAbort: holdOptions.ignoresAbort === true,
       started: started.resolve,
       released: released.promise,
       release: released.resolve,
@@ -238,7 +247,7 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
 
   const holdHcWait = (): HcWaitGate => holdHcCommand('wait');
 
-  const holdHcRun = (): HcWaitGate => holdHcCommand('run');
+  const holdHcRun = (holdOptions?: HoldOptions): HcWaitGate => holdHcCommand('run', holdOptions);
 
   const runtime: DraftReviewRuntime = { exec, connect: hc.connect };
 

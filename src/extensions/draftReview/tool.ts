@@ -17,6 +17,7 @@ import {
   TuicrExitTimeoutError,
   waitForReviewExit,
 } from './hcReview.js';
+import type { ReviewTerminalRequest } from './hcReview.js';
 import {
   readReview,
   removeReview,
@@ -143,6 +144,42 @@ const endTerminalAfterSaveFailure = async (
 
 const aborted = (signal: AbortSignal | undefined): boolean => signal?.aborted === true;
 
+const reviewLaunchTimeoutMilliseconds = 15_000;
+
+class ReviewLaunchTimeoutError extends Error {
+  override name = 'ReviewLaunchTimeoutError';
+}
+
+const launchReviewTerminal = async (
+  runtime: DraftReviewRuntime,
+  cwd: string,
+  request: ReviewTerminalRequest,
+): Promise<string> => {
+  const launchController = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new ReviewLaunchTimeoutError(
+          `hc run did not start a terminal within ${reviewLaunchTimeoutMilliseconds} ms.`,
+        ),
+      );
+
+      launchController.abort();
+    }, reviewLaunchTimeoutMilliseconds);
+  });
+
+  // The caller's signal stays off hc run, so an abort still learns the address of a terminal that started.
+  const launch = openReviewTerminal(hcRuntime(runtime, cwd, launchController.signal), request);
+
+  try {
+    return await Promise.race([launch, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const open = async (
   runtime: DraftReviewRuntime,
   cwd: string,
@@ -164,7 +201,7 @@ const open = async (
     } else {
       await saveStartingTerminal(staged);
 
-      address = await openReviewTerminal(hcRuntime(runtime, cwd, undefined), {
+      address = await launchReviewTerminal(runtime, cwd, {
         stagingDirectory: staged.stagingDirectory,
         space,
       });
@@ -175,6 +212,10 @@ const open = async (
     }
   } catch (error) {
     failure = error;
+  }
+
+  if (failure instanceof ReviewLaunchTimeoutError) {
+    throw openFailure(failure, staged.recordDirectory);
   }
 
   if (aborted(signal)) {
