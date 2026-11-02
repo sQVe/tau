@@ -3,7 +3,7 @@ export type CommitContent = {
   text: string;
 }[];
 
-export interface CommittedGroupDetails {
+interface CommittedGroupDetails {
   sha: string;
   files: string[];
   subject: string;
