@@ -224,3 +224,24 @@ export const createGhFake = (): GhFake => {
 
   return fake;
 };
+
+export const pullRequest = (overrides: Partial<FakePullRequest> = {}): FakePullRequest => ({
+  number: 7,
+  state: 'OPEN',
+  title: 'Add a feature',
+  body: 'Adds it.',
+  baseRefName: 'main',
+  isDraft: true,
+  headRefOid: 'abc123',
+  headOwner: 'sQVe',
+  headBranch: 'feature',
+  ...overrides,
+});
+
+export const holdPullRequests = (
+  fake: GhFake,
+  repository: string,
+  prs: FakePullRequest[],
+): void => {
+  fake.pullRequests[repository] = prs;
+};
