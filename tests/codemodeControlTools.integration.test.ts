@@ -312,7 +312,7 @@ it('returns ordinary results beside a refused control call in one script', async
   expect((await readAssignment(path))?.report).toBeNull();
 });
 
-it('lists the manager subagent tool but refuses it from a script', async () => {
+it('hides the manager subagent tool from scripts and refuses its call', async () => {
   const script = [
     discovery,
     settle(["tools.subagent({ task: 'Check the fixture.', profile: 'scout' })"]),
