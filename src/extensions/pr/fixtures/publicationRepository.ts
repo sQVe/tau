@@ -23,9 +23,6 @@ export const createBareRemote = async (
 export const pushFeature = (root: string): Promise<string> =>
   git(root, 'push', '--quiet', '-u', 'origin', 'feature');
 
-// A checkout with a base commit on main and a feature branch that adds one commit. With remote,
-// origin is github.com/<origin>, served by a bare remote, and main is pushed. forkPoint is the SHA
-// where feature leaves main.
 export const createPublicationRepository = async (
   registerCleanup: RegisterCleanup,
   { origin = 'sQVe/tau', remote = false }: { origin?: string; remote?: boolean } = {},
