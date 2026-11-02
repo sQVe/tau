@@ -73,11 +73,6 @@ interface StagedCandidate {
   files: string[];
 }
 
-interface SnapshotOutcome {
-  snapshot: StagedSnapshot;
-  cancelled: boolean;
-}
-
 export type GroupOutcome = { kind: 'cancelled' } | { kind: 'committed'; commit: CommittedGroup };
 
 interface CleanupCheck {
@@ -210,19 +205,23 @@ const stageAndVerifyRequest = async (run: GroupRun): Promise<boolean> => {
   return true;
 };
 
-const snapshotStagedTree = async (run: GroupRun): Promise<SnapshotOutcome> => {
+const snapshotStagedTree = async (run: GroupRun): Promise<StagedSnapshot> => {
   const tree = await writeTree(run.runner, run.context.cwd, run.signal);
   const index = await readIndex(run.runner, run.context.cwd);
   const head = await currentHead(run.runner, run.context.cwd);
-  const snapshot = { tree, index, head };
 
+  return { tree, index, head };
+};
+
+const prepareCommit = async (run: GroupRun, snapshot: StagedSnapshot): Promise<boolean> => {
   if (run.signal?.aborted === true) {
-    return { snapshot, cancelled: true };
+    return false;
   }
 
   if (run.targetHash !== undefined) {
     const targetInHistory =
-      head !== null && (await isCommitAncestor(run.runner, run.context.cwd, run.targetHash, head));
+      snapshot.head !== null &&
+      (await isCommitAncestor(run.runner, run.context.cwd, run.targetHash, snapshot.head));
 
     if (!targetInHistory) {
       throw new Error('Fixup target is no longer an ancestor of the snapshot HEAD.');
@@ -231,7 +230,7 @@ const snapshotStagedTree = async (run: GroupRun): Promise<SnapshotOutcome> => {
 
   await writeFile(run.messagePath, run.messageText, { mode: 0o600 });
 
-  return { snapshot, cancelled: false };
+  return true;
 };
 
 const snapshotChanged = async (
@@ -295,11 +294,9 @@ const stageGroup = async (run: GroupRun): Promise<StagedCandidate | null> => {
       return null;
     }
 
-    const prepared = await snapshotStagedTree(run);
+    snapshot = await snapshotStagedTree(run);
 
-    snapshot = prepared.snapshot;
-
-    if (prepared.cancelled) {
+    if (!(await prepareCommit(run, snapshot))) {
       return null;
     }
 

@@ -47,6 +47,48 @@ it('rejects a target removed from history before the snapshot and restores the i
   expect(await git(directory, 'ls-files', '--stage')).toBe(index);
 });
 
+it('leaves staging untouched when HEAD moves after a rejected fixup target', async () => {
+  const directory = await createTemporaryRepository();
+
+  await writeRepositoryFile(directory, 'file.txt', 'original\n');
+  await git(directory, 'add', 'file.txt');
+  await git(directory, 'commit', '-m', 'fix: target');
+
+  const tree = (await git(directory, 'rev-parse', 'HEAD^{tree}')).trim();
+  const unrelated = (await git(directory, 'commit-tree', tree, '-m', 'unrelated')).trim();
+  const later = (await git(directory, 'commit-tree', tree, '-m', 'later')).trim();
+
+  await writeRepositoryFile(directory, 'file.txt', 'corrected\n');
+
+  const tool = createCommitTool(async (cwd, commandArguments, options) => {
+    if (commandArguments[0] === 'write-tree') {
+      await git(directory, 'update-ref', 'HEAD', unrelated);
+    }
+
+    const result = await runGit(cwd, commandArguments, options);
+
+    if (commandArguments[0] === 'merge-base') {
+      await git(directory, 'update-ref', 'HEAD', later);
+    }
+
+    return result;
+  });
+
+  await expect(
+    tool.execute(
+      'race',
+      {
+        groups: [{ files: ['file.txt'], fixup: { target: 'HEAD', kind: 'fixup' } }],
+      },
+      undefined,
+      undefined,
+      commitContext(directory),
+    ),
+  ).rejects.toThrow(/Staged content or HEAD changed/);
+
+  expect(await git(directory, 'diff', '--cached', '--name-only')).toBe('file.txt');
+});
+
 it('allows earlier groups to advance HEAD before a fixup snapshot', async () => {
   const directory = await createTemporaryRepository();
 
