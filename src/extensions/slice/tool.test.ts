@@ -978,6 +978,12 @@ const asked = (root: string, answer: boolean) => {
 
 describe('slice tool apply ownership', () => {
   it('asks once before it writes to a slice another person owns, and writes nothing when declined', async () => {
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+
+    vi.stubEnv('TAU_ROLE', undefined);
+    vi.stubEnv('TAU_WORKER_RECORD', undefined);
     const { root, fake, directory, apply } = await appliedPlan();
 
     fake.issues.get('ME-2')!.assigneeId = 'user-other';
@@ -1017,7 +1023,8 @@ describe('slice tool apply ownership', () => {
     const writesBefore = fake.writes().length;
     const { seen, context } = asked(root, true);
 
-    vi.stubEnv('TAU_WORKER_RECORD', '/records/task-one');
+    vi.stubEnv('TAU_ROLE', 'worker');
+    vi.stubEnv('TAU_WORKER_RECORD', undefined);
 
     onTestFinished(() => {
       vi.unstubAllEnvs();

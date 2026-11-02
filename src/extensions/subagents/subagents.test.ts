@@ -312,7 +312,8 @@ it('keeps parent tools, delegation guidelines, and handlers unavailable when a t
     vi.unstubAllEnvs();
   });
 
-  vi.stubEnv('TAU_WORKER_RECORD', '/fixture/worker');
+  vi.stubEnv('TAU_ROLE', 'worker');
+  vi.stubEnv('TAU_WORKER_RECORD', undefined);
   const fake = fakeExtensionApi();
 
   const capacityRefusal = registerCapacityRefusal(fake.pi);
@@ -322,6 +323,48 @@ it('keeps parent tools, delegation guidelines, and handlers unavailable when a t
 
   expect(fake.tools.size).toBe(0);
   expect(fake.handlers.size).toBe(0);
+});
+
+it('refuses further subagent calls after a refusal in a manager session with both markers unset', ({
+  onTestFinished,
+}) => {
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  vi.stubEnv('TAU_ROLE', undefined);
+  vi.stubEnv('TAU_WORKER_RECORD', undefined);
+  const fake = fakeExtensionApi();
+
+  const capacityRefusal = registerCapacityRefusal(fake.pi);
+
+  expect(
+    fake.handler('tool_call')({ toolName: 'subagent' }, {} as ExtensionContext),
+  ).toBeUndefined();
+
+  capacityRefusal.refuse();
+
+  expect(fake.handler('tool_call')({ toolName: 'subagent' }, {} as ExtensionContext)).toMatchObject(
+    {
+      block: true,
+    },
+  );
+});
+
+it('registers the subagent tool in a manager session with both markers unset', ({
+  onTestFinished,
+}) => {
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  vi.stubEnv('TAU_ROLE', undefined);
+  vi.stubEnv('TAU_WORKER_RECORD', undefined);
+  const fake = fakeExtensionApi();
+
+  subagentsExtension(fake.pi, registerCapacityRefusal(fake.pi));
+
+  expect(fake.tools.has('subagent')).toBe(true);
 });
 
 const launchDescription = async (
@@ -859,7 +902,7 @@ it('places follow-ups with explicit visibility and the current parent terminal',
     throw new Error('Missing follow-up tool.');
   }
 
-  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('TAU_ROLE', '');
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'stale-pane-before-movement');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
@@ -939,7 +982,7 @@ it('launches a Pi worker through the tool and refuses a launch outside herdr', a
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
-  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('TAU_ROLE', '');
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
@@ -1005,7 +1048,7 @@ it('refuses a launch that needs a skill tool the parent did not register', async
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
-  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('TAU_ROLE', '');
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
@@ -1056,7 +1099,7 @@ it('defaults the launch timeout by profile role and keeps an explicit timeout', 
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
-  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('TAU_ROLE', '');
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
@@ -1125,7 +1168,7 @@ const environmentLaunch = (onTestFinished: (cleanup: () => void) => void) => {
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
-  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('TAU_ROLE', '');
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
@@ -1466,7 +1509,7 @@ it('returns allowlisted model content for a follow-up successor and keeps full d
     throw new Error('Missing follow-up tool.');
   }
 
-  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('TAU_ROLE', '');
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent-pane');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
@@ -1677,7 +1720,7 @@ it.each([
     vi.restoreAllMocks();
   });
 
-  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('TAU_ROLE', '');
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
@@ -1838,7 +1881,7 @@ it('returns the unreadable-evidence object when follow-up records fail', async (
   onTestFinished,
 }) => {
   const tools = registerTools();
-  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('TAU_ROLE', '');
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
@@ -1888,7 +1931,7 @@ it('returns the unreadable-evidence object when launch records fail', async ({
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
-  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('TAU_ROLE', '');
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');

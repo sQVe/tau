@@ -10,7 +10,8 @@ const createHarness = (onTestFinished: TestContext['onTestFinished']) => {
     vi.unstubAllEnvs();
   });
 
-  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('TAU_ROLE', undefined);
+  vi.stubEnv('TAU_WORKER_RECORD', undefined);
 
   const fake = fakeExtensionApi();
   const notify = vi.fn<(message: string, level?: string) => void>();
@@ -118,7 +119,8 @@ it('registers nothing in a worker', ({ onTestFinished }) => {
     vi.unstubAllEnvs();
   });
 
-  vi.stubEnv('TAU_WORKER_RECORD', '/fixture/worker');
+  vi.stubEnv('TAU_ROLE', 'worker');
+  vi.stubEnv('TAU_WORKER_RECORD', undefined);
   const fake = fakeExtensionApi();
 
   compactionExtension(fake.pi);

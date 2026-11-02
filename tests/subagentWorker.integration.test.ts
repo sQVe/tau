@@ -59,7 +59,7 @@ it('keeps the questionnaire available to the parent', async () => {
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
-  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('TAU_ROLE', '');
   const provider = fauxProvider({ provider: 'tau-parent-fixture' });
 
   const runtime = await ModelRuntime.create({
@@ -201,6 +201,7 @@ it.each(['editing', 'investigation'] as const)(
 
     const taskDirectory = join(directory, 'task');
     mkdirSync(taskDirectory);
+    vi.stubEnv('TAU_ROLE', 'worker');
     vi.stubEnv('TAU_WORKER_RECORD', taskDirectory);
 
     const task = validateTask({

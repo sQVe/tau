@@ -81,7 +81,7 @@ export const testEnvironment = [
 
 // Variables that test code reads but sets itself, so they stay out of the fingerprint. Tests stub
 // them before reading, or this file sets or deletes them before the workers start.
-export const testManagedEnvironment = ['PI_CODING_AGENT_DIR', 'TAU_WORKER_RECORD'];
+export const testManagedEnvironment = ['PI_CODING_AGENT_DIR', 'TAU_ROLE', 'TAU_WORKER_RECORD'];
 
 // When pnpm check sets TAU_PATH_COMMANDS, the digest of the commands PATH resolves to stands in for
 // PATH, so a reordered PATH keeps the cache. Vite+ still passes PATH to the tests.
@@ -125,6 +125,7 @@ export default defineConfig({
     // Git in tests, and in the code under test, must ignore the developer's configuration.
     env: {
       // Tests must choose the worker environment themselves.
+      TAU_ROLE: '',
       TAU_WORKER_RECORD: '',
       HERDR_PANE_ID: '',
       GIT_CONFIG_GLOBAL: '/dev/null',

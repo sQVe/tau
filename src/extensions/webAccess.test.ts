@@ -46,8 +46,9 @@ const setup = (config: unknown = {}) => {
   return { emit, find, getAvailable };
 };
 
-const startSession = (worker: string, toolNames: string[] = []) => {
-  vi.stubEnv('TAU_WORKER_RECORD', worker);
+const startSession = (role: string | undefined, toolNames: string[] = []) => {
+  vi.stubEnv('TAU_ROLE', role);
+  vi.stubEnv('TAU_WORKER_RECORD', undefined);
 
   const fake = fakeExtensionApi({
     getAllTools: () => toolNames.map((name) => ({ name })) as never,
@@ -65,14 +66,14 @@ const startSession = (worker: string, toolNames: string[] = []) => {
 afterEach(() => vi.unstubAllEnvs());
 
 it('names a missing bundled tool in a parent session but leaves worker tools to the profile', () => {
-  expect(startSession('')).toThrow('"web_search", "fetch_content" are not registered');
-  expect(startSession('/records/task')).not.toThrow();
+  expect(startSession(undefined)).toThrow('"web_search", "fetch_content" are not registered');
+  expect(startSession('worker')).not.toThrow();
 });
 
 it('accepts a parent session that registers both web tools and names only the missing one', () => {
-  expect(startSession('', ['web_search', 'fetch_content', 'read'])).not.toThrow();
-  expect(startSession('', ['web_search'])).toThrow('Tool "fetch_content" is not registered');
-  expect(startSession('', ['fetch_content'])).toThrow('Tool "web_search" is not registered');
+  expect(startSession(undefined, ['web_search', 'fetch_content', 'read'])).not.toThrow();
+  expect(startSession(undefined, ['web_search'])).toThrow('Tool "fetch_content" is not registered');
+  expect(startSession(undefined, ['fetch_content'])).toThrow('Tool "web_search" is not registered');
 });
 
 it('leaves answer fetches without a passed answerModel untouched and trims a passed one', () => {

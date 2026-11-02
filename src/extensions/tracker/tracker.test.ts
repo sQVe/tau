@@ -129,3 +129,23 @@ it('reports a bad tracker entry only for the repository the checkout is cloned f
   expect(other.prompt).not.toContain('must be a string');
   expect(other.prompt).toContain('no entry for `sQVe/other`');
 });
+
+it.for([
+  { role: 'worker', addsSessionPrompt: false },
+  { role: undefined, addsSessionPrompt: true },
+])(
+  'adds the tracker session prompt only in a non-worker session with TAU_ROLE $role',
+  ({ role, addsSessionPrompt }, { onTestFinished }) => {
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+
+    vi.stubEnv('TAU_ROLE', role);
+    vi.stubEnv('TAU_WORKER_RECORD', undefined);
+    const fake = fakeExtensionApi();
+
+    trackerExtension(fake.pi);
+
+    expect(fake.handlers.has('session_start')).toBe(addsSessionPrompt);
+  },
+);
