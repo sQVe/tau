@@ -14,7 +14,6 @@ import type { LaunchRuntime } from '../src/extensions/subagents/launch.js';
 import * as loadouts from '../src/extensions/subagents/loadout.js';
 import { createReportDelivery } from '../src/extensions/subagents/reportDelivery.js';
 import { runWithEnvironment } from '../src/hc/connect.js';
-import { skillTools } from '../src/skillTools.js';
 import { startHcSession } from './hcSessionHarness.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
@@ -182,11 +181,11 @@ it('shows a real worker report once before it gives the worker the manager envir
   vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
 
   const runtime: LaunchRuntime = {
-    pi: { getCommands: () => [] } as unknown as ExtensionAPI,
+    pi: { getCommands: () => [], getAllTools: () => [] } as unknown as ExtensionAPI,
     hc: hc.runtime,
     capacity: 4,
     admission: new Admission(),
-    skillTools,
+    readSkillTools: () => ({}),
     agentDirectory,
     processEnvironment: { ...hc.environment, PATH: managerPath },
   };
@@ -243,15 +242,14 @@ it('shows a real worker report once before it gives the worker the manager envir
     },
   } as unknown as ExtensionAPI;
 
-  const delivery = createReportDelivery(pi, hc.runtime);
-
   const deliveryContext = {
     sessionManager: { getEntries: () => entries },
     ui: { notify: () => undefined },
-  } as unknown as Parameters<typeof delivery.deliver>[0];
+  } as unknown as Parameters<ReturnType<typeof createReportDelivery>['deliver']>[0];
 
-  await delivery.deliver(deliveryContext);
-  await delivery.deliver(deliveryContext);
+  await createReportDelivery(pi, hc.runtime).deliver(deliveryContext);
+  await createReportDelivery(pi, hc.runtime).deliver(deliveryContext);
 
   expect(messages).toHaveLength(1);
+  expect(entries).toHaveLength(1);
 });
