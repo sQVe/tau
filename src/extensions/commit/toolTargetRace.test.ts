@@ -87,6 +87,7 @@ it('leaves staging untouched when HEAD moves after a rejected fixup target', asy
   ).rejects.toThrow(/Staged content or HEAD changed/);
 
   expect(await git(directory, 'diff', '--cached', '--name-only')).toBe('file.txt');
+  expect(await git(directory, 'show', ':file.txt')).toBe('corrected');
 });
 
 it('allows earlier groups to advance HEAD before a fixup snapshot', async () => {
