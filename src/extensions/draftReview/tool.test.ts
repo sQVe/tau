@@ -1,19 +1,25 @@
-import { getEventListeners } from 'node:events';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Value } from 'typebox/value';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { herdrFake } from '../../../tests/herdrFake.js';
+import type { ExecCall } from '../../../tests/execFake.js';
 import type { Exec } from '../../command.js';
+import type { Connect } from '../../hc/connect.js';
 import { saveCollectedRecord } from './collectedRecord.js';
-import { agentPane, comment, fixture, stagingOf } from './fixtures/reviewFixture.js';
+import { comment, fixture, stagingOf } from './fixtures/reviewFixture.js';
 import { readReview } from './stage.js';
 import { createDraftReviewTool } from './tool.js';
+import type { DraftReviewRuntime } from './tool.js';
 
-const placementFailure = vi.hoisted(() => ({ active: false }));
+const saveFailure = vi.hoisted(() => ({
+  active: false,
+  abortSignal: undefined as AbortController | undefined,
+  writes: 0,
+  throwOnSave: true,
+}));
 
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const actual = await importOriginal();
@@ -23,12 +29,17 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
     writeFile: async (...parameters: Parameters<typeof actual.writeFile>) => {
       const [target] = parameters;
 
-      if (
-        placementFailure.active &&
-        typeof target === 'string' &&
-        target.includes('.review.json.')
-      ) {
-        throw new Error('placement write refused');
+      if (saveFailure.active && typeof target === 'string' && target.includes('.review.json.')) {
+        saveFailure.writes += 1;
+
+        // The staging and starting manifests must be saved before the address is saved.
+        if (saveFailure.writes > 2) {
+          saveFailure.abortSignal?.abort();
+
+          if (saveFailure.throwOnSave) {
+            throw new Error('record save refused');
+          }
+        }
       }
 
       return actual.writeFile(...parameters);
@@ -36,8 +47,19 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
   };
 });
 
-it('prints the command outside herdr, then collects only comments on reviewed files and changed files', async () => {
-  const { run, setSession, deleted, records, real, herdrCalls, data } = await fixture();
+const refusalFixtures = join(import.meta.dirname, 'fixtures', 'review');
+
+const runtimeWithoutCalls = (): DraftReviewRuntime => ({
+  exec: vi.fn<Exec>(),
+  connect: vi.fn<Connect>(),
+});
+
+const commandCalls = (calls: ExecCall[], command: string, action: string) =>
+  calls.filter((call) => call.command === command && call.commandArguments[0] === action);
+
+it('prints the command outside a manager terminal, then collects only comments on reviewed files and changed files', async () => {
+  const context = await fixture();
+  const { run, setSession, deleted, records, real, data } = context;
   const opened = await run({ action: 'open', paths: ['.tau/slices/a.md', '.tau/slices/b.md'] });
   const manual = opened.details;
 
@@ -49,7 +71,7 @@ it('prints the command outside herdr, then collects only comments on reviewed fi
 
   expect(manual.command).toMatch(/^tuicr --file '/);
   expect(await readFile(join(staging, '01-slices/1-a.md'), 'utf8')).toBe('one\ntwo\n');
-  expect(herdrCalls).toEqual([]);
+  expect(context.hc.calls).toEqual([]);
 
   await writeFile(join(staging, '01-slices/1-a.md'), 'one\nTWO\n');
 
@@ -86,6 +108,7 @@ it('prints the command outside herdr, then collects only comments on reviewed fi
   expect(await readFile(real('slices/a.md'), 'utf8')).toBe('one\nTWO\n');
   expect(await readFile(real('slices/b.md'), 'utf8')).toBe('bee\n');
   expect(await records()).toEqual([]);
+  expect(context.hc.calls).toEqual([]);
   expect(existsSync(staging)).toBe(false);
 });
 
@@ -262,171 +285,6 @@ it('returns every comment on a retry after a delete failed partway and deletes o
   expect(await readFile(real('slices/a.md'), 'utf8')).toBe('user\n');
 });
 
-const processInfo = (...pids: number[]) =>
-  JSON.stringify({
-    result: { process_info: { foreground_processes: pids.map((pid) => ({ pid })) } },
-  });
-
-const socketClosed = () => new Error('herdr failed: socket closed');
-
-// The tuicr process the fake herdr started for the open review.
-const tuicr = (herdr: ReturnType<typeof herdrFake>) => herdr.workers().at(-1)!;
-
-const reviewTab = (herdr: ReturnType<typeof herdrFake>) => herdr.layout.panes.at(-1)!.tab_id;
-
-const steps = (calls: string[][]) => calls.map(([group, action]) => `${group} ${action}`);
-
-it('names the record directory when another herdr call fails', async () => {
-  const herdr = herdrFake();
-  herdr.failCall('pane run', socketClosed());
-
-  const { run, repository } = await fixture(herdr);
-
-  await expect(run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane)).rejects.toThrow(
-    join(repository, '.tau/draft-review/review-'),
-  );
-});
-
-it('names the record directory and keeps it when a herdr call fails during collect', async () => {
-  const herdr = herdrFake();
-  const { run } = await fixture(herdr);
-
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-  const { directory } = opened.details as { directory: string };
-
-  herdr.failCall('pane process-info', socketClosed());
-
-  const failure = run({ action: 'collect', directory });
-
-  await expect(failure).rejects.toThrow('socket closed');
-  await expect(failure).rejects.toThrow(directory);
-
-  expect(existsSync(directory)).toBe(true);
-});
-
-it('ignores a pane that is already gone on close but names the record when close fails', async () => {
-  const herdr = herdrFake();
-  herdr.failCall('pane run', socketClosed());
-
-  const { run, repository } = await fixture(herdr);
-
-  herdr.failCall('pane close', new Error('herdr failed: {"error":{"code":"pane_not_found"}}'));
-
-  await expect(run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane)).rejects.toThrow(
-    'socket closed',
-  );
-
-  herdr.failCall('pane close', socketClosed());
-
-  await expect(run({ action: 'open', paths: ['.tau/slices/b.md'] }, agentPane)).rejects.toThrow(
-    join(repository, '.tau/draft-review/review-'),
-  );
-});
-
-it('opens a right split when the agent pane is 164 columns wide', async () => {
-  const herdr = herdrFake(164);
-  const { run } = await fixture(herdr);
-
-  await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-
-  expect(steps(herdr.calls)).toContain('pane split');
-  expect(herdr.calls.some(([group]) => group === 'tab')).toBe(false);
-});
-
-it.each([
-  { width: 163, zoomed: false },
-  { width: 200, zoomed: true },
-])(
-  'opens a tab in the agent workspace for a $width column pane, zoomed $zoomed',
-  async ({ width, zoomed }) => {
-    const herdr = herdrFake(width);
-
-    if (zoomed) {
-      herdr.zoom();
-    }
-
-    const { run, herdrCalls } = await fixture(herdr);
-
-    await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-
-    const create = herdrCalls.find(([group, action]) => group === 'tab' && action === 'create');
-
-    expect(create).not.toContain('--focus');
-    expect(create?.[create.indexOf('--workspace') + 1]).toBe(herdr.layout.parent.workspace_id);
-    expect(steps(herdrCalls)).not.toContain('pane split');
-    expect(herdrCalls.find(([, action]) => action === 'run')?.[2]).toBe(tuicr(herdr).paneId);
-  },
-);
-
-it('collects when the user closes the review pane and the tab is already gone', async () => {
-  const herdr = herdrFake(100);
-  const { run, herdrCalls } = await fixture(herdr);
-
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-  herdr.loseTabOnClose(reviewTab(herdr));
-
-  const outcome = await run({
-    action: 'collect',
-    directory: (opened.details as { directory: string }).directory,
-  });
-
-  expect(outcome.details).toMatchObject({ status: 'reviewed' });
-  expect(herdrCalls.at(-1)).toEqual(['tab', 'focus', herdr.layout.parent.tab_id]);
-});
-
-it('fails with the herdr error and opens nothing when the pane layout cannot be read', async () => {
-  const herdr = herdrFake();
-  herdr.failCall('pane layout', socketClosed());
-
-  const { run, herdrCalls } = await fixture(herdr);
-
-  await expect(run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane)).rejects.toThrow(
-    'herdr failed: socket closed',
-  );
-
-  expect(herdrCalls.map(([, action]) => action)).toEqual(['layout']);
-});
-
-const abortDuringOpen = async (step: string) => {
-  const controller = new AbortController();
-  const herdr = herdrFake(100);
-  herdr.hangCall(step);
-
-  const { run, setSession, deleted, records } = await fixture(herdr);
-
-  await setSession([comment('on-a', '01-slices/1-a.md')]);
-
-  const opening = run(
-    { action: 'open', paths: ['.tau/slices/a.md'] },
-    agentPane,
-    controller.signal,
-  );
-
-  await vi.waitFor(() => {
-    expect(steps(herdr.calls)).toContain(step);
-  });
-
-  controller.abort();
-
-  const outcome = await opening;
-
-  return { details: outcome.details, deleted: await deleted(), records: await records() };
-};
-
-const cancelledWithNothingKept = {
-  details: { status: 'cancelled', comments: [], edits: [] },
-  deleted: [],
-  records: [],
-};
-
-it('returns cancelled and keeps no record when aborted during pane layout', async () => {
-  expect(await abortDuringOpen('pane layout')).toEqual(cancelledWithNothingKept);
-});
-
-it('returns cancelled and keeps no record when aborted during tab create', async () => {
-  expect(await abortDuringOpen('tab create')).toEqual(cancelledWithNothingKept);
-});
-
 it('gives the model the result as text content', async () => {
   const { run, setSession } = await fixture();
   const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] });
@@ -456,11 +314,7 @@ it('refuses an open call that has no paths', async () => {
 });
 
 it('refuses the removed review action', () => {
-  const { parameters } = createDraftReviewTool({
-    exec: vi.fn<Exec>(),
-    herdrPaneId: () => undefined,
-    isProcessRunning: () => false,
-  });
+  const { parameters } = createDraftReviewTool(runtimeWithoutCalls());
 
   expect(Value.Check(parameters, { action: 'review', paths: ['.tau/slices/a.md'] })).toBe(false);
 });
@@ -477,11 +331,7 @@ it.each([
   { call: { action: 'open', paths: [''] }, valid: false },
   { call: { action: 'collect', directory: '' }, valid: false },
 ])('checks the arguments $call: valid is $valid', ({ call, valid }) => {
-  const { parameters } = createDraftReviewTool({
-    exec: vi.fn<Exec>(),
-    herdrPaneId: () => undefined,
-    isProcessRunning: () => false,
-  });
+  const { parameters } = createDraftReviewTool(runtimeWithoutCalls());
 
   expect(Value.Check(parameters, call)).toBe(valid);
 });
@@ -595,699 +445,330 @@ it('names the comments deleted before a failed delete', async () => {
   );
 });
 
-it.each([
-  { agentWidth: 200, otherWidth: 50, placement: 'pane split' },
-  { agentWidth: 50, otherWidth: 200, placement: 'tab create' },
-])(
-  'places the review by the agent pane width $agentWidth, not another pane',
-  async ({ agentWidth, otherWidth, placement }) => {
-    const herdr = herdrFake(agentWidth);
-    herdr.addPane('other', otherWidth);
-
-    const { run, herdrCalls } = await fixture(herdr);
-
-    await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-
-    expect(steps(herdrCalls)).toContain(placement);
-  },
-);
-
-it('sends herdr the split arguments for a pane beside the agent', async () => {
-  const { run, herdrCalls } = await fixture(herdrFake());
-
-  await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-
-  const staging = /--file '([^']+)'/.exec(
-    herdrCalls.find(([, action]) => action === 'run')?.[3] ?? '',
-  )?.[1];
-
-  expect(herdrCalls.find(([, action]) => action === 'split')).toEqual([
-    'pane',
-    'split',
-    '--pane',
-    agentPane,
-    '--direction',
-    'right',
-    '--cwd',
-    staging,
-  ]);
-});
-
-it('sends herdr the arguments for a review tab in the agent workspace', async () => {
-  const herdr = herdrFake(100);
-  const { run, herdrCalls } = await fixture(herdr);
-
-  await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-
-  const staging = /--file '([^']+)'/.exec(
-    herdrCalls.find(([, action]) => action === 'run')?.[3] ?? '',
-  )?.[1];
-
-  expect(herdrCalls.find(([group, action]) => group === 'tab' && action === 'create')).toEqual([
-    'tab',
-    'create',
-    '--workspace',
-    herdr.layout.parent.workspace_id,
-    '--cwd',
-    staging,
-    '--label',
-    expect.any(String),
-  ]);
-});
-
-it('reports a tab close failure other than a missing tab and keeps the agent tab unfocused', async () => {
-  const herdr = herdrFake(100);
-  herdr.failCall('tab close', socketClosed());
-
-  const { run, herdrCalls } = await fixture(herdr);
-
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-
-  await expect(
-    run({ action: 'collect', directory: (opened.details as { directory: string }).directory }),
-  ).rejects.toThrow('socket closed');
-
-  expect(herdrCalls.some(([group, action]) => group === 'tab' && action === 'focus')).toBe(false);
-});
-
-const stagingFor = async (repository: string): Promise<string> => {
-  const parent = join(repository, '.tau/draft-review');
-  const [name] = await readdir(parent);
-  const manifest = await readFile(join(parent, name ?? '', 'review.json'), 'utf8');
-
-  return (JSON.parse(manifest) as { stagingDirectory: string }).stagingDirectory;
-};
-
-it('opens tuicr beside the agent without focus and returns at once', async () => {
-  const herdr = herdrFake();
-  const { run, herdrCalls, repository } = await fixture(herdr);
-
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
+it('opens tuicr in a manager tab with the space label and --bg, then saves a version 4 record', async () => {
+  const context = await fixture({ space: 'space-a' });
+  const opened = await context.run({ action: 'open', paths: ['.tau/slices/a.md'] });
   const details = opened.details;
 
   if (details.status !== 'opened') {
     throw new Error(`Expected an opened review, got ${details.status}`);
   }
 
-  const split = herdrCalls.find(([, action]) => action === 'split') ?? [];
-  const staging = await stagingFor(repository);
+  const runCall = commandCalls(context.hc.calls, 'hc', 'run')[0]?.commandArguments ?? [];
+  const name = runCall[runCall.indexOf('--name') + 1];
+  const { stagingDirectory } = await readReview(context.repository, details.directory);
 
-  expect(details.directory).toContain(join(repository, '.tau/draft-review/review-'));
-  expect(split).not.toContain('--focus');
-  expect(steps(herdrCalls)).not.toContain('pane wait-output');
+  expect(runCall).toContain('--bg');
+  expect(runCall[runCall.indexOf('--label') + 1]).toBe('herdr.space=space-a');
+  expect(name).toMatch(/^draft-review-[0-9a-f]{8}$/);
+  expect(runCall).toContain('tuicr');
+  expect(runCall.at(-1)).toBe(stagingDirectory);
 
-  expect(herdrCalls.find(([, action]) => action === 'run')).toEqual([
-    'pane',
-    'run',
-    tuicr(herdr).paneId,
-    `tuicr --file '${staging}'`,
-  ]);
+  const manifest = JSON.parse(await readFile(join(details.directory, 'review.json'), 'utf8')) as {
+    version: number;
+    terminal: unknown;
+  };
 
-  expect((await readReview(repository, details.directory)).placement).toEqual({
-    kind: 'split',
-    terminalId: tuicr(herdr).terminalId,
+  expect(manifest.version).toBe(4);
+  expect(manifest.terminal).toEqual({ state: 'open', address: 'review-1' });
+
+  expect((await readReview(context.repository, details.directory)).terminal).toEqual({
+    state: 'open',
+    address: 'review-1',
   });
 });
 
-it('opens a tab without focus, with no tab focus call', async () => {
-  const herdr = herdrFake(100);
-  const { run, herdrCalls, repository } = await fixture(herdr);
-
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-  const create = herdrCalls.find(([group, action]) => group === 'tab' && action === 'create');
-
-  expect(opened.details).toMatchObject({ status: 'opened' });
-  expect(create).not.toContain('--focus');
-  expect(steps(herdrCalls)).not.toContain('pane wait-output');
-  expect(steps(herdrCalls)).not.toContain('tab focus');
-
-  expect(herdrCalls.find(([, action]) => action === 'run')).toEqual([
-    'pane',
-    'run',
-    tuicr(herdr).paneId,
-    `tuicr --file '${await stagingFor(repository)}'`,
-  ]);
-
+it('returns comments after an hc wait reports the terminal ended', async () => {
+  const context = await fixture({ space: 'space-a' });
+  const opened = await context.run({ action: 'open', paths: ['.tau/slices/a.md'] });
   const directory = (opened.details as { directory: string }).directory;
 
-  expect((await readReview(repository, directory)).placement).toEqual({
-    kind: 'tab',
-    terminalId: tuicr(herdr).terminalId,
-    tabId: reviewTab(herdr),
-    agentTabId: herdr.layout.parent.tab_id,
+  await context.setSession([comment('on-a', '01-slices/1-a.md')]);
+
+  const collected = await context.run({ action: 'collect', directory });
+
+  expect(collected.details).toMatchObject({
+    status: 'reviewed',
+    comments: [{ path: context.real('slices/a.md'), content: 'on-a' }],
   });
+
+  const waitIndex = context.calls.findIndex(
+    (call) => call.command === 'hc' && call.commandArguments[0] === 'wait',
+  );
+
+  const listIndex = context.calls.findIndex(
+    (call) => call.command === 'tuicr' && call.commandArguments[0] === 'review',
+  );
+
+  expect(waitIndex).toBeGreaterThanOrEqual(0);
+  expect(listIndex).toBeGreaterThan(waitIndex);
+  expect(await context.deleted()).toEqual(['on-a']);
 });
 
-it('returns the command outside herdr when open is called', async () => {
-  const { run, herdrCalls } = await fixture();
+it('reads no comment and deletes none when hc wait keeps reporting a message', async () => {
+  const context = await fixture({ space: 'space-a' });
+  const opened = await context.run({ action: 'open', paths: ['.tau/slices/a.md'] });
+  const directory = (opened.details as { directory: string }).directory;
 
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] });
+  await context.setSession([comment('on-a', '01-slices/1-a.md')]);
+  context.setWait({ ended: false, reason: 'message' });
 
-  const details = opened.details;
+  await expect(context.run({ action: 'collect', directory })).rejects.toThrow(directory);
 
-  expect(details.status).toBe('manual');
-  expect('command' in details && details.command).toMatch(/^tuicr --file /);
-  expect(herdrCalls).toEqual([]);
+  expect(commandCalls(context.calls, 'tuicr', 'review')).toEqual([]);
+  expect(await context.deleted()).toEqual([]);
+  expect(await context.records()).toHaveLength(1);
 });
 
-it('removes the record and returns cancelled when open is cancelled', async () => {
+it('ends only the address it started when saving the record fails, then throws', async () => {
+  const context = await fixture({ space: 'space-a' });
+  saveFailure.writes = 0;
+  saveFailure.active = true;
+  saveFailure.throwOnSave = true;
+  saveFailure.abortSignal = undefined;
+
+  onTestFinished(() => {
+    saveFailure.active = false;
+    saveFailure.throwOnSave = true;
+  });
+
+  await expect(context.run({ action: 'open', paths: ['.tau/slices/a.md'] })).rejects.toThrow(
+    'record save refused',
+  );
+
+  const kills = commandCalls(context.hc.calls, 'hc', 'kill');
+
+  expect(kills).toHaveLength(1);
+  expect(kills[0]?.commandArguments.at(-1)).toBe('review-1');
+});
+
+it.each(['version-1.json', 'version-2.json', 'version-3.json'])(
+  'refuses to collect the %s record, deletes no comment, and keeps the record and staging',
+  async (name) => {
+    const context = await fixture();
+    const opened = await context.run({ action: 'open', paths: ['.tau/slices/a.md'] });
+    const manual = opened.details as { directory: string; command: string };
+    const staging = stagingOf(manual.command);
+
+    await writeFile(
+      join(manual.directory, 'review.json'),
+      await readFile(join(refusalFixtures, name), 'utf8'),
+    );
+
+    await context.setSession([comment('on-a', '01-slices/1-a.md')]);
+
+    await expect(context.run({ action: 'collect', directory: manual.directory })).rejects.toThrow(
+      /ran on herdr/,
+    );
+
+    expect(commandCalls(context.calls, 'tuicr', 'review')).toEqual([]);
+    expect(await context.deleted()).toEqual([]);
+    expect(existsSync(manual.directory)).toBe(true);
+    expect(existsSync(staging)).toBe(true);
+  },
+);
+
+it('removes the record and returns cancelled when open is aborted', async () => {
+  const context = await fixture({ space: 'space-a' });
   const controller = new AbortController();
 
-  const herdr = herdrFake();
-  herdr.hangCall('pane split');
+  controller.abort();
 
-  const { run, records } = await fixture(herdr);
-
-  const opening = run(
+  const opened = await context.run(
     { action: 'open', paths: ['.tau/slices/a.md'] },
-    agentPane,
     controller.signal,
   );
 
-  await vi.waitFor(() => {
-    expect(steps(herdr.calls)).toContain('pane split');
-  });
+  expect(opened.details).toEqual({ status: 'cancelled', comments: [], edits: [] });
+  expect(await context.records()).toEqual([]);
+});
+
+it('removes the record and returns cancelled when a manual open is aborted', async () => {
+  const context = await fixture();
+  const controller = new AbortController();
 
   controller.abort();
 
-  const opened = await opening;
+  const opened = await context.run(
+    { action: 'open', paths: ['.tau/slices/a.md'] },
+    controller.signal,
+  );
 
   expect(opened.details).toEqual({ status: 'cancelled', comments: [], edits: [] });
-  expect(await records()).toEqual([]);
+  expect(await context.records()).toEqual([]);
+  expect(await context.staging()).toEqual([]);
 });
 
-it('closes the tuicr pane and waits for its process to exit before deleting a comment', async () => {
-  const state: { running: boolean; checks: number; deletedWhileRunning: boolean } = {
-    running: true,
-    checks: 0,
-    deletedWhileRunning: false,
+it('removes the record and returns cancelled when the save succeeds after the abort', async () => {
+  const context = await fixture({ space: 'space-a' });
+  const controller = new AbortController();
+
+  saveFailure.writes = 0;
+  saveFailure.active = true;
+  saveFailure.throwOnSave = false;
+  saveFailure.abortSignal = controller;
+
+  onTestFinished(() => {
+    saveFailure.active = false;
+    saveFailure.throwOnSave = true;
+    saveFailure.abortSignal = undefined;
+  });
+
+  const opened = await context.run(
+    { action: 'open', paths: ['.tau/slices/a.md'] },
+    controller.signal,
+  );
+
+  expect(opened.details).toEqual({ status: 'cancelled', comments: [], edits: [] });
+  expect(await context.records()).toEqual([]);
+  expect(await context.staging()).toEqual([]);
+  expect(commandCalls(context.hc.calls, 'hc', 'kill')).toHaveLength(1);
+});
+
+it('keeps the starting record and names the terminal when saving the address and hc kill both fail', async () => {
+  const context = await fixture({ space: 'space-a' });
+
+  context.hc.fail('kill', 'kill refused', 1);
+  saveFailure.writes = 0;
+  saveFailure.active = true;
+  saveFailure.throwOnSave = true;
+  saveFailure.abortSignal = undefined;
+
+  onTestFinished(() => {
+    saveFailure.active = false;
+  });
+
+  const failure = await context.run({ action: 'open', paths: ['.tau/slices/a.md'] }).then(
+    () => undefined,
+    (error: unknown) => (error instanceof Error ? error : new Error(String(error))),
+  );
+
+  if (failure === undefined) {
+    throw new Error('Expected the open to fail.');
+  }
+
+  expect(failure.message).toContain(join(context.repository, '.tau/draft-review/review-'));
+  expect(failure.message).toContain('review-1');
+  expect(failure.message).toContain('kill refused');
+
+  const [name] = await context.records();
+
+  const directory = join(context.repository, '.tau/draft-review', name ?? '');
+
+  const manifest = JSON.parse(await readFile(join(directory, 'review.json'), 'utf8')) as {
+    terminal: unknown;
   };
 
-  const herdr = herdrFake();
+  expect(manifest.terminal).toEqual({ state: 'starting' });
 
-  const context = await fixture(herdr, async (processId) => {
-    state.checks += 1;
-    state.deletedWhileRunning ||= state.running && (await context.deleted()).length > 0;
+  await context.setSession([comment('on-a', '01-slices/1-a.md')]);
 
-    if (state.checks >= 3) {
-      state.running = false;
-    }
-
-    return processId === tuicr(herdr).processId && state.running;
-  });
-
-  const { run, setSession, deleted, herdrCalls } = context;
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-  const reviewPane = tuicr(herdr).paneId;
-  await setSession([comment('on-a', '01-slices/1-a.md')]);
-
-  const collected = await run({
-    action: 'collect',
-    directory: (opened.details as { directory: string }).directory,
-  });
-
-  expect(collected.details).toMatchObject({ status: 'reviewed', comments: [{ content: 'on-a' }] });
-  expect(herdrCalls.at(-1)).toEqual(['pane', 'close', reviewPane]);
-  expect(state.checks).toBe(3);
-  expect(state.deletedWhileRunning).toBe(false);
-  expect(await deleted()).toEqual(['on-a']);
+  await expect(context.run({ action: 'collect', directory })).rejects.toThrow(directory);
+  expect(commandCalls(context.calls, 'tuicr', 'review')).toEqual([]);
+  expect(await context.deleted()).toEqual([]);
+  expect(await context.records()).toHaveLength(1);
 });
 
-it('fails naming the record when the tuicr process never exits, and deletes nothing', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-
-  onTestFinished(() => {
-    vi.useRealTimers();
-  });
-
-  const herdr = herdrFake();
-  const checked = new Set<number>();
-
-  // The next poll's timer exists by the time this immediate runs.
-  const { run, setSession, deleted, records, repository } = await fixture(herdr, (processId) => {
-    checked.add(processId);
-    setImmediate(() => vi.advanceTimersByTime(100));
-
-    return true;
-  });
-
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-  const { terminalId, processId } = tuicr(herdr);
-
-  // herdr may name only the foreground processes.
-  herdr.holdReply(
-    terminalId,
-    'processInfo',
-    JSON.stringify({ result: { process_info: { foreground_processes: [{ pid: processId }] } } }),
-  );
-
-  await setSession([comment('on-a', '01-slices/1-a.md')]);
-
+it('keeps the review and deletes nothing when a collect is aborted while hc wait is pending', async () => {
+  const context = await fixture({ space: 'space-a' });
+  const opened = await context.run({ action: 'open', paths: ['.tau/slices/a.md'] });
   const directory = (opened.details as { directory: string }).directory;
 
-  await expect(run({ action: 'collect', directory })).rejects.toThrow(/to try again\.$/);
+  await context.setSession([comment('on-a', '01-slices/1-a.md')]);
 
-  expect(await deleted()).toEqual([]);
-  expect(await records()).toHaveLength(1);
-  expect((await readReview(repository, directory)).recordDirectory).toBe(directory);
-  expect([...checked]).toEqual([tuicr(herdr).processId]);
-});
-
-it('waits on the saved tuicr process when a retry finds the terminal gone, then deletes', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-
-  onTestFinished(() => {
-    vi.useRealTimers();
-  });
-
-  const state = { running: true, checked: [] as number[] };
-  const herdr = herdrFake();
-
-  const context = await fixture(herdr, (processId) => {
-    state.checked.push(processId);
-    setImmediate(() => vi.advanceTimersByTime(100));
-
-    return state.running;
-  });
-
-  const { run, setSession, deleted, records } = context;
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-  await setSession([comment('on-a', '01-slices/1-a.md')]);
-
-  const directory = (opened.details as { directory: string }).directory;
-
-  await expect(run({ action: 'collect', directory })).rejects.toThrow(directory);
-
-  expect(await deleted()).toEqual([]);
-  expect(await records()).toHaveLength(1);
-  expect(tuicr(herdr).exited).toBe(true);
-
-  state.checked.length = 0;
-
-  await expect(run({ action: 'collect', directory })).rejects.toThrow(directory);
-
-  expect(state.checked).toContain(tuicr(herdr).processId);
-  expect(await deleted()).toEqual([]);
-  expect(await records()).toHaveLength(1);
-
-  state.running = false;
-
-  const collected = await run({ action: 'collect', directory });
-
-  expect(collected.details).toMatchObject({ status: 'reviewed', comments: [{ content: 'on-a' }] });
-  expect(await deleted()).toEqual(['on-a']);
-});
-
-it('stops waiting on the saved tuicr process when the retry is cancelled', async () => {
-  const state = { running: true };
-  const herdr = herdrFake();
-  const { run, setSession, deleted } = await fixture(herdr, () => state.running);
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-  await setSession([comment('on-a', '01-slices/1-a.md')]);
-
-  const directory = (opened.details as { directory: string }).directory;
-  const firstTry = new AbortController();
-
-  firstTry.abort();
-
-  await expect(run({ action: 'collect', directory }, undefined, firstTry.signal)).rejects.toThrow(
-    directory,
-  );
-
-  expect(tuicr(herdr).exited).toBe(true);
-
-  const retry = new AbortController();
-
-  setTimeout(() => {
-    retry.abort();
-  }, 20);
-
-  await expect(run({ action: 'collect', directory }, undefined, retry.signal)).rejects.toThrow(
-    directory,
-  );
-
-  expect(await deleted()).toEqual([]);
-});
-
-it('polls the tuicr process 100 times, then leaves no timer or abort listener behind', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-
-  onTestFinished(() => {
-    vi.useRealTimers();
-  });
-
-  const state = { checks: 0 };
+  const gate = context.holdHcWait();
   const controller = new AbortController();
 
-  const { run } = await fixture(herdrFake(), () => {
-    state.checks += 1;
-    setImmediate(() => vi.advanceTimersByTime(100));
-
-    return true;
-  });
-
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-  const directory = (opened.details as { directory: string }).directory;
-
-  await expect(run({ action: 'collect', directory }, agentPane, controller.signal)).rejects.toThrow(
-    directory,
+  const failure = context.run({ action: 'collect', directory }, controller.signal).then(
+    () => undefined,
+    (error: unknown) => (error instanceof Error ? error : new Error(String(error))),
   );
 
-  expect(state.checks).toBe(100);
-  expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
-  expect(vi.getTimerCount()).toBe(0);
-});
-
-it('stops waiting for tuicr at once when the call is aborted, leaving no timer behind', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-
-  onTestFinished(() => {
-    vi.useRealTimers();
-  });
-
-  const controller = new AbortController();
-  const state = { checks: 0 };
-
-  const { run, setSession, deleted } = await fixture(herdrFake(), () => {
-    state.checks += 1;
-
-    return true;
-  });
-
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-  await setSession([comment('on-a', '01-slices/1-a.md')]);
-
-  const directory = (opened.details as { directory: string }).directory;
-  const collecting = run({ action: 'collect', directory }, agentPane, controller.signal);
-
-  const failure = collecting.then(
-    () => '',
-    (error: unknown) => (error instanceof Error ? error.message : ''),
-  );
-
-  await vi.waitFor(() => {
-    expect(vi.getTimerCount()).toBe(1);
-  });
-
+  await gate.started;
   controller.abort();
 
-  expect(await failure).toContain(directory);
+  const error = await failure;
 
-  expect(state.checks).toBe(1);
-  expect(vi.getTimerCount()).toBe(0);
-  expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
-  expect(await deleted()).toEqual([]);
+  expect(error?.message).toContain(directory);
+  expect(commandCalls(context.calls, 'tuicr', 'review')).toEqual([]);
+  expect(await context.deleted()).toEqual([]);
+  expect(await context.records()).toHaveLength(1);
 });
 
-it.each([
-  { label: 'split', width: 200, close: 'pane close' },
-  { label: 'tab', width: 100, close: 'tab close' },
-])(
-  'closes the opened $label without moving focus and keeps the error when pane run fails',
-  async ({ width, close }) => {
-    const herdr = herdrFake(width);
-    herdr.failCall('pane run', new Error('herdr failed: run refused'));
+it('propagates a cleanup failure once when the aborted open cleanup fails', async () => {
+  const context = await fixture({ space: 'space-a' });
+  const controller = new AbortController();
 
-    const { run, herdrCalls, records } = await fixture(herdr);
+  context.hc.fail('kill', 'kill refused', 1);
+  saveFailure.writes = 0;
+  saveFailure.active = true;
+  saveFailure.throwOnSave = false;
+  saveFailure.abortSignal = controller;
 
-    await expect(run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane)).rejects.toThrow(
-      'run refused',
-    );
-
-    expect(steps(herdrCalls)).toContain(close);
-    expect(steps(herdrCalls)).not.toContain('tab focus');
-    expect(await records()).toHaveLength(1);
-  },
-);
-
-it.each([
-  { label: 'the pane is already gone', closeError: 'pane_not_found', expected: 'run refused' },
-  { label: 'close fails otherwise', closeError: 'socket closed', expected: 'socket closed' },
-])('reports $expected when pane run fails and $label', async ({ closeError, expected }) => {
-  const herdr = herdrFake();
-  herdr.failCall('pane run', new Error('herdr failed: run refused'));
-  herdr.failCall('pane close', new Error(`herdr failed: ${closeError}`));
-
-  const { run } = await fixture(herdr);
-
-  await expect(run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane)).rejects.toThrow(
-    expected,
-  );
-});
-
-it('keeps the run error and closes nothing when pane run fails and the terminal is gone', async () => {
-  const herdr = herdrFake();
-  herdr.failCall('pane run', new Error('herdr failed: run refused'), true);
-
-  const { run, herdrCalls } = await fixture(herdr);
-
-  await expect(run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane)).rejects.toThrow(
-    'run refused',
-  );
-
-  expect(steps(herdrCalls)).not.toContain('pane close');
-});
-
-it('keeps the herdr error as the cause of the failure that names the record', async () => {
-  const herdr = herdrFake();
-  herdr.failCall('pane run', socketClosed());
-
-  const { run } = await fixture(herdr);
-
-  const failure = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane).catch(
-    (error: unknown) => error,
-  );
-
-  expect((failure as Error).cause).toBeInstanceOf(Error);
-});
-
-it('refuses an open call that has no paths', async () => {
-  const { run } = await fixture();
-
-  await expect(run({ action: 'open' })).rejects.toThrow('at least one path');
-});
-
-it('collects when the tuicr terminal is already gone', async () => {
-  const herdr = herdrFake();
-  const { run, setSession, herdrCalls } = await fixture(herdr);
-
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-  herdr.exit(tuicr(herdr).terminalId);
-  await setSession([comment('on-a', '01-slices/1-a.md')]);
-
-  const collected = await run({
-    action: 'collect',
-    directory: (opened.details as { directory: string }).directory,
+  onTestFinished(() => {
+    saveFailure.active = false;
+    saveFailure.throwOnSave = true;
+    saveFailure.abortSignal = undefined;
   });
 
-  expect(collected.details).toMatchObject({ status: 'reviewed', comments: [{ content: 'on-a' }] });
-  expect(steps(herdrCalls)).not.toContain('pane close');
+  const failure = context.run({ action: 'open', paths: ['.tau/slices/a.md'] }, controller.signal);
+
+  await expect(failure).rejects.toThrow(join(context.repository, '.tau/draft-review/review-'));
+  await expect(failure).rejects.toThrow(/and terminal review-1/);
+  await expect(failure).rejects.toThrow(/kill refused/);
+  expect(commandCalls(context.hc.calls, 'hc', 'kill')).toHaveLength(1);
+  expect(await context.records()).toHaveLength(1);
 });
 
-it('collects when tuicr quit but its pane is still open', async () => {
-  const herdr = herdrFake();
-  const { run, setSession, herdrCalls } = await fixture(herdr, () => false);
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-  const reviewPane = tuicr(herdr).paneId;
-  await setSession([comment('on-a', '01-slices/1-a.md')]);
+it('saves the starting state before hc run', async () => {
+  const context = await fixture({ space: 'space-a' });
 
-  const collected = await run({
-    action: 'collect',
-    directory: (opened.details as { directory: string }).directory,
-  });
+  context.hc.fail('run', 'run refused', 1);
 
-  expect(collected.details).toMatchObject({ status: 'reviewed', comments: [{ content: 'on-a' }] });
-  expect(herdrCalls.at(-1)).toEqual(['pane', 'close', reviewPane]);
+  await expect(context.run({ action: 'open', paths: ['.tau/slices/a.md'] })).rejects.toThrow(
+    /run refused/,
+  );
+
+  const [name] = await context.records();
+
+  const manifest = JSON.parse(
+    await readFile(
+      join(context.repository, '.tau/draft-review', name ?? '', 'review.json'),
+      'utf8',
+    ),
+  ) as { terminal: unknown };
+
+  expect(manifest.terminal).toEqual({ state: 'starting' });
 });
 
-it.each([
-  { focused: true, restoresFocus: true },
-  { focused: false, restoresFocus: false },
-])(
-  'closes the tab on collect and focuses the agent tab only when the tab was focused: $focused',
-  async ({ focused, restoresFocus }) => {
-    const herdr = herdrFake(100);
-    const agentTab = herdr.layout.parent.tab_id;
-    const { run, herdrCalls } = await fixture(herdr);
+it('refuses to collect a record left in the starting state and keeps it', async () => {
+  const context = await fixture({ space: 'space-a' });
 
-    const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-    const closing = ['tab', 'close', reviewTab(herdr)];
+  context.hc.fail('run', 'run refused', 1);
 
-    if (!focused) {
-      herdr.focus(agentTab);
-    }
+  await expect(context.run({ action: 'open', paths: ['.tau/slices/a.md'] })).rejects.toThrow(
+    /run refused/,
+  );
 
-    herdrCalls.length = 0;
+  const [name] = await context.records();
+  const directory = join(context.repository, '.tau/draft-review', name ?? '');
 
-    await run({
-      action: 'collect',
-      directory: (opened.details as { directory: string }).directory,
-    });
+  await context.setSession([comment('on-a', '01-slices/1-a.md')]);
 
-    const expected = restoresFocus ? [closing, ['tab', 'focus', agentTab]] : [closing];
-
-    expect(herdrCalls.filter(([group, action]) => group === 'tab' && action !== 'list')).toEqual(
-      expected,
-    );
-
-    expect(herdrCalls.find(([group, action]) => group === 'tab' && action === 'list')).toEqual([
-      'tab',
-      'list',
-      '--workspace',
-      herdr.layout.parent.workspace_id,
-    ]);
-  },
-);
-
-it('closes the pane open left when collect runs from a new tool instance', async () => {
-  const herdr = herdrFake();
-  const { run, herdrCalls } = await fixture(herdr);
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-  const reviewPane = tuicr(herdr).paneId;
-
-  expect(steps(herdrCalls)).not.toContain('pane close');
-
-  await run({
-    action: 'collect',
-    directory: (opened.details as { directory: string }).directory,
-  });
-
-  expect(herdrCalls.at(-1)).toEqual(['pane', 'close', reviewPane]);
+  await expect(context.run({ action: 'collect', directory })).rejects.toThrow(directory);
+  expect(commandCalls(context.calls, 'tuicr', 'review')).toEqual([]);
+  expect(await context.deleted()).toEqual([]);
+  expect(await context.records()).toHaveLength(1);
 });
 
-it.each([
-  { label: 'split', width: 200, close: 'pane close' },
-  { label: 'tab', width: 100, close: 'tab close' },
-])(
-  'closes the opened $label and names the record when saving the placement fails',
-  async ({ width, close }) => {
-    const herdr = herdrFake(width);
-    const { run, herdrCalls, repository } = await fixture(herdr);
+it('names the record and ends nothing when hc run fails before a terminal starts', async () => {
+  const context = await fixture({ space: 'space-a' });
 
-    herdr.beforeCall('pane run', () => {
-      placementFailure.active = true;
+  context.hc.fail('run', 'run refused', 1);
 
-      onTestFinished(() => {
-        placementFailure.active = false;
-      });
-    });
+  const failure = context.run({ action: 'open', paths: ['.tau/slices/a.md'] });
 
-    await expect(run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane)).rejects.toThrow(
-      join(repository, '.tau/draft-review/review-'),
-    );
-
-    expect(herdrCalls.at(-1)?.slice(0, 2)).toEqual(close.split(' '));
-    expect(tuicr(herdr).exited).toBe(true);
-  },
-);
-
-it.each(['process-info', 'close'] as const)(
-  'follows a terminal moved before %s, closes it at the new pane, and waits before deleting',
-  async (moveOn) => {
-    const state = { checks: 0, deletedEarly: false };
-
-    const herdr = herdrFake();
-    herdr.moveDuring(`pane ${moveOn}`);
-
-    const context = await fixture(herdr, async () => {
-      state.checks += 1;
-      state.deletedEarly ||= (await context.deleted()).length > 0;
-
-      return state.checks < 3;
-    });
-
-    const { run, setSession, deleted, herdrCalls } = context;
-    const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-    const firstPane = tuicr(herdr).paneId;
-    await setSession([comment('on-a', '01-slices/1-a.md')]);
-
-    const directory = (opened.details as { directory: string }).directory;
-    const collected = await run({ action: 'collect', directory });
-    const movedPane = tuicr(herdr).paneId;
-
-    expect(collected.details).toMatchObject({ status: 'reviewed' });
-    expect(movedPane).not.toBe(firstPane);
-
-    const infoPane = moveOn === 'process-info' ? movedPane : firstPane;
-
-    expect(herdrCalls).toContainEqual(['pane', 'process-info', '--pane', infoPane]);
-    expect(herdrCalls).toContainEqual(['pane', 'close', movedPane]);
-    expect(state.checks).toBe(3);
-    expect(state.deletedEarly).toBe(false);
-    expect(await deleted()).toEqual(['on-a']);
-  },
-);
-
-it.each([
-  { label: 'empty output', answer: '' },
-  { label: 'a missing process_info', answer: JSON.stringify({ result: {} }) },
-  {
-    label: 'a missing foreground_processes',
-    answer: JSON.stringify({ result: { process_info: {} } }),
-  },
-  {
-    label: 'a non-array foreground_processes',
-    answer: JSON.stringify({ result: { process_info: { foreground_processes: 'x' } } }),
-  },
-  { label: 'a non-number pid', answer: processInfo('abc' as unknown as number) },
-])(
-  'refuses $label from process-info, deletes nothing, and keeps the record',
-  async ({ answer }) => {
-    const herdr = herdrFake();
-    const { run, setSession, deleted, records } = await fixture(herdr);
-
-    const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-    herdr.malformedEvidence(tuicr(herdr).terminalId, 'processInfo', answer);
-    await setSession([comment('on-a', '01-slices/1-a.md')]);
-
-    const directory = (opened.details as { directory: string }).directory;
-
-    await expect(run({ action: 'collect', directory })).rejects.toThrow(directory);
-
-    expect(await deleted()).toEqual([]);
-    expect(await records()).toHaveLength(1);
-  },
-);
-
-it('names the bad process-info output in the error', async () => {
-  const herdr = herdrFake();
-  const { run } = await fixture(herdr);
-
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-  herdr.malformedEvidence(tuicr(herdr).terminalId, 'processInfo', '{"result":{"process_info":{}}}');
-  const directory = (opened.details as { directory: string }).directory;
-
-  await expect(run({ action: 'collect', directory })).rejects.toThrow('process_info');
-});
-
-it.each([
-  { label: 'a missing tabs', answer: () => JSON.stringify({ result: {} }) },
-  { label: 'a non-array tabs', answer: () => JSON.stringify({ result: { tabs: 'x' } }) },
-  { label: 'empty output', answer: () => '' },
-  { label: 'an entry with no fields', answer: () => JSON.stringify({ result: { tabs: [{}] } }) },
-  {
-    label: 'a string focused',
-    answer: (tabId: string) =>
-      JSON.stringify({ result: { tabs: [{ tab_id: tabId, focused: 'yes' }] } }),
-  },
-  {
-    label: 'a null entry after the focused tab',
-    answer: (tabId: string) =>
-      JSON.stringify({ result: { tabs: [{ tab_id: tabId, focused: true }, null] } }),
-  },
-])('refuses $label from tab list, deletes nothing, and keeps the record', async ({ answer }) => {
-  const herdr = herdrFake(100);
-  const { run, setSession, deleted, records, herdrCalls } = await fixture(herdr);
-
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-  herdr.malformedTabList(answer(reviewTab(herdr)));
-  await setSession([comment('on-a', '01-slices/1-a.md')]);
-
-  const directory = (opened.details as { directory: string }).directory;
-
-  await expect(run({ action: 'collect', directory })).rejects.toThrow(directory);
-
-  expect(await deleted()).toEqual([]);
-  expect(await records()).toHaveLength(1);
-  expect(steps(herdrCalls)).not.toContain('tab close');
+  await expect(failure).rejects.toThrow(join(context.repository, '.tau/draft-review/review-'));
+  expect(commandCalls(context.hc.calls, 'hc', 'kill')).toEqual([]);
+  expect(await context.records()).toHaveLength(1);
 });

@@ -6,7 +6,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { saveCollectedRecord } from './collectedRecord.js';
-import { savePlacement, stageReview } from './stage.js';
+import { saveTerminal, stageReview } from './stage.js';
 
 const writeState = vi.hoisted(() => ({ failMidway: false, failBefore: false }));
 
@@ -93,7 +93,7 @@ it('refuses to write the collected record through a symlink', async () => {
   expect(await readFile(outside, 'utf8')).toBe('outside');
 });
 
-it('keeps the earlier manifest when a placement save fails midway', async () => {
+it('keeps the earlier manifest when a terminal save fails midway', async () => {
   const review = await stagedReview();
   const before = await readdir(review.recordDirectory);
   const manifest = join(review.recordDirectory, 'review.json');
@@ -101,13 +101,11 @@ it('keeps the earlier manifest when a placement save fails midway', async () => 
 
   writeState.failMidway = true;
 
-  await expect(savePlacement(review, { kind: 'split', terminalId: 't9' })).rejects.toThrow(
-    'write failed',
-  );
+  await expect(saveTerminal(review, 't9')).rejects.toThrow('write failed');
 
   expect(await readFile(manifest, 'utf8')).toBe(text);
   expect(await readdir(review.recordDirectory)).toEqual(before);
-  expect(review.placement).toBeNull();
+  expect(review.terminal).toBeNull();
 });
 
 it('reports the write error when the temporary file was never created', async () => {

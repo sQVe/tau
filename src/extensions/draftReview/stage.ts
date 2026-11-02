@@ -3,10 +3,9 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 
 import { Type } from 'typebox';
-import type { Static } from 'typebox';
 
 import { isMissingFile } from '../../errors.js';
-import { parseVersionedRecord, writeRecord } from '../../record.js';
+import { parseVersionedRecord, savedVersion, writeRecord } from '../../record.js';
 import { isRecord } from '../../schema.js';
 import {
   climbsOut,
@@ -15,6 +14,8 @@ import {
   requireTauChild,
 } from '../../tauDirectory.js';
 import { stagedNames } from './reviewDecisions.js';
+
+type ReviewTerminal = { state: 'starting' } | { state: 'open'; address: string };
 
 export interface Review {
   // The real `.tau` directory the paths are relative to.
@@ -26,64 +27,30 @@ export interface Review {
   paths: string[];
   // The path of each file in the staging directory, in the order of `paths`.
   stagedPaths: string[];
-  // Where tuicr runs, so a later collect can close it. `null` until a placement is saved.
-  placement: SavedPlacement | null;
+  // The hc terminal state: null for a manual review, starting before `hc run`, then its address.
+  terminal: ReviewTerminal | null;
 }
 
 export interface ReviewManifest {
-  version: 1 | 2 | typeof manifestVersion;
+  version: typeof manifestVersion;
   stagingDirectory: string;
   paths: string[];
   stagedPaths: string[];
-  placement: SavedPlacement | null;
+  terminal: ReviewTerminal | null;
 }
 
 const recordParent = 'draft-review';
 const recordPrefix = 'review-';
 const manifestName = 'review.json';
-const manifestVersion = 3;
+const manifestVersion = 4;
 
-const placementSchema = Type.Union([
+const terminalSchema = Type.Union([
+  Type.Object({ state: Type.Literal('starting') }, { additionalProperties: false }),
   Type.Object(
-    {
-      kind: Type.Literal('split'),
-      terminalId: Type.String({ minLength: 1 }),
-      processIds: Type.Optional(Type.Array(Type.Integer())),
-    },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    {
-      kind: Type.Literal('tab'),
-      terminalId: Type.String({ minLength: 1 }),
-      tabId: Type.String({ minLength: 1 }),
-      agentTabId: Type.String({ minLength: 1 }),
-      processIds: Type.Optional(Type.Array(Type.Integer())),
-    },
+    { state: Type.Literal('open'), address: Type.String({ minLength: 1 }) },
     { additionalProperties: false },
   ),
 ]);
-
-export type SavedPlacement = Static<typeof placementSchema>;
-
-const versionOneSchema = Type.Object(
-  {
-    version: Type.Literal(1),
-    stagingDirectory: Type.String({ minLength: 1 }),
-    paths: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
-  },
-  { additionalProperties: false },
-);
-
-const versionTwoSchema = Type.Object(
-  {
-    version: Type.Literal(2),
-    stagingDirectory: Type.String({ minLength: 1 }),
-    paths: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
-    placement: Type.Union([Type.Null(), placementSchema]),
-  },
-  { additionalProperties: false },
-);
 
 const manifestSchema = Type.Object(
   {
@@ -91,38 +58,43 @@ const manifestSchema = Type.Object(
     stagingDirectory: Type.String({ minLength: 1 }),
     paths: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
     stagedPaths: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
-    placement: Type.Union([Type.Null(), placementSchema]),
+    terminal: Type.Union([Type.Null(), terminalSchema]),
   },
   { additionalProperties: false },
 );
 
-const versionOf = (value: unknown) => (isRecord(value) ? value['version'] : undefined);
+// A Tau before this one opened tuicr in a herdr pane it named itself. That placement is gone, and
+// its record holds no hc address to wait for, so collect refuses it and keeps the comments.
+const firstHerdrRecordVersion = 1;
+const lastHerdrRecordVersion = 3;
 
-const manifestSchemaFor = (value: unknown) => {
-  const version = versionOf(value);
+const isHerdrRecordVersion = (version: unknown): boolean =>
+  typeof version === 'number' &&
+  version >= firstHerdrRecordVersion &&
+  version <= lastHerdrRecordVersion;
 
-  if (version === 1) {
-    return versionOneSchema;
+const refuseHerdrRecord = (value: unknown): string | undefined => {
+  if (!isHerdrRecordVersion(savedVersion(value))) {
+    return undefined;
   }
 
-  return version === 2 ? versionTwoSchema : manifestSchema;
+  const stagingDirectory =
+    isRecord(value) && typeof value['stagingDirectory'] === 'string'
+      ? value['stagingDirectory']
+      : 'an unknown staging directory';
+
+  throw new Error(
+    `This review was saved by a Tau that ran on herdr, so this Tau cannot collect it. Its tuicr comments stay in ${stagingDirectory}. Open a new review from the current files.`,
+  );
 };
 
 export const parseReviewManifest = (path: string, content: string): ReviewManifest => {
   const manifest = parseVersionedRecord(path, content, {
     label: 'review record',
     version: manifestVersion,
-    schema: manifestSchemaFor,
+    schema: manifestSchema,
+    check: refuseHerdrRecord,
   });
-
-  // Versions 1 and 2 staged each file under its `.tau` path.
-  if (manifest.version === 1) {
-    return { ...manifest, stagedPaths: manifest.paths, placement: null };
-  }
-
-  if (manifest.version === 2) {
-    return { ...manifest, stagedPaths: manifest.paths };
-  }
 
   // A staged path paired with the wrong file would write one draft's text over another.
   const expected = stagedNames(manifest.paths);
@@ -211,28 +183,29 @@ const copyInto = async (from: string, to: string) => {
   await copyFile(from, to);
 };
 
-const writeManifest = async (review: Review, placement: SavedPlacement | null) => {
+const writeManifest = async (review: Review, terminal: ReviewTerminal | null) => {
   const { recordDirectory, stagingDirectory, paths, stagedPaths } = review;
-  const manifest = { version: manifestVersion, stagingDirectory, paths, stagedPaths, placement };
+  const manifest = { version: manifestVersion, stagingDirectory, paths, stagedPaths, terminal };
 
   const target = join(recordDirectory, manifestName);
 
   await writeRecord(target, manifest);
 };
 
-export const savePlacement = async (review: Review, placement: SavedPlacement): Promise<void> => {
-  await writeManifest(review, placement);
-  review.placement = placement;
+// Saved before `hc run`, so a record left by a failed address save says the terminal is starting
+// and collect refuses it instead of deleting comments under a live tuicr.
+export const saveStartingTerminal = async (review: Review): Promise<void> => {
+  const terminal: ReviewTerminal = { state: 'starting' };
+
+  await writeManifest(review, terminal);
+  review.terminal = terminal;
 };
 
-// Saves the tuicr process IDs before the terminal closes, so a collect retry can still wait for
-// tuicr to exit.
-export const saveProcessIds = async (review: Review, processIds: number[]): Promise<void> => {
-  if (review.placement === null) {
-    throw new Error(`Review record ${review.recordDirectory} has no placement to save into.`);
-  }
+export const saveTerminal = async (review: Review, address: string): Promise<void> => {
+  const terminal: ReviewTerminal = { state: 'open', address };
 
-  await savePlacement(review, { ...review.placement, processIds });
+  await writeManifest(review, terminal);
+  review.terminal = terminal;
 };
 
 const populateReview = async (review: Review) => {
@@ -275,7 +248,7 @@ export const stageReview = async (cwd: string, requested: readonly string[]): Pr
       stagingDirectory,
       paths,
       stagedPaths,
-      placement: null,
+      terminal: null,
     };
 
     await populateReview(review);
@@ -322,7 +295,7 @@ export const readReview = async (cwd: string, directory: string): Promise<Review
 
   const manifest = parseReviewManifest(manifestPath, content);
 
-  const { stagingDirectory, paths, stagedPaths, placement } = manifest;
+  const { stagingDirectory, paths, stagedPaths, terminal } = manifest;
 
   if (!isOwnStagingDirectory(stagingDirectory)) {
     throw new Error(
@@ -336,7 +309,7 @@ export const readReview = async (cwd: string, directory: string): Promise<Review
 
   const tauDirectory = await realpath(join(root, '.tau'));
 
-  return { tauDirectory, recordDirectory, stagingDirectory, paths, stagedPaths, placement };
+  return { tauDirectory, recordDirectory, stagingDirectory, paths, stagedPaths, terminal };
 };
 
 export const removeReview = async (review: Review): Promise<void> => {

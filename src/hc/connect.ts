@@ -14,13 +14,13 @@ import {
 } from './replies.js';
 import type { HcTerminal } from './replies.js';
 
-export interface ConnectOptions {
+interface ConnectOptions {
   cwd?: string | undefined;
   env?: Readonly<Record<string, string>> | undefined;
   signal?: AbortSignal | undefined;
 }
 
-export interface ConnectResult {
+interface ConnectResult {
   stdout: string;
   stderr: string;
   code: number | null;
@@ -40,7 +40,7 @@ export interface TerminalRunRequest {
   noParent?: boolean | undefined;
 }
 
-export const helloGeneration = 1;
+const helloGeneration = 1;
 
 const streamKillGraceMilliseconds = 5000;
 

@@ -1,1 +1,1 @@
-{ "version": 4, "stagingDirectory": "/tmp/x", "paths": ["a.md"], "extra": true }
+{ "version": 5, "stagingDirectory": "/tmp/x", "paths": ["a.md"], "extra": true }

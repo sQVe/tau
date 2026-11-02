@@ -25,8 +25,6 @@ export interface DestinationFacts {
 
 export type DestinationDecision = 'writable' | 'symlink' | 'not-file' | 'hard-linked' | 'outside';
 
-export type ReviewPlacement = 'right' | 'tab';
-
 export type EditDecision = 'unchanged' | 'apply' | 'conflict';
 
 export interface WaitFacts {
@@ -137,15 +135,4 @@ export const decideWaitOutcome = (facts: WaitFacts): WaitOutcome => {
   }
 
   return facts.reason === 'timeout' ? 'timeout' : 'unfinished';
-};
-
-// A right split halves the agent pane, so it needs room for two usable panes.
-export const reviewPlacement = (facts: {
-  width: number;
-  zoomed: boolean;
-  minimumWidth: number;
-}): ReviewPlacement => {
-  const roomForSplit = Math.floor(facts.width / 2) >= facts.minimumWidth;
-
-  return !facts.zoomed && roomForSplit ? 'right' : 'tab';
 };
