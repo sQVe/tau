@@ -40,29 +40,44 @@ const assignmentWithSessionInFolder = (): Assignment => {
   return { ...fixture, session };
 };
 
-it('reads a valid version 1 assignment file', async () => {
-  expect(await readAssignment(fixturePath('valid.json'))).toMatchObject({
+it('reads a valid version 1 assignment file without changing it', async () => {
+  const path = fixturePath('valid.json');
+  const before = readFileSync(path);
+
+  expect(await readAssignment(path)).toMatchObject({
     version: 1,
     assignmentId: '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f',
     profile: 'scout',
     report: null,
   });
+
+  expect(readFileSync(path)).toEqual(before);
 });
 
-it('reads a missing assignment file as absent', async () => {
+it('reads a missing assignment file as absent and creates nothing', async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-assignment-');
+  const path = join(directory, 'assignment.json');
 
-  expect(await readAssignment(join(directory, 'assignment.json'))).toBeUndefined();
+  expect(await readAssignment(path)).toBeUndefined();
+  expect(existsSync(path)).toBe(false);
 });
 
-it('refuses a malformed assignment file', async () => {
-  await expect(readAssignment(fixturePath('malformed.json'))).rejects.toThrow(
-    'Malformed assignment',
-  );
+it('refuses a malformed assignment file without changing it', async () => {
+  const path = fixturePath('malformed.json');
+  const before = readFileSync(path);
+
+  await expect(readAssignment(path)).rejects.toThrow('Malformed assignment');
+
+  expect(readFileSync(path)).toEqual(before);
 });
 
-it('refuses an assignment file in a newer format', async () => {
-  await expect(readAssignment(fixturePath('newer.json'))).rejects.toThrow('newer format');
+it('refuses an assignment file in a newer format without changing it', async () => {
+  const path = fixturePath('newer.json');
+  const before = readFileSync(path);
+
+  await expect(readAssignment(path)).rejects.toThrow('newer format');
+
+  expect(readFileSync(path)).toEqual(before);
 });
 
 it('writes the assignment in a private folder and reads it back', async () => {
