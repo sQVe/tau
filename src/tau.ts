@@ -11,7 +11,6 @@ import compactionExtension from './extensions/compaction/compaction.js';
 import draftReviewExtension from './extensions/draftReview/draftReview.js';
 import fullCheckExtension from './extensions/fullCheck/fullCheck.js';
 import handoverExtension from './extensions/handover/handover.js';
-import herdrBlockedExtension from './extensions/herdrBlocked.js';
 import instructionsExtension from './extensions/instructions.js';
 import mergeWatchExtension from './extensions/mergeWatch/mergeWatch.js';
 import prExtension from './extensions/pr/pr.js';
@@ -57,5 +56,4 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   subagentsExtension(pi, capacityRefusal);
   compactionExtension(pi);
   bareRootExtension(pi);
-  herdrBlockedExtension(pi);
 }

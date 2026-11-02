@@ -104,7 +104,11 @@ const theme = {
 const driver = () => {
   const { tool, events } = registeredTool();
   const dialogs: OpenDialog[] = [];
-  const terminal = { terminal: { rows: 24, columns: 60 }, requestRender: () => undefined };
+
+  const terminal = {
+    terminal: { rows: 24, columns: 60, setProgramStatus: () => undefined },
+    requestRender: () => undefined,
+  };
 
   const custom = (factory: unknown) =>
     new Promise<DialogResult>((resolve) => {
@@ -124,7 +128,7 @@ const driver = () => {
     const context = {
       mode: 'tui',
       ui: { custom },
-      sessionManager: { getBranch: () => [] },
+      sessionManager: { getBranch: () => [], getSessionName: () => undefined },
     } as unknown as Parameters<ToolDefinition['execute']>[4];
 
     return tool.execute('call', params, undefined, undefined, context);

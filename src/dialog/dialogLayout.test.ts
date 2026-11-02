@@ -115,7 +115,12 @@ const layoutContext = (
     return result as never;
   };
 
-  return { mode: 'tui', hasUI: true, ui: { custom } } as unknown as ExtensionContext;
+  return {
+    mode: 'tui',
+    hasUI: true,
+    ui: { custom },
+    sessionManager: { getSessionName: () => undefined },
+  } as unknown as ExtensionContext;
 };
 
 it.each([

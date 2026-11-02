@@ -5,21 +5,24 @@ import type {
   Theme,
 } from '@earendil-works/pi-coding-agent';
 import { KeybindingsManager, TUI_KEYBINDINGS as tuiKeybindings } from '@earendil-works/pi-tui';
-import type { Component, TUI } from '@earendil-works/pi-tui';
+import type { Component, ProgramStatus, TUI } from '@earendil-works/pi-tui';
 
 export const customContext = (
   interact: (component: Component) => Promise<void> | void,
   theme: Theme,
   keybindings = new KeybindingsManager(tuiKeybindings),
   dimensions?: { rows: number; columns: number },
-): ExtensionToolContext => {
+): ExtensionToolContext & { programStatusReports: ProgramStatus[] } => {
+  const programStatusReports: ProgramStatus[] = [];
+
   const custom: ExtensionUIContext['custom'] = async (factory) => {
     let result;
 
-    const terminal = {
-      requestRender: () => undefined,
-      terminal: dimensions ?? { rows: 40, columns: 100 },
-    } as unknown as TUI;
+    const size = Object.assign(dimensions ?? { rows: 40, columns: 100 }, {
+      setProgramStatus: (status: ProgramStatus) => programStatusReports.push(status),
+    });
+
+    const terminal = { requestRender: () => undefined, terminal: size } as unknown as TUI;
 
     const component = await factory(
       terminal,
@@ -35,7 +38,13 @@ export const customContext = (
     return result as never;
   };
 
-  return { mode: 'tui', hasUI: true, ui: { custom } } as unknown as ExtensionToolContext;
+  return {
+    mode: 'tui',
+    hasUI: true,
+    ui: { custom },
+    sessionManager: { getSessionName: () => 'session' },
+    programStatusReports,
+  } as unknown as ExtensionToolContext & { programStatusReports: ProgramStatus[] };
 };
 
 export const confirmContext = (

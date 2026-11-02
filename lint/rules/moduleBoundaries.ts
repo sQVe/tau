@@ -44,7 +44,11 @@ export const moduleList: readonly ModuleDeclaration[] = [
       'config/repositorySection',
     ],
   },
-  { name: 'dialog', entry: 'dialog/dialog', publicFiles: ['dialog/box', 'dialog/keys'] },
+  {
+    name: 'dialog',
+    entry: 'dialog/dialog',
+    publicFiles: ['dialog/blockedStatus', 'dialog/box', 'dialog/keys'],
+  },
   { name: 'errors', entry: 'errors', publicFiles: [] },
   {
     name: 'extensions/subagents/controller',
