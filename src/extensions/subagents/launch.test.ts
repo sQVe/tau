@@ -347,6 +347,42 @@ it.each(['missing_reply', 'read_failed', 'malformed', 'unexpected'] as const)(
   },
 );
 
+it('reconciles an aborted launch request that started the worker', async () => {
+  const state = uncertainSetup('aborted', ['npm:review-package']);
+  const controller = new AbortController();
+  let seenSignal: AbortSignal | undefined;
+
+  state.runtime.hc.connect = async (lines, options) => {
+    seenSignal = options?.signal;
+
+    const request = JSON.parse(lines[1] ?? '') as {
+      params: { name: string; labels: Record<string, string> };
+    };
+
+    const worker = {
+      address: 'worker',
+      name: request.params.name,
+      state: 'live',
+      parent: manager,
+      labels: request.params.labels,
+    };
+
+    state.fake.reply('ls', JSON.stringify({ terminals: [worker] }));
+    state.fake.reply('get', JSON.stringify(worker));
+
+    controller.abort();
+
+    throw new HcError('aborted', 'launch request aborted');
+  };
+
+  const result = await launch(state.runtime, { visibility: 'background' }, controller.signal);
+
+  expect(seenSignal).toBe(controller.signal);
+  expect(result.isError).not.toBe(true);
+  expect(result.details?.address).toBe('worker');
+  expect(snapshotNames(state.directory)).toHaveLength(1);
+});
+
 it('frees the slot when an unclear launch finds no worker', async () => {
   const state = uncertainSetup('missing_reply');
 

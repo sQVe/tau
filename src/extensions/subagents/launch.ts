@@ -287,14 +287,17 @@ const startWorker = async (
 
   const name = workerName(assignment.profile, assignment.assignmentId);
 
-  return runWithEnvironment(runtime.hc, {
-    argv,
-    name,
-    ...(assignment.parentTerminal === '' ? {} : { parent: assignment.parentTerminal }),
-    cwd: assignment.cwd,
-    labels,
-    env: environment,
-  });
+  return runWithEnvironment(
+    { ...runtime.hc, ...(signal === undefined ? {} : { signal }) },
+    {
+      argv,
+      name,
+      ...(assignment.parentTerminal === '' ? {} : { parent: assignment.parentTerminal }),
+      cwd: assignment.cwd,
+      labels,
+      env: environment,
+    },
+  );
 };
 
 export const executeLaunch = async (
