@@ -216,6 +216,23 @@ it('notifies an error for a missing assignment file', async () => {
   expect(managerState.messages).toEqual([]);
 });
 
+it('notifies an assignment read error once for repeated runs', async () => {
+  const managerState = createManager();
+
+  const hc = createHc([
+    liveTerminal('t-child', manager, { 'tau.assignment': '/agent/missing.json' }),
+  ]);
+
+  const delivery = createReportDelivery(managerState.pi, hc);
+
+  await delivery.deliver(managerState.context);
+  await delivery.deliver(managerState.context);
+
+  expect(managerState.notifications).toEqual([
+    ['Missing assignment file: /agent/missing.json.', 'error'],
+  ]);
+});
+
 it('notifies an error for a malformed assignment file', async () => {
   const directory = stubAgentDirectory();
   const path = join(directory, 'assignment.json');

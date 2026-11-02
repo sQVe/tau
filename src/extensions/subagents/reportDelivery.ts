@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
+import { notifyOnce } from '../../config/config.js';
 import { errorMessage } from '../../errors.js';
 import { currentTerminalAddress, get, ls } from '../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
@@ -112,7 +113,7 @@ export const createReportDelivery = (pi: ExtensionAPI, hc: HcRuntime): ReportDel
     const plan = decideReportDelivery({ shownIds: [...shownIds], facts });
 
     for (const error of plan.errors) {
-      context.ui.notify(error, 'error');
+      notifyOnce(context.ui, 'worker-report-delivery', error, error, 'error');
     }
 
     for (const { assignmentId, report } of plan.reports) {
