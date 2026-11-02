@@ -11,7 +11,6 @@ import type { LaunchRuntime } from '../src/extensions/subagents/launch.js';
 import * as loadouts from '../src/extensions/subagents/loadout.js';
 import { runWithEnvironment } from '../src/hc/connect.js';
 import { get } from '../src/hc/hc.js';
-import { skillTools } from '../src/skillTools.js';
 import { startHcSession } from './hcSessionHarness.js';
 
 vi.mock(import('../src/extensions/subagents/loadout.js'), { spy: true });
@@ -40,11 +39,11 @@ it('launches a background worker as an hc child with tau labels', async () => {
   vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
 
   const runtime: LaunchRuntime = {
-    pi: { getCommands: () => [] } as unknown as ExtensionAPI,
+    pi: { getCommands: () => [], getAllTools: () => [] } as unknown as ExtensionAPI,
     hc: hc.runtime,
     capacity: 4,
     admission: new Admission(),
-    skillTools,
+    readSkillTools: () => ({}),
     agentDirectory,
     processEnvironment: { PATH: process.env.PATH },
     buildCommand: () => ['sleep', '60'],

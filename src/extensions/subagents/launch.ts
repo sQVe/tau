@@ -8,6 +8,7 @@ import { runWithEnvironment } from '../../hc/connect.js';
 import { currentTerminalAddress, get, HcError, ls, readCurrentTerminal } from '../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import type { SkillTools } from '../../skillTools.js';
+import { readSkillTools as readCurrentSkillTools } from '../../skillTools.js';
 import { assignmentDirectory, writeAssignment } from './assignment.js';
 import type { Assignment } from './assignment.js';
 import { WorkerCapacityFullError } from './capacityRefusal.js';
@@ -20,23 +21,24 @@ import { installWorkerPackages } from './packageInstall.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 import { removeSnapshotDirectory, snapshotDirectoryFor } from './packageSnapshot.js';
 import { piPackageManager } from './piPackageManager.js';
+import { skillToolsRefusal } from './skillToolsRefusal.js';
 import { workerCommand, workerEnvironment } from './workerCommand.js';
 
 export interface LaunchRuntime {
   pi: ExtensionAPI;
   hc: HcRuntime;
   capacity: number;
-  skillTools: SkillTools;
   agentDirectory: string;
   processEnvironment: NodeJS.ProcessEnv;
   admission: Admission;
   refuseCapacity?: (() => void) | undefined;
-  refuseSkillTools?: (() => string | undefined) | undefined;
+  readSkillTools?: (() => SkillTools | undefined) | undefined;
   packageManager?: (loadout: Assignment['loadout']) => WorkerPackageManager;
   buildCommand?: (
     sessionFile: string,
     loadout: Assignment['loadout'],
     extensionPackages: readonly { path: string }[],
+    skillTools: SkillTools,
   ) => string[];
 }
 
@@ -255,14 +257,19 @@ const startWorker = async (
   resolved: Awaited<ReturnType<typeof resolveRoutedLoadout>>,
   assignment: Assignment,
   extensionPackages: readonly { path: string }[],
+  skillTools: SkillTools,
   signal: AbortSignal | undefined,
 ): Promise<HcTerminal> => {
   const commandBuilder =
     runtime.buildCommand ??
-    ((sessionFile, loadout, packages) =>
-      workerCommand(sessionFile, loadout, packages, runtime.skillTools));
+    ((sessionFile, loadout, packages) => workerCommand(sessionFile, loadout, packages, skillTools));
 
-  const argv = commandBuilder(assignment.session.file, assignment.loadout, extensionPackages);
+  const argv = commandBuilder(
+    assignment.session.file,
+    assignment.loadout,
+    extensionPackages,
+    skillTools,
+  );
 
   const environment = workerEnvironment(runtime.processEnvironment, runtime.agentDirectory);
 
@@ -308,10 +315,12 @@ export const executeLaunch = async (
   context: ExtensionContext,
 ): Promise<ToolResult<LaunchStatus | undefined>> => {
   try {
-    const skillToolsRefusal = runtime.refuseSkillTools?.();
+    const currentSkillTools = (runtime.readSkillTools ?? readCurrentSkillTools)();
+    const registeredToolNames = new Set(runtime.pi.getAllTools().map((tool) => tool.name));
+    const skillToolsRefused = skillToolsRefusal(currentSkillTools, registeredToolNames);
 
-    if (skillToolsRefusal !== undefined) {
-      throw new Error(skillToolsRefusal);
+    if (skillToolsRefused !== undefined) {
+      throw new Error(skillToolsRefused);
     }
 
     const { loadout, routing } = await resolveRoutedLoadout(
@@ -403,6 +412,7 @@ export const executeLaunch = async (
           { loadout, routing },
           assignment,
           extensionPackages,
+          currentSkillTools ?? {},
           signal,
         );
 

@@ -11,7 +11,6 @@ import type { Exec } from '../../command.js';
 import type { Connect } from '../../hc/connect.js';
 import { HcError } from '../../hc/hc.js';
 import type { HcTerminal } from '../../hc/hc.js';
-import { skillTools } from '../../skillTools.js';
 import { writeAssignment } from './assignment.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { writeFakePackage } from './fixtures/packageCache.js';
@@ -141,11 +140,11 @@ const setup = (
   const refuseCapacity = vi.fn<() => void>();
 
   const runtime: LaunchRuntime = {
-    pi: { getCommands: () => [] } as unknown as ExtensionAPI,
+    pi: { getCommands: () => [], getAllTools: () => [] } as unknown as ExtensionAPI,
     hc: { exec, connect, cwd: directory },
     capacity: 2,
     admission: new Admission(),
-    skillTools,
+    readSkillTools: () => ({}),
     agentDirectory: directory,
     processEnvironment: { PATH: process.env.PATH },
     refuseCapacity,
@@ -207,7 +206,7 @@ const uncertainSetup = (
     },
     capacity: 1,
     admission: new Admission(),
-    skillTools,
+    readSkillTools: () => ({}),
     agentDirectory: directory,
     processEnvironment: { PATH: process.env.PATH },
     buildCommand: () => ['sleep', '60'],
@@ -256,6 +255,24 @@ it('starts one of two concurrent launches and refuses the other', async () => {
   expect(second).toMatchObject({ isError: true, terminate: true });
   expect(fake.connectCalls).toHaveLength(1);
   expect(refuseCapacity).toHaveBeenCalledOnce();
+});
+
+it('refuses a launch when the fresh skill table needs an unregistered tool', async () => {
+  const { runtime } = setup();
+
+  runtime.readSkillTools = () => ({ scout: ['review_new_unregistered_tool'] });
+
+  runtime.pi = {
+    getCommands: () => [],
+    getAllTools: () => [{ name: 'read' }],
+  } as unknown as ExtensionAPI;
+
+  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
+
+  const result = await launch(runtime, { visibility: 'background' });
+
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('review_new_unregistered_tool');
 });
 
 it('refuses an editing launch without acceptance criteria', async () => {
