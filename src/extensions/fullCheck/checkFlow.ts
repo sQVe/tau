@@ -33,23 +33,6 @@ export interface CheckPolicy<Verdict extends { passed: boolean }> {
   reuse: (saved: CheckResult) => Promise<(Verdict & { reused: true }) | undefined>;
 }
 
-interface RunSettings {
-  signal: AbortSignal | undefined;
-  recordCommandGroup: (groupId: number) => Promise<void>;
-  idleLimitMilliseconds: number;
-  checksPath: string;
-  output: CheckOutput;
-}
-
-interface LockContext {
-  root: string;
-  agentDirectory: string;
-  repository: string;
-  signal: AbortSignal | undefined;
-  pollMilliseconds: number;
-  notifyWaiting: (message: string) => void;
-}
-
 const readRepository = async (runtime: CommandRuntime): Promise<Repository | undefined> => {
   const origin = await readOriginRepository(runtime);
 
@@ -83,56 +66,22 @@ const findReusedLog = async (
   };
 };
 
-// Runs the command and saves a record with the verdict of `settle` when its inputs did not change.
-// Only a passing record is reused.
-const runAndRecord = async <Verdict extends { passed: boolean }>(
-  root: string,
-  identity: CheckIdentity,
-  readIdentity: () => Promise<CheckIdentity>,
-  settings: RunSettings,
-  settle: (result: CheckResult) => Promise<Verdict>,
-): Promise<Recorded<Verdict>> => {
-  const result = await runCheck({
-    root,
-    argv: identity.argv,
-    signal: settings.signal,
-    onStarted: settings.recordCommandGroup,
-    idleLimitMilliseconds: settings.idleLimitMilliseconds,
-    output: settings.output,
-    checksPath: settings.checksPath,
-  });
-
-  const verdict = await settle(result);
-
-  // A missing record only disables reuse, so a failure to save it never changes the verdict.
-  try {
-    const after = await readIdentity();
-
-    if (sameReusableState(identity, after)) {
-      await saveCheckRecord(result.logPath, identity, verdict.passed);
-    }
-  } catch (error) {
-    return { ...verdict, reused: false, recordError: errorMessage(error) };
-  }
-
-  return { ...verdict, reused: false };
-};
-
 // Full checks and mutation checks of one repository share a lock, since they share resources.
 const withRepositoryLock = <T>(
-  context: LockContext,
+  plan: CheckPlan,
+  repository: Repository,
   run: (recordCommandGroup: (groupId: number) => Promise<void>) => Promise<T>,
 ): Promise<T> =>
   withFullCheckLock(
     {
-      lockPath: defaultLockPath(context.agentDirectory, context.repository),
-      checkout: context.root,
-      signal: context.signal,
-      pollMilliseconds: context.pollMilliseconds,
+      lockPath: defaultLockPath(plan.agentDirectory, repositoryLockKey(repository)),
+      checkout: plan.root,
+      signal: plan.signal,
+      pollMilliseconds: plan.pollMilliseconds,
       onWaiting: (holder) => {
         const holderName = holder === undefined ? 'another checkout' : holder.checkout;
 
-        context.notifyWaiting(
+        plan.notifyWaiting(
           `Waiting for the full check or mutation check running in ${holderName} to finish.`,
         );
       },
@@ -157,6 +106,8 @@ const reuseSaved = async <Verdict extends { passed: boolean }>(
   return policy.reuse(saved);
 };
 
+// Runs the command and saves a record with the verdict of `settle` when its inputs did not change.
+// Only a passing record is reused.
 const runWithRecord = async <Verdict extends { passed: boolean }>(
   plan: CheckPlan,
   policy: CheckPolicy<Verdict>,
@@ -169,19 +120,30 @@ const runWithRecord = async <Verdict extends { passed: boolean }>(
     return reused;
   }
 
-  return runAndRecord(
-    plan.root,
-    identity,
-    () => readCheckIdentity(plan.root, plan.argv),
-    {
-      signal: plan.signal,
-      recordCommandGroup,
-      idleLimitMilliseconds: plan.idleLimitMilliseconds,
-      checksPath: plan.checksPath,
-      output: plan.output,
-    },
-    policy.settle,
-  );
+  const result = await runCheck({
+    root: plan.root,
+    argv: identity.argv,
+    signal: plan.signal,
+    onStarted: recordCommandGroup,
+    idleLimitMilliseconds: plan.idleLimitMilliseconds,
+    output: plan.output,
+    checksPath: plan.checksPath,
+  });
+
+  const verdict = await policy.settle(result);
+
+  // A missing record only disables reuse, so a failure to save it never changes the verdict.
+  try {
+    const after = await readCheckIdentity(plan.root, plan.argv);
+
+    if (sameReusableState(identity, after)) {
+      await saveCheckRecord(result.logPath, identity, verdict.passed);
+    }
+  } catch (error) {
+    return { ...verdict, reused: false, recordError: errorMessage(error) };
+  }
+
+  return { ...verdict, reused: false };
 };
 
 export const executeRecordedCheck = async <Verdict extends { passed: boolean }>(
@@ -205,15 +167,7 @@ export const executeRecordedCheck = async <Verdict extends { passed: boolean }>(
     return reusedBeforeWaiting;
   }
 
-  return withRepositoryLock(
-    {
-      root: plan.root,
-      agentDirectory: plan.agentDirectory,
-      repository: repositoryLockKey(repository),
-      signal: plan.signal,
-      pollMilliseconds: plan.pollMilliseconds,
-      notifyWaiting: plan.notifyWaiting,
-    },
-    (recordCommandGroup) => runWithRecord(plan, policy, recordCommandGroup),
+  return withRepositoryLock(plan, repository, (recordCommandGroup) =>
+    runWithRecord(plan, policy, recordCommandGroup),
   );
 };

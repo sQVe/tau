@@ -128,6 +128,19 @@ const readReport = async (stdoutPath: string, logPath: string): Promise<Mutation
   }
 };
 
+const verdictFromReport = (result: CheckResult, report: MutationReport): MutationVerdict => ({
+  ...result,
+  passed: mutationPassed({
+    ...result,
+    status: report.status,
+    hasUnmutated: report.unmutated.length > 0,
+  }),
+  status: report.status,
+  ...(report.error === undefined ? {} : { error: report.error }),
+  survivors: report.survivors,
+  unmutated: report.unmutated,
+});
+
 const settleRun = async (result: CheckResult): Promise<MutationVerdict> => {
   if (runWasStopped(result) || result.stdoutPath === undefined) {
     return { ...result, passed: false, status: undefined, survivors: [], unmutated: [] };
@@ -135,18 +148,7 @@ const settleRun = async (result: CheckResult): Promise<MutationVerdict> => {
 
   const report = await readReport(result.stdoutPath, result.logPath);
 
-  return {
-    ...result,
-    passed: mutationPassed({
-      ...result,
-      status: report.status,
-      hasUnmutated: report.unmutated.length > 0,
-    }),
-    status: report.status,
-    ...(report.error === undefined ? {} : { error: report.error }),
-    survivors: report.survivors,
-    unmutated: report.unmutated,
-  };
+  return verdictFromReport(result, report);
 };
 
 const describeMutant = (survivor: Survivor): string =>
@@ -231,25 +233,9 @@ const describeResult = (result: MutationDetails): string => {
 const reuseSavedReport: CheckPolicy<MutationVerdict>['reuse'] = async (saved) => {
   try {
     const report = await readReport(stdoutPathOf(saved.logPath), saved.logPath);
+    const verdict = verdictFromReport(saved, report);
 
-    const passed = mutationPassed({
-      ...saved,
-      status: report.status,
-      hasUnmutated: report.unmutated.length > 0,
-    });
-
-    if (!passed) {
-      return undefined;
-    }
-
-    return {
-      ...saved,
-      reused: true,
-      status: report.status,
-      ...(report.error === undefined ? {} : { error: report.error }),
-      survivors: report.survivors,
-      unmutated: report.unmutated,
-    };
+    return verdict.passed ? { ...verdict, reused: true } : undefined;
   } catch {
     return undefined;
   }
