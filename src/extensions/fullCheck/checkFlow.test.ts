@@ -140,6 +140,11 @@ it.each(toolKinds)(
 
     const holder = startHoldingFullCheck(state.directory, started, holderGate);
 
+    onTestFinished(async () => {
+      await writeFile(holderGate, '');
+      await holder.catch(() => undefined);
+    });
+
     await vi.waitFor(
       () => {
         expect(existsSync(started)).toBe(true);
