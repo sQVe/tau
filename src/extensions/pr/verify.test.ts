@@ -3,41 +3,16 @@ import { link, mkdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { git } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { noUiContext } from '../../../tests/toolContext.js';
 import type { FakePullRequest, GhFake } from './fixtures/ghFake.js';
-import { createGhFake, holdPullRequests, pullRequest } from './fixtures/ghFake.js';
-import { createPublicationRepository } from './fixtures/publicationRepository.js';
-import { createPrTool } from './tool.js';
+import { holdPullRequests, pullRequest } from './fixtures/ghFake.js';
+import { createPublicationTool } from './fixtures/publicationRepository.js';
 import type { PrInput } from './tool.js';
 
-const toolContext = (root: string) =>
-  ({
-    ...noUiContext(root),
-    isProjectTrusted: () => false,
-    ui: { notify: () => undefined },
-  }) as unknown as ExtensionToolContext;
-
-const setUp = async () => {
-  const { root } = await createPublicationRepository(onTestFinished);
-  const fake = createGhFake();
-  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-pr-tool-agent-');
-
-  fake.repositories['github.com/sQVe/tau'] = { defaultBranch: 'main' };
-
-  const run = async (input: PrInput) => {
-    const tool = createPrTool(fake.exec, { agentDirectory });
-    const result = await tool.execute('call', input, undefined, undefined, toolContext(root));
-
-    return result.details;
-  };
-
-  return { root, fake, run };
-};
+const setUp = () => createPublicationTool(onTestFinished);
 
 const approved = {
   action: 'verify',

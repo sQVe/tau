@@ -1,66 +1,17 @@
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { git } from '../../../tests/gitRepository.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { noUiContext } from '../../../tests/toolContext.js';
 import {
   commitFile,
   createEvidenceRepository,
   readSavedFiles,
   saveCheck,
 } from './fixtures/evidenceRepository.js';
-import { createGhFake } from './fixtures/ghFake.js';
-import { createPublicationRepository, pushFeature } from './fixtures/publicationRepository.js';
-import { createPrTool } from './tool.js';
-import type { PrInput } from './tool.js';
 
 const setUp = (kind?: 'range' | 'workingTree') => createEvidenceRepository(onTestFinished, kind);
-
-const toolContext = (root: string) =>
-  ({
-    ...noUiContext(root),
-    isProjectTrusted: () => false,
-    ui: { notify: () => undefined },
-  }) as unknown as ExtensionToolContext;
-
-const setUpPublication = async () => {
-  const { root, forkPoint } = await createPublicationRepository(onTestFinished, { remote: true });
-  const fake = createGhFake();
-  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-pr-tool-agent-');
-
-  fake.repositories['github.com/sQVe/tau'] = { defaultBranch: 'main' };
-
-  const run = async (input: PrInput) => {
-    const tool = createPrTool(fake.exec, { agentDirectory });
-    const result = await tool.execute('call', input, undefined, undefined, toolContext(root));
-
-    return result.details;
-  };
-
-  return { root, forkPoint, run };
-};
-
-it('returns publication evidence through the tool', async () => {
-  const { root, forkPoint, run } = await setUpPublication();
-
-  await pushFeature(root);
-
-  const evidence = await run({ action: 'evidence' });
-
-  expect(evidence).toMatchObject({
-    target: { mergeBase: forkPoint, head: { branch: 'feature' }, pr: null, closedPrs: [] },
-    branch: 'feature',
-    subjects: ['feature'],
-    reuse: null,
-    review: null,
-    checks: [],
-    gaps: [{ kind: 'noReview' }, { kind: 'fullCheck', status: 'missing' }, { kind: 'noChecks' }],
-  });
-});
 
 it('returns differing paths and stale freshness when the reviewed head moved', async () => {
   const { root, run } = await setUp();

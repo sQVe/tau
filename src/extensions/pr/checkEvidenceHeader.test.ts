@@ -1,50 +1,19 @@
 import { mkdir, readFile, readdir, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { git } from '../../../tests/gitRepository.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { noUiContext } from '../../../tests/toolContext.js';
 import { runGit } from '../../git.js';
-import { createGhFake } from './fixtures/ghFake.js';
-import { createPublicationRepository, pushFeature } from './fixtures/publicationRepository.js';
-import { createPrTool } from './tool.js';
+import { createPublicationTool, pushFeature } from './fixtures/publicationRepository.js';
 import type { PrInput } from './tool.js';
 
-const toolContext = (root: string) =>
-  ({
-    ...noUiContext(root),
-    isProjectTrusted: () => false,
-    ui: { notify: () => undefined },
-  }) as unknown as ExtensionToolContext;
-
-// A checkout whose origin is github.com/<origin>, with main pushed and the feature branch checked
-// out. forkPoint is the SHA where feature leaves main.
-const setUp = async (origin = 'sQVe/tau') => {
-  const { root, forkPoint } = await createPublicationRepository(onTestFinished, {
-    origin,
-    remote: true,
-  });
-
-  const fake = createGhFake();
-  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-pr-tool-agent-');
-
-  fake.repositories[`github.com/${origin}`] = { defaultBranch: 'main' };
-
-  const run = async (input: PrInput) => {
-    const tool = createPrTool(fake.exec, { agentDirectory });
-    const result = await tool.execute('call', input, undefined, undefined, toolContext(root));
-
-    return result.details;
-  };
-
-  return { root, fake, forkPoint, run };
-};
+// A checkout with the feature branch checked out. forkPoint is the SHA where feature leaves main.
+// With remote, its origin is github.com/sQVe/tau and main is pushed.
+const setUp = (remote = false) => createPublicationTool(onTestFinished, { remote });
 
 it('makes a check log match evidence for a committed diff over 1 MiB', async () => {
-  const { root, forkPoint, fake, run } = await setUp();
+  const { root, forkPoint, fake, run } = await setUp(true);
   const content = 'a line of committed content\n'.repeat(80_000);
 
   await writeFile(join(root, 'large.txt'), content);
@@ -139,7 +108,7 @@ it.each([
 ])(
   'keeps check headers and evidence independent of $name configuration',
   async ({ key, value }) => {
-    const { root, forkPoint, run } = await setUp();
+    const { root, forkPoint, run } = await setUp(true);
 
     await writeFile(join(root, 'feature.txt'), 'tracked\n');
     await writeFile(join(root, '.gitattributes'), 'feature.txt diff=test\n');

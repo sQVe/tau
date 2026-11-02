@@ -1,7 +1,13 @@
+import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import type { onTestFinished } from 'vitest';
 
 import { createTemporaryRepository, git } from '../../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import { noUiContext } from '../../../../tests/toolContext.js';
+import { createPrTool } from '../tool.js';
+import type { PrInput } from '../tool.js';
+import { createGhFake } from './ghFake.js';
+import type { GhFake } from './ghFake.js';
 
 type RegisterCleanup = typeof onTestFinished;
 
@@ -23,7 +29,7 @@ export const createBareRemote = async (
 export const pushFeature = (root: string): Promise<string> =>
   git(root, 'push', '--quiet', '-u', 'origin', 'feature');
 
-export const createPublicationRepository = async (
+const createPublicationRepository = async (
   registerCleanup: RegisterCleanup,
   { origin = 'sQVe/tau', remote = false }: { origin?: string; remote?: boolean } = {},
 ): Promise<{ root: string; forkPoint: string }> => {
@@ -49,4 +55,42 @@ export const createPublicationRepository = async (
   await git(root, 'commit', '--quiet', '--allow-empty', '-m', 'feature');
 
   return { root, forkPoint };
+};
+
+const toolContext = (root: string) =>
+  ({
+    ...noUiContext(root),
+    isProjectTrusted: () => false,
+    ui: { notify: () => undefined },
+  }) as unknown as ExtensionToolContext;
+
+// A publication repository whose origin github.com/<origin> the gh fake knows, and a run that
+// calls the pr tool in it.
+export const createPublicationTool = async (
+  registerCleanup: RegisterCleanup,
+  { origin = 'sQVe/tau', remote = false }: { origin?: string; remote?: boolean } = {},
+): Promise<{
+  root: string;
+  forkPoint: string;
+  fake: GhFake;
+  run: (input: PrInput) => Promise<Record<string, unknown>>;
+}> => {
+  const { root, forkPoint } = await createPublicationRepository(registerCleanup, {
+    origin,
+    remote,
+  });
+
+  const fake = createGhFake();
+  const agentDirectory = temporaryDirectory(registerCleanup, 'tau-pr-tool-agent-');
+
+  fake.repositories[`github.com/${origin}`] = { defaultBranch: 'main' };
+
+  const run = async (input: PrInput) => {
+    const tool = createPrTool(fake.exec, { agentDirectory });
+    const result = await tool.execute('call', input, undefined, undefined, toolContext(root));
+
+    return result.details;
+  };
+
+  return { root, forkPoint, fake, run };
 };

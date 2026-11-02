@@ -3,40 +3,16 @@ import { join, relative } from 'node:path';
 
 import { validateToolArguments } from '@earendil-works/pi-ai';
 import type { ToolCall } from '@earendil-works/pi-ai';
-import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { git } from '../../../tests/gitRepository.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { createGhFake } from './fixtures/ghFake.js';
-import { createPublicationRepository } from './fixtures/publicationRepository.js';
+import { createPublicationTool, pushFeature } from './fixtures/publicationRepository.js';
 import { createPrTool } from './tool.js';
 import type { PrInput } from './tool.js';
 
-const toolContext = (root: string) =>
-  ({
-    ...noUiContext(root),
-    isProjectTrusted: () => false,
-    ui: { notify: () => undefined },
-  }) as unknown as ExtensionToolContext;
-
-const setUp = async () => {
-  const { root } = await createPublicationRepository(onTestFinished);
-  const fake = createGhFake();
-  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-pr-tool-agent-');
-
-  fake.repositories['github.com/sQVe/tau'] = { defaultBranch: 'main' };
-
-  const run = async (input: PrInput) => {
-    const tool = createPrTool(fake.exec, { agentDirectory });
-    const result = await tool.execute('call', input, undefined, undefined, toolContext(root));
-
-    return result.details;
-  };
-
-  return { root, fake, run };
-};
+const setUp = (remote = false) => createPublicationTool(onTestFinished, { remote });
 
 it('returns the details as JSON text for the model', async () => {
   const { root, fake } = await setUp();
@@ -99,4 +75,22 @@ it('prepares a fresh run directory that Git ignores', async () => {
   expect(second['directory']).not.toBe(directory);
   expect((await stat(directory)).isDirectory()).toBe(true);
   await expect(git(root, 'check-ignore', '--quiet', join(directory, 'body.md'))).resolves.toBe('');
+});
+
+it('returns publication evidence through the tool', async () => {
+  const { root, forkPoint, run } = await setUp(true);
+
+  await pushFeature(root);
+
+  const evidence = await run({ action: 'evidence' });
+
+  expect(evidence).toMatchObject({
+    target: { mergeBase: forkPoint, head: { branch: 'feature' }, pr: null, closedPrs: [] },
+    branch: 'feature',
+    subjects: ['feature'],
+    reuse: null,
+    review: null,
+    checks: [],
+    gaps: [{ kind: 'noReview' }, { kind: 'fullCheck', status: 'missing' }, { kind: 'noChecks' }],
+  });
 });

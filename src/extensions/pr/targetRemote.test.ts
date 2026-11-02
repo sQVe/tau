@@ -1,48 +1,21 @@
-import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { git } from '../../../tests/gitRepository.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { noUiContext } from '../../../tests/toolContext.js';
-import { createGhFake, holdPullRequests, pullRequest } from './fixtures/ghFake.js';
+import { holdPullRequests, pullRequest } from './fixtures/ghFake.js';
 import {
   createBareRemote,
-  createPublicationRepository,
+  createPublicationTool,
   githubUrl,
   pushFeature,
 } from './fixtures/publicationRepository.js';
-import { createPrTool } from './tool.js';
-import type { PrInput } from './tool.js';
-
-const toolContext = (root: string) =>
-  ({
-    ...noUiContext(root),
-    isProjectTrusted: () => false,
-    ui: { notify: () => undefined },
-  }) as unknown as ExtensionToolContext;
 
 // A checkout whose origin is github.com/<origin>, with main pushed and the feature branch checked
 // out. forkPoint is the SHA where feature leaves main.
-const setUp = async (origin = 'sQVe/tau') => {
-  const { root, forkPoint } = await createPublicationRepository(onTestFinished, {
-    origin,
+const setUp = (origin?: string) =>
+  createPublicationTool(onTestFinished, {
+    ...(origin === undefined ? {} : { origin }),
     remote: true,
   });
-
-  const fake = createGhFake();
-  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-pr-tool-agent-');
-
-  fake.repositories[`github.com/${origin}`] = { defaultBranch: 'main' };
-
-  const run = async (input: PrInput) => {
-    const tool = createPrTool(fake.exec, { agentDirectory });
-    const result = await tool.execute('call', input, undefined, undefined, toolContext(root));
-
-    return result.details;
-  };
-
-  return { root, fake, forkPoint, run };
-};
 
 it('targets a sole unpushed branch remote named publish', async () => {
   const { root, forkPoint, run } = await setUp();
