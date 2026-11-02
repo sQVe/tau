@@ -175,7 +175,7 @@ const launch = (
   );
 
 const uncertainSetup = (
-  kind: 'missing_reply' | 'read_failed' | 'spawn_failed',
+  kind: 'missing_reply' | 'read_failed' | 'malformed' | 'unexpected' | 'aborted' | 'spawn_failed',
   packages: string[] = [],
 ) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-launch-');
@@ -321,7 +321,7 @@ it('copies the manager herdr labels in foreground mode', async () => {
   expect(request?.labels['herdr.tab']).toBe('tab-2');
 });
 
-it.each(['missing_reply', 'read_failed'] as const)(
+it.each(['missing_reply', 'read_failed', 'malformed', 'unexpected'] as const)(
   'reconciles an unclear %s launch that finds the worker',
   async (kind) => {
     const state = uncertainSetup(kind);

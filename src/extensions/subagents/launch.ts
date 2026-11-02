@@ -201,13 +201,12 @@ const reconcileUnclearLaunch = async (
   }
 };
 
-const isUnclearLaunch = (error: unknown): boolean => {
-  if (!(error instanceof HcError)) {
-    return false;
-  }
+// Only a failure before hc sees the request is definite. Any later failure may have started the
+// worker, so it is reconciled by name.
+const definiteFailureKinds = new Set(['spawn_failed']);
 
-  return error.kind === 'missing_reply' || error.kind === 'exited' || error.kind === 'read_failed';
-};
+const isUnclearLaunch = (error: unknown): boolean =>
+  error instanceof HcError && !definiteFailureKinds.has(error.kind);
 
 const launchStatus = (terminal: HcTerminal): LaunchStatus => ({
   address: terminal.address,
