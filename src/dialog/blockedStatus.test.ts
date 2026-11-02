@@ -100,6 +100,41 @@ it('leaves the open count alone when Pi never calls the factory', async () => {
   expect(reports).toEqual([blockedReport, working]);
 });
 
+it('keeps reporting blocked for later dialogs after the blocked report throws', async () => {
+  const reports: ProgramStatus[] = [];
+  let failNextReport = true;
+
+  const flakyTerminal = {
+    terminal: {
+      setProgramStatus: (status: ProgramStatus) => {
+        if (failNextReport) {
+          failNextReport = false;
+
+          throw new Error('terminal write failed');
+        }
+
+        reports.push(status);
+      },
+    },
+  } as unknown as TUI;
+
+  const custom = async (factory: Factory) => {
+    await factory(flakyTerminal, undefined, undefined, noop);
+
+    return 'yes';
+  };
+
+  await expect(
+    customWithBlockedStatus(contextWith(custom), blocked, () => component),
+  ).rejects.toThrow('terminal write failed');
+
+  reports.length = 0;
+
+  await customWithBlockedStatus(contextWith(custom), blocked, () => component);
+
+  expect(reports).toEqual([blockedReport, working]);
+});
+
 it('writes one blocked and one working for a nested Tau dialog', async () => {
   const reports: ProgramStatus[] = [];
 

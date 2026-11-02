@@ -42,8 +42,9 @@ export const customWithBlockedStatus = async <T>(
 
   const wrappedFactory: DialogFactory<T> = (tui, theme, keybindings, done) => {
     openedTui = tui;
+    openDialogs += 1;
 
-    if (openDialogs === 0) {
+    if (openDialogs === 1) {
       tui.terminal.setProgramStatus({
         state: 'blocked',
         app: programName,
@@ -51,8 +52,6 @@ export const customWithBlockedStatus = async <T>(
         message: blocked.message,
       });
     }
-
-    openDialogs += 1;
 
     return factory(tui, theme, keybindings, done);
   };
