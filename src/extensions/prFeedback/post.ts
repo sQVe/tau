@@ -19,7 +19,7 @@ import {
 import { readFeedback } from './read.js';
 import type { PullRequestFeedback } from './read.js';
 import { readPosted, readPullRequestRecord, readReplies, writePosted } from './replies.js';
-import type { PostedWrite, Replies } from './replies.js';
+import type { PostedWrite, Replies, TargetedWrite } from './replies.js';
 import type { Thread } from './threads.js';
 import { planWrites, settleWrites, targetCommentIds } from './writes.js';
 import type { PlannedWrite } from './writes.js';
@@ -44,37 +44,35 @@ interface SavedWork {
   recorded: PostedWrite[];
 }
 
-interface WriteSummary {
-  kind: PlannedWrite['kind'];
-  thread: string | null;
-  url: string;
-  text: string | null;
-}
-
 interface PostFailure {
   posted: PostedWrite[];
-  notPosted: WriteSummary[];
+  notPosted: TargetedWrite[];
   uncertain?: PostedWrite[];
 }
 
-const summarize = ({ kind, thread, url, text }: PlannedWrite): WriteSummary => ({
-  kind,
-  thread,
-  url,
-  text,
-});
+const summarize = (write: PlannedWrite): TargetedWrite => {
+  if (write.kind === 'reply') {
+    return { kind: 'reply', thread: write.thread, text: write.text, url: write.url };
+  }
 
-const describeWrite = (write: WriteSummary) => {
+  if (write.kind === 'resolve') {
+    return { kind: 'resolve', thread: write.thread, text: null, url: write.url };
+  }
+
+  return { kind: 'comment', thread: null, text: write.text, url: write.url };
+};
+
+const describeWrite = (write: TargetedWrite) => {
   if (write.kind === 'resolve') {
     return `Resolve ${write.url}`;
   }
 
   const action = write.kind === 'reply' ? 'Reply to' : 'Comment on';
 
-  return `${action} ${write.url}:\n${write.text ?? ''}`;
+  return `${action} ${write.url}:\n${write.text}`;
 };
 
-const bulletList = (writes: readonly WriteSummary[]) =>
+const bulletList = (writes: readonly TargetedWrite[]) =>
   writes.length === 0 ? '- none' : writes.map((write) => `- ${describeWrite(write)}`).join('\n');
 
 const rejectChangedFeedback = (feedback: PullRequestFeedback, input: PostInput) => {

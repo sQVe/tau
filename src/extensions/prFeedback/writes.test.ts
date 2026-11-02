@@ -5,6 +5,14 @@ import type { Comment, Review, Thread } from './threads.js';
 import { planWrites, settleWrites, targetCommentIds } from './writes.js';
 import type { SettleFacts, WriteFacts } from './writes.js';
 
+interface RecordedChange {
+  state?: PostedWrite['state'];
+  commentId?: number | null;
+  earlierCommentIds?: number[];
+  thread?: string;
+  text?: string;
+}
+
 const thread = (id: string, change: Partial<Thread> = {}): Thread => ({
   id,
   path: 'src/tau.ts',
@@ -142,7 +150,7 @@ describe('planWrites', () => {
       case: 'recorded reply leaves the resolve',
       facts: facts({
         entries: [{ id: 'person', reply: 'Renamed.', resolve: true }],
-        recorded: [{ kind: 'reply', thread: 'person' }],
+        recorded: [{ kind: 'reply', thread: 'person', text: 'Renamed.' }],
       }),
       writes: [
         { kind: 'resolve', thread: 'person', url: url('person'), text: null, toPerson: true },
@@ -154,9 +162,9 @@ describe('planWrites', () => {
         entries: [{ id: 'gone', reply: 'Renamed.', resolve: true }],
         comment: { body: 'Thanks.', answers: ['999'] },
         recorded: [
-          { kind: 'reply', thread: 'gone' },
-          { kind: 'resolve', thread: 'gone' },
-          { kind: 'comment', thread: null },
+          { kind: 'reply', thread: 'gone', text: 'Renamed.' },
+          { kind: 'resolve', thread: 'gone', text: null },
+          { kind: 'comment', thread: null, text: 'Thanks.' },
         ],
       }),
       writes: [],
@@ -222,19 +230,30 @@ const viewerComment = (id: number, body: string, author = 'sqve') => ({
   updatedAt: '2026-10-01T10:00:00Z',
 });
 
-const recordedWrite = (
-  kind: PostedWrite['kind'],
-  change: Partial<PostedWrite> = {},
-): PostedWrite => ({
-  kind,
-  thread: kind === 'comment' ? null : 'person',
-  url: kind === 'comment' ? prUrl : url('person'),
-  text: kind === 'resolve' ? null : 'Renamed.',
-  state: 'uncertain',
-  commentId: null,
-  earlierCommentIds: [],
-  ...change,
-});
+const recordedWrite = (kind: PostedWrite['kind'], change: RecordedChange = {}): PostedWrite => {
+  const saved: Pick<PostedWrite, 'state' | 'commentId' | 'earlierCommentIds'> = {
+    state: 'uncertain',
+    commentId: null,
+    earlierCommentIds: [],
+    ...change,
+  };
+
+  if (kind === 'reply') {
+    return {
+      ...saved,
+      kind,
+      thread: change.thread ?? 'person',
+      text: change.text ?? 'Renamed.',
+      url: url('person'),
+    };
+  }
+
+  if (kind === 'resolve') {
+    return { ...saved, kind, thread: change.thread ?? 'person', text: null, url: url('person') };
+  }
+
+  return { ...saved, kind, thread: null, text: change.text ?? 'Renamed.', url: prUrl };
+};
 
 const settleFacts = (change: Partial<SettleFacts>): SettleFacts => ({
   recorded: [],
@@ -370,13 +389,24 @@ describe('settleWrites', () => {
 });
 
 describe('writes across threads', () => {
+  it('targets the thread ID when the thread has no comment to link', () => {
+    const planned = planWrites(
+      facts({
+        entries: [{ id: 'bot', reply: 'Done.', resolve: false }],
+        threads: [thread('bot', { comments: [] })],
+      }),
+    );
+
+    expect(planned.map((write) => write.url)).toEqual(['bot']);
+  });
+
   it('plans the reply and resolve of a thread when only another thread has them recorded', () => {
     const planned = planWrites(
       facts({
         entries: [{ id: 'bot', reply: 'Done.', resolve: true }],
         recorded: [
-          { kind: 'reply', thread: 'person' },
-          { kind: 'resolve', thread: 'person' },
+          { kind: 'reply', thread: 'person', text: 'Renamed.' },
+          { kind: 'resolve', thread: 'person', text: null },
         ],
       }),
     );
@@ -394,9 +424,17 @@ describe('writes across threads', () => {
       comments: [comment(301, false)],
     };
 
-    expect(targetCommentIds({ kind: 'reply', thread: 'other' }, feedback)).toEqual([555]);
-    expect(targetCommentIds({ kind: 'reply', thread: 'gone' }, feedback)).toEqual([]);
-    expect(targetCommentIds({ kind: 'comment', thread: null }, feedback)).toEqual([301]);
+    expect(targetCommentIds({ kind: 'reply', thread: 'other', text: 'Done.' }, feedback)).toEqual([
+      555,
+    ]);
+
+    expect(targetCommentIds({ kind: 'reply', thread: 'gone', text: 'Done.' }, feedback)).toEqual(
+      [],
+    );
+
+    expect(targetCommentIds({ kind: 'comment', thread: null, text: 'Done.' }, feedback)).toEqual([
+      301,
+    ]);
   });
 
   it('settles a resolve as posted when only other threads are unresolved', () => {
