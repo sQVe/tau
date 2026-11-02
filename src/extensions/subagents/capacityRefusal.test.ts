@@ -7,6 +7,16 @@ it.each([
   { name: 'assistant message', message: { role: 'assistant' }, clears: false },
   { name: 'tool result', message: { role: 'toolResult' }, clears: false },
   { name: 'custom message', message: { role: 'custom' }, clears: false },
+  {
+    name: 'worker report notice',
+    message: { role: 'custom', customType: 'tau-worker-report' },
+    clears: true,
+  },
+  {
+    name: 'another custom message',
+    message: { role: 'custom', customType: 'tau-worker-report-request' },
+    clears: false,
+  },
 ])('decides whether $name clears the capacity refusal', ({ message, clears }) => {
   expect(clearsCapacityRefusal(message)).toBe(clears);
 });

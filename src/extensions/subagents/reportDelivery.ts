@@ -15,7 +15,7 @@ export interface ReportDelivery {
   deliver: (context: ReportDeliveryContext) => Promise<void>;
 }
 
-const reportMessageType = 'tau-worker-report';
+export const reportMessageType = 'tau-worker-report';
 
 const evidenceText = (report: Assignment['report']): string => {
   const evidence = report?.evidence ?? [];
