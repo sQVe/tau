@@ -5,7 +5,7 @@ import type { Static } from 'typebox';
 const visibility = Type.Optional(
   StringEnum(['foreground', 'background'] as const, {
     description:
-      'Foreground opens in the manager tab, background under the parent. Defaults to foreground for editing profiles. The result reports the actual visibility.',
+      'Foreground opens in the manager tab, background under the parent. Defaults to foreground for editing profiles.',
   }),
 );
 
