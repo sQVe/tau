@@ -25,6 +25,7 @@ export interface Classification {
 interface TicketPath {
   path: string;
   slices: string;
+  cwd: string;
 }
 
 const classifierTimeoutMilliseconds = 5000;
@@ -76,8 +77,9 @@ const readOpenedTicket = async (
 
   const realPath = await realpath(ticket.path);
   const realSlices = await realpath(ticket.slices);
+  const realCwd = await realpath(ticket.cwd);
 
-  if (escapesDirectory(realPath, realSlices)) {
+  if (escapesDirectory(realPath, realCwd) || escapesDirectory(realPath, realSlices)) {
     return undefined;
   }
 
@@ -126,7 +128,11 @@ const resolveTicketPath = (brief: string, cwd: string): TicketPath | undefined =
     return undefined;
   }
 
-  return { path, slices: path.slice(0, markerIndex + ticketSlicesMarker.length - 1) };
+  return {
+    path,
+    slices: path.slice(0, markerIndex + ticketSlicesMarker.length - 1),
+    cwd: resolve(cwd),
+  };
 };
 
 export const classifyRoute = async (

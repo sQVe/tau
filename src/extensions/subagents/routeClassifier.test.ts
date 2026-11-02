@@ -14,6 +14,7 @@ import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import {
   allowModels,
   answered,
@@ -230,6 +231,21 @@ it('sends the ticket an absolute path names', async ({ onTestFinished }) => {
   });
 
   expect(routing?.ticketSent).toBe(true);
+});
+
+it('sends no ticket an absolute path names outside the session cwd', async ({ onTestFinished }) => {
+  const { context, classify } = await routedFixture(onTestFinished);
+  const outside = realpathSync(temporaryDirectory(onTestFinished, 'tau-ticket-outside-'));
+
+  mkdirSync(join(outside, '.tau', 'slices', 'ME-1'), { recursive: true });
+  writeFileSync(join(outside, '.tau', 'slices', 'ME-1', 'agent-1.md'), 'Private.');
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  const brief = `Read ${join(outside, '.tau', 'slices', 'ME-1', 'agent-1.md')} first.`;
+  const { routing } = await resolveRoutedLoadout({ profile: 'scout', task: brief }, context);
+
+  expect(classifiedState(classify)).toEqual({ brief, profile: 'scout' });
+  expect(routing?.ticketSent).toBe(false);
 });
 
 it('caps the ticket text at 12000 characters', async ({ onTestFinished }) => {
