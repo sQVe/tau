@@ -1,6 +1,6 @@
 import type { ToolCallEventResult } from '@earendil-works/pi-coding-agent';
 
-import { reportMessageType } from './reportDelivery.js';
+import { reportMessageType } from './reportMessage.js';
 
 interface MessageKind {
   role: string;

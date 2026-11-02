@@ -9,14 +9,13 @@ import { readAssignment } from './assignment.js';
 import type { Assignment } from './assignment.js';
 import { decideReportDelivery } from './reportDecision.js';
 import type { ReportReadFact } from './reportDecision.js';
+import { reportMessageType } from './reportMessage.js';
 
 type ReportDeliveryContext = Pick<ExtensionContext, 'sessionManager' | 'ui'>;
 
 export interface ReportDelivery {
   deliver: (context: ReportDeliveryContext) => Promise<void>;
 }
-
-export const reportMessageType = 'tau-worker-report';
 
 const evidenceText = (report: Assignment['report']): string => {
   const evidence = report?.evidence ?? [];
