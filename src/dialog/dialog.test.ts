@@ -213,6 +213,19 @@ it('refits the message after terminal height and width changes', async () => {
   expect(pages[2]?.join('\n')).not.toContain('Write 30');
 });
 
+it('reports a blocked permission while the confirm dialog is open', async () => {
+  const context = customContext((component) => {
+    component.handleInput?.('\r');
+  }, theme);
+
+  expect(await confirm(context, 'Title', 'Message')).toBe(true);
+
+  expect(context.programStatusReports).toEqual([
+    { state: 'blocked', app: 'pi', kind: 'permission', message: 'Title' },
+    { state: 'working', app: 'pi', message: 'session' },
+  ]);
+});
+
 it.each([true, false])('returns the non-TUI confirm answer %s', async (answer) => {
   const fallback = vi
     .fn<(title: string, message: string) => Promise<boolean>>()
@@ -249,7 +262,7 @@ const observedDialog = async (
         requestRender: () => {
           requests += 1;
         },
-        terminal: { rows: options.rows ?? 40, columns: 100 },
+        terminal: { rows: options.rows ?? 40, columns: 100, setProgramStatus: () => undefined },
       };
 
       const keybindings = options.keybindings ?? new KeybindingsManager(tuiKeybindings);
@@ -283,7 +296,13 @@ const observedDialog = async (
     },
   };
 
-  const context = { mode: 'tui', hasUI: true, ui } as unknown as ExtensionContext;
+  const context = {
+    mode: 'tui',
+    hasUI: true,
+    ui,
+    sessionManager: { getSessionName: () => undefined },
+  } as unknown as ExtensionContext;
+
   const answer = await confirm(context, 'Title', options.message ?? 'Message');
 
   return { answer, closed, pages, screens };

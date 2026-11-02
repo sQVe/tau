@@ -4,6 +4,7 @@ import { Container, matchesKey, Spacer, Text, truncateToWidth } from '@earendil-
 import type { Component } from '@earendil-works/pi-tui';
 
 import { isWorkerProcess } from '../worker.js';
+import { customWithBlockedStatus } from './blockedStatus.js';
 import { confirmationRefusal } from './eligibility.js';
 import { isBottom, isDown, isTop, isUp } from './keys.js';
 
@@ -39,7 +40,9 @@ export const confirm = async (
     return context.ui.confirm(title, message);
   }
 
-  const answer = await context.ui.custom<boolean | undefined>(
+  const answer = await customWithBlockedStatus<boolean | undefined>(
+    context,
+    { kind: 'permission', message: title },
     (terminal, theme, keybindings, done) => {
       const dialog: Container & Component = new Container();
       const options = new Container();

@@ -2,11 +2,8 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
 import { parseWorkerNoticeEvent, workerNoticeChannel } from '../../worker.js';
-import { questionDialog } from './dialog.js';
-import type { DialogQuestion, DialogResult, DialogSession } from './dialog.js';
-import type { Answer, QuestionnaireState } from './questionnaire.js';
-import { refuseUnrepliedTypedAnswer } from './typedAnswerReply.js';
-import { validateQuestions } from './validation.js';
+import { createQuestionAsker } from './askQuestions.js';
+import type { DialogSession } from './dialog.js';
 
 const optionSchema = Type.Object({
   label: Type.String({
@@ -92,57 +89,7 @@ Write for a user who has not read your discussion. \`problem\`, \`impact\`, and 
 - Set \`multiSelect: true\` when several answers can be valid. A typed answer returns with the checked options.
 - Add \`preview\` to an option to show what it produces, about 10 lines. Add \`preview\` to the question for content every option acts on, such as a draft to approve. An option preview replaces it.`;
 
-const answerSegment = (answer: Answer) => {
-  const preview = answer.preview === undefined ? '' : ` selected preview: ${answer.preview}.`;
-
-  return `"${answer.question}"="${answer.selected.join(', ')}".${preview}`;
-};
-
-const typedAnswerEnding =
-  'The user typed a free-text answer. If it asks a question or asks for an explanation, answer it in visible text first, then end your turn. Do not call ask_user_question in the same message.';
-
-const responseText = (result: DialogResult) => {
-  if (result.kind === 'declined') {
-    return 'User declined to answer questions. Closing the dialog is not approval. State the blocked decision and stop. Do not ask the same question again in prose.';
-  }
-
-  if (result.kind === 'deferred') {
-    return "User chose to handle a waiting worker notice first. No question was answered and nothing is approved. Handle the waiting notice, then call ask_user_question again with the same questions. The dialog restores the user's selections.";
-  }
-
-  const segments = result.answers.map(answerSegment).join(' ');
-  const typed = result.answers.some((answer) => answer.typed);
-
-  const ending = typed
-    ? typedAnswerEnding
-    : "You can now continue with the user's answers in mind.";
-
-  return `User has answered your questions: ${segments} ${ending}`;
-};
-
-// The model can repeat the same questions with their properties in another order.
-const questionsKey = (questions: DialogQuestion[]): string =>
-  JSON.stringify(
-    questions.map((question) => [
-      question.question,
-      question.problem,
-      question.impact,
-      question.preview ?? null,
-      question.header,
-      question.multiSelect,
-      question.options.map((option) => [
-        option.label,
-        option.description,
-        option.recommended === true,
-        option.preview ?? null,
-      ]),
-    ]),
-  );
-
 export default function askUserQuestionExtension(pi: ExtensionAPI): void {
-  // Only the latest deferred dialog is kept. Other questions asked in between leave it in place.
-  let deferred: { key: string; state: QuestionnaireState } | undefined;
-
   const subscribe: DialogSession['subscribe'] = (listener) =>
     pi.events.on(workerNoticeChannel, (data) => {
       const notice = parseWorkerNoticeEvent(data);
@@ -151,6 +98,8 @@ export default function askUserQuestionExtension(pi: ExtensionAPI): void {
         listener(notice);
       }
     });
+
+  const askQuestions = createQuestionAsker(subscribe);
 
   pi.registerTool({
     name: 'ask_user_question',
@@ -162,42 +111,7 @@ export default function askUserQuestionExtension(pi: ExtensionAPI): void {
     parameters: questionParams,
 
     async execute(_toolCallId, params, _signal, _onUpdate, context) {
-      // `hasUI` is also true in RPC mode, where `ui.custom` resolves without running a component.
-      if (context.mode !== 'tui') {
-        throw new Error('The questionnaire needs the terminal UI. Ask in plain text instead.');
-      }
-
-      refuseUnrepliedTypedAnswer(context.sessionManager);
-
-      validateQuestions(params.questions);
-
-      const questions = params.questions.map((question) => ({
-        ...question,
-        multiSelect: question.multiSelect === true,
-      }));
-
-      const key = questionsKey(questions);
-      const saved = deferred?.key === key ? deferred.state : undefined;
-
-      const session = {
-        saved,
-        subscribe,
-        save: (state: QuestionnaireState) => {
-          deferred = { key, state };
-        },
-      };
-
-      if (saved !== undefined) {
-        deferred = undefined;
-      }
-
-      const opened = await context.ui.custom<DialogResult | undefined>(
-        questionDialog(questions, session),
-      );
-
-      const result: DialogResult = opened ?? { kind: 'declined' };
-
-      return { content: [{ type: 'text', text: responseText(result) }], details: result };
+      return askQuestions(params.questions, context);
     },
   });
 }
