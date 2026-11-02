@@ -18,7 +18,6 @@ export interface CheckResult {
   stdoutPath?: string;
 }
 
-// 'combined' writes stdout and stderr to the log. 'report' writes stdout to its own file.
 export type CheckOutput = 'combined' | 'report';
 
 export interface CheckOptions {
@@ -58,7 +57,6 @@ const idlePollsPerLimit = 4;
 
 export const stdoutPathOf = (logPath: string): string => logPath.replace(/\.log$/u, '.stdout');
 
-// Runs argv without a shell in `root`, in a new log file.
 export const runCheck = async ({
   root,
   argv,

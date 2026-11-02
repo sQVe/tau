@@ -16,8 +16,6 @@ const toolKinds: { name: ToolKind }[] = [{ name: 'full_check' }, { name: 'mutati
 
 const passReport = { version: 1, mode: 'changed', status: 'pass', survivors: [], unmutated: [] };
 
-// Appends one byte to `counter`, optionally edits a tracked file, prints a pass report, and waits
-// for `gate` before it exits when a gate is given.
 const commandSource = (
   counter: string,
   gate: string | undefined,
@@ -99,8 +97,6 @@ const fixture = async (kind: ToolKind) => {
   return { root, directory, counter, gate, configure, run, runCount, savedRecords };
 };
 
-// A full check in another checkout of the same repository that holds the shared lock until the
-// gate file exists, so a call in the fixture checkout can prove it reuses a record without waiting.
 const startHoldingFullCheck = async (agentDirectory: string, started: string, gate: string) => {
   const root = await createTemporaryRepository(onTestFinished, 'tau-check-flow-holder-');
 

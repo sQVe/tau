@@ -66,7 +66,6 @@ const findReusedLog = async (
   };
 };
 
-// Full checks and mutation checks of one repository share a lock, since they share resources.
 const withRepositoryLock = <T>(
   plan: CheckPlan,
   repository: Repository,
@@ -106,8 +105,6 @@ const reuseSaved = async <Verdict extends { passed: boolean }>(
   return policy.reuse(saved);
 };
 
-// Runs the command and saves a record with the verdict of `settle` when its inputs did not change.
-// Only a passing record is reused.
 const runWithRecord = async <Verdict extends { passed: boolean }>(
   plan: CheckPlan,
   policy: CheckPolicy<Verdict>,
