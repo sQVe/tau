@@ -8,6 +8,7 @@ import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import { confirmContext, noUiContext } from '../../../../tests/toolContext.js';
 import type { Exec } from '../../../command.js';
 import { isMissingFile } from '../../../errors.js';
+import type { PostedWrite } from '../replies.js';
 import { createPrFeedbackTool } from '../tool.js';
 import type { PrFeedbackInput } from '../tool.js';
 import { createGhFake, groupExecOf } from './ghFake.js';
@@ -37,16 +38,6 @@ interface RoundSetUp {
     input?: Partial<PrFeedbackInput>,
     session?: PrFeedbackTool,
   ) => Promise<unknown>;
-}
-
-interface RecordedWrite {
-  kind: string;
-  thread: string;
-  url: string;
-  text: string | null;
-  state: string;
-  commentId: number | null;
-  earlierCommentIds: number[];
 }
 
 interface Confirmation {
@@ -201,18 +192,34 @@ export const mixedReplies = {
   comment: null,
 };
 
-export const recordedWrite = (
-  kind: string,
-  threadId: string,
-  text: string | null,
+const threadCommentIds = { 'thread-person': 101, 'thread-bot': 201 };
+
+type FixtureThreadId = keyof typeof threadCommentIds;
+
+const threadUrl = (threadId: FixtureThreadId) =>
+  `https://github.com/sQVe/tau/pull/7#discussion_r${threadCommentIds[threadId]}`;
+
+export const recordedReply = (
+  threadId: FixtureThreadId,
+  text: string,
   commentId: number | null,
-): RecordedWrite => ({
-  kind,
+): PostedWrite => ({
+  kind: 'reply',
   thread: threadId,
-  url: `https://github.com/sQVe/tau/pull/7#discussion_r${threadId === 'thread-bot' ? 201 : 101}`,
+  url: threadUrl(threadId),
   text,
   state: 'posted',
   commentId,
+  earlierCommentIds: [],
+});
+
+export const recordedResolve = (threadId: FixtureThreadId): PostedWrite => ({
+  kind: 'resolve',
+  thread: threadId,
+  url: threadUrl(threadId),
+  text: null,
+  state: 'posted',
+  commentId: null,
   earlierCommentIds: [],
 });
 

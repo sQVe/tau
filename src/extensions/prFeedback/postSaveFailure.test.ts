@@ -5,7 +5,7 @@ import {
   personThread,
   postFailure,
   readPosted,
-  recordedWrite,
+  recordedReply,
   recordingConfirm,
   replyTo,
   setUp,
@@ -91,7 +91,7 @@ describe('post save failure', () => {
   });
 });
 
-describe('post from two sessions', () => {
+describe('post save failure around an uncertain write', () => {
   const botReplies = {
     version: 1,
     threads: [replyTo('thread-bot', 'Added.', false)],
@@ -138,7 +138,7 @@ describe('post from two sessions', () => {
       version: 2,
       writes: [
         {
-          ...recordedWrite('reply', 'thread-bot', 'Added.', null),
+          ...recordedReply('thread-bot', 'Added.', null),
           state: 'uncertain',
           earlierCommentIds: [201],
         },

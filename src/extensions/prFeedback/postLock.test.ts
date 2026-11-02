@@ -12,7 +12,8 @@ import {
   personThread,
   postFailure,
   readPosted,
-  recordedWrite,
+  recordedReply,
+  recordedResolve,
   recordingConfirm,
   replyTo,
   setUp,
@@ -87,7 +88,7 @@ describe('post settled writes', () => {
     fake.loseWriteResponse(2);
     await postFailure(post(details));
 
-    const otherSession = recordedWrite('resolve', 'thread-bot', null, null);
+    const otherSession = recordedResolve('thread-bot');
     const lock = stallLockLink();
     const retry = post(details);
 
@@ -133,7 +134,7 @@ describe('post settled writes', () => {
     await postFailure(post(details));
 
     const otherSession = {
-      ...recordedWrite('reply', 'thread-bot', 'Also added.', null),
+      ...recordedReply('thread-bot', 'Also added.', null),
       state: 'uncertain',
       earlierCommentIds: [201, 1000],
     };
@@ -227,11 +228,11 @@ describe('post from two sessions', () => {
 
     expect(await postA).toBeUndefined();
     expect(fake.writes).toEqual([{ kind: 'reply', replyTo: 201, body: 'Added.' }]);
-    expect(failureB).toBeInstanceOf(Error);
+    expect(failureB?.message).toMatch(/Another pr_feedback post is posting/u);
 
     expect(await readPosted(details.directory)).toEqual({
       version: 2,
-      writes: [recordedWrite('reply', 'thread-bot', 'Added.', 1000)],
+      writes: [recordedReply('thread-bot', 'Added.', 1000)],
     });
   });
 
@@ -253,7 +254,7 @@ describe('post from two sessions', () => {
 
     const failureB = await postFailure(post(details));
 
-    expect(failureB).toBeInstanceOf(Error);
+    expect(failureB?.message).toMatch(/Another pr_feedback post is posting/u);
     expect(fake.writes).toEqual([]);
 
     sessionA.open();

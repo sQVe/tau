@@ -13,7 +13,8 @@ import {
   personThread,
   postFailure,
   readPosted,
-  recordedWrite,
+  recordedReply,
+  recordedResolve,
   recordingConfirm,
   replyTo,
   setUp,
@@ -151,9 +152,9 @@ describe('post refusals', () => {
     const otherSession = {
       version: 2,
       writes: [
-        recordedWrite('reply', 'thread-bot', 'Added.', 900),
-        recordedWrite('resolve', 'thread-bot', null, null),
-        recordedWrite('reply', 'thread-person', 'Renamed.', 901),
+        recordedReply('thread-bot', 'Added.', 900),
+        recordedResolve('thread-bot'),
+        recordedReply('thread-person', 'Renamed.', 901),
       ],
     };
 

@@ -7,7 +7,7 @@ import {
   botThread,
   postFailure,
   readPosted,
-  recordedWrite,
+  recordedReply,
   recordingConfirm,
   replyTo,
   setUp,
@@ -58,7 +58,7 @@ describe('post uncertain writes', () => {
         { kind: 'comment', body: 'Done.' },
       ];
 
-      const expectedPosted = [recordedWrite('reply', 'thread-bot', 'Added.', 1000)];
+      const expectedPosted = [recordedReply('thread-bot', 'Added.', 1000)];
 
       expect(posted).toHaveLength(attempt - 1);
 
@@ -200,7 +200,7 @@ describe('post uncertain resolve of a viewer-started thread', () => {
   });
 });
 
-describe('post settled writes', () => {
+describe('post uncertain reply with an earlier matching comment', () => {
   it('posts an uncertain reply again when only an earlier comment has its text', async () => {
     const { root, fake, read, post } = await setUp();
     const target = botThread();

@@ -7,7 +7,8 @@ import {
   personThread,
   postFailure,
   readPosted,
-  recordedWrite,
+  recordedReply,
+  recordedResolve,
   recordingConfirm,
   replyTo,
   setUp,
@@ -247,8 +248,8 @@ describe('post write output', () => {
   ];
 
   const expectedRecords = [
-    recordedWrite('reply', 'thread-bot', 'Added.', 1000),
-    recordedWrite('resolve', 'thread-bot', null, null),
+    recordedReply('thread-bot', 'Added.', 1000),
+    recordedResolve('thread-bot'),
     {
       kind: 'comment',
       thread: null,
