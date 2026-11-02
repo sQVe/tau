@@ -34,7 +34,6 @@ export interface ApplyRunner<Summary> {
   signal: AbortSignal | undefined;
 }
 
-// Linear created the ticket, but the draft does not record its identifier yet.
 export class CreatedButNotRecordedError extends Error {
   readonly created: PartialApplyCreate;
 

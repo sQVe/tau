@@ -41,7 +41,6 @@ export const run = async (
   return result.details;
 };
 
-// Narrows a result to a read result. Throws for any other result.
 export const readDetails = (details: SliceToolDetails): SliceReadDetails => {
   if (!('stateToken' in details)) {
     throw new Error(`Expected a read result, got ${JSON.stringify(details)}`);
@@ -50,7 +49,6 @@ export const readDetails = (details: SliceToolDetails): SliceReadDetails => {
   return details;
 };
 
-// Narrows a result to an apply outcome, which includes a failure. Throws for any other result.
 const applyDetails = (details: SliceToolDetails): SliceApplyOutcome => {
   if (!('applied' in details)) {
     throw new Error(`Expected an apply result, got ${JSON.stringify(details)}`);
@@ -59,7 +57,6 @@ const applyDetails = (details: SliceToolDetails): SliceApplyOutcome => {
   return details;
 };
 
-// Narrows a result to a failed apply. Throws for any other result.
 export const failureDetails = (
   details: SliceToolDetails,
 ): PartialApplyFailureDetails<StepSummary> => {
@@ -89,7 +86,6 @@ export const snapshotDraft = async (directory: string): Promise<string[][]> => {
   );
 };
 
-// Runs a read and checks that it changed no draft file and made no Linear write.
 export const expectReadOnly = async <Value>(
   fake: Fake,
   directory: string,
@@ -115,8 +111,6 @@ export const setUp = async (
 ): Promise<Setup> => {
   const root = await createRoot();
   const fake = createLinearFake();
-  // Without a UI, any confirm prompt would throw, so every apply here also shows that apply
-  // never asks the user.
   const context = noUiContext(root);
   const { directory } = await run(fake, context, { action: 'prepare', id: 'planning' });
 
@@ -125,7 +119,6 @@ export const setUp = async (
   await writeFile(join(directory, 'slice-1.md'), 'Slice one.\n');
   await writeFile(join(directory, 'slice-2.md'), 'Slice two.\n');
 
-  // Follows the draft when apply moves it to the container's identifier.
   let current = directory;
 
   const read = async (container?: string) =>
@@ -164,7 +157,6 @@ export const outsideDirectory = async (): Promise<string> => {
   return directory;
 };
 
-// Creates the container and both slices, then returns the moved draft directory.
 export const appliedPlan = async (): Promise<Setup> => {
   const setup = await setUp();
   const { directory } = await setup.apply();

@@ -45,7 +45,6 @@ describe('slice tool apply', () => {
   it('retries after a partial failure by creating only the missing slices', async () => {
     const { fake, directory, apply } = await setUp();
 
-    // Writes: container, slice 1, slice 2.
     fake.failWrite(3);
 
     const moved = join(directory, '..', 'me-1');
@@ -75,7 +74,6 @@ describe('slice tool apply', () => {
     const { fake, context, directory, apply } = await setUp();
     const { stateToken } = readDetails(await run(fake, context, { action: 'read', directory }));
 
-    // Linear creates the container, but the call fails as if the output were lost.
     const tool = createSliceTool(async (command, commandArguments, options) => {
       const result = await fake.exec(command, commandArguments, options);
       const created = commandArguments[1]?.includes('issueCreate') === true;
@@ -111,7 +109,6 @@ describe('slice tool apply', () => {
     const { stateToken } = readDetails(await run(fake, context, { action: 'read', directory }));
     const controller = new AbortController();
 
-    // Aborts once Linear creates the container.
     const tool = createSliceTool(async (command, commandArguments, options) => {
       const result = await fake.exec(command, commandArguments, options);
 
@@ -207,7 +204,6 @@ describe('slice tool apply', () => {
     const planFile = join(directory, 'plan.json');
     const { stateToken } = readDetails(await run(fake, context, { action: 'read', directory }));
 
-    // Replaces plan.json with a directory once Linear creates the container, so the save fails.
     const tool = createSliceTool(async (command, commandArguments, options) => {
       const result = await fake.exec(command, commandArguments, options);
 

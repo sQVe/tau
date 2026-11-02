@@ -18,7 +18,6 @@ type Fake = ReturnType<typeof createLinearFake>;
 
 type StartApplyOutcome = StartApplyDetails | PartialApplyFailureDetails<string>;
 
-// Each helper narrows a result to the variant that has the field it reads. Throws for any other.
 const readOf = (details: StartToolDetails): StartReadDetails => {
   if (!('stateToken' in details)) {
     throw new Error(`Expected a read result, got ${JSON.stringify(details)}`);

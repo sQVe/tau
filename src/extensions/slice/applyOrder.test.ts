@@ -276,7 +276,6 @@ describe('slice tool apply', () => {
     const writesBefore = fake.writes().length;
     const controller = new AbortController();
 
-    // Aborts once the first order move reaches Linear.
     const tool = createSliceTool(async (command, commandArguments, options) => {
       const result = await fake.exec(command, commandArguments, options);
 
@@ -314,7 +313,6 @@ describe('slice tool apply', () => {
     const writesBefore = fake.writes().length;
     const { stateToken } = readDetails(await run(fake, context, { action: 'read', directory }));
 
-    // Fails each container read once a move has reached Linear.
     const tool = createSliceTool(async (command, commandArguments, options) => {
       const moved = fake.writes().length > writesBefore;
 
