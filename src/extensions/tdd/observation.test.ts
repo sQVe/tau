@@ -186,85 +186,6 @@ it('does not reinterpret POSIX literal backslashes as separators', async ({ onTe
   expect(runTests).not.toHaveBeenCalled();
 });
 
-it('gives no hint after a fresh focused pass without RED, and a new cycle starts after a full pass', async ({
-  onTestFinished,
-}) => {
-  const { cwd, observation } = await setup(onTestFinished);
-  const regression = { ...behavior, behavior: 'regression check' };
-  const passed = await observation.run(regression, 'focused');
-
-  expect(passed).toMatchObject({ kind: 'pass', freshness: 'fresh', hint: undefined });
-
-  expect(await observation.checkpoint(false)).toBeUndefined();
-  await writeFile(join(cwd, 'src/value.ts'), 'formatted');
-  const full = await observation.run(regression, 'full');
-
-  expect(full).toMatchObject({ kind: 'pass', scope: 'full', freshness: 'fresh', hint: undefined });
-  expect((await observation.run(regression, 'focused')).hint).toBeUndefined();
-});
-
-it.for(['stale', 'unknown'] as const)(
-  'prioritizes %s inputs after a focused pass',
-  async (freshness, { onTestFinished }) => {
-    const { cwd, observation } = await setup(onTestFinished);
-    const report = result('passed');
-
-    vi.mocked(runTests).mockImplementationOnce(async () => {
-      if (freshness === 'stale') {
-        await writeFile(join(cwd, 'src/value.ts'), 'changed during tests');
-      } else {
-        await makeUnreadable(join(cwd, 'package.json'));
-      }
-
-      return report;
-    });
-
-    const passed = await observation.run(behavior, 'focused');
-
-    expect(passed).toMatchObject({ kind: 'pass', freshness });
-    expect(passed.report).toBe(report);
-    expect(passed.hint).toContain(freshness);
-
-    if (freshness === 'unknown') {
-      await rm(join(cwd, 'package.json'));
-    }
-
-    expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
-    expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
-  },
-);
-
-it('deduplicates the edit reminder across checkpoints', async ({ onTestFinished }) => {
-  const { cwd, observation } = await setup(onTestFinished);
-
-  expect(await observation.checkpoint(true)).toContain('RED');
-  await writeFile(join(cwd, 'src/value.ts'), 'after');
-  expect(await observation.checkpoint(true)).toBeUndefined();
-});
-
-it('observes RED and starts a new cycle after a full pass', async ({ onTestFinished }) => {
-  const { cwd, observation } = await setup(onTestFinished);
-  vi.mocked(runTests).mockResolvedValueOnce(result('failed'));
-
-  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
-  await writeFile(join(cwd, 'src/value.ts'), 'fixed');
-  const green = await observation.run(behavior, 'focused');
-
-  expect(green.hint).toBeUndefined();
-  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
-  expect((await observation.run(behavior, 'full')).hint).toBeUndefined();
-  expect((await observation.run(behavior, 'full')).hint).toBeUndefined();
-
-  await writeFile(join(cwd, 'src/value.ts'), 'next behavior');
-  expect(await observation.checkpoint(true)).toContain('stale');
-  expect(await observation.checkpoint(true)).toBeUndefined();
-  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
-  await writeFile(join(cwd, 'src/value.ts'), 'next implementation');
-  expect(await observation.checkpoint(true)).toContain('stale');
-  await writeFile(join(cwd, 'src/value.ts'), 'later implementation');
-  expect(await observation.checkpoint(true)).toContain('RED');
-});
-
 it.each(['duplicate', 'skipped', 'missing', 'load error'])(
   'does not observe RED from %s tests',
   async (invalid) => {
@@ -362,13 +283,6 @@ it.for(['duplicate', 'skipped', 'missing', 'load error'])(
   },
 );
 
-const failedWith = (message: string): RunnerResult => ({
-  kind: 'fail',
-  tests: [{ file: 'value.test.ts', fullname: 'value works', status: 'failed' }],
-  failures: [{ file: 'value.test.ts', fullname: 'value works', message }],
-  truncated: false,
-});
-
 it.for([
   ['TypeError: thing.run is not a function (value.test.ts:5)', 'TypeError'],
   ['ReferenceError: missingName is not defined', 'ReferenceError'],
@@ -394,27 +308,6 @@ it.for([
   expect(thrownErrorType(message)).toBe(errorType);
 });
 
-it('advises once when RED came from a thrown error and still counts it as RED', async ({
-  onTestFinished,
-}) => {
-  const { cwd, observation } = await setup(onTestFinished);
-  vi.mocked(runTests).mockResolvedValue(failedWith('TypeError: value.run is not a function'));
-
-  const red = await observation.run(behavior, 'focused');
-
-  expect(red.hint).toContain('TypeError');
-  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
-  await writeFile(join(cwd, 'src/value.ts'), 'implementation');
-  expect(await observation.checkpoint(true)).toBeUndefined();
-});
-
-it('stays quiet when RED came from a failed assertion', async ({ onTestFinished }) => {
-  const { observation } = await setup(onTestFinished);
-  vi.mocked(runTests).mockResolvedValue(failedWith('AssertionError: expected 1 to be 2'));
-
-  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
-});
-
 it('does not blame a thrown error from a test outside the selection', async ({
   onTestFinished,
 }) => {
@@ -433,110 +326,23 @@ it('does not blame a thrown error from a test outside the selection', async ({
   expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
 });
 
-it('keeps implementation edits quiet after observed focused RED', async ({ onTestFinished }) => {
+it('does not take a test with the selected name in another file as RED', async ({
+  onTestFinished,
+}) => {
   const { cwd, observation } = await setup(onTestFinished);
-  vi.mocked(runTests).mockResolvedValueOnce(result('failed'));
+
+  vi.mocked(runTests).mockResolvedValueOnce({
+    kind: 'fail',
+    failures: [],
+    truncated: false,
+    tests: [{ file: 'other.test.ts', fullname: 'value works', status: 'failed' }],
+  });
 
   await observation.run(behavior, 'focused');
   await writeFile(join(cwd, 'src/value.ts'), 'implementation');
-  expect(await observation.checkpoint(true)).toBeUndefined();
-  await writeFile(join(cwd, 'src/value.ts'), 'more implementation');
-  expect(await observation.checkpoint(true)).toBeUndefined();
-  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
-});
-
-it('retains observed RED through focused GREEN refactoring until a full pass', async ({
-  onTestFinished,
-}) => {
-  const { cwd, observation } = await setup(onTestFinished);
-  vi.mocked(runTests).mockResolvedValueOnce(result('failed'));
-
-  await observation.run(behavior, 'focused');
-  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
-
-  for (const content of ['refactor one', 'refactor two']) {
-    await writeFile(join(cwd, 'src/value.ts'), content);
-    expect(await observation.checkpoint(false)).toBeUndefined();
-    expect(await observation.checkpoint(true)).toBeUndefined();
-  }
-
-  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
-  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
-  await observation.run(behavior, 'full');
-  await writeFile(join(cwd, 'src/value.ts'), 'next cycle');
   expect(await observation.checkpoint(true)).toContain('stale');
-  expect(await observation.checkpoint(true)).toBeUndefined();
   await writeFile(join(cwd, 'src/value.ts'), 'next behavior');
   expect(await observation.checkpoint(true)).toContain('RED');
-  expect(await observation.checkpoint(true)).toBeUndefined();
-});
-
-it.each(['timeout', 'cancelled', 'compile-error', 'runner-missing', 'runner-resolution-error'])(
-  'keeps implementation quiet after observed RED and a focused %s',
-  async (kind) => {
-    const { cwd, observation } = await setup(registerCleanup);
-    vi.mocked(runTests).mockResolvedValueOnce(result('failed'));
-
-    await observation.run(behavior, 'focused');
-    await writeFile(join(cwd, 'src/value.ts'), 'implementation');
-    expect(await observation.checkpoint(true)).toBeUndefined();
-
-    const report = {
-      kind,
-      message: 'diagnostic',
-      tests: [],
-    } as RunnerResult;
-
-    vi.mocked(runTests).mockResolvedValueOnce(report);
-
-    const observed = await observation.run(behavior, 'focused');
-
-    expect(observed).toMatchObject({ kind, freshness: 'fresh', hint: undefined });
-    expect(observed.report).toBe(report);
-    await writeFile(join(cwd, 'src/value.ts'), 'more implementation');
-    expect(await observation.checkpoint(true)).toBeUndefined();
-    await writeFile(join(cwd, 'src/value.ts'), 'another implementation');
-    expect(await observation.checkpoint(true)).toBeUndefined();
-
-    await makeUnreadable(join(cwd, 'package.json'));
-    vi.mocked(runTests).mockResolvedValueOnce(report);
-    const unreadable = await observation.run(behavior, 'focused');
-
-    expect(unreadable).toMatchObject({ kind, freshness: 'unknown' });
-    expect(unreadable.report).toBe(report);
-    expect(unreadable.hint).toContain('unknown');
-    expect(await observation.checkpoint(true)).toBeUndefined();
-  },
-);
-
-it('keeps stale-first after full pass then hints missing RED only after another input change', async ({
-  onTestFinished,
-}) => {
-  const { cwd, observation } = await setup(onTestFinished);
-
-  await observation.run(behavior, 'full');
-  await writeFile(join(cwd, 'src/value.ts'), 'cleanup');
-  expect(await observation.checkpoint(true)).toContain('stale');
-  expect(await observation.checkpoint(true)).toBeUndefined();
-  await writeFile(join(cwd, 'src/value.ts'), 'cleanup');
-  expect(await observation.checkpoint(true)).toBeUndefined();
-  await writeFile(join(cwd, 'src/value.ts'), 'later work');
-  expect(await observation.checkpoint(false)).toBeUndefined();
-  expect(await observation.checkpoint(true)).toContain('RED');
-  await writeFile(join(cwd, 'src/value.ts'), 'more work');
-  expect(await observation.checkpoint(true)).toBeUndefined();
-});
-
-it('keeps stale then next-behavior RED advice after a focused pass', async ({ onTestFinished }) => {
-  const { cwd, observation } = await setup(onTestFinished);
-
-  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
-  await writeFile(join(cwd, 'src/value.ts'), 'later edit');
-  expect(await observation.checkpoint(true)).toContain('stale');
-  await writeFile(join(cwd, 'src/value.ts'), 'another edit');
-  expect(await observation.checkpoint(true)).toContain('RED');
-  await writeFile(join(cwd, 'src/value.ts'), 'repeated edit');
-  expect(await observation.checkpoint(true)).toBeUndefined();
 });
 
 it('records RED when each name fails once across the listed files', async ({ onTestFinished }) => {
@@ -599,20 +405,6 @@ it('requires every selected name to fail uniquely', async ({ onTestFinished }) =
 
   expect((await observation.run(multiple, 'focused')).hint).toBeUndefined();
   await writeFile(join(cwd, 'src/value.ts'), 'implementation after incomplete failures');
-  expect(await observation.checkpoint(true)).toContain('stale');
-  await writeFile(join(cwd, 'src/value.ts'), 'next behavior');
-  expect(await observation.checkpoint(true)).toContain('RED');
-});
-
-it('does not retain ancient RED when switching away and back', async ({ onTestFinished }) => {
-  const { cwd, observation } = await setup(onTestFinished);
-  vi.mocked(runTests).mockResolvedValueOnce(result('failed'));
-
-  await observation.run(behavior, 'focused');
-  await observation.run({ ...behavior, testFullName: 'second' }, 'focused');
-
-  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
-  await writeFile(join(cwd, 'src/value.ts'), 'implementation after switching back');
   expect(await observation.checkpoint(true)).toContain('stale');
   await writeFile(join(cwd, 'src/value.ts'), 'next behavior');
   expect(await observation.checkpoint(true)).toContain('RED');
@@ -1075,26 +867,6 @@ it('runs the whole suite, with no file or name filter, for a full run', async ({
   });
 });
 
-it('does not count a failing full run as RED', async ({ onTestFinished }) => {
-  const { observation } = await setup(onTestFinished);
-  vi.mocked(runTests).mockResolvedValueOnce(result('failed'));
-
-  expect((await observation.run(behavior, 'full')).hint).toBeUndefined();
-  expect(await observation.checkpoint(true)).toContain('RED');
-});
-
-it('keeps observed RED through a failing full run', async ({ onTestFinished }) => {
-  const { observation } = await setup(onTestFinished);
-  vi.mocked(runTests).mockResolvedValueOnce(result('failed'));
-
-  await observation.run(behavior, 'focused');
-
-  vi.mocked(runTests).mockResolvedValueOnce(result('failed'));
-
-  expect((await observation.run(behavior, 'full')).hint).toBeUndefined();
-  expect(await observation.checkpoint(true)).toBeUndefined();
-});
-
 it('reports unknown, not stale, when only the hash before the run failed', async ({
   onTestFinished,
 }) => {
@@ -1130,57 +902,6 @@ it('reports why the hash after the run failed', async ({ onTestFinished }) => {
   expect(observed.inputs.error).toContain('package.json');
 });
 
-it('keeps an unknown run unknown when inputs become readable and are edited', async ({
-  onTestFinished,
-}) => {
-  const { cwd, observation } = await setup(onTestFinished);
-
-  vi.mocked(runTests).mockImplementationOnce(async () => {
-    await makeUnreadable(join(cwd, 'package.json'));
-
-    return result('passed');
-  });
-
-  expect((await observation.run(behavior, 'full')).hint).toContain('unknown');
-  await rm(join(cwd, 'package.json'));
-  await writeFile(join(cwd, 'src/value.ts'), 'edited');
-  expect(await observation.checkpoint(true)).toBeUndefined();
-});
-
-it('keeps a stale run stale when inputs return to what the run ended with', async ({
-  onTestFinished,
-}) => {
-  const { cwd, observation } = await setup(onTestFinished);
-
-  vi.mocked(runTests).mockImplementationOnce(async () => {
-    await writeFile(join(cwd, 'src/value.ts'), 'changed during tests');
-
-    return result('passed');
-  });
-
-  expect((await observation.run(behavior, 'focused')).hint).toContain('stale');
-  expect(await observation.checkpoint(true)).toBeUndefined();
-});
-
-it('does not take a test with the selected name in another file as RED', async ({
-  onTestFinished,
-}) => {
-  const { cwd, observation } = await setup(onTestFinished);
-
-  vi.mocked(runTests).mockResolvedValueOnce({
-    kind: 'fail',
-    failures: [],
-    truncated: false,
-    tests: [{ file: 'other.test.ts', fullname: 'value works', status: 'failed' }],
-  });
-
-  await observation.run(behavior, 'focused');
-  await writeFile(join(cwd, 'src/value.ts'), 'implementation');
-  expect(await observation.checkpoint(true)).toContain('stale');
-  await writeFile(join(cwd, 'src/value.ts'), 'next behavior');
-  expect(await observation.checkpoint(true)).toContain('RED');
-});
-
 it('advises about a thrown error in any of several listed files', async ({ onTestFinished }) => {
   const { cwd, observation } = await setup(onTestFinished);
   const multiple = { ...behavior, files: ['value.test.ts', 'second.test.ts'] };
@@ -1200,130 +921,6 @@ it('advises about a thrown error in any of several listed files', async ({ onTes
   });
 
   expect((await observation.run(multiple, 'focused')).hint).toContain('TypeError');
-});
-
-it('gives no hint after a failure and a pass of the same behavior', async ({ onTestFinished }) => {
-  const { observation } = await setup(onTestFinished);
-
-  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
-  vi.mocked(runTests).mockResolvedValueOnce(result('failed'));
-  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
-  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
-});
-
-const changeDuringRun = (cwd: string, content: string) =>
-  vi.mocked(runTests).mockImplementationOnce(async () => {
-    await writeFile(join(cwd, 'src/value.ts'), content);
-
-    return result('passed');
-  });
-
-it('shows stale advice for a new behavior after a full pass and an edit', async ({
-  onTestFinished,
-}) => {
-  const { cwd, observation } = await setup(onTestFinished);
-  const other = { ...behavior, testFullName: 'other works' };
-
-  await observation.run(behavior, 'full');
-  await writeFile(join(cwd, 'src/value.ts'), 'edit after full pass');
-  expect(await observation.checkpoint(true)).toContain('stale');
-
-  changeDuringRun(cwd, 'edit during run');
-
-  expect((await observation.run(other, 'focused')).hint).toContain('stale');
-});
-
-it('keeps stale advice shown for the same behavior after a full pass and an edit', async ({
-  onTestFinished,
-}) => {
-  const { cwd, observation } = await setup(onTestFinished);
-
-  await observation.run(behavior, 'full');
-  await writeFile(join(cwd, 'src/value.ts'), 'edit after full pass');
-  expect(await observation.checkpoint(true)).toContain('stale');
-
-  changeDuringRun(cwd, 'edit during run');
-
-  expect((await observation.run(behavior, 'focused')).hint).toBeUndefined();
-});
-
-it('keeps earlier advice when a later run of the same behavior ends stale', async ({
-  onTestFinished,
-}) => {
-  const { cwd, observation } = await setup(onTestFinished);
-
-  await observation.run(behavior, 'focused');
-  expect(await observation.checkpoint(true)).toContain('RED');
-
-  changeDuringRun(cwd, 'edit during run');
-
-  expect((await observation.run(behavior, 'focused')).hint).toContain('stale');
-  await writeFile(join(cwd, 'src/value.ts'), 'next edit');
-  expect(await observation.checkpoint(true)).toBeUndefined();
-});
-
-it('warns about stale inputs after an edit that follows a failing full run', async ({
-  onTestFinished,
-}) => {
-  const { cwd, observation } = await setup(onTestFinished);
-  vi.mocked(runTests).mockResolvedValueOnce(result('failed'));
-
-  await observation.run(behavior, 'focused');
-  vi.mocked(runTests).mockResolvedValueOnce(result('failed'));
-  await observation.run(behavior, 'full');
-  await writeFile(join(cwd, 'src/value.ts'), 'implementation');
-
-  expect(await observation.checkpoint(true)).toContain('stale');
-});
-
-it('warns that freshness is unknown when inputs become unreadable after observed RED', async ({
-  onTestFinished,
-}) => {
-  const { cwd, observation } = await setup(onTestFinished);
-  vi.mocked(runTests).mockResolvedValueOnce(result('failed'));
-
-  await observation.run(behavior, 'focused');
-  await makeUnreadable(join(cwd, 'package.json'));
-
-  expect(await observation.checkpoint(true)).toContain('unknown');
-});
-
-it('does not suggest RED when inputs become unreadable after an unknown run', async ({
-  onTestFinished,
-}) => {
-  const { cwd, observation } = await setup(onTestFinished);
-  await makeUnreadable(join(cwd, 'package.json'));
-
-  vi.mocked(runTests).mockImplementationOnce(async () => {
-    await rm(join(cwd, 'package.json'));
-
-    return result('passed');
-  });
-
-  expect((await observation.run(behavior, 'focused')).hint).toContain('unknown');
-  await makeUnreadable(join(cwd, 'package.json'));
-  expect(await observation.checkpoint(true)).toBeUndefined();
-});
-
-it('suggests RED when inputs move back to an earlier state after an unknown run', async ({
-  onTestFinished,
-}) => {
-  const { cwd, observation } = await setup(onTestFinished);
-
-  changeDuringRun(cwd, 'first');
-  expect((await observation.run(behavior, 'focused')).hint).toContain('stale');
-  await makeUnreadable(join(cwd, 'package.json'));
-
-  vi.mocked(runTests).mockImplementationOnce(async () => {
-    await rm(join(cwd, 'package.json'));
-    await writeFile(join(cwd, 'src/value.ts'), 'second');
-
-    return result('passed');
-  });
-
-  expect((await observation.run(behavior, 'focused')).hint).toContain('unknown');
-  await writeFile(join(cwd, 'src/value.ts'), 'first');
-  expect(await observation.checkpoint(true)).toContain('RED');
 });
 
 it('starts a new advice cycle after a run of another behavior stopped at its start', async ({

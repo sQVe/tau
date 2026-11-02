@@ -5,23 +5,25 @@ import { errorMessage } from '../../errors.js';
 import { classifyPath, defaultTddConfig } from './config.js';
 import type { TddConfig } from './config.js';
 import { fingerprintInputs } from './inputFingerprint.js';
+import {
+  checkpoint,
+  checkpointNeedsInputHash,
+  compareInputs,
+  completeRun,
+  startRun,
+  testNames,
+} from './observationTransition.js';
+import type { CheckpointInput, CycleState, HintDecision } from './observationTransition.js';
 import { finishDiagnostics } from './runner/retention.js';
 import type { RunDiagnostics, RunnerResult } from './runner/types.js';
 import { runTests } from './runner/vitest.js';
-import type {
-  Behavior,
-  Freshness,
-  ObservationResult,
-  TestObservation,
-  TestScope,
-} from './types.js';
+import type { Behavior, ObservationResult, TestObservation, TestScope } from './types.js';
 
-interface LatestRun {
-  behavior: Behavior;
-  scope: TestScope;
-  kind: RunnerResult['kind'];
-  fingerprint: string | null;
-  freshness: Freshness;
+interface ObservationState {
+  cwd: string;
+  config: TddConfig;
+  cycle: CycleState;
+  pending: Promise<unknown>;
 }
 
 interface InputHash {
@@ -35,9 +37,6 @@ interface RunRequest {
   signal?: AbortSignal | undefined;
   onStart?: ((behavior: Behavior) => void) | undefined;
 }
-
-const testNames = (behavior: Behavior) =>
-  Array.isArray(behavior.testFullName) ? behavior.testFullName : [behavior.testFullName];
 
 const normalizeTestFile = async (cwd: string, config: TddConfig, file: string): Promise<string> => {
   const path = relative(cwd, resolve(cwd, file));
@@ -81,16 +80,6 @@ const normalizeBehavior = async (
   const files = [...new Set(normalized)].toSorted();
 
   return { ...behavior, files, testFullName: [...new Set(testNames(behavior))].toSorted() };
-};
-
-const identity = (behavior: Behavior) => JSON.stringify([behavior.files, testNames(behavior)]);
-
-const compareInputs = (before: string | null, after: string | null): Freshness => {
-  if (before === null || after === null) {
-    return 'unknown';
-  }
-
-  return before === after ? 'fresh' : 'stale';
 };
 
 const hashInputs = async (state: ObservationState, files: string[]): Promise<InputHash> => {
@@ -157,17 +146,6 @@ const hints = {
     'RED came from a thrown {errorType}, not a failed assertion; make the test fail on the expected behavior before implementing.',
 };
 
-interface ObservationState {
-  cwd: string;
-  config: TddConfig;
-  active: string | null;
-  observedRed: boolean;
-  latest: LatestRun | null;
-  shownHints: Set<keyof typeof hints>;
-  staleHintInput: string | null;
-  pending: Promise<unknown>;
-}
-
 const enqueue = <Result>(state: ObservationState, work: () => Promise<Result>): Promise<Result> => {
   const result = state.pending.then(work);
 
@@ -176,87 +154,10 @@ const enqueue = <Result>(state: ObservationState, work: () => Promise<Result>): 
   return result;
 };
 
-const hint = (
-  state: ObservationState,
-  condition: keyof typeof hints | undefined,
-  input: string | null = null,
-  errorType = 'error',
-): string | undefined => {
-  if (condition === undefined || state.shownHints.has(condition)) {
-    return undefined;
-  }
-
-  state.shownHints.add(condition);
-
-  if (condition === 'stale' || condition === 'unknown') {
-    state.staleHintInput = input;
-  }
-
-  return `Hint: ${hints[condition].replace('{errorType}', errorType)}`;
-};
-
-const sameAsLatest = (state: ObservationState, key: string): boolean =>
-  state.active === null && state.latest !== null && identity(state.latest.behavior) === key;
-
-const isExpectedImplementationEdit = (state: ObservationState, latest: LatestRun): boolean =>
-  state.observedRed && latest.scope === 'focused' && latest.freshness === 'stale';
-
-const suggestsMissingRed = (
-  state: ObservationState,
-  freshness: 'stale' | 'unknown',
-  current: string | null,
-): boolean => {
-  if (state.observedRed || !state.shownHints.has(freshness)) {
-    return false;
-  }
-
-  return current !== null && current !== state.staleHintInput;
-};
-
-const editHint = (state: ObservationState, current: string | null): string | undefined => {
-  const latest = state.latest;
-
-  if (latest !== null && latest.freshness !== 'fresh') {
-    const freshness = latest.freshness;
-
-    // Changing production is expected while implementing an observed focused failure.
-    if (isExpectedImplementationEdit(state, latest)) {
-      return undefined;
-    }
-
-    // Keep stale-first after verification. Only a later input change can suggest missing RED.
-    if (suggestsMissingRed(state, freshness, current)) {
-      return hint(state, 'red');
-    }
-
-    return hint(state, freshness, current);
-  }
-
-  if (latest?.scope === 'full' && latest.kind === 'pass') {
-    return undefined;
-  }
-
-  return hint(state, state.observedRed ? undefined : 'red');
-};
-
-const runHint = (
-  state: ObservationState,
-  scope: TestScope,
-  report: RunnerResult,
-  freshness: Freshness,
-): 'stale' | 'unknown' | undefined => {
-  if (freshness !== 'fresh') {
-    return freshness;
-  }
-
-  if (scope === 'full' && report.kind === 'pass') {
-    state.active = null;
-    state.observedRed = false;
-    state.shownHints.clear();
-  }
-
-  return undefined;
-};
+const hintText = (decision: HintDecision | undefined): string | undefined =>
+  decision === undefined
+    ? undefined
+    : `Hint: ${hints[decision.kind].replace('{errorType}', decision.errorType ?? 'error')}`;
 
 const saveRunRecord = async (diagnostics: RunDiagnostics | undefined, record: unknown) => {
   if (diagnostics === undefined) {
@@ -282,34 +183,23 @@ const checkpointWork = async (
   state: ObservationState,
   productionEdit: boolean,
 ): Promise<string | undefined> => {
-  const latest = state.latest;
-  const canSuggestRed = !state.observedRed && !state.shownHints.has('red');
-  let current: string | null = null;
+  const latest = state.cycle.latest;
+  let input: CheckpointInput = { kind: 'skipped' };
 
-  if (latest !== null && latest.fingerprint !== null) {
-    if (latest.freshness !== 'stale' || canSuggestRed) {
-      const inputs = await hashInputs(state, latest.behavior.files);
+  if (latest !== null && checkpointNeedsInputHash(state.cycle)) {
+    const inputs = await hashInputs(state, latest.behavior.files);
 
-      current = inputs.hash;
-
-      if (current === null) {
-        latest.freshness = 'unknown';
-      } else if (current !== latest.fingerprint) {
-        latest.freshness = 'stale';
-      } else if (latest.freshness === 'unknown') {
-        latest.freshness = 'fresh';
-      }
-    }
+    input = inputs.hash === null ? { kind: 'unavailable' } : { kind: 'value', hash: inputs.hash };
   }
 
-  if (!productionEdit) {
-    return undefined;
-  }
+  const transition = checkpoint(state.cycle, input, productionEdit);
 
-  return editHint(state, current);
+  state.cycle = transition.state;
+
+  return hintText(transition.hint);
 };
 
-const checkpoint = (state: ObservationState, productionEdit: boolean) =>
+const checkpointObservation = (state: ObservationState, productionEdit: boolean) =>
   enqueue(state, () => checkpointWork(state, productionEdit));
 
 const runTestsFor = (
@@ -340,14 +230,8 @@ const performRun = async (
   request: RunRequest,
 ): Promise<ObservationResult> => {
   const behavior = await normalizeBehavior(state.cwd, state.config, request.requested);
-  const key = identity(behavior);
 
-  if (state.active !== key && !sameAsLatest(state, key)) {
-    state.observedRed = false;
-    state.shownHints.clear();
-  }
-
-  state.active = key;
+  state.cycle = startRun(state.cycle, behavior);
 
   const before = await hashInputs(state, behavior.files);
 
@@ -356,34 +240,18 @@ const performRun = async (
   const report = await runTestsFor(state, behavior, request);
   const after = await hashInputs(state, behavior.files);
   const freshness = compareInputs(before.hash, after.hash);
-  const previous = state.latest;
 
-  state.latest = {
+  const transition = completeRun(state.cycle, {
     behavior,
     scope: request.scope,
     kind: report.kind,
     fingerprint: after.hash,
     freshness,
-  };
+    selectionFailed: selectedFailed(state.cwd, behavior, report),
+    thrownErrorType: selectedThrownErrorType(state.cwd, behavior, report),
+  });
 
-  let thrownType: string | null = null;
-
-  if (
-    freshness === 'fresh' &&
-    request.scope === 'focused' &&
-    selectedFailed(state.cwd, behavior, report)
-  ) {
-    if (!state.observedRed) {
-      state.shownHints.clear();
-    }
-
-    state.observedRed = true;
-    thrownType = selectedThrownErrorType(state.cwd, behavior, report);
-  }
-
-  if (previous?.freshness !== freshness && freshness === 'fresh') {
-    state.shownHints.clear();
-  }
+  state.cycle = transition.state;
 
   const inputs = reportedInputs(before, after);
 
@@ -406,10 +274,7 @@ const performRun = async (
     inputs,
     runPath,
     report,
-    hint:
-      thrownType === null
-        ? hint(state, runHint(state, request.scope, report, freshness), after.hash)
-        : hint(state, 'thrown', after.hash, thrownType),
+    hint: hintText(transition.hint),
   };
 };
 
@@ -423,11 +288,13 @@ export const createTestObservation = (
   const state: ObservationState = {
     cwd,
     config,
-    active: null,
-    observedRed: false,
-    latest: null,
-    shownHints: new Set(),
-    staleHintInput: null,
+    cycle: {
+      active: null,
+      observedRed: false,
+      latest: null,
+      shownHints: new Set(),
+      staleHintInput: null,
+    },
     pending: Promise.resolve(),
   };
 
@@ -438,7 +305,7 @@ export const createTestObservation = (
       signal?: AbortSignal,
       onStart?: (behavior: Behavior) => void,
     ) => runObservation(state, { requested, scope, signal, onStart }),
-    checkpoint: (productionEdit: boolean) => checkpoint(state, productionEdit),
+    checkpoint: (productionEdit: boolean) => checkpointObservation(state, productionEdit),
   };
 };
 
