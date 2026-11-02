@@ -99,7 +99,9 @@ const browserLoginCommand = (
       },
       context.ui,
     );
-  } catch {
+  } catch (error) {
+    context.ui.notify(errorMessage(error), 'error');
+
     return undefined;
   }
 };

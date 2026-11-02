@@ -374,3 +374,44 @@ it('gives the manager the configured browser login command', async ({ onTestFini
 
   expect(event.systemPromptOptions.appendSystemPrompt).toContain(loginCommand);
 });
+
+it('reports a broken browser login command and leaves it out of the prompt', async ({
+  onTestFinished,
+}) => {
+  vi.stubEnv('HC_TERMINAL_ID', manager);
+
+  const fixture = await workerFixture(onTestFinished);
+
+  writeFileSync(
+    join(fixture.directory, 'tau.json'),
+    JSON.stringify({ browser: { loginCommand: 1 } }),
+  );
+
+  const fake = hcSetup();
+
+  vi.mocked(connect).mockImplementation(fake.connect);
+
+  const pi = fakeExtensionApi({ exec: fake.exec });
+
+  subagentsExtension(pi.pi, registerCapacityRefusal(pi.pi));
+
+  const context = {
+    ...toolContext(fixture),
+    sessionManager: { getEntries: () => [], getSessionId: () => 'parent' },
+  };
+
+  for (const handler of pi.handlers.get('session_start') ?? []) {
+    await handler({} as never, context as unknown as ExtensionContext);
+  }
+
+  expect(fixture.notify).toHaveBeenCalledWith(
+    expect.stringContaining('browser.loginCommand must be a string'),
+    'error',
+  );
+
+  const event = { systemPromptOptions: { appendSystemPrompt: '', selectedTools: ['subagent'] } };
+
+  pi.handler('before_agent_start')(event, context as unknown as ExtensionContext);
+
+  expect(event.systemPromptOptions.appendSystemPrompt).not.toContain(loginCommand);
+});
