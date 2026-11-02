@@ -11,6 +11,14 @@ export interface ReuseRequest {
   mergeBase: string | undefined;
 }
 
+interface SavedReuseFacts {
+  directory: string;
+  recordedBase: string | null;
+  recordedHash: string;
+  recheck: Buffer;
+  recheckHash: string;
+}
+
 export interface ReuseResult extends Reuse {
   recordedBase: string | null;
   paths: DiffComparison;
@@ -71,18 +79,12 @@ const listReports = async (directory: string) => {
   return reportFileNames.filter((_, index) => exists[index] === true);
 };
 
-export const readReuse = async (root: string, request: ReuseRequest): Promise<ReuseResult> => {
-  if (request.directory === undefined) {
-    throw new Error('reuse needs directory, a .tau/workers/review-* directory.');
-  }
-
-  if (request.mergeBase === undefined) {
-    throw new Error('reuse needs mergeBase.');
-  }
-
-  const saved = await readSavedRecapture(root, request.directory);
-
-  const mergeBase = await resolveCommit(root, request.mergeBase);
+export const decideSavedReuse = async (
+  root: string,
+  saved: SavedReuseFacts,
+  revision: string,
+): Promise<ReuseResult> => {
+  const mergeBase = await resolveCommit(root, revision);
   const recordedBase = saved.recordedBase;
   const baseIsAncestor = recordedBase !== null && (await isAncestor(root, recordedBase, mergeBase));
   const comparison = compareDiffs(saved.recheck, await readBranchDiff(root, mergeBase));
@@ -102,4 +104,18 @@ export const readReuse = async (root: string, request: ReuseRequest): Promise<Re
     paths: comparison,
     reports: await listReports(saved.directory),
   };
+};
+
+export const readReuse = async (root: string, request: ReuseRequest): Promise<ReuseResult> => {
+  if (request.directory === undefined) {
+    throw new Error('reuse needs directory, a .tau/workers/review-* directory.');
+  }
+
+  if (request.mergeBase === undefined) {
+    throw new Error('reuse needs mergeBase.');
+  }
+
+  const saved = await readSavedRecapture(root, request.directory);
+
+  return decideSavedReuse(root, saved, request.mergeBase);
 };

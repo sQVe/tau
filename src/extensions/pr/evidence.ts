@@ -9,10 +9,14 @@ import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { readRepositoryArgv } from '../../config/repositoryCommand.js';
 import { errorMessage, isMissingFile } from '../../errors.js';
 import { readGit, runGit } from '../../git.js';
-import { readReviewEvidence, scanMarkers } from '../../reviewCapture/evidence.js';
+import { readInspectedEvidence, scanMarkers } from '../../reviewCapture/evidence.js';
 import type { MarkerLine, ReviewEvidence } from '../../reviewCapture/evidence.js';
-import type { CoverageDecision, CoverageLinkRequest } from '../../reviewCapture/reviewCapture.js';
-import { checkReviewDirectory } from '../../reviewCapture/reviewCapture.js';
+import type {
+  CoverageDecision,
+  CoverageLinkRequest,
+  ReviewInspection,
+} from '../../reviewCapture/reviewCapture.js';
+import { checkReviewDirectory, inspectReview } from '../../reviewCapture/reviewCapture.js';
 import { readChainCoverage } from './coverage.js';
 import {
   checkLogGaps,
@@ -28,7 +32,7 @@ import type {
   ModifiedCheckLog,
   PublicationGap,
 } from './evidenceDecisions.js';
-import { readReuse } from './reuse.js';
+import { decideSavedReuse } from './reuse.js';
 import type { ReuseResult } from './reuse.js';
 import { readTarget } from './target.js';
 import type { Target } from './target.js';
@@ -68,6 +72,39 @@ const readFailure = (
   reason: errorMessage(error),
 });
 
+const readInspectionReuse = async (
+  root: string,
+  inspection: ReviewInspection,
+  mergeBase: string,
+  evidence: PublicationEvidence,
+) => {
+  if (inspection.recheck.status === 'error') {
+    evidence.gaps.push({ kind: 'reuse', reason: inspection.recheck.error });
+
+    return;
+  }
+
+  try {
+    evidence.reuse = await decideSavedReuse(
+      root,
+      {
+        directory: inspection.directory,
+        recordedBase: inspection.record.base,
+        recordedHash: inspection.record.hash,
+        recheck: inspection.recheck.bytes,
+        recheckHash: inspection.recheck.hash,
+      },
+      mergeBase,
+    );
+
+    if (evidence.reuse.status === 'mismatch') {
+      evidence.gaps.push({ kind: 'reuseMismatch', reasons: evidence.reuse.reasons });
+    }
+  } catch (error) {
+    evidence.gaps.push(readFailure('reuse', error));
+  }
+};
+
 const readReview = async (
   root: string,
   request: PublicationRequest,
@@ -89,21 +126,26 @@ const readReview = async (
     return;
   }
 
-  // Reuse must read the saved recheck before the evidence reader recaptures freshness.
-  if (evidence.target !== null) {
-    try {
-      evidence.reuse = await readReuse(root, { directory, mergeBase: evidence.target.mergeBase });
+  let inspection: ReviewInspection;
 
-      if (evidence.reuse.status === 'mismatch') {
-        evidence.gaps.push({ kind: 'reuseMismatch', reasons: evidence.reuse.reasons });
-      }
-    } catch (error) {
+  try {
+    inspection = await inspectReview(root, directory);
+  } catch (error) {
+    if (evidence.target !== null) {
       evidence.gaps.push(readFailure('reuse', error));
     }
+
+    evidence.gaps.push(readFailure('review', error));
+
+    return;
+  }
+
+  if (evidence.target !== null) {
+    await readInspectionReuse(root, inspection, evidence.target.mergeBase, evidence);
   }
 
   try {
-    evidence.review = await readReviewEvidence(root, directory);
+    evidence.review = await readInspectedEvidence(root, inspection);
 
     evidence.gaps.push(
       ...evidence.review.gaps.map((gap): PublicationGap => ({ kind: 'reviewEvidence', gap })),
