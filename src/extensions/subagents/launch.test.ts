@@ -194,7 +194,7 @@ const uncertainSetup = (
   });
 
   const runtime: LaunchRuntime = {
-    pi: { getCommands: () => [] } as unknown as ExtensionAPI,
+    pi: { getCommands: () => [], getAllTools: () => [] } as unknown as ExtensionAPI,
     hc: {
       exec: fake.exec,
       connect: () => {
