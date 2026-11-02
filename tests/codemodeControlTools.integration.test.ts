@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,24 +8,21 @@ import { SessionManager, createCodemodeExtension } from '@earendil-works/pi-codi
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import askUserQuestionExtension from '../src/extensions/askUserQuestion/askUserQuestion.js';
-import { readWorkerActivity } from '../src/extensions/subagents/activity.js';
-import { nativeIdentity, seedSession } from '../src/extensions/subagents/assignment.js';
-import { fixtureLoadout } from '../src/extensions/subagents/fixtures/loadout.js';
-import { readPendingQuestion } from '../src/extensions/subagents/questionRecords.js';
 import {
-  publish,
-  readReport,
-  recordEvent,
-  validateTask,
-  workerRecordsDirectory,
-} from '../src/extensions/subagents/records.js';
+  assignmentDirectory,
+  assignmentPath,
+  readAssignment,
+  writeAssignment,
+} from '../src/extensions/subagents/assignment.js';
+import type { Assignment } from '../src/extensions/subagents/assignment.js';
 import subagentsExtension, {
   registerCapacityRefusal,
 } from '../src/extensions/subagents/subagents.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import { skillTools } from '../src/skillTools.js';
-import { createBoundSession } from './piSession.js';
+import { createHcFake } from './hcFake.js';
+import { createPiSession } from './piSession.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 interface ToolOutcome {
@@ -33,6 +30,14 @@ interface ToolOutcome {
   isError: boolean;
   text: string;
 }
+
+const workerTerminal = 'worker';
+
+const managerTools = ['subagent'];
+
+const workerControlTools = new Set(['subagent_report', 'ask_user_question']);
+
+const managerControlTools = new Set(['subagent', 'ask_user_question']);
 
 const safetyExtension = join(
   dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
@@ -59,7 +64,8 @@ const handover = 'Changes: None\nEvidence: None\nDecisions: None\nConcerns: None
 
 const codemodeCall = (code: string) => fauxAssistantMessage([fauxToolCall('codemode', { code })]);
 
-// Runs a dispatched worker task whose model follows `responses`, then waits until Pi settles.
+// Runs a worker task whose model follows `responses`. The responses and subscription are set before
+// the session binds, because the worker asks for its task during `session_start`.
 const runWorker = async (responses: FauxResponseStep[]) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-codemode-worker-');
 
@@ -68,73 +74,93 @@ const runWorker = async (responses: FauxResponseStep[]) => {
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
-  const taskDirectory = join(directory, 'task');
-  mkdirSync(taskDirectory);
   vi.stubEnv('TAU_ROLE', 'worker');
-  vi.stubEnv('TAU_WORKER_RECORD', taskDirectory);
+  vi.stubEnv('HC_TERMINAL_ID', workerTerminal);
   const provider = fauxProvider({ provider: 'tau-codemode-fixture' });
   const model = provider.getModel();
+  const assignmentId = '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f';
+  const sessionId = '11111111-1111-1111-1111-111111111111';
+  const path = assignmentPath(assignmentId);
+  const sessionFile = join(assignmentDirectory(assignmentId), `${sessionId}.jsonl`);
 
-  const task = validateTask({
-    version: 11,
-    taskId: 'codemode-task',
+  const loadout: Assignment['loadout'] = {
+    harness: 'pi',
+    profile: 'worker',
+    role: 'investigation',
+    model: `${model.provider}/${model.id}`,
+    thinking: 'off',
+    cwd: directory,
+    agentDirectory: directory,
+    permissions: 'trusted-full-tools',
+    instructions: 'Inspect the fixture only.',
+    tools: ['read', 'bash', 'codemode', 'ask_user_question'],
+    skills: [],
+    instructionSets: [],
+    packages: [],
+  };
+
+  await writeAssignment({
+    version: 1,
+    assignmentId,
     task: 'Inspect source.txt.',
+    acceptance: [],
+    label: null,
+    profile: 'worker',
+    loadout,
+    routing: null,
+    packageSnapshot: null,
+    session: { id: sessionId, file: sessionFile },
     parentSession: join(directory, 'parent.jsonl'),
-    parentSessionId: 'parent',
-    ...nativeIdentity(taskDirectory),
-    createdAt: Date.now(),
+    cwd: directory,
+    parentTerminal: 'manager',
     deadline: Date.now() + 30_000,
-    cancellationBudget: 2000,
-    monotonicDeadline: Date.now() + 30_000,
-    loadout: {
-      harness: 'pi',
-      profile: 'worker',
-      role: 'investigation',
-      model: `${model.provider}/${model.id}`,
-      thinking: 'off',
-      cwd: directory,
-      agentDirectory: directory,
-      permissions: 'trusted-full-tools',
-      instructions: 'Inspect the fixture only.',
-      tools: ['read', 'bash', 'codemode', 'ask_user_question'],
-      skills: [],
-      instructionSets: [],
-      packages: [],
-    },
+    createdAt: Date.now(),
+    report: null,
   });
 
-  publish(taskDirectory, 'task.json', task);
-  vi.stubEnv('TAU_WORKER_TOOLS', JSON.stringify(workerTools(task.loadout, skillTools)));
+  const hc = createHcFake();
 
-  seedSession({
-    file: task.nativeSessionFile,
-    id: task.nativeSessionId,
-    cwd: task.loadout.cwd,
-    parentSession: task.parentSession,
-    createdAt: task.createdAt,
-  });
+  hc.reply(
+    'get',
+    JSON.stringify({
+      address: workerTerminal,
+      state: 'live',
+      parent: 'manager',
+      labels: { 'tau.assignment': path },
+    }),
+  );
 
   writeFileSync(join(directory, 'source.txt'), 'fixture-source');
 
-  const { session } = await createBoundSession(onTestFinished, {
+  const created = await createPiSession(onTestFinished, {
     cwd: directory,
     agentDirectory: directory,
     providers: [provider],
-    tools: workerTools(task.loadout, skillTools),
-    sessionManager: SessionManager.open(task.nativeSessionFile),
+    tools: workerTools(loadout, skillTools),
+    sessionManager: SessionManager.open(sessionFile),
     settings: { compaction: { enabled: false }, retry: { enabled: false } },
     extensionPaths: [safetyExtension],
     extensionFactories: [
       createCodemodeExtension({ mode: 'on' }),
       askUserQuestionExtension,
-      workerExtension,
+      (pi) => {
+        pi.exec = hc.exec;
+
+        workerExtension(pi);
+      },
     ],
   });
+
+  if (created.extensionsResult.errors.length > 0) {
+    throw new Error(
+      `Extensions failed to load: ${JSON.stringify(created.extensionsResult.errors)}`,
+    );
+  }
 
   const outcomes: ToolOutcome[] = [];
   const settled = Promise.withResolvers<undefined>();
 
-  session.subscribe((event) => {
+  created.session.subscribe((event) => {
     if (event.type === 'tool_execution_end') {
       outcomes.push({
         toolName: event.toolName,
@@ -149,37 +175,13 @@ const runWorker = async (responses: FauxResponseStep[]) => {
   });
 
   provider.setResponses(responses);
-  publish(taskDirectory, 'dispatch.json', { taskId: task.taskId });
+  await created.session.bindExtensions({});
   await settled.promise;
 
-  return { taskDirectory, taskId: task.taskId, outcomes };
+  return { outcomes, path };
 };
 
-const savedTaskId = 'saved-task';
-
-const seedStoppedChild = (directory: string, sessionManager: SessionManager): void => {
-  const taskDirectory = join(workerRecordsDirectory(), savedTaskId);
-  mkdirSync(taskDirectory, { recursive: true });
-
-  const task = validateTask({
-    version: 11,
-    taskId: savedTaskId,
-    task: 'Inspect source.txt.',
-    parentSession: sessionManager.getSessionFile(),
-    parentSessionId: sessionManager.getSessionId(),
-    ...nativeIdentity(taskDirectory),
-    createdAt: 1000,
-    deadline: 20_000,
-    cancellationBudget: 1000,
-    monotonicDeadline: 20_000,
-    loadout: fixtureLoadout(directory),
-  });
-
-  publish(taskDirectory, 'task.json', task);
-  recordEvent(taskDirectory, savedTaskId, 'cleanup', { detail: 'Pane removed.', stopped: true });
-};
-
-// Runs one prompt in a manager session outside herdr, whose model follows `responses`.
+// Runs one prompt in a manager session whose model follows `responses`.
 const runManager = async (responses: FauxResponseStep[]) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-codemode-manager-');
 
@@ -189,13 +191,10 @@ const runManager = async (responses: FauxResponseStep[]) => {
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   vi.stubEnv('TAU_ROLE', '');
-  vi.stubEnv('HERDR_ENV', '0');
-  vi.stubEnv('HERDR_PANE_ID', '');
   const provider = fauxProvider({ provider: 'tau-codemode-manager' });
   const sessionManager = SessionManager.create(directory, join(directory, 'sessions'));
-  seedStoppedChild(directory, sessionManager);
 
-  const { session } = await createBoundSession(onTestFinished, {
+  const { session } = await createPiSession(onTestFinished, {
     cwd: directory,
     agentDirectory: directory,
     providers: [provider],
@@ -210,6 +209,8 @@ const runManager = async (responses: FauxResponseStep[]) => {
       },
     ],
   });
+
+  await session.bindExtensions({});
 
   const outcomes: ToolOutcome[] = [];
 
@@ -239,19 +240,8 @@ const settle = (calls: string[]) =>
 
 const discovery = [
   'const listed = ALL_TOOLS.map((tool) => tool.name);',
-  "const found = (await searchTools('subagent worker report question progress ask user', { limit: 50 })).map((tool) => tool.name);",
+  "const found = (await searchTools('subagent worker report ask user', { limit: 50 })).map((tool) => tool.name);",
 ].join('\n');
-
-const workerControlTools = new Set([
-  'subagent_report',
-  'subagent_question',
-  'subagent_progress',
-  'ask_user_question',
-]);
-
-const managerTools = ['subagent'];
-
-const managerControlTools = new Set(['subagent', 'ask_user_question']);
 
 const stopWithoutReport = [
   fauxAssistantMessage('Stopping without a report.'),
@@ -261,13 +251,13 @@ const stopWithoutReport = [
 it('fails a script call to subagent_report without saving a report', async () => {
   const report = JSON.stringify({ outcome: 'success', summary: handover, evidence: [] });
 
-  const { taskDirectory, taskId, outcomes } = await runWorker([
+  const { outcomes, path } = await runWorker([
     codemodeCall(`${settle([`tools.subagent_report(${report})`])}\nreturn outcomes;`),
     ...stopWithoutReport,
   ]);
 
   expect(scriptValue(outcomes)).toEqual(['rejected']);
-  expect(readReport(taskDirectory, taskId)).toBeUndefined();
+  expect((await readAssignment(path))?.report).toBeNull();
 });
 
 it('hides worker control tools from scripts and saves no record for their calls', async () => {
@@ -288,29 +278,19 @@ it('hides worker control tools from scripts and saves no record for their calls'
 
   const script = [
     discovery,
-    settle([
-      `tools.subagent_report(${report})`,
-      "tools.subagent_question({ question: 'Which file?' })",
-      "tools.subagent_progress({ description: 'Reading source' })",
-      `tools.ask_user_question(${questionnaire})`,
-    ]),
+    settle([`tools.subagent_report(${report})`, `tools.ask_user_question(${questionnaire})`]),
     'return { listed, found, outcomes };',
   ].join('\n');
 
-  const { taskDirectory, taskId, outcomes } = await runWorker([
-    codemodeCall(script),
-    ...stopWithoutReport,
-  ]);
+  const { outcomes, path } = await runWorker([codemodeCall(script), ...stopWithoutReport]);
 
   const value = scriptValue(outcomes) as { listed: string[]; found: string[]; outcomes: unknown[] };
 
   expect(value.listed).toContain('read');
   expect(value.listed.filter((name) => workerControlTools.has(name))).toEqual([]);
   expect(value.found.filter((name) => workerControlTools.has(name))).toEqual([]);
-  expect(value.outcomes).toEqual(['rejected', 'rejected', 'rejected', 'rejected']);
-  expect(readReport(taskDirectory, taskId)).toBeUndefined();
-  expect(readPendingQuestion(taskDirectory, taskId)).toBeUndefined();
-  expect(readWorkerActivity(taskDirectory, taskId)?.description).toBeUndefined();
+  expect(value.outcomes).toEqual(['rejected', 'rejected']);
+  expect((await readAssignment(path))?.report).toBeNull();
 });
 
 it('returns ordinary results beside a refused control call in one script', async () => {
@@ -325,17 +305,14 @@ it('returns ordinary results beside a refused control call in one script', async
     'return outcomes;',
   ].join('\n');
 
-  const { taskDirectory, taskId, outcomes } = await runWorker([
-    codemodeCall(script),
-    ...stopWithoutReport,
-  ]);
+  const { outcomes, path } = await runWorker([codemodeCall(script), ...stopWithoutReport]);
 
   const [read, bash, control] = scriptValue(outcomes) as unknown[];
 
   expect(read).toContain('fixture-source');
   expect(bash).toBe('bash-ok');
   expect(control).toBe('rejected');
-  expect(readReport(taskDirectory, taskId)).toBeUndefined();
+  expect((await readAssignment(path))?.report).toBeNull();
 });
 
 it('lists the manager subagent tool but refuses it from a script', async () => {

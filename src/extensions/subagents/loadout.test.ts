@@ -24,7 +24,7 @@ import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js'
 import { skillTools } from '../../skillTools.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import * as loadoutModule from './loadout.js';
-import { checkWorkerRuntime, validateSavedLoadout } from './loadout.js';
+import { checkWorkerRuntime } from './loadout.js';
 import { listProfiles, resolveProfile, parseProfile } from './profiles.js';
 import { workerTools } from './workerTools.js';
 
@@ -288,7 +288,7 @@ it('refuses profile files that set a model or use the reserved default name', ({
   expect(() => resolveProfile(directory, directory, false, 'default')).toThrow(named);
 });
 
-it('resolves and replays a worker model whose ID contains a slash', async ({ onTestFinished }) => {
+it('resolves a worker model whose ID contains a slash', async ({ onTestFinished }) => {
   const { context, request } = await workerFixture(onTestFinished);
   const nested = fauxProvider({ provider: 'openrouter', models: [{ id: 'meta/llama' }] });
 
@@ -305,44 +305,6 @@ it('resolves and replays a worker model whose ID contains a slash', async ({ onT
   const saved = resolveLoadout(launch, withNested);
 
   expect(saved.model).toBe('openrouter/meta/llama');
-  expect(validateSavedLoadout(saved, withNested)).toEqual(saved);
-});
-
-it('replays a saved loadout only under the same trust, directories, model, and thinking', async ({
-  onTestFinished,
-}) => {
-  const { directory, context, request } = await workerFixture(onTestFinished);
-  const saved = resolveLoadout(request, context);
-
-  expect(validateSavedLoadout(saved, context)).toEqual(saved);
-
-  expect(() => validateSavedLoadout({ ...saved, providerFingerprint: 'f' }, context)).toThrow(
-    'Invalid saved',
-  );
-
-  expect(() => validateSavedLoadout(saved, { ...context, isProjectTrusted: () => false })).toThrow(
-    'trusted',
-  );
-
-  expect(() => validateSavedLoadout({ ...saved, cwd: join(directory, 'wrong') }, context)).toThrow(
-    'cwd',
-  );
-
-  expect(() =>
-    validateSavedLoadout({ ...saved, agentDirectory: join(directory, 'wrong') }, context),
-  ).toThrow('directory');
-
-  expect(() => validateSavedLoadout({ ...saved, model: 'missing/model' }, context)).toThrow(
-    'no fallback',
-  );
-
-  expect(() => validateSavedLoadout({ ...saved, thinking: 'high' }, context)).toThrow('thinking');
-
-  const skill = join(directory, 'skills', 'SKILL.md');
-
-  expect(() => validateSavedLoadout({ ...saved, skills: [skill] }, context)).toThrow(
-    `skill is missing: ${skill}`,
-  );
 });
 
 const allowModels = (path: string, allowedModels: string[] | undefined) => {
@@ -373,15 +335,12 @@ it.for<[string, string[] | undefined, string[] | undefined]>([
   ['an absent list', undefined, undefined],
   ['an allowed model', ['{model}', 'other/model'], undefined],
   ['a repository list that narrows', ['{model}', 'other/model'], ['{model}']],
-])(
-  'launches and replays workers under allowedModels: %s',
-  async ([, user, repository], { onTestFinished }) => {
-    const { context, request, saved } = await allowedFixture(onTestFinished, user, repository);
+])('launches workers under allowedModels: %s', async ([, user, repository], { onTestFinished }) => {
+  const { context, request, saved } = await allowedFixture(onTestFinished, user, repository);
 
-    expect(resolveLoadout(request, context).model).toBe(request.model);
-    expect(validateSavedLoadout(saved, context)).toEqual(saved);
-  },
-);
+  expect(resolveLoadout(request, context).model).toBe(request.model);
+  expect(saved).toBeDefined();
+});
 
 it.for<[string, string[] | undefined, string[] | undefined, string]>([
   ['a model outside the user list', ['other/model'], undefined, 'tau.json'],
@@ -398,22 +357,15 @@ it.for<[string, string[] | undefined, string[] | undefined, string]>([
     '.pi/tau.json',
   ],
 ])(
-  'refuses to launch or replay workers under allowedModels: %s',
+  'refuses to launch workers under allowedModels: %s',
   async ([, user, repository, refusingFile], { onTestFinished }) => {
-    const { directory, context, request, saved } = await allowedFixture(
-      onTestFinished,
-      user,
-      repository,
-    );
+    const { directory, context, request } = await allowedFixture(onTestFinished, user, repository);
 
-    for (const refused of [
-      () => resolveLoadout(request, context),
-      () => validateSavedLoadout(saved, context),
-    ]) {
-      expect(refused).toThrow(request.model);
-      expect(refused).toThrow('other/model');
-      expect(refused).toThrow(join(directory, refusingFile));
-    }
+    const refused = () => resolveLoadout(request, context);
+
+    expect(refused).toThrow(request.model);
+    expect(refused).toThrow('other/model');
+    expect(refused).toThrow(join(directory, refusingFile));
   },
 );
 

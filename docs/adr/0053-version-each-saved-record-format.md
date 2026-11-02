@@ -64,8 +64,8 @@ Other records move to this path when their format next changes.
 
 A change to a record writer keeps frozen fixtures, saved as files, for each supported version. Tests
 read the previous and current fixtures with the current reader. They also check that a newer and a
-malformed fixture are skipped without hiding other records. Task records, in
-`src/extensions/subagents/fixtures/taskRecords/`, are the example to copy.
+malformed fixture are skipped without hiding other records. Assignment records, in
+`src/extensions/subagents/fixtures/assignment/`, are the example to copy.
 
 ## Consequences
 

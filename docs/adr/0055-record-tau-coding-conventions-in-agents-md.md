@@ -42,7 +42,7 @@ agent needs before designing: the contract test for read paths, and record versi
 - The names guide agents. Contract tests enforce the rule. Every new public read path that touches
   saved records or running workers gets a contract test. It covers normal, missing, and malformed
   evidence, and asserts that saved records are unchanged and that no worker action happened.
-- The example to copy is the read path in `src/extensions/subagents/records.test.ts`.
+- The example to copy is the read path in `src/extensions/subagents/assignment.test.ts`.
 
 ### Outcomes versus failures
 

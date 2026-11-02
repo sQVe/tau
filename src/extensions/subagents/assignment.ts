@@ -1,6 +1,7 @@
-import { randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
@@ -9,7 +10,6 @@ import { Value } from 'typebox/value';
 
 import { readVersionedRecord, writeRecord } from '../../record.js';
 import { describeSchemaProblem } from '../../schema.js';
-import { checkoutFolder } from './records.js';
 import { loadoutSchema, routingSchema, savedReportSchema, text } from './types.js';
 
 export type SavedReport = Static<typeof savedReportSchema>;
@@ -22,16 +22,13 @@ export interface PiSessionSeed {
   createdAt: number;
 }
 
-export interface NativeIdentity {
-  nativeSessionId: string;
-  nativeSessionFile: string;
-}
+const checkoutHashLength = 8;
 
-export const nativeIdentity = (directory: string): NativeIdentity => {
-  const nativeSessionId = randomUUID();
+// Each Tau checkout keeps its own assignments, so a branch that changes the record format never
+// breaks another checkout. This module sits three directories below the package root.
+const checkoutRoot = realpathSync(fileURLToPath(new URL('../../../', import.meta.url)));
 
-  return { nativeSessionId, nativeSessionFile: join(directory, `${nativeSessionId}.jsonl`) };
-};
+export const checkoutFolder = `${basename(checkoutRoot)}-${createHash('sha256').update(checkoutRoot).digest('hex').slice(0, checkoutHashLength)}`;
 
 const assignmentVersion = 1;
 

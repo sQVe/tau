@@ -1,56 +1,110 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-
 import type { AgentBeforeSettleEvent } from '@earendil-works/pi-coding-agent';
-import { expect, it, onTestFinished, vi } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import type { Assignment } from './assignment.js';
 import { remindToReport } from './reportReminder.js';
-import type { Task } from './types.js';
-import type { WorkerExtensionState } from './workerExtensionState.js';
+import type { ReminderState } from './reportReminder.js';
 
-const monotonicDeadline = 50_000;
-const cancellationBudget = 1000;
-const nanosecondsPerMillisecond = 1_000_000;
+const createdAt = 1_000_000;
+const deadline = createdAt + 30_000;
 
-const settingWorker = (monotonicNow: number) => {
-  const directory = temporaryDirectory(onTestFinished, 'tau-report-reminder-');
+const assignment = (overrides: Partial<Assignment> = {}): Assignment =>
+  ({
+    assignmentId: 'a',
+    task: 'Work.',
+    acceptance: [],
+    createdAt,
+    deadline,
+    report: null,
+    ...overrides,
+  }) as Assignment;
 
-  onTestFinished(() => {
-    vi.restoreAllMocks();
-  });
-
-  vi.spyOn(process.hrtime, 'bigint').mockReturnValue(
-    BigInt(monotonicNow * nanosecondsPerMillisecond),
-  );
-
-  const state = {
-    directory,
-    task: { taskId: 'task', cancellationBudget } as Task,
-    monotonicDeadline,
-    accepted: true,
-    settled: false,
-    reported: false,
-    remindAfterRefusal: false,
-    pendingQuestion: undefined,
-    runError: undefined,
-  } as WorkerExtensionState;
-
-  return { directory, state };
-};
+const state = (overrides: Partial<ReminderState> = {}): ReminderState => ({
+  assignment: assignment(),
+  refusal: { incompleteRefused: false, reminderSent: false, remindAfterRefusal: false },
+  runError: undefined,
+  ...overrides,
+});
 
 const event = { entries: [] } as unknown as AgentBeforeSettleEvent;
 
 it('asks for a report while work time remains', () => {
-  const { directory, state } = settingWorker(monotonicDeadline - cancellationBudget - 1);
+  vi.useFakeTimers();
+  vi.setSystemTime(deadline - 1);
 
-  expect(remindToReport(state, event)).toMatchObject({ continue: true });
-  expect(existsSync(join(directory, 'reportRequest.json'))).toBe(true);
+  try {
+    expect(remindToReport(state(), event)).toMatchObject({ continue: true });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('asks only once without a refused report', () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(deadline - 1);
+
+  try {
+    const worker = state({
+      refusal: { incompleteRefused: false, reminderSent: true, remindAfterRefusal: false },
+    });
+
+    expect(remindToReport(worker, event)).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('asks again after a refused report', () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(deadline - 1);
+
+  try {
+    const worker = state({
+      refusal: { incompleteRefused: false, reminderSent: true, remindAfterRefusal: false },
+    });
+
+    worker.refusal.remindAfterRefusal = true;
+
+    expect(remindToReport(worker, event)).toMatchObject({ continue: true });
+    expect(worker.refusal.remindAfterRefusal).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it('sends no reminder when no work time remains', () => {
-  const { directory, state } = settingWorker(monotonicDeadline - cancellationBudget);
+  vi.useFakeTimers();
+  vi.setSystemTime(deadline);
 
-  expect(remindToReport(state, event)).toBeUndefined();
-  expect(existsSync(join(directory, 'reportRequest.json'))).toBe(false);
+  try {
+    expect(remindToReport(state(), event)).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('sends no reminder after the report is saved', () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(deadline - 1);
+
+  try {
+    const saved = assignment({ report: { outcome: 'success', summary: 'Done.', evidence: [] } });
+
+    expect(remindToReport(state({ assignment: saved }), event)).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('sends no reminder after an errored run', () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(deadline - 1);
+
+  try {
+    expect(
+      remindToReport(state({ runError: 'Pi run ended with error: boom' }), event),
+    ).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
 });

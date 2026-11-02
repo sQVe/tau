@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expect, it } from 'vitest';
 
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import type { Assignment } from './assignment.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import {
   listProfiles,
@@ -12,7 +13,6 @@ import {
   workerInstructions,
   workerPrompt,
 } from './profiles.js';
-import type { Task } from './types.js';
 
 const agentsFixture = (onTestFinished: (callback: () => void) => void) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-profiles-test-');
@@ -28,16 +28,16 @@ const agentsFixture = (onTestFinished: (callback: () => void) => void) => {
   };
 };
 
-const task = (acceptance?: string[]) =>
+const assignment = (acceptance: string[] = []) =>
   ({
-    taskId: 'task-1',
+    assignmentId: '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f',
     task: 'Fix the parser.',
     deadline: 1_700_000_000_000,
-    ...(acceptance === undefined ? {} : { acceptance }),
-  }) as Task;
+    acceptance,
+  }) as Assignment;
 
 it('lists acceptance criteria in order under the task', () => {
-  const prompt = workerPrompt(task(['Parses empty input.', 'Keeps the old API.']));
+  const prompt = workerPrompt(assignment(['Parses empty input.', 'Keeps the old API.']));
 
   expect(prompt).toContain(
     'Fix the parser.\n\nAcceptance criteria:\n1. Parses empty input.\n2. Keeps the old API.\n\nDeadline:',
@@ -45,7 +45,7 @@ it('lists acceptance criteria in order under the task', () => {
 });
 
 it('adds no criteria section when the task has none', () => {
-  expect(workerPrompt(task())).not.toContain('Acceptance criteria');
+  expect(workerPrompt(assignment())).not.toContain('Acceptance criteria');
 });
 
 it('ends the worker system prompt with a safety directive after the contracts', () => {

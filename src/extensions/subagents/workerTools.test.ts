@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
 import { skillTools as bundledSkillTools } from '../../skillTools.js';
-import { parseWorkerTools, workerTools } from './workerTools.js';
+import { workerTools } from './workerTools.js';
 
 it.each([
   { skills: [], expected: [] },
@@ -24,13 +24,7 @@ it.each([
     review: ['review_evidence', 'tracker_evidence'],
   };
 
-  expect(workerTools(loadout, skillTools)).toEqual([
-    'read',
-    'subagent_report',
-    'subagent_progress',
-    'subagent_question',
-    ...expected,
-  ]);
+  expect(workerTools(loadout, skillTools)).toEqual(['read', 'subagent_report', ...expected]);
 });
 
 it('does not give a worker the full_check tool that its profile lists', () => {
@@ -70,38 +64,11 @@ it('finds the skill when the path holds a doubled slash', () => {
   );
 });
 
-it.each([
-  {
-    case: 'is a list of names',
-    text: '["read","subagent_report"]',
-    expected: ['read', 'subagent_report'],
-  },
-])('parses the parent tool list when it $case', ({ text, expected }) => {
-  expect(parseWorkerTools(text)).toEqual(expected);
-});
-
-it.each([
-  { case: 'is missing', text: undefined, error: 'Worker tool list is missing.' },
-  { case: 'is empty', text: '', error: 'Worker tool list is missing.' },
-  { case: 'is not JSON', text: '["read"', error: 'Worker tool list is malformed.' },
-  { case: 'is not a list', text: '{"read":true}', error: 'Worker tool list is malformed.' },
-  { case: 'is an empty list', text: '[]', error: 'Worker tool list is malformed.' },
-  {
-    case: 'holds a name that is not a string',
-    text: '["read",3]',
-    error: 'Worker tool list is malformed.',
-  },
-])('refuses a parent tool list that $case', ({ text, error }) => {
-  expect(() => parseWorkerTools(text)).toThrow(error);
-});
-
 it('adds no skill tool for a skill that has none', () => {
   const skills = ['/home/user/skills/other/SKILL.md'];
 
   expect(workerTools({ tools: ['read'], skills }, { tracker: ['tracker_evidence'] })).toEqual([
     'read',
-    'subagent_progress',
     'subagent_report',
-    'subagent_question',
   ]);
 });

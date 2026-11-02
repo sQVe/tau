@@ -8,13 +8,13 @@ import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js'
 import {
   assignmentDirectory,
   assignmentPath,
+  checkoutFolder,
   readAssignment,
   saveReport,
   seedSession,
   writeAssignment,
 } from './assignment.js';
 import type { Assignment } from './assignment.js';
-import { checkoutFolder } from './records.js';
 
 afterEach(() => {
   vi.unstubAllEnvs();

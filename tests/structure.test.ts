@@ -8,7 +8,6 @@ import type { Expression, MemberExpression, ModuleDeclaration } from 'oxc-parser
 import { expect, it } from 'vitest';
 
 import { importTable, moduleList } from '../lint/rules/moduleBoundaries.ts';
-import { versionedRecords } from '../src/extensions/subagents/records.js';
 import config, { testEnvironment, testManagedEnvironment } from '../vite.config.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -113,9 +112,7 @@ const pureModules = [
   'src/extensions/subagents/qaBrief.ts',
   'src/extensions/subagents/reportCap.ts',
   'src/extensions/subagents/skillToolsRefusal.ts',
-  'src/extensions/subagents/startupFailureDecision.ts',
   'src/extensions/subagents/summaryLength.ts',
-  'src/extensions/subagents/taskFormat.ts',
   'src/extensions/subagents/ticketPath.ts',
   'src/extensions/subagents/workerModels.ts',
   'src/extensions/subagents/workerPackages.ts',
@@ -350,35 +347,6 @@ it('names each source test after the module beside it', () => {
   });
 
   expect(unmatched).toEqual([]);
-});
-
-it('gives every versioned record schema a format version', () => {
-  const unversioned = Object.entries(versionedRecords).filter(([, schema]) => {
-    const variants: unknown[] =
-      'anyOf' in schema && Array.isArray(schema.anyOf) ? schema.anyOf : [schema];
-
-    return !variants.every((variant) =>
-      Number.isInteger(
-        (variant as { properties?: { version?: { const?: unknown } } }).properties?.version?.const,
-      ),
-    );
-  });
-
-  expect(unversioned.map(([name]) => name)).toEqual([]);
-});
-
-it('writes versioned records only through publishRecord', () => {
-  const rawWrites = sourceFiles
-    .filter((path) => !isTest(path) && !isFixture(path))
-    .filter((path) => {
-      const source = readFileSync(join(root, path), 'utf8');
-
-      return Object.keys(versionedRecords).some((name) =>
-        new RegExp(String.raw`\bpublish\([^)]*'${name.replace('.', String.raw`\.`)}'`).test(source),
-      );
-    });
-
-  expect(rawWrites).toEqual([]);
 });
 
 it('keeps fixtures out of production modules', () => {

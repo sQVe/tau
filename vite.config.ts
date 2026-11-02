@@ -90,6 +90,7 @@ export const testManagedEnvironment = [
   'TAU_ROLE',
   'TAU_WORKER_RECORD',
   'HC_SESSION',
+  'HC_TERMINAL_ID',
 ];
 
 // When pnpm check sets TAU_PATH_COMMANDS, the digest of the commands PATH resolves to stands in for

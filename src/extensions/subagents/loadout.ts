@@ -1,4 +1,4 @@
-import { constants, existsSync, realpathSync } from 'node:fs';
+import { constants, realpathSync } from 'node:fs';
 import type { BigIntStats } from 'node:fs';
 import { open, realpath, stat } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
@@ -13,7 +13,6 @@ import type {
   ModelRegistry,
   SlashCommandInfo,
 } from '@earendil-works/pi-coding-agent';
-import { Value } from 'typebox/value';
 
 import { userConfigPath } from '../../config/config.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
@@ -28,7 +27,6 @@ import type { ClassifierOutcome, ModelRoute, RoutedLaunch } from './modelRoutes.
 import { readProfileModel, readProfileRoute } from './profileModels.js';
 import { resolveProfile } from './profiles.js';
 import { findTicketPath } from './ticketPath.js';
-import { loadoutSchema } from './types.js';
 import type { Loadout, Profile } from './types.js';
 import { availableModels, defaultProfileName } from './workerModels.js';
 
@@ -480,36 +478,6 @@ const requireSavedWorkerDirectory = (loadout: Loadout, context: { cwd: string })
   ) {
     throw new Error('Worker cwd or configuration directory changed.');
   }
-};
-
-export const validateSavedLoadout = (
-  value: unknown,
-  context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'isProjectTrusted'>,
-): Loadout => {
-  if (!Value.Check(loadoutSchema, value)) {
-    throw new Error('Invalid saved worker loadout.');
-  }
-
-  if (!context.isProjectTrusted()) {
-    throw new Error('Saved worker replay requires a currently trusted project.');
-  }
-
-  requireSavedWorkerDirectory(value, context);
-  const reference = parseModelReference(value.model);
-  const location = { cwd: value.cwd, agentDirectory: value.agentDirectory, projectTrusted: true };
-  const model = reference && findModel(context.modelRegistry, location, reference);
-
-  if (!model || clampThinkingLevel(model, value.thinking) !== value.thinking) {
-    throw new Error('Saved worker model or thinking cannot be reproduced; no fallback allowed.');
-  }
-
-  const missingSkill = value.skills.find((path) => !existsSync(path));
-
-  if (missingSkill !== undefined) {
-    throw new Error(`Saved worker skill is missing: ${missingSkill}`);
-  }
-
-  return value;
 };
 
 export const checkWorkerRuntime = (
