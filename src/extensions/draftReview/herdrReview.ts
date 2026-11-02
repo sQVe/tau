@@ -15,6 +15,7 @@ import {
   text,
 } from '../../herdr.js';
 import type { PaneLayout, TerminalLocation } from '../../herdr.js';
+import { TuicrExitTimeoutError } from './hcReview.js';
 import { reviewPlacement } from './reviewDecisions.js';
 import type { ReviewPlacement } from './reviewDecisions.js';
 
@@ -239,10 +240,6 @@ const anyRunning = async (
 
   return states.includes(true);
 };
-
-export class TuicrExitTimeoutError extends Error {
-  override name = 'TuicrExitTimeoutError';
-}
 
 // tuicr saves its session when it exits, so deleting a comment before then could be undone.
 const waitForExit = async (request: CloseRequest, processIds: number[]): Promise<void> => {

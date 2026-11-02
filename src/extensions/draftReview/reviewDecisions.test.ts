@@ -3,11 +3,12 @@ import { expect, it } from 'vitest';
 import {
   decideDestination,
   decideEdit,
+  decideWaitOutcome,
   reviewPlacement,
   selectReviewedComments,
   stagedNames,
 } from './reviewDecisions.js';
-import type { FileFacts, SessionComment } from './reviewDecisions.js';
+import type { FileFacts, SessionComment, WaitFacts } from './reviewDecisions.js';
 
 const comment = (id: string, path: string | null): SessionComment => ({
   id,
@@ -121,6 +122,24 @@ it.each<{ name: string; width: number; zoomed: boolean; placement: string }>([
   { name: 'the pane is zoomed', width: 200, zoomed: true, placement: 'tab' },
 ])('places the review $placement when $name', ({ width, zoomed, placement }) => {
   expect(reviewPlacement({ width, zoomed, minimumWidth: 82 })).toBe(placement);
+});
+
+it.each<{ name: string; facts: WaitFacts; outcome: string }>([
+  { name: 'the terminal ended', facts: { ended: true, reason: 'exit' }, outcome: 'finished' },
+  {
+    name: 'the terminal ended while a message was pending',
+    facts: { ended: true, reason: 'message' },
+    outcome: 'finished',
+  },
+  { name: 'a message arrived', facts: { ended: false, reason: 'message' }, outcome: 'message' },
+  { name: 'the wait timed out', facts: { ended: false, reason: 'timeout' }, outcome: 'timeout' },
+  {
+    name: 'the wait gave a reason it does not know',
+    facts: { ended: false, reason: 'unknown' },
+    outcome: 'unfinished',
+  },
+])('decides $outcome when $name', ({ facts, outcome }) => {
+  expect(decideWaitOutcome(facts)).toBe(outcome);
 });
 
 it.each([

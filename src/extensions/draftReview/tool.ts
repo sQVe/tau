@@ -7,13 +7,8 @@ import type { Exec } from '../../command.js';
 import { errorMessage } from '../../errors.js';
 import { collectReview } from './collect.js';
 import type { Collected } from './collect.js';
-import {
-  TuicrExitTimeoutError,
-  closeOpened,
-  closePlacement,
-  openReview,
-  tuicrCommand,
-} from './herdrReview.js';
+import { TuicrExitTimeoutError } from './hcReview.js';
+import { closeOpened, closePlacement, openReview, tuicrCommand } from './herdrReview.js';
 import { readReview, removeReview, savePlacement, saveProcessIds, stageReview } from './stage.js';
 import type { Review } from './stage.js';
 import type { RunTuicr } from './tuicrSession.js';

@@ -29,6 +29,13 @@ export type ReviewPlacement = 'right' | 'tab';
 
 export type EditDecision = 'unchanged' | 'apply' | 'conflict';
 
+export interface WaitFacts {
+  ended: boolean;
+  reason: string;
+}
+
+export type WaitOutcome = 'finished' | 'message' | 'timeout' | 'unfinished';
+
 const nameByteLimit = 255;
 
 const truncateToBytes = (text: string, limit: number) => {
@@ -116,6 +123,20 @@ export const decideDestination = (facts: DestinationFacts): DestinationDecision 
   }
 
   return facts.insideTauDirectory ? 'writable' : 'outside';
+};
+
+// An ended terminal wins over any reason. A message means the wait stopped early, so waiting again
+// is safe.
+export const decideWaitOutcome = (facts: WaitFacts): WaitOutcome => {
+  if (facts.ended) {
+    return 'finished';
+  }
+
+  if (facts.reason === 'message') {
+    return 'message';
+  }
+
+  return facts.reason === 'timeout' ? 'timeout' : 'unfinished';
 };
 
 // A right split halves the agent pane, so it needs room for two usable panes.
