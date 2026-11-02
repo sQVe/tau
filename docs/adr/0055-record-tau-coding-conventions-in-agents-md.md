@@ -3,9 +3,9 @@
 **Date**: 2026-09-27\
 **Status**: Accepted\
 **Related**: [ADR 0006 (Load Tau's instruction sets into every prompt)](./0006-default-writing-policy.md),
-[ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
+[ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./README.md#retired),
 [ADR 0034 (Check house style outside the editor)](./0034-check-house-style-outside-the-editor.md),
-[ADR 0036 (Allowlist worker content and label states from one table)](./0036-allowlist-worker-content-and-label-states-from-one-table.md),
+[ADR 0036 (Allowlist worker content and label states from one table)](./README.md#retired),
 [ADR 0052 (Drop backwards compatibility by default)](./0052-drop-backwards-compatibility-by-default.md),
 [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
 [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md)
@@ -57,9 +57,8 @@ agent needs before designing: the contract test for read paths, and record versi
 ### Tables keyed by a union
 
 Use a table keyed by a union for a complete mapping, such as `shownModeText` in
-`src/reviewCapture/endpointTransition.ts`
-([ADR 0036](./0036-allowlist-worker-content-and-label-states-from-one-table.md)). Do not use such
-tables for control flow.
+`src/reviewCapture/endpointTransition.ts` ([ADR 0036](./README.md#retired)). Do not use such tables
+for control flow.
 
 ### Record compatibility
 
@@ -74,7 +73,7 @@ without asking the user.
 - Branded IDs, for now. Reopen when a concrete signature shows a misuse risk.
 - `assertNever()`. The exhaustive-switch lint already covers it.
 - An effects-returning state machine, a type per `Handle` phase, and per-harness adapters
-  ([ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)).
+  ([ADR 0043](./README.md#retired)).
 - `*Decision.ts` naming as enforcement, a `node:fs` import denylist, and count thresholds. Agents
   satisfy such proxies without meeting the rule behind them
   ([ADR 0034](./0034-check-house-style-outside-the-editor.md)).

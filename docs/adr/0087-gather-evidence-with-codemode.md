@@ -56,9 +56,9 @@ return.
 
 - `write`, `edit`, `commit`, and `run_tests` cannot be called from a script. Tau refuses such a call
   with a reason that says to call the tool directly. This applies in the manager and in workers.
-- Report, question, progress, user question, and orchestration tools are model-only. Tau refuses a
-  call to them from a script, in the manager and in workers.
-- Read-only status tools, such as `subagent_status`, stay callable from a script.
+- Report, user question, and orchestration tools are model-only. Tau refuses a call to them from a
+  script, in the manager and in workers.
+- Read-only tools, such as `read`, stay callable from a script.
 - `bash` stays callable, because it is the main way scripts read evidence. Tau does not sandbox
   `bash`, so a script can still change state through it. The guidelines forbid that, but nothing
   enforces it.

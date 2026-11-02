@@ -31,12 +31,11 @@ Use this skill when a branch belongs to a stack, or when another skill sends you
   `main`.
 - Never work out a stack from PR bases yourself. Step 1 tells you when PRs are chained without
   tracking.
-- Switch, create, restack, or sync only on a clean working tree and when every one of your workers
-  in the worktree is `stopped`. Workers share its files, so a branch change moves them under a live
-  worker. Find task IDs in this session's worker launch results and notices, then read each state
-  with `subagent_status`. If the worker list is incomplete, or any state is unreadable or not
-  `stopped`, do not change the branch. Recover the task IDs, wait for the worker, or ask the user
-  before you cancel it.
+- Switch, create, restack, or sync only on a clean working tree and when none of your workers is
+  running. Workers share its files, so a branch change moves them under a live worker. Run
+  `hc ls --json`. Your workers are the listed terminals whose `parent` is your `HC_TERMINAL_ID`. If
+  any is listed, or the output cannot be read, do not change the branch. Wait for the worker to
+  finish, or ask the user before you stop it.
 - Follow the rebase, abort, and push rules in the [update-branch skill](../update-branch/SKILL.md).
 
 ## Procedure

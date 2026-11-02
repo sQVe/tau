@@ -2,13 +2,13 @@
 
 **Date**: 2026-09-27\
 **Status**: Accepted\
-**Related**: [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
+**Related**: [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./README.md#retired),
 [ADR 0052 (Drop backwards compatibility by default)](./0052-drop-backwards-compatibility-by-default.md)
 
 ## Context
 
 Worker records outlive the Tau that wrote them. An open session and a newer session can share one
-records folder ([ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)).
+records folder ([ADR 0043](./README.md#retired)).
 
 Every record schema rejects unknown fields, so an older reader fails on any new field. An older
 session once refused every follow-up because a newer Tau had saved a name it rejected.

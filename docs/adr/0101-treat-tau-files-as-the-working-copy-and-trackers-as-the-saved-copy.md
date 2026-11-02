@@ -5,7 +5,7 @@
 **Supersedes**: the worktree files part of
 [ADR 0045 (Keep worker records per Tau checkout and worktree files in `.tau/`)](./README.md#retired)\
 **Related**:
-[ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
+[ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./README.md#retired),
 [ADR 0108 (Ask only before writes that other people see)](./0108-make-linear-writes-on-the-users-own-work-without-asking.md)
 
 ## Context

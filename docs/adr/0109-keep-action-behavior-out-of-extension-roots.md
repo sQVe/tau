@@ -3,7 +3,7 @@
 **Date**: 2026-10-14\
 **Status**: Accepted\
 **Related**: [ADR 0034 (Check house style outside the editor)](./0034-check-house-style-outside-the-editor.md),
-[ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
+[ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./README.md#retired),
 [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md)
 
 ## Context
@@ -14,7 +14,8 @@ extension's registration root may hold.
 Agents build most features as slices in parallel branches. The busiest integration files held action
 behavior next to registration. `subagents.ts` resolved paths, probed HTTP, and refused launches.
 `workerExtension.ts`, which Pi loads as the worker's extension, owned report acceptance and reminder
-policy. ADR 0043's coordinator and task controllers fixed the same problem for worker control only.
+policy. [ADR 0043](./README.md#retired)'s coordinator and task controllers fixed the same problem
+for worker control only.
 
 Conflicts come from shared blocks, not from size. Replaying PR #340 and PR #350 on one base
 conflicts in `managerPrompt.ts` because a login policy and a URL policy share one template string.
@@ -41,7 +42,7 @@ review signal under ADR 0034.
 - An action that still lives in a root moves to a behavior owner when a feature changes it.
 - Keep pure decisions apart from effectful steps, as ADR 0120 says.
 - This rule does not split a flat module or a shared module's entry. ADR 0120 still starts modules
-  flat. ADR 0043's coordinator keeps its stated duties.
+  flat.
 
 ### Prompt and guidance lists
 
@@ -62,7 +63,7 @@ review signal under ADR 0034.
 
 - Parallel slices that change different actions edit different behavior owners, and different lines
   of the root and prompt lists.
-- The rule extends ADR 0043's worker control split and keeps ADR 0120's flat start.
+- The rule keeps ADR 0120's flat start.
 
 ### Negative
 
