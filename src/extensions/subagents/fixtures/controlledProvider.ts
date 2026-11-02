@@ -11,6 +11,8 @@ import {
 import type { TranscriptContext } from '@earendil-works/pi-ai';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
+import { errorMessage } from '../../../errors.js';
+
 interface FixtureAssignment {
   loadout: { instructions: string };
 }
@@ -42,8 +44,13 @@ const readFixtureAssignment = (): FixtureAssignment | undefined => {
     }
 
     return JSON.parse(readFileSync(path, 'utf8')) as FixtureAssignment;
-  } catch {
-    return undefined;
+  } catch (error) {
+    throw new Error(
+      `controlledProvider could not read the fixture assignment: ${errorMessage(error)}`,
+      {
+        cause: error,
+      },
+    );
   }
 };
 
