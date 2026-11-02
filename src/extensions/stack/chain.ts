@@ -83,7 +83,6 @@ const readBlocker = async (
   return { url, number: reference.number, view, stacks };
 };
 
-// Reuses the view of a blocker, so a pull request that is both a blocker and a stack end is read once.
 const readStackEnds = async (
   runtime: CommandRuntime,
   repository: Repository,

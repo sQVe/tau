@@ -78,11 +78,9 @@ export interface GithubFacts {
   stacks: Read<StackedPullRequests> | null;
   // null when the base is the default branch or no pull request holds the branch.
   basePulls: Read<HeadPull[]> | null;
-  // Whether the selected head pull request needs a read of its base pull requests.
   basePullNeeded: boolean;
 }
 
-// The facts a decision reads. null and [] mean the read was not needed, never that it failed.
 export interface DecisionFacts {
   headPull: HeadPullChoice;
   basedOn: BasedPull[];
@@ -281,7 +279,6 @@ const unknownOutcome = (reason: string): GithubFactsOutcome => ({ result: 'unkno
 export const needsBasePull = (pull: HeadPull, defaultBranch: string): boolean =>
   pull.baseRefName !== defaultBranch;
 
-// Names the required read that was never made, or returns undefined when every needed read exists.
 const missingRequiredRead = (reads: GithubFacts, choice: HeadPullChoice): string | undefined => {
   if (choice.kind !== 'one') {
     return undefined;
@@ -298,8 +295,6 @@ const missingRequiredRead = (reads: GithubFacts, choice: HeadPullChoice): string
   return undefined;
 };
 
-// Turns the raw reads into decision facts. A failed or missing required read is unknown, never a
-// guess. A null read is only fine when the head pull request does not need it.
 export const normalizeGithubFacts = (
   reads: GithubFacts,
   headPull: Read<HeadPullChoice>,
@@ -394,7 +389,6 @@ const severalPullsReason = (branch: string, numbers: readonly number[]) => {
   return `Pull requests ${listed} are all open for ${branch}.`;
 };
 
-// The second step of the stack check, from the normalized GitHub facts.
 export const decideGithub = (branch: string, facts: DecisionFacts): GithubDecision => {
   const { headPull: choice, basedOn, stacks, basePulls } = facts;
 

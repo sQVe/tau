@@ -44,8 +44,6 @@ export type ParentDecision =
   | { result: 'stop'; reason: string }
   | { result: 'parent'; parent: Parent };
 
-// The trunk the new branch starts from. A stacked parent takes it from the bottom pull request of
-// its stack, so only an unstacked parent reads the default branch.
 export type ChainTrunk =
   | { kind: 'stack'; stack: GithubStack; ends: Read<{ bottom: PullView; top: PullView }> }
   | { kind: 'default'; defaultBranch: Read<string> };

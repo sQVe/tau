@@ -30,8 +30,6 @@ export interface PublishedReads {
   oldCherry: Read<CherryMark[]>;
 }
 
-// One layer is exactly one of: the remote tip read failed, the remote has no such branch, or the
-// remote branch exists with its tip and reads.
 export type LayerFacts =
   | { kind: 'tipFailed'; read: FailedRead }
   | { kind: 'missing' }
