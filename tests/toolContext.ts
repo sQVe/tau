@@ -18,7 +18,6 @@ export const customContext = (
   const custom: ExtensionUIContext['custom'] = async (factory) => {
     let result;
 
-    // Keep the caller's object so a test can resize it after the dialog opens.
     const size = Object.assign(dimensions ?? { rows: 40, columns: 100 }, {
       setProgramStatus: (status: ProgramStatus) => programStatusReports.push(status),
     });

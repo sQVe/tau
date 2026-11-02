@@ -47,7 +47,6 @@ const responseText = (result: DialogResult) => {
   return `User has answered your questions: ${segments} ${ending}`;
 };
 
-// The model can repeat the same questions with their properties in another order.
 const questionsKey = (questions: DialogQuestion[]): string =>
   JSON.stringify(
     questions.map((question) => [
@@ -67,11 +66,9 @@ const questionsKey = (questions: DialogQuestion[]): string =>
   );
 
 export const createQuestionAsker = (subscribe: DialogSession['subscribe']): AskQuestions => {
-  // Only the latest deferred dialog is kept. Other questions asked in between leave it in place.
   let deferred: { key: string; state: QuestionnaireState } | undefined;
 
   return async (input, context) => {
-    // `hasUI` is also true in RPC mode, where `ui.custom` resolves without running a component.
     if (context.mode !== 'tui') {
       throw new Error('The questionnaire needs the terminal UI. Ask in plain text instead.');
     }
