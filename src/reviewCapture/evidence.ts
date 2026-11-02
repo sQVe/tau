@@ -405,7 +405,6 @@ const reviewedInputPath = (directory: string, record: CaptureRecord) =>
     ? join(directory, generationFolderName, generationInputFileName)
     : join(directory, inputFileName);
 
-// Reads the evidence for the capture saved in directory from one recapture. Writes only recheck.diff.
 export const readReviewEvidence = async (
   root: string,
   requestedDirectory: string,

@@ -83,7 +83,6 @@ type GrepRecord = { match: GrepMatch; next: number; error?: undefined } | { erro
 export interface FreshnessGapFacts {
   freshness: Freshness;
   recordedHash: string;
-  // The hash of the recapture the evidence was read from, the same one the freshness decision used.
   evidenceHash: string;
 }
 
@@ -402,8 +401,6 @@ export const parseGrepOutput = (
   return { matches };
 };
 
-// The evidence and the freshness decision share one recapture. A failed capture passes its own
-// hash, never the recorded hash, so a mismatch is always reported against the bytes read.
 export const freshnessGaps = ({
   freshness: { status, reasons },
   recordedHash,

@@ -28,8 +28,6 @@ const captureFix = (root: string, target: FixTarget): Promise<ReviewCapture> => 
 export const captureReview = (root: string, target: PinnedTarget): Promise<ReviewCapture> =>
   target.kind === 'fix' ? captureFix(root, target) : captureTarget(root, target);
 
-// Recaptures the recorded target once, then reads HEAD, and writes recheckFile when both succeed.
-// A failed recapture removes recheckFile, so no stale file stands for the current target.
 export const recaptureReview = async (
   root: string,
   recorded: CaptureState & { target: PinnedTarget },
@@ -67,7 +65,6 @@ export const recaptureReview = async (
   return { capture, freshness };
 };
 
-// Captures the recorded target again into recheckFile and compares it, and HEAD, with the record.
 const checkFreshness = async (
   root: string,
   recorded: CaptureState & { target: PinnedTarget },
