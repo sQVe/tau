@@ -7,8 +7,12 @@ import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import type { Exec } from '../../command.js';
+import type { Connect } from '../../hc/connect.js';
 import { HcError } from '../../hc/hc.js';
+import type { HcTerminal } from '../../hc/hc.js';
 import { skillTools } from '../../skillTools.js';
+import { writeAssignment } from './assignment.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { writeFakePackage } from './fixtures/packageCache.js';
 import { Admission, executeLaunch } from './launch.js';
@@ -17,6 +21,7 @@ import type { LaunchParameters } from './launchParameters.js';
 import * as loadouts from './loadout.js';
 import * as packageSnapshot from './packageSnapshot.js';
 
+vi.mock(import('./assignment.js'), { spy: true });
 vi.mock(import('./loadout.js'), { spy: true });
 vi.mock(import('./packageSnapshot.js'), { spy: true });
 
@@ -50,8 +55,15 @@ const terminalRun = (fake: HcFake) => {
   return undefined;
 };
 
+const succeeded = (value: unknown) => ({
+  code: 0,
+  killed: false,
+  stdout: JSON.stringify(value),
+  stderr: '',
+});
+
 const setup = (
-  options: { children?: unknown[]; managerLabels?: Record<string, string> } = {},
+  options: { children?: HcTerminal[]; managerLabels?: Record<string, string> } = {},
 ): { fake: HcFake; runtime: LaunchRuntime; refuseCapacity: ReturnType<typeof vi.fn> } => {
   const directory = temporaryDirectory(onTestFinished, 'tau-launch-');
 
@@ -60,18 +72,14 @@ const setup = (
 
   const fake = createHcFake();
 
-  const managerTerminal = {
+  const managerTerminal: HcTerminal = {
     address: manager,
     state: 'live',
     labels: options.managerLabels ?? {},
   };
 
-  fake.reply('ls', JSON.stringify({ terminals: options.children ?? [] }));
-
-  fake.reply(
-    'get',
-    JSON.stringify((options.children ?? []).length > 0 ? existingChild : managerTerminal),
-  );
+  const children = options.children ?? [];
+  const launched: HcTerminal[] = [];
 
   fake.replyConnect('hello', 1, {
     generation: 1,
@@ -87,11 +95,55 @@ const setup = (
 
   fake.replyConnect('terminal.run', 2, { address: 't-worker', state: 'live', parent: manager });
 
+  // hc is the source of truth for launched children, so a confirmed launch must appear in ls.
+  const exec: Exec = (command, commandArguments, execOptions) => {
+    if (command === 'hc' && commandArguments[0] === 'ls') {
+      return Promise.resolve(succeeded({ terminals: [...children, ...launched] }));
+    }
+
+    if (command === 'hc' && commandArguments[0] === 'get') {
+      const address = commandArguments.at(-1);
+
+      const terminal =
+        address === manager
+          ? managerTerminal
+          : [...children, ...launched].find((child) => child.address === address);
+
+      return Promise.resolve(
+        terminal === undefined
+          ? { code: 1, killed: false, stdout: '', stderr: 'not_found' }
+          : succeeded(terminal),
+      );
+    }
+
+    return fake.exec(command, commandArguments, execOptions);
+  };
+
+  const connect: Connect = (lines, connectOptions) => {
+    const request = lines
+      .map(
+        (line) =>
+          JSON.parse(line) as { method: string; params?: { labels?: Record<string, string> } },
+      )
+      .find((message) => message.method === 'terminal.run');
+
+    if (request !== undefined) {
+      launched.push({
+        address: 't-worker',
+        state: 'live',
+        parent: manager,
+        labels: request.params?.labels ?? {},
+      });
+    }
+
+    return fake.connect(lines, connectOptions);
+  };
+
   const refuseCapacity = vi.fn<() => void>();
 
   const runtime: LaunchRuntime = {
     pi: { getCommands: () => [] } as unknown as ExtensionAPI,
-    hc: { exec: fake.exec, connect: fake.connect, cwd: directory },
+    hc: { exec, connect, cwd: directory },
     capacity: 2,
     admission: new Admission(),
     skillTools,
@@ -107,7 +159,11 @@ const context = {
   sessionManager: { getSessionId: () => 'parent-one' },
 } as unknown as ExtensionContext;
 
-const launch = (runtime: LaunchRuntime, parameters: Partial<LaunchParameters> = {}) =>
+const launch = (
+  runtime: LaunchRuntime,
+  parameters: Partial<LaunchParameters> = {},
+  signal?: AbortSignal,
+) =>
   executeLaunch(
     runtime,
     {
@@ -115,7 +171,7 @@ const launch = (runtime: LaunchRuntime, parameters: Partial<LaunchParameters> = 
       startedAt: { wall: 1000, monotonic: 2 },
       parentSession: '/work/parent.jsonl',
     },
-    undefined,
+    signal,
     context,
   );
 
@@ -384,6 +440,128 @@ it('removes the snapshot after a failed assignment write', async () => {
 
   expect(result.isError).toBe(true);
   expect(snapshotNames(state.directory)).toEqual([]);
+});
+
+it('refuses a launch aborted while it waits for admission', async () => {
+  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
+
+  const { fake, runtime } = setup();
+  const controller = new AbortController();
+  const release = Promise.withResolvers<undefined>();
+  const held = runtime.admission.run(() => release.promise);
+  const pending = launch(runtime, { model: 'faux/test' }, controller.signal);
+
+  controller.abort();
+  release.resolve(undefined);
+  await held;
+
+  const result = await pending;
+
+  expect(result.isError).toBe(true);
+  expect(terminalRun(fake)).toBeUndefined();
+  expect(fake.connectCalls).toHaveLength(0);
+});
+
+it('frees the slot and removes the snapshot when the signal aborts after admission', async () => {
+  const { fake, runtime } = setup();
+
+  const packagedLoadout = {
+    ...fixtureLoadout(runtime.agentDirectory),
+    packages: ['npm:review-package'],
+  };
+
+  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
+    loadout: packagedLoadout,
+    routing: undefined,
+  });
+
+  const controller = new AbortController();
+
+  runtime.capacity = 1;
+
+  runtime.packageManager = (() => ({
+    listConfiguredPackages: () => [],
+    resolveExtensionSources: async ([source = '']: string[]) => ({
+      extensions: [
+        {
+          path: source,
+          enabled: true,
+          metadata: {
+            source,
+            scope: 'temporary',
+            origin: 'package',
+            packageRoot: writeFakePackage(runtime.agentDirectory, source),
+          },
+        },
+      ],
+      skills: [],
+      prompts: [],
+      themes: [],
+    }),
+  })) as unknown as NonNullable<LaunchRuntime['packageManager']>;
+
+  // The abort lands after the admission turn and after the assignment write, but before
+  // startWorker creates the terminal.
+  vi.mocked(writeAssignment).mockImplementation(async () => {
+    queueMicrotask(() => {
+      controller.abort();
+    });
+  });
+
+  const result = await launch(runtime, { model: 'faux/test' }, controller.signal);
+
+  expect(result.isError).toBe(true);
+  expect(terminalRun(fake)).toBeUndefined();
+  expect(fake.connectCalls).toHaveLength(0);
+
+  expect(snapshotNames(runtime.agentDirectory)).toEqual([]);
+
+  vi.mocked(writeAssignment).mockRestore();
+
+  const second = await launch(runtime, { visibility: 'background' });
+
+  expect(second.isError).not.toBe(true);
+  expect(terminalRun(fake)).toBeDefined();
+});
+
+it('frees a confirmed slot when hc removed the child before the next launch', async () => {
+  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
+
+  const { runtime } = setup();
+
+  runtime.capacity = 1;
+
+  const first = await launch(runtime, { visibility: 'background' });
+
+  expect(first.isError).not.toBe(true);
+
+  // hc rm removed the finished child, so the next complete list holds no terminal.
+  const emptied = createHcFake();
+
+  emptied.reply('ls', JSON.stringify({ terminals: [] }));
+  emptied.reply('get', JSON.stringify({ address: manager, state: 'live', labels: {} }));
+
+  emptied.replyConnect('hello', 1, {
+    generation: 1,
+    version: 'test',
+    core: { id: 'core', name: 'core' },
+    framed: false,
+    methods: [],
+    features: [],
+  });
+
+  emptied.replyConnect('terminal.run', 2, {
+    address: 't-worker-2',
+    state: 'live',
+    parent: manager,
+  });
+
+  runtime.hc = { exec: emptied.exec, connect: emptied.connect, cwd: runtime.hc.cwd };
+
+  const second = await launch(runtime, { visibility: 'background' });
+
+  expect(second.isError).not.toBe(true);
+  expect(terminalRun(emptied)).toBeDefined();
 });
 
 it('refuses a launch without HC_TERMINAL_ID', async () => {

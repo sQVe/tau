@@ -326,6 +326,9 @@ export const executeLaunch = async (
     const packageManager = runtime.packageManager ?? piPackageManager;
 
     return await runtime.admission.run(async () => {
+      // The signal may have aborted while this launch waited for the admission turn.
+      signal?.throwIfAborted();
+
       const used = await runtime.admission.count(runtime, parentTerminal);
 
       if (used >= runtime.capacity) {
@@ -384,6 +387,9 @@ export const executeLaunch = async (
       runtime.admission.add(assignmentId);
 
       try {
+        // The signal may have aborted during package installation or the assignment write.
+        signal?.throwIfAborted();
+
         const terminal = await startWorker(
           runtime,
           request,
@@ -391,6 +397,10 @@ export const executeLaunch = async (
           assignment,
           extensionPackages,
         );
+
+        // The child is now in hc, so `hc ls` counts it from here on. A removed child frees the
+        // slot; only an unresolved launch keeps its reservation.
+        runtime.admission.remove(assignmentId);
 
         const status = launchStatus(terminal);
 
@@ -408,6 +418,8 @@ export const executeLaunch = async (
         const reconciled = await reconcileUnclearLaunch(runtime, name);
 
         if (reconciled.kind === 'found') {
+          runtime.admission.remove(assignmentId);
+
           const status = launchStatus(reconciled.terminal);
 
           return {

@@ -177,13 +177,15 @@ const savedReport = (): Assignment['report'] => ({
   evidence: ['a reference'],
 });
 
-const reportDelivery = async (): Promise<{
+const reportDelivery = async (
+  report: Assignment['report'] = savedReport(),
+): Promise<{
   managerState: ReturnType<typeof createManager>;
   deliver: ReturnType<typeof createReportDelivery>['deliver'];
   assignmentId: string;
 }> => {
   const directory = stubAgentDirectory();
-  const saved = savedAssignment(directory, savedReport());
+  const saved = savedAssignment(directory, report);
 
   await writeAssignment(saved);
 
@@ -308,7 +310,7 @@ it('keeps a queued report out of the saved session until its message is saved', 
     {
       type: 'custom_message',
       customType: 'tau-worker-report',
-      details: { assignmentId },
+      details: { assignmentId, outcome: 'success' },
     },
   ]);
 
@@ -338,7 +340,43 @@ it('shows a new report once and records it as a report message', async () => {
     {
       type: 'custom_message',
       customType: 'tau-worker-report',
-      details: { assignmentId },
+      details: { assignmentId, outcome: 'success' },
     },
   ]);
 });
+
+it('restores the shown state from a saved report message for a fresh delivery', async () => {
+  const { managerState, deliver, assignmentId } = await reportDelivery();
+
+  // A new delivery over a session that already recorded the report must treat it as shown.
+  managerState.entries.push({
+    type: 'custom_message',
+    customType: 'tau-worker-report',
+    details: { assignmentId, outcome: 'success' },
+  });
+
+  await deliver(managerState.context);
+
+  expect(managerState.messages).toEqual([]);
+  expect(managerState.entries).toHaveLength(1);
+});
+
+it.each(['success', 'failure'] as const)(
+  'shows the saved %s outcome in the report content and details',
+  async (outcome) => {
+    const { managerState, deliver, assignmentId } = await reportDelivery({
+      outcome,
+      summary: 'Changes: None\nEvidence: None\nDecisions: None\nConcerns: None',
+      evidence: [],
+    });
+
+    await deliver(managerState.context);
+
+    expect(managerState.messages).toHaveLength(1);
+
+    const message = managerState.messages[0] as { content: string; details: unknown };
+
+    expect(message.content).toContain(`Worker report ${assignmentId}: ${outcome}`);
+    expect(message.details).toEqual({ assignmentId, outcome });
+  },
+);

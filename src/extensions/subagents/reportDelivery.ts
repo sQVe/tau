@@ -27,7 +27,7 @@ const evidenceText = (report: Assignment['report']): string => {
 };
 
 const reportText = (assignmentId: string, report: Assignment['report']): string =>
-  `Worker report ${assignmentId}:\n\n${report?.summary ?? ''}${evidenceText(report)}`;
+  `Worker report ${assignmentId}: ${report?.outcome ?? 'unknown'}\n\n${report?.summary ?? ''}${evidenceText(report)}`;
 
 const shownIdFromEntry = (entry: {
   type: string;
@@ -124,7 +124,7 @@ export const createReportDelivery = (pi: ExtensionAPI, hc: HcRuntime): ReportDel
         customType: reportMessageType,
         content: reportText(assignmentId, report),
         display: true,
-        details: { assignmentId },
+        details: { assignmentId, outcome: report.outcome },
       });
 
       queuedIds.add(assignmentId);

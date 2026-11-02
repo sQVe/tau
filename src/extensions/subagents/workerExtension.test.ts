@@ -157,6 +157,47 @@ it('reads the assignment, activates its tools, and sends the first task prompt',
   expect(loadout.model).toBe('faux/test');
 });
 
+it('shuts the worker down after a settled report', async () => {
+  const { context, directory, pi, shutdown } = setup();
+
+  await writeAssignment(assignmentFor(directory));
+  await pi.handler('session_start')({}, context);
+
+  const tool = pi.tools.get('subagent_report');
+
+  if (tool === undefined) {
+    throw new Error('The report tool was not registered.');
+  }
+
+  Object.assign(context.sessionManager, {
+    getBranch: () => [
+      {
+        type: 'message',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'toolCall' }],
+        },
+      },
+    ],
+  });
+
+  await tool.execute(
+    'call',
+    {
+      outcome: 'success',
+      summary: 'Changes: None\nEvidence: None\nDecisions: None\nConcerns: None',
+      evidence: [],
+    },
+    undefined,
+    undefined,
+    context,
+  );
+
+  pi.handler('agent_settled')({}, context);
+
+  expect(shutdown).toHaveBeenCalledOnce();
+});
+
 it('reminds once for a report and shares that state', async () => {
   const { context, directory, pi } = setup();
 
