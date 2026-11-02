@@ -100,7 +100,9 @@ it('fails when PATH holds no executable pi', () => {
 
   vi.stubEnv('PATH', join(root, 'plain'));
 
-  expect(() => workerCommand(sessionFile, fixtureLoadout(root), [], skillTools)).toThrow('pi');
+  expect(() => workerCommand(sessionFile, fixtureLoadout(root), [], skillTools)).toThrow(
+    'No pi executable found on PATH.',
+  );
 });
 
 it('ignores a relative PATH entry', () => {
@@ -110,5 +112,7 @@ it('ignores a relative PATH entry', () => {
 
   vi.stubEnv('PATH', relative(process.cwd(), directory));
 
-  expect(() => workerCommand(sessionFile, fixtureLoadout(root), [], skillTools)).toThrow('pi');
+  expect(() => workerCommand(sessionFile, fixtureLoadout(root), [], skillTools)).toThrow(
+    'No pi executable found on PATH.',
+  );
 });
