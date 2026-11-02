@@ -29,6 +29,7 @@ import { isTaskId, taskVersion } from '../types.js';
 import type { Acknowledgement, Loadout, Question, Reply, Task } from '../types.js';
 import type { WorkerWidgetRow } from '../widget.js';
 import { defaultWorkerCapacity } from '../workerCapacityConfig.js';
+import { workerCommand, workerEnvironment } from '../workerCommand.js';
 import { workerTools } from '../workerTools.js';
 import {
   ensureReplyActive,
@@ -43,8 +44,6 @@ import {
   inspectWorker,
   prepareTaskDirectory,
   RequestNotSentError,
-  workerCommand,
-  workerEnvironment,
 } from './inspect.js';
 import type { HerdrClient } from './inspect.js';
 import { checkHandover, nativeReference, requireUnclaimed } from './launchSupport.js';
@@ -466,13 +465,17 @@ export class WorkerController {
           publish(handle.directory, 'pane.json', created);
         },
         cwd: handle.task.loadout.cwd,
-        command: workerCommand(handle.task, handle.startup.extensionPackages, currentSkillTools),
+        command: workerCommand(
+          handle.task.nativeSessionFile,
+          handle.task.loadout,
+          handle.startup.extensionPackages,
+          currentSkillTools,
+        ),
         environment: {
-          ...workerEnvironment(),
-          TAU_ROLE: 'worker',
+          // oxlint-disable-next-line node/no-process-env -- The worker inherits the parent's environment.
+          ...workerEnvironment(process.env, handle.task.loadout.agentDirectory),
           TAU_WORKER_RECORD: handle.directory,
           TAU_WORKER_TOOLS: toolsEnvironment,
-          PI_CODING_AGENT_DIR: handle.task.loadout.agentDirectory,
         },
       },
       async (argumentsList) => {

@@ -9,10 +9,8 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import askUserQuestionExtension from '../src/extensions/askUserQuestion/askUserQuestion.js';
 import { readWorkerActivity } from '../src/extensions/subagents/activity.js';
-import {
-  nativeIdentity,
-  seedSession,
-} from '../src/extensions/subagents/controller/nativeSession.js';
+import { seedSession } from '../src/extensions/subagents/assignment.js';
+import { nativeIdentity } from '../src/extensions/subagents/controller/nativeSession.js';
 import { fixtureLoadout } from '../src/extensions/subagents/fixtures/loadout.js';
 import { readPendingQuestion } from '../src/extensions/subagents/questionRecords.js';
 import {
@@ -108,7 +106,15 @@ const runWorker = async (responses: FauxResponseStep[]) => {
 
   publish(taskDirectory, 'task.json', task);
   vi.stubEnv('TAU_WORKER_TOOLS', JSON.stringify(workerTools(task.loadout, skillTools)));
-  seedSession(task);
+
+  seedSession({
+    file: task.nativeSessionFile,
+    id: task.nativeSessionId,
+    cwd: task.loadout.cwd,
+    parentSession: task.parentSession,
+    createdAt: task.createdAt,
+  });
+
   writeFileSync(join(directory, 'source.txt'), 'fixture-source');
 
   const { session } = await createBoundSession(onTestFinished, {

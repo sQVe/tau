@@ -23,11 +23,8 @@ import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi, onTestFinished } from 'vitest';
 
 import askUserQuestionExtension from '../src/extensions/askUserQuestion/askUserQuestion.js';
-import { workerArguments } from '../src/extensions/subagents/controller/inspect.js';
-import {
-  nativeIdentity,
-  seedSession,
-} from '../src/extensions/subagents/controller/nativeSession.js';
+import { seedSession } from '../src/extensions/subagents/assignment.js';
+import { nativeIdentity } from '../src/extensions/subagents/controller/nativeSession.js';
 import {
   acceptReply,
   readAcknowledgement,
@@ -42,6 +39,7 @@ import {
 import subagentsExtension, {
   registerCapacityRefusal,
 } from '../src/extensions/subagents/subagents.js';
+import { workerArguments } from '../src/extensions/subagents/workerCommand.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import { readInstructionSet } from '../src/instructions/instructions.js';
@@ -239,11 +237,19 @@ it.each(['editing', 'investigation'] as const)(
 
     publish(taskDirectory, 'task.json', task);
     vi.stubEnv('TAU_WORKER_TOOLS', JSON.stringify(workerTools(task.loadout, skillTools)));
-    seedSession(task);
+
+    seedSession({
+      file: task.nativeSessionFile,
+      id: task.nativeSessionId,
+      cwd: task.loadout.cwd,
+      parentSession: task.parentSession,
+      createdAt: task.createdAt,
+    });
+
     writeFileSync(join(directory, 'source.txt'), 'before\n');
     mkdirSync(join(directory, 'delete-fixture', '.git'), { recursive: true });
     writeFileSync(join(directory, 'delete-fixture', '.git', 'keep'), 'preserve');
-    const argumentsList = workerArguments(task, [], skillTools);
+    const argumentsList = workerArguments(task.nativeSessionFile, task.loadout, [], skillTools);
 
     const extensionPaths = [
       ...argumentsList.flatMap((argument, index) =>

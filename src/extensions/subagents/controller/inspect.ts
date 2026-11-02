@@ -1,28 +1,23 @@
 import { once } from 'node:events';
-import { accessSync, constants, mkdirSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { createConnection } from 'node:net';
-import { delimiter, isAbsolute, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
-import { fileURLToPath } from 'node:url';
 
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { parseModelReference } from '../../../config/models.js';
 import { herdrSocketPath, listTerminals, requireObject, result } from '../../../herdr.js';
 import type { TerminalLocation } from '../../../herdr.js';
-import type { SkillTools } from '../../../skillTools.js';
+import { seedSession } from '../assignment.js';
 import { matchesWorker, runClient } from '../cancellation.js';
 import type { OwnedWorker } from '../cancellation.js';
 import { publishRecord, readEvent } from '../records.js';
 import type { Task, TaskEvent } from '../types.js';
-import { workerTools } from '../workerTools.js';
 import { workBudget } from './budget.js';
-import { seedSession } from './nativeSession.js';
 import { integer, readProcessStart, WorkerExitedError } from './shellIdentity.js';
 import type { InspectionBudget } from './shellIdentity.js';
-import type { Handle, WorkerPackage } from './types.js';
+import type { Handle } from './types.js';
 
 export type HerdrClient = (
   argumentsList: string[],
@@ -104,78 +99,6 @@ export const herdrClient: HerdrClient = (argumentsList, budget, signal) =>
   argumentsList[0] === 'layout'
     ? socketRequest(herdrSocketPath() ?? '', argumentsList, budget, signal)
     : runClient('herdr', argumentsList, budget, signal ? { signal } : {});
-
-export const workerArguments = (
-  task: Task,
-  extensionPackages: readonly WorkerPackage[],
-  skillTools: SkillTools,
-): string[] => {
-  const model = parseModelReference(task.loadout.model);
-
-  if (!model) {
-    throw new Error('Pi workers need a provider/id model.');
-  }
-
-  return [
-    '--approve',
-    '--session',
-    task.nativeSessionFile,
-    '--provider',
-    model.provider,
-    '--model',
-    model.id,
-    '--thinking',
-    task.loadout.thinking,
-    // Only the profile's tools are registered, so no extension can activate another one later.
-    '--tools',
-    workerTools(task.loadout, skillTools).join(','),
-    '--no-skills',
-    ...task.loadout.skills.flatMap((path) => ['--skill', path]),
-    // Pi loads these command-line extensions before the saved configuration's, so the guard is active before CC Safety Net.
-    '-e',
-    fileURLToPath(new URL('../workerBashGuard.ts', import.meta.url)),
-    '-e',
-    fileURLToPath(new URL('../workerExtension.ts', import.meta.url)),
-    ...extensionPackages.flatMap(({ path }) => ['-e', path]),
-  ];
-};
-
-// The user's `pi` can be a shell function. Herdr runs the executable from PATH directly.
-const piExecutable = (): string => {
-  // oxlint-disable-next-line node/no-process-env -- Find pi as the user's shell would.
-  for (const directory of (process.env.PATH ?? '').split(delimiter)) {
-    const candidate = join(directory, 'pi');
-
-    try {
-      if (isAbsolute(directory)) {
-        accessSync(candidate, constants.X_OK);
-
-        return candidate;
-      }
-    } catch {
-      // Try the next PATH entry.
-    }
-  }
-
-  throw new Error('No pi executable found on PATH.');
-};
-
-export const workerCommand = (
-  task: Task,
-  extensionPackages: readonly WorkerPackage[],
-  skillTools: SkillTools,
-): string[] => [piExecutable(), ...workerArguments(task, extensionPackages, skillTools)];
-
-// A typed command inherited the user's shell setup, such as PATH. Pass the parent's environment,
-// which came from that shell. Herdr sets the pane's own HERDR_* identity after it.
-export const workerEnvironment = (): Record<string, string> =>
-  Object.fromEntries(
-    // oxlint-disable-next-line node/no-process-env -- The worker inherits the parent's environment.
-    Object.entries(process.env).filter(
-      (entry): entry is [string, string] =>
-        entry[1] !== undefined && entry[0] !== 'PWD' && entry[0] !== 'OLDPWD',
-    ),
-  );
 
 export const isHerdrError = (error: unknown, code: string): boolean => {
   if (!(error instanceof Error)) {
@@ -375,7 +298,13 @@ export const prepareTaskDirectory = (directory: string, task: Task, continued: b
 
     // A follow-up continues the saved session, which already holds its lineage.
     if (!continued) {
-      seedSession(task);
+      seedSession({
+        file: task.nativeSessionFile,
+        id: task.nativeSessionId,
+        cwd: task.loadout.cwd,
+        parentSession: task.parentSession,
+        createdAt: task.createdAt,
+      });
     }
   } catch (error) {
     throw new Error(

@@ -4,10 +4,14 @@ import { expect, it, vi } from 'vitest';
 
 import { skillTools } from '../../../skillTools.js';
 import { readTask } from '../records.js';
+import type { Task } from '../types.js';
+import { workerArguments } from '../workerCommand.js';
 import { setup } from './fixtures/controllerFixture.js';
-import { workerArguments } from './inspect.js';
 
 vi.mock(import('node:fs'), { spy: true });
+
+const workerArgumentsFor = (task: Task) =>
+  workerArguments(task.nativeSessionFile, task.loadout, [], skillTools);
 
 const dispatchRecordedForWorker = (calls: string[][]): boolean => {
   const launch = calls.find((call) => call[0] === 'layout')?.[2];
@@ -212,7 +216,7 @@ it('titles the worker pane with the model ID after the provider', async ({ onTes
 
   expect(rename?.[3]).toMatch(/^worker-[a-z0-9]{2} \(meta-llama\)$/);
 
-  expect(workerArguments(readTask(launched.directory), [], skillTools).slice(3, 7)).toEqual([
+  expect(workerArgumentsFor(readTask(launched.directory)).slice(3, 7)).toEqual([
     '--provider',
     'openrouter',
     '--model',

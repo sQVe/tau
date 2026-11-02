@@ -19,10 +19,8 @@ import { codemodeGuidelines } from '../src/codemode/guidelines.js';
 import codemodeExtension from '../src/extensions/codemode.js';
 import fullCheckExtension from '../src/extensions/fullCheck/fullCheck.js';
 import instructionsExtension from '../src/extensions/instructions.js';
-import {
-  nativeIdentity,
-  seedSession,
-} from '../src/extensions/subagents/controller/nativeSession.js';
+import { seedSession } from '../src/extensions/subagents/assignment.js';
+import { nativeIdentity } from '../src/extensions/subagents/controller/nativeSession.js';
 import { resolveProfile } from '../src/extensions/subagents/profiles.js';
 import { publish, readEvent, validateTask } from '../src/extensions/subagents/records.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
@@ -133,7 +131,15 @@ const startProfileWorker = async (
 
   publish(taskDirectory, 'task.json', task);
   vi.stubEnv('TAU_WORKER_TOOLS', JSON.stringify(workerTools(task.loadout, skillTools)));
-  seedSession(task);
+
+  seedSession({
+    file: task.nativeSessionFile,
+    id: task.nativeSessionId,
+    cwd: task.loadout.cwd,
+    parentSession: task.parentSession,
+    createdAt: task.createdAt,
+  });
+
   writeFileSync(join(directory, 'source.txt'), 'fixture-source');
   const executed: string[] = [];
 

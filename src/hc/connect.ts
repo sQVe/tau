@@ -35,6 +35,8 @@ export type Connect = (
 export interface TerminalRunRequest {
   argv: string[];
   env: Record<string, string>;
+  name?: string | undefined;
+  parent?: string | undefined;
   cwd?: string | undefined;
   labels?: Record<string, string> | undefined;
   noParent?: boolean | undefined;
@@ -47,6 +49,8 @@ const streamKillGraceMilliseconds = 5000;
 const terminalRunParams = (request: TerminalRunRequest): Record<string, unknown> => ({
   argv: request.argv,
   env: request.env,
+  ...(request.name === undefined ? {} : { name: request.name }),
+  ...(request.parent === undefined ? {} : { parent: request.parent }),
   ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
   ...(request.labels === undefined ? {} : { labels: request.labels }),
   ...(request.noParent === undefined ? {} : { no_parent: request.noParent }),

@@ -64,7 +64,8 @@ const maximumTimerDelay = 2_147_483_647;
 // Each Tau checkout keeps its own records, so a branch that changes the record format never
 // breaks another checkout. This module sits three directories below the package root.
 const checkoutRoot = realpathSync(fileURLToPath(new URL('../../../', import.meta.url)));
-const checkoutFolder = `${basename(checkoutRoot)}-${createHash('sha256').update(checkoutRoot).digest('hex').slice(0, checkoutHashLength)}`;
+
+export const checkoutFolder = `${basename(checkoutRoot)}-${createHash('sha256').update(checkoutRoot).digest('hex').slice(0, checkoutHashLength)}`;
 
 export const workerRecordsDirectory = (): string =>
   join(getAgentDir(), 'tau', checkoutFolder, 'workers');

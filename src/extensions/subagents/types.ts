@@ -36,7 +36,7 @@ export const taskIdSchema = Type.String({ pattern: '^[a-zA-Z0-9-]+$' });
 export const isTaskId = (value: string): boolean => Value.Check(taskIdSchema, value);
 
 export const textLimit = 32_000;
-const text = Type.String({ minLength: 1, maxLength: textLimit });
+export const text = Type.String({ minLength: 1, maxLength: textLimit });
 
 export const thinkingSchema = StringEnum([
   'off',
@@ -130,7 +130,7 @@ const routingWithoutConfidenceCutoffSchema = Type.Object(routingFields, {
   additionalProperties: false,
 });
 
-const routingSchema = Type.Object(
+export const routingSchema = Type.Object(
   { ...routingFields, ...confidenceCutoffField },
   { additionalProperties: false },
 );
@@ -187,19 +187,23 @@ export const ownedWorkerSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const reportFields = {
+  outcome: Type.Union([
+    Type.Literal('success'),
+    Type.Literal('failure'),
+    Type.Literal('incomplete'),
+  ]),
+  summary: text,
+  evidence: Type.Array(text, { maxItems: 100 }),
+};
+
 export const reportSchema = Type.Object(
-  {
-    taskId: text,
-    outcome: Type.Union([
-      Type.Literal('success'),
-      Type.Literal('failure'),
-      Type.Literal('incomplete'),
-    ]),
-    summary: text,
-    evidence: Type.Array(text, { maxItems: 100 }),
-  },
+  { taskId: text, ...reportFields },
   { additionalProperties: false },
 );
+
+// A saved assignment names its report by the assignment ID, so the report carries no task ID.
+export const savedReportSchema = Type.Object(reportFields, { additionalProperties: false });
 
 // Saved where no trusted task id exists, so it carries none.
 export const startupFailureSchema = Type.Object(
