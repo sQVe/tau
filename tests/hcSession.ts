@@ -96,7 +96,6 @@ const isLiveSessionProcess = (processId: string, marker: string): boolean => {
   }
 };
 
-// The live processes whose environment names this session, such as its core and holders.
 export const sessionProcesses = (session: string): number[] => {
   const marker = `HC_SESSION=${session}`;
   const processIds = readdirSync('/proc').filter((name) => /^\d+$/.test(name));

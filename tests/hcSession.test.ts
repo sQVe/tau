@@ -34,7 +34,6 @@ vi.mock(import('node:child_process'), async (importOriginal) => {
 const execFileMock = vi.mocked(execFile);
 const spawnMock = vi.mocked(spawn);
 
-// Every exec succeeds with no output, so no unit test in this file starts the real hc.
 const succeedsWithoutOutput = ((...argumentsList: unknown[]) => {
   const callback = argumentsList[3] as (error: null, stdout: string, stderr: string) => void;
 

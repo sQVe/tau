@@ -14,7 +14,6 @@ import {
 import type { HcTerminal } from './replies.js';
 
 export interface ConnectOptions {
-  // The complete child environment. Omit it to inherit the caller's environment.
   env?: Readonly<Record<string, string>> | undefined;
   signal?: AbortSignal | undefined;
 }
@@ -99,7 +98,6 @@ export const runWithEnvironment = async (
     throw failure;
   }
 
-  // The one-shot call writes every line before it reads, so the whole stdout is already available.
   const replyLines = result.stdout.split('\n');
   const replies = parseJsonRpcReplies(label, replyLines);
 
@@ -113,7 +111,6 @@ export const connect: Connect = (lines, options = {}) => {
 
   try {
     child = spawn('hc', ['connect'], {
-      // The caller passes the complete child environment; the default inherits process.env.
       ...(options.env === undefined ? {} : { env: options.env }),
       stdio: ['pipe', 'pipe', 'pipe'],
       ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -176,7 +173,6 @@ export const connect: Connect = (lines, options = {}) => {
         return;
       }
 
-      // A natural non-zero exit keeps its code over a stream failure from the same process.
       const naturalNonZero = code !== null && code !== 0;
 
       if (streamFailure !== undefined && !naturalNonZero) {

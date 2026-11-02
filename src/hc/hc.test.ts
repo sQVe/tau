@@ -30,7 +30,6 @@ const runtimeOf = (fake: HcFake): HcRuntime => ({
   cwd: '/repository',
 });
 
-// Captured before any test stubs the variable, so restoration has a stable expected value.
 const inheritedTerminalAddress = currentTerminalAddress();
 
 afterEach(() => {
