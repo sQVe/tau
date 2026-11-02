@@ -24,14 +24,17 @@ to the user with the `draft_review` tool, which opens it in tuicr.
 
 ### The review
 
-- The tool copies the drafts to a staging directory outside Git and opens tuicr on it. In herdr it
-  opens a right split beside the agent when the agent pane is wide enough for two usable panes, and
-  a new tab in the agent's workspace when it is narrow or zoomed. Neither takes focus, and `open`
-  returns at once, so the user can answer the approval question while tuicr stays open. Outside
-  herdr it returns the command, and the user quits tuicr before answering, because `collect` cannot
-  close it there.
-- After the answer, `collect` closes tuicr and waits for it to exit. The review ends when `collect`
-  runs, not when the user leaves tuicr.
+- The tool copies the drafts to a staging directory outside Git. It starts tuicr with `hc run --bg`
+  and the manager's `herdr.space` label. Herdr shows tuicr in a new tab in that space and names the
+  tab.
+- `open` returns at once, so the user can answer the approval question while tuicr stays open.
+  Without an `hc` terminal or a `herdr.space` label, `open` returns the command instead. In both
+  cases, the user quits tuicr before answering.
+- `collect` waits with `hc wait` until the tuicr terminal finishes, then collects. A message
+  interrupts the wait, so `collect` waits again, up to a limit. A timeout or the limit gives a
+  retryable error that deletes no comment and keeps the record.
+- `collect` refuses records saved by a Tau that ran on herdr. Their comments stay in tuicr. If tuicr
+  starts but its address cannot be saved, `collect` refuses that review.
 - `collect` returns the user's comments on the reviewed drafts and a diff of each draft the user
   edited. It deletes only the comments it returned, because other drafts share the session.
 - It writes the user's edits back only when the real file still matches the copy it staged. Any
@@ -61,7 +64,8 @@ to the user with the `draft_review` tool, which opens it in tuicr.
 
 ### Negative
 
-- The review needs tuicr installed. Outside herdr it also needs a manual command and a second call.
+- The review needs tuicr installed. It also needs an `hc` terminal with a `herdr.space` label to
+  open tuicr itself. Without one, the user runs a manual command and the agent makes a second call.
 - A comment on an accepted draft adds a round to the approval.
 - The tool depends on tuicr's session list and comment JSON, which a tuicr release can change.
 - Edits the user makes outside the staged copies, such as in the real `.tau` file, are not seen.
