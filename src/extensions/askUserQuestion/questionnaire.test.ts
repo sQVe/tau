@@ -491,7 +491,7 @@ it.each([
     question: multi,
     state: at([multi], 3, { customText: 'Docs' }),
   },
-])('answers with Enter on $rule while a notice waits', ({ question, state }) => {
+])('answers with Enter on $rule', ({ question, state }) => {
   expect(handleKey(state, press('enter'), [question], viewport).kind).toBe('submit');
 });
 
