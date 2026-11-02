@@ -1,5 +1,8 @@
 export interface ShellCommand {
   words: string[];
+  // The words bash passes to the command: `words` without file descriptor numbers and redirection
+  // targets.
+  arguments: string[];
   heredocs: string[];
 }
 
@@ -14,7 +17,9 @@ interface ListState {
   command: ShellCommand;
   word: string | undefined;
   wordQuoted: boolean;
+  wordCommandStart: number;
   heredocOperator: { stripsTabs: boolean } | undefined;
+  redirectionTarget: boolean;
   depth: number;
   closesSubstitution: boolean;
 }
@@ -22,6 +27,16 @@ interface ListState {
 const blankCharacters = new Set([' ', '\t']);
 const separatorCharacters = new Set([';', '&', '|', '\n', '(', ')']);
 const longestRedirection = '<<<';
+
+// A digit word touching `<` or `>` is a file descriptor. Quoting makes it an ordinary word.
+const isIoNumber = (word: string, wordQuoted: boolean, redirectionFollows: boolean) =>
+  redirectionFollows && !wordQuoted && /^\d+$/u.test(word);
+
+const rejectPendingHeredoc = (state: ListState) => {
+  if (state.heredocOperator !== undefined) {
+    throw new Error('Missing heredoc delimiter');
+  }
+};
 
 const extendedGlobOperators = new Set(['?', '*', '+', '@', '!']);
 
@@ -116,7 +131,9 @@ class ShellParser {
       command: this.startCommand(),
       word: undefined,
       wordQuoted: false,
+      wordCommandStart: 0,
       heredocOperator: undefined,
+      redirectionTarget: false,
       depth: 0,
       closesSubstitution,
     };
@@ -134,6 +151,7 @@ class ShellParser {
     }
 
     this.finishWord(state);
+    rejectPendingHeredoc(state);
     this.readPendingHeredocs();
   }
 
@@ -182,11 +200,15 @@ class ShellParser {
       this.finishWord(state);
       this.position += 1;
     } else if (character === '<' || character === '>') {
-      this.finishWord(state);
-      state.heredocOperator = this.readRedirection() ?? state.heredocOperator;
+      this.finishWord(state, true);
+      const heredoc = this.readRedirection();
+
+      state.heredocOperator = heredoc ?? state.heredocOperator;
+      state.redirectionTarget = heredoc === undefined;
     } else if (character === '&' && next === '>') {
       this.finishWord(state);
       this.position += 2;
+      state.redirectionTarget = true;
     } else if (separatorCharacters.has(character)) {
       return this.readSeparator(state, character);
     } else {
@@ -204,10 +226,15 @@ class ShellParser {
   }
 
   private readWordPiece(state: ListState, character: string): void {
+    const commandCount = this.commands.length;
     const piece = this.readWordPieceText(character);
 
     if (piece === undefined) {
       return;
+    }
+
+    if (state.word === undefined) {
+      state.wordCommandStart = commandCount;
     }
 
     state.word = (state.word ?? '') + piece.text;
@@ -249,12 +276,10 @@ class ShellParser {
 
   private readSeparator(state: ListState, character: string): boolean {
     this.finishWord(state);
-
-    if (state.heredocOperator !== undefined) {
-      throw new Error('Missing heredoc delimiter');
-    }
+    rejectPendingHeredoc(state);
 
     state.command = this.startCommand();
+    state.redirectionTarget = false;
     this.position += 1;
 
     if (character === '\n') {
@@ -278,8 +303,8 @@ class ShellParser {
     return false;
   }
 
-  private finishWord(state: ListState): void {
-    const { word, heredocOperator } = state;
+  private finishWord(state: ListState, redirectionFollows = false): void {
+    const { word, wordQuoted, heredocOperator, redirectionTarget } = state;
 
     if (word === undefined) {
       return;
@@ -287,7 +312,15 @@ class ShellParser {
 
     if (heredocOperator === undefined) {
       state.command.words.push(word);
+
+      if (!isIoNumber(word, wordQuoted, redirectionFollows) && !redirectionTarget) {
+        state.command.arguments.push(word);
+      }
+
+      state.redirectionTarget = false;
     } else {
+      this.commands.splice(state.wordCommandStart);
+
       this.pendingHeredocs.push({
         command: state.command,
         delimiter: word,
@@ -319,7 +352,7 @@ class ShellParser {
   }
 
   private startCommand(): ShellCommand {
-    const command: ShellCommand = { words: [], heredocs: [] };
+    const command: ShellCommand = { words: [], arguments: [], heredocs: [] };
 
     this.commands.push(command);
 

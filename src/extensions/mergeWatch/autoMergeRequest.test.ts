@@ -129,8 +129,103 @@ const table: { name: string; command: string; requests: AutoMergeRequest[] }[] =
     requests: [{ selector: '3', repository: undefined }],
   },
   {
+    name: 'ignores a merge in a quoted heredoc delimiter',
+    command: 'cat <<"$(gh pr merge --auto 7)"\ntext\n$(gh pr merge --auto 7)',
+    requests: [],
+  },
+  {
     name: 'ignores auto in a later command',
     command: 'gh pr merge 42 --squash && echo --auto',
+    requests: [],
+  },
+  {
+    name: 'reads auto-merge on the current branch before a comment',
+    command: 'gh pr merge --auto # note',
+    requests: [currentBranch],
+  },
+  {
+    name: 'reads the pull request after a line continuation',
+    command: 'gh pr merge --auto \\\n12',
+    requests: [{ selector: '12', repository: undefined }],
+  },
+  {
+    name: 'reads a flag after a pull request across a line continuation',
+    command: 'gh pr merge 12 \\\n--auto',
+    requests: [{ selector: '12', repository: undefined }],
+  },
+  {
+    name: 'reads the pull request across several line continuations',
+    command: 'gh pr merge \\\n  --auto \\\n  --squash \\\n  42',
+    requests: [{ selector: '42', repository: undefined }],
+  },
+  {
+    name: 'reads a merge inside a command substitution',
+    command: 'echo $(gh pr merge --auto 7)',
+    requests: [{ selector: '7', repository: undefined }],
+  },
+  {
+    name: 'reads a merge inside an assignment command substitution',
+    command: 'out=$(gh pr merge --auto 7)',
+    requests: [{ selector: '7', repository: undefined }],
+  },
+  {
+    name: 'reads a merge inside a command substitution in an expanding heredoc body',
+    command: 'cat <<EOF\n$(gh pr merge --auto 7)\nEOF',
+    requests: [{ selector: '7', repository: undefined }],
+  },
+  {
+    name: 'ignores a merge inside a command substitution in a quoted heredoc body',
+    command: "cat <<'EOF'\n$(gh pr merge --auto 7)\nEOF",
+    requests: [],
+  },
+  {
+    name: 'reads the pull request after an escaped quote in a flag value',
+    command: "gh pr merge --auto -b don\\'t 7",
+    requests: [{ selector: '7', repository: undefined }],
+  },
+  {
+    name: 'ignores a flag written after a comment',
+    command: 'gh pr merge 12 # --auto',
+    requests: [],
+  },
+  {
+    name: 'ignores a merge when the same line has a syntax error',
+    command: 'gh pr merge --auto 7; echo "x',
+    requests: [],
+  },
+  {
+    name: 'ignores a merge when a later line has a syntax error',
+    command: 'gh pr merge --auto 7\necho "x',
+    requests: [],
+  },
+  {
+    name: 'reads auto-merge on the current branch when stderr goes to stdout',
+    command: 'gh pr merge --auto 2>&1',
+    requests: [currentBranch],
+  },
+  {
+    name: 'reads auto-merge on the current branch when stderr goes to a file',
+    command: 'gh pr merge --auto 2>/dev/null',
+    requests: [currentBranch],
+  },
+  {
+    name: 'ignores a merge whose --auto is an output filename',
+    command: 'gh pr merge 7 >--auto',
+    requests: [],
+  },
+  {
+    name: 'reads the pull request when the output goes to a command substitution',
+    command: 'gh pr merge --auto 7 > $(echo out)',
+    requests: [{ selector: '7', repository: undefined }],
+  },
+  {
+    name: 'reads a merge inside a command substitution in an output target',
+    command: 'gh pr merge 7 > $(gh pr merge --auto 8)',
+    requests: [{ selector: '8', repository: undefined }],
+  },
+  {
+    name: 'ignores a merge when the heredoc operator has no delimiter',
+    command: 'gh pr merge --auto <<',
     requests: [],
   },
 ];
