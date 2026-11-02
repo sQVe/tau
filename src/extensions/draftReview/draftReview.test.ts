@@ -36,10 +36,18 @@ it('collects through the registered tool after the hc wait reports the terminal 
     { cwd: context.repository } as never,
   );
 
+  const order = context.calls.map(({ command, commandArguments }) =>
+    [command, commandArguments[0]].join(' '),
+  );
+
+  expect(opened.details).toMatchObject({ status: 'opened' });
+
   expect(collected.details).toMatchObject({
     status: 'reviewed',
     comments: [{ content: 'on-a' }],
   });
 
+  expect(order.indexOf('hc wait')).toBeGreaterThan(-1);
+  expect(order.indexOf('hc wait')).toBeLessThan(order.indexOf('tuicr review'));
   expect(await context.deleted()).toEqual(['on-a']);
 });
