@@ -1,5 +1,10 @@
 import { readFile, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
+
+import { parseFrontmatter } from '@earendil-works/pi-coding-agent';
+
+import { errorMessage } from '../../errors.js';
+import { isRecord } from '../../schema.js';
 
 export interface Snippet {
   /** Markdown filename without `.md`, such as `ask-questions`. Listed as `#ask-questions`. */
@@ -9,39 +14,62 @@ export interface Snippet {
   body: string;
 }
 
-// Header fields are optional, so an empty frontmatter block still parses.
-const frontmatterPattern = /^---\r?\n((?:[\S\s]*?\r?\n)?)---\r?\n?([\S\s]*)$/;
-const metadataPattern = /^([A-Za-z][\w-]*)\s*:\s*(.*)$/;
-const quotePattern = /^["']|["']$/g;
+const malformedFrontmatter = (path: string, reason: string) =>
+  new Error(`Snippet ${path} has malformed frontmatter: ${reason}`);
+
+/** Pi's parser also accepts a block that only looks like frontmatter, so match the lines here. */
+const hasFrontmatterBlock = (raw: string): boolean => {
+  const lines = raw.replaceAll('\r\n', '\n').split('\n');
+
+  if (lines[0] !== '---') {
+    return false;
+  }
+
+  return lines.slice(1).includes('---');
+};
+
+const parseFrontmatterOrThrow = (path: string, raw: string) => {
+  try {
+    return parseFrontmatter(raw);
+  } catch (error) {
+    throw malformedFrontmatter(path, errorMessage(error));
+  }
+};
+
+const readField = (
+  metadata: Record<string, unknown>,
+  key: string,
+  fallback: string,
+  path: string,
+): string => {
+  const value = metadata[key];
+
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+
+  if (typeof value !== 'string') {
+    throw malformedFrontmatter(path, `${key} must be a string`);
+  }
+
+  const trimmed = value.trim();
+
+  return trimmed === '' ? fallback : trimmed;
+};
 
 /** Returns null when the file has no frontmatter block or no body text. */
-const parseSnippet = (filename: string, raw: string): Snippet | null => {
-  const id = filename.replace(/\.md$/i, '');
-  const frontmatter = frontmatterPattern.exec(raw);
+const parseSnippet = (path: string, raw: string): Snippet | null => {
+  const id = basename(path).replace(/\.md$/i, '');
 
-  if (frontmatter === null) {
+  if (!hasFrontmatterBlock(raw)) {
     return null;
   }
 
-  const [, header = '', rest = ''] = frontmatter;
-  const metadata = new Map<string, string>();
+  const { frontmatter, body } = parseFrontmatterOrThrow(path, raw);
 
-  for (const line of header.split(/\r?\n/)) {
-    const field = metadataPattern.exec(line);
-
-    if (field === null) {
-      continue;
-    }
-
-    const [, key = '', rawValue = ''] = field;
-    const value = rawValue.trim().replace(quotePattern, '');
-
-    if (value !== '') {
-      metadata.set(key.toLowerCase(), value);
-    }
+  if (!isRecord(frontmatter)) {
+    throw malformedFrontmatter(path, 'frontmatter must be a mapping');
   }
-
-  const body = rest.replaceAll('\r\n', '\n').trim();
 
   if (body === '') {
     return null;
@@ -49,8 +77,8 @@ const parseSnippet = (filename: string, raw: string): Snippet | null => {
 
   return {
     id,
-    name: metadata.get('name') ?? id,
-    description: metadata.get('description') ?? '',
+    name: readField(frontmatter, 'name', id, path),
+    description: readField(frontmatter, 'description', '', path),
     body,
   };
 };
@@ -60,9 +88,9 @@ const compareSnippets = (first: Snippet, second: Snippet) => first.id.localeComp
 /**
  * Reads every markdown snippet in `directory`, sorted by id.
  *
- * Throws when the directory or one of its files cannot be read. A failure here
- * means the package is incomplete, which the caller shows instead of an empty
- * list.
+ * Throws when the directory or one of its files cannot be read, or when a file
+ * has frontmatter that `parseFrontmatter` cannot read. A failure here means the
+ * package is incomplete, which the caller shows instead of an empty list.
  */
 export const loadSnippets = async (directory: string): Promise<Snippet[]> => {
   // A directory named `draft.md` would otherwise reach readFile and throw.
@@ -74,9 +102,10 @@ export const loadSnippets = async (directory: string): Promise<Snippet[]> => {
 
   const parsed = await Promise.all(
     filenames.map(async (filename) => {
-      const content = await readFile(join(directory, filename), 'utf8');
+      const path = join(directory, filename);
+      const content = await readFile(path, 'utf8');
 
-      return parseSnippet(filename, content);
+      return parseSnippet(path, content);
     }),
   );
 
