@@ -72,7 +72,7 @@ it.each([
   { globs: ['f{1..3}.ts'], excludes: [], path: 'f2.ts', input: true },
   { globs: ['f{1..3}.ts'], excludes: [], path: 'f4.ts', input: false },
   { globs: ['src/*.ts'], excludes: [], path: 'src/a\nb.ts', input: true },
-  { globs: ['src/?.ts'], excludes: [], path: 'src/\u{1F600}.ts', input: false },
+  { globs: ['src/?.ts'], excludes: [], path: 'src/\u{1F600}.ts', input: true },
   { globs: ['src/*.ts'], excludes: [], path: 'src/\u{1F600}.ts', input: true },
   { globs: ['src/**/*.ts'], excludes: ['**/x'], path: 'src/a.ts', input: true },
   { globs: ['src/**/*.ts'], excludes: ['src'], path: 'src/a.ts', input: false },
