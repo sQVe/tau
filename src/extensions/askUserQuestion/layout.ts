@@ -70,13 +70,7 @@ export interface FullPreviewPlan {
   canScroll: boolean;
 }
 
-// The preview takes its rows before the options: at least its minimum, up to half the room, or all
-// the rows the options leave free. It never hides part of a focused option that fits the room. When
-// the focused option does not fit, the preview keeps its minimum and one row stays for the label.
-export const previewRoom = (
-  space: PreviewSpace,
-  previewHeight: number,
-): number => {
+export const previewRoom = (space: PreviewSpace, previewHeight: number): number => {
   const { room, optionRows, focusedRows, minimum } = space;
   const wanted = Math.max(room - optionRows, Math.floor(room / 2), minimum);
   const limit = focusedRows <= room ? room - focusedRows : Math.min(minimum, room - 1);
@@ -85,17 +79,12 @@ export const previewRoom = (
   return rows < minimum ? 0 : rows;
 };
 
-// The question and the problem. The impact is the first row dropped when rows run short.
 const minimumHeaderRows = 2;
 // Pi renders its widgets and a footer of two or more lines below the dialog.
 const piChromeRows = 6;
-// Below this many rows the dialog drops its borders and blank rows.
 const compactRows = 12;
-// The border, the question, the problem, the impact, and the blank row below them.
 const decoratedHeaderRows = 5;
-// A blank row, the key hints, and the border close the dialog.
 const footerRows = 3;
-// The full preview adds a border, a title, a blank row, and the hidden-line count to the footer.
 const fullPreviewChromeRows = 7;
 const compactFullPreviewChromeRows = 3;
 
@@ -109,21 +98,11 @@ export const isCompact = (terminalRows: number): boolean =>
 
 const previewTitleRows = (compact: boolean): number => (compact ? 1 : 2);
 
-// The title rows and the line that counts hidden lines.
-const minimumPreviewRows = (compact: boolean): number =>
-  previewTitleRows(compact) + 1;
+const minimumPreviewRows = (compact: boolean): number => previewTitleRows(compact) + 1;
 
-// The compact footer keeps only the key hints.
 const footerRowCount = (compact: boolean): number => (compact ? 1 : footerRows);
 
-// Fits the header into `rows`. The question, the problem, and the impact keep a row each before
-// the border, the blank row, or the tabs get any. When rows run short, the impact goes first,
-// then the problem, and the question stays. The tabs are dropped when they do not fit whole.
-const headerPlan = (
-  facts: HeaderFacts,
-  compact: boolean,
-  rows: number,
-): HeaderPlan => {
+const headerPlan = (facts: HeaderFacts, compact: boolean, rows: number): HeaderPlan => {
   const decorated = !compact && rows >= decoratedHeaderRows;
   const textRows = Math.max(1, decorated ? rows - 2 : rows);
   const questionRows = Math.max(1, textRows - 2);
@@ -168,7 +147,6 @@ const previewPlan = (previewLineCount: number, compact: boolean, rows: number): 
   };
 };
 
-// Scrolls the option rows so the focused option stays visible within `room` lines.
 const visibleWindow = (
   totalRows: number,
   focusedStart: number,

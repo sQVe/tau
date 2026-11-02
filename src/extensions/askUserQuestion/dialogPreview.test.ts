@@ -349,7 +349,6 @@ it('shows no question preview on the custom row', () => {
 
 const previewRowsIn = (lines: string[]) => lines.filter((line) => /row-\d+$/u.test(line));
 
-// Scrolls the full preview from top to bottom and collects every fixture line it ever shows.
 const reachablePreviewLines = (dialog: ReturnType<typeof open>['dialog']) => {
   const seen = new Set<string>();
 
@@ -372,7 +371,6 @@ it('shows every preview line in a roomy terminal', () => {
   expect(previewRowsIn(dialog.render(60))).toHaveLength(8);
 });
 
-// The hidden-line count is found as a number followed by "more", the only wording this test needs.
 const hiddenCountIn = (lines: string[]) => {
   const counts = lines.flatMap((line) => [...line.matchAll(/(\d+) more/gu)].map((m) => m[1]));
 
@@ -488,7 +486,6 @@ it('keeps the preview beside a clipped long description once the preview fits', 
     expect(lines.length).toBeLessThanOrEqual(rows - 6);
     expect(lines.some((line) => line.includes('Stacked'))).toBe(true);
 
-    // The description fills 10 rows when nothing clips it.
     const clipped = lines.filter((line) => line.includes('word')).length < 10;
     const hasPreview = hiddenCountIn(lines) !== undefined || previewRowsIn(lines).length === 6;
 
