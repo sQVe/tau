@@ -3,7 +3,6 @@
 - Scope: <the task, ticket, branch, or pane as resolved, and the time span>
 - Workspace: <workspace and worktree>
 - Scout: <name and report file, or "none; stopped" with the reason>
-- Evidence status: <the sources read, and any stale or inaccessible ones, with the reason>
 
 ## Findings
 
@@ -24,7 +23,7 @@ with no entry, such as when no problem is supported. Do not add entries to meet 
 
 ## Supported practices
 
-- <Practice>: <the evidence that shows it worked>
+- <Practice>: <the evidence that shows it worked, marked Verified>
 
 ## Gaps
 
