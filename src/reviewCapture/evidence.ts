@@ -34,7 +34,7 @@ import type {
   NumberedLine,
 } from './evidenceDecisions.js';
 import type { Freshness } from './freshness.js';
-import { captureReview, checkFreshness } from './pinnedCapture.js';
+import { recaptureReview } from './pinnedCapture.js';
 import {
   generationFolderName,
   generationInputFileName,
@@ -405,7 +405,7 @@ const reviewedInputPath = (directory: string, record: CaptureRecord) =>
     ? join(directory, generationFolderName, generationInputFileName)
     : join(directory, inputFileName);
 
-// Reads the evidence for the capture saved in directory. Writes only the freshness recapture.
+// Reads the evidence for the capture saved in directory from one recapture. Writes only recheck.diff.
 export const readReviewEvidence = async (
   root: string,
   requestedDirectory: string,
@@ -414,8 +414,13 @@ export const readReviewEvidence = async (
   const directory = await checkReviewDirectory(root, requestedDirectory);
   const generation = await generationGaps(root, directory);
   const record = await readCaptureRecord(directory);
-  const freshness = await checkFreshness(root, record, join(directory, recheckFileName));
-  const captured = await captureReview(root, record.target);
+
+  const { capture: captured, freshness } = await recaptureReview(
+    root,
+    record,
+    join(directory, recheckFileName),
+  );
+
   const paths = boundList(captured.paths, limits.paths, { list: 'paths' });
   const revision = sourceRevision(record.target);
   const tests = await readTests(root, revision, paths.items, limits);

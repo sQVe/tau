@@ -12,6 +12,11 @@ import { readCaptureRecord, recheckFileName } from './record.js';
 import { checkReviewDirectory } from './reviewDirectory.js';
 import type { PinnedTarget } from './target.js';
 
+export interface ReviewRecapture {
+  capture: ReviewCapture;
+  freshness: Freshness;
+}
+
 const captureFix = (root: string, target: FixTarget): Promise<ReviewCapture> => {
   const { predecessor } = target;
 
@@ -23,35 +28,54 @@ const captureFix = (root: string, target: FixTarget): Promise<ReviewCapture> => 
 export const captureReview = (root: string, target: PinnedTarget): Promise<ReviewCapture> =>
   target.kind === 'fix' ? captureFix(root, target) : captureTarget(root, target);
 
-// Captures the recorded target again into recheckFile and compares it, and HEAD, with the record.
+// Recaptures the recorded target once, then reads HEAD, and writes recheckFile when both succeed.
 // A failed recapture removes recheckFile, so no stale file stands for the current target.
-export const checkFreshness = async (
+export const recaptureReview = async (
   root: string,
   recorded: CaptureState & { target: PinnedTarget },
   recheckFile: string,
-): Promise<Freshness> => {
+): Promise<ReviewRecapture> => {
   const capture = await captureReview(root, recorded.target);
-  const current = await readHead(root);
+  const head = await readHead(root);
 
-  if (current.head === undefined) {
+  if (head.head === undefined) {
     await rm(recheckFile, { force: true });
 
-    const captureErrors = [...capture.errors, current.error];
+    const captureErrors = [...capture.errors, head.error];
+    const freshness = decideFreshness({ recorded, current: undefined, captureErrors });
 
-    return decideFreshness({ recorded, current: undefined, captureErrors });
+    return { capture, freshness };
   }
 
   if (capture.errors.length > 0) {
     await rm(recheckFile, { force: true });
 
-    return decideFreshness({ recorded, current: undefined, captureErrors: capture.errors });
+    const freshness = decideFreshness({
+      recorded,
+      current: undefined,
+      captureErrors: capture.errors,
+    });
+
+    return { capture, freshness };
   }
 
   await writeFile(recheckFile, capture.bytes);
 
-  const currentState = { hash: capture.hash, head: current.head };
+  const currentState = { hash: capture.hash, head: head.head };
+  const freshness = decideFreshness({ recorded, current: currentState, captureErrors: [] });
 
-  return decideFreshness({ recorded, current: currentState, captureErrors: [] });
+  return { capture, freshness };
+};
+
+// Captures the recorded target again into recheckFile and compares it, and HEAD, with the record.
+const checkFreshness = async (
+  root: string,
+  recorded: CaptureState & { target: PinnedTarget },
+  recheckFile: string,
+): Promise<Freshness> => {
+  const { freshness } = await recaptureReview(root, recorded, recheckFile);
+
+  return freshness;
 };
 
 export const checkReviewFreshness = async (root: string, directory: string): Promise<Freshness> => {
