@@ -14,11 +14,6 @@ interface QuestionResponse {
   details: DialogResult;
 }
 
-type AskQuestions = (
-  input: QuestionInput[],
-  context: ExtensionContext,
-) => Promise<QuestionResponse>;
-
 const answerSegment = (answer: Answer) => {
   const preview = answer.preview === undefined ? '' : ` selected preview: ${answer.preview}.`;
 
@@ -43,29 +38,30 @@ const responseText = (result: DialogResult) => {
   return `User has answered your questions: ${segments} ${ending}`;
 };
 
-export const createQuestionAsker = (): AskQuestions => {
-  return async (input, context) => {
-    if (context.mode !== 'tui') {
-      throw new Error('The questionnaire needs the terminal UI. Ask in plain text instead.');
-    }
+export const askQuestions = async (
+  input: QuestionInput[],
+  context: ExtensionContext,
+): Promise<QuestionResponse> => {
+  if (context.mode !== 'tui') {
+    throw new Error('The questionnaire needs the terminal UI. Ask in plain text instead.');
+  }
 
-    refuseUnrepliedTypedAnswer(context.sessionManager);
+  refuseUnrepliedTypedAnswer(context.sessionManager);
 
-    validateQuestions(input);
+  validateQuestions(input);
 
-    const questions = input.map((question) => ({
-      ...question,
-      multiSelect: question.multiSelect === true,
-    }));
+  const questions = input.map((question) => ({
+    ...question,
+    multiSelect: question.multiSelect === true,
+  }));
 
-    const opened = await customWithBlockedStatus<DialogResult | undefined>(
-      context,
-      { kind: 'question', message: questions[0]?.header ?? '' },
-      questionDialog(questions),
-    );
+  const opened = await customWithBlockedStatus<DialogResult | undefined>(
+    context,
+    { kind: 'question', message: questions[0]?.header ?? '' },
+    questionDialog(questions),
+  );
 
-    const result: DialogResult = opened ?? { kind: 'declined' };
+  const result: DialogResult = opened ?? { kind: 'declined' };
 
-    return { content: [{ type: 'text', text: responseText(result) }], details: result };
-  };
+  return { content: [{ type: 'text', text: responseText(result) }], details: result };
 };

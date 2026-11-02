@@ -2,6 +2,7 @@ import type { AgentBeforeSettleEvent } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
 import type { Assignment } from './assignment.js';
+import type { ReportTarget } from './report.js';
 import { remindToReport } from './reportReminder.js';
 import type { ReminderState } from './reportReminder.js';
 
@@ -19,9 +20,22 @@ const assignment = (overrides: Partial<Assignment> = {}): Assignment =>
     ...overrides,
   }) as Assignment;
 
-const state = (overrides: Partial<ReminderState> = {}): ReminderState => ({
+const target = (overrides: Partial<ReportTarget> = {}): ReportTarget => ({
+  hc: {
+    exec: () => Promise.reject(new Error('not used')),
+    connect: () => Promise.reject(new Error('not used')),
+    cwd: '/',
+  },
+  terminal: 'worker-1',
+  parent: 'manager-1',
+  assignmentPath: 'assignment.json',
   assignment: assignment(),
   refusal: { incompleteRefused: false, reminderSent: false, remindAfterRefusal: false },
+  ...overrides,
+});
+
+const state = (overrides: Partial<ReminderState> = {}): ReminderState => ({
+  target: target(),
   runError: undefined,
   ...overrides,
 });
@@ -45,7 +59,9 @@ it('asks only once without a refused report', () => {
 
   try {
     const worker = state({
-      refusal: { incompleteRefused: false, reminderSent: true, remindAfterRefusal: false },
+      target: target({
+        refusal: { incompleteRefused: false, reminderSent: true, remindAfterRefusal: false },
+      }),
     });
 
     expect(remindToReport(worker, event)).toBeUndefined();
@@ -60,13 +76,15 @@ it('asks again after a refused report', () => {
 
   try {
     const worker = state({
-      refusal: { incompleteRefused: false, reminderSent: true, remindAfterRefusal: false },
+      target: target({
+        refusal: { incompleteRefused: false, reminderSent: true, remindAfterRefusal: false },
+      }),
     });
 
-    worker.refusal.remindAfterRefusal = true;
+    worker.target.refusal.remindAfterRefusal = true;
 
     expect(remindToReport(worker, event)).toMatchObject({ continue: true });
-    expect(worker.refusal.remindAfterRefusal).toBe(false);
+    expect(worker.target.refusal.remindAfterRefusal).toBe(false);
   } finally {
     vi.useRealTimers();
   }
@@ -90,7 +108,7 @@ it('sends no reminder after the report is saved', () => {
   try {
     const saved = assignment({ report: { outcome: 'success', summary: 'Done.', evidence: [] } });
 
-    expect(remindToReport(state({ assignment: saved }), event)).toBeUndefined();
+    expect(remindToReport(state({ target: target({ assignment: saved }) }), event)).toBeUndefined();
   } finally {
     vi.useRealTimers();
   }

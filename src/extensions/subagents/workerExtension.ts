@@ -22,57 +22,21 @@ import { appendSystemPrompt, guidelineLines } from '../../instructions/systemPro
 import { skillTools } from '../../skillTools.js';
 import { isWorkerProcess } from '../../worker.js';
 import { readAssignment } from './assignment.js';
-import type { Assignment } from './assignment.js';
 import { checkWorkerRuntime } from './loadout.js';
 import { workerInstructions, workerPrompt } from './profiles.js';
 import { reportParameters, reportToParent } from './report.js';
 import type { ReportRefusalState, ReportTarget } from './report.js';
 import { remindToReport } from './reportReminder.js';
-import type { ReminderState } from './reportReminder.js';
 import type { Loadout } from './types.js';
 import { workerTools } from './workerTools.js';
 
 interface WorkerState {
   hc: HcRuntime;
   ready: Promise<void> | undefined;
-  terminal: string | undefined;
-  parent: string | undefined;
-  assignmentPath: string | undefined;
-  assignment: Assignment | undefined;
+  target: ReportTarget | undefined;
   refusal: ReportRefusalState;
   runError: string | undefined;
 }
-
-const asReportTarget = (state: WorkerState): ReportTarget => {
-  if (state.terminal === undefined || state.parent === undefined) {
-    throw new Error('Worker has no loaded assignment to report against.');
-  }
-
-  if (state.assignmentPath === undefined || state.assignment === undefined) {
-    throw new Error('Worker has no loaded assignment to report against.');
-  }
-
-  return {
-    hc: state.hc,
-    terminal: state.terminal,
-    parent: state.parent,
-    assignmentPath: state.assignmentPath,
-    assignment: state.assignment,
-    refusal: state.refusal,
-  };
-};
-
-const asReminderState = (state: WorkerState): ReminderState | undefined => {
-  if (state.assignment === undefined) {
-    return undefined;
-  }
-
-  return {
-    assignment: state.assignment,
-    refusal: state.refusal,
-    runError: state.runError,
-  };
-};
 
 const readLoadoutInstructionSets = (loadout: Loadout): Promise<string[]> =>
   Promise.all(
@@ -157,7 +121,11 @@ const registerReportTool = (pi: ExtensionAPI, state: WorkerState): void => {
     ].join(' '),
     parameters: reportParameters,
     execute(...argumentsList) {
-      return reportToParent(asReportTarget(state), argumentsList[1]);
+      if (state.target === undefined) {
+        throw new Error('Worker has no loaded assignment to report against.');
+      }
+
+      return reportToParent(state.target, argumentsList[1]);
     },
   });
 };
@@ -179,8 +147,8 @@ const registerSystemPromptHandler = (pi: ExtensionAPI, state: WorkerState): void
   pi.on('before_agent_start', async (event) => {
     await state.ready;
 
-    if (state.assignment) {
-      systemPrompt ??= workerSystemPrompt(state.assignment.loadout);
+    if (state.target !== undefined) {
+      systemPrompt ??= workerSystemPrompt(state.target.assignment.loadout);
       appendSystemPrompt(event, await systemPrompt);
     }
   });
@@ -188,7 +156,7 @@ const registerSystemPromptHandler = (pi: ExtensionAPI, state: WorkerState): void
 
 const readWorkerAssignment = async (
   state: WorkerState,
-): Promise<Pick<ReportTarget, 'terminal' | 'parent' | 'assignmentPath' | 'assignment'>> => {
+): Promise<Omit<ReportTarget, 'hc' | 'refusal'>> => {
   const terminalAddress = currentTerminalAddress();
 
   if (terminalAddress === undefined) {
@@ -233,10 +201,7 @@ const startWorker = async (
   try {
     const loaded = await readWorkerAssignment(state);
 
-    state.terminal = loaded.terminal;
-    state.parent = loaded.parent;
-    state.assignmentPath = loaded.assignmentPath;
-    state.assignment = loaded.assignment;
+    state.target = { hc: state.hc, refusal: state.refusal, ...loaded };
 
     checkWorkerRuntime(
       loaded.assignment.loadout,
@@ -268,15 +233,17 @@ const lastRunError = (event: AgentEndEvent): string | undefined => {
 
 const registerReportReminder = (pi: ExtensionAPI, state: WorkerState): void => {
   pi.on('agent_before_settle', (event) => {
-    const reminder = asReminderState(state);
+    if (state.target === undefined) {
+      return undefined;
+    }
 
-    return reminder === undefined ? undefined : remindToReport(reminder, event);
+    return remindToReport({ target: state.target, runError: state.runError }, event);
   });
 };
 
 const registerAgentSettledHandler = (pi: ExtensionAPI, state: WorkerState): void => {
   pi.on('agent_settled', (_event, context) => {
-    if (state.assignment === undefined) {
+    if (state.target === undefined) {
       return;
     }
 
@@ -298,10 +265,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
   const state: WorkerState = {
     hc: { exec: pi.exec.bind(pi), connect, cwd: process.cwd() },
     ready: undefined,
-    terminal: undefined,
-    parent: undefined,
-    assignmentPath: undefined,
-    assignment: undefined,
+    target: undefined,
     refusal: { incompleteRefused: false, reminderSent: false, remindAfterRefusal: false },
     runError: undefined,
   };

@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
-import { createQuestionAsker } from './askQuestions.js';
+import { askQuestions } from './askQuestions.js';
 
 const optionSchema = Type.Object({
   label: Type.String({
@@ -88,8 +88,6 @@ Write for a user who has not read your discussion. \`problem\`, \`impact\`, and 
 - Add \`preview\` to an option to show what it produces, about 10 lines. Add \`preview\` to the question for content every option acts on, such as a draft to approve. An option preview replaces it.`;
 
 export default function askUserQuestionExtension(pi: ExtensionAPI): void {
-  const askQuestions = createQuestionAsker();
-
   pi.registerTool({
     name: 'ask_user_question',
     exposure: 'model-only',

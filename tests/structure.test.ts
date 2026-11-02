@@ -110,7 +110,6 @@ const pureModules = [
   'src/extensions/subagents/launchEnvironment.ts',
   'src/extensions/subagents/modelRoutes.ts',
   'src/extensions/subagents/qaBrief.ts',
-  'src/extensions/subagents/reportCap.ts',
   'src/extensions/subagents/reportDecision.ts',
   'src/extensions/subagents/skillToolsRefusal.ts',
   'src/extensions/subagents/summaryLength.ts',

@@ -4,12 +4,10 @@ import type {
   CustomMessageEntryDraft,
 } from '@earendil-works/pi-coding-agent';
 
-import type { Assignment } from './assignment.js';
-import type { ReportRefusalState } from './report.js';
+import type { ReportTarget } from './report.js';
 
 export interface ReminderState {
-  assignment: Assignment;
-  refusal: ReportRefusalState;
+  target: ReportTarget;
   runError: string | undefined;
 }
 
@@ -28,23 +26,24 @@ export const remindToReport = (
   event: AgentBeforeSettleEvent,
 ): AgentBeforeSettleEventResult | undefined => {
   // A reminder after an errored or aborted run repeats the same error; the error explains the stop.
-  if (state.assignment.report !== null || state.runError !== undefined) {
+  if (state.target.assignment.report !== null || state.runError !== undefined) {
     return undefined;
   }
 
-  if (state.assignment.deadline - Date.now() <= 0) {
+  if (state.target.assignment.deadline - Date.now() <= 0) {
     return undefined;
   }
 
   // A refused report earns one more reminder; otherwise the worker could settle with no report.
-  const alreadyReminded = state.refusal.reminderSent && !state.refusal.remindAfterRefusal;
+  const { refusal } = state.target;
+  const alreadyReminded = refusal.reminderSent && !refusal.remindAfterRefusal;
 
   if (alreadyReminded) {
     return undefined;
   }
 
-  state.refusal.reminderSent = true;
-  state.refusal.remindAfterRefusal = false;
+  refusal.reminderSent = true;
+  refusal.remindAfterRefusal = false;
 
   return { entries: [...event.entries, reportReminder], continue: true };
 };

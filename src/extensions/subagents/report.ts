@@ -6,7 +6,6 @@ import type { Static } from 'typebox';
 import { errorMessage } from '../../errors.js';
 import { label, send } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
-import { isRecord } from '../../schema.js';
 import { saveReport } from './assignment.js';
 import type { Assignment, SavedReport } from './assignment.js';
 import { blockerKinds, decideIncompleteReport } from './incompleteReport.js';
@@ -32,33 +31,11 @@ export interface ReportTarget {
 const millisecondsPerSecond = 1000;
 const millisecondsPerMinute = 60_000;
 
-interface HandoverSections {
-  present: (typeof handoverSectionNames)[number][];
-  missing: (typeof handoverSectionNames)[number][];
-}
-
 export const handoverSectionNames = ['Changes', 'Evidence', 'Decisions', 'Concerns'] as const;
 
 // A heading starts its line, may carry Markdown marks, and ends at a colon, parenthesis, or line end.
 const summaryHasHeading = (summary: string, name: string): boolean =>
   new RegExp(`^[\\s#*>-]*${name}\\**\\s*(?::|\\(|$)`, 'im').test(summary);
-
-// Presence means the saved summary contains a section heading with that name. The scan reports the
-// missing handover sections; it does not read evidence strings, verify content, or claim freshness.
-const handoverSections = (report: unknown): HandoverSections | undefined => {
-  if (!isRecord(report)) {
-    return undefined;
-  }
-
-  const summary = typeof report.summary === 'string' ? report.summary : '';
-  const present = handoverSectionNames.filter((name) => summaryHasHeading(summary, name));
-  const presentSet = new Set(present);
-
-  return {
-    present,
-    missing: handoverSectionNames.filter((name) => !presentSet.has(name)),
-  };
-};
 
 const summaryLengthLimitText = summaryLengthLimit.toLocaleString('en-US');
 
@@ -138,7 +115,7 @@ const refuseEarlyIncomplete = (
 };
 
 const refuseMissingSections = (summary: string) => {
-  const missing = handoverSections({ summary })?.missing ?? [];
+  const missing = handoverSectionNames.filter((name) => !summaryHasHeading(summary, name));
 
   if (missing.length === 0) {
     return;
