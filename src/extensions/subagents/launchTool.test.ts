@@ -256,6 +256,51 @@ it('refuses a launch without a saved parent session', async ({ onTestFinished })
   ).rejects.toThrow('saved parent Pi session');
 });
 
+it('fails closed and reports an invalid worker capacity', async ({ onTestFinished }) => {
+  vi.stubEnv('HC_TERMINAL_ID', manager);
+
+  const fixture = await workerFixture(onTestFinished);
+
+  writeFileSync(
+    join(fixture.directory, 'tau.json'),
+    JSON.stringify({ subagents: { capacity: 0 } }),
+  );
+
+  const fake = hcSetup();
+
+  vi.mocked(connect).mockImplementation(fake.connect);
+
+  const pi = fakeExtensionApi({ exec: fake.exec });
+
+  subagentsExtension(pi.pi, registerCapacityRefusal(pi.pi));
+
+  const context = toolContext(fixture);
+
+  for (const handler of pi.handlers.get('session_start') ?? []) {
+    await handler({} as never, context);
+  }
+
+  expect(fixture.notify).toHaveBeenCalledWith(
+    expect.stringContaining('subagents.capacity must be an integer'),
+    'error',
+  );
+
+  const tool = pi.tools.get('subagent');
+
+  if (tool === undefined) {
+    throw new Error('The subagent tool was not registered.');
+  }
+
+  const result = await execute(
+    tool,
+    { profile: 'scout', model: fixture.request.model, task: 'Look.' },
+    context,
+  );
+
+  expect(result).toMatchObject({ isError: true, terminate: true });
+  expect(result.content[0]?.text).toContain('Worker capacity full (0/0)');
+});
+
 it('gives the manager the configured browser login command', async ({ onTestFinished }) => {
   vi.stubEnv('HC_TERMINAL_ID', manager);
 

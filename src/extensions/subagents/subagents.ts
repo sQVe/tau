@@ -104,6 +104,24 @@ const browserLoginCommand = (
   }
 };
 
+// An invalid cap refuses every launch, so a bad setting cannot raise the real limit.
+const launchCapacity = (context: ExtensionContext): number => {
+  try {
+    return readWorkerCapacity(
+      {
+        cwd: context.cwd,
+        agentDirectory: getAgentDir(),
+        projectTrusted: context.isProjectTrusted(),
+      },
+      context.ui,
+    );
+  } catch (error) {
+    context.ui.notify(errorMessage(error), 'error');
+
+    return 0;
+  }
+};
+
 const warnUnknownConfigKeys = (context: ExtensionContext): void => {
   try {
     const { files } = readTauConfig({
@@ -256,14 +274,7 @@ export default function subagentsExtension(
 
     const profiles = launchProfiles(context);
 
-    const capacity = readWorkerCapacity(
-      {
-        cwd: context.cwd,
-        agentDirectory: getAgentDir(),
-        projectTrusted: context.isProjectTrusted(),
-      },
-      context.ui,
-    );
+    const capacity = launchCapacity(context);
 
     registerLaunchTool(launchRuntime(capacity), profiles, launchModelLine(context, profiles));
 
