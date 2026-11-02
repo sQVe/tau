@@ -1,5 +1,6 @@
 export interface HcIsolationFacts {
   session: string | undefined;
+  inheritedSession: string | undefined;
   values: Readonly<Partial<Record<ProtectedVariable, string | undefined>>>;
   realValues: Readonly<Partial<Record<ProtectedVariable, string | undefined>>>;
   variables: readonly string[];
@@ -36,6 +37,7 @@ const inheritedProblem = (name: string): boolean => name !== 'HC_SESSION' && has
 
 export const isolationProblems = ({
   session,
+  inheritedSession,
   values,
   realValues,
   variables,
@@ -47,6 +49,8 @@ export const isolationProblems = ({
     problems.push('HC_SESSION is missing');
   } else if (trimmedSession === 'default') {
     problems.push('HC_SESSION is the default session');
+  } else if (trimmedSession === inheritedSession?.trim()) {
+    problems.push('HC_SESSION equals the inherited HC_SESSION');
   }
 
   for (const name of variables) {

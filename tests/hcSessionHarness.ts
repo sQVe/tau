@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import type { ExecFileException } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { homedir, tmpdir, userInfo } from 'node:os';
@@ -9,8 +10,9 @@ import type { TestContext } from 'vitest';
 import type { Exec } from '../src/command.js';
 import { connect as connectToHc } from '../src/hc/connect.js';
 import type { HcRuntime } from '../src/hc/hc.js';
-import { isolationProblems } from './hcIsolation.js';
-import type { ProtectedVariable } from './hcIsolation.js';
+import { isAbortError } from '../src/hc/replies.js';
+import { isolationProblems } from './hcIsolationHarness.js';
+import type { ProtectedVariable } from './hcIsolationHarness.js';
 
 export interface HcSession {
   root: string;
@@ -22,7 +24,12 @@ export interface HcSession {
 
 export interface HcSessionOptions {
   session?: string;
+  listProcesses?: (session: string) => number[];
 }
+
+type SessionProcessLister = (session: string) => number[];
+
+type HarnessExecResult = Awaited<ReturnType<Exec>> & { signal?: NodeJS.Signals | undefined };
 
 export const inheritedVariables = ['PATH', 'LANG', 'LC_ALL', 'TERM', 'TMPDIR', 'TZ'] as const;
 
@@ -96,7 +103,12 @@ const isLiveSessionProcess = (processId: string, marker: string): boolean => {
   }
 };
 
+// Reads /proc, which exists only on Linux. Other platforms report no session process.
 export const sessionProcesses = (session: string): number[] => {
+  if (process.platform !== 'linux') {
+    return [];
+  }
+
   const marker = `HC_SESSION=${session}`;
   const processIds = readdirSync('/proc').filter((name) => /^\d+$/.test(name));
 
@@ -104,24 +116,92 @@ export const sessionProcesses = (session: string): number[] => {
 };
 
 // hc server stop can return before the core process is gone. The core is not a child of this
-// process, so no exit event exists, and the wait polls /proc.
-const waitForSessionExit = async (session: string): Promise<void> => {
+// process, so no exit event exists, and the wait polls /proc. Returns false at the deadline.
+const waitForSessionExit = async (
+  session: string,
+  listProcesses: SessionProcessLister,
+): Promise<boolean> => {
   const deadline = Date.now() + stopDeadlineMilliseconds;
 
-  while (sessionProcesses(session).length > 0) {
+  while (listProcesses(session).length > 0) {
     if (Date.now() > deadline) {
-      throw new Error(`hc session ${session} still runs after hc server stop`);
+      return false;
     }
 
     await new Promise((resolve) => {
       setTimeout(resolve, stopPollMilliseconds);
     });
   }
+
+  return true;
 };
+
+// Only the stop request ends a session. The fixture never signals a process by PID, because a PID
+// read from /proc can be reused by another process before a signal reaches it.
+const stopCore = async (
+  exec: Exec,
+  session: string,
+  root: string,
+  listProcesses: SessionProcessLister,
+): Promise<void> => {
+  const result = await exec('hc', ['server', 'stop', '--json'], {
+    cwd: root,
+    timeout: stopDeadlineMilliseconds,
+  });
+
+  if (result.code !== 0 || result.killed) {
+    throw new Error(`hc server stop failed: ${result.stderr.trim()}`);
+  }
+
+  if (!(await waitForSessionExit(session, listProcesses))) {
+    throw new Error(`hc session ${session} still runs after hc server stop`);
+  }
+};
+
+// Removes the root only when no session process remains. Otherwise the root is kept, and the error
+// names the session and the root and carries the first failure as its cause.
+const stopSession = async (
+  exec: Exec,
+  session: string,
+  root: string,
+  listProcesses: SessionProcessLister,
+): Promise<void> => {
+  let failure: unknown;
+
+  try {
+    await stopCore(exec, session, root, listProcesses);
+  } catch (error) {
+    failure = error;
+  }
+
+  if (listProcesses(session).length > 0) {
+    throw new Error(`hc session ${session} still has processes after stop; kept ${root}`, {
+      cause: failure,
+    });
+  }
+
+  rmSync(root, { recursive: true, force: true });
+
+  if (failure !== undefined) {
+    throw asError(failure);
+  }
+};
+
+const killedResult = (
+  error: ExecFileException,
+  stdout: string,
+  stderr: string,
+): HarnessExecResult => ({
+  code: typeof error.code === 'number' ? error.code : 1,
+  killed: true,
+  stdout,
+  stderr,
+  signal: error.signal,
+});
 
 const createExec = (environment: Readonly<Record<string, string>>): Exec => {
   return (command, commandArguments, options = {}) =>
-    new Promise((resolve, reject) => {
+    new Promise<HarnessExecResult>((resolve, reject) => {
       execFile(
         command,
         commandArguments,
@@ -135,6 +215,18 @@ const createExec = (environment: Readonly<Record<string, string>>): Exec => {
         (error, stdout, stderr) => {
           if (error === null) {
             resolve({ code: 0, killed: false, stdout, stderr });
+
+            return;
+          }
+
+          if (isAbortError(error)) {
+            reject(asError(error));
+
+            return;
+          }
+
+          if (error.killed === true) {
+            resolve(killedResult(error, stdout, stderr));
 
             return;
           }
@@ -165,6 +257,7 @@ export const startHcSession = async (
 
     const problems = isolationProblems({
       session,
+      inheritedSession: process.env['HC_SESSION'],
       values: environment,
       realValues: realValues(),
       variables: Object.keys(environment),
@@ -183,34 +276,14 @@ export const startHcSession = async (
       cwd: root,
     };
 
-    let stopRequested = false;
+    const listProcesses = options.listProcesses ?? sessionProcesses;
 
-    const stop = async (): Promise<void> => {
-      if (stopRequested) {
-        return;
-      }
+    let stopping: Promise<void> | undefined;
 
-      stopRequested = true;
+    const stop = (): Promise<void> => {
+      stopping ??= stopSession(exec, session, root, listProcesses);
 
-      let failure: unknown;
-
-      try {
-        const result = await exec('hc', ['server', 'stop', '--json'], { cwd: root });
-
-        if (result.code !== 0 || result.killed) {
-          failure = new Error(`hc server stop failed: ${result.stderr.trim()}`);
-        } else {
-          await waitForSessionExit(session);
-        }
-      } catch (error) {
-        failure = error;
-      } finally {
-        rmSync(root, { recursive: true, force: true });
-      }
-
-      if (failure !== undefined) {
-        throw asError(failure);
-      }
+      return stopping;
     };
 
     registerCleanup(stop);

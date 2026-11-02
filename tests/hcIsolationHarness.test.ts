@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
-import { isolationProblems, protectedVariables } from './hcIsolation.js';
-import type { HcIsolationFacts, ProtectedVariable } from './hcIsolation.js';
+import { isolationProblems, protectedVariables } from './hcIsolationHarness.js';
+import type { HcIsolationFacts, ProtectedVariable } from './hcIsolationHarness.js';
 
 const realValues: Record<ProtectedVariable, string> = {
   HOME: '/real/home',
@@ -28,6 +28,7 @@ const facts = (
   values: Partial<Record<ProtectedVariable, string | undefined>> = {},
 ): HcIsolationFacts => ({
   session: 'tau-test-abc',
+  inheritedSession: undefined,
   values: { ...privateValues, ...values },
   realValues,
   variables: privateVariables,
@@ -44,6 +45,12 @@ it('refuses an empty session', () => {
 
 it('refuses an undefined session', () => {
   expect(isolationProblems(facts({ session: undefined }))).toEqual(['HC_SESSION is missing']);
+});
+
+it('refuses a session equal to the inherited HC_SESSION', () => {
+  expect(isolationProblems(facts({ inheritedSession: 'tau-test-abc' }))).toEqual([
+    'HC_SESSION equals the inherited HC_SESSION',
+  ]);
 });
 
 it('refuses the default session', () => {
@@ -92,8 +99,10 @@ it.each(protectedVariables)('refuses %s inside the real value', (name) => {
   ]);
 });
 
-it.each(protectedVariables)('refuses a missing %s', (name) => {
-  expect(isolationProblems(facts({}, { [name]: undefined }))).toEqual([`${name} is missing`]);
+it.each(protectedVariables)('refuses a missing or empty %s', (name) => {
+  for (const value of [undefined, '']) {
+    expect(isolationProblems(facts({}, { [name]: value }))).toEqual([`${name} is missing`]);
+  }
 });
 
 it('refuses a path inside the real home only after symlinks resolve', () => {
