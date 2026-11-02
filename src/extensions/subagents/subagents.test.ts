@@ -61,11 +61,11 @@ const createHc = (options: { terminal?: HcTerminal; lsFails?: boolean } = {}): H
 };
 
 const createPi = () => {
-  const handlers = new Map<string, (event: { text: string }, context: unknown) => unknown>();
+  const handlers = new Map<string, (event: unknown, context: unknown) => unknown>();
   const messages: unknown[] = [];
 
   const pi = {
-    on: (eventName: string, handler: (event: { text: string }, context: unknown) => unknown) => {
+    on: (eventName: string, handler: (event: unknown, context: unknown) => unknown) => {
       handlers.set(eventName, handler);
     },
     sendMessage: (message: unknown) => messages.push(message),
@@ -225,6 +225,85 @@ it('shows a pending question on a question note', async () => {
   }
 
   input({ text: `[tau-question] ${path}` }, context);
+
+  await tracked.settled();
+
+  expect(messages).toHaveLength(1);
+});
+
+it('shows one question message for the same question note twice', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-note-');
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+
+  const path = await savedQuestionAssignment(directory);
+  const { pi, handlers, messages } = createPi();
+  const { context } = createContext();
+  const hc = createHc({ terminal: liveTerminal({ 'tau.assignment': path }) });
+
+  const tracked = completionTracked(createWorkerDelivery(pi, hc));
+
+  registerWorkerDelivery(pi, tracked.delivery);
+
+  const input = handlers.get('input');
+
+  if (input === undefined) {
+    throw new Error('no input handler registered');
+  }
+
+  input({ text: `[tau-question] ${path}` }, context);
+  input({ text: `[tau-question] ${path}` }, context);
+
+  await tracked.settled();
+
+  expect(messages).toHaveLength(1);
+});
+
+it('shows no second question message when compaction follows a shown question', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-note-');
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+
+  const path = await savedQuestionAssignment(directory);
+  const { pi, handlers, messages } = createPi();
+  const { context } = createContext();
+  const hc = createHc({ terminal: liveTerminal({ 'tau.assignment': path }) });
+
+  const tracked = completionTracked(createWorkerDelivery(pi, hc));
+
+  registerWorkerDelivery(pi, tracked.delivery);
+
+  const input = handlers.get('input');
+
+  if (input === undefined) {
+    throw new Error('no input handler registered');
+  }
+
+  input({ text: `[tau-question] ${path}` }, context);
+
+  await tracked.settled();
+
+  expect(messages).toHaveLength(1);
+
+  handlers.get('session_compact')?.({}, context);
+
+  await tracked.settled();
+
+  expect(messages).toHaveLength(1);
+});
+
+it('shows a saved question once on compaction before its note arrives', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-note-');
+  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
+
+  const path = await savedQuestionAssignment(directory);
+  const { pi, handlers, messages } = createPi();
+  const { context } = createContext();
+  const hc = createHc({ terminal: liveTerminal({ 'tau.assignment': path }) });
+
+  const tracked = completionTracked(createWorkerDelivery(pi, hc));
+
+  registerWorkerDelivery(pi, tracked.delivery);
+
+  handlers.get('session_compact')?.({}, context);
 
   await tracked.settled();
 

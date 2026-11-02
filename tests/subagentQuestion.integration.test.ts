@@ -6,7 +6,9 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import type { Assignment } from '../src/extensions/subagents/assignment.js';
 import { readAssignment } from '../src/extensions/subagents/assignment.js';
+import { registerWorkerDelivery } from '../src/extensions/subagents/subagents.js';
 import { createWorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
+import type { WorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
 import { ls, send } from '../src/hc/hc.js';
 import { installCommandShim } from './commandShimFake.js';
 import { startHcSession } from './hcSessionHarness.js';
@@ -30,6 +32,11 @@ interface SessionEntry {
 }
 
 type DeliveryContext = Parameters<ReturnType<typeof createWorkerDelivery>['deliver']>[0];
+
+interface RecordingExtension {
+  pi: ExtensionAPI;
+  handlers: Map<string, (event: unknown, context: unknown) => unknown>;
+}
 
 vi.mock(import('../src/extensions/subagents/loadout.js'), { spy: true });
 
@@ -92,8 +99,16 @@ const childAddress = async (hc: HcSession, parent: string): Promise<string> => {
   return child.address;
 };
 
-const recordingExtension = (messages: SentMessage[], entries: SessionEntry[]): ExtensionAPI =>
-  ({
+const recordingExtension = (
+  messages: SentMessage[],
+  entries: SessionEntry[],
+): RecordingExtension => {
+  const handlers = new Map<string, (event: unknown, context: unknown) => unknown>();
+
+  const pi = {
+    on: (eventName: string, handler: (event: unknown, context: unknown) => unknown) => {
+      handlers.set(eventName, handler);
+    },
     sendMessage: (message: SentMessage) => {
       messages.push(message);
 
@@ -103,7 +118,27 @@ const recordingExtension = (messages: SentMessage[], entries: SessionEntry[]): E
         details: message.details,
       });
     },
-  }) as unknown as ExtensionAPI;
+  } as unknown as ExtensionAPI;
+
+  return { pi, handlers };
+};
+
+const completionTracked = (delivery: WorkerDelivery) => {
+  let tail: Promise<void> = Promise.resolve();
+
+  return {
+    delivery: {
+      deliver: (context: DeliveryContext) => {
+        const next = tail.then(() => delivery.deliver(context));
+
+        tail = next.catch(() => undefined);
+
+        return next;
+      },
+    },
+    settled: () => tail,
+  };
+};
 
 const deliveryContext = (entries: SessionEntry[]): DeliveryContext =>
   ({
@@ -151,17 +186,29 @@ it('shows a real worker question once and carries the manager answer into its re
 
   const messages: SentMessage[] = [];
   const entries: SessionEntry[] = [];
-  const pi = recordingExtension(messages, entries);
+  const { pi, handlers } = recordingExtension(messages, entries);
   const context = deliveryContext(entries);
+  const tracked = completionTracked(createWorkerDelivery(pi, hc.runtime));
 
-  const delivery = createWorkerDelivery(pi, hc.runtime);
+  registerWorkerDelivery(pi, tracked.delivery);
 
-  await delivery.deliver(context);
-  await delivery.deliver(context);
+  const input = handlers.get('input');
+  const compact = handlers.get('session_compact');
+
+  if (input === undefined || compact === undefined) {
+    throw new Error('worker delivery handlers are not registered');
+  }
+
+  input({ text: `[tau-question] ${worker.assignmentFilePath}` }, context);
+  input({ text: `[tau-question] ${worker.assignmentFilePath}` }, context);
+
+  await tracked.settled();
 
   expect(messages).toHaveLength(1);
 
-  await createWorkerDelivery(pi, hc.runtime).deliver(context);
+  compact({}, context);
+
+  await tracked.settled();
 
   expect(messages).toHaveLength(1);
 
@@ -223,7 +270,7 @@ it('shows a question once in a fresh delivery after its note failed', async () =
 
   const messages: SentMessage[] = [];
   const entries: SessionEntry[] = [];
-  const pi = recordingExtension(messages, entries);
+  const { pi } = recordingExtension(messages, entries);
   const context = deliveryContext(entries);
 
   await createWorkerDelivery(pi, hc.runtime).deliver(context);
