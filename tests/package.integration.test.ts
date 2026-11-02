@@ -1,3 +1,4 @@
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +42,21 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
     vi.unstubAllEnvs();
   });
 
+  // A fake hc keeps report delivery on session start away from the user's default core.
+  const hcBin = join(workingDirectory, 'bin');
+  const hcLog = join(workingDirectory, 'hc.log');
+
+  mkdirSync(hcBin, { recursive: true });
+
+  writeFileSync(
+    join(hcBin, 'hc'),
+    `#!/bin/sh\nprintf '%s\\n' "$*" >> "$HC_FAKE_LOG"\nprintf '{"terminals":[]}\\n'\n`,
+  );
+
+  chmodSync(join(hcBin, 'hc'), 0o755);
+
+  vi.stubEnv('HC_FAKE_LOG', hcLog);
+  vi.stubEnv('PATH', `${hcBin}:${process.env.PATH ?? ''}`);
   vi.stubEnv('HC_TERMINAL_ID', 'manager');
 
   // Pi-claude-bridge keeps this options object at before_agent_start and forwards only its
@@ -137,6 +153,12 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
   expect(tauExtension?.commands.has('retrospective')).toBe(true);
 
   await session.bindExtensions({});
+
+  // The fake boundary must have handled the session-start delivery, and no real hc ran.
+  await vi.waitFor(() => {
+    expect(existsSync(hcLog)).toBe(true);
+    expect(readFileSync(hcLog, 'utf8')).toContain('ls');
+  });
 
   const prompts: string[] = [];
   const transcripts: string[] = [];

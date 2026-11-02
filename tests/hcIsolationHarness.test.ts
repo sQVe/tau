@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 
+import config, { testEnvironment } from '../vite.config.js';
 import { isolationProblems, protectedVariables } from './hcIsolationHarness.js';
 import type { HcIsolationFacts, ProtectedVariable } from './hcIsolationHarness.js';
 
@@ -115,4 +116,17 @@ it('accepts a private value when the real value is missing', () => {
   expect(
     isolationProblems(facts({ realValues: { ...realValues, XDG_DATA_HOME: undefined } })),
   ).toEqual([]);
+});
+
+it('clears the inherited hc session and terminal id before every test worker starts', () => {
+  const env = (config as { test?: { env?: Record<string, string> } }).test?.env ?? {};
+
+  expect(env['HC_SESSION']).toBe('');
+  expect(env['HC_TERMINAL_ID']).toBe('');
+
+  expect(process.env.HC_SESSION ?? '').toBe('');
+  expect(process.env.HC_TERMINAL_ID ?? '').toBe('');
+
+  expect(testEnvironment).not.toContain('HC_SESSION');
+  expect(testEnvironment).not.toContain('HC_TERMINAL_ID');
 });
