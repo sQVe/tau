@@ -177,6 +177,19 @@ it('refuses a linked recheck.diff and never reads through it', async () => {
   expect(await savedState(root, directory)).toEqual(before);
 });
 
+it('refuses a recheck.diff symlink with a relative target before reading it', async () => {
+  const root = await committedRepository();
+  const { directory } = await savedReview(root);
+  const linked = join(directory, 'recheck.diff');
+
+  await rm(linked);
+  await symlink('missing-target.diff', linked);
+
+  await expect(readSavedRecapture(root, directory)).rejects.toThrow(
+    `Refusing to write through a symlink: ${linked}`,
+  );
+});
+
 it('refuses a recheck whose object format Git cannot report and changes nothing', async () => {
   const root = await committedRepository();
   const { directory } = await savedReview(root);

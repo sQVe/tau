@@ -2,6 +2,7 @@ import { join } from 'node:path';
 
 import { readGit, runGit } from '../../git.js';
 import { fixedPrefixes, readSavedRecapture } from '../../reviewCapture/reviewCapture.js';
+import type { SavedRecapture } from '../../reviewCapture/reviewCapture.js';
 import { existingEntry } from '../../tauDirectory.js';
 import { compareDiffs, decideReuse } from './reuseDecisions.js';
 import type { DiffComparison, Reuse } from './reuseDecisions.js';
@@ -9,14 +10,6 @@ import type { DiffComparison, Reuse } from './reuseDecisions.js';
 export interface ReuseRequest {
   directory: string | undefined;
   mergeBase: string | undefined;
-}
-
-interface SavedReuseFacts {
-  directory: string;
-  recordedBase: string | null;
-  recordedHash: string;
-  recheck: Buffer;
-  recheckHash: string;
 }
 
 export interface ReuseResult extends Reuse {
@@ -81,7 +74,7 @@ const listReports = async (directory: string) => {
 
 export const decideSavedReuse = async (
   root: string,
-  saved: SavedReuseFacts,
+  saved: SavedRecapture,
   revision: string,
 ): Promise<ReuseResult> => {
   const mergeBase = await resolveCommit(root, revision);

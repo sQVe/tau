@@ -1,8 +1,7 @@
-import { readFile } from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { isMissingFile } from '../errors.js';
-import { hashBytes } from './capture.js';
+import { hashOf, readOptionalBytes } from './completedCapture.js';
 import { readCaptureRecord, recheckFileName } from './record.js';
 import { checkReviewDirectory } from './reviewDirectory.js';
 
@@ -14,18 +13,30 @@ export interface SavedRecapture {
   recheckHash: string;
 }
 
-const readRecheck = async (path: string) => {
-  try {
-    return await readFile(path);
-  } catch (error) {
-    if (isMissingFile(error)) {
-      throw new Error(`No recheck.diff at ${path}. Run code_review freshness first.`, {
-        cause: error,
-      });
-    }
+export type RecheckRead =
+  | { status: 'read'; bytes: Buffer; hash: string }
+  | { status: 'error'; error: string };
 
-    throw error;
+const missingCause = (path: string): Promise<unknown> =>
+  lstat(path).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+
+export const readRecheck = async (
+  root: string,
+  directory: string,
+): Promise<{ bytes: Buffer; hash: string }> => {
+  const path = join(directory, recheckFileName);
+  const bytes = await readOptionalBytes(path);
+
+  if (bytes === undefined) {
+    throw new Error(`No recheck.diff at ${path}. Run code_review freshness first.`, {
+      cause: await missingCause(path),
+    });
   }
+
+  return { bytes, hash: await hashOf(root, bytes) };
 };
 
 export const readSavedRecapture = async (
@@ -34,18 +45,13 @@ export const readSavedRecapture = async (
 ): Promise<SavedRecapture> => {
   const checked = await checkReviewDirectory(root, directory);
   const record = await readCaptureRecord(checked);
-  const recheck = await readRecheck(join(checked, recheckFileName));
-  const hashed = await hashBytes(root, recheck);
-
-  if (hashed.error !== undefined) {
-    throw new Error(hashed.error);
-  }
+  const { bytes, hash } = await readRecheck(root, checked);
 
   return {
     directory: checked,
     recordedBase: record.base,
     recordedHash: record.hash,
-    recheck,
-    recheckHash: hashed.hash,
+    recheck: bytes,
+    recheckHash: hash,
   };
 };

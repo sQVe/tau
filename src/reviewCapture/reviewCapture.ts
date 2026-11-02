@@ -9,6 +9,7 @@ export { checkReviewDirectory } from './reviewDirectory.js';
 export { inspectReview } from './reviewInspection.js';
 export type { ReviewInspection } from './reviewInspection.js';
 export { readSavedRecapture } from './savedRecapture.js';
+export type { SavedRecapture } from './savedRecapture.js';
 
 export { reviewTargetSchema } from './target.js';
 export type { ReviewTarget } from './target.js';

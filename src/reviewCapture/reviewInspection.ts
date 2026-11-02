@@ -1,18 +1,14 @@
-import { join } from 'node:path';
-
 import { errorMessage } from '../errors.js';
-import { hashOf, readCompletedCapture, readOptionalBytes } from './completedCapture.js';
+import { readCompletedCapture } from './completedCapture.js';
 import type { EvidenceGap } from './evidenceDecisions.js';
 import type { ReviewCapture } from './fixChain.js';
 import type { Freshness } from './freshness.js';
 import { recaptureReview } from './pinnedCapture.js';
-import { readCaptureRecord, recheckFileName } from './record.js';
+import { readCaptureRecord } from './record.js';
 import type { CaptureRecord } from './record.js';
 import { checkReviewDirectory } from './reviewDirectory.js';
-
-type RecheckRead =
-  | { status: 'read'; bytes: Buffer; hash: string }
-  | { status: 'error'; error: string };
+import { readRecheck } from './savedRecapture.js';
+import type { RecheckRead } from './savedRecapture.js';
 
 export interface ReviewInspection {
   directory: string;
@@ -39,20 +35,11 @@ const generationGaps = async (root: string, directory: string): Promise<Evidence
   return [{ kind: 'generation', status: decision.status, reasons: decision.reasons }];
 };
 
-const readRecheck = async (root: string, directory: string): Promise<RecheckRead> => {
-  const path = join(directory, recheckFileName);
-
+const readRecheckStatus = async (root: string, directory: string): Promise<RecheckRead> => {
   try {
-    const bytes = await readOptionalBytes(path);
+    const { bytes, hash } = await readRecheck(root, directory);
 
-    if (bytes === undefined) {
-      return {
-        status: 'error',
-        error: `No recheck.diff at ${path}. Run code_review freshness first.`,
-      };
-    }
-
-    return { status: 'read', bytes, hash: await hashOf(root, bytes) };
+    return { status: 'read', bytes, hash };
   } catch (error) {
     return { status: 'error', error: errorMessage(error) };
   }
@@ -65,7 +52,7 @@ export const inspectReview = async (
   const directory = await checkReviewDirectory(root, requestedDirectory);
   const generation = await generationGaps(root, directory);
   const record = await readCaptureRecord(directory);
-  const recheck = await readRecheck(root, directory);
+  const recheck = await readRecheckStatus(root, directory);
   const { capture, freshness } = await recaptureReview(root, record);
 
   return { directory, generation, record, recheck, capture, freshness };
