@@ -43,7 +43,6 @@ interface CancelledGroupDetails {
   files: string[];
   subject: string;
   body: string | null;
-  // A cancelled group has no hook report; the field lets a caller read either result shape.
   hookChanges?: undefined;
 }
 
