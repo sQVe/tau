@@ -212,6 +212,32 @@ it('stops when the default branch cannot be read', async () => {
   expect(await run([url(2)])).toMatchObject({ decision: { result: 'stop' } });
 });
 
+it('views a one-pull-request stack only through its blocker', async () => {
+  const { fake, run } = setUp();
+
+  fake.pulls = [pull(2)];
+  fake.stacks = { 2: [2] };
+
+  await run([url(2)]);
+
+  const calls = joinedCalls(fake);
+
+  expect(calls.filter((call) => call.startsWith('pr view'))).toHaveLength(1);
+  expect(calls.filter((call) => call.startsWith('repo view'))).toEqual([]);
+});
+
+it('takes the trunk from the bottom pull request of a stack when the default branch cannot be read', async () => {
+  const { fake, run } = setUp();
+
+  fake.pulls = [pull(2, { baseRefName: 'release' }), pull(3, { baseRefName: 'slice-2' })];
+  fake.stacks = { 2: [2, 3] };
+  fake.failCommand('repo view', 'boom');
+
+  expect(await run([url(2)])).toMatchObject({
+    decision: { result: 'parent', parent: { number: 2 }, trunk: 'release' },
+  });
+});
+
 it('stops for a blocker that is no longer open', async () => {
   const { fake, run } = setUp();
 
