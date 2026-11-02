@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   fauxAssistantMessage,
@@ -67,6 +68,28 @@ const systemInstructions = (context: TranscriptContext): boolean =>
   savedAssignment !== undefined &&
   getCurrentSystemPrompt(context.messages).includes(savedAssignment.loadout.instructions);
 
+const appendSystemText = (): string | undefined => {
+  const agentDirectory = process.env.PI_CODING_AGENT_DIR;
+
+  if (agentDirectory === undefined || agentDirectory === '') {
+    return undefined;
+  }
+
+  try {
+    return readFileSync(join(agentDirectory, 'APPEND_SYSTEM.md'), 'utf8').trim();
+  } catch {
+    return undefined;
+  }
+};
+
+const appendSystemPresent = (context: TranscriptContext): boolean => {
+  const text = appendSystemText();
+
+  return (
+    text !== undefined && text !== '' && getCurrentSystemPrompt(context.messages).includes(text)
+  );
+};
+
 export default function controlledProvider(pi: ExtensionAPI): void {
   provider.setResponses([
     fauxAssistantMessage([
@@ -88,6 +111,7 @@ export default function controlledProvider(pi: ExtensionAPI): void {
 
       const edited = readFileSync(`${process.cwd()}/source.txt`, 'utf8') === 'after\n';
       const instructions = systemInstructions(context);
+      const appendPresent = appendSystemPresent(context);
 
       return fauxAssistantMessage([
         fauxToolCall('subagent_report', {
@@ -98,6 +122,10 @@ export default function controlledProvider(pi: ExtensionAPI): void {
             'edit checked',
             `Safety Net block: ${blocked}`,
             `saved instructions: ${instructions}`,
+            `PATH: ${process.env.PATH ?? ''}`,
+            `PI_CODING_AGENT_DIR: ${process.env.PI_CODING_AGENT_DIR ?? ''}`,
+            `TAU_ROLE: ${process.env.TAU_ROLE ?? ''}`,
+            `APPEND_SYSTEM.md: ${appendPresent}`,
           ],
         }),
       ]);

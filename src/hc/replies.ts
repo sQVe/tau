@@ -44,7 +44,8 @@ const hcTerminalSchema = Type.Object({
   rows: Type.Optional(Type.Number()),
   parent: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   exit_code: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
-  status: Type.Optional(Type.Union([statusSchema, Type.Null()])),
+  // `hc get` reports status as an object, but `hc ls` reports the state name as a string.
+  status: Type.Optional(Type.Union([statusSchema, Type.String(), Type.Null()])),
   name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 

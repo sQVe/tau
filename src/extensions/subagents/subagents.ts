@@ -8,6 +8,7 @@ import {
   readTauConfig,
   warnUnknownTopLevelKeys,
 } from '../../config/config.js';
+import { errorMessage } from '../../errors.js';
 import { connect } from '../../hc/connect.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
@@ -25,6 +26,8 @@ import { delegationGuidelines } from './managerPrompt.js';
 import { readProfileModels } from './profileModels.js';
 import { listProfiles } from './profiles.js';
 import type { ProfileSummary } from './profiles.js';
+import { createReportDelivery } from './reportDelivery.js';
+import type { ReportDelivery } from './reportDelivery.js';
 import { defaultWorkerCapacity, readWorkerCapacity } from './workerCapacityConfig.js';
 import { workerModelLine } from './workerModels.js';
 
@@ -186,6 +189,28 @@ export const registerCapacityRefusal = (pi: ExtensionAPI): CapacityRefusal => {
   };
 };
 
+export const registerReportDelivery = (pi: ExtensionAPI, delivery: ReportDelivery): void => {
+  const deliverReports = (context: Parameters<ReportDelivery['deliver']>[0]): void => {
+    delivery.deliver(context).catch((error: unknown) => {
+      context.ui.notify(`Worker report delivery failed: ${errorMessage(error)}`, 'error');
+    });
+  };
+
+  pi.on('input', (event, context) => {
+    if (event.text.includes('[tau-report]')) {
+      deliverReports(context);
+    }
+  });
+
+  pi.on('session_start', (_event, context) => {
+    deliverReports(context);
+  });
+
+  pi.on('session_compact', (_event, context) => {
+    deliverReports(context);
+  });
+};
+
 export default function subagentsExtension(
   pi: ExtensionAPI,
   capacityRefusal: CapacityRefusal,
@@ -204,6 +229,8 @@ export default function subagentsExtension(
     connect,
     cwd: process.cwd(),
   };
+
+  const delivery = createReportDelivery(pi, hc);
 
   const launchRuntime = (capacity: number): LaunchRuntime => ({
     pi,
@@ -244,6 +271,8 @@ export default function subagentsExtension(
       guidelines = delegationGuidelines(browserLoginCommand(context));
     }
   });
+
+  registerReportDelivery(pi, delivery);
 
   pi.on('tool_call', (event) => {
     if (isNestedControlCall(event)) {
