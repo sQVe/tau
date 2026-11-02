@@ -51,7 +51,6 @@ export const reportOf = (testResults: VitestTestFile[]): VitestReport => {
 
 export const validReport = reportOf([testFile([assertion()])]);
 
-// Raw JSON lets a row hold a shape that the typed builders forbid.
 export const rawReport = (assertionResult: unknown): string =>
   JSON.stringify({
     numTotalTests: 1,

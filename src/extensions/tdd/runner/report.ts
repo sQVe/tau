@@ -142,7 +142,6 @@ const isVitestReport = (value: unknown): value is VitestReport => {
   return value.testResults.every(isVitestTestFile);
 };
 
-// Malformed JSON and any shape the validators reject both mean no report.
 export const parseReport = (text: string): VitestReport | null => {
   try {
     const parsed: unknown = JSON.parse(text);
@@ -241,7 +240,6 @@ const frameLocation = (line: string, cwd: string): string | null => {
   return `${location}:${match?.[2]}`;
 };
 
-// Drops a high surrogate left at the cut so an emoji is never split.
 const capMessage = (text: string) =>
   text.length > maximumMessageCharacters
     ? `${text.slice(0, maximumMessageCharacters).replace(/[\uD800-\uDBFF]$/, '')}…`
