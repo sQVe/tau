@@ -5,7 +5,6 @@ import { errorMessage, isMissingFile } from '../errors.js';
 import { runGit } from '../git.js';
 import { climbsOut } from '../tauDirectory.js';
 import { isInsideRoot } from './capture.js';
-import { readCompletedCapture } from './completedCapture.js';
 import {
   boundList,
   callerText,
@@ -34,16 +33,10 @@ import type {
   NumberedLine,
 } from './evidenceDecisions.js';
 import type { Freshness } from './freshness.js';
-import { recaptureReview } from './pinnedCapture.js';
-import {
-  generationFolderName,
-  generationInputFileName,
-  inputFileName,
-  readCaptureRecord,
-  recheckFileName,
-} from './record.js';
+import { generationFolderName, generationInputFileName, inputFileName } from './record.js';
 import type { CaptureRecord } from './record.js';
-import { checkReviewDirectory } from './reviewDirectory.js';
+import { inspectReview } from './reviewInspection.js';
+import type { ReviewInspection } from './reviewInspection.js';
 import type { PinnedTarget } from './target.js';
 
 export { scanMarkers } from './evidenceDecisions.js';
@@ -381,22 +374,6 @@ const readNamedPaths = async (
   return { rules, checks, gaps: [] };
 };
 
-const generationGaps = async (root: string, directory: string): Promise<EvidenceGap[]> => {
-  const decision = await readCompletedCapture(root, directory);
-
-  if (decision.status === 'completed' || decision.status === 'legacy') {
-    return [];
-  }
-
-  if (decision.status === 'incomplete') {
-    throw new Error(
-      `The capture in ${directory} is incomplete, so it has no evidence. Prepare a new review.\n- ${decision.reasons.join('\n- ')}`,
-    );
-  }
-
-  return [{ kind: 'generation', status: decision.status, reasons: decision.reasons }];
-};
-
 // A version 3 or later capture saved the input it reviewed; the live input.md can change after.
 const firstVersionWithSavedInput = 3;
 
@@ -405,20 +382,12 @@ const reviewedInputPath = (directory: string, record: CaptureRecord) =>
     ? join(directory, generationFolderName, generationInputFileName)
     : join(directory, inputFileName);
 
-export const readReviewEvidence = async (
+export const readInspectedEvidence = async (
   root: string,
-  requestedDirectory: string,
+  inspection: ReviewInspection,
   limits = defaultEvidenceLimits,
 ): Promise<ReviewEvidence> => {
-  const directory = await checkReviewDirectory(root, requestedDirectory);
-  const generation = await generationGaps(root, directory);
-  const record = await readCaptureRecord(directory);
-
-  const { capture: captured, freshness } = await recaptureReview(
-    root,
-    record,
-    join(directory, recheckFileName),
-  );
+  const { capture: captured, directory, freshness, generation, record } = inspection;
 
   const paths = boundList(captured.paths, limits.paths, { list: 'paths' });
   const revision = sourceRevision(record.target);
@@ -459,3 +428,10 @@ export const readReviewEvidence = async (
     gaps,
   };
 };
+
+export const readReviewEvidence = async (
+  root: string,
+  requestedDirectory: string,
+  limits = defaultEvidenceLimits,
+): Promise<ReviewEvidence> =>
+  readInspectedEvidence(root, await inspectReview(root, requestedDirectory), limits);

@@ -13,6 +13,7 @@ import {
   captureWorkingTree,
   failGitCommand,
   preparedReview,
+  savedArtifactState,
 } from './fixtures/reviewDirectoryHarness.js';
 import { captureGeneration } from './generation.js';
 import {
@@ -201,14 +202,27 @@ it.each([
   },
 );
 
-it('writes nothing to the review directory except the freshness recapture', async () => {
+it.each([
+  { name: 'missing', saved: undefined },
+  { name: 'older bytes', saved: 'older bytes\n' },
+])('writes nothing to review files when recheck.diff is $name', async ({ saved }) => {
   const { root, from, to } = await rangeRepository();
   const directory = await savedCapture(root, { kind: 'range', from, to });
-  const before = await readdir(directory);
+
+  if (saved !== undefined) {
+    await writeFile(join(directory, 'recheck.diff'), saved);
+  }
+
+  const before = await savedArtifactState(directory);
 
   await readReviewEvidence(root, directory);
 
-  expect((await readdir(directory)).toSorted()).toEqual([...before, 'recheck.diff'].toSorted());
+  const between = await savedArtifactState(directory);
+
+  await readReviewEvidence(root, directory);
+
+  expect(between).toEqual(before);
+  expect(await savedArtifactState(directory)).toEqual(before);
 });
 
 it('refuses a review directory without capture.json', async () => {

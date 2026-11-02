@@ -31,14 +31,11 @@ export const captureReview = (root: string, target: PinnedTarget): Promise<Revie
 export const recaptureReview = async (
   root: string,
   recorded: CaptureState & { target: PinnedTarget },
-  recheckFile: string,
 ): Promise<ReviewRecapture> => {
   const capture = await captureReview(root, recorded.target);
   const head = await readHead(root);
 
   if (head.head === undefined) {
-    await rm(recheckFile, { force: true });
-
     const captureErrors = [...capture.errors, head.error];
     const freshness = decideFreshness({ recorded, current: undefined, captureErrors });
 
@@ -46,8 +43,6 @@ export const recaptureReview = async (
   }
 
   if (capture.errors.length > 0) {
-    await rm(recheckFile, { force: true });
-
     const freshness = decideFreshness({
       recorded,
       current: undefined,
@@ -57,27 +52,25 @@ export const recaptureReview = async (
     return { capture, freshness };
   }
 
-  await writeFile(recheckFile, capture.bytes);
-
   const currentState = { hash: capture.hash, head: head.head };
   const freshness = decideFreshness({ recorded, current: currentState, captureErrors: [] });
 
   return { capture, freshness };
 };
 
-const checkFreshness = async (
-  root: string,
-  recorded: CaptureState & { target: PinnedTarget },
-  recheckFile: string,
-): Promise<Freshness> => {
-  const { freshness } = await recaptureReview(root, recorded, recheckFile);
-
-  return freshness;
-};
-
+// A successful recapture saves recheck.diff; a failed one removes it, so no stale file stands for
+// the current target.
 export const checkReviewFreshness = async (root: string, directory: string): Promise<Freshness> => {
   const checked = await checkReviewDirectory(root, directory);
   const record = await readCaptureRecord(checked);
+  const { capture, freshness } = await recaptureReview(root, record);
+  const recheckFile = join(checked, recheckFileName);
 
-  return checkFreshness(root, record, join(checked, recheckFileName));
+  if (freshness.status === 'unknown') {
+    await rm(recheckFile, { force: true });
+  } else {
+    await writeFile(recheckFile, capture.bytes);
+  }
+
+  return freshness;
 };

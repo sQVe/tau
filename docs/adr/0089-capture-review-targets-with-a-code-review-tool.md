@@ -67,7 +67,8 @@ the reviewer, or bind verdicts to workers.
   change makes the capture stale.
 - A successful recapture overwrites `recheck.diff` in the review directory.
 - A failed recapture or HEAD read removes `recheck.diff`.
-- The tool writes no other review file, except that `evidence` also recaptures in the same way.
+- `evidence` recaptures to decide freshness but writes no review file. Only `freshness` writes or
+  removes `recheck.diff`, so the other review files never change.
 
 ### Evidence
 
