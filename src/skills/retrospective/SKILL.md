@@ -27,6 +27,7 @@ chooses, for later discussion.
 - Make no task, source, tracker, or lifecycle changes. That covers fixes, commits, pushes, ticket
   writes or comments, status changes, ticket closure, worker cancellation, and worktree or workspace
   removal.
+- The fresh scout is the only agent this skill may start. Never start a recipient manager.
 - Write only diagnostic scratch reports and the handover message. Allow existing scout and handover
   tools to maintain their own artifacts. Use the handover skill's prepared directory for its
   message. Existing records keep their retention. Add no saved-record format or permanent archive.
@@ -48,20 +49,24 @@ chooses, for later discussion.
    worktrees, or Linear.
    - For an ID such as `wMJ` or `wMJ:p1`, run `herdr workspace get wMJ` with the workspace part
      only.
+   - When the user names a pane, keep its full ID and then run `herdr pane get <pane>`. Keep the
+     requested pane as the evidence scope. If it cannot be resolved, ask rather than widen the
+     scope.
    - Without an ID, use the current worktree.
 2. Resolve the task.
    - Read a named ticket with `linear issue view <identifier>`. Otherwise take the task from the
      user's words or this session.
    - Ask the user when the task or workspace is missing or fits more than one target. Do not guess.
-3. Resolve the recipient. Find candidate managers with step 1 of the
-   [handover skill](../handover/SKILL.md). Ask the user which one receives the handover when none is
-   named or more than one fits.
+3. Resolve the recipient with `herdr agent list`, using the workspace and worker-exclusion filters
+   from step 1 of the [handover skill](../handover/SKILL.md). Use only its read-only discovery, not
+   its no-match startup path. Ask when no manager is named, several fit, or none is running.
 4. Choose questions from [questions.md](questions.md). Pick only what this task needs. Add a finding
    the questions do not cover when the evidence shows one.
 5. Create the scratch directory with `mktemp -d`.
 6. Launch one fresh `scout` worker with `cwd` set to this session's checkout. Never point it at
    another worktree to edit or test. Its brief includes:
-   - The resolved task, workspace, and scope, with its time span and what it excludes.
+   - The resolved task, workspace, pane when specified, and scope, with its time span and
+     exclusions.
    - Neutral context: the intent, the decisions and constraints that applied, and relevant successes
      and contrary evidence, not only suspected friction.
    - The evidence it may read, and the gaps already known.
@@ -87,11 +92,12 @@ chooses, for later discussion.
      state it as a finding.
    - Record each source you could not read, or that is stale, with the reason.
 9. Write the checked report with the [report template](report.md) into the scratch directory. Show
-   it to the user.
-10. When the recipient is chosen, hand over with the [handover skill](../handover/SKILL.md). The
-    message is the checked report with its sources and gaps. It asks only for diagnostic discussion
-    later, and it must make sense without any source file.
+   the report and scratch directory path to the user before sending.
+10. Check with the same read-only discovery that the chosen manager is still running. If not, keep
+    the report locally and ask the user; do not start a replacement. Otherwise hand over with the
+    [handover skill](../handover/SKILL.md), using that manager as the resolved target.
+    - The message is the checked report with its sources and gaps. It asks only for diagnostic
+      discussion later, and it must make sense without any source file.
     - Follow the handover skill's prepare, write, send, and failure rules, including its one-time
       arrival check after a stalled send. Add no retry or repeated check.
-    - Report the send result as the handover skill reports it.
-11. Report to the user: the checked findings, the delivery result, and the scratch directory path.
+    - Report the delivery result and end the turn.
