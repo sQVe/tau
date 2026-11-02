@@ -75,13 +75,13 @@ it.each(['version-1.json', 'version-2.json', 'version-3.json'])(
   async (name) => {
     const { repository } = await stagedFixture();
     const review = await stageReview(repository, ['.tau/slices/a.md']);
-    const text = await fixtureText(name);
-    const { stagingDirectory } = JSON.parse(text) as { stagingDirectory: string };
+    const saved = JSON.parse(await fixtureText(name)) as Record<string, unknown>;
+    const record = { ...saved, stagingDirectory: review.stagingDirectory };
 
-    await writeFile(join(review.recordDirectory, 'review.json'), text);
+    await writeFile(join(review.recordDirectory, 'review.json'), JSON.stringify(record));
 
     await expect(readReview(repository, review.recordDirectory)).rejects.toThrow(
-      `tuicr comments stay in ${stagingDirectory}. Open a new review`,
+      `tuicr comments stay in ${review.stagingDirectory}. Open a new review`,
     );
 
     expect(existsSync(review.recordDirectory)).toBe(true);
