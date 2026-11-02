@@ -123,7 +123,7 @@ const execute = async (
             recordCommandGroup,
             idleLimitMilliseconds: options.idleLimitMilliseconds,
             checksPath: defaultChecksPath,
-            separateStdout: false,
+            output: 'combined',
           },
           (checked) => Promise.resolve({ ...checked }),
         )

@@ -9,7 +9,7 @@ import type { Repository } from '../../github/github.js';
 import { readOriginRepository } from '../../github/repositoryTarget.js';
 import { defaultLockPath, withFullCheckLock } from './queue.js';
 import { readTail, runCheck } from './run.js';
-import type { CheckResult } from './run.js';
+import type { CheckOutput, CheckResult } from './run.js';
 
 export type Recorded<Verdict> = Verdict & { reused: boolean; recordError?: string };
 
@@ -18,7 +18,7 @@ export interface RunSettings {
   recordCommandGroup: (groupId: number) => Promise<void>;
   idleLimitMilliseconds: number | undefined;
   checksPath: string;
-  separateStdout: boolean;
+  output: CheckOutput;
 }
 
 export interface LockContext {
@@ -72,15 +72,15 @@ export const runAndRecord = async <Verdict extends { passed: boolean }>(
   settings: RunSettings,
   settle: (result: CheckResult) => Promise<Verdict>,
 ): Promise<Recorded<Verdict>> => {
-  const result = await runCheck(
+  const result = await runCheck({
     root,
-    identity.argv,
-    settings.signal,
-    settings.recordCommandGroup,
-    settings.idleLimitMilliseconds,
-    settings.separateStdout,
-    settings.checksPath,
-  );
+    argv: identity.argv,
+    signal: settings.signal,
+    onStarted: settings.recordCommandGroup,
+    idleLimitMilliseconds: settings.idleLimitMilliseconds,
+    output: settings.output,
+    checksPath: settings.checksPath,
+  });
 
   const verdict = await settle(result);
 

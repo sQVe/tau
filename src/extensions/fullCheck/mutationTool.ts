@@ -335,7 +335,7 @@ const execute = async (
           recordCommandGroup,
           idleLimitMilliseconds: options.idleLimitMilliseconds ?? defaultIdleLimitMilliseconds,
           checksPath: mutationChecksPath,
-          separateStdout: true,
+          output: 'report',
         },
         settleRun,
       );

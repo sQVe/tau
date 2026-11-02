@@ -9,6 +9,7 @@ import { onTestFinished, expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { runCheck } from './run.js';
+import type { CheckOutput } from './run.js';
 
 vi.mock(import('node:child_process'), async (importOriginal) => {
   const original = await importOriginal();
@@ -31,7 +32,7 @@ const idleLimit = 400;
 const groupId = 424_242;
 
 // A command that never exits by itself and writes to the log only when the test does.
-const setUp = async (separateStdout = false) => {
+const setUp = async (output: CheckOutput = 'combined') => {
   const root = await createTemporaryRepository(onTestFinished, 'tau-full-check-fake-');
   // oxlint-disable-next-line unicorn/prefer-event-target -- runCheck calls the Node child process once and emit API.
   const child = Object.assign(new EventEmitter(), { pid: groupId }) as unknown as ChildProcess;
@@ -68,14 +69,14 @@ const setUp = async (separateStdout = false) => {
     return child;
   });
 
-  const outcome = runCheck(
+  const outcome = runCheck({
     root,
-    ['fake'],
-    controller.signal,
-    async () => {},
-    idleLimit,
-    separateStdout,
-  );
+    argv: ['fake'],
+    signal: controller.signal,
+    onStarted: async () => {},
+    idleLimitMilliseconds: idleLimit,
+    output,
+  });
 
   // Swallows a rejection until the test awaits the outcome.
   outcome.catch(() => undefined);
@@ -153,7 +154,7 @@ it('does not stop a command that wrote output twice again after the idle limit p
 it.each(['stdout', 'stderr'] as const)(
   'keeps a command active while separate %s keeps growing',
   async (stream) => {
-    const { child, signals, outcome, write, writeStdout } = await setUp(true);
+    const { child, signals, outcome, write, writeStdout } = await setUp('report');
     const writeOutput = stream === 'stdout' ? writeStdout : write;
     const output = 'tick\n'.repeat(10);
 
@@ -175,7 +176,7 @@ it.each(['stdout', 'stderr'] as const)(
 );
 
 it('stops a silent command with separate stdout at the idle limit', async () => {
-  const { child, signals, outcome } = await setUp(true);
+  const { child, signals, outcome } = await setUp('report');
 
   vi.advanceTimersByTime(idleLimit - 1);
 
