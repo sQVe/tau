@@ -72,7 +72,6 @@ const facts = (overrides: Partial<GithubFacts> = {}): GithubFacts => ({
   basedOn: readOk([]),
   stacks: readOk({ kind: 'none' }),
   basePulls: null,
-  basePullNeeded: false,
   ...overrides,
 });
 
@@ -149,7 +148,6 @@ it.each([
     given: facts({
       headPulls: readOk([{ ...headPull(5), baseRefName: 'feature' }]),
       basePulls: null,
-      basePullNeeded: true,
     }),
     headPull: onePull({ ...headPull(5), baseRefName: 'feature' }),
     reason: containing('base pull requests read for feature was not made'),
@@ -241,6 +239,7 @@ it('decides untracked when a GitHub stack holds the pull request', () => {
     result: 'untracked',
     held: ['githubStack'],
     githubStack: { number: 40, pullRequests: [4, 5, 6] },
+    chainBase: 'main',
   });
 });
 

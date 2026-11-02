@@ -78,7 +78,6 @@ export interface GithubFacts {
   stacks: Read<StackedPullRequests> | null;
   // null when the base is the default branch or no pull request holds the branch.
   basePulls: Read<HeadPull[]> | null;
-  basePullNeeded: boolean;
 }
 
 export interface DecisionFacts {
@@ -288,7 +287,7 @@ const missingRequiredRead = (reads: GithubFacts, choice: HeadPullChoice): string
     return `The stacks read for #${choice.pull.number} was not made.`;
   }
 
-  if (reads.basePullNeeded && reads.basePulls === null) {
+  if (needsBasePull(choice.pull, reads.defaultBranch) && reads.basePulls === null) {
     return `The base pull requests read for ${choice.pull.baseRefName} was not made.`;
   }
 

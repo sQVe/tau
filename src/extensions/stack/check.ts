@@ -141,7 +141,6 @@ const gatherGithubFacts = async (
     basedOn,
     stacks,
     basePulls,
-    basePullNeeded,
   };
 
   return { reads, headPull };
