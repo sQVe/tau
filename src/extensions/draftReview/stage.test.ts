@@ -75,17 +75,25 @@ it.each(['version-1.json', 'version-2.json', 'version-3.json'])(
   async (name) => {
     const { repository } = await stagedFixture();
     const review = await stageReview(repository, ['.tau/slices/a.md']);
+    const text = await fixtureText(name);
+    const { stagingDirectory } = JSON.parse(text) as { stagingDirectory: string };
 
-    await writeFile(join(review.recordDirectory, 'review.json'), await fixtureText(name));
+    await writeFile(join(review.recordDirectory, 'review.json'), text);
 
     await expect(readReview(repository, review.recordDirectory)).rejects.toThrow(
-      /ran on herdr.*tuicr comments stay in .*Open a new review/s,
+      `tuicr comments stay in ${stagingDirectory}. Open a new review`,
     );
 
     expect(existsSync(review.recordDirectory)).toBe(true);
     expect(existsSync(review.stagingDirectory)).toBe(true);
   },
 );
+
+it('names the fallback staging directory when a refused record has no string path', () => {
+  const text = JSON.stringify({ version: 1, stagingDirectory: 5, paths: ['a.md'] });
+
+  expect(() => parseReviewManifest(path, text)).toThrow(/an unknown staging directory/);
+});
 
 it.each([
   { label: 'a missing staged path', stagedPaths: ['01-s/1-a.md'] },

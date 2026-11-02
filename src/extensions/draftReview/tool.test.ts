@@ -470,11 +470,12 @@ it('opens tuicr in a manager tab with the space label and --bg, then saves a ver
   };
 
   expect(manifest.version).toBe(4);
-  expect(manifest.terminal).toEqual({ state: 'open', address: 'review-1' });
+  expect(details.terminal).toBe('review-1');
+  expect(manifest.terminal).toEqual({ state: 'open', address: details.terminal });
 
   expect((await readReview(context.repository, details.directory)).terminal).toEqual({
     state: 'open',
-    address: 'review-1',
+    address: details.terminal,
   });
 });
 
@@ -623,6 +624,25 @@ it('removes the record and returns cancelled when the save succeeds after the ab
   expect(await context.records()).toEqual([]);
   expect(await context.staging()).toEqual([]);
   expect(commandCalls(context.hc.calls, 'hc', 'kill')).toHaveLength(1);
+});
+
+it('kills the started address and removes the record when open is aborted while hc run is pending', async () => {
+  const context = await fixture({ space: 'space-a' });
+  const controller = new AbortController();
+  const gate = context.holdHcRun();
+
+  const opened = context.run({ action: 'open', paths: ['.tau/slices/a.md'] }, controller.signal);
+
+  await gate.started;
+  controller.abort();
+  gate.release();
+
+  const result = await opened;
+
+  expect(result.details).toEqual({ status: 'cancelled', comments: [], edits: [] });
+  expect(commandCalls(context.hc.calls, 'hc', 'kill')).toHaveLength(1);
+  expect(await context.records()).toEqual([]);
+  expect(await context.staging()).toEqual([]);
 });
 
 it('keeps the starting record and names the terminal when saving the address and hc kill both fail', async () => {

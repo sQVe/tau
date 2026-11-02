@@ -35,7 +35,7 @@ export interface DraftReviewRuntime {
 type DraftReviewResult =
   | Collected
   | { status: 'manual'; command: string; directory: string }
-  | { status: 'opened'; directory: string }
+  | { status: 'opened'; directory: string; terminal: string }
   | { status: 'cancelled'; comments: []; edits: [] };
 
 const parameters = Type.Object({
@@ -46,7 +46,7 @@ const parameters = Type.Object({
 
 const description = `Show draft files under .tau/ to the user in tuicr. Returns the user's tuicr comments on those files and the edits the user made.
 - action open, paths: every path must be a file inside the repository's .tau directory. Paths may be absolute or relative to the working directory. The tool copies the files into a staging directory outside Git and opens that directory in tuicr. Staged names carry order numbers, such as 01-pr-run-5ASmpd/1-title.md, so tuicr shows them in paths order, grouped by folder. It returns at once. Ask the user your question, then call collect with directory.
-  - In a manager terminal: opens tuicr in a new tab of the manager's space. Returns {status: "opened", directory}. The user quits tuicr before answering.
+  - In a manager terminal: opens tuicr in a new tab of the manager's space. Returns {status: "opened", directory, terminal}, where terminal is the hc address to collect later. The user quits tuicr before answering.
   - Without a manager terminal: opens nothing. Returns {status: "manual", command, directory}. Tell the user to run command, and to tell you when they are done. Then call collect with directory.
   - If the call is cancelled while tuicr opens, the tool ends the terminal it started, removes the staging directory, and returns {status: "cancelled", comments: [], edits: []}.
 - action collect, directory: the directory that open returned. Waits until tuicr has exited. If tuicr does not exit, it deletes no comment, keeps the record, and returns an error that names the record directory. Then collects as below.
@@ -162,14 +162,16 @@ const open = async (
     } else {
       await saveStartingTerminal(staged);
 
-      address = await openReviewTerminal(hc, {
+      // `hc run --bg` returns at once. Run it without the abort signal so an abort after the
+      // launch still reaches the cleanup with the address to kill.
+      address = await openReviewTerminal(hcRuntime(runtime, cwd, undefined), {
         stagingDirectory: staged.stagingDirectory,
         space,
       });
 
       await saveTerminal(staged, address);
 
-      result = { status: 'opened', directory: staged.recordDirectory };
+      result = { status: 'opened', directory: staged.recordDirectory, terminal: address };
     }
   } catch (error) {
     failure = error;

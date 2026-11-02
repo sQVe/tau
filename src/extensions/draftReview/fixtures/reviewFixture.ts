@@ -26,9 +26,9 @@ interface TuicrComment {
 type DraftReviewTool = ReturnType<typeof createDraftReviewTool>;
 
 interface HcWaitGate {
-  // Resolves once the held hc wait has reached the exec boundary.
+  // Resolves once the held hc command has reached the exec boundary.
   started: Promise<void>;
-  // Lets the held hc wait continue to hc.
+  // Lets the held hc command continue to hc.
   release: () => void;
 }
 
@@ -45,6 +45,7 @@ export interface ReviewFixture {
   setSession: (comments: unknown) => Promise<void>;
   setWait: (result: { ended: boolean; reason: string }) => void;
   holdHcWait: () => HcWaitGate;
+  holdHcRun: () => HcWaitGate;
   deleted: () => Promise<string[]>;
   records: () => Promise<string[]>;
   staging: () => Promise<string[]>;
@@ -170,7 +171,15 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
     });
 
   const calls: ExecCall[] = [];
-  let heldWait: { started: () => void; released: Promise<void>; release: () => void } | undefined;
+
+  let heldHc:
+    | {
+        command: string;
+        started: () => void;
+        released: Promise<void>;
+        release: () => void;
+      }
+    | undefined;
 
   const exec: Exec = async (command, argumentsList, execOptions) => {
     calls.push({ command, commandArguments: [...argumentsList], signal: execOptions?.signal });
@@ -179,11 +188,11 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
       return tuicrExec(command, argumentsList, execOptions);
     }
 
-    if (argumentsList[0] === 'wait' && heldWait !== undefined) {
-      const held = heldWait;
+    if (heldHc !== undefined && argumentsList[0] === heldHc.command) {
+      const held = heldHc;
       const signal = execOptions?.signal;
 
-      heldWait = undefined;
+      heldHc = undefined;
       held.started();
 
       await Promise.race([
@@ -211,14 +220,23 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
     return hc.exec(command, argumentsList, execOptions);
   };
 
-  const holdHcWait = (): HcWaitGate => {
+  const holdHcCommand = (command: string): HcWaitGate => {
     const started = deferred();
     const released = deferred();
 
-    heldWait = { started: started.resolve, released: released.promise, release: released.resolve };
+    heldHc = {
+      command,
+      started: started.resolve,
+      released: released.promise,
+      release: released.resolve,
+    };
 
     return { started: started.promise, release: released.resolve };
   };
+
+  const holdHcWait = (): HcWaitGate => holdHcCommand('wait');
+
+  const holdHcRun = (): HcWaitGate => holdHcCommand('run');
 
   const runtime: DraftReviewRuntime = { exec, connect: hc.connect };
 
@@ -266,6 +284,7 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
     setSession,
     setWait,
     holdHcWait,
+    holdHcRun,
     deleted,
     records,
     staging,
