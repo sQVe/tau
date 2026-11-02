@@ -15,7 +15,7 @@ import type { SliceInput, SliceReadDetails, SliceToolDetails } from '../tool.js'
 
 type Fake = ReturnType<typeof createLinearFake>;
 
-export type SliceApplyOutcome = SliceApplyDetails | PartialApplyFailureDetails<StepSummary>;
+type SliceApplyOutcome = SliceApplyDetails | PartialApplyFailureDetails<StepSummary>;
 
 interface Setup {
   root: string;
@@ -51,7 +51,7 @@ export const readDetails = (details: SliceToolDetails): SliceReadDetails => {
 };
 
 // Narrows a result to an apply outcome, which includes a failure. Throws for any other result.
-export const applyDetails = (details: SliceToolDetails): SliceApplyOutcome => {
+const applyDetails = (details: SliceToolDetails): SliceApplyOutcome => {
   if (!('applied' in details)) {
     throw new Error(`Expected an apply result, got ${JSON.stringify(details)}`);
   }
