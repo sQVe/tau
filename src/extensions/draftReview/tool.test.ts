@@ -9,7 +9,7 @@ import type { ExecCall } from '../../../tests/execFake.js';
 import type { Exec } from '../../command.js';
 import type { Connect } from '../../hc/connect.js';
 import { saveCollectedRecord } from './collectedRecord.js';
-import { comment, fixture, stagingOf } from './fixtures/reviewFixture.js';
+import { comment, fixture, reviewAddress, stagingOf } from './fixtures/reviewFixture.js';
 import { readReview } from './stage.js';
 import { createDraftReviewTool } from './tool.js';
 import type { DraftReviewRuntime } from './tool.js';
@@ -638,8 +638,12 @@ it('kills the started address and removes the record when open is aborted while 
 
   const result = await opened;
 
+  const killed = commandCalls(context.hc.calls, 'hc', 'kill').map(({ commandArguments }) =>
+    commandArguments.at(-1),
+  );
+
   expect(result.details).toEqual({ status: 'cancelled', comments: [], edits: [] });
-  expect(commandCalls(context.hc.calls, 'hc', 'kill')).toHaveLength(1);
+  expect(killed).toEqual([reviewAddress]);
   expect(await context.records()).toEqual([]);
   expect(await context.staging()).toEqual([]);
 });

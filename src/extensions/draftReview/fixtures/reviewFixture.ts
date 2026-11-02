@@ -54,7 +54,9 @@ export interface ReviewFixtureOptions {
   space?: string;
 }
 
-const reviewAddress = 'review-1';
+export const reviewAddress = 'review-1';
+
+const isAborted = (signal: AbortSignal | undefined): boolean => signal?.aborted === true;
 
 const deferred = () => {
   const { promise, resolve } = Promise.withResolvers<undefined>();
@@ -191,6 +193,10 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
       heldHc = undefined;
       held.started();
 
+      if (isAborted(signal)) {
+        throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+      }
+
       await Promise.race([
         held.released,
         new Promise<void>((resolve) => {
@@ -204,7 +210,7 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
         }),
       ]);
 
-      if (signal?.aborted === true) {
+      if (isAborted(signal)) {
         throw Object.assign(new Error('aborted'), { name: 'AbortError' });
       }
     }
