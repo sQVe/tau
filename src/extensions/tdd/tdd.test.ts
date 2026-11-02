@@ -427,6 +427,22 @@ it('resets hints on session boundaries but not turns, compaction, or model chang
   }
 });
 
+it.for(['session_start', 'session_shutdown'] as const)(
+  'gives the next production edit the RED hint when %s resets while an edit lookup is pending',
+  async (reset, { onTestFinished }) => {
+    const cwd = temporaryDirectory(onTestFinished, 'tau-hint-pending-');
+    const application = setup();
+
+    const pendingEdit = application.edit(cwd);
+    await application.emit(reset, cwd, { reason: 'new' });
+    await pendingEdit;
+
+    expect(await application.edit(cwd)).toMatchObject({
+      content: [{ text: 'Original result' }, { text: redHint }],
+    });
+  },
+);
+
 it('isolates cwd and preserves arbitrary tool content, details, and errors', async ({
   onTestFinished,
 }) => {
