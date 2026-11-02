@@ -8,20 +8,22 @@ import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
 import { createLinearFake } from '../../../../tests/linearFake.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../../tests/toolContext.js';
+import type { SliceApplyDetails, StepSummary } from '../apply.js';
+import type { PartialApplyFailureDetails } from '../partialApply.js';
 import { createSliceTool } from '../tool.js';
-import type { SliceInput } from '../tool.js';
+import type { SliceInput, SliceReadDetails, SliceToolDetails } from '../tool.js';
 
 type Fake = ReturnType<typeof createLinearFake>;
 
-type ToolResult = Record<string, unknown> & { directory: string };
+export type SliceApplyOutcome = SliceApplyDetails | PartialApplyFailureDetails<StepSummary>;
 
 interface Setup {
   root: string;
   fake: Fake;
   context: ExtensionToolContext;
   directory: string;
-  read: (container?: string) => Promise<ToolResult>;
-  apply: (applyContext?: ExtensionToolContext, at?: string) => Promise<ToolResult>;
+  read: (container?: string) => Promise<SliceReadDetails>;
+  apply: (applyContext?: ExtensionToolContext, at?: string) => Promise<SliceApplyOutcome>;
 }
 
 export const fixtures = join(import.meta.dirname, 'plans');
@@ -32,11 +34,40 @@ export const run = async (
   fake: Fake,
   context: ExtensionToolContext,
   input: SliceInput,
-): Promise<ToolResult> => {
+): Promise<SliceToolDetails> => {
   const tool = createSliceTool(fake.exec);
   const result = await tool.execute('call', input, undefined, undefined, context);
 
-  return result.details as Record<string, unknown> & { directory: string };
+  return result.details;
+};
+
+// Narrows a result to a read result. Throws for any other result.
+export const readDetails = (details: SliceToolDetails): SliceReadDetails => {
+  if (!('stateToken' in details)) {
+    throw new Error(`Expected a read result, got ${JSON.stringify(details)}`);
+  }
+
+  return details;
+};
+
+// Narrows a result to an apply outcome, which includes a failure. Throws for any other result.
+export const applyDetails = (details: SliceToolDetails): SliceApplyOutcome => {
+  if (!('applied' in details)) {
+    throw new Error(`Expected an apply result, got ${JSON.stringify(details)}`);
+  }
+
+  return details;
+};
+
+// Narrows a result to a failed apply. Throws for any other result.
+export const failureDetails = (
+  details: SliceToolDetails,
+): PartialApplyFailureDetails<StepSummary> => {
+  if (!('error' in details)) {
+    throw new Error(`Expected a failed apply, got ${JSON.stringify(details)}`);
+  }
+
+  return details;
 };
 
 export const savedPlan = async (
@@ -59,15 +90,15 @@ export const snapshotDraft = async (directory: string): Promise<string[][]> => {
 };
 
 // Runs a read and checks that it changed no draft file and made no Linear write.
-export const expectReadOnly = async (
+export const expectReadOnly = async <Value>(
   fake: Fake,
   directory: string,
-  read: () => Promise<unknown>,
-): Promise<{ value?: unknown; error?: string }> => {
+  read: () => Promise<Value>,
+): Promise<{ value?: Value; error?: string }> => {
   const draftBefore = await snapshotDraft(directory);
   const writesBefore = fake.writes().length;
 
-  const outcome: { value?: unknown; error?: string } = await read().then(
+  const outcome: { value?: Value; error?: string } = await read().then(
     (value) => ({ value }),
     (error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }),
   );
@@ -97,21 +128,27 @@ export const setUp = async (
   // Follows the draft when apply moves it to the container's identifier.
   let current = directory;
 
-  const read = (container?: string) =>
-    run(fake, context, {
-      action: 'read',
-      directory: current,
-      ...(container === undefined ? {} : { container }),
-    });
+  const read = async (container?: string) =>
+    readDetails(
+      await run(fake, context, {
+        action: 'read',
+        directory: current,
+        ...(container === undefined ? {} : { container }),
+      }),
+    );
 
   const apply = async (applyContext: ExtensionToolContext = context, at = current) => {
-    const { stateToken } = await run(fake, applyContext, { action: 'read', directory: at });
+    const { stateToken } = readDetails(
+      await run(fake, applyContext, { action: 'read', directory: at }),
+    );
 
-    const result = await run(fake, applyContext, {
-      action: 'apply',
-      directory: at,
-      stateToken: String(stateToken),
-    });
+    const result = applyDetails(
+      await run(fake, applyContext, {
+        action: 'apply',
+        directory: at,
+        stateToken: stateToken,
+      }),
+    );
 
     current = result.directory;
 

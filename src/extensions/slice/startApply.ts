@@ -15,6 +15,26 @@ import { readStartState } from './startState.js';
 import type { StartState } from './startState.js';
 import type { Runtime } from './state.js';
 
+type StartTicketStatus = 'new' | 'updated' | 'unchanged';
+
+interface StartTicketSummary {
+  number: number;
+  identifier: string | null;
+  url: string | null;
+  title: string;
+  status: StartTicketStatus;
+}
+
+interface StartSummary {
+  directory: string;
+  slice: string;
+  tickets: StartTicketSummary[];
+}
+
+export type StartApplyDetails =
+  | { status: 'declined'; directory: string; slice: string; applied: readonly string[] }
+  | (StartSummary & { status: 'applied' | 'unchanged'; applied: readonly string[] });
+
 interface StartProgress {
   directory: string;
   agentTeam: string;
@@ -169,7 +189,7 @@ const rejectChangedRecord = async (state: StartState, checkDirectory: () => Prom
   }
 };
 
-const ticketStatus = (progress: StartProgress, number: number) => {
+const ticketStatus = (progress: StartProgress, number: number): StartTicketStatus => {
   if (progress.created.has(number)) {
     return 'new';
   }
@@ -177,7 +197,7 @@ const ticketStatus = (progress: StartProgress, number: number) => {
   return progress.changed.has(number) ? 'updated' : 'unchanged';
 };
 
-const summary = (progress: StartProgress, state: StartState) => {
+const summary = (progress: StartProgress, state: StartState): StartSummary => {
   const urls = new Map(progress.urls);
 
   for (const child of state.slice?.children ?? []) {
@@ -272,7 +292,7 @@ export const applyStart = async (
   context: ExtensionContext,
   request: { directory: string; agentTeam: string; stateToken: string | undefined },
   checkDirectory: () => Promise<unknown>,
-): Promise<Record<string, unknown>> => {
+): Promise<StartApplyDetails> => {
   const { directory, agentTeam, stateToken } = request;
   const state = await readStartState(runtime, directory, agentTeam);
   const { draft, slice } = rejectChangedState(state, stateToken);

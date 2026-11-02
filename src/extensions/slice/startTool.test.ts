@@ -8,27 +8,48 @@ import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createLinearFake } from '../../../tests/linearFake.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { confirmContext, noUiContext } from '../../../tests/toolContext.js';
+import type { PartialApplyFailureDetails } from './partialApply.js';
+import type { StartApplyDetails } from './startApply.js';
 import { createStartSliceTool } from './startTool.js';
+import type { StartReadDetails, StartToolDetails } from './startTool.js';
 import { createSliceTool } from './tool.js';
 
 type Fake = ReturnType<typeof createLinearFake>;
 
-interface Ticket {
-  number: number;
-  identifier: string | null;
-  url: string | null;
-  title: string;
-  status: string;
-}
+type StartApplyOutcome = StartApplyDetails | PartialApplyFailureDetails<string>;
 
-interface Details {
-  status: string;
-  error?: string;
-  tickets: Ticket[];
-  writes: { kind: string }[];
-  problems: string[];
-  stateToken: string;
-}
+// Each helper narrows a result to the variant that has the field it reads. Throws for any other.
+const readOf = (details: StartToolDetails): StartReadDetails => {
+  if (!('stateToken' in details)) {
+    throw new Error(`Expected a read result, got ${JSON.stringify(details)}`);
+  }
+
+  return details;
+};
+
+const applyOf = (details: StartToolDetails): StartApplyOutcome => {
+  if (!('applied' in details)) {
+    throw new Error(`Expected an apply result, got ${JSON.stringify(details)}`);
+  }
+
+  return details;
+};
+
+const ticketsOf = (details: StartApplyOutcome) => {
+  if (!('tickets' in details)) {
+    throw new Error(`Expected tickets, got ${JSON.stringify(details)}`);
+  }
+
+  return details.tickets;
+};
+
+const failureOf = (details: StartToolDetails): PartialApplyFailureDetails<string> => {
+  if (!('error' in details)) {
+    throw new Error(`Expected a failed apply, got ${JSON.stringify(details)}`);
+  }
+
+  return details;
+};
 
 const fixtures = join(import.meta.dirname, 'fixtures', 'starts');
 
@@ -57,7 +78,7 @@ const setUp = async (fake = createLinearFake()) => {
     context,
   );
 
-  const { directory } = prepare.details as { directory: string };
+  const { directory } = prepare.details;
 
   await copyFile(join(fixtures, 'version-1.json'), join(directory, 'start.json'));
   await writeFile(join(directory, 'agent-1.md'), 'One.\n');
@@ -68,7 +89,7 @@ const setUp = async (fake = createLinearFake()) => {
     stateToken?: string,
     useFake: Fake = fake,
     useContext: ExtensionToolContext = context,
-  ): Promise<Details> => {
+  ): Promise<StartToolDetails> => {
     const result = await createStartSliceTool(useFake.exec).execute(
       'call',
       { action, directory, agentTeam: 'AI', ...(stateToken === undefined ? {} : { stateToken }) },
@@ -77,13 +98,13 @@ const setUp = async (fake = createLinearFake()) => {
       useContext,
     );
 
-    return result.details as unknown as Details;
+    return result.details;
   };
 
   const apply = async (useFake: Fake = fake, useContext: ExtensionToolContext = context) => {
-    const { stateToken } = await call('read', undefined, useFake, useContext);
+    const { stateToken } = readOf(await call('read', undefined, useFake, useContext));
 
-    return call('apply', stateToken, useFake, useContext);
+    return applyOf(await call('apply', stateToken, useFake, useContext));
   };
 
   const snapshot = async () => {
@@ -140,9 +161,9 @@ describe('start_slice', () => {
       description: 'One.\n',
     });
 
-    expect(result.tickets.map((ticket) => ticket.status)).toEqual(['new', 'unchanged']);
+    expect(ticketsOf(result).map((ticket) => ticket.status)).toEqual(['new', 'unchanged']);
     expect(await saved()).toEqual([created?.identifier, 'AI-12']);
-    expect(result.tickets[0]?.url).toContain(created?.identifier);
+    expect(ticketsOf(result)[0]?.url).toContain(created?.identifier);
   });
 
   it('reports applied on the first run and unchanged on a retry with nothing to write', async () => {
@@ -171,7 +192,7 @@ describe('start_slice', () => {
     const outside = temporaryDirectory(onTestFinished, 'tau-start-outside-');
 
     const originalRecord = await readFile(join(directory, 'start.json'), 'utf8');
-    const { stateToken } = await call('read');
+    const { stateToken } = readOf(await call('read'));
 
     const racing: Fake = {
       ...fake,
@@ -207,7 +228,7 @@ describe('start_slice', () => {
 
     const { call, saved } = await setUp(fake);
     const before = await saved();
-    const result = await call('read');
+    const result = readOf(await call('read'));
 
     expect(result.writes.map((write) => write.kind)).toEqual(['createTicket', 'updateBody']);
     expect(result.problems).toEqual([]);
@@ -233,7 +254,7 @@ describe('start_slice', () => {
 
     const result = await apply();
 
-    expect(result.tickets.map((ticket) => ticket.status)).toEqual(['unchanged', 'updated']);
+    expect(ticketsOf(result).map((ticket) => ticket.status)).toEqual(['unchanged', 'updated']);
     expect(fake.issues.get('AI-12')?.description).toBe('Two.\n');
     expect(fake.writes()).toHaveLength(1);
   });
@@ -251,7 +272,7 @@ describe('start_slice', () => {
     expect(children(fake)).toHaveLength(2);
     expect(await saved()).toEqual(['AI-20', 'AI-12']);
     expect(fake.issues.get('AI-20')?.description).toBe('One.\n');
-    expect(result.tickets.map((ticket) => ticket.status)).toEqual(['updated', 'unchanged']);
+    expect(ticketsOf(result).map((ticket) => ticket.status)).toEqual(['updated', 'unchanged']);
   });
 
   it.each([
@@ -266,7 +287,7 @@ describe('start_slice', () => {
 
     const { call, saved } = await setUp(fake);
     const before = await saved();
-    const read = await call('read');
+    const read = readOf(await call('read'));
 
     expect(read.problems).toHaveLength(1);
     expect(read.problems[0]).toContain('ME-30');
@@ -288,7 +309,7 @@ describe('start_slice', () => {
 
     await recordNoIdentifiers();
 
-    const { stateToken } = await call('read');
+    const { stateToken } = readOf(await call('read'));
     let teamLookups = 0;
 
     const flakyTeam: Fake = {
@@ -306,9 +327,9 @@ describe('start_slice', () => {
       },
     };
 
-    const result = await call('apply', stateToken, flakyTeam);
+    const result = applyOf(await call('apply', stateToken, flakyTeam));
 
-    expect(result.tickets.map((ticket) => ticket.status)).toEqual(['new', 'new']);
+    expect(ticketsOf(result).map((ticket) => ticket.status)).toEqual(['new', 'new']);
     expect(await saved()).toEqual(children(fake).map((issue) => issue.identifier));
   });
 
@@ -319,7 +340,7 @@ describe('start_slice', () => {
     addAgentChild(fake, { identifier: 'AI-12', title: 'Report the start', description: 'Two.\n' });
 
     const { directory, context, call } = await setUp(fake);
-    const { stateToken } = await call('read');
+    const { stateToken } = readOf(await call('read'));
     const recordFile = join(directory, 'start.json');
 
     const failingSave: Fake = {
@@ -346,11 +367,7 @@ describe('start_slice', () => {
 
     expect(result.isError).toBe(true);
 
-    const details = result.details as {
-      directory: string;
-      created: { identifier: string; url: string };
-      notApplied: string[];
-    };
+    const details = failureOf(result.details);
 
     expect(details.directory).toBe(directory);
 
@@ -376,7 +393,7 @@ describe('start_slice', () => {
     const failure = await apply();
 
     expect(failure.status).toBe('failed');
-    expect(failure.error).toContain('Creating ticket 2 "Report the start" failed');
+    expect(failureOf(failure).error).toContain('Creating ticket 2 "Report the start" failed');
 
     const [first, second] = await saved();
 
@@ -387,8 +404,8 @@ describe('start_slice', () => {
     const result = await apply();
 
     expect(children(fake)).toHaveLength(2);
-    expect(result.tickets.map((ticket) => ticket.status)).toEqual(['unchanged', 'new']);
-    expect(result.tickets[0]?.identifier).toBe(first);
+    expect(ticketsOf(result).map((ticket) => ticket.status)).toEqual(['unchanged', 'new']);
+    expect(ticketsOf(result)[0]?.identifier).toBe(first);
   });
 
   it('stops at a create that prints no identifier and tells the model to read again', async () => {
@@ -404,7 +421,7 @@ describe('start_slice', () => {
     const failure = await apply();
 
     expect(failure.status).toBe('failed');
-    expect(failure.error).toContain('Call read again before any retry');
+    expect(failureOf(failure).error).toContain('Call read again before any retry');
 
     expect(await saved()).toEqual([null, null]);
     expect(fake.writes()).toHaveLength(1);
@@ -422,7 +439,7 @@ describe('start_slice', () => {
     const failure = await apply();
 
     expect(failure.status).toBe('failed');
-    expect(failure.error).toContain('read again');
+    expect(failureOf(failure).error).toContain('read again');
 
     const fake = createLinearFake();
 
@@ -432,7 +449,7 @@ describe('start_slice', () => {
     const result = await apply(fake);
 
     expect((await saved())[0]).toBe('AI-40');
-    expect(result.tickets[0]?.status).toBe('unchanged');
+    expect(ticketsOf(result)[0]?.status).toBe('unchanged');
     expect(children(fake).filter((issue) => issue.title === 'Record the start')).toHaveLength(1);
   });
 
@@ -443,7 +460,7 @@ describe('start_slice', () => {
 
     const { directory, call, saved } = await setUp(fake);
     const before = await saved();
-    const { stateToken } = await call('read');
+    const { stateToken } = readOf(await call('read'));
 
     await writeFile(join(directory, 'agent-1.md'), 'Changed.\n');
 
@@ -459,7 +476,7 @@ describe('start_slice', () => {
     addSlice(fake);
 
     const { call } = await setUp(fake);
-    const { stateToken } = await call('read');
+    const { stateToken } = readOf(await call('read'));
 
     addAgentChild(fake, { identifier: 'AI-50', title: 'Record the start' });
 
@@ -477,7 +494,7 @@ describe('start_slice', () => {
 
     await rm(join(directory, 'start.json'));
 
-    const read = await call('read');
+    const read = readOf(await call('read'));
 
     expect(read.problems).toHaveLength(1);
     await expect(call('apply', read.stateToken)).rejects.toThrow('has no start.json');
@@ -643,7 +660,7 @@ describe('start_slice ownership', () => {
     const { seen, context } = prompts(root, true);
     const result = await apply(fake, context);
 
-    expect(result.tickets.map((ticket) => ticket.status)).toEqual(['new', 'updated']);
+    expect(ticketsOf(result).map((ticket) => ticket.status)).toEqual(['new', 'updated']);
     expect(fake.issues.get('AI-12')?.description).toBe('Two.\n');
     expect(seen).toHaveLength(1);
     expect(seen[0]).toContain('AI-12');

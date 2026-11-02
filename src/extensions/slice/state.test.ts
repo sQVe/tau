@@ -8,6 +8,7 @@ import { noUiContext } from '../../../tests/toolContext.js';
 import {
   appliedPlan,
   expectReadOnly,
+  readDetails,
   run,
   setUp,
   temporaryRepository,
@@ -22,7 +23,7 @@ describe('slice tool read', () => {
     fake.mergedPullRequests.add('https://github.com/sQVe/tau/pull/1');
     fake.addIssue({ identifier: 'ME-9', title: 'Dropped', parent: 'ME-1', sortOrder: 9 });
 
-    const { value: result } = (await expectReadOnly(fake, directory, read)) as { value: unknown };
+    const { value: result } = await expectReadOnly(fake, directory, read);
 
     expect(result).toMatchObject({
       draft: { container: { identifier: 'ME-1' } },
@@ -189,7 +190,7 @@ describe('slice tool read', () => {
       },
     });
 
-    const { writes } = outcome.value as { writes: { text?: unknown }[] };
+    const { writes } = outcome.value!;
 
     expect(writes.every((write) => typeof write.text === 'string')).toBe(true);
   });
@@ -238,11 +239,11 @@ const limitAfterRead = async (
   limitPages: () => void,
 ) => {
   const { fake, context, directory } = setup;
-  const { stateToken } = await run(fake, context, { action: 'read', directory });
+  const { stateToken } = readDetails(await run(fake, context, { action: 'read', directory }));
 
   limitPages();
 
-  return () => run(fake, context, { action: 'apply', directory, stateToken: String(stateToken) });
+  return () => run(fake, context, { action: 'apply', directory, stateToken: stateToken });
 };
 
 describe('slice tool Linear pages', () => {

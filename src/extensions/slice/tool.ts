@@ -10,12 +10,35 @@ import type { Exec } from '../../command.js';
 import { isMissingFile } from '../../errors.js';
 import { ensureTauDirectory, findTauRoot, rejectLinkedEntries } from '../../tauDirectory.js';
 import { applySlicePlan } from './apply.js';
+import type { SliceApplyDetails, StepSummary } from './apply.js';
 import { readPlan } from './draft.js';
+import type { Plan } from './draft.js';
 import { checkDraftDirectory, draftName } from './draftDirectory.js';
 import { PartialApplyError, partialApplyToolResult } from './partialApply.js';
+import type { PartialApplyFailureDetails } from './partialApply.js';
 import { readState, slicesPath } from './state.js';
 import type { Runtime } from './state.js';
 import { describeWrite } from './writes.js';
+import type { LinearContainer, SliceWrite } from './writes.js';
+
+interface SlicePrepareDetails {
+  directory: string;
+}
+
+export interface SliceReadDetails {
+  directory: string;
+  draft: Plan | null;
+  container: LinearContainer | null;
+  writes: (SliceWrite & { text: string })[];
+  problems: string[];
+  dropped: string[];
+  orderInPlace: boolean;
+  stateToken: string;
+}
+
+type SliceSuccessDetails = SlicePrepareDetails | SliceReadDetails | SliceApplyDetails;
+
+export type SliceToolDetails = SliceSuccessDetails | PartialApplyFailureDetails<StepSummary>;
 
 export const sliceToolParameters = Type.Object({
   action: Type.Union([Type.Literal('prepare'), Type.Literal('read'), Type.Literal('apply')]),
@@ -109,7 +132,11 @@ const prepare = async (root: string, id: string | undefined) => {
   return createDraftDirectory(root, await findDraftFor(root, id));
 };
 
-const read = async (runtime: Runtime, directory: string, container: string | undefined) => {
+const read = async (
+  runtime: Runtime,
+  directory: string,
+  container: string | undefined,
+): Promise<SliceReadDetails> => {
   const state = await readState(runtime, directory, container);
   const plan = state.draft?.plan;
 
@@ -136,7 +163,7 @@ const runAction = async (
   context: ExtensionContext,
   parameters: SliceInput,
   signal: AbortSignal | undefined,
-): Promise<Record<string, unknown>> => {
+): Promise<SliceSuccessDetails> => {
   const root = await findTauRoot(context.cwd, 'slice');
   const runtime = { exec, root, signal };
 
@@ -165,7 +192,7 @@ const runAction = async (
 
 export const createSliceTool = (
   exec: Exec,
-): ToolDefinition<typeof sliceToolParameters, Record<string, unknown>> =>
+): ToolDefinition<typeof sliceToolParameters, SliceToolDetails> =>
   defineTool({
     name: 'slice',
     label: 'Slice',

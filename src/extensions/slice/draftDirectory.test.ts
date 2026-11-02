@@ -21,6 +21,7 @@ import {
   appliedPlan,
   fixtures,
   outsideDirectory,
+  readDetails,
   run,
   savedPlan,
   setUp,
@@ -170,12 +171,14 @@ describe('slice tool draft directory', () => {
     await mkdir(join(root, '.tau'));
     await writeFile(join(root, '.tau', 'note.md'), 'Not ignored.\n');
 
-    const result = await run(fake, context, {
-      action: 'read',
-      directory: '.tau/slices/missing',
-    });
+    const result = readDetails(
+      await run(fake, context, {
+        action: 'read',
+        directory: '.tau/slices/missing',
+      }),
+    );
 
-    expect(result['draft']).toBeNull();
+    expect(result.draft).toBeNull();
     expect(await exists(join(root, '.tau', '.gitignore'))).toBe(false);
     expect(await exists(join(root, '.tau', 'slices'))).toBe(false);
   });

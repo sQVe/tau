@@ -19,7 +19,6 @@ export interface PartialApplyFailure<Summary> {
 }
 
 export interface PartialApplyFailureDetails<Summary> {
-  [key: string]: unknown;
   status: 'failed';
   error: string;
   directory: string;

@@ -24,7 +24,7 @@ import type { Runtime, SliceState } from './state.js';
 import { describeWrite, isInPlanOrder, plannedSortOrders } from './writes.js';
 import type { LinearChild, LinearContainer, OrderedSlice, SliceWrite } from './writes.js';
 
-type StepSummary = (
+export type StepSummary = (
   | SliceWrite
   | { kind: 'moveDraft' }
   | { kind: 'saveIdentifier'; identifier: string }
@@ -32,6 +32,25 @@ type StepSummary = (
   text: string;
   identifier?: string;
 };
+
+interface SliceSummary {
+  directory: string;
+  container: { identifier: string | null; url: string | null };
+  slices: { number: number; identifier: string | null; url: string | null }[];
+}
+
+export type SliceApplyDetails =
+  | { status: 'declined'; directory: string; applied: readonly StepSummary[] }
+  | (SliceSummary & {
+      status: 'unchanged';
+      applied: readonly StepSummary[];
+      orderInPlace: boolean;
+    })
+  | (SliceSummary & {
+      status: 'applied';
+      applied: readonly StepSummary[];
+      orderInPlace: boolean;
+    });
 
 interface ApplyProgress {
   directory: string;
@@ -316,7 +335,7 @@ const checkOrder = async (
   return { applied: all, orderInPlace: isSlotsInPlanOrder(repaired.slots) };
 };
 
-const summary = (progress: ApplyProgress, container: LinearContainer | undefined) => {
+const summary = (progress: ApplyProgress, container: LinearContainer | undefined): SliceSummary => {
   const urls = new Map(progress.urls);
 
   for (const child of container?.children ?? []) {
@@ -356,7 +375,7 @@ export const applySlicePlan = async (
   context: ExtensionContext,
   request: { directory: string; stateToken: string | undefined },
   checkDirectory: () => Promise<unknown>,
-): Promise<Record<string, unknown>> => {
+): Promise<SliceApplyDetails> => {
   const { directory, stateToken } = request;
   const state = await readState(runtime, directory, undefined);
   const draft = rejectChangedState(state, stateToken);
