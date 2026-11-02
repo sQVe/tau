@@ -3,9 +3,9 @@ import type { Connect } from '../src/hc/connect.js';
 import { createExecFake, failedResult, succeededResult } from './execFake.js';
 import type { ExecCall } from './execFake.js';
 
-export type HcCommand = 'run' | 'get' | 'ls' | 'send' | 'wait' | 'kill' | 'rm' | 'label';
+type HcCommand = 'run' | 'get' | 'ls' | 'send' | 'wait' | 'kill' | 'rm' | 'label';
 
-export interface HcRequestMessage {
+interface HcRequestMessage {
   jsonrpc: string;
   id: number;
   method: string;

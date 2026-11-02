@@ -237,6 +237,18 @@ const errorCases = [
     parse: () => matchLines(['{"jsonrpc":"2.0","result":{"address":"t7"}}'], 2),
     expectedError: { kind: 'malformed' },
   },
+  {
+    name: 'an id-less reply after the matched reply',
+    parse: () =>
+      matchLines(
+        [
+          JSON.stringify({ jsonrpc: '2.0', id: 2, result: { address: 't7', state: 'live' } }),
+          JSON.stringify({ jsonrpc: '2.0', result: { address: 't7' } }),
+        ],
+        2,
+      ),
+    expectedError: { kind: 'malformed' },
+  },
 ];
 
 it.each(errorCases)('rejects $name', ({ parse, expectedError }) => {

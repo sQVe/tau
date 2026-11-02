@@ -6,11 +6,14 @@ import {
   HcError,
   currentTerminalAddress,
   get,
+  kill,
   label,
   ls,
   readCurrentTerminal,
+  rm,
   run,
   send,
+  wait,
 } from './hc.js';
 import type { HcRuntime } from './hc.js';
 
@@ -47,6 +50,29 @@ it('returns the terminal a get command parsed and starts no connection', async (
   expect(result.labels).toEqual({ role: 'worker' });
   expect(fake.calls).toHaveLength(1);
   expect(fake.connectCalls).toHaveLength(0);
+});
+
+const abortedExecError = (): Error => {
+  const error = new Error('The operation was aborted');
+
+  error.name = 'AbortError';
+
+  return error;
+};
+
+it('reports an exec aborted by the runtime signal as an aborted HcError', async () => {
+  const fake = createHcFake();
+
+  const runtime: HcRuntime = {
+    exec: () => Promise.reject(abortedExecError()),
+    connect: fake.connect,
+    cwd: '/repository',
+  };
+
+  const failure = await get(runtime, 't7').catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ name: 'HcError', kind: 'aborted' });
 });
 
 it('passes the runtime signal to exec', async () => {
@@ -198,6 +224,95 @@ it('sends text without flags by default', async () => {
   expect(fake.calls[0]?.commandArguments).toEqual(['send', '--json', '--', 't7', 'hello']);
 });
 
+it('separates a get terminal that starts with a dash from the flags', async () => {
+  const fake = createHcFake();
+
+  fake.reply('get', JSON.stringify(terminal));
+
+  await get(runtimeOf(fake), '-t7');
+
+  expect(fake.calls[0]?.commandArguments).toEqual(['get', '--json', '--', '-t7']);
+});
+
+it('passes the wait output and timeout flags before the terminal', async () => {
+  const fake = createHcFake();
+
+  fake.reply(
+    'wait',
+    JSON.stringify({ terminal: 't7', ended: false, reason: 'timeout', turn: 4, children: [] }),
+  );
+
+  const result = await wait(runtimeOf(fake), 't7', { output: 'screen', timeout: 30 });
+
+  expect(result.reason).toBe('timeout');
+
+  expect(fake.calls[0]?.commandArguments).toEqual([
+    'wait',
+    '--json',
+    '--output',
+    'screen',
+    '--timeout',
+    '30',
+    '--',
+    't7',
+  ]);
+});
+
+it('separates a wait terminal that starts with a dash from the flags', async () => {
+  const fake = createHcFake();
+
+  fake.reply(
+    'wait',
+    JSON.stringify({ terminal: '-t7', ended: true, reason: 'exit', turn: 1, children: [] }),
+  );
+
+  await wait(runtimeOf(fake), '-t7');
+
+  expect(fake.calls[0]?.commandArguments).toEqual(['wait', '--json', '--', '-t7']);
+});
+
+it('kills the terminal and returns it', async () => {
+  const fake = createHcFake();
+
+  fake.reply('kill', JSON.stringify(terminal));
+
+  const result = await kill(runtimeOf(fake), 't7');
+
+  expect(result.address).toBe('t7');
+  expect(fake.calls[0]?.commandArguments).toEqual(['kill', '--json', '--', 't7']);
+});
+
+it('separates a kill terminal that starts with a dash from the flags', async () => {
+  const fake = createHcFake();
+
+  fake.reply('kill', JSON.stringify({ ...terminal, address: '-t7' }));
+
+  await kill(runtimeOf(fake), '-t7');
+
+  expect(fake.calls[0]?.commandArguments).toEqual(['kill', '--json', '--', '-t7']);
+});
+
+it('removes the terminal and returns the removed address', async () => {
+  const fake = createHcFake();
+
+  fake.reply('rm', JSON.stringify({ removed: 't7' }));
+
+  const result = await rm(runtimeOf(fake), 't7');
+
+  expect(result.removed).toBe('t7');
+  expect(fake.calls[0]?.commandArguments).toEqual(['rm', '--json', '--', 't7']);
+});
+
+it('separates an rm terminal that starts with a dash from the flags', async () => {
+  const fake = createHcFake();
+
+  fake.reply('rm', JSON.stringify({ removed: '-t7' }));
+
+  await rm(runtimeOf(fake), '-t7');
+
+  expect(fake.calls[0]?.commandArguments).toEqual(['rm', '--json', '--', '-t7']);
+});
+
 it('separates label assignments that start with dashes from the terminal', async () => {
   const fake = createHcFake();
 
@@ -293,6 +408,6 @@ it('rejects malformed evidence for the current terminal', async () => {
   });
 
   expect(fake.calls).toHaveLength(1);
-  expect(fake.calls[0]?.commandArguments).toEqual(['get', '--json', 't7']);
+  expect(fake.calls[0]?.commandArguments).toEqual(['get', '--json', '--', 't7']);
   expect(fake.connectCalls).toHaveLength(0);
 });

@@ -5,6 +5,7 @@ import { errorMessage } from '../errors.js';
 import type { HcRuntime } from './hc.js';
 import {
   HcError,
+  isAbortError,
   matchParsedReply,
   parseHelloResult,
   parseJsonRpcReplies,
@@ -14,6 +15,7 @@ import {
 import type { HcTerminal } from './replies.js';
 
 export interface ConnectOptions {
+  cwd?: string | undefined;
   env?: Readonly<Record<string, string>> | undefined;
   signal?: AbortSignal | undefined;
 }
@@ -40,6 +42,8 @@ export interface TerminalRunRequest {
 
 export const helloGeneration = 1;
 
+const streamKillGraceMilliseconds = 5000;
+
 const terminalRunParams = (request: TerminalRunRequest): Record<string, unknown> => ({
   argv: request.argv,
   env: request.env,
@@ -62,6 +66,12 @@ const takeReply = (
   return reply;
 };
 
+const stderrDetail = (stderr: string): string => {
+  const trimmed = stderr.trim();
+
+  return trimmed === '' ? '' : `: ${trimmed}`;
+};
+
 const exitFailure = (result: ConnectResult): HcError | undefined => {
   if (result.code === 0 && result.signal === null) {
     return undefined;
@@ -72,8 +82,9 @@ const exitFailure = (result: ConnectResult): HcError | undefined => {
   }
 
   const details = result.code === null ? {} : { exitCode: result.code };
+  const message = `hc connect exited with code ${String(result.code)}${stderrDetail(result.stderr)}`;
 
-  return new HcError('exited', `hc connect exited with code ${String(result.code)}`, details);
+  return new HcError('exited', message, details);
 };
 
 export const runWithEnvironment = async (
@@ -82,15 +93,17 @@ export const runWithEnvironment = async (
 ): Promise<HcTerminal> => {
   const label = 'hc connect terminal.run';
 
+  const workingDirectory = request.cwd ?? runtime.cwd;
+
   const lines = [
     requestLine(1, 'hello', { generation: helloGeneration }),
-    requestLine(2, 'terminal.run', terminalRunParams(request)),
+    requestLine(2, 'terminal.run', terminalRunParams({ ...request, cwd: workingDirectory })),
   ];
 
-  const result = await runtime.connect(
-    lines,
-    runtime.signal === undefined ? {} : { signal: runtime.signal },
-  );
+  const result = await runtime.connect(lines, {
+    cwd: runtime.cwd,
+    ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
+  });
 
   const failure = exitFailure(result);
 
@@ -111,6 +124,7 @@ export const connect: Connect = (lines, options = {}) => {
 
   try {
     child = spawn('hc', ['connect'], {
+      ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       ...(options.env === undefined ? {} : { env: options.env }),
       stdio: ['pipe', 'pipe', 'pipe'],
       ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -126,10 +140,16 @@ export const connect: Connect = (lines, options = {}) => {
     let stderr = '';
     let spawnError: Error | undefined;
     let streamFailure: HcError | undefined;
+    let aborted = false;
+    let killTimer: NodeJS.Timeout | undefined;
 
     const failStream = (failure: HcError) => {
       streamFailure ??= failure;
       child.kill('SIGTERM');
+
+      killTimer ??= setTimeout(() => {
+        child.kill('SIGKILL');
+      }, streamKillGraceMilliseconds);
     };
 
     child.stdout.setEncoding('utf8');
@@ -157,18 +177,26 @@ export const connect: Connect = (lines, options = {}) => {
     });
 
     child.on('error', (error) => {
-      const aborted = error instanceof Error && error.name === 'AbortError';
-
-      if (!aborted) {
+      if (isAbortError(error)) {
+        aborted = true;
+      } else {
         spawnError = error;
       }
     });
 
     child.on('close', (code, signal) => {
+      clearTimeout(killTimer);
+
       if (spawnError !== undefined) {
         reject(
           new HcError('spawn_failed', `hc connect failed to start: ${errorMessage(spawnError)}`),
         );
+
+        return;
+      }
+
+      if (aborted) {
+        reject(new HcError('aborted', 'hc connect was aborted'));
 
         return;
       }

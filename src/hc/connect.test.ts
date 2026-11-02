@@ -58,7 +58,7 @@ const runtimeOf = (fake: HcFake): HcRuntime => ({
 const spawnRuntime = (): HcRuntime => ({
   exec: declinedExec,
   connect,
-  cwd: '/repository',
+  cwd: process.cwd(),
 });
 
 const shellQuote = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
@@ -127,6 +127,17 @@ it('writes hello and terminal.run to one connect call and returns the terminal',
   expect(result.address).toBe('t7');
 });
 
+it('defaults the terminal working directory to the runtime directory', async () => {
+  const fake = createHcFake();
+
+  fake.replyConnect('hello', 1, hello);
+  fake.replyConnect('terminal.run', 2, terminal);
+
+  await runWithEnvironment(runtimeOf(fake), { argv: ['true'], env: {} });
+
+  expect(fake.messages[1]?.params).toMatchObject({ cwd: '/repository' });
+});
+
 it('raises an HcError value from the entry on a JSON-RPC error reply', async () => {
   const fake = createHcFake();
 
@@ -144,6 +155,21 @@ it('raises an HcError value from the entry on a JSON-RPC error reply', async () 
 
   expect(failure).toBeInstanceOf(HcError);
   expect(failure).toMatchObject({ name: 'HcError', kind: 'not_found' });
+});
+
+it('rejects an id-less reply after both replies', async () => {
+  const fake = createHcFake();
+
+  fake.replyConnect('hello', 1, hello);
+  fake.replyConnect('terminal.run', 2, terminal);
+  fake.appendConnectOutput(`${JSON.stringify({ jsonrpc: '2.0', result: terminal })}\n`);
+
+  const failure = await runWithEnvironment(runtimeOf(fake), { argv: ['true'], env: {} }).catch(
+    (error: unknown) => error,
+  );
+
+  expect(failure).toBeInstanceOf(HcError);
+  expect(failure).toMatchObject({ name: 'HcError', kind: 'malformed' });
 });
 
 it('rejects a malformed trailing line after both replies', async () => {
@@ -186,6 +212,49 @@ it('rejects with the stdout failure after the child closes cleanly', async () =>
   expect(failure).toBeInstanceOf(HcError);
   expect(failure).toMatchObject({ name: 'HcError', kind: 'read_failed' });
   expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+});
+
+it('escalates a stream failure to SIGKILL when the child ignores SIGTERM', async () => {
+  vi.useFakeTimers();
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const pending = connect([helloLine, terminalLine]).catch((error: unknown) => error);
+
+  child.stdout.emit('error', new Error('read broke'));
+  vi.advanceTimersByTime(5000);
+
+  expect(child.kill).toHaveBeenNthCalledWith(1, 'SIGTERM');
+  expect(child.kill).toHaveBeenLastCalledWith('SIGKILL');
+
+  child.emit('close', null, 'SIGKILL');
+
+  expect(await pending).toMatchObject({ name: 'HcError', kind: 'read_failed' });
+});
+
+it('does not send SIGKILL when the child closes after SIGTERM', async () => {
+  vi.useFakeTimers();
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const pending = connect([helloLine, terminalLine]).catch((error: unknown) => error);
+
+  child.stdout.emit('error', new Error('read broke'));
+  child.emit('close', null, 'SIGTERM');
+  vi.advanceTimersByTime(5000);
+
+  expect(child.kill).toHaveBeenCalledTimes(1);
+  expect(await pending).toMatchObject({ name: 'HcError', kind: 'read_failed' });
 });
 
 it('rejects with the input failure when hc closes stdin before a large request', async () => {
@@ -239,6 +308,44 @@ it('reports the exit code when hc exits non-zero after reply 2', async () => {
   expect(failure).toMatchObject({ name: 'HcError', kind: 'exited', exitCode: 7 });
 });
 
+it('includes the trimmed stderr of a non-zero exit in the message', async () => {
+  await installStub(script(...readHello, "printf '%s\\n' 'no terminal host' >&2", 'exit 7'));
+
+  const failure = await runWithEnvironment(spawnRuntime(), { argv: ['true'], env: {} }).catch(
+    (error: unknown) => error,
+  );
+
+  expect(failure).toMatchObject({
+    name: 'HcError',
+    kind: 'exited',
+    exitCode: 7,
+    message: 'hc connect exited with code 7: no terminal host',
+  });
+});
+
+it('runs hc connect in the runtime directory', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-hc-working-');
+  const outputPath = join(directory, 'working-directory');
+
+  await installStub(
+    script(
+      ...readHello,
+      'read -r _run',
+      `pwd > ${shellQuote(outputPath)}`,
+      `printf '%s\\n' ${shellQuote(terminalLine)}`,
+      'exit 0',
+    ),
+  );
+
+  const result = await runWithEnvironment(
+    { ...spawnRuntime(), cwd: directory },
+    { argv: ['true'], env: {} },
+  );
+
+  expect(result.address).toBe('t7');
+  expect(readFileSync(outputPath, 'utf8').trim()).toBe(directory);
+});
+
 it('reports the exit code when hc exits non-zero before reply 2', async () => {
   await installStub(script(...readHello, 'exit 7'));
 
@@ -286,12 +393,24 @@ it('has no running child when an aborted call settles', async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-hc-abort-');
   const processIdFile = join(directory, 'pid');
 
-  await installStub(script(`printf '%s' "$$" > ${shellQuote(processIdFile)}`, 'exec sleep 60'));
+  const pendingProcessIdFile = join(directory, 'pid.pending');
+
+  await installStub(
+    script(
+      `printf '%s' "$$" > ${shellQuote(pendingProcessIdFile)}`,
+      `mv ${shellQuote(pendingProcessIdFile)} ${shellQuote(processIdFile)}`,
+      'exec sleep 60',
+    ),
+  );
 
   const controller = new AbortController();
 
   const started = new Promise<void>((resolve) => {
-    const watcher = watch(directory, () => {
+    const watcher = watch(directory, (_eventType, fileName) => {
+      if (fileName !== 'pid') {
+        return;
+      }
+
       watcher.close();
       resolve();
     });
@@ -312,7 +431,7 @@ it('has no running child when an aborted call settles', async () => {
   const failure = await pending.catch((error: unknown) => error);
 
   expect(failure).toBeInstanceOf(HcError);
-  expect(failure).toMatchObject({ name: 'HcError', kind: 'exited' });
+  expect(failure).toMatchObject({ name: 'HcError', kind: 'aborted' });
 
   const processId = Number(readFileSync(processIdFile, 'utf8'));
   expect(() => process.kill(processId, 0)).toThrow('ESRCH');

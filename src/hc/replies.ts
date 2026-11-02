@@ -6,6 +6,9 @@ import { parseJson } from '../command.js';
 import { errorMessage } from '../errors.js';
 import { describeSchemaProblem, isRecord } from '../schema.js';
 
+export const isAbortError = (error: unknown): boolean =>
+  error instanceof Error && error.name === 'AbortError';
+
 export class HcError extends Error {
   override name = 'HcError';
   readonly kind: string;
@@ -29,7 +32,7 @@ const statusSchema = Type.Object({
   title: Type.Optional(Type.String()),
 });
 
-export const hcTerminalSchema = Type.Object({
+const hcTerminalSchema = Type.Object({
   address: Type.String(),
   state: Type.String(),
   labels: Type.Optional(Type.Record(Type.String(), Type.String())),
@@ -45,11 +48,11 @@ export const hcTerminalSchema = Type.Object({
   name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
-export const hcTerminalListSchema = Type.Object({
+const hcTerminalListSchema = Type.Object({
   terminals: Type.Array(hcTerminalSchema),
 });
 
-export const hcWaitResultSchema = Type.Cyclic(
+const hcWaitResultSchema = Type.Cyclic(
   {
     WaitResult: Type.Object({
       terminal: Type.String(),
@@ -66,14 +69,14 @@ export const hcWaitResultSchema = Type.Cyclic(
   'WaitResult',
 );
 
-export const hcSendResultSchema = Type.Object({
+const hcSendResultSchema = Type.Object({
   turn: Type.Number(),
   started: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
   status: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   wait: Type.Optional(Type.Union([hcWaitResultSchema, Type.Null()])),
 });
 
-export const hcRemoveResultSchema = Type.Object({
+const hcRemoveResultSchema = Type.Object({
   removed: Type.String(),
 });
 
@@ -82,7 +85,7 @@ const coreInfoSchema = Type.Object({
   name: Type.String(),
 });
 
-export const helloResultSchema = Type.Object({
+const helloResultSchema = Type.Object({
   generation: Type.Number(),
   version: Type.String(),
   core: coreInfoSchema,
@@ -193,32 +196,32 @@ export const parseJsonRpcReplies = (
       return value;
     });
 
+const hasId = (value: Record<string, unknown>): boolean => 'id' in value;
+
 export const matchParsedReply = (
   label: string,
   replies: readonly Record<string, unknown>[],
   id: number,
 ): unknown => {
-  for (const value of replies) {
-    if (!('id' in value)) {
-      throw new HcError('malformed', `${label} printed a reply without an id`);
-    }
-
-    if (value.id !== id) {
-      continue;
-    }
-
-    if ('error' in value) {
-      throw jsonRpcError(label, value.error);
-    }
-
-    if (!('result' in value)) {
-      throw new HcError('malformed', `${label} printed reply ${id} without a result`);
-    }
-
-    return value.result;
+  if (!replies.every(hasId)) {
+    throw new HcError('malformed', `${label} printed a reply without an id`);
   }
 
-  return undefined;
+  const reply = replies.find((value) => value.id === id);
+
+  if (reply === undefined) {
+    return undefined;
+  }
+
+  if ('error' in reply) {
+    throw jsonRpcError(label, reply.error);
+  }
+
+  if (!('result' in reply)) {
+    throw new HcError('malformed', `${label} printed reply ${id} without a result`);
+  }
+
+  return reply.result;
 };
 
 export const requestLine = (id: number, method: string, params: unknown): string =>

@@ -1,7 +1,7 @@
 import type { Exec } from '../command.js';
 import { errorMessage } from '../errors.js';
 import type { Connect } from './connect.js';
-import { HcError, parseCliError, parseCommandReply } from './replies.js';
+import { HcError, isAbortError, parseCliError, parseCommandReply } from './replies.js';
 import type {
   HcCommand,
   HcCommandReply,
@@ -58,6 +58,11 @@ export { HcError } from './replies.js';
 const labelFlags = (labels: Record<string, string> | undefined): string[] =>
   Object.entries(labels ?? {}).flatMap(([key, value]) => ['--label', `${key}=${value}`]);
 
+const startFailure = (label: string, error: unknown): HcError =>
+  isAbortError(error)
+    ? new HcError('aborted', `${label} was aborted`)
+    : new HcError('spawn_failed', `${label} failed to start: ${errorMessage(error)}`);
+
 const runHc = async <Command extends HcCommand>(
   runtime: HcRuntime,
   command: Command,
@@ -72,7 +77,7 @@ const runHc = async <Command extends HcCommand>(
       ...(runtime.signal === undefined ? {} : { signal: runtime.signal }),
     });
   } catch (error) {
-    throw new HcError('spawn_failed', `${label} failed to start: ${errorMessage(error)}`);
+    throw startFailure(label, error);
   }
 
   if (result.code !== 0 || result.killed) {
@@ -110,7 +115,7 @@ export const run = (runtime: HcRuntime, request: RunRequest): Promise<HcTerminal
 };
 
 export const get = (runtime: HcRuntime, terminal: string): Promise<HcTerminal> =>
-  runHc(runtime, 'get', ['get', '--json', terminal], `hc get ${terminal}`);
+  runHc(runtime, 'get', ['get', '--json', '--', terminal], `hc get ${terminal}`);
 
 export const ls = (runtime: HcRuntime, request: LsRequest = {}): Promise<HcTerminalList> => {
   const flags = request.all === true ? ['--all'] : [];
@@ -160,14 +165,19 @@ export const wait = (
     flags.push('--timeout', String(request.timeout));
   }
 
-  return runHc(runtime, 'wait', ['wait', '--json', ...flags, terminal], `hc wait ${terminal}`);
+  return runHc(
+    runtime,
+    'wait',
+    ['wait', '--json', ...flags, '--', terminal],
+    `hc wait ${terminal}`,
+  );
 };
 
 export const kill = (runtime: HcRuntime, terminal: string): Promise<HcTerminal> =>
-  runHc(runtime, 'kill', ['kill', '--json', terminal], `hc kill ${terminal}`);
+  runHc(runtime, 'kill', ['kill', '--json', '--', terminal], `hc kill ${terminal}`);
 
 export const rm = (runtime: HcRuntime, terminal: string): Promise<HcRemoveResult> =>
-  runHc(runtime, 'rm', ['rm', '--json', terminal], `hc rm ${terminal}`);
+  runHc(runtime, 'rm', ['rm', '--json', '--', terminal], `hc rm ${terminal}`);
 
 export const label = (
   runtime: HcRuntime,
