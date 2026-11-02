@@ -308,7 +308,20 @@ describe('nodeExecutable', () => {
     },
   );
 
-  it('keeps a node executable regardless of PATH', () => {
+  it('keeps a node executable regardless of PATH', async () => {
+    const directory = temporaryDirectory(onTestFinished, 'tau-node-');
+
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+
+    const executable = join(directory, 'node');
+
+    await writeFile(executable, '');
+    await chmod(executable, 0o755);
+
+    vi.stubEnv('PATH', directory);
+
     expect(nodeExecutable('/usr/bin/node')).toBe('/usr/bin/node');
   });
 
