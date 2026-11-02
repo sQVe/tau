@@ -2,8 +2,21 @@
 
 **Date**: 2026-11-02\
 **Status**: Accepted\
-**Supersedes**: [ADR 0036 (Allowlist worker content and label states from one table)](./README.md#retired),
+**Supersedes**: [ADR 0028 (Keep worker control in the parent)](./README.md#retired),
+[ADR 0029 (Version worker provider fingerprints)](./README.md#retired),
+[ADR 0030 (Claim native follow-ups before opening)](./README.md#retired),
+[ADR 0031 (Reserve worker capacity under one tree lock)](./README.md#retired),
+[ADR 0032 (Run Claude workers through a parent-owned channel)](./README.md#retired),
+[ADR 0033 (Use one generic native worker workflow)](./README.md#retired),
+[ADR 0036 (Allowlist worker content and label states from one table)](./README.md#retired),
+[ADR 0037 (Launch native workers without parent approval)](./README.md#retired),
+[ADR 0040 (Release undispatched follow-up claims after confirmed cleanup)](./README.md#retired),
 [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./README.md#retired),
+[ADR 0045 (Keep worker records per Tau checkout and worktree files in `.tau/`)](./README.md#retired),
+[ADR 0050 (Split worker control into a coordinator and one controller per worker)](./README.md#retired),
+[ADR 0054 (Show one foreground worker per parent)](./README.md#retired),
+[ADR 0058 (Run subagents only as Pi workers)](./README.md#retired),
+[ADR 0059 (Run each Pi worker as its pane's own process)](./README.md#retired),
 [ADR 0097 (Track only the current session's workers)](./README.md#retired),
 [ADR 0123 (Delete stopped worker records 14 days after their last write)](./README.md#retired)\
 **Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
