@@ -114,7 +114,7 @@ describe('runTests', () => {
     expect(captured).toContain('^(?:adds item)$');
   });
 
-  it('passes only fixed reporter arguments plus scoped paths', async () => {
+  it('passes no options beyond the fixed reporter arguments and the output file', async () => {
     let captured: string[] = [];
 
     const report = {
