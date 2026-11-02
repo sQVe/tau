@@ -30,12 +30,9 @@ export const remindToReport = (
     return undefined;
   }
 
-  if (state.target.assignment.deadline - Date.now() <= 0) {
-    return undefined;
-  }
-
-  // A refused report earns one more reminder; otherwise the worker could settle with no report.
+  // Nothing enforces the deadline yet, so a worker past it can still report and must be asked to.
   const { refusal } = state.target;
+  // A refused report earns one more reminder; otherwise the worker could settle with no report.
   const alreadyReminded = refusal.reminderSent && !refusal.remindAfterRefusal;
 
   if (alreadyReminded) {

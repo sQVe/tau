@@ -90,12 +90,12 @@ it('asks again after a refused report', () => {
   }
 });
 
-it('sends no reminder when no work time remains', () => {
+it('asks for a report after the deadline passes', () => {
   vi.useFakeTimers();
-  vi.setSystemTime(deadline);
+  vi.setSystemTime(deadline + 60_000);
 
   try {
-    expect(remindToReport(state(), event)).toBeUndefined();
+    expect(remindToReport(state(), event)).toMatchObject({ continue: true });
   } finally {
     vi.useRealTimers();
   }
