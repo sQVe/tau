@@ -229,12 +229,17 @@ it('shows a real worker report once before it gives the worker the manager envir
   expect(evidence).toContain('APPEND_SYSTEM.md: true');
 
   const messages: unknown[] = [];
-  const entries: { type: string; customType: string; data?: unknown }[] = [];
+  const entries: { type: string; customType: string; details?: unknown }[] = [];
 
   const pi = {
-    sendMessage: (message: unknown) => messages.push(message),
-    appendEntry: (customType: string, data?: unknown) => {
-      entries.push({ type: 'custom', customType, data });
+    sendMessage: (message: { customType: string; details: unknown }) => {
+      messages.push(message);
+
+      entries.push({
+        type: 'custom_message',
+        customType: message.customType,
+        details: message.details,
+      });
     },
   } as unknown as ExtensionAPI;
 
