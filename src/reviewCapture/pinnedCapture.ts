@@ -58,8 +58,6 @@ export const recaptureReview = async (
   return { capture, freshness };
 };
 
-// A successful recapture saves recheck.diff; a failed one removes it, so no stale file stands for
-// the current target.
 export const checkReviewFreshness = async (root: string, directory: string): Promise<Freshness> => {
   const checked = await checkReviewDirectory(root, directory);
   const record = await readCaptureRecord(checked);
