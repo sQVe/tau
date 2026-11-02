@@ -25,7 +25,6 @@ import {
   isTaskId,
 } from './types.js';
 import type { Loadout, Report, Task, TaskEvent } from './types.js';
-import { taskEndedEventKinds } from './workerState.js';
 
 interface FoundTaskEntry {
   directory: string;
@@ -53,6 +52,17 @@ export interface EventDetails {
   stopped?: boolean;
   processId?: number;
 }
+
+// These events end the task even when no report was saved.
+const taskEndedEventKinds: readonly TaskEvent['kind'][] = [
+  'cleanup',
+  'cancelled',
+  'timeout',
+  'startupFailure',
+  'parentClosed',
+  'settled',
+  'stopping',
+];
 
 const recordByteLimit = 128_000;
 const reportByteLimit = 64_000;

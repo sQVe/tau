@@ -27,7 +27,6 @@ import { appendSystemPrompt, guidelineLines } from '../../instructions/systemPro
 import { isWorkerProcess } from '../../worker.js';
 import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
 import type { WorkerActivity } from './activity.js';
-import { monotonicNow } from './controller/budget.js';
 import { timeBlockerReserve } from './incompleteReport.js';
 import { checkWorkerRuntime } from './loadout.js';
 import { workerInstructions, workerPrompt } from './profiles.js';
@@ -42,7 +41,12 @@ import { reportParameters, reportToParent } from './report.js';
 import { remindToReport } from './reportReminder.js';
 import { recordStartupFailure } from './startupFailure.js';
 import type { Loadout, Question, Task } from './types.js';
-import { hasRunningTask, isTaskActive, remainingWork } from './workerExtensionState.js';
+import {
+  hasRunningTask,
+  isTaskActive,
+  monotonicNow,
+  remainingWork,
+} from './workerExtensionState.js';
 import type { WorkerExtensionState, WorkerPhase } from './workerExtensionState.js';
 import { parseWorkerTools } from './workerTools.js';
 

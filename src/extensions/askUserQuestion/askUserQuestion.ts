@@ -1,9 +1,7 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
-import { parseWorkerNoticeEvent, workerNoticeChannel } from '../../worker.js';
 import { createQuestionAsker } from './askQuestions.js';
-import type { DialogSession } from './dialog.js';
 
 const optionSchema = Type.Object({
   label: Type.String({
@@ -90,16 +88,7 @@ Write for a user who has not read your discussion. \`problem\`, \`impact\`, and 
 - Add \`preview\` to an option to show what it produces, about 10 lines. Add \`preview\` to the question for content every option acts on, such as a draft to approve. An option preview replaces it.`;
 
 export default function askUserQuestionExtension(pi: ExtensionAPI): void {
-  const subscribe: DialogSession['subscribe'] = (listener) =>
-    pi.events.on(workerNoticeChannel, (data) => {
-      const notice = parseWorkerNoticeEvent(data);
-
-      if (notice !== undefined) {
-        listener(notice);
-      }
-    });
-
-  const askQuestions = createQuestionAsker(subscribe);
+  const askQuestions = createQuestionAsker();
 
   pi.registerTool({
     name: 'ask_user_question',

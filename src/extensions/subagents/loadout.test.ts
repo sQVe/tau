@@ -693,7 +693,7 @@ it('accepts blank and comment frontmatter lines without relaxing selected profil
     'Malformed profile setting',
   );
 
-  for (const setting of ['name: replacement', 'unknown: value', 'thinking: invalid']) {
+  for (const setting of ['name: alternate', 'unknown: value', 'thinking: invalid']) {
     expect(() =>
       parseProfile(
         content.replace('---\nCustom', `${setting}\n---\nCustom`),

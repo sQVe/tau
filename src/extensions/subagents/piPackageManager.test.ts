@@ -3,8 +3,8 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
-import { fixtureLoadout } from '../fixtures/loadout.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { fixtureLoadout } from './fixtures/loadout.js';
 import { piPackageManager } from './piPackageManager.js';
 
 it('lists the user and trusted project packages the worker will load', () => {

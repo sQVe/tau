@@ -1,4 +1,3 @@
-import { monotonicNow } from './controller/budget.js';
 import type { Acknowledgement, Question, Task } from './types.js';
 
 export type WorkerPhase = 'starting' | 'active' | 'waiting' | 'done';
@@ -28,6 +27,11 @@ export interface WorkerExtensionState {
     | { input: number; output: number; cacheRead: number; cacheWrite: number }
     | undefined;
 }
+
+const nanosecondsPerMillisecond = 1_000_000;
+
+export const monotonicNow = (): number =>
+  Number(process.hrtime.bigint()) / nanosecondsPerMillisecond;
 
 export const hasRunningTask = (
   state: WorkerExtensionState,

@@ -65,7 +65,7 @@ class TerminalIdentityError extends Error {
   override name = 'TerminalIdentityError';
 }
 
-export const listTerminals = async (call: TerminalCall): Promise<TerminalLocation[]> => {
+const listTerminals = async (call: TerminalCall): Promise<TerminalLocation[]> => {
   const panes = result(await call(['pane', 'list'])).panes;
 
   if (!Array.isArray(panes)) {

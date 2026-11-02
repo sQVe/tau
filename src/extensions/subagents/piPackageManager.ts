@@ -1,7 +1,7 @@
 import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 
-import type { Loadout } from '../types.js';
 import type { WorkerPackageManager } from './packageInstall.js';
+import type { Loadout } from './types.js';
 
 // Build Pi's package manager as the worker will: in its cwd and agent directory, with the project
 // trusted.

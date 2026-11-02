@@ -15,8 +15,8 @@ import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-codin
 import type { ResolvedPaths } from '@earendil-works/pi-coding-agent';
 import { beforeEach, expect, it, onTestFinished } from 'vitest';
 
-import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
-import { fixtureLoadout } from '../fixtures/loadout.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { fixtureLoadout } from './fixtures/loadout.js';
 import {
   fakePackageRoot,
   fakePackageSnapshot,

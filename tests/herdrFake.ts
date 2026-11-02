@@ -1,9 +1,30 @@
-import type { HerdrClient } from '../src/extensions/subagents/controller/inspect.js';
-import { placementFixture } from '../src/extensions/subagents/fixtures/placement.js';
-import type { PlacementFixture } from '../src/extensions/subagents/fixtures/placement.js';
 import { requireObject, result, text } from '../src/herdr.js';
 import { herdrWorkerFake, shellProcessId } from './herdrWorkerFake.js';
 import type { FakeWorker, Reply, Surface } from './herdrWorkerFake.js';
+
+type HerdrClient = (
+  argumentsList: string[],
+  budget: number,
+  signal?: AbortSignal,
+) => Promise<string>;
+
+interface FixturePane {
+  pane_id: string;
+  terminal_id: string;
+  workspace_id: string;
+  tab_id: string;
+}
+
+interface LayoutFixture {
+  client: (argumentsList: string[]) => Promise<string>;
+  calls: string[][];
+  panes: FixturePane[];
+  titles: Map<string, string>;
+  labels: Map<string, string>;
+  dimensions: Map<string, { width: number; height: number }>;
+  parent: FixturePane;
+  view: { zoomed: boolean };
+}
 
 interface ProcessSnapshot {
   paneId: string | undefined;
@@ -23,7 +44,7 @@ interface SeededWorker {
 interface HerdrFake {
   client: HerdrClient;
   calls: string[][];
-  layout: PlacementFixture;
+  layout: LayoutFixture;
   workers: () => FakeWorker[];
   seedWorker: (worker: SeededWorker) => void;
   queueAgentReplies: (terminalId: string, replies: Reply[]) => void;
@@ -48,6 +69,131 @@ interface HerdrFake {
   malformedTabList: (reply: Reply) => void;
 }
 
+const layoutFixture = (width: number, height: number): LayoutFixture => {
+  const parent: FixturePane = {
+    pane_id: 'parent',
+    terminal_id: 'parent-terminal',
+    workspace_id: 'workspace',
+    tab_id: 'working',
+  };
+
+  const panes = [parent];
+  const dimensions = new Map([['parent', { width, height }]]);
+  const titles = new Map<string, string>();
+  const labels = new Map<string, string>();
+  const calls: string[][] = [];
+  const view = { zoomed: false };
+  let created = 0;
+
+  const client = async (argumentsList: string[]) => {
+    calls.push(argumentsList);
+    const value = (flag: string) => argumentsList[argumentsList.indexOf(flag) + 1];
+    const operation = argumentsList[1];
+
+    if (operation === 'current') {
+      return JSON.stringify({ result: { pane: parent } });
+    }
+
+    if (operation === 'list') {
+      return JSON.stringify({ result: { panes } });
+    }
+
+    if (operation === 'layout') {
+      const tabId = panes.find((pane) => pane.pane_id === value('--pane'))!.tab_id;
+
+      return JSON.stringify({
+        result: {
+          layout: {
+            workspace_id: 'workspace',
+            tab_id: tabId,
+            zoomed: view.zoomed,
+            area: { x: 0, y: 0, width, height },
+            panes: panes
+              .filter((pane) => pane.tab_id === tabId)
+              .map((pane) => ({ pane_id: pane.pane_id, rect: dimensions.get(pane.pane_id) })),
+          },
+        },
+      });
+    }
+
+    if (argumentsList[0] === 'tab' && operation === 'rename') {
+      labels.set(argumentsList[2]!, argumentsList.slice(3).join(' '));
+
+      return '{}';
+    }
+
+    if (operation === 'rename') {
+      const paneId = argumentsList[2] ?? '';
+      const label = argumentsList.slice(3).join(' ');
+      const pane = panes.find((item) => item.pane_id === paneId);
+
+      if (pane === undefined) {
+        throw new Error('pane not found');
+      }
+
+      titles.set(paneId, label);
+
+      return JSON.stringify({ result: { pane: { ...pane, title: label } } });
+    }
+
+    if (operation === 'close') {
+      const target = argumentsList[2]!;
+      const index = panes.findIndex((pane) => pane.pane_id === target);
+
+      if (index === -1) {
+        throw new Error('pane not found');
+      }
+
+      panes.splice(index, 1);
+      dimensions.delete(target);
+
+      return '{}';
+    }
+
+    if (operation === 'get') {
+      return JSON.stringify({
+        result: { pane: panes.find((pane) => pane.pane_id === argumentsList[2]) },
+      });
+    }
+
+    if (operation === 'move') {
+      const pane = panes.find((item) => item.pane_id === argumentsList[2])!;
+      const target = panes.find((item) => item.pane_id === value('--target-pane'))!;
+      const bounds = { ...dimensions.get(target.pane_id)! };
+      const axis = value('--split') === 'right' ? 'width' : 'height';
+      const firstLength = Math.round(bounds[axis] / 2);
+
+      dimensions.set(target.pane_id, { ...bounds, [axis]: firstLength });
+      dimensions.set(pane.pane_id, { ...bounds, [axis]: bounds[axis] - firstLength });
+      pane.tab_id = target.tab_id;
+
+      return JSON.stringify({ result: { move_result: { pane } } });
+    }
+
+    if (operation !== 'apply') {
+      throw new Error(`Unexpected operation: ${argumentsList.join(' ')}`);
+    }
+
+    created += 1;
+
+    const pane: FixturePane = {
+      ...parent,
+      pane_id: `worker-${created}`,
+      terminal_id: `terminal-${created}`,
+      tab_id: `background-${created}`,
+    };
+
+    dimensions.set(pane.pane_id, { width, height });
+    panes.push(pane);
+
+    labels.set(pane.tab_id, String(requireObject(JSON.parse(argumentsList[2]!)).tab_label));
+
+    return JSON.stringify({ result: { layout: { root: { pane_id: pane.pane_id } } } });
+  };
+
+  return { client, calls, panes, titles, labels, dimensions, parent, view };
+};
+
 // Response shapes were checked against herdr 0.9.1.
 const processInfoResponse = ({ paneId, shellPid, processId, argv }: ProcessSnapshot): string =>
   JSON.stringify({
@@ -61,7 +207,7 @@ const processInfoResponse = ({ paneId, shellPid, processId, argv }: ProcessSnaps
     },
   });
 
-export const agentResponse = (agent: Record<string, unknown>): string =>
+const agentResponse = (agent: Record<string, unknown>): string =>
   JSON.stringify({ result: { agent } });
 
 const answer = (reply: Reply) => {
@@ -113,7 +259,7 @@ const herdrError = (message: string, code: string) =>
  * process. Tests change a worker only through the named transitions.
  */
 export const herdrFake = (width = 200, height = 60): HerdrFake => {
-  const layout = placementFixture(width, height);
+  const layout = layoutFixture(width, height);
   const fleet = herdrWorkerFake();
   const calls: string[][] = [];
   const malformedTabLists: Reply[] = [];

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
-import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 
 const startInstall = (directory: string, name: string) => {
   const script = fileURLToPath(new URL('./fixtures/packageInstallChild.ts', import.meta.url));

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { removeSnapshotDirectory } from './packageSnapshot.js';
 
 it.each(['.', '..'])('refuses snapshot cleanup whose owner is %s', async (snapshotName) => {

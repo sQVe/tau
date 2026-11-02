@@ -1,12 +1,6 @@
 import { expect, it } from 'vitest';
 
-import {
-  handleKey,
-  initialState,
-  isCustomChecked,
-  restoredState,
-  withCustomText,
-} from './questionnaire.js';
+import { handleKey, initialState, isCustomChecked, withCustomText } from './questionnaire.js';
 import type { KeyPress, QuestionFacts, QuestionnaireState } from './questionnaire.js';
 
 const multi: QuestionFacts = {
@@ -49,7 +43,7 @@ const run = (questions: QuestionFacts[], state: QuestionnaireState, keys: KeyPre
   let current = state;
 
   for (const key of keys) {
-    const outcome = handleKey(current, key, questions, viewport, false);
+    const outcome = handleKey(current, key, questions, viewport);
 
     if (outcome.kind !== 'update') {
       return outcome;
@@ -123,7 +117,7 @@ it.each([
     key: press('other'),
   },
 ])('$rule', ({ questions, state, key }) => {
-  expect(handleKey(state, key, questions, viewport, false)).toEqual({ kind: 'type' });
+  expect(handleKey(state, key, questions, viewport)).toEqual({ kind: 'type' });
 });
 
 it.each([
@@ -177,14 +171,14 @@ it.each([
     typed: true,
   },
 ])('$rule', ({ questions, state, selected, typed }) => {
-  expect(handleKey(state, press('enter'), questions, viewport, false)).toEqual({
+  expect(handleKey(state, press('enter'), questions, viewport)).toEqual({
     kind: 'submit',
     answers: [{ question: questions[0]?.question, selected, typed }],
   });
 });
 
 it('returns the preview of a picked single-select option', () => {
-  expect(handleKey(at([single], 0), press('enter'), [single], viewport, false)).toEqual({
+  expect(handleKey(at([single], 0), press('enter'), [single], viewport)).toEqual({
     kind: 'submit',
     answers: [
       { question: 'Which library?', selected: ['Luxon'], typed: false, preview: 'luxon()' },
@@ -196,7 +190,7 @@ it.each([
   { rule: 'nothing checked in multi-select', questions: [multi], state: at([multi], 0) },
   { rule: 'an empty custom row in single-select', questions: [single], state: at([single], 2) },
 ])('ignores Enter with $rule', ({ questions, state }) => {
-  expect(handleKey(state, press('enter'), questions, viewport, false)).toEqual({
+  expect(handleKey(state, press('enter'), questions, viewport)).toEqual({
     kind: 'update',
     state,
   });
@@ -254,7 +248,7 @@ it.each([
 ])('switches questions with $key.kind from $from', ({ key, from, tab }) => {
   const state = { ...initialState([single, multi]), tab: from };
 
-  expect(handleKey(state, key, [single, multi], viewport, false)).toMatchObject({
+  expect(handleKey(state, key, [single, multi], viewport)).toMatchObject({
     kind: 'update',
     state: { tab },
   });
@@ -264,7 +258,7 @@ it.each([
   { row: 'an option', state: at([multi], 0) },
   { row: 'the custom row', state: at([multi], 3, { customText: 'Docs' }) },
 ])('cancels with Esc on $row', ({ state }) => {
-  expect(handleKey(state, press('cancel'), [multi], viewport, false)).toEqual({ kind: 'cancel' });
+  expect(handleKey(state, press('cancel'), [multi], viewport)).toEqual({ kind: 'cancel' });
 });
 
 it('submits a changed answer after returning to an answered question', () => {
@@ -376,7 +370,7 @@ it.each([
 it('ignores Ctrl+O on an option without a preview', () => {
   const state = at([single], 1);
 
-  expect(handleKey(state, press('preview'), [single], viewport, false)).toEqual({
+  expect(handleKey(state, press('preview'), [single], viewport)).toEqual({
     kind: 'update',
     state,
   });
@@ -385,7 +379,7 @@ it('ignores Ctrl+O on an option without a preview', () => {
 it('does not type Ctrl+O into the custom row', () => {
   const state = at([single], 2, { customText: 'date' });
 
-  expect(handleKey(state, press('preview'), [single], viewport, false)).toEqual({
+  expect(handleKey(state, press('preview'), [single], viewport)).toEqual({
     kind: 'update',
     state,
   });
@@ -415,7 +409,7 @@ it('keeps the answers when the full preview closes', () => {
 it('scrolls up from the last page after the terminal grows', () => {
   const state = { ...at([layout], 0), fullPreview: { offset: 4 } };
 
-  expect(handleKey(state, press('up'), [layout], viewport, false)).toEqual({
+  expect(handleKey(state, press('up'), [layout], viewport)).toEqual({
     kind: 'update',
     state: { ...state, fullPreview: { offset: 1 } },
   });
@@ -424,94 +418,21 @@ it('scrolls up from the last page after the terminal grows', () => {
 it('scrolls the full preview by its wrapped rows', () => {
   const state = { ...at([layout], 0), fullPreview: { offset: 0 } };
 
-  expect(handleKey(state, press('bottom'), [layout], { rows: 3, lineCount: 8 }, false)).toEqual({
+  expect(handleKey(state, press('bottom'), [layout], { rows: 3, lineCount: 8 })).toEqual({
     kind: 'update',
     state: { ...state, fullPreview: { offset: 5 } },
   });
 });
 
 // With a notice waiting, one more row sits below the custom row.
-const withAction = (question: QuestionFacts, state: QuestionnaireState, key: KeyPress) =>
-  handleKey(state, key, [question], viewport, true);
 
 it('does not move the cursor below the custom row while no notice waits', () => {
   const state = at([single], 2);
 
-  expect(handleKey(state, press('down', false), [single], viewport, false)).toEqual({
+  expect(handleKey(state, press('down', false), [single], viewport)).toEqual({
     kind: 'update',
     state,
   });
-});
-
-it('moves the cursor to the action row below the custom row', () => {
-  const outcome = withAction(single, at([single], 2), press('down', false));
-
-  expect(outcome).toMatchObject({ kind: 'update', state: { questions: [{ cursor: 3 }] } });
-});
-
-it.each([
-  { rule: 'single-select', question: single },
-  { rule: 'multi-select', question: multi },
-])('defers on Enter at the action row in $rule', ({ question }) => {
-  const state = at([question], question.options.length + 1, { checked: [0] });
-
-  expect(withAction(question, state, press('enter'))).toEqual({ kind: 'defer' });
-});
-
-it('keeps the checked options when Space hits the action row', () => {
-  const state = at([multi], 4, { checked: [1] });
-
-  expect(withAction(multi, state, press('space'))).toEqual({ kind: 'update', state });
-});
-
-const answeredThenAction = (label: string, cursor: number, back: KeyPress) => {
-  const answer = { question: single.question, selected: [label], typed: false };
-  const state = { ...at([single], cursor), answers: [answer] };
-  const onAction = withAction(single, state, press('bottom'));
-
-  if (onAction.kind !== 'update') {
-    throw new Error('The cursor move did not update.');
-  }
-
-  return { answer, onAction, back: withAction(single, onAction.state, back) };
-};
-
-it('keeps a saved single-select answer when the cursor moves onto the action row and back', () => {
-  const { answer, onAction, back } = answeredThenAction('Luxon', 0, press('top'));
-
-  expect(onAction.state.answers).toEqual([answer]);
-  expect(back).toMatchObject({ kind: 'update', state: { answers: [answer] } });
-});
-
-it('reopens a single-select answer when the cursor leaves the action row for another option', () => {
-  const { back } = answeredThenAction('Temporal', 1, press('top'));
-
-  expect(back).toMatchObject({ kind: 'update', state: { answers: [undefined] } });
-});
-
-it('does not type into the custom field on the action row', () => {
-  const outcome = withAction(single, at([single], 3), press('other'));
-
-  expect(outcome).toMatchObject({ kind: 'update' });
-});
-
-it('cancels with Esc at the action row', () => {
-  expect(withAction(single, at([single], 3), press('cancel'))).toEqual({ kind: 'cancel' });
-});
-
-it('moves a restored cursor off the action row and closes the full preview', () => {
-  const saved = { ...at([single], 3), fullPreview: { offset: 1 } };
-  const restored = restoredState(saved, [single]);
-
-  expect(restored.questions[0]?.cursor).toBe(2);
-  expect(restored.fullPreview).toBeUndefined();
-});
-
-it('moves a restored cursor off the action row to the saved single-select answer', () => {
-  const answer = { question: single.question, selected: ['Temporal'], typed: false };
-  const saved = { ...at([single], 3), answers: [answer] };
-
-  expect(restoredState(saved, [single]).questions[0]?.cursor).toBe(1);
 });
 
 const recommendedSecond: QuestionFacts = {
@@ -532,12 +453,6 @@ it.each([
   expect(initialState(questions).questions[0]?.cursor).toBe(cursor);
 });
 
-it('keeps the saved cursor of a restored state', () => {
-  const saved = at([recommendedSecond], 2);
-
-  expect(restoredState(saved, [recommendedSecond]).questions[0]?.cursor).toBe(2);
-});
-
 it.each([
   { rule: 'the question preview', cursor: 0, preview: 'draft' },
   { rule: 'the question preview of a recommended option', cursor: 1, preview: 'draft' },
@@ -548,7 +463,6 @@ it.each([
     press('enter'),
     [recommendedSecond],
     viewport,
-    false,
   );
 
   expect(outcome).toMatchObject({ kind: 'submit', answers: [{ preview }] });
@@ -560,7 +474,6 @@ it('opens the full preview of the question on an option without one', () => {
     press('preview'),
     [recommendedSecond],
     viewport,
-    false,
   );
 
   expect(outcome).toMatchObject({ kind: 'update', state: { fullPreview: { offset: 0 } } });
@@ -579,14 +492,14 @@ it.each([
     state: at([multi], 3, { customText: 'Docs' }),
   },
 ])('answers with Enter on $rule while a notice waits', ({ question, state }) => {
-  expect(handleKey(state, press('enter'), [question], viewport, true).kind).toBe('submit');
+  expect(handleKey(state, press('enter'), [question], viewport).kind).toBe('submit');
 });
 
 it('stays on the question when Enter has nothing to answer', () => {
   const questions = [multi, single];
   const state = initialState(questions);
 
-  expect(handleKey(state, press('enter'), questions, viewport, false)).toEqual({
+  expect(handleKey(state, press('enter'), questions, viewport)).toEqual({
     kind: 'update',
     state,
   });
@@ -629,29 +542,9 @@ it('keeps the answer when the typed text stays the same', () => {
 });
 
 it('does not check an option on a key that is not Space', () => {
-  const outcome = handleKey(at([multi], 1), press('other'), [multi], viewport, false);
+  const outcome = handleKey(at([multi], 1), press('other'), [multi], viewport);
 
   expect(outcome.kind === 'update' && outcome.state.questions[0]?.checked).toEqual([]);
-});
-
-it('moves the cursor of a restored typed answer to the custom row', () => {
-  const typed = { question: single.question, selected: ['Docs'], typed: true };
-  const saved = { ...at([single], 3, { customText: 'Docs' }), answers: [typed] };
-
-  expect(restoredState(saved, [single]).questions[0]?.cursor).toBe(2);
-});
-
-it('restores a typed answer that equals an option label to the custom row', () => {
-  const same: QuestionFacts = {
-    question: 'Which layout?',
-    multiSelect: false,
-    options: [{ label: 'Same', preview: 'same()' }],
-  };
-
-  const typed = { question: same.question, selected: ['Same'], typed: true };
-  const saved = { ...at([same], 2, { customText: 'Same' }), answers: [typed] };
-
-  expect(restoredState(saved, [same]).questions[0]?.cursor).toBe(1);
 });
 
 const three: QuestionFacts[] = ['One?', 'Two?', 'Three?'].map((question) => ({
@@ -668,7 +561,7 @@ it.each([
 ] as const)('moves from question $from to $tab with $key among three', ({ key, from, tab }) => {
   const state = { ...initialState(three), tab: from };
 
-  expect(handleKey(state, press(key), three, viewport, false)).toMatchObject({
+  expect(handleKey(state, press(key), three, viewport)).toMatchObject({
     kind: 'update',
     state: { tab },
   });
@@ -678,7 +571,7 @@ it.each(['nextQuestion', 'previousQuestion'] as const)(
   'switches questions with %s on the custom row instead of typing',
   (key) => {
     const state = at(three, 2, { customText: 'Docs' });
-    const outcome = handleKey(state, press(key), three, viewport, false);
+    const outcome = handleKey(state, press(key), three, viewport);
 
     expect(outcome.kind).toBe('update');
   },

@@ -3,9 +3,9 @@ import filesystem from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-import { fixtureLoadout } from '../../fixtures/loadout.js';
 import { installWorkerPackages } from '../packageInstall.js';
 import { observeInstallLockRead } from './installLockRead.js';
+import { fixtureLoadout } from './loadout.js';
 import { fakePackageRoot, writeFakePackage } from './packageCache.js';
 
 const [agentDirectory, record, name, observation, release] = process.argv.slice(2) as [

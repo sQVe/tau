@@ -8,9 +8,6 @@ const controlTools = [
   'subagent_progress',
   'ask_user_question',
   'subagent',
-  'subagent_follow_up',
-  'subagent_reply',
-  'subagent_cancel',
 ];
 
 it.each([

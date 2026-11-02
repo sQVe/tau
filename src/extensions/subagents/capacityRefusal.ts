@@ -2,14 +2,13 @@ import type { ToolCallEventResult } from '@earendil-works/pi-coding-agent';
 
 interface MessageKind {
   role: string;
-  customType?: string;
 }
 
-export const clearsCapacityRefusal = (message: MessageKind): boolean => {
-  const workerNotice = message.role === 'custom' && message.customType === 'tau-worker';
+export class WorkerCapacityFullError extends Error {
+  override name = 'WorkerCapacityFullError';
+}
 
-  return message.role === 'user' || workerNotice;
-};
+export const clearsCapacityRefusal = (message: MessageKind): boolean => message.role === 'user';
 
 export const capacityRefusalBlock = (capacityRefused: boolean): ToolCallEventResult | undefined => {
   if (!capacityRefused) {
@@ -18,7 +17,7 @@ export const capacityRefusalBlock = (capacityRefused: boolean): ToolCallEventRes
 
   return {
     block: true,
-    reason: 'Worker capacity was full. End your turn and wait for a worker notice.',
+    reason: 'Worker capacity was full. End your turn and retry after a worker stops.',
     terminate: true,
   };
 };

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -20,6 +21,17 @@ export interface PiSessionSeed {
   parentSession: string;
   createdAt: number;
 }
+
+export interface NativeIdentity {
+  nativeSessionId: string;
+  nativeSessionFile: string;
+}
+
+export const nativeIdentity = (directory: string): NativeIdentity => {
+  const nativeSessionId = randomUUID();
+
+  return { nativeSessionId, nativeSessionFile: join(directory, `${nativeSessionId}.jsonl`) };
+};
 
 const assignmentVersion = 1;
 

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { cp, mkdir, realpath, rm } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 
-import { errorMessage, isMissingFile } from '../../../errors.js';
+import { errorMessage, isMissingFile } from '../../errors.js';
 
 interface SnapshotRequest {
   agentDirectory: string;

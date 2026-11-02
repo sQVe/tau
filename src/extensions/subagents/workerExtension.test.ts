@@ -18,14 +18,14 @@ import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { readInstructionSet } from '../../instructions/instructions.js';
 import { readWorkerActivity, writeWorkerActivity } from './activity.js';
-import { monotonicNow } from './controller/budget.js';
-import { taskRecordStatus } from './controller/record.js';
 import { assignmentContract, handoverContract } from './handover.js';
 import * as questions from './questionRecords.js';
 import * as records from './records.js';
 import { publish, readEvent, readReport, readTask, recordEvent } from './records.js';
 import { readStartupFailure } from './startupFailure.js';
 import workerExtension from './workerExtension.js';
+import { monotonicNow } from './workerExtensionState.js';
+import { taskRecordStatus } from './workerRecord.js';
 
 const emptyEvent = { messages: [] };
 
@@ -488,7 +488,7 @@ it('leaves activity unchanged when a queued update outlives its Pi context', asy
 
   Object.defineProperty(worker.context, 'sessionManager', {
     get() {
-      throw new Error('This extension ctx is stale after session replacement or reload.');
+      throw new Error('This extension ctx is stale after a reload.');
     },
   });
 

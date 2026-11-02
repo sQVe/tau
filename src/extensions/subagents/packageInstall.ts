@@ -6,16 +6,20 @@ import { fileURLToPath } from 'node:url';
 
 import type { PackageManager, ResolvedPaths } from '@earendil-works/pi-coding-agent';
 
-import { errorMessage } from '../../../errors.js';
-import { withFileLock } from '../../../fileLock/fileLock.js';
-import type { Loadout } from '../types.js';
-import { isLocalPackage, packagesToLoad } from '../workerPackages.js';
+import { errorMessage } from '../../errors.js';
+import { withFileLock } from '../../fileLock/fileLock.js';
 import {
   removeSnapshotDirectory,
   snapshotDirectoryFor,
   snapshotPackageRoot,
 } from './packageSnapshot.js';
-import type { WorkerPackage } from './types.js';
+import type { Loadout } from './types.js';
+import { isLocalPackage, packagesToLoad } from './workerPackages.js';
+
+export interface WorkerPackage {
+  source: string;
+  path: string;
+}
 
 export type WorkerPackageManager = Pick<
   PackageManager,

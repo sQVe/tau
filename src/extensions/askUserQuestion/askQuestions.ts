@@ -2,8 +2,8 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { customWithBlockedStatus } from '../../dialog/blockedStatus.js';
 import { questionDialog } from './dialog.js';
-import type { DialogQuestion, DialogResult, DialogSession } from './dialog.js';
-import type { Answer, QuestionnaireState } from './questionnaire.js';
+import type { DialogQuestion, DialogResult } from './dialog.js';
+import type { Answer } from './questionnaire.js';
 import { refuseUnrepliedTypedAnswer } from './typedAnswerReply.js';
 import { validateQuestions } from './validation.js';
 
@@ -33,10 +33,6 @@ const responseText = (result: DialogResult) => {
     return 'User declined to answer questions. Closing the dialog is not approval. State the blocked decision and stop. Do not ask the same question again in prose.';
   }
 
-  if (result.kind === 'deferred') {
-    return "User chose to handle a waiting worker notice first. No question was answered and nothing is approved. Handle the waiting notice, then call ask_user_question again with the same questions. The dialog restores the user's selections.";
-  }
-
   const segments = result.answers.map(answerSegment).join(' ');
   const typed = result.answers.some((answer) => answer.typed);
 
@@ -47,27 +43,7 @@ const responseText = (result: DialogResult) => {
   return `User has answered your questions: ${segments} ${ending}`;
 };
 
-const questionsKey = (questions: DialogQuestion[]): string =>
-  JSON.stringify(
-    questions.map((question) => [
-      question.question,
-      question.problem,
-      question.impact,
-      question.preview ?? null,
-      question.header,
-      question.multiSelect,
-      question.options.map((option) => [
-        option.label,
-        option.description,
-        option.recommended === true,
-        option.preview ?? null,
-      ]),
-    ]),
-  );
-
-export const createQuestionAsker = (subscribe: DialogSession['subscribe']): AskQuestions => {
-  let deferred: { key: string; state: QuestionnaireState } | undefined;
-
+export const createQuestionAsker = (): AskQuestions => {
   return async (input, context) => {
     if (context.mode !== 'tui') {
       throw new Error('The questionnaire needs the terminal UI. Ask in plain text instead.');
@@ -82,25 +58,10 @@ export const createQuestionAsker = (subscribe: DialogSession['subscribe']): AskQ
       multiSelect: question.multiSelect === true,
     }));
 
-    const key = questionsKey(questions);
-    const saved = deferred?.key === key ? deferred.state : undefined;
-
-    const session = {
-      saved,
-      subscribe,
-      save: (state: QuestionnaireState) => {
-        deferred = { key, state };
-      },
-    };
-
-    if (saved !== undefined) {
-      deferred = undefined;
-    }
-
     const opened = await customWithBlockedStatus<DialogResult | undefined>(
       context,
       { kind: 'question', message: questions[0]?.header ?? '' },
-      questionDialog(questions, session),
+      questionDialog(questions),
     );
 
     const result: DialogResult = opened ?? { kind: 'declined' };

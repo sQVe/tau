@@ -42,23 +42,22 @@ agent needs before designing: the contract test for read paths, and record versi
 - The names guide agents. Contract tests enforce the rule. Every new public read path that touches
   saved records or running workers gets a contract test. It covers normal, missing, and malformed
   evidence, and asserts that saved records are unchanged and that no worker action happened.
-- The example to copy is "reads status and widget rows without writing records or stopping workers"
-  in `src/extensions/subagents/controller/controllerStatus.test.ts`.
+- The example to copy is the read path in `src/extensions/subagents/records.test.ts`.
 
 ### Outcomes versus failures
 
 - Return a discriminated union when callers branch on expected outcomes. Throw for invalid input and
   failed operations.
 - Add an `Error` subclass only when production code catches that exact condition, such as
-  `EvidenceUnavailableError`.
-- Turn errors into user text once, at the tool boundary. `evidenceResult` in
-  `src/extensions/subagents/subagents.ts` is the example.
+  `WorkerCapacityFullError` in `src/extensions/subagents/capacityRefusal.ts`.
+- Turn errors into user text once, at the tool boundary. `launchErrorResult` in
+  `src/extensions/subagents/errorResult.ts` is the example.
 - Tau adds no generic `Result` type and does not migrate existing code.
 
 ### Tables keyed by a union
 
-Use a table keyed by a union for a complete mapping, such as `stateLabels` in
-`src/extensions/subagents/presentation.ts`
+Use a table keyed by a union for a complete mapping, such as `shownModeText` in
+`src/reviewCapture/endpointTransition.ts`
 ([ADR 0036](./0036-allowlist-worker-content-and-label-states-from-one-table.md)). Do not use such
 tables for control flow.
 

@@ -41,9 +41,7 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
     vi.unstubAllEnvs();
   });
 
-  vi.stubEnv('HERDR_ENV', '1');
-  vi.stubEnv('HERDR_PANE_ID', 'parent');
-  vi.stubEnv('HERDR_SOCKET_PATH', join(workingDirectory, 'herdr.sock'));
+  vi.stubEnv('HC_TERMINAL_ID', 'manager');
 
   // Pi-claude-bridge keeps this options object at before_agent_start and forwards only its
   // appendSystemPrompt and context files at agent_start, after every handler has run.

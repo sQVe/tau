@@ -9,8 +9,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import askUserQuestionExtension from '../src/extensions/askUserQuestion/askUserQuestion.js';
 import { readWorkerActivity } from '../src/extensions/subagents/activity.js';
-import { seedSession } from '../src/extensions/subagents/assignment.js';
-import { nativeIdentity } from '../src/extensions/subagents/controller/nativeSession.js';
+import { nativeIdentity, seedSession } from '../src/extensions/subagents/assignment.js';
 import { fixtureLoadout } from '../src/extensions/subagents/fixtures/loadout.js';
 import { readPendingQuestion } from '../src/extensions/subagents/questionRecords.js';
 import {
@@ -250,21 +249,9 @@ const workerControlTools = new Set([
   'ask_user_question',
 ]);
 
-const managerTools = [
-  'subagent',
-  'subagent_follow_up',
-  'subagent_status',
-  'subagent_reply',
-  'subagent_cancel',
-];
+const managerTools = ['subagent'];
 
-const managerControlTools = new Set([
-  'subagent',
-  'subagent_follow_up',
-  'subagent_reply',
-  'subagent_cancel',
-  'ask_user_question',
-]);
+const managerControlTools = new Set(['subagent', 'ask_user_question']);
 
 const stopWithoutReport = [
   fauxAssistantMessage('Stopping without a report.'),
@@ -351,21 +338,18 @@ it('returns ordinary results beside a refused control call in one script', async
   expect(readReport(taskDirectory, taskId)).toBeUndefined();
 });
 
-it('lets manager scripts read worker status but not control workers', async () => {
+it('lists the manager subagent tool but refuses it from a script', async () => {
   const script = [
     discovery,
-    settle([
-      `tools.subagent_status({ taskId: '${savedTaskId}' }).then((result) => result.includes('${savedTaskId}'))`,
-      `tools.subagent_cancel({ taskId: '${savedTaskId}' })`,
-    ]),
+    settle(["tools.subagent({ task: 'Check the fixture.', profile: 'scout' })"]),
     'return { listed, found, outcomes };',
   ].join('\n');
 
   const outcomes = await runManager([codemodeCall(script), fauxAssistantMessage('Done.')]);
   const value = scriptValue(outcomes) as { listed: string[]; found: string[]; outcomes: unknown[] };
 
-  expect(value.listed).toContain('subagent_status');
+  expect(value.listed).toContain('read');
   expect(value.listed.filter((name) => managerControlTools.has(name))).toEqual([]);
   expect(value.found.filter((name) => managerControlTools.has(name))).toEqual([]);
-  expect(value.outcomes).toEqual([true, 'rejected']);
+  expect(value.outcomes).toEqual(['rejected']);
 });

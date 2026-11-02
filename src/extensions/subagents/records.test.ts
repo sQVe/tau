@@ -16,10 +16,10 @@ import { join } from 'node:path';
 import { afterEach, expect, it, onTestFinished as afterTest, vi } from 'vitest';
 
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { readWorkerFacts, taskRecordStatus } from './controller/record.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import * as questions from './questionRecords.js';
 import * as records from './records.js';
+import { readWorkerFacts, taskRecordStatus } from './workerRecord.js';
 
 vi.mock(import('node:fs'), { spy: true });
 

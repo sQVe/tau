@@ -29,9 +29,9 @@ export interface Profile {
   source: string;
 }
 
-export const workerNamePattern = '^[a-z][a-z0-9-]{0,31}-[a-z0-9]{2}$';
+const workerNamePattern = '^[a-z][a-z0-9-]{0,31}-[a-z0-9]{2}$';
 
-export const taskIdSchema = Type.String({ pattern: '^[a-zA-Z0-9-]+$' });
+const taskIdSchema = Type.String({ pattern: '^[a-zA-Z0-9-]+$' });
 
 export const isTaskId = (value: string): boolean => Value.Check(taskIdSchema, value);
 
@@ -173,19 +173,6 @@ export const retiredCanaryTaskSchema = Type.Union([
 ]);
 
 // Version 2: the Pi worker is its pane's own process, so shellPid equals processId.
-export const ownedWorkerSchema = Type.Object(
-  {
-    version: Type.Literal(2),
-    kind: Type.Literal('pi'),
-    paneId: text,
-    terminalId: text,
-    shellPid: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
-    processId: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
-    startedAt: text,
-    token: text,
-  },
-  { additionalProperties: false },
-);
 
 const reportFields = {
   outcome: Type.Union([
@@ -271,12 +258,3 @@ export type StartupFailure = Static<typeof startupFailureSchema>;
 
 export type Report = Static<typeof reportSchema>;
 export type TaskEvent = Static<typeof eventSchema>;
-
-// A worker with any of these events no longer accepts replies.
-export const replyClosedEventKinds: readonly TaskEvent['kind'][] = [
-  'settled',
-  'startupFailure',
-  'cleanup',
-  'cancelled',
-  'timeout',
-];
