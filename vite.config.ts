@@ -70,6 +70,10 @@ export const testEnvironment = [
   'TMP',
   'TEMP',
   'XDG_CONFIG_HOME',
+  'XDG_RUNTIME_DIR',
+  'XDG_STATE_HOME',
+  'XDG_DATA_HOME',
+  'XDG_CACHE_HOME',
   'LANG',
   'LANGUAGE',
   'LC_ALL',
@@ -81,7 +85,12 @@ export const testEnvironment = [
 
 // Variables that test code reads but sets itself, so they stay out of the fingerprint. Tests stub
 // them before reading, or this file sets or deletes them before the workers start.
-export const testManagedEnvironment = ['PI_CODING_AGENT_DIR', 'TAU_ROLE', 'TAU_WORKER_RECORD'];
+export const testManagedEnvironment = [
+  'PI_CODING_AGENT_DIR',
+  'TAU_ROLE',
+  'TAU_WORKER_RECORD',
+  'HC_SESSION',
+];
 
 // When pnpm check sets TAU_PATH_COMMANDS, the digest of the commands PATH resolves to stands in for
 // PATH, so a reordered PATH keeps the cache. Vite+ still passes PATH to the tests.
@@ -128,6 +137,8 @@ export default defineConfig({
       TAU_ROLE: '',
       TAU_WORKER_RECORD: '',
       HERDR_PANE_ID: '',
+      HC_TERMINAL_ID: '',
+      HC_SESSION: '',
       GIT_CONFIG_GLOBAL: '/dev/null',
       GIT_CONFIG_NOSYSTEM: '1',
       GIT_AUTHOR_NAME: 'Tau Test',

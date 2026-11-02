@@ -150,6 +150,7 @@ const pureModules = [
   'src/schema.ts',
   'src/shell.ts',
   'tests/adrIndexMark.ts',
+  'tests/hcIsolationHarness.ts',
 ];
 
 const pureAdvice =

@@ -57,6 +57,7 @@ The target shared modules and the modules each may import:
 | `config`        | `errors`, `schema`                                  |
 | `linear`        | `command`, `errors`                                 |
 | `github`        | `command`, `errors`, `git`, `schema`                |
+| `hc`            | `command`, `errors`, `schema`                       |
 | `tauDirectory`  | `errors`, `git`                                     |
 | `record`        | `errors`, `schema`, `tauDirectory`                  |
 | `checkRecord`   | `errors`, `git`, `record`                           |
