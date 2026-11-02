@@ -377,7 +377,7 @@ it('names only a package root other than the session cwd', async () => {
   expect(elsewhere).toHaveProperty('message', expect.stringContaining(join(cwd, 'other')));
 });
 
-it('resolves the name format version from the same package as the Vitest binary', async () => {
+it('reads the Vitest version from the manifest that owns the binary', async () => {
   const root = temporaryDirectory(onTestFinished, 'tau-vitest-version-');
   const directory = join(root, 'node_modules/vitest');
   await mkdir(directory, { recursive: true });
