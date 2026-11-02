@@ -357,6 +357,22 @@ it('restores the shown state from a saved report message for a fresh delivery', 
   expect(managerState.entries).toHaveLength(1);
 });
 
+it('shows non-empty report evidence in the message content', async () => {
+  const { managerState, deliver } = await reportDelivery({
+    outcome: 'success',
+    summary: 'Changes: None\nEvidence: None\nDecisions: None\nConcerns: None',
+    evidence: ['a reference', 'another reference'],
+  });
+
+  await deliver(managerState.context);
+
+  expect(managerState.messages).toHaveLength(1);
+
+  const message = managerState.messages[0] as { content: string };
+
+  expect(message.content).toContain('Evidence:\n- a reference\n- another reference');
+});
+
 it.each(['success', 'failure'] as const)(
   'shows the saved %s outcome in the report content and details',
   async (outcome) => {

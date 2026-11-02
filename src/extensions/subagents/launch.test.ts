@@ -559,6 +559,136 @@ it('frees a confirmed slot when hc removed the child before the next launch', as
   expect(terminalRun(emptied)).toBeDefined();
 });
 
+it('refuses a foreground launch whose signal aborts during the manager label read', async () => {
+  const { fake, runtime } = setup({ managerLabels: { 'herdr.space': 'space-1' } });
+
+  const packagedLoadout = {
+    ...fixtureLoadout(runtime.agentDirectory),
+    packages: ['npm:review-package'],
+  };
+
+  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
+    loadout: packagedLoadout,
+    routing: undefined,
+  });
+
+  const controller = new AbortController();
+  const entered = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  const originalExec = runtime.hc.exec;
+
+  runtime.capacity = 1;
+
+  runtime.packageManager = (() => ({
+    listConfiguredPackages: () => [],
+    resolveExtensionSources: async ([source = '']: string[]) => ({
+      extensions: [
+        {
+          path: source,
+          enabled: true,
+          metadata: {
+            source,
+            scope: 'temporary',
+            origin: 'package',
+            packageRoot: writeFakePackage(runtime.agentDirectory, source),
+          },
+        },
+      ],
+      skills: [],
+      prompts: [],
+      themes: [],
+    }),
+  })) as unknown as NonNullable<LaunchRuntime['packageManager']>;
+
+  runtime.hc.exec = async (command, commandArguments, execOptions) => {
+    if (command === 'hc' && commandArguments[0] === 'get' && commandArguments.at(-1) === manager) {
+      entered.resolve(undefined);
+      await release.promise;
+    }
+
+    return originalExec(command, commandArguments, execOptions);
+  };
+
+  const pending = launch(
+    runtime,
+    { model: 'faux/test', visibility: 'foreground' },
+    controller.signal,
+  );
+
+  await entered.promise;
+  controller.abort();
+  release.resolve(undefined);
+
+  const result = await pending;
+
+  expect(result.isError).toBe(true);
+  expect(terminalRun(fake)).toBeUndefined();
+  expect(fake.connectCalls).toHaveLength(0);
+  expect(snapshotNames(runtime.agentDirectory)).toEqual([]);
+
+  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
+
+  const second = await launch(runtime, { visibility: 'background' });
+
+  expect(second.isError).not.toBe(true);
+});
+
+it('frees an unclear reservation once hc shows that terminal finished', async () => {
+  const state = uncertainSetup('read_failed');
+  let labels: Record<string, string> = {};
+
+  state.runtime.hc.connect = async (lines) => {
+    const request = JSON.parse(lines[1] ?? '') as {
+      params: { labels: Record<string, string> };
+    };
+
+    labels = request.params.labels;
+    state.fake.fail('ls', 'temporary lookup failure', 1);
+
+    throw new HcError('read_failed', 'lost launch reply');
+  };
+
+  const first = await launch(state.runtime, { visibility: 'background' });
+
+  expect(first.isError).toBe(true);
+  expect(first.content[0]?.text).toContain('unclear');
+
+  const finished = createHcFake();
+
+  const finishedTerminal = {
+    address: 'worker',
+    name: 'worker',
+    state: 'finished',
+    parent: manager,
+    labels,
+  };
+
+  finished.reply('ls', JSON.stringify({ terminals: [finishedTerminal] }));
+  finished.reply('get', JSON.stringify(finishedTerminal));
+
+  finished.replyConnect('hello', 1, {
+    generation: 1,
+    version: 'test',
+    core: { id: 'core', name: 'core' },
+    framed: false,
+    methods: [],
+    features: [],
+  });
+
+  finished.replyConnect('terminal.run', 2, {
+    address: 't-worker-2',
+    state: 'live',
+    parent: manager,
+  });
+
+  state.runtime.hc = { exec: finished.exec, connect: finished.connect, cwd: state.runtime.hc.cwd };
+
+  const second = await launch(state.runtime, { visibility: 'background' });
+
+  expect(second.isError).not.toBe(true);
+  expect(terminalRun(finished)).toBeDefined();
+});
+
 it('refuses a launch without HC_TERMINAL_ID', async () => {
   vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
 

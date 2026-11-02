@@ -255,6 +255,7 @@ const startWorker = async (
   resolved: Awaited<ReturnType<typeof resolveRoutedLoadout>>,
   assignment: Assignment,
   extensionPackages: readonly { path: string }[],
+  signal: AbortSignal | undefined,
 ): Promise<HcTerminal> => {
   const commandBuilder =
     runtime.buildCommand ??
@@ -280,6 +281,10 @@ const startWorker = async (
   if (visibility === 'foreground') {
     Object.assign(labels, await foregroundLabels(runtime));
   }
+
+  // No await may sit between this check and the request, so a cancellation during the label read
+  // never starts a worker.
+  signal?.throwIfAborted();
 
   const name = workerName(assignment.profile, assignment.assignmentId);
 
@@ -389,6 +394,7 @@ export const executeLaunch = async (
           { loadout, routing },
           assignment,
           extensionPackages,
+          signal,
         );
 
         runtime.admission.remove(assignmentId);
