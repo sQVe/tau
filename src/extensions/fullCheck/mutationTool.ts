@@ -4,18 +4,11 @@ import { defineTool, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionToolContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
-import { readBase, readCheckIdentity } from '../../checkRecord/identity.js';
-import type { CheckIdentity } from '../../checkRecord/reuseDecision.js';
+import { readBase } from '../../checkRecord/identity.js';
 import type { Exec } from '../../command.js';
 import { findTauRoot } from '../../tauDirectory.js';
-import {
-  findReusedLog,
-  readRepository,
-  repositoryLockKey,
-  runAndRecord,
-  withRepositoryLock,
-} from './checkFlow.js';
-import type { Recorded } from './checkFlow.js';
+import { executeRecordedCheck } from './checkFlow.js';
+import type { CheckPolicy, Recorded } from './checkFlow.js';
 import { readMutationArgv } from './mutationConfig.js';
 import { parseMutationReport } from './mutationReport.js';
 import type { MutationReport, MutationStatus, Survivor } from './mutationReport.js';
@@ -235,21 +228,12 @@ const describeResult = (result: MutationDetails): string => {
 
 // A saved report that is missing, does not parse, or does not judge as a pass disables reuse, so
 // the script runs again.
-const reuseSaved = async (
-  root: string,
-  identity: CheckIdentity,
-): Promise<MutationDetails | undefined> => {
-  const reused = await findReusedLog(root, identity, mutationChecksPath);
-
-  if (reused === undefined) {
-    return undefined;
-  }
-
+const reuseSavedReport: CheckPolicy<MutationVerdict>['reuse'] = async (saved) => {
   try {
-    const report = await readReport(stdoutPathOf(reused.logPath), reused.logPath);
+    const report = await readReport(stdoutPathOf(saved.logPath), saved.logPath);
 
     const passed = mutationPassed({
-      ...reused,
+      ...saved,
       status: report.status,
       hasUnmutated: report.unmutated.length > 0,
     });
@@ -259,7 +243,8 @@ const reuseSaved = async (
     }
 
     return {
-      ...reused,
+      ...saved,
+      reused: true,
       status: report.status,
       ...(report.error === undefined ? {} : { error: report.error }),
       survivors: report.survivors,
@@ -284,7 +269,6 @@ const execute = async (
 ) => {
   const root = await findTauRoot(context.cwd, 'mutation_check');
   const agentDirectory = options.agentDirectory ?? getAgentDir();
-  const repository = await readRepository({ exec: options.exec, cwd: root, signal });
 
   const location = {
     cwd: root,
@@ -293,52 +277,25 @@ const execute = async (
   };
 
   const configured = readMutationArgv(location, context.ui);
-
-  if (repository === undefined) {
-    throw new Error(
-      'This checkout has an origin remote that does not name an owner/name repository, so the mutation check has no lock to share with the full check.',
-    );
-  }
-
   const argv = await planArgv(root, configured, request);
-  const readIdentity = () => readCheckIdentity(root, argv);
-  const identity = await readIdentity();
-  const reusedBeforeWaiting = await reuseSaved(root, identity);
 
-  if (reusedBeforeWaiting !== undefined) {
-    return toToolResult(reusedBeforeWaiting);
-  }
-
-  const result = await withRepositoryLock(
+  const result = await executeRecordedCheck(
     {
+      name: 'mutation check',
       root,
+      argv,
+      exec: options.exec,
       agentDirectory,
-      repository: repositoryLockKey(repository),
-      signal,
+      checksPath: mutationChecksPath,
+      output: 'report',
+      idleLimitMilliseconds: options.idleLimitMilliseconds ?? defaultIdleLimitMilliseconds,
       pollMilliseconds: options.pollMilliseconds ?? defaultPollMilliseconds,
+      signal,
       notifyWaiting,
     },
-    async (recordCommandGroup) => {
-      const current = await readIdentity();
-      const reused = await reuseSaved(root, current);
-
-      if (reused !== undefined) {
-        return reused;
-      }
-
-      return runAndRecord(
-        root,
-        current,
-        readIdentity,
-        {
-          signal,
-          recordCommandGroup,
-          idleLimitMilliseconds: options.idleLimitMilliseconds ?? defaultIdleLimitMilliseconds,
-          checksPath: mutationChecksPath,
-          output: 'report',
-        },
-        settleRun,
-      );
+    {
+      settle: settleRun,
+      reuse: reuseSavedReport,
     },
   );
 

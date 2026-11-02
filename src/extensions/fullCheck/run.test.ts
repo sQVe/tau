@@ -5,7 +5,7 @@ import { onTestFinished, expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { groupState } from '../../process/process.js';
-import { runCheck } from './run.js';
+import { defaultIdleLimitMilliseconds, runCheck } from './run.js';
 
 const waitForGroupExit = async (groupId: number): Promise<void> => {
   while ((await groupState(groupId)) !== 'gone') {
@@ -33,6 +33,7 @@ it('returns only after the command group is recorded, even when the command exit
 
       recorded = true;
     },
+    idleLimitMilliseconds: defaultIdleLimitMilliseconds,
     output: 'combined',
   });
 
@@ -63,6 +64,7 @@ it('settles a cancelled run of a command that cannot spawn without signalling pr
     argv: ['tau-no-such-command'],
     signal: controller.signal,
     onStarted: async () => {},
+    idleLimitMilliseconds: defaultIdleLimitMilliseconds,
     output: 'combined',
   });
 
@@ -102,6 +104,7 @@ it('returns only after a background process in the command group has gone', asyn
     argv: [process.execPath, '-e', script],
     signal: undefined,
     onStarted: async () => {},
+    idleLimitMilliseconds: defaultIdleLimitMilliseconds,
     output: 'combined',
   });
 

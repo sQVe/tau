@@ -26,7 +26,7 @@ export interface CheckOptions {
   argv: string[];
   signal: AbortSignal | undefined;
   onStarted: (groupId: number) => Promise<void>;
-  idleLimitMilliseconds?: number | undefined;
+  idleLimitMilliseconds: number;
   output: CheckOutput;
   checksPath?: string;
 }
@@ -50,7 +50,9 @@ const killGraceMilliseconds = 5000;
 
 const millisecondsPerMinute = 60_000;
 const idleLimitMinutes = 2;
-const defaultIdleLimitMilliseconds = idleLimitMinutes * millisecondsPerMinute;
+
+export const defaultIdleLimitMilliseconds = idleLimitMinutes * millisecondsPerMinute;
+
 const idlePollCeilingMilliseconds = 1000;
 const idlePollsPerLimit = 4;
 
@@ -62,7 +64,7 @@ export const runCheck = async ({
   argv,
   signal,
   onStarted,
-  idleLimitMilliseconds = defaultIdleLimitMilliseconds,
+  idleLimitMilliseconds,
   output,
   checksPath = 'checks',
 }: CheckOptions): Promise<CheckResult> => {

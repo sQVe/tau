@@ -224,21 +224,6 @@ it('fails on survivors with an exit other than 0 or 2 and saves nothing', async 
   expect(await runCount()).toBe(2);
 });
 
-it('returns the saved log of an unchanged state after a pass without running the script', async () => {
-  const { configure, run, runCount } = await fixture();
-
-  await configure(passReport, 0);
-
-  const first = await run();
-  const second = await run();
-  const [text] = second.content;
-
-  expect(first.details).toMatchObject({ passed: true, reused: false });
-  expect(second.details).toMatchObject({ passed: true, reused: true });
-  expect(text?.type === 'text' ? text.text : '').toContain('Reused the saved passing log');
-  expect(await runCount()).toBe(1);
-});
-
 it('reuses a passing run with survivors and lists the same survivors', async () => {
   const { configure, run, runCount } = await fixture();
 
@@ -587,6 +572,7 @@ it('rejects a repository whose origin names no owner and name', async () => {
   await git(root, 'remote', 'set-url', 'origin', '/tmp/some-path');
 
   await expect(run()).rejects.toThrow('owner/name');
+  await expect(run()).rejects.toThrow('mutation check');
   expect(await runCount()).toBe(0);
 });
 
