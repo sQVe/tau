@@ -135,9 +135,13 @@ it('leaves the published facts out of the evidence when the remote tip read fail
 
   expect(evidence.layers).toHaveLength(1);
 
-  expect(evidence.layers[0]?.facts).toMatchObject({
+  expect(evidence.layers[0]?.facts).toEqual({
     kind: 'tipFailed',
-    read: { ok: false },
+    read: {
+      ok: false,
+      command: 'git rev-parse --verify --quiet refs/remotes/origin/a',
+      problem: 'exited with code 128: fatal: boom',
+    },
   });
 });
 
