@@ -49,6 +49,7 @@ const setup = (
     vi.clearAllMocks();
   });
 
+  vi.stubEnv('TAU_ROLE', 'worker');
   vi.stubEnv('TAU_WORKER_RECORD', directory);
   vi.stubEnv('TAU_WORKER_TOOLS', JSON.stringify(parentToolList));
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
@@ -1832,4 +1833,19 @@ it('records cache usage of the current task only', async () => {
   });
 
   await worker.emit('session_shutdown');
+});
+
+it('registers nothing when TAU_WORKER_RECORD is set without TAU_ROLE', () => {
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  vi.stubEnv('TAU_ROLE', undefined);
+  vi.stubEnv('TAU_WORKER_RECORD', '/fixture/worker');
+  const fake = fakeExtensionApi();
+
+  workerExtension(fake.pi);
+
+  expect(fake.tools.size).toBe(0);
+  expect(fake.handlers.size).toBe(0);
 });

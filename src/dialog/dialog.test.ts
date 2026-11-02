@@ -4,7 +4,7 @@ import type { Component } from '@earendil-works/pi-tui';
 import { expect, it, vi } from 'vitest';
 
 import { customContext } from '../../tests/toolContext.js';
-import { confirm } from './dialog.js';
+import { confirm, confirmWithUser } from './dialog.js';
 
 const theme = {
   fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
@@ -375,4 +375,54 @@ it.each([12, 24])('fills the free rows of a %s-row terminal with message lines',
   const { pages } = await observedDialog([], { rows, message });
 
   expect(pages[0]).toHaveLength(rows - 6);
+});
+
+const roleDialogContext = (confirmAnswer: boolean) => {
+  const fallback = vi
+    .fn<(title: string, message: string) => Promise<boolean>>()
+    .mockResolvedValue(confirmAnswer);
+
+  const context = {
+    mode: 'rpc',
+    hasUI: true,
+    ui: { confirm: fallback, custom: vi.fn<() => void>() },
+  } as unknown as ExtensionContext;
+
+  return { context, fallback };
+};
+
+it('refuses a confirmation in a worker and asks nothing', async ({ onTestFinished }) => {
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  vi.stubEnv('TAU_ROLE', 'worker');
+  vi.stubEnv('TAU_WORKER_RECORD', undefined);
+  const { context, fallback } = roleDialogContext(true);
+
+  await expect(
+    confirmWithUser(context, { action: 'Writing to Linear', title: 'Title', message: 'Message' }),
+  ).rejects.toThrow('Writing to Linear needs');
+
+  expect(fallback).not.toHaveBeenCalled();
+});
+
+it('asks the user for a confirmation in a manager session', async ({ onTestFinished }) => {
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  vi.stubEnv('TAU_ROLE', undefined);
+  vi.stubEnv('TAU_WORKER_RECORD', undefined);
+  const { context, fallback } = roleDialogContext(true);
+
+  expect(
+    await confirmWithUser(context, {
+      action: 'Writing to Linear',
+      title: 'Title',
+      message: 'Message',
+    }),
+  ).toBe(true);
+
+  expect(fallback).toHaveBeenCalledWith('Title', 'Message');
 });

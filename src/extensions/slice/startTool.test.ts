@@ -684,7 +684,8 @@ describe('start_slice ownership', () => {
   });
 
   it('refuses in a worker with a UI, asks nothing, and leaves Linear and start.json unchanged', async () => {
-    vi.stubEnv('TAU_WORKER_RECORD', '/records/task-one');
+    vi.stubEnv('TAU_ROLE', 'worker');
+    vi.stubEnv('TAU_WORKER_RECORD', undefined);
 
     onTestFinished(() => {
       vi.unstubAllEnvs();

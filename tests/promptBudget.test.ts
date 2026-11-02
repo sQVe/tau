@@ -48,6 +48,7 @@ const toolsSize = (tools: ToolDefinition[]): number =>
   tools.reduce((total, tool) => total + toolSize(tool), 0);
 
 const loadTools = async (workerRecord: string, agentDirectory: string) => {
+  vi.stubEnv('TAU_ROLE', workerRecord === '' ? undefined : 'worker');
   vi.stubEnv('TAU_WORKER_RECORD', workerRecord);
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
 

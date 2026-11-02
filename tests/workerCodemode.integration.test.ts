@@ -93,6 +93,7 @@ const startProfileWorker = async (
 ) => {
   const taskDirectory = join(directory, 'task');
   mkdirSync(taskDirectory);
+  vi.stubEnv('TAU_ROLE', 'worker');
   vi.stubEnv('TAU_WORKER_RECORD', taskDirectory);
   const provider = fauxProvider({ provider: 'tau-profile-codemode' });
   const model = provider.getModel();
@@ -286,7 +287,7 @@ it.for([
   'adds the codemode guidelines to a manager prompt with tools %j: %s',
   async ([tools, expected]) => {
     const directory = piAgentDirectory('tau-manager-guidelines-');
-    vi.stubEnv('TAU_WORKER_RECORD', '');
+    vi.stubEnv('TAU_ROLE', '');
     const provider = fauxProvider({ provider: 'tau-manager-guidelines' });
     const { captured, step } = captureSystemPrompt();
 
@@ -342,7 +343,7 @@ const directChangeCalls = fauxAssistantMessage([
 
 // Starts a manager session with codemode, the built-in change tools, and package tool fixtures.
 const startManager = async (directory: string) => {
-  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('TAU_ROLE', '');
   writeFileSync(join(directory, 'source.txt'), 'fixture-source');
   const provider = fauxProvider({ provider: 'tau-manager-change-tools' });
   const executed: string[] = [];

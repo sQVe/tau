@@ -63,6 +63,8 @@ describe('tauSkillsExtension', () => {
   });
 
   it('names only the skills with required-for in the system prompt', () => {
+    vi.stubEnv('TAU_ROLE', undefined);
+    vi.stubEnv('TAU_WORKER_RECORD', undefined);
     const fake = fakeExtensionApi();
 
     tauSkillsExtension(fake.pi, skillsDirectory);
@@ -91,7 +93,8 @@ describe('tauSkillsExtension', () => {
   });
 
   it('adds no system prompt text in a worker process but keeps the commands', () => {
-    vi.stubEnv('TAU_WORKER_RECORD', '/records/task-one');
+    vi.stubEnv('TAU_ROLE', 'worker');
+    vi.stubEnv('TAU_WORKER_RECORD', undefined);
     const fake = fakeExtensionApi();
 
     tauSkillsExtension(fake.pi, skillsDirectory);

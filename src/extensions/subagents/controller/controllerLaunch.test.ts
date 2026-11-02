@@ -130,6 +130,7 @@ it('launches a fresh worker with saved full-tool settings and recovers without r
   expect(root.command.slice(1)).toEqual(workerArguments(task, [], skillTools));
 
   expect(root.env).toMatchObject({
+    TAU_ROLE: 'worker',
     TAU_WORKER_RECORD: launched.directory,
     PI_CODING_AGENT_DIR: task.loadout.agentDirectory,
   });

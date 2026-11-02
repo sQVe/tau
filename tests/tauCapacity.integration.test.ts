@@ -23,7 +23,7 @@ it('terminates a raw git commit call after Tau refuses worker capacity', async (
 
   isolateWebAccessConfig(directory, onTestFinished);
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
-  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('TAU_ROLE', '');
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');

@@ -90,7 +90,8 @@ in its own controller keeps changes to one worker out of the coordinator.
   absolute `pi` executable, and its cwd and environment go in the same request. Never pass `tab_id`,
   because herdr would replace that tab.
 - The worker environment is the parent's environment without `PWD` and `OLDPWD`, plus
-  `TAU_WORKER_RECORD`. Herdr then sets the pane's own `HERDR_*` identity.
+  `TAU_ROLE=worker`, which marks the worker role, and `TAU_WORKER_RECORD`, which names its record
+  folder. Herdr then sets the pane's own `HERDR_*` identity.
 - The pane lives as long as its Pi process. A finished worker exits by itself. To cancel or enforce
   the deadline, the parent checks the terminal, process identity, and Pi session in herdr, then
   closes the pane. It never types into a worker.

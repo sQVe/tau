@@ -451,7 +451,8 @@ describe('post refusals', () => {
   });
 
   it('posts nothing and asks nothing in a worker with UI', async () => {
-    vi.stubEnv('TAU_WORKER_RECORD', '/records/task-one');
+    vi.stubEnv('TAU_ROLE', 'worker');
+    vi.stubEnv('TAU_WORKER_RECORD', undefined);
 
     onTestFinished(() => {
       vi.unstubAllEnvs();

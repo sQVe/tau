@@ -35,6 +35,8 @@ const startSession = async (cwd: string) => {
 describe('bare repository root guard', () => {
   it('appends guidance without replacing existing prompt text in a bare root', async () => {
     const root = await createTemporaryBareRoot((cleanup) => cleanups.push(cleanup));
+    vi.stubEnv('TAU_ROLE', undefined);
+    vi.stubEnv('TAU_WORKER_RECORD', undefined);
     const appendedPrompt = await startSession(root);
 
     expect(appendedPrompt).toMatch(/^user append\s+\S/);
@@ -63,7 +65,8 @@ describe('bare repository root guard', () => {
 
   it('leaves a worker session in a bare root alone', async () => {
     const root = await createTemporaryBareRoot((cleanup) => cleanups.push(cleanup));
-    vi.stubEnv('TAU_WORKER_RECORD', '/records/task-one');
+    vi.stubEnv('TAU_ROLE', 'worker');
+    vi.stubEnv('TAU_WORKER_RECORD', undefined);
 
     expect(await startSession(root)).toBe('user append');
   });

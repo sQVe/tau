@@ -24,6 +24,7 @@ import {
 import { codemodeGuidelines } from '../../codemode/guidelines.js';
 import { instructionSetNames, readInstructionSet } from '../../instructions/instructions.js';
 import { appendSystemPrompt, guidelineLines } from '../../instructions/systemPrompt.js';
+import { isWorkerProcess } from '../../worker.js';
 import { parsePhaseDescription, writeWorkerActivity } from './activity.js';
 import type { WorkerActivity } from './activity.js';
 import { monotonicNow } from './controller/budget.js';
@@ -741,6 +742,10 @@ const registerAgentSettledHandler = (pi: ExtensionAPI, state: WorkerExtensionSta
 };
 
 export default function workerExtension(pi: ExtensionAPI): void {
+  if (!isWorkerProcess()) {
+    return;
+  }
+
   // oxlint-disable-next-line node/no-process-env -- The parent binds this process to its saved task through the pane environment.
   const directory = process.env.TAU_WORKER_RECORD;
 

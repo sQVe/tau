@@ -73,6 +73,7 @@ const runWorker = async (responses: FauxResponseStep[]) => {
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   const taskDirectory = join(directory, 'task');
   mkdirSync(taskDirectory);
+  vi.stubEnv('TAU_ROLE', 'worker');
   vi.stubEnv('TAU_WORKER_RECORD', taskDirectory);
   const provider = fauxProvider({ provider: 'tau-codemode-fixture' });
   const model = provider.getModel();
@@ -182,7 +183,7 @@ const runManager = async (responses: FauxResponseStep[]) => {
   });
 
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
-  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('TAU_ROLE', '');
   vi.stubEnv('HERDR_ENV', '0');
   vi.stubEnv('HERDR_PANE_ID', '');
   const provider = fauxProvider({ provider: 'tau-codemode-manager' });

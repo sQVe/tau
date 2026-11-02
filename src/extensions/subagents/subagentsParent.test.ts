@@ -55,7 +55,7 @@ beforeEach(() => {
   controllers.instances.length = 0;
   controllers.client = undefined;
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
-  vi.stubEnv('TAU_WORKER_RECORD', '');
+  vi.stubEnv('TAU_ROLE', '');
   vi.stubEnv('HERDR_ENV', '1');
   vi.stubEnv('HERDR_PANE_ID', 'parent');
   vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');

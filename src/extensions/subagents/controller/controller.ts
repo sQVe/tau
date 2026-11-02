@@ -469,6 +469,7 @@ export class WorkerController {
         command: workerCommand(handle.task, handle.startup.extensionPackages, currentSkillTools),
         environment: {
           ...workerEnvironment(),
+          TAU_ROLE: 'worker',
           TAU_WORKER_RECORD: handle.directory,
           TAU_WORKER_TOOLS: toolsEnvironment,
           PI_CODING_AGENT_DIR: handle.task.loadout.agentDirectory,
