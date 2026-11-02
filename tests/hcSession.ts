@@ -1,8 +1,10 @@
 import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { homedir, tmpdir, userInfo } from 'node:os';
 import { join } from 'node:path';
+
+import type { TestContext } from 'vitest';
 
 import type { Exec } from '../src/command.js';
 import { connect as connectToHc } from '../src/hc/connect.js';
@@ -77,6 +79,47 @@ const createDirectories = (root: string): void => {
 const asError = (error: unknown): Error =>
   error instanceof Error ? error : new Error(String(error));
 
+const stopDeadlineMilliseconds = 5000;
+
+const stopPollMilliseconds = 20;
+
+// A zombie has exited and holds no socket or file, so it does not count.
+const isLiveSessionProcess = (processId: string, marker: string): boolean => {
+  try {
+    const status = readFileSync(`/proc/${processId}/stat`, 'utf8');
+    const state = status.charAt(status.lastIndexOf(')') + 2);
+    const environment = readFileSync(`/proc/${processId}/environ`, 'utf8').split('\0');
+
+    return state !== 'Z' && environment.includes(marker);
+  } catch {
+    return false;
+  }
+};
+
+// The live processes whose environment names this session, such as its core and holders.
+export const sessionProcesses = (session: string): number[] => {
+  const marker = `HC_SESSION=${session}`;
+  const processIds = readdirSync('/proc').filter((name) => /^\d+$/.test(name));
+
+  return processIds.filter((processId) => isLiveSessionProcess(processId, marker)).map(Number);
+};
+
+// hc server stop can return before the core process is gone. The core is not a child of this
+// process, so no exit event exists, and the wait polls /proc.
+const waitForSessionExit = async (session: string): Promise<void> => {
+  const deadline = Date.now() + stopDeadlineMilliseconds;
+
+  while (sessionProcesses(session).length > 0) {
+    if (Date.now() > deadline) {
+      throw new Error(`hc session ${session} still runs after hc server stop`);
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, stopPollMilliseconds);
+    });
+  }
+};
+
 const createExec = (environment: Readonly<Record<string, string>>): Exec => {
   return (command, commandArguments, options = {}) =>
     new Promise((resolve, reject) => {
@@ -109,7 +152,10 @@ const createExec = (environment: Readonly<Record<string, string>>): Exec => {
     });
 };
 
-export const startHcSession = async (options: HcSessionOptions = {}): Promise<HcSession> => {
+export const startHcSession = async (
+  registerCleanup: TestContext['onTestFinished'],
+  options: HcSessionOptions = {},
+): Promise<HcSession> => {
   const session = (options.session ?? `tau-test-${randomBytes(6).toString('hex')}`).trim();
   const root = resolvePath(mkdtempSync(join(tmpdir(), 'tau-hc-')));
 
@@ -138,7 +184,15 @@ export const startHcSession = async (options: HcSessionOptions = {}): Promise<Hc
       cwd: root,
     };
 
+    let stopRequested = false;
+
     const stop = async (): Promise<void> => {
+      if (stopRequested) {
+        return;
+      }
+
+      stopRequested = true;
+
       let failure: unknown;
 
       try {
@@ -146,6 +200,8 @@ export const startHcSession = async (options: HcSessionOptions = {}): Promise<Hc
 
         if (result.code !== 0 || result.killed) {
           failure = new Error(`hc server stop failed: ${result.stderr.trim()}`);
+        } else {
+          await waitForSessionExit(session);
         }
       } catch (error) {
         failure = error;
@@ -157,6 +213,8 @@ export const startHcSession = async (options: HcSessionOptions = {}): Promise<Hc
         throw asError(failure);
       }
     };
+
+    registerCleanup(stop);
 
     return { root, session, environment, runtime, stop };
   } catch (error) {

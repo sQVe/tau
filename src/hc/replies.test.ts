@@ -2,10 +2,10 @@ import { expect, it } from 'vitest';
 
 import {
   HcError,
-  matchJsonRpcReply,
+  matchParsedReply,
   parseCliError,
   parseCommandReply,
-  splitLines,
+  parseJsonRpcReplies,
 } from './replies.js';
 
 const terminal = {
@@ -22,6 +22,18 @@ const terminal = {
   exit_code: null,
   status: { state: 'working', app: 'pi' },
 };
+
+const nestedWait = {
+  terminal: 't8',
+  ended: true,
+  reason: 'exit',
+  turn: 1,
+  children: [],
+  exit_code: 0,
+};
+
+const matchLines = (lines: string[], id: number): unknown =>
+  matchParsedReply('hc connect', parseJsonRpcReplies('hc connect', lines), id);
 
 const successCases = [
   {
@@ -79,6 +91,28 @@ const successCases = [
     },
   },
   {
+    name: 'the wait reply with a valid nested child',
+    parse: () =>
+      parseCommandReply(
+        'hc wait',
+        'wait',
+        JSON.stringify({
+          terminal: 't7',
+          ended: false,
+          reason: 'children',
+          turn: 3,
+          children: [nestedWait],
+        }),
+      ),
+    expected: {
+      terminal: 't7',
+      ended: false,
+      reason: 'children',
+      turn: 3,
+      children: [nestedWait],
+    },
+  },
+  {
     name: 'the kill reply',
     parse: () => parseCommandReply('hc kill', 'kill', JSON.stringify(terminal)),
     expected: terminal,
@@ -96,8 +130,7 @@ const successCases = [
   {
     name: 'a reply after an error for another id',
     parse: () =>
-      matchJsonRpcReply(
-        'hc connect',
+      matchLines(
         [
           JSON.stringify({
             jsonrpc: '2.0',
@@ -111,14 +144,10 @@ const successCases = [
     expected: { address: 't7', state: 'live' },
   },
   {
-    name: 'JSON-RPC output split across chunks',
-    parse: () => {
-      const first = splitLines('', '{"jsonrpc":"2.0","id":1,');
-      const second = splitLines(first.rest, '"result":{"generation":1}}\n');
-
-      return matchJsonRpcReply('hc connect', second.lines, 1);
-    },
-    expected: { generation: 1 },
+    name: 'a missing reply id',
+    parse: () =>
+      matchLines([JSON.stringify({ jsonrpc: '2.0', id: 1, result: { generation: 1 } })], 2),
+    expected: undefined,
   },
 ];
 
@@ -148,8 +177,7 @@ const errorCases = [
   {
     name: 'the JSON-RPC error shape',
     parse: () =>
-      matchJsonRpcReply(
-        'hc connect',
+      matchLines(
         [
           JSON.stringify({
             jsonrpc: '2.0',
@@ -176,10 +204,25 @@ const errorCases = [
     expectedError: { kind: 'unexpected' },
   },
   {
+    name: 'a wait reply with an invalid nested child',
+    parse: () =>
+      parseCommandReply(
+        'hc wait',
+        'wait',
+        JSON.stringify({
+          terminal: 't7',
+          ended: true,
+          reason: 'children',
+          turn: 3,
+          children: [{ terminal: 't8', ended: 'yes' }],
+        }),
+      ),
+    expectedError: { kind: 'unexpected' },
+  },
+  {
     name: 'a malformed trailing line',
     parse: () =>
-      matchJsonRpcReply(
-        'hc connect',
+      matchLines(
         [
           JSON.stringify({ jsonrpc: '2.0', id: 1, result: { generation: 1 } }),
           JSON.stringify({ jsonrpc: '2.0', id: 2, result: { address: 't7', state: 'live' } }),
@@ -191,8 +234,7 @@ const errorCases = [
   },
   {
     name: 'output missing the reply id',
-    parse: () =>
-      matchJsonRpcReply('hc connect', ['{"jsonrpc":"2.0","result":{"address":"t7"}}'], 2),
+    parse: () => matchLines(['{"jsonrpc":"2.0","result":{"address":"t7"}}'], 2),
     expectedError: { kind: 'malformed' },
   },
 ];

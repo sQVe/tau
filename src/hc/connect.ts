@@ -10,7 +10,6 @@ import {
   parseJsonRpcReplies,
   parseTerminal,
   requestLine,
-  splitLines,
 } from './replies.js';
 import type { HcTerminal } from './replies.js';
 
@@ -49,13 +48,6 @@ const terminalRunParams = (request: TerminalRunRequest): Record<string, unknown>
   ...(request.labels === undefined ? {} : { labels: request.labels }),
   ...(request.noParent === undefined ? {} : { no_parent: request.noParent }),
 });
-
-// The one-shot call writes every line before it reads, so the whole stdout is already available.
-const stdoutLines = (stdout: string): string[] => {
-  const split = splitLines('', stdout);
-
-  return split.rest === '' ? split.lines : [...split.lines, split.rest];
-};
 
 const takeReply = (
   label: string,
@@ -107,7 +99,9 @@ export const runWithEnvironment = async (
     throw failure;
   }
 
-  const replies = parseJsonRpcReplies(label, stdoutLines(result.stdout));
+  // The one-shot call writes every line before it reads, so the whole stdout is already available.
+  const replyLines = result.stdout.split('\n');
+  const replies = parseJsonRpcReplies(label, replyLines);
 
   parseHelloResult(label, takeReply(label, replies, 1));
 

@@ -50,23 +50,29 @@ export const hcTerminalListSchema = Type.Object({
   terminals: Type.Array(hcTerminalSchema),
 });
 
+// A child wait result has the same shape as its parent, so the schema refers to itself by name.
+export const hcWaitResultSchema = Type.Cyclic(
+  {
+    WaitResult: Type.Object({
+      terminal: Type.String(),
+      ended: Type.Boolean(),
+      reason: Type.String(),
+      turn: Type.Number(),
+      children: Type.Array(Type.Ref('WaitResult')),
+      exit_code: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+      signal: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+      status: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+      from: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    }),
+  },
+  'WaitResult',
+);
+
 export const hcSendResultSchema = Type.Object({
   turn: Type.Number(),
   started: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
   status: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  wait: Type.Optional(Type.Unknown()),
-});
-
-export const hcWaitResultSchema = Type.Object({
-  terminal: Type.String(),
-  ended: Type.Boolean(),
-  reason: Type.String(),
-  turn: Type.Number(),
-  children: Type.Array(Type.Unknown()),
-  exit_code: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
-  signal: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
-  status: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  from: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  wait: Type.Optional(Type.Union([hcWaitResultSchema, Type.Null()])),
 });
 
 export const hcRemoveResultSchema = Type.Object({
@@ -173,13 +179,6 @@ export const parseCliError = (label: string, stderr: string, exitCode: number): 
   return new HcError(kind, message, { ...(hint === undefined ? {} : { hint }), exitCode });
 };
 
-export const splitLines = (rest: string, chunk: string): { lines: string[]; rest: string } => {
-  const parts = `${rest}${chunk}`.split('\n');
-  const remainder = parts.pop() ?? '';
-
-  return { lines: parts, rest: remainder };
-};
-
 // Parses every nonblank line before any id is matched, so a malformed line anywhere is an error.
 export const parseJsonRpcReplies = (
   label: string,
@@ -224,9 +223,6 @@ export const matchParsedReply = (
 
   return undefined;
 };
-
-export const matchJsonRpcReply = (label: string, lines: readonly string[], id: number): unknown =>
-  matchParsedReply(label, parseJsonRpcReplies(label, lines), id);
 
 export const requestLine = (id: number, method: string, params: unknown): string =>
   `${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`;

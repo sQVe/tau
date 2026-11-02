@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
+import type { TestContext } from 'vitest';
 
 import { protectedVariables } from './hcIsolation.js';
 import type { ProtectedVariable } from './hcIsolation.js';
@@ -45,7 +46,9 @@ afterEach(() => {
 });
 
 it('refuses a default session and runs no hc command', async () => {
-  const failure = await startHcSession({ session: 'default' }).catch((error: unknown) => error);
+  const failure = await startHcSession(onTestFinished, { session: 'default' }).catch(
+    (error: unknown) => error,
+  );
 
   expect(failure).toBeInstanceOf(Error);
   expect((failure as Error).message).toContain('HC_SESSION');
@@ -54,20 +57,16 @@ it('refuses a default session and runs no hc command', async () => {
 });
 
 it('builds a private environment for a generated session', async () => {
-  const session = await startHcSession();
+  const session = await startHcSession(onTestFinished);
 
-  try {
-    expect(session.session).toMatch(/^tau-test-[0-9a-f]+$/);
+  expect(session.session).toMatch(/^tau-test-[0-9a-f]+$/);
 
-    for (const name of protectedVariables) {
-      expect(session.environment[name]).toBe(`${session.root}/${folderOf[name]}`);
-    }
+  for (const name of protectedVariables) {
+    expect(session.environment[name]).toBe(`${session.root}/${folderOf[name]}`);
+  }
 
-    for (const name of Object.keys(session.environment)) {
-      expect(allowedEnvironment.has(name)).toBe(true);
-    }
-  } finally {
-    rmSync(session.root, { recursive: true, force: true });
+  for (const name of Object.keys(session.environment)) {
+    expect(allowedEnvironment.has(name)).toBe(true);
   }
 });
 
@@ -82,7 +81,7 @@ it('refuses a temp root that resolves inside the real home', async () => {
   vi.stubEnv('TMPDIR', alias);
 
   try {
-    const failure = await startHcSession().catch((error: unknown) => error);
+    const failure = await startHcSession(onTestFinished).catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(Error);
     expect((failure as Error).message).toContain('HOME is inside the real HOME');
@@ -108,30 +107,55 @@ it('does not inherit HC_ or HERDR_ variables in exec, connect, or stop', async (
     throw new Error('connect stopped before spawn');
   });
 
-  const session = await startHcSession();
+  const session = await startHcSession(onTestFinished);
 
-  try {
-    await session.runtime.exec('hc', ['server', 'status', '--json'], { cwd: session.root });
-    await session.runtime.connect(['not-used']).catch(() => undefined);
-    await session.stop();
+  await session.runtime.exec('hc', ['server', 'status', '--json'], { cwd: session.root });
+  await session.runtime.connect(['not-used']).catch(() => undefined);
+  await session.stop();
 
-    expect(execFileMock).toHaveBeenCalledTimes(2);
-    expect(spawnMock).toHaveBeenCalledTimes(1);
+  expect(execFileMock).toHaveBeenCalledTimes(2);
+  expect(spawnMock).toHaveBeenCalledTimes(1);
 
-    const environments = [
-      (execFileMock.mock.calls[0]?.[2] as { env?: Record<string, string> } | undefined)?.env,
-      (spawnMock.mock.calls[0]?.[2] as { env?: Record<string, string> } | undefined)?.env,
-      (execFileMock.mock.calls[1]?.[2] as { env?: Record<string, string> } | undefined)?.env,
-    ];
+  const environments = [
+    (execFileMock.mock.calls[0]?.[2] as { env?: Record<string, string> } | undefined)?.env,
+    (spawnMock.mock.calls[0]?.[2] as { env?: Record<string, string> } | undefined)?.env,
+    (execFileMock.mock.calls[1]?.[2] as { env?: Record<string, string> } | undefined)?.env,
+  ];
 
-    for (const environment of environments) {
-      expect(environment).toBeDefined();
-      expect(environment).not.toHaveProperty('HC_SOCKET');
-      expect(environment).not.toHaveProperty('HC_TERMINAL_ID');
-      expect(environment).not.toHaveProperty('HERDR_PANE_ID');
-      expect(environment?.['HC_SESSION']).toBe(session.session);
-    }
-  } finally {
-    rmSync(session.root, { recursive: true, force: true });
+  for (const environment of environments) {
+    expect(environment).toBeDefined();
+    expect(environment).not.toHaveProperty('HC_SOCKET');
+    expect(environment).not.toHaveProperty('HC_TERMINAL_ID');
+    expect(environment).not.toHaveProperty('HERDR_PANE_ID');
+    expect(environment?.['HC_SESSION']).toBe(session.session);
   }
+});
+
+it('stops the core once when the caller and the registered cleanup both stop', async () => {
+  const cleanups: (() => Promise<void>)[] = [];
+
+  const registerCleanup = ((cleanup: () => Promise<void>) => {
+    cleanups.push(cleanup);
+  }) as unknown as TestContext['onTestFinished'];
+
+  execFileMock.mockImplementation(((...argumentsList: unknown[]) => {
+    const callback = argumentsList[3] as (error: null, stdout: string, stderr: string) => void;
+
+    callback(null, '', '');
+
+    return undefined;
+  }) as unknown as typeof execFile);
+
+  const session = await startHcSession(registerCleanup);
+
+  await session.stop();
+  await cleanups[0]?.();
+
+  const stopCalls = execFileMock.mock.calls.filter(
+    (callArguments) =>
+      (callArguments[1] as string[] | undefined)?.join(' ') === 'server stop --json',
+  );
+
+  expect(cleanups).toHaveLength(1);
+  expect(stopCalls).toHaveLength(1);
 });
