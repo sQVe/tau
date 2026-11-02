@@ -1,13 +1,10 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-
 import type { ExtensionAPI, ToolCallEvent } from '@earendil-works/pi-coding-agent';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { git, initializeRepository } from '../../../tests/gitRepository.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
 import commitExtension from './commit.js';
+import { writeRepositoryFile } from './fixtures/commitTool.js';
 import { commitGuardReason, guardToolCall } from './guard.js';
 
 const makeReadEvent = (): ToolCallEvent => ({
@@ -23,25 +20,6 @@ const makeBashEvent = (command: string): ToolCallEvent => ({
   toolName: 'bash',
   input: { command },
 });
-
-const createTemporaryRepository = async (): Promise<string> => {
-  const repositoryDirectory = temporaryDirectory(onTestFinished, 'tau-commit-guard-');
-
-  await initializeRepository(repositoryDirectory);
-
-  return repositoryDirectory;
-};
-
-const writeRepositoryFile = async (
-  repositoryDirectory: string,
-  relativePath: string,
-  content: string,
-): Promise<void> => {
-  const fullPath = join(repositoryDirectory, relativePath);
-
-  await mkdir(dirname(fullPath), { recursive: true });
-  await writeFile(fullPath, content);
-};
 
 const nest = (levels: number) => {
   let command = 'echo hello';
@@ -356,7 +334,10 @@ describe('commitExtension', () => {
   });
 
   it('commits without registering or reading an approval flag', async () => {
-    const repositoryDirectory = await createTemporaryRepository();
+    const repositoryDirectory = await createTemporaryRepository(
+      onTestFinished,
+      'tau-commit-guard-',
+    );
 
     const { fakePi, registeredTool } = createFakePi();
 
@@ -388,7 +369,11 @@ describe('commitExtension', () => {
   });
 
   it("does not affect the tool's own git invocations", async () => {
-    const repositoryDirectory = await createTemporaryRepository();
+    const repositoryDirectory = await createTemporaryRepository(
+      onTestFinished,
+      'tau-commit-guard-',
+    );
+
     await writeRepositoryFile(repositoryDirectory, 'README.md', 'hello\n');
 
     const { fakePi, registeredTool } = createFakePi();

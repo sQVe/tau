@@ -4,11 +4,10 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
-import { afterEach, onTestFinished, vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
 import type { Mock } from 'vitest';
 
 import { createTemporaryRepository as createRepository } from '../../../../tests/gitRepository.js';
-import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { runGit } from '../../../git.js';
 import type { GitResult } from '../../../git.js';
 import { createCommitTool } from '../tool.js';
@@ -36,7 +35,6 @@ interface FakeCommit {
   };
   input: CommitInput;
   execute: (signal?: AbortSignal) => CommitToolResult;
-  gitDirectory: string;
 }
 
 const execFileAsync = promisify(execFile);
@@ -158,8 +156,6 @@ export const executeCommit = async (
 };
 
 export const fakeCommit = (): FakeCommit => {
-  const gitDirectory = temporaryDirectory(onTestFinished, 'tau-mock-git-');
-
   const custom = vi.fn<() => never>(() => {
     throw new Error('Unexpected approval UI');
   });
@@ -202,7 +198,7 @@ export const fakeCommit = (): FakeCommit => {
     }
 
     if (commandArguments[0] === 'rev-parse' || commandArguments[0] === 'write-tree') {
-      stdout = commandArguments.includes('--absolute-git-dir') ? `${gitDirectory}\n` : 'abc123\n';
+      stdout = 'abc123\n';
     }
 
     if (commandArguments.includes('--show-prefix')) {
@@ -228,5 +224,5 @@ export const fakeCommit = (): FakeCommit => {
   const execute = (signal?: AbortSignal) =>
     tool.execute('call', input, signal, undefined, context as never);
 
-  return { custom, editor, runner, context, input, execute, gitDirectory };
+  return { custom, editor, runner, context, input, execute };
 };
