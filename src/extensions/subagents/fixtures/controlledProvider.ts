@@ -8,14 +8,27 @@ import {
   fauxToolCall,
   getCurrentSystemPrompt,
 } from '@earendil-works/pi-ai';
-import type { TranscriptContext } from '@earendil-works/pi-ai';
+import type {
+  FauxResponseStep,
+  ImageContent,
+  TextContent,
+  TranscriptContext,
+} from '@earendil-works/pi-ai';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../../errors.js';
 
 interface FixtureAssignment {
+  task: string;
   loadout: { instructions: string };
 }
+
+export const questionTaskMarker = 'fixture-asks-the-manager';
+
+const fixtureQuestion = 'Which value should the report hold?';
+
+const fixtureSummary =
+  'Model-free CLI fixture completed.\n\nChanges: None\nEvidence: None\nDecisions: None\nConcerns: None';
 
 const readFixtureAssignment = (): FixtureAssignment | undefined => {
   const hcSession = process.env.HC_SESSION;
@@ -94,47 +107,92 @@ const appendSystemPresent = (context: TranscriptContext): boolean => {
   );
 };
 
-export default function controlledProvider(pi: ExtensionAPI): void {
-  provider.setResponses([
+const isTextBlock = (block: TextContent | ImageContent): block is TextContent =>
+  block.type === 'text';
+
+const contentText = (content: string | (TextContent | ImageContent)[]): string =>
+  typeof content === 'string'
+    ? content
+    : content
+        .filter(isTextBlock)
+        .map((block) => block.text)
+        .join('\n');
+
+// The worker's first user message is its task; the reply is the next one. A missing reply must not
+// produce a report that hides the gap.
+const typedAnswer = (context: TranscriptContext): string => {
+  const userMessages = context.messages.filter((message) => message.role === 'user');
+  const answer = userMessages.at(-1);
+
+  if (userMessages.length < 2 || answer === undefined) {
+    throw new Error('The fixture question got no typed answer from the manager.');
+  }
+
+  const text = contentText(answer.content).trim();
+
+  if (text === '') {
+    throw new Error('The fixture question got an empty typed answer from the manager.');
+  }
+
+  return text;
+};
+
+const asksTheManager = (): boolean => savedAssignment?.task.includes(questionTaskMarker) ?? false;
+
+const questionResponses = (): FauxResponseStep[] => [
+  fauxAssistantMessage([fauxToolCall('subagent_question', { question: fixtureQuestion })]),
+  (context) =>
     fauxAssistantMessage([
-      fauxToolCall('edit', {
-        path: 'source.txt',
-        edits: [{ oldText: 'before', newText: 'after' }],
+      fauxToolCall('subagent_report', {
+        outcome: 'success',
+        summary: fixtureSummary,
+        evidence: [typedAnswer(context)],
       }),
     ]),
-    fauxAssistantMessage([
-      fauxToolCall('bash', { command: 'test "$(cat source.txt)" = after && printf command-ok' }),
-      fauxToolCall('bash', { command: 'find ./delete-fixture/.git -delete' }),
-    ]),
-    (context) => {
-      const blocked = context.messages.some(
-        (message) =>
-          message.role === 'toolResult' &&
-          JSON.stringify(message.content).includes('BLOCKED by CC Safety Net'),
-      );
+];
 
-      const edited = readFileSync(`${process.cwd()}/source.txt`, 'utf8') === 'after\n';
-      const instructions = systemInstructions(context);
-      const appendPresent = appendSystemPresent(context);
+const reportResponses = (): FauxResponseStep[] => [
+  fauxAssistantMessage([
+    fauxToolCall('edit', {
+      path: 'source.txt',
+      edits: [{ oldText: 'before', newText: 'after' }],
+    }),
+  ]),
+  fauxAssistantMessage([
+    fauxToolCall('bash', { command: 'test "$(cat source.txt)" = after && printf command-ok' }),
+    fauxToolCall('bash', { command: 'find ./delete-fixture/.git -delete' }),
+  ]),
+  (context) => {
+    const blocked = context.messages.some(
+      (message) =>
+        message.role === 'toolResult' &&
+        JSON.stringify(message.content).includes('BLOCKED by CC Safety Net'),
+    );
 
-      return fauxAssistantMessage([
-        fauxToolCall('subagent_report', {
-          outcome: blocked && edited && instructions ? 'success' : 'failure',
-          summary:
-            'Model-free CLI fixture completed.\n\nChanges: None\nEvidence: None\nDecisions: None\nConcerns: None',
-          evidence: [
-            'edit checked',
-            `Safety Net block: ${blocked}`,
-            `saved instructions: ${instructions}`,
-            `PATH: ${process.env.PATH ?? ''}`,
-            `PI_CODING_AGENT_DIR: ${process.env.PI_CODING_AGENT_DIR ?? ''}`,
-            `TAU_ROLE: ${process.env.TAU_ROLE ?? ''}`,
-            `APPEND_SYSTEM.md: ${appendPresent}`,
-          ],
-        }),
-      ]);
-    },
-  ]);
+    const edited = readFileSync(`${process.cwd()}/source.txt`, 'utf8') === 'after\n';
+    const instructions = systemInstructions(context);
+    const appendPresent = appendSystemPresent(context);
+
+    return fauxAssistantMessage([
+      fauxToolCall('subagent_report', {
+        outcome: blocked && edited && instructions ? 'success' : 'failure',
+        summary: fixtureSummary,
+        evidence: [
+          'edit checked',
+          `Safety Net block: ${blocked}`,
+          `saved instructions: ${instructions}`,
+          `PATH: ${process.env.PATH ?? ''}`,
+          `PI_CODING_AGENT_DIR: ${process.env.PI_CODING_AGENT_DIR ?? ''}`,
+          `TAU_ROLE: ${process.env.TAU_ROLE ?? ''}`,
+          `APPEND_SYSTEM.md: ${appendPresent}`,
+        ],
+      }),
+    ]);
+  },
+];
+
+export default function controlledProvider(pi: ExtensionAPI): void {
+  provider.setResponses(asksTheManager() ? questionResponses() : reportResponses());
 
   pi.registerProvider({ ...provider.provider, auth: fixtureAuth });
 }
