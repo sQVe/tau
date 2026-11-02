@@ -68,6 +68,12 @@ const shimScript = (
   return `${lines.join('\n')}\n`;
 };
 
+const resolveProgram = async (program: string): Promise<string> => {
+  const { stdout } = await promisify(execFile)('sh', ['-c', `command -v ${quote(program)}`]);
+
+  return stdout.trim();
+};
+
 export const installCommandShim = async (
   program: string,
   options: CommandShimOptions,
@@ -75,8 +81,7 @@ export const installCommandShim = async (
   const directory = temporaryDirectory(onTestFinished, `tau-${program}-shim-`);
   const answers = new Map((options.answers ?? []).map((answer) => [answer.prefix, answer]));
 
-  const { stdout } = await promisify(execFile)('sh', ['-c', `command -v ${quote(program)}`]);
-  const real = stdout.trim();
+  const real = options.otherCalls === 'real' ? await resolveProgram(program) : '';
 
   // A rename replaces the script in one step, so a running call never reads a partial file.
   const writeScript = () => {

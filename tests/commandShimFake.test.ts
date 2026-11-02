@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 import { installCommandShim } from './commandShimFake.js';
 
@@ -28,6 +28,14 @@ it('prints a canned answer and fails a call no rule matches', async () => {
 
   expect(answered).toEqual({ code: 0, stdout: 'abc123\n', stderr: '' });
   expect(unmatched).toEqual({ code: 128, stdout: '', stderr: 'fatal: unexpected status\n' });
+});
+
+it('installs a fail-only shim for a program that is not on PATH', async () => {
+  vi.stubEnv('PATH', '/usr/bin:/bin');
+
+  await expect(
+    installCommandShim('tau-absent-program', { otherCalls: 'fail' }),
+  ).resolves.toBeDefined();
 });
 
 it('uses an answer added after install, and the longest matching prefix wins', async () => {
@@ -60,7 +68,7 @@ it('runs an override with the real program in $real and acts after it', async ()
   const real = await runGit('rev-parse', 'HEAD');
 
   await installCommandShim('git', {
-    otherCalls: 'fail',
+    otherCalls: 'real',
     overrides: [{ match: ' rev-parse ', script: '"$real" "$@"; echo after' }],
   });
 
