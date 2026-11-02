@@ -135,6 +135,10 @@ export const classifyRoute = async (
   { brief, profile, cwd }: ClassifierState,
   launchSignal: AbortSignal | undefined,
 ): Promise<Classification> => {
+  if (launchSignal?.aborted === true) {
+    return { outcome: { kind: 'error' }, ticketSent: false };
+  }
+
   const reference = parseModelReference(route.classifier);
 
   if (reference === undefined) {

@@ -114,6 +114,27 @@ it('launches on the profile model when the classifier never answers within 5 sec
   expect(options.signal.aborted).toBe(true);
 });
 
+it('does not start classification when the launch is already cancelled', async ({
+  onTestFinished,
+}) => {
+  const { context, classify } = await routedFixture(onTestFinished);
+  const launch = new AbortController();
+
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  launch.abort();
+
+  const { routing } = await resolveRoutedLoadout(
+    { profile: 'scout', task: 'Find it.' },
+    context,
+    [],
+    launch.signal,
+  );
+
+  expect(classify).not.toHaveBeenCalled();
+  expect(routing).toMatchObject({ fallbackReason: 'error' });
+});
+
 it('stops a pending classification when the launch is cancelled', async ({ onTestFinished }) => {
   const { context, classify } = await routedFixture(onTestFinished);
   vi.useFakeTimers();
