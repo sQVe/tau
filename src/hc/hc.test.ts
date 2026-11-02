@@ -2,7 +2,16 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { createHcFake } from '../../tests/hcFake.js';
 import type { HcFake } from '../../tests/hcFake.js';
-import { HcError, currentTerminalAddress, get, ls, readCurrentTerminal, run } from './hc.js';
+import {
+  HcError,
+  currentTerminalAddress,
+  get,
+  label,
+  ls,
+  readCurrentTerminal,
+  run,
+  send,
+} from './hc.js';
 import type { HcRuntime } from './hc.js';
 
 const terminal = {
@@ -39,6 +48,17 @@ it('returns the terminal a get command parsed and starts no connection', async (
   expect(result.labels).toEqual({ role: 'worker' });
   expect(fake.calls).toHaveLength(1);
   expect(fake.connectCalls).toHaveLength(0);
+});
+
+it('passes the runtime signal to exec', async () => {
+  const fake = createHcFake();
+  const controller = new AbortController();
+
+  fake.reply('get', JSON.stringify(terminal));
+
+  await get({ ...runtimeOf(fake), signal: controller.signal }, 't7');
+
+  expect(fake.calls[0]?.signal).toBe(controller.signal);
 });
 
 it('keeps a not_found from get as an HcError with its exit code', async () => {
@@ -118,10 +138,75 @@ it('passes the run options as command flags', async () => {
     '--bg',
     '--label',
     'role=probe',
+    '--',
     'pi',
     '--model',
     'x',
   ]);
+});
+
+it('separates an argv that starts with dashes from the run flags', async () => {
+  const fake = createHcFake();
+
+  fake.reply('run', JSON.stringify(terminal));
+
+  await run(runtimeOf(fake), { argv: ['--version'] });
+
+  expect(fake.calls[0]?.commandArguments).toEqual(['run', '--json', '--', '--version']);
+});
+
+it('passes --all only when all terminals are requested', async () => {
+  const fake = createHcFake();
+
+  fake.reply('ls', JSON.stringify({ terminals: [] }));
+
+  await ls(runtimeOf(fake), { all: true });
+  await ls(runtimeOf(fake));
+
+  expect(fake.calls.map((call) => call.commandArguments)).toEqual([
+    ['ls', '--json', '--all'],
+    ['ls', '--json'],
+  ]);
+});
+
+it('passes the send flags and separates text that starts with dashes', async () => {
+  const fake = createHcFake();
+
+  fake.reply('send', JSON.stringify({ turn: 2 }));
+
+  await send(runtimeOf(fake), 't7', { text: '--probe', force: true, wait: true, timeout: 30 });
+
+  expect(fake.calls[0]?.commandArguments).toEqual([
+    'send',
+    '--json',
+    '--force',
+    '--wait',
+    '--timeout',
+    '30',
+    '--',
+    't7',
+    '--probe',
+  ]);
+});
+
+it('sends text without flags by default', async () => {
+  const fake = createHcFake();
+
+  fake.reply('send', JSON.stringify({ turn: 2 }));
+
+  await send(runtimeOf(fake), 't7', { text: 'hello' });
+
+  expect(fake.calls[0]?.commandArguments).toEqual(['send', '--json', '--', 't7', 'hello']);
+});
+
+it('separates label assignments that start with dashes from the terminal', async () => {
+  const fake = createHcFake();
+
+  fake.reply('label', JSON.stringify(terminal));
+
+  await label(runtimeOf(fake), 't7', { '-role': 'worker' });
+
+  expect(fake.calls[0]?.commandArguments).toEqual(['label', '--json', '--', 't7', '-role=worker']);
 });
 
 it('returns undefined for an empty terminal address', () => {

@@ -23,21 +23,29 @@ const allowedEnvironment = new Set([...inheritedVariables, ...protectedVariables
 
 vi.mock(import('node:child_process'), async (importOriginal) => {
   const actual = await importOriginal();
-  const execFileMock = vi.fn<typeof actual.execFile>(actual.execFile);
-  const spawnMock = vi.fn<typeof actual.spawn>(actual.spawn);
 
   return {
     ...actual,
-    execFile: execFileMock as unknown as typeof actual.execFile,
-    spawn: spawnMock as unknown as typeof actual.spawn,
+    execFile: vi.fn<typeof actual.execFile>() as unknown as typeof actual.execFile,
+    spawn: vi.fn<typeof actual.spawn>() as unknown as typeof actual.spawn,
   };
 });
 
 const execFileMock = vi.mocked(execFile);
 const spawnMock = vi.mocked(spawn);
 
+// Every exec succeeds with no output, so no unit test in this file starts the real hc.
+const succeedsWithoutOutput = ((...argumentsList: unknown[]) => {
+  const callback = argumentsList[3] as (error: null, stdout: string, stderr: string) => void;
+
+  callback(null, '', '');
+
+  return undefined;
+}) as unknown as typeof execFile;
+
 beforeEach(() => {
   execFileMock.mockClear();
+  execFileMock.mockImplementation(succeedsWithoutOutput);
   spawnMock.mockClear();
 });
 
@@ -95,14 +103,6 @@ it('does not inherit HC_ or HERDR_ variables in exec, connect, or stop', async (
   vi.stubEnv('HC_TERMINAL_ID', 't7');
   vi.stubEnv('HERDR_PANE_ID', 'pane');
 
-  execFileMock.mockImplementation(((...argumentsList: unknown[]) => {
-    const callback = argumentsList[3] as (error: null, stdout: string, stderr: string) => void;
-
-    callback(null, '', '');
-
-    return undefined;
-  }) as unknown as typeof execFile);
-
   spawnMock.mockImplementationOnce(() => {
     throw new Error('connect stopped before spawn');
   });
@@ -138,14 +138,6 @@ it('stops the core once when the caller and the registered cleanup both stop', a
     cleanups.push(cleanup);
   }) as unknown as TestContext['onTestFinished'];
 
-  execFileMock.mockImplementation(((...argumentsList: unknown[]) => {
-    const callback = argumentsList[3] as (error: null, stdout: string, stderr: string) => void;
-
-    callback(null, '', '');
-
-    return undefined;
-  }) as unknown as typeof execFile);
-
   const session = await startHcSession(registerCleanup);
 
   await session.stop();
@@ -158,4 +150,39 @@ it('stops the core once when the caller and the registered cleanup both stop', a
 
   expect(cleanups).toHaveLength(1);
   expect(stopCalls).toHaveLength(1);
+});
+
+it('runs an exec with the cwd, signal, and timeout it was given', async () => {
+  const session = await startHcSession(onTestFinished);
+  const controller = new AbortController();
+
+  await session.runtime.exec('hc', ['ls', '--json'], {
+    cwd: '/elsewhere',
+    signal: controller.signal,
+    timeout: 1000,
+  });
+
+  const options = execFileMock.mock.calls[0]?.[2] as
+    | { cwd?: string; signal?: AbortSignal; timeout?: number }
+    | undefined;
+
+  expect(options?.cwd).toBe('/elsewhere');
+  expect(options?.signal).toBe(controller.signal);
+  expect(options?.timeout).toBe(1000);
+});
+
+it('turns a non-zero exit into a result with its code', async () => {
+  const session = await startHcSession(onTestFinished);
+
+  execFileMock.mockImplementationOnce(((...argumentsList: unknown[]) => {
+    const callback = argumentsList[3] as (error: Error, stdout: string, stderr: string) => void;
+
+    callback(Object.assign(new Error('exited'), { code: 2 }), 'out', 'err');
+
+    return undefined;
+  }) as unknown as typeof execFile);
+
+  const result = await session.runtime.exec('hc', ['ls', '--json'], { cwd: session.root });
+
+  expect(result).toEqual({ code: 2, killed: false, stdout: 'out', stderr: 'err' });
 });

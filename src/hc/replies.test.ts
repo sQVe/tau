@@ -191,7 +191,7 @@ const errorCases = [
         ],
         2,
       ),
-    expectedError: { kind: 'not_found', hint: 'gone' },
+    expectedError: { kind: 'not_found', message: 'not_found', hint: 'gone' },
   },
   {
     name: 'malformed JSON',

@@ -104,7 +104,7 @@ export const run = (runtime: HcRuntime, request: RunRequest): Promise<HcTerminal
   return runHc(
     runtime,
     'run',
-    ['run', '--json', ...flags, ...labelFlags(request.labels), ...request.argv],
+    ['run', '--json', ...flags, ...labelFlags(request.labels), '--', ...request.argv],
     'hc run',
   );
 };
@@ -140,7 +140,7 @@ export const send = (
   return runHc(
     runtime,
     'send',
-    ['send', '--json', ...flags, terminal, request.text],
+    ['send', '--json', ...flags, '--', terminal, request.text],
     `hc send ${terminal}`,
   );
 };
@@ -179,7 +179,7 @@ export const label = (
   return runHc(
     runtime,
     'label',
-    ['label', '--json', terminal, ...assignments],
+    ['label', '--json', '--', terminal, ...assignments],
     `hc label ${terminal}`,
   );
 };
