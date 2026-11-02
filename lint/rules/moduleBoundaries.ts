@@ -76,7 +76,6 @@ export const moduleList: readonly ModuleDeclaration[] = [
     publicFiles: ['github/repositoryTarget', 'github/repositoryTargetDecisions'],
   },
   { name: 'hc', entry: 'hc/hc', publicFiles: ['hc/connect'] },
-  { name: 'herdr', entry: 'herdr', publicFiles: [] },
   {
     name: 'instructions',
     entry: 'instructions/instructions',
@@ -111,7 +110,6 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   git: ['errors'],
   github: ['command', 'errors', 'git', 'schema'],
   hc: ['command', 'errors', 'schema'],
-  herdr: [],
   instructions: [],
   linear: ['command', 'errors'],
   process: ['errors'],

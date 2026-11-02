@@ -45,7 +45,6 @@ The target shared modules and the modules each may import:
 | `schema`        | nothing                                             |
 | `command`       | `schema`                                            |
 | `instructions`  | nothing                                             |
-| `herdr`         | nothing                                             |
 | `codemode`      | nothing                                             |
 | `shell`         | nothing                                             |
 | `skillTools`    | nothing                                             |
@@ -114,7 +113,7 @@ rule reports an import, change the table or the module list instead of silencing
   `allowedModels.ts` or `requiredFor.ts`.
 - Name a unit test `foo.test.ts` beside `foo.ts`. Split a large test file by behavior and keep the
   source name first. Cross-module tests live in `tests/`. Mark tests that run a real Pi session or
-  herdr with `.integration.test.ts`.
+  `hc` with `.integration.test.ts`.
 - Rename an existing file only for a real ambiguity, in its own small change, after checking active
   unlanded work and the file's importers. Squash-merged branch refs are not active work.
 - Use kebab-case under `docs/`. ADRs use the `NNNN-kebab.md` form.
