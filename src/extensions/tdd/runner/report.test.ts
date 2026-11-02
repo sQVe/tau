@@ -389,6 +389,13 @@ describe('failure messages', () => {
       expected: 'boom',
     },
     {
+      name: 'skips a node_modules frame before the worktree frame',
+      failureMessages: [
+        'boom\n    at /repo/node_modules/x/index.js:3:2\n    at fn (/repo/src/a.ts:5:1)',
+      ],
+      expected: 'boom (src/a.ts:5)',
+    },
+    {
       name: 'ignores a location line without the "at " prefix',
       failureMessages: ['boom\n/repo/src/a.ts:4:1'],
       expected: 'boom',
