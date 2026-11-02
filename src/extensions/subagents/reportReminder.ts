@@ -9,6 +9,7 @@ import type { ReportTarget } from './report.js';
 export interface ReminderState {
   target: ReportTarget;
   runError: string | undefined;
+  questionAsked: boolean;
 }
 
 const reportReminder: CustomMessageEntryDraft = {
@@ -27,6 +28,11 @@ export const remindToReport = (
 ): AgentBeforeSettleEventResult | undefined => {
   // A reminder after an errored or aborted run repeats the same error; the error explains the stop.
   if (state.target.assignment.report !== null || state.runError !== undefined) {
+    return undefined;
+  }
+
+  // A worker that asked a question waits for the parent's reply; it is not done yet.
+  if (state.questionAsked) {
     return undefined;
   }
 

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "assignmentId": "3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f",
   "task": "Find the file that loads the config.",
   "acceptance": ["The answer names one file path."],
@@ -31,5 +31,6 @@
   "parentTerminal": "t1",
   "deadline": 1900000000000,
   "createdAt": 1700000000000,
+  "questions": [],
   "report": null
 }

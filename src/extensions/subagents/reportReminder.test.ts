@@ -37,6 +37,7 @@ const target = (overrides: Partial<ReportTarget> = {}): ReportTarget => ({
 const state = (overrides: Partial<ReminderState> = {}): ReminderState => ({
   target: target(),
   runError: undefined,
+  questionAsked: false,
   ...overrides,
 });
 
@@ -109,6 +110,17 @@ it('sends no reminder after the report is saved', () => {
     const saved = assignment({ report: { outcome: 'success', summary: 'Done.', evidence: [] } });
 
     expect(remindToReport(state({ target: target({ assignment: saved }) }), event)).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('sends no reminder while the worker waits for an answer to its question', () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(deadline - 1);
+
+  try {
+    expect(remindToReport(state({ questionAsked: true }), event)).toBeUndefined();
   } finally {
     vi.useRealTimers();
   }

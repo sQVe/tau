@@ -112,7 +112,7 @@ const savedAssignment = (directory: string): Assignment => {
   const sessionId = randomUUID();
 
   return {
-    version: 1,
+    version: 2,
     assignmentId,
     task: 'Inspect the counters.',
     acceptance: [],
@@ -127,6 +127,7 @@ const savedAssignment = (directory: string): Assignment => {
     parentTerminal: manager,
     deadline: Date.now() + 30_000,
     createdAt: Date.now(),
+    questions: [],
     report: {
       outcome: 'success',
       summary: 'Changes: None\nEvidence: None\nDecisions: None\nConcerns: None',

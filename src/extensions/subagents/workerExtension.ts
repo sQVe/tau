@@ -24,6 +24,7 @@ import { isWorkerProcess } from '../../worker.js';
 import { readAssignment } from './assignment.js';
 import { checkWorkerRuntime } from './loadout.js';
 import { workerInstructions, workerPrompt } from './profiles.js';
+import { askParent, questionParameters } from './question.js';
 import { reportParameters, reportToParent } from './report.js';
 import type { ReportRefusalState, ReportTarget } from './report.js';
 import { remindToReport } from './reportReminder.js';
@@ -36,6 +37,7 @@ interface WorkerState {
   target: ReportTarget | undefined;
   refusal: ReportRefusalState;
   runError: string | undefined;
+  questionAsked: boolean;
 }
 
 const readLoadoutInstructionSets = (loadout: Loadout): Promise<string[]> =>
@@ -65,6 +67,10 @@ const callsReportAlone = (
   assistant.message.role === 'assistant' &&
   assistant.message.content.filter((block) => block.type === 'toolCall').length === 1;
 
+// These tools end the turn, so the batch must hold no other call. Pi keeps a batch running unless
+// every result ends it.
+const turnEndingToolNames: ReadonlySet<string> = new Set(['subagent_report', 'subagent_question']);
+
 const handleToolCall = (
   event: ToolCallEvent,
   context: ExtensionContext,
@@ -93,7 +99,7 @@ const handleToolCall = (
     };
   }
 
-  if (event.toolName !== 'subagent_report') {
+  if (!turnEndingToolNames.has(event.toolName)) {
     return undefined;
   }
 
@@ -124,6 +130,30 @@ const registerReportTool = (pi: ExtensionAPI, state: WorkerState): void => {
       }
 
       return reportToParent(state.target, argumentsList[1]);
+    },
+  });
+};
+
+const registerQuestionTool = (pi: ExtensionAPI, state: WorkerState): void => {
+  pi.registerTool({
+    name: 'subagent_question',
+    exposure: 'model-only',
+    label: 'Worker question',
+    description: [
+      'Ask the parent one question that only the parent can answer.',
+      'Your turn ends after the question is saved. Wait for the parent reply in a new message.',
+    ].join(' '),
+    parameters: questionParameters,
+    async execute(...argumentsList) {
+      if (state.target === undefined) {
+        throw new Error('Worker has no loaded assignment to ask against.');
+      }
+
+      const result = await askParent(state.target, argumentsList[1]);
+
+      state.questionAsked = true;
+
+      return result;
     },
   });
 };
@@ -235,13 +265,23 @@ const registerReportReminder = (pi: ExtensionAPI, state: WorkerState): void => {
       return undefined;
     }
 
-    return remindToReport({ target: state.target, runError: state.runError }, event);
+    return remindToReport(
+      { target: state.target, runError: state.runError, questionAsked: state.questionAsked },
+      event,
+    );
   });
 };
 
 const registerAgentSettledHandler = (pi: ExtensionAPI, state: WorkerState): void => {
   pi.on('agent_settled', (_event, context) => {
     if (state.target === undefined) {
+      return;
+    }
+
+    // A saved report ends the worker, even when a question came earlier in the same run.
+    const waitingForReply = state.questionAsked && state.target.assignment.report === null;
+
+    if (waitingForReply) {
       return;
     }
 
@@ -266,6 +306,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
     target: undefined,
     refusal: { incompleteRefused: false, reminderSent: false, remindAfterRefusal: false },
     runError: undefined,
+    questionAsked: false,
   };
 
   pi.on('session_start', (_event, context) => {
@@ -275,11 +316,23 @@ export default function workerExtension(pi: ExtensionAPI): void {
   });
 
   registerReportTool(pi, state);
+  registerQuestionTool(pi, state);
   registerToolCallHandler(pi);
   registerSystemPromptHandler(pi, state);
   registerSessionSwitchBlock(pi);
   registerReportReminder(pi, state);
   registerAgentSettledHandler(pi, state);
+
+  pi.on('agent_start', () => {
+    state.questionAsked = false;
+  });
+
+  // Pi delivers a typed reply during a streaming turn as a user message without agent_start.
+  pi.on('message_start', (event) => {
+    if (event.message.role === 'user') {
+      state.questionAsked = false;
+    }
+  });
 
   pi.on('agent_end', (event) => {
     state.runError = lastRunError(event);

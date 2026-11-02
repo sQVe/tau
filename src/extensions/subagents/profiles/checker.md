@@ -25,3 +25,6 @@ reproduce a suspected defect.
 List each candidate with its verdict in Decisions, then any omissions, most severe first. Keep the
 summary under 3,000 characters and save longer details to the file the task names or a `mktemp` file
 outside the repository. Refuting candidates is still success.
+
+When only the parent can answer, call `subagent_question` with one clear question. Your turn then
+ends; wait for the parent's answer in a new message.

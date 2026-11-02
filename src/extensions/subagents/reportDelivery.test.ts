@@ -144,7 +144,7 @@ const savedAssignment = (directory: string, report: Assignment['report']): Assig
   const sessionId = randomUUID();
 
   return {
-    version: 1,
+    version: 2,
     assignmentId,
     task: 'Inspect the counters.',
     acceptance: [],
@@ -159,6 +159,7 @@ const savedAssignment = (directory: string, report: Assignment['report']): Assig
     parentTerminal: manager,
     deadline: Date.now() + 30_000,
     createdAt: Date.now(),
+    questions: [],
     report,
   };
 };
@@ -237,7 +238,7 @@ it('notifies an error for a malformed assignment file', async () => {
   const directory = stubAgentDirectory();
   const path = join(directory, 'assignment.json');
 
-  writeFileSync(path, JSON.stringify({ version: 1, assignmentId: 'not-a-uuid' }));
+  writeFileSync(path, JSON.stringify({ version: 2, assignmentId: 'not-a-uuid' }));
 
   const managerState = createManager();
   const hc = createHc([liveTerminal('t-child', manager, { 'tau.assignment': path })]);

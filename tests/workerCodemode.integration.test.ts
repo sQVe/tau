@@ -99,7 +99,7 @@ const seedAssignment = async (
   const sessionFile = join(assignmentDirectory(assignmentId), `${sessionId}.jsonl`);
 
   await writeAssignment({
-    version: 1,
+    version: 2,
     assignmentId,
     task: 'Inspect source.txt.',
     acceptance: [],
@@ -114,6 +114,7 @@ const seedAssignment = async (
     parentTerminal: 'manager',
     deadline: Date.now() + 30_000,
     createdAt: Date.now(),
+    questions: [],
     report: null,
   });
 

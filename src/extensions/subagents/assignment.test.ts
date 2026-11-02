@@ -10,6 +10,7 @@ import {
   assignmentPath,
   checkoutFolder,
   readAssignment,
+  saveQuestion,
   saveReport,
   seedSession,
   writeAssignment,
@@ -40,14 +41,29 @@ const assignmentWithSessionInFolder = (): Assignment => {
   return { ...fixture, session };
 };
 
-it('reads a valid version 1 assignment file without changing it', async () => {
+it('reads a valid version 2 assignment file without changing it', async () => {
   const path = fixturePath('valid.json');
   const before = readFileSync(path);
 
   expect(await readAssignment(path)).toMatchObject({
-    version: 1,
+    version: 2,
     assignmentId: '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f',
     profile: 'scout',
+    questions: [],
+    report: null,
+  });
+
+  expect(readFileSync(path)).toEqual(before);
+});
+
+it('reads a version 1 assignment file as a version 2 assignment with no questions', async () => {
+  const path = fixturePath('previous.json');
+  const before = readFileSync(path);
+
+  expect(await readAssignment(path)).toMatchObject({
+    version: 2,
+    assignmentId: '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f',
+    questions: [],
     report: null,
   });
 
@@ -143,6 +159,63 @@ it('refuses an assignment whose session file is outside its folder', async () =>
   await expect(writeAssignment(outside)).rejects.toThrow('session file');
 
   expect(await readAssignment(assignmentPath(assignment.assignmentId))).toBeUndefined();
+});
+
+const question = {
+  questionId: '6c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f',
+  text: 'Which config file wins?',
+  askedAt: 1_700_000_000_500,
+};
+
+it('saves a question into the assignment and reads it back', async () => {
+  useAgentDirectory();
+  const assignment = assignmentWithSessionInFolder();
+
+  await writeAssignment(assignment);
+  await saveQuestion(assignmentPath(assignment.assignmentId), question);
+
+  expect((await readAssignment(assignmentPath(assignment.assignmentId)))?.questions).toEqual([
+    question,
+  ]);
+});
+
+it('keeps earlier questions and the report when it saves another question', async () => {
+  useAgentDirectory();
+  const assignment = assignmentWithSessionInFolder();
+  const later = { ...question, questionId: '7d2e3f4a-5b6c-4d7e-9f8a-0b1c2d3e4f5a' };
+  const report = { outcome: 'success' as const, summary: 'Found it.', evidence: [] };
+
+  await writeAssignment(assignment);
+  await saveQuestion(assignmentPath(assignment.assignmentId), question);
+  await saveReport(assignmentPath(assignment.assignmentId), report);
+  await saveQuestion(assignmentPath(assignment.assignmentId), later);
+
+  const saved = await readAssignment(assignmentPath(assignment.assignmentId));
+
+  expect(saved?.questions).toEqual([question, later]);
+  expect(saved?.report).toEqual(report);
+});
+
+it('refuses an invalid question and keeps the saved file', async () => {
+  useAgentDirectory();
+  const assignment = assignmentWithSessionInFolder();
+
+  await writeAssignment(assignment);
+
+  await expect(
+    saveQuestion(assignmentPath(assignment.assignmentId), { ...question, text: '' }),
+  ).rejects.toThrow('Malformed question');
+
+  expect((await readAssignment(assignmentPath(assignment.assignmentId)))?.questions).toEqual([]);
+});
+
+it('refuses to save a question for a missing assignment and creates no file', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-assignment-');
+  const path = join(directory, 'assignment.json');
+
+  await expect(saveQuestion(path, question)).rejects.toThrow('Missing assignment');
+
+  expect(existsSync(path)).toBe(false);
 });
 
 it('saves a report into the assignment and reads it back', async () => {

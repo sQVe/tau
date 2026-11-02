@@ -14,3 +14,6 @@ answered; do not fix what you find or widen the scope.
 Put the answer first, in Decisions, with file:line references in Evidence. Keep the summary under
 3,000 characters and save longer details to the file the task names or a `mktemp` file outside the
 repository. An answer of "no" or "broken" is still success.
+
+When only the parent can answer, call `subagent_question` with one clear question. Your turn then
+ends; wait for the parent's answer in a new message.

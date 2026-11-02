@@ -24,7 +24,12 @@ it.each([
     review: ['review_evidence', 'tracker_evidence'],
   };
 
-  expect(workerTools(loadout, skillTools)).toEqual(['read', 'subagent_report', ...expected]);
+  expect(workerTools(loadout, skillTools)).toEqual([
+    'read',
+    'subagent_report',
+    'subagent_question',
+    ...expected,
+  ]);
 });
 
 it('does not give a worker the full_check tool that its profile lists', () => {
@@ -70,5 +75,6 @@ it('adds no skill tool for a skill that has none', () => {
   expect(workerTools({ tools: ['read'], skills }, { tracker: ['tracker_evidence'] })).toEqual([
     'read',
     'subagent_report',
+    'subagent_question',
   ]);
 });
