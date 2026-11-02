@@ -26,9 +26,7 @@ interface TuicrComment {
 type DraftReviewTool = ReturnType<typeof createDraftReviewTool>;
 
 interface HcWaitGate {
-  // Resolves once the held hc command has reached the exec boundary.
   started: Promise<void>;
-  // Lets the held hc command continue to hc.
   release: () => void;
 }
 
@@ -53,11 +51,9 @@ export interface ReviewFixture {
 }
 
 export interface ReviewFixtureOptions {
-  // The manager terminal's space label. Without it, open returns the manual command.
   space?: string;
 }
 
-// The address hc reports for the review terminal open starts.
 const reviewAddress = 'review-1';
 
 const deferred = () => {

@@ -14,7 +14,6 @@ import {
 import { get, run } from '../src/hc/hc.js';
 import { startHcSession } from './hcSessionHarness.js';
 
-// A running terminal that the wait gives up on after one second.
 const runningWaitTimeoutSeconds = 1;
 
 // CI does not install tuicr, so the open test puts a stub named tuicr first on PATH. hc starts

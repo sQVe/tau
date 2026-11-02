@@ -32,7 +32,6 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
       if (saveFailure.active && typeof target === 'string' && target.includes('.review.json.')) {
         saveFailure.writes += 1;
 
-        // The staging and starting manifests must be saved before the address is saved.
         if (saveFailure.writes > 2) {
           saveFailure.abortSignal?.abort();
 

@@ -27,7 +27,6 @@ export interface Review {
   paths: string[];
   // The path of each file in the staging directory, in the order of `paths`.
   stagedPaths: string[];
-  // The hc terminal state: null for a manual review, starting before `hc run`, then its address.
   terminal: ReviewTerminal | null;
 }
 
@@ -63,8 +62,6 @@ const manifestSchema = Type.Object(
   { additionalProperties: false },
 );
 
-// A Tau before this one opened tuicr in a herdr pane it named itself. That placement is gone, and
-// its record holds no hc address to wait for, so collect refuses it and keeps the comments.
 const firstHerdrRecordVersion = 1;
 const lastHerdrRecordVersion = 3;
 
@@ -192,8 +189,6 @@ const writeManifest = async (review: Review, terminal: ReviewTerminal | null) =>
   await writeRecord(target, manifest);
 };
 
-// Saved before `hc run`, so a record left by a failed address save says the terminal is starting
-// and collect refuses it instead of deleting comments under a live tuicr.
 export const saveStartingTerminal = async (review: Review): Promise<void> => {
   const terminal: ReviewTerminal = { state: 'starting' };
 

@@ -19,14 +19,12 @@ export const reviewWaitTimeoutSeconds = 30;
 
 const suffixByteCount = 4;
 
-// A message interrupts a wait without ending tuicr, so the wait runs again. This caps the waits.
 const messageWaitLimit = 5;
 
 export class TuicrExitTimeoutError extends Error {
   override name = 'TuicrExitTimeoutError';
 }
 
-// An unlabeled terminal stays hidden from the manager's space, so the caller needs the label.
 export const reviewSpace = async (runtime: HcRuntime): Promise<string | undefined> => {
   const terminal = await readCurrentTerminal(runtime);
   const labels = terminal?.labels;

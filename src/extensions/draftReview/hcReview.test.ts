@@ -22,7 +22,6 @@ const waitResult = (overrides: Partial<HcWaitResult>): HcWaitResult => ({
 
 const message = waitResult({ reason: 'message' });
 
-// Each hc wait call answers with the next result, so a test can script the outcomes in order.
 const runtimeWithWaits = (fake: HcFake, results: HcWaitResult[]): HcRuntime => ({
   exec: (command, commandArguments, options) => {
     const next = results.shift();

@@ -95,7 +95,6 @@ const cancelledResult = (): DraftReviewResult => ({
   edits: [],
 });
 
-// The aborted signal must not reach hc, or the cleanup would stop at once.
 const cleanupAbortedOpen = async (
   runtime: DraftReviewRuntime,
   cwd: string,
@@ -120,9 +119,6 @@ const cleanupAbortedOpen = async (
   }
 };
 
-// A save failure leaves the record in the starting state while the terminal may still run. Killing
-// the terminal makes it safe; when the kill fails too, the record keeps saying starting so collect
-// refuses it.
 const endTerminalAfterSaveFailure = async (
   runtime: DraftReviewRuntime,
   cwd: string,
@@ -162,8 +158,6 @@ const open = async (
     } else {
       await saveStartingTerminal(staged);
 
-      // `hc run --bg` returns at once. Run it without the abort signal so an abort after the
-      // launch still reaches the cleanup with the address to kill.
       address = await openReviewTerminal(hcRuntime(runtime, cwd, undefined), {
         stagingDirectory: staged.stagingDirectory,
         space,
@@ -177,7 +171,6 @@ const open = async (
     failure = error;
   }
 
-  // Cleanup runs outside the try so a failure propagates once, with no second attempt.
   if (aborted(signal)) {
     await cleanupAbortedOpen(runtime, cwd, staged, address);
 
@@ -185,7 +178,6 @@ const open = async (
   }
 
   if (failure !== undefined) {
-    // The address save failed after the terminal started, so end that one address before the error.
     if (address !== undefined) {
       await endTerminalAfterSaveFailure(runtime, cwd, staged, address);
     }

@@ -123,8 +123,6 @@ export const decideDestination = (facts: DestinationFacts): DestinationDecision 
   return facts.insideTauDirectory ? 'writable' : 'outside';
 };
 
-// An ended terminal wins over any reason. A message means the wait stopped early, so waiting again
-// is safe.
 export const decideWaitOutcome = (facts: WaitFacts): WaitOutcome => {
   if (facts.ended) {
     return 'finished';

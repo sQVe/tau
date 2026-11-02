@@ -16,7 +16,6 @@ const allowedPaths: AllowedPaths = {
     'docs/development.md',
   ],
   'skills/': ['docs/adr/0003-externally-observable-identifiers.md'],
-  // herdrReview.ts was removed after the tuning note recorded its survivors.
   'src/extensions/draftReview/herdrReview.ts': ['scripts/mutation-tuning.md'],
 };
 
