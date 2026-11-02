@@ -31,8 +31,6 @@ const linkBarrier = vi.hoisted(() => ({
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const original = await importOriginal();
 
-  // Stalls one link of the round lock, so a test can save posted.json from another session while
-  // this session is about to take the round.
   const gatedLink: typeof original.link = async (existing, created) => {
     const barrier = linkBarrier.current;
 
@@ -53,8 +51,6 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
   };
 });
 
-// Stalls the lock link the next post makes. The caller writes another session's posted.json, then
-// releases the post so it settles the round.
 const stallLockLink = () => {
   const entered = Promise.withResolvers<undefined>();
   const released = Promise.withResolvers<undefined>();
@@ -190,7 +186,6 @@ const runningGroup = () => {
   return command.pid ?? 0;
 };
 
-// Makes the round lock look as if its session process died.
 const killLockSession = async (directory: string) => {
   const names = await readdir(directory);
   const lockName = names.find((name) => /^post\.lock\.\d+$/u.test(name));

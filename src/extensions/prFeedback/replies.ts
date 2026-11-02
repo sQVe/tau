@@ -54,8 +54,6 @@ const postedVersion = 2;
 
 const threadIdSchema = Type.String({ minLength: 1 });
 
-// Each kind has one shape: a reply has a thread and text, a resolve has a thread and no text, and a
-// PR comment has no thread and text. The saved fields sit beside the payload in every variant.
 const writeVariants = <Saved extends TProperties>(saved: Saved) =>
   Type.Union([
     Type.Object(

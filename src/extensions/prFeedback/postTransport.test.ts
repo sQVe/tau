@@ -319,8 +319,6 @@ describe('post write output', () => {
   });
 });
 
-// Says which category of a failed post's error each write falls into. A write is found by a
-// marker that only it carries.
 const categoriesOf = (message: string | undefined, markers: Record<string, string>) => {
   const sections: Record<Category, string[]> = { uncertain: [], posted: [], notPosted: [] };
   let current: Category | undefined;
