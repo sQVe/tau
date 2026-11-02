@@ -6,8 +6,7 @@ import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { createGhFake } from './fixtures/ghFake.js';
-import type { FakePullRequest } from './fixtures/ghFake.js';
+import { createGhFake, pullRequest } from './fixtures/ghFake.js';
 import { readReviewBots } from './reviewBotSettings.js';
 import { createPrTool } from './tool.js';
 import type { PrInput } from './tool.js';
@@ -16,19 +15,6 @@ const repository = 'github.com/sQVe/tau';
 const bot = { login: 'chatgpt-codex-connector', comment: '@codex review' };
 const config = { reviews: { repositories: { 'sQVe/tau': { bots: [bot] } } } };
 const requestedAt = '2026-10-14T10:05:00Z';
-
-const pullRequest = (overrides: Partial<FakePullRequest> = {}): FakePullRequest => ({
-  number: 7,
-  state: 'OPEN',
-  title: 'Add a feature',
-  body: 'Adds it.',
-  baseRefName: 'main',
-  isDraft: false,
-  headRefOid: 'abc123',
-  headOwner: 'sQVe',
-  headBranch: 'feature',
-  ...overrides,
-});
 
 const setUp = async (userConfig?: unknown) => {
   const root = await createTemporaryRepository(onTestFinished);
