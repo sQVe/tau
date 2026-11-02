@@ -8,7 +8,7 @@ import type {
 
 import { classifyPath } from './config.js';
 import { observationDirectory } from './observation.js';
-import type { ObservationTracker, TrackedObservation } from './observationTracker.js';
+import type { ObservationTracker } from './observationTracker.js';
 import { worktreePath } from './worktreePath.js';
 
 const withNotice = (
@@ -38,22 +38,13 @@ export const handleToolResult = async (
     return undefined;
   }
 
-  let current: TrackedObservation;
+  const lookup = await tracker.observationForEdit(context);
 
-  try {
-    current = await tracker.observationFor(context);
-  } catch (error) {
-    const message = `TDD hints are paused: ${error instanceof Error ? error.message : String(error)}`;
-
-    if (!tracker.recordConfigError(message)) {
-      return undefined;
-    }
-
-    return withNotice(event, context, message, 'warning');
+  if (lookup.kind === 'paused') {
+    return lookup.notify ? withNotice(event, context, lookup.message, 'warning') : undefined;
   }
 
-  tracker.clearConfigError();
-  const { cwd, loaded, observation } = current;
+  const { cwd, loaded, observation } = lookup.tracked;
   const path = typeof event.input.path === 'string' ? event.input.path.replace(/^@/, '') : '';
   const target = resolve(context.cwd, path);
   const editablePath = event.toolName !== 'bash' && path.length > 0;

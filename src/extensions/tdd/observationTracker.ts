@@ -6,17 +6,20 @@ import type { LoadedTddConfig } from './config.js';
 import { createTestObservation, observationDirectory } from './observation.js';
 import type { TestObservation } from './types.js';
 
-export interface TrackedObservation {
+interface TrackedObservation {
   cwd: string;
   key: string;
   loaded: LoadedTddConfig;
   observation: TestObservation;
 }
 
+type EditObservation =
+  | { kind: 'observed'; tracked: TrackedObservation }
+  | { kind: 'paused'; message: string; notify: boolean };
+
 export interface ObservationTracker {
   observationFor: (context: ExtensionContext) => Promise<TrackedObservation>;
-  recordConfigError: (message: string) => boolean;
-  clearConfigError: () => void;
+  observationForEdit: (context: ExtensionContext) => Promise<EditObservation>;
   startSession: () => void;
   shutdownSession: () => void;
 }
@@ -58,22 +61,43 @@ export const createObservationTracker = (): ObservationTracker => {
     return current;
   };
 
-  return {
-    observationFor,
+  const reportConfigError = (message: string): boolean => {
+    if (reportedConfigError === message) {
+      return false;
+    }
 
-    recordConfigError(message) {
-      if (reportedConfigError === message) {
-        return false;
+    reportedConfigError = message;
+
+    return true;
+  };
+
+  const observationForEdit = async (context: ExtensionContext): Promise<EditObservation> => {
+    const startedGeneration = sessionGeneration;
+    const isCurrentSession = () => startedGeneration === sessionGeneration;
+    let tracked: TrackedObservation;
+
+    try {
+      tracked = await observationFor(context);
+    } catch (error) {
+      const message = `TDD hints are paused: ${error instanceof Error ? error.message : String(error)}`;
+
+      if (!isCurrentSession()) {
+        return { kind: 'paused', message, notify: true };
       }
 
-      reportedConfigError = message;
+      return { kind: 'paused', message, notify: reportConfigError(message) };
+    }
 
-      return true;
-    },
-
-    clearConfigError() {
+    if (isCurrentSession()) {
       reportedConfigError = undefined;
-    },
+    }
+
+    return { kind: 'observed', tracked };
+  };
+
+  return {
+    observationFor,
+    observationForEdit,
 
     startSession() {
       sessionGeneration += 1;

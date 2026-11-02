@@ -662,6 +662,26 @@ it('reports malformed config without falling back to defaults or blocking edits'
   expect(runTests).not.toHaveBeenCalled();
 });
 
+it('shows the malformed config warning in the new session after a stale lookup fails across session_start', async ({
+  onTestFinished,
+}) => {
+  const { cwd, writeProject } = await configFixture(onTestFinished);
+  await writeProject({ productionGlobs: 'src/**' });
+  const application = setup();
+  const event = writeEvent('src/value.ts');
+
+  const pendingEdit = application.emit('tool_result', cwd, event);
+  await application.emit('session_start', cwd, { reason: 'new' });
+  await pendingEdit;
+
+  expect(await application.emit('tool_result', cwd, event)).toEqual({
+    content: [
+      ...event.content,
+      { type: 'text', text: expect.stringContaining('TDD hints are paused') as string },
+    ],
+  });
+});
+
 it('reports an unknown config key again for the same ui after session_start', async ({
   onTestFinished,
 }) => {
