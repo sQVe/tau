@@ -25,9 +25,9 @@ import { delegationGuidelines } from './managerPrompt.js';
 import { readProfileModels } from './profileModels.js';
 import { listProfiles } from './profiles.js';
 import type { ProfileSummary } from './profiles.js';
-import { createReportDelivery } from './reportDelivery.js';
-import type { ReportDelivery } from './reportDelivery.js';
 import { defaultWorkerCapacity, readWorkerCapacity } from './workerCapacityConfig.js';
+import { createWorkerDelivery } from './workerDelivery.js';
+import type { WorkerDelivery } from './workerDelivery.js';
 import { workerModelLine } from './workerModels.js';
 
 interface CapacityRefusal {
@@ -151,7 +151,8 @@ const registerLaunchTool = (
       `Profiles: ${profileText(profiles)}. model overrides the profile default as provider/id.`,
       ...modelLine,
       'Editing workers require acceptance criteria. Brief them with, when it applies: outcome, scope and non-goals, entry files, decisions already made, baseline, and checks to run. Give the worktree; one editor per worktree. The deadline includes waits and cleanup.',
-      'A worker note starts a new turn when a worker reports or stops. End your turn to wait; never sleep or poll.',
+      'A worker note starts a new turn when a worker reports, asks a question, or stops. End your turn to wait; never sleep or poll.',
+      'Answer a worker question with `hc send <address> "<answer>"`, never `--force`; report a refused send to the user.',
     ].join(' '),
     parameters: launchParameters,
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
@@ -209,25 +210,25 @@ export const registerCapacityRefusal = (pi: ExtensionAPI): CapacityRefusal => {
   };
 };
 
-export const registerReportDelivery = (pi: ExtensionAPI, delivery: ReportDelivery): void => {
-  const deliverReports = (context: Parameters<ReportDelivery['deliver']>[0]): void => {
+export const registerWorkerDelivery = (pi: ExtensionAPI, delivery: WorkerDelivery): void => {
+  const deliverPending = (context: Parameters<WorkerDelivery['deliver']>[0]): void => {
     delivery.deliver(context).catch((error: unknown) => {
-      context.ui.notify(`Worker report delivery failed: ${errorMessage(error)}`, 'error');
+      context.ui.notify(`Worker delivery failed: ${errorMessage(error)}`, 'error');
     });
   };
 
   pi.on('input', (event, context) => {
-    if (event.text.includes('[tau-report]')) {
-      deliverReports(context);
+    if (event.text.includes('[tau-report]') || event.text.includes('[tau-question]')) {
+      deliverPending(context);
     }
   });
 
   pi.on('session_start', (_event, context) => {
-    deliverReports(context);
+    deliverPending(context);
   });
 
   pi.on('session_compact', (_event, context) => {
-    deliverReports(context);
+    deliverPending(context);
   });
 };
 
@@ -250,7 +251,7 @@ export default function subagentsExtension(
     cwd: process.cwd(),
   };
 
-  const delivery = createReportDelivery(pi, hc);
+  const delivery = createWorkerDelivery(pi, hc);
 
   const launchRuntime = (capacity: number): LaunchRuntime => ({
     pi,
@@ -284,7 +285,7 @@ export default function subagentsExtension(
     }
   });
 
-  registerReportDelivery(pi, delivery);
+  registerWorkerDelivery(pi, delivery);
 
   pi.on('tool_call', (event) => {
     if (isNestedControlCall(event)) {

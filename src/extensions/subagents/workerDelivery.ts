@@ -6,15 +6,15 @@ import { currentTerminalAddress, get, ls } from '../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import { isRecord } from '../../schema.js';
 import { readAssignment } from './assignment.js';
-import type { Assignment } from './assignment.js';
-import { decideReportDelivery } from './reportDecision.js';
-import type { ReportReadFact } from './reportDecision.js';
-import { reportMessageType } from './reportMessage.js';
+import type { Assignment, SavedQuestion } from './assignment.js';
+import { decideWorkerDelivery, questionKey, reportKey } from './workerDecision.js';
+import type { WorkerReadFact } from './workerDecision.js';
+import { questionMessageType, reportMessageType } from './workerMessage.js';
 
-type ReportDeliveryContext = Pick<ExtensionContext, 'sessionManager' | 'ui'>;
+type WorkerDeliveryContext = Pick<ExtensionContext, 'sessionManager' | 'ui'>;
 
-export interface ReportDelivery {
-  deliver: (context: ReportDeliveryContext) => Promise<void>;
+export interface WorkerDelivery {
+  deliver: (context: WorkerDeliveryContext) => Promise<void>;
 }
 
 const evidenceText = (report: Assignment['report']): string => {
@@ -28,37 +28,51 @@ const evidenceText = (report: Assignment['report']): string => {
 const reportText = (assignmentId: string, report: Assignment['report']): string =>
   `Worker report ${assignmentId}: ${report?.outcome ?? 'unknown'}\n\n${report?.summary ?? ''}${evidenceText(report)}`;
 
-const shownIdFromEntry = (entry: {
+const questionText = (assignmentId: string, address: string, question: SavedQuestion): string =>
+  `Worker question ${assignmentId} from ${address}:\n\n${question.text}\n\nAnswer with \`hc send ${address} "<answer>"\`. Never use --force. If hc refuses the send, report that to the user and do not force it.`;
+
+const shownKeyFromEntry = (entry: {
   type: string;
   customType?: string;
   details?: unknown;
 }): string | undefined => {
-  if (entry.type !== 'custom_message' || entry.customType !== reportMessageType) {
+  if (entry.type !== 'custom_message' || !isRecord(entry.details)) {
     return undefined;
   }
 
-  const details = entry.details;
+  const assignmentId = entry.details['assignmentId'];
+  const questionId = entry.details['questionId'];
 
-  return isRecord(details) && typeof details['assignmentId'] === 'string'
-    ? details['assignmentId']
-    : undefined;
+  if (typeof assignmentId !== 'string') {
+    return undefined;
+  }
+
+  if (entry.customType === reportMessageType) {
+    return reportKey(assignmentId);
+  }
+
+  if (entry.customType === questionMessageType && typeof questionId === 'string') {
+    return questionKey(assignmentId, questionId);
+  }
+
+  return undefined;
 };
 
-const restoreShownIds = (context: ReportDeliveryContext): Set<string> => {
+const restoreShownKeys = (context: WorkerDeliveryContext): Set<string> => {
   const shown = new Set<string>();
 
   for (const entry of context.sessionManager.getEntries()) {
-    const assignmentId = shownIdFromEntry(entry);
+    const key = shownKeyFromEntry(entry);
 
-    if (assignmentId !== undefined) {
-      shown.add(assignmentId);
+    if (key !== undefined) {
+      shown.add(key);
     }
   }
 
   return shown;
 };
 
-const readFact = async (terminal: HcTerminal): Promise<ReportReadFact> => {
+const readFact = async (terminal: HcTerminal): Promise<WorkerReadFact> => {
   const path = terminal.labels?.['tau.assignment'];
 
   if (path === undefined || path === '') {
@@ -77,14 +91,16 @@ const readFact = async (terminal: HcTerminal): Promise<ReportReadFact> => {
     return { kind: 'error', message: `Missing assignment file: ${path}.` };
   }
 
-  if (assignment.report === null) {
-    return { kind: 'no-report' };
-  }
-
-  return { kind: 'report', assignmentId: assignment.assignmentId, report: assignment.report };
+  return {
+    kind: 'assignment',
+    assignmentId: assignment.assignmentId,
+    address: terminal.address,
+    report: assignment.report,
+    questions: assignment.questions,
+  };
 };
 
-const childFact = async (hc: HcRuntime, child: HcTerminal): Promise<ReportReadFact> => {
+const childFact = async (hc: HcRuntime, child: HcTerminal): Promise<WorkerReadFact> => {
   try {
     return await readFact(await get(hc, child.address));
   } catch (error) {
@@ -92,11 +108,11 @@ const childFact = async (hc: HcRuntime, child: HcTerminal): Promise<ReportReadFa
   }
 };
 
-export const createReportDelivery = (pi: ExtensionAPI, hc: HcRuntime): ReportDelivery => {
+export const createWorkerDelivery = (pi: ExtensionAPI, hc: HcRuntime): WorkerDelivery => {
   let tail: Promise<void> = Promise.resolve();
-  const queuedIds = new Set<string>();
+  const queuedKeys = new Set<string>();
 
-  const run = async (context: ReportDeliveryContext): Promise<void> => {
+  const run = async (context: WorkerDeliveryContext): Promise<void> => {
     const managerTerminal = currentTerminalAddress();
 
     if (managerTerminal === undefined) {
@@ -107,9 +123,9 @@ export const createReportDelivery = (pi: ExtensionAPI, hc: HcRuntime): ReportDel
     const children = list.terminals.filter((terminal) => terminal.parent === managerTerminal);
     const facts = await Promise.all(children.map((child) => childFact(hc, child)));
 
-    const shownIds = new Set([...restoreShownIds(context), ...queuedIds]);
+    const shownKeys = new Set([...restoreShownKeys(context), ...queuedKeys]);
 
-    const plan = decideReportDelivery({ shownIds: [...shownIds], facts });
+    const plan = decideWorkerDelivery({ shownKeys: [...shownKeys], facts });
 
     for (const error of plan.errors) {
       notifyOnce(context.ui, 'worker-report-delivery', error, error, 'error');
@@ -123,7 +139,18 @@ export const createReportDelivery = (pi: ExtensionAPI, hc: HcRuntime): ReportDel
         details: { assignmentId, outcome: report.outcome },
       });
 
-      queuedIds.add(assignmentId);
+      queuedKeys.add(reportKey(assignmentId));
+    }
+
+    for (const { assignmentId, address, question } of plan.questions) {
+      pi.sendMessage({
+        customType: questionMessageType,
+        content: questionText(assignmentId, address, question),
+        display: true,
+        details: { assignmentId, questionId: question.questionId },
+      });
+
+      queuedKeys.add(questionKey(assignmentId, question.questionId));
     }
   };
 

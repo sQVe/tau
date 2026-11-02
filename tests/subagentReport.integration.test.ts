@@ -12,7 +12,7 @@ import { readAssignment } from '../src/extensions/subagents/assignment.js';
 import { Admission, executeLaunch } from '../src/extensions/subagents/launch.js';
 import type { LaunchRuntime } from '../src/extensions/subagents/launch.js';
 import * as loadouts from '../src/extensions/subagents/loadout.js';
-import { createReportDelivery } from '../src/extensions/subagents/reportDelivery.js';
+import { createWorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
 import { runWithEnvironment } from '../src/hc/connect.js';
 import { startHcSession } from './hcSessionHarness.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
@@ -245,10 +245,10 @@ it('shows a real worker report once before it gives the worker the manager envir
   const deliveryContext = {
     sessionManager: { getEntries: () => entries },
     ui: { notify: () => undefined },
-  } as unknown as Parameters<ReturnType<typeof createReportDelivery>['deliver']>[0];
+  } as unknown as Parameters<ReturnType<typeof createWorkerDelivery>['deliver']>[0];
 
-  await createReportDelivery(pi, hc.runtime).deliver(deliveryContext);
-  await createReportDelivery(pi, hc.runtime).deliver(deliveryContext);
+  await createWorkerDelivery(pi, hc.runtime).deliver(deliveryContext);
+  await createWorkerDelivery(pi, hc.runtime).deliver(deliveryContext);
 
   expect(messages).toHaveLength(1);
   expect(entries).toHaveLength(1);
