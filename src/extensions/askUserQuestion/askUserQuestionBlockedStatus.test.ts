@@ -41,7 +41,12 @@ it('reports a blocked question with the first header while the question dialog i
     arguments: { questions: [layout] },
   });
 
-  const opened = customContext(() => undefined, theme);
+  let reportsWhileOpen: unknown[] = [];
+
+  const opened = customContext((component) => {
+    reportsWhileOpen = [...opened.programStatusReports];
+    component.handleInput?.('\u001B');
+  }, theme);
 
   const context = {
     ...opened,
@@ -49,6 +54,10 @@ it('reports a blocked question with the first header while the question dialog i
   };
 
   await tool.execute('call', params, undefined, undefined, context);
+
+  expect(reportsWhileOpen).toEqual([
+    { state: 'blocked', app: 'pi', kind: 'question', message: 'Layout' },
+  ]);
 
   expect(opened.programStatusReports).toEqual([
     { state: 'blocked', app: 'pi', kind: 'question', message: 'Layout' },

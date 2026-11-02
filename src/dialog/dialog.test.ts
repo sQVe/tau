@@ -214,11 +214,18 @@ it('refits the message after terminal height and width changes', async () => {
 });
 
 it('reports a blocked permission while the confirm dialog is open', async () => {
+  let reportsWhileOpen: unknown[] = [];
+
   const context = customContext((component) => {
+    reportsWhileOpen = [...context.programStatusReports];
     component.handleInput?.('\r');
   }, theme);
 
   expect(await confirm(context, 'Title', 'Message')).toBe(true);
+
+  expect(reportsWhileOpen).toEqual([
+    { state: 'blocked', app: 'pi', kind: 'permission', message: 'Title' },
+  ]);
 
   expect(context.programStatusReports).toEqual([
     { state: 'blocked', app: 'pi', kind: 'permission', message: 'Title' },
