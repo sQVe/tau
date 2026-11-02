@@ -3,7 +3,6 @@ import { basename, join } from 'node:path';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { errorMessage } from '../../errors.js';
 import { ensureTauDirectory } from '../../tauDirectory.js';
 import { approveForeignWrites, rejectChangedDraft } from './applyApproval.js';
 import type { Draft, Plan } from './draft.js';
@@ -18,6 +17,8 @@ import {
 } from './linear.js';
 import type { CreatedIssue } from './linear.js';
 import { isViewersTicket } from './ownership.js';
+import { CreatedButNotRecordedError, failPartialApply, runApplySteps } from './partialApply.js';
+import type { ApplyRunner, PartialApplyStep } from './partialApply.js';
 import { readState, slicesPath } from './state.js';
 import type { Runtime, SliceState } from './state.js';
 import { describeWrite, isInPlanOrder, plannedSortOrders } from './writes.js';
@@ -32,11 +33,6 @@ type StepSummary = (
   identifier?: string;
 };
 
-interface Step {
-  summary: StepSummary;
-  run: () => Promise<void>;
-}
-
 interface ApplyProgress {
   directory: string;
   draft: Draft;
@@ -45,17 +41,6 @@ interface ApplyProgress {
   teamId: string | undefined;
   projectId: string | null;
   urls: Map<string, string>;
-}
-
-// Linear created the ticket, but the draft does not record its identifier yet.
-class IdentifierSaveError extends Error {
-  readonly created: CreatedIssue;
-
-  constructor(created: CreatedIssue, options: ErrorOptions) {
-    super(`Linear created ${created.identifier}, but saving its identifier failed.`, options);
-    this.name = 'IdentifierSaveError';
-    this.created = created;
-  }
 }
 
 const bulletList = (lines: readonly string[]) =>
@@ -100,7 +85,7 @@ const saveIdentifier = async (progress: ApplyProgress, created: CreatedIssue) =>
   try {
     await writePlan(progress.directory, progress.plan);
   } catch (error) {
-    throw new IdentifierSaveError(created, { cause: error });
+    throw new CreatedButNotRecordedError(created, { cause: error });
   }
 };
 
@@ -191,13 +176,13 @@ const applyWrite = async (runtime: Runtime, progress: ApplyProgress, write: Slic
   });
 };
 
-const moveStep = (runtime: Runtime, progress: ApplyProgress): Step => ({
+const moveStep = (runtime: Runtime, progress: ApplyProgress): PartialApplyStep<StepSummary> => ({
   summary: { kind: 'moveDraft', text: 'Move the draft to its container identifier' },
   run: () => moveDraft(runtime, progress),
 });
 
 const buildSteps = (runtime: Runtime, progress: ApplyProgress, writes: readonly SliceWrite[]) => {
-  const steps: Step[] = [];
+  const steps: PartialApplyStep<StepSummary>[] = [];
 
   if (needsMove(progress)) {
     steps.push(moveStep(runtime, progress));
@@ -217,71 +202,22 @@ const buildSteps = (runtime: Runtime, progress: ApplyProgress, writes: readonly 
   return steps;
 };
 
-// A failed save follows a create that Linear made, so the create counts as applied and the save
-// does not.
-const splitSteps = (summaries: readonly StepSummary[], index: number, error: unknown) => {
-  if (!(error instanceof IdentifierSaveError)) {
-    return {
-      applied: summaries.slice(0, index),
-      notApplied: summaries.slice(index),
-    };
-  }
-
-  const { created } = error;
-  const failedStep = summaries[index];
-
-  const createStep =
-    failedStep === undefined ? [] : [{ ...failedStep, identifier: created.identifier }];
-
-  const saveStep: StepSummary = {
+const applyRunner = (runtime: Runtime, progress: ApplyProgress): ApplyRunner<StepSummary> => ({
+  describe: (summary) => summary.text,
+  directory: () => progress.directory,
+  recordIdentifier: (created) => ({
     kind: 'saveIdentifier',
     identifier: created.identifier,
     text: `Record ${created.identifier} (${created.url}) in the draft`,
-  };
+  }),
+  signal: runtime.signal,
+});
 
-  return {
-    applied: [...summaries.slice(0, index), ...createStep],
-    notApplied: [saveStep, ...summaries.slice(index + 1)],
-  };
-};
-
-const failedApply = (
+const runSteps = (
+  runtime: Runtime,
   progress: ApplyProgress,
-  summaries: readonly StepSummary[],
-  index: number,
-  error: unknown,
-) => {
-  const { applied, notApplied } = splitSteps(summaries, index, error);
-  const texts = (steps: readonly StepSummary[]) => bulletList(steps.map((step) => step.text));
-
-  return new Error(
-    `A slice step failed: ${errorMessage(error)}\nApplied:\n${texts(applied)}\nNot applied:\n${texts(notApplied)}\nThe draft is in ${progress.directory}. Read it again before a retry.`,
-    { cause: error },
-  );
-};
-
-const runSteps = async (
-  progress: ApplyProgress,
-  steps: readonly Step[],
-  signal: AbortSignal | undefined,
-) => {
-  const summaries = steps.map((step) => step.summary);
-
-  for (const [index, step] of steps.entries()) {
-    if (signal?.aborted === true) {
-      throw failedApply(progress, summaries, index, new Error('The call was aborted.'));
-    }
-
-    try {
-      // oxlint-disable-next-line no-await-in-loop -- Steps run in plan order, and a create records its identifier before the next step.
-      await step.run();
-    } catch (error) {
-      throw failedApply(progress, summaries, index, error);
-    }
-  }
-
-  return summaries;
-};
+  steps: readonly PartialApplyStep<StepSummary>[],
+) => runApplySteps(applyRunner(runtime, progress), [], steps);
 
 const rejectChangedState = (state: SliceState, stateToken: string | undefined) => {
   if (state.draft === undefined) {
@@ -329,7 +265,7 @@ const repairSteps = (
   viewer: string,
   slots: readonly (LinearChild | undefined)[],
 ) => {
-  const steps: Step[] = [];
+  const steps: PartialApplyStep<StepSummary>[] = [];
 
   for (const [index, sortOrder] of plannedSortOrders(slots).entries()) {
     const slot = slots[index];
@@ -358,7 +294,7 @@ const readSlotsAfter = async (
   try {
     return await readSlots(runtime, progress);
   } catch (error) {
-    throw failedApply(progress, applied, applied.length, error);
+    return failPartialApply(applyRunner(runtime, progress), applied, error);
   }
 };
 
@@ -374,21 +310,7 @@ const checkOrder = async (
   }
 
   const repairs = repairSteps(runtime, progress, viewer, slots);
-  const all = [...applied, ...repairs.map((step) => step.summary)];
-
-  for (const [index, step] of repairs.entries()) {
-    if (runtime.signal?.aborted === true) {
-      throw failedApply(progress, all, applied.length + index, new Error('The call was aborted.'));
-    }
-
-    try {
-      // oxlint-disable-next-line no-await-in-loop -- Moves run in plan order.
-      await step.run();
-    } catch (error) {
-      throw failedApply(progress, all, applied.length + index, error);
-    }
-  }
-
+  const all = await runApplySteps(applyRunner(runtime, progress), applied, repairs);
   const repaired = await readSlotsAfter(runtime, progress, all);
 
   return { applied: all, orderInPlace: isSlotsInPlanOrder(repaired.slots) };
@@ -459,7 +381,7 @@ export const applySlicePlan = async (
     };
   }
 
-  const applied = await runSteps(progress, steps, runtime.signal);
+  const applied = await runSteps(runtime, progress, steps);
   const checked = await checkOrder(runtime, progress, applied);
 
   return {

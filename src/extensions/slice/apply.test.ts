@@ -138,7 +138,7 @@ describe('slice tool apply', () => {
 
     const moved = join(directory, '..', 'me-1');
 
-    await expect(apply()).rejects.toBeInstanceOf(Error);
+    expect((await apply())['status']).toBe('failed');
 
     expect([...fake.issues.keys()]).toEqual(['ME-1', 'ME-2']);
     expect(fake.issues.get('ME-2')).toMatchObject({ parent: 'ME-1', blockedBy: [] });
@@ -183,15 +183,16 @@ describe('slice tool apply', () => {
       return created ? { code: 1, killed: false, stdout: '', stderr: 'timeout' } : result;
     });
 
-    await expect(
-      tool.execute(
-        'call',
-        { action: 'apply', directory, stateToken: String(stateToken) },
-        undefined,
-        undefined,
-        context,
-      ),
-    ).rejects.toThrow(/timeout/u);
+    const failure = await tool.execute(
+      'call',
+      { action: 'apply', directory, stateToken: String(stateToken) },
+      undefined,
+      undefined,
+      context,
+    );
+
+    expect(failure.isError).toBe(true);
+    expect(String(failure.details['error'])).toContain('timeout');
 
     expect(await savedPlan(directory)).toMatchObject({
       container: { identifier: null },
@@ -242,15 +243,16 @@ describe('slice tool apply', () => {
       return result;
     });
 
-    await expect(
-      tool.execute(
-        'call',
-        { action: 'apply', directory, stateToken: String(stateToken) },
-        controller.signal,
-        undefined,
-        context,
-      ),
-    ).rejects.toThrow(/aborted/u);
+    const aborted = await tool.execute(
+      'call',
+      { action: 'apply', directory, stateToken: String(stateToken) },
+      controller.signal,
+      undefined,
+      context,
+    );
+
+    expect(aborted.isError).toBe(true);
+    expect(JSON.stringify(aborted.details)).toContain('aborted');
 
     expect(fake.writes()).toHaveLength(1);
 
@@ -421,21 +423,19 @@ describe('slice tool apply', () => {
     const { stateToken } = read.details as { stateToken: string };
     const writesBefore = fake.writes().length;
 
-    const outcome = await tool
-      .execute(
-        'call',
-        { action: 'apply', directory, stateToken },
-        controller.signal,
-        undefined,
-        context,
-      )
-      .then(
-        () => 'applied',
-        (error: unknown) => (error instanceof Error ? error.message : String(error)),
-      );
+    const aborted = await tool.execute(
+      'call',
+      { action: 'apply', directory, stateToken },
+      controller.signal,
+      undefined,
+      context,
+    );
 
-    expect(outcome).toContain('aborted');
-    expect(outcome).toContain('Not applied:\n- Move ME-3 into plan order');
+    expect(aborted.isError).toBe(true);
+
+    const { notApplied } = aborted.details as { notApplied: { text: string }[] };
+
+    expect(notApplied[0]?.text).toBe('Move ME-3 into plan order');
     expect(fake.writes()).toHaveLength(writesBefore + 1);
     expect(fake.issues.get('ME-3')!.sortOrder).toBeLessThan(1000);
   });
@@ -537,7 +537,7 @@ describe('slice tool apply', () => {
     fake.issues.get('ME-4')!.sortOrder = 0;
     fake.failWrite(fake.writes().length + 2);
 
-    await expect(apply(undefined, moved)).rejects.toBeInstanceOf(Error);
+    expect((await apply(undefined, moved))['status']).toBe('failed');
 
     expect(fake.issues.get('ME-2')?.sortOrder).toBe(5);
     expect(fake.issues.get('ME-3')?.sortOrder).toBeGreaterThan(5);
@@ -581,15 +581,16 @@ describe('slice tool apply', () => {
       return result;
     });
 
-    await expect(
-      tool.execute(
-        'call',
-        { action: 'apply', directory: created.directory, stateToken: String(read.stateToken) },
-        controller.signal,
-        undefined,
-        context,
-      ),
-    ).rejects.toThrow(/aborted/u);
+    const aborted = await tool.execute(
+      'call',
+      { action: 'apply', directory: created.directory, stateToken: String(read.stateToken) },
+      controller.signal,
+      undefined,
+      context,
+    );
+
+    expect(aborted.isError).toBe(true);
+    expect(JSON.stringify(aborted.details)).toContain('aborted');
 
     expect(fake.issues.get('ME-2')?.sortOrder).toBe(5);
     expect(fake.issues.get('ME-3')?.sortOrder).toBeGreaterThan(5);
@@ -618,7 +619,7 @@ describe('slice tool apply', () => {
       return fake.exec(command, commandArguments, options);
     });
 
-    const failure = tool.execute(
+    const failure = await tool.execute(
       'call',
       { action: 'apply', directory, stateToken: String(stateToken) },
       undefined,
@@ -626,7 +627,8 @@ describe('slice tool apply', () => {
       context,
     );
 
-    await expect(failure).rejects.toThrow(/network error/u);
+    expect(failure.isError).toBe(true);
+    expect(JSON.stringify(failure.details)).toContain('network error');
 
     expect(fake.issues.get('ME-2')?.sortOrder).toBe(5);
     expect(fake.issues.get('ME-3')?.sortOrder).toBeGreaterThan(5);
@@ -737,7 +739,7 @@ describe('slice tool apply', () => {
     await mkdir(target);
     await writeFile(join(target, 'blocker.txt'), 'in the way\n');
 
-    await expect(apply()).rejects.toBeInstanceOf(Error);
+    expect((await apply())['status']).toBe('failed');
 
     expect([...fake.issues.keys()]).toEqual(['ME-1']);
     expect(fake.writes()).toHaveLength(1);
@@ -804,7 +806,7 @@ describe('slice tool apply', () => {
       return result;
     });
 
-    const failure = tool.execute(
+    const result = await tool.execute(
       'call',
       { action: 'apply', directory, stateToken: String(stateToken) },
       undefined,
@@ -812,10 +814,22 @@ describe('slice tool apply', () => {
       context,
     );
 
-    const failureDetails = (await failure.catch((error: unknown) => error)) as Error;
+    expect(result.isError).toBe(true);
 
-    expect(failureDetails.message).toContain('ME-1');
-    expect(failureDetails.message).toContain('https://linear.app/me/issue/ME-1');
+    const details = result.details as {
+      directory: string;
+      created: { identifier: string; url: string };
+      notApplied: { text: string }[];
+    };
+
+    expect(details.directory).toBe(directory);
+
+    expect(details.created).toEqual({
+      identifier: 'ME-1',
+      url: 'https://linear.app/me/issue/ME-1',
+    });
+
+    expect(details.notApplied[0]?.text).toContain('ME-1');
     expect(fake.issues.get('ME-1')).toMatchObject({ parent: null, title: 'Add PR-sized planning' });
     expect(fake.writes()).toHaveLength(1);
 
@@ -870,10 +884,8 @@ describe('slice tool Linear pages after writes', () => {
 
     fake.limitChildren(1);
 
-    const message = await apply().then(
-      () => undefined,
-      (error: unknown) => (error instanceof Error ? error.message : String(error)),
-    );
+    const failure = await apply();
+    const message = String(failure['error']);
 
     expect(message).toContain('more than one Linear page');
     expect(message).toContain('Applied:');

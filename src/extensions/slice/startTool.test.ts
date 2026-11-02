@@ -23,6 +23,7 @@ interface Ticket {
 
 interface Details {
   status: string;
+  error?: string;
   tickets: Ticket[];
   writes: { kind: string }[];
   problems: string[];
@@ -317,7 +318,7 @@ describe('start_slice', () => {
     addSlice(fake);
     addAgentChild(fake, { identifier: 'AI-12', title: 'Report the start', description: 'Two.\n' });
 
-    const { directory, call } = await setUp(fake);
+    const { directory, context, call } = await setUp(fake);
     const { stateToken } = await call('read');
     const recordFile = join(directory, 'start.json');
 
@@ -335,19 +336,30 @@ describe('start_slice', () => {
       },
     };
 
-    const failure = await call('apply', stateToken, failingSave).catch(
-      (error: unknown) => error as Error,
+    const result = await createStartSliceTool(failingSave.exec).execute(
+      'call',
+      { action: 'apply', directory, agentTeam: 'AI', stateToken },
+      undefined,
+      undefined,
+      context,
     );
 
-    expect(failure).toBeInstanceOf(Error);
+    expect(result.isError).toBe(true);
 
-    const [, applied = '', notApplied = ''] = (failure as Error).message.split(
-      /\nApplied:\n|\nNot applied:\n/u,
-    );
+    const details = result.details as {
+      directory: string;
+      created: { identifier: string; url: string };
+      notApplied: string[];
+    };
 
-    expect(applied).toContain('Create ticket 1');
-    expect(notApplied).not.toContain('Create ticket 1');
-    expect(notApplied).toContain('Save the identifier of ticket 1');
+    expect(details.directory).toBe(directory);
+
+    expect(details.created).toEqual({
+      identifier: 'ME-701',
+      url: 'https://linear.app/me/issue/ME-701',
+    });
+
+    expect(details.notApplied[0]).toContain('ME-701');
     expect(children(fake)).toHaveLength(2);
   });
 
@@ -361,7 +373,10 @@ describe('start_slice', () => {
     await recordNoIdentifiers();
     fake.failWrite(2);
 
-    await expect(apply()).rejects.toThrow('Creating ticket 2 "Report the start" failed');
+    const failure = await apply();
+
+    expect(failure.status).toBe('failed');
+    expect(failure.error).toContain('Creating ticket 2 "Report the start" failed');
 
     const [first, second] = await saved();
 
@@ -386,7 +401,10 @@ describe('start_slice', () => {
     await recordNoIdentifiers();
     fake.overrideOutput('issueCreate', '{"data":{"issueCreate":{"issue":null}}}');
 
-    await expect(apply()).rejects.toThrow('Call read again before any retry');
+    const failure = await apply();
+
+    expect(failure.status).toBe('failed');
+    expect(failure.error).toContain('Call read again before any retry');
 
     expect(await saved()).toEqual([null, null]);
     expect(fake.writes()).toHaveLength(1);
@@ -401,7 +419,10 @@ describe('start_slice', () => {
 
     await recordNoIdentifiers();
     lost.overrideOutput('issueCreate', '{"data":{"issueCreate":{"issue":null}}}');
-    await expect(apply()).rejects.toThrow('read again');
+    const failure = await apply();
+
+    expect(failure.status).toBe('failed');
+    expect(failure.error).toContain('read again');
 
     const fake = createLinearFake();
 
