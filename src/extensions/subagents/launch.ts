@@ -31,6 +31,7 @@ export interface LaunchRuntime {
   processEnvironment: NodeJS.ProcessEnv;
   admission: Admission;
   refuseCapacity?: (() => void) | undefined;
+  refuseSkillTools?: (() => string | undefined) | undefined;
   packageManager?: (loadout: Assignment['loadout']) => WorkerPackageManager;
   buildCommand?: (
     sessionFile: string,
@@ -307,6 +308,12 @@ export const executeLaunch = async (
   context: ExtensionContext,
 ): Promise<ToolResult<LaunchStatus | undefined>> => {
   try {
+    const skillToolsRefusal = runtime.refuseSkillTools?.();
+
+    if (skillToolsRefusal !== undefined) {
+      throw new Error(skillToolsRefusal);
+    }
+
     const { loadout, routing } = await resolveRoutedLoadout(
       request.parameters,
       context,

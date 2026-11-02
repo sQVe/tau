@@ -14,6 +14,7 @@ import { initializeRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
 import { connect } from '../../hc/connect.js';
+import { skillTools } from '../../skillTools.js';
 import { writeFakePackage } from './fixtures/packageCache.js';
 import { answered, haiku, routedFixture, workerFixture } from './fixtures/routedLoadout.js';
 import { checkLaunchEnvironment } from './launchCheck.js';
@@ -91,10 +92,15 @@ const terminalRun = (fake: HcFake) => {
   return undefined;
 };
 
-const registerTool = (fake: HcFake) => {
+const allSkillToolNames = [...new Set(Object.values(skillTools).flat())];
+
+const registerTool = (fake: HcFake, registeredToolNames: string[] = allSkillToolNames) => {
   vi.mocked(connect).mockImplementation(fake.connect);
 
-  const pi = fakeExtensionApi({ exec: fake.exec });
+  const pi = fakeExtensionApi({
+    exec: fake.exec,
+    getAllTools: () => registeredToolNames.map((name) => ({ name })) as never,
+  });
 
   subagentsExtension(pi.pi, registerCapacityRefusal(pi.pi));
 
@@ -256,6 +262,24 @@ it('refuses a launch without a saved parent session', async ({ onTestFinished })
   await expect(
     execute(tool, { profile: 'scout', model: fixture.request.model, task: 'Look.' }, context),
   ).rejects.toThrow('saved parent Pi session');
+});
+
+it('refuses a launch when a listed skill tool is not registered', async ({ onTestFinished }) => {
+  vi.stubEnv('HC_TERMINAL_ID', manager);
+
+  const fixture = await workerFixture(onTestFinished);
+  const fake = hcSetup();
+  const { tool } = registerTool(fake, []);
+
+  const result = await execute(
+    tool,
+    { profile: 'scout', model: fixture.request.model, task: 'Look.' },
+    toolContext(fixture),
+  );
+
+  expect(result).toMatchObject({ isError: true });
+  expect(result.content[0]?.text).toContain('Run /reload');
+  expect(terminalRun(fake)).toBeUndefined();
 });
 
 it('starts the deadline before the pre-launch environment checks', async ({ onTestFinished }) => {

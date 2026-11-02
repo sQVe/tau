@@ -28,6 +28,7 @@ import { listProfiles } from './profiles.js';
 import type { ProfileSummary } from './profiles.js';
 import { createReportDelivery } from './reportDelivery.js';
 import type { ReportDelivery } from './reportDelivery.js';
+import { skillToolsRefusal } from './skillToolsRefusal.js';
 import { defaultWorkerCapacity, readWorkerCapacity } from './workerCapacityConfig.js';
 import { workerModelLine } from './workerModels.js';
 
@@ -263,6 +264,8 @@ export default function subagentsExtension(
     // oxlint-disable-next-line node/no-process-env -- the worker keeps the manager's shell setup.
     processEnvironment: process.env,
     refuseCapacity: capacityRefusal.refuse,
+    refuseSkillTools: () =>
+      skillToolsRefusal(skillTools, new Set(pi.getAllTools().map((tool) => tool.name))),
   });
 
   pi.on('before_agent_start', (event) => {
