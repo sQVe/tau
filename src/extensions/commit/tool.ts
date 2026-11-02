@@ -17,7 +17,7 @@ import {
 } from './gitCommands.js';
 import { executeGroup } from './groupExecution.js';
 import type { GroupOutcome } from './groupExecution.js';
-import type { CommitSuccess } from './types.js';
+import type { CommitContent, CommittedGroup } from './types.js';
 import {
   commitToolParameters,
   normalizeBody,
@@ -38,9 +38,27 @@ type ResolvedGroup = CommitInput['groups'][number] & {
   targetHash: string | undefined;
 };
 
+interface CancelledGroupDetails {
+  sha: '';
+  files: string[];
+  subject: string;
+  body: string | null;
+  // A cancelled group has no hook report; the field lets a caller read either result shape.
+  hookChanges?: undefined;
+}
+
+type GroupResult =
+  | CommittedGroup
+  | {
+      details: CancelledGroupDetails;
+      content: CommitContent;
+    };
+
+type GroupDetails = GroupResult['details'];
+
 interface CommitToolResult {
-  content: CommitSuccess['content'];
-  details: { groups: CommitSuccess['details'][] };
+  content: CommitContent;
+  details: { groups: GroupDetails[] };
 }
 
 export const commitToolGuidelines = [
@@ -128,21 +146,31 @@ const resolveGroup = async (
 };
 
 const prefixGroupContent = (
-  items: CommitSuccess['content'],
+  items: CommitContent,
   groupLabel: string,
   groupCount: number,
-): CommitSuccess['content'] =>
+): CommitContent =>
   items.map((item) => ({
     ...item,
     text: groupCount === 1 ? item.text : `Group ${groupLabel}: ${item.text}`,
   }));
 
+const buildCancelledResult = (group: ResolvedGroup): GroupResult => ({
+  content: [{ type: 'text', text: 'Commit cancelled' }],
+  details: {
+    sha: '',
+    files: group.files,
+    subject: group.subject,
+    body: normalizeBody(group.body ?? null),
+  },
+});
+
 const runGroup = async (
   runtime: CommitToolRuntime,
   group: ResolvedGroup,
-  committedGroups: CommitSuccess['details'][],
+  committedGroups: GroupDetails[],
   groupCount: number,
-): Promise<CommitSuccess> => {
+): Promise<GroupResult> => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), 'tau-commit-message-'));
   let outcome: GroupOutcome;
 
@@ -168,13 +196,13 @@ const runGroup = async (
   }
 
   const cleanupFailure = await cleanupTemporary(temporaryDirectory);
-  const { kind, result } = outcome;
+  const result = outcome.kind === 'committed' ? outcome.commit : buildCancelledResult(group);
 
   if (cleanupFailure !== null) {
     result.content.push({ type: 'text', text: cleanupFailure });
   }
 
-  if (kind === 'cancelled' && groupCount > 1) {
+  if (outcome.kind === 'cancelled' && groupCount > 1) {
     throw new Error(
       cleanupFailure === null ? 'Commit cancelled' : `Commit cancelled\n${cleanupFailure}`,
     );
@@ -189,10 +217,10 @@ const executeCommitTool = async (
 ): Promise<CommitToolResult> => {
   validateCommitGroups(parameters);
 
-  const groups: CommitSuccess['details'][] = [];
-  const content: CommitSuccess['content'] = [];
+  const groups: GroupDetails[] = [];
+  const content: CommitContent = [];
 
-  const finish = (items: CommitSuccess['content']): CommitToolResult => ({
+  const finish = (items: CommitContent): CommitToolResult => ({
     content: items,
     details: { groups },
   });
@@ -236,7 +264,7 @@ const executeCommitTool = async (
 
 export const createCommitTool = (
   runner: typeof runGit,
-): ToolDefinition<typeof commitToolParameters, { groups: CommitSuccess['details'][] }> =>
+): ToolDefinition<typeof commitToolParameters, { groups: GroupDetails[] }> =>
   defineTool({
     name: 'commit',
     label: 'Commit',

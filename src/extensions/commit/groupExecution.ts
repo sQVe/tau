@@ -20,7 +20,7 @@ import {
   writeTree,
 } from './gitCommands.js';
 import { reportCommit } from './reporting.js';
-import type { CommitSuccess } from './types.js';
+import type { CommittedGroup } from './types.js';
 import {
   buildCommitMessage,
   commitFailedError,
@@ -53,17 +53,32 @@ interface GroupExecution {
 
 interface GroupRun extends GroupExecution {
   messagePath: string;
-  body: string | null;
+  messageText: string;
   requestedFiles: Set<string>;
   prefix: string;
   stagedBefore: StagedBefore;
-  snapshot: StagedSnapshot | null;
 }
 
-export interface GroupOutcome {
-  kind: 'cancelled' | 'committed';
-  result: CommitSuccess;
+interface StagedCandidate {
+  snapshot: StagedSnapshot;
+  requestedFiles: Set<string>;
+  stagedBefore: StagedBefore;
+  message: {
+    path: string;
+    text: string;
+  };
+  runner: typeof runGit;
+  cwd: string;
+  prefix: string;
+  files: string[];
 }
+
+interface SnapshotOutcome {
+  snapshot: StagedSnapshot;
+  cancelled: boolean;
+}
+
+export type GroupOutcome = { kind: 'cancelled' } | { kind: 'committed'; commit: CommittedGroup };
 
 interface CleanupCheck {
   runner: typeof runGit;
@@ -74,15 +89,6 @@ interface CleanupCheck {
   snapshot: StagedSnapshot | null;
   headUnread: boolean;
 }
-
-const buildCancelledResult = (
-  files: string[],
-  subject: string,
-  body: string | null,
-): CommitSuccess => ({
-  content: [{ type: 'text', text: 'Commit cancelled' }],
-  details: { sha: '', files, subject, body },
-});
 
 const repositoryPath = (prefix: string, file: string) =>
   normalizeRepositoryPath(`${prefix}${file}`);
@@ -204,24 +210,14 @@ const stageAndVerifyRequest = async (run: GroupRun): Promise<boolean> => {
   return true;
 };
 
-// Every step after snapshotStagedTree reads the staged snapshot; reaching one without it is a bug.
-const requireSnapshot = (run: GroupRun): StagedSnapshot => {
-  if (run.snapshot === null) {
-    throw new Error('The staged snapshot was read before it was taken.');
-  }
-
-  return run.snapshot;
-};
-
-const snapshotStagedTree = async (run: GroupRun): Promise<boolean> => {
+const snapshotStagedTree = async (run: GroupRun): Promise<SnapshotOutcome> => {
   const tree = await writeTree(run.runner, run.context.cwd, run.signal);
   const index = await readIndex(run.runner, run.context.cwd);
   const head = await currentHead(run.runner, run.context.cwd);
-
-  run.snapshot = { tree, index, head };
+  const snapshot = { tree, index, head };
 
   if (run.signal?.aborted === true) {
-    return false;
+    return { snapshot, cancelled: true };
   }
 
   if (run.targetHash !== undefined) {
@@ -233,9 +229,9 @@ const snapshotStagedTree = async (run: GroupRun): Promise<boolean> => {
     }
   }
 
-  await writeFile(run.messagePath, buildCommitMessage(run.subject, run.body), { mode: 0o600 });
+  await writeFile(run.messagePath, run.messageText, { mode: 0o600 });
 
-  return true;
+  return { snapshot, cancelled: false };
 };
 
 const snapshotChanged = async (
@@ -289,20 +285,62 @@ const withGroupError = (groupError: unknown, cleanupError: unknown): unknown => 
   });
 };
 
-const runGroupPipeline = async (run: GroupRun): Promise<boolean> => {
-  if (!(await stageAndVerifyRequest(run))) {
-    return false;
-  }
+const stageGroup = async (run: GroupRun): Promise<StagedCandidate | null> => {
+  let groupError: unknown;
+  let candidate: StagedCandidate | null = null;
+  let snapshot: StagedSnapshot | null = null;
 
-  return snapshotStagedTree(run);
+  try {
+    if (!(await stageAndVerifyRequest(run))) {
+      return null;
+    }
+
+    const prepared = await snapshotStagedTree(run);
+
+    snapshot = prepared.snapshot;
+
+    if (prepared.cancelled) {
+      return null;
+    }
+
+    candidate = {
+      snapshot,
+      requestedFiles: run.requestedFiles,
+      stagedBefore: run.stagedBefore,
+      message: { path: run.messagePath, text: run.messageText },
+      runner: run.runner,
+      cwd: run.context.cwd,
+      prefix: run.prefix,
+      files: run.parameters.files,
+    };
+
+    return candidate;
+  } catch (error) {
+    groupError = error;
+    throw error;
+  } finally {
+    if (candidate === null) {
+      const check: CleanupCheck = {
+        runner: run.runner,
+        cwd: run.context.cwd,
+        requestedFiles: run.requestedFiles,
+        prefix: run.prefix,
+        stagedBefore: run.stagedBefore,
+        snapshot,
+        headUnread: groupError instanceof HeadReadError,
+      };
+
+      await cleanUpGroup(check, run.parameters.files).catch((cleanupError: unknown) => {
+        throw withGroupError(groupError, cleanupError);
+      });
+    }
+  }
 };
 
-const commitStaged = async (run: GroupRun): Promise<GitResult> => {
-  const snapshot = requireSnapshot(run);
-
-  const commitResult = await run.runner(
-    run.context.cwd,
-    ['commit', '--cleanup=verbatim', '-F', run.messagePath],
+const commitStaged = async (candidate: StagedCandidate): Promise<GitResult> => {
+  const commitResult = await candidate.runner(
+    candidate.cwd,
+    ['commit', '--cleanup=verbatim', '-F', candidate.message.path],
     {
       timeoutMilliseconds: null,
     },
@@ -312,14 +350,14 @@ const commitStaged = async (run: GroupRun): Promise<GitResult> => {
     const failure = commitFailedError(decodeOutput(commitResult), commitResult.stderr);
 
     try {
-      if ((await currentHead(run.runner, run.context.cwd)) !== snapshot.head) {
+      if ((await currentHead(candidate.runner, candidate.cwd)) !== candidate.snapshot.head) {
         throw new Error(
           'HEAD changed during git commit. Staging was left untouched. Inspect the repository before retrying.',
         );
       }
 
       // Requested-path staging during hooks is hook-owned; same-path concurrent writers are unsupported.
-      await restoreRequest(run.runner, run.context.cwd, run, run.parameters.files);
+      await restoreRequest(candidate.runner, candidate.cwd, candidate, candidate.files);
     } catch (error) {
       throw new Error(`${failure.message}\n${String(error)}`, { cause: error });
     }
@@ -331,18 +369,14 @@ const commitStaged = async (run: GroupRun): Promise<GitResult> => {
 };
 
 export const executeGroup = async (execution: GroupExecution): Promise<GroupOutcome> => {
+  if (execution.signal?.aborted === true) {
+    return { kind: 'cancelled' };
+  }
+
   const subject = execution.subject;
   const body = normalizeBody(execution.parameters.body ?? null);
   const messagePath = join(execution.temporaryDirectory, 'message');
-
-  const cancelled = {
-    kind: 'cancelled',
-    result: buildCancelledResult(execution.parameters.files, subject, body),
-  } as const;
-
-  if (execution.signal?.aborted === true) {
-    return cancelled;
-  }
+  const messageText = buildCommitMessage(subject, body);
 
   const prefix = await repositoryPathPrefix(execution.runner, execution.context.cwd);
 
@@ -359,55 +393,27 @@ export const executeGroup = async (execution: GroupExecution): Promise<GroupOutc
   const run: GroupRun = {
     ...execution,
     messagePath,
-    subject,
-    body,
+    messageText,
     requestedFiles,
     prefix,
     stagedBefore,
-    snapshot: null,
   };
 
-  let groupError: unknown;
-  let readyToCommit = false;
+  const candidate = await stageGroup(run);
 
-  try {
-    if (!(await runGroupPipeline(run))) {
-      return cancelled;
-    }
-
-    readyToCommit = true;
-  } catch (error) {
-    groupError = error;
-    throw error;
-  } finally {
-    if (!readyToCommit) {
-      const check = {
-        runner: execution.runner,
-        cwd: execution.context.cwd,
-        requestedFiles,
-        prefix,
-        stagedBefore,
-        snapshot: run.snapshot,
-        headUnread: groupError instanceof HeadReadError,
-      };
-
-      await cleanUpGroup(check, execution.parameters.files).catch((cleanupError: unknown) => {
-        throw withGroupError(groupError, cleanupError);
-      });
-    }
+  if (candidate === null) {
+    return { kind: 'cancelled' };
   }
 
-  const commitResult = await commitStaged(run);
+  const commitResult = await commitStaged(candidate);
 
-  const snapshot = requireSnapshot(run);
-
-  const result = await reportCommit({
-    runner: run.runner,
-    cwd: run.context.cwd,
-    snapshot: { tree: snapshot.tree, head: snapshot.head },
-    expectedMessage: buildCommitMessage(run.subject, run.body),
+  const commit = await reportCommit({
+    runner: candidate.runner,
+    cwd: candidate.cwd,
+    snapshot: { tree: candidate.snapshot.tree, head: candidate.snapshot.head },
+    expectedMessage: candidate.message.text,
     commitResult,
   });
 
-  return { kind: 'committed', result };
+  return { kind: 'committed', commit };
 };
