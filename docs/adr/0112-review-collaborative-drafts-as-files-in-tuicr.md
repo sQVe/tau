@@ -27,9 +27,9 @@ to the user with the `draft_review` tool, which opens it in tuicr.
 - The tool copies the drafts to a staging directory outside Git. It starts tuicr with `hc run --bg`
   and the manager's `herdr.space` label. Herdr shows tuicr in a new tab in that space and names the
   tab.
-- `open` returns at once, so the user can answer the approval question while tuicr stays open.
-  Without an `hc` terminal or a `herdr.space` label, `open` returns the command instead. In both
-  cases, the user quits tuicr before answering.
+- `open` returns at once, so the agent can ask the approval question while the user reviews in
+  tuicr. Without an `hc` terminal or a `herdr.space` label, `open` returns the command instead. In
+  both cases, the user quits tuicr before answering.
 - `collect` waits with `hc wait` until the tuicr terminal finishes, then collects. A message
   interrupts the wait, so `collect` waits again, up to a limit. A timeout or the limit gives a
   retryable error that deletes no comment and keeps the record.
