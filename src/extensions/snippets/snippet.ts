@@ -85,13 +85,6 @@ const parseSnippet = (path: string, raw: string): Snippet | null => {
 
 const compareSnippets = (first: Snippet, second: Snippet) => first.id.localeCompare(second.id);
 
-/**
- * Reads every markdown snippet in `directory`, sorted by id.
- *
- * Throws when the directory or one of its files cannot be read, or when a file
- * has frontmatter that `parseFrontmatter` cannot read. A failure here means the
- * package is incomplete, which the caller shows instead of an empty list.
- */
 export const loadSnippets = async (directory: string): Promise<Snippet[]> => {
   // A directory named `draft.md` would otherwise reach readFile and throw.
   const entries = await readdir(directory, { withFileTypes: true });

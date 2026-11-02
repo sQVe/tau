@@ -73,8 +73,6 @@ const previewBox = (snippet: Snippet, theme: Theme): Component => ({
   },
 });
 
-// Pi renders the editor on every frame, so the widget changes only when the
-// previewed snippet does.
 export const showPreview = (
   context: ExtensionContext,
   readSnippets: () => Snippet[],
@@ -96,7 +94,6 @@ export const showPreview = (
       return;
     }
 
-    // Pi cuts a string array widget after ten lines, so a component shows the whole body.
     context.ui.setWidget(widgetKey, (_terminalUI, theme) => previewBox(snippet, theme));
   };
 };
