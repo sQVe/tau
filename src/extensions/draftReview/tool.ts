@@ -83,9 +83,15 @@ const requireDirectory = (directory: string | undefined): string => {
   return directory;
 };
 
-const recordFailure = (error: unknown, recordDirectory: string): Error =>
+const openFailure = (error: unknown, recordDirectory: string): Error =>
   new Error(
-    `${errorMessage(error)} The review record is ${recordDirectory}; open a new review or collect it after fixing the cause.`,
+    `${errorMessage(error)} The review record is ${recordDirectory}; open a new review after fixing the cause.`,
+    { cause: error },
+  );
+
+const collectFailure = (error: unknown, recordDirectory: string): Error =>
+  new Error(
+    `${errorMessage(error)} The review record is ${recordDirectory}; call collect with it again after fixing the cause.`,
     { cause: error },
   );
 
@@ -182,7 +188,7 @@ const open = async (
       await endTerminalAfterSaveFailure(runtime, cwd, staged, address);
     }
 
-    throw recordFailure(failure, staged.recordDirectory);
+    throw openFailure(failure, staged.recordDirectory);
   }
 
   if (result === undefined) {
@@ -214,7 +220,7 @@ const collect = async (
         throw error;
       }
 
-      throw recordFailure(error, record.recordDirectory);
+      throw collectFailure(error, record.recordDirectory);
     });
   }
 
