@@ -129,6 +129,12 @@ const execute = (
   context: ExtensionToolContext,
 ) => tool.execute('call', parameters, undefined, undefined, context);
 
+const resultText = (result: Awaited<ReturnType<ToolDefinition['execute']>>): string => {
+  const [first] = result.content;
+
+  return first?.type === 'text' ? first.text : '';
+};
+
 it('launches the model the classifier routes to', async ({ onTestFinished }) => {
   vi.stubEnv('HC_TERMINAL_ID', manager);
 
@@ -278,7 +284,7 @@ it('refuses a launch when a listed skill tool is not registered', async ({ onTes
   );
 
   expect(result).toMatchObject({ isError: true });
-  expect(result.content[0]?.text).toContain('Run /reload');
+  expect(resultText(result)).toContain('Run /reload');
   expect(terminalRun(fake)).toBeUndefined();
 });
 
@@ -337,7 +343,10 @@ it('fails closed and reports an invalid worker capacity', async ({ onTestFinishe
 
   vi.mocked(connect).mockImplementation(fake.connect);
 
-  const pi = fakeExtensionApi({ exec: fake.exec });
+  const pi = fakeExtensionApi({
+    exec: fake.exec,
+    getAllTools: () => allSkillToolNames.map((name) => ({ name })) as never,
+  });
 
   subagentsExtension(pi.pi, registerCapacityRefusal(pi.pi));
 
@@ -365,7 +374,7 @@ it('fails closed and reports an invalid worker capacity', async ({ onTestFinishe
   );
 
   expect(result).toMatchObject({ isError: true, terminate: true });
-  expect(result.content[0]?.text).toContain('Worker capacity full (0/0)');
+  expect(resultText(result)).toContain('Worker capacity full (0/0)');
 });
 
 it('gives the manager the configured browser login command', async ({ onTestFinished }) => {
