@@ -162,14 +162,15 @@ const registerLaunchTool = (
         throw new Error('Worker launch requires a saved parent Pi session.');
       }
 
+      // The deadline covers the environment checks, so the worker's budget starts before them.
+      const startedAt = { wall: Date.now(), monotonic: performance.now() };
+
       const resolved = await checkLaunchEnvironment(
         parameters,
         signal,
         context,
         piExec(runtime.pi),
       );
-
-      const startedAt = { wall: Date.now(), monotonic: performance.now() };
 
       return executeLaunch(
         runtime,

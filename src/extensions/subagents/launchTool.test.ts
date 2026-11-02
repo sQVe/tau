@@ -16,6 +16,7 @@ import type { HcFake } from '../../../tests/hcFake.js';
 import { connect } from '../../hc/connect.js';
 import { writeFakePackage } from './fixtures/packageCache.js';
 import { answered, haiku, routedFixture, workerFixture } from './fixtures/routedLoadout.js';
+import { checkLaunchEnvironment } from './launchCheck.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 import { piPackageManager } from './piPackageManager.js';
 import subagentsExtension, { registerCapacityRefusal } from './subagents.js';
@@ -26,6 +27,7 @@ interface ToolFixture {
 }
 
 vi.mock(import('../../hc/connect.js'), { spy: true });
+vi.mock(import('./launchCheck.js'), { spy: true });
 vi.mock(import('./piPackageManager.js'), { spy: true });
 
 const offlinePackageManager = (agentDirectory: string): WorkerPackageManager => ({
@@ -254,6 +256,47 @@ it('refuses a launch without a saved parent session', async ({ onTestFinished })
   await expect(
     execute(tool, { profile: 'scout', model: fixture.request.model, task: 'Look.' }, context),
   ).rejects.toThrow('saved parent Pi session');
+});
+
+it('starts the deadline before the pre-launch environment checks', async ({ onTestFinished }) => {
+  vi.useFakeTimers();
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  vi.stubEnv('HC_TERMINAL_ID', manager);
+
+  const fixture = await workerFixture(onTestFinished);
+  const fake = hcSetup();
+  const { tool } = registerTool(fake);
+  const start = 1_000_000;
+
+  vi.setSystemTime(start);
+
+  vi.mocked(checkLaunchEnvironment).mockImplementationOnce(async (parameters) => {
+    vi.setSystemTime(start + 5000);
+
+    return parameters;
+  });
+
+  const result = await execute(
+    tool,
+    { profile: 'scout', model: fixture.request.model, task: 'Look.' },
+    toolContext(fixture),
+  );
+
+  expect(result.isError).not.toBe(true);
+
+  const assignmentPath = terminalRun(fake)?.labels['tau.assignment'];
+
+  if (assignmentPath === undefined) {
+    throw new Error('The launch returned no assignment label.');
+  }
+
+  const assignment = JSON.parse(readFileSync(assignmentPath, 'utf8')) as { deadline: number };
+
+  expect(assignment.deadline).toBe(start + 1800 * 1000);
 });
 
 it('fails closed and reports an invalid worker capacity', async ({ onTestFinished }) => {
