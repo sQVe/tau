@@ -31,7 +31,6 @@ const useAgentDirectory = (): string => {
   return directory;
 };
 
-// The fixture's session file names a path outside the assignment folder, so tests place it inside.
 const assignmentWithSessionInFolder = (): Assignment => {
   const fixture = JSON.parse(readFileSync(fixturePath('valid.json'), 'utf8')) as Assignment;
   const session = { id: fixture.session.id, file: '' };

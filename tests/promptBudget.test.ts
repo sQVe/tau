@@ -52,7 +52,6 @@ const loadTools = async (workerRecord: string, agentDirectory: string) => {
   vi.stubEnv('TAU_WORKER_RECORD', workerRecord);
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
 
-  // A real manager runs as an hc terminal, which turns on the delegation guidelines.
   if (workerRecord === '') {
     vi.stubEnv('HC_TERMINAL_ID', 'manager');
   }

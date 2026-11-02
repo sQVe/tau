@@ -282,7 +282,6 @@ export default function subagentsExtension(
     return undefined;
   });
 
-  // Register once before the session is known, so the tool list holds `subagent` from the start.
   registerLaunchTool(
     launchRuntime(defaultWorkerCapacity),
     launchProfiles({ cwd: process.cwd(), isProjectTrusted: () => false }),

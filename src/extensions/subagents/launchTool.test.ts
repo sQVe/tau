@@ -28,7 +28,6 @@ interface ToolFixture {
 vi.mock(import('../../hc/connect.js'), { spy: true });
 vi.mock(import('./piPackageManager.js'), { spy: true });
 
-// A local package stands in for the npm source, so the QA launch never reaches the network.
 const offlinePackageManager = (agentDirectory: string): WorkerPackageManager => ({
   listConfiguredPackages: () => [],
   resolveExtensionSources: async ([source = '']) => {

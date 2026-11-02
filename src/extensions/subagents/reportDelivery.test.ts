@@ -298,7 +298,6 @@ it('keeps a queued report out of the saved session until its message is saved', 
   expect(managerState.messages).toHaveLength(1);
   expect(managerState.entries).toEqual([]);
 
-  // A second note while the first report is still queued queues no second report.
   await deliver(managerState.context);
 
   expect(managerState.messages).toHaveLength(1);
@@ -314,7 +313,6 @@ it('keeps a queued report out of the saved session until its message is saved', 
     },
   ]);
 
-  // The saved report message is the record, so another note shows nothing new.
   await deliver(managerState.context);
 
   expect(managerState.messages).toHaveLength(1);
@@ -323,7 +321,6 @@ it('keeps a queued report out of the saved session until its message is saved', 
 it('shows a new report once and records it as a report message', async () => {
   const { managerState, deliver, assignmentId } = await reportDelivery();
 
-  // Foreign entries and an incomplete report message must not hide the saved report.
   managerState.entries.push(
     { type: 'custom_message', customType: 'other-extension', details: { assignmentId: 'other' } },
     { type: 'custom_message', customType: 'tau-worker-report', details: {} },
@@ -348,7 +345,6 @@ it('shows a new report once and records it as a report message', async () => {
 it('restores the shown state from a saved report message for a fresh delivery', async () => {
   const { managerState, deliver, assignmentId } = await reportDelivery();
 
-  // A new delivery over a session that already recorded the report must treat it as shown.
   managerState.entries.push({
     type: 'custom_message',
     customType: 'tau-worker-report',

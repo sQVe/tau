@@ -67,7 +67,6 @@ const decoratedHeaderRows = 5;
 const footerRows = 3;
 // The full preview adds a border, a title, a blank row, and the hidden-line count to the footer.
 const fullPreviewChromeRows = 7;
-// The compact full preview adds the title, the hidden-line count, and the key hints.
 const compactFullPreviewChromeRows = 3;
 
 const fullPreviewChrome = (compact: boolean) =>
@@ -497,7 +496,6 @@ class QuestionDialog implements Component {
     return truncateToWidth(prefix + text, width);
   }
 
-  // The header keeps two rows and the options keep one.
   private preview(facts: DialogQuestion, width: number, rows: number): string[] {
     const focused = this.focusedPreview(facts);
 

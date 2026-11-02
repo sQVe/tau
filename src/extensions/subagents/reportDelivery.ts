@@ -15,7 +15,6 @@ export interface ReportDelivery {
   deliver: (context: ReportDeliveryContext) => Promise<void>;
 }
 
-// A shown report is its own saved report message, so a queued message never marks it shown.
 const reportMessageType = 'tau-worker-report';
 
 const evidenceText = (report: Assignment['report']): string => {
@@ -85,7 +84,6 @@ const readFact = async (terminal: HcTerminal): Promise<ReportReadFact> => {
   return { kind: 'report', assignmentId: assignment.assignmentId, report: assignment.report };
 };
 
-// An unreadable child is an error, not a silently skipped report.
 const childFact = async (hc: HcRuntime, child: HcTerminal): Promise<ReportReadFact> => {
   try {
     return await readFact(await get(hc, child.address));
@@ -96,8 +94,6 @@ const childFact = async (hc: HcRuntime, child: HcTerminal): Promise<ReportReadFa
 
 export const createReportDelivery = (pi: ExtensionAPI, hc: HcRuntime): ReportDelivery => {
   let tail: Promise<void> = Promise.resolve();
-  // A report queued while Pi streams is shown to the model but not saved yet. Keep it out of the
-  // saved shown IDs, and remember it here so a second note does not queue it twice.
   const queuedIds = new Set<string>();
 
   const run = async (context: ReportDeliveryContext): Promise<void> => {

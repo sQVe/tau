@@ -89,7 +89,6 @@ const reportFields = {
   evidence: Type.Array(text, { maxItems: 100 }),
 };
 
-// A saved assignment names its report by the assignment ID, so the report carries no task ID.
 export const savedReportSchema = Type.Object(reportFields, { additionalProperties: false });
 
 export type Loadout = Static<typeof loadoutSchema>;

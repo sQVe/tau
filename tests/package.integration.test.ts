@@ -42,7 +42,6 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
     vi.unstubAllEnvs();
   });
 
-  // A fake hc keeps report delivery on session start away from the user's default core.
   const hcBin = join(workingDirectory, 'bin');
   const hcLog = join(workingDirectory, 'hc.log');
 
@@ -154,7 +153,6 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
 
   await session.bindExtensions({});
 
-  // The fake boundary must have handled the session-start delivery, and no real hc ran.
   await vi.waitFor(() => {
     expect(existsSync(hcLog)).toBe(true);
     expect(readFileSync(hcLog, 'utf8')).toContain('ls');

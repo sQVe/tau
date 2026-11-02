@@ -77,7 +77,6 @@ const handleToolCall = (
     return { block: true, reason: nestedChangeCallReason };
   }
 
-  // A profile may list this tool, but a worker pane has no user to answer it.
   if (event.toolName === 'ask_user_question') {
     return {
       block: true,
@@ -86,7 +85,6 @@ const handleToolCall = (
     };
   }
 
-  // A worker pane has no user to review a draft, so the call would wait until the deadline.
   if (event.toolName === 'draft_review') {
     return {
       block: true,

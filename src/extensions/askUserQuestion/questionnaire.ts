@@ -213,8 +213,6 @@ const handleOptionKey = (
 
   const cursor = cursors[key.kind];
 
-  // The cursor picks the answer only in single-select. A saved answer stays while the cursor
-  // returns to the answered row.
   if (cursor !== undefined) {
     const moved = withQuestion(state, { cursor });
     const staysOnAnswer = cursor === answeredRow(facts, state.answers[state.tab]);
@@ -304,10 +302,6 @@ const handleListKey = (
   return handleOptionKey(state, key, facts, question);
 };
 
-/**
- * The last row of each question is the custom text row, which returns `type` for keys the caller
- * should pass to its text input. `viewport` describes the focused option's full preview.
- */
 export const handleKey = (
   state: QuestionnaireState,
   key: KeyPress,

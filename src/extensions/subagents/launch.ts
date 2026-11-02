@@ -89,8 +89,6 @@ const assignmentIdFromPath = (path: string | undefined): string | undefined => {
 
 const isFinished = (terminal: HcTerminal): boolean => terminal.state === 'finished';
 
-// Serializes count and launch so two concurrent launches cannot both take the last slot. The set
-// holds this process's unfinished launches, which `hc ls` cannot report before they return.
 export class Admission {
   private tail: Promise<void> = Promise.resolve();
   private readonly live = new Set<string>();
@@ -185,8 +183,6 @@ class UnclearLaunchError extends Error {
   }
 }
 
-// `terminal.run` can send the request without a reply. `hc` may still have started it, so a lookup
-// decides what happened. A failed lookup is `unclear`, never `missing`.
 const reconcileUnclearLaunch = async (
   runtime: LaunchRuntime,
   name: string,
@@ -326,7 +322,6 @@ export const executeLaunch = async (
     const packageManager = runtime.packageManager ?? piPackageManager;
 
     return await runtime.admission.run(async () => {
-      // The signal may have aborted while this launch waited for the admission turn.
       signal?.throwIfAborted();
 
       const used = await runtime.admission.count(runtime, parentTerminal);
@@ -344,7 +339,6 @@ export const executeLaunch = async (
         snapshotDirectory,
       );
 
-      // Returns the error to throw. A failed snapshot removal is added to the launch error.
       const errorAfterCleanup = async (error: unknown): Promise<unknown> => {
         if (extensionPackages.length === 0) {
           return error;
@@ -387,7 +381,6 @@ export const executeLaunch = async (
       runtime.admission.add(assignmentId);
 
       try {
-        // The signal may have aborted during package installation or the assignment write.
         signal?.throwIfAborted();
 
         const terminal = await startWorker(
@@ -398,8 +391,6 @@ export const executeLaunch = async (
           extensionPackages,
         );
 
-        // The child is now in hc, so `hc ls` counts it from here on. A removed child frees the
-        // slot; only an unresolved launch keeps its reservation.
         runtime.admission.remove(assignmentId);
 
         const status = launchStatus(terminal);
@@ -433,7 +424,6 @@ export const executeLaunch = async (
           throw await errorAfterCleanup(error);
         }
 
-        // The lookup failed, so the worker may have started. Keep the reservation and snapshot.
         throw new UnclearLaunchError(name);
       }
     });

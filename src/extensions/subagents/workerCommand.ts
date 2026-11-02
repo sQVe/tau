@@ -29,7 +29,6 @@ export const workerArguments = (
     model.id,
     '--thinking',
     loadout.thinking,
-    // Only the profile's tools are registered, so no extension can activate another one later.
     '--tools',
     workerTools(loadout, skillTools).join(','),
     '--no-skills',
@@ -43,7 +42,6 @@ export const workerArguments = (
   ];
 };
 
-// The user's `pi` can be a shell function. Herdr runs the executable from PATH directly.
 const piExecutable = (): string => {
   // oxlint-disable-next-line node/no-process-env -- Find pi as the user's shell would.
   for (const directory of (process.env.PATH ?? '').split(delimiter)) {
@@ -81,8 +79,6 @@ const isTerminalVariable = (name: string): boolean =>
 const isManagerVariable = (name: string): boolean =>
   isWorkingDirectoryVariable(name) || isTerminalVariable(name);
 
-// The worker keeps the manager's shell setup, such as PATH, but not its working directory or
-// terminal identity. The terminal runtime sets the worker's own identity.
 export const workerEnvironment = (
   processEnvironment: NodeJS.ProcessEnv,
   agentDirectory: string,

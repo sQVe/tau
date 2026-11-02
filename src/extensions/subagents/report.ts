@@ -11,8 +11,6 @@ import type { Assignment, SavedReport } from './assignment.js';
 import { blockerKinds, decideIncompleteReport } from './incompleteReport.js';
 import { decideSummaryLength, summaryLengthLimit } from './summaryLength.js';
 
-// The worker reads these facts from its assignment file and its terminal labels. The report tool
-// writes the shared refusal record so a refusal is visible to the reminder.
 export interface ReportRefusalState {
   incompleteRefused: boolean;
   reminderSent: boolean;
@@ -33,7 +31,6 @@ const millisecondsPerMinute = 60_000;
 
 export const handoverSectionNames = ['Changes', 'Evidence', 'Decisions', 'Concerns'] as const;
 
-// A heading starts its line, may carry Markdown marks, and ends at a colon, parenthesis, or line end.
 const summaryHasHeading = (summary: string, name: string): boolean =>
   new RegExp(`^[\\s#*>-]*${name}\\**\\s*(?::|\\(|$)`, 'im').test(summary);
 

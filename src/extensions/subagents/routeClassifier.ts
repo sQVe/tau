@@ -29,8 +29,6 @@ interface TicketPath {
 
 const classifierTimeoutMilliseconds = 5000;
 
-// The brief leaves the machine, so the classifier obeys allowedModels like every model Tau selects.
-// A shadow pick never blocks a launch, so an excluded classifier skips instead of refusing.
 export const classifierAllowed = (location: ConfigLocation, route: ModelRoute): boolean => {
   const allowed = readAllowedModels(location);
 
@@ -43,8 +41,6 @@ const maximumBytesPerCharacter = 4;
 
 const ticketByteLimit = ticketCharacterLimit * maximumBytesPerCharacter;
 
-// A read may return fewer bytes than asked before the end of the file, so read until it is full or
-// a read returns nothing.
 const fillBuffer = async (file: FileHandle, buffer: Buffer, filled: number): Promise<number> => {
   if (filled === buffer.length) {
     return filled;

@@ -15,12 +15,9 @@ interface FixtureAssignment {
   loadout: { instructions: string };
 }
 
-// The worker reads its assignment from its own `hc` terminal, as the worker extension does. The
-// fixture reads the same file so its report reflects the saved instructions.
 const readFixtureAssignment = (): FixtureAssignment | undefined => {
   const hcSession = process.env.HC_SESSION;
 
-  // Never guess at the user's default core: only a private test session may be reached.
   if (hcSession === undefined || hcSession === '') {
     throw new Error('controlledProvider needs HC_SESSION; refusing to reach the default hc core.');
   }

@@ -24,8 +24,6 @@ export interface PiSessionSeed {
 
 const checkoutHashLength = 8;
 
-// Each Tau checkout keeps its own assignments, so a branch that changes the record format never
-// breaks another checkout. This module sits three directories below the package root.
 const checkoutRoot = realpathSync(fileURLToPath(new URL('../../../', import.meta.url)));
 
 export const checkoutFolder = `${basename(checkoutRoot)}-${createHash('sha256').update(checkoutRoot).digest('hex').slice(0, checkoutHashLength)}`;
@@ -63,8 +61,6 @@ const assignmentSchema = Type.Object(
 
 export type Assignment = Static<typeof assignmentSchema>;
 
-// Writes the session header that a worker's Pi session starts from. The `wx` flag refuses to
-// replace a session that already exists.
 export const seedSession = (seed: PiSessionSeed): void => {
   const header = {
     type: 'session',
@@ -127,7 +123,6 @@ export const writeAssignment = async (assignment: Assignment): Promise<void> => 
   await writeRecord(path, assignment);
 };
 
-// Validates the report before it replaces the file, so a refused report keeps the saved assignment.
 export const saveReport = async (path: string, report: SavedReport): Promise<void> => {
   if (!Value.Check(savedReportSchema, report)) {
     throw new Error(

@@ -1,6 +1,3 @@
-// Decides which worker reports a manager shows and which reads are errors.
-// tests/structure.test.ts keeps this module pure.
-
 import type { SavedReport } from './assignment.js';
 
 export type ReportReadFact =

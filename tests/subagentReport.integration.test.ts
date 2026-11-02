@@ -67,7 +67,6 @@ const waitForObservation = async (path: string): Promise<NoteObservation> => {
   throw new Error(`Manager never observed the note at ${path}.`);
 };
 
-// A manager that records, when the note arrives, whether the assignment already holds the report.
 const managerProbe = `
 import { appendFileSync, readFileSync } from 'node:fs';
 
@@ -162,7 +161,6 @@ it('shows a real worker report once before it gives the worker the manager envir
 
   vi.stubEnv('HC_TERMINAL_ID', manager.address);
 
-  // The core keeps its own PATH, so the manager's PATH shows whether the launch passes it through.
   const managerPath = `${join(agentDirectory, 'bin')}:${process.env.PATH ?? ''}`;
 
   const loadout: Assignment['loadout'] = {
@@ -190,8 +188,6 @@ it('shows a real worker report once before it gives the worker the manager envir
     admission: new Admission(),
     skillTools,
     agentDirectory,
-    // The worker inherits the manager's environment. A test manager is not inside the core, so it
-    // borrows the private core's HOME and XDG paths; otherwise its own `hc` calls miss the session.
     processEnvironment: { ...hc.environment, PATH: managerPath },
   };
 

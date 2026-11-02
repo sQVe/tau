@@ -64,8 +64,6 @@ const handover = 'Changes: None\nEvidence: None\nDecisions: None\nConcerns: None
 
 const codemodeCall = (code: string) => fauxAssistantMessage([fauxToolCall('codemode', { code })]);
 
-// Runs a worker task whose model follows `responses`. The responses and subscription are set before
-// the session binds, because the worker asks for its task during `session_start`.
 const runWorker = async (responses: FauxResponseStep[]) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-codemode-worker-');
 
@@ -181,7 +179,6 @@ const runWorker = async (responses: FauxResponseStep[]) => {
   return { outcomes, path };
 };
 
-// Runs one prompt in a manager session whose model follows `responses`.
 const runManager = async (responses: FauxResponseStep[]) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-codemode-manager-');
 

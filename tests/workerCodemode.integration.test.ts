@@ -120,10 +120,6 @@ const seedAssignment = async (
   return { path, sessionFile };
 };
 
-// Starts a worker session from a bundled profile, as a launched Pi worker would. A launched worker
-// may run without Tau, so `workflow: false` leaves out the workflow and codemode extensions. The
-// responses and subscription are set before the session binds, because the worker asks for its task
-// during `session_start`.
 const startProfileWorker = async (
   directory: string,
   profileName: string,

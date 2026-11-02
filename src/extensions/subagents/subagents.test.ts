@@ -90,7 +90,6 @@ const createContext = () => {
   };
 };
 
-// The test awaits the same chain the registered handler starts, so both notes run to completion.
 const completionTracked = (delivery: ReportDelivery) => {
   let tail: Promise<void> = Promise.resolve();
 

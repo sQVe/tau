@@ -95,7 +95,6 @@ const setup = (
 
   fake.replyConnect('terminal.run', 2, { address: 't-worker', state: 'live', parent: manager });
 
-  // hc is the source of truth for launched children, so a confirmed launch must appear in ls.
   const exec: Exec = (command, commandArguments, execOptions) => {
     if (command === 'hc' && commandArguments[0] === 'ls') {
       return Promise.resolve(succeeded({ terminals: [...children, ...launched] }));
@@ -175,7 +174,6 @@ const launch = (
     context,
   );
 
-// A launch whose `terminal.run` cannot be confirmed. `connect` rejects before `hc` replies.
 const uncertainSetup = (
   kind: 'missing_reply' | 'read_failed' | 'spawn_failed',
   packages: string[] = [],
@@ -500,8 +498,6 @@ it('frees the slot and removes the snapshot when the signal aborts after admissi
     }),
   })) as unknown as NonNullable<LaunchRuntime['packageManager']>;
 
-  // The abort lands after the admission turn and after the assignment write, but before
-  // startWorker creates the terminal.
   vi.mocked(writeAssignment).mockImplementation(async () => {
     queueMicrotask(() => {
       controller.abort();
@@ -535,7 +531,6 @@ it('frees a confirmed slot when hc removed the child before the next launch', as
 
   expect(first.isError).not.toBe(true);
 
-  // hc rm removed the finished child, so the next complete list holds no terminal.
   const emptied = createHcFake();
 
   emptied.reply('ls', JSON.stringify({ terminals: [] }));
