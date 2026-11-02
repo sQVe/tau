@@ -3,9 +3,9 @@ import { stripVTControlCharacters } from 'node:util';
 
 import type { LoadedTddConfig, TddConfig } from './config.js';
 import { tddConfigFields } from './configLayers.js';
+import { maximumFailures } from './runner/report.js';
 import { maximumRetainedRuns } from './runner/retention.js';
 import type { DiagnosticFile, RunnerResult } from './runner/types.js';
-import { maximumFailures } from './runner/vitest.js';
 import type { Behavior, ObservationResult } from './types.js';
 
 type Observation = Omit<ObservationResult, 'hint'>;

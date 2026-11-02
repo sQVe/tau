@@ -1,13 +1,13 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { beforeEach, expect, it, onTestFinished, vi } from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { defaultTddConfig } from '../config.js';
 import { createTestObservation } from '../observation.js';
 import { runContext, summarize } from '../render.js';
-import { defaultResolveVitest } from './resolution.js';
+import { defaultResolveVitest, extractBinPath } from './resolution.js';
 import type { SpawnCommand } from './types.js';
 import { runTests } from './vitest.js';
 
@@ -375,4 +375,61 @@ it('names only a package root other than the session cwd', async () => {
 
   expect(local).toHaveProperty('message', 'message' in unexplained ? unexplained.message : '');
   expect(elsewhere).toHaveProperty('message', expect.stringContaining(join(cwd, 'other')));
+});
+
+it('resolves the name format version from the same package as the Vitest binary', async () => {
+  const root = temporaryDirectory(onTestFinished, 'tau-vitest-version-');
+  const directory = join(root, 'node_modules/vitest');
+  await mkdir(directory, { recursive: true });
+
+  await writeFile(
+    join(directory, 'package.json'),
+    JSON.stringify({
+      name: 'vitest',
+      version: '5.0.0-beta.1',
+      bin: { vitest: './bin/vitest.mjs' },
+    }),
+  );
+
+  await mkdir(join(directory, 'bin'));
+  await writeFile(join(directory, 'bin/vitest.mjs'), '');
+
+  expect(defaultResolveVitest(root)).toEqual({
+    path: join(directory, 'bin/vitest.mjs'),
+    version: '5.0.0-beta.1',
+  });
+});
+
+it('reads the current Vitest version after a same-path package upgrade', async () => {
+  const root = temporaryDirectory(onTestFinished, 'tau-vitest-upgrade-');
+  const directory = join(root, 'node_modules/vitest');
+  await mkdir(directory, { recursive: true });
+
+  await writeFile(join(directory, 'vitest.mjs'), '');
+
+  for (const version of ['4.1.11', '5.0.1']) {
+    await writeFile(
+      join(directory, 'package.json'),
+      JSON.stringify({ name: 'vitest', version, bin: './vitest.mjs' }),
+    );
+
+    expect(defaultResolveVitest(root)).toEqual({
+      path: join(directory, 'vitest.mjs'),
+      version,
+    });
+  }
+});
+
+describe('extractBinPath', () => {
+  it('resolves string, object-keyed, and missing bin entries', () => {
+    expect(extractBinPath({ bin: './bin/vitest.mjs' })).toBe('./bin/vitest.mjs');
+
+    expect(extractBinPath({ bin: { vitest: './dist/cli.js', other: './o.js' } })).toBe(
+      './dist/cli.js',
+    );
+
+    expect(extractBinPath({ bin: { other: './o.js' } })).toBeNull();
+    expect(extractBinPath({})).toBeNull();
+    expect(extractBinPath(null)).toBeNull();
+  });
 });
