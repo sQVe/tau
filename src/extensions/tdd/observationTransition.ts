@@ -1,9 +1,6 @@
 import type { RunnerResult } from './runner/types.js';
 import type { Behavior, Freshness, TestScope } from './types.js';
 
-// Decides observation cycle transitions from facts the caller read.
-// tests/structure.test.ts keeps this module pure.
-
 type HintKind = 'red' | 'stale' | 'unknown' | 'thrown';
 
 export interface HintDecision {
@@ -185,12 +182,10 @@ const editHint = (state: CycleState, current: string | null): CycleTransition =>
   if (latest !== null && latest.freshness !== 'fresh') {
     const freshness = latest.freshness;
 
-    // Changing production is expected while implementing an observed focused failure.
     if (isExpectedImplementationEdit(state, latest)) {
       return { state, hint: undefined };
     }
 
-    // Keep stale-first after verification. Only a later input change can suggest missing RED.
     if (suggestsMissingRed(state, freshness, current)) {
       return applyHint(state, 'red', current);
     }
@@ -220,7 +215,6 @@ export const checkpoint = (
 
   if (latest !== null && latest.fingerprint !== null) {
     if (input.kind === 'unavailable') {
-      // A read failure must not erase stale evidence; only unknown freshness may recover.
       if (latest.freshness !== 'stale') {
         next = { ...next, latest: { ...latest, freshness: 'unknown' } };
       }
