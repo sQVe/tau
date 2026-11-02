@@ -5,30 +5,38 @@ import { Type } from 'typebox';
 import { runCommand } from '../../command.js';
 import type { Exec } from '../../command.js';
 import { errorMessage } from '../../errors.js';
+import type { Connect } from '../../hc/connect.js';
+import type { HcRuntime } from '../../hc/hc.js';
 import { collectReview } from './collect.js';
 import type { Collected } from './collect.js';
 import {
+  endReviewTerminal,
+  openReviewTerminal,
+  reviewSpace,
+  reviewWaitTimeoutSeconds,
   TuicrExitTimeoutError,
-  closeOpened,
-  closePlacement,
-  openReview,
-  tuicrCommand,
-} from './herdrReview.js';
-import { readReview, removeReview, savePlacement, saveProcessIds, stageReview } from './stage.js';
+  waitForReviewExit,
+} from './hcReview.js';
+import type { ReviewTerminalRequest } from './hcReview.js';
+import {
+  readReview,
+  removeReview,
+  saveStartingTerminal,
+  saveTerminal,
+  stageReview,
+} from './stage.js';
 import type { Review } from './stage.js';
 import type { RunTuicr } from './tuicrSession.js';
 
 export interface DraftReviewRuntime {
   exec: Exec;
-  // The agent's herdr pane, or undefined outside herdr.
-  herdrPaneId: () => string | undefined;
-  isProcessRunning: (processId: number) => boolean | Promise<boolean>;
+  connect: Connect;
 }
 
 type DraftReviewResult =
   | Collected
   | { status: 'manual'; command: string; directory: string }
-  | { status: 'opened'; directory: string }
+  | { status: 'opened'; directory: string; terminal: string }
   | { status: 'cancelled'; comments: []; edits: [] };
 
 const parameters = Type.Object({
@@ -38,19 +46,35 @@ const parameters = Type.Object({
 });
 
 const description = `Show draft files under .tau/ to the user in tuicr. Returns the user's tuicr comments on those files and the edits the user made.
-- action open, paths: every path must be a file inside the repository's .tau directory. Paths may be absolute or relative to the working directory. The tool copies the files into a staging directory outside Git and opens that directory in tuicr without moving focus. Staged names carry order numbers, such as 01-pr-run-5ASmpd/1-title.md, so tuicr shows them in paths order, grouped by folder. It returns at once. Ask the user your question, then call collect with directory.
-  - Inside herdr: opens tuicr in a pane beside yours when your pane is wide enough to split, or in a new tab in your workspace when it is narrow or zoomed. Returns {status: "opened", directory}.
-  - Outside herdr: opens nothing. Returns {status: "manual", command, directory}. Tell the user to run command, and to tell you when they are done. Then call collect with directory.
-  - If the call is cancelled while tuicr opens, the tool closes what it opened, removes the staging directory, and returns {status: "cancelled", comments: [], edits: []}.
-- action collect, directory: the directory that open returned. First closes the tuicr pane or tab that open left, focuses your tab again when the user was in the tuicr tab, and waits until tuicr has exited. If tuicr does not exit within 10 seconds, it deletes no comment, keeps the record, and returns an error that names the record directory. Then collects as below.
+- action open, paths: every path must be a file inside the repository's .tau directory. Paths may be absolute or relative to the working directory. The tool copies the files into a staging directory outside Git and opens that directory in tuicr. Staged names carry order numbers, such as 01-pr-run-5ASmpd/1-title.md, so tuicr shows them in paths order, grouped by folder. It returns at once. Ask the user your question, then call collect with directory.
+  - In a manager terminal: opens tuicr in a new tab of the manager's space. Returns {status: "opened", directory, terminal}, where terminal is the hc address to collect later. The user quits tuicr before answering.
+  - Without a manager terminal: opens nothing. Returns {status: "manual", command, directory}. Tell the user to run command, and to tell you when they are done. Then call collect with directory.
+  - If the call is cancelled while tuicr opens, the tool ends the terminal it started, removes the staging directory, and returns {status: "cancelled", comments: [], edits: []}.
+- action collect, directory: the directory that open returned. Waits until tuicr has exited. If tuicr does not exit, it deletes no comment, keeps the record, and returns an error that names the record directory. Then collects as below.
 - Collect: keeps comments on the reviewed files and deletes exactly those from the tuicr session. It never clears other comments. It returns comments as [{path, startLine, endLine, type, content}] with absolute paths in .tau/. Comments for other files and session-level comments stay in tuicr.
 - Edits: each file the user changed gets {path, diff, status}. A file the user did not change gets no entry. Status "applied" means the tool wrote the user's version to the real file. Status "conflict" means the real file changed during the review, so the tool wrote nothing for it. Compare the diff with the file and merge by hand.
-- Errors: no paths, a path that is missing, not a file, outside .tau/, inside .tau/draft-review, or a hard link; a directory that is no review record; a missing original copy or a saved path outside the reviewed files (collect deletes no comment and writes no file); a real file that became a link or left .tau/ before its write-back; tuicr output the tool cannot parse (the error names the output). After an error, the staging directory and record stay. A herdr error names the record directory. A collect retry returns the comments and edit outcomes saved by the first try, finishes only the missing deletes and write-backs, and never re-decides an applied edit. Before each write-back the tool compares the real file with the original and reports conflict if it changed.`;
+- Errors: no paths, a path that is missing, not a file, outside .tau/, inside .tau/draft-review, or a hard link; a directory that is no review record; a review record saved by an older Tau that ran on herdr; a missing original copy or a saved path outside the reviewed files (collect deletes no comment and writes no file); a real file that became a link or left .tau/ before its write-back; tuicr output the tool cannot parse (the error names the output). After an error, the staging directory and record stay. An hc error names the record directory. A collect retry returns the comments and edit outcomes saved by the first try, finishes only the missing deletes and write-backs, and never re-decides an applied edit. Before each write-back the tool compares the real file with the original and reports conflict if it changed.`;
 
 const tuicrRunner =
   (runtime: DraftReviewRuntime, cwd: string, signal: AbortSignal | undefined): RunTuicr =>
   (argumentsList) =>
     runCommand({ exec: runtime.exec, cwd, signal }, 'tuicr', argumentsList, 'tuicr');
+
+const quote = (value: string) => `'${value.replaceAll("'", String.raw`'\''`)}'`;
+
+const tuicrCommand = (stagingDirectory: string): string =>
+  `tuicr --file ${quote(stagingDirectory)}`;
+
+const hcRuntime = (
+  runtime: DraftReviewRuntime,
+  cwd: string,
+  signal: AbortSignal | undefined,
+): HcRuntime => ({
+  exec: runtime.exec,
+  connect: runtime.connect,
+  cwd,
+  signal,
+});
 
 const requireDirectory = (directory: string | undefined): string => {
   if (directory === undefined) {
@@ -60,11 +84,101 @@ const requireDirectory = (directory: string | undefined): string => {
   return directory;
 };
 
-const herdrFailure = (error: unknown, recordDirectory: string): Error =>
+const openFailure = (error: unknown, recordDirectory: string): Error =>
   new Error(
-    `${errorMessage(error)} The review record is ${recordDirectory}; call collect with it to collect the review.`,
+    `${errorMessage(error)} The review record is ${recordDirectory}; open a new review after fixing the cause.`,
     { cause: error },
   );
+
+const collectFailure = (error: unknown, recordDirectory: string): Error =>
+  new Error(
+    `${errorMessage(error)} The review record is ${recordDirectory}; call collect with it again after fixing the cause.`,
+    { cause: error },
+  );
+
+const cancelledResult = (): DraftReviewResult => ({
+  status: 'cancelled',
+  comments: [],
+  edits: [],
+});
+
+const cleanupAbortedOpen = async (
+  runtime: DraftReviewRuntime,
+  cwd: string,
+  staged: Review,
+  address: string | undefined,
+): Promise<void> => {
+  const hc = hcRuntime(runtime, cwd, undefined);
+
+  try {
+    if (address !== undefined) {
+      await endReviewTerminal(hc, address);
+    }
+
+    await removeReview(staged);
+  } catch (error) {
+    const addressText = address === undefined ? '' : ` and terminal ${address}`;
+
+    throw new Error(
+      `${errorMessage(error)} The review record is ${staged.recordDirectory}${addressText}; open a new review or clean up the record before collecting.`,
+      { cause: error },
+    );
+  }
+};
+
+const endTerminalAfterSaveFailure = async (
+  runtime: DraftReviewRuntime,
+  cwd: string,
+  staged: Review,
+  address: string,
+): Promise<void> => {
+  try {
+    await endReviewTerminal(hcRuntime(runtime, cwd, undefined), address);
+  } catch (killError) {
+    throw new Error(
+      `${errorMessage(killError)} The review record is ${staged.recordDirectory} and terminal ${address}. Quit that terminal, then open a new review.`,
+      { cause: killError },
+    );
+  }
+};
+
+const aborted = (signal: AbortSignal | undefined): boolean => signal?.aborted === true;
+
+const reviewLaunchTimeoutMilliseconds = 15_000;
+
+class ReviewLaunchTimeoutError extends Error {
+  override name = 'ReviewLaunchTimeoutError';
+}
+
+const launchReviewTerminal = async (
+  runtime: DraftReviewRuntime,
+  cwd: string,
+  request: ReviewTerminalRequest,
+): Promise<string> => {
+  const launchController = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new ReviewLaunchTimeoutError(
+          `hc run did not start a terminal within ${reviewLaunchTimeoutMilliseconds} ms.`,
+        ),
+      );
+
+      launchController.abort();
+    }, reviewLaunchTimeoutMilliseconds);
+  });
+
+  // The caller's signal stays off hc run, so an abort still learns the address of a terminal that started.
+  const launch = openReviewTerminal(hcRuntime(runtime, cwd, launchController.signal), request);
+
+  try {
+    return await Promise.race([launch, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
 
 const open = async (
   runtime: DraftReviewRuntime,
@@ -74,35 +188,55 @@ const open = async (
 ): Promise<DraftReviewResult> => {
   const staged = await stageReview(cwd, paths);
   const command = tuicrCommand(staged.stagingDirectory);
-  const agentPane = runtime.herdrPaneId();
-
-  if (agentPane === undefined) {
-    return { status: 'manual', command, directory: staged.recordDirectory };
-  }
-
-  const { exec } = runtime;
-  const { stagingDirectory } = staged;
-  const request = { exec, cwd, agentPane, stagingDirectory, command, signal };
+  const hc = hcRuntime(runtime, cwd, signal);
+  let address: string | undefined;
+  let result: DraftReviewResult | undefined;
+  let failure: unknown;
 
   try {
-    const placement = await openReview(request);
+    const space = await reviewSpace(hc);
 
-    await savePlacement(staged, placement).catch(async (error: unknown) => {
-      await closeOpened(request, placement);
+    if (space === undefined) {
+      result = { status: 'manual', command, directory: staged.recordDirectory };
+    } else {
+      await saveStartingTerminal(staged);
 
-      throw error;
-    });
-  } catch (error) {
-    if (signal?.aborted === true) {
-      await removeReview(staged);
+      address = await launchReviewTerminal(runtime, cwd, {
+        stagingDirectory: staged.stagingDirectory,
+        space,
+      });
 
-      return { status: 'cancelled', comments: [], edits: [] };
+      await saveTerminal(staged, address);
+
+      result = { status: 'opened', directory: staged.recordDirectory, terminal: address };
     }
-
-    throw herdrFailure(error, staged.recordDirectory);
+  } catch (error) {
+    failure = error;
   }
 
-  return { status: 'opened', directory: staged.recordDirectory };
+  if (failure instanceof ReviewLaunchTimeoutError) {
+    throw openFailure(failure, staged.recordDirectory);
+  }
+
+  if (aborted(signal)) {
+    await cleanupAbortedOpen(runtime, cwd, staged, address);
+
+    return cancelledResult();
+  }
+
+  if (failure !== undefined) {
+    if (address !== undefined) {
+      await endTerminalAfterSaveFailure(runtime, cwd, staged, address);
+    }
+
+    throw openFailure(failure, staged.recordDirectory);
+  }
+
+  if (result === undefined) {
+    throw new Error(`draft_review open finished without a result for ${staged.recordDirectory}.`);
+  }
+
+  return result;
 };
 
 const collect = async (
@@ -111,24 +245,23 @@ const collect = async (
   record: Review,
   signal: AbortSignal | undefined,
 ): Promise<DraftReviewResult> => {
-  const { placement } = record;
+  if (record.terminal?.state === 'starting') {
+    throw new Error(
+      `The review record ${record.recordDirectory} was left while tuicr was starting, so its hc address is missing. Quit tuicr, then open a new review.`,
+    );
+  }
 
-  if (placement !== null) {
-    await closePlacement({
-      exec: runtime.exec,
-      cwd,
-      signal,
-      placement,
-      savedProcessIds: placement.processIds,
-      saveProcessIds: (processIds) => saveProcessIds(record, processIds),
-      isProcessRunning: runtime.isProcessRunning,
+  if (record.terminal?.state === 'open') {
+    await waitForReviewExit(hcRuntime(runtime, cwd, signal), {
+      address: record.terminal.address,
       recordDirectory: record.recordDirectory,
+      timeoutSeconds: reviewWaitTimeoutSeconds,
     }).catch((error: unknown) => {
       if (error instanceof TuicrExitTimeoutError) {
         throw error;
       }
 
-      throw herdrFailure(error, record.recordDirectory);
+      throw collectFailure(error, record.recordDirectory);
     });
   }
 

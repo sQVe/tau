@@ -5,14 +5,14 @@ import { join } from 'node:path';
 
 import { onTestFinished, vi } from 'vitest';
 
+import type { ExecCall } from '../../../../tests/execFake.js';
 import { createTemporaryRepository } from '../../../../tests/gitRepository.js';
-import type { herdrFake } from '../../../../tests/herdrFake.js';
+import { createHcFake } from '../../../../tests/hcFake.js';
+import type { HcFake } from '../../../../tests/hcFake.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import type { Exec } from '../../../command.js';
 import { createDraftReviewTool } from '../tool.js';
 import type { DraftReviewRuntime } from '../tool.js';
-
-type ProcessCheck = (processId: number) => boolean | Promise<boolean>;
 
 interface TuicrComment {
   id: string;
@@ -25,26 +25,53 @@ interface TuicrComment {
 
 type DraftReviewTool = ReturnType<typeof createDraftReviewTool>;
 
-interface ReviewFixture {
+interface HcWaitGate {
+  started: Promise<void>;
+  release: () => void;
+}
+
+interface HoldOptions {
+  ignoresAbort?: boolean;
+}
+
+export interface ReviewFixture {
   exec: Exec;
+  calls: ExecCall[];
+  hc: HcFake;
   repository: string;
   data: string;
   run: (
     parameters: Record<string, unknown>,
-    paneId?: string,
     signal?: AbortSignal,
   ) => ReturnType<DraftReviewTool['execute']>;
   setSession: (comments: unknown) => Promise<void>;
+  setWait: (result: { ended: boolean; reason: string }) => void;
+  holdHcWait: () => HcWaitGate;
+  holdHcRun: (options?: HoldOptions) => HcWaitGate;
   deleted: () => Promise<string[]>;
   records: () => Promise<string[]>;
+  staging: () => Promise<string[]>;
   real: (name: string) => string;
-  herdrCalls: string[][];
 }
 
-type Herdr = ReturnType<typeof herdrFake>;
+export interface ReviewFixtureOptions {
+  space?: string;
+}
 
-// The fake herdr ignores the budget.
-const herdrBudget = 0;
+export const reviewAddress = 'review-1';
+
+const isAborted = (signal: AbortSignal | undefined): boolean => signal?.aborted === true;
+
+const deferred = () => {
+  const { promise, resolve } = Promise.withResolvers<undefined>();
+
+  return {
+    promise,
+    resolve: () => {
+      resolve(undefined);
+    },
+  };
+};
 
 const fakeScript = (data: string) => `
 const fs = require('node:fs');
@@ -79,9 +106,6 @@ if (subcommand === 'list') {
 }
 `;
 
-// The pane the fake herdr starts the agent in.
-export const agentPane = 'parent';
-
 export const comment = (id: string, path: string | null, content = id): TuicrComment => ({
   id,
   path,
@@ -91,16 +115,14 @@ export const comment = (id: string, path: string | null, content = id): TuicrCom
   content,
 });
 
-export const fixture = async (
-  herdr?: Herdr,
-  isProcessRunning: ProcessCheck = () => false,
-): Promise<ReviewFixture> => {
+export const fixture = async (options: ReviewFixtureOptions = {}): Promise<ReviewFixture> => {
   const repository = await createTemporaryRepository(onTestFinished, 'tau-draft-review-repo-');
   const data = temporaryDirectory(onTestFinished, 'tau-fake-tuicr-');
 
   // Staging goes under os.tmpdir(), and failed reviews keep it for a retry. Point it at data so
   // every test removes its staging.
   vi.stubEnv('TMPDIR', data);
+  vi.stubEnv('HC_TERMINAL_ID', options.space === undefined ? undefined : 'manager');
 
   onTestFinished(() => {
     vi.unstubAllEnvs();
@@ -114,33 +136,123 @@ export const fixture = async (
   await writeFile(join(repository, '.tau/slices/b.md'), 'bee\n');
   await writeFile(join(repository, '.tau/tickets/c.md'), 'sea\n');
 
-  const herdrCalls: string[][] = [];
+  const hc = createHcFake();
 
-  const exec: Exec = async (command, argumentsList, options) => {
-    if (command === 'herdr') {
-      herdrCalls.push(argumentsList);
-      const stdout = (await herdr?.client(argumentsList, herdrBudget, options?.signal)) ?? '';
+  if (options.space !== undefined) {
+    hc.reply(
+      'get',
+      JSON.stringify({
+        address: 'manager',
+        state: 'live',
+        labels: { 'herdr.space': options.space },
+      }),
+    );
+  }
 
-      return { stdout, stderr: '', code: 0, killed: false };
-    }
+  hc.reply('run', JSON.stringify({ address: reviewAddress, state: 'live' }));
+  hc.reply('kill', JSON.stringify({ address: reviewAddress, state: 'closed' }));
 
-    return new Promise((resolve) => {
+  hc.reply(
+    'wait',
+    JSON.stringify({
+      terminal: reviewAddress,
+      ended: true,
+      reason: 'exit',
+      turn: 1,
+      children: [],
+    }),
+  );
+
+  const tuicrExec: Exec = (_command, argumentsList) =>
+    new Promise((resolve) => {
       execFile(process.execPath, [script, ...argumentsList], (error, stdout, stderr) => {
         const code = typeof error?.code === 'number' ? error.code : Number(error !== null);
 
         resolve({ stdout, stderr, code, killed: false });
       });
     });
+
+  const calls: ExecCall[] = [];
+
+  let heldHc:
+    | {
+        command: string;
+        ignoresAbort: boolean;
+        started: () => void;
+        released: Promise<void>;
+        release: () => void;
+      }
+    | undefined;
+
+  const exec: Exec = async (command, argumentsList, execOptions) => {
+    calls.push({ command, commandArguments: [...argumentsList], signal: execOptions?.signal });
+
+    if (command !== 'hc') {
+      return tuicrExec(command, argumentsList, execOptions);
+    }
+
+    if (heldHc !== undefined && argumentsList[0] === heldHc.command) {
+      const held = heldHc;
+      const signal = execOptions?.signal;
+
+      heldHc = undefined;
+      held.started();
+
+      if (isAborted(signal)) {
+        throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+      }
+
+      const abortWakes = new Promise<void>((resolve) => {
+        if (held.ignoresAbort) {
+          return;
+        }
+
+        signal?.addEventListener(
+          'abort',
+          () => {
+            resolve();
+          },
+          { once: true },
+        );
+      });
+
+      await Promise.race([held.released, abortWakes]);
+
+      if (isAborted(signal)) {
+        throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+      }
+    }
+
+    if (execOptions?.signal?.aborted === true) {
+      throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+    }
+
+    return hc.exec(command, argumentsList, execOptions);
   };
 
-  const runtime = (paneId?: string): DraftReviewRuntime => ({
-    exec,
-    herdrPaneId: () => paneId,
-    isProcessRunning,
-  });
+  const holdHcCommand = (command: string, holdOptions: HoldOptions = {}): HcWaitGate => {
+    const started = deferred();
+    const released = deferred();
 
-  const run = (parameters: Record<string, unknown>, paneId?: string, signal?: AbortSignal) =>
-    createDraftReviewTool(runtime(paneId)).execute('call', parameters as never, signal, undefined, {
+    heldHc = {
+      command,
+      ignoresAbort: holdOptions.ignoresAbort === true,
+      started: started.resolve,
+      released: released.promise,
+      release: released.resolve,
+    };
+
+    return { started: started.promise, release: released.resolve };
+  };
+
+  const holdHcWait = (): HcWaitGate => holdHcCommand('wait');
+
+  const holdHcRun = (holdOptions?: HoldOptions): HcWaitGate => holdHcCommand('run', holdOptions);
+
+  const runtime: DraftReviewRuntime = { exec, connect: hc.connect };
+
+  const run = (parameters: Record<string, unknown>, signal?: AbortSignal) =>
+    createDraftReviewTool(runtime).execute('call', parameters as never, signal, undefined, {
       cwd: repository,
     } as never);
 
@@ -156,6 +268,10 @@ export const fixture = async (
     );
   };
 
+  const setWait = (result: { ended: boolean; reason: string }) => {
+    hc.reply('wait', JSON.stringify({ terminal: reviewAddress, turn: 1, children: [], ...result }));
+  };
+
   const deleted = async () => {
     const log = join(data, 'deleted.log');
 
@@ -163,18 +279,27 @@ export const fixture = async (
   };
 
   const records = () => readdir(join(repository, '.tau/draft-review'));
+
+  const staging = async () =>
+    (await readdir(data)).filter((name) => name.startsWith('tau-draft-review-'));
+
   const real = (name: string) => join(repository, '.tau', name);
 
   return {
     exec,
+    calls,
+    hc,
     repository,
     data,
     run,
     setSession,
+    setWait,
+    holdHcWait,
+    holdHcRun,
     deleted,
     records,
+    staging,
     real,
-    herdrCalls,
   };
 };
 

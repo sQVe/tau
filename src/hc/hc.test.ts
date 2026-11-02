@@ -180,6 +180,20 @@ it('separates an argv that starts with dashes from the run flags', async () => {
   expect(fake.calls[0]?.commandArguments).toEqual(['run', '--json', '--', '--version']);
 });
 
+it('passes --no-notify only when notifications are turned off', async () => {
+  const fake = createHcFake();
+
+  fake.reply('run', JSON.stringify(terminal));
+
+  await run(runtimeOf(fake), { argv: ['tuicr'], notify: false });
+  await run(runtimeOf(fake), { argv: ['tuicr'] });
+
+  expect(fake.calls.map((call) => call.commandArguments)).toEqual([
+    ['run', '--json', '--no-notify', '--', 'tuicr'],
+    ['run', '--json', '--', 'tuicr'],
+  ]);
+});
+
 it('passes --all only when all terminals are requested', async () => {
   const fake = createHcFake();
 

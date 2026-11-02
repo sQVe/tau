@@ -16,6 +16,7 @@ const allowedPaths: AllowedPaths = {
     'docs/development.md',
   ],
   'skills/': ['docs/adr/0003-externally-observable-identifiers.md'],
+  'src/extensions/draftReview/herdrReview.ts': ['scripts/mutation-tuning.md'],
 };
 
 const root = '/repository';

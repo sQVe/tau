@@ -26,6 +26,7 @@ export interface RunRequest {
   labels?: Record<string, string> | undefined;
   noParent?: boolean | undefined;
   background?: boolean | undefined;
+  notify?: boolean | undefined;
 }
 
 export interface LsRequest {
@@ -104,6 +105,10 @@ export const run = (runtime: HcRuntime, request: RunRequest): Promise<HcTerminal
 
   if (request.background === true) {
     flags.push('--bg');
+  }
+
+  if (request.notify === false) {
+    flags.push('--no-notify');
   }
 
   return runHc(

@@ -1,73 +1,53 @@
-import { expect, it, onTestFinished, vi } from 'vitest';
+import { expect, it } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { herdrFake } from '../../../tests/herdrFake.js';
 import draftReviewExtension from './draftReview.js';
-import { agentPane, comment, fixture } from './fixtures/reviewFixture.js';
+import { comment, fixture } from './fixtures/reviewFixture.js';
 
-it('keeps review comments while process liveness is unknown and collects only after confirmed exit', async () => {
-  const { exec, repository, run, setSession, deleted, records } = await fixture(herdrFake());
-  const opened = await run({ action: 'open', paths: ['.tau/slices/a.md'] }, agentPane);
-  const { directory } = opened.details as { directory: string };
+it('collects through the registered tool after the hc wait reports the terminal ended', async () => {
+  const context = await fixture({ space: 'space-a' });
+  const fake = fakeExtensionApi({ exec: context.exec });
 
-  await setSession([comment('on-a', '01-slices/1-a.md')]);
-  const fake = fakeExtensionApi({ exec });
   draftReviewExtension(fake.pi);
+
   const tool = fake.tools.get('draft_review');
 
   if (tool === undefined) {
     throw new Error('Missing draft_review tool');
   }
 
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
-
-  onTestFinished(() => {
-    vi.restoreAllMocks();
-    vi.useRealTimers();
-  });
-
-  const probed = Promise.withResolvers<undefined>();
-
-  const probe = vi.spyOn(process, 'kill').mockImplementation(() => {
-    probed.resolve(undefined);
-
-    throw Object.assign(new Error('Probe failed'), { code: 'EINVAL' });
-  });
-
-  const controller = new AbortController();
-  const context = { cwd: repository } as never;
-
-  const collecting = tool.execute(
-    'collect',
-    { action: 'collect', directory },
-    controller.signal,
+  const opened = await tool.execute(
+    'open',
+    { action: 'open', paths: ['.tau/slices/a.md'] },
     undefined,
-    context,
+    undefined,
+    { cwd: context.repository } as never,
   );
 
-  collecting.catch(() => undefined);
+  const directory = (opened.details as { directory: string }).directory;
 
-  await probed.promise;
-  controller.abort();
-  await vi.advanceTimersByTimeAsync(100);
-  await expect(collecting).rejects.toThrow('no comment was deleted');
-
-  expect(await deleted()).toEqual([]);
-  expect(await records()).toHaveLength(1);
-
-  probe.mockImplementation(() => {
-    throw Object.assign(new Error('Process exited'), { code: 'ESRCH' });
-  });
+  await context.setSession([comment('on-a', '01-slices/1-a.md')]);
 
   const collected = await tool.execute(
-    'retry',
+    'collect',
     { action: 'collect', directory },
     undefined,
     undefined,
-    context,
+    { cwd: context.repository } as never,
   );
 
-  expect(collected.details).toMatchObject({ status: 'reviewed', comments: [{ content: 'on-a' }] });
-  expect(await deleted()).toEqual(['on-a']);
-  expect(await records()).toEqual([]);
+  const order = context.calls.map(({ command, commandArguments }) =>
+    [command, commandArguments[0]].join(' '),
+  );
+
+  expect(opened.details).toMatchObject({ status: 'opened' });
+
+  expect(collected.details).toMatchObject({
+    status: 'reviewed',
+    comments: [{ content: 'on-a' }],
+  });
+
+  expect(order.indexOf('hc wait')).toBeGreaterThan(-1);
+  expect(order.indexOf('hc wait')).toBeLessThan(order.indexOf('tuicr review'));
+  expect(await context.deleted()).toEqual(['on-a']);
 });

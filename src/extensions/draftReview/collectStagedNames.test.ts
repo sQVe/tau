@@ -66,27 +66,3 @@ it('returns comments and edits on staged names under their .tau paths', async ()
   expect(await readFile(real('pr/run-a/body.md'), 'utf8')).toBe('edited\n');
   expect(await readFile(real('pr/run-b/body.md'), 'utf8')).toBe('run-b/body.md\n');
 });
-
-it('collects a version 2 record whose files are staged under their .tau paths', async () => {
-  const { run, setSession, real, directory } = await openStack();
-  const manifestPath = join(directory, 'review.json');
-  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>;
-  const { stagingDirectory } = manifest as { stagingDirectory: string };
-
-  await mkdir(join(stagingDirectory, 'pr/run-a'), { recursive: true });
-  await writeFile(join(stagingDirectory, 'pr/run-a/body.md'), 'edited\n');
-
-  const { stagedPaths: _stagedPaths, ...versionTwo } = manifest;
-
-  await writeFile(manifestPath, JSON.stringify({ ...versionTwo, version: 2 }));
-  await setSession([comment('on-body', 'pr/run-a/body.md')]);
-
-  const collected = await run({ action: 'collect', directory });
-
-  expect(collected.details).toMatchObject({
-    comments: [{ path: real('pr/run-a/body.md'), content: 'on-body' }],
-    edits: [{ path: real('pr/run-a/body.md'), status: 'applied' }],
-  });
-
-  expect(await readFile(real('pr/run-a/body.md'), 'utf8')).toBe('edited\n');
-});
