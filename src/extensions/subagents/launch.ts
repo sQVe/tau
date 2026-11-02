@@ -3,6 +3,7 @@ import { basename, dirname, join } from 'node:path';
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
+import { errorMessage } from '../../errors.js';
 import { runWithEnvironment } from '../../hc/connect.js';
 import { currentTerminalAddress, get, HcError, ls, readCurrentTerminal } from '../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
@@ -340,16 +341,26 @@ export const executeLaunch = async (
         snapshotDirectory,
       );
 
-      const cleanupSnapshot = async (): Promise<void> => {
+      // Returns the error to throw. A failed snapshot removal is added to the launch error.
+      const errorAfterCleanup = async (error: unknown): Promise<unknown> => {
         if (extensionPackages.length === 0) {
-          return;
+          return error;
         }
 
-        await removeSnapshotDirectory({
+        const cleanupError = await removeSnapshotDirectory({
           agentDirectory: runtime.agentDirectory,
           directory: snapshotDirectory,
           snapshotName: assignmentId,
         });
+
+        if (cleanupError === undefined) {
+          return error;
+        }
+
+        return new Error(
+          `${errorMessage(error)} Also failed to remove the launch package snapshot: ${cleanupError}`,
+          { cause: error },
+        );
       };
 
       let assignment: Assignment;
@@ -367,8 +378,7 @@ export const executeLaunch = async (
 
         await writeAssignment(assignment);
       } catch (error) {
-        await cleanupSnapshot();
-        throw error;
+        throw await errorAfterCleanup(error);
       }
 
       runtime.admission.add(assignmentId);
@@ -391,8 +401,7 @@ export const executeLaunch = async (
       } catch (error) {
         if (!isUnclearLaunch(error)) {
           runtime.admission.remove(assignmentId);
-          await cleanupSnapshot();
-          throw error;
+          throw await errorAfterCleanup(error);
         }
 
         const name = workerName(assignment.profile, assignmentId);
@@ -409,8 +418,7 @@ export const executeLaunch = async (
 
         if (reconciled.kind === 'missing') {
           runtime.admission.remove(assignmentId);
-          await cleanupSnapshot();
-          throw error;
+          throw await errorAfterCleanup(error);
         }
 
         // The lookup failed, so the worker may have started. Keep the reservation and snapshot.

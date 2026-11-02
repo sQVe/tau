@@ -15,8 +15,10 @@ import { Admission, executeLaunch } from './launch.js';
 import type { LaunchRuntime } from './launch.js';
 import type { LaunchParameters } from './launchParameters.js';
 import * as loadouts from './loadout.js';
+import * as packageSnapshot from './packageSnapshot.js';
 
 vi.mock(import('./loadout.js'), { spy: true });
+vi.mock(import('./packageSnapshot.js'), { spy: true });
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -358,6 +360,18 @@ it('removes the snapshot after a definite launch failure', async () => {
 
   expect(result.isError).toBe(true);
   expect(snapshotNames(state.directory)).toEqual([]);
+});
+
+it('keeps the cleanup error in the launch error when snapshot removal also fails', async () => {
+  const cleanupError = 'Package snapshot root is redirected. Cleanup refused.';
+
+  vi.mocked(packageSnapshot.removeSnapshotDirectory).mockResolvedValueOnce(cleanupError);
+  const state = uncertainSetup('spawn_failed', ['npm:review-package']);
+  const result = await launch(state.runtime, { visibility: 'background' });
+
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('launch failure');
+  expect(result.content[0]?.text).toContain(cleanupError);
 });
 
 it('removes the snapshot after a failed assignment write', async () => {
