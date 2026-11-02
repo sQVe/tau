@@ -7,8 +7,6 @@ import { buildSkillMessage, loadSkillCatalog } from './skillCatalog.js';
 export default function tauSkillsExtension(pi: ExtensionAPI, skillsDirectory: string): void {
   const { commands, requiredForLines } = loadSkillCatalog(skillsDirectory);
 
-  // Registers `/<name>` for each Tau skill, so skills stay reachable when Pi's `/skill:<name>`
-  // commands are disabled.
   for (const command of commands) {
     pi.registerCommand(command.name, {
       description: command.description,

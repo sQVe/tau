@@ -42,7 +42,6 @@ export interface StatusbarFooter {
   refreshAfterToolResult: (context: ExtensionContext) => void;
 }
 
-// Bound background Git work. Failures leave the dirty marker hidden.
 const gitTimeoutMilliseconds = 5000;
 const shownDirectoryDepth = 2;
 
@@ -118,8 +117,6 @@ const readDirty = async (context: ExtensionContext): Promise<boolean> => {
   return result.exitCode === 0 && result.stdout.length > 0;
 };
 
-// Tool results arrive in bursts. Run one git status at a time and fold the requests that arrive
-// meanwhile into a single rerun with the newest context.
 const refreshDirty = async (state: StatusbarState, context: ExtensionContext): Promise<void> => {
   state.pendingContext = context;
 
@@ -138,7 +135,6 @@ const refreshDirty = async (state: StatusbarState, context: ExtensionContext): P
       // oxlint-disable-next-line eslint/no-await-in-loop -- Serial reruns are the point.
       const nextDirty = await readDirty(current);
 
-      // Runs finish in order, so only a disposed footer makes a result stale.
       if (generation === state.footerGeneration) {
         state.dirty = nextDirty;
         state.requestRender?.();
@@ -170,7 +166,6 @@ const createFooter = (
       startRefresh(state, context);
     });
 
-    // Pi disposes the old footer before calling this factory. Start after that disposal.
     startRefresh(state, context);
 
     let stats: SessionStats | undefined;

@@ -17,7 +17,6 @@ export const buildSkillMessage = (skillName: string, argumentsText: string): str
   return trimmedArguments ? `${prefix} ${trimmedArguments}` : prefix;
 };
 
-// Pi's `Skill` drops custom frontmatter fields, so read them from the skill file.
 const readFrontmatter = (filePath: string) => {
   const content = readFileSync(filePath, 'utf8');
 
@@ -43,7 +42,6 @@ const readRequiredForLines = (skills: readonly Skill[]) => {
   return skillLines.length === 0 ? [] : [requiredForLead, ...skillLines];
 };
 
-// Pi skips a skill it cannot parse and only warns, which would silently drop its rules.
 const rejectSkillProblems = (
   skillsDirectory: string,
   diagnostics: readonly ResourceDiagnostic[],
