@@ -6,18 +6,74 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import type { DeadlineWatchdog } from '../src/extensions/subagents/deadlineWatchdog.js';
+import { createEventWatch } from '../src/extensions/subagents/eventWatch.js';
 import { createWorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
+import { reportMessageType } from '../src/extensions/subagents/workerMessage.js';
 import { createWorkerScan } from '../src/extensions/subagents/workerScan.js';
+import { subscribeEvents } from '../src/hc/events.js';
 import { get } from '../src/hc/hc.js';
 import type { HcSession } from './hcSessionHarness.js';
 import { startHcSession } from './hcSessionHarness.js';
 import { launchWorkerSession, waitForReport } from './subagentSessionHarness.js';
+
+interface SentReportMessage {
+  customType?: unknown;
+  content?: unknown;
+  details?: unknown;
+}
+
+interface SessionEntry {
+  type: string;
+  customType: string;
+  details?: unknown;
+}
+
+type DeliveryContext = Parameters<ReturnType<typeof createWorkerDelivery>['deliver']>[0];
 
 vi.mock(import('../src/extensions/subagents/loadout.js'), { spy: true });
 
 vi.setConfig({ testTimeout: 120_000 });
 
 const noDeadline: DeadlineWatchdog = { apply: () => Promise.resolve(), clear: () => undefined };
+
+const recordingManager = () => {
+  const messages: SentReportMessage[] = [];
+  const entries: SessionEntry[] = [];
+
+  const pi = {
+    on: () => undefined,
+    sendMessage: (message: { customType: string; details: unknown }) => {
+      messages.push(message);
+
+      entries.push({
+        type: 'custom_message',
+        customType: message.customType,
+        details: message.details,
+      });
+    },
+  } as unknown as ExtensionAPI;
+
+  const context = {
+    sessionManager: { getEntries: () => entries },
+    ui: { notify: () => undefined },
+    isIdle: () => true,
+    signal: undefined,
+  } as unknown as DeliveryContext;
+
+  return { pi, messages, entries, context };
+};
+
+const waitForReportMessage = async (messages: readonly SentReportMessage[]): Promise<void> => {
+  const deadline = Date.now() + 90_000;
+
+  while (messages.length === 0) {
+    if (Date.now() > deadline) {
+      throw new Error('The event watch never delivered the worker report.');
+    }
+
+    await delay(100);
+  }
+};
 
 const managerProbe = `
 import { appendFileSync } from 'node:fs';
@@ -96,28 +152,7 @@ it('shows a real worker report once before it gives the worker the manager envir
   expect(evidence).toContain('TAU_ROLE: worker');
   expect(evidence).toContain('APPEND_SYSTEM.md: true');
 
-  const messages: unknown[] = [];
-  const entries: { type: string; customType: string; details?: unknown }[] = [];
-
-  const pi = {
-    on: () => undefined,
-    sendMessage: (message: { customType: string; details: unknown }) => {
-      messages.push(message);
-
-      entries.push({
-        type: 'custom_message',
-        customType: message.customType,
-        details: message.details,
-      });
-    },
-  } as unknown as ExtensionAPI;
-
-  const deliveryContext = {
-    sessionManager: { getEntries: () => entries },
-    ui: { notify: () => undefined },
-    isIdle: () => true,
-    signal: undefined,
-  } as unknown as Parameters<ReturnType<typeof createWorkerDelivery>['deliver']>[0];
+  const { pi, messages, entries, context: deliveryContext } = recordingManager();
 
   await createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline).scan(deliveryContext);
   await createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline).scan(deliveryContext);
@@ -127,5 +162,51 @@ it('shows a real worker report once before it gives the worker the manager envir
 
   await delay(500);
 
+  expect(existsSync(worker.observationPath)).toBe(false);
+});
+
+it('delivers one worker report through the real hc event watch', async () => {
+  const hc = await startHcSession(onTestFinished);
+
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  for (const [name, value] of Object.entries(hc.environment)) {
+    vi.stubEnv(name, value);
+  }
+
+  vi.resetModules();
+
+  const { fixtureModel } =
+    await import('../src/extensions/subagents/fixtures/controlledProvider.js');
+
+  const worker = await launchWorkerSession({
+    hc,
+    model: fixtureModel,
+    task: 'Edit source.txt and report.',
+    acceptance: ['source.txt says after.'],
+    probe: { source: managerProbe },
+    prepareWorker: (workerDirectory) => {
+      writeFileSync(join(workerDirectory, 'source.txt'), 'before\n');
+    },
+  });
+
+  if (worker.observationPath === undefined) {
+    throw new Error('The fixture worker got no manager probe.');
+  }
+
+  const { pi, messages, context } = recordingManager();
+  const scan = createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline);
+  const watch = createEventWatch(subscribeEvents, scan);
+
+  watch.start(context);
+
+  await waitForReportMessage(messages);
+  watch.stop();
+
+  expect(messages).toHaveLength(1);
+  expect(messages[0]).toMatchObject({ customType: reportMessageType });
   expect(existsSync(worker.observationPath)).toBe(false);
 });
