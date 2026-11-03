@@ -98,16 +98,11 @@ the run.
 
 Use the full package manifest, not only `./src/tau.ts`: the latter omits the bundled question and
 web tools and CC Safety Net, causing worker launch to refuse. Do not use `--no-extensions` or
-`--no-skills`; they suppress configured resources, including skills and herdr integrations.
+`--no-skills`; they suppress configured resources, including skills.
 
-Before launching a Pi subagent worker, install herdr's Pi integration in the parent Pi session:
-
-```sh
-herdr integration install pi
-```
-
-The command writes the integration to `~/.pi/agent/extensions/`, where Pi loads global extensions
-automatically. Without the integration, worker launch refuses before it runs any herdr pane command.
+Before launching a Pi subagent worker, run step 3 in a terminal of the herdr app. Each app terminal
+is an `hc` terminal: `hc` sets `HC_TERMINAL_ID` there, and worker launch uses it to find the manager
+terminal. Outside an `hc` terminal, worker launch refuses.
 
 For use in another project, run `pi install -l /absolute/path/to/tau` there, then start Pi. This
 records the local package in that project's `.pi/settings.json`.

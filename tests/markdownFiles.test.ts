@@ -17,7 +17,6 @@ const allowedPaths: AllowedPaths = {
   ],
   'skills/': ['docs/adr/0003-externally-observable-identifiers.md'],
   'src/extensions/draftReview/herdrReview.ts': ['scripts/mutation-tuning.md'],
-  'src/herdr.ts': ['.changeset/group-dialog-and-herdr-modules.md'],
 };
 
 const root = '/repository';

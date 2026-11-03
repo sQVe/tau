@@ -32,15 +32,15 @@ capability module or an extension feature folder, as ADR 0120 uses the word.
    effects. A shared module's behavior is tested once, in that module.
 3. A test that kills a mutation survivor follows the placement rule in step 5 of
    [the TDD skill](../../src/skills/tdd/SKILL.md).
-4. Fake the boundary, not the module: `Exec`, the herdr client, or a command shim. Assert outcomes.
-   Read a `calls` list only when the call is the behavior.
+4. Fake the boundary, not the module: `Exec`, the `hc` fake (`tests/hcFake.ts`), or a command shim.
+   Assert outcomes. Read a `calls` list only when the call is the behavior.
 5. A fixture used by one module lives in that module's `fixtures/`. A fixture used by two modules or
    by `tests/` lives in `tests/`. `tests/` stays flat: `*Fake.ts` and `*Harness.ts` for support, and
-   `*.integration.test.ts` for Pi or herdr runs. Existing support files with other names move in
-   later cleanup work, so this rule applies to new and moved files.
+   `*.integration.test.ts` for Pi or hc runs. Existing support files with other names move in later
+   cleanup work, so this rule applies to new and moved files.
 6. Size is a review signal. Split a test file over 1,000 lines in the pull request that splits its
    owner.
-7. Pi sessions and real herdr run only in `tests/*.integration.test.ts`. This sets where the
+7. Pi sessions and real `hc` run only in `tests/*.integration.test.ts`. This sets where the
    integration tests of ADR 0005 live.
 
 Rules 1 and 5 give every file one home that a reader can predict. Rules 2 and 4 keep each behavior
