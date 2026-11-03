@@ -16,7 +16,6 @@ export const missingCause = (path: string): Promise<unknown> =>
     (error: unknown) => error,
   );
 
-// Refuses a linked record before any read, so a link cannot send the read outside the checkout.
 export const readRecord = async (root: string, directory: string): Promise<RecordRead> => {
   const path = join(directory, recordFileName);
   const bytes = await readOptionalBytes(path);
