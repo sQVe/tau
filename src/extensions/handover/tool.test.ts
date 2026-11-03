@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { Value } from 'typebox/value';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { createExecFake, succeededResult } from '../../../tests/execFake.js';
+import type { ExecFake } from '../../../tests/execFake.js';
 import {
   createTemporaryBareRoot,
   createTemporaryRepository,
@@ -271,4 +273,123 @@ it('refuses a send without a terminal before any hc call', async () => {
   ).rejects.toThrow(/send needs a terminal/);
 
   expect(fake.calls).toEqual([]);
+});
+
+const writeHandover = async (root: string, content: string): Promise<string> => {
+  const directory = join(root, '.tau', 'handovers');
+  const file = join(directory, 'message.md');
+
+  await mkdir(directory, { recursive: true });
+  await writeFile(file, content);
+
+  return file;
+};
+
+const createHerdrFake = (): ExecFake<'herdr'> =>
+  createExecFake<'herdr'>({
+    keyOf: (command) => (command === 'herdr-app' ? 'herdr' : undefined),
+    handlerFor: () => () => succeededResult('{"ok":true}'),
+  });
+
+const createStartTool = (herdr: ExecFake<'herdr'>) =>
+  createHandoverTool({ exec: herdr.exec, connect: createHcFake().connect, cwd: '/repository' });
+
+const abortedSignal = (): AbortSignal => {
+  const controller = new AbortController();
+
+  controller.abort();
+
+  return controller.signal;
+};
+
+it('refuses an already-aborted send before any hc call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+  const file = await writeHandover(root, 'Next steps\n');
+
+  await expect(
+    createHandoverTool(runtimeOf(fake)).execute(
+      'call',
+      { action: 'send', terminal: 't7', file },
+      abortedSignal(),
+      undefined,
+      noUiContext(root),
+    ),
+  ).rejects.toMatchObject({ name: 'AbortError' });
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('starts a Manager tab in a space and returns the herdr-app reply', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const herdr = createHerdrFake();
+
+  const result = await createStartTool(herdr).execute(
+    'call',
+    { action: 'start', file, folder: root, space: 'space-1' },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  expect(result.details).toEqual({ reply: '{"ok":true}' });
+  expect(herdr.calls.map((call) => call.commandArguments[1])).toEqual(['tab.new']);
+});
+
+it('refuses a start without a space or name before any herdr-app call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const herdr = createHerdrFake();
+
+  await expect(
+    createStartTool(herdr).execute(
+      'call',
+      { action: 'start', file, folder: root },
+      undefined,
+      undefined,
+      noUiContext(root),
+    ),
+  ).rejects.toThrow(/start needs a name when it has no space/);
+
+  expect(herdr.calls).toEqual([]);
+});
+
+it.each([
+  { folder: '', name: 'an empty folder' },
+  { folder: '../target', name: 'a relative folder' },
+])('refuses a start with $name before any herdr-app call', async ({ folder }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const herdr = createHerdrFake();
+
+  await expect(
+    createStartTool(herdr).execute(
+      'call',
+      { action: 'start', file, folder, name: 'me-1' },
+      undefined,
+      undefined,
+      noUiContext(root),
+    ),
+  ).rejects.toThrow(/start needs an absolute folder/);
+
+  expect(herdr.calls).toEqual([]);
+});
+
+it('refuses an already-aborted start before any herdr-app call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const herdr = createHerdrFake();
+
+  await expect(
+    createStartTool(herdr).execute(
+      'call',
+      { action: 'start', file, folder: root, space: 'space-1' },
+      abortedSignal(),
+      undefined,
+      noUiContext(root),
+    ),
+  ).rejects.toMatchObject({ name: 'AbortError' });
+
+  expect(herdr.calls).toEqual([]);
 });

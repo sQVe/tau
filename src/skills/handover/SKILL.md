@@ -54,9 +54,8 @@ commit another worktree from your session, even over bash.
    - Tell the receiver to ask its user before editing if the ticket conflicts with the message.
    - For planning only, list the open questions. Tell the receiver to plan with its user and get
      approval before any edit.
-   - Never type the message on the bash line. The shell expands `$()` and backticks typed there, but
-     not in the output of `$(cat <file>)`. VCS commands in the message would also trip the bash
-     guard.
+   - Never type the message on the bash line. The shell expands `$()` and backticks typed there. VCS
+     commands in the message would also trip the bash guard.
 3. Send the file in a separate step, after the write. Never write and send in the same parallel tool
    batch: the send can run first and read an empty file. Then end your turn.
    - With a target, call the `handover` tool with action `send`, the target's address as `terminal`,
@@ -66,12 +65,9 @@ commit another worktree from your session, even over bash.
      - `blocked`: nothing was sent, and the receiver waits on its user. Tell your user.
      - Any other error: report it to your user and stop.
    - Never force a send or wait for the receiver's turn.
-   - With no target, find the space for the checkout in `herdr-app ls`. Start Pi in it with the
-     message as its task:
-
-     ```sh
-     herdr-app do tab.new --space <id> --name Manager --folder <checkout> --argv '["pi"]' --task "$(cat <file>)"
-     ```
-
-   - With several spaces for the checkout, ask the user. With no space, start one with
-     `herdr-app do space.new --name <ticket or branch> --folder <checkout> --tab Manager --argv '["pi"]' --task "$(cat <file>)"`.
+   - With no target, find the space for the checkout in `herdr-app ls`. Then call the `handover`
+     tool with action `start`, the checkout as `folder`, and the message path as `file`:
+     - One space for the checkout: pass its ID as `space`.
+     - Several spaces for the checkout: ask the user which one.
+     - No space: leave `space` out and pass `name` as the ticket or branch.
+   - Then end your turn.

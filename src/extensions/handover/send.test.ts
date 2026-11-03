@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
+import type { Exec } from '../../command.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { sendHandover } from './send.js';
 
@@ -221,6 +222,34 @@ it("refuses the caller's own terminal by name without sending", async () => {
   await expect(
     sendHandover(runtimeOf(fake), { cwd: root, terminal: 'worker', file }),
   ).rejects.toThrow(/own terminal/);
+
+  expectNoSend(fake);
+});
+
+it('sends nothing when the caller aborts while the terminal lookup is pending', async () => {
+  const fake = createHcFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const controller = new AbortController();
+
+  const exec: Exec = async (command, commandArguments, options) => {
+    const result = await fake.exec(command, commandArguments, options);
+
+    if (commandArguments[0] === 'get') {
+      controller.abort();
+    }
+
+    return result;
+  };
+
+  fake.reply('get', terminalReply('t7'));
+  fake.reply('send', JSON.stringify({ turn: 3, started: true }));
+
+  const runtime = { exec, connect: fake.connect, cwd: '/repository', signal: controller.signal };
+
+  await expect(sendHandover(runtime, { cwd: root, terminal: 't7', file })).rejects.toMatchObject({
+    name: 'AbortError',
+  });
 
   expectNoSend(fake);
 });
