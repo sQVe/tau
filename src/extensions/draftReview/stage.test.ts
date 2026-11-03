@@ -190,7 +190,9 @@ it('reads a manifest whose paths wander but stay inside .tau', async () => {
 
   await tamperManifest(review, { paths, stagedPaths: stagedNames(paths) });
 
-  expect((await readReview(repository, review.recordDirectory)).paths).toEqual(paths);
+  const read = await readReview(repository, review.recordDirectory);
+
+  expect(read.files.map((file) => file.path)).toEqual(paths);
 });
 
 it.each(['outside the temporary directory', 'without the prefix', 'inside a staging directory'])(
@@ -231,9 +233,11 @@ it('stages a file whose name already uses the 255 bytes a name may hold', async 
   await writeFile(join(repository, '.tau', name), 'long\n');
 
   const review = await stageReview(repository, [`.tau/${name}`]);
-  const [stagedPath = ''] = review.stagedPaths;
+  const [file] = review.files;
 
-  expect(await readFile(join(review.stagingDirectory, stagedPath), 'utf8')).toBe('long\n');
+  expect(await readFile(join(review.stagingDirectory, file?.stagedPath ?? ''), 'utf8')).toBe(
+    'long\n',
+  );
 });
 
 it('stages a file by a path relative to a subdirectory cwd and reads the review by one too', async () => {
@@ -246,7 +250,7 @@ it('stages a file by a path relative to a subdirectory cwd and reads the review 
   const relativeRecord = relative(cwd, review.recordDirectory);
   const read = await readReview(cwd, relativeRecord);
 
-  expect(read.paths).toEqual(['slices/a.md']);
+  expect(read.files.map((file) => file.path)).toEqual(['slices/a.md']);
   expect(read.recordDirectory).toBe(review.recordDirectory);
 });
 

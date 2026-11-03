@@ -18,16 +18,23 @@ const comment = (id: string, path: string | null): SessionComment => ({
   content: id,
 });
 
-it('keeps only comments on reviewed files', () => {
+it('keeps only comments on reviewed files, under their .tau paths', () => {
   const comments = [
-    comment('reviewed', 'slices/a.md'),
-    comment('other', 'slices/other.md'),
+    comment('reviewed', '01-slices/1-a.md'),
+    comment('other', '01-slices/1-other.md'),
     comment('session', null),
   ];
 
-  const kept = selectReviewedComments(comments, ['slices/a.md', 'tickets/b.md']);
+  const files = [
+    { path: 'slices/a.md', stagedPath: '01-slices/1-a.md' },
+    { path: 'tickets/b.md', stagedPath: '02-tickets/1-b.md' },
+  ];
 
-  expect(kept.map(({ id }) => id)).toEqual(['reviewed']);
+  const kept = selectReviewedComments(comments, files);
+
+  expect(kept.map(({ id, path }) => ({ id, path }))).toEqual([
+    { id: 'reviewed', path: 'slices/a.md' },
+  ]);
 });
 
 const tenFiles = Array.from({ length: 10 }, (_, index) => `pr/run-a/${String(index)}.md`);
