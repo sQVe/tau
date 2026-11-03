@@ -23,6 +23,7 @@ export const createEventWatch = (subscribe: SubscribeEvents, scan: WorkerScan): 
   let retry: ReturnType<typeof setTimeout> | undefined;
   let attempt = 0;
   let generation = 0;
+  let connection = 0;
   let running = false;
   let pending = false;
 
@@ -67,6 +68,18 @@ export const createEventWatch = (subscribe: SubscribeEvents, scan: WorkerScan): 
     }
   };
 
+  const clearConnection = (): void => {
+    connection += 1;
+
+    if (retry !== undefined) {
+      clearTimeout(retry);
+      retry = undefined;
+    }
+
+    subscription?.stop();
+    subscription = undefined;
+  };
+
   const connect = (): void => {
     const managerTerminal = currentTerminalAddress();
 
@@ -74,18 +87,33 @@ export const createEventWatch = (subscribe: SubscribeEvents, scan: WorkerScan): 
       return;
     }
 
+    connection += 1;
+    const connectionId = connection;
+
     subscription = subscribe(managerTerminal, {
       onReady: () => {
+        if (connectionId !== connection) {
+          return;
+        }
+
         attempt = 0;
         generation += 1;
         requestScan();
       },
       onEvent: (event: HcEvent) => {
+        if (connectionId !== connection) {
+          return;
+        }
+
         if (decideEventScan(event) === 'scan') {
           requestScan();
         }
       },
       onClose: (reason) => {
+        if (connectionId !== connection) {
+          return;
+        }
+
         subscription = undefined;
 
         if (stopped) {
@@ -115,6 +143,7 @@ export const createEventWatch = (subscribe: SubscribeEvents, scan: WorkerScan): 
 
   return {
     start: (newContext) => {
+      clearConnection();
       context = newContext;
       stopped = false;
       attempt = 0;
@@ -123,14 +152,7 @@ export const createEventWatch = (subscribe: SubscribeEvents, scan: WorkerScan): 
     stop: () => {
       stopped = true;
       pending = false;
-
-      if (retry !== undefined) {
-        clearTimeout(retry);
-        retry = undefined;
-      }
-
-      subscription?.stop();
-      subscription = undefined;
+      clearConnection();
     },
   };
 };

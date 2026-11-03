@@ -184,6 +184,47 @@ it('keeps reconnecting with a capped backoff and reports one lasting failure', a
   expect(lasting()).toBe(2);
 });
 
+it('ignores a late close from a replaced subscription', () => {
+  const notifications: string[] = [];
+  const { hcFake, watch } = createWatch();
+
+  watch.start(contextOf((message) => notifications.push(message)));
+  watch.start(contextOf((message) => notifications.push(message)));
+
+  hcFake.closeSubscriptionAt(0, 'late');
+
+  expect(notifications).toEqual([]);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it('replaces the live subscription when start is called twice', () => {
+  const { hcFake, watch } = createWatch();
+
+  watch.start(contextOf(() => undefined));
+  watch.start(contextOf(() => undefined));
+
+  expect(hcFake.subscribeCalls).toHaveLength(2);
+  expect(hcFake.liveSubscriptions()).toBe(1);
+
+  watch.stop();
+
+  expect(hcFake.liveSubscriptions()).toBe(0);
+});
+
+it('clears a pending retry when start is called twice', () => {
+  const { hcFake, watch } = createWatch();
+
+  watch.start(contextOf(() => undefined));
+  hcFake.closeSubscription('boom');
+
+  expect(vi.getTimerCount()).toBe(1);
+
+  watch.start(contextOf(() => undefined));
+
+  expect(vi.getTimerCount()).toBe(0);
+  expect(hcFake.liveSubscriptions()).toBe(1);
+});
+
 it('stops reconnecting after session shutdown', async () => {
   const { hcFake, watch } = createWatch();
 

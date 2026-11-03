@@ -33,6 +33,8 @@ export interface HcFake {
   setConnectExit: (code: number | null, signal?: NodeJS.Signals | null) => void;
   subscribe: SubscribeEvents;
   subscribeCalls: string[];
+  liveSubscriptions: () => number;
+  closeSubscriptionAt: (index: number, reason: string) => void;
   ready: () => void;
   emitEvent: (event: HcEvent) => void;
   closeSubscription: (reason: string) => void;
@@ -139,6 +141,20 @@ export const createHcFake = (): HcFake => {
   const activeSubscription = () =>
     [...subscriptions].toReversed().find((subscription) => !subscription.stopped);
 
+  const liveSubscriptions = (): number =>
+    subscriptions.filter((subscription) => !subscription.stopped).length;
+
+  const closeSubscriptionAt = (index: number, reason: string): void => {
+    const entry = subscriptions[index];
+
+    if (entry === undefined) {
+      return;
+    }
+
+    entry.stopped = true;
+    entry.handlers.onClose(reason);
+  };
+
   const subscribe: SubscribeEvents = (childrenOf, handlers) => {
     const entry = { childrenOf, handlers, stopped: false };
 
@@ -160,6 +176,8 @@ export const createHcFake = (): HcFake => {
     connectCalls,
     subscribe,
     subscribeCalls,
+    liveSubscriptions,
+    closeSubscriptionAt,
     ready: () => activeSubscription()?.handlers.onReady(),
     emitEvent: (event: HcEvent) => activeSubscription()?.handlers.onEvent(event),
     closeSubscription: (reason: string) => {
