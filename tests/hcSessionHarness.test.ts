@@ -1,11 +1,12 @@
 import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 
+import { runWithEnvironment } from '../src/hc/connect.js';
 import { protectedVariables } from './hcIsolationHarness.js';
 import type { ProtectedVariable } from './hcIsolationHarness.js';
 import { inheritedVariables, sessionProcesses, startHcSession } from './hcSessionHarness.js';
@@ -387,7 +388,33 @@ it('removes the root after a failed hc server stop when no process remains', asy
   expect(existsSync(session.root)).toBe(false);
 });
 
-it('keeps the root and names the session and root when a process outlives the stop', async () => {
+it('signals a lingering process of its own session and removes the root when it exits', async () => {
+  const remaining = new Set([4343]);
+  const session = await startUnregisteredSession(() => [...remaining]);
+
+  const killSpy = vi.spyOn(process, 'kill').mockImplementation((processId) => {
+    remaining.delete(processId);
+
+    return true;
+  });
+
+  onTestFinished(() => {
+    killSpy.mockRestore();
+  });
+
+  useFakeTimersUntilFinished();
+
+  const stopping = session.stop();
+
+  await vi.runAllTimersAsync();
+  await stopping;
+
+  expect(killSpy).toHaveBeenCalledWith(4343, 'SIGTERM');
+  expect(killSpy).not.toHaveBeenCalledWith(4343, 'SIGKILL');
+  expect(existsSync(session.root)).toBe(false);
+});
+
+it('escalates to SIGKILL and keeps the root when a process outlives both signals', async () => {
   const session = await startUnregisteredSession(() => [4343]);
 
   onTestFinished(() => {
@@ -414,10 +441,20 @@ it('keeps the root and names the session and root when a process outlives the st
     `hc session ${session.session} still has processes after stop; kept ${session.root}`,
   );
 
-  expect((failure as Error).cause).toMatchObject({
-    message: `hc session ${session.session} still runs after hc server stop`,
-  });
-
+  expect(killSpy).toHaveBeenCalledWith(4343, 'SIGTERM');
+  expect(killSpy).toHaveBeenCalledWith(4343, 'SIGKILL');
   expect(existsSync(session.root)).toBe(true);
-  expect(killSpy).not.toHaveBeenCalled();
+});
+
+it('refuses a terminal run with a real protected path before starting a process', async () => {
+  const session = await startHcSession(onTestFinished);
+
+  await expect(
+    runWithEnvironment(session.runtime, {
+      argv: ['true'],
+      env: { ...session.environment, HOME: homedir() },
+    }),
+  ).rejects.toThrow('HOME');
+
+  expect(spawnMock).not.toHaveBeenCalled();
 });

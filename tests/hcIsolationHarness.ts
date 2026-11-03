@@ -35,6 +35,36 @@ const hasPrivatePrefix = (name: string): boolean =>
 
 const inheritedProblem = (name: string): boolean => name !== 'HC_SESSION' && hasPrivatePrefix(name);
 
+// Checks only the private-path variables that are present, because a process may inherit the rest
+// from the core it runs on.
+export const privatePathProblems = (
+  values: Readonly<Partial<Record<ProtectedVariable, string | undefined>>>,
+  realValues: Readonly<Partial<Record<ProtectedVariable, string | undefined>>>,
+): string[] => {
+  const problems: string[] = [];
+
+  for (const name of protectedVariables) {
+    const value = values[name];
+    const real = realValues[name];
+
+    if (value === undefined || value === '') {
+      continue;
+    }
+
+    if (real === undefined || real === '') {
+      continue;
+    }
+
+    if (normalize(value) === normalize(real)) {
+      problems.push(`${name} equals the real ${name}`);
+    } else if (isInside(value, real)) {
+      problems.push(`${name} is inside the real ${name}`);
+    }
+  }
+
+  return problems;
+};
+
 export const isolationProblems = ({
   session,
   inheritedSession,
@@ -61,24 +91,13 @@ export const isolationProblems = ({
 
   for (const name of protectedVariables) {
     const value = values[name];
-    const real = realValues[name];
 
     if (value === undefined || value === '') {
       problems.push(`${name} is missing`);
-
-      continue;
-    }
-
-    if (real === undefined || real === '') {
-      continue;
-    }
-
-    if (normalize(value) === normalize(real)) {
-      problems.push(`${name} equals the real ${name}`);
-    } else if (isInside(value, real)) {
-      problems.push(`${name} is inside the real ${name}`);
     }
   }
+
+  problems.push(...privatePathProblems(values, realValues));
 
   return problems;
 };

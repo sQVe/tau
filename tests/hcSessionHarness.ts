@@ -11,7 +11,7 @@ import type { Exec } from '../src/command.js';
 import { connect as connectToHc } from '../src/hc/connect.js';
 import type { HcRuntime } from '../src/hc/hc.js';
 import { isAbortError } from '../src/hc/replies.js';
-import { isolationProblems } from './hcIsolationHarness.js';
+import { isolationProblems, privatePathProblems } from './hcIsolationHarness.js';
 import type { ProtectedVariable } from './hcIsolationHarness.js';
 
 export interface HcSession {
@@ -88,6 +88,10 @@ const asError = (error: unknown): Error =>
 
 const stopDeadlineMilliseconds = 5000;
 
+// hc server stop ends the core in a moment. Waiting longer only delays the signal fallback when a
+// process from another XDG directory shares the session.
+const stopSettleMilliseconds = 1000;
+
 const stopPollMilliseconds = 20;
 
 // A zombie has exited and holds no socket or file, so it does not count.
@@ -120,8 +124,9 @@ export const sessionProcesses = (session: string): number[] => {
 const waitForSessionExit = async (
   session: string,
   listProcesses: SessionProcessLister,
+  deadlineMilliseconds = stopDeadlineMilliseconds,
 ): Promise<boolean> => {
-  const deadline = Date.now() + stopDeadlineMilliseconds;
+  const deadline = Date.now() + deadlineMilliseconds;
 
   while (listProcesses(session).length > 0) {
     if (Date.now() > deadline) {
@@ -136,8 +141,8 @@ const waitForSessionExit = async (
   return true;
 };
 
-// Only the stop request ends a session. The fixture never signals a process by PID, because a PID
-// read from /proc can be reused by another process before a signal reaches it.
+// The stop request ends the core the fixture started. A process from another XDG directory can
+// carry the same session, so stopSession still checks and signals the session's processes.
 const stopCore = async (
   exec: Exec,
   session: string,
@@ -153,9 +158,40 @@ const stopCore = async (
     throw new Error(`hc server stop failed: ${result.stderr.trim()}`);
   }
 
-  if (!(await waitForSessionExit(session, listProcesses))) {
-    throw new Error(`hc session ${session} still runs after hc server stop`);
+  await waitForSessionExit(session, listProcesses, stopSettleMilliseconds);
+};
+
+const signalDeadlineMilliseconds = 2000;
+
+const signalSessionProcesses = (
+  session: string,
+  listProcesses: SessionProcessLister,
+  signal: NodeJS.Signals,
+): void => {
+  for (const processId of listProcesses(session)) {
+    try {
+      process.kill(processId, signal);
+    } catch {
+      // The process exited between the listing and the signal.
+    }
   }
+};
+
+// hc server stop reaches only the core the fixture started. A process with the same session can
+// still run, so the fallback signals it by PID. The session name is unique to this fixture, so the
+// user's default core is never matched.
+const terminateSessionProcesses = async (
+  session: string,
+  listProcesses: SessionProcessLister,
+): Promise<void> => {
+  signalSessionProcesses(session, listProcesses, 'SIGTERM');
+
+  if (await waitForSessionExit(session, listProcesses, signalDeadlineMilliseconds)) {
+    return;
+  }
+
+  signalSessionProcesses(session, listProcesses, 'SIGKILL');
+  await waitForSessionExit(session, listProcesses, signalDeadlineMilliseconds);
 };
 
 // Removes the root only when no session process remains. Otherwise the root is kept, and the error
@@ -172,6 +208,10 @@ const stopSession = async (
     await stopCore(exec, session, root, listProcesses);
   } catch (error) {
     failure = error;
+  }
+
+  if (listProcesses(session).length > 0) {
+    await terminateSessionProcesses(session, listProcesses);
   }
 
   if (listProcesses(session).length > 0) {
@@ -243,6 +283,41 @@ const createExec = (environment: Readonly<Record<string, string>>): Exec => {
     });
 };
 
+// A test may pass its own terminal environment to runWithEnvironment. Check it before any process
+// starts, so nothing can point a worker at the user's core. Lines that are not a terminal.run
+// request, such as the hello line or a unit test placeholder, carry no environment to check.
+const requestedEnvironments = (lines: readonly string[]): Record<string, string>[] => {
+  const environments: Record<string, string>[] = [];
+
+  for (const line of lines) {
+    let message: unknown;
+
+    try {
+      message = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
+    if (typeof message !== 'object' || message === null) {
+      continue;
+    }
+
+    const { method, params } = message as { method?: unknown; params?: unknown };
+
+    if (method !== 'terminal.run' || typeof params !== 'object' || params === null) {
+      continue;
+    }
+
+    const { env } = params as { env?: unknown };
+
+    if (typeof env === 'object' && env !== null) {
+      environments.push(env as Record<string, string>);
+    }
+  }
+
+  return environments;
+};
+
 export const startHcSession = async (
   registerCleanup: TestContext['onTestFinished'],
   options: HcSessionOptions = {},
@@ -255,11 +330,13 @@ export const startHcSession = async (
 
     const environment = privateEnvironment(root, session);
 
+    const realEnvironment = realValues();
+
     const problems = isolationProblems({
       session,
       inheritedSession: process.env['HC_SESSION'],
       values: environment,
-      realValues: realValues(),
+      realValues: realEnvironment,
       variables: Object.keys(environment),
     });
 
@@ -271,8 +348,19 @@ export const startHcSession = async (
 
     const runtime: HcRuntime = {
       exec,
-      connect: (lines, connectOptions = {}) =>
-        connectToHc(lines, { ...connectOptions, env: environment }),
+      connect: (lines, connectOptions = {}) => {
+        const shared = requestedEnvironments(lines).flatMap((requested) =>
+          privatePathProblems(requested, realEnvironment),
+        );
+
+        if (shared.length > 0) {
+          return Promise.reject(
+            new Error(`refusing to run a process with shared paths: ${shared.join('; ')}`),
+          );
+        }
+
+        return connectToHc(lines, { ...connectOptions, env: environment });
+      },
       cwd: root,
     };
 

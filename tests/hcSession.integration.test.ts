@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -66,6 +67,30 @@ it.skipIf(!onLinux)(
 
     expect(sessionProcesses(sentinel.session)).toEqual([]);
     expect(existsSync(sentinel.root)).toBe(false);
+  },
+);
+
+it.skipIf(!onLinux)(
+  'signals a process of its own session that hc server stop leaves running',
+  async () => {
+    const hc = await startHcSession(onTestFinished);
+
+    await runWithEnvironment(hc.runtime, { argv: ['sleep', '60'], env: {} });
+
+    const sleeper = spawn('sleep', ['60'], { env: hc.environment, stdio: 'ignore' });
+
+    onTestFinished(() => {
+      sleeper.kill('SIGKILL');
+    });
+
+    await vi.waitFor(() => {
+      expect(sessionProcesses(hc.session)).toContain(sleeper.pid);
+    });
+
+    await hc.stop();
+
+    expect(sessionProcesses(hc.session)).toEqual([]);
+    expect(existsSync(hc.root)).toBe(false);
   },
 );
 
