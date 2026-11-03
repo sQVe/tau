@@ -32,7 +32,6 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
     await original.truncate(path, length);
   };
 
-  // Runs the hook once, after a session reads an owner record and before it acts on the record.
   const pausingReadFile = (async (...readArguments: Parameters<typeof original.readFile>) => {
     const text = await original.readFile(...readArguments);
     const afterOwnerRead = fileFaults.afterOwnerRead;
