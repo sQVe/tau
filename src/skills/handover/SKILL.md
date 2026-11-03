@@ -65,9 +65,13 @@ commit another worktree from your session, even over bash.
      - `blocked`: nothing was sent, and the receiver waits on its user. Tell your user.
      - Any other error: report it to your user and stop.
    - Never force a send or wait for the receiver's turn.
-   - With no target, find the space for the checkout in `herdr-app ls`. Then call the `handover`
-     tool with action `start`, the checkout as `folder`, and the message path as `file`:
+   - With no target, find the space for the checkout by its folder in `herdr-app ls`, never by its
+     name. Then call the `handover` tool with action `start`, the checkout as `folder`, and the
+     message path as `file`:
      - One space for the checkout: pass its ID as `space`.
      - Several spaces for the checkout: ask the user which one.
-     - No space: leave `space` out and pass `name` as the ticket or branch.
+     - No space: leave `space` out and pass `name` as a short title of what the work does, such as
+       `Completion uses the read record`: about 40 characters, sentence case, one line, and no
+       ticket ID.
+   - Never rename a reused space. The user may have renamed it by hand.
    - Then end your turn.

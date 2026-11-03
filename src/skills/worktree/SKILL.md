@@ -42,9 +42,14 @@ creates the worktree and runs the repository's add hooks, such as dependency ins
    - If the branch already has a worktree, Grove refuses with
      `worktree already exists for branch "<branch>" at <path>` and creates nothing. Use that
      `<path>` as the checkout in step 3.
-3. Open the worktree as a space. Reuse the space whose folder is the checkout in `herdr-app ls`, and
-   show it with `herdr-app do space.select --id <id>`. Otherwise run
-   `herdr-app do space.new --name <ticket or branch> --folder <checkout>`.
+3. Open the worktree as a space:
+   - Find a space to reuse by its folder in `herdr-app ls`, never by its name. When a space has the
+     checkout as its folder, show it with `herdr-app do space.select --id <id>`.
+   - Never rename a reused space. The user may have renamed it by hand.
+   - With no space for the checkout, run
+     `herdr-app do space.new --name <title> --folder <checkout>`.
+   - Make `<title>` a short title of what the work does, such as `Completion uses the read record`:
+     about 40 characters, sentence case, one line, and no ticket ID.
 4. Send a handover to the new space with the [handover skill](../handover/SKILL.md) when the user
    asked for one. From the bare repository root, also send the approved implementation task without
    waiting to be asked.
