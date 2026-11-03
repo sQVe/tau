@@ -1,10 +1,11 @@
-import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { repositorySnapshot } from '../../tests/repositorySnapshotHarness.js';
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { createFreshTauDirectory } from '../tauDirectory.js';
 import { readCoverage } from './coverage.js';
 import { captureGeneration } from './generation.js';
@@ -288,6 +289,26 @@ it('reads a malformed capture record as unknown and changes nothing', async () =
 
   expect(coverage).toMatchObject({ status: 'unknown', link: 1 });
   expect(await repositorySnapshot(root, [review])).toEqual(before);
+});
+
+it('refuses a review whose capture record is a symlink', async () => {
+  const { root, base } = await committedRepository();
+
+  await writeFile(join(root, 'a.ts'), 'a two\n');
+
+  const reviewed = await commitAll(root, 'reviewed');
+  const review = await capturedReview(root, { kind: 'range', from: base, to: reviewed });
+  const links = await linksOf(root, [review]);
+  const outside = temporaryDirectory(onTestFinished, 'tau-coverage-');
+  const recordPath = join(review, recordFileName);
+
+  await writeFile(join(outside, recordFileName), await readFile(recordPath));
+  await rm(recordPath);
+  await symlink(join(outside, recordFileName), recordPath);
+
+  await expect(readCoverage(root, { links, mergeBase: base, head: reviewed })).rejects.toThrow(
+    'Refusing to',
+  );
 });
 
 it('reads a chain whose head tree object is gone as unknown and changes nothing else', async () => {

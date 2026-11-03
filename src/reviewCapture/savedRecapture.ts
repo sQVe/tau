@@ -1,8 +1,8 @@
-import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { hashOf, readOptionalBytes } from './completedCapture.js';
-import { readCaptureRecord, recheckFileName } from './record.js';
+import { recheckFileName } from './record.js';
+import { missingCause, readRecord, requireRecord } from './recordRead.js';
 import { checkReviewDirectory } from './reviewDirectory.js';
 
 export interface SavedRecapture {
@@ -16,12 +16,6 @@ export interface SavedRecapture {
 export type RecheckRead =
   | { status: 'read'; bytes: Buffer; hash: string }
   | { status: 'error'; error: string };
-
-const missingCause = (path: string): Promise<unknown> =>
-  lstat(path).then(
-    () => undefined,
-    (error: unknown) => error,
-  );
 
 export const readRecheck = async (
   root: string,
@@ -44,7 +38,7 @@ export const readSavedRecapture = async (
   directory: string,
 ): Promise<SavedRecapture> => {
   const checked = await checkReviewDirectory(root, directory);
-  const record = await readCaptureRecord(checked);
+  const record = requireRecord(await readRecord(checked)).record;
   const { bytes, hash } = await readRecheck(root, checked);
 
   return {

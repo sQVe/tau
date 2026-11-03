@@ -5,8 +5,8 @@ import { readCompletedCapture } from './completedCapture.js';
 import { decideCoverage } from './coverageDecision.js';
 import type { CoverageDecision, CoverageLinkFacts, LinkRecord } from './coverageDecision.js';
 import { readTree } from './endpoint.js';
-import { readCaptureRecord } from './record.js';
 import type { CaptureRecord } from './record.js';
+import { readRecord, recordError } from './recordRead.js';
 import { checkReviewDirectory, reviewDirectoryPath } from './reviewDirectory.js';
 
 export interface CoverageLinkRequest {
@@ -47,16 +47,14 @@ const readLink = async (
   }
 
   const path = await checkReviewDirectory(root, directory);
-  let record: CaptureRecord;
+  const result = await readRecord(path);
 
-  try {
-    record = await readCaptureRecord(path);
-  } catch (error) {
+  if (result.status !== 'read') {
     return {
       status: 'unreadable',
       directory,
       expectedIdentity: identity,
-      reason: errorMessage(error),
+      reason: errorMessage(recordError(result)),
     };
   }
 
@@ -66,7 +64,7 @@ const readLink = async (
     status: 'read',
     directory,
     expectedIdentity: identity,
-    record: linkRecord(record),
+    record: linkRecord(result.record),
     generation,
   };
 };

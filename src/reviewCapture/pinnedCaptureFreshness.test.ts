@@ -1,4 +1,4 @@
-import { readFile, readdir, writeFile } from 'node:fs/promises';
+import { cp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -11,7 +11,10 @@ import {
   failureOf,
   savedArtifactState,
   preparedReview,
+  prepareDirectory,
+  fixRepository,
 } from './fixtures/reviewDirectoryHarness.js';
+import { captureReviewDirectory } from './generation.js';
 import { checkReviewFreshness } from './pinnedCapture.js';
 
 it('reports fresh for an unchanged tree and saves the recapture as recheck.diff', async () => {
@@ -120,4 +123,51 @@ it('reports unknown when HEAD cannot be read, removes the recheck, and keeps the
   );
 
   expect(await git(root, 'for-each-ref', 'refs/tau/review-captures/')).toBe(refs);
+});
+
+it('reports unknown when the earlier review of a fix capture became a symlink', async () => {
+  const root = await fixRepository();
+  const review = await prepareDirectory(root);
+
+  await writeFile(join(root, 'src', 'math.ts'), 'export const add = (a, b) => a + b + 0;\n');
+  await captureWorkingTree(root, review);
+  await writeFile(join(root, 'src', 'math.ts'), 'export const add = (a, b) => b + a;\n');
+
+  const directory = await prepareDirectory(root);
+
+  await captureReviewDirectory(root, directory, { kind: 'fix', review, findingPaths: [] });
+
+  const record = JSON.parse(await readFile(join(directory, 'capture.json'), 'utf8')) as {
+    target: Record<string, unknown>;
+  };
+
+  const { predecessor: _predecessor, ...legacyTarget } = record.target;
+
+  await writeFile(
+    join(directory, 'capture.json'),
+    JSON.stringify({ ...record, target: legacyTarget }),
+  );
+
+  const outside = join(temporaryDirectory(onTestFinished, 'tau-review-outside-'), 'review');
+
+  await cp(review, outside, { recursive: true });
+  await rm(review, { recursive: true });
+  await symlink(outside, review);
+
+  const freshness = await checkReviewFreshness(root, directory);
+
+  expect(freshness).toMatchObject({ status: 'unknown' });
+  expect(freshness.reasons.join('\n')).toContain('symlink');
+});
+
+it('reports unknown and removes the recheck when the hash command fails', async () => {
+  const { root, directory } = await preparedReview();
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+  await captureWorkingTree(root, directory);
+  await checkReviewFreshness(root, directory);
+  await failGitCommand('--show-object-format');
+
+  expect(await checkReviewFreshness(root, directory)).toMatchObject({ status: 'unknown' });
+  expect(await readdir(directory)).not.toContain('recheck.diff');
 });
