@@ -12,13 +12,16 @@ import type {
   DeadlineKill,
   DeadlineTimer,
 } from './deadlineDecision.js';
-import { readWorkerChildren } from './workerDelivery.js';
 import type { ChildAssignment, WorkerChildRead, WorkerDelivery } from './workerDelivery.js';
 
 export type DeadlineWatchdogContext = Pick<ExtensionContext, 'sessionManager' | 'ui'>;
 
 export interface DeadlineWatchdog {
-  scan: (context: DeadlineWatchdogContext) => Promise<void>;
+  apply: (
+    context: DeadlineWatchdogContext,
+    managerTerminal: string,
+    children: readonly WorkerChildRead[],
+  ) => Promise<void>;
   clear: () => void;
 }
 
@@ -96,7 +99,6 @@ export const createDeadlineWatchdog = (
 ): DeadlineWatchdog => {
   const armed = new Map<string, ArmedTimers>();
   let stopped = false;
-  let tail: Promise<void> = Promise.resolve();
 
   // Read through a function so TypeScript does not narrow the flag across awaits.
   const isStopped = (): boolean => stopped;
@@ -268,19 +270,11 @@ export const createDeadlineWatchdog = (
     });
   };
 
-  const runScan = async (context: DeadlineWatchdogContext): Promise<void> => {
-    if (isStopped()) {
-      return;
-    }
-
-    const managerTerminal = currentTerminalAddress();
-
-    if (managerTerminal === undefined) {
-      return;
-    }
-
-    const children = await readWorkerChildren(hc, managerTerminal);
-
+  const apply = async (
+    context: DeadlineWatchdogContext,
+    managerTerminal: string,
+    children: readonly WorkerChildRead[],
+  ): Promise<void> => {
     if (isStopped()) {
       return;
     }
@@ -329,16 +323,7 @@ export const createDeadlineWatchdog = (
   };
 
   return {
-    scan: (context) => {
-      const next = tail.then(
-        () => runScan(context),
-        () => runScan(context),
-      );
-
-      tail = next.catch(() => undefined);
-
-      return next;
-    },
+    apply,
     clear: () => {
       stopped = true;
 

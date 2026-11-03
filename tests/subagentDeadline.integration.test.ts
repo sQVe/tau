@@ -7,8 +7,8 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { readAssignment } from '../src/extensions/subagents/assignment.js';
 import { createDeadlineWatchdog } from '../src/extensions/subagents/deadlineWatchdog.js';
-import type { DeadlineWatchdog } from '../src/extensions/subagents/deadlineWatchdog.js';
 import { createWorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
+import { createWorkerScan } from '../src/extensions/subagents/workerScan.js';
 import { runWithEnvironment } from '../src/hc/connect.js';
 import { get, label, ls } from '../src/hc/hc.js';
 import { startHcSession } from './hcSessionHarness.js';
@@ -94,8 +94,13 @@ const managerView = (): ManagerView => {
   return { pi, context, messages, notices };
 };
 
-const startWatchdog = (hc: HcSession, view: ManagerView): DeadlineWatchdog =>
-  createDeadlineWatchdog(hc.runtime, createWorkerDelivery(view.pi, hc.runtime));
+// A reload builds a new watchdog. Each test starts one, as the manager does on session start.
+const startWatchdog = (hc: HcSession, view: ManagerView) => {
+  const delivery = createWorkerDelivery(view.pi);
+  const watchdog = createDeadlineWatchdog(hc.runtime, delivery);
+
+  return { watchdog, scan: createWorkerScan(hc.runtime, delivery, watchdog) };
+};
 
 const prepareTest = (): void => {
   onTestFinished(() => {
@@ -169,7 +174,7 @@ it('warns a worker at its short deadline, then ends it', async () => {
   const deadline = await deadlineOf(worker);
   const view = managerView();
 
-  await startWatchdog(hc, view).scan(view.context);
+  await startWatchdog(hc, view).scan.scan(view.context);
 
   const inputPath = join(worker.agentDirectory, 'input.txt');
 
@@ -196,14 +201,14 @@ it('ends an overdue worker after a manager reload builds a new watchdog', async 
   const view = managerView();
   const beforeReload = startWatchdog(hc, view);
 
-  await beforeReload.scan(view.context);
-  beforeReload.clear();
+  await beforeReload.scan.scan(view.context);
+  beforeReload.watchdog.clear();
 
   await waitUntil(() => Date.now() >= deadline, 'The deadline never passed.');
 
   expect(await workerState(hc, worker)).toBe('live');
 
-  await startWatchdog(hc, view).scan(view.context);
+  await startWatchdog(hc, view).scan.scan(view.context);
 
   await waitUntil(
     () => view.messages.length === 1,
@@ -226,7 +231,7 @@ it('shows an error for a malformed tau.deadline label and still ends the worker 
 
   const view = managerView();
 
-  await startWatchdog(hc, view).scan(view.context);
+  await startWatchdog(hc, view).scan.scan(view.context);
 
   expect(view.notices).toEqual([expect.objectContaining({ level: 'error' })]);
   expect(view.notices[0]?.message).toContain('"soon"');
@@ -254,7 +259,7 @@ it('never ends a terminal that is not the manager child, even with an expired de
 
   const view = managerView();
 
-  await startWatchdog(hc, view).scan(view.context);
+  await startWatchdog(hc, view).scan.scan(view.context);
 
   await waitUntil(() => view.messages.length === 1, 'The manager never showed the worker end.');
 

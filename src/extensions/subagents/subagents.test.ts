@@ -9,12 +9,16 @@ import type { Exec } from '../../command.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import { assignmentDirectory, writeAssignment } from './assignment.js';
 import type { Assignment } from './assignment.js';
+import type { DeadlineWatchdog } from './deadlineWatchdog.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
-import { registerWorkerDelivery } from './subagents.js';
+import { registerWorkerScan } from './subagents.js';
 import { createWorkerDelivery } from './workerDelivery.js';
-import type { WorkerDelivery } from './workerDelivery.js';
+import { createWorkerScan } from './workerScan.js';
+import type { WorkerScan } from './workerScan.js';
 
 const manager = 't-manager';
+
+const noDeadline: DeadlineWatchdog = { apply: () => Promise.resolve(), clear: () => undefined };
 
 beforeEach(() => {
   vi.stubEnv('HC_TERMINAL_ID', manager);
@@ -90,23 +94,19 @@ const createContext = () => {
   };
 };
 
-const completionTracked = (delivery: WorkerDelivery) => {
-  let tail: Promise<void> = Promise.resolve();
+// Keeps the last scan. The scan owner runs scans in order, so this one settles after the others.
+const completionTracked = (scan: WorkerScan) => {
+  let last: Promise<void> = Promise.resolve();
 
   return {
-    delivery: {
-      deliver: (context: Parameters<WorkerDelivery['deliver']>[0]) => {
-        const next = tail.then(() => delivery.deliver(context));
+    scan: {
+      scan: (context: Parameters<WorkerScan['scan']>[0]) => {
+        last = scan.scan(context);
 
-        tail = next.catch(() => undefined);
-
-        return next;
-      },
-      showEnded: (context: Parameters<WorkerDelivery['showEnded']>[0], assignmentId: string) => {
-        delivery.showEnded(context, assignmentId);
+        return last;
       },
     },
-    settled: () => tail,
+    settled: () => last,
   };
 };
 
@@ -152,9 +152,9 @@ it('shows one report message for the same note twice', async () => {
   const { context } = createContext();
   const hc = createHc({ terminal: liveTerminal({ 'tau.assignment': path }) });
 
-  const tracked = completionTracked(createWorkerDelivery(pi, hc));
+  const tracked = completionTracked(createWorkerScan(hc, createWorkerDelivery(pi), noDeadline));
 
-  registerWorkerDelivery(pi, tracked.delivery);
+  registerWorkerScan(pi, tracked.scan);
 
   const input = handlers.get('input');
 
@@ -191,9 +191,9 @@ it('shows nothing for an input note without a worker marker', async () => {
   const { context } = createContext();
   const hc = createHc({ terminal: liveTerminal({ 'tau.assignment': path }) });
 
-  const tracked = completionTracked(createWorkerDelivery(pi, hc));
+  const tracked = completionTracked(createWorkerScan(hc, createWorkerDelivery(pi), noDeadline));
 
-  registerWorkerDelivery(pi, tracked.delivery);
+  registerWorkerScan(pi, tracked.scan);
 
   const input = handlers.get('input');
 
@@ -217,9 +217,9 @@ it('shows a pending question on a question note', async () => {
   const { context } = createContext();
   const hc = createHc({ terminal: liveTerminal({ 'tau.assignment': path }) });
 
-  const tracked = completionTracked(createWorkerDelivery(pi, hc));
+  const tracked = completionTracked(createWorkerScan(hc, createWorkerDelivery(pi), noDeadline));
 
-  registerWorkerDelivery(pi, tracked.delivery);
+  registerWorkerScan(pi, tracked.scan);
 
   const input = handlers.get('input');
 
@@ -243,9 +243,9 @@ it('shows one question message for the same question note twice', async () => {
   const { context } = createContext();
   const hc = createHc({ terminal: liveTerminal({ 'tau.assignment': path }) });
 
-  const tracked = completionTracked(createWorkerDelivery(pi, hc));
+  const tracked = completionTracked(createWorkerScan(hc, createWorkerDelivery(pi), noDeadline));
 
-  registerWorkerDelivery(pi, tracked.delivery);
+  registerWorkerScan(pi, tracked.scan);
 
   const input = handlers.get('input');
 
@@ -270,9 +270,9 @@ it('shows no second question message when compaction follows a shown question', 
   const { context } = createContext();
   const hc = createHc({ terminal: liveTerminal({ 'tau.assignment': path }) });
 
-  const tracked = completionTracked(createWorkerDelivery(pi, hc));
+  const tracked = completionTracked(createWorkerScan(hc, createWorkerDelivery(pi), noDeadline));
 
-  registerWorkerDelivery(pi, tracked.delivery);
+  registerWorkerScan(pi, tracked.scan);
 
   const input = handlers.get('input');
 
@@ -302,9 +302,9 @@ it('shows a saved question once on compaction before its note arrives', async ()
   const { context } = createContext();
   const hc = createHc({ terminal: liveTerminal({ 'tau.assignment': path }) });
 
-  const tracked = completionTracked(createWorkerDelivery(pi, hc));
+  const tracked = completionTracked(createWorkerScan(hc, createWorkerDelivery(pi), noDeadline));
 
-  registerWorkerDelivery(pi, tracked.delivery);
+  registerWorkerScan(pi, tracked.scan);
 
   handlers.get('session_compact')?.({}, context);
 
@@ -318,9 +318,9 @@ it('reports a failed delivery with an error notification', async () => {
   const { context, notifications } = createContext();
   const hc = createHc({ lsFails: true });
 
-  const tracked = completionTracked(createWorkerDelivery(pi, hc));
+  const tracked = completionTracked(createWorkerScan(hc, createWorkerDelivery(pi), noDeadline));
 
-  registerWorkerDelivery(pi, tracked.delivery);
+  registerWorkerScan(pi, tracked.scan);
 
   const input = handlers.get('input');
 
@@ -333,7 +333,9 @@ it('reports a failed delivery with an error notification', async () => {
   await tracked.settled();
 
   expect(messages).toEqual([]);
-  expect(notifications).toHaveLength(1);
-  expect(notifications[0]?.[0]).toContain('hc ls failed: boom');
-  expect(notifications[0]?.[1]).toBe('error');
+
+  expect(notifications).toEqual([
+    [expect.stringContaining('Worker delivery failed: hc ls failed: boom'), 'error'],
+    [expect.stringContaining('Deadline scan failed: hc ls failed: boom'), 'error'],
+  ]);
 });

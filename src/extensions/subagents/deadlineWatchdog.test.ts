@@ -16,6 +16,7 @@ import type { DeadlineWatchdogContext } from './deadlineWatchdog.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { registerDeadlineWatchdog } from './subagents.js';
 import type { WorkerDelivery } from './workerDelivery.js';
+import { createWorkerScan } from './workerScan.js';
 
 const manager = 't-manager';
 const now = 1_000_000;
@@ -102,7 +103,7 @@ const harness = (hcFake: HcFake) => {
   const notifications: [string, string | undefined][] = [];
 
   const delivery: WorkerDelivery = {
-    deliver: () => Promise.resolve(undefined),
+    deliver: () => undefined,
     showEnded: (_context, assignmentId) => {
       ended.push(assignmentId);
     },
@@ -118,6 +119,7 @@ const harness = (hcFake: HcFake) => {
   } as unknown as DeadlineWatchdogContext;
 
   const watchdog = createDeadlineWatchdog(hc, delivery);
+  const scanner = createWorkerScan(hc, delivery, watchdog);
   const fake = fakeExtensionApi();
 
   registerDeadlineWatchdog(fake.pi, watchdog);
@@ -131,7 +133,7 @@ const harness = (hcFake: HcFake) => {
   const commands = (name: string) =>
     hcFake.calls.filter((call) => call.commandArguments[0] === name);
 
-  return { context, ended, notifications, watchdog, hc, emit, commands };
+  return { context, ended, notifications, scanner, hc, emit, commands };
 };
 
 const setup = async (
@@ -165,9 +167,9 @@ const standalone = (hcFake: HcFake) => {
 };
 
 it('warns at the reserve and kills at the deadline', async () => {
-  const { context, watchdog, deadline, ended, commands } = await setup();
+  const { context, scanner, deadline, ended, commands } = await setup();
 
-  await watchdog.scan(context);
+  await scanner.scan(context);
 
   await vi.advanceTimersByTimeAsync(deadline - reserve - now - 1);
 
@@ -193,9 +195,9 @@ it('warns at the reserve and kills at the deadline', async () => {
 });
 
 it('kills after hc refuses the warning', async () => {
-  const { context, watchdog, deadline, notifications, commands } = await setup({ sendFails: true });
+  const { context, scanner, deadline, notifications, commands } = await setup({ sendFails: true });
 
-  await watchdog.scan(context);
+  await scanner.scan(context);
   await vi.advanceTimersByTimeAsync(deadline - reserve - now);
 
   expect(commands('send')).toHaveLength(1);
@@ -212,9 +214,9 @@ it('kills after hc refuses the warning', async () => {
 });
 
 it('skips the kill when hc get shows another parent', async () => {
-  const { context, watchdog, hcFake, deadline, path, commands } = await setup();
+  const { context, scanner, hcFake, deadline, path, commands } = await setup();
 
-  await watchdog.scan(context);
+  await scanner.scan(context);
 
   hcFake.reply('get', JSON.stringify(terminal(path, deadline, { parent: 't-other' })));
 
@@ -225,9 +227,9 @@ it('skips the kill when hc get shows another parent', async () => {
 });
 
 it('skips the kill when hc get shows another assignment', async () => {
-  const { context, watchdog, hcFake, deadline, commands } = await setup();
+  const { context, scanner, hcFake, deadline, commands } = await setup();
 
-  await watchdog.scan(context);
+  await scanner.scan(context);
 
   hcFake.reply('get', JSON.stringify(terminal('/agent/other-assignment.json', deadline)));
 
@@ -238,9 +240,9 @@ it('skips the kill when hc get shows another assignment', async () => {
 });
 
 it('clears every timer at session shutdown', async () => {
-  const { context, watchdog, deadline, emit, commands } = await setup();
+  const { context, scanner, deadline, emit, commands } = await setup();
 
-  await watchdog.scan(context);
+  await scanner.scan(context);
 
   await emit('session_shutdown', { reason: 'quit' });
 
@@ -253,7 +255,7 @@ it('clears every timer at session shutdown', async () => {
 });
 
 it('keeps a newer deadline when an older scan finishes first', async () => {
-  const { context, watchdog, hcFake, hc } = await setup();
+  const { context, scanner, hcFake, hc } = await setup();
   const entered = deferred();
   const release = deferred();
   const realExec = hcFake.exec;
@@ -272,13 +274,13 @@ it('keeps a newer deadline when an older scan finishes first', async () => {
 
   hcFake.reply('ls', JSON.stringify({ terminals: [] }));
 
-  const oldScan = watchdog.scan(context);
+  const oldScan = scanner.scan(context);
 
   await entered.promise;
 
   hcFake.reply('ls', JSON.stringify({ terminals: [childRow] }));
 
-  const newScan = watchdog.scan(context);
+  const newScan = scanner.scan(context);
 
   release.resolve();
 
@@ -288,21 +290,21 @@ it('keeps a newer deadline when an older scan finishes first', async () => {
 });
 
 it('keeps a known deadline when a child read fails', async () => {
-  const { context, watchdog, hcFake, notifications } = await setup();
+  const { context, scanner, hcFake, notifications } = await setup();
 
-  await watchdog.scan(context);
+  await scanner.scan(context);
 
   expect(vi.getTimerCount()).toBe(2);
 
   hcFake.fail('get', 'temporary read failure', 1);
-  await watchdog.scan(context);
+  await scanner.scan(context);
 
   expect(vi.getTimerCount()).toBe(2);
   expect(notifications.some(([message]) => message.includes('Reading t-child failed'))).toBe(true);
 });
 
 it('arms nothing when a scan resumes after shutdown', async () => {
-  const { context, watchdog, hc, hcFake, deadline, emit, commands } = await setup();
+  const { context, scanner, hc, hcFake, deadline, emit, commands } = await setup();
   const entered = deferred();
   const release = deferred();
   const realExec = hcFake.exec;
@@ -316,7 +318,7 @@ it('arms nothing when a scan resumes after shutdown', async () => {
     return realExec(command, commandArguments, options);
   };
 
-  const scanning = watchdog.scan(context);
+  const scanning = scanner.scan(context);
 
   await entered.promise;
 
@@ -333,9 +335,9 @@ it('arms nothing when a scan resumes after shutdown', async () => {
 });
 
 it('sends no kill when a callback resumes after shutdown', async () => {
-  const { context, watchdog, hc, hcFake, deadline, emit, commands } = await setup();
+  const { context, scanner, hc, hcFake, deadline, emit, commands } = await setup();
 
-  await watchdog.scan(context);
+  await scanner.scan(context);
 
   const entered = deferred();
   const release = deferred();
@@ -364,9 +366,9 @@ it('sends no kill when a callback resumes after shutdown', async () => {
 });
 
 it('arms nothing for a child whose assignment already reported', async () => {
-  const { context, watchdog, deadline, commands } = await setup({ reported: true });
+  const { context, scanner, deadline, commands } = await setup({ reported: true });
 
-  await watchdog.scan(context);
+  await scanner.scan(context);
   await vi.advanceTimersByTimeAsync(deadline - now + reserve);
 
   expect(commands('send')).toHaveLength(0);
@@ -374,9 +376,9 @@ it('arms nothing for a child whose assignment already reported', async () => {
 });
 
 it('warns at once when less than the reserve is left', async () => {
-  const { context, watchdog, commands } = await setup({ deadline: now + 30_000 });
+  const { context, scanner, commands } = await setup({ deadline: now + 30_000 });
 
-  await watchdog.scan(context);
+  await scanner.scan(context);
   await vi.advanceTimersByTimeAsync(0);
 
   expect(commands('send')).toHaveLength(1);
@@ -391,9 +393,9 @@ it('kills at once when the assignment file is missing', async () => {
 
   hcFake.reply('get', JSON.stringify(terminal('/agent/missing.json', now + 300_000)));
 
-  const { context, watchdog, notifications, commands } = standalone(hcFake);
+  const { context, scanner, notifications, commands } = standalone(hcFake);
 
-  await watchdog.scan(context);
+  await scanner.scan(context);
 
   expect(commands('kill')).toHaveLength(1);
   expect(notifications).toEqual([[`Missing assignment file: /agent/missing.json.`, 'error']]);
@@ -407,9 +409,9 @@ it('kills at once when the assignment file is malformed', async () => {
   writeFileSync(path, JSON.stringify({ version: 2, assignmentId: 'not-a-uuid' }));
   hcFake.reply('get', JSON.stringify(terminal(path, now + 300_000)));
 
-  const { context, watchdog, notifications, commands } = standalone(hcFake);
+  const { context, scanner, notifications, commands } = standalone(hcFake);
 
-  await watchdog.scan(context);
+  await scanner.scan(context);
 
   expect(commands('kill')).toHaveLength(1);
   expect(notifications).toHaveLength(1);
@@ -421,9 +423,9 @@ it('reports an unread child without killing it', async () => {
 
   hcFake.fail('get', 'not_found', 1);
 
-  const { context, watchdog, notifications, commands } = standalone(hcFake);
+  const { context, scanner, notifications, commands } = standalone(hcFake);
 
-  await watchdog.scan(context);
+  await scanner.scan(context);
 
   expect(notifications).toHaveLength(1);
   expect(notifications[0]?.[0]).toContain('Reading t-child failed');

@@ -17,7 +17,7 @@ import { isWorkerProcess } from '../../worker.js';
 import { readBrowserLoginCommand } from './browserLogin.js';
 import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.js';
 import { createDeadlineWatchdog } from './deadlineWatchdog.js';
-import type { DeadlineWatchdog, DeadlineWatchdogContext } from './deadlineWatchdog.js';
+import type { DeadlineWatchdog } from './deadlineWatchdog.js';
 import { Admission, executeLaunch } from './launch.js';
 import type { LaunchRuntime } from './launch.js';
 import { checkLaunchEnvironment } from './launchCheck.js';
@@ -29,8 +29,9 @@ import { listProfiles } from './profiles.js';
 import type { ProfileSummary } from './profiles.js';
 import { defaultWorkerCapacity, readWorkerCapacity } from './workerCapacityConfig.js';
 import { createWorkerDelivery } from './workerDelivery.js';
-import type { WorkerDelivery } from './workerDelivery.js';
 import { workerModelLine } from './workerModels.js';
+import { createWorkerScan } from './workerScan.js';
+import type { WorkerScan, WorkerScanContext } from './workerScan.js';
 
 interface CapacityRefusal {
   refuse: () => void;
@@ -139,10 +140,15 @@ const warnUnknownConfigKeys = (context: ExtensionContext): void => {
   }
 };
 
+// The scan reports its own errors through the UI, so no handler waits for it.
+const startScan = (scan: WorkerScan, context: WorkerScanContext): void => {
+  scan.scan(context).catch(() => undefined);
+};
+
 const registerLaunchTool = (
   runtime: LaunchRuntime,
   profiles: ProfileSummary[],
-  scanDeadlines: (context: DeadlineWatchdogContext) => void,
+  scan: WorkerScan,
   modelLine: string[] = [],
 ): void => {
   runtime.pi.registerTool({
@@ -185,7 +191,7 @@ const registerLaunchTool = (
       );
 
       if (result.isError !== true) {
-        scanDeadlines(context);
+        startScan(scan, context);
       }
 
       return result;
@@ -225,35 +231,19 @@ export const registerDeadlineWatchdog = (pi: ExtensionAPI, watchdog: DeadlineWat
   });
 };
 
-export const registerWorkerDelivery = (
-  pi: ExtensionAPI,
-  delivery: WorkerDelivery,
-  afterDeliver?: (context: Parameters<WorkerDelivery['deliver']>[0]) => void,
-): void => {
-  const deliverPending = (context: Parameters<WorkerDelivery['deliver']>[0]): void => {
-    delivery
-      .deliver(context)
-      .catch((error: unknown) => {
-        context.ui.notify(`Worker delivery failed: ${errorMessage(error)}`, 'error');
-      })
-      .then(() => {
-        afterDeliver?.(context);
-      })
-      .catch(() => undefined);
-  };
-
+export const registerWorkerScan = (pi: ExtensionAPI, scan: WorkerScan): void => {
   pi.on('input', (event, context) => {
     if (event.text.includes('[tau-report]') || event.text.includes('[tau-question]')) {
-      deliverPending(context);
+      startScan(scan, context);
     }
   });
 
   pi.on('session_start', (_event, context) => {
-    deliverPending(context);
+    startScan(scan, context);
   });
 
   pi.on('session_compact', (_event, context) => {
-    deliverPending(context);
+    startScan(scan, context);
   });
 };
 
@@ -276,18 +266,9 @@ export default function subagentsExtension(
     cwd: process.cwd(),
   };
 
-  const delivery = createWorkerDelivery(pi, hc);
+  const delivery = createWorkerDelivery(pi);
   const watchdog = createDeadlineWatchdog(hc, delivery);
-
-  const scanDeadlines = (context: DeadlineWatchdogContext): void => {
-    watchdog.scan(context).catch((error: unknown) => {
-      try {
-        context.ui.notify(`Deadline scan failed: ${errorMessage(error)}`, 'error');
-      } catch {
-        // A replaced session makes its old context stale, so the error has nowhere to go.
-      }
-    });
-  };
+  const scan = createWorkerScan(hc, delivery, watchdog);
 
   const launchRuntime = (capacity: number): LaunchRuntime => ({
     pi,
@@ -314,12 +295,7 @@ export default function subagentsExtension(
 
     const capacity = launchCapacity(context);
 
-    registerLaunchTool(
-      launchRuntime(capacity),
-      profiles,
-      scanDeadlines,
-      launchModelLine(context, profiles),
-    );
+    registerLaunchTool(launchRuntime(capacity), profiles, scan, launchModelLine(context, profiles));
 
     if (delegating) {
       guidelines = delegationGuidelines(browserLoginCommand(context));
@@ -327,7 +303,7 @@ export default function subagentsExtension(
   });
 
   registerDeadlineWatchdog(pi, watchdog);
-  registerWorkerDelivery(pi, delivery, scanDeadlines);
+  registerWorkerScan(pi, scan);
 
   pi.on('tool_call', (event) => {
     if (isNestedControlCall(event)) {
@@ -340,6 +316,6 @@ export default function subagentsExtension(
   registerLaunchTool(
     launchRuntime(defaultWorkerCapacity),
     launchProfiles({ cwd: process.cwd(), isProjectTrusted: () => false }),
-    scanDeadlines,
+    scan,
   );
 }

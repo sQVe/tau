@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 
 import { notifyOnce } from '../../config/config.js';
 import { errorMessage } from '../../errors.js';
-import { currentTerminalAddress, get, ls } from '../../hc/hc.js';
+import { get, ls } from '../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import { isRecord } from '../../schema.js';
 import { readAssignment } from './assignment.js';
@@ -14,7 +14,7 @@ import { deadlineMessageType, questionMessageType, reportMessageType } from './w
 type WorkerDeliveryContext = Pick<ExtensionContext, 'sessionManager' | 'ui'>;
 
 export interface WorkerDelivery {
-  deliver: (context: WorkerDeliveryContext) => Promise<void>;
+  deliver: (context: WorkerDeliveryContext, children: readonly WorkerChildRead[]) => void;
   showEnded: (context: WorkerDeliveryContext, assignmentId: string) => void;
 }
 
@@ -160,18 +160,10 @@ const deliveryFact = (child: WorkerChildRead): WorkerReadFact => {
   };
 };
 
-export const createWorkerDelivery = (pi: ExtensionAPI, hc: HcRuntime): WorkerDelivery => {
-  let tail: Promise<void> = Promise.resolve();
+export const createWorkerDelivery = (pi: ExtensionAPI): WorkerDelivery => {
   const queuedKeys = new Set<string>();
 
-  const run = async (context: WorkerDeliveryContext): Promise<void> => {
-    const managerTerminal = currentTerminalAddress();
-
-    if (managerTerminal === undefined) {
-      return;
-    }
-
-    const children = await readWorkerChildren(hc, managerTerminal);
+  const deliver = (context: WorkerDeliveryContext, children: readonly WorkerChildRead[]): void => {
     const facts = children.map((child) => deliveryFact(child));
 
     const shownKeys = new Set([...restoreShownKeys(context), ...queuedKeys]);
@@ -222,17 +214,5 @@ export const createWorkerDelivery = (pi: ExtensionAPI, hc: HcRuntime): WorkerDel
     });
   };
 
-  return {
-    deliver: (context) => {
-      const next = tail.then(
-        () => run(context),
-        () => run(context),
-      );
-
-      tail = next.catch(() => undefined);
-
-      return next;
-    },
-    showEnded,
-  };
+  return { deliver, showEnded };
 };
