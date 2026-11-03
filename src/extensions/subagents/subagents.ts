@@ -18,6 +18,8 @@ import { readBrowserLoginCommand } from './browserLogin.js';
 import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.js';
 import { createDeadlineWatchdog } from './deadlineWatchdog.js';
 import type { DeadlineWatchdog } from './deadlineWatchdog.js';
+import { executeFollowUp } from './followUp.js';
+import { followUpParameters } from './followUpParameters.js';
 import { Admission, executeLaunch } from './launch.js';
 import type { LaunchRuntime } from './launch.js';
 import { checkLaunchEnvironment } from './launchCheck.js';
@@ -196,6 +198,42 @@ const registerLaunchTool = (
   });
 };
 
+const registerFollowUpTool = (runtime: LaunchRuntime, scan: WorkerScan): void => {
+  runtime.pi.registerTool({
+    name: 'subagent_follow_up',
+    exposure: 'model-only',
+    label: 'Resume worker',
+    description: [
+      'Resume an ended worker from its saved Pi session in a new hc child, with a new assignment file and a fresh deadline.',
+      'Pass the ended worker assignment ID, the new task, and acceptance criteria for editing workers.',
+      'The follow-up is refused when the session file is missing or a running worker uses it. End your turn to wait; never sleep or poll.',
+    ].join(' '),
+    parameters: followUpParameters,
+    async execute(_toolCallId, parameters, signal, _onUpdate, context) {
+      requireTrustedProject(context);
+
+      const parentSession = context.sessionManager.getSessionFile();
+
+      if (parentSession == null || parentSession === '') {
+        throw new Error('Worker follow-up requires a saved parent Pi session.');
+      }
+
+      const startedAt = { wall: Date.now(), monotonic: performance.now() };
+
+      const result = await executeFollowUp(
+        runtime,
+        { parameters, startedAt, parentSession },
+        signal,
+        context,
+      );
+
+      startScan(scan, context);
+
+      return result;
+    },
+  });
+};
+
 export const registerCapacityRefusal = (pi: ExtensionAPI): CapacityRefusal => {
   if (isWorkerProcess()) {
     return { refuse: () => undefined };
@@ -296,7 +334,10 @@ export default function subagentsExtension(
 
     const capacity = launchCapacity(context);
 
-    registerLaunchTool(launchRuntime(capacity), profiles, scan, launchModelLine(context, profiles));
+    const runtime = launchRuntime(capacity);
+
+    registerLaunchTool(runtime, profiles, scan, launchModelLine(context, profiles));
+    registerFollowUpTool(runtime, scan);
 
     if (delegating) {
       guidelines = delegationGuidelines(browserLoginCommand(context));
@@ -314,9 +355,13 @@ export default function subagentsExtension(
     return undefined;
   });
 
+  const fallbackRuntime = launchRuntime(defaultWorkerCapacity);
+
   registerLaunchTool(
-    launchRuntime(defaultWorkerCapacity),
+    fallbackRuntime,
     launchProfiles({ cwd: process.cwd(), isProjectTrusted: () => false }),
     scan,
   );
+
+  registerFollowUpTool(fallbackRuntime, scan);
 }

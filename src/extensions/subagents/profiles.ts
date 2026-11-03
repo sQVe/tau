@@ -14,6 +14,7 @@ import type { Assignment } from './assignment.js';
 import { assignmentContractFor, handoverContract } from './handover.js';
 import { thinkingSchema, toolNamePattern } from './types.js';
 import type { Loadout, Profile } from './types.js';
+import { taskPromptHeader } from './workerMessage.js';
 import { defaultProfileName } from './workerModels.js';
 
 export interface ProfileSummary {
@@ -288,7 +289,7 @@ const acceptanceList = (assignment: Assignment): string[] => {
 
 export const workerPrompt = (assignment: Assignment): string =>
   [
-    `Task ${assignment.assignmentId}:`,
+    taskPromptHeader(assignment.assignmentId),
     assignment.task,
     ...acceptanceList(assignment),
     '',

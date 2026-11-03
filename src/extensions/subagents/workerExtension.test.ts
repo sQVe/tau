@@ -18,6 +18,7 @@ import { assignmentDirectory, writeAssignment } from './assignment.js';
 import type { Assignment } from './assignment.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import workerExtension from './workerExtension.js';
+import { taskPromptHeader } from './workerMessage.js';
 import { workerTools } from './workerTools.js';
 
 const workerTerminal = 'worker-1';
@@ -92,7 +93,7 @@ const setup = (assignmentPath?: string) => {
 };
 
 const assignmentFor = (directory: string): Assignment => ({
-  version: 2,
+  version: 3,
   assignmentId,
   task: 'Inspect the fixture.',
   acceptance: [],
@@ -110,6 +111,8 @@ const assignmentFor = (directory: string): Assignment => ({
   parentTerminal,
   deadline: Date.now() + 60_000,
   createdAt: Date.now(),
+  previousAssignmentId: null,
+  extensionPackages: null,
   questions: [],
   report: null,
 });
@@ -155,6 +158,11 @@ it('reads the assignment, activates its tools, and sends the first task prompt',
   expect(activeTools).toHaveBeenCalledWith(tools);
 
   expect(pi.sendUserMessage).toHaveBeenCalledWith(expect.stringContaining('Inspect the fixture.'));
+
+  expect(pi.sendUserMessage).toHaveBeenCalledWith(
+    expect.stringContaining(taskPromptHeader(assignmentId)),
+  );
+
   expect(loadout.model).toBe('faux/test');
 });
 

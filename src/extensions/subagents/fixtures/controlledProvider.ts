@@ -25,6 +25,10 @@ interface FixtureAssignment {
 
 export const questionTaskMarker = 'fixture-asks-the-manager';
 
+export const firstTaskMarker = 'fixture-first-task-marker';
+
+export const followUpTaskMarker = 'fixture-follow-up-marker';
+
 const fixtureQuestion = 'Which value should the report hold?';
 
 const fixtureSummary =
@@ -137,6 +141,29 @@ const typedAnswer = (context: TranscriptContext): string => {
 
 const asksTheManager = (): boolean => savedAssignment?.task.includes(questionTaskMarker) ?? false;
 
+const firstTaskPresent = (context: TranscriptContext): boolean => {
+  const text = context.messages
+    .filter((message) => message.role === 'user')
+    .map((message) => contentText(message.content))
+    .join('\n');
+
+  return text.includes(firstTaskMarker);
+};
+
+const followUpResponses = (): FauxResponseStep[] => [
+  (context) => {
+    const present = firstTaskPresent(context);
+
+    return fauxAssistantMessage([
+      fauxToolCall('subagent_report', {
+        outcome: present ? 'success' : 'failure',
+        summary: fixtureSummary,
+        evidence: [`first task in context: ${present}`],
+      }),
+    ]);
+  },
+];
+
 const questionResponses = (): FauxResponseStep[] => [
   fauxAssistantMessage([fauxToolCall('subagent_question', { question: fixtureQuestion })]),
   (context) =>
@@ -189,8 +216,16 @@ const reportResponses = (): FauxResponseStep[] => [
   },
 ];
 
+const fixtureResponses = (): FauxResponseStep[] => {
+  if (savedAssignment?.task.includes(followUpTaskMarker) ?? false) {
+    return followUpResponses();
+  }
+
+  return asksTheManager() ? questionResponses() : reportResponses();
+};
+
 export default function controlledProvider(pi: ExtensionAPI): void {
-  provider.setResponses(asksTheManager() ? questionResponses() : reportResponses());
+  provider.setResponses(fixtureResponses());
 
   pi.registerProvider({ ...provider.provider, auth: fixtureAuth });
 }

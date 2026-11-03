@@ -9,10 +9,12 @@ import { expect, onTestFinished, vi } from 'vitest';
 
 import type { Assignment } from '../src/extensions/subagents/assignment.js';
 import { readAssignment } from '../src/extensions/subagents/assignment.js';
+import { executeFollowUp } from '../src/extensions/subagents/followUp.js';
 import { Admission, executeLaunch } from '../src/extensions/subagents/launch.js';
 import type { LaunchRuntime } from '../src/extensions/subagents/launch.js';
 import * as loadouts from '../src/extensions/subagents/loadout.js';
 import { runWithEnvironment } from '../src/hc/connect.js';
+import { get } from '../src/hc/hc.js';
 import type { HcSession } from './hcSessionHarness.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
@@ -37,7 +39,23 @@ export interface WorkerSession {
   managerAddress: string;
   managerPath: string;
   assignmentFilePath: string;
+  workerAddress: string;
+  runtime: LaunchRuntime;
   observationPath: string | undefined;
+}
+
+export interface FollowUpWorkerOptions {
+  source: WorkerSession;
+  task: string;
+  acceptance?: string[];
+  label?: string;
+  visibility?: 'foreground' | 'background';
+  timeoutSeconds?: number;
+}
+
+export interface FollowUpWorkerSession {
+  assignmentFilePath: string;
+  workerAddress: string;
 }
 
 const observationDeadlineMilliseconds = 90_000;
@@ -220,9 +238,10 @@ export const launchWorkerSession = async (
   expect(result.isError).not.toBe(true);
 
   const assignmentFilePath = result.details?.labels['tau.assignment'];
+  const workerAddress = result.details?.address;
 
-  if (assignmentFilePath === undefined) {
-    throw new Error('Launch returned no assignment label.');
+  if (assignmentFilePath === undefined || workerAddress === undefined) {
+    throw new Error('Launch returned no assignment label or address.');
   }
 
   return {
@@ -230,6 +249,67 @@ export const launchWorkerSession = async (
     managerAddress: manager.address,
     managerPath,
     assignmentFilePath,
+    workerAddress,
+    runtime,
     observationPath,
   };
+};
+
+export const waitForTerminalFinished = async (hc: HcSession, address: string): Promise<void> => {
+  const deadline = Date.now() + observationDeadlineMilliseconds;
+
+  while (Date.now() <= deadline) {
+    const terminal = await get(hc.runtime, address);
+
+    if (terminal.state === 'finished') {
+      return;
+    }
+
+    await delay(observationPollMilliseconds);
+  }
+
+  throw new Error(`Worker terminal ${address} never finished.`);
+};
+
+export const followUpWorkerSession = async (
+  options: FollowUpWorkerOptions,
+): Promise<FollowUpWorkerSession> => {
+  const { source } = options;
+  const sourceAssignment = await readAssignment(source.assignmentFilePath);
+
+  if (sourceAssignment === undefined) {
+    throw new Error(`The source assignment is missing: ${source.assignmentFilePath}.`);
+  }
+
+  vi.stubEnv('HC_TERMINAL_ID', source.managerAddress);
+  vi.stubEnv('PI_CODING_AGENT_DIR', source.agentDirectory);
+
+  const result = await executeFollowUp(
+    source.runtime,
+    {
+      parameters: {
+        sourceAssignmentId: sourceAssignment.assignmentId,
+        task: options.task,
+        ...(options.acceptance === undefined ? {} : { acceptance: options.acceptance }),
+        ...(options.label === undefined ? {} : { label: options.label }),
+        visibility: options.visibility ?? 'background',
+        ...(options.timeoutSeconds === undefined ? {} : { timeoutSeconds: options.timeoutSeconds }),
+      },
+      startedAt: { wall: Date.now(), monotonic: performance.now() },
+      parentSession: join(source.agentDirectory, 'parent.jsonl'),
+    },
+    undefined,
+    { sessionManager: { getSessionId: () => 'manager-one' } } as unknown as ExtensionContext,
+  );
+
+  expect(result.isError).not.toBe(true);
+
+  const assignmentFilePath = result.details?.labels['tau.assignment'];
+  const workerAddress = result.details?.address;
+
+  if (assignmentFilePath === undefined || workerAddress === undefined) {
+    throw new Error('The follow-up returned no assignment label or address.');
+  }
+
+  return { assignmentFilePath, workerAddress };
 };

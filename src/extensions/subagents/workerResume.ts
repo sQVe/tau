@@ -1,6 +1,8 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 
 import { isRecord } from '../../schema.js';
+import type { Assignment } from './assignment.js';
+import { taskPromptHeader } from './workerMessage.js';
 
 export interface WorkerResume {
   sendTaskPrompt: boolean;
@@ -21,6 +23,40 @@ const messageRecord = (entry: SessionEntry): Record<string, unknown> | undefined
 
 const isUserMessage = (entry: SessionEntry): boolean => messageRecord(entry)?.role === 'user';
 
+const messageText = (entry: SessionEntry): string | undefined => {
+  const message = messageRecord(entry);
+
+  if (message?.role !== 'user') {
+    return undefined;
+  }
+
+  const content = message['content'];
+
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+
+  const texts: string[] = [];
+
+  for (const block of content) {
+    if (isRecord(block) && block['type'] === 'text' && typeof block['text'] === 'string') {
+      texts.push(block['text']);
+    }
+  }
+
+  return texts.join('\n');
+};
+
+const namesAssignment = (entry: SessionEntry, assignmentId: string): boolean => {
+  const text = messageText(entry);
+
+  return text?.split('\n').includes(taskPromptHeader(assignmentId)) === true;
+};
+
 const isQuestionResult = (entry: SessionEntry): boolean => {
   const message = messageRecord(entry);
 
@@ -34,14 +70,25 @@ const isQuestionResult = (entry: SessionEntry): boolean => {
 const waitsAfterQuestion = (branch: readonly SessionEntry[], questionIndex: number): boolean =>
   !branch.slice(questionIndex + 1).some(isUserMessage);
 
-// A reloaded session replays its branch, so the saved entries decide the resume: no user message
-// means the task prompt never went out, and a question with no later user message means an answer
-// is still pending.
-export const decideWorkerResume = (branch: readonly SessionEntry[]): WorkerResume => {
+const isFirstAssignmentSentByMessage = (
+  branch: readonly SessionEntry[],
+  previousAssignmentId: string | null,
+): boolean => previousAssignmentId === null && branch.some(isUserMessage);
+
+export const decideWorkerResume = (
+  branch: readonly SessionEntry[],
+  assignment: Pick<Assignment, 'assignmentId' | 'previousAssignmentId'>,
+): WorkerResume => {
   const questionIndex = branch.findLastIndex(isQuestionResult);
+  const taskSent = branch.some((entry) => namesAssignment(entry, assignment.assignmentId));
+
+  const firstSentByMessage = isFirstAssignmentSentByMessage(
+    branch,
+    assignment.previousAssignmentId,
+  );
 
   return {
-    sendTaskPrompt: !branch.some(isUserMessage),
+    sendTaskPrompt: !taskSent && !firstSentByMessage,
     waitingForQuestion: questionIndex !== -1 && waitsAfterQuestion(branch, questionIndex),
   };
 };

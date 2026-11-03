@@ -14,6 +14,7 @@ import {
   saveReport,
   seedSession,
   writeAssignment,
+  writeFollowUpAssignment,
 } from './assignment.js';
 import type { Assignment } from './assignment.js';
 
@@ -41,14 +42,21 @@ const assignmentWithSessionInFolder = (): Assignment => {
   return { ...fixture, session };
 };
 
-it('reads a valid version 2 assignment file without changing it', async () => {
+it('reads version 3 assignment unchanged', async () => {
   const path = fixturePath('valid.json');
   const before = readFileSync(path);
 
   expect(await readAssignment(path)).toMatchObject({
-    version: 2,
+    version: 3,
     assignmentId: '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f',
     profile: 'scout',
+    previousAssignmentId: null,
+    extensionPackages: [
+      {
+        source: 'npm:review-package',
+        path: '/agent/tmp/tau-worker-packages/3f9a2c1d/review-package',
+      },
+    ],
     questions: [],
     report: null,
   });
@@ -56,13 +64,51 @@ it('reads a valid version 2 assignment file without changing it', async () => {
   expect(readFileSync(path)).toEqual(before);
 });
 
-it('reads a version 1 assignment file as a version 2 assignment with no questions', async () => {
+it('reads version 2 as version 3', async () => {
+  const path = fixturePath('version2.json');
+  const before = readFileSync(path);
+
+  expect(await readAssignment(path)).toMatchObject({
+    version: 3,
+    assignmentId: '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f',
+    previousAssignmentId: null,
+    extensionPackages: null,
+    questions: [],
+    report: null,
+  });
+
+  expect(readFileSync(path)).toEqual(before);
+});
+
+it('keeps the saved questions of a version 2 assignment', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-assignment-');
+  const path = join(directory, 'assignment.json');
+
+  const saved = JSON.parse(readFileSync(fixturePath('version2.json'), 'utf8')) as Record<
+    string,
+    unknown
+  >;
+
+  const question = {
+    questionId: '6c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f',
+    text: 'Which config file wins?',
+    askedAt: 1_700_000_000_500,
+  };
+
+  writeFileSync(path, JSON.stringify({ ...saved, questions: [question] }));
+
+  expect((await readAssignment(path))?.questions).toEqual([question]);
+});
+
+it('reads version 1 as version 3', async () => {
   const path = fixturePath('previous.json');
   const before = readFileSync(path);
 
   expect(await readAssignment(path)).toMatchObject({
-    version: 2,
+    version: 3,
     assignmentId: '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f',
+    previousAssignmentId: null,
+    extensionPackages: null,
     questions: [],
     report: null,
   });
@@ -159,6 +205,71 @@ it('refuses an assignment whose session file is outside its folder', async () =>
   await expect(writeAssignment(outside)).rejects.toThrow('session file');
 
   expect(await readAssignment(assignmentPath(assignment.assignmentId))).toBeUndefined();
+});
+
+const followUpId = '7d2e3f4a-5b6c-4d7e-9f8a-0b1c2d3e4f5a';
+
+const followUpFor = (original: Assignment, file: string): Assignment => ({
+  ...original,
+  assignmentId: followUpId,
+  previousAssignmentId: original.assignmentId,
+  session: { ...original.session, file },
+});
+
+it('follow-up reuses saved session file', async () => {
+  useAgentDirectory();
+  const original = assignmentWithSessionInFolder();
+
+  await writeAssignment(original);
+  const sessionBefore = readFileSync(original.session.file);
+
+  const followUp = followUpFor(original, original.session.file);
+
+  await writeFollowUpAssignment(followUp);
+
+  expect(await readAssignment(assignmentPath(original.assignmentId))).toEqual(original);
+  expect(await readAssignment(assignmentPath(followUpId))).toEqual(followUp);
+  expect(readFileSync(original.session.file)).toEqual(sessionBefore);
+});
+
+it('follow-up refuses a missing session', async () => {
+  useAgentDirectory();
+  const original = assignmentWithSessionInFolder();
+  const missing = join(assignmentDirectory(original.assignmentId), 'missing.jsonl');
+  const followUp = followUpFor(original, missing);
+
+  await expect(writeFollowUpAssignment(followUp)).rejects.toThrow(
+    `Follow-up assignment ${followUpId} session file is missing: ${missing}.`,
+  );
+
+  expect(existsSync(assignmentPath(followUpId))).toBe(false);
+  expect(existsSync(missing)).toBe(false);
+});
+
+it('follow-up needs a previous ID', async () => {
+  useAgentDirectory();
+  const original = assignmentWithSessionInFolder();
+
+  await writeAssignment(original);
+
+  const followUp = { ...followUpFor(original, original.session.file), previousAssignmentId: null };
+
+  await expect(writeFollowUpAssignment(followUp)).rejects.toThrow('previous assignment ID');
+
+  expect(existsSync(assignmentPath(followUpId))).toBe(false);
+});
+
+it('refuses a malformed follow-up', async () => {
+  useAgentDirectory();
+  const original = assignmentWithSessionInFolder();
+
+  await writeAssignment(original);
+
+  const followUp = { ...followUpFor(original, original.session.file), task: '' };
+
+  await expect(writeFollowUpAssignment(followUp)).rejects.toThrow('Malformed assignment');
+
+  expect(existsSync(assignmentPath(followUpId))).toBe(false);
 });
 
 const question = {

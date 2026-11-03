@@ -2,7 +2,13 @@ import { expect, it } from 'vitest';
 
 import { isNestedChangeCall, isNestedControlCall } from './controlTools.js';
 
-const controlTools = ['subagent_report', 'subagent_question', 'ask_user_question', 'subagent'];
+const controlTools = [
+  'subagent_report',
+  'subagent_question',
+  'ask_user_question',
+  'subagent',
+  'subagent_follow_up',
+];
 
 it.each([
   ...controlTools.flatMap((toolName) => [
