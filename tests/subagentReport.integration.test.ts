@@ -10,6 +10,7 @@ import { createEventWatch } from '../src/extensions/subagents/eventWatch.js';
 import { createWorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
 import { reportMessageType } from '../src/extensions/subagents/workerMessage.js';
 import { createWorkerScan } from '../src/extensions/subagents/workerScan.js';
+import type { WorkerScan } from '../src/extensions/subagents/workerScan.js';
 import { subscribeEvents } from '../src/hc/events.js';
 import { get } from '../src/hc/hc.js';
 import type { HcSession } from './hcSessionHarness.js';
@@ -182,6 +183,31 @@ it('delivers one worker report through the real hc event watch', async () => {
   const { fixtureModel } =
     await import('../src/extensions/subagents/fixtures/controlledProvider.js');
 
+  const { pi, messages, context } = recordingManager();
+  const scan = createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline);
+
+  const readiness = Promise.withResolvers<undefined>();
+  let completedScans = 0;
+
+  const trackedScan: WorkerScan = {
+    scan: async (scanContext) => {
+      await scan.scan(scanContext);
+
+      completedScans += 1;
+      readiness.resolve(undefined);
+    },
+    clear: () => {
+      scan.clear();
+    },
+  };
+
+  const watch = createEventWatch(subscribeEvents, trackedScan);
+
+  onTestFinished(() => {
+    watch.stop();
+    scan.clear();
+  });
+
   const worker = await launchWorkerSession({
     hc,
     model: fixtureModel,
@@ -191,22 +217,22 @@ it('delivers one worker report through the real hc event watch', async () => {
     prepareWorker: (workerDirectory) => {
       writeFileSync(join(workerDirectory, 'source.txt'), 'before\n');
     },
+    beforeLaunch: async () => {
+      watch.start(context);
+      await readiness.promise;
+
+      expect(messages).toHaveLength(0);
+    },
   });
 
   if (worker.observationPath === undefined) {
     throw new Error('The fixture worker got no manager probe.');
   }
 
-  const { pi, messages, context } = recordingManager();
-  const scan = createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline);
-  const watch = createEventWatch(subscribeEvents, scan);
-
-  watch.start(context);
-
   await waitForReportMessage(messages);
-  watch.stop();
 
   expect(messages).toHaveLength(1);
   expect(messages[0]).toMatchObject({ customType: reportMessageType });
+  expect(completedScans).toBeGreaterThan(1);
   expect(existsSync(worker.observationPath)).toBe(false);
 });

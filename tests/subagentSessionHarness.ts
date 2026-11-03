@@ -27,6 +27,8 @@ export interface WorkerSessionOptions {
   command?: { source: string };
   timeoutSeconds?: number;
   prepareWorker?: (workerDirectory: string) => void;
+  // Runs after the manager terminal exists and HC_TERMINAL_ID points at it, before the worker.
+  beforeLaunch?: (managerAddress: string) => Promise<void>;
 }
 
 export interface WorkerSession {
@@ -176,6 +178,8 @@ export const launchWorkerSession = async (
   });
 
   vi.stubEnv('HC_TERMINAL_ID', manager.address);
+
+  await options.beforeLaunch?.(manager.address);
 
   const managerPath = `${join(agentDirectory, 'bin')}:${process.env.PATH ?? ''}`;
   const loadout = fixtureLoadout(workerDirectory, agentDirectory, options.model);
