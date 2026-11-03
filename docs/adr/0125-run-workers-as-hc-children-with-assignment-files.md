@@ -71,16 +71,16 @@ only the worker writes its report and its questions into it.
 - The worker finds its assignment path in the label of its own terminal. No environment variable
   carries the path.
 - The report tool validates the report and saves it in the assignment file first. Then Tau sets a
-  label on the worker's terminal and sends the manager a short note with the file path. A failed
-  label or note keeps the saved report.
-- The manager reads its children's assignment files when a note arrives, at session start, and after
+  label on the worker's terminal. The manager's `hc` event subscription starts a scan on that label
+  change. A failed label keeps the saved report.
+- The manager reads its children's assignment files on a child event, at session start, and after
   compaction. It shows each report once for each assignment ID.
 
 ### Question
 
 - The worker calls `subagent_question` with one question. Tau validates it and saves it in the
-  assignment file with a new question ID and the time. Then Tau sends the manager a short note with
-  the file path. A failed note keeps the saved question.
+  assignment file with a new question ID and the time. Then Tau sets a `tau.question` label on the
+  worker's terminal. A failed label keeps the saved question.
 - The worker's turn ends after the question is saved. The worker process keeps running and waits for
   typed input.
 - The manager shows each question once for each assignment ID and question ID. It reads the
@@ -132,7 +132,7 @@ only the worker writes its report and its questions into it.
 - Tau refuses to launch outside an `hc` terminal.
 - Until later changes add it back on `hc`, a manager cannot cancel a worker, and a worker cannot
   report progress or set a deadline.
-- A lost note delays a report until the next session start or compaction.
+- A lost event delays a report until the subscription reconnects or the next session start.
 - After an unclear launch, a person must check `hc ls` by hand.
 - Tau keeps every assignment folder. No rule deletes them yet.
 - Tau does not read task records from earlier formats, so their workers cannot be reported or
@@ -151,10 +151,10 @@ Keep both tools and read `hc` inside them. Rejected because the manager already 
 through `hc` for capacity and reports. A tool would add a second contract over the same reads and no
 new fact.
 
-### Send the report in the note
+### Send the report in the event
 
-Put the full report in the `hc` note. Rejected because a report can hold up to 100 evidence items,
-and the note would repeat text that the assignment file already holds.
+Put the full report in the `hc` event payload. Rejected because a report can hold up to 100 evidence
+items, and the payload would repeat text that the assignment file already holds.
 
 ### One shared record folder
 
