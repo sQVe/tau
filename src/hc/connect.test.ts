@@ -127,6 +127,22 @@ it('writes hello and terminal.run to one connect call and returns the terminal',
   expect(result.address).toBe('t7');
 });
 
+it('sends the terminal name and parent in terminal.run', async () => {
+  const fake = createHcFake();
+
+  fake.replyConnect('hello', 1, hello);
+  fake.replyConnect('terminal.run', 2, terminal);
+
+  await runWithEnvironment(runtimeOf(fake), {
+    argv: ['true'],
+    env: {},
+    name: 'scout-3f9a2c1d',
+    parent: 't1',
+  });
+
+  expect(fake.messages[1]?.params).toMatchObject({ name: 'scout-3f9a2c1d', parent: 't1' });
+});
+
 it('defaults the terminal working directory to the runtime directory', async () => {
   const fake = createHcFake();
 

@@ -3,16 +3,36 @@ import type { AgentToolResult } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
+import { errorMessage } from '../../errors.js';
+import { label, send } from '../../hc/hc.js';
+import type { HcRuntime } from '../../hc/hc.js';
+import { saveReport } from './assignment.js';
+import type { Assignment, SavedReport } from './assignment.js';
 import { blockerKinds, decideIncompleteReport } from './incompleteReport.js';
-import { handoverSectionNames, handoverSections } from './presentation.js';
-import { acceptReport } from './records.js';
 import { decideSummaryLength, summaryLengthLimit } from './summaryLength.js';
-import type { Report, Task } from './types.js';
-import { isTaskActive, remainingWork } from './workerExtensionState.js';
-import type { WorkerExtensionState } from './workerExtensionState.js';
+
+export interface ReportRefusalState {
+  incompleteRefused: boolean;
+  reminderSent: boolean;
+  remindAfterRefusal: boolean;
+}
+
+export interface ReportTarget {
+  hc: HcRuntime;
+  terminal: string;
+  parent: string;
+  assignmentPath: string;
+  assignment: Assignment;
+  refusal: ReportRefusalState;
+}
 
 const millisecondsPerSecond = 1000;
 const millisecondsPerMinute = 60_000;
+
+export const handoverSectionNames = ['Changes', 'Evidence', 'Decisions', 'Concerns'] as const;
+
+const summaryHasHeading = (summary: string, name: string): boolean =>
+  new RegExp(`^[\\s#*>-]*${name}\\**\\s*(?::|\\(|$)`, 'im').test(summary);
 
 const summaryLengthLimitText = summaryLengthLimit.toLocaleString('en-US');
 
@@ -50,8 +70,7 @@ export const reportParameters = Type.Object({
 export type ReportInput = Static<typeof reportParameters>;
 
 const refuseEarlyIncomplete = (
-  state: WorkerExtensionState,
-  task: Task,
+  target: ReportTarget,
   {
     blocker,
     blockerKind,
@@ -64,13 +83,14 @@ const refuseEarlyIncomplete = (
     );
   }
 
-  const remaining = remainingWork(state, task);
+  const { assignment } = target;
+  const remaining = assignment.deadline - Date.now();
 
   const step = decideIncompleteReport({
     blockerKind,
     remaining,
-    window: task.deadline - task.createdAt,
-    refusedBefore: state.incompleteRefused,
+    window: assignment.deadline - assignment.createdAt,
+    refusedBefore: target.refusal.incompleteRefused,
     onlyParentCanClear,
   });
 
@@ -84,14 +104,15 @@ const refuseEarlyIncomplete = (
     );
   }
 
-  state.incompleteRefused = true;
+  target.refusal.incompleteRefused = true;
+
   throw new Error(
     `Report refused: ${Math.floor(remaining / millisecondsPerMinute)} minutes remain. Finish the remaining assigned work. Report incomplete only when a concrete blocker stops you. Set onlyParentCanClear when only the parent or user can clear it.`,
   );
 };
 
 const refuseMissingSections = (summary: string) => {
-  const missing = handoverSections({ summary })?.missing ?? [];
+  const missing = handoverSectionNames.filter((name) => !summaryHasHeading(summary, name));
 
   if (missing.length === 0) {
     return;
@@ -114,18 +135,34 @@ const refuseLongSummary = (summary: string) => {
   );
 };
 
+const reportOutcome = (value: string): SavedReport['outcome'] => {
+  if (value === 'success' || value === 'failure' || value === 'incomplete') {
+    return value;
+  }
+
+  throw new Error(`Unknown report outcome: ${value}.`);
+};
+
 const withBlocker = (summary: string, blocker: string | undefined): string =>
   blocker === undefined ? summary : `Blocker: ${blocker}\n\n${summary}`;
 
-export const reportToParent = (
-  state: WorkerExtensionState,
-  parameters: ReportInput,
-): Promise<AgentToolResult<Report>> => {
-  if (!isTaskActive(state)) {
-    throw new Error('This worker has no accepted active task.');
-  }
+const stepFailure = (step: string, error: unknown): string =>
+  `${step} failed: ${errorMessage(error)}`;
 
-  const task = state.task;
+const resultText = (failures: readonly string[]): string =>
+  failures.length === 0
+    ? 'Handover durably accepted. Parent notified. Stop working.'
+    : `Handover durably accepted. ${failures.join(' ')} Stop working.`;
+
+export const reportToParent = async (
+  target: ReportTarget,
+  parameters: ReportInput,
+): Promise<AgentToolResult<SavedReport>> => {
+  const { assignment } = target;
+
+  if (assignment.report !== null) {
+    throw new Error('This worker already reported.');
+  }
 
   const {
     blocker,
@@ -144,25 +181,39 @@ export const reportToParent = (
     refuseMissingSections(summary);
 
     if (handover.outcome === 'incomplete') {
-      refuseEarlyIncomplete(state, task, parameters);
+      refuseEarlyIncomplete(target, parameters);
     }
   } catch (error) {
-    state.remindAfterRefusal = true;
+    target.refusal.remindAfterRefusal = true;
     throw error;
   }
 
-  const report = acceptReport(state.directory, task.taskId, {
-    ...handover,
+  const report: SavedReport = {
+    outcome: reportOutcome(handover.outcome),
     summary,
-    taskId: task.taskId,
-  });
+    evidence: handover.evidence,
+  };
 
-  state.reported = true;
-  clearTimeout(state.deadlineWarning);
+  await saveReport(target.assignmentPath, report);
+  assignment.report = report;
 
-  return Promise.resolve({
-    content: [{ type: 'text' as const, text: 'Handover durably accepted. Stop working.' }],
+  const failures: string[] = [];
+
+  try {
+    await label(target.hc, target.terminal, { 'tau.report': target.assignmentPath });
+  } catch (error) {
+    failures.push(stepFailure('Report label', error));
+  }
+
+  try {
+    await send(target.hc, target.parent, { text: `[tau-report] ${target.assignmentPath}` });
+  } catch (error) {
+    failures.push(stepFailure('Report note', error));
+  }
+
+  return {
+    content: [{ type: 'text' as const, text: resultText(failures) }],
     details: report,
     terminate: true,
-  });
+  };
 };

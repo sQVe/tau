@@ -2,10 +2,10 @@ import { StringEnum } from '@earendil-works/pi-ai';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-export const visibility = Type.Optional(
+const visibility = Type.Optional(
   StringEnum(['foreground', 'background'] as const, {
     description:
-      'Foreground opens beside the parent, background in a separate tab. Defaults to foreground for editing profiles. The result reports the actual placement.',
+      'Foreground opens in the manager tab, background under the parent. Defaults to foreground for editing profiles.',
   }),
 );
 
@@ -16,7 +16,7 @@ export const launchParameters = Type.Object(
       Type.String({
         minLength: 1,
         maxLength: 120,
-        description: 'Short widget label, such as "Fix status counts".',
+        description: 'Short task label, such as "Fix status counts".',
       }),
     ),
     acceptance: Type.Optional(

@@ -20,7 +20,7 @@ export const blockerKinds = ['time', 'dependency', 'decision', 'limit'] as const
 type BlockerKind = (typeof blockerKinds)[number];
 
 // A report turn takes about a minute at p90, so a short window still leaves room to write one.
-export const timeBlockerReserve = 90_000;
+const timeBlockerReserve = 90_000;
 
 const timeBlockerShare = 0.1;
 const earlyBlockerShare = 0.2;

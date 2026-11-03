@@ -1,6 +1,6 @@
-import { handoverSectionNames } from './presentation.js';
+import { handoverSectionNames } from './report.js';
 
-export const assignmentContract = [
+const assignmentContract = [
   'Own the assigned outcome through to completion: acceptance criteria, exploration, design, implementation, tests, and debugging.',
   'Tests, docs, and checks the assignment names are part of the work, not follow-ups.',
   'The parent assigns one editor per worktree, and you are it for this assignment.',

@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -10,17 +11,52 @@ import {
 import type { TranscriptContext } from '@earendil-works/pi-ai';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
-import { readTask } from '../records.js';
+import { errorMessage } from '../../../errors.js';
 
-const directory = process.env.TAU_WORKER_RECORD;
-const savedTask = directory != null && directory !== '' ? readTask(directory) : undefined;
-const activeCancellation = savedTask?.task.includes('active cancellation') === true;
+interface FixtureAssignment {
+  loadout: { instructions: string };
+}
 
-const provider = fauxProvider({
-  provider: 'tau-worker-fixture',
-  api: 'tau-worker-fixture',
-  ...(activeCancellation ? { tokensPerSecond: 100 } : {}),
-});
+const readFixtureAssignment = (): FixtureAssignment | undefined => {
+  const hcSession = process.env.HC_SESSION;
+
+  if (hcSession === undefined || hcSession === '') {
+    throw new Error('controlledProvider needs HC_SESSION; refusing to reach the default hc core.');
+  }
+
+  const address = process.env.HC_TERMINAL_ID;
+
+  if (address === undefined || address === '') {
+    return undefined;
+  }
+
+  try {
+    const output = execFileSync('hc', ['get', '--json', '--', address], {
+      encoding: 'utf8',
+      env: process.env,
+    });
+
+    const terminal = JSON.parse(output) as { labels?: Record<string, string> };
+    const path = terminal.labels?.['tau.assignment'];
+
+    if (path === undefined || path === '') {
+      return undefined;
+    }
+
+    return JSON.parse(readFileSync(path, 'utf8')) as FixtureAssignment;
+  } catch (error) {
+    throw new Error(
+      `controlledProvider could not read the fixture assignment: ${errorMessage(error)}`,
+      {
+        cause: error,
+      },
+    );
+  }
+};
+
+const savedAssignment = readFixtureAssignment();
+
+const provider = fauxProvider({ provider: 'tau-worker-fixture', api: 'tau-worker-fixture' });
 
 export const fixtureModel = provider.getModel();
 
@@ -33,72 +69,33 @@ export const fixtureAuth = {
 };
 
 const systemInstructions = (context: TranscriptContext): boolean =>
-  savedTask !== undefined &&
-  getCurrentSystemPrompt(context.messages).includes(savedTask.loadout.instructions);
+  savedAssignment !== undefined &&
+  getCurrentSystemPrompt(context.messages).includes(savedAssignment.loadout.instructions);
 
-const registerFollowUpProvider = (pi: ExtensionAPI): void => {
-  provider.setResponses([
-    fauxAssistantMessage([fauxToolCall('bash', { command: 'find ./delete-fixture/.git -delete' })]),
-    (context) => {
-      const prior = context.messages.some(
-        (message) =>
-          message.role === 'user' &&
-          JSON.stringify(message.content).includes(savedTask?.predecessorTaskId ?? 'missing'),
-      );
+const appendSystemText = (): string | undefined => {
+  const agentDirectory = process.env.PI_CODING_AGENT_DIR;
 
-      const blocked = JSON.stringify(
-        context.messages.findLast(
-          (message) => message.role === 'toolResult' && message.toolName === 'bash',
-        ),
-      ).includes('BLOCKED by CC Safety Net');
-
-      const instructions = systemInstructions(context);
-
-      return fauxAssistantMessage([
-        fauxToolCall('subagent_report', {
-          outcome: prior && blocked && instructions ? 'success' : 'failure',
-          summary:
-            'Native follow-up checked.\n\nChanges: None\nEvidence: None\nDecisions: None\nConcerns: None',
-          evidence: [
-            `prior context: ${prior}`,
-            `Safety Net block: ${blocked}`,
-            `saved instructions: ${instructions}`,
-          ],
-        }),
-      ]);
-    },
-  ]);
-
-  pi.registerProvider({ ...provider.provider, auth: fixtureAuth });
-};
-
-const registerCancellationProvider = (pi: ExtensionAPI): void => {
-  provider.setResponses([fauxAssistantMessage('Active streaming fixture. '.repeat(1000))]);
-
-  pi.on('message_update', () => {
-    writeFileSync(join(process.cwd(), 'streaming'), 'active');
-  });
-
-  pi.registerProvider({ ...provider.provider, auth: fixtureAuth });
-};
-
-const registerDefaultProvider = (pi: ExtensionAPI): void => {
-  const asking =
-    directory != null && directory !== '' ? readTask(directory).task.includes('question') : false;
-
-  const responses: Parameters<typeof provider.setResponses>[0] = [];
-
-  if (asking) {
-    responses.push(
-      fauxAssistantMessage([
-        fauxToolCall('subagent_question', {
-          question: 'May I edit source.txt within the assigned scope?',
-        }),
-      ]),
-    );
+  if (agentDirectory === undefined || agentDirectory === '') {
+    return undefined;
   }
 
-  responses.push(
+  try {
+    return readFileSync(join(agentDirectory, 'APPEND_SYSTEM.md'), 'utf8').trim();
+  } catch {
+    return undefined;
+  }
+};
+
+const appendSystemPresent = (context: TranscriptContext): boolean => {
+  const text = appendSystemText();
+
+  return (
+    text !== undefined && text !== '' && getCurrentSystemPrompt(context.messages).includes(text)
+  );
+};
+
+export default function controlledProvider(pi: ExtensionAPI): void {
+  provider.setResponses([
     fauxAssistantMessage([
       fauxToolCall('edit', {
         path: 'source.txt',
@@ -116,8 +113,9 @@ const registerDefaultProvider = (pi: ExtensionAPI): void => {
           JSON.stringify(message.content).includes('BLOCKED by CC Safety Net'),
       );
 
-      const edited = readFileSync(join(process.cwd(), 'source.txt'), 'utf8') === 'after\n';
+      const edited = readFileSync(`${process.cwd()}/source.txt`, 'utf8') === 'after\n';
       const instructions = systemInstructions(context);
+      const appendPresent = appendSystemPresent(context);
 
       return fauxAssistantMessage([
         fauxToolCall('subagent_report', {
@@ -128,28 +126,15 @@ const registerDefaultProvider = (pi: ExtensionAPI): void => {
             'edit checked',
             `Safety Net block: ${blocked}`,
             `saved instructions: ${instructions}`,
+            `PATH: ${process.env.PATH ?? ''}`,
+            `PI_CODING_AGENT_DIR: ${process.env.PI_CODING_AGENT_DIR ?? ''}`,
+            `TAU_ROLE: ${process.env.TAU_ROLE ?? ''}`,
+            `APPEND_SYSTEM.md: ${appendPresent}`,
           ],
         }),
       ]);
     },
-  );
+  ]);
 
-  provider.setResponses(responses);
   pi.registerProvider({ ...provider.provider, auth: fixtureAuth });
-};
-
-export default function controlledProvider(pi: ExtensionAPI): void {
-  if (savedTask?.predecessorTaskId != null) {
-    registerFollowUpProvider(pi);
-
-    return;
-  }
-
-  if (activeCancellation) {
-    registerCancellationProvider(pi);
-
-    return;
-  }
-
-  registerDefaultProvider(pi);
 }

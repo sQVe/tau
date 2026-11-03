@@ -11,7 +11,7 @@ import type { Exec } from '../src/command.js';
 import { connect as connectToHc } from '../src/hc/connect.js';
 import type { HcRuntime } from '../src/hc/hc.js';
 import { isAbortError } from '../src/hc/replies.js';
-import { isolationProblems } from './hcIsolationHarness.js';
+import { isolationProblems, privatePathProblems } from './hcIsolationHarness.js';
 import type { ProtectedVariable } from './hcIsolationHarness.js';
 
 export interface HcSession {
@@ -44,16 +44,23 @@ const resolvePath = (path: string): string => {
 const resolveExisting = (path: string | undefined): string | undefined =>
   path === undefined || path === '' ? path : resolvePath(path);
 
-const realValues = (): Record<ProtectedVariable, string | undefined> => ({
-  HOME: resolveExisting(homedir()),
-  XDG_RUNTIME_DIR: resolveExisting(
-    process.env['XDG_RUNTIME_DIR'] ?? `/run/user/${String(userInfo().uid)}`,
-  ),
-  XDG_STATE_HOME: resolveExisting(process.env['XDG_STATE_HOME']),
-  XDG_CONFIG_HOME: resolveExisting(process.env['XDG_CONFIG_HOME']),
-  XDG_DATA_HOME: resolveExisting(process.env['XDG_DATA_HOME']),
-  XDG_CACHE_HOME: resolveExisting(process.env['XDG_CACHE_HOME']),
-});
+const realValues = (): Record<ProtectedVariable, string | undefined> => {
+  const home = resolveExisting(homedir());
+
+  return {
+    HOME: home,
+    XDG_RUNTIME_DIR: resolveExisting(
+      process.env['XDG_RUNTIME_DIR'] ?? `/run/user/${String(userInfo().uid)}`,
+    ),
+    XDG_STATE_HOME: resolveExisting(
+      process.env['XDG_STATE_HOME'] ??
+        (home === undefined ? undefined : join(home, '.local/state')),
+    ),
+    XDG_CONFIG_HOME: resolveExisting(process.env['XDG_CONFIG_HOME']),
+    XDG_DATA_HOME: resolveExisting(process.env['XDG_DATA_HOME']),
+    XDG_CACHE_HOME: resolveExisting(process.env['XDG_CACHE_HOME']),
+  };
+};
 
 const privateEnvironment = (root: string, session: string): Record<string, string> => {
   const environment: Record<string, string> = {};
@@ -88,6 +95,10 @@ const asError = (error: unknown): Error =>
 
 const stopDeadlineMilliseconds = 5000;
 
+// hc server stop ends the core in a moment. Waiting longer only delays the signal fallback when a
+// process from another XDG directory shares the session.
+const stopSettleMilliseconds = 1000;
+
 const stopPollMilliseconds = 20;
 
 // A zombie has exited and holds no socket or file, so it does not count.
@@ -120,8 +131,9 @@ export const sessionProcesses = (session: string): number[] => {
 const waitForSessionExit = async (
   session: string,
   listProcesses: SessionProcessLister,
+  deadlineMilliseconds = stopDeadlineMilliseconds,
 ): Promise<boolean> => {
-  const deadline = Date.now() + stopDeadlineMilliseconds;
+  const deadline = Date.now() + deadlineMilliseconds;
 
   while (listProcesses(session).length > 0) {
     if (Date.now() > deadline) {
@@ -136,8 +148,8 @@ const waitForSessionExit = async (
   return true;
 };
 
-// Only the stop request ends a session. The fixture never signals a process by PID, because a PID
-// read from /proc can be reused by another process before a signal reaches it.
+// The stop request ends the core the fixture started. A process from another XDG directory can
+// carry the same session, so stopSession still stops the session's leftover cores through hc.
 const stopCore = async (
   exec: Exec,
   session: string,
@@ -153,37 +165,29 @@ const stopCore = async (
     throw new Error(`hc server stop failed: ${result.stderr.trim()}`);
   }
 
-  if (!(await waitForSessionExit(session, listProcesses))) {
-    throw new Error(`hc session ${session} still runs after hc server stop`);
-  }
+  await waitForSessionExit(session, listProcesses, stopSettleMilliseconds);
 };
 
-// Removes the root only when no session process remains. Otherwise the root is kept, and the error
-// names the session and the root and carries the first failure as its cause.
-const stopSession = async (
-  exec: Exec,
-  session: string,
-  root: string,
-  listProcesses: SessionProcessLister,
-): Promise<void> => {
-  let failure: unknown;
+// Reads a Linux process environment. Returns undefined when the process is gone.
+const processEnvironment = (processId: number): Record<string, string> | undefined => {
+  if (process.platform !== 'linux') {
+    return undefined;
+  }
 
   try {
-    await stopCore(exec, session, root, listProcesses);
-  } catch (error) {
-    failure = error;
-  }
+    const environment: Record<string, string> = {};
 
-  if (listProcesses(session).length > 0) {
-    throw new Error(`hc session ${session} still has processes after stop; kept ${root}`, {
-      cause: failure,
-    });
-  }
+    for (const entry of readFileSync(`/proc/${String(processId)}/environ`, 'utf8').split('\0')) {
+      const separator = entry.indexOf('=');
 
-  rmSync(root, { recursive: true, force: true });
+      if (separator > 0) {
+        environment[entry.slice(0, separator)] = entry.slice(separator + 1);
+      }
+    }
 
-  if (failure !== undefined) {
-    throw asError(failure);
+    return environment;
+  } catch {
+    return undefined;
   }
 };
 
@@ -243,6 +247,116 @@ const createExec = (environment: Readonly<Record<string, string>>): Exec => {
     });
 };
 
+// hc server stop reaches only the core the fixture started. A process with the same session can
+// still run under another XDG root. Stop it by its own socket: run hc server stop under the
+// environment the process carries. The session name is unique to this fixture, and a process
+// without that exact session is left alone, so the user's default core is never stopped.
+const stopLeftoverSessionProcess = async (
+  session: string,
+  processId: number,
+  root: string,
+): Promise<void> => {
+  const environment = processEnvironment(processId);
+
+  if (environment === undefined || environment['HC_SESSION'] !== session) {
+    return;
+  }
+
+  const stopEnvironment: Record<string, string> = { ...environment, HC_SESSION: session };
+  const exec = createExec(stopEnvironment);
+
+  try {
+    await exec('hc', ['server', 'stop', '--json'], {
+      cwd: root,
+      timeout: stopDeadlineMilliseconds,
+    });
+  } catch {
+    // The core may already be gone. stopSession still checks the process list.
+  }
+};
+
+const leftoverStopDeadlineMilliseconds = 2000;
+
+const terminateSessionProcesses = async (
+  session: string,
+  root: string,
+  listProcesses: SessionProcessLister,
+): Promise<void> => {
+  for (const processId of listProcesses(session)) {
+    await stopLeftoverSessionProcess(session, processId, root);
+  }
+
+  await waitForSessionExit(session, listProcesses, leftoverStopDeadlineMilliseconds);
+};
+
+// Removes the root only when no session process remains. Otherwise the root is kept, and the error
+// names the session and the root and carries the first failure as its cause.
+const stopSession = async (
+  exec: Exec,
+  session: string,
+  root: string,
+  listProcesses: SessionProcessLister,
+): Promise<void> => {
+  let failure: unknown;
+
+  try {
+    await stopCore(exec, session, root, listProcesses);
+  } catch (error) {
+    failure = error;
+  }
+
+  if (listProcesses(session).length > 0) {
+    await terminateSessionProcesses(session, root, listProcesses);
+  }
+
+  if (listProcesses(session).length > 0) {
+    throw new Error(`hc session ${session} still has processes after stop; kept ${root}`, {
+      cause: failure,
+    });
+  }
+
+  rmSync(root, { recursive: true, force: true });
+
+  if (failure !== undefined) {
+    throw asError(failure);
+  }
+};
+
+// A test may pass its own terminal environment to runWithEnvironment. Check it before any process
+// starts, so nothing can point a worker at the user's core. Lines that are not a terminal.run
+// request, such as the hello line or a unit test placeholder, carry no environment to check.
+const requestedEnvironments = (lines: readonly string[]): Record<string, string>[] => {
+  const environments: Record<string, string>[] = [];
+
+  for (const line of lines) {
+    let message: unknown;
+
+    try {
+      message = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
+    if (typeof message !== 'object' || message === null) {
+      continue;
+    }
+
+    const { method, params } = message as { method?: unknown; params?: unknown };
+
+    if (method !== 'terminal.run' || typeof params !== 'object' || params === null) {
+      continue;
+    }
+
+    const { env } = params as { env?: unknown };
+
+    if (typeof env === 'object' && env !== null) {
+      environments.push(env as Record<string, string>);
+    }
+  }
+
+  return environments;
+};
+
 export const startHcSession = async (
   registerCleanup: TestContext['onTestFinished'],
   options: HcSessionOptions = {},
@@ -255,11 +369,13 @@ export const startHcSession = async (
 
     const environment = privateEnvironment(root, session);
 
+    const realEnvironment = realValues();
+
     const problems = isolationProblems({
       session,
       inheritedSession: process.env['HC_SESSION'],
       values: environment,
-      realValues: realValues(),
+      realValues: realEnvironment,
       variables: Object.keys(environment),
     });
 
@@ -271,8 +387,19 @@ export const startHcSession = async (
 
     const runtime: HcRuntime = {
       exec,
-      connect: (lines, connectOptions = {}) =>
-        connectToHc(lines, { ...connectOptions, env: environment }),
+      connect: (lines, connectOptions = {}) => {
+        const shared = requestedEnvironments(lines).flatMap((requested) =>
+          privatePathProblems(requested, realEnvironment),
+        );
+
+        if (shared.length > 0) {
+          return Promise.reject(
+            new Error(`refusing to run a process with shared paths: ${shared.join('; ')}`),
+          );
+        }
+
+        return connectToHc(lines, { ...connectOptions, env: environment });
+      },
       cwd: root,
     };
 

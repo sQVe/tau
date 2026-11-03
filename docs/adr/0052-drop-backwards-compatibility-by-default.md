@@ -4,7 +4,7 @@
 **Status**: Accepted\
 **Related**: [ADR 0003 (Stability of externally observable identifiers)](./0003-externally-observable-identifiers.md),
 [ADR 0006 (Load Tau's instruction sets into every prompt)](./0006-default-writing-policy.md),
-[ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
+[ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./README.md#retired),
 [Agent coding instructions](../../src/instructions/coding.md)
 
 ## Context
@@ -16,8 +16,8 @@ later.
 
 Some surfaces have users the agent cannot see. Published packages have npm users, and users type CLI
 commands and write config files. Records written by one Tau version are read by another
-([ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md)). Deleting the old path on these
-surfaces breaks something outside the checkout.
+([ADR 0043](./README.md#retired)). Deleting the old path on these surfaces breaks something outside
+the checkout.
 
 ## Decision
 

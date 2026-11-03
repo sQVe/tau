@@ -1,15 +1,15 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-
 import type {
   AgentBeforeSettleEvent,
   AgentBeforeSettleEventResult,
   CustomMessageEntryDraft,
 } from '@earendil-works/pi-coding-agent';
 
-import { publish, taskEnded } from './records.js';
-import { isTaskActive, remainingWork } from './workerExtensionState.js';
-import type { WorkerExtensionState } from './workerExtensionState.js';
+import type { ReportTarget } from './report.js';
+
+export interface ReminderState {
+  target: ReportTarget;
+  runError: string | undefined;
+}
 
 const reportReminder: CustomMessageEntryDraft = {
   type: 'custom_message',
@@ -22,33 +22,25 @@ const reportReminder: CustomMessageEntryDraft = {
 };
 
 export const remindToReport = (
-  state: WorkerExtensionState,
+  state: ReminderState,
   event: AgentBeforeSettleEvent,
 ): AgentBeforeSettleEventResult | undefined => {
   // A reminder after an errored or aborted run repeats the same error; the error explains the stop.
-  if (!isTaskActive(state) || state.pendingQuestion || state.runError !== undefined) {
+  if (state.target.assignment.report !== null || state.runError !== undefined) {
     return undefined;
   }
 
-  const task = state.task;
-
-  if (remainingWork(state, task) <= 0 || taskEnded(state.directory, task)) {
-    return undefined;
-  }
-
-  const requested = existsSync(join(state.directory, 'reportRequest.json'));
+  // Nothing enforces the deadline yet, so a worker past it can still report and must be asked to.
+  const { refusal } = state.target;
   // A refused report earns one more reminder; otherwise the worker could settle with no report.
-  const alreadyReminded = requested && !state.remindAfterRefusal;
+  const alreadyReminded = refusal.reminderSent && !refusal.remindAfterRefusal;
 
   if (alreadyReminded) {
     return undefined;
   }
 
-  state.remindAfterRefusal = false;
-
-  if (!requested) {
-    publish(state.directory, 'reportRequest.json', { taskId: task.taskId, at: Date.now() });
-  }
+  refusal.reminderSent = true;
+  refusal.remindAfterRefusal = false;
 
   return { entries: [...event.entries, reportReminder], continue: true };
 };

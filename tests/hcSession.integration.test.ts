@@ -70,6 +70,31 @@ it.skipIf(!onLinux)(
 );
 
 it.skipIf(!onLinux)(
+  'stops a leftover core of its own session under another XDG root through hc',
+  async () => {
+    const primary = await startHcSession(onTestFinished);
+    const leftover = await startHcSession(() => undefined, { session: primary.session });
+
+    onTestFinished(async () => {
+      await leftover.stop().catch(() => undefined);
+      rmSync(leftover.root, { recursive: true, force: true });
+    });
+
+    await runWithEnvironment(primary.runtime, { argv: ['sleep', '60'], env: {} });
+    await runWithEnvironment(leftover.runtime, { argv: ['sleep', '60'], env: {} });
+
+    await vi.waitFor(() => {
+      expect(sessionProcesses(primary.session).length).toBeGreaterThanOrEqual(2);
+    });
+
+    await primary.stop();
+
+    expect(sessionProcesses(primary.session)).toEqual([]);
+    expect(existsSync(primary.root)).toBe(false);
+  },
+);
+
+it.skipIf(!onLinux)(
   'runs a terminal when TMPDIR contains a space and leaves no private core',
   async () => {
     const outer = mkdtempSync(join(tmpdir(), 'tau-hc-space-'));

@@ -28,8 +28,8 @@ Tau appends every system prompt addition to `systemPromptOptions.appendSystemPro
 ### Append rules
 
 - Tools do not declare `promptGuidelines`. Tau appends a tool's guidelines while the tool is active.
-- A worker reads its instructions from its saved task and appends them the same way as a parent, so
-  a follow-up gets them without resending.
+- A worker reads its loadout from its assignment file and appends its instructions the same way as a
+  parent.
 - Worker instructions state only what no tool description or guard already states, because the
   worker already sees those tool descriptions and guards.
 - A turn that Tau starts while Pi is idle may use `triggerTurn`. Since Pi 1.2.0, an idle

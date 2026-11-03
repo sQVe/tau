@@ -10,9 +10,10 @@ import {
   isInstructionSetName,
 } from '../../instructions/instructions.js';
 import type { InstructionSetName } from '../../instructions/instructions.js';
+import type { Assignment } from './assignment.js';
 import { assignmentContractFor, handoverContract } from './handover.js';
 import { thinkingSchema, toolNamePattern } from './types.js';
-import type { Loadout, Profile, Task } from './types.js';
+import type { Loadout, Profile } from './types.js';
 import { defaultProfileName } from './workerModels.js';
 
 export interface ProfileSummary {
@@ -275,21 +276,21 @@ export const workerInstructions = (loadout: Loadout): string =>
     ].join(' '),
   ].join('\n\n');
 
-const acceptanceList = (task: Task): string[] => {
-  if (task.acceptance === undefined) {
+const acceptanceList = (assignment: Assignment): string[] => {
+  if (assignment.acceptance.length === 0) {
     return [];
   }
 
-  const items = task.acceptance.map((item, index) => `${index + 1}. ${item}`);
+  const items = assignment.acceptance.map((item, index) => `${index + 1}. ${item}`);
 
   return ['', 'Acceptance criteria:', ...items];
 };
 
-export const workerPrompt = (task: Task): string =>
+export const workerPrompt = (assignment: Assignment): string =>
   [
-    `Task ${task.taskId}:`,
-    task.task,
-    ...acceptanceList(task),
+    `Task ${assignment.assignmentId}:`,
+    assignment.task,
+    ...acceptanceList(assignment),
     '',
-    `Deadline: ${new Date(task.deadline).toISOString()}.`,
+    `Deadline: ${new Date(assignment.deadline).toISOString()}.`,
   ].join('\n');

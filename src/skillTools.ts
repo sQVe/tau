@@ -44,8 +44,18 @@ export const parseSkillTools = (text: string): SkillTools | undefined => {
   return Object.fromEntries(entries);
 };
 
+// Re-reads the table, so a launch sees edits made after this module loaded. An unreadable or
+// malformed file returns undefined, which the launch refuses.
+export const readSkillTools = (): SkillTools | undefined => {
+  try {
+    return parseSkillTools(readFileSync(skillToolsPath, 'utf8'));
+  } catch {
+    return undefined;
+  }
+};
+
 const loadSkillTools = (): SkillTools => {
-  const parsed = parseSkillTools(readFileSync(skillToolsPath, 'utf8'));
+  const parsed = readSkillTools();
 
   if (parsed === undefined) {
     throw new Error(`${skillToolsPath} must map each skill name to a list of tool names.`);

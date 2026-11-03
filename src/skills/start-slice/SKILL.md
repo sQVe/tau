@@ -171,8 +171,8 @@ or Git. Workers then carry out the agent tickets.
 
 9. Start the slice in this order.
    - Check that `git status --porcelain` prints nothing. If it prints anything, stop and report it.
-   - Check that every one of your workers in the worktree is `stopped`, as the
-     [stack skill](../stack/SKILL.md) checks before a switch. If one is not, stop and report it.
+   - Check that none of your workers is running, with the `hc ls --json` check that the
+     [stack skill](../stack/SKILL.md) makes before a switch. If one is, stop and report it.
    - For a stacked start, create the branch on the parent with step 2 of the stack skill, passing
      the trunk from step 4. If it stops, report what it found and stop.
    - Otherwise create the branch with `git switch --no-track -c <branchName> <base>`. If

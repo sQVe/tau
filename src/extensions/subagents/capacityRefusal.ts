@@ -1,15 +1,22 @@
 import type { ToolCallEventResult } from '@earendil-works/pi-coding-agent';
 
+import { reportMessageType } from './reportMessage.js';
+
 interface MessageKind {
   role: string;
   customType?: string;
 }
 
-export const clearsCapacityRefusal = (message: MessageKind): boolean => {
-  const workerNotice = message.role === 'custom' && message.customType === 'tau-worker';
+export class WorkerCapacityFullError extends Error {
+  override name = 'WorkerCapacityFullError';
+}
 
-  return message.role === 'user' || workerNotice;
-};
+// A worker report ends a worker, so it frees a slot like a user message does.
+const isWorkerReportNotice = (message: MessageKind): boolean =>
+  message.role === 'custom' && message.customType === reportMessageType;
+
+export const clearsCapacityRefusal = (message: MessageKind): boolean =>
+  message.role === 'user' || isWorkerReportNotice(message);
 
 export const capacityRefusalBlock = (capacityRefused: boolean): ToolCallEventResult | undefined => {
   if (!capacityRefused) {
@@ -18,7 +25,7 @@ export const capacityRefusalBlock = (capacityRefused: boolean): ToolCallEventRes
 
   return {
     block: true,
-    reason: 'Worker capacity was full. End your turn and wait for a worker notice.',
+    reason: 'Worker capacity was full. End your turn and retry after a worker stops.',
     terminate: true,
   };
 };

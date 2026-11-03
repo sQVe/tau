@@ -12,8 +12,7 @@
 Pi compacts a session only near the model's context window. A manager session can grow large long
 before that.
 
-Pi's summary drops exact task IDs and question IDs, and a manager needs them to reply to a worker or
-read its report.
+Pi's summary drops exact task IDs, and a manager needs them to read a worker's report.
 
 Pi saves a compaction that does not go through its own path without emitting `session_compact`.
 `pi-claude-bridge` rebuilds its Claude Code session only on that event. A compaction that Tau wrote
@@ -32,21 +31,17 @@ start a new session. Workers keep Pi's defaults.
 - Tau shows the reminder again only after a compaction or after the context is at or below 50%. A
   new session also clears it. A missing usage reading keeps the current state.
 
-### Worker ledger
+### Worker reports after compaction
 
-- After each compaction, Tau queues a hidden message for the next prompt. It starts no turn.
-- The message lists the current session's workers that have not stopped or have a pending question.
-  Unresolved workers are included. Each line gives the task ID, name, state, and pending question
-  ID.
-- The message ends by pointing to `subagent_status` for worker reports.
-- Tau sends nothing when no worker is listed.
+- After each compaction, Tau reads the assignment files of its workers and shows each report that it
+  has not shown yet.
+- Tau shows nothing when no report is new.
 
 ### Worker notices
 
-- While Pi is idle, a notice wakes the manager.
-- While a run is active, including Pi's automatic compaction, Tau steers the notice into the run.
-- While Pi is busy without a run, as in a manual `/compact`, Tau queues the notice for the next
-  prompt. The notice does not wake Pi.
+- While Pi streams a run, Tau steers a report note into the run.
+- Otherwise Tau saves the report in the session and starts no turn. The manager reads it at the next
+  prompt.
 
 ## Consequences
 
@@ -54,16 +49,14 @@ start a new session. Workers keep Pi's defaults.
 
 - Pi's `session_compact` hooks, compaction UI, and file-list carry-over run on every compaction.
 - Tau never starts a compaction, so no compaction of Tau's interrupts work in progress.
-- The worker ledger reaches the model after every compaction, whoever wrote the summary.
+- Each new worker report reaches the manager after every compaction, whoever wrote the summary.
 
 ### Negative
 
 - A manager pays for a large context until the user starts a new session, compacts, or Pi compacts
   near the window.
-- Pi's summary lacks exact IDs. The ledger restores the open workers as a separate message. Finished
-  workers and their reports need a `subagent_status` call.
-- A notice that arrives during a manual compaction does not wake the manager. The user started the
-  compaction and sends the next prompt.
+- Pi's summary lacks exact IDs. Tau reads the workers' assignment files again after each compaction.
+- A report note does not wake an idle manager. The report waits for the next prompt.
 - 50% is a guess. No measurement shows where a manager's work starts to degrade.
 - A user who prefers `/compact` gets advice that does not match that habit.
 

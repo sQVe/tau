@@ -1,21 +1,10 @@
 import { StringEnum } from '@earendil-works/pi-ai';
 import { Type } from 'typebox';
-import type { Static, TSchema } from 'typebox';
-import { Value } from 'typebox/value';
+import type { Static } from 'typebox';
 
 import { modelReferencePattern } from '../../config/models.js';
 import { instructionSetNames } from '../../instructions/instructions.js';
 import type { InstructionSetName } from '../../instructions/instructions.js';
-
-export type WorkerState =
-  | 'starting'
-  | 'running'
-  | 'awaitingReply'
-  | 'reported'
-  | 'stopping'
-  | 'stopped'
-  | 'cleanupUnconfirmed'
-  | 'notOwned';
 
 export interface Profile {
   name: string;
@@ -29,14 +18,8 @@ export interface Profile {
   source: string;
 }
 
-export const workerNamePattern = '^[a-z][a-z0-9-]{0,31}-[a-z0-9]{2}$';
-
-export const taskIdSchema = Type.String({ pattern: '^[a-zA-Z0-9-]+$' });
-
-export const isTaskId = (value: string): boolean => Value.Check(taskIdSchema, value);
-
 export const textLimit = 32_000;
-const text = Type.String({ minLength: 1, maxLength: textLimit });
+export const text = Type.String({ minLength: 1, maxLength: textLimit });
 
 export const thinkingSchema = StringEnum([
   'off',
@@ -82,197 +65,30 @@ export const loadoutSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const taskProperties = {
-  taskId: taskIdSchema,
-  // Display only. Newer Taus add profiles, so any prefix is accepted.
-  name: Type.Optional(Type.String({ pattern: workerNamePattern })),
-  label: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
-  predecessorTaskId: Type.Optional(taskIdSchema),
-  task: text,
-  acceptance: Type.Optional(Type.Array(text, { minItems: 1, maxItems: 50 })),
-  parentSession: text,
-  parentSessionId: text,
-
-  createdAt: Type.Integer({ minimum: 1 }),
-  deadline: Type.Integer({ minimum: 1 }),
-  cancellationBudget: Type.Integer({ minimum: 1, maximum: 30_000 }),
-  monotonicDeadline: Type.Number({ minimum: 1 }),
-};
-
-// Bump for any change to the saved fields, including a new optional field.
-export const taskVersion = 13;
-
-export const oldestReadableTaskVersion = 11;
-
-export const routingWithoutConfidenceCutoffTaskVersion = 11;
-
-export const routingWithConfidenceCutoffTaskVersion = 12;
-
-const routingFields = {
-  shadowPick: text,
-  label: Type.Optional(text),
-  confidence: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
-  fallbackReason: Type.Optional(
-    StringEnum(['lowConfidence', 'error', 'timeout', 'noRoute', 'unknownLabel']),
-  ),
-  ticketSent: Type.Boolean(),
-};
-
-const confidenceCutoffField = {
-  confidenceCutoff: Type.Number({ minimum: 0, maximum: 1 }),
-};
-
-const canaryField = {
-  canary: Type.Boolean(),
-};
-
-const routingWithoutConfidenceCutoffSchema = Type.Object(routingFields, {
-  additionalProperties: false,
-});
-
-const routingSchema = Type.Object(
-  { ...routingFields, ...confidenceCutoffField },
-  { additionalProperties: false },
-);
-
-const retiredCanaryRoutingSchema = Type.Object(
-  { ...routingFields, ...canaryField },
-  { additionalProperties: false },
-);
-
-const retiredCanaryRoutingWithCutoffSchema = Type.Object(
-  { ...routingFields, ...canaryField, ...confidenceCutoffField },
-  { additionalProperties: false },
-);
-
-const taskFields = {
-  ...taskProperties,
-  nativeSessionId: text,
-  nativeSessionFile: text,
-  loadout: loadoutSchema,
-};
-
-const taskWithRouting = <Version extends number, Routing extends TSchema>(
-  version: Version,
-  routing: Routing,
-) =>
-  Type.Object(
-    { ...taskFields, version: Type.Literal(version), routing: Type.Optional(routing) },
-    { additionalProperties: false },
-  );
-
-export const taskSchema = Type.Union([
-  taskWithRouting(routingWithoutConfidenceCutoffTaskVersion, routingWithoutConfidenceCutoffSchema),
-  taskWithRouting(routingWithConfidenceCutoffTaskVersion, routingSchema),
-  taskWithRouting(taskVersion, routingSchema),
-]);
-
-export const retiredCanaryTaskSchema = Type.Union([
-  taskWithRouting(routingWithoutConfidenceCutoffTaskVersion, retiredCanaryRoutingSchema),
-  taskWithRouting(routingWithConfidenceCutoffTaskVersion, retiredCanaryRoutingWithCutoffSchema),
-]);
-
-// Version 2: the Pi worker is its pane's own process, so shellPid equals processId.
-export const ownedWorkerSchema = Type.Object(
+export const routingSchema = Type.Object(
   {
-    version: Type.Literal(2),
-    kind: Type.Literal('pi'),
-    paneId: text,
-    terminalId: text,
-    shellPid: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
-    processId: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
-    startedAt: text,
-    token: text,
+    shadowPick: text,
+    label: Type.Optional(text),
+    confidence: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+    fallbackReason: Type.Optional(
+      StringEnum(['lowConfidence', 'error', 'timeout', 'noRoute', 'unknownLabel']),
+    ),
+    ticketSent: Type.Boolean(),
+    confidenceCutoff: Type.Number({ minimum: 0, maximum: 1 }),
   },
   { additionalProperties: false },
 );
 
-export const reportSchema = Type.Object(
-  {
-    taskId: text,
-    outcome: Type.Union([
-      Type.Literal('success'),
-      Type.Literal('failure'),
-      Type.Literal('incomplete'),
-    ]),
-    summary: text,
-    evidence: Type.Array(text, { maxItems: 100 }),
-  },
-  { additionalProperties: false },
-);
-
-// Saved where no trusted task id exists, so it carries none.
-export const startupFailureSchema = Type.Object(
-  {
-    version: Type.Literal(1),
-    kind: StringEnum(['taskRetired', 'taskNewer', 'failed']),
-    message: text,
-  },
-  { additionalProperties: false },
-);
-
-export const eventSchema = Type.Object(
-  {
-    taskId: text,
-    kind: StringEnum([
-      'ready',
-      'accepted',
-      'settled',
-      'startupFailure',
-      'continuationRefused',
-      'cancelled',
-      'timeout',
-      'cleanup',
-      'parentClosed',
-      'stopping',
-    ]),
-    detail: text,
-    at: Type.Integer({ minimum: 1 }),
-    stopped: Type.Boolean(),
-    processId: Type.Optional(Type.Integer({ minimum: 1 })),
-  },
-  { additionalProperties: false },
-);
-
-export const questionIdentitySchema = Type.String({ pattern: '^[a-zA-Z0-9-]{1,128}$' });
-
-const questionIdentity = {
-  version: Type.Literal(1),
-  taskId: text,
-  questionId: questionIdentitySchema,
+const reportFields = {
+  outcome: Type.Union([
+    Type.Literal('success'),
+    Type.Literal('failure'),
+    Type.Literal('incomplete'),
+  ]),
+  summary: text,
+  evidence: Type.Array(text, { maxItems: 100 }),
 };
 
-export const questionSchema = Type.Object(
-  { ...questionIdentity, question: text },
-  { additionalProperties: false },
-);
+export const savedReportSchema = Type.Object(reportFields, { additionalProperties: false });
 
-export const replySchema = Type.Object(
-  { ...questionIdentity, replyId: questionIdentitySchema, reply: text },
-  { additionalProperties: false },
-);
-
-// Acknowledgement records worker receipt, not successful application of arbitrary side effects.
-export const acknowledgementSchema = Type.Object(
-  { ...questionIdentity, replyId: questionIdentitySchema },
-  { additionalProperties: false },
-);
-
-export type Question = Static<typeof questionSchema>;
-export type Reply = Static<typeof replySchema>;
-export type Acknowledgement = Static<typeof acknowledgementSchema>;
 export type Loadout = Static<typeof loadoutSchema>;
-export type Task = Static<typeof taskSchema>;
-export type StartupFailure = Static<typeof startupFailureSchema>;
-
-export type Report = Static<typeof reportSchema>;
-export type TaskEvent = Static<typeof eventSchema>;
-
-// A worker with any of these events no longer accepts replies.
-export const replyClosedEventKinds: readonly TaskEvent['kind'][] = [
-  'settled',
-  'startupFailure',
-  'cleanup',
-  'cancelled',
-  'timeout',
-];

@@ -157,7 +157,6 @@ file is an error, like any key in the wrong file.
 ### XDG folder, root `tau.json`, or `package.json`
 
 Rejected because the XDG folder ignores `PI_CODING_AGENT_DIR`, so separate Pi setups and the
-integration tests would share one file, the reason
-[ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md) rejected XDG for records. XDG suits
-tools that run under several agents, and Tau runs only in Pi. A root file skips Pi's project trust,
-and repositories in Go or Lua have no `package.json`.
+integration tests would share one file, the reason [ADR 0043](./README.md#retired) rejected XDG for
+records. XDG suits tools that run under several agents, and Tau runs only in Pi. A root file skips
+Pi's project trust, and repositories in Go or Lua have no `package.json`.

@@ -8,7 +8,6 @@ import type { Expression, MemberExpression, ModuleDeclaration } from 'oxc-parser
 import { expect, it } from 'vitest';
 
 import { importTable, moduleList } from '../lint/rules/moduleBoundaries.ts';
-import { versionedRecords } from '../src/extensions/subagents/records.js';
 import config, { testEnvironment, testManagedEnvironment } from '../vite.config.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -107,25 +106,17 @@ const pureModules = [
   'src/extensions/subagents/acceptanceRefusal.ts',
   'src/extensions/subagents/bashOutputCap.ts',
   'src/extensions/subagents/capacityRefusal.ts',
-  'src/extensions/subagents/compactionWorkers.ts',
-  'src/extensions/subagents/controller/discoveryDecision.ts',
   'src/extensions/subagents/incompleteReport.ts',
   'src/extensions/subagents/launchEnvironment.ts',
   'src/extensions/subagents/modelRoutes.ts',
-  'src/extensions/subagents/noticeDelivery.ts',
-  'src/extensions/subagents/passiveWait.ts',
-  'src/extensions/subagents/piStop.ts',
   'src/extensions/subagents/qaBrief.ts',
-  'src/extensions/subagents/reportCap.ts',
-  'src/extensions/subagents/retentionDecision.ts',
+  'src/extensions/subagents/reportDecision.ts',
+  'src/extensions/subagents/reportMessage.ts',
   'src/extensions/subagents/skillToolsRefusal.ts',
-  'src/extensions/subagents/startupFailureDecision.ts',
   'src/extensions/subagents/summaryLength.ts',
-  'src/extensions/subagents/taskFormat.ts',
   'src/extensions/subagents/ticketPath.ts',
   'src/extensions/subagents/workerModels.ts',
   'src/extensions/subagents/workerPackages.ts',
-  'src/extensions/subagents/workerState.ts',
   'src/extensions/subagents/workerTools.ts',
   'src/extensions/tauSkills/requiredFor.ts',
   'src/extensions/tdd/configLayers.ts',
@@ -357,35 +348,6 @@ it('names each source test after the module beside it', () => {
   });
 
   expect(unmatched).toEqual([]);
-});
-
-it('gives every versioned record schema a format version', () => {
-  const unversioned = Object.entries(versionedRecords).filter(([, schema]) => {
-    const variants: unknown[] =
-      'anyOf' in schema && Array.isArray(schema.anyOf) ? schema.anyOf : [schema];
-
-    return !variants.every((variant) =>
-      Number.isInteger(
-        (variant as { properties?: { version?: { const?: unknown } } }).properties?.version?.const,
-      ),
-    );
-  });
-
-  expect(unversioned.map(([name]) => name)).toEqual([]);
-});
-
-it('writes versioned records only through publishRecord', () => {
-  const rawWrites = sourceFiles
-    .filter((path) => !isTest(path) && !isFixture(path))
-    .filter((path) => {
-      const source = readFileSync(join(root, path), 'utf8');
-
-      return Object.keys(versionedRecords).some((name) =>
-        new RegExp(String.raw`\bpublish\([^)]*'${name.replace('.', String.raw`\.`)}'`).test(source),
-      );
-    });
-
-  expect(rawWrites).toEqual([]);
 });
 
 it('keeps fixtures out of production modules', () => {
@@ -676,9 +638,8 @@ it('refuses index files, one-file folders, and missing entries but allows flat f
     'src/extensions/snippets/menu.ts',
     'src/extensions/snippets/snippets/verify.md',
     'src/extensions/subagents/subagents.ts',
+    'src/extensions/subagents/launch.ts',
     'src/extensions/subagents/profiles/scout.md',
-    'src/extensions/subagents/controller/controller.ts',
-    'src/extensions/subagents/controller/record.ts',
   ];
 
   const refused = [

@@ -2,16 +2,7 @@ import { expect, it } from 'vitest';
 
 import { isNestedChangeCall, isNestedControlCall } from './controlTools.js';
 
-const controlTools = [
-  'subagent_report',
-  'subagent_question',
-  'subagent_progress',
-  'ask_user_question',
-  'subagent',
-  'subagent_follow_up',
-  'subagent_reply',
-  'subagent_cancel',
-];
+const controlTools = ['subagent_report', 'ask_user_question', 'subagent'];
 
 it.each([
   ...controlTools.flatMap((toolName) => [
@@ -19,7 +10,6 @@ it.each([
     { toolName, parentToolCallId: 'codemode-call', nested: true },
   ]),
   { toolName: 'read', parentToolCallId: 'codemode-call', nested: false },
-  { toolName: 'subagent_status', parentToolCallId: 'codemode-call', nested: false },
 ])(
   'decides $toolName with parent $parentToolCallId is nested control: $nested',
   ({ toolName, parentToolCallId, nested }) => {

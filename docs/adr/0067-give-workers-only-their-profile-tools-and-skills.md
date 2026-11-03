@@ -6,7 +6,7 @@
 [ADR 0069 (Load each Pi package where its tools are used)](./README.md#retired),
 [ADR 0084 (Keep the diagram skill out of worker profiles)](./README.md#retired)\
 **Related**: [ADR 0006 (Load Tau's instruction sets into every prompt)](./0006-default-writing-policy.md),
-[ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md),
+[ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./README.md#retired),
 [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
 [ADR 0076 (Give browser workers one shared set of browser rules)](./0076-give-browser-workers-one-shared-set-of-browser-rules.md),
 [ADR 0087 (Use codemode to batch or filter evidence within an output budget)](./0087-gather-evidence-with-codemode.md),
@@ -21,8 +21,8 @@ worker's first request. Saved worker sessions show that workers use few of those
 Only scouts used the web tools often.
 
 Every extension must still load. The worker refuses to start without CC Safety Net from Tau's
-bundled file, [ADR 0043](./0043-own-only-the-worker-guarantees-herdr-lacks.md) rejects restricted
-extension loadouts, and reloading extensions once left the Claude bridge provider unregistered.
+bundled file, [ADR 0043](./README.md#retired) rejects restricted extension loadouts, and reloading
+extensions once left the Claude bridge provider unregistered.
 
 Activating tools after startup does not hold. Some extensions, such as the questionnaire, activate
 their tool again before every prompt.
@@ -37,8 +37,7 @@ tools, and the worker reads only the listed skills.
 
 - A profile's `tools:` setting replaces the defaults for its role. Without it, investigation
   profiles get `read` and `bash`, and editing profiles get `read`, `bash`, `edit`, and `write`.
-- Tau always adds `subagent_progress`, `subagent_report`, and `subagent_question`. A profile cannot
-  remove them.
+- Tau always adds `subagent_report`. A profile cannot remove it.
 - A loaded skill adds the tools it needs. The skill tool table in `src/skillTools.ts` names them,
   such as `mutation_check` for `tdd`.
 - Tau removes `full_check` from every worker, even when a worker loads the `pr` skill. Only the
@@ -109,11 +108,11 @@ tools, and the worker reads only the listed skills.
 - Worker profiles do not load the `diagram` skill, custom profiles included. This is a rule for
   profile authors, and no runtime check enforces it. No bundled profile loads it.
 
-### Saved tasks
+### Assignment files
 
-- The launch saves the tools, skill paths, instruction sets, and packages in the task loadout.
-- A follow-up uses its saved loadout, not the current profile file. It keeps the tools, skills,
-  sets, and packages of its original launch.
+- The launch saves the tools, skill paths, instruction sets, and packages in the assignment file's
+  loadout.
+- The worker uses that saved loadout when it starts, not the current profile file.
 
 ### Model routes
 
@@ -167,7 +166,7 @@ The profile's `model` stays the fallback. Routing works like this:
 - The parent cannot call a profile's tools directly. It must start a worker for that work.
 - A worker launch fails when a named package cannot be installed or loaded, or a named skill is not
   found.
-- A skill path saved at launch must still exist when the task is followed up.
+- A skill path saved at launch must still exist when the worker starts.
 - An instruction set added later needs a new name in the setting and in the list of allowed names.
 - Pi keeps an unpinned npm package at the version it first cached. Pin a version to update it.
 
@@ -201,7 +200,8 @@ reviewer is an investigation profile but needs the coding set.
 ### Instruction sets in an environment variable
 
 Send the list of sets to the worker through an environment variable. Rejected because the worker
-reads its saved task, so a follow-up would lose a list that only the launch environment carried.
+reads its assignment file, so a resumed worker would lose a list that only the launch environment
+carried.
 
 ### Load every package in the parent
 

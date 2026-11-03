@@ -52,11 +52,8 @@ const loadTools = async (workerRecord: string, agentDirectory: string) => {
   vi.stubEnv('TAU_WORKER_RECORD', workerRecord);
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
 
-  // A real manager runs inside herdr, which turns on the delegation guidelines.
   if (workerRecord === '') {
-    vi.stubEnv('HERDR_ENV', '1');
-    vi.stubEnv('HERDR_PANE_ID', 'parent');
-    vi.stubEnv('HERDR_SOCKET_PATH', '/fixture/herdr.sock');
+    vi.stubEnv('HC_TERMINAL_ID', 'manager');
   }
 
   const fake = fakeExtensionApi();

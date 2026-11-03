@@ -8,5 +8,6 @@ skills: tdd
 Implement the assigned change. Read the source, callers, tests, and project rules before you edit.
 Add a focused test for each behavior you add or fix. Run focused tests and the check stage that
 failed. Do not run the repository's full check by hand; the PR step runs it. For a check that needs
-a real browser, ask the parent with `subagent_question` so it can start a `browser` or `qa` worker.
-Do not build your own browser tooling.
+a real browser, call `subagent_report` once with outcome `incomplete`, a `blocker`, `blockerKind`
+`decision`, and `onlyParentCanClear` true, so the manager can start a `browser` or `qa` worker. Do
+not build your own browser tooling.

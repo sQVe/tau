@@ -57,6 +57,26 @@ const successCases = [
     expected: { terminals: [{ address: 't7', state: 'live' }] },
   },
   {
+    name: 'the running ls status',
+    parse: () =>
+      parseCommandReply(
+        'hc ls',
+        'ls',
+        JSON.stringify({
+          terminals: [
+            { address: 't7', state: 'live', status: 'working' },
+            { address: 't8', state: 'finished', status: null },
+          ],
+        }),
+      ),
+    expected: {
+      terminals: [
+        { address: 't7', state: 'live', status: 'working' },
+        { address: 't8', state: 'finished', status: null },
+      ],
+    },
+  },
+  {
     name: 'the send reply',
     parse: () =>
       parseCommandReply(

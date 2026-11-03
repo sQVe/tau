@@ -1,11 +1,12 @@
 import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 
+import { runWithEnvironment } from '../src/hc/connect.js';
 import { protectedVariables } from './hcIsolationHarness.js';
 import type { ProtectedVariable } from './hcIsolationHarness.js';
 import { inheritedVariables, sessionProcesses, startHcSession } from './hcSessionHarness.js';
@@ -63,6 +64,22 @@ const addFakeProcess = (processId: number, session: string): void => {
   fakeProcesses.set(String(processId), {
     state: 'S',
     environment: `PATH=/usr/bin\0HC_SESSION=${session}\0`,
+  });
+
+  onTestFinished(() => {
+    fakeProcesses.clear();
+  });
+};
+
+const addFakeProcessEnvironment = (
+  processId: number,
+  environment: Record<string, string>,
+): void => {
+  const entries = Object.entries(environment).map(([name, value]) => `${name}=${value}`);
+
+  fakeProcesses.set(String(processId), {
+    state: 'S',
+    environment: `${entries.join('\0')}\0`,
   });
 
   onTestFinished(() => {
@@ -387,8 +404,67 @@ it('removes the root after a failed hc server stop when no process remains', asy
   expect(existsSync(session.root)).toBe(false);
 });
 
-it('keeps the root and names the session and root when a process outlives the stop', async () => {
+it('stops a leftover core of its own session with the core paths and no PID signal', async () => {
+  const remaining = new Set([4343]);
+  const session = await startUnregisteredSession(() => [...remaining]);
+
+  addFakeProcessEnvironment(4343, {
+    PATH: '/usr/bin',
+    HC_SESSION: session.session,
+    XDG_RUNTIME_DIR: join(session.root, 'run'),
+    XDG_STATE_HOME: join(session.root, 'state'),
+  });
+
+  const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
+
+  onTestFinished(() => {
+    killSpy.mockRestore();
+  });
+
+  const stopEnvironments: (Record<string, string> | undefined)[] = [];
+
+  execFileMock.mockImplementation(((...argumentsList: unknown[]) => {
+    const options = argumentsList[2] as { env?: Record<string, string> } | undefined;
+    const callback = argumentsList[3] as (error: null, stdout: string, stderr: string) => void;
+
+    stopEnvironments.push(options?.env);
+    callback(null, '', '');
+
+    if (stopEnvironments.length >= 2) {
+      remaining.clear();
+    }
+
+    return undefined;
+  }) as unknown as typeof execFile);
+
+  useFakeTimersUntilFinished();
+
+  const stopping = session.stop();
+
+  await vi.runAllTimersAsync();
+  await stopping;
+
+  expect(killSpy).not.toHaveBeenCalled();
+  expect(stopEnvironments).toHaveLength(2);
+
+  expect(stopEnvironments[1]).toMatchObject({
+    HC_SESSION: session.session,
+    XDG_RUNTIME_DIR: join(session.root, 'run'),
+    XDG_STATE_HOME: join(session.root, 'state'),
+  });
+
+  expect(existsSync(session.root)).toBe(false);
+});
+
+it('refuses to stop a leftover process whose environment is not the test session', async () => {
   const session = await startUnregisteredSession(() => [4343]);
+
+  addFakeProcessEnvironment(4343, {
+    PATH: '/usr/bin',
+    HC_SESSION: 'other-session',
+    XDG_RUNTIME_DIR: '/run/user/1000',
+    XDG_STATE_HOME: '/home/other/.local/state',
+  });
 
   onTestFinished(() => {
     rmSync(session.root, { recursive: true, force: true });
@@ -414,10 +490,23 @@ it('keeps the root and names the session and root when a process outlives the st
     `hc session ${session.session} still has processes after stop; kept ${session.root}`,
   );
 
-  expect((failure as Error).cause).toMatchObject({
-    message: `hc session ${session.session} still runs after hc server stop`,
-  });
+  expect(
+    execFileMock.mock.calls.filter(([, args]) => args?.join(' ') === 'server stop --json'),
+  ).toHaveLength(1);
 
-  expect(existsSync(session.root)).toBe(true);
   expect(killSpy).not.toHaveBeenCalled();
+  expect(existsSync(session.root)).toBe(true);
+});
+
+it('refuses a terminal run with a real protected path before starting a process', async () => {
+  const session = await startHcSession(onTestFinished);
+
+  await expect(
+    runWithEnvironment(session.runtime, {
+      argv: ['true'],
+      env: { ...session.environment, HOME: homedir() },
+    }),
+  ).rejects.toThrow('HOME');
+
+  expect(spawnMock).not.toHaveBeenCalled();
 });

@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +19,7 @@ import manifest from '../package.json' with { type: 'json' };
 import { commitToolGuidelines } from '../src/extensions/commit/tool.js';
 import { delegationGuidelines } from '../src/extensions/subagents/managerPrompt.js';
 import { readInstructionSet } from '../src/instructions/instructions.js';
+import { emptySessionRefusal, installHcCommand } from './hcCommandHarness.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createPiSession } from './piSession.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
@@ -41,9 +43,12 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
     vi.unstubAllEnvs();
   });
 
-  vi.stubEnv('HERDR_ENV', '1');
-  vi.stubEnv('HERDR_PANE_ID', 'parent');
-  vi.stubEnv('HERDR_SOCKET_PATH', join(workingDirectory, 'herdr.sock'));
+  const { bin: hcBin, log: hcLog } = installHcCommand(workingDirectory);
+
+  vi.stubEnv('HC_FAKE_LOG', hcLog);
+  vi.stubEnv('PATH', `${hcBin}:${process.env.PATH ?? ''}`);
+  vi.stubEnv('HC_SESSION', 'tau-test-package');
+  vi.stubEnv('HC_TERMINAL_ID', 'manager');
 
   // Pi-claude-bridge keeps this options object at before_agent_start and forwards only its
   // appendSystemPrompt and context files at agent_start, after every handler has run.
@@ -140,6 +145,11 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
 
   await session.bindExtensions({});
 
+  await vi.waitFor(() => {
+    expect(existsSync(hcLog)).toBe(true);
+    expect(readFileSync(hcLog, 'utf8')).toMatch(/^ls\b/m);
+  });
+
   const prompts: string[] = [];
   const transcripts: string[] = [];
 
@@ -220,6 +230,43 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
   for (const prompt of prompts) {
     expect(prompt).not.toContain(browserInstructions);
   }
+}, 30_000);
+
+it('refuses to run hc with an empty HC_SESSION from the package integration path', async ({
+  onTestFinished,
+}) => {
+  const workingDirectory = temporaryDirectory(onTestFinished, 'tau-package-refusal-');
+  const agentDirectory = join(workingDirectory, 'agent');
+
+  isolateWebAccessConfig(agentDirectory, onTestFinished);
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const { bin, log } = installHcCommand(workingDirectory);
+
+  vi.stubEnv('HC_FAKE_LOG', log);
+  vi.stubEnv('PATH', `${bin}:${process.env.PATH ?? ''}`);
+  vi.stubEnv('HC_SESSION', '');
+  vi.stubEnv('HC_TERMINAL_ID', 'manager');
+
+  const scriptedProvider = fauxProvider({ provider: 'tau-package-refusal' });
+
+  const { session } = await createPiSession(onTestFinished, {
+    cwd: workingDirectory,
+    agentDirectory,
+    providers: [scriptedProvider],
+    extensionPaths: [fileURLToPath(new URL('../', import.meta.url))],
+    tools: ['subagent', 'commit'],
+  });
+
+  await session.bindExtensions({});
+
+  await vi.waitFor(() => {
+    expect(existsSync(log)).toBe(true);
+    expect(readFileSync(log, 'utf8')).toContain(emptySessionRefusal);
+  });
 }, 30_000);
 
 it('reports an extension error for a missing bundled web extension', async ({ onTestFinished }) => {

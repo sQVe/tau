@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { isWorkerProcess, parseWorkerNoticeEvent } from './worker.js';
+import { isWorkerProcess } from './worker.js';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -20,19 +20,5 @@ it.each([
     vi.stubEnv('TAU_WORKER_RECORD', recordDirectory);
 
     expect(isWorkerProcess()).toBe(expected);
-  },
-);
-
-it('reads a notice payload', () => {
-  expect(parseWorkerNoticeEvent({ worker: 'scout', label: 'asks' })).toEqual({
-    worker: 'scout',
-    label: 'asks',
-  });
-});
-
-it.each([undefined, null, 'text', [], {}, { worker: 'scout' }, { worker: 1, label: 'asks' }])(
-  'ignores malformed data %j',
-  (data) => {
-    expect(parseWorkerNoticeEvent(data)).toBeUndefined();
   },
 );

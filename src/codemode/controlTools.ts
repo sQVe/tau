@@ -7,13 +7,8 @@ interface ToolCallFacts {
 // them directly; a call from another tool, such as a codemode script, is refused.
 const controlToolNames: ReadonlySet<string> = new Set([
   'subagent_report',
-  'subagent_question',
-  'subagent_progress',
   'ask_user_question',
   'subagent',
-  'subagent_follow_up',
-  'subagent_reply',
-  'subagent_cancel',
 ]);
 
 export const nestedControlCallReason =

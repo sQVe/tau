@@ -2,7 +2,7 @@
 
 **Date**: 2026-09-28\
 **Status**: Accepted\
-**Related**: [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./0043-own-only-the-worker-guarantees-herdr-lacks.md)
+**Related**: [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./README.md#retired)
 
 ## Context
 

@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 
+import config, { testEnvironment } from '../vite.config.js';
 import { isolationProblems, protectedVariables } from './hcIsolationHarness.js';
 import type { HcIsolationFacts, ProtectedVariable } from './hcIsolationHarness.js';
 
@@ -111,8 +112,44 @@ it('refuses a path inside the real home only after symlinks resolve', () => {
   ]);
 });
 
+it('refuses a dot-segment alias of the real XDG runtime dir', () => {
+  expect(isolationProblems(facts({}, { XDG_RUNTIME_DIR: '/run/user/other/../1000' }))).toEqual([
+    'XDG_RUNTIME_DIR equals the real XDG_RUNTIME_DIR',
+  ]);
+});
+
+it('refuses a canonical alias outside the lexical prefix', () => {
+  expect(
+    isolationProblems(facts({}, { XDG_RUNTIME_DIR: '/run/user/1000/../other/../1000' })),
+  ).toEqual(['XDG_RUNTIME_DIR equals the real XDG_RUNTIME_DIR']);
+});
+
+it('refuses the default state home when the real XDG state home is unset', () => {
+  expect(
+    isolationProblems(
+      facts(
+        { realValues: { ...realValues, XDG_STATE_HOME: undefined } },
+        { XDG_STATE_HOME: '/real/home/.local/state' },
+      ),
+    ),
+  ).toEqual(['XDG_STATE_HOME equals the real XDG_STATE_HOME']);
+});
+
 it('accepts a private value when the real value is missing', () => {
   expect(
     isolationProblems(facts({ realValues: { ...realValues, XDG_DATA_HOME: undefined } })),
   ).toEqual([]);
+});
+
+it('clears the inherited hc session and terminal id before every test worker starts', () => {
+  const env = (config as { test?: { env?: Record<string, string> } }).test?.env ?? {};
+
+  expect(env['HC_SESSION']).toBe('');
+  expect(env['HC_TERMINAL_ID']).toBe('');
+
+  expect(process.env.HC_SESSION ?? '').toBe('');
+  expect(process.env.HC_TERMINAL_ID ?? '').toBe('');
+
+  expect(testEnvironment).not.toContain('HC_SESSION');
+  expect(testEnvironment).not.toContain('HC_TERMINAL_ID');
 });

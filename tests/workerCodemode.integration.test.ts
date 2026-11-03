@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,15 +20,17 @@ import codemodeExtension from '../src/extensions/codemode.js';
 import fullCheckExtension from '../src/extensions/fullCheck/fullCheck.js';
 import instructionsExtension from '../src/extensions/instructions.js';
 import {
-  nativeIdentity,
-  seedSession,
-} from '../src/extensions/subagents/controller/nativeSession.js';
+  assignmentDirectory,
+  assignmentPath,
+  writeAssignment,
+} from '../src/extensions/subagents/assignment.js';
+import type { Assignment } from '../src/extensions/subagents/assignment.js';
 import { resolveProfile } from '../src/extensions/subagents/profiles.js';
-import { publish, readEvent, validateTask } from '../src/extensions/subagents/records.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import { skillTools } from '../src/skillTools.js';
-import { createBoundSession } from './piSession.js';
+import { createHcFake } from './hcFake.js';
+import { createPiSession } from './piSession.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 interface ToolOutcome {
@@ -36,6 +38,8 @@ interface ToolOutcome {
   isError: boolean;
   text: string;
 }
+
+const workerTerminal = 'worker';
 
 const safetyExtension = join(
   dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
@@ -84,17 +88,46 @@ const piAgentDirectory = (prefix: string): string => {
   return directory;
 };
 
-// Starts a worker session from a bundled profile, as a launched Pi worker would. A launched worker
-// may run without Tau, so `workflow: false` leaves out the workflow and codemode extensions.
+const seedAssignment = async (
+  directory: string,
+  profileName: string,
+  loadout: Assignment['loadout'],
+): Promise<{ path: string; sessionFile: string }> => {
+  const assignmentId = '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f';
+  const sessionId = '11111111-1111-1111-1111-111111111111';
+  const path = assignmentPath(assignmentId);
+  const sessionFile = join(assignmentDirectory(assignmentId), `${sessionId}.jsonl`);
+
+  await writeAssignment({
+    version: 1,
+    assignmentId,
+    task: 'Inspect source.txt.',
+    acceptance: [],
+    label: null,
+    profile: profileName,
+    loadout,
+    routing: null,
+    packageSnapshot: null,
+    session: { id: sessionId, file: sessionFile },
+    parentSession: join(directory, 'parent.jsonl'),
+    cwd: directory,
+    parentTerminal: 'manager',
+    deadline: Date.now() + 30_000,
+    createdAt: Date.now(),
+    report: null,
+  });
+
+  return { path, sessionFile };
+};
+
 const startProfileWorker = async (
   directory: string,
   profileName: string,
+  responses: FauxResponseStep[],
   { workflow = true }: { workflow?: boolean } = {},
 ) => {
-  const taskDirectory = join(directory, 'task');
-  mkdirSync(taskDirectory);
   vi.stubEnv('TAU_ROLE', 'worker');
-  vi.stubEnv('TAU_WORKER_RECORD', taskDirectory);
+  vi.stubEnv('HC_TERMINAL_ID', workerTerminal);
   const provider = fauxProvider({ provider: 'tau-profile-codemode' });
   const model = provider.getModel();
   const profile = resolveProfile(directory, directory, true, profileName);
@@ -103,37 +136,36 @@ const startProfileWorker = async (
     throw new Error(`Profile not found: ${profileName}`);
   }
 
-  const task = validateTask({
-    version: 11,
-    taskId: `${profileName}-task`,
-    task: 'Inspect source.txt.',
-    parentSession: join(directory, 'parent.jsonl'),
-    parentSessionId: 'parent',
-    ...nativeIdentity(taskDirectory),
-    createdAt: Date.now(),
-    deadline: Date.now() + 30_000,
-    cancellationBudget: 2000,
-    monotonicDeadline: Date.now() + 30_000,
-    loadout: {
-      harness: 'pi',
-      profile: profileName,
-      role: profile.role,
-      model: `${model.provider}/${model.id}`,
-      thinking: 'off',
-      cwd: directory,
-      agentDirectory: directory,
-      permissions: 'trusted-full-tools',
-      instructions: profile.instructions,
-      tools: profile.tools,
-      skills: [],
-      instructionSets: profile.instructionSets,
-      packages: [],
-    },
-  });
+  const loadout: Assignment['loadout'] = {
+    harness: 'pi',
+    profile: profileName,
+    role: profile.role,
+    model: `${model.provider}/${model.id}`,
+    thinking: 'off',
+    cwd: directory,
+    agentDirectory: directory,
+    permissions: 'trusted-full-tools',
+    instructions: profile.instructions,
+    tools: profile.tools,
+    skills: [],
+    instructionSets: profile.instructionSets,
+    packages: [],
+  };
 
-  publish(taskDirectory, 'task.json', task);
-  vi.stubEnv('TAU_WORKER_TOOLS', JSON.stringify(workerTools(task.loadout, skillTools)));
-  seedSession(task);
+  const { path, sessionFile } = await seedAssignment(directory, profileName, loadout);
+
+  const hc = createHcFake();
+
+  hc.reply(
+    'get',
+    JSON.stringify({
+      address: workerTerminal,
+      state: 'live',
+      parent: 'manager',
+      labels: { 'tau.assignment': path },
+    }),
+  );
+
   writeFileSync(join(directory, 'source.txt'), 'fixture-source');
   const executed: string[] = [];
 
@@ -147,31 +179,34 @@ const startProfileWorker = async (
     extensionFactories.push(instructionsExtension, codemodeExtension);
   }
 
-  extensionFactories.push(workerExtension);
-
-  const { session } = await createBoundSession(onTestFinished, {
+  const created = await createPiSession(onTestFinished, {
     cwd: directory,
     agentDirectory: directory,
     providers: [provider],
-    tools: workerTools(task.loadout, skillTools),
-    sessionManager: SessionManager.open(task.nativeSessionFile),
+    tools: workerTools(loadout, skillTools),
+    sessionManager: SessionManager.open(sessionFile),
     settings: { compaction: { enabled: false }, retry: { enabled: false } },
     extensionPaths: [safetyExtension],
-    extensionFactories,
+    extensionFactories: [
+      ...extensionFactories,
+      (pi) => {
+        pi.exec = hc.exec;
+
+        workerExtension(pi);
+      },
+    ],
   });
 
-  return { session, provider, taskDirectory, taskId: task.taskId, executed };
-};
+  if (created.extensionsResult.errors.length > 0) {
+    throw new Error(
+      `Extensions failed to load: ${JSON.stringify(created.extensionsResult.errors)}`,
+    );
+  }
 
-// Dispatches the task and waits until the worker's model follows `responses` to the end.
-const runTask = async (
-  worker: Awaited<ReturnType<typeof startProfileWorker>>,
-  responses: FauxResponseStep[],
-): Promise<ToolOutcome[]> => {
   const outcomes: ToolOutcome[] = [];
   const settled = Promise.withResolvers<undefined>();
 
-  worker.session.subscribe((event) => {
+  created.session.subscribe((event) => {
     if (event.type === 'tool_execution_end') {
       outcomes.push({
         toolName: event.toolName,
@@ -185,11 +220,11 @@ const runTask = async (
     }
   });
 
-  worker.provider.setResponses(responses);
-  publish(worker.taskDirectory, 'dispatch.json', { taskId: worker.taskId });
+  provider.setResponses(responses);
+  await created.session.bindExtensions({});
   await settled.promise;
 
-  return outcomes;
+  return { executed, outcomes, path, session: created.session };
 };
 
 const stopWithoutReport = [
@@ -228,25 +263,24 @@ it.for([
   ['browser', false],
 ] as const)('gives the bundled %s profile codemode: %s', async ([profileName, expected]) => {
   const directory = piAgentDirectory('tau-profile-codemode-');
-  const worker = await startProfileWorker(directory, profileName);
+  const worker = await startProfileWorker(directory, profileName, stopWithoutReport);
 
-  expect(readEvent(worker.taskDirectory, worker.taskId, 'ready')).toBeDefined();
   expect(worker.session.getActiveToolNames().includes('codemode')).toBe(expected);
 });
 
 it('refuses a scout script call to a tool the profile does not list', async () => {
   const directory = piAgentDirectory('tau-scout-codemode-');
-  const worker = await startProfileWorker(directory, 'scout');
 
-  const script =
-    "await tools.edit({ path: 'source.txt', edits: [{ oldText: 'fixture', newText: 'edited' }] });";
-
-  const outcomes = await runTask(worker, [
-    fauxAssistantMessage([fauxToolCall('codemode', { code: script })]),
+  const worker = await startProfileWorker(directory, 'scout', [
+    fauxAssistantMessage([
+      fauxToolCall('codemode', {
+        code: "await tools.edit({ path: 'source.txt', edits: [{ oldText: 'fixture', newText: 'edited' }] });",
+      }),
+    ]),
     ...stopWithoutReport,
   ]);
 
-  const result = outcomes.find((outcome) => outcome.toolName === 'codemode');
+  const result = worker.outcomes.find((outcome) => outcome.toolName === 'codemode');
 
   expect(result?.isError).toBe(true);
   expect(result?.text).toContain('tools.edit does not exist');
@@ -264,10 +298,9 @@ it.for([
   'adds the codemode guidelines to the %s worker prompt with workflow %s: %s',
   async ([profileName, workflow, expected]) => {
     const directory = piAgentDirectory('tau-worker-guidelines-');
-    const worker = await startProfileWorker(directory, profileName, { workflow });
     const { captured, step } = captureSystemPrompt();
 
-    await runTask(worker, [step, ...stopWithoutReport]);
+    await startProfileWorker(directory, profileName, [step, ...stopWithoutReport], { workflow });
 
     expect(captured.systemPrompt).toContain('# Tau workflow instructions');
     expect(hasCodemodeGuidelines(captured.systemPrompt)).toBe(expected);
@@ -291,7 +324,7 @@ it.for([
     const provider = fauxProvider({ provider: 'tau-manager-guidelines' });
     const { captured, step } = captureSystemPrompt();
 
-    const { session } = await createBoundSession(onTestFinished, {
+    const { session } = await createPiSession(onTestFinished, {
       cwd: directory,
       agentDirectory: directory,
       providers: [provider],
@@ -305,6 +338,7 @@ it.for([
     });
 
     provider.setResponses([step]);
+    await session.bindExtensions({});
     await session.prompt('Check the fixture.');
 
     expect(captured.systemPrompt).toContain('# Tau workflow instructions');
@@ -348,7 +382,7 @@ const startManager = async (directory: string) => {
   const provider = fauxProvider({ provider: 'tau-manager-change-tools' });
   const executed: string[] = [];
 
-  const { session } = await createBoundSession(onTestFinished, {
+  const { session } = await createPiSession(onTestFinished, {
     cwd: directory,
     agentDirectory: directory,
     providers: [provider],
@@ -361,6 +395,8 @@ const startManager = async (directory: string) => {
       codemodeExtension,
     ],
   });
+
+  await session.bindExtensions({});
 
   const run = async (responses: FauxResponseStep[]): Promise<ToolOutcome[]> => {
     const outcomes: ToolOutcome[] = [];
@@ -386,14 +422,18 @@ const startManager = async (directory: string) => {
 
 it('refuses change tools called from a worker script and changes nothing', async () => {
   const directory = piAgentDirectory('tau-worker-change-script-');
-  const worker = await startProfileWorker(directory, 'worker', { workflow: false });
 
-  const outcomes = await runTask(worker, [
-    fauxAssistantMessage([fauxToolCall('codemode', { code: changeToolScript })]),
-    ...stopWithoutReport,
-  ]);
+  const worker = await startProfileWorker(
+    directory,
+    'worker',
+    [
+      fauxAssistantMessage([fauxToolCall('codemode', { code: changeToolScript })]),
+      ...stopWithoutReport,
+    ],
+    { workflow: false },
+  );
 
-  const result = outcomes.find((outcome) => outcome.toolName === 'codemode');
+  const result = worker.outcomes.find((outcome) => outcome.toolName === 'codemode');
 
   expect(result?.text).toContain(nestedChangeCallReason);
   expect(result?.text).not.toContain('change-tool-ran');
@@ -403,11 +443,17 @@ it('refuses change tools called from a worker script and changes nothing', async
 
 it('runs change tools a worker calls directly', async () => {
   const directory = piAgentDirectory('tau-worker-change-direct-');
-  const worker = await startProfileWorker(directory, 'worker', { workflow: false });
 
-  const outcomes = await runTask(worker, [directChangeCalls, ...stopWithoutReport]);
+  const worker = await startProfileWorker(
+    directory,
+    'worker',
+    [directChangeCalls, ...stopWithoutReport],
+    {
+      workflow: false,
+    },
+  );
 
-  expect(outcomes.filter((outcome) => outcome.isError)).toEqual([]);
+  expect(worker.outcomes.filter((outcome) => outcome.isError)).toEqual([]);
   expect(readFileSync(join(directory, 'written.txt'), 'utf8')).toBe('written');
   expect(readFileSync(join(directory, 'source.txt'), 'utf8')).toBe('edited-source');
   expect(worker.executed.toSorted()).toEqual(['commit', 'run_tests']);
@@ -462,14 +508,13 @@ text('small two');
 
 it('blocks a worker script that raises the budget without a reason and runs nothing', async () => {
   const directory = piAgentDirectory('tau-worker-budget-refusal-');
-  const worker = await startProfileWorker(directory, 'scout');
 
-  const outcomes = await runTask(worker, [
+  const worker = await startProfileWorker(directory, 'scout', [
     fauxAssistantMessage([fauxToolCall('codemode', { code: raisedWithoutReason })]),
     ...stopWithoutReport,
   ]);
 
-  const result = outcomes.find((outcome) => outcome.toolName === 'codemode');
+  const result = worker.outcomes.find((outcome) => outcome.toolName === 'codemode');
 
   expect(result?.isError).toBe(true);
   expect(result?.text).toContain('// @budget: <reason>');
@@ -480,9 +525,8 @@ it('blocks a worker script that raises the budget without a reason and runs noth
 
 it('returns the items that fit and names each cut item with the full-output path', async () => {
   const directory = piAgentDirectory('tau-worker-budget-cut-');
-  const worker = await startProfileWorker(directory, 'scout');
 
-  const outcomes = await runTask(worker, [
+  const worker = await startProfileWorker(directory, 'scout', [
     fauxAssistantMessage([
       fauxToolCall('codemode', {
         code: `// @options: {"max_output_tokens": 2000}\n${overBudgetScript}`,
@@ -491,7 +535,7 @@ it('returns the items that fit and names each cut item with the full-output path
     ...stopWithoutReport,
   ]);
 
-  const result = outcomes.find((outcome) => outcome.toolName === 'codemode');
+  const result = worker.outcomes.find((outcome) => outcome.toolName === 'codemode');
   const path = /Full output: ([^\s\]\\]+)/.exec(result?.text ?? '')?.[1];
 
   expect(result?.isError).toBe(false);
@@ -506,14 +550,13 @@ it('returns the items that fit and names each cut item with the full-output path
 
 it('returns a script within its budget as Pi does without the budget handlers', async () => {
   const directory = piAgentDirectory('tau-worker-budget-within-');
-  const worker = await startProfileWorker(directory, 'scout');
 
-  const outcomes = await runTask(worker, [
+  const worker = await startProfileWorker(directory, 'scout', [
     fauxAssistantMessage([fauxToolCall('codemode', { code: withinBudgetScript })]),
     ...stopWithoutReport,
   ]);
 
-  const result = outcomes.find((outcome) => outcome.toolName === 'codemode');
+  const result = worker.outcomes.find((outcome) => outcome.toolName === 'codemode');
 
   expect(result?.isError).toBe(false);
   expect(result?.text).toContain('small one');
@@ -540,15 +583,14 @@ it('blocks a manager script that raises the budget without a reason', async () =
 
 it('keeps a script with 1,000 short rows within the default budget', async () => {
   const directory = piAgentDirectory('tau-worker-budget-rows-');
-  const worker = await startProfileWorker(directory, 'scout');
   const script = "for (let row = 1; row <= 1000; row++) text('row ' + row + ' ' + 'x'.repeat(40));";
 
-  const outcomes = await runTask(worker, [
+  const worker = await startProfileWorker(directory, 'scout', [
     fauxAssistantMessage([fauxToolCall('codemode', { code: script })]),
     ...stopWithoutReport,
   ]);
 
-  const result = outcomes.find((outcome) => outcome.toolName === 'codemode');
+  const result = worker.outcomes.find((outcome) => outcome.toolName === 'codemode');
   const content = (JSON.parse(result?.text ?? '{}') as { content: { text: string }[] }).content;
   const bodyLength = content.slice(1).reduce((sum, item) => sum + item.text.length, 0);
 
@@ -559,15 +601,14 @@ it('keeps a script with 1,000 short rows within the default budget', async () =>
 
 it('lets Pi reject an invalid max_output_tokens and runs no nested call', async () => {
   const directory = piAgentDirectory('tau-worker-budget-invalid-');
-  const worker = await startProfileWorker(directory, 'scout');
   const script = `// @options: {"max_output_tokens": -1}\nawait tools.read({ path: 'source.txt' });\ntext('invalid-ran');`;
 
-  const outcomes = await runTask(worker, [
+  const worker = await startProfileWorker(directory, 'scout', [
     fauxAssistantMessage([fauxToolCall('codemode', { code: script })]),
     ...stopWithoutReport,
   ]);
 
-  const result = outcomes.find((outcome) => outcome.toolName === 'codemode');
+  const result = worker.outcomes.find((outcome) => outcome.toolName === 'codemode');
 
   expect(result?.isError).toBe(true);
   expect(result?.text).toContain('max_output_tokens');

@@ -16,9 +16,9 @@ rushed launch skips the part that is easiest to forget.
 
 ## Decision
 
-Launches and follow-ups of editing roles require a list of acceptance criteria, and the tool refuses
-a launch without one. Goal, scope, and files stay guidance in the tool description and the manager
-guidelines.
+Launches of editing roles require a list of acceptance criteria, and the tool refuses a launch
+without one. Follow-ups are not built yet. A later change adds them and keeps this rule. Goal,
+scope, and files stay guidance in the tool description and the manager guidelines.
 
 Acceptance criteria get a code check because a missing criterion cannot be recovered later. A weak
 goal or scope still gives the worker something to work from, and the manager can correct it when the
@@ -26,7 +26,7 @@ worker reports. A missing criterion leaves nothing to verify, so the review and 
 have no target. The check is cheap: it tests that the list exists, not that the criteria are good.
 Other brief items vary too much by task for a fixed rule, so a check on them would force filler.
 
-The task record holds a working copy of the criteria. The agent ticket is the saved copy, as ADR
+The assignment file holds a working copy of the criteria. The agent ticket is the saved copy, as ADR
 0101 says. The `start-slice` skill copies the ticket's `## Acceptance` items word for word into the
 launch, so the worker and the reviewer see the same criteria the user approved. The reviewer maps
 each criterion to evidence and reports one it cannot check as a finding.

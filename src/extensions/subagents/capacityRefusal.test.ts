@@ -4,16 +4,17 @@ import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.j
 
 it.each([
   { name: 'user message', message: { role: 'user' }, clears: true },
-  {
-    name: 'worker notice',
-    message: { role: 'custom', customType: 'tau-worker' },
-    clears: true,
-  },
   { name: 'assistant message', message: { role: 'assistant' }, clears: false },
   { name: 'tool result', message: { role: 'toolResult' }, clears: false },
+  { name: 'custom message', message: { role: 'custom' }, clears: false },
   {
-    name: 'unrelated custom message',
-    message: { role: 'custom', customType: 'tau-worker-ledger' },
+    name: 'worker report notice',
+    message: { role: 'custom', customType: 'tau-worker-report' },
+    clears: true,
+  },
+  {
+    name: 'another custom message',
+    message: { role: 'custom', customType: 'tau-worker-report-request' },
     clears: false,
   },
 ])('decides whether $name clears the capacity refusal', ({ message, clears }) => {
