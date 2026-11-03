@@ -4,8 +4,8 @@ import { defineTool, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionToolContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
-import { readBase } from '../../checkRecord/identity.js';
 import type { Exec } from '../../command.js';
+import { runGit } from '../../git.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import { executeRecordedCheck } from './checkFlow.js';
 import type { CheckPolicy, Recorded } from './checkFlow.js';
@@ -90,6 +90,35 @@ const readAuditPaths = (request: MutationRequest): string[] => {
 const withLimit = (argv: string[], maxMutants: number | undefined): string[] =>
   maxMutants === undefined ? argv : [...argv, '--max-mutants', String(maxMutants)];
 
+const resolveCommit = async (root: string, reference: string): Promise<string | undefined> => {
+  const commandArguments = ['rev-parse', '--verify', '--quiet', `${reference}^{commit}`];
+  const result = await runGit(root, commandArguments);
+
+  if (result.exitCode === null) {
+    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
+  }
+
+  return result.exitCode === 0 ? result.stdout.toString('utf8').trim() : undefined;
+};
+
+const readMutationBase = async (root: string, base: string | undefined): Promise<string | null> => {
+  if (base === undefined) {
+    return (await resolveCommit(root, 'origin/HEAD')) ?? null;
+  }
+
+  if (base.startsWith('-')) {
+    throw new Error(`The base ${base} must be a ref or commit, not an option.`);
+  }
+
+  const commit = await resolveCommit(root, base);
+
+  if (commit === undefined) {
+    throw new Error(`The base ${base} does not name a commit in ${root}.`);
+  }
+
+  return commit;
+};
+
 const planArgv = async (
   root: string,
   configured: string[],
@@ -105,7 +134,7 @@ const planArgv = async (
     throw new Error('The paths parameter belongs to audit mode, not changed mode.');
   }
 
-  const base = await readBase(root, request.base);
+  const base = await readMutationBase(root, request.base);
 
   if (base === null) {
     throw new Error(

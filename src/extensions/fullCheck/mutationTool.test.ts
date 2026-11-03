@@ -371,6 +371,26 @@ it.each<{ name: string; parameters: RunParameters }>([
   expect(await runCount()).toBe(0);
 });
 
+it.each<{ name: string; base: string; message: (root: string) => string }>([
+  {
+    name: 'an option-shaped base',
+    base: '--output=x',
+    message: () => 'The base --output=x must be a ref or commit, not an option.',
+  },
+  {
+    name: 'a ref that names no commit',
+    base: 'no-such-ref',
+    message: (root) => `The base no-such-ref does not name a commit in ${root}.`,
+  },
+])('refuses $name with its message and runs no script', async ({ base, message }) => {
+  const { root, configure, run, runCount } = await fixture();
+
+  await configure(passReport, 0);
+
+  await expect(run({ mode: 'changed', base })).rejects.toThrow(message(root));
+  expect(await runCount()).toBe(0);
+});
+
 it('waits on the lock of a running mutation check for a full check of the same repository', async () => {
   const { directory, gate, configure, configureFullCheck, context, run, runCount } =
     await fixture();
