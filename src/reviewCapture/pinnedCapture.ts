@@ -8,7 +8,8 @@ import { captureChainedFix } from './fixChain.js';
 import type { ReviewCapture } from './fixChain.js';
 import { decideFreshness } from './freshness.js';
 import type { CaptureState, Freshness } from './freshness.js';
-import { readCaptureRecord, recheckFileName } from './record.js';
+import { recheckFileName } from './record.js';
+import { readRecord, requireRecord } from './recordRead.js';
 import { checkReviewDirectory } from './reviewDirectory.js';
 import type { PinnedTarget } from './target.js';
 
@@ -60,7 +61,7 @@ export const recaptureReview = async (
 
 export const checkReviewFreshness = async (root: string, directory: string): Promise<Freshness> => {
   const checked = await checkReviewDirectory(root, directory);
-  const record = await readCaptureRecord(checked);
+  const record = requireRecord(await readRecord(root, checked)).record;
   const { capture, freshness } = await recaptureReview(root, record);
   const recheckFile = join(checked, recheckFileName);
 

@@ -4,8 +4,8 @@ import type { EvidenceGap } from './evidenceDecisions.js';
 import type { ReviewCapture } from './fixChain.js';
 import type { Freshness } from './freshness.js';
 import { recaptureReview } from './pinnedCapture.js';
-import { readCaptureRecord } from './record.js';
 import type { CaptureRecord } from './record.js';
+import { readRecord, requireRecord } from './recordRead.js';
 import { checkReviewDirectory } from './reviewDirectory.js';
 import { readRecheck } from './savedRecapture.js';
 import type { RecheckRead } from './savedRecapture.js';
@@ -51,7 +51,7 @@ export const inspectReview = async (
 ): Promise<ReviewInspection> => {
   const directory = await checkReviewDirectory(root, requestedDirectory);
   const generation = await generationGaps(root, directory);
-  const record = await readCaptureRecord(directory);
+  const record = requireRecord(await readRecord(root, directory)).record;
   const recheck = await readRecheckStatus(root, directory);
   const { capture, freshness } = await recaptureReview(root, record);
 

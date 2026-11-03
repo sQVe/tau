@@ -1,11 +1,9 @@
-import { readFile } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute } from 'node:path';
 
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { isMissingFile } from '../errors.js';
 import { parseVersionedRecord } from '../record.js';
 import { objectNameSchema, pinnedTargetSchema, pinnedTargetSchemas } from './target.js';
 
@@ -213,20 +211,3 @@ export const parseCaptureRecord = (path: string, text: string): CaptureRecord =>
     schema: recordSchema,
     check: recordProblem,
   });
-
-export const readCaptureRecord = async (directory: string): Promise<CaptureRecord> => {
-  const path = join(directory, recordFileName);
-  let text: string;
-
-  try {
-    text = await readFile(path, 'utf8');
-  } catch (error) {
-    if (isMissingFile(error)) {
-      throw new Error(`No capture record at ${path}. Run capture first.`, { cause: error });
-    }
-
-    throw error;
-  }
-
-  return parseCaptureRecord(path, text);
-};
