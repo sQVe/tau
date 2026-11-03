@@ -240,7 +240,15 @@ describe('slice tool apply', () => {
     fake.issues.get('ME-4')!.sortOrder = 0;
     fake.failWrite(fake.writes().length + 2);
 
-    expect((await apply(undefined, moved))['status']).toBe('failed');
+    const failure = failureDetails(await apply(undefined, moved));
+
+    expect(failure.status).toBe('failed');
+
+    expect(failure.applied).toContainEqual(
+      expect.objectContaining({ kind: 'moveSlice', identifier: 'ME-3' }),
+    );
+
+    expect(failure.notApplied).toMatchObject([{ kind: 'moveSlice', identifier: 'ME-4' }]);
 
     expect(fake.issues.get('ME-2')?.sortOrder).toBe(5);
     expect(fake.issues.get('ME-3')?.sortOrder).toBeGreaterThan(5);

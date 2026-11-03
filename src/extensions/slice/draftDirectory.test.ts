@@ -35,6 +35,8 @@ const exists = (path: string) =>
     () => false,
   );
 
+const isRoot = process.getuid?.() === 0;
+
 describe('slice tool prepare', () => {
   it('refuses a hard-linked ignore file without changing outside bytes', async () => {
     const root = await temporaryRepository();
@@ -136,7 +138,7 @@ describe('slice tool prepare', () => {
     expect(prepared.directory).toBe(directory);
   });
 
-  it('refuses to prepare when it cannot list the drafts', async () => {
+  it.skipIf(isRoot)('refuses to prepare when it cannot list the drafts', async () => {
     const { root, fake, context } = await setUp();
     const slices = join(root, '.tau', 'slices');
 
@@ -153,12 +155,28 @@ describe('slice tool prepare', () => {
     expect(await exists(join(slices, 'other'))).toBe(false);
   });
 
-  it('refuses a selected draft that it cannot read', async () => {
+  it('refuses a selected draft with malformed JSON', async () => {
     const { fake, context, directory } = await setUp('malformed.json');
 
     await expect(run(fake, context, { action: 'prepare', id: 'planning' })).rejects.toThrow(
       new RegExp(`Malformed slice draft ${join(directory, 'plan.json')}`),
     );
+  });
+
+  it.skipIf(isRoot)('refuses a selected draft whose plan.json it cannot read', async () => {
+    const { fake, context, directory } = await setUp();
+    const plan = join(directory, 'plan.json');
+
+    await chmod(plan, 0o000);
+
+    const outcome = await run(fake, context, { action: 'prepare', id: 'planning' }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    await chmod(plan, 0o644);
+
+    expect(outcome).toMatchObject({ code: 'EACCES' });
   });
 });
 
