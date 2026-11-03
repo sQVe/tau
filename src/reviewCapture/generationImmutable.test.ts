@@ -8,6 +8,7 @@ import { readCompletedCapture } from './completedCapture.js';
 import { readReviewEvidence } from './evidence.js';
 import { captureReviewDirectory } from './generation.js';
 import { checkReviewFreshness } from './pinnedCapture.js';
+import { readRecord as readRecordState } from './recordRead.js';
 import { prepareReviewDirectory } from './reviewPrepare.js';
 
 const savedFiles = ['capture/patch.diff', 'capture/input.md', 'capture.json'];
@@ -108,7 +109,7 @@ it('keeps the saved capture bytes through repeated freshness and evidence after 
   expect(record['hash']).toBe(originalRecord['hash']);
   expect(record['hash']).toBe(captured['hash']);
 
-  expect(await readCompletedCapture(root, directory)).toEqual({
+  expect(await readCompletedCapture(root, directory, await readRecordState(directory))).toEqual({
     status: 'completed',
     identity: captured['identity'],
     reasons: [],

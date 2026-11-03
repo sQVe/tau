@@ -23,6 +23,7 @@ import {
   snapshotFolder,
 } from './record.js';
 import type { CaptureRecord } from './record.js';
+import { readRecord } from './recordRead.js';
 import { checkReviewDirectory } from './reviewDirectory.js';
 import type { PinnedTarget, ReviewTarget } from './target.js';
 
@@ -145,7 +146,8 @@ const recheckPredecessor = async (root: string, predecessor: PredecessorIdentity
     return;
   }
 
-  const decision = await readCompletedCapture(root, predecessor.review, predecessor.identity);
+  const read = await readRecord(predecessor.review);
+  const decision = await readCompletedCapture(root, predecessor.review, read, predecessor.identity);
 
   if (decision.status !== 'completed' && decision.status !== 'legacy') {
     throw new Error(

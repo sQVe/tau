@@ -1,7 +1,6 @@
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { isMissingFile } from '../errors.js';
 import { existingEntry, rejectLinkedFile } from '../tauDirectory.js';
 import { hashBytes } from './capture.js';
 import { observeSavedEndpoint } from './endpoint.js';
@@ -11,12 +10,12 @@ import {
   generationFolderName,
   generationInputFileName,
   generationPatchFileName,
-  parseCaptureRecord,
   isRepositoryPath,
-  recordFileName,
   snapshotFolder,
 } from './record.js';
 import type { RecordedEndpoint, Snapshot } from './record.js';
+import { recordError } from './recordRead.js';
+import type { RecordRead } from './recordRead.js';
 import type { PinnedTarget } from './target.js';
 
 interface ReadRecord {
@@ -34,20 +33,6 @@ export const hashOf = async (root: string, bytes: Buffer): Promise<string> => {
   }
 
   return hashed.hash;
-};
-
-export const readOptionalBytes = async (path: string): Promise<Buffer | undefined> => {
-  await rejectLinkedFile(path, 'read');
-
-  try {
-    return await readFile(path);
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return undefined;
-    }
-
-    throw error;
-  }
 };
 
 const readArtifactBytes = async (path: string): Promise<Buffer | undefined> => {
@@ -119,8 +104,16 @@ export const hashSnapshot = async (
     ? undefined
     : hashArtifact(root, await snapshotManifest(root, directory, snapshot));
 
-const readSavedRecord = async (root: string, path: string, bytes: Buffer): Promise<ReadRecord> => {
-  const record = parseCaptureRecord(path, bytes.toString('utf8'));
+const savedRecordOf = async (root: string, read: RecordRead): Promise<ReadRecord | undefined> => {
+  if (read.status === 'missing') {
+    return undefined;
+  }
+
+  if (read.status === 'unreadable') {
+    throw read.error;
+  }
+
+  const { record, bytes } = read;
   const recorded = 'original' in record ? record.original : undefined;
   const snapshot = 'snapshot' in record ? record.snapshot : undefined;
   const endpoint = 'endpoint' in record ? record.endpoint : undefined;
@@ -136,22 +129,20 @@ const readSavedRecord = async (root: string, path: string, bytes: Buffer): Promi
 export const readCompletedCapture = async (
   root: string,
   directory: string,
+  read: RecordRead,
   expectedIdentity?: string,
 ): Promise<GenerationDecision> => {
-  const recordPath = join(directory, recordFileName);
   const folder = join(directory, generationFolderName);
 
   await rejectLinkedFile(folder, 'read');
 
-  const recordBytes = await readOptionalBytes(recordPath);
   const folderExists = (await existingEntry(folder)) !== undefined;
 
-  if (recordBytes === undefined && !folderExists) {
-    throw new Error(`No capture record at ${recordPath}. Run capture first.`);
+  if (read.status === 'missing' && !folderExists) {
+    throw recordError(read);
   }
 
-  const record =
-    recordBytes === undefined ? undefined : await readSavedRecord(root, recordPath, recordBytes);
+  const record = await savedRecordOf(root, read);
 
   const patchBytes = await readArtifactBytes(join(folder, generationPatchFileName));
   const inputBytes = await readArtifactBytes(join(folder, generationInputFileName));

@@ -1,7 +1,7 @@
 import { appendFile, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { repositorySnapshot } from '../../tests/repositorySnapshotHarness.js';
@@ -16,6 +16,30 @@ import {
   recordFileName,
 } from './record.js';
 import type { ReviewTarget } from './target.js';
+
+const afterRead = vi.hoisted(() => ({
+  path: '',
+  run: undefined as (() => Promise<void>) | undefined,
+}));
+
+vi.mock(import('node:fs/promises'), async (importOriginal) => {
+  const actual = await importOriginal();
+
+  return {
+    ...actual,
+    readFile: (async (...parameters: Parameters<typeof actual.readFile>) => {
+      const bytes = await actual.readFile(...parameters);
+      const run = parameters[0] === afterRead.path ? afterRead.run : undefined;
+
+      if (run !== undefined) {
+        afterRead.run = undefined;
+        await run();
+      }
+
+      return bytes;
+    }) as typeof actual.readFile,
+  };
+});
 
 const commitAll = async (root: string, message: string) => {
   await git(root, 'add', '-A');
@@ -109,6 +133,23 @@ it('matches a working tree review and two chained fixes', async () => {
   const coverage = await readCoverage(root, { links, mergeBase: base, head });
 
   expect(coverage.status).toBe('match');
+});
+
+it('matches a chain whose review record is replaced after the coverage read', async () => {
+  const { root, base, reviewed, head, review, fix } = await rangeChain();
+  const links = await linksOf(root, [review, fix]);
+  const recordPath = join(review, recordFileName);
+  const replacement = await readFile(join(fix, recordFileName));
+
+  afterRead.path = recordPath;
+  afterRead.run = () => writeFile(recordPath, replacement);
+
+  const coverage = await readCoverage(root, { links, mergeBase: base, head });
+
+  expect(coverage).toMatchObject({
+    status: 'match',
+    links: [{ head: reviewed }, { head: reviewed }],
+  });
 });
 
 it('finds a mismatch when two fix links swap places', async () => {

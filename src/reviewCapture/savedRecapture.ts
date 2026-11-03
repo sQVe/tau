@@ -1,8 +1,8 @@
 import { join } from 'node:path';
 
-import { hashOf, readOptionalBytes } from './completedCapture.js';
+import { hashOf } from './completedCapture.js';
 import { recheckFileName } from './record.js';
-import { missingCause, readRecord, requireRecord } from './recordRead.js';
+import { missingCause, readOptionalBytes, readRecord, requireRecord } from './recordRead.js';
 import { checkReviewDirectory } from './reviewDirectory.js';
 
 export interface SavedRecapture {
