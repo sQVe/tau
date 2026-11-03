@@ -48,8 +48,10 @@ only the worker writes its report and its questions into it.
 - The file holds the task, its acceptance criteria, the loadout, the Pi session, the parent session,
   the questions, and the report. Its format is versioned under
   [ADR 0053](./0053-version-each-saved-record-format.md).
-- The file and the worker's Pi session file sit in one folder under Pi's agent directory. Each Tau
-  checkout has its own folder, so a branch that changes the format does not break another checkout.
+- A launch writes its assignment file and the worker's Pi session file in one folder under Pi's
+  agent directory. A follow-up writes a new assignment file in its own folder and points at the
+  session file of the earlier assignment. Each Tau checkout has its own folder, so a branch that
+  changes the format does not break another checkout.
 - The manager never writes the file after launch.
 
 ### Launch
@@ -109,8 +111,10 @@ only the worker writes its report and its questions into it.
 
 ### Tools
 
-- The manager has no tool that reads or changes a worker after launch. Its only worker tool is
-  `subagent`, which launches one. It answers a question with `hc send` through bash.
+- The manager has two worker tools. `subagent` launches one, and `subagent_follow_up` resumes an
+  ended worker from its saved Pi session in a new child with a new assignment file and deadline. The
+  manager has no other tool that reads or changes a worker. It answers a question with `hc send`
+  through bash.
 - The worker has `subagent_report`, `subagent_question`, and the tools of its profile. It has no
   tool to report progress.
 
@@ -126,8 +130,8 @@ only the worker writes its report and its questions into it.
 ### Negative
 
 - Tau refuses to launch outside an `hc` terminal.
-- Until later changes add them back on `hc`, a manager cannot follow up with or cancel a worker, and
-  a worker cannot report progress or set a deadline.
+- Until later changes add it back on `hc`, a manager cannot cancel a worker, and a worker cannot
+  report progress or set a deadline.
 - A lost note delays a report until the next session start or compaction.
 - After an unclear launch, a person must check `hc ls` by hand.
 - Tau keeps every assignment folder. No rule deletes them yet.

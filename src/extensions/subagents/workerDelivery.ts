@@ -89,7 +89,10 @@ const restoreShownKeys = (context: WorkerDeliveryContext): Set<string> => {
   return shown;
 };
 
-const readWorkerChild = async (hc: HcRuntime, child: HcTerminal): Promise<WorkerChildRead> => {
+export const readWorkerChild = async (
+  hc: HcRuntime,
+  child: HcTerminal,
+): Promise<WorkerChildRead> => {
   let terminal: HcTerminal;
 
   try {

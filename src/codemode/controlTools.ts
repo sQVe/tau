@@ -8,6 +8,7 @@ const controlToolNames: ReadonlySet<string> = new Set([
   'subagent_question',
   'ask_user_question',
   'subagent',
+  'subagent_follow_up',
 ]);
 
 export const nestedControlCallReason =
