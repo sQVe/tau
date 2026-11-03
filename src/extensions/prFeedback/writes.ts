@@ -1,7 +1,8 @@
-import type { PostedWrite } from './replies.js';
+import type { PostedWrite, WritePayload } from './replies.js';
 import type { Comment, Review, Thread } from './threads.js';
 
-type WriteKind = PostedWrite['kind'];
+type WriteKind = WritePayload['kind'];
+type ReplyPayload = Extract<WritePayload, { kind: 'reply' }>;
 
 interface WriteTarget {
   url: string;
@@ -9,11 +10,7 @@ interface WriteTarget {
 }
 
 export type PlannedWrite = WriteTarget &
-  (
-    | { kind: 'reply'; thread: string; replyTo: number; text: string }
-    | { kind: 'resolve'; thread: string; text: null }
-    | { kind: 'comment'; thread: null; text: string }
-  );
+  (Exclude<WritePayload, ReplyPayload> | (ReplyPayload & { replyTo: number }));
 
 interface ThreadEntry {
   id: string;
@@ -33,7 +30,7 @@ export interface WriteFacts {
   reviews: Review[];
   comments: Comment[];
   prUrl: string;
-  recorded: { kind: WriteKind; thread: string | null }[];
+  recorded: WritePayload[];
 }
 
 export interface SettleFacts {
@@ -44,21 +41,20 @@ export interface SettleFacts {
   unmatched: 'drop' | 'keep';
 }
 
-const writeKey = (write: { kind: WriteKind; thread: string | null }): string =>
-  `${write.kind}:${write.thread ?? ''}`;
+const writeKey = (write: WritePayload): string => `${write.kind}:${write.thread ?? ''}`;
 
-const entryKinds = (entry: ThreadEntry) => {
-  const kinds: WriteKind[] = [];
+const entryPayloads = (entry: ThreadEntry) => {
+  const payloads: WritePayload[] = [];
 
   if (entry.reply !== null) {
-    kinds.push('reply');
+    payloads.push({ kind: 'reply', thread: entry.id, text: entry.reply });
   }
 
   if (entry.resolve) {
-    kinds.push('resolve');
+    payloads.push({ kind: 'resolve', thread: entry.id, text: null });
   }
 
-  return kinds;
+  return payloads;
 };
 
 const rejectRepeatedEntries = (entries: readonly ThreadEntry[]) => {
@@ -95,18 +91,28 @@ const rejectForbidden = (thread: Thread, kinds: readonly WriteKind[]) => {
   }
 };
 
+const planThreadWrite = (payload: WritePayload, thread: Thread): PlannedWrite => {
+  const target = { url: thread.comments[0]?.url ?? thread.id, toPerson: thread.fromPerson };
+
+  if (payload.kind === 'reply') {
+    return { ...target, ...payload, replyTo: thread.replyTo };
+  }
+
+  return { ...target, ...payload };
+};
+
 const threadWrites = (
   entry: ThreadEntry,
   threads: readonly Thread[],
   recorded: Set<string>,
 ): PlannedWrite[] => {
-  const kinds = entryKinds(entry);
+  const payloads = entryPayloads(entry);
 
-  if (kinds.length === 0) {
+  if (payloads.length === 0) {
     throw new Error(`Thread ${entry.id} in replies.json has no reply and does not resolve.`);
   }
 
-  const missing = kinds.filter((kind) => !recorded.has(writeKey({ kind, thread: entry.id })));
+  const missing = payloads.filter((payload) => !recorded.has(writeKey(payload)));
 
   if (missing.length === 0) {
     return [];
@@ -114,26 +120,12 @@ const threadWrites = (
 
   const thread = findThread(threads, entry.id);
 
-  rejectForbidden(thread, missing);
+  rejectForbidden(
+    thread,
+    missing.map((payload) => payload.kind),
+  );
 
-  const target = { url: thread.comments[0]?.url ?? thread.id, toPerson: thread.fromPerson };
-  const writes: PlannedWrite[] = [];
-
-  if (missing.includes('reply') && entry.reply !== null) {
-    writes.push({
-      ...target,
-      kind: 'reply',
-      thread: thread.id,
-      replyTo: thread.replyTo,
-      text: entry.reply,
-    });
-  }
-
-  if (missing.includes('resolve')) {
-    writes.push({ ...target, kind: 'resolve', thread: thread.id, text: null });
-  }
-
-  return writes;
+  return missing.map((payload) => planThreadWrite(payload, thread));
 };
 
 // A PR comment that answers nothing in particular speaks to everyone, people included. GitHub
@@ -166,19 +158,17 @@ const commentToPerson = (comment: CommentEntry, facts: WriteFacts) => {
 const commentWrites = (facts: WriteFacts, recorded: Set<string>): PlannedWrite[] => {
   const { comment } = facts;
 
-  if (comment === null || recorded.has(writeKey({ kind: 'comment', thread: null }))) {
+  if (comment === null) {
     return [];
   }
 
-  return [
-    {
-      kind: 'comment',
-      thread: null,
-      url: facts.prUrl,
-      text: comment.body,
-      toPerson: commentToPerson(comment, facts),
-    },
-  ];
+  const payload: WritePayload = { kind: 'comment', thread: null, text: comment.body };
+
+  if (recorded.has(writeKey(payload))) {
+    return [];
+  }
+
+  return [{ ...payload, url: facts.prUrl, toPerson: commentToPerson(comment, facts) }];
 };
 
 // Plans the writes that are not recorded yet, in file order: per thread the reply, then the
@@ -195,7 +185,7 @@ export const planWrites = (facts: WriteFacts): PlannedWrite[] => {
 };
 
 const targetComments = (
-  write: { kind: WriteKind; thread: string | null },
+  write: WritePayload,
   feedback: { threads: readonly Thread[]; comments: readonly Comment[] },
 ) => {
   if (write.kind === 'comment') {
@@ -207,7 +197,7 @@ const targetComments = (
 
 // Lists the comments a write's thread, or the pull request for a PR comment, holds before the write.
 export const targetCommentIds = (
-  write: { kind: WriteKind; thread: string | null },
+  write: WritePayload,
   feedback: { threads: readonly Thread[]; comments: readonly Comment[] },
 ): number[] => targetComments(write, feedback).map((comment) => comment.id);
 

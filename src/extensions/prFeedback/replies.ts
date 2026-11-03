@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 
-import type { Static } from 'typebox';
+import type { Static, TProperties } from 'typebox';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
@@ -8,7 +8,13 @@ import { errorMessage } from '../../errors.js';
 import { parseRepository } from '../../github/github.js';
 import type { Repository } from '../../github/github.js';
 import { formatRepository } from '../../github/repositoryTargetDecisions.js';
-import { parseVersionedRecord, readOptionalText, savedVersion, writeRecord } from '../../record.js';
+import {
+  parseVersionedRecord,
+  readOptionalText,
+  readVersionedRecord,
+  savedVersion,
+  writeRecord,
+} from '../../record.js';
 import { describeSchemaProblem } from '../../schema.js';
 
 export interface PullRequestRecord {
@@ -46,22 +52,53 @@ const repliesSchema = Type.Object(
 
 const postedVersion = 2;
 
-const postedWriteFields = {
-  kind: Type.Union([Type.Literal('reply'), Type.Literal('resolve'), Type.Literal('comment')]),
-  thread: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
+const threadIdSchema = Type.String({ minLength: 1 });
+
+const writeVariants = <Saved extends TProperties>(saved: Saved) =>
+  Type.Union([
+    Type.Object(
+      {
+        kind: Type.Literal('reply'),
+        thread: threadIdSchema,
+        text: Type.String(),
+        ...saved,
+      },
+      { additionalProperties: false },
+    ),
+    Type.Object(
+      {
+        kind: Type.Literal('resolve'),
+        thread: threadIdSchema,
+        text: Type.Null(),
+        ...saved,
+      },
+      { additionalProperties: false },
+    ),
+    Type.Object(
+      {
+        kind: Type.Literal('comment'),
+        thread: Type.Null(),
+        text: Type.String(),
+        ...saved,
+      },
+      { additionalProperties: false },
+    ),
+  ]);
+
+const writePayloadSchema = writeVariants({});
+
+const version1SavedFields = {
   url: Type.String(),
-  text: Type.Union([Type.String(), Type.Null()]),
   commentId: Type.Union([Type.Integer(), Type.Null()]),
 };
 
-const postedWriteSchema = Type.Object(
-  {
-    ...postedWriteFields,
-    state: Type.Union([Type.Literal('posted'), Type.Literal('uncertain')]),
-    earlierCommentIds: Type.Array(Type.Integer()),
-  },
-  { additionalProperties: false },
-);
+const postedVersion1WriteSchema = writeVariants(version1SavedFields);
+
+const postedWriteSchema = writeVariants({
+  ...version1SavedFields,
+  state: Type.Union([Type.Literal('posted'), Type.Literal('uncertain')]),
+  earlierCommentIds: Type.Array(Type.Integer()),
+});
 
 const postedSchema = Type.Object(
   { version: Type.Literal(postedVersion), writes: Type.Array(postedWriteSchema) },
@@ -71,7 +108,7 @@ const postedSchema = Type.Object(
 const postedVersion1Schema = Type.Object(
   {
     version: Type.Literal(1),
-    writes: Type.Array(Type.Object(postedWriteFields, { additionalProperties: false })),
+    writes: Type.Array(postedVersion1WriteSchema),
   },
   { additionalProperties: false },
 );
@@ -86,6 +123,8 @@ const pullRequestRecordSchema = Type.Object(
 );
 
 export type Replies = Static<typeof repliesSchema>;
+export type WritePayload = Static<typeof writePayloadSchema>;
+export type TargetedWrite = Static<typeof writePayloadSchema> & { url: string };
 export type PostedWrite = Static<typeof postedWriteSchema>;
 export type Posted = Static<typeof postedSchema>;
 
@@ -145,17 +184,16 @@ const isPostedVersion1 = (
 
 export const readPosted = async (directory: string): Promise<Posted> => {
   const path = join(directory, postedFileName);
-  const text = await readOptionalText(path);
 
-  if (text === undefined) {
-    return { version: postedVersion, writes: [] };
-  }
-
-  const posted = parseVersionedRecord(path, text, {
+  const posted = await readVersionedRecord(path, {
     label: 'posted record',
     version: postedVersion,
     schema: (value) => (savedVersion(value) === 1 ? postedVersion1Schema : postedSchema),
   });
+
+  if (posted === undefined) {
+    return { version: postedVersion, writes: [] };
+  }
 
   return isPostedVersion1(posted) ? fromPostedVersion1(posted) : posted;
 };

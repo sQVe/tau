@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { describe, expect, it, onTestFinished } from 'vitest';
@@ -220,6 +220,44 @@ describe('records of the wrong shape', () => {
 
     await expect(read(directory)).rejects.toThrow(/^Malformed .*\.json: /u);
   });
+});
+
+const snapshotDirectory = async (directory: string) => {
+  const names = (await readdir(directory)).toSorted();
+  const texts = await Promise.all(names.map((name) => readFile(join(directory, name), 'utf8')));
+
+  return Object.fromEntries(names.map((name, index) => [name, texts[index]]));
+};
+
+const contradictoryWrites = [
+  { case: 'a PR comment with a thread', kind: 'comment', thread: 'T1', text: 'Thanks.' },
+  { case: 'a resolve with text', kind: 'resolve', thread: 'T1', text: 'Done.' },
+  { case: 'a reply with a null thread', kind: 'reply', thread: null, text: 'Done.' },
+  { case: 'a reply with null text', kind: 'reply', thread: 'T1', text: null },
+  { case: 'a PR comment with null text', kind: 'comment', thread: null, text: null },
+];
+
+const recordVersions = [
+  { version: 1, extra: {} },
+  { version: 2, extra: { state: 'posted', earlierCommentIds: [] } },
+];
+
+it.each(
+  recordVersions.flatMap(({ version, extra }) =>
+    contradictoryWrites.map(({ case: name, ...write }) => ({
+      name: `version ${version} ${name}`,
+      record: { version, writes: [{ url: 'u', commentId: null, ...write, ...extra }] },
+    })),
+  ),
+)('rejects a contradictory saved write in posted.json: $name', async ({ record }) => {
+  const directory = await roundDirectory();
+
+  await writeFile(join(directory, 'posted.json'), JSON.stringify(record));
+
+  const before = await snapshotDirectory(directory);
+
+  await expect(readPosted(directory)).rejects.toThrow(/^Malformed .*posted\.json: /u);
+  expect(await snapshotDirectory(directory)).toEqual(before);
 });
 
 describe('unreadable records', () => {
