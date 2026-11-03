@@ -5,6 +5,8 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { confirmWithUser } from '../../dialog/dialog.js';
 import { errorMessage } from '../../errors.js';
 import { createIssue, readRouteIds, updateIssue } from './linear.js';
+import { CreatedButNotRecordedError, runApplySteps } from './partialApply.js';
+import type { ApplyRunner, PartialApplyStep } from './partialApply.js';
 import { decideForeignUpdates } from './startDecisions.js';
 import type { StartWrite } from './startDecisions.js';
 import { readStartDraft, writeStart } from './startRecord.js';
@@ -12,6 +14,26 @@ import type { Start, StartDraft } from './startRecord.js';
 import { readStartState } from './startState.js';
 import type { StartState } from './startState.js';
 import type { Runtime } from './state.js';
+
+type StartTicketStatus = 'new' | 'updated' | 'unchanged';
+
+interface StartTicketSummary {
+  number: number;
+  identifier: string | null;
+  url: string | null;
+  title: string;
+  status: StartTicketStatus;
+}
+
+interface StartSummary {
+  directory: string;
+  slice: string;
+  tickets: StartTicketSummary[];
+}
+
+export type StartApplyDetails =
+  | { status: 'declined'; directory: string; slice: string; applied: readonly string[] }
+  | (StartSummary & { status: 'applied' | 'unchanged'; applied: readonly string[] });
 
 interface StartProgress {
   directory: string;
@@ -41,9 +63,6 @@ export const describeStartWrite = (start: Start, write: StartWrite): string => {
 };
 
 const bulletList = (lines: readonly string[]) => lines.map((line) => `- ${line}`).join('\n');
-
-const bulletOrNone = (lines: readonly string[]) =>
-  lines.length === 0 ? '- none' : bulletList(lines);
 
 const requireTicket = (progress: StartProgress, number: number) => {
   const ticket = progress.start.tickets[number - 1];
@@ -86,10 +105,7 @@ const createTicket = async (runtime: Runtime, progress: StartProgress, number: n
   ticket.identifier = created.identifier;
 
   await writeStart(progress.directory, progress.start).catch((error: unknown) => {
-    throw new Error(
-      `Linear created ${created.identifier} (${created.url}) for ticket ${number}, but saving its identifier failed: ${errorMessage(error)}. Call read again: it finds the child by title and records it.`,
-      { cause: error },
-    );
+    throw new CreatedButNotRecordedError(created, { cause: error });
   });
 };
 
@@ -118,65 +134,20 @@ const applyWrite = async (runtime: Runtime, progress: StartProgress, write: Star
   });
 };
 
-const failedApply = (
-  applied: readonly string[],
-  notApplied: readonly string[],
-  index: number,
-  error: unknown,
-) =>
-  new Error(
-    `Start stopped at step ${index + 1}: ${errorMessage(error)}\nApplied:\n${bulletOrNone(applied)}\nNot applied:\n${bulletList(notApplied)}`,
-    { cause: error },
-  );
+const startRunner = (runtime: Runtime, progress: StartProgress): ApplyRunner<string> => ({
+  describe: (summary) => summary,
+  directory: () => progress.directory,
+  recordIdentifier: (created) => `Save the identifier ${created.identifier} in start.json`,
+  signal: runtime.signal,
+});
 
-// A create that reached Linear stays applied even when saving its identifier failed.
-const failedWrite = (
-  progress: StartProgress,
-  descriptions: readonly string[],
-  index: number,
-  write: StartWrite,
-  error: unknown,
-) => {
-  const created = write.kind === 'createTicket' && progress.created.has(write.number);
+const runWrites = (runtime: Runtime, progress: StartProgress, writes: readonly StartWrite[]) => {
+  const steps: PartialApplyStep<string>[] = writes.map((write) => ({
+    summary: describeStartWrite(progress.start, write),
+    run: () => applyWrite(runtime, progress, write),
+  }));
 
-  if (!created) {
-    return failedApply(descriptions.slice(0, index), descriptions.slice(index), index, error);
-  }
-
-  const notApplied = [
-    `Save the identifier of ticket ${write.number} in start.json`,
-    ...descriptions.slice(index + 1),
-  ];
-
-  return failedApply(descriptions.slice(0, index + 1), notApplied, index, error);
-};
-
-const runWrites = async (
-  runtime: Runtime,
-  progress: StartProgress,
-  writes: readonly StartWrite[],
-) => {
-  const descriptions = writes.map((write) => describeStartWrite(progress.start, write));
-
-  for (const [index, write] of writes.entries()) {
-    if (runtime.signal?.aborted === true) {
-      throw failedApply(
-        descriptions.slice(0, index),
-        descriptions.slice(index),
-        index,
-        new Error('The call was aborted.'),
-      );
-    }
-
-    try {
-      // oxlint-disable-next-line no-await-in-loop -- Writes run in work order.
-      await applyWrite(runtime, progress, write);
-    } catch (error) {
-      throw failedWrite(progress, descriptions, index, write, error);
-    }
-  }
-
-  return descriptions;
+  return runApplySteps(startRunner(runtime, progress), [], steps);
 };
 
 const rejectChangedState = (state: StartState, stateToken: string | undefined) => {
@@ -218,7 +189,7 @@ const rejectChangedRecord = async (state: StartState, checkDirectory: () => Prom
   }
 };
 
-const ticketStatus = (progress: StartProgress, number: number) => {
+const ticketStatus = (progress: StartProgress, number: number): StartTicketStatus => {
   if (progress.created.has(number)) {
     return 'new';
   }
@@ -226,7 +197,7 @@ const ticketStatus = (progress: StartProgress, number: number) => {
   return progress.changed.has(number) ? 'updated' : 'unchanged';
 };
 
-const summary = (progress: StartProgress, state: StartState) => {
+const summary = (progress: StartProgress, state: StartState): StartSummary => {
   const urls = new Map(progress.urls);
 
   for (const child of state.slice?.children ?? []) {
@@ -321,7 +292,7 @@ export const applyStart = async (
   context: ExtensionContext,
   request: { directory: string; agentTeam: string; stateToken: string | undefined },
   checkDirectory: () => Promise<unknown>,
-): Promise<Record<string, unknown>> => {
+): Promise<StartApplyDetails> => {
   const { directory, agentTeam, stateToken } = request;
   const state = await readStartState(runtime, directory, agentTeam);
   const { draft, slice } = rejectChangedState(state, stateToken);

@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import type { Plan } from './draft.js';
 import { readDraft, readPlan, writePlan } from './draft.js';
 
 const fixtures = join(import.meta.dirname, 'fixtures', 'plans');
@@ -299,7 +298,7 @@ describe('writePlan', () => {
     const plan = (await readPlan(directory))!;
 
     // JSON.stringify throws on a bigint, so the save fails before it writes anything.
-    const unsaveable = { ...plan, version: 1n } as unknown as Plan;
+    const unsaveable = Object.assign(plan, { version: 1n });
 
     await expect(writePlan(directory, unsaveable)).rejects.toThrow(/BigInt/);
 
