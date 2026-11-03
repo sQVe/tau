@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, onTestFinished as afterThisTest } from 'vitest';
 
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import bundledSnippets from './fixtures/bundledSnippets.json' with { type: 'json' };
 import { loadSnippets } from './snippet.js';
 
 const snippetFile = (name: string, body: string) => `---\nname: ${name}\n---\n${body}\n`;
@@ -52,14 +53,12 @@ describe('parsing a snippet file', () => {
     });
   });
 
-  it('strips quotes and ignores blank fields, unknown fields, and letter case', async () => {
+  it('reads quoted fields and ignores blank or unknown fields', async () => {
     const raw = [
       '---',
-      'NAME: "Quoted name"',
+      'name: "Quoted name"',
       "description: 'Quoted description'",
-      'description:',
       'unknown: ignored',
-      'not a field',
       '---',
       'Body.',
     ].join('\n');
@@ -70,17 +69,32 @@ describe('parsing a snippet file', () => {
     });
   });
 
+  it('matches frontmatter keys by exact case', async () => {
+    const raw = ['---', 'NAME: "Quoted name"', '---', 'Body.'].join('\n');
+
+    expect(await loadOne('quoted.md', raw)).toMatchObject({ name: 'quoted' });
+  });
+
+  it('uses the default description for a null field', async () => {
+    const raw = ['---', 'name: Named', 'description:', '---', 'Body.'].join('\n');
+
+    expect(await loadOne('null-description.md', raw)).toMatchObject({
+      name: 'Named',
+      description: '',
+    });
+  });
+
   it.for([
     ['a space before the colon', 'name : Spaced', 'Spaced'],
     ['a field name inside a sentence', 'about name: Hidden', 'spaced'],
-    ['no space after the colon', 'name:Tight', 'Tight'],
     ['many spaces after the colon', 'name:    Wide', 'Wide'],
     ['trailing spaces', 'name: Trailing   ', 'Trailing'],
     ['quotes and trailing spaces', 'name: "Quoted"   ', 'Quoted'],
     ['quotes inside the value', 'name: Say "hi" to \'them\' now', 'Say "hi" to \'them\' now'],
-    ['quotes around and inside the value', 'name: "Say "hi" now"', 'Say "hi" now'],
-    ['only an opening quote', 'name: "Open', 'Open'],
-    ['only a closing quote', "name: Close'", 'Close'],
+    ['only a closing quote', "name: Close'", "Close'"],
+    ['a quoted value with padding', 'name: "  Padded  "', 'Padded'],
+    ['an empty quoted value', 'name: ""', 'spaced'],
+    ['a quoted value of only spaces', 'name: "   "', 'spaced'],
   ])('reads the value with %s', async ([, line, expected]) => {
     const raw = `---\n${line}\n---\nBody.`;
 
@@ -113,6 +127,26 @@ describe('parsing a snippet file', () => {
     ['frontmatter after other text', 'Intro\n---\nname: Late\n---\nBody.'],
   ])('returns null for %s', async ([, raw]) => {
     expect(await loadOne('invalid.md', raw!)).toBeNull();
+  });
+
+  it('reports a snippet with malformed frontmatter by its path', async () => {
+    const directory = temporaryDirectory(afterThisTest, 'tau-snippet-malformed-');
+    const path = join(directory, 'broken.md');
+    await writeFile(path, '---\nname: "Open\n---\nBody.');
+
+    await expect(loadSnippets(directory)).rejects.toThrow(path);
+  });
+
+  it.for([
+    ['a non-string name', 'name: 42'],
+    ['a frontmatter root that is not a mapping', 'name:Tight'],
+    ['a duplicate key', 'description: first\ndescription: second'],
+  ])('reports malformed frontmatter with %s by path', async ([, header]) => {
+    const directory = temporaryDirectory(afterThisTest, 'tau-snippet-malformed-');
+    const path = join(directory, 'broken.md');
+    await writeFile(path, `---\n${header}\n---\nBody.`);
+
+    await expect(loadSnippets(directory)).rejects.toThrow(path);
   });
 });
 
@@ -160,6 +194,12 @@ describe('loadSnippets', () => {
 
 describe('the shipped snippets', () => {
   const shippedDirectory = fileURLToPath(new URL('./snippets/', import.meta.url));
+
+  it('loads every bundled snippet as before', async () => {
+    const snippets = await loadSnippets(shippedDirectory);
+
+    expect(snippets).toEqual(bundledSnippets);
+  });
 
   it('sends each paragraph as one line, so no instruction breaks mid-sentence', async () => {
     const snippets = await loadSnippets(shippedDirectory);
