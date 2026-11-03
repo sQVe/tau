@@ -18,9 +18,10 @@ Worker news reaches the manager through `hc`'s event stream, not typed input. A 
 `tau.report` label, and a question sets a `tau.question` label, on the worker's own terminal. The
 manager process subscribes with `events.subscribe` and `children_of` its own terminal over a
 long-lived `hc connect`. A child labels change, a child finished event, or a missed snapshot starts
-at most one pending worker scan. Heartbeats and every other event type do nothing. The subscription
-reconnects with bounded backoff after an exit or error and stops at session shutdown. Subscription
-failures go to `ui.notify`, never to a Pi message.
+at most one pending worker scan. Heartbeats and every other event type do nothing. After an exit or
+error, the subscription retries for the whole session with a delay capped at 45 seconds, and stops
+at session shutdown. One lasting failure shows one notice per outage. Subscription failures go to
+`ui.notify`, never to a Pi message.
 
 ### Delivery
 
