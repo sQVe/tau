@@ -28,11 +28,14 @@ to the user with the `draft_review` tool, which opens it in tuicr.
   and the manager's `herdr.space` label. Herdr shows tuicr in a new tab in that space and names the
   tab.
 - `open` returns at once, so the agent can ask the approval question while the user reviews in
-  tuicr. Without an `hc` terminal or a `herdr.space` label, `open` returns the command instead. In
-  both cases, the user quits tuicr before answering.
-- `collect` waits with `hc wait` until the tuicr terminal finishes, then collects. A message
-  interrupts the wait, so `collect` waits again, up to a limit. A timeout or the limit gives a
-  retryable error that deletes no comment and keeps the record.
+  tuicr. In a manager terminal, the user submits comments and saves edits before answering, since
+  `collect` ends tuicr. Text the user has not submitted, and unsaved editor buffers, are lost.
+  Without an `hc` terminal or a `herdr.space` label, `open` returns the command instead, and the
+  user quits tuicr before answering.
+- `collect` ends the tuicr terminal with `hc kill`, then waits with `hc wait` until it finishes,
+  then collects. A message interrupts the wait, so `collect` waits again, up to a limit. A kill
+  error, a wait error, a timeout, or the limit gives a retryable error that deletes no comment and
+  keeps the record.
 - `collect` refuses records saved by a Tau that ran on herdr. Their comments stay in tuicr. If tuicr
   starts but its address cannot be saved, `collect` refuses that review.
 - `collect` returns the user's comments on the reviewed drafts and a diff of each draft the user
@@ -69,6 +72,7 @@ to the user with the `draft_review` tool, which opens it in tuicr.
 - A comment on an accepted draft adds a round to the approval.
 - The tool depends on tuicr's session list and comment JSON, which a tuicr release can change.
 - Edits the user makes outside the staged copies, such as in the real `.tau` file, are not seen.
+- `collect` ends a tuicr terminal the user left open, so text not yet submitted there is lost.
 
 ## Alternatives considered
 

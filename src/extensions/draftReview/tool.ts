@@ -47,10 +47,10 @@ const parameters = Type.Object({
 
 const description = `Show draft files under .tau/ to the user in tuicr. Returns the user's tuicr comments on those files and the edits the user made.
 - action open, paths: every path must be a file inside the repository's .tau directory. Paths may be absolute or relative to the working directory. The tool copies the files into a staging directory outside Git and opens that directory in tuicr. Staged names carry order numbers, such as 01-pr-run-5ASmpd/1-title.md, so tuicr shows them in paths order, grouped by folder. It returns at once. Ask the user your question, then call collect with directory.
-  - In a manager terminal: opens tuicr in a new tab of the manager's space. Returns {status: "opened", directory, terminal}, where terminal is the hc address to collect later. The user quits tuicr before answering.
+  - In a manager terminal: opens tuicr in a new tab of the manager's space. Returns {status: "opened", directory, terminal}, where terminal is the hc address to collect later. The user submits comments and saves edits before answering, because collect ends tuicr; unsubmitted text is lost.
   - Without a manager terminal: opens nothing. Returns {status: "manual", command, directory}. Tell the user to run command, and to tell you when they are done. Then call collect with directory.
   - If the call is cancelled while tuicr opens, the tool ends the terminal it started, removes the staging directory, and returns {status: "cancelled", comments: [], edits: []}.
-- action collect, directory: the directory that open returned. Waits until tuicr has exited. If tuicr does not exit, it deletes no comment, keeps the record, and returns an error that names the record directory. Then collects as below.
+- action collect, directory: the directory that open returned. Ends the tuicr terminal from open, then waits until tuicr has exited. If tuicr does not exit, it deletes no comment, keeps the record, and returns an error that names the record directory. Then collects as below.
 - Collect: keeps comments on the reviewed files and deletes exactly those from the tuicr session. It never clears other comments. It returns comments as [{path, startLine, endLine, type, content}] with absolute paths in .tau/. Comments for other files and session-level comments stay in tuicr.
 - Edits: each file the user changed gets {path, diff, status}. A file the user did not change gets no entry. Status "applied" means the tool wrote the user's version to the real file. Status "conflict" means the real file changed during the review, so the tool wrote nothing for it. Compare the diff with the file and merge by hand.
 - Errors: no paths, a path that is missing, not a file, outside .tau/, inside .tau/draft-review, or a hard link; a directory that is no review record; a review record saved by an older Tau; a missing original copy or a saved path outside the reviewed files (collect deletes no comment and writes no file); a real file that became a link or left .tau/ before its write-back; tuicr output the tool cannot parse (the error names the output). After an error, the staging directory and record stay. An hc error names the record directory. A collect retry returns the comments and edit outcomes saved by the first try, finishes only the missing deletes and write-backs, and never re-decides an applied edit. Before each write-back the tool compares the real file with the original and reports conflict if it changed.`;
@@ -239,6 +239,20 @@ const open = async (
   return result;
 };
 
+const endAndWaitForReview = async (
+  hc: HcRuntime,
+  address: string,
+  recordDirectory: string,
+): Promise<void> => {
+  await endReviewTerminal(hc, address);
+
+  await waitForReviewExit(hc, {
+    address,
+    recordDirectory,
+    timeoutSeconds: reviewWaitTimeoutSeconds,
+  });
+};
+
 const collect = async (
   runtime: DraftReviewRuntime,
   cwd: string,
@@ -252,11 +266,11 @@ const collect = async (
   }
 
   if (record.terminal?.state === 'open') {
-    await waitForReviewExit(hcRuntime(runtime, cwd, signal), {
-      address: record.terminal.address,
-      recordDirectory: record.recordDirectory,
-      timeoutSeconds: reviewWaitTimeoutSeconds,
-    }).catch((error: unknown) => {
+    await endAndWaitForReview(
+      hcRuntime(runtime, cwd, signal),
+      record.terminal.address,
+      record.recordDirectory,
+    ).catch((error: unknown) => {
       if (error instanceof TuicrExitTimeoutError) {
         throw error;
       }
