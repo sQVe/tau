@@ -90,8 +90,6 @@ export const stagedNames = (paths: readonly string[]): string[] => {
   });
 };
 
-// Session-level comments have no path and belong to no reviewed file. A kept comment takes the
-// `.tau` path of the file its staged path names.
 export const selectReviewedComments = (
   comments: readonly SessionComment[],
   reviewedFiles: readonly { path: string; stagedPath: string }[],

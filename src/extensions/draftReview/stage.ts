@@ -18,9 +18,7 @@ import { stagedNames } from './reviewDecisions.js';
 type ReviewTerminal = { state: 'starting' } | { state: 'open'; address: string };
 
 export interface ReviewFile {
-  // The path relative to the real `.tau` directory.
   path: string;
-  // The path of the file in the staging directory.
   stagedPath: string;
 }
 
@@ -31,7 +29,6 @@ export interface Review {
   recordDirectory: string;
   // A directory outside Git that tuicr opens, with each file under its staged path.
   stagingDirectory: string;
-  // Each reviewed file, in the order the caller gave.
   files: ReviewFile[];
   terminal: ReviewTerminal | null;
 }
@@ -171,7 +168,6 @@ const reviewablePaths = async (
 
 const stagingPrefix = 'tau-draft-review-';
 
-// Each path pairs with the staged path at the same index. Both lists come from one source.
 const pairFiles = (paths: readonly string[], stagedPaths: readonly string[]): ReviewFile[] =>
   paths.map((path, index) => {
     const stagedPath = stagedPaths[index];
