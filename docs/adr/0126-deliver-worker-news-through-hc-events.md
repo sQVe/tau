@@ -25,10 +25,11 @@ at session shutdown. One lasting failure shows one notice per outage. Subscripti
 
 ### Delivery
 
-Tau starts workers with `no_notify`, so `hc` types no exit note. Only a report, a question, or one
-short "ended without a report" message reaches the session. The ended message appears once for a
-finished worker that has a saved assignment, no report, and no "ended at its deadline" message. Tau
-puts no event payload, screen, or label dump in message content.
+Tau starts workers with `no_notify`, so `hc` types no exit note. Only a report, a question, one
+short "ended without a report" message, or one "ended at its deadline" message reaches the session.
+The ended message appears once for a finished worker that has a saved assignment, no report, and no
+"ended at its deadline" message. Tau puts no event payload, screen, or label dump in message
+content.
 
 An arriving message wakes an idle manager and steers a running one. That wake rule lives in one
 shared module that both the worker delivery and mergeWatch use.
