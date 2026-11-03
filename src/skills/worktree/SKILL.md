@@ -48,8 +48,8 @@ creates the worktree and runs the repository's add hooks, such as dependency ins
    - Never rename a reused space. The user may have renamed it by hand.
    - With no space for the checkout, run
      `herdr-app do space.new --name <title> --folder <checkout>`.
-   - Make `<title>` a short title of what the work does, such as `Completion uses the read record`:
-     about 40 characters, sentence case, one line, and no ticket ID.
+   - Make `<title>` a short title of what the work does, such as `completion uses the read record`:
+     about 40 characters, lowercase, one line, and no ticket ID.
 4. Send a handover to the new space with the [handover skill](../handover/SKILL.md) when the user
    asked for one. From the bare repository root, also send the approved implementation task without
    waiting to be asked.
