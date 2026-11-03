@@ -125,6 +125,7 @@ const pureModules = [
   'src/extensions/tauSkills/requiredFor.ts',
   'src/extensions/tdd/configLayers.ts',
   'src/extensions/tdd/inputGlob.ts',
+  'src/extensions/tdd/runner/report.ts',
   'src/extensions/tdd/worktreePath.ts',
   'src/extensions/tracker/candidateFit.ts',
   'src/extensions/tracker/promptLines.ts',
@@ -189,6 +190,7 @@ const findingLines = (found: string[]) => found.map((finding) => Number(finding.
 
 // The outside libraries a registered module may import, by module path.
 const pureLibraries: Readonly<Record<string, readonly string[]>> = {
+  'src/extensions/tdd/runner/report.ts': ['node:path'],
   'src/schema.ts': ['typebox/value'],
 };
 
