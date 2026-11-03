@@ -28,7 +28,7 @@ const setup = () => {
   const assignmentId = '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f';
 
   const assignment: Assignment = {
-    version: 2,
+    version: 3,
     assignmentId,
     task: 'Do the thing.',
     acceptance: [],
@@ -46,6 +46,8 @@ const setup = () => {
     parentTerminal,
     deadline: Date.now() + 60_000,
     createdAt: Date.now(),
+    previousAssignmentId: null,
+    extensionPackages: null,
     questions: [],
     report: null,
   };

@@ -31,7 +31,7 @@ import type { ReportRefusalState, ReportTarget } from './report.js';
 import { remindToReport } from './reportReminder.js';
 import type { Loadout } from './types.js';
 import { decideWorkerResume, decideWorkerStart } from './workerResume.js';
-import type { WorkerResume, WorkerStart } from './workerResume.js';
+import type { WorkerStart } from './workerResume.js';
 import { workerTools } from './workerTools.js';
 
 interface WorkerState {
@@ -248,7 +248,6 @@ const startWorker = async (
   pi: ExtensionAPI,
   state: WorkerState,
   context: ExtensionContext,
-  resume: WorkerResume,
 ): Promise<void> => {
   try {
     const loaded = await readWorkerAssignment(state);
@@ -262,7 +261,10 @@ const startWorker = async (
       workerTools(loaded.assignment.loadout, skillTools),
     );
 
+    const resume = decideWorkerResume(context.sessionManager.getBranch(), loaded.assignment);
     const hasReport = loaded.assignment.report !== null;
+
+    state.questionAsked = resume.waitingForQuestion;
 
     runStartAction(pi, context, decideWorkerStart(resume, hasReport), loaded.assignment);
   } catch (error) {
@@ -335,10 +337,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
   };
 
   pi.on('session_start', (_event, context) => {
-    const resume = decideWorkerResume(context.sessionManager.getBranch());
-
-    state.questionAsked = resume.waitingForQuestion;
-    state.ready = startWorker(pi, state, context, resume);
+    state.ready = startWorker(pi, state, context);
 
     return state.ready;
   });

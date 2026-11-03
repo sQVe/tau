@@ -469,6 +469,18 @@ it('removes the snapshot after a definite launch failure', async () => {
   expect(snapshotNames(state.directory)).toEqual([]);
 });
 
+it('saves installed extension packages', async () => {
+  const state = uncertainSetup('spawn_failed', ['npm:review-package']);
+
+  await launch(state.runtime, { visibility: 'background' });
+
+  const saved = vi.mocked(writeAssignment).mock.calls.at(-1)?.[0];
+  const installed = saved?.extensionPackages;
+
+  expect(installed?.[0]?.source).toBe('npm:review-package');
+  expect(installed?.[0]?.path).toContain('tau-worker-packages');
+});
+
 it('keeps the cleanup error in the launch error when snapshot removal also fails', async () => {
   const cleanupError = 'Package snapshot root is redirected. Cleanup refused.';
 

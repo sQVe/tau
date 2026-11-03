@@ -33,7 +33,7 @@ const savedAssignment = (directory: string): Assignment => {
   const sessionId = randomUUID();
 
   return {
-    version: 2,
+    version: 3,
     assignmentId,
     task: 'Inspect the counters.',
     acceptance: [],
@@ -48,6 +48,8 @@ const savedAssignment = (directory: string): Assignment => {
     parentTerminal: manager,
     deadline: Date.now() + 30_000,
     createdAt: Date.now(),
+    previousAssignmentId: null,
+    extensionPackages: null,
     questions: [],
     report: null,
   };

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -34,7 +34,7 @@ const checkoutRoot = realpathSync(fileURLToPath(new URL('../../../', import.meta
 
 export const checkoutFolder = `${basename(checkoutRoot)}-${createHash('sha256').update(checkoutRoot).digest('hex').slice(0, checkoutHashLength)}`;
 
-const assignmentVersion = 2;
+const assignmentVersion = 3;
 
 const assignmentFileName = 'assignment.json';
 
@@ -70,8 +70,22 @@ const assignmentFields = {
   report: Type.Union([savedReportSchema, Type.Null()]),
 };
 
+const extensionPackageSchema = Type.Object(
+  { source: text, path: text },
+  { additionalProperties: false },
+);
+
 const assignmentVersion1Schema = Type.Object(
   { version: Type.Literal(1), ...assignmentFields },
+  { additionalProperties: false },
+);
+
+const assignmentVersion2Schema = Type.Object(
+  {
+    version: Type.Literal(2),
+    ...assignmentFields,
+    questions: Type.Array(savedQuestionSchema),
+  },
   { additionalProperties: false },
 );
 
@@ -79,6 +93,8 @@ const assignmentSchema = Type.Object(
   {
     version: Type.Literal(assignmentVersion),
     ...assignmentFields,
+    previousAssignmentId: Type.Union([Type.String({ pattern: uuidPattern }), Type.Null()]),
+    extensionPackages: Type.Union([Type.Array(extensionPackageSchema), Type.Null()]),
     questions: Type.Array(savedQuestionSchema),
   },
   { additionalProperties: false },
@@ -88,12 +104,25 @@ export type Assignment = Static<typeof assignmentSchema>;
 
 type AssignmentVersion1 = Static<typeof assignmentVersion1Schema>;
 
+type AssignmentVersion2 = Static<typeof assignmentVersion2Schema>;
+
 const isAssignmentVersion1 = (value: unknown): boolean => isRecord(value) && value['version'] === 1;
+
+const isAssignmentVersion2 = (value: unknown): boolean => isRecord(value) && value['version'] === 2;
 
 const fromVersion1 = (assignment: AssignmentVersion1): Assignment => ({
   ...assignment,
   version: assignmentVersion,
+  previousAssignmentId: null,
+  extensionPackages: null,
   questions: [],
+});
+
+const fromVersion2 = (assignment: AssignmentVersion2): Assignment => ({
+  ...assignment,
+  version: assignmentVersion,
+  previousAssignmentId: null,
+  extensionPackages: null,
 });
 
 export const seedSession = (seed: PiSessionSeed): void => {
@@ -122,14 +151,32 @@ export const readAssignment = async (path: string): Promise<Assignment | undefin
   const record = await readVersionedRecord(path, {
     label: 'assignment',
     version: assignmentVersion,
-    schema: (value) => (isAssignmentVersion1(value) ? assignmentVersion1Schema : assignmentSchema),
+    schema: (value) => {
+      if (isAssignmentVersion1(value)) {
+        return assignmentVersion1Schema;
+      }
+
+      return isAssignmentVersion2(value) ? assignmentVersion2Schema : assignmentSchema;
+    },
   });
 
   if (record === undefined) {
     return undefined;
   }
 
-  return record.version === 1 ? fromVersion1(record) : record;
+  if (record.version === 1) {
+    return fromVersion1(record);
+  }
+
+  return record.version === 2 ? fromVersion2(record) : record;
+};
+
+const checkAssignment = (path: string, assignment: Assignment): void => {
+  if (!Value.Check(assignmentSchema, assignment)) {
+    throw new Error(
+      `Malformed assignment ${path}: ${describeSchemaProblem(assignmentSchema, assignment)}.`,
+    );
+  }
 };
 
 // Creates the folder and the session file before the assignment file, so a saved assignment always
@@ -137,11 +184,7 @@ export const readAssignment = async (path: string): Promise<Assignment | undefin
 export const writeAssignment = async (assignment: Assignment): Promise<void> => {
   const path = assignmentPath(assignment.assignmentId);
 
-  if (!Value.Check(assignmentSchema, assignment)) {
-    throw new Error(
-      `Malformed assignment ${path}: ${describeSchemaProblem(assignmentSchema, assignment)}.`,
-    );
-  }
+  checkAssignment(path, assignment);
 
   const directory = assignmentDirectory(assignment.assignmentId);
   const sessionFile = join(directory, `${assignment.session.id}.jsonl`);
@@ -161,6 +204,30 @@ export const writeAssignment = async (assignment: Assignment): Promise<void> => 
     parentSession: assignment.parentSession,
     createdAt: assignment.createdAt,
   });
+
+  await writeRecord(path, assignment);
+};
+
+// A follow-up reuses the earlier session, so it needs no seed and may keep the file in the earlier
+// assignment's folder.
+export const writeFollowUpAssignment = async (assignment: Assignment): Promise<void> => {
+  const path = assignmentPath(assignment.assignmentId);
+
+  checkAssignment(path, assignment);
+
+  if (assignment.previousAssignmentId === null) {
+    throw new Error(
+      `Follow-up assignment ${assignment.assignmentId} needs a previous assignment ID.`,
+    );
+  }
+
+  if (!existsSync(assignment.session.file)) {
+    throw new Error(
+      `Follow-up assignment ${assignment.assignmentId} session file is missing: ${assignment.session.file}.`,
+    );
+  }
+
+  mkdirSync(assignmentDirectory(assignment.assignmentId), { recursive: true, mode: 0o700 });
 
   await writeRecord(path, assignment);
 };

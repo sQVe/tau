@@ -67,7 +67,7 @@ const savedAssignment = async (
   const sessionId = randomUUID();
 
   const assignment: Assignment = {
-    version: 2,
+    version: 3,
     assignmentId,
     task: 'Inspect the counters.',
     acceptance: [],
@@ -82,6 +82,8 @@ const savedAssignment = async (
     parentTerminal: manager,
     deadline,
     createdAt: now,
+    previousAssignmentId: null,
+    extensionPackages: null,
     questions: [],
     report: reported
       ? {

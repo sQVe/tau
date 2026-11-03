@@ -227,12 +227,13 @@ const buildAssignment = (
   parentSession: string,
   parentTerminal: string,
   packageSnapshot: string | undefined,
+  extensionPackages: readonly { source: string; path: string }[],
 ): Assignment => {
   const sessionId = randomUUID();
   const sessionFile = join(assignmentDirectory(assignmentId), `${sessionId}.jsonl`);
 
   return {
-    version: 2,
+    version: 3,
     assignmentId,
     task: briefWithAppUrl(parameters.task, parameters.url),
     acceptance: parameters.acceptance ?? [],
@@ -247,6 +248,8 @@ const buildAssignment = (
     parentTerminal,
     deadline,
     createdAt: Date.now(),
+    previousAssignmentId: null,
+    extensionPackages: [...extensionPackages],
     questions: [],
     report: null,
   };
@@ -395,6 +398,7 @@ export const executeLaunch = async (
           request.parentSession,
           parentTerminal,
           extensionPackages.length === 0 ? undefined : snapshotDirectory,
+          extensionPackages,
         );
 
         await writeAssignment(assignment);

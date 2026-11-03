@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "assignmentId": "3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f",
+  "task": "Find the file that loads the config.",
+  "acceptance": ["The answer names one file path."],
+  "label": null,
+  "profile": "scout",
+  "loadout": {
+    "harness": "pi",
+    "profile": "scout",
+    "role": "investigation",
+    "model": "faux/test",
+    "thinking": "off",
+    "cwd": "/repository",
+    "agentDirectory": "/agent",
+    "permissions": "trusted-full-tools",
+    "instructions": "Work on the assigned task.",
+    "tools": ["read", "bash"],
+    "skills": [],
+    "instructionSets": ["writing", "workflow"],
+    "packages": []
+  },
+  "routing": null,
+  "packageSnapshot": null,
+  "session": {
+    "file": "/agent/tau/repository-0a1b2c3d/assignments/3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f/5e6f7a8b-1c2d-4e3f-8a9b-0c1d2e3f4a5b.jsonl",
+    "id": "5e6f7a8b-1c2d-4e3f-8a9b-0c1d2e3f4a5b"
+  },
+  "parentSession": "/agent/sessions/parent.jsonl",
+  "cwd": "/repository",
+  "parentTerminal": "t1",
+  "deadline": 1900000000000,
+  "createdAt": 1700000000000,
+  "questions": [],
+  "report": null
+}

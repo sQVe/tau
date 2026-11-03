@@ -98,7 +98,7 @@ const runWorker = async (responses: FauxResponseStep[]) => {
   };
 
   await writeAssignment({
-    version: 2,
+    version: 3,
     assignmentId,
     task: 'Inspect source.txt.',
     acceptance: [],
@@ -113,6 +113,8 @@ const runWorker = async (responses: FauxResponseStep[]) => {
     parentTerminal: 'manager',
     deadline: Date.now() + 30_000,
     createdAt: Date.now(),
+    previousAssignmentId: null,
+    extensionPackages: null,
     questions: [],
     report: null,
   });

@@ -93,7 +93,7 @@ const customMessageEntry = (message: SentMessage): SessionEntryLike => ({
 });
 
 // Models Pi: while streaming, `sendMessage` only queues the message in memory. The message becomes
-// a session entry when the turn drains, while `appendEntry` writes at once.
+// a session entry when the turn drains.
 const createManager = () => {
   const messages: SentMessage[] = [];
   const entries: SessionEntryLike[] = [];
@@ -110,9 +110,6 @@ const createManager = () => {
       } else {
         entries.push(customMessageEntry(message));
       }
-    },
-    appendEntry: (customType: string, data?: unknown) => {
-      entries.push({ type: 'custom', customType, data });
     },
   } as unknown as ExtensionAPI;
 
@@ -149,7 +146,7 @@ const savedAssignment = (
   const sessionId = randomUUID();
 
   return {
-    version: 2,
+    version: 3,
     assignmentId,
     task: 'Inspect the counters.',
     acceptance: [],
@@ -164,6 +161,8 @@ const savedAssignment = (
     parentTerminal: manager,
     deadline: Date.now() + 30_000,
     createdAt: Date.now(),
+    previousAssignmentId: null,
+    extensionPackages: null,
     questions,
     report,
   };
