@@ -44,7 +44,24 @@ export interface DeadlinePlan {
   errors: DeadlineError[];
 }
 
+export interface ArmedTimerFact {
+  killAt: number;
+}
+
 export const deadlineWarningReserve = 90_000;
+
+const firstRetryMilliseconds = 5_000;
+const secondRetryMilliseconds = 15_000;
+const thirdRetryMilliseconds = 45_000;
+
+const retryDelays = [firstRetryMilliseconds, secondRetryMilliseconds, thirdRetryMilliseconds];
+
+export const retryDelay = (attempt: number): number | undefined => retryDelays[attempt];
+
+export const reuseArmedTimer = (
+  current: ArmedTimerFact | undefined,
+  next: ArmedTimerFact,
+): boolean => current !== undefined && current.killAt === next.killAt;
 
 const labelMessage = (assignmentId: string, label: string | undefined, deadline: number): string =>
   label === undefined

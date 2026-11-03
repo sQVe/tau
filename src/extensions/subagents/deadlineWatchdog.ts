@@ -5,7 +5,7 @@ import { errorMessage } from '../../errors.js';
 import { currentTerminalAddress, get, kill, send } from '../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import { readAssignment } from './assignment.js';
-import { decideDeadline } from './deadlineDecision.js';
+import { decideDeadline, retryDelay, reuseArmedTimer } from './deadlineDecision.js';
 import type {
   DeadlineAssignment,
   DeadlineChildFact,
@@ -28,7 +28,6 @@ export interface DeadlineWatchdog {
 interface ArmedTimers {
   warn: ReturnType<typeof setTimeout>;
   killTimer: ReturnType<typeof setTimeout>;
-  warnAt: number;
   killAt: number;
 }
 
@@ -114,6 +113,58 @@ export const createDeadlineWatchdog = (
     armed.delete(address);
   };
 
+  const retries = new Map<string, ReturnType<typeof setTimeout>>();
+
+  const clearRetry = (address: string): void => {
+    const timer = retries.get(address);
+
+    if (timer === undefined) {
+      return;
+    }
+
+    clearTimeout(timer);
+    retries.delete(address);
+  };
+
+  const scheduleRetry = (
+    context: DeadlineWatchdogContext,
+    target: DeadlineTimer | DeadlineKill,
+    attempt: number,
+    run: () => Promise<void>,
+  ): void => {
+    if (isStopped()) {
+      return;
+    }
+
+    const delay = retryDelay(attempt);
+
+    if (delay === undefined) {
+      return;
+    }
+
+    clearRetry(target.address);
+
+    const timer = setTimeout(() => {
+      retries.delete(target.address);
+
+      run().catch((error: unknown) => {
+        if (isStopped()) {
+          return;
+        }
+
+        notifyOnce(
+          context.ui,
+          'worker-deadline',
+          `kill:${target.address}`,
+          `Deadline kill for ${target.address} failed: ${errorMessage(error)}`,
+          'error',
+        );
+      });
+    }, delay);
+
+    retries.set(target.address, timer);
+  };
+
   const reportKillProblem = (
     context: DeadlineWatchdogContext,
     key: string,
@@ -158,10 +209,13 @@ export const createDeadlineWatchdog = (
   const killAtDeadline = async (
     context: DeadlineWatchdogContext,
     target: DeadlineTimer | DeadlineKill,
+    attempt = 0,
   ): Promise<void> => {
     if (isStopped()) {
       return;
     }
+
+    clearRetry(target.address);
 
     const managerTerminal = currentTerminalAddress();
 
@@ -180,6 +234,8 @@ export const createDeadlineWatchdog = (
         `Reading ${target.address} failed:`,
         error,
       );
+
+      scheduleRetry(context, target, attempt, () => killAtDeadline(context, target, attempt + 1));
 
       return;
     }
@@ -205,6 +261,8 @@ export const createDeadlineWatchdog = (
         `Ending ${target.address} failed:`,
         error,
       );
+
+      scheduleRetry(context, target, attempt, () => killAtDeadline(context, target, attempt + 1));
 
       return;
     }
@@ -264,7 +322,6 @@ export const createDeadlineWatchdog = (
     armed.set(timer.address, {
       warn: warnTimer,
       killTimer,
-      warnAt: timer.warnAt,
       killAt: timer.killAt,
     });
   };
@@ -299,11 +356,7 @@ export const createDeadlineWatchdog = (
     for (const timer of plan.armed) {
       const current = armed.get(timer.address);
 
-      if (
-        current !== undefined &&
-        current.warnAt === timer.warnAt &&
-        current.killAt === timer.killAt
-      ) {
+      if (reuseArmedTimer(current, timer)) {
         continue;
       }
 
@@ -317,6 +370,14 @@ export const createDeadlineWatchdog = (
       }
     }
 
+    const killing = new Set(plan.kills.map((target) => target.address));
+
+    for (const address of retries.keys()) {
+      if (!killing.has(address) && !inconclusive.has(address)) {
+        clearRetry(address);
+      }
+    }
+
     await Promise.all(plan.kills.map((target) => killAtDeadline(context, target)));
   };
 
@@ -327,6 +388,10 @@ export const createDeadlineWatchdog = (
 
       for (const address of armed.keys()) {
         clearAddress(address);
+      }
+
+      for (const address of retries.keys()) {
+        clearRetry(address);
       }
     },
   };

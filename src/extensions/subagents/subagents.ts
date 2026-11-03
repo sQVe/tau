@@ -229,6 +229,10 @@ export const registerDeadlineWatchdog = (pi: ExtensionAPI, watchdog: DeadlineWat
 };
 
 export const registerWorkerScan = (pi: ExtensionAPI, scan: WorkerScan): void => {
+  pi.on('session_shutdown', () => {
+    scan.clear();
+  });
+
   pi.on('input', (event, context) => {
     if (event.text.includes('[tau-report]') || event.text.includes('[tau-question]')) {
       startScan(scan, context);

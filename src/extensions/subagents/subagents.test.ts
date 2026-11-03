@@ -104,6 +104,7 @@ const completionTracked = (scan: WorkerScan) => {
 
         return last;
       },
+      clear: () => undefined,
     },
     settled: () => last,
   };

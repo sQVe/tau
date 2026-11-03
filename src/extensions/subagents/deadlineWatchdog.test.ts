@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { failedResult } from '../../../tests/execFake.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
@@ -442,4 +443,258 @@ it('reports an unread child without killing it', async () => {
   expect(notifications).toHaveLength(1);
   expect(notifications[0]?.[0]).toContain('Reading t-child failed');
   expect(commands('kill')).toHaveLength(0);
+});
+
+it('sends one warning when a rescan clamps the warning time', async () => {
+  const { context, scanner, commands } = await setup({ deadline: now + 30_000 });
+
+  await scanner.scan(context);
+  await vi.advanceTimersByTimeAsync(0);
+
+  expect(commands('send')).toHaveLength(1);
+
+  await vi.advanceTimersByTimeAsync(1_000);
+  await scanner.scan(context);
+  await vi.advanceTimersByTimeAsync(0);
+
+  expect(commands('send')).toHaveLength(1);
+});
+
+it('retries a kill after hc get fails, then succeeds', async () => {
+  const { context, scanner, hc, hcFake, deadline, ended } = await setup();
+
+  await scanner.scan(context);
+
+  const realExec = hcFake.exec;
+  let getAttempts = 0;
+
+  hc.exec = async (command, commandArguments, options) => {
+    if (commandArguments[0] === 'get') {
+      getAttempts += 1;
+
+      if (getAttempts === 1) {
+        return failedResult('temporary get failure');
+      }
+    }
+
+    return realExec(command, commandArguments, options);
+  };
+
+  await vi.advanceTimersByTimeAsync(deadline - now);
+
+  expect(getAttempts).toBe(1);
+
+  await vi.advanceTimersByTimeAsync(5_000);
+
+  await vi.waitFor(() => {
+    expect(ended).toHaveLength(1);
+  });
+
+  expect(getAttempts).toBe(2);
+});
+
+it('keeps a pending kill retry when a rescan cannot read the child', async () => {
+  const { context, scanner, hc, hcFake, deadline, ended } = await setup();
+
+  await scanner.scan(context);
+
+  const realExec = hcFake.exec;
+  let getAttempts = 0;
+
+  hc.exec = async (command, commandArguments, options) => {
+    if (commandArguments[0] === 'get') {
+      getAttempts += 1;
+
+      if (getAttempts <= 2) {
+        return failedResult('temporary get failure');
+      }
+    }
+
+    return realExec(command, commandArguments, options);
+  };
+
+  await vi.advanceTimersByTimeAsync(deadline - now);
+
+  await vi.waitFor(() => {
+    expect(getAttempts).toBe(1);
+  });
+
+  await scanner.scan(context);
+
+  expect(getAttempts).toBe(2);
+
+  await vi.advanceTimersByTimeAsync(5_000);
+
+  await vi.waitFor(() => {
+    expect(ended).toHaveLength(1);
+  });
+
+  expect(getAttempts).toBe(3);
+});
+
+it('retries a kill after hc kill fails, then succeeds', async () => {
+  const { context, scanner, hc, hcFake, deadline, ended } = await setup();
+
+  await scanner.scan(context);
+
+  const realExec = hcFake.exec;
+  let killAttempts = 0;
+
+  hc.exec = async (command, commandArguments, options) => {
+    if (commandArguments[0] === 'kill') {
+      killAttempts += 1;
+
+      if (killAttempts === 1) {
+        return failedResult('temporary kill failure');
+      }
+    }
+
+    return realExec(command, commandArguments, options);
+  };
+
+  await vi.advanceTimersByTimeAsync(deadline - now);
+
+  await vi.waitFor(() => {
+    expect(killAttempts).toBe(1);
+  });
+
+  await vi.advanceTimersByTimeAsync(5_000);
+
+  await vi.waitFor(() => {
+    expect(ended).toHaveLength(1);
+  });
+
+  expect(killAttempts).toBe(2);
+});
+
+it('clears a pending kill retry when a rescan kills the worker', async () => {
+  const { context, scanner, hc, hcFake, deadline, ended } = await setup();
+
+  await scanner.scan(context);
+
+  const realExec = hcFake.exec;
+  let killAttempts = 0;
+
+  hc.exec = async (command, commandArguments, options) => {
+    if (commandArguments[0] === 'kill') {
+      killAttempts += 1;
+
+      if (killAttempts === 1) {
+        return failedResult('temporary kill failure');
+      }
+    }
+
+    return realExec(command, commandArguments, options);
+  };
+
+  await vi.advanceTimersByTimeAsync(deadline - now);
+
+  await vi.waitFor(() => {
+    expect(killAttempts).toBe(1);
+  });
+
+  await scanner.scan(context);
+
+  await vi.waitFor(() => {
+    expect(ended).toHaveLength(1);
+  });
+
+  await vi.advanceTimersByTimeAsync(5_000);
+
+  expect(killAttempts).toBe(2);
+  expect(ended).toHaveLength(1);
+});
+
+it('retries a second kill failure with the next backoff', async () => {
+  const { context, scanner, hc, hcFake, deadline, ended } = await setup();
+
+  await scanner.scan(context);
+
+  const realExec = hcFake.exec;
+  let killAttempts = 0;
+
+  hc.exec = async (command, commandArguments, options) => {
+    if (commandArguments[0] === 'kill') {
+      killAttempts += 1;
+
+      if (killAttempts <= 2) {
+        return failedResult('temporary kill failure');
+      }
+    }
+
+    return realExec(command, commandArguments, options);
+  };
+
+  await vi.advanceTimersByTimeAsync(deadline - now);
+
+  await vi.waitFor(() => {
+    expect(killAttempts).toBe(1);
+  });
+
+  await vi.advanceTimersByTimeAsync(5_000);
+
+  await vi.waitFor(() => {
+    expect(killAttempts).toBe(2);
+  });
+
+  await vi.advanceTimersByTimeAsync(15_000);
+
+  await vi.waitFor(() => {
+    expect(ended).toHaveLength(1);
+  });
+
+  expect(killAttempts).toBe(3);
+});
+
+it('stops retrying a failed kill after the bounded schedule', async () => {
+  const { context, scanner, hc, hcFake, deadline } = await setup();
+
+  await scanner.scan(context);
+
+  const realExec = hcFake.exec;
+  let getAttempts = 0;
+
+  hc.exec = async (command, commandArguments, options) => {
+    if (commandArguments[0] === 'get') {
+      getAttempts += 1;
+
+      return failedResult('persistent get failure');
+    }
+
+    return realExec(command, commandArguments, options);
+  };
+
+  await vi.advanceTimersByTimeAsync(deadline - now);
+  await vi.advanceTimersByTimeAsync(5_000 + 15_000 + 45_000);
+  await vi.advanceTimersByTimeAsync(1_000_000);
+
+  expect(getAttempts).toBe(4);
+});
+
+it('cancels a pending kill retry at session shutdown', async () => {
+  const { context, scanner, hc, hcFake, deadline, emit } = await setup();
+
+  await scanner.scan(context);
+
+  const realExec = hcFake.exec;
+  let getAttempts = 0;
+
+  hc.exec = async (command, commandArguments, options) => {
+    if (commandArguments[0] === 'get') {
+      getAttempts += 1;
+
+      return failedResult('persistent get failure');
+    }
+
+    return realExec(command, commandArguments, options);
+  };
+
+  await vi.advanceTimersByTimeAsync(deadline - now);
+
+  expect(getAttempts).toBe(1);
+
+  await emit('session_shutdown', { reason: 'quit' });
+  await vi.advanceTimersByTimeAsync(5_000);
+
+  expect(getAttempts).toBe(1);
 });
