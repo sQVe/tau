@@ -74,7 +74,6 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 
 ## Workers
 
-- [0064: Deliver worker replies through records](./0064-deliver-worker-replies-through-records.md)
 - [0067: Give each worker profile one loadout of tools, skills, instruction sets, and packages](./0067-give-workers-only-their-profile-tools-and-skills.md)
 - [0076: Give browser workers one shared set of browser rules](./0076-give-browser-workers-one-shared-set-of-browser-rules.md)
 - [0102: Require acceptance criteria on editing worker launches](./0102-require-acceptance-criteria-on-editing-worker-launches.md)
@@ -164,6 +163,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 | 0060 | Keep local code review in a skill                                              | [0089](./0089-capture-review-targets-with-a-code-review-tool.md)                                                                                                                                                                  | `1558d611`  |
 | 0062 | Put worker instructions in the system prompt                                   | [0066](./0066-add-taus-prompt-text-to-pis-append-section.md)                                                                                                                                                                      | `b0980b75`  |
 | 0063 | Narrow allowed models from the user file to the repository file                | [0061](./0061-layer-tau-config-from-user-and-repository-files.md)                                                                                                                                                                 | `b0980b75`  |
+| 0064 | Deliver worker replies through records                                         | [0125](./0125-run-workers-as-hc-children-with-assignment-files.md)                                                                                                                                                                | 27d8ce48    |
 | 0065 | Put user decisions first in replies                                            | [0107](./0107-state-the-problem-and-keep-option-order-stable-in-questions.md)                                                                                                                                                     | `b0980b75`  |
 | 0068 | Load only the instruction sets each worker profile needs                       | [0067](./0067-give-workers-only-their-profile-tools-and-skills.md)                                                                                                                                                                | `b0980b75`  |
 | 0069 | Load each Pi package where its tools are used                                  | [0067](./0067-give-workers-only-their-profile-tools-and-skills.md)                                                                                                                                                                | `b0980b75`  |

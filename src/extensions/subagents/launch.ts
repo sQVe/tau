@@ -232,7 +232,7 @@ const buildAssignment = (
   const sessionFile = join(assignmentDirectory(assignmentId), `${sessionId}.jsonl`);
 
   return {
-    version: 1,
+    version: 2,
     assignmentId,
     task: briefWithAppUrl(parameters.task, parameters.url),
     acceptance: parameters.acceptance ?? [],
@@ -247,6 +247,7 @@ const buildAssignment = (
     parentTerminal,
     deadline,
     createdAt: Date.now(),
+    questions: [],
     report: null,
   };
 };

@@ -21,3 +21,6 @@ as a gate, or you must reproduce a suspected defect.
 List findings in Decisions, most severe first, or say you found none. Keep the summary under 3,000
 characters and save longer details to the file the task names or a `mktemp` file outside the
 repository. Finding defects is still success.
+
+When only the parent can answer, call `subagent_question` with one clear question. Your turn then
+ends; wait for the parent's answer in a new message.

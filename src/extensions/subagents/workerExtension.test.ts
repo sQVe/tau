@@ -92,7 +92,7 @@ const setup = (assignmentPath?: string) => {
 };
 
 const assignmentFor = (directory: string): Assignment => ({
-  version: 1,
+  version: 2,
   assignmentId,
   task: 'Inspect the fixture.',
   acceptance: [],
@@ -110,6 +110,7 @@ const assignmentFor = (directory: string): Assignment => ({
   parentTerminal,
   deadline: Date.now() + 60_000,
   createdAt: Date.now(),
+  questions: [],
   report: null,
 });
 
@@ -157,6 +158,117 @@ it('reads the assignment, activates its tools, and sends the first task prompt',
   expect(loadout.model).toBe('faux/test');
 });
 
+it('keeps a reloaded worker waiting without a second task prompt', async () => {
+  const { context, directory, pi, shutdown } = setup();
+
+  await writeAssignment(assignmentFor(directory));
+
+  Object.assign(context.sessionManager, {
+    getBranch: () => [
+      { type: 'message', message: { role: 'user', content: 'Task' } },
+      { type: 'message', message: { role: 'toolResult', toolName: 'subagent_question' } },
+    ],
+  });
+
+  await pi.handler('session_start')({}, context);
+
+  expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toBeUndefined();
+
+  pi.handler('agent_settled')({}, context);
+
+  expect(shutdown).not.toHaveBeenCalled();
+});
+
+it('shuts a reloaded worker down without a message when its assignment already has a report', async () => {
+  const { context, directory, pi, shutdown } = setup();
+
+  await writeAssignment({
+    ...assignmentFor(directory),
+    report: {
+      outcome: 'success',
+      summary: 'Changes: None\nEvidence: None\nDecisions: None\nConcerns: None',
+      evidence: [],
+    },
+  });
+
+  Object.assign(context.sessionManager, {
+    getBranch: () => [{ type: 'message', message: { role: 'user', content: 'Task' } }],
+  });
+
+  await pi.handler('session_start')({}, context);
+
+  expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  expect(shutdown).toHaveBeenCalledOnce();
+});
+
+it('sends one continuation message to a reloaded worker with a sent task and no pending question', async () => {
+  const { context, directory, pi, shutdown } = setup();
+
+  await writeAssignment(assignmentFor(directory));
+
+  Object.assign(context.sessionManager, {
+    getBranch: () => [{ type: 'message', message: { role: 'user', content: 'Task' } }],
+  });
+
+  await pi.handler('session_start')({}, context);
+
+  expect(pi.sendUserMessage).toHaveBeenCalledOnce();
+  expect(shutdown).not.toHaveBeenCalled();
+});
+
+it('reminds again for a report after the parent answers a question the reminded worker asked', async () => {
+  const { context, directory, pi } = setup();
+
+  await writeAssignment(assignmentFor(directory));
+  await pi.handler('session_start')({}, context);
+
+  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toMatchObject({
+    continue: true,
+  });
+
+  const question = pi.tools.get('subagent_question');
+
+  if (question === undefined) {
+    throw new Error('The question tool was not registered.');
+  }
+
+  await question.execute(
+    'question',
+    { question: 'Which config file wins?' },
+    undefined,
+    undefined,
+    context,
+  );
+
+  pi.handler('message_start')(
+    { type: 'message_start', message: { role: 'user', content: 'Use A.' } },
+    context,
+  );
+
+  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toMatchObject({
+    continue: true,
+  });
+});
+
+it('does not restart the report reminder when a non-user message starts', async () => {
+  const { context, directory, pi } = setup();
+
+  await writeAssignment(assignmentFor(directory));
+  await pi.handler('session_start')({}, context);
+
+  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toMatchObject({
+    continue: true,
+  });
+
+  pi.handler('message_start')(
+    { type: 'message_start', message: { role: 'assistant', content: [] } },
+    context,
+  );
+
+  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toBeUndefined();
+});
+
 it('shuts the worker down after a settled report', async () => {
   const { context, directory, pi, shutdown } = setup();
 
@@ -193,6 +305,127 @@ it('shuts the worker down after a settled report', async () => {
     context,
   );
 
+  pi.handler('agent_settled')({}, context);
+
+  expect(shutdown).toHaveBeenCalledOnce();
+});
+
+it('keeps the worker running and skips the report reminder when its turn ends on a question', async () => {
+  const { context, directory, pi, shutdown } = setup();
+
+  await writeAssignment(assignmentFor(directory));
+  await pi.handler('session_start')({}, context);
+
+  const tool = pi.tools.get('subagent_question');
+
+  if (tool === undefined) {
+    throw new Error('The question tool was not registered.');
+  }
+
+  await tool.execute(
+    'call',
+    { question: 'Which config file wins?' },
+    undefined,
+    undefined,
+    context,
+  );
+
+  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toBeUndefined();
+
+  pi.handler('agent_settled')({}, context);
+
+  expect(shutdown).not.toHaveBeenCalled();
+});
+
+it('shuts the worker down when a report is saved after a question in the same run', async () => {
+  const { context, directory, pi, shutdown } = setup();
+
+  await writeAssignment(assignmentFor(directory));
+  await pi.handler('session_start')({}, context);
+
+  const question = pi.tools.get('subagent_question');
+  const report = pi.tools.get('subagent_report');
+
+  if (question === undefined || report === undefined) {
+    throw new Error('The question and report tools must be registered.');
+  }
+
+  await question.execute(
+    'question',
+    { question: 'Which config file wins?' },
+    undefined,
+    undefined,
+    context,
+  );
+
+  await report.execute(
+    'report',
+    {
+      outcome: 'success',
+      summary: 'Changes: None\nEvidence: None\nDecisions: None\nConcerns: None',
+      evidence: [],
+    },
+    undefined,
+    undefined,
+    context,
+  );
+
+  pi.handler('agent_settled')({}, context);
+
+  expect(shutdown).toHaveBeenCalledOnce();
+});
+
+it('reminds for a report after a reply is consumed while the turn streams', async () => {
+  const { context, directory, pi } = setup();
+
+  await writeAssignment(assignmentFor(directory));
+  await pi.handler('session_start')({}, context);
+
+  const question = pi.tools.get('subagent_question');
+
+  if (question === undefined) {
+    throw new Error('The question tool was not registered.');
+  }
+
+  await question.execute(
+    'question',
+    { question: 'Which config file wins?' },
+    undefined,
+    undefined,
+    context,
+  );
+
+  pi.handler('message_start')(
+    { type: 'message_start', message: { role: 'user', content: 'Use A.' } },
+    context,
+  );
+
+  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toMatchObject({
+    continue: true,
+  });
+});
+
+it('shuts the worker down when the turn that answers its question settles', async () => {
+  const { context, directory, pi, shutdown } = setup();
+
+  await writeAssignment(assignmentFor(directory));
+  await pi.handler('session_start')({}, context);
+
+  const tool = pi.tools.get('subagent_question');
+
+  if (tool === undefined) {
+    throw new Error('The question tool was not registered.');
+  }
+
+  await tool.execute(
+    'call',
+    { question: 'Which config file wins?' },
+    undefined,
+    undefined,
+    context,
+  );
+
+  pi.handler('agent_start')({}, context);
   pi.handler('agent_settled')({}, context);
 
   expect(shutdown).toHaveBeenCalledOnce();
@@ -244,26 +477,26 @@ it('blocks a direct worker questionnaire', () => {
   expect(result).toMatchObject({ block: true });
 });
 
-it('blocks a report that shares its turn with another tool call', () => {
-  const { context, pi } = setup();
+it.each(['subagent_report', 'subagent_question'])(
+  'blocks %s when it shares its turn with another tool call',
+  (toolName) => {
+    const { context, pi } = setup();
 
-  Object.assign(context.sessionManager, {
-    getBranch: () => [
-      {
-        type: 'message',
-        message: {
-          role: 'assistant',
-          content: [{ type: 'toolCall' }, { type: 'toolCall' }],
+    Object.assign(context.sessionManager, {
+      getBranch: () => [
+        {
+          type: 'message',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'toolCall' }, { type: 'toolCall' }],
+          },
         },
-      },
-    ],
-  });
+      ],
+    });
 
-  const result = pi.handler('tool_call')(
-    { toolName: 'subagent_report', toolCallId: 'call', input: {} },
-    context,
-  );
+    const result = pi.handler('tool_call')({ toolName, toolCallId: 'call', input: {} }, context);
 
-  expect(result).toMatchObject({ block: true });
-  expect((result as { reason: string }).reason).toContain('alone');
-});
+    expect(result).toMatchObject({ block: true });
+    expect((result as { reason: string }).reason).toContain('alone');
+  },
+);

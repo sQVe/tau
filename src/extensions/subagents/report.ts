@@ -146,7 +146,7 @@ const reportOutcome = (value: string): SavedReport['outcome'] => {
 const withBlocker = (summary: string, blocker: string | undefined): string =>
   blocker === undefined ? summary : `Blocker: ${blocker}\n\n${summary}`;
 
-const stepFailure = (step: string, error: unknown): string =>
+export const stepFailure = (step: string, error: unknown): string =>
   `${step} failed: ${errorMessage(error)}`;
 
 const resultText = (failures: readonly string[]): string =>

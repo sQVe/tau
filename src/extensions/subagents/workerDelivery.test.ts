@@ -9,11 +9,11 @@ import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js'
 import type { Exec } from '../../command.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import { assignmentDirectory, writeAssignment } from './assignment.js';
-import type { Assignment } from './assignment.js';
+import type { Assignment, SavedQuestion } from './assignment.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
-import { createReportDelivery } from './reportDelivery.js';
+import { createWorkerDelivery } from './workerDelivery.js';
 
-type DeliveryContext = Parameters<ReturnType<typeof createReportDelivery>['deliver']>[0];
+type DeliveryContext = Parameters<ReturnType<typeof createWorkerDelivery>['deliver']>[0];
 
 interface SentMessage {
   customType?: unknown;
@@ -139,12 +139,16 @@ const createManager = () => {
   };
 };
 
-const savedAssignment = (directory: string, report: Assignment['report']): Assignment => {
+const savedAssignment = (
+  directory: string,
+  report: Assignment['report'],
+  questions: SavedQuestion[] = [],
+): Assignment => {
   const assignmentId = randomUUID();
   const sessionId = randomUUID();
 
   return {
-    version: 1,
+    version: 2,
     assignmentId,
     task: 'Inspect the counters.',
     acceptance: [],
@@ -159,6 +163,7 @@ const savedAssignment = (directory: string, report: Assignment['report']): Assig
     parentTerminal: manager,
     deadline: Date.now() + 30_000,
     createdAt: Date.now(),
+    questions,
     report,
   };
 };
@@ -177,15 +182,23 @@ const savedReport = (): Assignment['report'] => ({
   evidence: ['a reference'],
 });
 
+const savedQuestion = (): SavedQuestion => ({
+  questionId: randomUUID(),
+  text: 'Which branch should I use?',
+  askedAt: Date.now(),
+});
+
 const reportDelivery = async (
   report: Assignment['report'] = savedReport(),
+  questions: SavedQuestion[] = [],
 ): Promise<{
   managerState: ReturnType<typeof createManager>;
-  deliver: ReturnType<typeof createReportDelivery>['deliver'];
+  deliver: ReturnType<typeof createWorkerDelivery>['deliver'];
+  hc: HcRuntime;
   assignmentId: string;
 }> => {
   const directory = stubAgentDirectory();
-  const saved = savedAssignment(directory, report);
+  const saved = savedAssignment(directory, report, questions);
 
   await writeAssignment(saved);
 
@@ -195,7 +208,8 @@ const reportDelivery = async (
 
   return {
     managerState,
-    deliver: createReportDelivery(managerState.pi, hc).deliver,
+    deliver: createWorkerDelivery(managerState.pi, hc).deliver,
+    hc,
     assignmentId: saved.assignmentId,
   };
 };
@@ -207,7 +221,7 @@ it('notifies an error for a missing assignment file', async () => {
     liveTerminal('t-child', manager, { 'tau.assignment': '/agent/missing.json' }),
   ]);
 
-  await createReportDelivery(managerState.pi, hc).deliver(managerState.context);
+  await createWorkerDelivery(managerState.pi, hc).deliver(managerState.context);
 
   expect(managerState.notifications).toEqual([
     ['Missing assignment file: /agent/missing.json.', 'error'],
@@ -223,7 +237,7 @@ it('notifies an assignment read error once for repeated runs', async () => {
     liveTerminal('t-child', manager, { 'tau.assignment': '/agent/missing.json' }),
   ]);
 
-  const delivery = createReportDelivery(managerState.pi, hc);
+  const delivery = createWorkerDelivery(managerState.pi, hc);
 
   await delivery.deliver(managerState.context);
   await delivery.deliver(managerState.context);
@@ -237,12 +251,12 @@ it('notifies an error for a malformed assignment file', async () => {
   const directory = stubAgentDirectory();
   const path = join(directory, 'assignment.json');
 
-  writeFileSync(path, JSON.stringify({ version: 1, assignmentId: 'not-a-uuid' }));
+  writeFileSync(path, JSON.stringify({ version: 2, assignmentId: 'not-a-uuid' }));
 
   const managerState = createManager();
   const hc = createHc([liveTerminal('t-child', manager, { 'tau.assignment': path })]);
 
-  await createReportDelivery(managerState.pi, hc).deliver(managerState.context);
+  await createWorkerDelivery(managerState.pi, hc).deliver(managerState.context);
 
   expect(managerState.notifications).toHaveLength(1);
   expect(managerState.notifications[0]?.[0]).toContain('Malformed assignment');
@@ -253,7 +267,7 @@ it('skips a child without an assignment label', async () => {
   const managerState = createManager();
   const hc = createHc([liveTerminal('t-child', manager)]);
 
-  await createReportDelivery(managerState.pi, hc).deliver(managerState.context);
+  await createWorkerDelivery(managerState.pi, hc).deliver(managerState.context);
 
   expect(managerState.notifications).toEqual([]);
   expect(managerState.messages).toEqual([]);
@@ -270,7 +284,7 @@ it('ignores an assignment whose report is not written yet', async () => {
   const managerState = createManager();
   const hc = createHc([liveTerminal('t-child', manager, { 'tau.assignment': path })]);
 
-  await createReportDelivery(managerState.pi, hc).deliver(managerState.context);
+  await createWorkerDelivery(managerState.pi, hc).deliver(managerState.context);
 
   expect(managerState.notifications).toEqual([]);
   expect(managerState.messages).toEqual([]);
@@ -284,7 +298,7 @@ it('skips a terminal that is not the manager child', async () => {
     liveTerminal('t-child', manager),
   ]);
 
-  await createReportDelivery(managerState.pi, hc).deliver(managerState.context);
+  await createWorkerDelivery(managerState.pi, hc).deliver(managerState.context);
 
   expect(managerState.notifications).toEqual([]);
   expect(managerState.messages).toEqual([]);
@@ -299,7 +313,7 @@ it('does nothing without a manager terminal', async () => {
     liveTerminal('t-child', manager, { 'tau.assignment': '/agent/missing.json' }),
   ]);
 
-  await createReportDelivery(managerState.pi, hc).deliver(managerState.context);
+  await createWorkerDelivery(managerState.pi, hc).deliver(managerState.context);
 
   expect(managerState.notifications).toEqual([]);
   expect(managerState.messages).toEqual([]);
@@ -409,3 +423,74 @@ it.each(['success', 'failure'] as const)(
     expect(message.details).toEqual({ assignmentId, outcome });
   },
 );
+
+it('shows a pending question once and records it as a question message', async () => {
+  const question = savedQuestion();
+  const { managerState, deliver, assignmentId } = await reportDelivery(null, [question]);
+
+  await deliver(managerState.context);
+  await deliver(managerState.context);
+
+  expect(managerState.messages).toHaveLength(1);
+
+  expect(managerState.entries).toEqual([
+    {
+      type: 'custom_message',
+      customType: 'tau-worker-question',
+      details: { assignmentId, questionId: question.questionId },
+    },
+  ]);
+});
+
+it('shows a question again when another extension message carries its IDs', async () => {
+  const question = savedQuestion();
+  const { managerState, deliver, assignmentId } = await reportDelivery(null, [question]);
+
+  managerState.entries.push({
+    type: 'custom_message',
+    customType: 'other-extension',
+    details: { assignmentId, questionId: question.questionId },
+  });
+
+  await deliver(managerState.context);
+
+  expect(managerState.messages).toHaveLength(1);
+});
+
+it('does not show a saved question again for a fresh delivery over its message', async () => {
+  const question = savedQuestion();
+  const { managerState, hc, assignmentId } = await reportDelivery(null, [question]);
+
+  managerState.entries.push({
+    type: 'custom_message',
+    customType: 'tau-worker-question',
+    details: { assignmentId, questionId: question.questionId },
+  });
+
+  await createWorkerDelivery(managerState.pi, hc).deliver(managerState.context);
+
+  expect(managerState.messages).toEqual([]);
+  expect(managerState.entries).toHaveLength(1);
+});
+
+it('does not show a queued question twice while its message is still queued', async () => {
+  const { managerState, deliver } = await reportDelivery(null, [savedQuestion()]);
+
+  managerState.setStreaming(true);
+
+  await deliver(managerState.context);
+  await deliver(managerState.context);
+
+  expect(managerState.messages).toHaveLength(1);
+});
+
+it('names the worker address and the hc send answer in the question message', async () => {
+  const { managerState, deliver } = await reportDelivery(null, [savedQuestion()]);
+
+  await deliver(managerState.context);
+
+  const message = managerState.messages[0] as { content: string };
+
+  expect(message.content).toContain('Which branch should I use?');
+  expect(message.content).toContain('hc send t-child "<answer>"');
+});

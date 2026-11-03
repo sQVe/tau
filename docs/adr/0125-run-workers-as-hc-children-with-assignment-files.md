@@ -17,6 +17,7 @@
 [ADR 0054 (Show one foreground worker per parent)](./README.md#retired),
 [ADR 0058 (Run subagents only as Pi workers)](./README.md#retired),
 [ADR 0059 (Run each Pi worker as its pane's own process)](./README.md#retired),
+[ADR 0064 (Deliver worker replies through records)](./README.md#retired),
 [ADR 0097 (Track only the current session's workers)](./README.md#retired),
 [ADR 0123 (Delete stopped worker records 14 days after their last write)](./README.md#retired)\
 **Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
@@ -40,12 +41,12 @@ long, so the message that announces it must stay short.
 
 Tau starts each worker as a child terminal of its manager's `hc` terminal. Each launch writes one
 versioned assignment file before the worker starts. The manager and the worker read that file, and
-only the worker writes its report into it.
+only the worker writes its report and its questions into it.
 
 ### Assignment file
 
 - The file holds the task, its acceptance criteria, the loadout, the Pi session, the parent session,
-  and the report. Its format is versioned under
+  the questions, and the report. Its format is versioned under
   [ADR 0053](./0053-version-each-saved-record-format.md).
 - The file and the worker's Pi session file sit in one folder under Pi's agent directory. Each Tau
   checkout has its own folder, so a branch that changes the format does not break another checkout.
@@ -73,12 +74,27 @@ only the worker writes its report into it.
 - The manager reads its children's assignment files when a note arrives, at session start, and after
   compaction. It shows each report once for each assignment ID.
 
+### Question
+
+- The worker calls `subagent_question` with one question. Tau validates it and saves it in the
+  assignment file with a new question ID and the time. Then Tau sends the manager a short note with
+  the file path. A failed note keeps the saved question.
+- The worker's turn ends after the question is saved. The worker process keeps running and waits for
+  typed input.
+- The manager shows each question once for each assignment ID and question ID. It reads the
+  questions on the same triggers as reports.
+- The shown question names the worker's `hc` address and tells the manager to answer with
+  `hc send <address> "<answer>"`. Tau never uses `hc send --force`. When `hc send` refuses a blocked
+  worker, the manager reports that and does not force it.
+- Tau keeps no answer state. A saved shown message for a question is the only record that the
+  question was handled.
+
 ### Tools
 
 - The manager has no tool that reads or changes a worker after launch. Its only worker tool is
-  `subagent`, which launches one.
-- The worker has `subagent_report` and the tools of its profile. It has no tool to ask a question or
-  report progress.
+  `subagent`, which launches one. It answers a question with `hc send` through bash.
+- The worker has `subagent_report`, `subagent_question`, and the tools of its profile. It has no
+  tool to report progress.
 
 ## Consequences
 
@@ -92,8 +108,8 @@ only the worker writes its report into it.
 ### Negative
 
 - Tau refuses to launch outside an `hc` terminal.
-- Until later changes add them back on `hc`, a manager cannot follow up, reply to, or cancel a
-  worker, and a worker cannot ask a question or set a deadline.
+- Until later changes add them back on `hc`, a manager cannot follow up with or cancel a worker, and
+  a worker cannot report progress or set a deadline.
 - A lost note delays a report until the next session start or compaction.
 - After an unclear launch, a person must check `hc ls` by hand.
 - Tau keeps every assignment folder. No rule deletes them yet.

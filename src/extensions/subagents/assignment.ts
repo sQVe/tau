@@ -9,10 +9,16 @@ import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { readVersionedRecord, writeRecord } from '../../record.js';
-import { describeSchemaProblem } from '../../schema.js';
+import { describeSchemaProblem, isRecord } from '../../schema.js';
 import { loadoutSchema, routingSchema, savedReportSchema, text } from './types.js';
 
 export type SavedReport = Static<typeof savedReportSchema>;
+
+export interface SavedQuestion {
+  questionId: string;
+  text: string;
+  askedAt: number;
+}
 
 export interface PiSessionSeed {
   file: string;
@@ -28,38 +34,67 @@ const checkoutRoot = realpathSync(fileURLToPath(new URL('../../../', import.meta
 
 export const checkoutFolder = `${basename(checkoutRoot)}-${createHash('sha256').update(checkoutRoot).digest('hex').slice(0, checkoutHashLength)}`;
 
-const assignmentVersion = 1;
+const assignmentVersion = 2;
 
 const assignmentFileName = 'assignment.json';
 
 const uuidPattern = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 
+const savedQuestionSchema = Type.Object(
+  {
+    questionId: Type.String({ pattern: uuidPattern }),
+    text,
+    askedAt: Type.Integer({ minimum: 1 }),
+  },
+  { additionalProperties: false },
+);
+
+const assignmentFields = {
+  assignmentId: Type.String({ pattern: uuidPattern }),
+  task: text,
+  acceptance: Type.Array(text, { maxItems: 50 }),
+  label: Type.Union([Type.String({ minLength: 1, maxLength: 120 }), Type.Null()]),
+  profile: text,
+  loadout: loadoutSchema,
+  routing: Type.Union([routingSchema, Type.Null()]),
+  packageSnapshot: Type.Union([text, Type.Null()]),
+  session: Type.Object(
+    { file: text, id: Type.String({ pattern: uuidPattern }) },
+    { additionalProperties: false },
+  ),
+  parentSession: text,
+  cwd: text,
+  parentTerminal: text,
+  deadline: Type.Integer({ minimum: 1 }),
+  createdAt: Type.Integer({ minimum: 1 }),
+  report: Type.Union([savedReportSchema, Type.Null()]),
+};
+
+const assignmentVersion1Schema = Type.Object(
+  { version: Type.Literal(1), ...assignmentFields },
+  { additionalProperties: false },
+);
+
 const assignmentSchema = Type.Object(
   {
     version: Type.Literal(assignmentVersion),
-    assignmentId: Type.String({ pattern: uuidPattern }),
-    task: text,
-    acceptance: Type.Array(text, { maxItems: 50 }),
-    label: Type.Union([Type.String({ minLength: 1, maxLength: 120 }), Type.Null()]),
-    profile: text,
-    loadout: loadoutSchema,
-    routing: Type.Union([routingSchema, Type.Null()]),
-    packageSnapshot: Type.Union([text, Type.Null()]),
-    session: Type.Object(
-      { file: text, id: Type.String({ pattern: uuidPattern }) },
-      { additionalProperties: false },
-    ),
-    parentSession: text,
-    cwd: text,
-    parentTerminal: text,
-    deadline: Type.Integer({ minimum: 1 }),
-    createdAt: Type.Integer({ minimum: 1 }),
-    report: Type.Union([savedReportSchema, Type.Null()]),
+    ...assignmentFields,
+    questions: Type.Array(savedQuestionSchema),
   },
   { additionalProperties: false },
 );
 
 export type Assignment = Static<typeof assignmentSchema>;
+
+type AssignmentVersion1 = Static<typeof assignmentVersion1Schema>;
+
+const isAssignmentVersion1 = (value: unknown): boolean => isRecord(value) && value['version'] === 1;
+
+const fromVersion1 = (assignment: AssignmentVersion1): Assignment => ({
+  ...assignment,
+  version: assignmentVersion,
+  questions: [],
+});
 
 export const seedSession = (seed: PiSessionSeed): void => {
   const header = {
@@ -83,12 +118,19 @@ export const assignmentDirectory = (assignmentId: string): string =>
 export const assignmentPath = (assignmentId: string): string =>
   join(assignmentDirectory(assignmentId), assignmentFileName);
 
-export const readAssignment = (path: string): Promise<Assignment | undefined> =>
-  readVersionedRecord(path, {
+export const readAssignment = async (path: string): Promise<Assignment | undefined> => {
+  const record = await readVersionedRecord(path, {
     label: 'assignment',
     version: assignmentVersion,
-    schema: assignmentSchema,
+    schema: (value) => (isAssignmentVersion1(value) ? assignmentVersion1Schema : assignmentSchema),
   });
+
+  if (record === undefined) {
+    return undefined;
+  }
+
+  return record.version === 1 ? fromVersion1(record) : record;
+};
 
 // Creates the folder and the session file before the assignment file, so a saved assignment always
 // has its session.
@@ -121,6 +163,22 @@ export const writeAssignment = async (assignment: Assignment): Promise<void> => 
   });
 
   await writeRecord(path, assignment);
+};
+
+export const saveQuestion = async (path: string, question: SavedQuestion): Promise<void> => {
+  if (!Value.Check(savedQuestionSchema, question)) {
+    throw new Error(
+      `Malformed question for ${path}: ${describeSchemaProblem(savedQuestionSchema, question)}.`,
+    );
+  }
+
+  const assignment = await readAssignment(path);
+
+  if (assignment === undefined) {
+    throw new Error(`Missing assignment ${path}; no question can be saved.`);
+  }
+
+  await writeRecord(path, { ...assignment, questions: [...assignment.questions, question] });
 };
 
 export const saveReport = async (path: string, report: SavedReport): Promise<void> => {
