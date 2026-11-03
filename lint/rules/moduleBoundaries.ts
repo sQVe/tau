@@ -76,7 +76,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
     entry: 'github/github',
     publicFiles: ['github/repositoryTarget', 'github/repositoryTargetDecisions'],
   },
-  { name: 'hc', entry: 'hc/hc', publicFiles: ['hc/connect'] },
+  { name: 'hc', entry: 'hc/hc', publicFiles: ['hc/connect', 'hc/events'] },
   {
     name: 'instructions',
     entry: 'instructions/instructions',
@@ -95,6 +95,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
   { name: 'skillTools', entry: 'skillTools', publicFiles: [] },
   { name: 'tau', entry: 'tau', publicFiles: [] },
   { name: 'tauDirectory', entry: 'tauDirectory', publicFiles: [] },
+  { name: 'wake', entry: 'wake/wake', publicFiles: [] },
   { name: 'worker', entry: 'worker', publicFiles: [] },
 ];
 
@@ -120,6 +121,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   shell: [],
   skillTools: [],
   tauDirectory: ['errors', 'git'],
+  wake: [],
   worker: ['schema'],
 };
 

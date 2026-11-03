@@ -82,7 +82,6 @@ const pureModules = [
   'src/extensions/fullCheck/mutationVerdict.ts',
   'src/extensions/handover/sendStatus.ts',
   'src/extensions/mergeWatch/autoMergeRequest.ts',
-  'src/extensions/mergeWatch/deliveryStep.ts',
   'src/extensions/mergeWatch/watchOutcome.ts',
   'src/extensions/mergeWatch/watchStart.ts',
   'src/extensions/pr/evidenceDecisions.ts',
@@ -112,6 +111,7 @@ const pureModules = [
   'src/extensions/subagents/bashOutputCap.ts',
   'src/extensions/subagents/capacityRefusal.ts',
   'src/extensions/subagents/deadlineDecision.ts',
+  'src/extensions/subagents/eventDecision.ts',
   'src/extensions/subagents/incompleteReport.ts',
   'src/extensions/subagents/launchEnvironment.ts',
   'src/extensions/subagents/modelRoutes.ts',
@@ -150,6 +150,7 @@ const pureModules = [
   'src/reviewCapture/predecessorDecision.ts',
   'src/schema.ts',
   'src/shell.ts',
+  'src/wake/deliveryStep.ts',
   'tests/adrIndexMark.ts',
   'tests/hcIsolationHarness.ts',
 ];
