@@ -14,7 +14,6 @@ const skillsDirectory = join(import.meta.dirname, '..', 'src', 'skills');
 const tauAllowlists: SkillAllowlists = {
   extraHeadings: {
     'pr-feedback': ['Replies'],
-    'start-slice': ['Changes after the start'],
   },
   multiCommandShellBlocks: {},
 };
