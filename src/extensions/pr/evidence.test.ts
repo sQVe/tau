@@ -1,137 +1,17 @@
-import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises';
-import { join, relative } from 'node:path';
-import { promisify } from 'node:util';
+import { readFile, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { githubOrigin, serveGithubOriginFrom } from '../../../tests/githubOriginFake.js';
-import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
-import { createSavedReview } from '../../../tests/savedReview.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { saveCheckRecord } from '../../checkRecord/checkRecord.js';
-import { readCheckState } from '../../checkRecord/identity.js';
-import { readPublicationEvidence } from './evidence.js';
-import type { PublicationEvidence, PublicationRequest } from './evidence.js';
-import { createGhFake } from './fixtures/ghFake.js';
+import { git } from '../../../tests/gitRepository.js';
+import {
+  commitFile,
+  createEvidenceRepository,
+  readSavedFiles,
+  saveCheck,
+} from './fixtures/evidenceRepository.js';
 
-const commitFile = async (root: string, text: string) => {
-  await writeFile(join(root, 'feature.txt'), text);
-  await git(root, 'add', 'feature.txt');
-  await git(root, 'commit', '--quiet', '-m', 'change feature');
-
-  return git(root, 'rev-parse', 'HEAD');
-};
-
-const setUp = async (kind: 'range' | 'workingTree' = 'range') => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const remote = temporaryDirectory(onTestFinished, 'tau-pr-evidence-');
-
-  await git(remote, 'init', '--quiet', '--bare', '--initial-branch=main');
-  await serveGithubOriginFrom(remote, onTestFinished);
-  await git(root, 'remote', 'add', 'origin', githubOrigin);
-
-  const mergeBase = await commitFile(root, 'one\n');
-
-  await git(root, 'push', '--quiet', 'origin', 'main');
-  await git(root, 'checkout', '--quiet', '-b', 'feature');
-  await commitFile(root, 'two\n');
-
-  const head = await git(root, 'rev-parse', 'HEAD');
-  const target = kind === 'range' ? { kind, from: mergeBase, to: head } : { kind, base: mergeBase };
-  const directory = await createSavedReview(root, target);
-
-  const fake = createGhFake();
-
-  fake.repositories['github.com/sQVe/tau'] = { defaultBranch: 'main' };
-
-  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-pr-evidence-agent-');
-
-  await mkdir(join(root, '.pi'));
-
-  await writeFile(
-    join(root, '.pi', 'tau.json'),
-    JSON.stringify({ fullCheck: { argv: ['pnpm', 'check'] } }),
-  );
-
-  const config = {
-    location: { cwd: root, agentDirectory, projectTrusted: true },
-    ui: { notify: () => undefined },
-  };
-
-  const defaultRequest = { remote: 'origin', review: directory };
-
-  const run = (request: PublicationRequest = defaultRequest, projectTrusted = true) =>
-    readPublicationEvidence({ exec: fake.exec, cwd: root, signal: undefined }, root, request, {
-      ...config,
-      location: { ...config.location, projectTrusted },
-    });
-
-  return { root, directory, mergeBase, fake, run };
-};
-
-const readSavedFiles = async (root: string) => {
-  const entries = await readdir(root, { recursive: true, withFileTypes: true });
-
-  const paths = entries
-    .filter((entry) => entry.isFile())
-    .map((entry) => relative(root, join(entry.parentPath, entry.name)))
-    .filter((path) => !path.startsWith('.git/'))
-    .toSorted();
-
-  return Promise.all(paths.map(async (path) => [path, await readFile(join(root, path))]));
-};
-
-const outputHash = async (root: string, commandArguments: string[]) => {
-  const { stdout } = await promisify(execFile)('git', commandArguments, {
-    cwd: root,
-    encoding: 'buffer',
-  });
-
-  return createHash('sha256').update(stdout).digest('hex');
-};
-
-const saveFullCheck = async (root: string, passed: boolean, argv = ['pnpm', 'check']) => {
-  const directory = join(root, '.tau', 'checks');
-  const logPath = join(directory, '2026-01-01T00-00-00.log');
-
-  await mkdir(directory, { recursive: true });
-  await writeFile(join(root, '.git', 'info', 'exclude'), '.tau/\n', { flag: 'a' });
-  await writeFile(logPath, 'compiling\nall done\n');
-
-  const state = await readCheckState(root);
-
-  await saveCheckRecord(logPath, { ...state, argv }, passed);
-
-  return logPath;
-};
-
-const gapsWithoutFullCheck = (evidence: PublicationEvidence) =>
-  evidence.gaps.filter((gap) => gap.kind !== 'fullCheck');
-
-const saveCheck = async (root: string, mergeBase: string, body = 'tests passed\n') => {
-  const directory = join(root, '.tau', 'pr', 'run-check', 'checks');
-
-  await mkdir(directory, { recursive: true });
-
-  const path = join(directory, 'test.log');
-  const head = await git(root, 'rev-parse', 'HEAD');
-  const status = await outputHash(root, ['--no-optional-locks', 'status', '--porcelain']);
-
-  const diff = await outputHash(root, [
-    'diff',
-    '--no-ext-diff',
-    '--no-textconv',
-    '--no-color',
-    mergeBase,
-    'HEAD',
-  ]);
-
-  await writeFile(path, `HEAD: ${head}\nStatus: ${status}\nDiff: ${diff}\n${body}`);
-
-  return path;
-};
+const setUp = (kind?: 'range' | 'workingTree') => createEvidenceRepository(onTestFinished, kind);
 
 it('returns differing paths and stale freshness when the reviewed head moved', async () => {
   const { root, run } = await setUp();
@@ -299,127 +179,6 @@ it.each([
   expect(await readSavedFiles(root)).toEqual(before);
 });
 
-it.each([
-  { header: 'HEAD', field: 'head', length: 40 },
-  { header: 'Status', field: 'status', length: 64 },
-  { header: 'Diff', field: 'diff', length: 64 },
-])('rejects a check log with a changed $header hash', async ({ header, field, length }) => {
-  const { root, mergeBase, run } = await setUp();
-  const path = await saveCheck(root, mergeBase);
-  const text = await readFile(path, 'utf8');
-  const pattern = new RegExp(`^${header}: .*`, 'mu');
-
-  await writeFile(path, text.replace(pattern, `${header}: ${'0'.repeat(length)}`));
-
-  const before = await readSavedFiles(root);
-  const evidence = await run();
-
-  expect(evidence.checks).toEqual([
-    {
-      path,
-      matches: false,
-      reasons: [{ field, reason: expect.any(String) as unknown }],
-      excerpt: null,
-      truncated: false,
-    },
-  ]);
-
-  expect(gapsWithoutFullCheck(evidence)).toEqual([]);
-
-  expect(await readSavedFiles(root)).toEqual(before);
-});
-
-it('returns only the newest log for a check without gaps from superseded runs', async () => {
-  const { root, mergeBase, run } = await setUp();
-  const older = await saveCheck(root, mergeBase);
-  const currentLog = await readFile(older, 'utf8');
-  const newerDirectory = join(root, '.tau', 'pr', 'run-another', 'checks');
-  const newer = join(newerDirectory, 'test.log');
-
-  await writeFile(older, currentLog.replace(/^HEAD: .*$/mu, `HEAD: ${'0'.repeat(40)}`));
-  await mkdir(newerDirectory, { recursive: true });
-  await writeFile(newer, currentLog);
-  await utimes(older, 100, 100);
-  await utimes(newer, 200, 200);
-
-  const before = await readSavedFiles(root);
-  const evidence = await run();
-
-  expect(evidence.checks).toEqual([
-    { path: newer, matches: true, reasons: [], excerpt: 'tests passed', truncated: false },
-  ]);
-
-  expect(gapsWithoutFullCheck(evidence)).toEqual([]);
-  expect(await readSavedFiles(root)).toEqual(before);
-});
-
-it('matches the exact status bytes of a dirty worktree', async () => {
-  const { root, mergeBase, run } = await setUp();
-
-  await writeFile(join(root, 'feature.txt'), 'dirty\n');
-
-  const path = await saveCheck(root, mergeBase);
-  const evidence = await run();
-
-  expect(evidence.checks).toMatchObject([{ path, matches: true, reasons: [] }]);
-});
-
-it('rejects a saved check when the worktree status changes', async () => {
-  const { root, mergeBase, run } = await setUp();
-  const path = await saveCheck(root, mergeBase);
-
-  await writeFile(join(root, 'feature.txt'), 'dirty\n');
-
-  const evidence = await run();
-
-  expect(evidence.checks).toMatchObject([
-    { path, matches: false, reasons: [{ field: 'status' }], excerpt: null },
-  ]);
-});
-
-it('rejects a saved check when the committed head and diff change', async () => {
-  const { root, mergeBase, run } = await setUp();
-  const path = await saveCheck(root, mergeBase);
-
-  await commitFile(root, 'three\n');
-
-  const evidence = await run();
-
-  expect(evidence.checks).toMatchObject([
-    { path, matches: false, reasons: [{ field: 'head' }, { field: 'diff' }], excerpt: null },
-  ]);
-});
-
-it('rejects a check log without a header', async () => {
-  const { root, mergeBase, run } = await setUp();
-  const path = await saveCheck(root, mergeBase);
-
-  await writeFile(path, 'passed without a header\n');
-
-  const evidence = await run();
-
-  expect(evidence.checks).toMatchObject([
-    { path, matches: false, reasons: [{ field: 'header' }], excerpt: null },
-  ]);
-
-  expect(evidence.gaps).toContainEqual({
-    kind: 'check',
-    path,
-    reasons: evidence.checks[0]?.reasons,
-  });
-});
-
-it('reports noChecks without creating a checks directory', async () => {
-  const { root, run } = await setUp();
-  const before = await readSavedFiles(root);
-  const evidence = await run();
-
-  expect(evidence.checks).toEqual([]);
-  expect(evidence.gaps).toContainEqual({ kind: 'noChecks' });
-  await expect(readdir(join(root, '.tau', 'pr'))).rejects.toMatchObject({ code: 'ENOENT' });
-  expect(await readSavedFiles(root)).toEqual(before);
-});
-
 it('reports a failed target read and skips comparisons that need the merge base', async () => {
   const { root, mergeBase, fake, run } = await setUp();
   const path = await saveCheck(root, mergeBase);
@@ -450,19 +209,6 @@ it('reports a failed target read and skips comparisons that need the merge base'
   expect(await readSavedFiles(root)).toEqual(before);
 });
 
-it('keeps a bounded tail of a matching log and reports its cut', async () => {
-  const { root, mergeBase, run } = await setUp();
-  const body = `${'first\n'.repeat(30)}last\n`;
-  const path = await saveCheck(root, mergeBase, body);
-  const evidence = await run();
-
-  expect(evidence.checks).toMatchObject([
-    { matches: true, excerpt: `${'first\n'.repeat(19)}last`, truncated: true },
-  ]);
-
-  expect(evidence.gaps).toContainEqual({ kind: 'checkExcerpt', path });
-});
-
 it('reports a missing recheck and leaves it missing', async () => {
   const { directory, run } = await setUp();
 
@@ -485,27 +231,6 @@ it('refuses an invalid review directory without creating any file', async () => 
   expect(evidence.reuse).toBeNull();
   expect(evidence.gaps).toContainEqual({ kind: 'review', reason: expect.any(String) as unknown });
   expect(await readSavedFiles(root)).toEqual(before);
-});
-
-it('does not follow linked check logs', async () => {
-  const { root, mergeBase, run } = await setUp();
-  const path = await saveCheck(root, mergeBase);
-  const linked = join(root, '.tau', 'pr', 'run-check', 'checks', 'linked.log');
-
-  await symlink(path, linked);
-
-  const evidence = await run();
-
-  expect(evidence.checks).toMatchObject([
-    { path: linked, matches: false, reasons: [{ field: 'read' }], excerpt: null },
-    { path, matches: true },
-  ]);
-
-  expect(evidence.gaps).toContainEqual({
-    kind: 'check',
-    path: linked,
-    reasons: evidence.checks[0]?.reasons,
-  });
 });
 
 it('lists added markers from the branch diff since the merge base', async () => {
@@ -560,78 +285,4 @@ it('adds a markers read failure and keeps the rest of the evidence when the diff
   expect(evidence.gaps.filter((gap) => gap.kind === 'markers')).toHaveLength(1);
   expect(evidence.branch).toBe('feature');
   expect(evidence.target).not.toBeNull();
-});
-
-it.each([
-  {
-    name: 'passed',
-    passed: true,
-    gaps: [],
-  },
-  {
-    name: 'failed',
-    passed: false,
-    gaps: [{ kind: 'fullCheck', status: 'failed' }],
-  },
-])('reads a $name full check record with its log excerpt', async ({ name, passed, gaps }) => {
-  const { root, run } = await setUp();
-  const logPath = await saveFullCheck(root, passed);
-  const evidence = await run();
-
-  expect(evidence.fullCheck).toEqual({
-    status: name,
-    logPath,
-    argv: ['pnpm', 'check'],
-    excerpt: 'compiling\nall done',
-    truncated: false,
-  });
-
-  expect(evidence.checks).toEqual([]);
-  expect(evidence.gaps).toEqual(gaps);
-});
-
-it('reports a missing full check record when the tree changed after the run', async () => {
-  const { root, run } = await setUp();
-
-  await saveFullCheck(root, true);
-  await writeFile(join(root, 'feature.txt'), 'edited\n');
-
-  const evidence = await run();
-
-  expect(evidence.fullCheck).toEqual({ status: 'missing' });
-  expect(evidence.gaps).toContainEqual({ kind: 'fullCheck', status: 'missing' });
-});
-
-it('reports a missing full check record for a passing record of another command', async () => {
-  const { root, run } = await setUp();
-
-  await saveFullCheck(root, true, ['pnpm', 'other']);
-
-  const evidence = await run();
-
-  expect(evidence.fullCheck).toEqual({ status: 'missing' });
-  expect(evidence.gaps).toContainEqual({ kind: 'fullCheck', status: 'missing' });
-});
-
-it('reports a missing full check when the project is not trusted', async () => {
-  const { root, run } = await setUp();
-
-  await saveFullCheck(root, true);
-
-  const evidence = await run(undefined, false);
-
-  expect(evidence.fullCheck).toEqual({ status: 'missing' });
-  expect(evidence.gaps).toContainEqual({ kind: 'fullCheck', status: 'missing' });
-});
-
-it('reports a malformed full check record', async () => {
-  const { root, run } = await setUp();
-  const logPath = await saveFullCheck(root, true);
-
-  await writeFile(logPath.replace(/\.log$/u, '.json'), '{');
-
-  const evidence = await run();
-
-  expect(evidence.fullCheck).toEqual({ status: 'malformed' });
-  expect(evidence.gaps).toContainEqual({ kind: 'fullCheck', status: 'malformed' });
 });
