@@ -427,6 +427,22 @@ it('resets hints on session boundaries but not turns, compaction, or model chang
   }
 });
 
+it.for(['session_start', 'session_shutdown'] as const)(
+  'gives the next production edit the RED hint when %s resets while an edit lookup is pending',
+  async (reset, { onTestFinished }) => {
+    const cwd = temporaryDirectory(onTestFinished, 'tau-hint-pending-');
+    const application = setup();
+
+    const pendingEdit = application.edit(cwd);
+    await application.emit(reset, cwd, { reason: 'new' });
+    await pendingEdit;
+
+    expect(await application.edit(cwd)).toMatchObject({
+      content: [{ text: 'Original result' }, { text: redHint }],
+    });
+  },
+);
+
 it('isolates cwd and preserves arbitrary tool content, details, and errors', async ({
   onTestFinished,
 }) => {
@@ -644,6 +660,26 @@ it('reports malformed config without falling back to defaults or blocking edits'
   expect(await application.emit('tool_result', cwd, event)).toBeUndefined();
   await expect(application.run(cwd)).rejects.toThrow(path);
   expect(runTests).not.toHaveBeenCalled();
+});
+
+it('shows the malformed config warning in the new session after a stale lookup fails across session_start', async ({
+  onTestFinished,
+}) => {
+  const { cwd, writeProject } = await configFixture(onTestFinished);
+  await writeProject({ productionGlobs: 'src/**' });
+  const application = setup();
+  const event = writeEvent('src/value.ts');
+
+  const pendingEdit = application.emit('tool_result', cwd, event);
+  await application.emit('session_start', cwd, { reason: 'new' });
+  await pendingEdit;
+
+  expect(await application.emit('tool_result', cwd, event)).toEqual({
+    content: [
+      ...event.content,
+      { type: 'text', text: expect.stringContaining('TDD hints are paused') as string },
+    ],
+  });
 });
 
 it('reports an unknown config key again for the same ui after session_start', async ({
