@@ -63,7 +63,6 @@ beforeAll(async () => {
   await cp(builtChain.root, snapshotDirectory, { recursive: true });
 });
 
-// Saved records store absolute paths, so the snapshot returns to the same root path.
 beforeEach(async () => {
   await rm(builtChain.root, { recursive: true, force: true });
   await cp(snapshotDirectory, builtChain.root, { recursive: true });
