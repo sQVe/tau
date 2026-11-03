@@ -183,6 +183,7 @@ const registerLaunchTool = (
         piExec(runtime.pi),
       );
 
+      // An unclear launch can leave a live child even when it returns an error, so every attempt scans.
       const result = await executeLaunch(
         runtime,
         { parameters: resolved, startedAt, parentSession },
@@ -190,9 +191,7 @@ const registerLaunchTool = (
         context,
       );
 
-      if (result.isError !== true) {
-        startScan(scan, context);
-      }
+      startScan(scan, context);
 
       return result;
     },

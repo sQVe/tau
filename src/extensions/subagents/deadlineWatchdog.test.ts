@@ -254,7 +254,7 @@ it('clears every timer at session shutdown', async () => {
   expect(commands('kill')).toHaveLength(0);
 });
 
-it('keeps a newer deadline when an older scan finishes first', async () => {
+it('starts the newer scan read only after the older scan finishes', async () => {
   const { context, scanner, hcFake, hc } = await setup();
   const entered = deferred();
   const release = deferred();
@@ -262,14 +262,21 @@ it('keeps a newer deadline when an older scan finishes first', async () => {
   let listCalls = 0;
 
   hc.exec = async (command, commandArguments, options) => {
+    if (commandArguments[0] !== 'ls') {
+      return realExec(command, commandArguments, options);
+    }
+
     listCalls += 1;
 
-    if (listCalls === 1 && commandArguments[0] === 'ls') {
+    // The first read takes the empty list, then blocks before its scan applies it.
+    const result = await realExec(command, commandArguments, options);
+
+    if (listCalls === 1) {
       entered.resolve();
       await release.promise;
     }
 
-    return realExec(command, commandArguments, options);
+    return result;
   };
 
   hcFake.reply('ls', JSON.stringify({ terminals: [] }));
@@ -282,10 +289,17 @@ it('keeps a newer deadline when an older scan finishes first', async () => {
 
   const newScan = scanner.scan(context);
 
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+
+  expect(listCalls).toBe(1);
+
   release.resolve();
 
   await Promise.all([oldScan, newScan]);
 
+  expect(listCalls).toBe(2);
   expect(vi.getTimerCount()).toBe(2);
 });
 

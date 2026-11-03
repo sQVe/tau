@@ -9,11 +9,14 @@ import type {
 } from '@earendil-works/pi-coding-agent';
 import { afterEach, expect, it, vi } from 'vitest';
 
+import { failedResult } from '../../../tests/execFake.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { initializeRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
+import type { Exec } from '../../command.js';
 import { connect } from '../../hc/connect.js';
+import { HcError } from '../../hc/hc.js';
 import { skillTools } from '../../skillTools.js';
 import { writeFakePackage } from './fixtures/packageCache.js';
 import { answered, haiku, routedFixture, workerFixture } from './fixtures/routedLoadout.js';
@@ -94,11 +97,15 @@ const terminalRun = (fake: HcFake) => {
 
 const allSkillToolNames = [...new Set(Object.values(skillTools).flat())];
 
-const registerTool = (fake: HcFake, registeredToolNames: string[] = allSkillToolNames) => {
+const registerTool = (
+  fake: HcFake,
+  registeredToolNames: string[] = allSkillToolNames,
+  exec: Exec = fake.exec,
+) => {
   vi.mocked(connect).mockImplementation(fake.connect);
 
   const pi = fakeExtensionApi({
-    exec: fake.exec,
+    exec,
     getAllTools: () => registeredToolNames.map((name) => ({ name })) as never,
   });
 
@@ -327,6 +334,67 @@ it('starts the deadline before the pre-launch environment checks', async ({ onTe
   const assignment = JSON.parse(readFileSync(assignmentPath, 'utf8')) as { deadline: number };
 
   expect(assignment.deadline).toBe(start + 1800 * 1000);
+});
+
+it('scans the children after a launch whose reconciliation failed', async ({ onTestFinished }) => {
+  vi.useFakeTimers();
+
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+
+  vi.stubEnv('HC_TERMINAL_ID', manager);
+
+  const fixture = await workerFixture(onTestFinished);
+  const fake = hcSetup();
+  // The admission count is the first ls and the reconciliation is the second. Only that one fails,
+  // so the scan that follows reads the worker the launch started.
+  let listCalls = 0;
+
+  const exec: Exec = (command, commandArguments, options) => {
+    if (commandArguments[0] === 'ls') {
+      listCalls += 1;
+
+      if (listCalls === 2) {
+        return Promise.resolve(failedResult('temporary lookup failure'));
+      }
+    }
+
+    return fake.exec(command, commandArguments, options);
+  };
+
+  const { tool } = registerTool(fake, allSkillToolNames, exec);
+
+  vi.mocked(connect).mockImplementation((lines) => {
+    const request = JSON.parse(lines[1] ?? '') as { params: { labels: Record<string, string> } };
+
+    const worker = {
+      address: 't-worker',
+      name: 'worker',
+      state: 'live',
+      parent: manager,
+      labels: request.params.labels,
+    };
+
+    fake.reply('ls', JSON.stringify({ terminals: [worker] }));
+    fake.reply('get', JSON.stringify(worker));
+
+    return Promise.reject(new HcError('read_failed', 'lost launch reply'));
+  });
+
+  const result = await execute(
+    tool,
+    { profile: 'scout', model: fixture.request.model, task: 'Look.' },
+    toolContext(fixture),
+  );
+
+  expect(result.isError).toBe(true);
+  expect(resultText(result)).toContain('unclear');
+
+  // The worker's warning and kill timers are armed only by the scan.
+  await vi.waitFor(() => {
+    expect(vi.getTimerCount()).toBe(2);
+  });
 });
 
 it('fails closed and reports an invalid worker capacity', async ({ onTestFinished }) => {
