@@ -78,7 +78,6 @@ const readSavedFiles = async (root: string) => {
     .filter((entry) => entry.isFile())
     .map((entry) => relative(root, join(entry.parentPath, entry.name)))
     .filter((path) => !path.startsWith('.git/'))
-    .filter((path) => !path.endsWith('/recheck.diff'))
     .toSorted();
 
   return Promise.all(paths.map(async (path) => [path, await readFile(join(root, path))]));
@@ -275,6 +274,32 @@ it.each([
 });
 
 it.each([
+  { name: 'a normal review', prepare: undefined },
+  {
+    name: 'a missing capture.json',
+    prepare: (directory: string) => rm(join(directory, 'capture.json')),
+  },
+  {
+    name: 'a malformed capture.json',
+    prepare: (directory: string) => writeFile(join(directory, 'capture.json'), '{'),
+  },
+])('runs evidence twice on $name without changing any saved file', async ({ prepare }) => {
+  const { root, directory, run } = await setUp();
+
+  await prepare?.(directory);
+
+  const before = await readSavedFiles(root);
+
+  await run();
+
+  expect(await readSavedFiles(root)).toEqual(before);
+
+  await run();
+
+  expect(await readSavedFiles(root)).toEqual(before);
+});
+
+it.each([
   { header: 'HEAD', field: 'head', length: 40 },
   { header: 'Status', field: 'status', length: 64 },
   { header: 'Diff', field: 'diff', length: 64 },
@@ -438,7 +463,7 @@ it('keeps a bounded tail of a matching log and reports its cut', async () => {
   expect(evidence.gaps).toContainEqual({ kind: 'checkExcerpt', path });
 });
 
-it('reports a missing recheck before the review reader recaptures it', async () => {
+it('reports a missing recheck and leaves it missing', async () => {
   const { directory, run } = await setUp();
 
   await rm(join(directory, 'recheck.diff'));
@@ -448,6 +473,7 @@ it('reports a missing recheck before the review reader recaptures it', async () 
   expect(evidence.reuse).toBeNull();
   expect(evidence.gaps).toContainEqual({ kind: 'reuse', reason: expect.any(String) as unknown });
   expect(evidence.review?.freshness.status).toBe('fresh');
+  await expect(readFile(join(directory, 'recheck.diff'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
 it('refuses an invalid review directory without creating any file', async () => {

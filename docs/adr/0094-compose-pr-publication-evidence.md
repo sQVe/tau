@@ -18,9 +18,9 @@ implementation would let publication interpret the same saved review differently
 Compose publication evidence in one `pr` action, and bind saved check logs to explicit content
 identities rather than their timestamps.
 
-The action calls the existing readers without replacing their results or rules. It reads reuse
-before review evidence because freshness recapture replaces `recheck.diff`, the copy of the current
-target that reuse compares. The saved capture files never change; see
+The action calls the existing readers without replacing their results or rules. The action inspects
+the review once, writes no review file, and only `code_review freshness` writes or removes
+`recheck.diff`. The saved capture files never change; see
 [ADR 0124](./0124-publish-review-captures-as-immutable-generations.md). Failures and missing
 evidence remain gaps; they do not hide independent evidence or become a publication verdict. The
 action inherits the target reader's base fetch and the review reader's freshness recapture. It

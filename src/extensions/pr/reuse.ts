@@ -2,6 +2,7 @@ import { join } from 'node:path';
 
 import { readGit, runGit } from '../../git.js';
 import { fixedPrefixes, readSavedRecapture } from '../../reviewCapture/reviewCapture.js';
+import type { SavedRecapture } from '../../reviewCapture/reviewCapture.js';
 import { existingEntry } from '../../tauDirectory.js';
 import { compareDiffs, decideReuse } from './reuseDecisions.js';
 import type { DiffComparison, Reuse } from './reuseDecisions.js';
@@ -71,18 +72,12 @@ const listReports = async (directory: string) => {
   return reportFileNames.filter((_, index) => exists[index] === true);
 };
 
-export const readReuse = async (root: string, request: ReuseRequest): Promise<ReuseResult> => {
-  if (request.directory === undefined) {
-    throw new Error('reuse needs directory, a .tau/workers/review-* directory.');
-  }
-
-  if (request.mergeBase === undefined) {
-    throw new Error('reuse needs mergeBase.');
-  }
-
-  const saved = await readSavedRecapture(root, request.directory);
-
-  const mergeBase = await resolveCommit(root, request.mergeBase);
+export const decideSavedReuse = async (
+  root: string,
+  saved: SavedRecapture,
+  revision: string,
+): Promise<ReuseResult> => {
+  const mergeBase = await resolveCommit(root, revision);
   const recordedBase = saved.recordedBase;
   const baseIsAncestor = recordedBase !== null && (await isAncestor(root, recordedBase, mergeBase));
   const comparison = compareDiffs(saved.recheck, await readBranchDiff(root, mergeBase));
@@ -102,4 +97,18 @@ export const readReuse = async (root: string, request: ReuseRequest): Promise<Re
     paths: comparison,
     reports: await listReports(saved.directory),
   };
+};
+
+export const readReuse = async (root: string, request: ReuseRequest): Promise<ReuseResult> => {
+  if (request.directory === undefined) {
+    throw new Error('reuse needs directory, a .tau/workers/review-* directory.');
+  }
+
+  if (request.mergeBase === undefined) {
+    throw new Error('reuse needs mergeBase.');
+  }
+
+  const saved = await readSavedRecapture(root, request.directory);
+
+  return decideSavedReuse(root, saved, request.mergeBase);
 };
