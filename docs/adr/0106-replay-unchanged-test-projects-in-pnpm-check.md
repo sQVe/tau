@@ -41,8 +41,8 @@ workers a full run uses.
 
 Each project task lists every environment variable whose value can change a test result, such as
 `CI`, `HOME`, the temporary directory variables, and `TAU_COLLECTION_TIMEOUT_MS`. A change to one of
-them reruns the task. The list leaves out the herdr, Pi, Tau worker, and Git variables. The tests
-set those themselves, and they differ per pane or Git hook. A test fails when test code reads a
+them reruns the task. The list leaves out the hc, Pi, Tau worker, and Git variables. The tests set
+those themselves, and they differ per terminal or Git hook. A test fails when test code reads a
 variable that is neither listed nor known to be set by the tests.
 
 `PATH` works differently. Vite+ does not track files outside the workspace, so a fingerprint of the
@@ -81,8 +81,8 @@ writes no log file and keeps its sandbox in `.tau/stryker-tmp`.
 
 - A check on an unchanged tree replays every project in a few seconds.
 - A change in one extension reruns only the projects that read it.
-- The shell's herdr, Pi, and Git variables do not reach cached test runs, so a run from an agent
-  pane or a Git hook gives the same result as one from a plain shell.
+- The shell's hc, Pi, and Git variables do not reach cached test runs, so a run from an agent
+  terminal or a Git hook gives the same result as one from a plain shell.
 
 ### Negative
 
@@ -121,8 +121,8 @@ integration tests failed under that load.
 
 ### Fingerprint the whole shell environment
 
-Pass and fingerprint every variable, including herdr and Git ones. Rejected because the pane
-variables differ in every herdr pane, so the cache would miss in each one. Git hook variables would
+Pass and fingerprint every variable, including hc and Git ones. Rejected because the terminal
+variables differ in every hc terminal, so the cache would miss in each one. Git hook variables would
 also reach the tests' own Git calls.
 
 ### Fingerprint the raw `PATH` when a directory cannot be listed

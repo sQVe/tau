@@ -301,7 +301,7 @@ it('reports a failed loadout check', async () => {
   expect(result.content[0]?.text).toContain('package');
 });
 
-it('writes the tau labels and no herdr labels in background mode', async () => {
+it('writes the tau labels and no space and tab labels in background mode', async () => {
   vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
 
   const { fake, runtime } = setup({ managerLabels: { 'herdr.space': 'space-1' } });
@@ -324,7 +324,7 @@ it('writes the tau labels and no herdr labels in background mode', async () => {
   expect(request?.labels['herdr.tab']).toBeUndefined();
 });
 
-it('copies the manager herdr labels in foreground mode', async () => {
+it('copies the manager space and tab labels in foreground mode', async () => {
   vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
 
   const { fake, runtime } = setup({

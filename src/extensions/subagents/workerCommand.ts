@@ -73,8 +73,7 @@ export const workerCommand = (
 
 const isWorkingDirectoryVariable = (name: string): boolean => name === 'PWD' || name === 'OLDPWD';
 
-const isTerminalVariable = (name: string): boolean =>
-  name === 'HC_TERMINAL_ID' || name.startsWith('HERDR_');
+const isTerminalVariable = (name: string): boolean => name === 'HC_TERMINAL_ID';
 
 // hc finds its core from these two paths, and runs a terminal on top of the core's environment.
 // Forwarding the manager's own copies would let a test reach the user's core. The rest of the

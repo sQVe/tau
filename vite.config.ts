@@ -61,7 +61,7 @@ const workersPerProject = 3;
 // these misses the cache. PATH is fingerprinted as the commands it resolves to, see taskEnvironment.
 // HOME and NODE_OPTIONS are listed because file tracking cannot see a different home directory
 // that has no earlier reads.
-// Leave out herdr, Pi, Tau worker, and Git variables. Tests set those themselves, and they
+// Leave out Pi, Tau worker, and Git variables. Tests set those themselves, and they
 // differ per pane or Git hook, so passing them would leak the shell and miss the cache.
 export const testEnvironment = [
   'CI',
@@ -137,7 +137,6 @@ export default defineConfig({
       // Tests must choose the worker environment themselves.
       TAU_ROLE: '',
       TAU_WORKER_RECORD: '',
-      HERDR_PANE_ID: '',
       HC_TERMINAL_ID: '',
       HC_SESSION: '',
       GIT_CONFIG_GLOBAL: '/dev/null',

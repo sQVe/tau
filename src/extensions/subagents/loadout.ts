@@ -142,7 +142,7 @@ export const requireSessionCwd = (
 
   if (cwd !== realpathSync(context.cwd)) {
     throw new Error(
-      `Workers launch only in this session's cwd (${context.cwd}). For ${cwd}, send the task to the agent already running there (herdr agent list, herdr agent prompt) or start a session there.`,
+      `Workers launch only in this session's cwd (${context.cwd}). For ${cwd}, send the task to the agent already running there with the handover skill or start a session there.`,
     );
   }
 

@@ -45,10 +45,7 @@ const isInside = (candidate: string, real: string): boolean => {
   return normalize(candidate).startsWith(prefix);
 };
 
-const hasPrivatePrefix = (name: string): boolean =>
-  name.startsWith('HC_') || name.startsWith('HERDR_');
-
-const inheritedProblem = (name: string): boolean => name !== 'HC_SESSION' && hasPrivatePrefix(name);
+const inheritedProblem = (name: string): boolean => name !== 'HC_SESSION' && name.startsWith('HC_');
 
 // XDG_STATE_HOME defaults under the real home when the runner leaves it unset.
 const defaultRealValue = (

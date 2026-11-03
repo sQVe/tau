@@ -27,8 +27,8 @@ supply assistant messages and tool calls without a network connection.
 
 - `*.test.ts` for unit tests next to the code they test, or under `tests/` for cross-module checks.
   They may use a temporary Git repository but never a Pi session.
-- `*.integration.test.ts` for tests with a real `AgentSession` or herdr, and scripted model
-  responses. Run in CI without a network connection or API key.
+- `*.integration.test.ts` for tests with a real `AgentSession` or a real `hc` terminal, and scripted
+  model responses. Run in CI without a network connection or API key.
 - Check whether the model follows a skill through separate evaluations outside CI.
 
 ### Isolation

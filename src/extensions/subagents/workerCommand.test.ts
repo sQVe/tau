@@ -43,12 +43,6 @@ it.each([
     expected: undefined,
   },
   {
-    name: 'drops HERDR_* pane identity',
-    input: { HERDR_PANE_ID: 'p1' },
-    variable: 'HERDR_PANE_ID',
-    expected: undefined,
-  },
-  {
     name: 'drops the manager XDG runtime dir',
     input: { XDG_RUNTIME_DIR: '/run/user/1000' },
     variable: 'XDG_RUNTIME_DIR',

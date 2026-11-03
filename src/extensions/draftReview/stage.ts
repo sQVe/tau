@@ -62,16 +62,16 @@ const manifestSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const firstHerdrRecordVersion = 1;
-const lastHerdrRecordVersion = 3;
+const firstOlderRecordVersion = 1;
+const lastOlderRecordVersion = 3;
 
-const isHerdrRecordVersion = (version: unknown): boolean =>
+const isOlderRecordVersion = (version: unknown): boolean =>
   typeof version === 'number' &&
-  version >= firstHerdrRecordVersion &&
-  version <= lastHerdrRecordVersion;
+  version >= firstOlderRecordVersion &&
+  version <= lastOlderRecordVersion;
 
-const refuseHerdrRecord = (value: unknown): string | undefined => {
-  if (!isHerdrRecordVersion(savedVersion(value))) {
+const refuseOlderRecord = (value: unknown): string | undefined => {
+  if (!isOlderRecordVersion(savedVersion(value))) {
     return undefined;
   }
 
@@ -81,7 +81,7 @@ const refuseHerdrRecord = (value: unknown): string | undefined => {
       : 'an unknown staging directory';
 
   throw new Error(
-    `This review was saved by a Tau that ran on herdr, so this Tau cannot collect it. Its tuicr comments stay in ${stagingDirectory}. Open a new review from the current files.`,
+    `This review was saved by an older Tau, so this Tau cannot collect it. Its tuicr comments stay in ${stagingDirectory}. Open a new review from the current files.`,
   );
 };
 
@@ -90,7 +90,7 @@ export const parseReviewManifest = (path: string, content: string): ReviewManife
     label: 'review record',
     version: manifestVersion,
     schema: manifestSchema,
-    check: refuseHerdrRecord,
+    check: refuseOlderRecord,
   });
 
   // A staged path paired with the wrong file would write one draft's text over another.
