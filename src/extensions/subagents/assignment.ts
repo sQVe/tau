@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  mkdirSync,
+  openSync,
+  readSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,6 +16,7 @@ import type { Static } from 'typebox';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
+import { isMissingFile } from '../../errors.js';
 import { readVersionedRecord, writeRecord } from '../../record.js';
 import { describeSchemaProblem, isRecord } from '../../schema.js';
 import { loadoutSchema, routingSchema, savedReportSchema, text } from './types.js';
@@ -208,6 +217,57 @@ export const writeAssignment = async (assignment: Assignment): Promise<void> => 
   await writeRecord(path, assignment);
 };
 
+const headerReadLimit = 65_536;
+
+const readFirstLine = (file: string): string => {
+  const buffer = Buffer.alloc(headerReadLimit);
+  const descriptor = openSync(file, 'r');
+
+  try {
+    const length = readSync(descriptor, buffer, 0, headerReadLimit, 0);
+
+    return buffer.subarray(0, length).toString('utf8').split('\n')[0] ?? '';
+  } finally {
+    closeSync(descriptor);
+  }
+};
+
+const isSessionHeader = (line: string): boolean => {
+  try {
+    const header: unknown = JSON.parse(line);
+
+    return isRecord(header) && header['type'] === 'session';
+  } catch {
+    return false;
+  }
+};
+
+// Pi starts a new, empty conversation from a file without a session header, so the follow-up
+// would lose the worker's context without an error.
+const sessionFileProblem = (file: string): string | undefined => {
+  let isFile: boolean;
+
+  try {
+    isFile = statSync(file).isFile();
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return 'is missing';
+    }
+
+    throw error;
+  }
+
+  if (!isFile) {
+    return 'is not a regular file';
+  }
+
+  if (!isSessionHeader(readFirstLine(file))) {
+    return 'has no Pi session header';
+  }
+
+  return undefined;
+};
+
 export const writeFollowUpAssignment = async (assignment: Assignment): Promise<void> => {
   const path = assignmentPath(assignment.assignmentId);
 
@@ -219,9 +279,11 @@ export const writeFollowUpAssignment = async (assignment: Assignment): Promise<v
     );
   }
 
-  if (!existsSync(assignment.session.file)) {
+  const problem = sessionFileProblem(assignment.session.file);
+
+  if (problem !== undefined) {
     throw new Error(
-      `Follow-up assignment ${assignment.assignmentId} session file is missing: ${assignment.session.file}.`,
+      `Follow-up assignment ${assignment.assignmentId} session file ${problem}: ${assignment.session.file}.`,
     );
   }
 
