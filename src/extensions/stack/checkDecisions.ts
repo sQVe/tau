@@ -2,7 +2,7 @@ import type { Repository } from '../../github/github.js';
 import { fromHeadRepository } from '../../github/repositoryTargetDecisions.js';
 import type { ListedHead } from '../../github/repositoryTargetDecisions.js';
 import { isRecord } from '../../schema.js';
-import { describeFailures, failedExit, failures, malformedOutput, readOk } from './readResult.js';
+import { describeFailures, failedExit, malformedOutput, readOk } from './readResult.js';
 import type { CommandOutput, Read } from './readResult.js';
 
 export interface StackLayer {
@@ -79,6 +79,17 @@ export interface GithubFacts {
   // null when the base is the default branch or no pull request holds the branch.
   basePulls: Read<HeadPull[]> | null;
 }
+
+export interface DecisionFacts {
+  headPull: HeadPullChoice;
+  basedOn: BasedPull[];
+  stacks: StackedPullRequests | null;
+  basePulls: HeadPull[];
+}
+
+export type GithubFactsOutcome =
+  | { result: 'facts'; facts: DecisionFacts }
+  | { result: 'unknown'; reason: string };
 
 type HeldReason = 'githubStack' | 'baseHasOpenPull' | 'openPullBasedOnBranch';
 
@@ -262,11 +273,63 @@ export const selectHeadPull = (
 const pullsFromRepository = (pulls: readonly HeadPull[], repository: Repository) =>
   pulls.filter((pull) => fromHeadRepository(pull, repository));
 
+const unknownOutcome = (reason: string): GithubFactsOutcome => ({ result: 'unknown', reason });
+
 export const needsBasePull = (pull: HeadPull, defaultBranch: string): boolean =>
   pull.baseRefName !== defaultBranch;
 
-const valueOr = <Value>(read: Read<Value> | null, fallback: Value): Value =>
-  read?.ok === true ? read.value : fallback;
+const missingRequiredRead = (reads: GithubFacts, choice: HeadPullChoice): string | undefined => {
+  if (choice.kind !== 'one') {
+    return undefined;
+  }
+
+  if (reads.stacks === null) {
+    return `The stacks read for #${choice.pull.number} was not made.`;
+  }
+
+  if (needsBasePull(choice.pull, reads.defaultBranch) && reads.basePulls === null) {
+    return `The base pull requests read for ${choice.pull.baseRefName} was not made.`;
+  }
+
+  return undefined;
+};
+
+export const normalizeGithubFacts = (
+  reads: GithubFacts,
+  headPull: Read<HeadPullChoice>,
+): GithubFactsOutcome => {
+  if (!headPull.ok) {
+    return unknownOutcome(describeFailures([headPull]));
+  }
+
+  if (!reads.basedOn.ok) {
+    return unknownOutcome(describeFailures([reads.basedOn]));
+  }
+
+  if (reads.stacks?.ok === false) {
+    return unknownOutcome(describeFailures([reads.stacks]));
+  }
+
+  if (reads.basePulls?.ok === false) {
+    return unknownOutcome(describeFailures([reads.basePulls]));
+  }
+
+  const missing = missingRequiredRead(reads, headPull.value);
+
+  if (missing !== undefined) {
+    return unknownOutcome(missing);
+  }
+
+  return {
+    result: 'facts',
+    facts: {
+      headPull: headPull.value,
+      basedOn: reads.basedOn.value,
+      stacks: reads.stacks?.value ?? null,
+      basePulls: pullsFromRepository(reads.basePulls?.value ?? [], reads.baseRepository),
+    },
+  };
+};
 
 export const linkOf = (pull: BasedPull): ChainLink => ({
   branch: pull.headRefName,
@@ -298,7 +361,7 @@ const chainOf = (
 };
 
 const heldReasons = (
-  stacks: StackedPullRequests | undefined,
+  stacks: StackedPullRequests | null,
   basePulls: readonly HeadPull[],
   basedOn: readonly BasedPull[],
 ) => {
@@ -325,25 +388,14 @@ const severalPullsReason = (branch: string, numbers: readonly number[]) => {
   return `Pull requests ${listed} are all open for ${branch}.`;
 };
 
-// The second step of the stack check, from what GitHub says. A failed read is unknown, never
-// standalone.
-export const decideGithub = (branch: string, facts: GithubFacts): GithubDecision => {
-  const failed = failures([facts.headPulls, facts.basedOn, facts.stacks, facts.basePulls]);
-
-  if (failed.length > 0) {
-    return { result: 'unknown', reason: describeFailures(failed) };
-  }
-
-  const choice = selectHeadPull(valueOr(facts.headPulls, []), facts.pushRepository);
+export const decideGithub = (branch: string, facts: DecisionFacts): GithubDecision => {
+  const { headPull: choice, basedOn, stacks, basePulls } = facts;
 
   if (choice.kind === 'several') {
     return { result: 'unknown', reason: severalPullsReason(branch, choice.numbers) };
   }
 
   const headPull = choice.kind === 'one' ? choice.pull : undefined;
-  const stacks = valueOr<StackedPullRequests | undefined>(facts.stacks, undefined);
-  const basedOn = valueOr(facts.basedOn, []);
-  const basePulls = pullsFromRepository(valueOr(facts.basePulls, []), facts.baseRepository);
   const held = heldReasons(stacks, basePulls, basedOn);
 
   if (held.length === 0) {

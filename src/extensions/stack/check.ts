@@ -9,6 +9,7 @@ import {
   decideGithub,
   decideStackView,
   needsBasePull,
+  normalizeGithubFacts,
   selectHeadPull,
   linkOf,
 } from './checkDecisions.js';
@@ -18,11 +19,17 @@ import type {
   CurrentBranchFacts,
   GithubDecision,
   GithubFacts,
+  HeadPullChoice,
   ViewOutcome,
 } from './checkDecisions.js';
 import { gitCommandOutput, readFailed, readOk } from './readResult.js';
 import type { Read } from './readResult.js';
 import { readBasedOnPulls, readHeadPulls, readStacks, readStackViewFacts } from './reads.js';
+
+interface GatheredGithub {
+  reads: GithubFacts;
+  headPull: Read<HeadPullChoice>;
+}
 
 export interface CheckRequest {
   remote: string | undefined;
@@ -44,7 +51,10 @@ interface CheckEvidence {
   basedOn?: Read<BasedPull[]>;
 }
 
-export type CheckResult = (ViewOutcome | GithubDecision | { basedOn: ChainLink[] }) & {
+type TrackedCheck = Extract<ViewOutcome, { result: 'tracked' }> & { basedOn: ChainLink[] };
+type OtherCheck = Exclude<ViewOutcome | GithubDecision, { result: 'tracked' }>;
+
+export type CheckResult = (TrackedCheck | OtherCheck) & {
   branch: string | null;
   evidence: CheckEvidence;
 };
@@ -103,7 +113,7 @@ const resolve = async (
 const gatherGithubFacts = async (
   runtime: CommandRuntime,
   resolved: Resolved,
-): Promise<GithubFacts> => {
+): Promise<GatheredGithub> => {
   const { pushRepository, baseRepository, defaultBranch, serverBranch } = resolved;
 
   const [headPulls, basedOn] = await Promise.all([
@@ -111,16 +121,29 @@ const gatherGithubFacts = async (
     readBasedOnPulls(runtime, baseRepository, serverBranch),
   ]);
 
-  const choice = headPulls.ok ? selectHeadPull(headPulls.value, pushRepository) : undefined;
-  const pull = choice?.kind === 'one' ? choice.pull : undefined;
-  const stacks = pull === undefined ? null : await readStacks(runtime, baseRepository, pull.number);
-  const needsBase = pull !== undefined && needsBasePull(pull, defaultBranch);
+  const headPull: Read<HeadPullChoice> = headPulls.ok
+    ? readOk(selectHeadPull(headPulls.value, pushRepository))
+    : headPulls;
 
-  const basePulls = needsBase
-    ? await readHeadPulls(runtime, baseRepository, pull.baseRefName)
-    : null;
+  const pull = headPull.ok && headPull.value.kind === 'one' ? headPull.value.pull : undefined;
+  const basePullNeeded = pull !== undefined && needsBasePull(pull, defaultBranch);
 
-  return { defaultBranch, pushRepository, baseRepository, headPulls, basedOn, stacks, basePulls };
+  const [stacks, basePulls] = await Promise.all([
+    pull === undefined ? null : readStacks(runtime, baseRepository, pull.number),
+    basePullNeeded ? readHeadPulls(runtime, baseRepository, pull.baseRefName) : null,
+  ]);
+
+  const reads: GithubFacts = {
+    defaultBranch,
+    pushRepository,
+    baseRepository,
+    headPulls,
+    basedOn,
+    stacks,
+    basePulls,
+  };
+
+  return { reads, headPull };
 };
 
 const unknownResult = (
@@ -143,10 +166,15 @@ const checkOnGithub = async (
     return unknownResult(`${resolved.command} ${resolved.problem}`, branch, evidence);
   }
 
-  const github = await gatherGithubFacts(runtime, resolved.value);
-  const decision = decideGithub(branch, github);
+  const { reads, headPull } = await gatherGithubFacts(runtime, resolved.value);
+  const evidence = { current, resolved, github: reads };
+  const outcome = normalizeGithubFacts(reads, headPull);
 
-  return { ...decision, branch, evidence: { current, resolved, github } };
+  if (outcome.result === 'unknown') {
+    return unknownResult(outcome.reason, branch, evidence);
+  }
+
+  return { ...decideGithub(branch, outcome.facts), branch, evidence };
 };
 
 // A local stack can miss a pull request based on the branch, so a tracked branch also reads those.
@@ -176,6 +204,30 @@ const checkTracked = async (
   return { ...decision, basedOn: read.value.map(linkOf), branch, evidence };
 };
 
+const checkDecidedCurrent = async (
+  runtime: CommandRuntime,
+  request: CheckRequest,
+  branch: string | undefined,
+  current: CurrentBranchFacts,
+): Promise<CheckResult> => {
+  const evidence = { current, resolved: null, github: null };
+  const decision = decideStackView(branch ?? '', current);
+
+  if (decision.result === 'github' && branch !== undefined) {
+    return checkOnGithub(runtime, request, branch, current);
+  }
+
+  if (decision.result === 'tracked' && branch !== undefined) {
+    return checkTracked(runtime, request, branch, current, decision);
+  }
+
+  if (decision.result === 'github' || decision.result === 'tracked') {
+    return unknownResult('The current branch is unknown.', null, evidence);
+  }
+
+  return { ...decision, branch: branch ?? null, evidence };
+};
+
 const checkCurrent = async (
   runtime: CommandRuntime,
   request: CheckRequest,
@@ -190,9 +242,10 @@ const checkCurrent = async (
   }
 
   const current = read.value;
-  const evidence = { current, resolved: null, github: null };
 
   if (!current.rebasePaused && branch === undefined) {
+    const evidence = { current, resolved: null, github: null };
+
     return unknownResult(
       'HEAD is detached, so the current branch is unknown. Pass branch.',
       null,
@@ -200,21 +253,7 @@ const checkCurrent = async (
     );
   }
 
-  const decision = decideStackView(branch ?? '', current);
-
-  if (decision.result === 'github' && branch !== undefined) {
-    return checkOnGithub(runtime, request, branch, current);
-  }
-
-  if (decision.result === 'github') {
-    return unknownResult('The current branch is unknown.', null, evidence);
-  }
-
-  if (decision.result === 'tracked' && branch !== undefined) {
-    return checkTracked(runtime, request, branch, current, decision);
-  }
-
-  return { ...decision, branch: branch ?? null, evidence };
+  return checkDecidedCurrent(runtime, request, branch, current);
 };
 
 // Runs the stack check on the current branch, or on another branch with only the GitHub reads.

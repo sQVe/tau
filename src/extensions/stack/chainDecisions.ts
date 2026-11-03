@@ -29,10 +29,13 @@ interface GithubStack {
   pullRequests: number[];
 }
 
-export interface Parent {
+export interface ParentIdentity {
   number: number;
   url: string;
   branch: string;
+}
+
+export interface Parent extends ParentIdentity {
   // The pull requests of the GitHub stack that holds the parent, bottom to top, or null.
   stack: GithubStack | null;
 }
@@ -41,15 +44,17 @@ export type ParentDecision =
   | { result: 'stop'; reason: string }
   | { result: 'parent'; parent: Parent };
 
+export type ChainTrunk =
+  | { kind: 'stack'; stack: GithubStack; ends: Read<{ bottom: PullView; top: PullView }> }
+  | { kind: 'default'; defaultBranch: Read<string> };
+
 export interface ChainFacts {
-  parent: Parent;
+  parent: ParentIdentity;
   // The pull request of the slice being started, which does not count as a branch above.
   slicePullRequest: number | null;
   // Open pull requests based on the parent's branch.
   basedOn: Read<{ number: number; headRefName: string }[]>;
-  // The lowest and highest pull requests of the parent's stack. null when no stack holds it.
-  stackEnds: Read<{ bottom: PullView; top: PullView }> | null;
-  defaultBranch: Read<string>;
+  trunk: ChainTrunk;
 }
 
 export type ChainDecision =
@@ -173,15 +178,17 @@ export const pickParent = (blockers: readonly BlockerFacts[]): ParentDecision =>
   return typeof open === 'string' ? stop(open) : pickFromOpen(open);
 };
 
-const parentSummary = ({ number, url, branch }: Parent) => ({ number, url, branch });
+export const parentIdentity = ({ number, url, branch }: ParentIdentity): ParentIdentity => ({
+  number,
+  url,
+  branch,
+});
 
 const decideWithoutStack = (
-  facts: ChainFacts,
+  parent: ParentIdentity,
   defaultBranch: string,
   above: number[],
 ): ChainDecision => {
-  const { parent } = facts;
-
   if (above.length > 0) {
     return stop(
       `Pull requests ${describeNumbers(above)} are based on ${parent.branch} and no GitHub stack holds #${parent.number}.`,
@@ -190,7 +197,7 @@ const decideWithoutStack = (
 
   return {
     result: 'parent',
-    parent: parentSummary(parent),
+    parent: parentIdentity(parent),
     branchAbove: false,
     above,
     githubStack: null,
@@ -198,14 +205,23 @@ const decideWithoutStack = (
   };
 };
 
+const decideDefaultTrunk = (
+  parent: ParentIdentity,
+  defaultBranch: Read<string>,
+  above: number[],
+): ChainDecision =>
+  defaultBranch.ok
+    ? decideWithoutStack(parent, defaultBranch.value, above)
+    : stop(describeFailures([defaultBranch]));
+
 const decideWithStack = (
-  parent: Parent,
+  parent: ParentIdentity,
   stack: GithubStack,
   ends: { bottom: PullView; top: PullView },
   above: number[],
 ): ChainDecision => ({
   result: 'parent',
-  parent: parentSummary(parent),
+  parent: parentIdentity(parent),
   branchAbove: above.length > 0,
   above,
   githubStack: {
@@ -220,11 +236,11 @@ const decideWithStack = (
 // The pull requests above the parent: those after it in its stack and those based on its branch.
 // The slice's own pull request is not above the parent.
 const pullsAbove = (facts: ChainFacts, basedOn: readonly number[]): number[] | undefined => {
-  const { parent, slicePullRequest } = facts;
-  const pullRequests = parent.stack?.pullRequests;
+  const { parent, slicePullRequest, trunk } = facts;
+  const pullRequests = trunk.kind === 'stack' ? trunk.stack.pullRequests : null;
   const position = pullRequests?.indexOf(parent.number) ?? -1;
 
-  if (parent.stack !== null && position === -1) {
+  if (pullRequests !== null && position === -1) {
     return undefined;
   }
 
@@ -233,31 +249,33 @@ const pullsAbove = (facts: ChainFacts, basedOn: readonly number[]): number[] | u
   return [...new Set([...inStack, ...basedOn])].filter((number) => number !== slicePullRequest);
 };
 
+const decideStackTrunk = (
+  parent: ParentIdentity,
+  stack: GithubStack,
+  ends: Read<{ bottom: PullView; top: PullView }>,
+  above: number[],
+): ChainDecision =>
+  ends.ok ? decideWithStack(parent, stack, ends.value, above) : stop(describeFailures([ends]));
+
 // The part of the chain rule that needs the parent: whether it already has a branch above it, and
 // the trunk to create the new branch from.
 export const decideChain = (facts: ChainFacts): ChainDecision => {
-  const failed = failures([facts.basedOn, facts.stackEnds, facts.defaultBranch]);
+  const { parent, trunk } = facts;
 
-  if (failed.length > 0) {
-    return stop(describeFailures(failed));
+  if (!facts.basedOn.ok) {
+    return stop(describeFailures([facts.basedOn]));
   }
 
-  const basedOn = facts.basedOn.ok ? facts.basedOn.value.map((pull) => pull.number) : [];
-  const defaultBranch = facts.defaultBranch.ok ? facts.defaultBranch.value : '';
+  const basedOn = facts.basedOn.value.map((pull) => pull.number);
   const above = pullsAbove(facts, basedOn);
-  const { parent } = facts;
 
-  if (above === undefined || parent.stack === null) {
-    return above === undefined
-      ? stop(`The GitHub stack of #${parent.number} does not list it.`)
-      : decideWithoutStack(facts, defaultBranch, above);
+  if (above === undefined) {
+    return stop(`The GitHub stack of #${parent.number} does not list it.`);
   }
 
-  const ends = facts.stackEnds?.ok === true ? facts.stackEnds.value : undefined;
-
-  if (ends === undefined) {
-    return stop('The ends of the GitHub stack were not read.');
+  if (trunk.kind === 'default') {
+    return decideDefaultTrunk(parent, trunk.defaultBranch, above);
   }
 
-  return decideWithStack(parent, parent.stack, ends, above);
+  return decideStackTrunk(parent, trunk.stack, trunk.ends, above);
 };

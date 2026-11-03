@@ -62,8 +62,12 @@ const readLayerFacts = async (
   const tipRead = await gather(cwd, ['rev-parse', '--verify', '--quiet', remoteBranch]);
   const remoteTip = readRemoteTip(tipRead.command, tipRead.output);
 
-  if (!remoteTip.ok || remoteTip.value === null) {
-    return { remoteTip, published: null };
+  if (!remoteTip.ok) {
+    return { kind: 'tipFailed', read: remoteTip };
+  }
+
+  if (remoteTip.value === null) {
+    return { kind: 'missing' };
   }
 
   const rebasedSincePush = tips.has(branch);
@@ -78,8 +82,9 @@ const readLayerFacts = async (
   ]);
 
   return {
-    remoteTip,
-    published: {
+    kind: 'published',
+    tip: remoteTip.value,
+    reads: {
       unseen: readCommitCount(unseen.command, unseen.output),
       ancestor: ancestor === undefined ? null : readAncestor(ancestor.command, ancestor.output),
       newCherry: readCherry(newCherry.command, newCherry.output),

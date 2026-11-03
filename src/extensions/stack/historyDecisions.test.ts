@@ -153,39 +153,40 @@ const published = (overrides: Partial<PublishedReads> = {}): PublishedReads => (
   ...overrides,
 });
 
-const decide = (reads: PublishedReads) => decideLayer({ remoteTip: readOk(tip), published: reads });
+const decide = (reads: PublishedReads) => decideLayer({ kind: 'published', tip, reads });
 
 it.each([
   {
     name: 'no remote branch',
-    facts: { remoteTip: readOk(null), published: null },
+    facts: { kind: 'missing' } as const,
     status: 'unpublished',
     tip: null,
   },
   {
     name: 'a remote with nothing new',
-    facts: { remoteTip: readOk(tip), published: published({ unseen: readOk(0) }) },
+    facts: { kind: 'published', tip, reads: published({ unseen: readOk(0) }) } as const,
     status: 'current',
     tip,
   },
   {
     name: 'a branch behind its remote',
-    facts: { remoteTip: readOk(tip), published: published({ ancestor: readOk(true) }) },
+    facts: { kind: 'published', tip, reads: published({ ancestor: readOk(true) }) } as const,
     status: 'behind',
     tip,
   },
   {
     name: 'a rewritten remote',
-    facts: { remoteTip: readOk(tip), published: published() },
+    facts: { kind: 'published', tip, reads: published() } as const,
     status: 'rewritten',
     tip,
   },
   {
     name: 'a rewritten remote with several commits',
     facts: {
-      remoteTip: readOk(tip),
-      published: published({ newCherry: readOk(['-', '-']), oldCherry: readOk(['-', '-', '-']) }),
-    },
+      kind: 'published',
+      tip,
+      reads: published({ newCherry: readOk(['-', '-']), oldCherry: readOk(['-', '-', '-']) }),
+    } as const,
     status: 'rewritten',
     tip,
   },
@@ -258,35 +259,39 @@ it('does not read the cherry output of a branch that is behind', () => {
 it.each([
   {
     name: 'the remote tip',
-    facts: { remoteTip: readFailed('git rev-parse', 'bad'), published: null },
+    facts: { kind: 'tipFailed', read: readFailed('git rev-parse', 'bad') } as const,
   },
   {
     name: 'the log',
     facts: {
-      remoteTip: readOk(tip),
-      published: published({ unseen: readFailed('git log', 'bad') }),
-    },
+      kind: 'published',
+      tip,
+      reads: published({ unseen: readFailed('git log', 'bad') }),
+    } as const,
   },
   {
     name: 'the ancestor test',
     facts: {
-      remoteTip: readOk(tip),
-      published: published({ ancestor: readFailed('git merge-base', 'bad') }),
-    },
+      kind: 'published',
+      tip,
+      reads: published({ ancestor: readFailed('git merge-base', 'bad') }),
+    } as const,
   },
   {
     name: 'the first cherry',
     facts: {
-      remoteTip: readOk(tip),
-      published: published({ newCherry: readFailed('git cherry', 'bad') }),
-    },
+      kind: 'published',
+      tip,
+      reads: published({ newCherry: readFailed('git cherry', 'bad') }),
+    } as const,
   },
   {
     name: 'the second cherry',
     facts: {
-      remoteTip: readOk(tip),
-      published: published({ oldCherry: readFailed('git cherry', 'bad') }),
-    },
+      kind: 'published',
+      tip,
+      reads: published({ oldCherry: readFailed('git cherry', 'bad') }),
+    } as const,
   },
 ])('decides unknown, with the reason, when $name cannot be read', ({ facts }) => {
   expect(decideLayer(facts)).toMatchObject({

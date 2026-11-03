@@ -1,15 +1,18 @@
 import type { CommandRuntime } from '../../command.js';
 import type { Repository } from '../../github/github.js';
 import { formatRepository, sameRepository } from '../../github/repositoryTargetDecisions.js';
-import { decideChain, parsePullRequestUrl, pickParent } from './chainDecisions.js';
+import { decideChain, parentIdentity, parsePullRequestUrl, pickParent } from './chainDecisions.js';
 import type {
   BlockerFacts,
   ChainDecision,
   ChainFacts,
-  ParentDecision,
+  ChainTrunk,
+  Parent,
   PullRequestReference,
+  PullView,
 } from './chainDecisions.js';
 import { readFailed } from './readResult.js';
+import type { Read } from './readResult.js';
 import { readBasedOnPulls, readDefaultBranch, readPullView, readStacks } from './reads.js';
 
 export interface ChainRequest {
@@ -19,7 +22,7 @@ export interface ChainRequest {
 
 export interface ChainResult {
   repository: string;
-  decision: ChainDecision | ParentDecision;
+  decision: ChainDecision;
   evidence: { blockers: BlockerFacts[]; facts: ChainFacts | null };
 }
 
@@ -84,7 +87,8 @@ const readStackEnds = async (
   runtime: CommandRuntime,
   repository: Repository,
   stack: readonly number[],
-): Promise<ChainFacts['stackEnds']> => {
+  blockers: readonly BlockerFacts[],
+): Promise<Read<{ bottom: PullView; top: PullView }>> => {
   const bottomNumber = stack[0];
   const topNumber = stack.at(-1);
 
@@ -92,16 +96,38 @@ const readStackEnds = async (
     return readFailed('gh api stacks', 'printed a stack with no pull requests');
   }
 
-  const [bottom, top] = await Promise.all([
-    readPullView(runtime, repository, bottomNumber),
-    readPullView(runtime, repository, topNumber),
-  ]);
+  const readView = (number: number) => {
+    const blocker = blockers.find((candidate) => candidate.number === number);
+
+    return blocker === undefined ? readPullView(runtime, repository, number) : blocker.view;
+  };
+
+  const bottomRead = readView(bottomNumber);
+  const topRead = bottomNumber === topNumber ? bottomRead : readView(topNumber);
+  const [bottom, top] = await Promise.all([bottomRead, topRead]);
 
   if (!bottom.ok) {
     return bottom;
   }
 
   return top.ok ? { ok: true, value: { bottom: bottom.value, top: top.value } } : top;
+};
+
+const readTrunk = async (
+  runtime: CommandRuntime,
+  repository: Repository,
+  parent: Parent,
+  blockers: readonly BlockerFacts[],
+): Promise<ChainTrunk> => {
+  const stack = parent.stack;
+
+  if (stack === null) {
+    return { kind: 'default', defaultBranch: await readDefaultBranch(runtime, repository) };
+  }
+
+  const ends = await readStackEnds(runtime, repository, stack.pullRequests, blockers);
+
+  return { kind: 'stack', stack, ends };
 };
 
 // Decides the parent of a stacked slice from its open blockers, then whether the parent already
@@ -125,13 +151,17 @@ export const readChain = async (
 
   const { parent } = picked;
 
-  const [basedOn, stackEnds, defaultBranch] = await Promise.all([
+  const [basedOn, trunk] = await Promise.all([
     readBasedOnPulls(runtime, repository, parent.branch),
-    parent.stack === null ? null : readStackEnds(runtime, repository, parent.stack.pullRequests),
-    readDefaultBranch(runtime, repository),
+    readTrunk(runtime, repository, parent, blockers),
   ]);
 
-  const facts: ChainFacts = { parent, slicePullRequest: slice, basedOn, stackEnds, defaultBranch };
+  const facts: ChainFacts = {
+    parent: parentIdentity(parent),
+    slicePullRequest: slice,
+    basedOn,
+    trunk,
+  };
 
   return {
     repository: repositoryName,

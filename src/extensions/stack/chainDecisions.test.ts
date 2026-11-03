@@ -1,7 +1,13 @@
 import { expect, it } from 'vitest';
 
 import { decideChain, parsePullRequestUrl, pickParent } from './chainDecisions.js';
-import type { BlockerFacts, ChainFacts, Parent, PullView } from './chainDecisions.js';
+import type {
+  BlockerFacts,
+  ChainFacts,
+  ChainTrunk,
+  ParentIdentity,
+  PullView,
+} from './chainDecisions.js';
 import type { StackedPullRequests } from './checkDecisions.js';
 import { readFailed, readOk } from './readResult.js';
 
@@ -133,20 +139,10 @@ it('stops without blockers', () => {
   expect(pickParent([])).toMatchObject({ result: 'stop' });
 });
 
-const parent = (stackNumbers: number[] | null, number = 3): Parent => ({
+const parent = (number = 3): ParentIdentity => ({
   number,
   url: url(number),
   branch: `slice-${number}`,
-  stack: stackNumbers === null ? null : { number: 100, pullRequests: stackNumbers },
-});
-
-const chainFacts = (overrides: Partial<ChainFacts> = {}): ChainFacts => ({
-  parent: parent(null),
-  slicePullRequest: null,
-  basedOn: readOk([]),
-  stackEnds: null,
-  defaultBranch: readOk('main'),
-  ...overrides,
 });
 
 const ends = (bottomBase: string, topNumber: number) =>
@@ -154,6 +150,25 @@ const ends = (bottomBase: string, topNumber: number) =>
     bottom: { ...view(2), baseRefName: bottomBase },
     top: view(topNumber),
   });
+
+const stackTrunk = (stackNumbers: number[], bottomBase: string, topNumber: number): ChainTrunk => ({
+  kind: 'stack',
+  stack: { number: 100, pullRequests: stackNumbers },
+  ends: ends(bottomBase, topNumber),
+});
+
+const defaultTrunk = (defaultBranch = 'main'): ChainTrunk => ({
+  kind: 'default',
+  defaultBranch: readOk(defaultBranch),
+});
+
+const chainFacts = (overrides: Partial<ChainFacts> = {}): ChainFacts => ({
+  parent: parent(),
+  slicePullRequest: null,
+  basedOn: readOk([]),
+  trunk: defaultTrunk(),
+  ...overrides,
+});
 
 it('starts on the default branch when the parent has no stack and nothing above it', () => {
   expect(decideChain(chainFacts())).toEqual({
@@ -168,7 +183,7 @@ it('starts on the default branch when the parent has no stack and nothing above 
 
 it('takes the trunk from the bottom pull request of the parent stack', () => {
   const decision = decideChain(
-    chainFacts({ parent: parent([2, 3]), stackEnds: ends('release', 3) }),
+    chainFacts({ parent: parent(), trunk: stackTrunk([2, 3], 'release', 3) }),
   );
 
   expect(decision).toMatchObject({
@@ -185,7 +200,10 @@ it.each([
   { name: 'the middle', stackNumbers: [2, 3, 4], above: [4] },
 ])('finds the pull requests above a parent in $name of its stack', ({ stackNumbers, above }) => {
   const decision = decideChain(
-    chainFacts({ parent: parent(stackNumbers), stackEnds: ends('main', stackNumbers.at(-1) ?? 0) }),
+    chainFacts({
+      parent: parent(),
+      trunk: stackTrunk(stackNumbers, 'main', stackNumbers.at(-1) ?? 0),
+    }),
   );
 
   expect(decision).toMatchObject({ branchAbove: above.length > 0, above });
@@ -194,9 +212,9 @@ it.each([
 it('finds a branch above the parent from an open pull request based on it', () => {
   const decision = decideChain(
     chainFacts({
-      parent: parent([2, 3]),
+      parent: parent(),
       basedOn: readOk([{ number: 9, headRefName: 'other' }]),
-      stackEnds: ends('main', 3),
+      trunk: stackTrunk([2, 3], 'main', 3),
     }),
   );
 
@@ -206,10 +224,10 @@ it('finds a branch above the parent from an open pull request based on it', () =
 it('does not count the pull request of the slice as a branch above', () => {
   const decision = decideChain(
     chainFacts({
-      parent: parent([2, 3, 8]),
+      parent: parent(),
       slicePullRequest: 8,
       basedOn: readOk([{ number: 8, headRefName: 'slice' }]),
-      stackEnds: ends('main', 8),
+      trunk: stackTrunk([2, 3, 8], 'main', 8),
     }),
   );
 
@@ -219,9 +237,9 @@ it('does not count the pull request of the slice as a branch above', () => {
 it('counts a pull request based on the parent twice only once', () => {
   const decision = decideChain(
     chainFacts({
-      parent: parent([2, 3, 4]),
+      parent: parent(),
       basedOn: readOk([{ number: 4, headRefName: 'child' }]),
-      stackEnds: ends('main', 4),
+      trunk: stackTrunk([2, 3, 4], 'main', 4),
     }),
   );
 
@@ -237,7 +255,9 @@ it('stops when a pull request is based on the parent and no stack holds the pare
 });
 
 it('stops when the parent stack does not list the parent', () => {
-  const decision = decideChain(chainFacts({ parent: parent([4, 5]), stackEnds: ends('main', 5) }));
+  const decision = decideChain(
+    chainFacts({ parent: parent(), trunk: stackTrunk([4, 5], 'main', 5) }),
+  );
 
   expect(decision.result).toBe('stop');
 });
@@ -247,18 +267,27 @@ it.each([
     name: 'the pull requests based on the parent',
     facts: { basedOn: readFailed('gh pr list', 'boom') },
   },
-  { name: 'the default branch', facts: { defaultBranch: readFailed('gh repo view', 'boom') } },
+  {
+    name: 'the default branch',
+    facts: { trunk: { kind: 'default', defaultBranch: readFailed('gh repo view', 'boom') } },
+  },
   {
     name: 'the ends of the stack',
-    facts: { parent: parent([2, 3]), stackEnds: readFailed('gh pr view', 'boom') },
+    facts: {
+      parent: parent(),
+      trunk: {
+        kind: 'stack',
+        stack: { number: 100, pullRequests: [2, 3] },
+        ends: readFailed('gh pr view', 'boom'),
+      },
+    },
   },
-])('stops when $name cannot be read', ({ facts }) => {
-  expect(decideChain(chainFacts(facts))).toMatchObject({
-    result: 'stop',
-    reason: containing('boom'),
-  });
-});
-
-it('stops when the parent has a stack but its ends were not read', () => {
-  expect(decideChain(chainFacts({ parent: parent([2, 3]) })).result).toBe('stop');
-});
+] satisfies { name: string; facts: Partial<ChainFacts> }[])(
+  'stops when $name cannot be read',
+  ({ facts }) => {
+    expect(decideChain(chainFacts(facts))).toMatchObject({
+      result: 'stop',
+      reason: containing('boom'),
+    });
+  },
+);
