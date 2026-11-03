@@ -26,7 +26,6 @@ export const decideEventScan = (event: EventFact): EventScanAction => {
   return 'ignore';
 };
 
-// A failed subscription keeps retrying for the session, at the last delay once the schedule ends.
 export const decideReconnect = (attempt: number): ReconnectPlan => {
   const next = retryDelay(attempt);
 

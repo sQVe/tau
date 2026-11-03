@@ -35,7 +35,6 @@ export const createEventWatch = (subscribe: SubscribeEvents, scan: WorkerScan): 
           break;
         }
 
-        // Scans run one at a time, so a burst of events cannot overlap them.
         // oxlint-disable-next-line eslint/no-await-in-loop -- the scans must run in order, not together.
         await scan.scan(context);
       }

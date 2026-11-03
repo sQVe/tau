@@ -236,7 +236,6 @@ export const createWorkerDelivery = (pi: ExtensionAPI): WorkerDelivery => {
     const ended = endedKey(assignmentId);
     const shown = restoreShownKeys(context);
 
-    // A finished-event scan may have shown the ended message while the kill reply was pending.
     if (shown.has(ended) || queuedKeys.has(ended)) {
       return;
     }

@@ -151,7 +151,6 @@ it('keeps reconnecting with a capped backoff and reports one lasting failure', a
 
   expect(lasting()).toBe(1);
 
-  // A successful reconnect starts one scan and clears the lasting failure for the next outage.
   hcFake.ready();
   await vi.advanceTimersByTimeAsync(0);
 
