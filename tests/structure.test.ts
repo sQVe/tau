@@ -65,6 +65,8 @@ const pureModules = [
   'src/checkRecord/reuseDecision.ts',
   'src/codemode/budget.ts',
   'src/codemode/controlTools.ts',
+  'src/codemode/outputCuts.ts',
+  'src/codemode/outputSegments.ts',
   'src/config/allowedModels.ts',
   'src/config/repositoryEntry.ts',
   'src/dialog/eligibility.ts',
