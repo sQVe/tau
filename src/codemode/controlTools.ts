@@ -3,8 +3,6 @@ interface ToolCallFacts {
   parentToolCallId?: string;
 }
 
-// Tools that report to or ask the parent, ask a person, or start and stop workers. Only the model
-// may call them directly; a call from another tool, such as a codemode script, is refused.
 const controlToolNames: ReadonlySet<string> = new Set([
   'subagent_report',
   'subagent_question',

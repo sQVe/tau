@@ -118,8 +118,6 @@ const contentText = (content: string | (TextContent | ImageContent)[]): string =
         .map((block) => block.text)
         .join('\n');
 
-// The worker's first user message is its task; the reply is the next one. A missing reply must not
-// produce a report that hides the gap.
 const typedAnswer = (context: TranscriptContext): string => {
   const userMessages = context.messages.filter((message) => message.role === 'user');
   const answer = userMessages.at(-1);

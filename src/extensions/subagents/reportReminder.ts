@@ -31,7 +31,6 @@ export const remindToReport = (
     return undefined;
   }
 
-  // A worker that asked a question waits for the parent's reply; it is not done yet.
   if (state.questionAsked) {
     return undefined;
   }

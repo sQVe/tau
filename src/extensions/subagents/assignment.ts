@@ -70,7 +70,6 @@ const assignmentFields = {
   report: Type.Union([savedReportSchema, Type.Null()]),
 };
 
-// Version 1 has no questions. It reads as the current version with an empty question list.
 const assignmentVersion1Schema = Type.Object(
   { version: Type.Literal(1), ...assignmentFields },
   { additionalProperties: false },

@@ -67,8 +67,6 @@ const callsReportAlone = (
   assistant.message.role === 'assistant' &&
   assistant.message.content.filter((block) => block.type === 'toolCall').length === 1;
 
-// These tools end the turn, so the batch must hold no other call. Pi keeps a batch running unless
-// every result ends it.
 const turnEndingToolNames: ReadonlySet<string> = new Set(['subagent_report', 'subagent_question']);
 
 const handleToolCall = (
@@ -278,7 +276,6 @@ const registerAgentSettledHandler = (pi: ExtensionAPI, state: WorkerState): void
       return;
     }
 
-    // A saved report ends the worker, even when a question came earlier in the same run.
     const waitingForReply = state.questionAsked && state.target.assignment.report === null;
 
     if (waitingForReply) {
@@ -327,7 +324,6 @@ export default function workerExtension(pi: ExtensionAPI): void {
     state.questionAsked = false;
   });
 
-  // Pi delivers a typed reply during a streaming turn as a user message without agent_start.
   pi.on('message_start', (event) => {
     if (event.message.role === 'user') {
       state.questionAsked = false;
