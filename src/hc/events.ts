@@ -3,6 +3,7 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 
 import { errorMessage } from '../errors.js';
 import { isRecord } from '../schema.js';
+import { streamKillGraceMilliseconds } from './connect.js';
 import { isAbortError, matchParsedReply, requestLine } from './replies.js';
 
 export interface HcEvent {
@@ -88,6 +89,15 @@ export const subscribeEvents: SubscribeEvents = (childrenOf, handlers, options =
   let buffer = '';
   let stopped = false;
   let ready = false;
+  let killTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const terminate = (): void => {
+    child.kill('SIGTERM');
+
+    killTimer ??= setTimeout(() => {
+      child.kill('SIGKILL');
+    }, streamKillGraceMilliseconds);
+  };
 
   const fail = (reason: string) => {
     if (stopped) {
@@ -95,7 +105,7 @@ export const subscribeEvents: SubscribeEvents = (childrenOf, handlers, options =
     }
 
     stopped = true;
-    child.kill('SIGTERM');
+    terminate();
     handlers.onClose(reason);
   };
 
@@ -187,6 +197,8 @@ export const subscribeEvents: SubscribeEvents = (childrenOf, handlers, options =
   });
 
   child.on('close', (code, signal) => {
+    clearTimeout(killTimer);
+    killTimer = undefined;
     fail(closeMessage(code, signal));
   });
 
@@ -202,7 +214,7 @@ export const subscribeEvents: SubscribeEvents = (childrenOf, handlers, options =
       }
 
       stopped = true;
-      child.kill('SIGTERM');
+      terminate();
     },
   };
 };

@@ -3,7 +3,7 @@ import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 
 import { subscribeEvents } from './events.js';
 import type { HcEvent, SubscribeHandlers } from './events.js';
@@ -74,6 +74,10 @@ const helloLine = `${JSON.stringify({
 
 const notification = (method: string, params: unknown): string =>
   `${JSON.stringify({ jsonrpc: '2.0', method, params })}\n`;
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 it('writes hello and events.subscribe with the manager terminal', () => {
   const child = createFakeChild();
@@ -199,6 +203,43 @@ it('closes when a line is not JSON', () => {
   child.stdout.emit('data', 'not-json\n');
 
   expect(closes).toEqual(['hc connect printed a line that is not JSON']);
+});
+
+it('escalates a failed child to SIGKILL when it ignores SIGTERM', () => {
+  vi.useFakeTimers();
+
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const { handlers } = createHandlers();
+
+  subscribeEvents('t-manager', handlers);
+  child.stdin.emit('error', new Error('write broke'));
+
+  expect(child.kill).toHaveBeenNthCalledWith(1, 'SIGTERM');
+
+  vi.advanceTimersByTime(5000);
+
+  expect(child.kill).toHaveBeenLastCalledWith('SIGKILL');
+
+  child.emit('close', null, 'SIGKILL');
+});
+
+it('does not send SIGKILL when the child closes after SIGTERM', () => {
+  vi.useFakeTimers();
+
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const { handlers } = createHandlers();
+
+  subscribeEvents('t-manager', handlers);
+  child.stdin.emit('error', new Error('write broke'));
+  child.emit('close', null, 'SIGTERM');
+
+  vi.advanceTimersByTime(5000);
+
+  expect(child.kill).toHaveBeenCalledTimes(1);
 });
 
 it('stops the child without a close report when the subscription is stopped', () => {

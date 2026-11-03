@@ -45,7 +45,7 @@ export interface TerminalRunRequest {
 
 const helloGeneration = 1;
 
-const streamKillGraceMilliseconds = 5000;
+export const streamKillGraceMilliseconds = 5000;
 
 const terminalRunParams = (request: TerminalRunRequest): Record<string, unknown> => ({
   argv: request.argv,
