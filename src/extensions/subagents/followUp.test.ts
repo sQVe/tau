@@ -174,6 +174,40 @@ const refusalCases: {
     },
   },
   {
+    name: 'session path that is a folder',
+    prepare: async (directory) => {
+      const source = sourceAssignment(directory);
+
+      await writeAssignment(source);
+      rmSync(source.session.file);
+      mkdirSync(source.session.file);
+
+      return source.assignmentId;
+    },
+  },
+  {
+    name: 'empty session file',
+    prepare: async (directory) => {
+      const source = sourceAssignment(directory);
+
+      await writeAssignment(source);
+      writeFileSync(source.session.file, '');
+
+      return source.assignmentId;
+    },
+  },
+  {
+    name: 'session file without a session header',
+    prepare: async (directory) => {
+      const source = sourceAssignment(directory);
+
+      await writeAssignment(source);
+      writeFileSync(source.session.file, '{"type":"message"}\n');
+
+      return source.assignmentId;
+    },
+  },
+  {
     name: 'missing package path',
     prepare: async (directory) => {
       const source = sourceAssignment(directory, {
@@ -204,6 +238,22 @@ it.each(refusalCases)('refuses a follow-up with a $name', async ({ prepare, over
   const before = assignmentFolders(directory);
 
   const result = await followUp(runtime, sourceId, overrides);
+
+  expect(result.isError).toBe(true);
+  expect(terminalRun(fake)).toBeUndefined();
+  expect(assignmentFolders(directory)).toEqual(before);
+});
+
+it('refuses a follow-up when the skill tool map cannot be read', async () => {
+  const { directory, fake, runtime } = setup();
+  const source = sourceAssignment(directory);
+
+  await writeAssignment(source);
+
+  runtime.readSkillTools = () => undefined;
+
+  const before = assignmentFolders(directory);
+  const result = await followUp(runtime, source.assignmentId);
 
   expect(result.isError).toBe(true);
   expect(terminalRun(fake)).toBeUndefined();

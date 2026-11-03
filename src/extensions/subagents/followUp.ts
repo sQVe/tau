@@ -16,6 +16,7 @@ import { capacityRefusal, startReservedWorker } from './launch.js';
 import type { LaunchRuntime, LaunchStatus } from './launch.js';
 import { decideSessionUse } from './sessionUse.js';
 import type { SessionUse, SessionUseTerminal } from './sessionUse.js';
+import { skillToolsRefusal } from './skillToolsRefusal.js';
 import { readWorkerChild } from './workerDelivery.js';
 import type { WorkerChildRead } from './workerDelivery.js';
 
@@ -161,6 +162,12 @@ export const executeFollowUp = async (
 
     const deadline = request.startedAt.wall + followUpTimeout(source, parameters);
     const skillTools = (runtime.readSkillTools ?? readCurrentSkillTools)();
+    const registeredToolNames = new Set(runtime.pi.getAllTools().map((tool) => tool.name));
+    const skillToolsRefused = skillToolsRefusal(skillTools, registeredToolNames);
+
+    if (skillToolsRefused !== undefined) {
+      throw new Error(skillToolsRefused);
+    }
 
     return await runtime.admission.run(async () => {
       signal?.throwIfAborted();
