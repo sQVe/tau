@@ -6,6 +6,7 @@ import { expect, it, onTestFinished } from 'vitest';
 import { createExecFake, succeededResult } from '../../../tests/execFake.js';
 import type { ExecFake } from '../../../tests/execFake.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { startHandover } from './start.js';
 import type { StartHandoverRequest, StartHandoverTarget } from './start.js';
 
@@ -29,7 +30,7 @@ const requestFor = (
   root: string,
   file: string,
   target: StartHandoverTarget,
-): StartHandoverRequest => ({ cwd: root, file, folder: '/repository/wt', target });
+): StartHandoverRequest => ({ cwd: root, file, folder: root, target });
 
 const commandsOf = (fake: ExecFake<'herdr'>) =>
   fake.calls.map(({ command, commandArguments }) => ({ command, commandArguments }));
@@ -57,7 +58,7 @@ it('opens a Manager tab in the space with the file text as its task', async () =
         '--name',
         'Manager',
         '--folder',
-        '/repository/wt',
+        root,
         '--argv',
         '["pi"]',
         '--task',
@@ -83,7 +84,7 @@ it('opens a new space with a Manager tab when no space is given', async () => {
         '--name',
         'ticket-1',
         '--folder',
-        '/repository/wt',
+        root,
         '--tab',
         'Manager',
         '--argv',
@@ -117,6 +118,34 @@ it('refuses an empty file before any herdr-app call', async () => {
   await expect(
     startHandover({ exec: fake.exec, cwd: root }, requestFor(root, file, { name: 'ticket-1' })),
   ).rejects.toThrow(/handover file is empty/);
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses a handover too large for one command argument before any herdr-app call', async () => {
+  const fake = createHerdrFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'x'.repeat(102_401));
+
+  await expect(
+    startHandover({ exec: fake.exec, cwd: root }, requestFor(root, file, { name: 'ticket-1' })),
+  ).rejects.toThrow(/handover file is larger than/);
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses a folder that is not a Git checkout before any herdr-app call', async () => {
+  const fake = createHerdrFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const folder = temporaryDirectory(onTestFinished, 'tau-start-');
+
+  await expect(
+    startHandover(
+      { exec: fake.exec, cwd: root },
+      { ...requestFor(root, file, { name: 'ticket-1' }), folder },
+    ),
+  ).rejects.toThrow(/start folder is not a Git checkout/);
 
   expect(fake.calls).toEqual([]);
 });
