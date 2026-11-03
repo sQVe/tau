@@ -76,8 +76,13 @@ const isWorkingDirectoryVariable = (name: string): boolean => name === 'PWD' || 
 const isTerminalVariable = (name: string): boolean =>
   name === 'HC_TERMINAL_ID' || name.startsWith('HERDR_');
 
+// hc runs a terminal on top of the core's environment. The core's session paths are already private
+// to the running session, so forwarding the manager's own HOME or XDG paths would let a test reach
+// the user's core.
+const isSessionPathVariable = (name: string): boolean => name === 'HOME' || name.startsWith('XDG_');
+
 const isManagerVariable = (name: string): boolean =>
-  isWorkingDirectoryVariable(name) || isTerminalVariable(name);
+  isWorkingDirectoryVariable(name) || isTerminalVariable(name) || isSessionPathVariable(name);
 
 export const workerEnvironment = (
   processEnvironment: NodeJS.ProcessEnv,

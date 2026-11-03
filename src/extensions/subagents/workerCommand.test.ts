@@ -49,6 +49,24 @@ it.each([
     expected: undefined,
   },
   {
+    name: 'drops the manager home',
+    input: { HOME: '/home/manager' },
+    variable: 'HOME',
+    expected: undefined,
+  },
+  {
+    name: 'drops the manager XDG runtime dir',
+    input: { XDG_RUNTIME_DIR: '/run/user/1000' },
+    variable: 'XDG_RUNTIME_DIR',
+    expected: undefined,
+  },
+  {
+    name: 'drops the manager XDG state home',
+    input: { XDG_STATE_HOME: '/home/manager/.local/state' },
+    variable: 'XDG_STATE_HOME',
+    expected: undefined,
+  },
+  {
     name: 'keeps PATH from the manager',
     input: { PATH: '/bin' },
     variable: 'PATH',
