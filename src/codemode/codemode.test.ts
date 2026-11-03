@@ -10,7 +10,9 @@ import { registerCodemodeBudget } from './codemode.js';
 const itemText = (firstLine: string, length: number): string =>
   `${firstLine}\n${'a'.repeat(length - firstLine.length - 1)}`;
 
-it('cuts whole items one character over the budget and saves the full text', async () => {
+it('cuts whole items one character over the budget and saves the full text', async ({
+  onTestFinished,
+}) => {
   const fake = fakeExtensionApi();
   const checkCall = registerCodemodeBudget(fake.pi);
   const toolCallId = 'codemode-call-1';
@@ -44,6 +46,11 @@ it('cuts whole items one character over the budget and saves the full text', asy
   )) as { content: { type: 'text'; text: string }[] };
 
   const [header, kept, gap] = result.content;
+  const path = gap?.text.match(/Full output: (.+)\]$/m)?.[1];
+
+  if (path !== undefined) {
+    onTestFinished(() => rm(dirname(path), { recursive: true, force: true }));
+  }
 
   expect(header?.text).toBe('Script output');
   expect(kept?.text).toBe(items[0]);
@@ -52,10 +59,9 @@ it('cuts whole items one character over the budget and saves the full text', asy
   expect(gap?.text).toContain('item 2: "second item" (1499 characters)');
   expect(gap?.text).toContain('item 3: "third item" (1500 characters)');
 
-  const path = gap?.text.match(/Full output: (.+)\]$/m)?.[1] ?? '';
-  const saved = await readFile(path, 'utf8');
+  expect(path).toBeDefined();
+
+  const saved = await readFile(path ?? '', 'utf8');
 
   expect(saved).toBe(items.join('\n'));
-
-  await rm(dirname(path), { recursive: true, force: true });
 });
