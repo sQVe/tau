@@ -5,15 +5,10 @@ import type {
   ToolResultEvent,
 } from '@earendil-works/pi-coding-agent';
 
-import {
-  cutOverBudget,
-  decideBudgetRefusal,
-  describeCutItems,
-  splitOutput,
-  raiseOutputCap,
-  readOutputBudget,
-} from './budget.js';
+import { decideBudgetRefusal, raiseOutputCap, readOutputBudget } from './budget.js';
 import { saveFullOutput } from './fullOutput.js';
+import { cutOverBudget, describeCutItems } from './outputCuts.js';
+import { splitOutput } from './outputSegments.js';
 
 type ToolResultContent = ToolResultEvent['content'][number];
 
