@@ -390,6 +390,21 @@ it('does not show an ended message when the deadline message was shown', async (
   expect(managerState.messages).toEqual([]);
 });
 
+it('does not show the deadline message when the ended message was already shown', async () => {
+  const { managerState, hc, assignmentId } = await finishedWorker();
+
+  const delivery = createWorkerDelivery(managerState.pi);
+
+  await deliverPending(delivery, hc, managerState.context);
+
+  expect(managerState.messages).toHaveLength(1);
+
+  delivery.showEnded(managerState.context, assignmentId);
+
+  expect(managerState.messages).toHaveLength(1);
+  expect(managerState.messages[0]?.customType).toBe('tau-worker-ended');
+});
+
 it('skips a terminal that is not the manager child', async () => {
   const managerState = createManager();
 

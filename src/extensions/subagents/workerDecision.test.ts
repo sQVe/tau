@@ -1,7 +1,13 @@
 import { expect, it } from 'vitest';
 
 import type { SavedQuestion, SavedReport } from './assignment.js';
-import { decideWorkerDelivery, deadlineKey, questionKey, reportKey } from './workerDecision.js';
+import {
+  decideWorkerDelivery,
+  deadlineKey,
+  endedKey,
+  questionKey,
+  reportKey,
+} from './workerDecision.js';
 import type { WorkerDecisionFacts, WorkerDeliveryPlan, WorkerReadFact } from './workerDecision.js';
 
 const report = (summary: string): SavedReport => ({
@@ -262,6 +268,14 @@ const table: {
     name: 'does not show an ended message when the deadline message is shown',
     facts: {
       shownKeys: [deadlineKey('assignment-a')],
+      facts: [assignment('assignment-a', { state: 'finished' })],
+    },
+    expected: { reports: [], questions: [], ended: [], errors: [] },
+  },
+  {
+    name: 'does not show an ended message when the ended key is shown',
+    facts: {
+      shownKeys: [endedKey('assignment-a')],
       facts: [assignment('assignment-a', { state: 'finished' })],
     },
     expected: { reports: [], questions: [], ended: [], errors: [] },
