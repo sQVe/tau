@@ -156,16 +156,22 @@ describe('slice tool prepare', () => {
   });
 
   it('refuses a selected draft with malformed JSON', async () => {
-    const { fake, context, directory } = await setUp('malformed.json');
+    const { root, fake, context, directory } = await setUp('malformed.json');
+    const before = await snapshotDraft(directory);
 
     await expect(run(fake, context, { action: 'prepare', id: 'planning' })).rejects.toThrow(
       new RegExp(`Malformed slice draft ${join(directory, 'plan.json')}`),
     );
+
+    expect(await snapshotDraft(directory)).toEqual(before);
+    expect(await readdir(join(root, '.tau', 'slices'))).toEqual(['planning']);
+    expect(fake.writes()).toEqual([]);
   });
 
   it.skipIf(isRoot)('refuses a selected draft whose plan.json it cannot read', async () => {
-    const { fake, context, directory } = await setUp();
+    const { root, fake, context, directory } = await setUp();
     const plan = join(directory, 'plan.json');
+    const before = await snapshotDraft(directory);
 
     await chmod(plan, 0o000);
 
@@ -177,6 +183,9 @@ describe('slice tool prepare', () => {
     await chmod(plan, 0o644);
 
     expect(outcome).toMatchObject({ code: 'EACCES' });
+    expect(await snapshotDraft(directory)).toEqual(before);
+    expect(await readdir(join(root, '.tau', 'slices'))).toEqual(['planning']);
+    expect(fake.writes()).toEqual([]);
   });
 });
 
