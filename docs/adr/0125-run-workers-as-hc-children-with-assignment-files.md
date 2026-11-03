@@ -89,6 +89,24 @@ only the worker writes its report and its questions into it.
 - Tau keeps no answer state. A saved shown message for a question is the only record that the
   question was handled.
 
+### Deadline
+
+- The assignment file's `deadline` decides when a worker ends. The `tau.deadline` label is a pointer
+  for display only.
+- The manager's deadline watchdog arms its timers at session start, after each launch, and on each
+  delivery scan. A reload builds a new watchdog. Session shutdown clears every timer.
+- Tau warns the worker 90 seconds before its deadline, or at once when less time is left. The
+  warning is an `hc send` that asks the worker to call `subagent_report` now. Tau never uses
+  `hc send --force`. A refused or failed warning is reported and does not cancel the kill.
+- At the deadline, Tau reads the terminal again. It kills the worker only when the terminal is still
+  live, its parent is this manager's terminal, its `tau.assignment` label is the same path, and the
+  assignment has no saved report.
+- Tau fails closed. A missing or malformed assignment file ends the worker at once. Tau never treats
+  such a worker as having unlimited time.
+- A `tau.deadline` label that is missing, malformed, or different from the assignment is shown as an
+  error. The assignment deadline still applies.
+- After a kill, the manager shows one "ended at its deadline" message for each assignment ID.
+
 ### Tools
 
 - The manager has no tool that reads or changes a worker after launch. Its only worker tool is

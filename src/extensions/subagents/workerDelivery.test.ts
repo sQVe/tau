@@ -11,7 +11,8 @@ import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import { assignmentDirectory, writeAssignment } from './assignment.js';
 import type { Assignment, SavedQuestion } from './assignment.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
-import { createWorkerDelivery } from './workerDelivery.js';
+import { createWorkerDelivery, readWorkerChildren } from './workerDelivery.js';
+import type { WorkerDelivery } from './workerDelivery.js';
 
 type DeliveryContext = Parameters<ReturnType<typeof createWorkerDelivery>['deliver']>[0];
 
@@ -188,12 +189,20 @@ const savedQuestion = (): SavedQuestion => ({
   askedAt: Date.now(),
 });
 
+const deliverPending = async (
+  delivery: WorkerDelivery,
+  hc: HcRuntime,
+  context: DeliveryContext,
+): Promise<void> => {
+  delivery.deliver(context, await readWorkerChildren(hc, manager));
+};
+
 const reportDelivery = async (
   report: Assignment['report'] = savedReport(),
   questions: SavedQuestion[] = [],
 ): Promise<{
   managerState: ReturnType<typeof createManager>;
-  deliver: ReturnType<typeof createWorkerDelivery>['deliver'];
+  deliver: (context: DeliveryContext) => Promise<void>;
   hc: HcRuntime;
   assignmentId: string;
 }> => {
@@ -205,10 +214,11 @@ const reportDelivery = async (
   const path = join(assignmentDirectory(saved.assignmentId), 'assignment.json');
   const managerState = createManager();
   const hc = createHc([liveTerminal('t-child', manager, { 'tau.assignment': path })]);
+  const delivery = createWorkerDelivery(managerState.pi);
 
   return {
     managerState,
-    deliver: createWorkerDelivery(managerState.pi, hc).deliver,
+    deliver: (context) => deliverPending(delivery, hc, context),
     hc,
     assignmentId: saved.assignmentId,
   };
@@ -221,7 +231,7 @@ it('notifies an error for a missing assignment file', async () => {
     liveTerminal('t-child', manager, { 'tau.assignment': '/agent/missing.json' }),
   ]);
 
-  await createWorkerDelivery(managerState.pi, hc).deliver(managerState.context);
+  await deliverPending(createWorkerDelivery(managerState.pi), hc, managerState.context);
 
   expect(managerState.notifications).toEqual([
     ['Missing assignment file: /agent/missing.json.', 'error'],
@@ -237,10 +247,10 @@ it('notifies an assignment read error once for repeated runs', async () => {
     liveTerminal('t-child', manager, { 'tau.assignment': '/agent/missing.json' }),
   ]);
 
-  const delivery = createWorkerDelivery(managerState.pi, hc);
+  const delivery = createWorkerDelivery(managerState.pi);
 
-  await delivery.deliver(managerState.context);
-  await delivery.deliver(managerState.context);
+  await deliverPending(delivery, hc, managerState.context);
+  await deliverPending(delivery, hc, managerState.context);
 
   expect(managerState.notifications).toEqual([
     ['Missing assignment file: /agent/missing.json.', 'error'],
@@ -256,7 +266,7 @@ it('notifies an error for a malformed assignment file', async () => {
   const managerState = createManager();
   const hc = createHc([liveTerminal('t-child', manager, { 'tau.assignment': path })]);
 
-  await createWorkerDelivery(managerState.pi, hc).deliver(managerState.context);
+  await deliverPending(createWorkerDelivery(managerState.pi), hc, managerState.context);
 
   expect(managerState.notifications).toHaveLength(1);
   expect(managerState.notifications[0]?.[0]).toContain('Malformed assignment');
@@ -267,7 +277,7 @@ it('skips a child without an assignment label', async () => {
   const managerState = createManager();
   const hc = createHc([liveTerminal('t-child', manager)]);
 
-  await createWorkerDelivery(managerState.pi, hc).deliver(managerState.context);
+  await deliverPending(createWorkerDelivery(managerState.pi), hc, managerState.context);
 
   expect(managerState.notifications).toEqual([]);
   expect(managerState.messages).toEqual([]);
@@ -284,7 +294,7 @@ it('ignores an assignment whose report is not written yet', async () => {
   const managerState = createManager();
   const hc = createHc([liveTerminal('t-child', manager, { 'tau.assignment': path })]);
 
-  await createWorkerDelivery(managerState.pi, hc).deliver(managerState.context);
+  await deliverPending(createWorkerDelivery(managerState.pi), hc, managerState.context);
 
   expect(managerState.notifications).toEqual([]);
   expect(managerState.messages).toEqual([]);
@@ -298,22 +308,7 @@ it('skips a terminal that is not the manager child', async () => {
     liveTerminal('t-child', manager),
   ]);
 
-  await createWorkerDelivery(managerState.pi, hc).deliver(managerState.context);
-
-  expect(managerState.notifications).toEqual([]);
-  expect(managerState.messages).toEqual([]);
-});
-
-it('does nothing without a manager terminal', async () => {
-  vi.stubEnv('HC_TERMINAL_ID', '');
-
-  const managerState = createManager();
-
-  const hc = createHc([
-    liveTerminal('t-child', manager, { 'tau.assignment': '/agent/missing.json' }),
-  ]);
-
-  await createWorkerDelivery(managerState.pi, hc).deliver(managerState.context);
+  await deliverPending(createWorkerDelivery(managerState.pi), hc, managerState.context);
 
   expect(managerState.notifications).toEqual([]);
   expect(managerState.messages).toEqual([]);
@@ -467,7 +462,7 @@ it('does not show a saved question again for a fresh delivery over its message',
     details: { assignmentId, questionId: question.questionId },
   });
 
-  await createWorkerDelivery(managerState.pi, hc).deliver(managerState.context);
+  await deliverPending(createWorkerDelivery(managerState.pi), hc, managerState.context);
 
   expect(managerState.messages).toEqual([]);
   expect(managerState.entries).toHaveLength(1);

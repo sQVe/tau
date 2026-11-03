@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import type { DeadlineWatchdog } from '../src/extensions/subagents/deadlineWatchdog.js';
 import { createWorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
+import { createWorkerScan } from '../src/extensions/subagents/workerScan.js';
 import { startHcSession } from './hcSessionHarness.js';
 import {
   launchWorkerSession,
@@ -15,6 +17,8 @@ import {
 vi.mock(import('../src/extensions/subagents/loadout.js'), { spy: true });
 
 vi.setConfig({ testTimeout: 120_000 });
+
+const noDeadline: DeadlineWatchdog = { apply: () => Promise.resolve(), clear: () => undefined };
 
 const managerProbe = `
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -115,8 +119,8 @@ it('shows a real worker report once before it gives the worker the manager envir
     ui: { notify: () => undefined },
   } as unknown as Parameters<ReturnType<typeof createWorkerDelivery>['deliver']>[0];
 
-  await createWorkerDelivery(pi, hc.runtime).deliver(deliveryContext);
-  await createWorkerDelivery(pi, hc.runtime).deliver(deliveryContext);
+  await createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline).scan(deliveryContext);
+  await createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline).scan(deliveryContext);
 
   expect(messages).toHaveLength(1);
   expect(entries).toHaveLength(1);

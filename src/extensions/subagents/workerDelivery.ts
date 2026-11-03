@@ -2,19 +2,32 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 
 import { notifyOnce } from '../../config/config.js';
 import { errorMessage } from '../../errors.js';
-import { currentTerminalAddress, get, ls } from '../../hc/hc.js';
+import { get, ls } from '../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import { isRecord } from '../../schema.js';
 import { readAssignment } from './assignment.js';
 import type { Assignment, SavedQuestion } from './assignment.js';
-import { decideWorkerDelivery, questionKey, reportKey } from './workerDecision.js';
+import { deadlineKey, decideWorkerDelivery, questionKey, reportKey } from './workerDecision.js';
 import type { WorkerReadFact } from './workerDecision.js';
-import { questionMessageType, reportMessageType } from './workerMessage.js';
+import { deadlineMessageType, questionMessageType, reportMessageType } from './workerMessage.js';
 
 type WorkerDeliveryContext = Pick<ExtensionContext, 'sessionManager' | 'ui'>;
 
 export interface WorkerDelivery {
-  deliver: (context: WorkerDeliveryContext) => Promise<void>;
+  deliver: (context: WorkerDeliveryContext, children: readonly WorkerChildRead[]) => void;
+  showEnded: (context: WorkerDeliveryContext, assignmentId: string) => void;
+}
+
+export type ChildAssignment =
+  | { kind: 'none' }
+  | { kind: 'unread'; message: string }
+  | { kind: 'missing'; path: string }
+  | { kind: 'malformed'; path: string; message: string }
+  | { kind: 'saved'; path: string; assignment: Assignment };
+
+export interface WorkerChildRead {
+  terminal: HcTerminal;
+  assignment: ChildAssignment;
 }
 
 const evidenceText = (report: Assignment['report']): string => {
@@ -55,6 +68,10 @@ const shownKeyFromEntry = (entry: {
     return questionKey(assignmentId, questionId);
   }
 
+  if (entry.customType === deadlineMessageType) {
+    return deadlineKey(assignmentId);
+  }
+
   return undefined;
 };
 
@@ -72,56 +89,81 @@ const restoreShownKeys = (context: WorkerDeliveryContext): Set<string> => {
   return shown;
 };
 
-const readFact = async (terminal: HcTerminal): Promise<WorkerReadFact> => {
+const readWorkerChild = async (hc: HcRuntime, child: HcTerminal): Promise<WorkerChildRead> => {
+  let terminal: HcTerminal;
+
+  try {
+    terminal = await get(hc, child.address);
+  } catch (error) {
+    return {
+      terminal: child,
+      assignment: {
+        kind: 'unread',
+        message: `Reading ${child.address} failed: ${errorMessage(error)}`,
+      },
+    };
+  }
+
   const path = terminal.labels?.['tau.assignment'];
 
   if (path === undefined || path === '') {
+    return { terminal, assignment: { kind: 'none' } };
+  }
+
+  try {
+    const assignment = await readAssignment(path);
+
+    return assignment === undefined
+      ? { terminal, assignment: { kind: 'missing', path } }
+      : { terminal, assignment: { kind: 'saved', path, assignment } };
+  } catch (error) {
+    return { terminal, assignment: { kind: 'malformed', path, message: errorMessage(error) } };
+  }
+};
+
+export const readWorkerChildren = async (
+  hc: HcRuntime,
+  managerTerminal: string,
+): Promise<WorkerChildRead[]> => {
+  const list = await ls(hc, { all: true });
+  const children = list.terminals.filter((terminal) => terminal.parent === managerTerminal);
+
+  return Promise.all(children.map((child) => readWorkerChild(hc, child)));
+};
+
+const deliveryFact = (child: WorkerChildRead): WorkerReadFact => {
+  const { assignment } = child;
+
+  if (assignment.kind === 'none') {
     return { kind: 'skip' };
   }
 
-  let assignment: Assignment | undefined;
-
-  try {
-    assignment = await readAssignment(path);
-  } catch (error) {
-    return { kind: 'error', message: errorMessage(error) };
+  if (assignment.kind === 'unread') {
+    return { kind: 'error', message: assignment.message };
   }
 
-  if (assignment === undefined) {
-    return { kind: 'error', message: `Missing assignment file: ${path}.` };
+  if (assignment.kind === 'missing') {
+    return { kind: 'error', message: `Missing assignment file: ${assignment.path}.` };
+  }
+
+  if (assignment.kind === 'malformed') {
+    return { kind: 'error', message: assignment.message };
   }
 
   return {
     kind: 'assignment',
-    assignmentId: assignment.assignmentId,
-    address: terminal.address,
-    report: assignment.report,
-    questions: assignment.questions,
+    assignmentId: assignment.assignment.assignmentId,
+    address: child.terminal.address,
+    report: assignment.assignment.report,
+    questions: assignment.assignment.questions,
   };
 };
 
-const childFact = async (hc: HcRuntime, child: HcTerminal): Promise<WorkerReadFact> => {
-  try {
-    return await readFact(await get(hc, child.address));
-  } catch (error) {
-    return { kind: 'error', message: `Reading ${child.address} failed: ${errorMessage(error)}` };
-  }
-};
-
-export const createWorkerDelivery = (pi: ExtensionAPI, hc: HcRuntime): WorkerDelivery => {
-  let tail: Promise<void> = Promise.resolve();
+export const createWorkerDelivery = (pi: ExtensionAPI): WorkerDelivery => {
   const queuedKeys = new Set<string>();
 
-  const run = async (context: WorkerDeliveryContext): Promise<void> => {
-    const managerTerminal = currentTerminalAddress();
-
-    if (managerTerminal === undefined) {
-      return;
-    }
-
-    const list = await ls(hc, { all: true });
-    const children = list.terminals.filter((terminal) => terminal.parent === managerTerminal);
-    const facts = await Promise.all(children.map((child) => childFact(hc, child)));
+  const deliver = (context: WorkerDeliveryContext, children: readonly WorkerChildRead[]): void => {
+    const facts = children.map((child) => deliveryFact(child));
 
     const shownKeys = new Set([...restoreShownKeys(context), ...queuedKeys]);
 
@@ -154,16 +196,22 @@ export const createWorkerDelivery = (pi: ExtensionAPI, hc: HcRuntime): WorkerDel
     }
   };
 
-  return {
-    deliver: (context) => {
-      const next = tail.then(
-        () => run(context),
-        () => run(context),
-      );
+  const showEnded = (context: WorkerDeliveryContext, assignmentId: string): void => {
+    const key = deadlineKey(assignmentId);
 
-      tail = next.catch(() => undefined);
+    if (restoreShownKeys(context).has(key) || queuedKeys.has(key)) {
+      return;
+    }
 
-      return next;
-    },
+    queuedKeys.add(key);
+
+    pi.sendMessage({
+      customType: deadlineMessageType,
+      content: `Worker ${assignmentId} was ended at its deadline.`,
+      display: true,
+      details: { assignmentId },
+    });
   };
+
+  return { deliver, showEnded };
 };

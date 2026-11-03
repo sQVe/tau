@@ -6,9 +6,11 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import type { Assignment } from '../src/extensions/subagents/assignment.js';
 import { readAssignment } from '../src/extensions/subagents/assignment.js';
-import { registerWorkerDelivery } from '../src/extensions/subagents/subagents.js';
+import type { DeadlineWatchdog } from '../src/extensions/subagents/deadlineWatchdog.js';
+import { registerWorkerScan } from '../src/extensions/subagents/subagents.js';
 import { createWorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
-import type { WorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
+import { createWorkerScan } from '../src/extensions/subagents/workerScan.js';
+import type { WorkerScan } from '../src/extensions/subagents/workerScan.js';
 import { ls, send } from '../src/hc/hc.js';
 import { installCommandShim } from './commandShimFake.js';
 import { startHcSession } from './hcSessionHarness.js';
@@ -123,22 +125,23 @@ const recordingExtension = (
   return { pi, handlers };
 };
 
-const completionTracked = (delivery: WorkerDelivery) => {
-  let tail: Promise<void> = Promise.resolve();
+const completionTracked = (scan: WorkerScan) => {
+  let last: Promise<void> = Promise.resolve();
 
   return {
-    delivery: {
-      deliver: (context: DeliveryContext) => {
-        const next = tail.then(() => delivery.deliver(context));
+    scan: {
+      scan: (context: DeliveryContext) => {
+        last = scan.scan(context);
 
-        tail = next.catch(() => undefined);
-
-        return next;
+        return last;
       },
+      clear: () => undefined,
     },
-    settled: () => tail,
+    settled: () => last,
   };
 };
+
+const noDeadline: DeadlineWatchdog = { apply: () => Promise.resolve(), clear: () => undefined };
 
 const deliveryContext = (entries: SessionEntry[]): DeliveryContext =>
   ({
@@ -188,9 +191,12 @@ it('shows a real worker question once and carries the manager answer into its re
   const entries: SessionEntry[] = [];
   const { pi, handlers } = recordingExtension(messages, entries);
   const context = deliveryContext(entries);
-  const tracked = completionTracked(createWorkerDelivery(pi, hc.runtime));
 
-  registerWorkerDelivery(pi, tracked.delivery);
+  const tracked = completionTracked(
+    createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline),
+  );
+
+  registerWorkerScan(pi, tracked.scan);
 
   const input = handlers.get('input');
   const compact = handlers.get('session_compact');
@@ -273,7 +279,7 @@ it('shows a question once in a fresh delivery after its note failed', async () =
   const { pi } = recordingExtension(messages, entries);
   const context = deliveryContext(entries);
 
-  await createWorkerDelivery(pi, hc.runtime).deliver(context);
+  await createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline).scan(context);
 
   expect(messages).toHaveLength(1);
 
@@ -282,7 +288,7 @@ it('shows a question once in a fresh delivery after its note failed', async () =
     questionId: question.questionId,
   });
 
-  await createWorkerDelivery(pi, hc.runtime).deliver(context);
+  await createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline).scan(context);
 
   expect(messages).toHaveLength(1);
 });
