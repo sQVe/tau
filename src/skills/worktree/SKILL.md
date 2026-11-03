@@ -39,8 +39,9 @@ creates the worktree and runs the repository's add hooks, such as dependency ins
    - Pass `--base <base>` only for a new branch whose base the user or project names. Otherwise
      Grove uses the default branch. Grove rejects `--base` for an existing branch.
    - If the branch already has a worktree, Grove reuses it. Use that checkout in step 3.
-3. Open the worktree as a space. Reuse the space whose folder is the checkout in `herdr-app ls`.
-   Otherwise run `herdr-app do space.new --name <ticket or branch> --folder <checkout>`.
+3. Open the worktree as a space. Reuse the space whose folder is the checkout in `herdr-app ls`, and
+   show it with `herdr-app do space.select --id <id>`. Otherwise run
+   `herdr-app do space.new --name <ticket or branch> --folder <checkout>`.
 4. Send a handover to the new space with the [handover skill](../handover/SKILL.md) when the user
    asked for one. From the bare repository root, also send the approved implementation task without
    waiting to be asked.
