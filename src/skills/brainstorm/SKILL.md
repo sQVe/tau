@@ -20,7 +20,7 @@ unclear. Do not use it for a design the user already agreed on. Use the
 - Write nothing to Linear.
 - Save files only in the directory the `slice` tool's `prepare` action returns for the design's
   slug, such as `.tau/slices/add-dark-mode`.
-- Ask every question with `ask_user_question`, at most four per call.
+- Ask with `ask_user_question`, at most four questions per call.
 - Work one round at a time. Stop for the user where a step says so.
 - Before each stop for the user, update `design.md` in the directory from step 1 with the decisions
   so far, the findings, and the open questions. A later session can then resume from it.
