@@ -1,7 +1,8 @@
-import { lstat } from 'node:fs/promises';
+import { lstat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { readOptionalBytes } from './completedCapture.js';
+import { isMissingFile } from '../errors.js';
+import { rejectLinkedFile } from '../tauDirectory.js';
 import { parseCaptureRecord, recordFileName } from './record.js';
 import type { CaptureRecord } from './record.js';
 
@@ -9,6 +10,20 @@ export type RecordRead =
   | { status: 'missing'; path: string; cause: unknown }
   | { status: 'unreadable'; path: string; error: unknown }
   | { status: 'read'; path: string; bytes: Buffer; record: CaptureRecord };
+
+export const readOptionalBytes = async (path: string): Promise<Buffer | undefined> => {
+  await rejectLinkedFile(path, 'read');
+
+  try {
+    return await readFile(path);
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return undefined;
+    }
+
+    throw error;
+  }
+};
 
 export const missingCause = (path: string): Promise<unknown> =>
   lstat(path).then(

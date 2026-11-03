@@ -15,6 +15,7 @@ import {
   generationPatchFileName,
   recordFileName,
 } from './record.js';
+import { readRecord } from './recordRead.js';
 
 const failure = vi.hoisted(() => ({ call: '', path: '' }));
 
@@ -153,7 +154,10 @@ it.each([
     expect(await readdir(directory)).toEqual(['input.md']);
     expect(await readFile(join(directory, 'input.md'), 'utf8')).toBe(inputHeader);
     expect(await endpointRefs(root)).toBe('');
-    await expect(readCompletedCapture(root, directory)).rejects.toThrow(recordFileName);
+
+    await expect(
+      readCompletedCapture(root, directory, await readRecord(directory)),
+    ).rejects.toThrow(recordFileName);
   },
 );
 
@@ -217,7 +221,10 @@ it('refuses a second capture over a capture folder an earlier capture left witho
 
   expect((await readdir(directory)).toSorted()).toEqual([generationFolderName, 'input.md']);
   expect(await readFile(join(directory, 'input.md'), 'utf8')).toBe(inputHeader);
-  expect((await readCompletedCapture(root, directory)).status).toBe('incomplete');
+
+  expect((await readCompletedCapture(root, directory, await readRecord(directory))).status).toBe(
+    'incomplete',
+  );
 });
 
 it('lets one of two captures started at once publish a record of its own artifacts', async () => {
@@ -248,7 +255,7 @@ it('lets one of two captures started at once publish a record of its own artifac
 
   expect(await readFile(join(directory, 'input.md'))).toEqual(input);
 
-  expect(await readCompletedCapture(root, directory)).toEqual({
+  expect(await readCompletedCapture(root, directory, await readRecord(directory))).toEqual({
     status: 'completed',
     identity,
     reasons: [],

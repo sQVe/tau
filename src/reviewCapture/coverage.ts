@@ -58,7 +58,7 @@ const readLink = async (
     };
   }
 
-  const generation = await readCompletedCapture(root, path, identity);
+  const generation = await readCompletedCapture(root, path, result, identity);
 
   return {
     status: 'read',

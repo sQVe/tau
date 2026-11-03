@@ -1,17 +1,44 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 import { readInspectedEvidence } from './evidence.js';
 import {
   captureWorkingTree,
   failureOf,
   preparedReview,
+  prepareDirectory,
 } from './fixtures/reviewDirectoryHarness.js';
 import { checkReviewFreshness } from './pinnedCapture.js';
+import { recordFileName } from './record.js';
+import { readRecord, requireRecord } from './recordRead.js';
 import { inspectReview } from './reviewCapture.js';
 import type { ReviewInspection } from './reviewCapture.js';
+
+const afterRead = vi.hoisted(() => ({
+  path: '',
+  run: undefined as (() => Promise<void>) | undefined,
+}));
+
+vi.mock(import('node:fs/promises'), async (importOriginal) => {
+  const actual = await importOriginal();
+
+  return {
+    ...actual,
+    readFile: (async (...parameters: Parameters<typeof actual.readFile>) => {
+      const bytes = await actual.readFile(...parameters);
+      const run = parameters[0] === afterRead.path ? afterRead.run : undefined;
+
+      if (run !== undefined) {
+        afterRead.run = undefined;
+        await run();
+      }
+
+      return bytes;
+    }) as typeof actual.readFile,
+  };
+});
 
 it('returns the saved recheck, the current capture, and stale freshness', async () => {
   const { root, directory } = await preparedReview();
@@ -29,6 +56,30 @@ it('returns the saved recheck, the current capture, and stale freshness', async 
   expect(inspection.capture.hash).not.toBe(saved.hash);
   expect(inspection.capture.paths).toEqual(['tracked.txt']);
   expect(inspection.freshness.status).toBe('stale');
+});
+
+it('describes the first record when capture.json is replaced during inspection', async () => {
+  const { root, directory } = await preparedReview();
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+  await captureWorkingTree(root, directory);
+  const first = requireRecord(await readRecord(directory)).record;
+
+  await writeFile(join(root, 'tracked.txt'), 'three\n');
+  const second = await prepareDirectory(root);
+
+  await captureWorkingTree(root, second);
+
+  const recordPath = join(directory, recordFileName);
+  const replacement = await readFile(join(second, recordFileName));
+
+  afterRead.path = recordPath;
+  afterRead.run = () => writeFile(recordPath, replacement);
+
+  const inspection = await inspectReview(root, directory);
+
+  expect(inspection.generation).toEqual([]);
+  expect(inspection.record).toEqual(first);
 });
 
 it('builds review evidence from an inspection', async () => {

@@ -14,6 +14,7 @@ import { decidePredecessor, statusRefusal } from './predecessorDecision.js';
 import { generationFolderName } from './record.js';
 import type { CaptureRecord, Snapshot } from './record.js';
 import { readRecord, requireRecord } from './recordRead.js';
+import type { RecordRead } from './recordRead.js';
 import { checkReviewDirectory } from './reviewDirectory.js';
 import type { PinnedTarget } from './target.js';
 
@@ -40,12 +41,16 @@ interface WorkingTree {
   dirtySubmodules: string[];
 }
 
-const refuseMissingRecord = async (root: string, review: string): Promise<never> => {
+const refuseMissingRecord = async (
+  root: string,
+  review: string,
+  read: RecordRead,
+): Promise<never> => {
   if ((await existingEntry(join(review, generationFolderName))) === undefined) {
     throw new Error(`${review} holds no capture record, so a fix review has nothing to compare.`);
   }
 
-  throw new Error(statusRefusal(review, await readCompletedCapture(root, review)));
+  throw new Error(statusRefusal(review, await readCompletedCapture(root, review, read)));
 };
 
 const completeEndpointTree = (record: CaptureRecord) =>
@@ -59,7 +64,7 @@ export const pinPredecessor = async (
   const result = await readRecord(review);
 
   if (result.status === 'missing') {
-    return refuseMissingRecord(root, review);
+    return refuseMissingRecord(root, review, result);
   }
 
   const { bytes, record } = requireRecord(result);
@@ -71,7 +76,7 @@ export const pinPredecessor = async (
     version: record.version,
     target: record.target.kind,
     hasSnapshot: snapshot !== undefined,
-    generation: await readCompletedCapture(root, review, identity),
+    generation: await readCompletedCapture(root, review, result, identity),
     endpointTree: completeEndpointTree(record),
   });
 

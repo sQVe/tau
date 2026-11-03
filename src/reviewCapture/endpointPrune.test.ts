@@ -8,6 +8,7 @@ import { readCompletedCapture } from './completedCapture.js';
 import { pruneEndpointRefs } from './endpointPrune.js';
 import { captureGeneration } from './generation.js';
 import { generationFolderName, recordFileName } from './record.js';
+import { readRecord } from './recordRead.js';
 
 const day = 24 * 60 * 60 * 1000;
 const isRoot = process.getuid?.() === 0;
@@ -74,7 +75,9 @@ it('keeps the ref of a completed capture, which still reads as completed', async
 
   expect(await git(root, 'rev-parse', ref)).toBe(commit);
 
-  expect(await readCompletedCapture(root, directory, identity)).toMatchObject({
+  expect(
+    await readCompletedCapture(root, directory, await readRecord(directory), identity),
+  ).toMatchObject({
     status: 'completed',
   });
 });
@@ -114,7 +117,9 @@ it('keeps the ref of a deleted review that a fix capture compares against', asyn
 
   expect(await git(root, 'rev-parse', ref)).toBe(commit);
 
-  expect(await readCompletedCapture(root, fixDirectory, identity)).toMatchObject({
+  expect(
+    await readCompletedCapture(root, fixDirectory, await readRecord(fixDirectory), identity),
+  ).toMatchObject({
     status: 'completed',
   });
 });

@@ -9,6 +9,7 @@ import { readCompletedCapture } from './completedCapture.js';
 import { compareEndpoint } from './endpoint.js';
 import { captureGeneration } from './generation.js';
 import { inputFileName, recordFileName } from './record.js';
+import { readRecord } from './recordRead.js';
 import type { ReviewTarget } from './target.js';
 
 const writeAt = async (root: string, path: string, content: string) => {
@@ -93,7 +94,7 @@ it('records the tree of the range end and keeps it with a ref', async () => {
 
   expect(await git(root, 'rev-parse', `${ref}^`)).toBe(await git(root, 'rev-parse', 'HEAD~1'));
 
-  expect(await readCompletedCapture(root, directory)).toMatchObject({
+  expect(await readCompletedCapture(root, directory, await readRecord(directory))).toMatchObject({
     status: 'completed',
     endpoint: 'complete',
   });
@@ -119,7 +120,9 @@ it('records the committed tree of a working tree that renames, deletes, and chan
     tree: await git(root, 'rev-parse', 'HEAD^{tree}'),
   });
 
-  expect((await readCompletedCapture(root, directory)).status).toBe('completed');
+  expect((await readCompletedCapture(root, directory, await readRecord(directory))).status).toBe(
+    'completed',
+  );
 });
 
 it('reads a record whose endpoint tree belongs to another capture as altered', async () => {
@@ -141,7 +144,11 @@ it('reads a record whose endpoint tree belongs to another capture as altered', a
 
   await writeFile(join(first.directory, recordFileName), JSON.stringify(swapped));
 
-  const decision = await readCompletedCapture(root, first.directory);
+  const decision = await readCompletedCapture(
+    root,
+    first.directory,
+    await readRecord(first.directory),
+  );
 
   expect(decision.status).toBe('altered');
   expect(decision.reasons).toEqual([expect.stringContaining('src/kept.ts')]);
@@ -163,7 +170,7 @@ it('keeps a range capture completed after its topic branch is deleted and pruned
   await git(root, 'reflog', 'expire', '--expire=now', '--all');
   await git(root, 'gc', '--quiet', '--prune=now');
 
-  expect(await readCompletedCapture(root, directory)).toMatchObject({
+  expect(await readCompletedCapture(root, directory, await readRecord(directory))).toMatchObject({
     status: 'completed',
     endpoint: 'complete',
   });
@@ -180,7 +187,7 @@ it('reads a capture whose endpoint ref was deleted and objects pruned as missing
   await git(root, 'update-ref', '-d', endpoint['ref'] ?? '');
   await git(root, 'prune', '--expire=now');
 
-  const decision = await readCompletedCapture(root, directory);
+  const decision = await readCompletedCapture(root, directory, await readRecord(directory));
 
   expect(decision.status).toBe('missing');
   expect(decision.reasons).toEqual([expect.stringContaining(endpoint['tree'] ?? '')]);
@@ -197,7 +204,7 @@ it('reads a capture whose endpoint lost a blob object as missing', async () => {
 
   await rm(join(root, '.git', 'objects', blob.slice(0, 2), blob.slice(2)));
 
-  const decision = await readCompletedCapture(root, directory);
+  const decision = await readCompletedCapture(root, directory, await readRecord(directory));
 
   expect(decision.status).toBe('missing');
   expect(decision.reasons).toEqual([expect.stringContaining(blob)]);
@@ -244,7 +251,7 @@ it('reads a record whose endpoint trees make the same change to other content as
 
   await writeFile(join(directory, recordFileName), JSON.stringify(replaced));
 
-  const decision = await readCompletedCapture(root, directory);
+  const decision = await readCompletedCapture(root, directory, await readRecord(directory));
 
   expect(decision.status).toBe('altered');
   expect(decision.reasons).toEqual([expect.stringContaining(foreign.baseTree)]);
@@ -272,7 +279,7 @@ it('reads a range record whose endpoint trees make the same change to other cont
 
   await writeFile(join(directory, recordFileName), JSON.stringify(replaced));
 
-  const decision = await readCompletedCapture(root, directory);
+  const decision = await readCompletedCapture(root, directory, await readRecord(directory));
 
   expect(decision.status).toBe('altered');
 
@@ -356,7 +363,7 @@ it.each([
 
     expect(await git(root, 'for-each-ref', 'refs/tau/')).toBe('');
 
-    expect(await readCompletedCapture(root, directory)).toMatchObject({
+    expect(await readCompletedCapture(root, directory, await readRecord(directory))).toMatchObject({
       status: 'completed',
       endpoint: 'unsupported',
     });

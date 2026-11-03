@@ -6,6 +6,7 @@ import type { Freshness } from './freshness.js';
 import { recaptureReview } from './pinnedCapture.js';
 import type { CaptureRecord } from './record.js';
 import { readRecord, requireRecord } from './recordRead.js';
+import type { RecordRead } from './recordRead.js';
 import { checkReviewDirectory } from './reviewDirectory.js';
 import { readRecheck } from './savedRecapture.js';
 import type { RecheckRead } from './savedRecapture.js';
@@ -19,8 +20,12 @@ export interface ReviewInspection {
   freshness: Freshness;
 }
 
-const generationGaps = async (root: string, directory: string): Promise<EvidenceGap[]> => {
-  const decision = await readCompletedCapture(root, directory);
+const generationGaps = async (
+  root: string,
+  directory: string,
+  read: RecordRead,
+): Promise<EvidenceGap[]> => {
+  const decision = await readCompletedCapture(root, directory, read);
 
   if (decision.status === 'completed' || decision.status === 'legacy') {
     return [];
@@ -50,8 +55,9 @@ export const inspectReview = async (
   requestedDirectory: string,
 ): Promise<ReviewInspection> => {
   const directory = await checkReviewDirectory(root, requestedDirectory);
-  const generation = await generationGaps(root, directory);
-  const record = requireRecord(await readRecord(directory)).record;
+  const read = await readRecord(directory);
+  const generation = await generationGaps(root, directory, read);
+  const record = requireRecord(read).record;
   const recheck = await readRecheckStatus(root, directory);
   const { capture, freshness } = await recaptureReview(root, record);
 

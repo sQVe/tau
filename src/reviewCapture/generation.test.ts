@@ -16,6 +16,7 @@ import {
   recordFileName,
   snapshotFolder,
 } from './record.js';
+import { readRecord } from './recordRead.js';
 
 const statFailure = vi.hoisted(() => ({ suffix: '' }));
 
@@ -86,7 +87,7 @@ it('returns completed with the identity of the saved record', async () => {
   await saveGeneration(root, directory);
   const before = await readSavedFiles(directory);
 
-  expect(await readCompletedCapture(root, directory)).toEqual({
+  expect(await readCompletedCapture(root, directory, await readRecord(directory))).toEqual({
     status: 'completed',
     identity: await recordIdentity(root, directory),
     reasons: [],
@@ -106,7 +107,7 @@ it('returns altered when one byte of capture/patch.diff changes', async () => {
 
   await writeFile(patchPath, saved.replace('diff', 'Diff'));
 
-  const decision = await readCompletedCapture(root, directory);
+  const decision = await readCompletedCapture(root, directory, await readRecord(directory));
 
   expect(decision.status).toBe('altered');
 });
@@ -117,14 +118,18 @@ it('returns incomplete when the capture folder has no record', async () => {
 
   await mkdir(join(directory, generationFolderName));
 
-  expect((await readCompletedCapture(root, directory)).status).toBe('incomplete');
+  expect((await readCompletedCapture(root, directory, await readRecord(directory))).status).toBe(
+    'incomplete',
+  );
 });
 
 it('refuses a directory with neither a record nor a capture folder', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const directory = temporaryDirectory(onTestFinished, 'tau-review-generation-');
 
-  await expect(readCompletedCapture(root, directory)).rejects.toThrow(recordPath(directory));
+  await expect(readCompletedCapture(root, directory, await readRecord(directory))).rejects.toThrow(
+    recordPath(directory),
+  );
 });
 
 it('refuses a capture record that is a link', async () => {
@@ -135,7 +140,9 @@ it('refuses a capture record that is a link', async () => {
   await saveGeneration(root, elsewhere);
   await symlink(recordPath(elsewhere), recordPath(directory));
 
-  await expect(readCompletedCapture(root, directory)).rejects.toThrow('symlink');
+  const completion = async () => readCompletedCapture(root, directory, await readRecord(directory));
+
+  await expect(completion()).rejects.toThrow('symlink');
 });
 
 it('returns completed for a matching expected identity and changes no saved file', async () => {
@@ -146,7 +153,9 @@ it('returns completed for a matching expected identity and changes no saved file
   const identity = await recordIdentity(root, directory);
   const before = await readSavedFiles(directory);
 
-  expect(await readCompletedCapture(root, directory, identity)).toEqual({
+  expect(
+    await readCompletedCapture(root, directory, await readRecord(directory), identity),
+  ).toEqual({
     status: 'completed',
     identity,
     reasons: [],
@@ -162,7 +171,12 @@ it('returns altered for a mismatching expected identity and changes no saved fil
   await saveGeneration(root, directory);
   const before = await readSavedFiles(directory);
 
-  const decision = await readCompletedCapture(root, directory, 'b'.repeat(40));
+  const decision = await readCompletedCapture(
+    root,
+    directory,
+    await readRecord(directory),
+    'b'.repeat(40),
+  );
 
   expect(decision.status).toBe('altered');
   expect(await readSavedFiles(directory)).toEqual(before);
@@ -183,7 +197,10 @@ it('returns legacy for a version 2 record and changes no saved file', async () =
   await writeFile(recordPath(directory), JSON.stringify(record));
   const before = await readSavedFiles(directory);
 
-  expect((await readCompletedCapture(root, directory)).status).toBe('legacy');
+  expect((await readCompletedCapture(root, directory, await readRecord(directory))).status).toBe(
+    'legacy',
+  );
+
   expect(await readSavedFiles(directory)).toEqual(before);
 });
 
@@ -195,7 +212,10 @@ it('returns missing when a saved artifact is gone and changes no saved file', as
   await rm(join(directory, generationFolderName, generationPatchFileName));
   const before = await readSavedFiles(directory);
 
-  expect((await readCompletedCapture(root, directory)).status).toBe('missing');
+  expect((await readCompletedCapture(root, directory, await readRecord(directory))).status).toBe(
+    'missing',
+  );
+
   expect(await readSavedFiles(directory)).toEqual(before);
 });
 
@@ -207,7 +227,10 @@ it('refuses a malformed capture record and changes no saved file', async () => {
   await writeFile(recordPath(directory), '{ "version": 3');
   const before = await readSavedFiles(directory);
 
-  await expect(readCompletedCapture(root, directory)).rejects.toThrow(recordPath(directory));
+  await expect(readCompletedCapture(root, directory, await readRecord(directory))).rejects.toThrow(
+    recordPath(directory),
+  );
+
   expect(await readSavedFiles(directory)).toEqual(before);
 });
 
@@ -228,7 +251,9 @@ const capturedWorkingTree = async () => {
 it('returns completed for an untouched working tree capture with a snapshot', async () => {
   const { root, directory } = await capturedWorkingTree();
 
-  expect((await readCompletedCapture(root, directory)).status).toBe('completed');
+  expect((await readCompletedCapture(root, directory, await readRecord(directory))).status).toBe(
+    'completed',
+  );
 });
 
 it('returns altered when one byte of a saved snapshot copy changes', async () => {
@@ -236,7 +261,9 @@ it('returns altered when one byte of a saved snapshot copy changes', async () =>
 
   await writeFile(copy, 'twO\n');
 
-  expect((await readCompletedCapture(root, directory)).status).toBe('altered');
+  expect((await readCompletedCapture(root, directory, await readRecord(directory))).status).toBe(
+    'altered',
+  );
 });
 
 it('returns missing when a saved snapshot copy is deleted', async () => {
@@ -244,7 +271,9 @@ it('returns missing when a saved snapshot copy is deleted', async () => {
 
   await rm(copy);
 
-  expect((await readCompletedCapture(root, directory)).status).toBe('missing');
+  expect((await readCompletedCapture(root, directory, await readRecord(directory))).status).toBe(
+    'missing',
+  );
 });
 
 it('returns missing when a saved snapshot copy goes away between its read and its mode', async () => {
@@ -256,7 +285,9 @@ it('returns missing when a saved snapshot copy goes away between its read and it
     statFailure.suffix = '';
   });
 
-  expect((await readCompletedCapture(root, directory)).status).toBe('missing');
+  expect((await readCompletedCapture(root, directory, await readRecord(directory))).status).toBe(
+    'missing',
+  );
 });
 
 it('refuses a capture record that names a snapshot path outside the repository', async () => {
@@ -270,19 +301,24 @@ it('refuses a capture record that names a snapshot path outside the repository',
   record.snapshot.present = ['../outside.txt'];
   await writeFile(recordFile, JSON.stringify(record));
 
-  await expect(readCompletedCapture(root, directory)).rejects.toThrow('../outside.txt');
+  await expect(readCompletedCapture(root, directory, await readRecord(directory))).rejects.toThrow(
+    '../outside.txt',
+  );
 });
 
 it('returns altered when only the mode of a saved snapshot copy changes', async () => {
   const { root, directory, copy } = await capturedWorkingTree();
 
   await chmod(copy, 0o644);
-  const completed = await readCompletedCapture(root, directory);
+  const completed = await readCompletedCapture(root, directory, await readRecord(directory));
 
   await chmod(copy, 0o755);
 
   expect(completed.status).toBe('completed');
-  expect((await readCompletedCapture(root, directory)).status).toBe('altered');
+
+  expect((await readCompletedCapture(root, directory, await readRecord(directory))).status).toBe(
+    'altered',
+  );
 });
 
 it('records no snapshot hash for a range capture', async () => {
@@ -302,5 +338,8 @@ it('records no snapshot hash for a range capture', async () => {
   };
 
   expect(Object.keys(record.original)).toEqual(['patch', 'input']);
-  expect((await readCompletedCapture(root, directory)).status).toBe('completed');
+
+  expect((await readCompletedCapture(root, directory, await readRecord(directory))).status).toBe(
+    'completed',
+  );
 });
