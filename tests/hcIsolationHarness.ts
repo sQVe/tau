@@ -17,10 +17,25 @@ export const protectedVariables = [
 
 export type ProtectedVariable = (typeof protectedVariables)[number];
 
+// Resolves . and .. segments in one lexical form. Every path here is absolute.
 const normalize = (value: string): string => {
-  const trimmed = value.replace(/\/+$/, '');
+  const segments: string[] = [];
 
-  return trimmed === '' ? '/' : trimmed;
+  for (const segment of value.split('/')) {
+    if (segment === '' || segment === '.') {
+      continue;
+    }
+
+    if (segment === '..') {
+      segments.pop();
+
+      continue;
+    }
+
+    segments.push(segment);
+  }
+
+  return `/${segments.join('/')}`;
 };
 
 const isInside = (candidate: string, real: string): boolean => {
@@ -35,6 +50,27 @@ const hasPrivatePrefix = (name: string): boolean =>
 
 const inheritedProblem = (name: string): boolean => name !== 'HC_SESSION' && hasPrivatePrefix(name);
 
+// XDG_STATE_HOME defaults under the real home when the runner leaves it unset.
+const defaultRealValue = (
+  name: ProtectedVariable,
+  realValues: Readonly<Partial<Record<ProtectedVariable, string | undefined>>>,
+): string | undefined => {
+  const home = realValues['HOME'];
+
+  return name === 'XDG_STATE_HOME' && home !== undefined && home !== ''
+    ? `${normalize(home)}/.local/state`
+    : undefined;
+};
+
+const effectiveRealValue = (
+  name: ProtectedVariable,
+  realValues: Readonly<Partial<Record<ProtectedVariable, string | undefined>>>,
+): string | undefined => {
+  const real = realValues[name];
+
+  return real === undefined || real === '' ? defaultRealValue(name, realValues) : real;
+};
+
 // Checks only the private-path variables that are present, because a process may inherit the rest
 // from the core it runs on.
 export const privatePathProblems = (
@@ -45,7 +81,7 @@ export const privatePathProblems = (
 
   for (const name of protectedVariables) {
     const value = values[name];
-    const real = realValues[name];
+    const real = effectiveRealValue(name, realValues);
 
     if (value === undefined || value === '') {
       continue;

@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -71,26 +70,27 @@ it.skipIf(!onLinux)(
 );
 
 it.skipIf(!onLinux)(
-  'signals a process of its own session that hc server stop leaves running',
+  'stops a leftover core of its own session under another XDG root through hc',
   async () => {
-    const hc = await startHcSession(onTestFinished);
+    const primary = await startHcSession(onTestFinished);
+    const leftover = await startHcSession(() => undefined, { session: primary.session });
 
-    await runWithEnvironment(hc.runtime, { argv: ['sleep', '60'], env: {} });
-
-    const sleeper = spawn('sleep', ['60'], { env: hc.environment, stdio: 'ignore' });
-
-    onTestFinished(() => {
-      sleeper.kill('SIGKILL');
+    onTestFinished(async () => {
+      await leftover.stop().catch(() => undefined);
+      rmSync(leftover.root, { recursive: true, force: true });
     });
+
+    await runWithEnvironment(primary.runtime, { argv: ['sleep', '60'], env: {} });
+    await runWithEnvironment(leftover.runtime, { argv: ['sleep', '60'], env: {} });
 
     await vi.waitFor(() => {
-      expect(sessionProcesses(hc.session)).toContain(sleeper.pid);
+      expect(sessionProcesses(primary.session).length).toBeGreaterThanOrEqual(2);
     });
 
-    await hc.stop();
+    await primary.stop();
 
-    expect(sessionProcesses(hc.session)).toEqual([]);
-    expect(existsSync(hc.root)).toBe(false);
+    expect(sessionProcesses(primary.session)).toEqual([]);
+    expect(existsSync(primary.root)).toBe(false);
   },
 );
 

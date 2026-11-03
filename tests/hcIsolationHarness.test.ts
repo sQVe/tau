@@ -112,6 +112,29 @@ it('refuses a path inside the real home only after symlinks resolve', () => {
   ]);
 });
 
+it('refuses a dot-segment alias of the real XDG runtime dir', () => {
+  expect(isolationProblems(facts({}, { XDG_RUNTIME_DIR: '/run/user/other/../1000' }))).toEqual([
+    'XDG_RUNTIME_DIR equals the real XDG_RUNTIME_DIR',
+  ]);
+});
+
+it('refuses a canonical alias outside the lexical prefix', () => {
+  expect(
+    isolationProblems(facts({}, { XDG_RUNTIME_DIR: '/run/user/1000/../other/../1000' })),
+  ).toEqual(['XDG_RUNTIME_DIR equals the real XDG_RUNTIME_DIR']);
+});
+
+it('refuses the default state home when the real XDG state home is unset', () => {
+  expect(
+    isolationProblems(
+      facts(
+        { realValues: { ...realValues, XDG_STATE_HOME: undefined } },
+        { XDG_STATE_HOME: '/real/home/.local/state' },
+      ),
+    ),
+  ).toEqual(['XDG_STATE_HOME equals the real XDG_STATE_HOME']);
+});
+
 it('accepts a private value when the real value is missing', () => {
   expect(
     isolationProblems(facts({ realValues: { ...realValues, XDG_DATA_HOME: undefined } })),

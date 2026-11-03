@@ -44,16 +44,23 @@ const resolvePath = (path: string): string => {
 const resolveExisting = (path: string | undefined): string | undefined =>
   path === undefined || path === '' ? path : resolvePath(path);
 
-const realValues = (): Record<ProtectedVariable, string | undefined> => ({
-  HOME: resolveExisting(homedir()),
-  XDG_RUNTIME_DIR: resolveExisting(
-    process.env['XDG_RUNTIME_DIR'] ?? `/run/user/${String(userInfo().uid)}`,
-  ),
-  XDG_STATE_HOME: resolveExisting(process.env['XDG_STATE_HOME']),
-  XDG_CONFIG_HOME: resolveExisting(process.env['XDG_CONFIG_HOME']),
-  XDG_DATA_HOME: resolveExisting(process.env['XDG_DATA_HOME']),
-  XDG_CACHE_HOME: resolveExisting(process.env['XDG_CACHE_HOME']),
-});
+const realValues = (): Record<ProtectedVariable, string | undefined> => {
+  const home = resolveExisting(homedir());
+
+  return {
+    HOME: home,
+    XDG_RUNTIME_DIR: resolveExisting(
+      process.env['XDG_RUNTIME_DIR'] ?? `/run/user/${String(userInfo().uid)}`,
+    ),
+    XDG_STATE_HOME: resolveExisting(
+      process.env['XDG_STATE_HOME'] ??
+        (home === undefined ? undefined : join(home, '.local/state')),
+    ),
+    XDG_CONFIG_HOME: resolveExisting(process.env['XDG_CONFIG_HOME']),
+    XDG_DATA_HOME: resolveExisting(process.env['XDG_DATA_HOME']),
+    XDG_CACHE_HOME: resolveExisting(process.env['XDG_CACHE_HOME']),
+  };
+};
 
 const privateEnvironment = (root: string, session: string): Record<string, string> => {
   const environment: Record<string, string> = {};
@@ -142,7 +149,7 @@ const waitForSessionExit = async (
 };
 
 // The stop request ends the core the fixture started. A process from another XDG directory can
-// carry the same session, so stopSession still checks and signals the session's processes.
+// carry the same session, so stopSession still stops the session's leftover cores through hc.
 const stopCore = async (
   exec: Exec,
   session: string,
@@ -161,69 +168,26 @@ const stopCore = async (
   await waitForSessionExit(session, listProcesses, stopSettleMilliseconds);
 };
 
-const signalDeadlineMilliseconds = 2000;
-
-const signalSessionProcesses = (
-  session: string,
-  listProcesses: SessionProcessLister,
-  signal: NodeJS.Signals,
-): void => {
-  for (const processId of listProcesses(session)) {
-    try {
-      process.kill(processId, signal);
-    } catch {
-      // The process exited between the listing and the signal.
-    }
+// Reads a Linux process environment. Returns undefined when the process is gone.
+const processEnvironment = (processId: number): Record<string, string> | undefined => {
+  if (process.platform !== 'linux') {
+    return undefined;
   }
-};
-
-// hc server stop reaches only the core the fixture started. A process with the same session can
-// still run, so the fallback signals it by PID. The session name is unique to this fixture, so the
-// user's default core is never matched.
-const terminateSessionProcesses = async (
-  session: string,
-  listProcesses: SessionProcessLister,
-): Promise<void> => {
-  signalSessionProcesses(session, listProcesses, 'SIGTERM');
-
-  if (await waitForSessionExit(session, listProcesses, signalDeadlineMilliseconds)) {
-    return;
-  }
-
-  signalSessionProcesses(session, listProcesses, 'SIGKILL');
-  await waitForSessionExit(session, listProcesses, signalDeadlineMilliseconds);
-};
-
-// Removes the root only when no session process remains. Otherwise the root is kept, and the error
-// names the session and the root and carries the first failure as its cause.
-const stopSession = async (
-  exec: Exec,
-  session: string,
-  root: string,
-  listProcesses: SessionProcessLister,
-): Promise<void> => {
-  let failure: unknown;
 
   try {
-    await stopCore(exec, session, root, listProcesses);
-  } catch (error) {
-    failure = error;
-  }
+    const environment: Record<string, string> = {};
 
-  if (listProcesses(session).length > 0) {
-    await terminateSessionProcesses(session, listProcesses);
-  }
+    for (const entry of readFileSync(`/proc/${String(processId)}/environ`, 'utf8').split('\0')) {
+      const separator = entry.indexOf('=');
 
-  if (listProcesses(session).length > 0) {
-    throw new Error(`hc session ${session} still has processes after stop; kept ${root}`, {
-      cause: failure,
-    });
-  }
+      if (separator > 0) {
+        environment[entry.slice(0, separator)] = entry.slice(separator + 1);
+      }
+    }
 
-  rmSync(root, { recursive: true, force: true });
-
-  if (failure !== undefined) {
-    throw asError(failure);
+    return environment;
+  } catch {
+    return undefined;
   }
 };
 
@@ -281,6 +245,81 @@ const createExec = (environment: Readonly<Record<string, string>>): Exec => {
         },
       );
     });
+};
+
+// hc server stop reaches only the core the fixture started. A process with the same session can
+// still run under another XDG root. Stop it by its own socket: run hc server stop under the
+// environment the process carries. The session name is unique to this fixture, and a process
+// without that exact session is left alone, so the user's default core is never stopped.
+const stopLeftoverSessionProcess = async (
+  session: string,
+  processId: number,
+  root: string,
+): Promise<void> => {
+  const environment = processEnvironment(processId);
+
+  if (environment === undefined || environment['HC_SESSION'] !== session) {
+    return;
+  }
+
+  const stopEnvironment: Record<string, string> = { ...environment, HC_SESSION: session };
+  const exec = createExec(stopEnvironment);
+
+  try {
+    await exec('hc', ['server', 'stop', '--json'], {
+      cwd: root,
+      timeout: stopDeadlineMilliseconds,
+    });
+  } catch {
+    // The core may already be gone. stopSession still checks the process list.
+  }
+};
+
+const leftoverStopDeadlineMilliseconds = 2000;
+
+const terminateSessionProcesses = async (
+  session: string,
+  root: string,
+  listProcesses: SessionProcessLister,
+): Promise<void> => {
+  for (const processId of listProcesses(session)) {
+    await stopLeftoverSessionProcess(session, processId, root);
+  }
+
+  await waitForSessionExit(session, listProcesses, leftoverStopDeadlineMilliseconds);
+};
+
+// Removes the root only when no session process remains. Otherwise the root is kept, and the error
+// names the session and the root and carries the first failure as its cause.
+const stopSession = async (
+  exec: Exec,
+  session: string,
+  root: string,
+  listProcesses: SessionProcessLister,
+): Promise<void> => {
+  let failure: unknown;
+
+  try {
+    await stopCore(exec, session, root, listProcesses);
+  } catch (error) {
+    failure = error;
+  }
+
+  if (listProcesses(session).length > 0) {
+    await terminateSessionProcesses(session, root, listProcesses);
+  }
+
+  if (listProcesses(session).length > 0) {
+    throw new Error(`hc session ${session} still has processes after stop; kept ${root}`, {
+      cause: failure,
+    });
+  }
+
+  rmSync(root, { recursive: true, force: true });
+
+  if (failure !== undefined) {
+    throw asError(failure);
+  }
 };
 
 // A test may pass its own terminal environment to runWithEnvironment. Check it before any process

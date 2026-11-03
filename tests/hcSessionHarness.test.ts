@@ -71,6 +71,22 @@ const addFakeProcess = (processId: number, session: string): void => {
   });
 };
 
+const addFakeProcessEnvironment = (
+  processId: number,
+  environment: Record<string, string>,
+): void => {
+  const entries = Object.entries(environment).map(([name, value]) => `${name}=${value}`);
+
+  fakeProcesses.set(String(processId), {
+    state: 'S',
+    environment: `${entries.join('\0')}\0`,
+  });
+
+  onTestFinished(() => {
+    fakeProcesses.clear();
+  });
+};
+
 // The stop path polls with timers, so the tests drive them with fake time.
 const useFakeTimersUntilFinished = (): void => {
   vi.useFakeTimers();
@@ -388,19 +404,38 @@ it('removes the root after a failed hc server stop when no process remains', asy
   expect(existsSync(session.root)).toBe(false);
 });
 
-it('signals a lingering process of its own session and removes the root when it exits', async () => {
+it('stops a leftover core of its own session with the core paths and no PID signal', async () => {
   const remaining = new Set([4343]);
   const session = await startUnregisteredSession(() => [...remaining]);
 
-  const killSpy = vi.spyOn(process, 'kill').mockImplementation((processId) => {
-    remaining.delete(processId);
-
-    return true;
+  addFakeProcessEnvironment(4343, {
+    PATH: '/usr/bin',
+    HC_SESSION: session.session,
+    XDG_RUNTIME_DIR: join(session.root, 'run'),
+    XDG_STATE_HOME: join(session.root, 'state'),
   });
+
+  const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
 
   onTestFinished(() => {
     killSpy.mockRestore();
   });
+
+  const stopEnvironments: (Record<string, string> | undefined)[] = [];
+
+  execFileMock.mockImplementation(((...argumentsList: unknown[]) => {
+    const options = argumentsList[2] as { env?: Record<string, string> } | undefined;
+    const callback = argumentsList[3] as (error: null, stdout: string, stderr: string) => void;
+
+    stopEnvironments.push(options?.env);
+    callback(null, '', '');
+
+    if (stopEnvironments.length >= 2) {
+      remaining.clear();
+    }
+
+    return undefined;
+  }) as unknown as typeof execFile);
 
   useFakeTimersUntilFinished();
 
@@ -409,13 +444,27 @@ it('signals a lingering process of its own session and removes the root when it 
   await vi.runAllTimersAsync();
   await stopping;
 
-  expect(killSpy).toHaveBeenCalledWith(4343, 'SIGTERM');
-  expect(killSpy).not.toHaveBeenCalledWith(4343, 'SIGKILL');
+  expect(killSpy).not.toHaveBeenCalled();
+  expect(stopEnvironments).toHaveLength(2);
+
+  expect(stopEnvironments[1]).toMatchObject({
+    HC_SESSION: session.session,
+    XDG_RUNTIME_DIR: join(session.root, 'run'),
+    XDG_STATE_HOME: join(session.root, 'state'),
+  });
+
   expect(existsSync(session.root)).toBe(false);
 });
 
-it('escalates to SIGKILL and keeps the root when a process outlives both signals', async () => {
+it('refuses to stop a leftover process whose environment is not the test session', async () => {
   const session = await startUnregisteredSession(() => [4343]);
+
+  addFakeProcessEnvironment(4343, {
+    PATH: '/usr/bin',
+    HC_SESSION: 'other-session',
+    XDG_RUNTIME_DIR: '/run/user/1000',
+    XDG_STATE_HOME: '/home/other/.local/state',
+  });
 
   onTestFinished(() => {
     rmSync(session.root, { recursive: true, force: true });
@@ -441,8 +490,11 @@ it('escalates to SIGKILL and keeps the root when a process outlives both signals
     `hc session ${session.session} still has processes after stop; kept ${session.root}`,
   );
 
-  expect(killSpy).toHaveBeenCalledWith(4343, 'SIGTERM');
-  expect(killSpy).toHaveBeenCalledWith(4343, 'SIGKILL');
+  expect(
+    execFileMock.mock.calls.filter(([, args]) => args?.join(' ') === 'server stop --json'),
+  ).toHaveLength(1);
+
+  expect(killSpy).not.toHaveBeenCalled();
   expect(existsSync(session.root)).toBe(true);
 });
 
