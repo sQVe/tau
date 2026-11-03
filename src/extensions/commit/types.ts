@@ -1,18 +1,22 @@
-export interface CommitSuccess {
-  details: {
-    sha: string;
+export type CommitContent = {
+  type: 'text';
+  text: string;
+}[];
+
+interface CommittedGroupDetails {
+  sha: string;
+  files: string[];
+  subject: string;
+  body: string | null;
+  message: string;
+  hooks: 'run';
+  hookChanges: {
     files: string[];
-    subject: string;
-    body: string | null;
-    message?: string;
-    hooks?: 'run';
-    hookChanges?: {
-      files: string[];
-      message: boolean;
-    };
+    message: boolean;
   };
-  content: {
-    type: 'text';
-    text: string;
-  }[];
+}
+
+export interface CommittedGroup {
+  details: CommittedGroupDetails;
+  content: CommitContent;
 }

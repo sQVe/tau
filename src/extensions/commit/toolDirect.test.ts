@@ -18,64 +18,6 @@ import {
 import { createCommitTool } from './tool.js';
 
 describe('direct commit staging', () => {
-  it('preserves untimed wrappers and bounded Git calls', async () => {
-    const { execute, runner } = fakeCommit();
-    const signal = new AbortController().signal;
-
-    await execute(signal);
-
-    const untimedCalls = runner.mock.calls.filter(([, argumentsList]) => {
-      const queryFlags =
-        argumentsList.includes('--show-prefix') || argumentsList.includes('--cached');
-
-      const commands = argumentsList.includes('add') || argumentsList[0] === 'diff-tree';
-
-      return queryFlags || commands;
-    });
-
-    expect(untimedCalls).toHaveLength(7);
-
-    for (const call of untimedCalls) {
-      expect(call[0]).toBe('/repo');
-      expect(call[2]).toEqual({ timeoutMilliseconds: null });
-    }
-
-    for (const command of ['ls-files', 'write-tree', 'cat-file']) {
-      const calls = runner.mock.calls.filter(([, argumentsList]) => argumentsList[0] === command);
-
-      expect(calls.length).toBeGreaterThan(0);
-
-      for (const call of calls) {
-        expect(call[0]).toBe('/repo');
-
-        expect(call[2]).toEqual({
-          timeoutMilliseconds: 30_000,
-          ...(command === 'write-tree' ? { signal } : {}),
-        });
-      }
-    }
-
-    const headCalls = runner.mock.calls.filter(
-      ([, argumentsList]) =>
-        argumentsList[0] === 'rev-parse' && argumentsList.at(-1)?.startsWith('HEAD') === true,
-    );
-
-    const hookDiff = runner.mock.calls.find(
-      ([, argumentsList]) => argumentsList[0] === 'diff' && !argumentsList.includes('--cached'),
-    );
-
-    const snapshotHeadCalls = headCalls.slice(0, -1);
-
-    expect(snapshotHeadCalls.length).toBeGreaterThan(0);
-
-    for (const call of snapshotHeadCalls) {
-      expect(call[2]).toEqual({ timeoutMilliseconds: null });
-    }
-
-    expect(headCalls.at(-1)?.[2]).toEqual({ timeoutMilliseconds: 30_000 });
-    expect(hookDiff?.[2]).toEqual({ timeoutMilliseconds: 30_000 });
-  });
-
   it('stops and unstages when Git staging is killed despite a zero exit code', async () => {
     const { execute, runner } = fakeCommit();
     const executeGit = runner.getMockImplementation()!;

@@ -1,6 +1,6 @@
 import type { GitResult, runGit } from '../../git.js';
 import { decodeOutput, listCommitPaths, readGitText } from './gitCommands.js';
-import type { CommitSuccess } from './types.js';
+import type { CommittedGroup } from './types.js';
 import { isSensitivePath } from './validation.js';
 
 interface CommitReporting {
@@ -50,7 +50,7 @@ const buildCommitReport = async (
   commitHash: string,
   commitObject: string,
   messageOffset: number,
-): Promise<CommitSuccess> => {
+): Promise<CommittedGroup> => {
   const committedPaths = await listCommitPaths(reporting.runner, reporting.cwd, commitHash);
   const storedMessage = commitObject.slice(messageOffset + 2);
   const firstNewline = storedMessage.indexOf('\n');
@@ -104,7 +104,7 @@ const buildCommitReport = async (
   };
 };
 
-export const reportCommit = async (reporting: CommitReporting): Promise<CommitSuccess> => {
+export const reportCommit = async (reporting: CommitReporting): Promise<CommittedGroup> => {
   let commitHash = '';
 
   try {
