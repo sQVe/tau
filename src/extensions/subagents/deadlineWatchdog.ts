@@ -14,7 +14,10 @@ import type {
 } from './deadlineDecision.js';
 import type { ChildAssignment, WorkerChildRead, WorkerDelivery } from './workerDelivery.js';
 
-export type DeadlineWatchdogContext = Pick<ExtensionContext, 'sessionManager' | 'ui'>;
+export type DeadlineWatchdogContext = Pick<
+  ExtensionContext,
+  'sessionManager' | 'ui' | 'isIdle' | 'signal'
+>;
 
 export interface DeadlineWatchdog {
   apply: (

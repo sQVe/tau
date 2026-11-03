@@ -4,7 +4,7 @@ import type { AgentToolResult } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import { send } from '../../hc/hc.js';
+import { label } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { saveQuestion } from './assignment.js';
 import type { Assignment, SavedQuestion } from './assignment.js';
@@ -12,7 +12,7 @@ import { stepFailure } from './report.js';
 
 export interface QuestionTarget {
   hc: HcRuntime;
-  parent: string;
+  terminal: string;
   assignmentPath: string;
   assignment: Assignment;
 }
@@ -49,9 +49,9 @@ export const askParent = async (
   const failures: string[] = [];
 
   try {
-    await send(target.hc, target.parent, { text: `[tau-question] ${target.assignmentPath}` });
+    await label(target.hc, target.terminal, { 'tau.question': question.questionId });
   } catch (error) {
-    failures.push(stepFailure('Question note', error));
+    failures.push(stepFailure('Question label', error));
   }
 
   return {

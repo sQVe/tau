@@ -54,11 +54,11 @@ const setup = () => {
 
   const fake = createHcFake();
 
-  fake.reply('send', JSON.stringify({ turn: 1 }));
+  fake.reply('label', JSON.stringify({ address: workerTerminal, state: 'live' }));
 
   const target: QuestionTarget = {
     hc: { exec: fake.exec, connect: fake.connect, cwd: directory },
-    parent: parentTerminal,
+    terminal: workerTerminal,
     assignmentPath: join(assignmentDirectory(assignmentId), 'assignment.json'),
     assignment,
   };
@@ -71,27 +71,27 @@ const setup = () => {
 const commandCalls = (fake: ReturnType<typeof setup>['fake']) =>
   fake.calls.map((call) => call.commandArguments[0]);
 
-it('keeps the saved question and names the failed note when hc send fails', async () => {
+it('keeps the saved question and names the failed label when hc label fails', async () => {
   const { fake, question, target } = setup();
 
-  fake.fail('send', 'send refused', 1);
+  fake.fail('label', 'label refused', 1);
 
   await writeAssignment(target.assignment);
 
   const result = await askParent(target, question);
   const content = result.content[0];
 
-  expect(content?.type === 'text' ? content.text : '').toContain('Question note failed');
+  expect(content?.type === 'text' ? content.text : '').toContain('Question label failed');
   expect(result.terminate).toBe(true);
 
   const saved = await readAssignment(target.assignmentPath);
   const savedTexts = saved?.questions.map((entry) => entry.text);
 
   expect(savedTexts).toEqual([question.question]);
-  expect(commandCalls(fake)).toEqual(['send']);
+  expect(commandCalls(fake)).toEqual(['label']);
 });
 
-it('saves and sends nothing for an invalid question', async () => {
+it('saves nothing and labels nothing for an invalid question', async () => {
   const { fake, target } = setup();
 
   await writeAssignment(target.assignment);
@@ -102,13 +102,13 @@ it('saves and sends nothing for an invalid question', async () => {
   expect(fake.calls).toEqual([]);
 });
 
-it('saves the question before it notes the parent', async () => {
+it('saves the question before it labels the terminal', async () => {
   const { fake, question, target } = setup();
-  let savedCountWhenNoted: number | undefined;
+  let savedCountWhenLabelled: number | undefined;
 
   const exec: Exec = async (command, commandArguments, options) => {
-    if (commandArguments[0] === 'send') {
-      savedCountWhenNoted = (await readAssignment(target.assignmentPath))?.questions.length;
+    if (commandArguments[0] === 'label') {
+      savedCountWhenLabelled = (await readAssignment(target.assignmentPath))?.questions.length;
     }
 
     return fake.exec(command, commandArguments, options);
@@ -118,20 +118,21 @@ it('saves the question before it notes the parent', async () => {
 
   await askParent({ ...target, hc: { ...target.hc, exec } }, question);
 
-  expect(savedCountWhenNoted).toBe(1);
-  expect(commandCalls(fake)).toEqual(['send']);
+  expect(savedCountWhenLabelled).toBe(1);
+  expect(commandCalls(fake)).toEqual(['label']);
 });
 
-it('notes the parent with the assignment path', async () => {
+it('labels the worker terminal with the question id', async () => {
   const { fake, question, target } = setup();
 
   await writeAssignment(target.assignment);
 
-  await askParent(target, question);
+  const result = await askParent(target, question);
 
-  const sendCall = fake.calls.find((call) => call.commandArguments[0] === 'send');
+  const labelCall = fake.calls.find((call) => call.commandArguments[0] === 'label');
+  const questionId = result.details.questionId;
 
-  expect(sendCall?.commandArguments.at(-1)).toBe(`[tau-question] ${target.assignmentPath}`);
+  expect(labelCall?.commandArguments).toContain(`tau.question=${questionId}`);
 });
 
 it('keeps earlier questions and the report when it asks another question', async () => {

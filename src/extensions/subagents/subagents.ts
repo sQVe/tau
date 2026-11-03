@@ -10,6 +10,7 @@ import {
 } from '../../config/config.js';
 import { errorMessage } from '../../errors.js';
 import { connect } from '../../hc/connect.js';
+import { subscribeEvents } from '../../hc/events.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
@@ -18,6 +19,8 @@ import { readBrowserLoginCommand } from './browserLogin.js';
 import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.js';
 import { createDeadlineWatchdog } from './deadlineWatchdog.js';
 import type { DeadlineWatchdog } from './deadlineWatchdog.js';
+import { createEventWatch } from './eventWatch.js';
+import type { EventWatch } from './eventWatch.js';
 import { executeFollowUp } from './followUp.js';
 import { followUpParameters } from './followUpParameters.js';
 import { Admission, executeLaunch } from './launch.js';
@@ -161,7 +164,7 @@ const registerLaunchTool = (
       `Profiles: ${profileText(profiles)}. model overrides the profile default as provider/id.`,
       ...modelLine,
       'Editing workers require acceptance criteria. Brief them with, when it applies: outcome, scope and non-goals, entry files, decisions already made, baseline, and checks to run. Give the worktree; one editor per worktree. The deadline includes waits and cleanup.',
-      'A worker note starts a new turn when a worker reports, asks a question, or stops. End your turn to wait; never sleep or poll.',
+      'A worker event starts a new turn when a worker reports, asks a question, or stops. End your turn to wait; never sleep or poll.',
       'Answer a worker question with `hc send <address> "<answer>"`, never `--force`; report a refused send to the user.',
     ].join(' '),
     parameters: launchParameters,
@@ -266,19 +269,19 @@ export const registerDeadlineWatchdog = (pi: ExtensionAPI, watchdog: DeadlineWat
   });
 };
 
-export const registerWorkerScan = (pi: ExtensionAPI, scan: WorkerScan): void => {
+export const registerWorkerScan = (
+  pi: ExtensionAPI,
+  scan: WorkerScan,
+  events: EventWatch,
+): void => {
   pi.on('session_shutdown', () => {
     scan.clear();
-  });
-
-  pi.on('input', (event, context) => {
-    if (event.text.includes('[tau-report]') || event.text.includes('[tau-question]')) {
-      startScan(scan, context);
-    }
+    events.stop();
   });
 
   pi.on('session_start', (_event, context) => {
     startScan(scan, context);
+    events.start(context);
   });
 
   pi.on('session_compact', (_event, context) => {
@@ -308,6 +311,7 @@ export default function subagentsExtension(
   const delivery = createWorkerDelivery(pi);
   const watchdog = createDeadlineWatchdog(hc, delivery);
   const scan = createWorkerScan(hc, delivery, watchdog);
+  const events = createEventWatch(subscribeEvents, scan);
 
   const launchRuntime = (capacity: number): LaunchRuntime => ({
     pi,
@@ -345,7 +349,7 @@ export default function subagentsExtension(
   });
 
   registerDeadlineWatchdog(pi, watchdog);
-  registerWorkerScan(pi, scan);
+  registerWorkerScan(pi, scan, events);
 
   pi.on('tool_call', (event) => {
     if (isNestedControlCall(event)) {

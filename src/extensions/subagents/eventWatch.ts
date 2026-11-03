@@ -1,0 +1,134 @@
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
+
+import { notifyOnce } from '../../config/config.js';
+import type { EventSubscription, HcEvent, SubscribeEvents } from '../../hc/events.js';
+import { currentTerminalAddress } from '../../hc/hc.js';
+import { retryDelay } from './deadlineDecision.js';
+import { decideEventScan } from './eventDecision.js';
+import type { WorkerScan } from './workerScan.js';
+
+export type EventWatchContext = Pick<
+  ExtensionContext,
+  'sessionManager' | 'ui' | 'isIdle' | 'signal'
+>;
+
+export interface EventWatch {
+  start: (context: EventWatchContext) => void;
+  stop: () => void;
+}
+
+export const createEventWatch = (subscribe: SubscribeEvents, scan: WorkerScan): EventWatch => {
+  let stopped = true;
+  let context: EventWatchContext | undefined;
+  let subscription: EventSubscription | undefined;
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  let attempt = 0;
+  let running = false;
+  let pending = false;
+
+  const runScans = async (): Promise<void> => {
+    try {
+      while (pending) {
+        pending = false;
+
+        if (stopped || context === undefined) {
+          break;
+        }
+
+        // Scans run one at a time, so a burst of events cannot overlap them.
+        // oxlint-disable-next-line eslint/no-await-in-loop -- the scans must run in order, not together.
+        await scan.scan(context);
+      }
+    } finally {
+      running = false;
+    }
+  };
+
+  const requestScan = (): void => {
+    if (running) {
+      pending = true;
+
+      return;
+    }
+
+    running = true;
+    pending = true;
+    runScans().catch(() => undefined);
+  };
+
+  const notify = (message: string, key: string): void => {
+    if (context === undefined) {
+      return;
+    }
+
+    notifyOnce(context.ui, 'worker-events', key, message, 'error');
+  };
+
+  const connect = (): void => {
+    const managerTerminal = currentTerminalAddress();
+
+    if (stopped || managerTerminal === undefined) {
+      return;
+    }
+
+    subscription = subscribe(managerTerminal, {
+      onReady: () => {
+        attempt = 0;
+        requestScan();
+      },
+      onEvent: (event: HcEvent) => {
+        if (decideEventScan(event) === 'scan') {
+          requestScan();
+        }
+      },
+      onClose: (reason) => {
+        subscription = undefined;
+
+        if (stopped) {
+          return;
+        }
+
+        notify(`Worker event subscription closed: ${reason}`, `closed:${attempt}`);
+
+        if (retry !== undefined) {
+          return;
+        }
+
+        const delay = retryDelay(attempt);
+
+        if (delay === undefined) {
+          notify('Worker event subscription stopped after repeated failures.', 'stopped');
+
+          return;
+        }
+
+        retry = setTimeout(() => {
+          retry = undefined;
+          attempt += 1;
+          connect();
+        }, delay);
+      },
+    });
+  };
+
+  return {
+    start: (newContext) => {
+      context = newContext;
+      stopped = false;
+      attempt = 0;
+      connect();
+    },
+    stop: () => {
+      stopped = true;
+      pending = false;
+
+      if (retry !== undefined) {
+        clearTimeout(retry);
+        retry = undefined;
+      }
+
+      subscription?.stop();
+      subscription = undefined;
+    },
+  };
+};

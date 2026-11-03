@@ -88,7 +88,7 @@ const handleToolCall = (
     return {
       block: true,
       reason:
-        'Use the parent note channel to ask the parent. Direct worker questionnaires are unavailable.',
+        'Use subagent_question to ask the parent. Direct worker questionnaires are unavailable.',
     };
   }
 
@@ -216,7 +216,6 @@ const readWorkerAssignment = async (
 
   return {
     terminal: terminalAddress,
-    parent: terminal.parent,
     assignmentPath,
     assignment,
   };

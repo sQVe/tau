@@ -27,7 +27,6 @@ const target = (overrides: Partial<ReportTarget> = {}): ReportTarget => ({
     cwd: '/',
   },
   terminal: 'worker-1',
-  parent: 'manager-1',
   assignmentPath: 'assignment.json',
   assignment: assignment(),
   refusal: { incompleteRefused: false, reminderSent: false, remindAfterRefusal: false },

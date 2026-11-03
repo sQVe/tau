@@ -4,7 +4,7 @@ import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
 import { errorMessage } from '../../errors.js';
-import { label, send } from '../../hc/hc.js';
+import { label } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { saveReport } from './assignment.js';
 import type { Assignment, SavedReport } from './assignment.js';
@@ -20,7 +20,6 @@ export interface ReportRefusalState {
 export interface ReportTarget {
   hc: HcRuntime;
   terminal: string;
-  parent: string;
   assignmentPath: string;
   assignment: Assignment;
   refusal: ReportRefusalState;
@@ -203,12 +202,6 @@ export const reportToParent = async (
     await label(target.hc, target.terminal, { 'tau.report': target.assignmentPath });
   } catch (error) {
     failures.push(stepFailure('Report label', error));
-  }
-
-  try {
-    await send(target.hc, target.parent, { text: `[tau-report] ${target.assignmentPath}` });
-  } catch (error) {
-    failures.push(stepFailure('Report note', error));
   }
 
   return {
