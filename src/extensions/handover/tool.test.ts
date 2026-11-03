@@ -2,18 +2,32 @@ import { link, mkdir, readdir, readFile, stat, symlink, unlink, writeFile } from
 import { join } from 'node:path';
 
 import { Value } from 'typebox/value';
-import { expect, it, onTestFinished } from 'vitest';
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import {
   createTemporaryBareRoot,
   createTemporaryRepository,
   git,
 } from '../../../tests/gitRepository.js';
+import { createHcFake } from '../../../tests/hcFake.js';
+import type { HcFake } from '../../../tests/hcFake.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { createHandoverTool } from './tool.js';
 
+const runtimeOf = (fake: HcFake) => ({
+  exec: fake.exec,
+  connect: fake.connect,
+  cwd: '/repository',
+});
+
+const createTool = () => createHandoverTool(runtimeOf(createHcFake()));
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 const prepare = async (root: string) => {
-  const result = await createHandoverTool().execute(
+  const result = await createTool().execute(
     'call',
     { action: 'prepare' },
     undefined,
@@ -21,7 +35,7 @@ const prepare = async (root: string) => {
     noUiContext(root),
   );
 
-  return result.details;
+  return result.details as { directory: string };
 };
 
 const repositories = [
@@ -178,8 +192,8 @@ it('refuses a later ignore exception in a bare root without changing it', async 
   expect(await readdir(join(root, '.tau'))).toEqual(['.gitignore']);
 });
 
-it('accepts only the prepare action in the parameters Pi validates', () => {
-  const { parameters } = createHandoverTool();
+it('accepts prepare and rejects an unknown or missing action in the parameters Pi validates', () => {
+  const { parameters } = createTool();
 
   expect(Value.Check(parameters, { action: 'prepare' })).toBe(true);
   expect(Value.Check(parameters, { action: 'delete' })).toBe(false);
@@ -189,7 +203,7 @@ it('accepts only the prepare action in the parameters Pi validates', () => {
 it('gives the model the directory as JSON text in the tool content', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  const result = await createHandoverTool().execute(
+  const result = await createTool().execute(
     'call',
     { action: 'prepare' },
     undefined,
@@ -204,4 +218,57 @@ it('gives the model the directory as JSON text in the tool content', async () =>
   expect(JSON.parse(block?.type === 'text' ? block.text : '')).toEqual({
     directory: join(root, '.tau', 'handovers'),
   });
+});
+
+it('accepts the send action with its terminal and file in the parameters Pi validates', () => {
+  const { parameters } = createTool();
+
+  expect(Value.Check(parameters, { action: 'send', terminal: 't7', file: 'message.md' })).toBe(
+    true,
+  );
+});
+
+it('sends the handover file through hc and returns the status as JSON text', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+  const file = join(root, '.tau', 'handovers', 'message.md');
+
+  vi.stubEnv('HC_TERMINAL_ID', 'caller');
+  await mkdir(join(root, '.tau', 'handovers'), { recursive: true });
+  await writeFile(file, 'Next steps\n');
+  fake.reply('get', JSON.stringify({ address: 't7', state: 'live', labels: {} }));
+  fake.reply('send', JSON.stringify({ turn: 3, started: true }));
+
+  const result = await createHandoverTool(runtimeOf(fake)).execute(
+    'call',
+    { action: 'send', terminal: 't7', file },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  expect(result.details).toEqual({ status: 'started', terminal: 't7', turn: 3 });
+
+  expect(JSON.parse(result.content[0]?.type === 'text' ? result.content[0].text : '')).toEqual({
+    status: 'started',
+    terminal: 't7',
+    turn: 3,
+  });
+});
+
+it('refuses a send without a terminal before any hc call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+
+  await expect(
+    createHandoverTool(runtimeOf(fake)).execute(
+      'call',
+      { action: 'send', file: join(root, 'message.md') },
+      undefined,
+      undefined,
+      noUiContext(root),
+    ),
+  ).rejects.toThrow(/send needs a terminal/);
+
+  expect(fake.calls).toEqual([]);
 });
