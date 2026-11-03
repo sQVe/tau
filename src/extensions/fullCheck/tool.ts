@@ -2,18 +2,12 @@ import { defineTool, getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionToolContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
-import { readCheckIdentity } from '../../checkRecord/identity.js';
 import type { Exec } from '../../command.js';
 import { readRepositoryArgv, withIgnoredNote } from '../../config/repositoryCommand.js';
 import { findTauRoot } from '../../tauDirectory.js';
+import { executeRecordedCheck } from './checkFlow.js';
 import type { Recorded } from './checkFlow.js';
-import {
-  findReusedLog,
-  readRepository,
-  repositoryLockKey,
-  runAndRecord,
-  withRepositoryLock,
-} from './checkFlow.js';
+import { defaultIdleLimitMilliseconds } from './run.js';
 import type { CheckResult } from './run.js';
 
 export type FullCheckDetails = Recorded<CheckResult>;
@@ -29,9 +23,6 @@ const parameters = Type.Object({});
 
 const defaultChecksPath = 'checks';
 const defaultPollMilliseconds = 500;
-
-const noLockMessage =
-  'This checkout has an origin remote that does not name an owner/name repository, so the full check has no lock to share with other checkouts of the repository.';
 
 const notConfiguredMessage = (ignored: string | undefined): string =>
   withIgnoredNote(
@@ -86,48 +77,23 @@ const execute = async (
     throw new Error(notConfiguredMessage(ignored));
   }
 
-  const repository = await readRepository({ exec: options.exec, cwd: root, signal });
-
-  if (repository === undefined) {
-    throw new Error(noLockMessage);
-  }
-
-  const waiting = await readCheckIdentity(root, argv);
-  const reusedBeforeWaiting = await findReusedLog(root, waiting, defaultChecksPath);
-
-  if (reusedBeforeWaiting !== undefined) {
-    return toToolResult(reusedBeforeWaiting);
-  }
-
-  const result = await withRepositoryLock(
+  const result = await executeRecordedCheck(
     {
+      name: 'full check',
       root,
+      argv,
+      exec: options.exec,
       agentDirectory,
-      repository: repositoryLockKey(repository),
-      signal,
+      checksPath: defaultChecksPath,
+      output: 'combined',
+      idleLimitMilliseconds: options.idleLimitMilliseconds ?? defaultIdleLimitMilliseconds,
       pollMilliseconds: options.pollMilliseconds ?? defaultPollMilliseconds,
+      signal,
       notifyWaiting,
     },
-    async (recordCommandGroup) => {
-      const identity = await readCheckIdentity(root, argv);
-      const reused = await findReusedLog(root, identity, defaultChecksPath);
-
-      return (
-        reused ??
-        runAndRecord(
-          root,
-          identity,
-          () => readCheckIdentity(root, argv),
-          {
-            signal,
-            recordCommandGroup,
-            idleLimitMilliseconds: options.idleLimitMilliseconds,
-            checksPath: defaultChecksPath,
-            separateStdout: false,
-          },
-          (checked) => Promise.resolve({ ...checked }),
-        )
-      );
+    {
+      settle: (checked) => Promise.resolve(checked),
+      reuse: (saved) => Promise.resolve({ ...saved, reused: true }),
     },
   );
 

@@ -18,6 +18,18 @@ export interface CheckResult {
   stdoutPath?: string;
 }
 
+export type CheckOutput = 'combined' | 'report';
+
+export interface CheckOptions {
+  root: string;
+  argv: string[];
+  signal: AbortSignal | undefined;
+  onStarted: (groupId: number) => Promise<void>;
+  idleLimitMilliseconds: number;
+  output: CheckOutput;
+  checksPath?: string;
+}
+
 const tailLineCount = 40;
 
 export const readTail = async (logPath: string): Promise<string> => {
@@ -37,26 +49,28 @@ const killGraceMilliseconds = 5000;
 
 const millisecondsPerMinute = 60_000;
 const idleLimitMinutes = 2;
-const defaultIdleLimitMilliseconds = idleLimitMinutes * millisecondsPerMinute;
+
+export const defaultIdleLimitMilliseconds = idleLimitMinutes * millisecondsPerMinute;
+
 const idlePollCeilingMilliseconds = 1000;
 const idlePollsPerLimit = 4;
 
 export const stdoutPathOf = (logPath: string): string => logPath.replace(/\.log$/u, '.stdout');
 
-// Runs argv without a shell in `root`, with stdout and stderr together in a new log file.
-export const runCheck = async (
-  root: string,
-  argv: string[],
-  signal: AbortSignal | undefined,
-  onStarted: (groupId: number) => Promise<void>,
-  idleLimitMilliseconds = defaultIdleLimitMilliseconds,
-  separateStdout = false,
+export const runCheck = async ({
+  root,
+  argv,
+  signal,
+  onStarted,
+  idleLimitMilliseconds,
+  output,
   checksPath = 'checks',
-): Promise<CheckResult> => {
+}: CheckOptions): Promise<CheckResult> => {
+  const writesStdoutFile = output === 'report';
   const logPath = await newLogPath(root, checksPath);
   const log = await open(logPath, 'wx');
   const stdoutPath = stdoutPathOf(logPath);
-  const stdoutFile = separateStdout ? await open(stdoutPath, 'wx') : undefined;
+  const stdoutFile = writesStdoutFile ? await open(stdoutPath, 'wx') : undefined;
 
   // Settles with the record's error, or undefined. The caller releases the lock only after this
   // settles, so the release never races the record's rewrite of the same lock file.
@@ -177,7 +191,7 @@ export const runCheck = async (
       idle: hang.idle,
       logPath,
       tail,
-      ...(separateStdout ? { stdoutPath } : {}),
+      ...(writesStdoutFile ? { stdoutPath } : {}),
     };
   } finally {
     clearInterval(idleMonitor);

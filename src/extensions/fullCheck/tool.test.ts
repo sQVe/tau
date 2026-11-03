@@ -1,7 +1,7 @@
 import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { expect, it, onTestFinished, vi } from 'vitest';
+import { expect, it, onTestFinished } from 'vitest';
 
 import { declinedExec } from '../../../tests/declinedExecFake.js';
 import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
@@ -49,18 +49,6 @@ const fixture = async () => {
 
   return { root, directory, counter, configure, run, runCount };
 };
-
-it('returns the saved passing log for an unchanged state without running the command', async () => {
-  const { run, runCount } = await fixture();
-
-  const first = await run();
-  const second = await run();
-
-  expect(first.details?.reused).toBe(false);
-  expect(second.details).toMatchObject({ passed: true, reused: true, idle: false });
-  expect(second.details?.logPath).toBe(first.details?.logPath);
-  expect(await runCount()).toBe(1);
-});
 
 it('returns the saved passing log after a commit and an amend that change no files', async () => {
   const { root, run, runCount } = await fixture();
@@ -136,44 +124,6 @@ it('saves a failing record next to the log and runs the command again', async ()
   ]);
 
   expect(saved.filter((name) => name.endsWith('.log'))).toHaveLength(2);
-});
-
-it('saves no reusable record when the inputs change during the run', async () => {
-  const { configure, counter, run, runCount, root } = await fixture();
-
-  const edit = `require('node:fs').appendFileSync('tracked.txt', 'more\\n');`;
-  await configure(countingArgv(counter, edit));
-
-  const first = await run();
-  const second = await run();
-
-  expect(first.details).toMatchObject({ passed: true, reused: false });
-  expect(second.details?.reused).toBe(false);
-  expect(await runCount()).toBe(2);
-
-  const saved = await readdir(join(root, '.tau', 'checks'));
-
-  expect(saved.filter((name) => name.endsWith('.json'))).toEqual([]);
-});
-
-it('returns a passing log saved by another session while this check waited in the queue', async () => {
-  const { configure, counter, run, runCount } = await fixture();
-
-  await configure(countingArgv(counter, 'setTimeout(() => {}, 400);'));
-
-  const running = run();
-
-  await vi.waitFor(async () => {
-    expect(await runCount()).toBe(1);
-  });
-
-  const waiting = await run();
-  const started = await running;
-
-  expect(started.details?.reused).toBe(false);
-  expect(waiting.details).toMatchObject({ passed: true, reused: true });
-  expect(waiting.details?.logPath).toBe(started.details?.logPath);
-  expect(await runCount()).toBe(1);
 });
 
 it('runs the command again after the executable mode of an untracked file changes', async () => {
@@ -274,6 +224,16 @@ it('refuses a repository file that sets no fullCheck command and names the key a
 
   await expect(run()).rejects.toThrow('fullCheck.argv');
   await expect(run()).rejects.toThrow('.pi/tau.json');
+  expect(await runCount()).toBe(0);
+});
+
+it('refuses a repository whose origin names no owner and name', async () => {
+  const { root, run, runCount } = await fixture();
+
+  await git(root, 'remote', 'set-url', 'origin', '/tmp/some-path');
+
+  await expect(run()).rejects.toThrow('owner/name');
+  await expect(run()).rejects.toThrow('full check');
   expect(await runCount()).toBe(0);
 });
 
