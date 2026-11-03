@@ -132,14 +132,14 @@ to ready. Neither choice completes a required action.
      artifact, or changed content. Restore available evidence or review only the uncovered scope.
      Carry genuinely missing evidence into step 6 as a named required action, never a generic
      mismatch item. Recheck coverage after repairs; neither result is a pass.
-   - For `unsupported`, or saved evidence that cannot form a tool chain, offer manual assessment
-     before a fast rereview with `ask_user_question`. Recommend assessment for old records, not a
-     new review merely because their format is unsupported.
+   - For `unsupported`, or saved evidence that cannot form a tool chain, run the manual assessment
+     without asking.
    - Manual assessment: read the full review, each later fix review, and the diff since the newest.
      Apply the same per-link checks above. Record the paths inspected and your coverage judgment in
      the session report, never as a tool match or as fresh. Missing required evidence stays a named
-     required action in step 6. If assessment cannot establish coverage, offer a fast rereview of
-     the uncovered scope or continuation with the action open.
+     required action in step 6. If assessment cannot establish coverage, ask with
+     `ask_user_question`: a fast rereview of the uncovered scope, or continuation with the action
+     open.
 
    When no saved review exists, or when the user chooses the fast rereview, run the
    [code-review skill](../code-review/SKILL.md) in fast mode on the uncovered scope (the pinned
