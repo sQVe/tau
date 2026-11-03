@@ -80,6 +80,26 @@ it('reads version 2 as version 3', async () => {
   expect(readFileSync(path)).toEqual(before);
 });
 
+it('keeps the saved questions of a version 2 assignment', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-assignment-');
+  const path = join(directory, 'assignment.json');
+
+  const saved = JSON.parse(readFileSync(fixturePath('version2.json'), 'utf8')) as Record<
+    string,
+    unknown
+  >;
+
+  const question = {
+    questionId: '6c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f',
+    text: 'Which config file wins?',
+    askedAt: 1_700_000_000_500,
+  };
+
+  writeFileSync(path, JSON.stringify({ ...saved, questions: [question] }));
+
+  expect((await readAssignment(path))?.questions).toEqual([question]);
+});
+
 it('reads version 1 as version 3', async () => {
   const path = fixturePath('previous.json');
   const before = readFileSync(path);
