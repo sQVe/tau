@@ -10,9 +10,9 @@ import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js'
 import { startHandover } from './start.js';
 import type { StartHandoverRequest, StartHandoverTarget } from './start.js';
 
-const createHerdrFake = (): ExecFake<'herdr'> =>
-  createExecFake<'herdr'>({
-    keyOf: (command) => (command === 'herdr-app' ? 'herdr' : undefined),
+const createAppFake = (): ExecFake<'app'> =>
+  createExecFake<'app'>({
+    keyOf: (command) => (command === 'herdr-app' ? 'app' : undefined),
     handlerFor: () => () => succeededResult('{"ok":true}'),
   });
 
@@ -32,11 +32,11 @@ const requestFor = (
   target: StartHandoverTarget,
 ): StartHandoverRequest => ({ cwd: root, file, folder: root, target });
 
-const commandsOf = (fake: ExecFake<'herdr'>) =>
+const commandsOf = (fake: ExecFake<'app'>) =>
   fake.calls.map(({ command, commandArguments }) => ({ command, commandArguments }));
 
 it('opens a Manager tab in the space with the file text as its task', async () => {
-  const fake = createHerdrFake();
+  const fake = createAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
 
@@ -69,7 +69,7 @@ it('opens a Manager tab in the space with the file text as its task', async () =
 });
 
 it('opens a new space with a Manager tab when no space is given', async () => {
-  const fake = createHerdrFake();
+  const fake = createAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
 
@@ -97,7 +97,7 @@ it('opens a new space with a Manager tab when no space is given', async () => {
 });
 
 it('refuses a file outside .tau/handovers before any herdr-app call', async () => {
-  const fake = createHerdrFake();
+  const fake = createAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = join(root, 'message.md');
 
@@ -111,7 +111,7 @@ it('refuses a file outside .tau/handovers before any herdr-app call', async () =
 });
 
 it('refuses an empty file before any herdr-app call', async () => {
-  const fake = createHerdrFake();
+  const fake = createAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, '');
 
@@ -123,7 +123,7 @@ it('refuses an empty file before any herdr-app call', async () => {
 });
 
 it('refuses a handover too large for one command argument before any herdr-app call', async () => {
-  const fake = createHerdrFake();
+  const fake = createAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'x'.repeat(102_401));
 
@@ -135,7 +135,7 @@ it('refuses a handover too large for one command argument before any herdr-app c
 });
 
 it('refuses a folder that is not a Git checkout before any herdr-app call', async () => {
-  const fake = createHerdrFake();
+  const fake = createAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
   const folder = temporaryDirectory(onTestFinished, 'tau-start-');
@@ -151,7 +151,7 @@ it('refuses a folder that is not a Git checkout before any herdr-app call', asyn
 });
 
 it('runs nothing when the signal is already aborted', async () => {
-  const fake = createHerdrFake();
+  const fake = createAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
   const controller = new AbortController();

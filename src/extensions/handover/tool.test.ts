@@ -285,14 +285,14 @@ const writeHandover = async (root: string, content: string): Promise<string> => 
   return file;
 };
 
-const createHerdrFake = (): ExecFake<'herdr'> =>
-  createExecFake<'herdr'>({
-    keyOf: (command) => (command === 'herdr-app' ? 'herdr' : undefined),
+const createAppFake = (): ExecFake<'app'> =>
+  createExecFake<'app'>({
+    keyOf: (command) => (command === 'herdr-app' ? 'app' : undefined),
     handlerFor: () => () => succeededResult('{"ok":true}'),
   });
 
-const createStartTool = (herdr: ExecFake<'herdr'>) =>
-  createHandoverTool({ exec: herdr.exec, connect: createHcFake().connect, cwd: '/repository' });
+const createStartTool = (app: ExecFake<'app'>) =>
+  createHandoverTool({ exec: app.exec, connect: createHcFake().connect, cwd: '/repository' });
 
 const abortedSignal = (): AbortSignal => {
   const controller = new AbortController();
@@ -323,9 +323,9 @@ it('refuses an already-aborted send before any hc call', async () => {
 it('starts a Manager tab in a space and returns the herdr-app reply', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
-  const herdr = createHerdrFake();
+  const app = createAppFake();
 
-  const result = await createStartTool(herdr).execute(
+  const result = await createStartTool(app).execute(
     'call',
     { action: 'start', file, folder: root, space: 'space-1' },
     undefined,
@@ -334,16 +334,16 @@ it('starts a Manager tab in a space and returns the herdr-app reply', async () =
   );
 
   expect(result.details).toEqual({ reply: '{"ok":true}' });
-  expect(herdr.calls.map((call) => call.commandArguments[1])).toEqual(['tab.new']);
+  expect(app.calls.map((call) => call.commandArguments[1])).toEqual(['tab.new']);
 });
 
 it('refuses a start without a space or name before any herdr-app call', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
-  const herdr = createHerdrFake();
+  const app = createAppFake();
 
   await expect(
-    createStartTool(herdr).execute(
+    createStartTool(app).execute(
       'call',
       { action: 'start', file, folder: root },
       undefined,
@@ -352,7 +352,7 @@ it('refuses a start without a space or name before any herdr-app call', async ()
     ),
   ).rejects.toThrow(/start needs a name when it has no space/);
 
-  expect(herdr.calls).toEqual([]);
+  expect(app.calls).toEqual([]);
 });
 
 it.each([
@@ -361,10 +361,10 @@ it.each([
 ])('refuses a start with $name before any herdr-app call', async ({ folder }) => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
-  const herdr = createHerdrFake();
+  const app = createAppFake();
 
   await expect(
-    createStartTool(herdr).execute(
+    createStartTool(app).execute(
       'call',
       { action: 'start', file, folder, name: 'me-1' },
       undefined,
@@ -373,16 +373,16 @@ it.each([
     ),
   ).rejects.toThrow(/start needs an absolute folder/);
 
-  expect(herdr.calls).toEqual([]);
+  expect(app.calls).toEqual([]);
 });
 
 it('refuses an already-aborted start before any herdr-app call', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
-  const herdr = createHerdrFake();
+  const app = createAppFake();
 
   await expect(
-    createStartTool(herdr).execute(
+    createStartTool(app).execute(
       'call',
       { action: 'start', file, folder: root, space: 'space-1' },
       abortedSignal(),
@@ -391,5 +391,5 @@ it('refuses an already-aborted start before any herdr-app call', async () => {
     ),
   ).rejects.toMatchObject({ name: 'AbortError' });
 
-  expect(herdr.calls).toEqual([]);
+  expect(app.calls).toEqual([]);
 });
