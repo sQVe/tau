@@ -68,14 +68,14 @@ export const registerCodemodeBudget = (
     );
 
     const cuttable = segments.flat().filter((segment) => segment.kind !== 'label');
-    const texts = cuttable.map((segment) => segment.text);
-    const choice = cutOverBudget(texts, tokens, cuttable);
+    const choice = cutOverBudget(cuttable, tokens);
 
     if (choice === undefined) {
       return undefined;
     }
 
-    const path = await saveFullOutput('tau-codemode-', texts.join('\n')).catch(() => undefined);
+    const fullText = cuttable.map((segment) => segment.text).join('\n');
+    const path = await saveFullOutput('tau-codemode-', fullText).catch(() => undefined);
     let seen = 0;
 
     const content = items.flatMap((item, index): ToolResultContent[] => {

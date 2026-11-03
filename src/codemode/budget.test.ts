@@ -9,8 +9,18 @@ import {
   raiseOutputCap,
   splitOutput,
 } from './budget.js';
+import type { Segment } from './budget.js';
 
 const body = 'text("done");';
+
+const itemSegments = (texts: readonly string[]): Segment[] =>
+  texts.map((text, index): Segment => ({
+    kind: 'item',
+    text,
+    number: index + 1,
+    firstLine: text.split('\n')[0] ?? '',
+    separator: '',
+  }));
 
 it.for([
   ['no options line', body, false],
@@ -84,14 +94,14 @@ it('leaves options that Pi rejects for Pi to report', () => {
 });
 
 it('chooses no cut for items within the budget', () => {
-  expect(cutOverBudget(['a'.repeat(10), 'b'.repeat(10)], 6)).toBeUndefined();
+  expect(cutOverBudget(itemSegments(['a'.repeat(10), 'b'.repeat(10)]), 6)).toBeUndefined();
 });
 
 it.for([
   ['an item over the budget', ['a'.repeat(1000), 'b'.repeat(3000), 'c'.repeat(2)], 1000, 1, [2, 3]],
   ['a first item over the budget', ['a'.repeat(5000), 'b'], 1000, 0, [1, 2]],
 ] as const)('keeps whole items in order for %s', ([, texts, tokens, kept, cut]) => {
-  const choice = cutOverBudget(texts, tokens);
+  const choice = cutOverBudget(itemSegments(texts), tokens);
 
   expect(choice?.kept).toBe(kept);
   expect(choice?.cut.map((item) => item.number)).toEqual(cut);
@@ -99,7 +109,7 @@ it.for([
 
 it('names each cut item by number, first line cut to 100 characters, and length', () => {
   const long = `${'x'.repeat(150)}\nsecond line`;
-  const choice = cutOverBudget(['ok', 'y'.repeat(4000), long, 'last'], 1000);
+  const choice = cutOverBudget(itemSegments(['ok', 'y'.repeat(4000), long, 'last']), 1000);
 
   expect(choice?.cut).toEqual([
     { number: 2, firstLine: 'y'.repeat(100), length: 4000 },
@@ -116,7 +126,7 @@ it.for(['-1', '"8000"', '8000.5'])('leaves max_output_tokens %s for Pi to reject
 
 it('bounds the gap for many cut items and names the remaining range', () => {
   const rows = Array.from({ length: 1000 }, (_, index) => `row ${index + 1} ${'x'.repeat(40)}`);
-  const choice = cutOverBudget(rows, 4000);
+  const choice = cutOverBudget(itemSegments(rows), 4000);
   const gap = describeCutItems(choice?.cut ?? [], '/tmp/tau-codemode-x/output.log');
   const keptLength = rows.slice(0, choice?.kept).join('\n').length;
 
@@ -128,15 +138,12 @@ it('bounds the gap for many cut items and names the remaining range', () => {
 });
 
 it('keeps nothing when the budget is smaller than the gap reserve', () => {
-  expect(cutOverBudget(['a'.repeat(3000), 'b'], 10)?.kept).toBe(0);
+  expect(cutOverBudget(itemSegments(['a'.repeat(3000), 'b']), 10)?.kept).toBe(0);
 });
 
 it('cuts nothing from output shorter than the gap reserve under a smaller budget', () => {
   expect(
-    cutOverBudget(
-      Array.from({ length: 10 }, () => 'x'.repeat(107)),
-      100,
-    ),
+    cutOverBudget(itemSegments(Array.from({ length: 10 }, () => 'x'.repeat(107))), 100),
   ).toBeUndefined();
 });
 
@@ -232,11 +239,7 @@ const cutFrom = (
     .flat()
     .filter((segment) => segment.kind !== 'label');
 
-  return cutOverBudget(
-    cuttable.map((segment) => segment.text),
-    tokens,
-    cuttable,
-  );
+  return cutOverBudget(cuttable, tokens);
 };
 
 it('reports Pi item k as cut item k and the console block without a number', () => {
@@ -330,7 +333,7 @@ it.for([
   ['a boundary-sized total', 1999, false],
   ['a total one over the boundary', 2000, true],
 ] as const)('cuts by Pi newline-joined length for %s', ([, secondLength, isCut]) => {
-  const choice = cutOverBudget(['a'.repeat(2000), 'b'.repeat(secondLength)], 1000);
+  const choice = cutOverBudget(itemSegments(['a'.repeat(2000), 'b'.repeat(secondLength)]), 1000);
 
   expect(choice !== undefined).toBe(isCut);
 });
@@ -339,7 +342,10 @@ it.for([
   ['an item that fills the keep budget with its separator', 799, 2],
   ['an item one over the keep budget with its separator', 800, 1],
 ] as const)('keeps %s', ([, secondLength, kept]) => {
-  const choice = cutOverBudget(['a'.repeat(700), 'b'.repeat(secondLength), 'c'.repeat(3000)], 1000);
+  const choice = cutOverBudget(
+    itemSegments(['a'.repeat(700), 'b'.repeat(secondLength), 'c'.repeat(3000)]),
+    1000,
+  );
 
   expect(choice?.kept).toBe(kept);
 });
@@ -548,7 +554,7 @@ it('leaves an options line with leading whitespace that Pi rejects for Pi to rep
 });
 
 it('keeps a first item that fills the keep budget exactly', () => {
-  expect(cutOverBudget(['a'.repeat(1500), 'b'.repeat(3000)], 1000)?.kept).toBe(1);
+  expect(cutOverBudget(itemSegments(['a'.repeat(1500), 'b'.repeat(3000)]), 1000)?.kept).toBe(1);
 });
 
 it('splits numbered texts around an image when the last block holds only console output', () => {

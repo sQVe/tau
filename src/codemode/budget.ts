@@ -1,4 +1,4 @@
-export interface CutDetail {
+interface CutDetail {
   // Absent for output Pi adds besides the script's text items.
   number?: number | undefined;
   name?: string | undefined;
@@ -319,15 +319,14 @@ export const splitOutput = (
 // Pi joins text items with a newline when it counts characters. A budget below the gap reserve
 // counts as the reserve, so the list of cut items never outgrows the output it replaces.
 export const cutOverBudget = (
-  texts: readonly string[],
+  segments: readonly Segment[],
   tokens: number,
-  details: readonly CutDetail[] = texts.map((text, index) => ({
-    number: index + 1,
-    firstLine: text.split('\n')[0] ?? '',
-  })),
 ): BudgetChoice | undefined => {
   const budget = Math.max(tokens * charactersPerToken, gapReserve);
-  const total = texts.reduce((sum, text) => sum + text.length, 0) + Math.max(texts.length - 1, 0);
+
+  const total =
+    segments.reduce((sum, segment) => sum + segment.text.length, 0) +
+    Math.max(segments.length - 1, 0);
 
   if (total <= budget) {
     return undefined;
@@ -337,8 +336,8 @@ export const cutOverBudget = (
   let used = 0;
   let kept = 0;
 
-  for (const text of texts) {
-    const next = used + text.length + (kept > 0 ? 1 : 0);
+  for (const segment of segments) {
+    const next = used + segment.text.length + (kept > 0 ? 1 : 0);
 
     if (next > keepBudget) {
       break;
@@ -348,11 +347,11 @@ export const cutOverBudget = (
     kept += 1;
   }
 
-  const cut = texts.slice(kept).map((text, index) => ({
-    number: details[kept + index]?.number,
-    name: details[kept + index]?.name,
-    firstLine: (details[kept + index]?.firstLine ?? '').slice(0, firstLineLength),
-    length: text.length,
+  const cut = segments.slice(kept).map((segment) => ({
+    number: segment.number,
+    name: segment.name,
+    firstLine: segment.firstLine.slice(0, firstLineLength),
+    length: segment.text.length,
   }));
 
   return { kept, cut };
