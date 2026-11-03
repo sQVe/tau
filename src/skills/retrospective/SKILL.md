@@ -12,9 +12,9 @@ description:
 ## When to use
 
 Use this skill only when the user explicitly asks for a retrospective of a task or workspace. Do not
-start it after a task or from another skill. It needs the `subagent` tools inside herdr to launch a
-scout, and `HERDR_ENV=1` to hand over the findings. Without either, tell the user what is missing
-and stop before any launch.
+start it after a task or from another skill. It needs the `subagent` tools to launch a scout, and
+`HC_TERMINAL_ID` to hand over the findings. Without either, tell the user what is missing and stop
+before any launch.
 
 ## Goal
 
@@ -45,19 +45,17 @@ chooses, for later discussion.
 
 ## Procedure
 
-1. Resolve the workspace first. Resolve any ID the user gives before you search files, branches,
+1. Resolve the scope first. Resolve any address the user gives before you search files, branches,
    worktrees, or Linear.
-   - For an ID such as `wMJ` or `wMJ:p1`, run `herdr workspace get wMJ` with the workspace part
-     only.
-   - When the user names a pane, keep its full ID and then run `herdr pane get <pane>`. Keep the
-     requested pane as the evidence scope. If it cannot be resolved, ask rather than widen the
-     scope.
-   - Without an ID, use the current worktree.
+   - For an address such as `t28`, run `hc get t28` and use its `cwd` and labels.
+   - When the user names a terminal, keep its address and run `hc get <t>`. Keep the requested
+     terminal as the evidence scope. If it cannot be resolved, ask rather than widen the scope.
+   - Without an address, use the current worktree.
 2. Resolve the task.
    - Read a named ticket with `linear issue view <identifier>`. Otherwise take the task from the
      user's words or this session.
    - Ask the user when the task or workspace is missing or fits more than one target. Do not guess.
-3. Resolve the recipient with `herdr agent list`, using the workspace and worker-exclusion filters
+3. Resolve the recipient with `hc ls --json`, using the `cwd`, `status.app`, and `parent` filters
    from step 1 of the [handover skill](../handover/SKILL.md). Use only its read-only discovery, not
    its no-match startup path. Ask when no manager is named, several fit, or none is running.
 4. Choose questions from [questions.md](questions.md). Pick only what this task needs. Add a finding
@@ -98,6 +96,6 @@ chooses, for later discussion.
     [handover skill](../handover/SKILL.md), using that manager as the resolved target.
     - The message is the checked report with its sources and gaps. It asks only for diagnostic
       discussion later, and it must make sense without any source file.
-    - Follow the handover skill's prepare, write, send, and failure rules, including its one-time
-      arrival check after a stalled send. Add no retry or repeated check.
+    - Follow the handover skill's prepare, write, send, and failure rules. Add no retry or repeated
+      send.
     - Report the delivery result and end the turn.

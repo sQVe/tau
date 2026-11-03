@@ -2,18 +2,34 @@ import { link, mkdir, readdir, readFile, stat, symlink, unlink, writeFile } from
 import { join } from 'node:path';
 
 import { Value } from 'typebox/value';
-import { expect, it, onTestFinished } from 'vitest';
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { createExecFake, succeededResult } from '../../../tests/execFake.js';
+import type { ExecFake } from '../../../tests/execFake.js';
 import {
   createTemporaryBareRoot,
   createTemporaryRepository,
   git,
 } from '../../../tests/gitRepository.js';
+import { createHcFake } from '../../../tests/hcFake.js';
+import type { HcFake } from '../../../tests/hcFake.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { createHandoverTool } from './tool.js';
 
+const runtimeOf = (fake: HcFake) => ({
+  exec: fake.exec,
+  connect: fake.connect,
+  cwd: '/repository',
+});
+
+const createTool = () => createHandoverTool(runtimeOf(createHcFake()));
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 const prepare = async (root: string) => {
-  const result = await createHandoverTool().execute(
+  const result = await createTool().execute(
     'call',
     { action: 'prepare' },
     undefined,
@@ -21,7 +37,7 @@ const prepare = async (root: string) => {
     noUiContext(root),
   );
 
-  return result.details;
+  return result.details as { directory: string };
 };
 
 const repositories = [
@@ -178,8 +194,8 @@ it('refuses a later ignore exception in a bare root without changing it', async 
   expect(await readdir(join(root, '.tau'))).toEqual(['.gitignore']);
 });
 
-it('accepts only the prepare action in the parameters Pi validates', () => {
-  const { parameters } = createHandoverTool();
+it('accepts prepare and rejects an unknown or missing action in the parameters Pi validates', () => {
+  const { parameters } = createTool();
 
   expect(Value.Check(parameters, { action: 'prepare' })).toBe(true);
   expect(Value.Check(parameters, { action: 'delete' })).toBe(false);
@@ -189,7 +205,7 @@ it('accepts only the prepare action in the parameters Pi validates', () => {
 it('gives the model the directory as JSON text in the tool content', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  const result = await createHandoverTool().execute(
+  const result = await createTool().execute(
     'call',
     { action: 'prepare' },
     undefined,
@@ -204,4 +220,176 @@ it('gives the model the directory as JSON text in the tool content', async () =>
   expect(JSON.parse(block?.type === 'text' ? block.text : '')).toEqual({
     directory: join(root, '.tau', 'handovers'),
   });
+});
+
+it('accepts the send action with its terminal and file in the parameters Pi validates', () => {
+  const { parameters } = createTool();
+
+  expect(Value.Check(parameters, { action: 'send', terminal: 't7', file: 'message.md' })).toBe(
+    true,
+  );
+});
+
+it('sends the handover file through hc and returns the status as JSON text', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+  const file = join(root, '.tau', 'handovers', 'message.md');
+
+  vi.stubEnv('HC_TERMINAL_ID', 'caller');
+  await mkdir(join(root, '.tau', 'handovers'), { recursive: true });
+  await writeFile(file, 'Next steps\n');
+  fake.reply('get', JSON.stringify({ address: 't7', state: 'live', labels: {} }));
+  fake.reply('send', JSON.stringify({ turn: 3, started: true }));
+
+  const result = await createHandoverTool(runtimeOf(fake)).execute(
+    'call',
+    { action: 'send', terminal: 't7', file },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  expect(result.details).toEqual({ status: 'started', terminal: 't7', turn: 3 });
+
+  expect(JSON.parse(result.content[0]?.type === 'text' ? result.content[0].text : '')).toEqual({
+    status: 'started',
+    terminal: 't7',
+    turn: 3,
+  });
+});
+
+it('refuses a send without a terminal before any hc call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+
+  await expect(
+    createHandoverTool(runtimeOf(fake)).execute(
+      'call',
+      { action: 'send', file: join(root, 'message.md') },
+      undefined,
+      undefined,
+      noUiContext(root),
+    ),
+  ).rejects.toThrow(/send needs a terminal/);
+
+  expect(fake.calls).toEqual([]);
+});
+
+const writeHandover = async (root: string, content: string): Promise<string> => {
+  const directory = join(root, '.tau', 'handovers');
+  const file = join(directory, 'message.md');
+
+  await mkdir(directory, { recursive: true });
+  await writeFile(file, content);
+
+  return file;
+};
+
+const createAppFake = (): ExecFake<'app'> =>
+  createExecFake<'app'>({
+    keyOf: (command) => (command === 'herdr-app' ? 'app' : undefined),
+    handlerFor: () => () => succeededResult('{"ok":true}'),
+  });
+
+const createStartTool = (app: ExecFake<'app'>) =>
+  createHandoverTool({ exec: app.exec, connect: createHcFake().connect, cwd: '/repository' });
+
+const abortedSignal = (): AbortSignal => {
+  const controller = new AbortController();
+
+  controller.abort();
+
+  return controller.signal;
+};
+
+it('refuses an already-aborted send before any hc call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+  const file = await writeHandover(root, 'Next steps\n');
+
+  await expect(
+    createHandoverTool(runtimeOf(fake)).execute(
+      'call',
+      { action: 'send', terminal: 't7', file },
+      abortedSignal(),
+      undefined,
+      noUiContext(root),
+    ),
+  ).rejects.toMatchObject({ name: 'AbortError' });
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('starts a Manager tab in a space and returns the herdr-app reply', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const app = createAppFake();
+
+  const result = await createStartTool(app).execute(
+    'call',
+    { action: 'start', file, folder: root, space: 'space-1' },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  expect(result.details).toEqual({ reply: '{"ok":true}' });
+  expect(app.calls.map((call) => call.commandArguments[1])).toEqual(['tab.new']);
+});
+
+it('refuses a start without a space or name before any herdr-app call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const app = createAppFake();
+
+  await expect(
+    createStartTool(app).execute(
+      'call',
+      { action: 'start', file, folder: root },
+      undefined,
+      undefined,
+      noUiContext(root),
+    ),
+  ).rejects.toThrow(/start needs a name when it has no space/);
+
+  expect(app.calls).toEqual([]);
+});
+
+it.each([
+  { folder: '', name: 'an empty folder' },
+  { folder: '../target', name: 'a relative folder' },
+])('refuses a start with $name before any herdr-app call', async ({ folder }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const app = createAppFake();
+
+  await expect(
+    createStartTool(app).execute(
+      'call',
+      { action: 'start', file, folder, name: 'me-1' },
+      undefined,
+      undefined,
+      noUiContext(root),
+    ),
+  ).rejects.toThrow(/start needs an absolute folder/);
+
+  expect(app.calls).toEqual([]);
+});
+
+it('refuses an already-aborted start before any herdr-app call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const app = createAppFake();
+
+  await expect(
+    createStartTool(app).execute(
+      'call',
+      { action: 'start', file, folder: root, space: 'space-1' },
+      abortedSignal(),
+      undefined,
+      noUiContext(root),
+    ),
+  ).rejects.toMatchObject({ name: 'AbortError' });
+
+  expect(app.calls).toEqual([]);
 });

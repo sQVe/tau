@@ -14,8 +14,8 @@ metadata:
 ## When to use
 
 Use this skill to start work on one slice, after `/slice` planned the design or for any human ticket
-the user wants to run as a slice. One manager pane inside herdr runs the whole flow in one worktree.
-It needs the `linear` CLI authenticated for the workspace, and `gh` for merge state.
+the user wants to run as a slice. One manager terminal runs the whole flow in one worktree. It needs
+the `linear` CLI authenticated for the workspace, and `gh` for merge state.
 
 Do not use it to split or re-plan a design. Use the [slice skill](../slice/SKILL.md) for that.
 

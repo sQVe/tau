@@ -16,9 +16,7 @@ const tauAllowlists: SkillAllowlists = {
     'pr-feedback': ['Replies'],
     'start-slice': ['Changes after the start'],
   },
-  multiCommandShellBlocks: {
-    handover: ['1927769d42b4'],
-  },
+  multiCommandShellBlocks: {},
 };
 
 const noAllowlists: SkillAllowlists = { extraHeadings: {}, multiCommandShellBlocks: {} };

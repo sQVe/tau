@@ -10,8 +10,8 @@ description:
 ## When to use
 
 Use this skill to delete comments in local code: the current branch diff, a commit or range, or
-named files. It needs the `subagent` tools inside herdr. Without them, tell the user and stop. It
-does not review code. For that, use [code-quality](../code-quality/SKILL.md) or
+named files. It needs the `subagent` tools. Without them, tell the user and stop. It does not review
+code. For that, use [code-quality](../code-quality/SKILL.md) or
 [code-review](../code-review/SKILL.md).
 
 ## Hard rules

@@ -14,8 +14,8 @@ A stack's manager switches branches and rebases the whole stack. Git refuses to 
 another worktree has checked out, and `git rebase --update-refs` skips such branches. Workers share
 their manager's checkout. A branch switch under a running worker changes the files it edits.
 
-The user keeps some worktrees open in herdr after their PRs merge, to continue work or plan other
-work.
+The user keeps some worktrees open in herdr-app after their PRs merge, to continue work or plan
+other work.
 
 ## Decision
 
@@ -24,7 +24,7 @@ The user removes each worktree. This keeps today's layout and adds the ownership
 
 ### Ownership
 
-- One worktree, one manager, and one herdr workspace own a workstream.
+- One worktree, one manager, and one herdr-app space own a workstream.
 - A stack stays in one worktree. Its manager switches between the stack's branches.
 - The manager switches branches, restacks, or syncs only on a clean tree and when every one of its
   workers in the worktree has stopped.
@@ -34,7 +34,7 @@ The user removes each worktree. This keeps today's layout and adds the ownership
 ### Removal
 
 - A worktree may stay after its workstream's last PR merges.
-- The user removes worktrees by hand, such as with `grove prune --herdr`. No skill removes them.
+- The user removes worktrees by hand, such as with `grove prune`. No skill removes them.
 
 ## Consequences
 
@@ -42,7 +42,7 @@ The user removes each worktree. This keeps today's layout and adds the ownership
 
 - Each folder has one owner and one purpose that an agent can name.
 - One owner can restack the whole stack, because no other worktree holds its branches.
-- The user keeps a merged worktree and its herdr workspace for as long as they need it.
+- The user keeps a merged worktree and its herdr-app space for as long as they need it.
 
 ### Negative
 

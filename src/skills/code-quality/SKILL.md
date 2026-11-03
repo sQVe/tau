@@ -14,9 +14,9 @@ description:
 ## When to use
 
 Use this skill to review the structure of local code: the current branch, uncommitted work, a commit
-or range, named files, or the whole repository in ordered parts. It needs the `subagent` tools
-inside herdr. Without them, tell the user and stop. For defects, use the
-[code-review](../code-review/SKILL.md) skill.
+or range, named files, or the whole repository in ordered parts. It needs the `subagent` tools.
+Without them, tell the user and stop. For defects, use the [code-review](../code-review/SKILL.md)
+skill.
 
 ## Hard rules
 
