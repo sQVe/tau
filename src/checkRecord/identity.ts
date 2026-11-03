@@ -21,35 +21,6 @@ const copyIndex = async (indexPath: string, temporaryIndex: string): Promise<voi
   }
 };
 
-const resolveCommit = async (root: string, reference: string): Promise<string | undefined> => {
-  const commandArguments = ['rev-parse', '--verify', '--quiet', `${reference}^{commit}`];
-  const result = await runGit(root, commandArguments);
-
-  if (result.exitCode === null) {
-    throw new Error(`git ${commandArguments.join(' ')} failed: ${result.stderr.trim()}`);
-  }
-
-  return result.exitCode === 0 ? result.stdout.toString('utf8').trim() : undefined;
-};
-
-export const readBase = async (root: string, base: string | undefined): Promise<string | null> => {
-  if (base === undefined) {
-    return (await resolveCommit(root, 'origin/HEAD')) ?? null;
-  }
-
-  if (base.startsWith('-')) {
-    throw new Error(`The base ${base} must be a ref or commit, not an option.`);
-  }
-
-  const commit = await resolveCommit(root, base);
-
-  if (commit === undefined) {
-    throw new Error(`The base ${base} does not name a commit in ${root}.`);
-  }
-
-  return commit;
-};
-
 const hasDirtySubmodule = async (root: string): Promise<boolean> => {
   const status = await runGit(root, ['status', '--porcelain=v2', '-z', '--ignore-submodules=none']);
 
