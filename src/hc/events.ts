@@ -109,6 +109,15 @@ export const subscribeEvents: SubscribeEvents = (childrenOf, handlers, options =
     handlers.onClose(reason);
   };
 
+  const reportClose = (reason: string) => {
+    if (stopped) {
+      return;
+    }
+
+    stopped = true;
+    handlers.onClose(reason);
+  };
+
   const handleLine = (line: string) => {
     if (stopped || line.trim() === '') {
       return;
@@ -199,7 +208,7 @@ export const subscribeEvents: SubscribeEvents = (childrenOf, handlers, options =
   child.on('close', (code, signal) => {
     clearTimeout(killTimer);
     killTimer = undefined;
-    fail(closeMessage(code, signal));
+    reportClose(closeMessage(code, signal));
   });
 
   child.stdin.write(

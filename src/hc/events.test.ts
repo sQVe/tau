@@ -205,6 +205,22 @@ it('closes when a line is not JSON', () => {
   expect(closes).toEqual(['hc connect printed a line that is not JSON']);
 });
 
+it('sends no signal when the child closes on its own', () => {
+  vi.useFakeTimers();
+
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const { handlers, closes } = createHandlers();
+
+  subscribeEvents('t-manager', handlers);
+  child.emit('close', 7, null);
+
+  expect(child.kill).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
+  expect(closes).toEqual(['hc connect exited with code 7']);
+});
+
 it('escalates a failed child to SIGKILL when it ignores SIGTERM', () => {
   vi.useFakeTimers();
 
