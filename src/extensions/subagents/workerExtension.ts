@@ -29,6 +29,7 @@ import { reportParameters, reportToParent } from './report.js';
 import type { ReportRefusalState, ReportTarget } from './report.js';
 import { remindToReport } from './reportReminder.js';
 import type { Loadout } from './types.js';
+import { decideWorkerResume } from './workerResume.js';
 import { workerTools } from './workerTools.js';
 
 interface WorkerState {
@@ -223,6 +224,7 @@ const startWorker = async (
   pi: ExtensionAPI,
   state: WorkerState,
   context: ExtensionContext,
+  sendTaskPrompt: boolean,
 ): Promise<void> => {
   try {
     const loaded = await readWorkerAssignment(state);
@@ -236,7 +238,9 @@ const startWorker = async (
       workerTools(loaded.assignment.loadout, skillTools),
     );
 
-    pi.sendUserMessage(workerPrompt(loaded.assignment));
+    if (sendTaskPrompt) {
+      pi.sendUserMessage(workerPrompt(loaded.assignment));
+    }
   } catch (error) {
     context.ui.notify(`Worker refused: ${String(error)}`, 'error');
     context.shutdown();
@@ -307,7 +311,10 @@ export default function workerExtension(pi: ExtensionAPI): void {
   };
 
   pi.on('session_start', (_event, context) => {
-    state.ready = startWorker(pi, state, context);
+    const resume = decideWorkerResume(context.sessionManager.getBranch());
+
+    state.questionAsked = resume.waitingForQuestion;
+    state.ready = startWorker(pi, state, context, resume.sendTaskPrompt);
 
     return state.ready;
   });

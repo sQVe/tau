@@ -158,6 +158,28 @@ it('reads the assignment, activates its tools, and sends the first task prompt',
   expect(loadout.model).toBe('faux/test');
 });
 
+it('keeps a reloaded worker waiting without a second task prompt', async () => {
+  const { context, directory, pi, shutdown } = setup();
+
+  await writeAssignment(assignmentFor(directory));
+
+  Object.assign(context.sessionManager, {
+    getBranch: () => [
+      { type: 'message', message: { role: 'user', content: 'Task' } },
+      { type: 'message', message: { role: 'toolResult', toolName: 'subagent_question' } },
+    ],
+  });
+
+  await pi.handler('session_start')({}, context);
+
+  expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toBeUndefined();
+
+  pi.handler('agent_settled')({}, context);
+
+  expect(shutdown).not.toHaveBeenCalled();
+});
+
 it('shuts the worker down after a settled report', async () => {
   const { context, directory, pi, shutdown } = setup();
 
