@@ -397,6 +397,9 @@ describe('start_slice', () => {
 
     expect(failure.status).toBe('failed');
     expect(failureOf(failure).error).toContain('Creating ticket 2 "Report the start" failed');
+    expect(failureOf(failure).applied).toHaveLength(1);
+    expect(failureOf(failure).applied[0]).toContain('Create ticket 1');
+    expect(failureOf(failure).notApplied[0]).toContain('Create ticket 2');
 
     const [first, second] = await saved();
 

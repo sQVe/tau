@@ -49,7 +49,20 @@ describe('slice tool apply', () => {
 
     const moved = join(directory, '..', 'me-1');
 
-    expect((await apply())['status']).toBe('failed');
+    const failure = failureDetails(await apply());
+
+    expect(failure.status).toBe('failed');
+
+    expect(failure.applied.map((step) => step.kind)).toEqual([
+      'createContainer',
+      'moveDraft',
+      'createSlice',
+    ]);
+
+    expect(failure.notApplied).toMatchObject([
+      { kind: 'createSlice', number: 2 },
+      { kind: 'addBlockedBy', number: 2, blocker: 1 },
+    ]);
 
     expect([...fake.issues.keys()]).toEqual(['ME-1', 'ME-2']);
     expect(fake.issues.get('ME-2')).toMatchObject({ parent: 'ME-1', blockedBy: [] });
@@ -129,6 +142,7 @@ describe('slice tool apply', () => {
 
     expect(aborted.isError).toBe(true);
     expect(JSON.stringify(aborted.details)).toContain('aborted');
+    expect(failureDetails(aborted.details).applied).toMatchObject([{ kind: 'createContainer' }]);
 
     expect(fake.writes()).toHaveLength(1);
 
