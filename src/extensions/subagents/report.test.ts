@@ -98,7 +98,7 @@ it('saves the report then labels it for the manager', async () => {
   const content = result.content[0];
 
   expect(content?.type === 'text' ? content.text : '').toBe(
-    'Handover durably accepted. Parent notified. Stop working.',
+    'Handover durably accepted. Report label set. Stop working.',
   );
 });
 

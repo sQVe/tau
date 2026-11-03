@@ -150,7 +150,7 @@ export const stepFailure = (step: string, error: unknown): string =>
 
 const resultText = (failures: readonly string[]): string =>
   failures.length === 0
-    ? 'Handover durably accepted. Parent notified. Stop working.'
+    ? 'Handover durably accepted. Report label set. Stop working.'
     : `Handover durably accepted. ${failures.join(' ')} Stop working.`;
 
 export const reportToParent = async (

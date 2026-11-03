@@ -30,7 +30,7 @@ export type QuestionInput = Static<typeof questionParameters>;
 
 const resultText = (failures: readonly string[]): string =>
   failures.length === 0
-    ? 'Question saved. Parent notified. Wait for the parent reply.'
+    ? 'Question saved. Question label set. Wait for the parent reply.'
     : `Question saved. ${failures.join(' ')} Wait for the parent reply.`;
 
 export const askParent = async (
