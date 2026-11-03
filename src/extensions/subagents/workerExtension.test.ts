@@ -180,6 +180,95 @@ it('keeps a reloaded worker waiting without a second task prompt', async () => {
   expect(shutdown).not.toHaveBeenCalled();
 });
 
+it('shuts a reloaded worker down without a message when its assignment already has a report', async () => {
+  const { context, directory, pi, shutdown } = setup();
+
+  await writeAssignment({
+    ...assignmentFor(directory),
+    report: {
+      outcome: 'success',
+      summary: 'Changes: None\nEvidence: None\nDecisions: None\nConcerns: None',
+      evidence: [],
+    },
+  });
+
+  Object.assign(context.sessionManager, {
+    getBranch: () => [{ type: 'message', message: { role: 'user', content: 'Task' } }],
+  });
+
+  await pi.handler('session_start')({}, context);
+
+  expect(pi.sendUserMessage).not.toHaveBeenCalled();
+  expect(shutdown).toHaveBeenCalledOnce();
+});
+
+it('sends one continuation message to a reloaded worker with a sent task and no pending question', async () => {
+  const { context, directory, pi, shutdown } = setup();
+
+  await writeAssignment(assignmentFor(directory));
+
+  Object.assign(context.sessionManager, {
+    getBranch: () => [{ type: 'message', message: { role: 'user', content: 'Task' } }],
+  });
+
+  await pi.handler('session_start')({}, context);
+
+  expect(pi.sendUserMessage).toHaveBeenCalledOnce();
+  expect(shutdown).not.toHaveBeenCalled();
+});
+
+it('reminds again for a report after the parent answers a question the reminded worker asked', async () => {
+  const { context, directory, pi } = setup();
+
+  await writeAssignment(assignmentFor(directory));
+  await pi.handler('session_start')({}, context);
+
+  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toMatchObject({
+    continue: true,
+  });
+
+  const question = pi.tools.get('subagent_question');
+
+  if (question === undefined) {
+    throw new Error('The question tool was not registered.');
+  }
+
+  await question.execute(
+    'question',
+    { question: 'Which config file wins?' },
+    undefined,
+    undefined,
+    context,
+  );
+
+  pi.handler('message_start')(
+    { type: 'message_start', message: { role: 'user', content: 'Use A.' } },
+    context,
+  );
+
+  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toMatchObject({
+    continue: true,
+  });
+});
+
+it('does not restart the report reminder when a non-user message starts', async () => {
+  const { context, directory, pi } = setup();
+
+  await writeAssignment(assignmentFor(directory));
+  await pi.handler('session_start')({}, context);
+
+  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toMatchObject({
+    continue: true,
+  });
+
+  pi.handler('message_start')(
+    { type: 'message_start', message: { role: 'assistant', content: [] } },
+    context,
+  );
+
+  expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toBeUndefined();
+});
+
 it('shuts the worker down after a settled report', async () => {
   const { context, directory, pi, shutdown } = setup();
 

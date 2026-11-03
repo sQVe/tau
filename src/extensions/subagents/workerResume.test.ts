@@ -1,7 +1,7 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 import { expect, it } from 'vitest';
 
-import { decideWorkerResume } from './workerResume.js';
+import { decideWorkerResume, decideWorkerStart } from './workerResume.js';
 
 const entry = (message: unknown, type = 'message') =>
   ({ type, message }) as unknown as SessionEntry;
@@ -75,4 +75,49 @@ it.each([
   waitingForQuestion: boolean;
 }[])('$name', ({ branch, sendTaskPrompt, waitingForQuestion }) => {
   expect(decideWorkerResume(branch)).toEqual({ sendTaskPrompt, waitingForQuestion });
+});
+
+const resume = (sendTaskPrompt: boolean, waitingForQuestion: boolean) => ({
+  sendTaskPrompt,
+  waitingForQuestion,
+});
+
+it.each([
+  {
+    name: 'shuts down a fresh worker whose assignment has a report',
+    resume: resume(true, false),
+    hasReport: true,
+    start: 'shutdown',
+  },
+  {
+    name: 'shuts down a reported worker that was waiting for an answer',
+    resume: resume(false, true),
+    hasReport: true,
+    start: 'shutdown',
+  },
+  {
+    name: 'sends the task when the task prompt never went out',
+    resume: resume(true, false),
+    hasReport: false,
+    start: 'sendTask',
+  },
+  {
+    name: 'waits when a question has no answer yet',
+    resume: resume(false, true),
+    hasReport: false,
+    start: 'wait',
+  },
+  {
+    name: 'continues a sent task with no question and no report',
+    resume: resume(false, false),
+    hasReport: false,
+    start: 'continue',
+  },
+] satisfies {
+  name: string;
+  resume: ReturnType<typeof resume>;
+  hasReport: boolean;
+  start: string;
+}[])('$name', ({ resume: facts, hasReport, start }) => {
+  expect(decideWorkerStart(facts, hasReport)).toBe(start);
 });

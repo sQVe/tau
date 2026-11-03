@@ -7,6 +7,8 @@ export interface WorkerResume {
   waitingForQuestion: boolean;
 }
 
+export type WorkerStart = 'shutdown' | 'sendTask' | 'wait' | 'continue';
+
 const messageRecord = (entry: SessionEntry): Record<string, unknown> | undefined => {
   if (entry.type !== 'message') {
     return undefined;
@@ -42,4 +44,20 @@ export const decideWorkerResume = (branch: readonly SessionEntry[]): WorkerResum
     sendTaskPrompt: !branch.some(isUserMessage),
     waitingForQuestion: questionIndex !== -1 && waitsAfterQuestion(branch, questionIndex),
   };
+};
+
+export const decideWorkerStart = (resume: WorkerResume, hasReport: boolean): WorkerStart => {
+  if (hasReport) {
+    return 'shutdown';
+  }
+
+  if (resume.sendTaskPrompt) {
+    return 'sendTask';
+  }
+
+  if (resume.waitingForQuestion) {
+    return 'wait';
+  }
+
+  return 'continue';
 };
