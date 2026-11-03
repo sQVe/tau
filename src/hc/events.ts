@@ -3,7 +3,7 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 
 import { errorMessage } from '../errors.js';
 import { isRecord } from '../schema.js';
-import { isAbortError, requestLine } from './replies.js';
+import { isAbortError, matchParsedReply, requestLine } from './replies.js';
 
 export interface HcEvent {
   method: string;
@@ -128,6 +128,14 @@ export const subscribeEvents: SubscribeEvents = (childrenOf, handlers, options =
       }
 
       if (value.id === 2 && !ready) {
+        try {
+          matchParsedReply('hc connect', [value], 2);
+        } catch (error) {
+          fail(errorMessage(error));
+
+          return;
+        }
+
         ready = true;
         handlers.onReady();
       }

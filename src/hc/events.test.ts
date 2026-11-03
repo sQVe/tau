@@ -160,6 +160,19 @@ it('closes with the exit code when hc connect ends', () => {
   expect(closes).toEqual(['hc connect exited with code 7']);
 });
 
+it('closes when the subscribe reply has no result', () => {
+  const child = createFakeChild();
+  spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
+
+  const { handlers, ready, closes } = createHandlers();
+
+  subscribeEvents('t-manager', handlers);
+  child.stdout.emit('data', `${JSON.stringify({ jsonrpc: '2.0', id: 2 })}\n`);
+
+  expect(ready).toHaveLength(0);
+  expect(closes).toEqual(['hc connect printed reply 2 without a result']);
+});
+
 it('closes when a reply is an error', () => {
   const child = createFakeChild();
   spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
