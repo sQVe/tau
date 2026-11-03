@@ -16,6 +16,8 @@ import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
 import { isWorkerProcess } from '../../worker.js';
 import { readBrowserLoginCommand } from './browserLogin.js';
 import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.js';
+import { createDeadlineWatchdog } from './deadlineWatchdog.js';
+import type { DeadlineWatchdog, DeadlineWatchdogContext } from './deadlineWatchdog.js';
 import { Admission, executeLaunch } from './launch.js';
 import type { LaunchRuntime } from './launch.js';
 import { checkLaunchEnvironment } from './launchCheck.js';
@@ -140,6 +142,7 @@ const warnUnknownConfigKeys = (context: ExtensionContext): void => {
 const registerLaunchTool = (
   runtime: LaunchRuntime,
   profiles: ProfileSummary[],
+  scanDeadlines: (context: DeadlineWatchdogContext) => void,
   modelLine: string[] = [],
 ): void => {
   runtime.pi.registerTool({
@@ -174,12 +177,18 @@ const registerLaunchTool = (
         piExec(runtime.pi),
       );
 
-      return executeLaunch(
+      const result = await executeLaunch(
         runtime,
         { parameters: resolved, startedAt, parentSession },
         signal,
         context,
       );
+
+      if (result.isError !== true) {
+        scanDeadlines(context);
+      }
+
+      return result;
     },
   });
 };
@@ -210,11 +219,27 @@ export const registerCapacityRefusal = (pi: ExtensionAPI): CapacityRefusal => {
   };
 };
 
-export const registerWorkerDelivery = (pi: ExtensionAPI, delivery: WorkerDelivery): void => {
+export const registerDeadlineWatchdog = (pi: ExtensionAPI, watchdog: DeadlineWatchdog): void => {
+  pi.on('session_shutdown', () => {
+    watchdog.clear();
+  });
+};
+
+export const registerWorkerDelivery = (
+  pi: ExtensionAPI,
+  delivery: WorkerDelivery,
+  afterDeliver?: (context: Parameters<WorkerDelivery['deliver']>[0]) => void,
+): void => {
   const deliverPending = (context: Parameters<WorkerDelivery['deliver']>[0]): void => {
-    delivery.deliver(context).catch((error: unknown) => {
-      context.ui.notify(`Worker delivery failed: ${errorMessage(error)}`, 'error');
-    });
+    delivery
+      .deliver(context)
+      .catch((error: unknown) => {
+        context.ui.notify(`Worker delivery failed: ${errorMessage(error)}`, 'error');
+      })
+      .then(() => {
+        afterDeliver?.(context);
+      })
+      .catch(() => undefined);
   };
 
   pi.on('input', (event, context) => {
@@ -252,6 +277,17 @@ export default function subagentsExtension(
   };
 
   const delivery = createWorkerDelivery(pi, hc);
+  const watchdog = createDeadlineWatchdog(hc, delivery);
+
+  const scanDeadlines = (context: DeadlineWatchdogContext): void => {
+    watchdog.scan(context).catch((error: unknown) => {
+      try {
+        context.ui.notify(`Deadline scan failed: ${errorMessage(error)}`, 'error');
+      } catch {
+        // A replaced session makes its old context stale, so the error has nowhere to go.
+      }
+    });
+  };
 
   const launchRuntime = (capacity: number): LaunchRuntime => ({
     pi,
@@ -278,14 +314,20 @@ export default function subagentsExtension(
 
     const capacity = launchCapacity(context);
 
-    registerLaunchTool(launchRuntime(capacity), profiles, launchModelLine(context, profiles));
+    registerLaunchTool(
+      launchRuntime(capacity),
+      profiles,
+      scanDeadlines,
+      launchModelLine(context, profiles),
+    );
 
     if (delegating) {
       guidelines = delegationGuidelines(browserLoginCommand(context));
     }
   });
 
-  registerWorkerDelivery(pi, delivery);
+  registerDeadlineWatchdog(pi, watchdog);
+  registerWorkerDelivery(pi, delivery, scanDeadlines);
 
   pi.on('tool_call', (event) => {
     if (isNestedControlCall(event)) {
@@ -298,5 +340,6 @@ export default function subagentsExtension(
   registerLaunchTool(
     launchRuntime(defaultWorkerCapacity),
     launchProfiles({ cwd: process.cwd(), isProjectTrusted: () => false }),
+    scanDeadlines,
   );
 }

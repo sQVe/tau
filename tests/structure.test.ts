@@ -106,6 +106,7 @@ const pureModules = [
   'src/extensions/subagents/acceptanceRefusal.ts',
   'src/extensions/subagents/bashOutputCap.ts',
   'src/extensions/subagents/capacityRefusal.ts',
+  'src/extensions/subagents/deadlineDecision.ts',
   'src/extensions/subagents/incompleteReport.ts',
   'src/extensions/subagents/launchEnvironment.ts',
   'src/extensions/subagents/modelRoutes.ts',

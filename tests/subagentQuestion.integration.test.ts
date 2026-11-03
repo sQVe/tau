@@ -135,6 +135,9 @@ const completionTracked = (delivery: WorkerDelivery) => {
 
         return next;
       },
+      showEnded: (context: DeliveryContext, assignmentId: string) => {
+        delivery.showEnded(context, assignmentId);
+      },
     },
     settled: () => tail,
   };

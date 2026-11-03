@@ -27,6 +27,8 @@ export const reportKey = (assignmentId: string): string => `report:${assignmentI
 export const questionKey = (assignmentId: string, questionId: string): string =>
   `question:${assignmentId}:${questionId}`;
 
+export const deadlineKey = (assignmentId: string): string => `deadline:${assignmentId}`;
+
 const takeReport = (
   fact: Extract<WorkerReadFact, { kind: 'assignment' }>,
   shown: Set<string>,

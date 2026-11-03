@@ -494,3 +494,45 @@ it('names the worker address and the hc send answer in the question message', as
   expect(message.content).toContain('Which branch should I use?');
   expect(message.content).toContain('hc send t-child "<answer>"');
 });
+
+it('shows one ended-at-deadline message per assignment', async () => {
+  const { managerState, hc, assignmentId } = await reportDelivery();
+  const delivery = createWorkerDelivery(managerState.pi, hc);
+
+  delivery.showEnded(managerState.context, assignmentId);
+  delivery.showEnded(managerState.context, assignmentId);
+
+  expect(managerState.messages).toHaveLength(1);
+
+  const message = managerState.messages[0] as {
+    customType?: unknown;
+    display?: unknown;
+    details?: unknown;
+  };
+
+  expect(message.customType).toBe('tau-worker-deadline');
+  expect(message.display).toBe(true);
+  expect(message.details).toEqual({ assignmentId });
+
+  expect(managerState.entries).toEqual([
+    {
+      type: 'custom_message',
+      customType: 'tau-worker-deadline',
+      details: { assignmentId },
+    },
+  ]);
+});
+
+it('restores the ended-at-deadline message from the saved session', async () => {
+  const { managerState, hc, assignmentId } = await reportDelivery();
+
+  managerState.entries.push({
+    type: 'custom_message',
+    customType: 'tau-worker-deadline',
+    details: { assignmentId },
+  });
+
+  createWorkerDelivery(managerState.pi, hc).showEnded(managerState.context, assignmentId);
+
+  expect(managerState.messages).toEqual([]);
+});
