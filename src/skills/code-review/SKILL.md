@@ -15,7 +15,7 @@ description:
 ## When to use
 
 Use this skill to review local code: the current branch, uncommitted work, a commit or range, or
-named files. It needs the `subagent` tools inside herdr. Without them, tell the user and stop.
+named files. It needs the `subagent` tools. Without them, tell the user and stop.
 
 ## Hard rules
 

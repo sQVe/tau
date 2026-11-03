@@ -19,7 +19,7 @@ commit another worktree from your session, even over bash.
 
 ## Hard rules
 
-- Requires `HERDR_ENV=1`. Otherwise tell the user you cannot reach the other workspace and stop.
+- Requires `HC_TERMINAL_ID`. Otherwise tell the user you cannot reach the other agent and stop.
 - The message is one-way. Do not ask for a reply, poll, or wait for the receiver to finish.
 - A handover links to records, such as tickets or `.tau/` working copies, and is not a record
   itself.
@@ -39,21 +39,15 @@ commit another worktree from your session, even over bash.
 ## Procedure
 
 1. Find the target. Ask the user when the target is ambiguous. Do not guess.
-   - Run `herdr agent list` and keep the agents in the target workspace or whose `cwd` is the target
-     worktree. Drop agents named `worker-*`, `scout-*`, `reviewer-*`, `checker-*`, `qa-*`,
-     `browser-*`, or `investigator-*`: they are Tau subagents working for a parent.
+   - Run `hc ls --json`. Keep the terminals whose `cwd` is the target worktree or inside it, whose
+     `status.app` is `pi`, and that have no `parent`. Children with a `parent` are Tau workers.
+   - When a row lacks `cwd`, `parent`, or an object `status`, run `hc get <t> --json` on that
+     terminal before you decide. Those fields are optional in `hc` output.
    - One match is the target. With several matches, ask the user.
-   - With no match, the target is not ambiguous: start Pi in the workspace's manager pane. That pane
-     is in the first tab, which has the lowest `number` in `herdr tab list --workspace <workspace>`.
-     `herdr pane list` shows each pane's tab by `tab_id`. Other tabs hold workers and servers.
-   - If the first tab has exactly one pane, read it with `herdr pane read <pane>`. If the output
-     clearly shows a shell prompt, run `herdr agent start <worktree-name> --kind pi --pane <pane>`
-     and use the `pane_id` it returns.
-   - With several panes in the first tab, or without a clear shell prompt, ask the user.
+   - With no match, the target is not ambiguous: start Pi in the checkout's space. Step 3 shows how.
 2. Call the `handover` tool's `prepare` action in your worktree or the bare repository root. Write
-   the message with the file tool to `<directory>/<your-pane>-<timestamp>.md`, using the returned
-   `directory`. Save no file until the tool has prepared the directory.
-   - Take your pane from `HERDR_PANE_ID`.
+   the message with the file tool to `<directory>/<your HC_TERMINAL_ID>-<timestamp>.md`, using the
+   returned `directory`. Save no file until the tool has prepared the directory.
    - Make the message self-contained: what to do, the state the receiver needs, and what it must not
      touch.
    - For implementation, give the plan status "agreed, nothing open" with the agreed scope.
@@ -65,14 +59,19 @@ commit another worktree from your session, even over bash.
      guard.
 3. Send the file in a separate step, after the write. Never write and send in the same parallel tool
    batch: the send can run first and read an empty file. Then end your turn.
+   - With a target, call the `handover` tool with action `send`, the target's address as `terminal`,
+     and the message path as `file`. Then read its status:
+     - `started`: the receiver began its turn. End your turn.
+     - `notStarted`: the text arrived but no turn started. Do not send again. Tell your user.
+     - `blocked`: nothing was sent, and the receiver waits on its user. Tell your user.
+     - Any other error: report it to your user and stop.
+   - Never force a send or wait for the receiver's turn.
+   - With no target, find the space for the checkout in `herdr-app ls`. Start Pi in it with the
+     message as its task:
 
-   ```bash
-   herdr agent prompt <pane> "$(cat <file>)" --wait --until working
-   ```
+     ```sh
+     herdr-app do tab.new --space <id> --name Manager --folder <checkout> --argv '["pi"]' --task "$(cat <file>)"
+     ```
 
-   The send waits only until the receiver starts working.
-   - `agent_blocked`: nothing was sent. The receiver is waiting on its user, so tell yours.
-   - `agent_prompt_stalled`: the message may have arrived. Run `herdr agent read <pane>` once. If it
-     shows the message arrived, do not send again. Otherwise report that delivery is uncertain and
-     stop.
-   - Any other send error: report it to your user and stop.
+   - With several spaces for the checkout, ask the user. With no space, start one with
+     `herdr-app do space.new --name <ticket or branch> --folder <checkout> --tab Manager --argv '["pi"]' --task "$(cat <file>)"`.

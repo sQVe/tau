@@ -17,7 +17,7 @@ const tauAllowlists: SkillAllowlists = {
     'start-slice': ['Changes after the start'],
   },
   multiCommandShellBlocks: {
-    handover: ['1927769d42b4'],
+    handover: ['92b9db876268'],
   },
 };
 

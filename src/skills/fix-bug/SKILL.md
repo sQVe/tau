@@ -14,7 +14,7 @@ metadata:
 Use this skill for a defect, a regression, or broken behavior. Use a bug ticket the user named.
 Create one with the `tracker` skill only when the user asks. Do not file a ticket for every fix.
 
-The procedure delegates to subagent workers, which need herdr. Without the `subagent` tools, carry
+The procedure delegates to subagent workers, which need the `subagent` tools. Without them, carry
 out each step yourself in the same order.
 
 ## Hard rules
