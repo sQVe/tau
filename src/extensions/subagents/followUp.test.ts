@@ -308,6 +308,39 @@ it('starts a new child that resumes the source session', async () => {
   expect(assignment.deadline).toBe(31_000);
 });
 
+it('refuses a cancelled follow-up before it writes or starts anything', async () => {
+  const { directory, fake, runtime } = setup();
+  const source = sourceAssignment(directory);
+
+  await writeAssignment(source);
+
+  const controller = new AbortController();
+
+  controller.abort();
+
+  const before = assignmentFolders(directory);
+
+  const result = await executeFollowUp(
+    runtime,
+    {
+      parameters: {
+        sourceAssignmentId: source.assignmentId,
+        task: 'Continue the work.',
+        acceptance: ['The follow-up is done.'],
+        visibility: 'background',
+      },
+      startedAt: { wall: 1000, monotonic: 2 },
+      parentSession: '/work/parent.jsonl',
+    },
+    controller.signal,
+    context,
+  );
+
+  expect(result.isError).toBe(true);
+  expect(terminalRun(fake)).toBeUndefined();
+  expect(assignmentFolders(directory)).toEqual(before);
+});
+
 it('refuses a follow-up when the capacity is full', async () => {
   const { directory, fake, runtime } = setup();
   const source = sourceAssignment(directory);
