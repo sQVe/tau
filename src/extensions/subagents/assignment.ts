@@ -208,8 +208,6 @@ export const writeAssignment = async (assignment: Assignment): Promise<void> => 
   await writeRecord(path, assignment);
 };
 
-// A follow-up reuses the earlier session, so it needs no seed and may keep the file in the earlier
-// assignment's folder.
 export const writeFollowUpAssignment = async (assignment: Assignment): Promise<void> => {
   const path = assignmentPath(assignment.assignmentId);
 

@@ -75,10 +75,6 @@ const isFirstAssignmentSentByMessage = (
   previousAssignmentId: string | null,
 ): boolean => previousAssignmentId === null && branch.some(isUserMessage);
 
-// A reloaded session replays its branch, so the saved prompt decides the resume: a user message
-// that names this assignment means the task went out, and for a first assignment any user message
-// means the same because workers started before the header existed sent their task once. A question
-// with no later user message means an answer is still pending.
 export const decideWorkerResume = (
   branch: readonly SessionEntry[],
   assignment: Pick<Assignment, 'assignmentId' | 'previousAssignmentId'>,

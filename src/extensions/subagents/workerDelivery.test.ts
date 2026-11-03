@@ -92,8 +92,6 @@ const customMessageEntry = (message: SentMessage): SessionEntryLike => ({
   details: message.details,
 });
 
-// Models Pi: while streaming, `sendMessage` only queues the message in memory. The message becomes
-// a session entry when the turn drains.
 const createManager = () => {
   const messages: SentMessage[] = [];
   const entries: SessionEntryLike[] = [];

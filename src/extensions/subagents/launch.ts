@@ -316,9 +316,6 @@ const startAssignmentWorker = async (
   );
 };
 
-// Reserves the assignment, starts and reconciles it, then releases the reservation on a confirmed
-// result or a definite failure and returns the tool result. An unclear start keeps the reservation
-// and throws, because a worker may be running.
 export const startReservedWorker = async (
   runtime: LaunchRuntime,
   facts: WorkerStart,

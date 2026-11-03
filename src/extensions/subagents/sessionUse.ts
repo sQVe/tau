@@ -18,9 +18,6 @@ export interface SessionUseFacts {
   terminals: readonly SessionUseTerminal[];
 }
 
-// A finished terminal no longer holds its session, so only running terminals decide. A running
-// terminal with the assignment label but an unreadable assignment could be the source's worker, so
-// it is unknown rather than free.
 export const decideSessionUse = (facts: SessionUseFacts): SessionUse => {
   let unknown = false;
 
