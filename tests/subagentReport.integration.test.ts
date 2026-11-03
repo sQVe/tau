@@ -1,5 +1,6 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
@@ -7,12 +8,10 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import type { DeadlineWatchdog } from '../src/extensions/subagents/deadlineWatchdog.js';
 import { createWorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
 import { createWorkerScan } from '../src/extensions/subagents/workerScan.js';
+import { get } from '../src/hc/hc.js';
+import type { HcSession } from './hcSessionHarness.js';
 import { startHcSession } from './hcSessionHarness.js';
-import {
-  launchWorkerSession,
-  waitForObservation,
-  waitForReport,
-} from './subagentSessionHarness.js';
+import { launchWorkerSession, waitForReport } from './subagentSessionHarness.js';
 
 vi.mock(import('../src/extensions/subagents/loadout.js'), { spy: true });
 
@@ -21,37 +20,38 @@ vi.setConfig({ testTimeout: 120_000 });
 const noDeadline: DeadlineWatchdog = { apply: () => Promise.resolve(), clear: () => undefined };
 
 const managerProbe = `
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync } from 'node:fs';
 
 const output = process.argv[2];
-const marker = '[tau-report]';
-let buffer = '';
-let observed = false;
-
-const observe = () => {
-  if (observed) return;
-  const at = buffer.indexOf(marker);
-  if (at < 0) return;
-  const match = buffer.slice(at + marker.length).match(/\\/\\S+/);
-  if (match === null) return;
-  const path = match[0].replace(/[^A-Za-z0-9/_.-].*$/s, '');
-  let report = false;
-  try {
-    report = JSON.parse(readFileSync(path, 'utf8')).report != null;
-  } catch {
-    return;
-  }
-  appendFileSync(output, JSON.stringify({ path, report }) + '\\n');
-  observed = true;
-  process.exit(0);
-};
 
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => {
-  buffer += chunk;
-  observe();
+  appendFileSync(output, JSON.stringify({ typed: chunk }) + '\\n');
 });
 `;
+
+const waitForTerminalLabel = async (
+  hc: HcSession,
+  address: string,
+  key: string,
+  value: string,
+): Promise<void> => {
+  const deadline = Date.now() + 90_000;
+
+  for (;;) {
+    const terminal = await get(hc.runtime, address);
+
+    if (terminal.labels?.[key] === value) {
+      return;
+    }
+
+    if (Date.now() > deadline) {
+      throw new Error(`Worker never set ${key} on ${address}.`);
+    }
+
+    await delay(100);
+  }
+};
 
 it('shows a real worker report once before it gives the worker the manager environment', async () => {
   const hc = await startHcSession(onTestFinished);
@@ -88,10 +88,7 @@ it('shows a real worker report once before it gives the worker the manager envir
     throw new Error('The fixture worker got no manager probe.');
   }
 
-  const observation = await waitForObservation(worker.observationPath);
-
-  expect(observation.path).toBe(worker.assignmentFilePath);
-  expect(observation.report).toBe(true);
+  await waitForTerminalLabel(hc, worker.workerAddress, 'tau.report', worker.assignmentFilePath);
 
   expect(worker.managerPath).not.toBe(hc.environment['PATH']);
   expect(evidence).toContain(`PATH: ${worker.managerPath}`);
@@ -127,4 +124,8 @@ it('shows a real worker report once before it gives the worker the manager envir
 
   expect(messages).toHaveLength(1);
   expect(entries).toHaveLength(1);
+
+  await delay(500);
+
+  expect(existsSync(worker.observationPath)).toBe(false);
 });

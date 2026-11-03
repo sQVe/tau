@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -17,11 +17,6 @@ import { runWithEnvironment } from '../src/hc/connect.js';
 import { get } from '../src/hc/hc.js';
 import type { HcSession } from './hcSessionHarness.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
-
-interface NoteObservation {
-  path: string;
-  report: boolean;
-}
 
 export interface WorkerSessionOptions {
   hc: HcSession;
@@ -76,26 +71,6 @@ export const waitForReport = async (path: string): Promise<Assignment> => {
   }
 
   return assignment;
-};
-
-export const waitForObservation = async (path: string): Promise<NoteObservation> => {
-  const deadline = Date.now() + observationDeadlineMilliseconds;
-
-  while (Date.now() <= deadline) {
-    try {
-      const [line] = readFileSync(path, 'utf8').trim().split('\n');
-
-      if (line !== undefined && line !== '') {
-        return JSON.parse(line) as NoteObservation;
-      }
-    } catch {
-      // The manager has not recorded the note yet.
-    }
-
-    await delay(observationPollMilliseconds);
-  }
-
-  throw new Error(`Manager never observed the note at ${path}.`);
 };
 
 const writeAgentSettings = (agentDirectory: string): void => {
