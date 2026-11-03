@@ -82,16 +82,9 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
    branches or layers, and what gets more tangled.
 6. Write the draft in `$slicedir`: `agent-<n>.md` per agent ticket in work order, from the
    [tracker skill](../tracker/SKILL.md) template, one worker task each, with the step 5 answers in
-   `## Files`. Write `start.json` in this shape, verbatim:
-
-   ```text
-   {"version": 1, "slice": "<identifier>", "branch": "<name>", "base": "<ref>", "tickets": [
-     {"title": "<title>", "file": "agent-<n>.md", "labels": ["<label id>"], "identifier": null}
-   ]}
-   ```
-
-   Take label IDs from the agent team's label list, as the tracker skill says, or use `[]`. Keep
-   existing identifiers; new ones stay `null`. The tickets together cover every acceptance
+   `## Files`. Write `start.json` as the `start_slice` tool describes, with the tickets in work
+   order. Take label IDs from the agent team's label list, as the tracker skill says, or use `[]`.
+   Keep existing identifiers; new ones stay `null`. The tickets together cover every acceptance
    criterion.
 
 7. Map each slice criterion to its tickets, and change the draft until none is uncovered. Each
@@ -106,9 +99,10 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
    its questions and plan answers, or says none.
    - Revise the body file to answer each question, or proceed when the ticket or code answers it. A
      scout never blocks the start.
-   - Revise `## Files` for each plan answer that changes structure, then recheck as step 7 says.
-   - A ticket with no questions goes to step 9 unchanged. A scout that fails to launch or stops
-     without a report does not stop the start; step 10 names it.
+   - Revise `## Files` for each plan answer that changes structure.
+   - After any revision, check the draft again as step 7 says.
+   - A ticket with no questions and no plan answer to record goes to step 9 unchanged. A scout that
+     fails to launch or stops without a report does not stop the start; step 10 names it.
 9. Start in this order.
    - `git status --porcelain` must print nothing, and no worker may run. Check workers with the
      `hc ls --json` check from the [stack skill](../stack/SKILL.md). Stop and report either failure.

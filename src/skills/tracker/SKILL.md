@@ -33,7 +33,7 @@ This list is the one approval rule; other skills link here.
 - Make only two status changes: move a slice to In Progress when it starts, and cancel a ticket
   after the user approves a preview that shows it. Linear's GitHub integration moves a ticket to
   Done when its PR merges. Never close, reopen, or set any other status.
-- Take teams, projects, and labels only from the prompt's tracker lines. Never guess them.
+- Take teams and projects only from the prompt's tracker lines. Never guess them or a label.
 
 ## Procedure
 
@@ -80,8 +80,9 @@ This list is the one approval rule; other skills link here.
    - Labels: add only a fitting step 3 label, as listed, with its `id`. Never create one. Containers
      and slices get none.
    - Draft: save `ticket.md` and `title.md` in the calling skill's draft directory. Otherwise call
-     `tracker_draft` with action `prepare`, using the lower-case identifier or a title slug. Write
-     the title from `title.md`. Keep the type, route, parent, and labels in the preview only.
+     `tracker_draft` with action `prepare`, with the lower-case identifier when the ticket exists,
+     else a title slug. Write the title from `title.md`. Keep the type, route, parent, and labels in
+     the preview only.
    - Record: right after each create, call `tracker_draft` with action `record`, the same `id` as
      `prepare`, field `identifier`, and the identifier as `value`. Saved comment IDs stay.
    - A recorded identifier makes the write an update, never a create. Read the ticket with
