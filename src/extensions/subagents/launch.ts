@@ -71,10 +71,6 @@ export interface WorkerStart {
   signal: AbortSignal | undefined;
 }
 
-export type WorkerStartOutcome =
-  | { kind: 'started'; terminal: HcTerminal }
-  | { kind: 'unclear'; name: string };
-
 const defaultTimeoutSeconds = { investigation: 1800, editing: 3600 };
 const taskLabelLength = 60;
 const workerNameSuffixLength = 8;
@@ -188,7 +184,7 @@ const foregroundLabels = async (runtime: LaunchRuntime): Promise<Record<string, 
   return labels;
 };
 
-export class UnclearLaunchError extends Error {
+class UnclearLaunchError extends Error {
   override name = 'UnclearLaunchError';
 
   constructor(name: string) {
@@ -223,7 +219,7 @@ const definiteFailureKinds = new Set(['spawn_failed']);
 const isUnclearLaunch = (error: unknown): boolean =>
   error instanceof HcError && !definiteFailureKinds.has(error.kind);
 
-export const launchStatus = (terminal: HcTerminal): LaunchStatus => ({
+const launchStatus = (terminal: HcTerminal): LaunchStatus => ({
   address: terminal.address,
   name: terminal.name ?? '',
   parent: terminal.parent ?? undefined,
@@ -320,31 +316,67 @@ const startAssignmentWorker = async (
   );
 };
 
-// Starts once and reconciles an unclear result by name. The caller keeps the admission slot when
-// the outcome is unclear, because a worker may be running.
-export const startAndReconcileWorker = async (
+// Reserves the assignment, starts and reconciles it, then releases the reservation on a confirmed
+// result or a definite failure and returns the tool result. An unclear start keeps the reservation
+// and throws, because a worker may be running.
+export const startReservedWorker = async (
   runtime: LaunchRuntime,
   facts: WorkerStart,
-): Promise<WorkerStartOutcome> => {
+  hooks: { onDefiniteFailure?: ((error: unknown) => Promise<unknown>) | undefined } = {},
+): Promise<ToolResult<LaunchStatus>> => {
+  const { assignment } = facts;
+  const assignmentId = assignment.assignmentId;
+
+  runtime.admission.add(assignmentId);
+
   try {
-    return { kind: 'started', terminal: await startAssignmentWorker(runtime, facts) };
+    facts.signal?.throwIfAborted();
+
+    let terminal: HcTerminal;
+
+    try {
+      terminal = await startAssignmentWorker(runtime, facts);
+    } catch (error) {
+      if (!isUnclearLaunch(error)) {
+        throw error;
+      }
+
+      const name = workerName(assignment.profile, assignment.assignmentId);
+      const reconciled = await reconcileUnclearLaunch(runtime, name);
+
+      if (reconciled.kind === 'missing') {
+        throw error;
+      }
+
+      if (reconciled.kind === 'unclear') {
+        throw new UnclearLaunchError(name);
+      }
+
+      terminal = reconciled.terminal;
+    }
+
+    runtime.admission.remove(assignmentId);
+
+    const status = launchStatus(terminal);
+
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(status) }],
+      details: status,
+    };
   } catch (error) {
-    if (!isUnclearLaunch(error)) {
+    if (error instanceof UnclearLaunchError) {
       throw error;
     }
 
-    const name = workerName(facts.assignment.profile, facts.assignment.assignmentId);
-    const reconciled = await reconcileUnclearLaunch(runtime, name);
+    runtime.admission.remove(assignmentId);
 
-    if (reconciled.kind === 'found') {
-      return { kind: 'started', terminal: reconciled.terminal };
-    }
+    const onDefiniteFailure = hooks.onDefiniteFailure;
 
-    if (reconciled.kind === 'missing') {
+    if (onDefiniteFailure === undefined) {
       throw error;
     }
 
-    return { kind: 'unclear', name };
+    throw await onDefiniteFailure(error);
   }
 };
 
@@ -442,12 +474,9 @@ export const executeLaunch = async (
         throw await errorAfterCleanup(error);
       }
 
-      runtime.admission.add(assignmentId);
-
-      try {
-        signal?.throwIfAborted();
-
-        const outcome = await startAndReconcileWorker(runtime, {
+      return startReservedWorker(
+        runtime,
+        {
           assignment,
           task: request.parameters.task,
           label: request.parameters.label,
@@ -455,28 +484,9 @@ export const executeLaunch = async (
           extensionPackages,
           skillTools: currentSkillTools ?? {},
           signal,
-        });
-
-        if (outcome.kind === 'unclear') {
-          throw new UnclearLaunchError(outcome.name);
-        }
-
-        runtime.admission.remove(assignmentId);
-
-        const status = launchStatus(outcome.terminal);
-
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(status) }],
-          details: status,
-        };
-      } catch (error) {
-        if (error instanceof UnclearLaunchError) {
-          throw error;
-        }
-
-        runtime.admission.remove(assignmentId);
-        throw await errorAfterCleanup(error);
-      }
+        },
+        { onDefiniteFailure: errorAfterCleanup },
+      );
     });
   } catch (error) {
     if (error instanceof WorkerCapacityFullError) {

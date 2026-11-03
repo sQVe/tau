@@ -311,13 +311,23 @@ it('starts a new child that resumes the source session', async () => {
 it('refuses a follow-up when the capacity is full', async () => {
   const { directory, fake, runtime } = setup();
   const source = sourceAssignment(directory);
+  const other = sourceAssignment(directory);
 
   await writeAssignment(source);
+  await writeAssignment(other);
 
   runtime.capacity = 1;
   runtime.refuseCapacity = vi.fn<() => void>();
 
-  runtime.admission.add(randomUUID());
+  const busy = {
+    address: 't-busy',
+    state: 'live',
+    parent: manager,
+    labels: { 'tau.assignment': assignmentPath(other.assignmentId) },
+  };
+
+  fake.reply('ls', JSON.stringify({ terminals: [busy] }));
+  fake.reply('get', JSON.stringify(busy));
 
   const before = assignmentFolders(directory);
   const result = await followUp(runtime, source.assignmentId);

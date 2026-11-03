@@ -12,12 +12,7 @@ import { WorkerCapacityFullError } from './capacityRefusal.js';
 import { launchErrorResult } from './errorResult.js';
 import type { ToolResult } from './errorResult.js';
 import type { FollowUpParameters } from './followUpParameters.js';
-import {
-  capacityRefusal,
-  launchStatus,
-  startAndReconcileWorker,
-  UnclearLaunchError,
-} from './launch.js';
+import { capacityRefusal, startReservedWorker } from './launch.js';
 import type { LaunchRuntime, LaunchStatus } from './launch.js';
 import { decideSessionUse } from './sessionUse.js';
 import type { SessionUse, SessionUseTerminal } from './sessionUse.js';
@@ -199,41 +194,15 @@ export const executeFollowUp = async (
 
       await writeFollowUpAssignment(assignment);
 
-      runtime.admission.add(assignment.assignmentId);
-
-      try {
-        signal?.throwIfAborted();
-
-        const outcome = await startAndReconcileWorker(runtime, {
-          assignment,
-          task: parameters.task,
-          label: parameters.label,
-          visibility: parameters.visibility,
-          extensionPackages,
-          skillTools: skillTools ?? {},
-          signal,
-        });
-
-        if (outcome.kind === 'unclear') {
-          throw new UnclearLaunchError(outcome.name);
-        }
-
-        runtime.admission.remove(assignment.assignmentId);
-
-        const status = launchStatus(outcome.terminal);
-
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(status) }],
-          details: status,
-        };
-      } catch (error) {
-        if (error instanceof UnclearLaunchError) {
-          throw error;
-        }
-
-        runtime.admission.remove(assignment.assignmentId);
-        throw error;
-      }
+      return startReservedWorker(runtime, {
+        assignment,
+        task: parameters.task,
+        label: parameters.label,
+        visibility: parameters.visibility,
+        extensionPackages,
+        skillTools: skillTools ?? {},
+        signal,
+      });
     });
   } catch (error) {
     if (error instanceof WorkerCapacityFullError) {
