@@ -3,8 +3,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { notifyOnce } from '../../config/config.js';
 import type { EventSubscription, HcEvent, SubscribeEvents } from '../../hc/events.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
-import { retryDelay } from './deadlineDecision.js';
-import { decideEventScan } from './eventDecision.js';
+import { decideEventScan, decideReconnect } from './eventDecision.js';
 import type { WorkerScan } from './workerScan.js';
 
 export type EventWatchContext = Pick<
@@ -23,6 +22,7 @@ export const createEventWatch = (subscribe: SubscribeEvents, scan: WorkerScan): 
   let subscription: EventSubscription | undefined;
   let retry: ReturnType<typeof setTimeout> | undefined;
   let attempt = 0;
+  let generation = 0;
   let running = false;
   let pending = false;
 
@@ -74,6 +74,7 @@ export const createEventWatch = (subscribe: SubscribeEvents, scan: WorkerScan): 
     subscription = subscribe(managerTerminal, {
       onReady: () => {
         attempt = 0;
+        generation += 1;
         requestScan();
       },
       onEvent: (event: HcEvent) => {
@@ -94,19 +95,17 @@ export const createEventWatch = (subscribe: SubscribeEvents, scan: WorkerScan): 
           return;
         }
 
-        const delay = retryDelay(attempt);
+        const plan = decideReconnect(attempt);
 
-        if (delay === undefined) {
-          notify('Worker event subscription stopped after repeated failures.', 'stopped');
-
-          return;
+        if (plan.lasting) {
+          notify('Worker event subscription keeps failing; retrying.', `lasting:${generation}`);
         }
 
         retry = setTimeout(() => {
           retry = undefined;
           attempt += 1;
           connect();
-        }, delay);
+        }, plan.delay);
       },
     });
   };

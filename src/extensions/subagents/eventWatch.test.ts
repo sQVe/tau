@@ -131,34 +131,38 @@ it('does nothing without a manager terminal', () => {
   expect(scan.calls).toEqual([]);
 });
 
-it('reconnects with bounded backoff and stops after the schedule', async () => {
+it('keeps reconnecting with a capped backoff and reports one lasting failure', async () => {
   const notifications: [string, string | undefined][] = [];
-  const { hcFake, watch } = createWatch();
+  const { hcFake, scan, watch } = createWatch();
 
   watch.start(contextOf((message, kind) => notifications.push([message, kind])));
 
   expect(hcFake.subscribeCalls).toHaveLength(1);
 
-  hcFake.closeSubscription('boom');
-  await vi.advanceTimersByTimeAsync(5_000);
+  for (const delay of [5_000, 15_000, 45_000, 45_000, 45_000]) {
+    hcFake.closeSubscription('boom');
+    await vi.advanceTimersByTimeAsync(delay);
+  }
 
-  expect(hcFake.subscribeCalls).toHaveLength(2);
+  expect(hcFake.subscribeCalls).toHaveLength(6);
 
-  hcFake.closeSubscription('boom');
-  await vi.advanceTimersByTimeAsync(15_000);
+  const lasting = () =>
+    notifications.filter(([message]) => message.includes('keeps failing')).length;
 
-  expect(hcFake.subscribeCalls).toHaveLength(3);
+  expect(lasting()).toBe(1);
 
-  hcFake.closeSubscription('boom');
-  await vi.advanceTimersByTimeAsync(45_000);
+  // A successful reconnect starts one scan and clears the lasting failure for the next outage.
+  hcFake.ready();
+  await vi.advanceTimersByTimeAsync(0);
 
-  expect(hcFake.subscribeCalls).toHaveLength(4);
+  expect(scan.calls.length).toBeGreaterThanOrEqual(1);
 
-  hcFake.closeSubscription('boom');
-  await vi.advanceTimersByTimeAsync(1_000_000);
+  for (const delay of [5_000, 15_000, 45_000, 45_000]) {
+    hcFake.closeSubscription('boom');
+    await vi.advanceTimersByTimeAsync(delay);
+  }
 
-  expect(hcFake.subscribeCalls).toHaveLength(4);
-  expect(notifications.at(-1)?.[0]).toContain('stopped after repeated failures');
+  expect(lasting()).toBe(2);
 });
 
 it('stops reconnecting after session shutdown', async () => {
