@@ -4,6 +4,9 @@ import { relative, resolve } from 'node:path';
 import { isMissingFile } from '../../errors.js';
 import { climbsOut, ensureTauDirectory, findTauRoot } from '../../tauDirectory.js';
 
+// hc send and herdr-app pass the text as one argument, and Linux refuses one above 128 KiB.
+const handoverByteLimit = 102_400;
+
 const resolveHandoverFile = async (file: string, cwd: string): Promise<string> => {
   try {
     return await realpath(resolve(cwd, file));
@@ -36,6 +39,10 @@ export const readHandoverText = async (cwd: string, file: string): Promise<strin
 
   if (stats.size === 0) {
     throw new Error(`handover file is empty: ${file}`);
+  }
+
+  if (stats.size > handoverByteLimit) {
+    throw new Error(`handover file is larger than ${handoverByteLimit} bytes: ${file}`);
   }
 
   return readFile(realFile, 'utf8');
