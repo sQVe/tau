@@ -7,6 +7,10 @@ export interface SessionComment {
   content: string;
 }
 
+export interface FileComment extends Omit<SessionComment, 'path'> {
+  path: string;
+}
+
 export interface FileFacts {
   path: string;
   // The file as it was when the review began.
@@ -86,12 +90,15 @@ export const stagedNames = (paths: readonly string[]): string[] => {
   });
 };
 
-// Session-level comments have no path and belong to no reviewed file.
 export const selectReviewedComments = (
   comments: readonly SessionComment[],
-  reviewedPaths: readonly string[],
-): SessionComment[] =>
-  comments.filter((comment) => comment.path !== null && reviewedPaths.includes(comment.path));
+  reviewedFiles: readonly { path: string; stagedPath: string }[],
+): FileComment[] =>
+  comments.flatMap((comment) => {
+    const file = reviewedFiles.find(({ stagedPath }) => stagedPath === comment.path);
+
+    return file === undefined ? [] : [{ ...comment, path: file.path }];
+  });
 
 // A changed file is written back only while the real file still matches what the review began with.
 // A real file that already holds the staged text is a retry of an earlier write, so it applies.

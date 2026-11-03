@@ -11,9 +11,9 @@ import {
 } from './destination.js';
 import { diffFiles } from './diff.js';
 import { decideEdit, selectReviewedComments } from './reviewDecisions.js';
-import type { SessionComment } from './reviewDecisions.js';
-import { removeReview, stagedPathOf } from './stage.js';
-import type { Review } from './stage.js';
+import type { FileComment } from './reviewDecisions.js';
+import { removeReview } from './stage.js';
+import type { Review, ReviewFile } from './stage.js';
 import { deleteSessionComment, listSessionPaths, readSessionComments } from './tuicrSession.js';
 import type { RunTuicr } from './tuicrSession.js';
 
@@ -40,13 +40,10 @@ export interface Collected {
 
 interface SessionCommentRef {
   sessionPath: string;
-  comment: SessionComment;
+  comment: FileComment;
 }
 
 // tuicr names each file by its staged path; collect names it by its `.tau` path.
-const pathOfStaged = (review: Review, stagedPath: string | null): string =>
-  review.paths[review.stagedPaths.indexOf(stagedPath ?? '')] ?? '';
-
 const readReviewedComments = async (
   run: RunTuicr,
   review: Review,
@@ -56,12 +53,9 @@ const readReviewedComments = async (
   const found = await Promise.all(
     sessionPaths.map(async (sessionPath) => {
       const comments = await readSessionComments(run, sessionPath);
-      const kept = selectReviewedComments(comments, review.stagedPaths);
+      const kept = selectReviewedComments(comments, review.files);
 
-      return kept.map((comment) => ({
-        sessionPath,
-        comment: { ...comment, path: pathOfStaged(review, comment.path) },
-      }));
+      return kept.map((comment) => ({ sessionPath, comment }));
     }),
   );
 
@@ -112,16 +106,16 @@ const refusalWithProgress = (error: unknown, record: CollectedRecord | undefined
       })
     : error;
 
-const planEdit = async (review: Review, path: string, original: string) => {
+const planEdit = async (review: Review, { path, stagedPath }: ReviewFile, original: string) => {
   const originalPath = originalPathOf(review, path);
-  const stagedPath = join(review.stagingDirectory, stagedPathOf(review, path));
-  const staged = await readOptionalText(stagedPath);
+  const stagedFilePath = join(review.stagingDirectory, stagedPath);
+  const staged = await readOptionalText(stagedFilePath);
 
   if (staged === undefined || staged === original) {
     return [];
   }
 
-  const diff = await diffFiles(originalPath, stagedPath, path);
+  const diff = await diffFiles(originalPath, stagedFilePath, path);
 
   return [{ path, diff, staged, status: 'pending' as const }];
 };
@@ -134,14 +128,14 @@ const planCollect = async (
   const reviewed = await readReviewedComments(run, review);
 
   const planned = await Promise.all(
-    review.paths.map((path) => planEdit(review, path, originals.get(path) ?? '')),
+    review.files.map((file) => planEdit(review, file, originals.get(file.path) ?? '')),
   );
 
   const comments = reviewed.map(({ sessionPath, comment }) => ({
     sessionPath,
     id: comment.id,
     deleted: false,
-    path: comment.path ?? '',
+    path: comment.path,
     startLine: comment.startLine,
     endLine: comment.endLine,
     type: comment.type,
@@ -215,15 +209,16 @@ const writeBack = async (review: Review, record: CollectedRecord): Promise<void>
 
 const readOriginals = async (review: Review): Promise<Map<string, string>> => {
   const entries = await Promise.all(
-    review.paths.map(async (path) => [path, await readRequired(review, path)] as const),
+    review.files.map(async ({ path }) => [path, await readRequired(review, path)] as const),
   );
 
   return new Map(entries);
 };
 
 const requireReviewedPaths = (review: Review, saved: CollectedRecord): void => {
+  const reviewedPaths = new Set(review.files.map(({ path }) => path));
   const paths = [...saved.comments, ...saved.edits].map(({ path }) => path);
-  const stranger = paths.find((path) => !review.paths.includes(path));
+  const stranger = paths.find((path) => !reviewedPaths.has(path));
 
   if (stranger !== undefined) {
     throw new CollectRefusalError(

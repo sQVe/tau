@@ -17,6 +17,11 @@ import { stagedNames } from './reviewDecisions.js';
 
 type ReviewTerminal = { state: 'starting' } | { state: 'open'; address: string };
 
+export interface ReviewFile {
+  path: string;
+  stagedPath: string;
+}
+
 export interface Review {
   // The real `.tau` directory the paths are relative to.
   tauDirectory: string;
@@ -24,9 +29,7 @@ export interface Review {
   recordDirectory: string;
   // A directory outside Git that tuicr opens, with each file under its staged path.
   stagingDirectory: string;
-  paths: string[];
-  // The path of each file in the staging directory, in the order of `paths`.
-  stagedPaths: string[];
+  files: ReviewFile[];
   terminal: ReviewTerminal | null;
 }
 
@@ -165,15 +168,16 @@ const reviewablePaths = async (
 
 const stagingPrefix = 'tau-draft-review-';
 
-export const stagedPathOf = (review: Review, path: string): string => {
-  const stagedPath = review.stagedPaths[review.paths.indexOf(path)];
+const pairFiles = (paths: readonly string[], stagedPaths: readonly string[]): ReviewFile[] =>
+  paths.map((path, index) => {
+    const stagedPath = stagedPaths[index];
 
-  if (stagedPath === undefined) {
-    throw new Error(`Review record ${review.recordDirectory} has no staged path for ${path}.`);
-  }
+    if (stagedPath === undefined) {
+      throw new Error(`Review record has no staged path for ${path}.`);
+    }
 
-  return stagedPath;
-};
+    return { path, stagedPath };
+  });
 
 const copyInto = async (from: string, to: string) => {
   await mkdir(dirname(to), { recursive: true });
@@ -181,7 +185,9 @@ const copyInto = async (from: string, to: string) => {
 };
 
 const writeManifest = async (review: Review, terminal: ReviewTerminal | null) => {
-  const { recordDirectory, stagingDirectory, paths, stagedPaths } = review;
+  const { recordDirectory, stagingDirectory, files } = review;
+  const paths = files.map(({ path }) => path);
+  const stagedPaths = files.map(({ stagedPath }) => stagedPath);
   const manifest = { version: manifestVersion, stagingDirectory, paths, stagedPaths, terminal };
 
   const target = join(recordDirectory, manifestName);
@@ -204,15 +210,15 @@ export const saveTerminal = async (review: Review, address: string): Promise<voi
 };
 
 const populateReview = async (review: Review) => {
-  const { tauDirectory, recordDirectory, stagingDirectory, paths } = review;
+  const { tauDirectory, recordDirectory, stagingDirectory, files } = review;
 
   // Staging copies the saved original, not the live file, so both start from one snapshot.
   const copies = await Promise.allSettled(
-    paths.map(async (path) => {
+    files.map(async ({ path, stagedPath }) => {
       const original = join(recordDirectory, 'originals', path);
 
       await copyInto(join(tauDirectory, path), original);
-      await copyInto(original, join(stagingDirectory, stagedPathOf(review, path)));
+      await copyInto(original, join(stagingDirectory, stagedPath));
     }),
   );
 
@@ -235,14 +241,11 @@ export const stageReview = async (cwd: string, requested: readonly string[]): Pr
   try {
     stagingDirectory = await mkdtemp(join(tmpdir(), stagingPrefix));
 
-    const stagedPaths = stagedNames(paths);
-
-    const review = {
+    const review: Review = {
       tauDirectory,
       recordDirectory,
       stagingDirectory,
-      paths,
-      stagedPaths,
+      files: pairFiles(paths, stagedNames(paths)),
       terminal: null,
     };
 
@@ -304,7 +307,9 @@ export const readReview = async (cwd: string, directory: string): Promise<Review
 
   const tauDirectory = await realpath(join(root, '.tau'));
 
-  return { tauDirectory, recordDirectory, stagingDirectory, paths, stagedPaths, terminal };
+  const files = pairFiles(paths, stagedPaths);
+
+  return { tauDirectory, recordDirectory, stagingDirectory, files, terminal };
 };
 
 export const removeReview = async (review: Review): Promise<void> => {
