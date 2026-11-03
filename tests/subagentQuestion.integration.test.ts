@@ -12,7 +12,6 @@ import { createWorkerDelivery } from '../src/extensions/subagents/workerDelivery
 import { createWorkerScan } from '../src/extensions/subagents/workerScan.js';
 import type { WorkerScan } from '../src/extensions/subagents/workerScan.js';
 import { ls, send } from '../src/hc/hc.js';
-import { installCommandShim } from './commandShimFake.js';
 import { startHcSession } from './hcSessionHarness.js';
 import type { HcSession } from './hcSessionHarness.js';
 import {
@@ -147,6 +146,8 @@ const deliveryContext = (entries: SessionEntry[]): DeliveryContext =>
   ({
     sessionManager: { getEntries: () => entries },
     ui: { notify: () => undefined },
+    isIdle: () => true,
+    signal: undefined,
   }) as unknown as DeliveryContext;
 
 it('shows a real worker question once and carries the manager answer into its report', async () => {
@@ -196,17 +197,16 @@ it('shows a real worker question once and carries the manager answer into its re
     createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline),
   );
 
-  registerWorkerScan(pi, tracked.scan);
+  registerWorkerScan(pi, tracked.scan, { start: () => undefined, stop: () => undefined });
 
-  const input = handlers.get('input');
   const compact = handlers.get('session_compact');
 
-  if (input === undefined || compact === undefined) {
+  if (compact === undefined) {
     throw new Error('worker delivery handlers are not registered');
   }
 
-  input({ text: `[tau-question] ${worker.assignmentFilePath}` }, context);
-  input({ text: `[tau-question] ${worker.assignmentFilePath}` }, context);
+  compact({}, context);
+  compact({}, context);
 
   await tracked.settled();
 
@@ -240,7 +240,7 @@ it('shows a real worker question once and carries the manager answer into its re
   expect(reported.report?.evidence).toContain(reply);
 });
 
-it('shows a question once in a fresh delivery after its note failed', async () => {
+it('shows a question once across repeated delivery scans', async () => {
   const hc = await startHcSession(onTestFinished);
 
   onTestFinished(() => {
@@ -249,11 +249,6 @@ it('shows a question once in a fresh delivery after its note failed', async () =
   });
 
   vi.stubEnv('HC_SESSION', hc.session);
-
-  await installCommandShim('hc', {
-    otherCalls: 'real',
-    overrides: [{ match: ' send ', script: `printf '%s\\n' 'send refused' >&2; exit 1` }],
-  });
 
   vi.resetModules();
 

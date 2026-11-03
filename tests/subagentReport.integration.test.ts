@@ -103,6 +103,7 @@ it('shows a real worker report once before it gives the worker the manager envir
   const entries: { type: string; customType: string; details?: unknown }[] = [];
 
   const pi = {
+    on: () => undefined,
     sendMessage: (message: { customType: string; details: unknown }) => {
       messages.push(message);
 
@@ -117,6 +118,8 @@ it('shows a real worker report once before it gives the worker the manager envir
   const deliveryContext = {
     sessionManager: { getEntries: () => entries },
     ui: { notify: () => undefined },
+    isIdle: () => true,
+    signal: undefined,
   } as unknown as Parameters<ReturnType<typeof createWorkerDelivery>['deliver']>[0];
 
   await createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline).scan(deliveryContext);
