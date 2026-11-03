@@ -55,9 +55,9 @@ chooses, for later discussion.
    - Read a named ticket with `linear issue view <identifier>`. Otherwise take the task from the
      user's words or this session.
    - Ask the user when the task or workspace is missing or fits more than one target. Do not guess.
-3. Resolve the recipient with `hc ls --json`, using the `cwd` and `parent` filters from step 1 of
-   the [handover skill](../handover/SKILL.md). Use only its read-only discovery, not its no-match
-   startup path. Ask when no manager is named, several fit, or none is running.
+3. Resolve the recipient with `hc ls --json`, using the `cwd`, `status.app`, and `parent` filters
+   from step 1 of the [handover skill](../handover/SKILL.md). Use only its read-only discovery, not
+   its no-match startup path. Ask when no manager is named, several fit, or none is running.
 4. Choose questions from [questions.md](questions.md). Pick only what this task needs. Add a finding
    the questions do not cover when the evidence shows one.
 5. Create the scratch directory with `mktemp -d`.
