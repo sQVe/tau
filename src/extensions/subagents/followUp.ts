@@ -48,8 +48,10 @@ const sessionUseTerminal = (child: WorkerChildRead): SessionUseTerminal => {
 const sessionUse = async (runtime: LaunchRuntime, source: Assignment): Promise<SessionUse> => {
   const list = await ls(runtime.hc, { all: true });
 
+  const running = list.terminals.filter((terminal) => terminal.state !== 'finished');
+
   const children = await Promise.all(
-    list.terminals.map((terminal) => readWorkerChild(runtime.hc, terminal)),
+    running.map((terminal) => readWorkerChild(runtime.hc, terminal)),
   );
 
   return decideSessionUse({
@@ -171,6 +173,12 @@ export const executeFollowUp = async (
 
     return await runtime.admission.run(async () => {
       signal?.throwIfAborted();
+
+      if (runtime.admission.holdsSession(source.session.file)) {
+        throw new Error(
+          `The worker session ${source.session.file} belongs to a launch whose start is still unclear; check \`hc ls\` first.`,
+        );
+      }
 
       const use = await sessionUse(runtime, source);
 

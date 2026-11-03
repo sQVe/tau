@@ -102,7 +102,7 @@ const isFinished = (terminal: HcTerminal): boolean => terminal.state === 'finish
 
 export class Admission {
   private tail: Promise<void> = Promise.resolve();
-  private readonly live = new Set<string>();
+  private readonly live = new Map<string, string>();
 
   run<Result>(work: () => Promise<Result>): Promise<Result> {
     const previous = this.tail;
@@ -119,8 +119,12 @@ export class Admission {
     });
   }
 
-  add(assignmentId: string): void {
-    this.live.add(assignmentId);
+  add(assignmentId: string, sessionFile: string): void {
+    this.live.set(assignmentId, sessionFile);
+  }
+
+  holdsSession(sessionFile: string): boolean {
+    return [...this.live.values()].includes(sessionFile);
   }
 
   remove(assignmentId: string): void {
@@ -324,7 +328,7 @@ export const startReservedWorker = async (
   const { assignment } = facts;
   const assignmentId = assignment.assignmentId;
 
-  runtime.admission.add(assignmentId);
+  runtime.admission.add(assignmentId, assignment.session.file);
 
   try {
     facts.signal?.throwIfAborted();

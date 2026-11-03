@@ -284,6 +284,22 @@ it('refuses a follow-up while the session is in use', async () => {
   expect(assignmentFolders(directory)).toEqual(before);
 });
 
+it('refuses a follow-up while an unresolved launch holds the session', async () => {
+  const { directory, fake, runtime } = setup();
+  const source = sourceAssignment(directory);
+
+  await writeAssignment(source);
+
+  runtime.admission.add(randomUUID(), source.session.file);
+
+  const before = assignmentFolders(directory);
+  const result = await followUp(runtime, source.assignmentId);
+
+  expect(result.isError).toBe(true);
+  expect(terminalRun(fake)).toBeUndefined();
+  expect(assignmentFolders(directory)).toEqual(before);
+});
+
 it('refuses a follow-up when the session use is unknown', async () => {
   const { directory, fake, runtime } = setup();
   const source = sourceAssignment(directory);
@@ -306,6 +322,32 @@ it('refuses a follow-up when the session use is unknown', async () => {
   expect(result.isError).toBe(true);
   expect(terminalRun(fake)).toBeUndefined();
   expect(assignmentFolders(directory)).toEqual(before);
+});
+
+it('starts a follow-up without reading finished terminals', async () => {
+  const { directory, fake, runtime } = setup();
+  const source = sourceAssignment(directory);
+
+  await writeAssignment(source);
+
+  fake.reply('ls', JSON.stringify({ terminals: [{ address: 't-old', state: 'finished' }] }));
+
+  fake.replyConnect('hello', 1, {
+    generation: 1,
+    version: 'test',
+    core: { id: 'core', name: 'core' },
+    framed: false,
+    methods: [],
+    features: [],
+  });
+
+  fake.replyConnect('terminal.run', 2, { address: 't-new', state: 'live', parent: manager });
+
+  const result = await followUp(runtime, source.assignmentId);
+  const reads = fake.calls.filter((call) => call.commandArguments.includes('get'));
+
+  expect(result.isError).not.toBe(true);
+  expect(reads).toEqual([]);
 });
 
 it('starts a new child that resumes the source session', async () => {
