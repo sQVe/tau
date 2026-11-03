@@ -38,7 +38,11 @@ export class CreatedButNotRecordedError extends Error {
   readonly created: PartialApplyCreate;
 
   constructor(created: PartialApplyCreate, options: ErrorOptions) {
-    super(`Linear created ${created.identifier}, but saving its identifier failed.`, options);
+    super(
+      `Linear created ${created.identifier}, but saving its identifier failed: ${errorMessage(options.cause)}`,
+      options,
+    );
+
     this.name = 'CreatedButNotRecordedError';
     this.created = { identifier: created.identifier, url: created.url };
   }

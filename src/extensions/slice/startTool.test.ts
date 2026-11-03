@@ -369,6 +369,7 @@ describe('start_slice', () => {
     const details = failureOf(result.details);
 
     expect(details.directory).toBe(directory);
+    expect(details.error).toMatch(/saving its identifier failed: \S/u);
 
     expect(details.created).toEqual({
       identifier: 'ME-701',
