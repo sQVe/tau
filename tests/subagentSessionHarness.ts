@@ -27,6 +27,8 @@ export interface WorkerSessionOptions {
   task: string;
   acceptance: string[];
   probe?: { source: string };
+  command?: { source: string };
+  timeoutSeconds?: number;
   prepareWorker?: (workerDirectory: string) => void;
 }
 
@@ -120,6 +122,21 @@ const managerInvocation = (
   return { argv: ['node', probePath, observationPath], observationPath };
 };
 
+const workerCommandArgv = (
+  agentDirectory: string,
+  command: { source: string } | undefined,
+): string[] | undefined => {
+  if (command === undefined) {
+    return undefined;
+  }
+
+  const commandPath = join(agentDirectory, 'worker-program.mjs');
+
+  writeFileSync(commandPath, command.source);
+
+  return ['node', commandPath, agentDirectory];
+};
+
 const fixtureLoadout = (
   workerDirectory: string,
   agentDirectory: string,
@@ -157,6 +174,7 @@ export const launchWorkerSession = async (
   options.prepareWorker?.(workerDirectory);
 
   const { argv: managerArgv, observationPath } = managerInvocation(agentDirectory, options.probe);
+  const workerArgv = workerCommandArgv(agentDirectory, options.command);
 
   const manager = await runWithEnvironment(options.hc.runtime, {
     argv: managerArgv,
@@ -179,6 +197,7 @@ export const launchWorkerSession = async (
     readSkillTools: () => ({}),
     agentDirectory,
     processEnvironment: { ...options.hc.environment, PATH: managerPath },
+    ...(workerArgv === undefined ? {} : { buildCommand: () => workerArgv }),
   };
 
   const result = await executeLaunch(
@@ -189,6 +208,7 @@ export const launchWorkerSession = async (
         profile: 'worker',
         acceptance: options.acceptance,
         visibility: 'background',
+        ...(options.timeoutSeconds === undefined ? {} : { timeoutSeconds: options.timeoutSeconds }),
       },
       startedAt: { wall: Date.now(), monotonic: performance.now() },
       parentSession: join(agentDirectory, 'parent.jsonl'),
