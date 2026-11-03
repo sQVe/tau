@@ -120,7 +120,7 @@ export const createEventWatch = (subscribe: SubscribeEvents, scan: WorkerScan): 
           return;
         }
 
-        notify(`Worker event subscription closed: ${reason}`, `closed:${attempt}`);
+        notify(`Worker event subscription closed: ${reason}`, `closed:${generation}`);
 
         if (retry !== undefined) {
           return;

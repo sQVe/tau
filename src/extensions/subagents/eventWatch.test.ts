@@ -225,6 +225,22 @@ it('clears a pending retry when start is called twice', () => {
   expect(hcFake.liveSubscriptions()).toBe(1);
 });
 
+it('shows one close notice per outage', async () => {
+  const notifications: string[] = [];
+  const { hcFake, watch } = createWatch();
+
+  watch.start(contextOf((message) => notifications.push(message)));
+
+  for (const delay of [5_000, 15_000, 45_000, 45_000]) {
+    hcFake.closeSubscription('boom');
+    await vi.advanceTimersByTimeAsync(delay);
+  }
+
+  const closed = notifications.filter((message) => message.includes('subscription closed'));
+
+  expect(closed).toHaveLength(1);
+});
+
 it('stops reconnecting after session shutdown', async () => {
   const { hcFake, watch } = createWatch();
 
