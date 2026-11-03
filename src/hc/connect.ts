@@ -40,6 +40,7 @@ export interface TerminalRunRequest {
   cwd?: string | undefined;
   labels?: Record<string, string> | undefined;
   noParent?: boolean | undefined;
+  noNotify?: boolean | undefined;
 }
 
 const helloGeneration = 1;
@@ -54,6 +55,7 @@ const terminalRunParams = (request: TerminalRunRequest): Record<string, unknown>
   ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
   ...(request.labels === undefined ? {} : { labels: request.labels }),
   ...(request.noParent === undefined ? {} : { no_parent: request.noParent }),
+  ...(request.noNotify === undefined ? {} : { no_notify: request.noNotify }),
 });
 
 const takeReply = (
