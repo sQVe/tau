@@ -28,7 +28,6 @@ import { hasOnlyLineEndingWarnings } from './lineEndingWarning.js';
 import { shownBlobs } from './patchBlobs.js';
 import { isRepositoryPath, snapshotFolder } from './record.js';
 import type { Snapshot } from './record.js';
-import { checkReviewDirectory } from './reviewDirectory.js';
 import type { PinnedTarget } from './target.js';
 
 export type FixTarget = Extract<PinnedTarget, { kind: 'fix' }>;
@@ -299,14 +298,13 @@ export const pinFixTarget = async (
   root: string,
   target: FixReviewTarget,
 ): Promise<{ target: FixTarget; predecessor: PredecessorIdentity }> => {
-  const review = await checkReviewDirectory(root, target.review);
-  const pinned = await pinPredecessor(root, review);
+  const pinned = await pinPredecessor(root, target.review);
 
-  await rejectUnsafeSnapshot(review, pinned.snapshot);
+  await rejectUnsafeSnapshot(pinned.review, pinned.snapshot);
 
   return {
     target: pinnedFixTarget(target, pinned),
-    predecessor: { review, identity: pinned.identity },
+    predecessor: { review: pinned.review, identity: pinned.identity },
   };
 };
 

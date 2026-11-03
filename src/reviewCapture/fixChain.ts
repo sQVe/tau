@@ -7,12 +7,14 @@ import { readGit, runGit } from '../git.js';
 import { existingEntry } from '../tauDirectory.js';
 import { captureTarget, uniqueGaps } from './capture.js';
 import type { Capture } from './capture.js';
-import { hashOf, readCompletedCapture, readOptionalBytes } from './completedCapture.js';
+import { readCompletedCapture } from './completedCapture.js';
 import type { ChainedTrees, Endpoint, EndpointCapture } from './endpoint.js';
 import { decideEndpoint } from './endpointDecision.js';
 import { decidePredecessor, statusRefusal } from './predecessorDecision.js';
-import { generationFolderName, parseCaptureRecord, recordFileName } from './record.js';
+import { generationFolderName } from './record.js';
 import type { CaptureRecord, Snapshot } from './record.js';
+import { readRecord, requireRecord } from './recordRead.js';
+import { checkReviewDirectory } from './reviewDirectory.js';
 import type { PinnedTarget } from './target.js';
 
 export interface PinnedPredecessor {
@@ -49,16 +51,18 @@ const refuseMissingRecord = async (root: string, review: string): Promise<never>
 const completeEndpointTree = (record: CaptureRecord) =>
   'endpoint' in record && record.endpoint.status === 'complete' ? record.endpoint.tree : undefined;
 
-export const pinPredecessor = async (root: string, review: string): Promise<PinnedPredecessor> => {
-  const recordPath = join(review, recordFileName);
-  const bytes = await readOptionalBytes(recordPath);
+export const pinPredecessor = async (
+  root: string,
+  requestedReview: string,
+): Promise<PinnedPredecessor> => {
+  const review = await checkReviewDirectory(root, requestedReview);
+  const result = await readRecord(root, review);
 
-  if (bytes === undefined) {
+  if (result.status === 'missing') {
     return refuseMissingRecord(root, review);
   }
 
-  const record = parseCaptureRecord(recordPath, bytes.toString('utf8'));
-  const identity = await hashOf(root, bytes);
+  const { record, identity } = requireRecord(result);
   const snapshot = 'snapshot' in record ? record.snapshot : undefined;
 
   const decision = decidePredecessor({
