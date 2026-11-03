@@ -1,6 +1,3 @@
-// Decides what the deadline watchdog does with each child from facts and the current time.
-// tests/structure.test.ts keeps this module pure.
-
 export type DeadlineAssignment =
   | { kind: 'none' }
   | { kind: 'unread'; message: string }
@@ -54,7 +51,6 @@ const labelMessage = (assignmentId: string, label: string | undefined, deadline:
     ? `Worker ${assignmentId} has no tau.deadline label; using the assignment deadline ${deadline}.`
     : `Worker ${assignmentId} has tau.deadline label "${label}"; using the assignment deadline ${deadline}.`;
 
-// Number(undefined) is NaN, so a missing label never equals the assignment deadline.
 const labelMismatch = (label: string | undefined, deadline: number): boolean =>
   Number(label) !== deadline;
 

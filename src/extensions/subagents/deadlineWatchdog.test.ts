@@ -96,7 +96,6 @@ const savedAssignment = async (
   return join(assignmentDirectory(assignmentId), 'assignment.json');
 };
 
-// Every read and effect goes through the shared `hc` fake; no test reaches a real core.
 const harness = (hcFake: HcFake) => {
   const hc: HcRuntime = { exec: hcFake.exec, connect: hcFake.connect, cwd: process.cwd() };
   const ended: string[] = [];
@@ -268,7 +267,6 @@ it('starts the newer scan read only after the older scan finishes', async () => 
 
     listCalls += 1;
 
-    // The first read takes the empty list, then blocks before its scan applies it.
     const result = await realExec(command, commandArguments, options);
 
     if (listCalls === 1) {

@@ -347,8 +347,6 @@ it('scans the children after a launch whose reconciliation failed', async ({ onT
 
   const fixture = await workerFixture(onTestFinished);
   const fake = hcSetup();
-  // The admission count is the first ls and the reconciliation is the second. Only that one fails,
-  // so the scan that follows reads the worker the launch started.
   let listCalls = 0;
 
   const exec: Exec = (command, commandArguments, options) => {
@@ -391,7 +389,6 @@ it('scans the children after a launch whose reconciliation failed', async ({ onT
   expect(result.isError).toBe(true);
   expect(resultText(result)).toContain('unclear');
 
-  // The worker's warning and kill timers are armed only by the scan.
   await vi.waitFor(() => {
     expect(vi.getTimerCount()).toBe(2);
   });

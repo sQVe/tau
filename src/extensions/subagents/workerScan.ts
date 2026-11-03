@@ -21,8 +21,6 @@ const notifyFailure = (context: WorkerScanContext, message: string): void => {
   }
 };
 
-// Reads the children once per trigger, then runs delivery before the deadline step. A failed step
-// does not stop the next one. The scans run one at a time.
 export const createWorkerScan = (
   hc: HcRuntime,
   delivery: WorkerDelivery,

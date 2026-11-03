@@ -18,7 +18,6 @@ afterEach(() => {
 
 const childRow = { address: 't-child', state: 'live', parent: manager };
 
-// Records each step in call order. Delivery and the deadline step are fakes; the hc reads are real.
 const createSteps = () => {
   const order: string[] = [];
   const notifications: [string, string | undefined][] = [];

@@ -189,7 +189,6 @@ const savedQuestion = (): SavedQuestion => ({
   askedAt: Date.now(),
 });
 
-// The scan reads the children once and passes them to delivery. Tests read them the same way.
 const deliverPending = async (
   delivery: WorkerDelivery,
   hc: HcRuntime,

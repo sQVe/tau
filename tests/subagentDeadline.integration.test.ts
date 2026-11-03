@@ -21,7 +21,6 @@ interface Notice {
   level: string;
 }
 
-// What the manager shows: messages from the watchdog's delivery and notices from its ui.
 interface ManagerView {
   pi: ExtensionAPI;
   context: Pick<ExtensionContext, 'sessionManager' | 'ui'>;
@@ -40,7 +39,6 @@ const workerTimeoutSeconds = 10;
 const warningPattern =
   /Deadline in \d+ s: call subagent_report now with what you have; blockerKind time is accepted\./;
 
-// Writes each stdin chunk to input.txt and keeps running. It writes ready only after it listens.
 const neverReportingProgram = `
 import { appendFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -94,7 +92,6 @@ const managerView = (): ManagerView => {
   return { pi, context, messages, notices };
 };
 
-// A reload builds a new watchdog. Each test starts one, as the manager does on session start.
 const startWatchdog = (hc: HcSession, view: ManagerView) => {
   const delivery = createWorkerDelivery(view.pi);
   const watchdog = createDeadlineWatchdog(hc.runtime, delivery);

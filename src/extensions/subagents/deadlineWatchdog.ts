@@ -100,7 +100,6 @@ export const createDeadlineWatchdog = (
   const armed = new Map<string, ArmedTimers>();
   let stopped = false;
 
-  // Read through a function so TypeScript does not narrow the flag across awaits.
   const isStopped = (): boolean => stopped;
 
   const clearAddress = (address: string): void => {
@@ -291,7 +290,6 @@ export const createDeadlineWatchdog = (
 
     const wanted = new Set(plan.armed.map((timer) => timer.address));
 
-    // A failed read is inconclusive, so its known deadline timers stay armed.
     const inconclusive = new Set(
       children
         .filter((child) => child.assignment.kind === 'unread')

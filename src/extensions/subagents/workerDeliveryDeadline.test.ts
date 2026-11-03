@@ -11,7 +11,6 @@ interface SentMessage {
   details?: unknown;
 }
 
-// Models the session: each message the extension sends becomes a saved custom message entry.
 const createManagerSession = () => {
   const messages: SentMessage[] = [];
   const entries: unknown[] = [];

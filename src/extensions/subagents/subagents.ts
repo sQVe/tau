@@ -140,7 +140,6 @@ const warnUnknownConfigKeys = (context: ExtensionContext): void => {
   }
 };
 
-// The scan reports its own errors through the UI, so no handler waits for it.
 const startScan = (scan: WorkerScan, context: WorkerScanContext): void => {
   scan.scan(context).catch(() => undefined);
 };
@@ -183,7 +182,6 @@ const registerLaunchTool = (
         piExec(runtime.pi),
       );
 
-      // An unclear launch can leave a live child even when it returns an error, so every attempt scans.
       const result = await executeLaunch(
         runtime,
         { parameters: resolved, startedAt, parentSession },

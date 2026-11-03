@@ -125,7 +125,6 @@ const recordingExtension = (
   return { pi, handlers };
 };
 
-// Keeps the last scan. The scan owner runs scans in order, so this one settles after the others.
 const completionTracked = (scan: WorkerScan) => {
   let last: Promise<void> = Promise.resolve();
 

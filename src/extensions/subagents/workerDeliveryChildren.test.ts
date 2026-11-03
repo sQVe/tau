@@ -53,7 +53,6 @@ const savedAssignment = (directory: string): Assignment => {
   };
 };
 
-// Maps each file under the directory to its content, so a write of any file shows as a change.
 const snapshotFiles = (directory: string): Record<string, string> =>
   Object.fromEntries(
     readdirSync(directory, { recursive: true, withFileTypes: true })
@@ -65,7 +64,6 @@ const snapshotFiles = (directory: string): Record<string, string> =>
       }),
   );
 
-// Reads one child whose `hc get` label names the given assignment path.
 const readChildWithAssignment = async (path: string) => {
   const hcFake = createHcFake();
 

@@ -121,7 +121,6 @@ const readWorkerChild = async (hc: HcRuntime, child: HcTerminal): Promise<Worker
   }
 };
 
-// `hc ls` rows carry no labels, so every policy read goes through `hc get` and the assignment file.
 export const readWorkerChildren = async (
   hc: HcRuntime,
   managerTerminal: string,
