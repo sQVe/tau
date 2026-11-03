@@ -1,4 +1,4 @@
-import { chmod, mkdir, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -9,7 +9,11 @@ import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import { captureTarget, pinTarget, readHead } from './capture.js';
 import type { DirectReviewTarget } from './capture.js';
 import { readReviewEvidence } from './evidence.js';
-import { captureWorkingTree, preparedReview } from './fixtures/reviewDirectoryHarness.js';
+import {
+  captureWorkingTree,
+  failGitCommand,
+  preparedReview,
+} from './fixtures/reviewDirectoryHarness.js';
 import { captureGeneration } from './generation.js';
 import {
   generationFolderName,
@@ -763,5 +767,42 @@ it('returns the evidence for a saved capture', async () => {
     freshness: { status: 'fresh', reasons: [] },
     paths: ['tracked.txt'],
     gaps: [],
+  });
+});
+
+it('captures the saved target once per evidence read', async () => {
+  const { root, directory } = await preparedReview();
+  const log = join(temporaryDirectory(onTestFinished, 'tau-capture-runs-'), 'runs');
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+  await captureWorkingTree(root, directory);
+
+  await installCommandShim('git', {
+    otherCalls: 'real',
+    overrides: [
+      {
+        match: ' --raw --numstat -p -z ',
+        script: `printf 'run\\n' >> '${log}'\nexec "$real" "$@"`,
+      },
+    ],
+  });
+
+  await readReviewEvidence(root, directory);
+
+  expect((await readFile(log, 'utf8')).trimEnd().split('\n')).toHaveLength(1);
+});
+
+it('reports a failed HEAD read with its reason', async () => {
+  const { root, directory } = await preparedReview();
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+  await captureWorkingTree(root, directory);
+  await failGitCommand('--verify HEAD');
+
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.freshness).toEqual({
+    status: 'unknown',
+    reasons: ['git rev-parse --verify HEAD failed: exit 2: forced failure'],
   });
 });

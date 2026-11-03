@@ -83,7 +83,6 @@ type GrepRecord = { match: GrepMatch; next: number; error?: undefined } | { erro
 export interface FreshnessGapFacts {
   freshness: Freshness;
   recordedHash: string;
-  // The hash of the capture the evidence was read from, taken after the freshness check.
   evidenceHash: string;
 }
 
@@ -402,8 +401,6 @@ export const parseGrepOutput = (
   return { matches };
 };
 
-// The target can change between the freshness check and the evidence capture, so a fresh result
-// alone does not show that the evidence matches the saved capture.
 export const freshnessGaps = ({
   freshness: { status, reasons },
   recordedHash,
