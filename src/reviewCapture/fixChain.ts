@@ -7,7 +7,7 @@ import { readGit, runGit } from '../git.js';
 import { existingEntry } from '../tauDirectory.js';
 import { captureTarget, uniqueGaps } from './capture.js';
 import type { Capture } from './capture.js';
-import { readCompletedCapture } from './completedCapture.js';
+import { hashOf, readCompletedCapture } from './completedCapture.js';
 import type { ChainedTrees, Endpoint, EndpointCapture } from './endpoint.js';
 import { decideEndpoint } from './endpointDecision.js';
 import { decidePredecessor, statusRefusal } from './predecessorDecision.js';
@@ -56,13 +56,14 @@ export const pinPredecessor = async (
   requestedReview: string,
 ): Promise<PinnedPredecessor> => {
   const review = await checkReviewDirectory(root, requestedReview);
-  const result = await readRecord(root, review);
+  const result = await readRecord(review);
 
   if (result.status === 'missing') {
     return refuseMissingRecord(root, review);
   }
 
-  const { record, identity } = requireRecord(result);
+  const { bytes, record } = requireRecord(result);
+  const identity = await hashOf(root, bytes);
   const snapshot = 'snapshot' in record ? record.snapshot : undefined;
 
   const decision = decidePredecessor({

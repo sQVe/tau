@@ -1,14 +1,14 @@
 import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { hashOf, readOptionalBytes } from './completedCapture.js';
+import { readOptionalBytes } from './completedCapture.js';
 import { parseCaptureRecord, recordFileName } from './record.js';
 import type { CaptureRecord } from './record.js';
 
 export type RecordRead =
   | { status: 'missing'; path: string; cause: unknown }
   | { status: 'unreadable'; path: string; error: unknown }
-  | { status: 'read'; path: string; bytes: Buffer; record: CaptureRecord; identity: string };
+  | { status: 'read'; path: string; bytes: Buffer; record: CaptureRecord };
 
 export const missingCause = (path: string): Promise<unknown> =>
   lstat(path).then(
@@ -16,7 +16,7 @@ export const missingCause = (path: string): Promise<unknown> =>
     (error: unknown) => error,
   );
 
-export const readRecord = async (root: string, directory: string): Promise<RecordRead> => {
+export const readRecord = async (directory: string): Promise<RecordRead> => {
   const path = join(directory, recordFileName);
   const bytes = await readOptionalBytes(path);
 
@@ -32,7 +32,7 @@ export const readRecord = async (root: string, directory: string): Promise<Recor
     return { status: 'unreadable', path, error };
   }
 
-  return { status: 'read', path, bytes, record, identity: await hashOf(root, bytes) };
+  return { status: 'read', path, bytes, record };
 };
 
 export const recordError = (result: Exclude<RecordRead, { status: 'read' }>): unknown =>

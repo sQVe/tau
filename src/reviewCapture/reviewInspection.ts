@@ -51,7 +51,7 @@ export const inspectReview = async (
 ): Promise<ReviewInspection> => {
   const directory = await checkReviewDirectory(root, requestedDirectory);
   const generation = await generationGaps(root, directory);
-  const record = requireRecord(await readRecord(root, directory)).record;
+  const record = requireRecord(await readRecord(directory)).record;
   const recheck = await readRecheckStatus(root, directory);
   const { capture, freshness } = await recaptureReview(root, record);
 

@@ -205,7 +205,6 @@ it('refuses reuse when recheck.diff is replaced after reuse reads it', async () 
   const wrapperDirectory = temporaryDirectory(onTestFinished, 'tau-reuse-race-');
 
   const reviewedPath = join(wrapperDirectory, 'reviewed.diff');
-  const recordHashedPath = join(wrapperDirectory, 'record-hashed');
 
   await writeFile(reviewedPath, reviewedBytes);
   await commitFile(root, 'feature.txt', 'three\n');
@@ -216,8 +215,7 @@ it('refuses reuse when recheck.diff is replaced after reuse reads it', async () 
     overrides: [
       {
         match: ' rev-parse --show-object-format ',
-        // The first hash is capture.json's; the swap must wait for the recheck.diff hash.
-        script: `if [ -e '${recordHashedPath}' ]; then cp '${reviewedPath}' '${recheckPath}'; else : > '${recordHashedPath}'; fi; exec "$real" "$@"`,
+        script: `cp '${reviewedPath}' '${recheckPath}'; exec "$real" "$@"`,
       },
     ],
   });

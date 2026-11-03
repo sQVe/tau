@@ -47,7 +47,7 @@ const readLink = async (
   }
 
   const path = await checkReviewDirectory(root, directory);
-  const result = await readRecord(root, path);
+  const result = await readRecord(path);
 
   if (result.status !== 'read') {
     return {

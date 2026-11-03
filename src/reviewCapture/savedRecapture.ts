@@ -38,7 +38,7 @@ export const readSavedRecapture = async (
   directory: string,
 ): Promise<SavedRecapture> => {
   const checked = await checkReviewDirectory(root, directory);
-  const record = requireRecord(await readRecord(root, checked)).record;
+  const record = requireRecord(await readRecord(checked)).record;
   const { bytes, hash } = await readRecheck(root, checked);
 
   return {

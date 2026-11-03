@@ -61,7 +61,7 @@ export const recaptureReview = async (
 
 export const checkReviewFreshness = async (root: string, directory: string): Promise<Freshness> => {
   const checked = await checkReviewDirectory(root, directory);
-  const record = requireRecord(await readRecord(root, checked)).record;
+  const record = requireRecord(await readRecord(checked)).record;
   const { capture, freshness } = await recaptureReview(root, record);
   const recheckFile = join(checked, recheckFileName);
 

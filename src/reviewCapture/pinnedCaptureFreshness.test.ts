@@ -159,3 +159,15 @@ it('reports unknown when the earlier review of a fix capture became a symlink', 
   expect(freshness).toMatchObject({ status: 'unknown' });
   expect(freshness.reasons.join('\n')).toContain('symlink');
 });
+
+it('reports unknown and removes the recheck when the hash command fails', async () => {
+  const { root, directory } = await preparedReview();
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+  await captureWorkingTree(root, directory);
+  await checkReviewFreshness(root, directory);
+  await failGitCommand('--show-object-format');
+
+  expect(await checkReviewFreshness(root, directory)).toMatchObject({ status: 'unknown' });
+  expect(await readdir(directory)).not.toContain('recheck.diff');
+});
