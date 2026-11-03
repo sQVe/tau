@@ -46,6 +46,7 @@ export interface ReviewFixture {
   ) => ReturnType<DraftReviewTool['execute']>;
   setSession: (comments: unknown) => Promise<void>;
   setWait: (result: { ended: boolean; reason: string }) => void;
+  keepTuicrLive: () => void;
   holdHcWait: () => HcWaitGate;
   holdHcRun: (options?: HoldOptions) => HcWaitGate;
   deleted: () => Promise<string[]>;
@@ -152,16 +153,13 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
   hc.reply('run', JSON.stringify({ address: reviewAddress, state: 'live' }));
   hc.reply('kill', JSON.stringify({ address: reviewAddress, state: 'closed' }));
 
-  hc.reply(
-    'wait',
-    JSON.stringify({
-      terminal: reviewAddress,
-      ended: true,
-      reason: 'exit',
-      turn: 1,
-      children: [],
-    }),
-  );
+  const waitReply = (result: { ended: boolean; reason: string }) =>
+    JSON.stringify({ terminal: reviewAddress, turn: 1, children: [], ...result });
+
+  const exitedReply = { ended: true, reason: 'exit' };
+  let exitsOnKill = false;
+
+  hc.reply('wait', waitReply(exitedReply));
 
   const tuicrExec: Exec = (_command, argumentsList) =>
     new Promise((resolve) => {
@@ -227,7 +225,13 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
       throw Object.assign(new Error('aborted'), { name: 'AbortError' });
     }
 
-    return hc.exec(command, argumentsList, execOptions);
+    const result = await hc.exec(command, argumentsList, execOptions);
+
+    if (exitsOnKill && argumentsList[0] === 'kill' && result.code === 0) {
+      hc.reply('wait', waitReply(exitedReply));
+    }
+
+    return result;
   };
 
   const holdHcCommand = (command: string, holdOptions: HoldOptions = {}): HcWaitGate => {
@@ -269,7 +273,13 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
   };
 
   const setWait = (result: { ended: boolean; reason: string }) => {
-    hc.reply('wait', JSON.stringify({ terminal: reviewAddress, turn: 1, children: [], ...result }));
+    hc.reply('wait', waitReply(result));
+  };
+
+  // tuicr stays open until hc kill ends it, so a wait reports a timeout before that.
+  const keepTuicrLive = () => {
+    hc.reply('wait', waitReply({ ended: false, reason: 'timeout' }));
+    exitsOnKill = true;
   };
 
   const deleted = async () => {
@@ -294,6 +304,7 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
     run,
     setSession,
     setWait,
+    keepTuicrLive,
     holdHcWait,
     holdHcRun,
     deleted,

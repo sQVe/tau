@@ -520,6 +520,88 @@ it('reads no comment and deletes none when hc wait keeps reporting a message', a
   expect(await context.records()).toHaveLength(1);
 });
 
+it('collects comments and edits after ending a tuicr terminal that is still live', async () => {
+  const context = await fixture({ space: 'space-a' });
+  const opened = await context.run({ action: 'open', paths: ['.tau/slices/a.md'] });
+  const directory = (opened.details as { directory: string }).directory;
+  const stagingNames = await context.staging();
+
+  expect(stagingNames).toHaveLength(1);
+  await writeFile(join(context.data, ...stagingNames, '01-slices/1-a.md'), 'one\nTWO\n');
+  await context.setSession([comment('on-a', '01-slices/1-a.md')]);
+  context.keepTuicrLive();
+
+  const collected = await context.run({ action: 'collect', directory });
+
+  expect(collected.details).toMatchObject({
+    status: 'reviewed',
+    comments: [{ path: context.real('slices/a.md'), content: 'on-a' }],
+    edits: [{ path: context.real('slices/a.md'), status: 'applied' }],
+  });
+
+  const killed = commandCalls(context.calls, 'hc', 'kill').map(({ commandArguments }) =>
+    commandArguments.at(-1),
+  );
+
+  expect(killed).toEqual([reviewAddress]);
+  expect(await readFile(context.real('slices/a.md'), 'utf8')).toBe('one\nTWO\n');
+  expect(await context.deleted()).toEqual(['on-a']);
+});
+
+it('collects comments after tuicr already exited before collect', async () => {
+  const context = await fixture({ space: 'space-a' });
+  const opened = await context.run({ action: 'open', paths: ['.tau/slices/a.md'] });
+  const directory = (opened.details as { directory: string }).directory;
+
+  await context.setSession([comment('on-a', '01-slices/1-a.md')]);
+
+  const collected = await context.run({ action: 'collect', directory });
+
+  expect(collected.details).toMatchObject({
+    status: 'reviewed',
+    comments: [{ path: context.real('slices/a.md'), content: 'on-a' }],
+  });
+
+  expect(commandCalls(context.calls, 'hc', 'kill')).toHaveLength(1);
+  expect(await context.deleted()).toEqual(['on-a']);
+});
+
+it('keeps the review and deletes nothing when hc kill fails during collect', async () => {
+  const context = await fixture({ space: 'space-a' });
+  const opened = await context.run({ action: 'open', paths: ['.tau/slices/a.md'] });
+  const directory = (opened.details as { directory: string }).directory;
+
+  await context.setSession([comment('on-a', '01-slices/1-a.md')]);
+  context.hc.fail('kill', 'kill refused', 1);
+
+  const failure = context.run({ action: 'collect', directory });
+
+  await expect(failure).rejects.toThrow('kill refused');
+  await expect(failure).rejects.toThrow(directory);
+
+  expect(commandCalls(context.calls, 'tuicr', 'review')).toEqual([]);
+  expect(await context.deleted()).toEqual([]);
+  expect(await context.records()).toHaveLength(1);
+});
+
+it('keeps the review and deletes nothing when hc wait fails after the kill', async () => {
+  const context = await fixture({ space: 'space-a' });
+  const opened = await context.run({ action: 'open', paths: ['.tau/slices/a.md'] });
+  const directory = (opened.details as { directory: string }).directory;
+
+  await context.setSession([comment('on-a', '01-slices/1-a.md')]);
+  context.hc.fail('wait', 'wait refused', 1);
+
+  const failure = context.run({ action: 'collect', directory });
+
+  await expect(failure).rejects.toThrow('wait refused');
+  await expect(failure).rejects.toThrow(directory);
+
+  expect(commandCalls(context.calls, 'tuicr', 'review')).toEqual([]);
+  expect(await context.deleted()).toEqual([]);
+  expect(await context.records()).toHaveLength(1);
+});
+
 it('ends only the address it started when saving the record fails, then throws', async () => {
   const context = await fixture({ space: 'space-a' });
   saveFailure.writes = 0;
