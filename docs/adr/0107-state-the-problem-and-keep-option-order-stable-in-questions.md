@@ -36,9 +36,10 @@ keep a natural, stable order, with the recommendation marked wherever it sits.
 - A yes or no question states the default the agent uses without an answer.
 - A skill's own reply or question format takes precedence over these rules, so skills such as
   code-review and pr keep their reports and `ask_user_question` prompts.
-- A turn that waits for the user states the question. This rule sits in the workflow instructions
-  because it governs when the agent stops, following [ADR 0006](./0006-default-writing-policy.md).
-  The other rules sit in the writing instructions.
+- A turn that waits for the user states the question. While the agent follows a skill, it asks only
+  with `ask_user_question`. These two rules sit in the workflow instructions because they govern
+  when the agent stops, following [ADR 0006](./0006-default-writing-policy.md). The other rules sit
+  in the writing instructions.
 
 ### Question fields
 
