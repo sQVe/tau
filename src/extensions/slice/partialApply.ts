@@ -78,7 +78,7 @@ const failureMessage = <Summary>(
   const applied = bulletList(failure.applied.map(options.describe));
   const notApplied = bulletList(failure.notApplied.map(options.describe));
 
-  return `A step failed: ${errorMessage(cause)}\nApplied:\n${applied}\nNot applied:\n${notApplied}\nThe draft is in ${failure.directory}. Read it again before a retry.`;
+  return `The apply stopped: ${errorMessage(cause)}\nApplied:\n${applied}\nNot applied:\n${notApplied}\nThe draft is in ${failure.directory}. Read it again before a retry.`;
 };
 
 const partialApplyError = <Summary>(
