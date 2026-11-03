@@ -14,8 +14,14 @@ import type { KnownKeys } from '../../schema.js';
 import { mergeConfigLayers } from './configLayers.js';
 import type { ConfigLayer, MergedTddConfig } from './configLayers.js';
 import { createInputRules, unsupportedGlobReason } from './inputGlob.js';
+import type { InputRules } from './inputGlob.js';
 
 export type TddConfig = Static<typeof tddConfigSchema>;
+
+interface ClassificationRules {
+  test: InputRules;
+  production: InputRules;
+}
 
 export interface LoadedTddConfig extends MergedTddConfig {
   // A repository config file that was skipped because the project is not trusted.
@@ -136,16 +142,33 @@ export const loadTddConfig = (location: ConfigLocation, ui: ConfigWarnings): Loa
   return { ...mergeConfigLayers(defaultTddConfig, defaultSource, layers), ignored };
 };
 
+// Configs are not changed after loading, so the compiled rules stay valid for each config object.
+const rulesByConfig = new WeakMap<TddConfig, ClassificationRules>();
+
+const classificationRules = (config: TddConfig): ClassificationRules => {
+  const cached = rulesByConfig.get(config);
+
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const rules = {
+    test: createInputRules(config.testGlobs, config.excludedGlobs),
+    production: createInputRules(config.productionGlobs, config.excludedGlobs),
+  };
+
+  rulesByConfig.set(config, rules);
+
+  return rules;
+};
+
 export const classifyPath = (config: TddConfig, path: string): 'test' | 'production' | 'other' => {
   const normalizedPath = path.replaceAll('\\', '/');
-  const testRules = createInputRules(config.testGlobs, config.excludedGlobs);
-  const isTest = testRules.isInput(normalizedPath);
+  const rules = classificationRules(config);
 
-  if (isTest) {
+  if (rules.test.isInput(normalizedPath)) {
     return 'test';
   }
 
-  const production = createInputRules(config.productionGlobs, config.excludedGlobs);
-
-  return production.isInput(normalizedPath) ? 'production' : 'other';
+  return rules.production.isInput(normalizedPath) ? 'production' : 'other';
 };

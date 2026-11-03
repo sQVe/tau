@@ -191,6 +191,7 @@ const findingLines = (found: string[]) => found.map((finding) => Number(finding.
 
 // The outside libraries a registered module may import, by module path.
 const pureLibraries: Readonly<Record<string, readonly string[]>> = {
+  'src/extensions/tdd/inputGlob.ts': ['minimatch'],
   'src/extensions/tdd/runner/report.ts': ['node:path'],
   'src/schema.ts': ['typebox/value'],
 };

@@ -95,9 +95,10 @@ rule reports an import, change the table or the module list instead of silencing
 - Register a module that makes pure decisions in `pureModules` in `tests/structure.test.ts`. The
   check fails the suite when a registered module does a runtime import of an unregistered module,
   imports dynamically, or reads the clock, randomness, or the environment. The caller reads those
-  values and passes them in as facts. The one outside library a registered module may import is
-  `typebox/value` in `src/schema.ts`, whose schema checks are pure. The check follows imports, not
-  names, so renaming a file does not escape it.
+  values and passes them in as facts. The outside libraries a registered module may import are
+  `typebox/value` in `src/schema.ts`, whose schema checks are pure, and `minimatch` in
+  `src/extensions/tdd/inputGlob.ts`, which only compiles and matches strings. The check follows
+  imports, not names, so renaming a file does not escape it.
 
 ### File names
 

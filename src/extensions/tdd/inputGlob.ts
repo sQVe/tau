@@ -1,14 +1,9 @@
+import { Minimatch } from 'minimatch';
+
 interface BraceGroup {
   close: number;
   commas: number[];
 }
-
-interface Segment {
-  text: string;
-  test: (name: string) => boolean;
-}
-
-type Pattern = Segment[];
 
 export interface InputRules {
   entersDirectory: (path: string) => boolean;
@@ -20,6 +15,8 @@ const maxRangeValues = 1000;
 const maxExpansions = 1000;
 
 const leadingCurrentDirectory = /^(?:\.\/)+/u;
+
+const matcherOptions = { dot: true, nonegate: true, nocomment: true, noext: true };
 
 const numericRange = /^(-?\d+)\.\.(-?\d+)$/u;
 
@@ -231,106 +228,54 @@ export const unsupportedGlobReason = (glob: string): string | null => {
   return alternatives.map(segmentProblem).find((problem) => problem !== null) ?? null;
 };
 
-const wildcardExpressions: Record<string, string> = { '*': '.*', '?': '.' };
+const compileAlternative = (alternative: string): Minimatch =>
+  new Minimatch(alternative.replace(leadingCurrentDirectory, ''), matcherOptions);
 
-const escapeLiteral = (character: string) => character.replaceAll(/[$()*+.?[\\\]^{|}]/gu, '\\$&');
+const expandGlobs = (globs: string[]): string[] =>
+  globs.flatMap((glob) => expandBraces(glob, maxExpansions) ?? []);
 
-const toRegularExpression = (source: string): RegExp => {
-  const expression = source
-    .split('')
-    .map((character) => wildcardExpressions[character] ?? escapeLiteral(character))
-    .join('');
-
-  return new RegExp(`^${expression}$`, 's');
-};
-
-const compileSegment = (text: string): Segment => {
-  const isWildcard = /[*?]/u.test(text);
-
-  if (!isWildcard) {
-    return { text, test: (name) => name === text };
-  }
-
-  const expression = toRegularExpression(text);
-
-  return { text, test: (name) => expression.test(name) };
-};
-
-const compileGlobs = (globs: string[]): Pattern[] =>
-  globs
-    .flatMap((glob) => expandBraces(glob, maxExpansions) ?? [])
-    .map((alternative) =>
-      alternative.replace(leadingCurrentDirectory, '').split('/').map(compileSegment),
-    );
-
-const matchesGlobstar = (
-  path: string[],
-  first: number,
-  matchesRest: (remaining: string[]) => boolean,
-): boolean => {
-  for (let skipped = 0; skipped <= path.length; skipped++) {
-    const canStop = skipped >= first && matchesRest(path.slice(skipped));
-
-    if (canStop) {
-      return true;
-    }
-  }
-
-  return false;
-};
-
-const matchesSegments = (pattern: Pattern, path: string[]): boolean => {
-  const [head, ...rest] = pattern;
-
-  if (head === undefined) {
-    return path.length === 0;
-  }
-
-  if (head.text === '**') {
-    const matchesRest = (remaining: string[]) => matchesSegments(rest, remaining);
-
-    return matchesGlobstar(path, rest.length === 0 ? 1 : 0, matchesRest);
-  }
-
-  const [name, ...remaining] = path;
-
-  if (name === undefined) {
-    return false;
-  }
-
-  return head.test(name) && matchesSegments(rest, remaining);
-};
+const treeSuffix = '/**';
 
 // A pattern ending in `/**` also excludes the directory it names, and so every descendant.
-const excludesDirectory = (excludes: Pattern[], segments: string[]) =>
-  excludes.some((pattern) => {
-    const isTree = pattern.at(-1)?.text === '**';
-    const treeRoot = pattern.slice(0, -1);
+const compileExclude = (alternative: string) => {
+  const matcher = compileAlternative(alternative);
 
-    const matchesTree = isTree && matchesSegments(treeRoot, segments);
+  const treeRoot = alternative.endsWith(treeSuffix)
+    ? compileAlternative(alternative.slice(0, -treeSuffix.length))
+    : null;
 
-    return matchesSegments(pattern, segments) || matchesTree;
-  });
+  return {
+    matches: (path: string) => matcher.match(path),
+    matchesDirectory: (path: string) => matcher.match(path) || treeRoot?.match(path) === true,
+  };
+};
 
 // A directory whose real path is one of its own ancestors would repeat the walk forever.
 export const closesLoop = (realPath: string, ancestorRealPaths: ReadonlySet<string>): boolean =>
   ancestorRealPaths.has(realPath);
 
 export const createInputRules = (includeGlobs: string[], excludedGlobs: string[]): InputRules => {
-  const patterns = compileGlobs(includeGlobs);
-  const excludes = compileGlobs(excludedGlobs);
+  const patterns = expandGlobs(includeGlobs).map(compileAlternative);
+  const excludes = expandGlobs(excludedGlobs).map(compileExclude);
+
+  const isExcludedDirectory = (directory: string) =>
+    excludes.some((rule) => rule.matchesDirectory(directory));
 
   return {
-    entersDirectory: (path) => !excludesDirectory(excludes, path.split('/')),
+    entersDirectory: (path) => !isExcludedDirectory(path),
     isInput: (path) => {
       const segments = path.split('/');
-      const directories = segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1));
 
-      const isExcluded =
-        excludes.some((pattern) => matchesSegments(pattern, segments)) ||
-        directories.some((directory) => excludesDirectory(excludes, directory));
+      const ancestors = segments
+        .slice(0, -1)
+        .map((_, index) => segments.slice(0, index + 1).join('/'));
 
-      return !isExcluded && patterns.some((pattern) => matchesSegments(pattern, segments));
+      const isExcludedFile = excludes.some((rule) => rule.matches(path));
+      const isInExcludedDirectory = ancestors.some(isExcludedDirectory);
+
+      return (
+        !isExcludedFile && !isInExcludedDirectory && patterns.some((pattern) => pattern.match(path))
+      );
     },
   };
 };

@@ -40,6 +40,7 @@
   },
   "dependencies": {
     "cc-safety-net": "2.4.1",
+    "minimatch": "11.0.3",
     "pi-web-access": "0.33.0"
   },
   "devDependencies": {
