@@ -1,6 +1,6 @@
-export type HandoverSendStatus = 'started' | 'notStarted' | 'blocked';
+export type HandoverReplyStatus = 'started' | 'notStarted';
 
-export const replySendStatus = (started: boolean | null | undefined): HandoverSendStatus =>
+export const replySendStatus = (started: boolean | null | undefined): HandoverReplyStatus =>
   started === true ? 'started' : 'notStarted';
 
 // An undefined status means the caller rethrows the error.

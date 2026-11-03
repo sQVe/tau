@@ -6,7 +6,7 @@ import { currentTerminalAddress, get, HcError, send } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { climbsOut, ensureTauDirectory, findTauRoot } from '../../tauDirectory.js';
 import { errorSendStatus, replySendStatus } from './sendStatus.js';
-import type { HandoverSendStatus } from './sendStatus.js';
+import type { HandoverReplyStatus } from './sendStatus.js';
 
 export interface SendHandoverRequest {
   cwd: string;
@@ -14,11 +14,9 @@ export interface SendHandoverRequest {
   file: string;
 }
 
-export interface SendHandoverResult {
-  status: HandoverSendStatus;
-  terminal: string;
-  turn?: number;
-}
+export type SendHandoverResult =
+  | { status: HandoverReplyStatus; terminal: string; turn: number }
+  | { status: 'blocked'; terminal: string };
 
 const resolveHandoverFile = async (file: string, cwd: string): Promise<string> => {
   try {
