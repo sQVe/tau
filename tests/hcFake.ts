@@ -1,5 +1,6 @@
 import type { Exec } from '../src/command.js';
 import type { Connect } from '../src/hc/connect.js';
+import type { HcEvent, SubscribeEvents, SubscribeHandlers } from '../src/hc/events.js';
 import { createExecFake, failedResult, succeededResult } from './execFake.js';
 import type { ExecCall } from './execFake.js';
 
@@ -30,6 +31,13 @@ export interface HcFake {
   failConnect: (method: string, id: number, error: unknown) => void;
   appendConnectOutput: (text: string) => void;
   setConnectExit: (code: number | null, signal?: NodeJS.Signals | null) => void;
+  subscribe: SubscribeEvents;
+  subscribeCalls: string[];
+  liveSubscriptions: () => number;
+  closeSubscriptionAt: (index: number, reason: string) => void;
+  ready: () => void;
+  emitEvent: (event: HcEvent) => void;
+  closeSubscription: (reason: string) => void;
 }
 
 const commands = new Set<HcCommand>(['run', 'get', 'ls', 'send', 'wait', 'kill', 'rm', 'label']);
@@ -127,12 +135,61 @@ export const createHcFake = (): HcFake => {
     return Promise.resolve(result);
   };
 
+  const subscriptions: { childrenOf: string; handlers: SubscribeHandlers; stopped: boolean }[] = [];
+  const subscribeCalls: string[] = [];
+
+  const activeSubscription = () =>
+    [...subscriptions].toReversed().find((subscription) => !subscription.stopped);
+
+  const liveSubscriptions = (): number =>
+    subscriptions.filter((subscription) => !subscription.stopped).length;
+
+  const closeSubscriptionAt = (index: number, reason: string): void => {
+    const entry = subscriptions[index];
+
+    if (entry === undefined) {
+      return;
+    }
+
+    entry.stopped = true;
+    entry.handlers.onClose(reason);
+  };
+
+  const subscribe: SubscribeEvents = (childrenOf, handlers) => {
+    const entry = { childrenOf, handlers, stopped: false };
+
+    subscriptions.push(entry);
+    subscribeCalls.push(childrenOf);
+
+    return {
+      stop: () => {
+        entry.stopped = true;
+      },
+    };
+  };
+
   return {
     exec: execFake.exec,
     calls: execFake.calls,
     connect,
     messages,
     connectCalls,
+    subscribe,
+    subscribeCalls,
+    liveSubscriptions,
+    closeSubscriptionAt,
+    ready: () => activeSubscription()?.handlers.onReady(),
+    emitEvent: (event: HcEvent) => activeSubscription()?.handlers.onEvent(event),
+    closeSubscription: (reason: string) => {
+      const entry = activeSubscription();
+
+      if (entry === undefined) {
+        return;
+      }
+
+      entry.stopped = true;
+      entry.handlers.onClose(reason);
+    },
     reply: (command, stdout) => replies.set(command, stdout),
     fail: (command, stderr, code) => failures.set(command, { stderr, code }),
     replyConnect: (method, id, result) => {

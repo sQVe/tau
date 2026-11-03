@@ -54,12 +54,10 @@ const setup = () => {
   const fake = createHcFake();
 
   fake.reply('label', JSON.stringify({ address: workerTerminal, state: 'live' }));
-  fake.reply('send', JSON.stringify({ turn: 1 }));
 
   const target: ReportTarget = {
     hc: { exec: fake.exec, connect: fake.connect, cwd: directory },
     terminal: workerTerminal,
-    parent: parentTerminal,
     assignmentPath: join(assignmentDirectory(assignmentId), 'assignment.json'),
     assignment,
     refusal: { incompleteRefused: false, reminderSent: false, remindAfterRefusal: false },
@@ -77,19 +75,17 @@ const setup = () => {
 const reportCommandCalls = (fake: ReturnType<typeof setup>['fake']) =>
   fake.calls.map((call) => call.commandArguments[0]);
 
-it('saves the report, labels it, then notes the parent', async () => {
+it('saves the report then labels it for the manager', async () => {
   const { fake, report, target } = setup();
 
   await writeAssignment(target.assignment);
   const result = await reportToParent(target, report);
 
-  expect(reportCommandCalls(fake)).toEqual(['label', 'send']);
+  expect(reportCommandCalls(fake)).toEqual(['label']);
 
   const labelCall = fake.calls.find((call) => call.commandArguments[0] === 'label');
-  const sendCall = fake.calls.find((call) => call.commandArguments[0] === 'send');
 
   expect(labelCall?.commandArguments).toContain(`tau.report=${target.assignmentPath}`);
-  expect(sendCall?.commandArguments.at(-1)).toBe(`[tau-report] ${target.assignmentPath}`);
 
   const saved = await readAssignment(target.assignmentPath);
 
@@ -102,29 +98,11 @@ it('saves the report, labels it, then notes the parent', async () => {
   const content = result.content[0];
 
   expect(content?.type === 'text' ? content.text : '').toBe(
-    'Handover durably accepted. Parent notified. Stop working.',
+    'Handover durably accepted. Report label set. Stop working.',
   );
 });
 
-it('keeps the saved report and names the failed note when hc send fails', async () => {
-  const { fake, report, target } = setup();
-
-  fake.fail('send', 'send refused', 1);
-
-  await writeAssignment(target.assignment);
-
-  const result = await reportToParent(target, report);
-  const content = result.content[0];
-
-  expect(content?.type).toBe('text');
-  expect(content?.type === 'text' ? content.text : '').toContain('Report note failed');
-  expect(result.terminate).toBe(true);
-
-  expect((await readAssignment(target.assignmentPath))?.report?.outcome).toBe('success');
-  expect(reportCommandCalls(fake)).toEqual(['label', 'send']);
-});
-
-it('keeps the saved report, names the failed label, and still sends the note', async () => {
+it('keeps the saved report and names the failed label', async () => {
   const { fake, report, target } = setup();
 
   fake.fail('label', 'label refused', 1);
@@ -136,25 +114,9 @@ it('keeps the saved report, names the failed label, and still sends the note', a
 
   expect(content?.type).toBe('text');
   expect(content?.type === 'text' ? content.text : '').toContain('Report label failed');
-  expect(reportCommandCalls(fake)).toEqual(['label', 'send']);
+  expect(reportCommandCalls(fake)).toEqual(['label']);
 
   expect((await readAssignment(target.assignmentPath))?.report?.outcome).toBe('success');
-});
-
-it('names both failed steps when the label and the note fail', async () => {
-  const { fake, report, target } = setup();
-
-  fake.fail('label', 'label refused', 1);
-  fake.fail('send', 'send refused', 1);
-
-  await writeAssignment(target.assignment);
-
-  const result = await reportToParent(target, report);
-  const content = result.content[0];
-  const text = content?.type === 'text' ? content.text : '';
-
-  expect(text).toContain('Report label failed');
-  expect(text).toContain('Report note failed');
 });
 
 it('accepts an incomplete time blocker only near the deadline', async () => {
@@ -182,10 +144,10 @@ it('accepts an incomplete time blocker only near the deadline', async () => {
   await reportToParent(target, incomplete);
 
   expect((await readAssignment(target.assignmentPath))?.report?.outcome).toBe('incomplete');
-  expect(reportCommandCalls(fake)).toEqual(['label', 'send']);
+  expect(reportCommandCalls(fake)).toEqual(['label']);
 });
 
-it('writes nothing and sends nothing for an invalid report', async () => {
+it('writes nothing and labels nothing for an invalid report', async () => {
   const { fake, target } = setup();
 
   await writeAssignment(target.assignment);

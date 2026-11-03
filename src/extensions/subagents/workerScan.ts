@@ -8,7 +8,10 @@ import type { DeadlineWatchdog } from './deadlineWatchdog.js';
 import { readWorkerChildren } from './workerDelivery.js';
 import type { WorkerChildRead, WorkerDelivery } from './workerDelivery.js';
 
-export type WorkerScanContext = Pick<ExtensionContext, 'sessionManager' | 'ui'>;
+export type WorkerScanContext = Pick<
+  ExtensionContext,
+  'sessionManager' | 'ui' | 'isIdle' | 'signal'
+>;
 
 export interface WorkerScan {
   scan: (context: WorkerScanContext) => Promise<void>;

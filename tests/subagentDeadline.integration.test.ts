@@ -23,7 +23,7 @@ interface Notice {
 
 interface ManagerView {
   pi: ExtensionAPI;
-  context: Pick<ExtensionContext, 'sessionManager' | 'ui'>;
+  context: Pick<ExtensionContext, 'sessionManager' | 'ui' | 'isIdle' | 'signal'>;
   messages: string[];
   notices: Notice[];
 }
@@ -69,6 +69,7 @@ const managerView = (): ManagerView => {
   const notices: Notice[] = [];
 
   const pi = {
+    on: () => undefined,
     sendMessage: (message: { customType: string; content: string; details: unknown }) => {
       messages.push(message.content);
 
@@ -87,6 +88,8 @@ const managerView = (): ManagerView => {
         notices.push({ message, level });
       },
     },
+    isIdle: () => true,
+    signal: undefined,
   } as unknown as ManagerView['context'];
 
   return { pi, context, messages, notices };

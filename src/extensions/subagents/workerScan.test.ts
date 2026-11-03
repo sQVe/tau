@@ -293,7 +293,7 @@ it('cancels a pending discovery retry at session shutdown', async () => {
 
   const scanner = createWorkerScan(hc, steps.delivery, steps.deadline);
 
-  registerWorkerScan(fake.pi, scanner);
+  registerWorkerScan(fake.pi, scanner, { start: () => undefined, stop: () => undefined });
 
   await scanner.scan(steps.context);
 

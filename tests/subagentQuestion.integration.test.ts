@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
@@ -11,15 +12,10 @@ import { registerWorkerScan } from '../src/extensions/subagents/subagents.js';
 import { createWorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
 import { createWorkerScan } from '../src/extensions/subagents/workerScan.js';
 import type { WorkerScan } from '../src/extensions/subagents/workerScan.js';
-import { ls, send } from '../src/hc/hc.js';
-import { installCommandShim } from './commandShimFake.js';
+import { get, ls, send } from '../src/hc/hc.js';
 import { startHcSession } from './hcSessionHarness.js';
 import type { HcSession } from './hcSessionHarness.js';
-import {
-  launchWorkerSession,
-  waitForObservation,
-  waitForReport,
-} from './subagentSessionHarness.js';
+import { launchWorkerSession, waitForReport } from './subagentSessionHarness.js';
 
 interface SentMessage {
   customType?: unknown;
@@ -68,27 +64,35 @@ const managerQuestionProbe = `
 import { appendFileSync } from 'node:fs';
 
 const output = process.argv[2];
-const marker = '[tau-question]';
-let buffer = '';
-let observed = false;
-
-const observe = () => {
-  if (observed) return;
-  const at = buffer.indexOf(marker);
-  if (at < 0) return;
-  const match = buffer.slice(at + marker.length).match(/\\/\\S+/);
-  if (match === null) return;
-  const path = match[0].replace(/[^A-Za-z0-9/_.-].*$/s, '');
-  appendFileSync(output, JSON.stringify({ path }) + '\\n');
-  observed = true;
-};
 
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => {
-  buffer += chunk;
-  observe();
+  appendFileSync(output, JSON.stringify({ typed: chunk }) + '\\n');
 });
 `;
+
+const waitForTerminalLabel = async (
+  hc: HcSession,
+  address: string,
+  key: string,
+  value: string,
+): Promise<void> => {
+  const deadline = Date.now() + questionDeadlineMilliseconds;
+
+  for (;;) {
+    const terminal = await get(hc.runtime, address);
+
+    if (terminal.labels?.[key] === value) {
+      return;
+    }
+
+    if (Date.now() > deadline) {
+      throw new Error(`Worker never set ${key} on ${address}.`);
+    }
+
+    await delay(questionPollMilliseconds);
+  }
+};
 
 const childAddress = async (hc: HcSession, parent: string): Promise<string> => {
   const list = await ls(hc.runtime, { all: true });
@@ -147,6 +151,8 @@ const deliveryContext = (entries: SessionEntry[]): DeliveryContext =>
   ({
     sessionManager: { getEntries: () => entries },
     ui: { notify: () => undefined },
+    isIdle: () => true,
+    signal: undefined,
   }) as unknown as DeliveryContext;
 
 it('shows a real worker question once and carries the manager answer into its report', async () => {
@@ -178,14 +184,13 @@ it('shows a real worker question once and carries the manager answer into its re
     throw new Error('The fixture worker got no manager probe.');
   }
 
-  const observation = await waitForObservation(worker.observationPath);
   const question = assignment.questions[0];
 
   if (question === undefined) {
     throw new Error('Worker saved no question.');
   }
 
-  expect(observation.path).toBe(worker.assignmentFilePath);
+  await waitForTerminalLabel(hc, worker.workerAddress, 'tau.question', question.questionId);
 
   const messages: SentMessage[] = [];
   const entries: SessionEntry[] = [];
@@ -196,17 +201,16 @@ it('shows a real worker question once and carries the manager answer into its re
     createWorkerScan(hc.runtime, createWorkerDelivery(pi), noDeadline),
   );
 
-  registerWorkerScan(pi, tracked.scan);
+  registerWorkerScan(pi, tracked.scan, { start: () => undefined, stop: () => undefined });
 
-  const input = handlers.get('input');
   const compact = handlers.get('session_compact');
 
-  if (input === undefined || compact === undefined) {
+  if (compact === undefined) {
     throw new Error('worker delivery handlers are not registered');
   }
 
-  input({ text: `[tau-question] ${worker.assignmentFilePath}` }, context);
-  input({ text: `[tau-question] ${worker.assignmentFilePath}` }, context);
+  compact({}, context);
+  compact({}, context);
 
   await tracked.settled();
 
@@ -238,9 +242,13 @@ it('shows a real worker question once and carries the manager answer into its re
   const reported = await waitForReport(worker.assignmentFilePath);
 
   expect(reported.report?.evidence).toContain(reply);
+
+  await delay(500);
+
+  expect(existsSync(worker.observationPath)).toBe(false);
 });
 
-it('shows a question once in a fresh delivery after its note failed', async () => {
+it('shows a question once across repeated delivery scans', async () => {
   const hc = await startHcSession(onTestFinished);
 
   onTestFinished(() => {
@@ -249,11 +257,6 @@ it('shows a question once in a fresh delivery after its note failed', async () =
   });
 
   vi.stubEnv('HC_SESSION', hc.session);
-
-  await installCommandShim('hc', {
-    otherCalls: 'real',
-    overrides: [{ match: ' send ', script: `printf '%s\\n' 'send refused' >&2; exit 1` }],
-  });
 
   vi.resetModules();
 
@@ -273,6 +276,8 @@ it('shows a question once in a fresh delivery after its note failed', async () =
   if (question === undefined) {
     throw new Error('Worker saved no question.');
   }
+
+  await waitForTerminalLabel(hc, worker.workerAddress, 'tau.question', question.questionId);
 
   const messages: SentMessage[] = [];
   const entries: SessionEntry[] = [];

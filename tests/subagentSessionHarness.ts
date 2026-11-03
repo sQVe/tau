@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -18,11 +18,6 @@ import { get } from '../src/hc/hc.js';
 import type { HcSession } from './hcSessionHarness.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
-interface NoteObservation {
-  path: string;
-  report: boolean;
-}
-
 export interface WorkerSessionOptions {
   hc: HcSession;
   model: { provider: string; id: string };
@@ -32,6 +27,8 @@ export interface WorkerSessionOptions {
   command?: { source: string };
   timeoutSeconds?: number;
   prepareWorker?: (workerDirectory: string) => void;
+  // Runs after the manager terminal exists and HC_TERMINAL_ID points at it, before the worker.
+  beforeLaunch?: (managerAddress: string) => Promise<void>;
 }
 
 export interface WorkerSession {
@@ -76,26 +73,6 @@ export const waitForReport = async (path: string): Promise<Assignment> => {
   }
 
   return assignment;
-};
-
-export const waitForObservation = async (path: string): Promise<NoteObservation> => {
-  const deadline = Date.now() + observationDeadlineMilliseconds;
-
-  while (Date.now() <= deadline) {
-    try {
-      const [line] = readFileSync(path, 'utf8').trim().split('\n');
-
-      if (line !== undefined && line !== '') {
-        return JSON.parse(line) as NoteObservation;
-      }
-    } catch {
-      // The manager has not recorded the note yet.
-    }
-
-    await delay(observationPollMilliseconds);
-  }
-
-  throw new Error(`Manager never observed the note at ${path}.`);
 };
 
 const writeAgentSettings = (agentDirectory: string): void => {
@@ -201,6 +178,8 @@ export const launchWorkerSession = async (
   });
 
   vi.stubEnv('HC_TERMINAL_ID', manager.address);
+
+  await options.beforeLaunch?.(manager.address);
 
   const managerPath = `${join(agentDirectory, 'bin')}:${process.env.PATH ?? ''}`;
   const loadout = fixtureLoadout(workerDirectory, agentDirectory, options.model);

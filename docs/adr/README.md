@@ -78,6 +78,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0076: Give browser workers one shared set of browser rules](./0076-give-browser-workers-one-shared-set-of-browser-rules.md)
 - [0102: Require acceptance criteria on editing worker launches](./0102-require-acceptance-criteria-on-editing-worker-launches.md)
 - [0125: Run workers as hc children with one assignment file each](./0125-run-workers-as-hc-children-with-assignment-files.md)
+- [0126: Deliver worker news through `hc` events, not typed pane input](./0126-deliver-worker-news-through-hc-events.md)
 
 ## Manager sessions
 

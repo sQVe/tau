@@ -35,6 +35,13 @@ interface PiSessionOptions {
   sessionStartEvent?: SessionStartEvent;
 }
 
+// A raw AgentSession.dispose() invalidates the runner without a shutdown event. Pi's runtime emits
+// session_shutdown first, so extensions can stop their timers and subscriptions.
+export const shutdownSession = async (session: AgentSession): Promise<void> => {
+  await session.extensionRunner.emit({ type: 'session_shutdown', reason: 'quit' });
+  session.dispose();
+};
+
 // A real Pi session on faux providers that loads only the named extensions and skills. The caller
 // binds extensions, because the UI context differs per test.
 export const createPiSession = async (
@@ -87,8 +94,8 @@ export const createPiSession = async (
       : { sessionStartEvent: options.sessionStartEvent }),
   });
 
-  registerCleanup(() => {
-    session.dispose();
+  registerCleanup(async () => {
+    await shutdownSession(session);
   });
 
   return { session, extensionsResult };

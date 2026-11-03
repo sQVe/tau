@@ -116,7 +116,7 @@ it('writes hello and terminal.run to one connect call and returns the terminal',
   expect(fake.connectCalls).toHaveLength(1);
   expect(fake.messages.map((message) => message.method)).toEqual(['hello', 'terminal.run']);
 
-  expect(fake.messages[1]?.params).toEqual({
+  expect(fake.messages[1]?.params).toStrictEqual({
     argv: ['sh', '-c', 'echo $X'],
     env,
     cwd: '/working',
@@ -141,6 +141,17 @@ it('sends the terminal name and parent in terminal.run', async () => {
   });
 
   expect(fake.messages[1]?.params).toMatchObject({ name: 'scout-3f9a2c1d', parent: 't1' });
+});
+
+it('starts a worker with no_notify when asked', async () => {
+  const fake = createHcFake();
+
+  fake.replyConnect('hello', 1, hello);
+  fake.replyConnect('terminal.run', 2, terminal);
+
+  await runWithEnvironment(runtimeOf(fake), { argv: ['true'], env: {}, noNotify: true });
+
+  expect(fake.messages[1]?.params).toMatchObject({ no_notify: true });
 });
 
 it('defaults the terminal working directory to the runtime directory', async () => {

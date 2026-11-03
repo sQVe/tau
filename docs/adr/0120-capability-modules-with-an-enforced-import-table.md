@@ -58,6 +58,7 @@ The target shared modules and the modules each may import:
 | `github`        | `command`, `errors`, `git`, `schema`                |
 | `hc`            | `command`, `errors`, `schema`                       |
 | `tauDirectory`  | `errors`, `git`                                     |
+| `wake`          | nothing                                             |
 | `record`        | `errors`, `schema`, `tauDirectory`                  |
 | `checkRecord`   | `errors`, `git`, `record`                           |
 | `reviewCapture` | `errors`, `git`, `record`, `schema`, `tauDirectory` |

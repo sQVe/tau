@@ -5,13 +5,25 @@ import { errorMessage } from '../../errors.js';
 import { get, ls } from '../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import { isRecord } from '../../schema.js';
+import { createWake } from '../../wake/wake.js';
 import { readAssignment } from './assignment.js';
 import type { Assignment, SavedQuestion } from './assignment.js';
-import { deadlineKey, decideWorkerDelivery, questionKey, reportKey } from './workerDecision.js';
+import {
+  deadlineKey,
+  decideWorkerDelivery,
+  endedKey,
+  questionKey,
+  reportKey,
+} from './workerDecision.js';
 import type { WorkerReadFact } from './workerDecision.js';
-import { deadlineMessageType, questionMessageType, reportMessageType } from './workerMessage.js';
+import {
+  deadlineMessageType,
+  endedMessageType,
+  questionMessageType,
+  reportMessageType,
+} from './workerMessage.js';
 
-type WorkerDeliveryContext = Pick<ExtensionContext, 'sessionManager' | 'ui'>;
+type WorkerDeliveryContext = Pick<ExtensionContext, 'sessionManager' | 'ui' | 'isIdle' | 'signal'>;
 
 export interface WorkerDelivery {
   deliver: (context: WorkerDeliveryContext, children: readonly WorkerChildRead[]) => void;
@@ -40,6 +52,9 @@ const evidenceText = (report: Assignment['report']): string => {
 
 const reportText = (assignmentId: string, report: Assignment['report']): string =>
   `Worker report ${assignmentId}: ${report?.outcome ?? 'unknown'}\n\n${report?.summary ?? ''}${evidenceText(report)}`;
+
+const endedText = (assignmentId: string, address: string): string =>
+  `Worker ${assignmentId} at ${address} ended without a report. Read its screen with hc read ${address}.`;
 
 const questionText = (assignmentId: string, address: string, question: SavedQuestion): string =>
   `Worker question ${assignmentId} from ${address}:\n\n${question.text}\n\nAnswer with \`hc send ${address} "<answer>"\`. Never use --force. If hc refuses the send, report that to the user and do not force it.`;
@@ -70,6 +85,10 @@ const shownKeyFromEntry = (entry: {
 
   if (entry.customType === deadlineMessageType) {
     return deadlineKey(assignmentId);
+  }
+
+  if (entry.customType === endedMessageType) {
+    return endedKey(assignmentId);
   }
 
   return undefined;
@@ -157,6 +176,7 @@ const deliveryFact = (child: WorkerChildRead): WorkerReadFact => {
     kind: 'assignment',
     assignmentId: assignment.assignment.assignmentId,
     address: child.terminal.address,
+    state: child.terminal.state,
     report: assignment.assignment.report,
     questions: assignment.assignment.questions,
   };
@@ -164,6 +184,7 @@ const deliveryFact = (child: WorkerChildRead): WorkerReadFact => {
 
 export const createWorkerDelivery = (pi: ExtensionAPI): WorkerDelivery => {
   const queuedKeys = new Set<string>();
+  const wake = createWake(pi);
 
   const deliver = (context: WorkerDeliveryContext, children: readonly WorkerChildRead[]): void => {
     const facts = children.map((child) => deliveryFact(child));
@@ -177,7 +198,7 @@ export const createWorkerDelivery = (pi: ExtensionAPI): WorkerDelivery => {
     }
 
     for (const { assignmentId, report } of plan.reports) {
-      pi.sendMessage({
+      wake(context, {
         customType: reportMessageType,
         content: reportText(assignmentId, report),
         display: true,
@@ -188,7 +209,7 @@ export const createWorkerDelivery = (pi: ExtensionAPI): WorkerDelivery => {
     }
 
     for (const { assignmentId, address, question } of plan.questions) {
-      pi.sendMessage({
+      wake(context, {
         customType: questionMessageType,
         content: questionText(assignmentId, address, question),
         display: true,
@@ -197,18 +218,35 @@ export const createWorkerDelivery = (pi: ExtensionAPI): WorkerDelivery => {
 
       queuedKeys.add(questionKey(assignmentId, question.questionId));
     }
+
+    for (const { assignmentId, address } of plan.ended) {
+      wake(context, {
+        customType: endedMessageType,
+        content: endedText(assignmentId, address),
+        display: true,
+        details: { assignmentId },
+      });
+
+      queuedKeys.add(endedKey(assignmentId));
+    }
   };
 
   const showEnded = (context: WorkerDeliveryContext, assignmentId: string): void => {
     const key = deadlineKey(assignmentId);
+    const ended = endedKey(assignmentId);
+    const shown = restoreShownKeys(context);
 
-    if (restoreShownKeys(context).has(key) || queuedKeys.has(key)) {
+    if (shown.has(ended) || queuedKeys.has(ended)) {
+      return;
+    }
+
+    if (shown.has(key) || queuedKeys.has(key)) {
       return;
     }
 
     queuedKeys.add(key);
 
-    pi.sendMessage({
+    wake(context, {
       customType: deadlineMessageType,
       content: `Worker ${assignmentId} was ended at its deadline.`,
       display: true,

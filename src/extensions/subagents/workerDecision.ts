@@ -7,6 +7,7 @@ export type WorkerReadFact =
       kind: 'assignment';
       assignmentId: string;
       address: string;
+      state: string;
       report: SavedReport | null;
       questions: SavedQuestion[];
     };
@@ -19,6 +20,7 @@ export interface WorkerDecisionFacts {
 export interface WorkerDeliveryPlan {
   reports: { assignmentId: string; report: SavedReport }[];
   questions: { assignmentId: string; address: string; question: SavedQuestion }[];
+  ended: { assignmentId: string; address: string }[];
   errors: string[];
 }
 
@@ -28,6 +30,8 @@ export const questionKey = (assignmentId: string, questionId: string): string =>
   `question:${assignmentId}:${questionId}`;
 
 export const deadlineKey = (assignmentId: string): string => `deadline:${assignmentId}`;
+
+export const endedKey = (assignmentId: string): string => `ended:${assignmentId}`;
 
 const takeReport = (
   fact: Extract<WorkerReadFact, { kind: 'assignment' }>,
@@ -66,9 +70,28 @@ const takeQuestions = (
   return taken;
 };
 
+const takeEnded = (
+  fact: Extract<WorkerReadFact, { kind: 'assignment' }>,
+  shown: Set<string>,
+): boolean => {
+  if (fact.state !== 'finished' || fact.report !== null) {
+    return false;
+  }
+
+  const key = endedKey(fact.assignmentId);
+
+  if (shown.has(key) || shown.has(deadlineKey(fact.assignmentId))) {
+    return false;
+  }
+
+  shown.add(key);
+
+  return true;
+};
+
 export const decideWorkerDelivery = (facts: WorkerDecisionFacts): WorkerDeliveryPlan => {
   const shown = new Set(facts.shownKeys);
-  const plan: WorkerDeliveryPlan = { reports: [], questions: [], errors: [] };
+  const plan: WorkerDeliveryPlan = { reports: [], questions: [], ended: [], errors: [] };
 
   for (const fact of facts.facts) {
     if (fact.kind === 'skip') {
@@ -85,10 +108,16 @@ export const decideWorkerDelivery = (facts: WorkerDecisionFacts): WorkerDelivery
 
     if (report !== undefined) {
       plan.reports.push({ assignmentId: fact.assignmentId, report });
+
+      continue;
     }
 
     for (const question of takeQuestions(fact, shown)) {
       plan.questions.push({ assignmentId: fact.assignmentId, address: fact.address, question });
+    }
+
+    if (takeEnded(fact, shown)) {
+      plan.ended.push({ assignmentId: fact.assignmentId, address: fact.address });
     }
   }
 

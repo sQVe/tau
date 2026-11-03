@@ -58,6 +58,8 @@ const retryDelays = [firstRetryMilliseconds, secondRetryMilliseconds, thirdRetry
 
 export const retryDelay = (attempt: number): number | undefined => retryDelays[attempt];
 
+export const lastRetryDelay = retryDelays.at(-1) ?? 0;
+
 export const reuseArmedTimer = (
   current: ArmedTimerFact | undefined,
   next: ArmedTimerFact,
