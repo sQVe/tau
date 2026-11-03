@@ -167,7 +167,7 @@ it.each<{
     },
   },
   {
-    name: 'shows a report and a question of the same assignment',
+    name: 'shows the report and no question of an assignment that reported',
     facts: {
       shownKeys: [],
       facts: [
@@ -179,13 +179,7 @@ it.each<{
     },
     expected: {
       reports: [{ assignmentId: 'assignment-a', report: report('first') }],
-      questions: [
-        {
-          assignmentId: 'assignment-a',
-          address: 't-child',
-          question: question('q-1', 'Which branch?'),
-        },
-      ],
+      questions: [],
       errors: [],
     },
   },

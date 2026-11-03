@@ -48,6 +48,10 @@ const takeQuestions = (
 ): SavedQuestion[] => {
   const taken: SavedQuestion[] = [];
 
+  if (fact.report !== null) {
+    return taken;
+  }
+
   for (const question of fact.questions) {
     const key = questionKey(fact.assignmentId, question.questionId);
 
