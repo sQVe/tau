@@ -25,8 +25,6 @@ const sessionPrompt = async (
     vi.unstubAllEnvs();
   });
 
-  vi.stubEnv('HERDR_ENV', '0');
-  vi.stubEnv('HERDR_PANE_ID', '');
   vi.stubEnv('PI_CODING_AGENT_DIR', directory);
   writeFileSync(join(directory, 'tau.json'), JSON.stringify(config.user));
 
@@ -57,7 +55,7 @@ const sessionPrompt = async (
   return { prompt: appendedSystemPrompt(fake.handlers, [], context), notify };
 };
 
-it('names the agent team and the repository route with no herdr and no subagent tool', async ({
+it('names the agent team and the repository route with no subagent tool', async ({
   onTestFinished,
 }) => {
   const { prompt } = await sessionPrompt(onTestFinished, {

@@ -92,7 +92,7 @@ it('resolves an explicit worker model and names the configured models when none 
 
   const otherCwd = () => resolveLoadout({ ...request, cwd: tmpdir() }, context);
   expect(otherCwd).toThrow(context.cwd);
-  expect(otherCwd).toThrow('herdr agent prompt');
+  expect(otherCwd).toThrow('handover');
   expect(() => resolveLoadout({ ...request, profile: 'missing' }, context)).toThrow('not found');
 });
 

@@ -71,7 +71,7 @@ it('reads a version 4 manifest with its staged paths and terminal', async () => 
 });
 
 it.each(['version-1.json', 'version-2.json', 'version-3.json'])(
-  'refuses the %s record as saved by a Tau that ran on herdr and keeps the record and staging',
+  'refuses the %s record as saved by an older Tau and keeps the record and staging',
   async (name) => {
     const { repository } = await stagedFixture();
     const review = await stageReview(repository, ['.tau/slices/a.md']);

@@ -558,7 +558,7 @@ it.each(['version-1.json', 'version-2.json', 'version-3.json'])(
     await context.setSession([comment('on-a', '01-slices/1-a.md')]);
 
     await expect(context.run({ action: 'collect', directory: manual.directory })).rejects.toThrow(
-      /ran on herdr/,
+      /saved by an older Tau/,
     );
 
     expect(commandCalls(context.calls, 'tuicr', 'review')).toEqual([]);

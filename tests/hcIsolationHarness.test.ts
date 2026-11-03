@@ -82,12 +82,6 @@ it('refuses an inherited HC_ variable other than HC_SESSION', () => {
   ]);
 });
 
-it('refuses an inherited HERDR_ variable', () => {
-  expect(isolationProblems(facts({ variables: [...privateVariables, 'HERDR_PANE_ID'] }))).toEqual([
-    'HERDR_PANE_ID must not be set',
-  ]);
-});
-
 it.each(protectedVariables)('refuses %s equal to the real value', (name) => {
   expect(isolationProblems(facts({}, { [name]: realValues[name] }))).toEqual([
     `${name} equals the real ${name}`,

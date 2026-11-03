@@ -162,7 +162,7 @@ it('launches the model the classifier routes to', async ({ onTestFinished }) => 
   expect(terminalRun(fake)?.labels['tau.model']).toBe(haiku);
 });
 
-it('defaults an editing profile to foreground and copies the manager herdr labels', async ({
+it('defaults an editing profile to foreground and copies the manager space and tab labels', async ({
   onTestFinished,
 }) => {
   vi.stubEnv('HC_TERMINAL_ID', manager);
@@ -188,7 +188,7 @@ it('defaults an editing profile to foreground and copies the manager herdr label
   expect(terminalRun(fake)?.labels['herdr.tab']).toBe('tab-2');
 });
 
-it('defaults an investigation profile to background and keeps no herdr labels', async ({
+it('defaults an investigation profile to background and keeps no space and tab labels', async ({
   onTestFinished,
 }) => {
   vi.stubEnv('HC_TERMINAL_ID', manager);

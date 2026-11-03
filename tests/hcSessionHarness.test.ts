@@ -188,10 +188,9 @@ it('refuses a temp root that resolves inside the real home', async () => {
   }
 });
 
-it('does not inherit HC_ or HERDR_ variables in exec, connect, or stop', async () => {
+it('does not inherit HC_ variables in exec, connect, or stop', async () => {
   vi.stubEnv('HC_SOCKET', '/tmp/witness.sock');
   vi.stubEnv('HC_TERMINAL_ID', 't7');
-  vi.stubEnv('HERDR_PANE_ID', 'pane');
 
   spawnMock.mockImplementationOnce(() => {
     throw new Error('connect stopped before spawn');
@@ -216,7 +215,6 @@ it('does not inherit HC_ or HERDR_ variables in exec, connect, or stop', async (
     expect(environment).toBeDefined();
     expect(environment).not.toHaveProperty('HC_SOCKET');
     expect(environment).not.toHaveProperty('HC_TERMINAL_ID');
-    expect(environment).not.toHaveProperty('HERDR_PANE_ID');
     expect(environment?.['HC_SESSION']).toBe(session.session);
   }
 });
