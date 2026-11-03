@@ -63,6 +63,26 @@ const contextOf = (
     signal: undefined,
   }) as unknown as EventWatchContext;
 
+const staleContext = (): EventWatchContext =>
+  ({
+    sessionManager: { getEntries: () => [] },
+    get ui() {
+      throw new Error('This extension ctx is stale after session replacement or reload.');
+    },
+    isIdle: () => true,
+    signal: undefined,
+  }) as unknown as EventWatchContext;
+
+it('does not throw when a close notifies a stale context', () => {
+  const { hcFake, watch } = createWatch();
+
+  watch.start(staleContext());
+
+  expect(() => {
+    hcFake.closeSubscription('boom');
+  }).not.toThrow();
+});
+
 it('starts a scan for a labels event and ignores a heartbeat', async () => {
   const { hcFake, scan, watch } = createWatch();
 

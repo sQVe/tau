@@ -60,7 +60,11 @@ export const createEventWatch = (subscribe: SubscribeEvents, scan: WorkerScan): 
       return;
     }
 
-    notifyOnce(context.ui, 'worker-events', key, message, 'error');
+    try {
+      notifyOnce(context.ui, 'worker-events', key, message, 'error');
+    } catch {
+      // A replaced session makes its old context stale, so the error has nowhere to go.
+    }
   };
 
   const connect = (): void => {
