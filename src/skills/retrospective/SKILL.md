@@ -96,6 +96,6 @@ chooses, for later discussion.
     [handover skill](../handover/SKILL.md), using that manager as the resolved target.
     - The message is the checked report with its sources and gaps. It asks only for diagnostic
       discussion later, and it must make sense without any source file.
-    - Follow the handover skill's prepare, write, send, and failure rules, including its one-time
-      arrival check after a stalled send. Add no retry or repeated check.
+    - Follow the handover skill's prepare, write, send, and failure rules. Add no retry or repeated
+      send.
     - Report the delivery result and end the turn.
