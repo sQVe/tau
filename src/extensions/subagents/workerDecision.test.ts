@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
 import type { SavedQuestion, SavedReport } from './assignment.js';
-import { decideWorkerDelivery, questionKey, reportKey } from './workerDecision.js';
+import { decideWorkerDelivery, deadlineKey, questionKey, reportKey } from './workerDecision.js';
 import type { WorkerDecisionFacts, WorkerDeliveryPlan, WorkerReadFact } from './workerDecision.js';
 
 const report = (summary: string): SavedReport => ({
@@ -18,20 +18,21 @@ const question = (questionId: string, text: string): SavedQuestion => ({
 
 const assignment = (
   assignmentId: string,
-  saved: { report?: SavedReport | null; questions?: SavedQuestion[] },
+  saved: { report?: SavedReport | null; questions?: SavedQuestion[]; state?: string },
 ): WorkerReadFact => ({
   kind: 'assignment',
   assignmentId,
   address: 't-child',
+  state: saved.state ?? 'live',
   report: saved.report ?? null,
   questions: saved.questions ?? [],
 });
 
-it.each<{
+const table: {
   name: string;
   facts: WorkerDecisionFacts;
   expected: WorkerDeliveryPlan;
-}>([
+}[] = [
   {
     name: 'shows a new report once',
     facts: {
@@ -41,6 +42,7 @@ it.each<{
     expected: {
       reports: [{ assignmentId: 'assignment-a', report: report('first') }],
       questions: [],
+      ended: [],
       errors: [],
     },
   },
@@ -50,7 +52,7 @@ it.each<{
       shownKeys: [reportKey('assignment-a')],
       facts: [assignment('assignment-a', { report: report('first') })],
     },
-    expected: { reports: [], questions: [], errors: [] },
+    expected: { reports: [], questions: [], ended: [], errors: [] },
   },
   {
     name: 'shows a second report whose ID is not shown',
@@ -61,6 +63,7 @@ it.each<{
     expected: {
       reports: [{ assignmentId: 'assignment-b', report: report('second') }],
       questions: [],
+      ended: [],
       errors: [],
     },
   },
@@ -76,6 +79,7 @@ it.each<{
     expected: {
       reports: [{ assignmentId: 'assignment-a', report: report('first') }],
       questions: [],
+      ended: [],
       errors: [],
     },
   },
@@ -97,6 +101,7 @@ it.each<{
           question: question('q-1', 'Which branch?'),
         },
       ],
+      ended: [],
       errors: [],
     },
   },
@@ -115,6 +120,7 @@ it.each<{
           question: question('q-1', 'Which branch?'),
         },
       ],
+      ended: [],
       errors: [],
     },
   },
@@ -124,7 +130,7 @@ it.each<{
       shownKeys: [questionKey('assignment-a', 'q-1')],
       facts: [assignment('assignment-a', { questions: [question('q-1', 'Which branch?')] })],
     },
-    expected: { reports: [], questions: [], errors: [] },
+    expected: { reports: [], questions: [], ended: [], errors: [] },
   },
   {
     name: 'shows a second question of the same assignment',
@@ -145,6 +151,7 @@ it.each<{
           question: question('q-2', 'Which file?'),
         },
       ],
+      ended: [],
       errors: [],
     },
   },
@@ -163,6 +170,7 @@ it.each<{
           question: question('q-1', 'Which branch?'),
         },
       ],
+      ended: [],
       errors: [],
     },
   },
@@ -180,6 +188,7 @@ it.each<{
     expected: {
       reports: [{ assignmentId: 'assignment-a', report: report('first') }],
       questions: [],
+      ended: [],
       errors: [],
     },
   },
@@ -189,7 +198,73 @@ it.each<{
       shownKeys: [],
       facts: [assignment('assignment-a', {})],
     },
-    expected: { reports: [], questions: [], errors: [] },
+    expected: { reports: [], questions: [], ended: [], errors: [] },
+  },
+  {
+    name: 'shows an ended message for a finished assignment without a report',
+    facts: {
+      shownKeys: [],
+      facts: [assignment('assignment-a', { state: 'finished' })],
+    },
+    expected: {
+      reports: [],
+      questions: [],
+      ended: [{ assignmentId: 'assignment-a', address: 't-child' }],
+      errors: [],
+    },
+  },
+  {
+    name: 'shows the ended message once when two children share an assignment ID',
+    facts: {
+      shownKeys: [],
+      facts: [
+        assignment('assignment-a', { state: 'finished' }),
+        assignment('assignment-a', { state: 'finished' }),
+      ],
+    },
+    expected: {
+      reports: [],
+      questions: [],
+      ended: [{ assignmentId: 'assignment-a', address: 't-child' }],
+      errors: [],
+    },
+  },
+  {
+    name: 'does not show an ended message for a live assignment',
+    facts: {
+      shownKeys: [],
+      facts: [assignment('assignment-a', { state: 'live' })],
+    },
+    expected: { reports: [], questions: [], ended: [], errors: [] },
+  },
+  {
+    name: 'does not show an ended message when the assignment reported',
+    facts: {
+      shownKeys: [],
+      facts: [assignment('assignment-a', { state: 'finished', report: report('first') })],
+    },
+    expected: {
+      reports: [{ assignmentId: 'assignment-a', report: report('first') }],
+      questions: [],
+      ended: [],
+      errors: [],
+    },
+  },
+  {
+    name: 'does not show an ended message when the report was already shown',
+    facts: {
+      shownKeys: [reportKey('assignment-a')],
+      facts: [assignment('assignment-a', { state: 'finished', report: report('first') })],
+    },
+    expected: { reports: [], questions: [], ended: [], errors: [] },
+  },
+  {
+    name: 'does not show an ended message when the deadline message is shown',
+    facts: {
+      shownKeys: [deadlineKey('assignment-a')],
+      facts: [assignment('assignment-a', { state: 'finished' })],
+    },
+    expected: { reports: [], questions: [], ended: [], errors: [] },
   },
   {
     name: 'skips a child without an assignment label',
@@ -197,7 +272,7 @@ it.each<{
       shownKeys: [],
       facts: [{ kind: 'skip' }],
     },
-    expected: { reports: [], questions: [], errors: [] },
+    expected: { reports: [], questions: [], ended: [], errors: [] },
   },
   {
     name: 'reports a missing assignment file as an error',
@@ -208,6 +283,7 @@ it.each<{
     expected: {
       reports: [],
       questions: [],
+      ended: [],
       errors: ['Missing assignment file: /agent/assignment.json.'],
     },
   },
@@ -220,9 +296,12 @@ it.each<{
     expected: {
       reports: [],
       questions: [],
+      ended: [],
       errors: ['Malformed assignment /agent/assignment.json: not JSON.'],
     },
   },
-])('$name', ({ facts, expected }) => {
+];
+
+it.each(table.map((row) => [row.name, row] as const))('%s', (_name, { facts, expected }) => {
   expect(decideWorkerDelivery(facts)).toStrictEqual(expected);
 });

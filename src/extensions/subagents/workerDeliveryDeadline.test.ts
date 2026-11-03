@@ -16,6 +16,7 @@ const createManagerSession = () => {
   const entries: unknown[] = [];
 
   const pi = {
+    on: () => undefined,
     sendMessage: (message: SentMessage) => {
       messages.push(message);
 
@@ -30,6 +31,8 @@ const createManagerSession = () => {
   const context = {
     sessionManager: { getEntries: () => entries },
     ui: { notify: () => undefined },
+    isIdle: () => true,
+    signal: undefined,
   } as unknown as Parameters<ReturnType<typeof createWorkerDelivery>['showEnded']>[0];
 
   return { pi, context, messages, entries };

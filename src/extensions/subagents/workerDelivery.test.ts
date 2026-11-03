@@ -92,16 +92,19 @@ const customMessageEntry = (message: SentMessage): SessionEntryLike => ({
   details: message.details,
 });
 
-const createManager = () => {
+const createManager = (options: { idle?: boolean; running?: boolean } = {}) => {
   const messages: SentMessage[] = [];
+  const sendOptions: unknown[] = [];
   const entries: SessionEntryLike[] = [];
   const queued: SentMessage[] = [];
   const notifications: [string, string | undefined][] = [];
   let streaming = false;
 
   const pi = {
-    sendMessage: (message: SentMessage) => {
+    on: () => undefined,
+    sendMessage: (message: SentMessage, sendOption?: unknown) => {
       messages.push(message);
+      sendOptions.push(sendOption);
 
       if (streaming) {
         queued.push(message);
@@ -116,12 +119,15 @@ const createManager = () => {
     ui: {
       notify: (message: string, kind: string | undefined) => notifications.push([message, kind]),
     },
+    isIdle: () => options.idle ?? true,
+    signal: options.running === true ? new AbortController().signal : undefined,
   } as unknown as DeliveryContext;
 
   return {
     pi,
     context,
     messages,
+    sendOptions,
     entries,
     notifications,
     setStreaming: (value: boolean) => {
@@ -197,6 +203,7 @@ const deliverPending = async (
 const reportDelivery = async (
   report: Assignment['report'] = savedReport(),
   questions: SavedQuestion[] = [],
+  managerOptions: { idle?: boolean; running?: boolean } = {},
 ): Promise<{
   managerState: ReturnType<typeof createManager>;
   deliver: (context: DeliveryContext) => Promise<void>;
@@ -209,7 +216,7 @@ const reportDelivery = async (
   await writeAssignment(saved);
 
   const path = join(assignmentDirectory(saved.assignmentId), 'assignment.json');
-  const managerState = createManager();
+  const managerState = createManager(managerOptions);
   const hc = createHc([liveTerminal('t-child', manager, { 'tau.assignment': path })]);
   const delivery = createWorkerDelivery(managerState.pi);
 
@@ -297,6 +304,92 @@ it('ignores an assignment whose report is not written yet', async () => {
   expect(managerState.messages).toEqual([]);
 });
 
+const finishedWorker = async (): Promise<{
+  managerState: ReturnType<typeof createManager>;
+  hc: HcRuntime;
+  assignmentId: string;
+}> => {
+  const directory = stubAgentDirectory();
+  const saved = savedAssignment(directory, null);
+
+  await writeAssignment(saved);
+
+  const path = join(assignmentDirectory(saved.assignmentId), 'assignment.json');
+  const managerState = createManager();
+
+  const hc = createHc([
+    { address: 't-child', state: 'finished', parent: manager, labels: { 'tau.assignment': path } },
+  ]);
+
+  return { managerState, hc, assignmentId: saved.assignmentId };
+};
+
+it('shows one ended message for a finished worker without a report', async () => {
+  const { managerState, hc, assignmentId } = await finishedWorker();
+
+  const delivery = createWorkerDelivery(managerState.pi);
+
+  await deliverPending(delivery, hc, managerState.context);
+  await deliverPending(delivery, hc, managerState.context);
+
+  expect(managerState.messages).toHaveLength(1);
+
+  const message = managerState.messages[0] as {
+    customType: string;
+    content: string;
+    details: unknown;
+  };
+
+  expect(message.customType).toBe('tau-worker-ended');
+
+  expect(message.content).toBe(
+    `Worker ${assignmentId} at t-child ended without a report. Read its screen with hc read t-child.`,
+  );
+
+  expect(message.details).toEqual({ assignmentId });
+});
+
+it('restores the ended message from the saved session', async () => {
+  const { managerState, hc, assignmentId } = await finishedWorker();
+
+  managerState.entries.push({
+    type: 'custom_message',
+    customType: 'tau-worker-ended',
+    details: { assignmentId },
+  });
+
+  await deliverPending(createWorkerDelivery(managerState.pi), hc, managerState.context);
+
+  expect(managerState.messages).toEqual([]);
+});
+
+it('does not show an ended message twice while its message is still queued', async () => {
+  const { managerState, hc } = await finishedWorker();
+
+  managerState.setStreaming(true);
+
+  const delivery = createWorkerDelivery(managerState.pi);
+
+  await deliverPending(delivery, hc, managerState.context);
+  await deliverPending(delivery, hc, managerState.context);
+
+  expect(managerState.messages).toHaveLength(1);
+});
+
+it('does not show an ended message when the deadline message was shown', async () => {
+  const { managerState, hc, assignmentId } = await finishedWorker();
+
+  managerState.entries.push({
+    type: 'custom_message',
+    customType: 'tau-worker-deadline',
+    details: { assignmentId },
+  });
+
+  await deliverPending(createWorkerDelivery(managerState.pi), hc, managerState.context);
+
+  expect(managerState.messages).toEqual([]);
+});
+
 it('skips a terminal that is not the manager child', async () => {
   const managerState = createManager();
 
@@ -378,6 +471,25 @@ it('restores the shown state from a saved report message for a fresh delivery', 
 
   expect(managerState.messages).toEqual([]);
   expect(managerState.entries).toHaveLength(1);
+});
+
+it('wakes an idle manager with a report', async () => {
+  const { managerState, deliver } = await reportDelivery();
+
+  await deliver(managerState.context);
+
+  expect(managerState.sendOptions).toEqual([{ triggerTurn: true }]);
+});
+
+it('steers a running manager with a report', async () => {
+  const { managerState, deliver } = await reportDelivery(savedReport(), [], {
+    idle: false,
+    running: true,
+  });
+
+  await deliver(managerState.context);
+
+  expect(managerState.sendOptions).toEqual([{ deliverAs: 'steer', triggerTurn: true }]);
 });
 
 it('shows non-empty report evidence in the message content', async () => {

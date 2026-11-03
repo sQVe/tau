@@ -315,6 +315,7 @@ const startAssignmentWorker = async (
       ...(assignment.parentTerminal === '' ? {} : { parent: assignment.parentTerminal }),
       cwd: assignment.cwd,
       labels,
+      noNotify: true,
       env: environment,
     },
   );
