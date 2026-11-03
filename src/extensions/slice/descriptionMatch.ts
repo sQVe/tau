@@ -15,8 +15,6 @@ const closesFence = (line: string, fence: Fence) => {
   return marker?.[0] === fence.character && marker.length >= fence.length;
 };
 
-// Linear rewrites a "- " list item as "* ", so compare descriptions without the marker.
-// Lines inside a fenced code block stay as they are.
 const withoutListMarkers = (description: string) => {
   let fence: Fence | undefined;
 
