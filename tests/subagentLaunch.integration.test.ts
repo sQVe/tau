@@ -130,7 +130,12 @@ it('gives a launched worker the private session paths when the manager environme
       XDG_RUNTIME_DIR: realRuntimeDirectory,
       XDG_STATE_HOME: realStateHome,
     },
-    buildCommand: () => ['sh', '-c', `env > ${environmentPath}; sleep 60`],
+    // The shell creates the target before env writes to it, so the file appears whole only after mv.
+    buildCommand: () => [
+      'sh',
+      '-c',
+      `env > ${environmentPath}.partial && mv ${environmentPath}.partial ${environmentPath}; sleep 60`,
+    ],
   };
 
   const result = await executeLaunch(
