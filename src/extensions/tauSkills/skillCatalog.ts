@@ -1,0 +1,71 @@
+import { readFileSync } from 'node:fs';
+
+import { loadSkillsFromDir, parseFrontmatter } from '@earendil-works/pi-coding-agent';
+import type { ResourceDiagnostic, Skill } from '@earendil-works/pi-coding-agent';
+
+import { requiredActions } from './requiredFor.js';
+
+export interface SkillCatalog {
+  commands: { name: string; description: string }[];
+  requiredForLines: string[];
+}
+
+export const buildSkillMessage = (skillName: string, argumentsText: string): string => {
+  const prefix = `/skill:${skillName}`;
+  const trimmedArguments = argumentsText.trim();
+
+  return trimmedArguments ? `${prefix} ${trimmedArguments}` : prefix;
+};
+
+const readFrontmatter = (filePath: string) => {
+  const content = readFileSync(filePath, 'utf8');
+
+  return parseFrontmatter(content).frontmatter;
+};
+
+const requiredForLead =
+  'Use each skill named below also when its action is a step in a larger task.';
+
+const readRequiredForLines = (skills: readonly Skill[]) => {
+  const actions = requiredActions(
+    skills.map((skill) => ({
+      name: skill.name,
+      filePath: skill.filePath,
+      frontmatter: readFrontmatter(skill.filePath),
+    })),
+  );
+
+  const skillLines = actions.map(
+    ({ name, action }) => `Use the \`${name}\` skill whenever you are ${action}.`,
+  );
+
+  return skillLines.length === 0 ? [] : [requiredForLead, ...skillLines];
+};
+
+const rejectSkillProblems = (
+  skillsDirectory: string,
+  diagnostics: readonly ResourceDiagnostic[],
+) => {
+  if (diagnostics.length === 0) {
+    return;
+  }
+
+  const problems = diagnostics.map(
+    (diagnostic) => `${diagnostic.path ?? skillsDirectory}: ${diagnostic.message}`,
+  );
+
+  throw new Error(`Tau skills failed to load:\n${problems.join('\n')}`);
+};
+
+export const loadSkillCatalog = (skillsDirectory: string): SkillCatalog => {
+  const { skills, diagnostics } = loadSkillsFromDir({ dir: skillsDirectory, source: 'tau' });
+
+  rejectSkillProblems(skillsDirectory, diagnostics);
+
+  const commands = skills.map((skill) => ({
+    name: skill.name,
+    description: `Run the ${skill.name} skill.`,
+  }));
+
+  return { commands, requiredForLines: readRequiredForLines(skills) };
+};
