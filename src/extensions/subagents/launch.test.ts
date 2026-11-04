@@ -188,6 +188,7 @@ const uncertainSetup = (
   let launches = 0;
 
   fake.reply('ls', JSON.stringify({ terminals: [] }));
+  fake.reply('get', JSON.stringify({ address: manager, state: 'live', labels: {} }));
 
   vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
     loadout: uncertainLoadout,
@@ -247,10 +248,7 @@ it('starts one of two concurrent launches and refuses the other', async () => {
 
   const { fake, runtime, refuseCapacity } = setup({ children: [existingChild] });
 
-  const [first, second] = await Promise.all([
-    launch(runtime, { visibility: 'background' }),
-    launch(runtime, { visibility: 'background' }),
-  ]);
+  const [first, second] = await Promise.all([launch(runtime, {}), launch(runtime, {})]);
 
   expect(first.isError).not.toBe(true);
   expect(second).toMatchObject({ isError: true, terminate: true });
@@ -270,7 +268,7 @@ it('refuses a launch when the fresh skill table needs an unregistered tool', asy
 
   vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
 
-  const result = await launch(runtime, { visibility: 'background' });
+  const result = await launch(runtime, {});
 
   expect(result.isError).toBe(true);
   expect(result.content[0]?.text).toContain('review_new_unregistered_tool');
@@ -302,12 +300,12 @@ it('reports a failed loadout check', async () => {
   expect(result.content[0]?.text).toContain('package');
 });
 
-it('writes the tau labels and no space and tab labels in background mode', async () => {
+it('writes the tau labels and no space and tab labels when the manager has no tab', async () => {
   vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
 
   const { fake, runtime } = setup({ managerLabels: { 'herdr.space': 'space-1' } });
 
-  const result = await launch(runtime, { visibility: 'background' });
+  const result = await launch(runtime, {});
 
   const request = terminalRun(fake);
 
@@ -325,14 +323,14 @@ it('writes the tau labels and no space and tab labels in background mode', async
   expect(request?.labels['herdr.tab']).toBeUndefined();
 });
 
-it('copies the manager space and tab labels in foreground mode', async () => {
+it('places an editing worker in the manager space and tab', async () => {
   vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
 
   const { fake, runtime } = setup({
     managerLabels: { 'herdr.space': 'space-1', 'herdr.tab': 'tab-2' },
   });
 
-  await launch(runtime, { visibility: 'foreground' });
+  await launch(runtime, {});
   const request = terminalRun(fake);
 
   expect(request?.labels['herdr.space']).toBe('space-1');
@@ -358,7 +356,7 @@ it.each(['missing_reply', 'read_failed', 'malformed', 'unexpected'] as const)(
       throw new HcError(kind, 'launch failure');
     };
 
-    const result = await launch(state.runtime, { visibility: 'background' });
+    const result = await launch(state.runtime, {});
 
     expect(result.isError).not.toBe(true);
     expect(result.details?.address).toBe('worker');
@@ -393,7 +391,7 @@ it('reconciles an aborted launch request that started the worker', async () => {
     throw new HcError('aborted', 'launch request aborted');
   };
 
-  const result = await launch(state.runtime, { visibility: 'background' }, controller.signal);
+  const result = await launch(state.runtime, {}, controller.signal);
 
   expect(seenSignal).toBe(controller.signal);
   expect(result.isError).not.toBe(true);
@@ -404,8 +402,8 @@ it('reconciles an aborted launch request that started the worker', async () => {
 it('frees the slot when an unclear launch finds no worker', async () => {
   const state = uncertainSetup('missing_reply');
 
-  const first = await launch(state.runtime, { visibility: 'background' });
-  const second = await launch(state.runtime, { visibility: 'background' });
+  const first = await launch(state.runtime, {});
+  const second = await launch(state.runtime, {});
 
   expect(first.isError).toBe(true);
   expect(state.launches()).toBe(2);
@@ -442,7 +440,7 @@ it.each(['ls', 'get'] as const)(
   async (failure) => {
     const state = reconciliationFailureSetup(failure);
 
-    const result = await launch(state.runtime, { visibility: 'background' });
+    const result = await launch(state.runtime, {});
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain('unclear');
@@ -455,16 +453,51 @@ it.each(['ls', 'get'] as const)(
 
     state.runtime.hc.exec = empty.exec;
 
-    const second = await launch(state.runtime, { visibility: 'background' });
+    const second = await launch(state.runtime, {});
 
     expect(second.isError).toBe(true);
     expect(second.content[0]?.text).toContain('capacity full');
   },
 );
 
+it('reports a definite error and frees the slot when the manager read and the reconciliation list both fail', async () => {
+  const state = uncertainSetup('read_failed', ['npm:review-package']);
+  const listExec = state.runtime.hc.exec;
+  let listings = 0;
+
+  state.fake.fail('get', 'manager read failure', 1);
+
+  state.runtime.hc.exec = (command, commandArguments, execOptions) => {
+    if (command === 'hc' && commandArguments[0] === 'ls') {
+      listings += 1;
+
+      if (listings > 1) {
+        state.fake.fail('ls', 'list failure', 1);
+      }
+    }
+
+    return listExec(command, commandArguments, execOptions);
+  };
+
+  const first = await launch(state.runtime, {});
+
+  expect(first.isError).toBe(true);
+  expect(first.content[0]?.text).not.toContain('launch is unclear');
+
+  const empty = createHcFake();
+
+  empty.reply('ls', JSON.stringify({ terminals: [] }));
+
+  state.runtime.hc.exec = empty.exec;
+
+  const second = await launch(state.runtime, {});
+
+  expect(second.content[0]?.text).not.toContain('capacity full');
+});
+
 it('removes the snapshot after a definite launch failure', async () => {
   const state = uncertainSetup('spawn_failed', ['npm:review-package']);
-  const result = await launch(state.runtime, { visibility: 'background' });
+  const result = await launch(state.runtime, {});
 
   expect(result.isError).toBe(true);
   expect(snapshotNames(state.directory)).toEqual([]);
@@ -473,7 +506,7 @@ it('removes the snapshot after a definite launch failure', async () => {
 it('saves installed extension packages', async () => {
   const state = uncertainSetup('spawn_failed', ['npm:review-package']);
 
-  await launch(state.runtime, { visibility: 'background' });
+  await launch(state.runtime, {});
 
   const saved = vi.mocked(writeAssignment).mock.calls.at(-1)?.[0];
   const installed = saved?.extensionPackages;
@@ -487,7 +520,7 @@ it('keeps the cleanup error in the launch error when snapshot removal also fails
 
   vi.mocked(packageSnapshot.removeSnapshotDirectory).mockResolvedValueOnce(cleanupError);
   const state = uncertainSetup('spawn_failed', ['npm:review-package']);
-  const result = await launch(state.runtime, { visibility: 'background' });
+  const result = await launch(state.runtime, {});
 
   expect(result.isError).toBe(true);
   expect(result.content[0]?.text).toContain('launch failure');
@@ -500,7 +533,7 @@ it('removes the snapshot after a failed assignment write', async () => {
   mkdirSync(state.directory, { recursive: true });
   writeFileSync(join(state.directory, 'tau'), 'blocked');
 
-  const result = await launch(state.runtime, { visibility: 'background' });
+  const result = await launch(state.runtime, {});
 
   expect(result.isError).toBe(true);
   expect(snapshotNames(state.directory)).toEqual([]);
@@ -580,7 +613,7 @@ it('frees the slot and removes the snapshot when the signal aborts after admissi
 
   vi.mocked(writeAssignment).mockRestore();
 
-  const second = await launch(runtime, { visibility: 'background' });
+  const second = await launch(runtime, {});
 
   expect(second.isError).not.toBe(true);
   expect(terminalRun(fake)).toBeDefined();
@@ -593,7 +626,7 @@ it('frees a confirmed slot when hc removed the child before the next launch', as
 
   runtime.capacity = 1;
 
-  const first = await launch(runtime, { visibility: 'background' });
+  const first = await launch(runtime, {});
 
   expect(first.isError).not.toBe(true);
 
@@ -619,7 +652,7 @@ it('frees a confirmed slot when hc removed the child before the next launch', as
 
   runtime.hc = { exec: emptied.exec, connect: emptied.connect, cwd: runtime.hc.cwd };
 
-  const second = await launch(runtime, { visibility: 'background' });
+  const second = await launch(runtime, {});
 
   expect(second.isError).not.toBe(true);
   expect(terminalRun(emptied)).toBeDefined();
@@ -675,11 +708,7 @@ it('refuses a foreground launch whose signal aborts during the manager label rea
     return originalExec(command, commandArguments, execOptions);
   };
 
-  const pending = launch(
-    runtime,
-    { model: 'faux/test', visibility: 'foreground' },
-    controller.signal,
-  );
+  const pending = launch(runtime, { model: 'faux/test' }, controller.signal);
 
   await entered.promise;
   controller.abort();
@@ -694,7 +723,7 @@ it('refuses a foreground launch whose signal aborts during the manager label rea
 
   vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
 
-  const second = await launch(runtime, { visibility: 'background' });
+  const second = await launch(runtime, {});
 
   expect(second.isError).not.toBe(true);
 });
@@ -714,7 +743,7 @@ it('frees an unclear reservation once hc shows that terminal finished', async ()
     throw new HcError('read_failed', 'lost launch reply');
   };
 
-  const first = await launch(state.runtime, { visibility: 'background' });
+  const first = await launch(state.runtime, {});
 
   expect(first.isError).toBe(true);
   expect(first.content[0]?.text).toContain('unclear');
@@ -749,7 +778,7 @@ it('frees an unclear reservation once hc shows that terminal finished', async ()
 
   state.runtime.hc = { exec: finished.exec, connect: finished.connect, cwd: state.runtime.hc.cwd };
 
-  const second = await launch(state.runtime, { visibility: 'background' });
+  const second = await launch(state.runtime, {});
 
   expect(second.isError).not.toBe(true);
   expect(terminalRun(finished)).toBeDefined();

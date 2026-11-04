@@ -213,7 +213,6 @@ export const executeFollowUp = async (
         assignment,
         task: parameters.task,
         label: parameters.label,
-        visibility: parameters.visibility,
         extensionPackages,
         skillTools: skillTools ?? {},
         signal,

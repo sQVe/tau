@@ -23,6 +23,7 @@ import { removeSnapshotDirectory, snapshotDirectoryFor } from './packageSnapshot
 import { piPackageManager } from './piPackageManager.js';
 import { skillToolsRefusal } from './skillToolsRefusal.js';
 import { workerCommand, workerEnvironment } from './workerCommand.js';
+import { placementLabels } from './workerPlacement.js';
 
 export interface LaunchRuntime {
   pi: ExtensionAPI;
@@ -65,7 +66,6 @@ export interface WorkerStart {
   assignment: Assignment;
   task: string;
   label: string | undefined;
-  visibility: 'foreground' | 'background' | undefined;
   extensionPackages: readonly { path: string }[];
   skillTools: SkillTools;
   signal: AbortSignal | undefined;
@@ -168,26 +168,6 @@ export const capacityRefusal = (used: number, capacity: number): WorkerCapacityF
     `Worker capacity full (${used}/${capacity}). End your turn and retry after a worker stops.`,
   );
 
-const foregroundLabels = async (runtime: LaunchRuntime): Promise<Record<string, string>> => {
-  const manager = await readCurrentTerminal(runtime.hc);
-
-  if (manager === undefined) {
-    return {};
-  }
-
-  const labels: Record<string, string> = {};
-
-  for (const key of ['herdr.space', 'herdr.tab']) {
-    const value = manager.labels?.[key];
-
-    if (value !== undefined && value !== '') {
-      labels[key] = value;
-    }
-  }
-
-  return labels;
-};
-
 class UnclearLaunchError extends Error {
   override name = 'UnclearLaunchError';
 
@@ -270,6 +250,7 @@ const buildAssignment = (
 const startAssignmentWorker = async (
   runtime: LaunchRuntime,
   facts: WorkerStart,
+  placement: Record<string, string>,
 ): Promise<HcTerminal> => {
   const { assignment, extensionPackages, skillTools } = facts;
 
@@ -286,23 +267,17 @@ const startAssignmentWorker = async (
 
   const environment = workerEnvironment(runtime.processEnvironment, runtime.agentDirectory);
 
-  const visibility =
-    facts.visibility ?? (assignment.loadout.role === 'editing' ? 'foreground' : 'background');
-
   const labels: Record<string, string> = {
     'tau.assignment': join(assignmentDirectory(assignment.assignmentId), 'assignment.json'),
     'tau.profile': assignment.profile,
     'tau.model': assignment.loadout.model,
     'tau.deadline': String(assignment.deadline),
     'tau.task': shortTask(facts.task, facts.label),
+    ...placement,
   };
 
-  if (visibility === 'foreground') {
-    Object.assign(labels, await foregroundLabels(runtime));
-  }
-
-  // No await may sit between this check and the request, so a cancellation during the label read
-  // never starts a worker.
+  // No await may sit between this check and the request, so a cancellation before the request never
+  // starts a worker.
   facts.signal?.throwIfAborted();
 
   const name = workerName(assignment.profile, assignment.assignmentId);
@@ -334,10 +309,14 @@ export const startReservedWorker = async (
   try {
     facts.signal?.throwIfAborted();
 
+    // A failed manager read happens before hc sees the request, so it is a definite failure.
+    const manager = await readCurrentTerminal(runtime.hc);
+    const placement = placementLabels(assignment.loadout.role, manager?.labels ?? {});
+
     let terminal: HcTerminal;
 
     try {
-      terminal = await startAssignmentWorker(runtime, facts);
+      terminal = await startAssignmentWorker(runtime, facts, placement);
     } catch (error) {
       if (!isUnclearLaunch(error)) {
         throw error;
@@ -482,7 +461,6 @@ export const executeLaunch = async (
           assignment,
           task: request.parameters.task,
           label: request.parameters.label,
-          visibility: request.parameters.visibility,
           extensionPackages,
           skillTools: currentSkillTools ?? {},
           signal,

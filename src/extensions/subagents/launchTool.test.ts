@@ -162,9 +162,7 @@ it('launches the model the classifier routes to', async ({ onTestFinished }) => 
   expect(terminalRun(fake)?.labels['tau.model']).toBe(haiku);
 });
 
-it('defaults an editing profile to foreground and copies the manager space and tab labels', async ({
-  onTestFinished,
-}) => {
+it('places an editing worker in the manager tab', async ({ onTestFinished }) => {
   vi.stubEnv('HC_TERMINAL_ID', manager);
 
   const fixture = await workerFixture(onTestFinished);
@@ -188,7 +186,7 @@ it('defaults an editing profile to foreground and copies the manager space and t
   expect(terminalRun(fake)?.labels['herdr.tab']).toBe('tab-2');
 });
 
-it('defaults an investigation profile to background and keeps no space and tab labels', async ({
+it('places an investigation worker in the workers tab of the manager', async ({
   onTestFinished,
 }) => {
   vi.stubEnv('HC_TERMINAL_ID', manager);
@@ -201,6 +199,32 @@ it('defaults an investigation profile to background and keeps no space and tab l
   const result = await execute(
     tool,
     { profile: 'scout', model: fixture.request.model, task: 'Look.' },
+    toolContext(fixture),
+  );
+
+  expect(result.isError).not.toBe(true);
+  expect(terminalRun(fake)?.labels['herdr.space']).toBe('space-1');
+  expect(terminalRun(fake)?.labels['herdr.tab']).toBe('tab-2-workers');
+});
+
+it('gives a worker no herdr labels when the manager has no space and tab labels', async ({
+  onTestFinished,
+}) => {
+  vi.stubEnv('HC_TERMINAL_ID', manager);
+
+  const fixture = await workerFixture(onTestFinished);
+
+  const fake = hcSetup();
+  const { tool } = registerTool(fake);
+
+  const result = await execute(
+    tool,
+    {
+      profile: 'worker',
+      model: fixture.request.model,
+      acceptance: ['Done.'],
+      task: 'Fix it.',
+    },
     toolContext(fixture),
   );
 
