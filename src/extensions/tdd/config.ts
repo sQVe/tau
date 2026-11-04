@@ -7,6 +7,8 @@ import type { ConfigFile, ConfigLocation, ConfigWarnings } from '../../config/co
 import type { KnownKeys } from '../../schema.js';
 import { mergeConfigLayers } from './configLayers.js';
 import type { ConfigLayer, MergedTddConfig } from './configLayers.js';
+import { fileRoles } from './fileRoles.js';
+import type { FileRoles } from './fileRoles.js';
 import { createInputRules, unsupportedGlobReason } from './inputGlob.js';
 import type { InputRules } from './inputGlob.js';
 import { lookupRunner } from './runner/runners.js';
@@ -143,13 +145,17 @@ const classificationRules = (config: TddConfig): ClassificationRules => {
   return rules;
 };
 
-export const classifyPath = (config: TddConfig, path: string): 'test' | 'production' | 'other' => {
+export const classifyPath = (
+  config: TddConfig,
+  path: string,
+  testFilesCanBeProduction: boolean,
+): FileRoles => {
   const normalizedPath = path.replaceAll('\\', '/');
   const rules = classificationRules(config);
 
-  if (rules.test.isInput(normalizedPath)) {
-    return 'test';
-  }
-
-  return rules.production.isInput(normalizedPath) ? 'production' : 'other';
+  return fileRoles({
+    testMatch: rules.test.isInput(normalizedPath),
+    productionMatch: rules.production.isInput(normalizedPath),
+    testFilesCanBeProduction,
+  });
 };

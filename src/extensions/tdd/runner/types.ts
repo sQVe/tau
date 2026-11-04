@@ -131,5 +131,11 @@ export interface TestRunner {
   testNameFormat: string;
   focusedTimeoutMs: number;
   fullTimeoutMs: number;
+  /**
+   * When true, a file that matches both the test and production globs is a production file too.
+   * An edit to it counts as a production edit even when only its tests changed, so the freshness
+   * hint can come early.
+   */
+  testFilesCanBeProduction: boolean;
   run: (input: RunTestsInput) => Promise<RunnerResult>;
 }

@@ -16,7 +16,7 @@ import {
 import type { CheckpointInput, CycleState, HintDecision } from './observationTransition.js';
 import { finishDiagnostics } from './runner/retention.js';
 import { lookupRunner } from './runner/runners.js';
-import type { RunDiagnostics, RunnerResult } from './runner/types.js';
+import type { RunDiagnostics, RunnerResult, TestRunner } from './runner/types.js';
 import type { Behavior, ObservationResult, TestObservation, TestScope } from './types.js';
 
 interface ObservationState {
@@ -38,7 +38,12 @@ interface RunRequest {
   onStart?: ((behavior: Behavior) => void) | undefined;
 }
 
-const normalizeTestFile = async (cwd: string, config: TddConfig, file: string): Promise<string> => {
+const normalizeTestFile = async (
+  cwd: string,
+  config: TddConfig,
+  file: string,
+  testFilesCanBeProduction: boolean,
+): Promise<string> => {
   const path = relative(cwd, resolve(cwd, file));
 
   if (isAbsolute(file) || isAbsolute(path)) {
@@ -57,7 +62,7 @@ const normalizeTestFile = async (cwd: string, config: TddConfig, file: string): 
       () => false,
     );
 
-  if (path.startsWith('../') || classifyPath(config, path) !== 'test') {
+  if (path.startsWith('../') || !classifyPath(config, path, testFilesCanBeProduction).test) {
     throw new Error(`Expected a test file inside the worktree: ${file}`);
   }
 
@@ -72,9 +77,10 @@ const normalizeBehavior = async (
   cwd: string,
   config: TddConfig,
   behavior: Behavior,
+  testFilesCanBeProduction: boolean,
 ): Promise<Behavior> => {
   const normalized = await Promise.all(
-    behavior.files.map((file) => normalizeTestFile(cwd, config, file)),
+    behavior.files.map((file) => normalizeTestFile(cwd, config, file, testFilesCanBeProduction)),
   );
 
   const files = [...new Set(normalized)].toSorted();
@@ -204,11 +210,10 @@ const checkpointObservation = (state: ObservationState, productionEdit: boolean)
 
 const runTestsFor = (
   state: ObservationState,
+  runner: TestRunner,
   behavior: Behavior,
   request: RunRequest,
 ): Promise<RunnerResult> => {
-  const runner = lookupRunner('vitest');
-
   const input = {
     cwd: state.cwd,
     verificationArgv: state.config.verificationArgv,
@@ -231,7 +236,14 @@ const performRun = async (
   state: ObservationState,
   request: RunRequest,
 ): Promise<ObservationResult> => {
-  const behavior = await normalizeBehavior(state.cwd, state.config, request.requested);
+  const runner = lookupRunner('vitest');
+
+  const behavior = await normalizeBehavior(
+    state.cwd,
+    state.config,
+    request.requested,
+    runner.testFilesCanBeProduction,
+  );
 
   state.cycle = startRun(state.cycle, behavior);
 
@@ -239,7 +251,7 @@ const performRun = async (
 
   request.onStart?.(behavior);
 
-  const report = await runTestsFor(state, behavior, request);
+  const report = await runTestsFor(state, runner, behavior, request);
   const after = await hashInputs(state, behavior.files);
   const freshness = compareInputs(before.hash, after.hash);
 

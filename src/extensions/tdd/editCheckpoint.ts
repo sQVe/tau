@@ -9,6 +9,7 @@ import type {
 import { classifyPath } from './config.js';
 import { observationDirectory } from './observation.js';
 import type { ObservationTracker } from './observationTracker.js';
+import { lookupRunner } from './runner/runners.js';
 import { worktreePath } from './worktreePath.js';
 
 const withNotice = (
@@ -52,7 +53,10 @@ export const handleToolResult = async (
   const editedPath = worktreePath(relative(context.cwd, target), relative(cwd, canonicalTarget));
 
   const productionEdit =
-    !event.isError && editablePath && classifyPath(loaded.config, editedPath) === 'production';
+    !event.isError &&
+    editablePath &&
+    classifyPath(loaded.config, editedPath, lookupRunner('vitest').testFilesCanBeProduction)
+      .production;
 
   const hint = await observation.checkpoint(productionEdit);
 
