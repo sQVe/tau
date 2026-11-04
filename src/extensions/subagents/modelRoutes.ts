@@ -43,9 +43,6 @@ export type RoutePick =
 
 export type RoutedLaunch = RoutePick & { ticketSent: boolean };
 
-// Where a worker's model came from. `profileWithoutRoute` means the profile has no usable route: none
-// is configured, or the configured one is invalid. A skipped classification is a `routed` fallback
-// with `noRoute`.
 export type ModelChoice =
   | { kind: 'launch' }
   | { kind: 'profileWithoutRoute' }

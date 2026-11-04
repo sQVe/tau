@@ -25,7 +25,6 @@ const listRelative = async (root: string) => {
   try {
     return await readdir(root, { recursive: true, encoding: 'utf8' });
   } catch (error) {
-    // A missing directory holds no records; any other failure would fake an empty window.
     if (isMissingFile(error)) {
       return [];
     }
