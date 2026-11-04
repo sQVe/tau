@@ -9,13 +9,11 @@ import { decideViewerReply } from './reviewDecisions.js';
 import type { ViewerReplyDecision, ViewerReplyState } from './reviewDecisions.js';
 
 export interface ViewerFile {
-  // Relative to the `.tau` directory, as the review holds it.
   path: string;
   stagedPath: string;
 }
 
 export interface ViewerComment {
-  // Relative to the `.tau` directory, after the staged path is mapped back.
   path: string;
   startLine: number | null;
   endLine: number | null;

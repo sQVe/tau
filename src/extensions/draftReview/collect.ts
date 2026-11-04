@@ -137,7 +137,6 @@ const planEdits = async (review: Review, originals: ReadonlyMap<string, string>)
   return planned.flat();
 };
 
-// A viewer writes its own comments.json, so collect reads and deletes no tuicr comment.
 const planViewerRecord = async (
   review: Review,
   originals: ReadonlyMap<string, string>,
@@ -268,15 +267,12 @@ const checkBeforeChanges = async (
     requireReviewedPaths(review, saved);
   }
 
-  // Every try reads and validates the viewer reply again, so a retry returns its comments after a
-  // failed write-back.
   const viewerComments = await readViewerComments(
     review.recordDirectory,
     basename(review.recordDirectory),
     review.files,
   );
 
-  // A retry cannot switch source, or it would delete the saved tuicr comments without returning them.
   const source = decideViewerSource({
     savedTuicrComments: saved?.comments.length ?? 0,
     viewerReplyExists: viewerComments !== undefined,

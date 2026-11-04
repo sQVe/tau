@@ -37,15 +37,10 @@ export type ViewerReplyState =
   | { kind: 'error'; reason: string };
 
 export interface ViewerReplyFacts {
-  // What the viewer says about the review.
   state: ViewerReplyState;
-  // The review ID the reply claims.
   claimedReviewId: string;
-  // The name of the record directory being collected.
   reviewId: string;
-  // The staged path of each comment in the reply.
   files: readonly string[];
-  // Every staged path the review holds.
   stagedPaths: readonly string[];
 }
 
@@ -56,9 +51,7 @@ export type ViewerReplyDecision =
   | { kind: 'unknown-file'; file: string };
 
 export interface ViewerSourceFacts {
-  // How many tuicr comments the saved plan holds.
   savedTuicrComments: number;
-  // Whether the record holds a comments.json now.
   viewerReplyExists: boolean;
 }
 
@@ -133,8 +126,6 @@ export const selectReviewedComments = (
     return file === undefined ? [] : [{ ...comment, path: file.path }];
   });
 
-// A comments.json from another review, for a file this review did not stage, or with an error
-// state is refused before collect reads or writes anything.
 export const decideViewerReply = (facts: ViewerReplyFacts): ViewerReplyDecision => {
   if (facts.state.kind === 'error') {
     return { kind: 'viewer-error', reason: facts.state.reason };
@@ -150,8 +141,6 @@ export const decideViewerReply = (facts: ViewerReplyFacts): ViewerReplyDecision 
   return stranger === undefined ? { kind: 'accepted' } : { kind: 'unknown-file', file: stranger };
 };
 
-// A record that already saved tuicr comments keeps them, because collect must return every comment
-// it deletes.
 export const decideViewerSource = (facts: ViewerSourceFacts): ViewerSourceDecision =>
   facts.savedTuicrComments > 0 && facts.viewerReplyExists ? 'refuse-switch' : 'accepted';
 
