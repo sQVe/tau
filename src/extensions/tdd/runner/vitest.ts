@@ -45,11 +45,9 @@ const vitestDefaults: TddConfig = {
   excludedGlobs: [
     '**/{node_modules,.git,dist,build,coverage,.next,.nuxt,.output,.turbo,.cache,generated,__generated__}/**',
   ],
-  // The default reporter keeps console and setup diagnostics; JSON alone omits them.
   verificationArgv: ['vitest', 'run', '--reporter=json', '--reporter=default', '--no-color'],
 };
 
-// Vitest loads its own configuration before Vite's. Hash both because either can change which tests run.
 const configurationGlobs = [
   `${CONFIG_DIR_NAME}/${configFileName}`,
   '**/package.json',

@@ -213,7 +213,6 @@ const diagnosticFileLine = (label: string, file: DiagnosticFile): string => {
   return `${label}: ${file.path} (${size}${truncation})`;
 };
 
-// Only runs with more than one stage label their stage.
 const stageLabel = (label: string, stage: RunStage, labelStages: boolean): string =>
   labelStages ? `${label} (${stage.name})` : label;
 

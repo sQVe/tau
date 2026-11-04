@@ -289,7 +289,6 @@ export const defaultResolveVitest: ResolveVitest = (cwd) => {
   }
 };
 
-// Debian-family systems name the runtime `nodejs`, so both spellings count as a Node command.
 const nodeNames = ['node', 'nodejs'];
 
 // oxlint-disable-next-line node/no-process-env -- Compiled Pi needs a real Node executable from the caller's PATH.
@@ -307,7 +306,5 @@ const nodeOnPath = (path = process.env.PATH ?? '') =>
       }
     });
 
-// In compiled Pi, process.execPath is the agent and cannot run Vitest. Prefer Node from PATH.
-// Keep the fallback for Node executables with other names, such as `nodejs`.
 export const nodeExecutable = (executablePath = process.execPath): string =>
   /^node$/i.test(basename(executablePath)) ? executablePath : (nodeOnPath() ?? executablePath);

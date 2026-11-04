@@ -107,7 +107,6 @@ const retain = async (
   try {
     return await save();
   } catch (error) {
-    // One unavailable artifact must not discard other diagnostics or the test outcome.
     errors.push(String(error));
 
     return undefined;
