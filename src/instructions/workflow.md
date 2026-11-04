@@ -29,5 +29,6 @@ these defaults.
 - Editing comments does not give permission to refactor code or expand the task.
 - Continue the work unless it needs user input.
 - Do not end a turn that waits for the user without stating the question.
+- While you follow a skill, ask the user only with `ask_user_question`, never in prose.
 - As a manager, start a new session when a batch of work has finished and no workers are running.
   Carry state through handover files and Linear, not the conversation.

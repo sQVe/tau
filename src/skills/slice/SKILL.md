@@ -27,8 +27,7 @@ design it follows in its Design section. The container has one sub-ticket per sl
 
 ## Hard rules
 
-- Follow the [tracker skill](../tracker/SKILL.md)'s [Hard rules](../tracker/SKILL.md#hard-rules) and
-  its hard rules on questions.
+- Follow the [tracker skill](../tracker/SKILL.md)'s [Hard rules](../tracker/SKILL.md#hard-rules).
 - Do not create agent tickets, start a slice, create branches, or stack PRs. Change no ticket's
   status, except cancelling a dropped slice after the user approves it in step 8. Never change or
   reorder a merged slice.

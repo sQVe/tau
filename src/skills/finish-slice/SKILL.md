@@ -23,7 +23,6 @@ for the workspace.
 - Write to Linear as the tracker skill's [Hard rules](../tracker/SKILL.md#hard-rules) says. Write
   only the audit comment and agent tickets inside the slice's outcome. Do not write to the container
   or other slices, and do not change any status.
-- Ask every question with the `ask_user_question` tool.
 - Do not run the full check. The pr skill owns it.
 - Worker reports and reviews only feed evidence in. This skill gives the verdict.
 - Verdicts are:
@@ -57,9 +56,9 @@ for the workspace.
      a summary. Cite that path as the evidence.
 
 5. For each item that is not met, create a fix agent ticket when the fix fits inside the slice
-   outcome, as "Changes after the start" in the start-slice skill says. Otherwise report that the
-   fix needs a new slice. Then go on to step 6. The audit is always saved and posted, and a not-met
-   item makes draft the suggested PR status.
+   outcome, as the start-slice skill's [Hard rules](../start-slice/SKILL.md#hard-rules) say.
+   Otherwise report that the fix needs a new slice. Then go on to step 6. The audit is always saved
+   and posted, and a not-met item makes draft the suggested PR status.
 
 6. Find an earlier audit comment before you write a new one. Run the tracker skill's comment list
    command on the slice, even when `finish.md` records a comment ID. Pick the comment with the
