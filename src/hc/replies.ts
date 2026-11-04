@@ -32,9 +32,17 @@ const statusSchema = Type.Object({
   title: Type.Optional(Type.String()),
 });
 
+const foregroundSchema = Type.Object({
+  pid: Type.Number(),
+  name: Type.String(),
+  argv: Type.Array(Type.String()),
+  cwd: Type.String(),
+});
+
 const hcTerminalSchema = Type.Object({
   address: Type.String(),
   state: Type.String(),
+  foreground: Type.Optional(Type.Union([foregroundSchema, Type.Null()])),
   labels: Type.Optional(Type.Record(Type.String(), Type.String())),
   argv: Type.Optional(Type.Array(Type.String())),
   cwd: Type.Optional(Type.String()),

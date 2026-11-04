@@ -55,6 +55,10 @@ jobs:
           chmod +x "${RUNNER_TEMP}/hc/herdr-core"
           ln -s "${RUNNER_TEMP}/hc/herdr-core" "${RUNNER_TEMP}/hc/hc"
           echo "${RUNNER_TEMP}/hc" >> "${GITHUB_PATH}"
+      - name: Install zsh
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zsh
       - run: pnpm test
 
   mutation:
