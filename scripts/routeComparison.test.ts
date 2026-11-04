@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -70,6 +70,38 @@ const snapshot = async () => {
       return [name, info.mtimeMs, info.isFile() ? await readFile(path, 'utf8') : ''];
     }),
   );
+};
+
+const sideSection = (output: string, label: string) => {
+  const start = output.indexOf(label);
+  const end = label === 'Before switch' ? output.indexOf('After switch') : output.length;
+
+  return output.slice(start, end);
+};
+
+const timeToReport = (section: string) => {
+  const match =
+    /time to first report: median (([\d.]+)|none) min \((\d+) measured, (\d+) without a readable report\)/.exec(
+      section,
+    );
+
+  if (match === null) {
+    return undefined;
+  }
+
+  return { median: match[1], measured: Number(match[3]), missing: Number(match[4]) };
+};
+
+const successCount = (section: string) => {
+  const match = /success: (\d+) success,/.exec(section);
+
+  return match === null ? undefined : Number(match[1]);
+};
+
+const noReportCount = (section: string) => {
+  const match = /success: \d+ success, \d+ failure, \d+ incomplete, (\d+) no report/.exec(section);
+
+  return match === null ? undefined : Number(match[1]);
 };
 
 const writeAllFormats = async () => {
@@ -178,4 +210,77 @@ it('leaves the record files unchanged after a run', async () => {
 
   expect(result.status).toBe(0);
   expect(afterState).toEqual(beforeState);
+});
+
+it('feeds report file times and outcomes into each side measure', async () => {
+  const taskReport = await write('tau-archive/proj/archive-before/report.json', report);
+  await write('tau-archive/proj/archive-before/task.json', taskRecord(8, 'archive-before', before));
+  await utimes(taskReport, new Date(before + 300_000), new Date(before + 300_000));
+
+  const sessionPath = await write(
+    'tau/proj/assignments/assignment-after/session.jsonl',
+    `${JSON.stringify({
+      type: 'message',
+      timestamp: new Date(after + 180_000).toISOString(),
+      message: { role: 'toolResult', toolName: 'subagent_report', isError: false },
+    })}\n`,
+  );
+
+  await write(
+    'tau/proj/assignments/assignment-after/assignment.json',
+    JSON.stringify({
+      version: 3,
+      assignmentId: 'assignment-after',
+      createdAt: after,
+      profile: 'worker',
+      cwd: '/repo',
+      routing: { label: 'routine' },
+      session: { file: sessionPath },
+      report: { outcome: 'success', summary: 'Done' },
+    }),
+  );
+
+  const result = run();
+
+  expect(result.status).toBe(0);
+
+  const beforeSection = sideSection(result.stdout, 'Before switch');
+  const afterSection = sideSection(result.stdout, 'After switch');
+
+  expect(timeToReport(beforeSection)?.median).toBe('5.0');
+  expect(timeToReport(beforeSection)?.missing).toBe(0);
+  expect(successCount(beforeSection)).toBe(1);
+
+  expect(timeToReport(afterSection)?.median).toBe('3.0');
+  expect(timeToReport(afterSection)?.missing).toBe(0);
+  expect(successCount(afterSection)).toBe(1);
+});
+
+it('counts launches whose report files are missing', async () => {
+  await write('tau-archive/proj/archive-before/task.json', taskRecord(8, 'archive-before', before));
+
+  await write(
+    'tau/proj/assignments/assignment-after/assignment.json',
+    JSON.stringify({
+      version: 3,
+      assignmentId: 'assignment-after',
+      createdAt: after,
+      profile: 'worker',
+      cwd: '/repo',
+      routing: { label: 'routine' },
+      session: { file: join(agentDirectory, 'missing.jsonl') },
+    }),
+  );
+
+  const result = run();
+
+  expect(result.status).toBe(0);
+
+  const beforeSection = sideSection(result.stdout, 'Before switch');
+  const afterSection = sideSection(result.stdout, 'After switch');
+
+  expect(timeToReport(beforeSection)?.missing).toBe(1);
+  expect(noReportCount(beforeSection)).toBe(1);
+  expect(timeToReport(afterSection)?.missing).toBe(1);
+  expect(noReportCount(afterSection)).toBe(1);
 });
