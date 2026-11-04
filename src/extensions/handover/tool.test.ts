@@ -320,7 +320,7 @@ it('refuses an already-aborted send before any hc call', async () => {
   expect(fake.calls).toEqual([]);
 });
 
-it('starts a Manager tab in a space and returns the herdr-app reply', async () => {
+it('starts a tab in a space and returns the herdr-app reply', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
   const app = createAppFake();

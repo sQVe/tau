@@ -38,7 +38,7 @@ const parameters = Type.Object({
   ),
   space: Type.Optional(
     Type.String({
-      description: 'start: herdr-app space ID that gets the Manager tab. Omit it to use name.',
+      description: 'start: herdr-app space ID that gets the new Pi tab. Omit it to use name.',
     }),
   ),
   name: Type.Optional(Type.String({ description: 'start without space: name of the new space.' })),
@@ -118,7 +118,7 @@ export const createHandoverTool = (
     description: `Prepare, send, and start handover messages.
 - action prepare: creates .tau/handovers in the checkout or bare repository root. Returns {directory}, an absolute path. Reuses an existing directory.
 - action send: sends the file's text to terminal with hc send, never forced or waiting. Needs terminal (hc address or name) and file (from prepare). Returns {status, terminal, turn}: started, notStarted, or blocked (the receiver waits on its user; no turn).
-- action start: opens a Manager Pi tab with the file's text as its task. Needs file and folder, plus space or name. Returns {reply}, herdr-app's output.`,
+- action start: opens a Pi tab with the file's text as its task. Needs file and folder, plus space or name. Returns {reply}, herdr-app's output.`,
     promptSnippet: 'Prepare, send, and start handover messages.',
     parameters,
     executionMode: 'sequential',
