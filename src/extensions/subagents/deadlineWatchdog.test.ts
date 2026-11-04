@@ -2,20 +2,22 @@ import { randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import { failedResult } from '../../../tests/execFake.js';
+import { failedResult, succeededResult } from '../../../tests/execFake.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
-import { assignmentDirectory, writeAssignment } from './assignment.js';
+import { assignmentDirectory, readAssignment, writeAssignment } from './assignment.js';
 import type { Assignment } from './assignment.js';
 import { createDeadlineWatchdog } from './deadlineWatchdog.js';
 import type { DeadlineWatchdogContext } from './deadlineWatchdog.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { registerDeadlineWatchdog } from './subagents.js';
+import { createWorkerDelivery } from './workerDelivery.js';
 import type { WorkerDelivery } from './workerDelivery.js';
 import { createWorkerScan } from './workerScan.js';
 
@@ -57,6 +59,13 @@ const terminal = (
 });
 
 const childRow = { address: 't-child', state: 'live', parent: manager };
+
+const missingChild = (address: string, path: string): HcTerminal => ({
+  address,
+  state: 'live',
+  parent: manager,
+  labels: { 'tau.assignment': path },
+});
 
 const savedAssignment = async (
   directory: string,
@@ -102,13 +111,17 @@ const savedAssignment = async (
 const harness = (hcFake: HcFake) => {
   const hc: HcRuntime = { exec: hcFake.exec, connect: hcFake.connect, cwd: process.cwd() };
   const ended: string[] = [];
+  const order: string[] = [];
   const notifications: [string, string | undefined][] = [];
 
   const delivery: WorkerDelivery = {
     deliver: () => undefined,
     showEnded: (_context, assignmentId) => {
+      order.push('showEnded');
       ended.push(assignmentId);
     },
+    markDeadlinePending: () => undefined,
+    clearDeadlinePending: () => undefined,
   };
 
   const context = {
@@ -135,7 +148,7 @@ const harness = (hcFake: HcFake) => {
   const commands = (name: string) =>
     hcFake.calls.filter((call) => call.commandArguments[0] === name);
 
-  return { context, ended, notifications, scanner, hc, emit, commands };
+  return { context, ended, order, notifications, scanner, hc, emit, commands };
 };
 
 const setup = async (
@@ -153,6 +166,7 @@ const setup = async (
   hcFake.reply('get', JSON.stringify(terminal(path, deadline)));
   hcFake.reply('send', JSON.stringify({ turn: 1 }));
   hcFake.reply('kill', JSON.stringify({ address: 't-child', state: 'finished' }));
+  hcFake.reply('label', JSON.stringify(terminal(path, deadline)));
 
   if (options.sendFails === true) {
     hcFake.fail('send', JSON.stringify({ error: { kind: 'blocked', message: 'blocked' } }), 1);
@@ -213,6 +227,263 @@ it('kills after hc refuses the warning', async () => {
   expect(notifications).toHaveLength(1);
   expect(notifications[0]?.[0]).toContain('Warning t-child failed');
   expect(notifications[0]?.[1]).toBe('error');
+});
+
+it('labels the worker as ended at its deadline after the kill, once the deadline message is shown', async () => {
+  const { context, scanner, hc, deadline, commands, order } = await setup();
+
+  const realExec = hc.exec;
+
+  hc.exec = async (command, commandArguments, options) => {
+    if (commandArguments[0] === 'kill' || commandArguments[0] === 'label') {
+      order.push(commandArguments[0]);
+    }
+
+    return realExec(command, commandArguments, options);
+  };
+
+  await scanner.scan(context);
+  await vi.advanceTimersByTimeAsync(deadline - now);
+
+  await vi.waitFor(() => {
+    expect(commands('label')).toHaveLength(1);
+  });
+
+  expect(order).toEqual(['kill', 'showEnded', 'label']);
+
+  expect(commands('label')[0]?.commandArguments).toEqual([
+    'label',
+    '--json',
+    '--',
+    't-child',
+    'tau.ended=deadline',
+  ]);
+});
+
+it('still kills and reports one problem when the deadline label fails', async () => {
+  const { context, scanner, deadline, notifications, commands, ended, hcFake } = await setup();
+
+  hcFake.fail('label', JSON.stringify({ error: { kind: 'blocked', message: 'blocked' } }), 1);
+
+  await scanner.scan(context);
+  await vi.advanceTimersByTimeAsync(deadline - now);
+
+  await vi.waitFor(() => {
+    expect(commands('kill')).toHaveLength(1);
+  });
+
+  expect(ended).toHaveLength(1);
+  expect(notifications).toHaveLength(1);
+  expect(notifications[0]?.[0]).toContain('Marking t-child as ended at its deadline failed');
+  expect(notifications[0]?.[1]).toBe('error');
+});
+
+it('still kills when the deadline label reply omits labels and parent', async () => {
+  const { context, scanner, hcFake, deadline, commands, ended } = await setup();
+
+  hcFake.reply('label', JSON.stringify({ address: 't-child', state: 'live' }));
+
+  await scanner.scan(context);
+  await vi.advanceTimersByTimeAsync(deadline - now);
+
+  await vi.waitFor(() => {
+    expect(commands('kill')).toHaveLength(1);
+  });
+
+  expect(ended).toHaveLength(1);
+});
+
+it('makes no label call when the kill fails, and still retries the kill', async () => {
+  const { context, scanner, hcFake, deadline, commands, ended } = await setup();
+
+  hcFake.fail('kill', JSON.stringify({ error: { kind: 'blocked', message: 'blocked' } }), 1);
+
+  await scanner.scan(context);
+  await vi.advanceTimersByTimeAsync(deadline - now);
+
+  await vi.waitFor(() => {
+    expect(commands('kill')).toHaveLength(1);
+  });
+
+  await vi.advanceTimersByTimeAsync(5_000);
+
+  await vi.waitFor(() => {
+    expect(commands('kill')).toHaveLength(2);
+  });
+
+  expect(commands('label')).toHaveLength(0);
+  expect(ended).toEqual([]);
+});
+
+const twoMissingChildren = (hcFake: HcFake) => {
+  const terminals = [
+    missingChild('t-first', '/agent/missing-first.json'),
+    missingChild('t-second', '/agent/missing-second.json'),
+  ];
+
+  hcFake.reply('ls', JSON.stringify({ terminals }));
+  hcFake.reply('kill', JSON.stringify({ address: 't-first', state: 'finished' }));
+
+  const harnessed = harness(hcFake);
+  const realExec = hcFake.exec;
+
+  harnessed.hc.exec = async (command, commandArguments, options) => {
+    if (commandArguments[0] === 'get') {
+      const address = commandArguments.at(-1);
+      const child = terminals.find((candidate) => candidate.address === address);
+
+      return succeededResult(JSON.stringify(child));
+    }
+
+    return realExec(command, commandArguments, options);
+  };
+
+  return harnessed;
+};
+
+it('reports a failed deadline label once per child, with no retry', async () => {
+  const hcFake = createHcFake();
+
+  hcFake.fail('label', JSON.stringify({ error: { kind: 'blocked', message: 'blocked' } }), 1);
+
+  const { context, scanner, notifications, commands } = twoMissingChildren(hcFake);
+
+  await scanner.scan(context);
+  await vi.advanceTimersByTimeAsync(60_000);
+
+  expect(commands('kill')).toHaveLength(2);
+  expect(notifications.filter(([message]) => message.includes('t-first'))).toHaveLength(1);
+  expect(notifications.filter(([message]) => message.includes('t-second'))).toHaveLength(1);
+
+  await scanner.scan(context);
+
+  expect(notifications.filter(([message]) => message.includes('t-first'))).toHaveLength(1);
+  expect(notifications.filter(([message]) => message.includes('t-second'))).toHaveLength(1);
+});
+
+const customTypes = (messages: { customType?: unknown }[]): unknown[] =>
+  messages.map((message) => message.customType);
+
+const launchingDelivery = () => {
+  const messages: { customType?: unknown; details?: unknown }[] = [];
+
+  const pi = {
+    on: () => undefined,
+    sendMessage: (message: { customType?: unknown; details?: unknown }) => {
+      messages.push(message);
+    },
+  } as unknown as ExtensionAPI;
+
+  return { delivery: createWorkerDelivery(pi), messages };
+};
+
+const launchingContext = (parentSession: string) =>
+  ({
+    sessionManager: { getEntries: () => [], getSessionFile: () => parentSession },
+    ui: { notify: () => undefined },
+    isIdle: () => true,
+    signal: undefined,
+  }) as unknown as DeadlineWatchdogContext;
+
+const parentSessionOf = async (path: string): Promise<string> => {
+  const assignment = await readAssignment(path);
+
+  if (assignment === undefined) {
+    throw new Error('The assignment file is missing.');
+  }
+
+  return assignment.parentSession;
+};
+
+it('shows one deadline message when the worker finishes while its kill is pending', async () => {
+  const { path, deadline, hc, hcFake, commands } = await setup();
+  const context = launchingContext(await parentSessionOf(path));
+  const { delivery, messages } = launchingDelivery();
+  const watchdog = createDeadlineWatchdog(hc, delivery);
+  const scanner = createWorkerScan(hc, delivery, watchdog);
+  const killStarted = deferred();
+  const killFinished = deferred();
+  const realExec = hcFake.exec;
+  let finished = false;
+  let labelled = false;
+
+  const labelsNow = (): Record<string, string> => {
+    const labels = terminal(path, deadline).labels ?? {};
+
+    return labelled ? { ...labels, 'tau.ended': 'deadline' } : labels;
+  };
+
+  const stateNow = (): string => (finished ? 'finished' : 'live');
+
+  hc.exec = async (command, commandArguments, options) => {
+    const [name] = commandArguments;
+
+    if (name === 'ls') {
+      return succeededResult(JSON.stringify({ terminals: [{ ...childRow, state: stateNow() }] }));
+    }
+
+    if (name === 'get') {
+      return succeededResult(
+        JSON.stringify({ ...terminal(path, deadline), state: stateNow(), labels: labelsNow() }),
+      );
+    }
+
+    if (name === 'label') {
+      labelled = true;
+
+      return succeededResult(
+        JSON.stringify({ ...terminal(path, deadline), state: stateNow(), labels: labelsNow() }),
+      );
+    }
+
+    if (name === 'kill') {
+      finished = true;
+      killStarted.resolve();
+      await killFinished.promise;
+    }
+
+    return realExec(command, commandArguments, options);
+  };
+
+  await scanner.scan(context);
+  await vi.advanceTimersByTimeAsync(deadline - now);
+  await killStarted.promise;
+
+  await scanner.scan(context);
+
+  killFinished.resolve();
+
+  await vi.waitFor(() => {
+    expect(labelled).toBe(true);
+  });
+
+  await scanner.scan(context);
+
+  expect(commands('kill')).toHaveLength(1);
+  expect(customTypes(messages)).toEqual(['tau-worker-deadline']);
+});
+
+it('shows the generic ended message when a failed kill is followed by an unreported finish', async () => {
+  const { path, deadline, hc, hcFake, commands } = await setup();
+  const context = launchingContext(await parentSessionOf(path));
+  const { delivery, messages } = launchingDelivery();
+  const scanner = createWorkerScan(hc, delivery, createDeadlineWatchdog(hc, delivery));
+
+  hcFake.fail('kill', JSON.stringify({ error: { kind: 'blocked', message: 'blocked' } }), 1);
+
+  await scanner.scan(context);
+  await vi.advanceTimersByTimeAsync(deadline - now);
+
+  await vi.waitFor(() => {
+    expect(commands('kill')).toHaveLength(1);
+  });
+
+  hcFake.reply('ls', JSON.stringify({ terminals: [{ ...childRow, state: 'finished' }] }));
+  hcFake.reply('get', JSON.stringify({ ...terminal(path, deadline), state: 'finished' }));
+
+  await scanner.scan(context);
+
+  expect(customTypes(messages)).toEqual(['tau-worker-ended']);
 });
 
 it('skips the kill when hc get shows another parent', async () => {
@@ -407,6 +678,7 @@ it('kills at once when the assignment file is missing', async () => {
   const hcFake = createHcFake();
 
   hcFake.reply('get', JSON.stringify(terminal('/agent/missing.json', now + 300_000)));
+  hcFake.reply('label', JSON.stringify(terminal('/agent/missing.json', now + 300_000)));
 
   const { context, scanner, notifications, commands, ended } = standalone(hcFake);
 
@@ -424,6 +696,7 @@ it('kills at once when the assignment file is malformed', async () => {
 
   writeFileSync(path, JSON.stringify({ version: 2, assignmentId: 'not-a-uuid' }));
   hcFake.reply('get', JSON.stringify(terminal(path, now + 300_000)));
+  hcFake.reply('label', JSON.stringify(terminal(path, now + 300_000)));
 
   const { context, scanner, notifications, commands } = standalone(hcFake);
 

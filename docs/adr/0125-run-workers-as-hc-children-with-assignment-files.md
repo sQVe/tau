@@ -112,8 +112,15 @@ only the worker writes its report and its questions into it.
   such a worker as having unlimited time.
 - A `tau.deadline` label that is missing, malformed, or different from the assignment is shown as an
   error. The assignment deadline still applies.
-- After a kill, the manager shows one "ended at its deadline" message for each assignment ID, only
-  in the session that launched the worker.
+- After a successful kill, Tau sets the label `tau.ended=deadline` on the finished worker's
+  terminal. A failed kill sets no label and keeps the retry schedule. A failed label after a kill is
+  reported once and does not start a retry.
+- The launching session shows one "ended at its deadline" message for each assignment ID, even when
+  another session in the same terminal performed the kill. The label keeps that fact until the
+  launching session reads the worker. A finished worker with no report and this label gets the
+  deadline message, not the generic "ended without a report" message. When the label write failed,
+  the launching session has no label to read and shows the generic "ended without a report" message
+  when another session performed the kill.
 
 ### Tools
 

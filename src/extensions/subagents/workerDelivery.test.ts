@@ -325,7 +325,9 @@ it('ignores an assignment whose report is not written yet', async () => {
   expect(managerState.messages).toEqual([]);
 });
 
-const finishedWorker = async (): Promise<{
+const finishedWorker = async (
+  extraLabels: Record<string, string> = {},
+): Promise<{
   managerState: ReturnType<typeof createManager>;
   hc: HcRuntime;
   assignmentId: string;
@@ -339,7 +341,12 @@ const finishedWorker = async (): Promise<{
   const managerState = createManager();
 
   const hc = createHc([
-    { address: 't-child', state: 'finished', parent: manager, labels: { 'tau.assignment': path } },
+    {
+      address: 't-child',
+      state: 'finished',
+      parent: manager,
+      labels: { 'tau.assignment': path, ...extraLabels },
+    },
   ]);
 
   return { managerState, hc, assignmentId: saved.assignmentId };
@@ -478,6 +485,44 @@ it('does not show the deadline message when the ended message was already shown'
 
   expect(managerState.messages).toHaveLength(1);
   expect(managerState.messages[0]?.customType).toBe('tau-worker-ended');
+});
+
+it('shows the deadline message, not the ended message, for a worker that ended at its deadline', async () => {
+  const { managerState, hc, assignmentId } = await finishedWorker({ 'tau.ended': 'deadline' });
+
+  await deliverPending(createWorkerDelivery(managerState.pi), hc, managerState.context);
+
+  expect(managerState.messages).toHaveLength(1);
+
+  expect(managerState.messages[0]).toMatchObject({
+    customType: 'tau-worker-deadline',
+    details: { assignmentId },
+  });
+});
+
+it('does not show the deadline message twice while it is still queued', async () => {
+  const { managerState, hc } = await finishedWorker({ 'tau.ended': 'deadline' });
+
+  managerState.setStreaming(true);
+
+  const delivery = createWorkerDelivery(managerState.pi);
+
+  await deliverPending(delivery, hc, managerState.context);
+  await deliverPending(delivery, hc, managerState.context);
+
+  expect(managerState.messages).toHaveLength(1);
+});
+
+it('shows the deadline message once when the launching session already showed it', async () => {
+  const { managerState, hc, assignmentId } = await finishedWorker({ 'tau.ended': 'deadline' });
+
+  const delivery = createWorkerDelivery(managerState.pi);
+
+  delivery.showEnded(managerState.context, assignmentId, managerSession);
+  await deliverPending(delivery, hc, managerState.context);
+
+  expect(managerState.messages).toHaveLength(1);
+  expect(managerState.messages[0]?.customType).toBe('tau-worker-deadline');
 });
 
 it('skips a terminal that is not the manager child', async () => {

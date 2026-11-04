@@ -2,10 +2,15 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { notifyOnce } from '../../config/config.js';
 import { errorMessage } from '../../errors.js';
-import { currentTerminalAddress, get, kill, send } from '../../hc/hc.js';
+import { currentTerminalAddress, get, kill, label, send } from '../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import { readAssignment } from './assignment.js';
-import { decideDeadline, retryDelay, reuseArmedTimer } from './deadlineDecision.js';
+import {
+  decideDeadline,
+  deadlineEndLabel,
+  retryDelay,
+  reuseArmedTimer,
+} from './deadlineDecision.js';
 import type {
   DeadlineAssignment,
   DeadlineChildFact,
@@ -188,6 +193,22 @@ export const createDeadlineWatchdog = (
     );
   };
 
+  const markEndedAtDeadline = async (
+    context: DeadlineWatchdogContext,
+    target: DeadlineTimer | DeadlineKill,
+  ): Promise<void> => {
+    try {
+      await label(hc, target.address, { [deadlineEndLabel.key]: deadlineEndLabel.value });
+    } catch (error) {
+      reportKillProblem(
+        context,
+        `label:${target.address}`,
+        `Marking ${target.address} as ended at its deadline failed:`,
+        error,
+      );
+    }
+  };
+
   const warn = async (context: DeadlineWatchdogContext, timer: DeadlineTimer): Promise<void> => {
     if (isStopped()) {
       return;
@@ -208,6 +229,20 @@ export const createDeadlineWatchdog = (
         'error',
       );
     }
+  };
+
+  const setKillPending = (target: DeadlineTimer | DeadlineKill, pending: boolean): void => {
+    if (target.assignmentId === undefined) {
+      return;
+    }
+
+    if (pending) {
+      delivery.markDeadlinePending(target.assignmentId);
+
+      return;
+    }
+
+    delivery.clearDeadlinePending(target.assignmentId);
   };
 
   const showEndedNotice = (
@@ -267,6 +302,8 @@ export const createDeadlineWatchdog = (
       return;
     }
 
+    setKillPending(target, true);
+
     try {
       await kill(hc, target.address);
     } catch (error) {
@@ -276,6 +313,8 @@ export const createDeadlineWatchdog = (
         `Ending ${target.address} failed:`,
         error,
       );
+
+      setKillPending(target, false);
 
       scheduleRetry(context, target, attempt, () => killAtDeadline(context, target, attempt + 1));
 
@@ -287,6 +326,8 @@ export const createDeadlineWatchdog = (
     }
 
     showEndedNotice(context, target);
+
+    await markEndedAtDeadline(context, target);
   };
 
   const arm = (context: DeadlineWatchdogContext, timer: DeadlineTimer): void => {
