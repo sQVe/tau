@@ -44,6 +44,7 @@ interface ShellCase {
   pi: boolean;
   getCalls: number | undefined;
   maxElapsedMs: number | undefined;
+  firstCallFailure?: 'exit' | 'malformed';
 }
 
 interface ShellResult {
@@ -268,6 +269,13 @@ fi
 counter=$((counter + 1))
 printf '%s' "$counter" > "$FAKE_HC_COUNTER"
 
+if [ "$counter" -eq 1 ]; then
+  case "$FAKE_HC_FIRST_CALL_FAILURE" in
+    exit) exit 1 ;;
+    malformed) printf '%s\n' 'not json'; exit 0 ;;
+  esac
+fi
+
 case "$FAKE_HC_PID_MODE" in
   match) pid="$EXPECTED_SHELL_PID" ;;
   different) pid=$((EXPECTED_SHELL_PID + 1)) ;;
@@ -391,6 +399,38 @@ const shellCases: ShellCase[] = [
     getCalls: undefined,
     maxElapsedMs: 5500,
   },
+  {
+    name: 'retries when hc get exits non-zero once, then resumes',
+    terminalId: 't7',
+    scope: 'core-1',
+    guard: '',
+    labels: 'session',
+    pidMode: 'match',
+    sessionExists: true,
+    cwdExists: true,
+    delay: '',
+    waitSeconds: '',
+    firstCallFailure: 'exit',
+    pi: true,
+    getCalls: 2,
+    maxElapsedMs: undefined,
+  },
+  {
+    name: 'retries when hc get prints invalid JSON once, then resumes',
+    terminalId: 't7',
+    scope: 'core-1',
+    guard: '',
+    labels: 'session',
+    pidMode: 'match',
+    sessionExists: true,
+    cwdExists: true,
+    delay: '',
+    waitSeconds: '',
+    firstCallFailure: 'malformed',
+    pi: true,
+    getCalls: 2,
+    maxElapsedMs: undefined,
+  },
 ];
 
 const writeExecutable = (path: string, contents: string): void => {
@@ -446,6 +486,7 @@ const runCase = (row: ShellCase): ShellResult => {
         FAKE_HC_SESSION: sessionFile,
         FAKE_HC_CWD: cwd,
         FAKE_HC_DELAY: row.delay,
+        FAKE_HC_FIRST_CALL_FAILURE: row.firstCallFailure ?? '',
         FAKE_PI_ARGS_FILE: piArgsFile,
         FAKE_PI_CWD_FILE: piCwdFile,
       },
@@ -490,7 +531,9 @@ describe.skipIf(!hasZsh)('resume-pi shell snippet', () => {
     expect(result.stdout).not.toContain('HELPER_LEAK');
     expect(result.piArgs).toBe(row.pi ? `--session ${result.sessionFile}` : undefined);
     expect(result.piCwd).toBe(row.pi ? result.cwd : undefined);
-    expect(result.hcCalls, result.stderr).toBe(row.getCalls ?? result.hcCalls);
+    const hcCallsToCheck = row.getCalls === undefined ? undefined : result.hcCalls;
+
+    expect(hcCallsToCheck, result.stderr).toBe(row.getCalls);
     expect(result.elapsedMs).toBeLessThan(row.maxElapsedMs ?? Number.POSITIVE_INFINITY);
   });
 });

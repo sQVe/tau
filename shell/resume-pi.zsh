@@ -38,6 +38,7 @@
     local -F deadline=$((EPOCHREALTIME + wait_seconds))
     local -F remaining
     local terminal_json=''
+    local terminal_read=0
     local session_label=''
     local cwd_label=''
     local recorded_pid=''
@@ -52,7 +53,13 @@
         break
       fi
 
-      terminal_json="$(timeout "$remaining" hc get "$terminal_id" --json 2>/dev/null)" || terminal_json=''
+      if terminal_json="$(timeout "$remaining" hc get "$terminal_id" --json 2>/dev/null)" && print -r -- "$terminal_json" | jq -e . >/dev/null 2>&1; then
+        terminal_read=1
+      else
+        terminal_read=0
+        terminal_json=''
+      fi
+
       session_label="$(print -r -- "$terminal_json" | jq -r '.labels["pi.session"] // empty' 2>/dev/null)"
       cwd_label="$(print -r -- "$terminal_json" | jq -r '.labels["pi.cwd"] // empty' 2>/dev/null)"
       recorded_pid="$(print -r -- "$terminal_json" | jq -r '.pid // empty' 2>/dev/null)"
@@ -77,7 +84,7 @@
 
       decision=$(
         _tau_resume_decision \
-          "$terminal_id" "$scope" "$guard" 1 "$session_label" "$cwd_label" "$recorded_pid" \
+          "$terminal_id" "$scope" "$guard" "$terminal_read" "$session_label" "$cwd_label" "$recorded_pid" \
           "$current_pid" "$session_file_exists" "$cwd_exists" "$pi_available"
       )
 
