@@ -6,7 +6,12 @@ import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { skillTools } from '../../skillTools.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
-import { workerArguments, workerCommand, workerEnvironment } from './workerCommand.js';
+import {
+  workerArguments,
+  workerCommand,
+  workerEnvironment,
+  workerStartMessage,
+} from './workerCommand.js';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -92,6 +97,17 @@ it('starts the worker without waiting for an approval prompt', () => {
   expect(workerArguments(sessionFile, fixtureLoadout('/tmp'), [], skillTools)).toContain(
     '--approve',
   );
+});
+
+it('ends the Pi arguments with the start message after the extension flags', () => {
+  expect(
+    workerArguments(
+      sessionFile,
+      fixtureLoadout('/tmp'),
+      [{ path: '/ext/package.ts' }],
+      skillTools,
+    ).slice(-3),
+  ).toEqual(['-e', '/ext/package.ts', workerStartMessage]);
 });
 
 it('passes the session file after --session', () => {

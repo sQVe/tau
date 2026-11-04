@@ -7,6 +7,11 @@ import type { SkillTools } from '../../skillTools.js';
 import type { Loadout } from './types.js';
 import { workerTools } from './workerTools.js';
 
+// Pi runs this message as the first turn. The worker extension swaps it for the task prompt.
+// Do not start the run from session_start instead: Pi subscribes its terminal status to agent
+// events only after session_start, so that run would report idle.
+export const workerStartMessage = 'Start the assigned work.';
+
 export const workerArguments = (
   sessionFile: string,
   loadout: Loadout,
@@ -39,6 +44,7 @@ export const workerArguments = (
     '-e',
     fileURLToPath(new URL('./workerExtension.ts', import.meta.url)),
     ...extensionPackages.flatMap(({ path }) => ['-e', path]),
+    workerStartMessage,
   ];
 };
 

@@ -22,16 +22,17 @@ import { appendSystemPrompt, guidelineLines } from '../../instructions/systemPro
 import { skillTools } from '../../skillTools.js';
 import { isWorkerProcess } from '../../worker.js';
 import { readAssignment } from './assignment.js';
-import type { Assignment } from './assignment.js';
 import { checkWorkerRuntime } from './loadout.js';
-import { workerInstructions, workerPrompt } from './profiles.js';
+import { workerInstructions } from './profiles.js';
 import { askParent, questionParameters } from './question.js';
 import { reportParameters, reportToParent } from './report.js';
 import type { ReportRefusalState, ReportTarget } from './report.js';
 import { remindToReport } from './reportReminder.js';
 import type { Loadout } from './types.js';
+import { workerStartMessage } from './workerCommand.js';
 import { decideWorkerResume, decideWorkerStart } from './workerResume.js';
 import type { WorkerStart } from './workerResume.js';
+import { startPromptText } from './workerStart.js';
 import { workerTools } from './workerTools.js';
 
 interface WorkerState {
@@ -41,6 +42,8 @@ interface WorkerState {
   refusal: ReportRefusalState;
   runError: string | undefined;
   questionAsked: boolean;
+  startText: string | undefined;
+  startMessagePending: boolean;
 }
 
 const readLoadoutInstructionSets = (loadout: Loadout): Promise<string[]> =>
@@ -221,25 +224,9 @@ const readWorkerAssignment = async (
   };
 };
 
-const workerContinuation =
-  'Your session restarted. Finish the assigned work, then call subagent_report.';
-
-const runStartAction = (
-  pi: ExtensionAPI,
-  context: ExtensionContext,
-  start: WorkerStart,
-  assignment: Assignment,
-): void => {
+const runStartAction = (context: ExtensionContext, start: WorkerStart): void => {
   if (start === 'shutdown') {
     context.shutdown();
-  }
-
-  if (start === 'sendTask') {
-    pi.sendUserMessage(workerPrompt(assignment));
-  }
-
-  if (start === 'continue') {
-    pi.sendUserMessage(workerContinuation);
   }
 };
 
@@ -265,11 +252,35 @@ const startWorker = async (
 
     state.questionAsked = resume.waitingForQuestion;
 
-    runStartAction(pi, context, decideWorkerStart(resume, hasReport), loaded.assignment);
+    const start = decideWorkerStart(resume, hasReport);
+
+    state.startText = startPromptText(start, loaded.assignment);
+
+    runStartAction(context, start);
   } catch (error) {
     context.ui.notify(`Worker refused: ${String(error)}`, 'error');
     context.shutdown();
   }
+};
+
+// The first run starts from the start message that workerCommand passes to Pi. It becomes the
+// stored task prompt or continuation, or no run when the worker must not run.
+const registerStartInput = (pi: ExtensionAPI, state: WorkerState): void => {
+  pi.on('input', async (event) => {
+    if (!state.startMessagePending || event.text !== workerStartMessage) {
+      return { action: 'continue' };
+    }
+
+    state.startMessagePending = false;
+
+    await state.ready;
+
+    if (state.startText === undefined) {
+      return { action: 'handled' };
+    }
+
+    return { action: 'transform', text: state.startText };
+  });
 };
 
 const lastRunError = (event: AgentEndEvent): string | undefined => {
@@ -333,6 +344,8 @@ export default function workerExtension(pi: ExtensionAPI): void {
     refusal: { incompleteRefused: false, reminderSent: false, remindAfterRefusal: false },
     runError: undefined,
     questionAsked: false,
+    startText: undefined,
+    startMessagePending: true,
   };
 
   pi.on('session_start', (_event, context) => {
@@ -341,6 +354,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
     return state.ready;
   });
 
+  registerStartInput(pi, state);
   registerReportTool(pi, state);
   registerQuestionTool(pi, state);
   registerToolCallHandler(pi);
