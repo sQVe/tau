@@ -14,6 +14,7 @@ import {
   requireTauChild,
 } from '../../tauDirectory.js';
 import { stagedNames } from './reviewDecisions.js';
+import { writeRequest } from './viewerProtocol.js';
 
 type ReviewTerminal = { state: 'starting' } | { state: 'open'; address: string };
 
@@ -229,6 +230,12 @@ const populateReview = async (review: Review) => {
   }
 
   await writeManifest(review, null);
+
+  await writeRequest(review.recordDirectory, {
+    version: 1,
+    reviewId: basename(recordDirectory),
+    files,
+  });
 };
 
 export const stageReview = async (cwd: string, requested: readonly string[]): Promise<Review> => {

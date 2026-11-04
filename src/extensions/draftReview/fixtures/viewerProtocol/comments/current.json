@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "reviewId": "review-AbC123",
+  "state": "open",
+  "comments": [
+    {
+      "file": "01-notes/1-title.md",
+      "startLine": 1,
+      "endLine": 2,
+      "type": "issue",
+      "content": "Fix the title."
+    },
+    {
+      "file": "01-notes/2-body.md",
+      "startLine": null,
+      "endLine": null,
+      "type": "suggestion",
+      "content": "Trim the body."
+    }
+  ]
+}
