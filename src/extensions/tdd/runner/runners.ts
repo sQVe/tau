@@ -1,9 +1,10 @@
+import { nextestRunner } from './nextest.js';
 import type { TestRunner } from './types.js';
 import { vitestRunner } from './vitest.js';
 
 export type RunnerTable = Readonly<Record<string, TestRunner>>;
 
-export const runners = { vitest: vitestRunner } as const;
+export const runners = { vitest: vitestRunner, nextest: nextestRunner } as const;
 
 export const defaultRunnerName = 'vitest';
 

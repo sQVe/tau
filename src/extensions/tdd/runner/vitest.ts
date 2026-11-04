@@ -1,11 +1,10 @@
-import { readFile, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 
 import { CONFIG_DIR_NAME } from '@earendil-works/pi-coding-agent';
 
 import { configFileName } from '../../../config/config.js';
 import type { TddConfig } from '../config.js';
-import { saveDiagnostics } from './diagnostics.js';
+import { runWithDiagnostics } from './diagnostics.js';
 import type { StageSpawn } from './diagnostics.js';
 import { defaultSpawn } from './process.js';
 import { classifyReport, parseReport, unparseableReportResult } from './report.js';
@@ -17,9 +16,7 @@ import {
   resolutionFailure,
 } from './resolution.js';
 import type { ResolveVitest } from './resolution.js';
-import { createDiagnosticsDirectory } from './retention.js';
 import type {
-  ReportTarget,
   RunTestsInput,
   RunnerResult,
   SpawnCommand,
@@ -113,6 +110,8 @@ const classifyResult = async (
   outputFile: string,
   version: string,
 ): Promise<RunnerResult> => {
+  const report = await readReport(outputFile);
+
   if (input.signal?.aborted === true) {
     return { kind: 'cancelled' };
   }
@@ -120,8 +119,6 @@ const classifyResult = async (
   if (result.timedOut) {
     return { kind: 'timeout' };
   }
-
-  const report = await readReport(outputFile);
 
   if (report == null) {
     return unparseableReportResult(input, result.code, result.stdout, result.stderr);
@@ -172,40 +169,20 @@ const runInDirectory = async (
 export const runTests = async (
   input: RunTestsInput,
   dependencies: RunnerDeps = defaultDeps(input.scope),
-): Promise<RunnerResult> => {
-  const directory = await createDiagnosticsDirectory();
-  const started = performance.now();
+): Promise<RunnerResult> =>
+  runWithDiagnostics(
+    { reportFileName: 'report.json', reportFormat: 'json', timeoutMs: dependencies.timeoutMs },
+    async (_directory, reportPath) => {
+      const { report, stage } = await runInDirectory(input, dependencies, reportPath);
 
-  const reportTarget: ReportTarget = { path: join(directory, 'report.json'), format: 'json' };
-
-  try {
-    const { report, stage } = await runInDirectory(input, dependencies, reportTarget.path);
-    const stages = stage === undefined ? [] : [stage];
-
-    const diagnostics = await saveDiagnostics(
-      {
-        directory,
-        durationMs: Math.round(performance.now() - started),
-        timeoutMs: dependencies.timeoutMs,
-        report: reportTarget,
-        ...('resolution' in report ? { resolution: report.resolution } : {}),
-      },
-      stages,
-    );
-
-    return { ...report, diagnostics };
-  } catch (error) {
-    // Retention prunes a leftover directory once it expires; report the runner error instead.
-    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
-
-    throw error;
-  }
-};
+      return { report, stages: stage === undefined ? [] : [stage] };
+    },
+  );
 
 const verificationArgvError = (verificationArgv: readonly string[]): string | null =>
   verificationArgv[0] === 'vitest'
     ? null
-    : 'verificationArgv must start with "vitest", the only supported runner.';
+    : 'verificationArgv must start with "vitest" for the vitest runner.';
 
 export const vitestRunner = {
   name: 'vitest',

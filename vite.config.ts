@@ -71,6 +71,8 @@ const workersPerProject = 3;
 // differ per pane or Git hook, so passing them would leak the shell and miss the cache.
 export const testEnvironment = [
   'CI',
+  'CARGO_HOME',
+  'RUSTUP_HOME',
   'TAU_COLLECTION_TIMEOUT_MS',
   'TMPDIR',
   'TMP',
@@ -92,6 +94,7 @@ export const testEnvironment = [
 // Variables that test code reads but sets itself, so they stay out of the fingerprint. Tests stub
 // them before reading, or this file sets or deletes them before the workers start.
 export const testManagedEnvironment = [
+  'CARGO_TARGET_DIR',
   'PI_CODING_AGENT_DIR',
   'TAU_ROLE',
   'TAU_WORKER_RECORD',

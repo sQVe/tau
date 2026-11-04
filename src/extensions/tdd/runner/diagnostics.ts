@@ -1,16 +1,18 @@
-import { chmod, lstat, truncate, writeFile } from 'node:fs/promises';
+import { chmod, lstat, rm, truncate, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
 import { isMissingFile } from '../../../errors.js';
 import { reportLabels } from './constants.js';
 import { maximumStdoutBytes, maximumTotalBytes } from './process.js';
+import { createDiagnosticsDirectory } from './retention.js';
 import type {
   DiagnosticFile,
-  PackageResolutionDiagnostic,
   ReportFormat,
   ReportTarget,
+  ResolutionDiagnostic,
   RunDiagnostics,
+  RunnerResult,
   RunStage,
   SpawnResult,
 } from './types.js';
@@ -25,13 +27,24 @@ export interface RunOverview {
   durationMs: number;
   timeoutMs: number;
   report: ReportTarget;
-  resolution?: PackageResolutionDiagnostic;
+  resolution?: ResolutionDiagnostic;
 }
 
 export interface StageSpawn {
   name: string;
   durationMs: number;
   result: SpawnResult;
+}
+
+interface DiagnosedRunSettings {
+  reportFileName: string;
+  reportFormat: ReportFormat;
+  timeoutMs: number;
+}
+
+interface DiagnosedRunOutcome {
+  report: RunnerResult;
+  stages: StageSpawn[];
 }
 
 const bytesPerMebibyte = 1_048_576;
@@ -172,4 +185,39 @@ export const saveDiagnostics = async (
   }
 
   return diagnostics;
+};
+
+export const runWithDiagnostics = async (
+  settings: DiagnosedRunSettings,
+  execute: (directory: string, reportPath: string) => Promise<DiagnosedRunOutcome>,
+): Promise<RunnerResult> => {
+  const directory = await createDiagnosticsDirectory();
+  const started = performance.now();
+
+  const reportTarget: ReportTarget = {
+    path: join(directory, settings.reportFileName),
+    format: settings.reportFormat,
+  };
+
+  try {
+    const { report, stages } = await execute(directory, reportTarget.path);
+
+    const diagnostics = await saveDiagnostics(
+      {
+        directory,
+        durationMs: Math.round(performance.now() - started),
+        timeoutMs: settings.timeoutMs,
+        report: reportTarget,
+        ...('resolution' in report ? { resolution: report.resolution } : {}),
+      },
+      stages,
+    );
+
+    return { ...report, diagnostics };
+  } catch (error) {
+    // Retention prunes a leftover directory once it expires; report the runner error instead.
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+
+    throw error;
+  }
 };

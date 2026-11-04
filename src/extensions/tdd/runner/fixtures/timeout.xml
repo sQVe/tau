@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="nextest-run" tests="1" skipped="0" failures="1" errors="0" uuid="fa14f731-667f-486f-b08a-492b92652dfa" timestamp="2026-11-04T21:13:36.695+01:00" time="1.005">
+    <testsuite name="demo" tests="1" skipped="0" errors="0" failures="1">
+        <testcase name="tests::sleeps" classname="demo" timestamp="2026-11-04T21:13:36.695+01:00" time="1.003">
+            <failure type="test timeout"/>
+            <system-out>
+running 1 test
+</system-out>
+            <system-err></system-err>
+        </testcase>
+    </testsuite>
+</testsuites>

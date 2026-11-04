@@ -245,7 +245,7 @@ describe('TDD config', () => {
       );
 
     expect(loading).toThrow('runner "constructor" is unknown');
-    expect(loading).toThrow('Known runners: vitest');
+    expect(loading).toThrow('Known runners: nextest, vitest');
   });
 
   it('validates the merged command with the selected runner and names the file that set it', async ({

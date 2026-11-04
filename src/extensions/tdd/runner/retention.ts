@@ -1,6 +1,6 @@
 import type { Stats } from 'node:fs';
 import { lstat, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
@@ -13,7 +13,7 @@ const millisecondsPerDay = 86_400_000;
 const retentionMilliseconds = retentionDays * millisecondsPerDay;
 const sharedPermissionBits = 0o077;
 
-const diagnosticsRoot = () => join(getAgentDir(), 'test-runs');
+const diagnosticsRoot = () => resolve(getAgentDir(), 'test-runs');
 const runDirectoryName = /^run-[a-zA-Z0-9]{6}$/;
 
 const metadataIfPresent = async (path: string) => {
