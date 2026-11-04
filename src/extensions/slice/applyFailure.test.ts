@@ -91,7 +91,9 @@ describe('slice tool apply', () => {
       const result = await fake.exec(command, commandArguments, options);
       const created = commandArguments[1]?.includes('issueCreate') === true;
 
-      return created ? { code: 1, killed: false, stdout: '', stderr: 'timeout' } : result;
+      return created
+        ? { code: 1, killed: false, truncated: false, stdout: '', stderr: 'timeout' }
+        : result;
     });
 
     const failure = await tool.execute(

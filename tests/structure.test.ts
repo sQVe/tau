@@ -198,7 +198,7 @@ const findingLines = (found: string[]) => found.map((finding) => Number(finding.
 const pureLibraries: Readonly<Record<string, readonly string[]>> = {
   'src/extensions/tdd/inputGlob.ts': ['minimatch'],
   'src/extensions/tdd/runner/report.ts': ['node:path'],
-  'src/schema.ts': ['typebox/value'],
+  'src/schema.ts': ['typebox', 'typebox/value'],
 };
 
 const isPureLibrary = (path: string, specifier: string) =>

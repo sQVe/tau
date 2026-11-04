@@ -35,6 +35,7 @@ export interface ExecFake<Key extends string> {
 export const failedResult = (stderr: string, code = 1): ExecResult => ({
   code,
   killed: false,
+  truncated: false,
   stdout: '',
   stderr,
 });
@@ -42,6 +43,7 @@ export const failedResult = (stderr: string, code = 1): ExecResult => ({
 export const succeededResult = (stdout: string): ExecResult => ({
   code: 0,
   killed: false,
+  truncated: false,
   stdout,
   stderr: '',
 });

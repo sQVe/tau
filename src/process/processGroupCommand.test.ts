@@ -28,7 +28,13 @@ it('returns the output and exit status of the command', async () => {
     { cwd: directory, onStarted: async () => undefined },
   );
 
-  expect(result).toEqual({ stdout: 'out', stderr: 'err', code: 3, killed: false });
+  expect(result).toEqual({
+    stdout: 'out',
+    stderr: 'err',
+    code: 3,
+    killed: false,
+    truncated: false,
+  });
 });
 
 it('keeps a multibyte character that spans two output chunks', async () => {
@@ -141,5 +147,5 @@ it('starts the command without launching the current executable', async () => {
     onStarted: async () => undefined,
   });
 
-  expect(result).toEqual({ stdout: 'out', stderr: '', code: 0, killed: false });
+  expect(result).toEqual({ stdout: 'out', stderr: '', code: 0, killed: false, truncated: false });
 });

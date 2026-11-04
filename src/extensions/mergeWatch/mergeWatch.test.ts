@@ -18,6 +18,7 @@ const stateOutput = (state: string, mergedAt: string | null = null) =>
 const checksOutput = (checks: { name: string; bucket: string }[], code = 8): ExecResult => ({
   code,
   killed: false,
+  truncated: false,
   stdout: JSON.stringify(checks.map((check) => ({ ...check, state: check.bucket }))),
   stderr: '',
 });

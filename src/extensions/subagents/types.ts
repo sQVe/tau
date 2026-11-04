@@ -1,10 +1,10 @@
-import { StringEnum } from '@earendil-works/pi-ai';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
 import { modelReferencePattern } from '../../config/models.js';
 import { instructionSetNames } from '../../instructions/instructions.js';
 import type { InstructionSetName } from '../../instructions/instructions.js';
+import { stringEnum } from '../../schema.js';
 
 export interface Profile {
   name: string;
@@ -21,7 +21,7 @@ export interface Profile {
 export const textLimit = 32_000;
 export const text = Type.String({ minLength: 1, maxLength: textLimit });
 
-export const thinkingSchema = StringEnum([
+export const thinkingSchema = stringEnum([
   'off',
   'minimal',
   'low',
@@ -59,7 +59,7 @@ export const loadoutSchema = Type.Object(
   {
     ...loadoutProperties,
     ...toolAndSkillProperties,
-    instructionSets: Type.Array(StringEnum(instructionSetNames), { maxItems: 4 }),
+    instructionSets: Type.Array(stringEnum(instructionSetNames), { maxItems: 4 }),
     ...packageProperties,
   },
   { additionalProperties: false },
@@ -71,7 +71,7 @@ export const routingSchema = Type.Object(
     label: Type.Optional(text),
     confidence: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
     fallbackReason: Type.Optional(
-      StringEnum(['lowConfidence', 'error', 'timeout', 'noRoute', 'unknownLabel']),
+      stringEnum(['lowConfidence', 'error', 'timeout', 'noRoute', 'unknownLabel']),
     ),
     ticketSent: Type.Boolean(),
     confidenceCutoff: Type.Number({ minimum: 0, maximum: 1 }),

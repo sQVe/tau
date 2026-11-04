@@ -469,7 +469,13 @@ export const createLinearFake = (): LinearFake => {
     try {
       operation = decode(call);
     } catch (error) {
-      return { code: 1, killed: false, stdout: '', stderr: (error as Error).message };
+      return {
+        code: 1,
+        killed: false,
+        truncated: false,
+        stdout: '',
+        stderr: (error as Error).message,
+      };
     }
 
     if (isWrite(operation)) {
@@ -477,14 +483,14 @@ export const createLinearFake = (): LinearFake => {
     }
 
     if (isWrite(operation) && failures.has(writeCalls.length)) {
-      return { code: 1, killed: false, stdout: '', stderr: 'network error' };
+      return { code: 1, killed: false, truncated: false, stdout: '', stderr: 'network error' };
     }
 
     const calledWith = commandArguments.slice(0, 2).join(' ');
     const failure = [...callFailures].find(([key]) => calledWith.includes(key))?.[1];
 
     if (failure !== undefined) {
-      return { code: 1, killed: false, stdout: '', stderr: failure };
+      return { code: 1, killed: false, truncated: false, stdout: '', stderr: failure };
     }
 
     const override = [...overrides].find(([key]) => calledWith.includes(key))?.[1];
@@ -492,9 +498,15 @@ export const createLinearFake = (): LinearFake => {
     try {
       const stdout = override ?? respond(operation);
 
-      return { code: 0, killed: false, stdout, stderr: '' };
+      return { code: 0, killed: false, truncated: false, stdout, stderr: '' };
     } catch (error) {
-      return { code: 1, killed: false, stdout: '', stderr: (error as Error).message };
+      return {
+        code: 1,
+        killed: false,
+        truncated: false,
+        stdout: '',
+        stderr: (error as Error).message,
+      };
     }
   };
 

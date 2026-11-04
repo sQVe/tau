@@ -1,6 +1,7 @@
+import { Value } from 'typebox/value';
 import { expect, it } from 'vitest';
 
-import { anyKey, findUnknownKeys, reportedId, unreportedKeys } from './schema.js';
+import { anyKey, findUnknownKeys, reportedId, stringEnum, unreportedKeys } from './schema.js';
 import type { KnownKeys } from './schema.js';
 
 const known: KnownKeys = {
@@ -37,4 +38,23 @@ it('drops key paths already reported for the same file and repeats them for anot
 
   expect(unreportedKeys(reported, '/user.json', ['a.b', 'a.c', 'a.c'])).toEqual(['a.c']);
   expect(unreportedKeys(reported, '/other.json', ['a.b'])).toEqual(['a.b']);
+});
+
+it('sends a string enum to model providers as a string type with an enum list', () => {
+  const schema = stringEnum(['low', 'high'], { description: 'Level.' });
+
+  expect(schema).toEqual({
+    description: 'Level.',
+    type: 'string',
+    enum: ['low', 'high'],
+  });
+});
+
+it.for<[unknown, boolean]>([
+  ['low', true],
+  ['high', true],
+  ['medium', false],
+  [1, false],
+])('accepts only the listed strings in a string enum: %j', ([value, valid]) => {
+  expect(Value.Check(stringEnum(['low', 'high']), value)).toBe(valid);
 });

@@ -182,8 +182,20 @@ export const createGhFake = (): GhFake => {
     const hostname = fake.sshHostnames[commandArguments.slice(1).join(' ')];
 
     return hostname === undefined
-      ? { code: 255, killed: false, stdout: '', stderr: 'ssh: Could not resolve hostname' }
-      : { code: 0, killed: false, stdout: `user git\nhostname ${hostname}\nport 22\n`, stderr: '' };
+      ? {
+          code: 255,
+          killed: false,
+          truncated: false,
+          stdout: '',
+          stderr: 'ssh: Could not resolve hostname',
+        }
+      : {
+          code: 0,
+          killed: false,
+          truncated: false,
+          stdout: `user git\nhostname ${hostname}\nport 22\n`,
+          stderr: '',
+        };
   };
 
   const keyOf = (command: string, commandArguments: readonly string[]) => {

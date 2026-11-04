@@ -11,7 +11,13 @@ const runtimeReturning = (result: ExecResult) => ({
 });
 
 it('returns the exit code and output of a gh run that fails', async () => {
-  const runtime = runtimeReturning({ code: 2, killed: false, stdout: 'out', stderr: 'err' });
+  const runtime = runtimeReturning({
+    code: 2,
+    killed: false,
+    truncated: false,
+    stdout: 'out',
+    stderr: 'err',
+  });
 
   expect(await runOutcome(runtime, ['pr', 'view'])).toEqual({
     exitCode: 2,
@@ -22,7 +28,13 @@ it('returns the exit code and output of a gh run that fails', async () => {
 });
 
 it('marks a killed gh run as cancelled', async () => {
-  const runtime = runtimeReturning({ code: 143, killed: true, stdout: '', stderr: '' });
+  const runtime = runtimeReturning({
+    code: 143,
+    killed: true,
+    truncated: false,
+    stdout: '',
+    stderr: '',
+  });
 
   expect(await runOutcome(runtime, ['pr', 'view'])).toMatchObject({ cancelled: true });
 });
