@@ -215,6 +215,7 @@ export const executeFollowUp = async (
         label: parameters.label,
         extensionPackages,
         skillTools: skillTools ?? {},
+        modelChoice: { kind: 'followUp' },
         signal,
       });
     });

@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
-import { defaultRouteConfidence, pickRoutedModel } from './modelRoutes.js';
-import type { ClassifierOutcome, ModelRoute, RoutePick } from './modelRoutes.js';
+import { defaultRouteConfidence, describeModelChoice, pickRoutedModel } from './modelRoutes.js';
+import type { ClassifierOutcome, ModelChoice, ModelRoute, RoutePick } from './modelRoutes.js';
 
 const profileModel = 'claude-bridge/claude-opus-5-5';
 const haiku = 'claude-bridge/claude-haiku-5-5';
@@ -124,4 +124,82 @@ it.for<[string, number, RoutePick]>([
       outcome: answered('narrow', confidence),
     }),
   ).toEqual(expected);
+});
+
+const routinePick: RoutePick = {
+  shadowPick: haiku,
+  label: 'routine',
+  confidence: 0.82,
+  confidenceCutoff: 0.7,
+};
+
+it.for<[string, ModelChoice, string[]]>([
+  ['an explicit launch model names the launch', { kind: 'launch' }, ['launch']],
+  [
+    'a profile without a route names the missing route',
+    { kind: 'profileWithoutRoute' },
+    ['no route'],
+  ],
+  [
+    'a routed label names the label, confidence, and cutoff',
+    { kind: 'routed', pick: routinePick },
+    ['routine', '0.82', '0.7'],
+  ],
+  [
+    'a low confidence fallback names the label, confidence, cutoff, and profile model',
+    {
+      kind: 'routed',
+      pick: {
+        shadowPick: profileModel,
+        label: 'narrow',
+        confidence: 0.69,
+        fallbackReason: 'lowConfidence',
+        confidenceCutoff: 0.7,
+      },
+    },
+    ['narrow', '0.69', '0.7', 'profile'],
+  ],
+  [
+    'an unknown label fallback names the label and profile model',
+    {
+      kind: 'routed',
+      pick: {
+        shadowPick: profileModel,
+        label: 'medium',
+        confidence: 0.95,
+        fallbackReason: 'unknownLabel',
+        confidenceCutoff: 0.7,
+      },
+    },
+    ['medium', 'profile'],
+  ],
+  [
+    'a classifier error fallback names the error and profile model',
+    {
+      kind: 'routed',
+      pick: { shadowPick: profileModel, fallbackReason: 'error', confidenceCutoff: 0.7 },
+    },
+    ['error', 'profile'],
+  ],
+  [
+    'a classifier timeout fallback names the timeout and profile model',
+    {
+      kind: 'routed',
+      pick: { shadowPick: profileModel, fallbackReason: 'timeout', confidenceCutoff: 0.7 },
+    },
+    ['timeout', 'profile'],
+  ],
+  [
+    'a skipped classification names the classifier as not allowed, not a missing route',
+    {
+      kind: 'routed',
+      pick: { shadowPick: profileModel, fallbackReason: 'noRoute', confidenceCutoff: 0.7 },
+    },
+    ['classifier', 'not allowed', 'profile'],
+  ],
+  ['a follow-up names the source model it keeps', { kind: 'followUp' }, ['follow-up', 'source']],
+])('%s', ([, choice, facts]) => {
+  const reason = describeModelChoice(choice);
+
+  expect(facts.filter((fact) => !reason.includes(fact))).toEqual([]);
 });

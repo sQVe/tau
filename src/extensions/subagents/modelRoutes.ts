@@ -40,6 +40,14 @@ export interface RoutePick {
 
 export type RoutedLaunch = RoutePick & { ticketSent: boolean };
 
+// Where a worker's model came from. `profileWithoutRoute` means the profile has no route; a skipped
+// classification is a `routed` fallback with `noRoute`.
+export type ModelChoice =
+  | { kind: 'launch' }
+  | { kind: 'profileWithoutRoute' }
+  | { kind: 'routed'; pick: RoutePick }
+  | { kind: 'followUp' };
+
 export const defaultRouteConfidence = 0.7;
 
 // An explicit launch model means no classification and no pick, so the result is undefined.
@@ -78,4 +86,48 @@ export const pickRoutedModel = (facts: RouteFacts): RoutePick | undefined => {
   }
 
   return { shadowPick: routed.model, label, confidence, confidenceCutoff: route.confidence };
+};
+
+const describeFallback = (pick: RoutePick, fallbackReason: FallbackReason): string => {
+  if (fallbackReason === 'noRoute') {
+    return 'Classification was skipped because the classifier is not allowed or not available, so the profile model runs.';
+  }
+
+  if (fallbackReason === 'error') {
+    return 'The classifier returned an error, so the profile model runs.';
+  }
+
+  if (fallbackReason === 'timeout') {
+    return 'The classifier hit its timeout, so the profile model runs.';
+  }
+
+  if (fallbackReason === 'unknownLabel') {
+    return `The classifier answered ${String(pick.label)}, which is not a route label, so the profile model runs.`;
+  }
+
+  return `Route label ${String(pick.label)} had confidence ${String(pick.confidence)}, below the cutoff ${pick.confidenceCutoff}, so the profile model runs.`;
+};
+
+const describeRoutedPick = (pick: RoutePick): string => {
+  if (pick.fallbackReason !== undefined) {
+    return describeFallback(pick, pick.fallbackReason);
+  }
+
+  return `Route label ${String(pick.label)} had confidence ${String(pick.confidence)}, at or above the cutoff ${pick.confidenceCutoff}.`;
+};
+
+export const describeModelChoice = (choice: ModelChoice): string => {
+  if (choice.kind === 'launch') {
+    return 'The launch named a model, so no route ran.';
+  }
+
+  if (choice.kind === 'profileWithoutRoute') {
+    return 'The profile has no route, so the profile model runs.';
+  }
+
+  if (choice.kind === 'followUp') {
+    return 'The follow-up keeps the model of its source assignment.';
+  }
+
+  return describeRoutedPick(choice.pick);
 };

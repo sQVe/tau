@@ -411,6 +411,8 @@ it('starts a new child that resumes the source session', async () => {
   const result = await followUp(runtime, source.assignmentId, { timeoutSeconds: 30 });
 
   expect(result.isError).not.toBe(true);
+  expect(result.details?.model).toBe(source.loadout.model);
+  expect(result.details?.modelReason).toContain('source');
 
   const request = terminalRun(fake);
 

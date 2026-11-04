@@ -20,6 +20,7 @@ import { HcError } from '../../hc/hc.js';
 import { skillTools } from '../../skillTools.js';
 import { writeFakePackage } from './fixtures/packageCache.js';
 import { answered, haiku, routedFixture, workerFixture } from './fixtures/routedLoadout.js';
+import type { LaunchStatus } from './launch.js';
 import { checkLaunchEnvironment } from './launchCheck.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 import { piPackageManager } from './piPackageManager.js';
@@ -160,6 +161,10 @@ it('launches the model the classifier routes to', async ({ onTestFinished }) => 
 
   expect(result.isError).not.toBe(true);
   expect(terminalRun(fake)?.labels['tau.model']).toBe(haiku);
+  const details = result.details as LaunchStatus;
+
+  expect(details.model).toBe(haiku);
+  expect(details.modelReason).toContain('narrow');
 });
 
 it('places an editing worker in the manager tab', async ({ onTestFinished }) => {

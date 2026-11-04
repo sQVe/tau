@@ -20,7 +20,7 @@ import {
 } from '../../config/models.js';
 import { acceptanceRefusal } from './acceptanceRefusal.js';
 import { pickRoutedModel } from './modelRoutes.js';
-import type { RoutedLaunch } from './modelRoutes.js';
+import type { ModelChoice, RoutedLaunch } from './modelRoutes.js';
 import { readProfileModel, readProfileRoute } from './profileModels.js';
 import { resolveProfile } from './profiles.js';
 import { classifierAllowed, classifyRoute } from './routeClassifier.js';
@@ -42,6 +42,7 @@ interface LaunchRequest {
 export interface RoutedLoadout {
   loadout: Loadout;
   routing: RoutedLaunch | undefined;
+  choice: ModelChoice;
 }
 
 const nodeRequire = createRequire(import.meta.url);
@@ -212,7 +213,7 @@ export const resolveRoutedLoadout = async (
   }
 
   if (input.model !== undefined) {
-    return { loadout, routing: undefined };
+    return { loadout, routing: undefined, choice: { kind: 'launch' } };
   }
 
   const location = {
@@ -224,7 +225,7 @@ export const resolveRoutedLoadout = async (
   const route = readProfileRoute(location, loadout.profile, context.ui);
 
   if (route === undefined) {
-    return { loadout, routing: undefined };
+    return { loadout, routing: undefined, choice: { kind: 'profileWithoutRoute' } };
   }
 
   const { outcome, ticketSent }: Classification = classifierAllowed(location, route)
@@ -244,19 +245,20 @@ export const resolveRoutedLoadout = async (
   });
 
   if (pick === undefined) {
-    return { loadout, routing: undefined };
+    return { loadout, routing: undefined, choice: { kind: 'launch' } };
   }
 
   const routing = { ...pick, ticketSent };
+  const choice: ModelChoice = { kind: 'routed', pick };
 
   if (pick.shadowPick === loadout.model) {
-    return { loadout, routing };
+    return { loadout, routing, choice };
   }
 
   // The routed model passes the same checks as an explicit launch model.
   const routedLoadout = resolveLoadout({ ...input, model: pick.shadowPick }, context, commands);
 
-  return { loadout: routedLoadout, routing };
+  return { loadout: routedLoadout, routing, choice };
 };
 
 const requireSavedWorkerDirectory = (loadout: Loadout, context: { cwd: string }): void => {

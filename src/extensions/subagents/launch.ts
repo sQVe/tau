@@ -17,6 +17,8 @@ import type { ToolResult } from './errorResult.js';
 import { briefWithAppUrl } from './launchEnvironment.js';
 import type { LaunchParameters } from './launchParameters.js';
 import { resolveRoutedLoadout } from './loadout.js';
+import { describeModelChoice } from './modelRoutes.js';
+import type { ModelChoice } from './modelRoutes.js';
 import { installWorkerPackages } from './packageInstall.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 import { removeSnapshotDirectory, snapshotDirectoryFor } from './packageSnapshot.js';
@@ -55,6 +57,8 @@ export interface LaunchStatus {
   parent: string | undefined;
   state: string;
   labels: Record<string, string>;
+  model: string;
+  modelReason: string;
 }
 
 type Reconciliation =
@@ -68,6 +72,7 @@ export interface WorkerStart {
   label: string | undefined;
   extensionPackages: readonly { path: string }[];
   skillTools: SkillTools;
+  modelChoice: ModelChoice;
   signal: AbortSignal | undefined;
 }
 
@@ -203,12 +208,14 @@ const definiteFailureKinds = new Set(['spawn_failed']);
 const isUnclearLaunch = (error: unknown): boolean =>
   error instanceof HcError && !definiteFailureKinds.has(error.kind);
 
-const launchStatus = (terminal: HcTerminal): LaunchStatus => ({
+const launchStatus = (terminal: HcTerminal, model: string, modelReason: string): LaunchStatus => ({
   address: terminal.address,
   name: terminal.name ?? '',
   parent: terminal.parent ?? undefined,
   state: terminal.state,
   labels: terminal.labels ?? {},
+  model,
+  modelReason,
 });
 
 const buildAssignment = (
@@ -337,7 +344,8 @@ export const startReservedWorker = async (
 
     runtime.admission.remove(assignmentId);
 
-    const status = launchStatus(terminal);
+    const modelReason = describeModelChoice(facts.modelChoice);
+    const status = launchStatus(terminal, assignment.loadout.model, modelReason);
 
     return {
       content: [{ type: 'text' as const, text: JSON.stringify(status) }],
@@ -375,7 +383,7 @@ export const executeLaunch = async (
       throw new Error(skillToolsRefused);
     }
 
-    const { loadout, routing } = await resolveRoutedLoadout(
+    const { loadout, routing, choice } = await resolveRoutedLoadout(
       request.parameters,
       context,
       runtime.pi.getCommands(),
@@ -441,7 +449,7 @@ export const executeLaunch = async (
         assignment = buildAssignment(
           assignmentId,
           request.parameters,
-          { loadout, routing },
+          { loadout, routing, choice },
           deadline,
           request.parentSession,
           parentTerminal,
@@ -462,6 +470,7 @@ export const executeLaunch = async (
           label: request.parameters.label,
           extensionPackages,
           skillTools: currentSkillTools ?? {},
+          modelChoice: choice,
           signal,
         },
         { onDefiniteFailure: errorAfterCleanup },

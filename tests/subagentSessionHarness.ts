@@ -186,7 +186,11 @@ export const launchWorkerSession = async (
   const managerPath = `${join(agentDirectory, 'bin')}:${process.env.PATH ?? ''}`;
   const loadout = fixtureLoadout(workerDirectory, agentDirectory, options.model);
 
-  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
+  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
+    loadout,
+    routing: undefined,
+    choice: { kind: 'profileWithoutRoute' },
+  });
 
   const runtime: LaunchRuntime = {
     pi: { getCommands: () => [], getAllTools: () => [] } as unknown as ExtensionAPI,
