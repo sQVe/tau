@@ -1,6 +1,3 @@
-# Pure resume decision for resume-pi.zsh. Prints one word: skip, retry, or resume.
-# Args: terminal_id scope guard read session_label cwd_label recorded_pid current_pid
-#       session_file_exists cwd_exists pi_available
 _tau_resume_decision() {
   local terminal_id=$1
   local scope=$2
