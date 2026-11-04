@@ -35,7 +35,7 @@ const requestFor = (
 const commandsOf = (fake: ExecFake<'app'>) =>
   fake.calls.map(({ command, commandArguments }) => ({ command, commandArguments }));
 
-it('opens a Manager tab in the space with the file text as its task', async () => {
+it('opens a tab in the space with the file text as its task', async () => {
   const fake = createAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
@@ -55,8 +55,6 @@ it('opens a Manager tab in the space with the file text as its task', async () =
         'tab.new',
         '--space',
         'space-1',
-        '--name',
-        'Manager',
         '--folder',
         root,
         '--argv',
@@ -68,7 +66,7 @@ it('opens a Manager tab in the space with the file text as its task', async () =
   ]);
 });
 
-it('opens a new space with a Manager tab when no space is given', async () => {
+it('opens a new space with a tab when no space is given', async () => {
   const fake = createAppFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
@@ -85,8 +83,6 @@ it('opens a new space with a Manager tab when no space is given', async () => {
         'ticket-1',
         '--folder',
         root,
-        '--tab',
-        'Manager',
         '--argv',
         '["pi"]',
         '--task',
