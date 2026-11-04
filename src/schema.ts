@@ -1,4 +1,5 @@
-import type { TSchema } from 'typebox';
+import { Type } from 'typebox';
+import type { TSchema, TUnsafe } from 'typebox';
 import { Value } from 'typebox/value';
 
 // A key set to `true` is a known leaf. A nested object lists the known keys below it. The key `*`
@@ -15,6 +16,13 @@ export const describeSchemaProblem = (schema: TSchema, value: unknown): string =
 
   return error === undefined ? 'unknown problem' : `${error.instancePath || '/'} ${error.message}`;
 };
+
+// Gives `{ type: 'string', enum }` instead of `anyOf` with `const`, which some model providers reject.
+export const stringEnum = <const Values extends readonly string[]>(
+  values: Values,
+  options: { description?: string } = {},
+): TUnsafe<Values[number]> =>
+  Type.Unsafe<Values[number]>({ ...options, type: 'string', enum: [...values] });
 
 export const anyKey = '*';
 

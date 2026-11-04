@@ -198,6 +198,7 @@ const killedResult = (
 ): HarnessExecResult => ({
   code: typeof error.code === 'number' ? error.code : 1,
   killed: true,
+  truncated: false,
   stdout,
   stderr,
   signal: error.signal,
@@ -218,7 +219,7 @@ const createExec = (environment: Readonly<Record<string, string>>): Exec => {
         },
         (error, stdout, stderr) => {
           if (error === null) {
-            resolve({ code: 0, killed: false, stdout, stderr });
+            resolve({ code: 0, killed: false, truncated: false, stdout, stderr });
 
             return;
           }
@@ -241,7 +242,7 @@ const createExec = (environment: Readonly<Record<string, string>>): Exec => {
             return;
           }
 
-          resolve({ code: error.code, killed: false, stdout, stderr });
+          resolve({ code: error.code, killed: false, truncated: false, stdout, stderr });
         },
       );
     });

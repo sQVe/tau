@@ -325,7 +325,7 @@ describe('slice tool apply', () => {
       const moved = fake.writes().length > writesBefore;
 
       if (moved && commandArguments[1]?.includes('children') === true) {
-        return { code: 1, killed: false, stdout: '', stderr: 'network error' };
+        return { code: 1, killed: false, truncated: false, stdout: '', stderr: 'network error' };
       }
 
       return fake.exec(command, commandArguments, options);

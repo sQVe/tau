@@ -13,6 +13,7 @@ const sshAlias: Exec = (_command, commandArguments) =>
   Promise.resolve({
     code: 0,
     killed: false,
+    truncated: false,
     stdout: commandArguments.includes('git@work') ? 'hostname github.com\n' : '',
     stderr: '',
   });
@@ -65,7 +66,13 @@ it('keeps the URL host when the ssh read is killed, and bounds the read with a t
   const killed: Exec = (_command, _commandArguments, options) => {
     timeouts.push(options?.timeout);
 
-    return Promise.resolve({ code: 0, killed: true, stdout: 'hostname github.com\n', stderr: '' });
+    return Promise.resolve({
+      code: 0,
+      killed: true,
+      truncated: false,
+      stdout: 'hostname github.com\n',
+      stderr: '',
+    });
   };
 
   expect(await originOf('git@work:sQVe/tau.git', killed)).toEqual(named('work'));

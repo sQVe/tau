@@ -20,6 +20,7 @@ interface GroupCommandResult {
   stderr: string;
   code: number;
   killed: boolean;
+  truncated: boolean;
 }
 
 export type GroupExec = (
@@ -210,5 +211,7 @@ export const execInGroup: GroupExec = async (command, commandArguments, options)
     stderr: status.error?.message ?? output.stderr,
     code: status.code,
     killed: stopping !== undefined,
+    // Output is never capped, so it is never cut short.
+    truncated: false,
   };
 };

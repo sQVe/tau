@@ -272,7 +272,13 @@ it('turns a non-zero exit into a result with its code', async () => {
 
   const result = await session.runtime.exec('hc', ['ls', '--json'], { cwd: session.root });
 
-  expect(result).toEqual({ code: 2, killed: false, stdout: 'out', stderr: 'err' });
+  expect(result).toEqual({
+    code: 2,
+    killed: false,
+    truncated: false,
+    stdout: 'out',
+    stderr: 'err',
+  });
 });
 
 it('refuses a session equal to the inherited HC_SESSION and runs no hc command', async () => {
@@ -307,6 +313,7 @@ it('reports a command killed by its timeout as killed with its signal', async ()
   expect(result).toEqual({
     code: 1,
     killed: true,
+    truncated: false,
     stdout: 'out',
     stderr: 'err',
     signal: 'SIGTERM',

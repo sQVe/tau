@@ -52,6 +52,7 @@ const liveTerminal = (
 const succeeded = (value: unknown) => ({
   code: 0,
   killed: false,
+  truncated: false,
   stdout: JSON.stringify(value),
   stderr: '',
 });
@@ -60,7 +61,13 @@ const succeeded = (value: unknown) => ({
 const createHc = (terminals: HcTerminal[]): HcRuntime => {
   const exec: Exec = (command, commandArguments) => {
     if (command !== 'hc') {
-      return Promise.resolve({ code: 1, killed: false, stdout: '', stderr: 'unexpected' });
+      return Promise.resolve({
+        code: 1,
+        killed: false,
+        truncated: false,
+        stdout: '',
+        stderr: 'unexpected',
+      });
     }
 
     if (commandArguments[0] === 'ls') {
@@ -76,11 +83,23 @@ const createHc = (terminals: HcTerminal[]): HcRuntime => {
       const terminal = terminals.find((candidate) => candidate.address === address);
 
       return terminal === undefined
-        ? Promise.resolve({ code: 1, killed: false, stdout: '', stderr: 'not_found' })
+        ? Promise.resolve({
+            code: 1,
+            killed: false,
+            truncated: false,
+            stdout: '',
+            stderr: 'not_found',
+          })
         : Promise.resolve(succeeded(terminal));
     }
 
-    return Promise.resolve({ code: 1, killed: false, stdout: '', stderr: 'unexpected' });
+    return Promise.resolve({
+      code: 1,
+      killed: false,
+      truncated: false,
+      stdout: '',
+      stderr: 'unexpected',
+    });
   };
 
   return { exec, connect: () => Promise.reject(new Error('not used')), cwd: process.cwd() };

@@ -166,7 +166,7 @@ export const fixture = async (options: ReviewFixtureOptions = {}): Promise<Revie
       execFile(process.execPath, [script, ...argumentsList], (error, stdout, stderr) => {
         const code = typeof error?.code === 'number' ? error.code : Number(error !== null);
 
-        resolve({ stdout, stderr, code, killed: false });
+        resolve({ stdout, stderr, code, killed: false, truncated: false });
       });
     });
 

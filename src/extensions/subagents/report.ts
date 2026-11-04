@@ -1,4 +1,3 @@
-import { StringEnum } from '@earendil-works/pi-ai';
 import type { AgentToolResult } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
@@ -6,6 +5,7 @@ import type { Static } from 'typebox';
 import { errorMessage } from '../../errors.js';
 import { label } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
+import { stringEnum } from '../../schema.js';
 import { saveReport } from './assignment.js';
 import type { Assignment, SavedReport } from './assignment.js';
 import { blockerKinds, decideIncompleteReport } from './incompleteReport.js';
@@ -38,7 +38,7 @@ const summaryLengthLimitText = summaryLengthLimit.toLocaleString('en-US');
 const summaryHeadings = handoverSectionNames.map((name) => `## ${name}`).join(', ');
 
 export const reportParameters = Type.Object({
-  outcome: StringEnum(['success', 'failure', 'incomplete']),
+  outcome: stringEnum(['success', 'failure', 'incomplete']),
   summary: Type.String({
     minLength: 1,
     maxLength: 32_000,
@@ -53,7 +53,7 @@ export const reportParameters = Type.Object({
     }),
   ),
   blockerKind: Type.Optional(
-    StringEnum(blockerKinds, {
+    stringEnum(blockerKinds, {
       description:
         'Required for incomplete. time: the deadline is nearly reached; dependency: an external dependency; decision: a parent decision; limit: another exhausted limit.',
     }),

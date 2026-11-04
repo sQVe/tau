@@ -22,7 +22,7 @@ const setUp = () => {
         return (commandArguments) => {
           writes.push(commandArguments.join(' '));
 
-          return { code: 3, killed: true, stdout: 'written', stderr: '' };
+          return { code: 3, killed: true, truncated: false, stdout: 'written', stderr: '' };
         };
       }
 
@@ -71,7 +71,7 @@ it('replaces only stdout and still runs the handler', async () => {
 
   const result = await fake.exec('tool', ['write', 'a'], undefined);
 
-  expect(result).toEqual({ code: 3, killed: true, stdout: 'odd', stderr: '' });
+  expect(result).toEqual({ code: 3, killed: true, truncated: false, stdout: 'odd', stderr: '' });
   expect(writes).toEqual(['write a']);
 });
 
@@ -85,6 +85,7 @@ it('fails a command with the given stderr and skips the handler', async () => {
   expect(result).toEqual({
     code: 1,
     killed: false,
+    truncated: false,
     stdout: '',
     stderr: 'boom',
   });

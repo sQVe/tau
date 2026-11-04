@@ -57,6 +57,7 @@ const terminalRun = (fake: HcFake) => {
 const succeeded = (value: unknown) => ({
   code: 0,
   killed: false,
+  truncated: false,
   stdout: JSON.stringify(value),
   stderr: '',
 });
@@ -109,7 +110,7 @@ const setup = (
 
       return Promise.resolve(
         terminal === undefined
-          ? { code: 1, killed: false, stdout: '', stderr: 'not_found' }
+          ? { code: 1, killed: false, truncated: false, stdout: '', stderr: 'not_found' }
           : succeeded(terminal),
       );
     }

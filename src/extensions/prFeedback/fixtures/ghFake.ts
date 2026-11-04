@@ -310,10 +310,16 @@ export const createGhFake = (): GhFake => {
     const found = fake.jobLogs[job] ?? { code: 1, stderr: `job ${job} not found` };
 
     if ('log' in found) {
-      return { code: 0, killed: found.killed === true, stdout: found.log, stderr: '' };
+      return {
+        code: 0,
+        killed: found.killed === true,
+        truncated: false,
+        stdout: found.log,
+        stderr: '',
+      };
     }
 
-    return { code: found.code, killed: false, stdout: '', stderr: found.stderr };
+    return { code: found.code, killed: false, truncated: false, stdout: '', stderr: found.stderr };
   };
 
   const respond = (key: Exclude<CommandKey, 'run view'>, commandArguments: readonly string[]) =>
@@ -333,11 +339,17 @@ export const createGhFake = (): GhFake => {
 
       // GitHub made the write, but Pi killed gh before it printed the response.
       if (lostResponses.has(writeAttempts) && isWriteKey(key)) {
-        return { code: 0, killed: true, stdout: '', stderr: '' };
+        return { code: 0, killed: true, truncated: false, stdout: '', stderr: '' };
       }
 
       if (key === 'pr checks') {
-        return { code: fake.checksExitCode, killed: fake.checksKilled, stdout, stderr: '' };
+        return {
+          code: fake.checksExitCode,
+          killed: fake.checksKilled,
+          truncated: false,
+          stdout,
+          stderr: '',
+        };
       }
 
       return succeededResult(stdout);

@@ -130,7 +130,7 @@ export const createStackFake = (): StackFake => {
   };
 
   const handlers: Record<string, ExecHandler> = {
-    'stack view': () => ({ ...fake.stackView, killed: false }),
+    'stack view': () => ({ ...fake.stackView, killed: false, truncated: false }),
     'pr list --head': listed,
     'pr list --base': listed,
     'pr list': listed,
@@ -146,7 +146,7 @@ export const createStackFake = (): StackFake => {
       ? undefined
       : (commandArguments, options) =>
           options?.signal?.aborted === true
-            ? { code: 1, killed: true, stdout: '', stderr: '' }
+            ? { code: 1, killed: true, truncated: false, stdout: '', stderr: '' }
             : handler(commandArguments, options);
   };
 

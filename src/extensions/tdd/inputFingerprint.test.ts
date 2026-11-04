@@ -420,6 +420,10 @@ const walkOnlyDifferences: Difference[] = [
     reason: 'Bun glob does not expand a numeric range such as {1..3}; the walk does',
     allows: (entry) => hasRangeBrace(entry.include),
   },
+  {
+    reason: 'Bun glob does not enter a symlinked directory through **; the walk does',
+    allows: (entry, path) => entry.include.includes('**') && path.startsWith('src/shared/'),
+  },
 ];
 
 const globOnlyDifferences: Difference[] = [
@@ -430,6 +434,12 @@ const globOnlyDifferences: Difference[] = [
   {
     reason: 'Bun glob tests an exclude against the ./ path of a ./ include, so it can miss',
     allows: (entry) => entry.include.startsWith('./') && entry.excludedGlobs.length > 0,
+  },
+  {
+    reason: 'Bun glob does not match a dot path with a wildcard exclude; the walk does',
+    allows: (entry, path) =>
+      entry.excludedGlobs.some(hasWildcard) &&
+      path.split('/').some((segment) => segment.startsWith('.')),
   },
   {
     reason: 'Bun glob repeats files behind a link that points back to an ancestor; the walk stops',
