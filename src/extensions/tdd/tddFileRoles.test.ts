@@ -7,19 +7,47 @@ import { expect, it, vi } from 'vitest';
 
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import type { TddConfig } from './config.js';
 import type { TestRunner } from './runner/types.js';
 import { vitestRunner } from './runner/vitest.js';
 import tddExtension from './tdd.js';
 
-const overrides = vi.hoisted(() => ({ runner: undefined as TestRunner | undefined }));
+const fakeDefaults: TddConfig = {
+  ...vitestRunner.defaults,
+  runner: 'fake',
+  productionGlobs: ['**/*.check.ts'],
+  testGlobs: ['**/*.check.ts'],
+  testSupportGlobs: [],
+  excludedGlobs: [],
+};
+
+const overrides = vi.hoisted(() => ({
+  vitest: undefined as TestRunner | undefined,
+  fake: undefined as TestRunner | undefined,
+}));
+
 const runTests = vi.hoisted(() => vi.fn<TestRunner['run']>());
 
 vi.mock(import('./runner/runners.js'), async (importOriginal) => {
   const original = await importOriginal();
 
+  const table = (): Record<string, TestRunner> => ({
+    vitest: overrides.vitest ?? original.runners.vitest,
+    fake: overrides.fake ?? original.runners.vitest,
+  });
+
   return {
     ...original,
-    lookupRunner: () => overrides.runner ?? original.lookupRunner('vitest'),
+    findRunner: (name: string) => table()[name],
+    lookupRunner: (name: string) => {
+      const runner = table()[name];
+
+      if (runner === undefined) {
+        throw new Error(`Unknown TDD runner: ${name}`);
+      }
+
+      return runner;
+    },
   };
 });
 
@@ -44,7 +72,7 @@ const setup = () => {
       isProjectTrusted: () => true,
     }) as unknown as ExtensionContext & ExtensionToolContext;
 
-  const run = (cwd: string) => {
+  const run = (cwd: string, file = 'src/example.test.ts') => {
     if (tool === undefined) {
       throw new Error('Missing test tool');
     }
@@ -54,7 +82,7 @@ const setup = () => {
       {
         behavior: 'value',
         testFullName: 'works',
-        files: ['src/example.test.ts'],
+        files: [file],
         scope: 'focused',
       },
       undefined,
@@ -63,11 +91,11 @@ const setup = () => {
     );
   };
 
-  const edit = (cwd: string) =>
+  const edit = (cwd: string, file = 'src/example.test.ts') =>
     fake.handler('tool_result')(
       {
         toolName: 'write',
-        input: { path: 'src/example.test.ts' },
+        input: { path: file },
         isError: false,
         content: [{ type: 'text', text: 'Original result' }],
       },
@@ -77,29 +105,60 @@ const setup = () => {
   return { run, edit, notify };
 };
 
+it('calls the selected non-Vitest runner for run_tests', async ({ onTestFinished }) => {
+  const cwd = temporaryDirectory(onTestFinished, 'tau-file-roles-selected-');
+  await mkdir(join(cwd, 'src'));
+  await writeFile(join(cwd, 'src/example.check.ts'), 'test');
+  await mkdir(join(cwd, '.pi'));
+  await writeFile(join(cwd, '.pi', 'tau.json'), JSON.stringify({ tdd: { runner: 'fake' } }));
+
+  overrides.fake = { ...vitestRunner, name: 'fake', defaults: fakeDefaults, run: runTests };
+
+  runTests.mockResolvedValueOnce({
+    kind: 'pass',
+    tests: [{ file: 'src/example.check.ts', fullname: 'works', status: 'passed' }],
+  });
+
+  const application = setup();
+
+  await application.run(cwd, 'src/example.check.ts');
+
+  expect(runTests).toHaveBeenLastCalledWith(
+    expect.objectContaining({ scope: 'focused', files: ['src/example.check.ts'] }),
+  );
+});
+
 it('accepts a file matching both glob lists in run_tests files and fires the production checkpoint on a real edit', async ({
   onTestFinished,
 }) => {
   const cwd = temporaryDirectory(onTestFinished, 'tau-file-roles-overlap-');
   await mkdir(join(cwd, 'src'));
-  await writeFile(join(cwd, 'src/example.test.ts'), 'test');
+  await writeFile(join(cwd, 'src/example.check.ts'), 'test');
+  await mkdir(join(cwd, '.pi'));
+  await writeFile(join(cwd, '.pi', 'tau.json'), JSON.stringify({ tdd: { runner: 'fake' } }));
 
-  overrides.runner = { ...vitestRunner, testFilesCanBeProduction: true, run: runTests };
+  overrides.fake = {
+    ...vitestRunner,
+    name: 'fake',
+    defaults: fakeDefaults,
+    testFilesCanBeProduction: true,
+    run: runTests,
+  };
 
   runTests.mockResolvedValueOnce({
     kind: 'pass',
-    tests: [{ file: 'src/example.test.ts', fullname: 'works', status: 'passed' }],
+    tests: [{ file: 'src/example.check.ts', fullname: 'works', status: 'passed' }],
   });
 
   const application = setup();
 
-  await application.run(cwd);
+  await application.run(cwd, 'src/example.check.ts');
 
   expect(runTests).toHaveBeenLastCalledWith(
-    expect.objectContaining({ files: ['src/example.test.ts'] }),
+    expect.objectContaining({ files: ['src/example.check.ts'] }),
   );
 
-  const patch = await application.edit(cwd);
+  const patch = await application.edit(cwd, 'src/example.check.ts');
 
   expect(patch).toEqual({
     content: [
@@ -116,7 +175,7 @@ it('leaves a Vitest test file out of the production checkpoint after a run', asy
   await mkdir(join(cwd, 'src'));
   await writeFile(join(cwd, 'src/example.test.ts'), 'test');
 
-  overrides.runner = { ...vitestRunner, run: runTests };
+  overrides.vitest = { ...vitestRunner, run: runTests };
 
   runTests.mockResolvedValueOnce({
     kind: 'pass',

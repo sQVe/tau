@@ -17,6 +17,7 @@ import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { loadTddConfig } from './config.js';
 import { configSummary, runContext, summarize } from './render.js';
+import { runners } from './runner/runners.js';
 import type { RunnerResult, TestRunner } from './runner/types.js';
 import tddExtension from './tdd.js';
 
@@ -305,6 +306,7 @@ it.for(['ordinary', 'long'] as const)(
             loadTddConfig(
               { cwd, agentDirectory: cwd, projectTrusted: true },
               { notify: () => undefined },
+              runners,
             ),
           ),
         },

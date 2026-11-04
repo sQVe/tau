@@ -506,6 +506,7 @@ it('reports a missing JSON report and a diagnostics error only when they exist',
 
 it('mentions an ignored config file only when one was skipped', () => {
   const sources = {
+    runner: 'built-in default',
     productionGlobs: 'built-in default',
     testGlobs: 'built-in default',
     testSupportGlobs: 'built-in default',

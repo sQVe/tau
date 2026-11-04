@@ -39,6 +39,7 @@ const fullTimeoutMilliseconds = 120_000;
 const testNameFormat = 'Vitest 4 joins nested names with spaces, Vitest 5 with " > "';
 
 const vitestDefaults: TddConfig = {
+  runner: 'vitest',
   productionGlobs: ['{src,apps,packages,functions,infra}/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
   testGlobs: ['**/*.test.{ts,tsx,js,jsx,mjs,cjs}', '**/*.spec.{ts,tsx,js,jsx,mjs,cjs}'],
   testSupportGlobs: ['tests/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
@@ -201,6 +202,11 @@ export const runTests = async (
   }
 };
 
+const verificationArgvError = (verificationArgv: readonly string[]): string | null =>
+  verificationArgv[0] === 'vitest'
+    ? null
+    : 'verificationArgv must start with "vitest", the only supported runner.';
+
 export const vitestRunner = {
   name: 'vitest',
   defaults: vitestDefaults,
@@ -209,5 +215,6 @@ export const vitestRunner = {
   focusedTimeoutMs: defaultTimeoutMilliseconds,
   fullTimeoutMs: fullTimeoutMilliseconds,
   testFilesCanBeProduction: false,
+  verificationArgvError,
   run: runTests,
 } satisfies TestRunner;

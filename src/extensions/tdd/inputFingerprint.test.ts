@@ -360,12 +360,13 @@ const parityConfigs = parityIncludes.flatMap((include) =>
 );
 
 // Runs under Pi's Bun, which lists inputs the old way (`glob`) and the new way (the walk).
-const parityScript = (module: string, configModule: string) =>
+const parityScript = (module: string, configModule: string, runnerModule: string) =>
   [
     `import { writeFileSync } from 'node:fs';`,
     `import { glob } from 'node:fs/promises';`,
     `import { listInputs } from ${JSON.stringify(module)};`,
-    `import { configurationGlobs, defaultTddConfig } from ${JSON.stringify(configModule)};`,
+    `import { defaultTddConfig } from ${JSON.stringify(configModule)};`,
+    `import { vitestRunner } from ${JSON.stringify(runnerModule)};`,
     `const cwd = process.argv[2];`,
     `const results = [];`,
     `for (const { include, excludedGlobs } of ${JSON.stringify(parityConfigs)}) {`,
@@ -373,7 +374,7 @@ const parityScript = (module: string, configModule: string) =>
     `  const globbed = [];`,
     `  let failure = null;`,
     `  try {`,
-    `    for await (const file of glob([include, ...configurationGlobs], { cwd, exclude: excludedGlobs })) globbed.push(file);`,
+    `    for await (const file of glob([include, ...vitestRunner.configurationGlobs], { cwd, exclude: excludedGlobs })) globbed.push(file);`,
     `  } catch (error) {`,
     `    failure = error.code;`,
     `  }`,
@@ -556,8 +557,9 @@ it.runIf(canRunInstalledPi)(
 
     const module = fileURLToPath(new URL('inputFingerprint.ts', import.meta.url));
     const configModule = fileURLToPath(new URL('config.ts', import.meta.url));
+    const runnerModule = fileURLToPath(new URL('./runner/vitest.ts', import.meta.url));
     const script = join(cwd, '..', `${basename(cwd)}-parity.mts`);
-    await writeFile(script, parityScript(module, configModule));
+    await writeFile(script, parityScript(module, configModule, runnerModule));
     onTestFinished(() => rm(script, { force: true }));
 
     const output = join(cwd, '..', `${basename(cwd)}-parity.json`);

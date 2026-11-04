@@ -5,8 +5,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import type { ConfigWarnings } from '../../config/config.js';
-import { classifyPath, configurationGlobs, defaultTddConfig, loadTddConfig } from './config.js';
+import { classifyPath, defaultTddConfig, loadTddConfig } from './config.js';
 import { unsupportedGlobReason } from './inputGlob.js';
+import { runners } from './runner/runners.js';
+import type { TestRunner } from './runner/types.js';
+import { vitestRunner } from './runner/vitest.js';
 
 const classify = (path: string, testFilesCanBeProduction = false) =>
   classifyPath(defaultTddConfig, path, testFilesCanBeProduction);
@@ -131,6 +134,7 @@ describe('TDD config', () => {
     const { config } = loadTddConfig(
       { cwd, agentDirectory: join(cwd, 'agent'), projectTrusted: true },
       { notify: () => undefined },
+      runners,
     );
 
     expect(classifyPath(config, 'internal/git/status.go', false)).toEqual({
@@ -156,6 +160,7 @@ describe('TDD config', () => {
     const { config } = loadTddConfig(
       { cwd, agentDirectory: join(cwd, 'agent'), projectTrusted: true },
       { notify },
+      runners,
     );
 
     expect(config.productionGlobs).toEqual(['lib/**']);
@@ -177,9 +182,107 @@ describe('TDD config', () => {
     const { config } = loadTddConfig(
       { cwd, agentDirectory: join(cwd, 'agent'), projectTrusted: true },
       { notify: () => undefined },
+      runners,
     );
 
     expect(config.verificationArgv).toEqual(['vitest', 'run', '--silent']);
+  });
+
+  it('loads the Vitest defaults with the runner name when no file sets one', async ({
+    onTestFinished,
+  }) => {
+    const cwd = temporaryDirectory(onTestFinished, 'tau-config-default-');
+
+    const { config, sources } = loadTddConfig(
+      { cwd, agentDirectory: join(cwd, 'agent'), projectTrusted: true },
+      { notify: () => undefined },
+      runners,
+    );
+
+    expect(config).toEqual({ ...defaultTddConfig, runner: 'vitest' });
+
+    expect(sources).toEqual({
+      runner: 'built-in default',
+      productionGlobs: 'built-in default',
+      testGlobs: 'built-in default',
+      testSupportGlobs: 'built-in default',
+      excludedGlobs: 'built-in default',
+      verificationArgv: 'built-in default',
+    });
+  });
+
+  it('loads the selected runner from a config file', async ({ onTestFinished }) => {
+    const cwd = temporaryDirectory(onTestFinished, 'tau-config-runner-');
+    await mkdir(join(cwd, '.pi'));
+    await writeFile(join(cwd, '.pi', 'tau.json'), JSON.stringify({ tdd: { runner: 'vitest' } }));
+
+    const { config, sources } = loadTddConfig(
+      { cwd, agentDirectory: join(cwd, 'agent'), projectTrusted: true },
+      { notify: () => undefined },
+      runners,
+    );
+
+    expect(config).toEqual(defaultTddConfig);
+    expect(sources.runner).toBe(join(cwd, '.pi', 'tau.json'));
+  });
+
+  it('refuses a runner name that only exists on the object prototype', async ({
+    onTestFinished,
+  }) => {
+    const cwd = temporaryDirectory(onTestFinished, 'tau-config-runner-');
+    await mkdir(join(cwd, '.pi'));
+
+    await writeFile(
+      join(cwd, '.pi', 'tau.json'),
+      JSON.stringify({ tdd: { runner: 'constructor' } }),
+    );
+
+    const loading = () =>
+      loadTddConfig(
+        { cwd, agentDirectory: join(cwd, 'agent'), projectTrusted: true },
+        { notify: () => undefined },
+        runners,
+      );
+
+    expect(loading).toThrow('runner "constructor" is unknown');
+    expect(loading).toThrow('Known runners: vitest');
+  });
+
+  it('validates the merged command with the selected runner and names the file that set it', async ({
+    onTestFinished,
+  }) => {
+    const cwd = temporaryDirectory(onTestFinished, 'tau-config-runner-');
+    await mkdir(join(cwd, '.pi'));
+    await mkdir(join(cwd, 'agent'));
+
+    await writeFile(
+      join(cwd, 'agent', 'tau.json'),
+      JSON.stringify({ tdd: { runner: 'fake', verificationArgv: ['bad-command'] } }),
+    );
+
+    await writeFile(
+      join(cwd, '.pi', 'tau.json'),
+      JSON.stringify({ tdd: { excludedGlobs: ['dist/**'] } }),
+    );
+
+    const fakeRunner: TestRunner = {
+      ...vitestRunner,
+      name: 'fake',
+      defaults: { ...vitestRunner.defaults, runner: 'fake', verificationArgv: ['fake', 'run'] },
+      verificationArgvError: (verificationArgv) =>
+        verificationArgv[0] === 'fake' ? null : 'fake runner needs its own command.',
+    };
+
+    const loading = () =>
+      loadTddConfig(
+        { cwd, agentDirectory: join(cwd, 'agent'), projectTrusted: true },
+        { notify: () => undefined },
+        { fake: fakeRunner },
+        'fake',
+      );
+
+    expect(loading).toThrow(join(cwd, 'agent', 'tau.json'));
+    expect(loading).toThrow('fake runner needs its own command.');
   });
 
   it.for<[string, string, string]>([
@@ -187,6 +290,7 @@ describe('TDD config', () => {
     ['.pi/tau.json', '[]', '.pi/tau.json'],
     ['.pi/tau.json', '{"tdd": {"productionGlobs": "src"}}', 'productionGlobs'],
     ['.pi/tau.json', '{"tdd": {"testGlobs": ["", "**/*.test.ts"]}}', 'testGlobs'],
+    ['.pi/tau.json', '{"tdd": {"runner": "jest"}}', 'vitest'],
     ['.pi/tau.json', '{"tdd": {"verificationArgv": ["jest"]}}', 'verificationArgv'],
     ['.pi/tau.json', '{"tdd": {"verificationArgv": []}}', 'verificationArgv'],
     ['.pi/tau.json', '{"tdd": {"verificationArgv": ["vitest", ""]}}', 'verificationArgv'],
@@ -201,6 +305,7 @@ describe('TDD config', () => {
       loadTddConfig(
         { cwd, agentDirectory: join(cwd, 'agent'), projectTrusted: true },
         { notify: () => undefined },
+        runners,
       );
 
     expect(loading).toThrow(join(cwd, file));
@@ -233,6 +338,7 @@ describe('TDD config', () => {
       loadTddConfig(
         { cwd, agentDirectory: join(cwd, 'agent'), projectTrusted: true },
         { notify: () => undefined },
+        runners,
       );
 
     expect(loading).toThrow(glob);
@@ -270,7 +376,7 @@ describe('TDD config', () => {
       ...defaultTddConfig.testGlobs,
       ...defaultTddConfig.testSupportGlobs,
       ...defaultTddConfig.excludedGlobs,
-      ...configurationGlobs,
+      ...vitestRunner.configurationGlobs,
     ];
 
     expect(builtIn.map(unsupportedGlobReason)).toEqual(builtIn.map(() => null));

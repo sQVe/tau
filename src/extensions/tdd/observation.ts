@@ -236,7 +236,7 @@ const performRun = async (
   state: ObservationState,
   request: RunRequest,
 ): Promise<ObservationResult> => {
-  const runner = lookupRunner('vitest');
+  const runner = lookupRunner(state.config.runner);
 
   const behavior = await normalizeBehavior(
     state.cwd,

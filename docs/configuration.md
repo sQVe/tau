@@ -33,6 +33,10 @@ base repository of the pull request.
 Set these keys in either file. Each key you set replaces its default. A list in the repository file
 replaces the list in the user file.
 
+- `runner`: non-empty string naming the test runner. Default: `vitest`. Known values: `vitest`. A
+  layer that changes it resets the other TDD keys to that runner's built-in defaults, and each key's
+  source becomes `built-in default`. A layer that omits `runner` or restates the current one keeps
+  the merged values.
 - `productionGlobs`: array of glob strings. Default:
   `{src,apps,packages,functions,infra}/**/*.{ts,tsx,js,jsx,mjs,cjs}`.
 - `testGlobs`: array of glob strings. Default: `**/*.test.{ts,tsx,js,jsx,mjs,cjs}` and
@@ -40,8 +44,9 @@ replaces the list in the user file.
 - `testSupportGlobs`: array of glob strings. Default: `tests/**/*.{ts,tsx,js,jsx,mjs,cjs}`.
 - `excludedGlobs`: array of glob strings. Default:
   `**/{node_modules,.git,dist,build,coverage,.next,.nuxt,.output,.turbo,.cache,generated,__generated__}/**`.
-- `verificationArgv`: array of strings with at least one item. The first item must be `vitest`.
-  Default: `["vitest", "run", "--reporter=json", "--reporter=default", "--no-color"]`.
+- `verificationArgv`: array of strings with at least one item. The selected runner validates it. For
+  `vitest`, the first item must be `vitest`. Default:
+  `["vitest", "run", "--reporter=json", "--reporter=default", "--no-color"]`.
 
 Glob entries accept literal segments, `*`, `**`, `?`, comma brace groups such as `{src,scripts}`, a
 leading `./`, and numeric ranges such as `{1..3}`. A range may have at most 1000 values. Tau fails

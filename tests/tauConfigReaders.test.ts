@@ -4,6 +4,7 @@ import { readAllowedModels } from '../src/config/models.js';
 import { readBrowserLoginCommand } from '../src/extensions/subagents/browserLogin.js';
 import { readProfileModels } from '../src/extensions/subagents/profileModels.js';
 import { loadTddConfig } from '../src/extensions/tdd/config.js';
+import { runners } from '../src/extensions/tdd/runner/runners.js';
 import { readTrackerSetup } from '../src/extensions/tracker/config.js';
 import { temporaryTauConfig } from './tauConfigHarness.js';
 
@@ -29,9 +30,9 @@ it('leaves TDD config, profiles, and allowed models readable when bulkRead is br
     new Map([['scout', 'a/one']]),
   );
 
-  expect(loadTddConfig(location, { notify: () => undefined }).config.productionGlobs).toEqual([
-    'lib/**',
-  ]);
+  expect(
+    loadTddConfig(location, { notify: () => undefined }, runners).config.productionGlobs,
+  ).toEqual(['lib/**']);
 });
 
 it('leaves TDD config, profiles, and allowed models readable next to a bulkRead model', ({
@@ -56,9 +57,9 @@ it('leaves TDD config, profiles, and allowed models readable next to a bulkRead 
     new Map([['scout', 'a/one']]),
   );
 
-  expect(loadTddConfig(location, { notify: () => undefined }).config.productionGlobs).toEqual([
-    'lib/**',
-  ]);
+  expect(
+    loadTddConfig(location, { notify: () => undefined }, runners).config.productionGlobs,
+  ).toEqual(['lib/**']);
 });
 
 it('keeps every reader working when each block holds unknown keys', ({ onTestFinished }) => {
@@ -91,5 +92,5 @@ it('keeps every reader working when each block holds unknown keys', ({ onTestFin
   });
 
   expect(readBrowserLoginCommand(location, ui)).toBe('open-browser');
-  expect(loadTddConfig(location, ui).config.productionGlobs).toEqual(['lib/**']);
+  expect(loadTddConfig(location, ui, runners).config.productionGlobs).toEqual(['lib/**']);
 });
