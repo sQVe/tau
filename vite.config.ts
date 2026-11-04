@@ -41,7 +41,13 @@ const testProjects: TestProject[] = [
   },
   {
     name: 'repository',
-    include: ['*.test.ts', 'tests/*.test.ts', 'scripts/**/*.test.ts', 'lint/**/*.test.ts'],
+    include: [
+      '*.test.ts',
+      'tests/*.test.ts',
+      'shell/*.test.ts',
+      'scripts/**/*.test.ts',
+      'lint/**/*.test.ts',
+    ],
     exclude: ['tests/*.integration.test.ts'],
   },
   { name: 'integration-subagents', include: subagentIntegrationTests, exclude: [] },

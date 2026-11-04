@@ -84,6 +84,7 @@ const pureModules = [
   'src/extensions/mergeWatch/autoMergeRequest.ts',
   'src/extensions/mergeWatch/watchOutcome.ts',
   'src/extensions/mergeWatch/watchStart.ts',
+  'src/extensions/piResume/sessionDecision.ts',
   'src/extensions/pr/evidenceDecisions.ts',
   'src/extensions/pr/reuseDecisions.ts',
   'src/extensions/pr/reviewBotDecisions.ts',
