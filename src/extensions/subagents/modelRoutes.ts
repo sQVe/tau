@@ -22,26 +22,30 @@ export type ClassifierOutcome =
   | { kind: 'skipped' };
 
 export interface RouteFacts {
-  launchModel: string | undefined;
   profileModel: string;
   route: ModelRoute;
   outcome: ClassifierOutcome;
 }
 
-type FallbackReason = 'lowConfidence' | 'error' | 'timeout' | 'noRoute' | 'unknownLabel';
-
-export interface RoutePick {
-  shadowPick: string;
-  label?: string;
-  confidence?: number;
-  fallbackReason?: FallbackReason;
-  confidenceCutoff: number;
-}
+export type RoutePick =
+  | {
+      shadowPick: string;
+      confidenceCutoff: number;
+      label: string;
+      confidence: number;
+      fallbackReason?: 'lowConfidence' | 'unknownLabel';
+    }
+  | {
+      shadowPick: string;
+      confidenceCutoff: number;
+      fallbackReason: 'error' | 'timeout' | 'noRoute';
+    };
 
 export type RoutedLaunch = RoutePick & { ticketSent: boolean };
 
-// Where a worker's model came from. `profileWithoutRoute` means the profile has no route; a skipped
-// classification is a `routed` fallback with `noRoute`.
+// Where a worker's model came from. `profileWithoutRoute` means the profile has no usable route: none
+// is configured, or the configured one is invalid. A skipped classification is a `routed` fallback
+// with `noRoute`.
 export type ModelChoice =
   | { kind: 'launch' }
   | { kind: 'profileWithoutRoute' }
@@ -50,70 +54,66 @@ export type ModelChoice =
 
 export const defaultRouteConfidence = 0.7;
 
-// An explicit launch model means no classification and no pick, so the result is undefined.
-export const pickRoutedModel = (facts: RouteFacts): RoutePick | undefined => {
-  const { launchModel, profileModel, route, outcome } = facts;
-
-  if (launchModel !== undefined) {
-    return undefined;
-  }
-
+export const pickRoutedModel = (facts: RouteFacts): RoutePick => {
+  const { profileModel, route, outcome } = facts;
   const confidenceCutoff = route.confidence;
 
-  const fallback = (fallbackReason: FallbackReason): RoutePick => ({
-    shadowPick: profileModel,
-    fallbackReason,
-    confidenceCutoff,
-  });
-
   if (outcome.kind === 'skipped') {
-    return fallback('noRoute');
+    return { shadowPick: profileModel, fallbackReason: 'noRoute', confidenceCutoff };
   }
 
   if (outcome.kind !== 'answered') {
-    return fallback(outcome.kind);
+    return { shadowPick: profileModel, fallbackReason: outcome.kind, confidenceCutoff };
   }
 
   const { label, confidence } = outcome;
   const routed = route.labels.get(label);
 
   if (routed === undefined) {
-    return { ...fallback('unknownLabel'), label, confidence };
+    return {
+      shadowPick: profileModel,
+      label,
+      confidence,
+      fallbackReason: 'unknownLabel',
+      confidenceCutoff,
+    };
   }
 
   if (confidence < route.confidence) {
-    return { ...fallback('lowConfidence'), label, confidence };
+    return {
+      shadowPick: profileModel,
+      label,
+      confidence,
+      fallbackReason: 'lowConfidence',
+      confidenceCutoff,
+    };
   }
 
-  return { shadowPick: routed.model, label, confidence, confidenceCutoff: route.confidence };
-};
-
-const describeFallback = (pick: RoutePick, fallbackReason: FallbackReason): string => {
-  if (fallbackReason === 'noRoute') {
-    return 'Classification was skipped because the classifier is not allowed or not available, so the profile model runs.';
-  }
-
-  if (fallbackReason === 'error') {
-    return 'The classifier returned an error, so the profile model runs.';
-  }
-
-  if (fallbackReason === 'timeout') {
-    return 'The classifier hit its timeout, so the profile model runs.';
-  }
-
-  if (fallbackReason === 'unknownLabel') {
-    return `The classifier answered ${String(pick.label)}, which is not a route label, so the profile model runs.`;
-  }
-
-  return `Route label ${String(pick.label)} had confidence ${String(pick.confidence)}, below the cutoff ${pick.confidenceCutoff}, so the profile model runs.`;
+  return { shadowPick: routed.model, label, confidence, confidenceCutoff };
 };
 
 const describeRoutedPick = (pick: RoutePick): string => {
-  if (pick.fallbackReason !== undefined) {
-    return describeFallback(pick, pick.fallbackReason);
+  if (!('label' in pick)) {
+    if (pick.fallbackReason === 'noRoute') {
+      return 'Classification was skipped because the classifier is not allowed or not available, so the profile model runs.';
+    }
+
+    if (pick.fallbackReason === 'error') {
+      return 'The classifier returned an error, so the profile model runs.';
+    }
+
+    return 'The classifier hit its timeout, so the profile model runs.';
   }
 
-  return `Route label ${String(pick.label)} had confidence ${String(pick.confidence)}, at or above the cutoff ${pick.confidenceCutoff}.`;
+  if (pick.fallbackReason === undefined) {
+    return `Route label ${pick.label} had confidence ${pick.confidence}, at or above the cutoff ${pick.confidenceCutoff}.`;
+  }
+
+  if (pick.fallbackReason === 'unknownLabel') {
+    return `The classifier answered ${pick.label}, which is not a route label, so the profile model runs.`;
+  }
+
+  return `Route label ${pick.label} had confidence ${pick.confidence}, below the cutoff ${pick.confidenceCutoff}, so the profile model runs.`;
 };
 
 export const describeModelChoice = (choice: ModelChoice): string => {
@@ -122,7 +122,7 @@ export const describeModelChoice = (choice: ModelChoice): string => {
   }
 
   if (choice.kind === 'profileWithoutRoute') {
-    return 'The profile has no route, so the profile model runs.';
+    return 'The profile has no usable route, so the profile model runs.';
   }
 
   if (choice.kind === 'followUp') {

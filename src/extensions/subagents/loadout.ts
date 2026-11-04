@@ -238,15 +238,10 @@ export const resolveRoutedLoadout = async (
     : { outcome: { kind: 'skipped' }, ticketSent: false };
 
   const pick = pickRoutedModel({
-    launchModel: input.model,
     profileModel: loadout.model,
     route,
     outcome,
   });
-
-  if (pick === undefined) {
-    return { loadout, routing: undefined, choice: { kind: 'launch' } };
-  }
 
   const routing = { ...pick, ticketSent };
   const choice: ModelChoice = { kind: 'routed', pick };
