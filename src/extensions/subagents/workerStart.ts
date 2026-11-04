@@ -5,7 +5,6 @@ import type { WorkerStart } from './workerResume.js';
 export const workerContinuation =
   'Your session restarted. Finish the assigned work, then call subagent_report.';
 
-// The text that replaces the start message. Undefined means the first run must not start.
 export const startPromptText = (start: WorkerStart, assignment: Assignment): string | undefined => {
   if (start === 'sendTask') {
     return workerPrompt(assignment);

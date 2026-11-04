@@ -263,8 +263,6 @@ const startWorker = async (
   }
 };
 
-// The first run starts from the start message that workerCommand passes to Pi. It becomes the
-// stored task prompt or continuation, or no run when the worker must not run.
 const registerStartInput = (pi: ExtensionAPI, state: WorkerState): void => {
   pi.on('input', async (event) => {
     if (!state.startMessagePending || event.text !== workerStartMessage) {
