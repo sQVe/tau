@@ -3,6 +3,7 @@ import { chmod, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/pr
 import { basename, delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { minimatch } from 'minimatch';
 import { expect, it } from 'vitest';
 
 import { installedPiPath } from '../../../scripts/piVersionDrift.js';
@@ -397,6 +398,17 @@ const hasRangeBrace = (glob: string) => /\{-?\d+\.\.-?\d+\}/u.test(glob);
 
 const hasWildcard = (glob: string) => /[*?]/u.test(glob);
 
+const globMatches = (glob: string, path: string) =>
+  minimatch(path, withoutCurrentDirectory(glob), { dot: true });
+
+const isExcluded = (entry: ParityResult, path: string) =>
+  entry.excludedGlobs.some((glob) => globMatches(glob, path));
+
+const isListed = (entry: ParityResult, path: string) =>
+  globMatches(entry.include, path) && !isExcluded(entry, path);
+
+const hasDotSegment = (path: string) => path.split('/').some((segment) => segment.startsWith('.'));
+
 const excludedWithCurrentDirectory = (entry: ParityResult, path: string) =>
   entry.excludedGlobs.includes(`./${path}`);
 
@@ -422,7 +434,8 @@ const walkOnlyDifferences: Difference[] = [
   },
   {
     reason: 'Bun glob does not enter a symlinked directory through **; the walk does',
-    allows: (entry, path) => entry.include.includes('**') && path.startsWith('src/shared/'),
+    allows: (entry, path) =>
+      entry.include.includes('**') && path.startsWith('src/shared/') && isListed(entry, path),
   },
 ];
 
@@ -438,8 +451,8 @@ const globOnlyDifferences: Difference[] = [
   {
     reason: 'Bun glob does not match a dot path with a wildcard exclude; the walk does',
     allows: (entry, path) =>
-      entry.excludedGlobs.some(hasWildcard) &&
-      path.split('/').some((segment) => segment.startsWith('.')),
+      hasDotSegment(path) &&
+      entry.excludedGlobs.some((glob) => hasWildcard(glob) && globMatches(glob, path)),
   },
   {
     reason: 'Bun glob repeats files behind a link that points back to an ancestor; the walk stops',
@@ -449,6 +462,56 @@ const globOnlyDifferences: Difference[] = [
 
 const isAllowed = (differences: Difference[], entry: ParityResult, path: string) =>
   differences.some((difference) => difference.allows(entry, path));
+
+it.for<[string, Difference[], string, string[], string, boolean]>([
+  [
+    'a ** include through a symlink',
+    walkOnlyDifferences,
+    '**/*.ts',
+    [],
+    'src/shared/real.ts',
+    true,
+  ],
+  [
+    'an include that misses the path',
+    walkOnlyDifferences,
+    '**/*.test.ts',
+    [],
+    'src/shared/real.ts',
+    false,
+  ],
+  [
+    'an exclude that names the path',
+    walkOnlyDifferences,
+    '**/*.ts',
+    ['src/shared/**'],
+    'src/shared/real.ts',
+    false,
+  ],
+  [
+    'a wildcard exclude of a dot path',
+    globOnlyDifferences,
+    '.hidden/**/*.ts',
+    ['**/*.ts'],
+    '.hidden/value.ts',
+    true,
+  ],
+  [
+    'an exclude that misses the dot path',
+    globOnlyDifferences,
+    '**/*.ts',
+    ['src/shared/**'],
+    '.pi/tau.json',
+    false,
+  ],
+])(
+  'allows a known glob difference only where it applies: %s',
+  ([, differences, include, excludedGlobs, path, allowed]) => {
+    const entry = { include, excludedGlobs, failure: null, globbed: [], walked: [] };
+
+    expect(isAllowed(differences, entry, path)).toBe(allowed);
+  },
+);
 
 const parityProblems = async (cwd: string, entry: ParityResult) => {
   const label = JSON.stringify({ include: entry.include, excludedGlobs: entry.excludedGlobs });
