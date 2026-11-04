@@ -1,10 +1,11 @@
-import { accessSync, constants } from 'node:fs';
+import { accessSync, constants, statSync } from 'node:fs';
 import { delimiter, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseModelReference } from '../../config/models.js';
 import type { SkillTools } from '../../skillTools.js';
 import type { Loadout } from './types.js';
+import { workerStartMessage } from './workerStart.js';
 import { workerTools } from './workerTools.js';
 
 export const workerArguments = (
@@ -39,6 +40,7 @@ export const workerArguments = (
     '-e',
     fileURLToPath(new URL('./workerExtension.ts', import.meta.url)),
     ...extensionPackages.flatMap(({ path }) => ['-e', path]),
+    workerStartMessage,
   ];
 };
 
@@ -48,7 +50,7 @@ const piExecutable = (): string => {
     const candidate = join(directory, 'pi');
 
     try {
-      if (isAbsolute(directory)) {
+      if (isAbsolute(directory) && statSync(candidate).isFile()) {
         accessSync(candidate, constants.X_OK);
 
         return candidate;

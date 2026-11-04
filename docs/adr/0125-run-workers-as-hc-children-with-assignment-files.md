@@ -67,6 +67,10 @@ only the worker writes its report and its questions into it.
 - Every worker gets a herdr pane by its role. An editing worker takes the manager's herdr space and
   tab. Any other worker takes the manager's herdr space and a tab named `<manager tab>-workers`. A
   manager without both labels gives its workers no herdr labels. Tau has no `visibility` parameter.
+- A worker's first run starts from a fixed start message that Tau passes on the Pi command line. The
+  worker extension replaces it with the task prompt or the restart note, or handles it with no run.
+  The worker extension never sends a message during Pi's `session_start`: Pi reports terminal status
+  only after every extension has started, so a run that began during startup reported `idle`.
 
 ### Report
 
@@ -165,6 +169,12 @@ because it keeps a second worker state, and each tool repeats a fact that `hc` r
 Keep both tools and read `hc` inside them. Rejected because the manager already reads its children
 through `hc` for capacity and reports. A tool would add a second contract over the same reads and no
 new fact.
+
+### Send the task from the worker's startup
+
+Send the task with `sendUserMessage` while the worker extension starts. Rejected because Pi does not
+report that run's status. Fixing Pi's startup order needs an upstream release, and typing the task
+into the worker's terminal would make it user input.
 
 ### Send the report in the event
 

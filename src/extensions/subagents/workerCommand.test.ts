@@ -7,6 +7,7 @@ import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js'
 import { skillTools } from '../../skillTools.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { workerArguments, workerCommand, workerEnvironment } from './workerCommand.js';
+import { workerStartMessage } from './workerStart.js';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -94,6 +95,17 @@ it('starts the worker without waiting for an approval prompt', () => {
   );
 });
 
+it('ends the Pi arguments with the start message after the extension flags', () => {
+  expect(
+    workerArguments(
+      sessionFile,
+      fixtureLoadout('/tmp'),
+      [{ path: '/ext/package.ts' }],
+      skillTools,
+    ).slice(-3),
+  ).toEqual(['-e', '/ext/package.ts', workerStartMessage]);
+});
+
 it('passes the session file after --session', () => {
   expect(workerArguments(sessionFile, fixtureLoadout('/tmp'), [], skillTools).slice(0, 3)).toEqual([
     '--approve',
@@ -108,6 +120,16 @@ it('runs the first executable pi found on PATH', () => {
   const executable = pi(join(root, 'bin'), 0o755);
 
   vi.stubEnv('PATH', [join(root, 'missing'), join(root, 'plain'), join(root, 'bin')].join(':'));
+
+  expect(workerCommand(sessionFile, fixtureLoadout(root), [], skillTools)[0]).toBe(executable);
+});
+
+it('skips a directory named pi on PATH', () => {
+  const root = temporaryDirectory(onTestFinished, 'tau-launch-');
+  mkdirSync(join(root, 'folder', 'pi'), { recursive: true });
+  const executable = pi(join(root, 'bin'), 0o755);
+
+  vi.stubEnv('PATH', [join(root, 'folder'), join(root, 'bin')].join(':'));
 
   expect(workerCommand(sessionFile, fixtureLoadout(root), [], skillTools)[0]).toBe(executable);
 });

@@ -27,6 +27,7 @@ import {
 import type { Assignment } from '../src/extensions/subagents/assignment.js';
 import { resolveProfile } from '../src/extensions/subagents/profiles.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
+import { workerStartMessage } from '../src/extensions/subagents/workerStart.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import { skillTools } from '../src/skillTools.js';
 import { createHcFake } from './hcFake.js';
@@ -225,6 +226,7 @@ const startProfileWorker = async (
 
   provider.setResponses(responses);
   await created.session.bindExtensions({});
+  await created.session.prompt(workerStartMessage);
   await settled.promise;
 
   return { executed, outcomes, path, session: created.session };

@@ -19,6 +19,7 @@ import subagentsExtension, {
   registerCapacityRefusal,
 } from '../src/extensions/subagents/subagents.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
+import { workerStartMessage } from '../src/extensions/subagents/workerStart.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import { skillTools } from '../src/skillTools.js';
 import { createHcFake } from './hcFake.js';
@@ -177,6 +178,7 @@ const runWorker = async (responses: FauxResponseStep[]) => {
 
   provider.setResponses(responses);
   await created.session.bindExtensions({});
+  await created.session.prompt(workerStartMessage);
   await settled.promise;
 
   return { outcomes, path };
