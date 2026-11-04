@@ -17,7 +17,6 @@ export const describeSchemaProblem = (schema: TSchema, value: unknown): string =
   return error === undefined ? 'unknown problem' : `${error.instancePath || '/'} ${error.message}`;
 };
 
-// Gives `{ type: 'string', enum }` instead of `anyOf` with `const`, which some model providers reject.
 export const stringEnum = <const Values extends readonly string[]>(
   values: Values,
   options: { description?: string } = {},
