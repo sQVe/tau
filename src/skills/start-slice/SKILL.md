@@ -64,7 +64,7 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
 3. Read the slice with `linear issue view <slice> --json --no-pager`: its `branchName`, team, and
    `## Acceptance`. If `$slicedir/start.json` exists, read it and its body files. Read the children:
    `linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title description team { key } project { name } } } } }' --variable id=<slice>`.
-   - A body file that `start.json` lists but lacks is saved from the ticket's description.
+   - When a ticket with a recorded identifier lacks its body file, save its description as one.
    - When a body file differs from the description, either may be newer. Show the difference and ask
      with `ask_user_question` which to keep. A kept body goes to Linear in step 9. Keeping Linear's
      text means saving the description as the body file.
