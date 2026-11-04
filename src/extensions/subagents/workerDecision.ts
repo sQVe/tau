@@ -33,6 +33,9 @@ export const deadlineKey = (assignmentId: string): string => `deadline:${assignm
 
 export const endedKey = (assignmentId: string): string => `ended:${assignmentId}`;
 
+export const isCurrentSession = (parentSession: string, sessionFile: string | undefined): boolean =>
+  parentSession === sessionFile;
+
 const takeReport = (
   fact: Extract<WorkerReadFact, { kind: 'assignment' }>,
   shown: Set<string>,

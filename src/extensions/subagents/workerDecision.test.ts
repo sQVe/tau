@@ -5,6 +5,7 @@ import {
   decideWorkerDelivery,
   deadlineKey,
   endedKey,
+  isCurrentSession,
   questionKey,
   reportKey,
 } from './workerDecision.js';
@@ -318,4 +319,40 @@ const table: {
 
 it.each(table.map((row) => [row.name, row] as const))('%s', (_name, { facts, expected }) => {
   expect(decideWorkerDelivery(facts)).toStrictEqual(expected);
+});
+
+const sessionTable: {
+  name: string;
+  parentSession: string;
+  sessionFile: string | undefined;
+  expected: boolean;
+}[] = [
+  {
+    name: 'accepts a matching session file',
+    parentSession: '/sessions/manager.jsonl',
+    sessionFile: '/sessions/manager.jsonl',
+    expected: true,
+  },
+  {
+    name: 'rejects a different session file',
+    parentSession: '/sessions/previous.jsonl',
+    sessionFile: '/sessions/manager.jsonl',
+    expected: false,
+  },
+  {
+    name: 'rejects a missing session file',
+    parentSession: '/sessions/manager.jsonl',
+    sessionFile: undefined,
+    expected: false,
+  },
+  {
+    name: 'rejects an empty session file',
+    parentSession: '/sessions/manager.jsonl',
+    sessionFile: '',
+    expected: false,
+  },
+];
+
+it.each(sessionTable.map((row) => [row.name, row] as const))('%s', (_name, row) => {
+  expect(isCurrentSession(row.parentSession, row.sessionFile)).toBe(row.expected);
 });

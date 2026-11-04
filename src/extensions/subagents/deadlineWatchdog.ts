@@ -57,6 +57,7 @@ const deadlineAssignment = (assignment: ChildAssignment): DeadlineAssignment => 
     kind: 'saved',
     path: assignment.path,
     assignmentId: assignment.assignment.assignmentId,
+    parentSession: assignment.assignment.parentSession,
     deadline: assignment.assignment.deadline,
     reported: assignment.assignment.report !== null,
   };
@@ -209,6 +210,17 @@ export const createDeadlineWatchdog = (
     }
   };
 
+  const showEndedNotice = (
+    context: DeadlineWatchdogContext,
+    target: DeadlineKill | DeadlineTimer,
+  ): void => {
+    if (target.assignmentId === undefined || target.parentSession === undefined) {
+      return;
+    }
+
+    delivery.showEnded(context, target.assignmentId, target.parentSession);
+  };
+
   const killAtDeadline = async (
     context: DeadlineWatchdogContext,
     target: DeadlineTimer | DeadlineKill,
@@ -274,9 +286,7 @@ export const createDeadlineWatchdog = (
       return;
     }
 
-    if (target.assignmentId !== undefined) {
-      delivery.showEnded(context, target.assignmentId);
-    }
+    showEndedNotice(context, target);
   };
 
   const arm = (context: DeadlineWatchdogContext, timer: DeadlineTimer): void => {

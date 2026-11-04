@@ -3,7 +3,14 @@ export type DeadlineAssignment =
   | { kind: 'unread'; message: string }
   | { kind: 'missing'; path: string }
   | { kind: 'malformed'; path: string; message: string }
-  | { kind: 'saved'; path: string; assignmentId: string; deadline: number; reported: boolean };
+  | {
+      kind: 'saved';
+      path: string;
+      assignmentId: string;
+      parentSession: string;
+      deadline: number;
+      reported: boolean;
+    };
 
 export interface DeadlineChildFact {
   address: string;
@@ -23,6 +30,7 @@ export interface DeadlineTimer {
   address: string;
   assignmentPath: string;
   assignmentId: string;
+  parentSession: string;
   warnAt: number;
   killAt: number;
 }
@@ -31,6 +39,7 @@ export interface DeadlineKill {
   address: string;
   assignmentPath: string;
   assignmentId?: string;
+  parentSession?: string;
 }
 
 interface DeadlineError {
@@ -97,6 +106,7 @@ const decideSaved = (
       address: child.address,
       assignmentPath: assignment.path,
       assignmentId: assignment.assignmentId,
+      parentSession: assignment.parentSession,
     });
 
     return;
@@ -106,6 +116,7 @@ const decideSaved = (
     address: child.address,
     assignmentPath: assignment.path,
     assignmentId: assignment.assignmentId,
+    parentSession: assignment.parentSession,
     warnAt: Math.max(facts.now, assignment.deadline - deadlineWarningReserve),
     killAt: assignment.deadline,
   });

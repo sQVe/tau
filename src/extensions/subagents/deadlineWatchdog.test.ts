@@ -408,11 +408,12 @@ it('kills at once when the assignment file is missing', async () => {
 
   hcFake.reply('get', JSON.stringify(terminal('/agent/missing.json', now + 300_000)));
 
-  const { context, scanner, notifications, commands } = standalone(hcFake);
+  const { context, scanner, notifications, commands, ended } = standalone(hcFake);
 
   await scanner.scan(context);
 
   expect(commands('kill')).toHaveLength(1);
+  expect(ended).toEqual([]);
   expect(notifications).toEqual([[`Missing assignment file: /agent/missing.json.`, 'error']]);
 });
 

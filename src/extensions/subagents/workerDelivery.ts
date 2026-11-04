@@ -12,6 +12,7 @@ import {
   deadlineKey,
   decideWorkerDelivery,
   endedKey,
+  isCurrentSession,
   questionKey,
   reportKey,
 } from './workerDecision.js';
@@ -27,7 +28,7 @@ type WorkerDeliveryContext = Pick<ExtensionContext, 'sessionManager' | 'ui' | 'i
 
 export interface WorkerDelivery {
   deliver: (context: WorkerDeliveryContext, children: readonly WorkerChildRead[]) => void;
-  showEnded: (context: WorkerDeliveryContext, assignmentId: string) => void;
+  showEnded: (context: WorkerDeliveryContext, assignmentId: string, parentSession: string) => void;
 }
 
 export type ChildAssignment =
@@ -153,7 +154,7 @@ export const readWorkerChildren = async (
   return Promise.all(children.map((child) => readWorkerChild(hc, child)));
 };
 
-const deliveryFact = (child: WorkerChildRead): WorkerReadFact => {
+const deliveryFact = (child: WorkerChildRead, sessionFile: string | undefined): WorkerReadFact => {
   const { assignment } = child;
 
   if (assignment.kind === 'none') {
@@ -172,6 +173,10 @@ const deliveryFact = (child: WorkerChildRead): WorkerReadFact => {
     return { kind: 'error', message: assignment.message };
   }
 
+  if (!isCurrentSession(assignment.assignment.parentSession, sessionFile)) {
+    return { kind: 'skip' };
+  }
+
   return {
     kind: 'assignment',
     assignmentId: assignment.assignment.assignmentId,
@@ -187,7 +192,8 @@ export const createWorkerDelivery = (pi: ExtensionAPI): WorkerDelivery => {
   const wake = createWake(pi);
 
   const deliver = (context: WorkerDeliveryContext, children: readonly WorkerChildRead[]): void => {
-    const facts = children.map((child) => deliveryFact(child));
+    const sessionFile = context.sessionManager.getSessionFile();
+    const facts = children.map((child) => deliveryFact(child, sessionFile));
 
     const shownKeys = new Set([...restoreShownKeys(context), ...queuedKeys]);
 
@@ -231,7 +237,15 @@ export const createWorkerDelivery = (pi: ExtensionAPI): WorkerDelivery => {
     }
   };
 
-  const showEnded = (context: WorkerDeliveryContext, assignmentId: string): void => {
+  const showEnded = (
+    context: WorkerDeliveryContext,
+    assignmentId: string,
+    parentSession: string,
+  ): void => {
+    if (!isCurrentSession(parentSession, context.sessionManager.getSessionFile())) {
+      return;
+    }
+
     const key = deadlineKey(assignmentId);
     const ended = endedKey(assignmentId);
     const shown = restoreShownKeys(context);

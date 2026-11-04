@@ -13,7 +13,7 @@ import { runWithEnvironment } from '../src/hc/connect.js';
 import { get, label, ls } from '../src/hc/hc.js';
 import { startHcSession } from './hcSessionHarness.js';
 import type { HcSession } from './hcSessionHarness.js';
-import { launchWorkerSession } from './subagentSessionHarness.js';
+import { launchWorkerSession, managerSessionFile } from './subagentSessionHarness.js';
 import type { WorkerSession } from './subagentSessionHarness.js';
 
 interface Notice {
@@ -82,7 +82,7 @@ const managerView = (): ManagerView => {
   } as unknown as ExtensionAPI;
 
   const context = {
-    sessionManager: { getEntries: () => entries },
+    sessionManager: { getEntries: () => entries, getSessionFile: () => managerSessionFile },
     ui: {
       notify: (message: string, level: string) => {
         notices.push({ message, level });
