@@ -309,7 +309,6 @@ export const startReservedWorker = async (
   try {
     facts.signal?.throwIfAborted();
 
-    // A failed manager read happens before hc sees the request, so it is a definite failure.
     const manager = await readCurrentTerminal(runtime.hc);
     const placement = placementLabels(assignment.loadout.role, manager?.labels ?? {});
 
