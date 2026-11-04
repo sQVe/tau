@@ -6,12 +6,8 @@ import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { skillTools } from '../../skillTools.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
-import {
-  workerArguments,
-  workerCommand,
-  workerEnvironment,
-  workerStartMessage,
-} from './workerCommand.js';
+import { workerArguments, workerCommand, workerEnvironment } from './workerCommand.js';
+import { workerStartMessage } from './workerStart.js';
 
 afterEach(() => {
   vi.unstubAllEnvs();

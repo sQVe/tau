@@ -18,9 +18,8 @@ import { assignmentDirectory, writeAssignment } from './assignment.js';
 import type { Assignment, SavedReport } from './assignment.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { workerPrompt } from './profiles.js';
-import { workerStartMessage } from './workerCommand.js';
 import workerExtension from './workerExtension.js';
-import { workerContinuation } from './workerStart.js';
+import { workerContinuation, workerStartMessage } from './workerStart.js';
 import { workerTools } from './workerTools.js';
 
 const workerTerminal = 'worker-1';

@@ -23,16 +23,17 @@ import { skillTools } from '../../skillTools.js';
 import { isWorkerProcess } from '../../worker.js';
 import { readAssignment } from './assignment.js';
 import { checkWorkerRuntime } from './loadout.js';
-import { workerInstructions } from './profiles.js';
+import { workerInstructions, workerPrompt } from './profiles.js';
 import { askParent, questionParameters } from './question.js';
 import { reportParameters, reportToParent } from './report.js';
 import type { ReportRefusalState, ReportTarget } from './report.js';
 import { remindToReport } from './reportReminder.js';
 import type { Loadout } from './types.js';
-import { workerStartMessage } from './workerCommand.js';
 import { decideWorkerResume, decideWorkerStart } from './workerResume.js';
 import type { WorkerStart } from './workerResume.js';
 import { startPromptText } from './workerStart.js';
+import { handleStartInput } from './workerStartInput.js';
+import type { WorkerStartInput } from './workerStartInput.js';
 import { workerTools } from './workerTools.js';
 
 interface WorkerState {
@@ -42,8 +43,7 @@ interface WorkerState {
   refusal: ReportRefusalState;
   runError: string | undefined;
   questionAsked: boolean;
-  startText: string | undefined;
-  startMessagePending: boolean;
+  startInput: WorkerStartInput;
 }
 
 const readLoadoutInstructionSets = (loadout: Loadout): Promise<string[]> =>
@@ -254,7 +254,7 @@ const startWorker = async (
 
     const start = decideWorkerStart(resume, hasReport);
 
-    state.startText = startPromptText(start, loaded.assignment);
+    state.startInput.startText = startPromptText(start, workerPrompt(loaded.assignment));
 
     runStartAction(context, start);
   } catch (error) {
@@ -264,21 +264,7 @@ const startWorker = async (
 };
 
 const registerStartInput = (pi: ExtensionAPI, state: WorkerState): void => {
-  pi.on('input', async (event) => {
-    if (!state.startMessagePending || event.text !== workerStartMessage) {
-      return { action: 'continue' };
-    }
-
-    state.startMessagePending = false;
-
-    await state.ready;
-
-    if (state.startText === undefined) {
-      return { action: 'handled' };
-    }
-
-    return { action: 'transform', text: state.startText };
-  });
+  pi.on('input', (event) => handleStartInput(state.startInput, event.text, state.ready));
 };
 
 const lastRunError = (event: AgentEndEvent): string | undefined => {
@@ -342,8 +328,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
     refusal: { incompleteRefused: false, reminderSent: false, remindAfterRefusal: false },
     runError: undefined,
     questionAsked: false,
-    startText: undefined,
-    startMessagePending: true,
+    startInput: { pending: true, startText: undefined },
   };
 
   pi.on('session_start', (_event, context) => {

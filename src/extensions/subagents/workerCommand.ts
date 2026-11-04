@@ -5,9 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { parseModelReference } from '../../config/models.js';
 import type { SkillTools } from '../../skillTools.js';
 import type { Loadout } from './types.js';
+import { workerStartMessage } from './workerStart.js';
 import { workerTools } from './workerTools.js';
-
-export const workerStartMessage = 'Start the assigned work.';
 
 export const workerArguments = (
   sessionFile: string,

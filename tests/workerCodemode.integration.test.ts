@@ -26,8 +26,8 @@ import {
 } from '../src/extensions/subagents/assignment.js';
 import type { Assignment } from '../src/extensions/subagents/assignment.js';
 import { resolveProfile } from '../src/extensions/subagents/profiles.js';
-import { workerStartMessage } from '../src/extensions/subagents/workerCommand.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
+import { workerStartMessage } from '../src/extensions/subagents/workerStart.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import { skillTools } from '../src/skillTools.js';
 import { createHcFake } from './hcFake.js';
