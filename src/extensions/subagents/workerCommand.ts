@@ -1,4 +1,4 @@
-import { accessSync, constants } from 'node:fs';
+import { accessSync, constants, statSync } from 'node:fs';
 import { delimiter, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -54,7 +54,7 @@ const piExecutable = (): string => {
     const candidate = join(directory, 'pi');
 
     try {
-      if (isAbsolute(directory)) {
+      if (isAbsolute(directory) && statSync(candidate).isFile()) {
         accessSync(candidate, constants.X_OK);
 
         return candidate;

@@ -128,6 +128,16 @@ it('runs the first executable pi found on PATH', () => {
   expect(workerCommand(sessionFile, fixtureLoadout(root), [], skillTools)[0]).toBe(executable);
 });
 
+it('skips a directory named pi on PATH', () => {
+  const root = temporaryDirectory(onTestFinished, 'tau-launch-');
+  mkdirSync(join(root, 'folder', 'pi'), { recursive: true });
+  const executable = pi(join(root, 'bin'), 0o755);
+
+  vi.stubEnv('PATH', [join(root, 'folder'), join(root, 'bin')].join(':'));
+
+  expect(workerCommand(sessionFile, fixtureLoadout(root), [], skillTools)[0]).toBe(executable);
+});
+
 it('fails when PATH holds no executable pi', () => {
   const root = temporaryDirectory(onTestFinished, 'tau-launch-');
   pi(join(root, 'plain'), 0o644);
