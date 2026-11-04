@@ -7,13 +7,18 @@ import type { TestContext } from 'vitest';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { defaultTddConfig } from './config.js';
 import { createTestObservation, thrownErrorType } from './observation.js';
-import type { RunnerResult } from './runner/types.js';
-import { runTests } from './runner/vitest.js';
+import type { RunnerResult, TestRunner } from './runner/types.js';
 
-vi.mock(import('./runner/vitest.js'), async (importOriginal) => ({
-  ...(await importOriginal()),
-  runTests: vi.fn<typeof runTests>(),
-}));
+const runTests = vi.hoisted(() => vi.fn<TestRunner['run']>());
+
+vi.mock(import('./runner/runners.js'), async (importOriginal) => {
+  const original = await importOriginal();
+
+  return {
+    ...original,
+    lookupRunner: () => ({ ...original.lookupRunner('vitest'), run: runTests }),
+  };
+});
 
 const behavior = { behavior: 'value', testFullName: 'value works', files: ['value.test.ts'] };
 
@@ -57,12 +62,11 @@ it('saves stale input fingerprints and preserves the outcome when the run record
     return {
       ...result('passed'),
       diagnostics: {
-        command: ['vitest'],
-        started: true,
         directory,
         durationMs: 10,
         timeoutMs: 30_000,
-        exitCode: 0,
+        report: { path: join(directory, 'report.json'), format: 'json' },
+        stages: [{ name: 'run', command: ['vitest'], started: true, exitCode: 0, durationMs: 10 }],
       },
     };
   });
@@ -79,12 +83,11 @@ it('saves stale input fingerprints and preserves the outcome when the run record
   vi.mocked(runTests).mockResolvedValueOnce({
     ...result('passed'),
     diagnostics: {
-      command: ['vitest'],
-      started: true,
       directory,
       durationMs: 10,
       timeoutMs: 30_000,
-      exitCode: 0,
+      report: { path: join(directory, 'report.json'), format: 'json' },
+      stages: [{ name: 'run', command: ['vitest'], started: true, exitCode: 0, durationMs: 10 }],
     },
   });
 

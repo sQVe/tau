@@ -196,7 +196,7 @@ it('retains safe diagnostics when an injected resolver throws without starting e
   expect(result).toMatchObject({
     kind: 'runner-resolution-error',
     resolution: { stage: 'resolver', cwd, errorCode: 'EACCES', errorType: 'TypeError' },
-    diagnostics: { started: false, exitCode: null, resolution: { errorCode: 'EACCES' } },
+    diagnostics: { stages: [], resolution: { errorCode: 'EACCES' } },
   });
 
   expect(JSON.stringify(result)).not.toContain(secret);
@@ -248,7 +248,7 @@ it('does not echo arbitrary resolver error names codes or thrown values', async 
 
     expect(result).toMatchObject({
       kind: 'runner-resolution-error',
-      diagnostics: { started: false },
+      diagnostics: { stages: [] },
     });
 
     expect(JSON.stringify(result)).not.toMatch(/private|PRIVATE_CREDENTIAL/);
@@ -273,7 +273,7 @@ it('persists and presents resolution evidence through the production observation
   expect(saved).toMatchObject({
     kind: 'runner-resolution-error',
     diagnostics: {
-      started: false,
+      stages: [],
       resolution: { cwd, manifestPath, stage: 'binary', errorCode: 'INVALID_BIN' },
     },
   });

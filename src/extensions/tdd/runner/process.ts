@@ -1,7 +1,5 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { accessSync, constants, statSync } from 'node:fs';
-import { basename, delimiter, join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
 import { signalGroup } from '../../../process/process.js';
@@ -35,29 +33,6 @@ const maximumStdoutMebibytes = 8;
 export const maximumTotalBytes = maximumTotalKibibytes * bytesPerKibibyte;
 // Bound captured process output separately from the shorter diagnostic messages.
 export const maximumStdoutBytes = maximumStdoutMebibytes * bytesPerMebibyte;
-
-// Debian-family systems name the runtime `nodejs`, so both spellings count as a Node command.
-const nodeNames = ['node', 'nodejs'];
-
-// oxlint-disable-next-line node/no-process-env -- Compiled Pi needs a real Node executable from the caller's PATH.
-const nodeOnPath = (path = process.env.PATH ?? '') =>
-  path
-    .split(delimiter)
-    .flatMap((directory) => nodeNames.map((name) => join(directory, name)))
-    .find((executable) => {
-      try {
-        accessSync(executable, constants.X_OK);
-
-        return statSync(executable).isFile();
-      } catch {
-        return false;
-      }
-    });
-
-// In compiled Pi, process.execPath is the agent and cannot run Vitest. Prefer Node from PATH.
-// Keep the fallback for Node executables with other names, such as `nodejs`.
-export const nodeExecutable = (executablePath = process.execPath): string =>
-  /^node$/i.test(basename(executablePath)) ? executablePath : (nodeOnPath() ?? executablePath);
 
 const appendChunk = (
   chunk: Buffer,
@@ -120,12 +95,11 @@ const captureStderr = (state: SpawnState, chunk: Buffer): void => {
   state.stderrBytes += chunk.length;
 };
 
-export const defaultSpawn: SpawnCommand = (command, argumentsList, options) =>
+export const defaultSpawn: SpawnCommand = (executable, argumentsList, options) =>
   new Promise<SpawnResult>((resolve) => {
-    const executable = nodeExecutable();
-    const commandLine = [executable, command, ...argumentsList];
+    const commandLine = [executable, ...argumentsList];
 
-    const child = nodeSpawn(executable, [command, ...argumentsList], {
+    const child = nodeSpawn(executable, argumentsList, {
       cwd: options.cwd,
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],

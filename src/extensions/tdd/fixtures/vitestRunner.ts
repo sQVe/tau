@@ -2,13 +2,16 @@ import { rm, writeFile } from 'node:fs/promises';
 
 import { onTestFinished } from 'vitest';
 
-import type { RunnerDeps, RunnerResult, SpawnCommand, SpawnResult } from '../runner/types.js';
-import { runTests as runTestsWithDiagnostics } from '../runner/vitest.js';
+import { runners } from '../runner/runners.js';
+import type { RunnerResult, RunTestsInput, SpawnCommand, SpawnResult } from '../runner/types.js';
+
+type RunnerDeps = NonNullable<Parameters<typeof runners.vitest.run>[1]>;
 
 export const runTests = async (
-  ...argumentsList: Parameters<typeof runTestsWithDiagnostics>
+  input: RunTestsInput,
+  dependencies?: RunnerDeps,
 ): Promise<RunnerResult> => {
-  const result = await runTestsWithDiagnostics(...argumentsList);
+  const result = await runners.vitest.run(input, dependencies);
 
   if (result.diagnostics !== undefined) {
     const directory = result.diagnostics.directory;

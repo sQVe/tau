@@ -3,12 +3,35 @@ import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 
 import { isMissingFile } from '../../../errors.js';
+import { reportLabels } from './constants.js';
 import { maximumStdoutBytes, maximumTotalBytes } from './process.js';
-import type { DiagnosticFile, RunDiagnostics, SpawnResult } from './types.js';
+import type {
+  DiagnosticFile,
+  PackageResolutionDiagnostic,
+  ReportFormat,
+  ReportTarget,
+  RunDiagnostics,
+  RunStage,
+  SpawnResult,
+} from './types.js';
 
 interface OutputCapture {
   observedBytes: number;
   truncated: boolean;
+}
+
+export interface RunOverview {
+  directory: string;
+  durationMs: number;
+  timeoutMs: number;
+  report: ReportTarget;
+  resolution?: PackageResolutionDiagnostic;
+}
+
+export interface StageSpawn {
+  name: string;
+  durationMs: number;
+  result: SpawnResult;
 }
 
 const bytesPerMebibyte = 1_048_576;
@@ -40,15 +63,17 @@ const saveOutput = async (
   };
 };
 
-const retainReport = async (directory: string): Promise<DiagnosticFile | undefined> => {
-  const path = join(directory, 'report.json');
+const retainReport = async (
+  path: string,
+  format: ReportFormat,
+): Promise<DiagnosticFile | undefined> => {
   let bytes: number;
 
   try {
     const metadata = await lstat(path);
 
     if (!metadata.isFile()) {
-      throw new Error('The JSON report is not a regular file.');
+      throw new Error(`The ${reportLabels[format]} is not a regular file.`);
     }
 
     bytes = metadata.size;
@@ -75,42 +100,73 @@ const retainReport = async (directory: string): Promise<DiagnosticFile | undefin
   };
 };
 
+const retain = async (
+  errors: string[],
+  save: () => Promise<DiagnosticFile | undefined>,
+): Promise<DiagnosticFile | undefined> => {
+  try {
+    return await save();
+  } catch (error) {
+    // One unavailable artifact must not discard other diagnostics or the test outcome.
+    errors.push(String(error));
+
+    return undefined;
+  }
+};
+
+const saveStage = async (
+  directory: string,
+  stage: StageSpawn,
+  errors: string[],
+  labelFiles: boolean,
+): Promise<RunStage> => {
+  const { result } = stage;
+  const prefix = labelFiles ? `${stage.name}.` : '';
+
+  const stdout = await retain(errors, () =>
+    saveOutput(join(directory, `${prefix}stdout.txt`), result.stdout, maximumStdoutBytes, {
+      observedBytes: result.stdoutBytes,
+      truncated: result.stdoutTruncated,
+    }),
+  );
+
+  const stderr = await retain(errors, () =>
+    saveOutput(join(directory, `${prefix}stderr.txt`), result.stderr, maximumTotalBytes, {
+      observedBytes: result.stderrBytes,
+      truncated: false,
+    }),
+  );
+
+  return {
+    name: stage.name,
+    command: result.command,
+    started: result.started,
+    exitCode: result.code,
+    durationMs: stage.durationMs,
+    stdout,
+    stderr,
+    excerpt: (result.stderr || result.stdout).slice(0, maximumExcerptLength),
+  };
+};
+
 export const saveDiagnostics = async (
-  diagnostics: RunDiagnostics,
-  result: SpawnResult | undefined,
+  run: RunOverview,
+  stages: StageSpawn[],
 ): Promise<RunDiagnostics> => {
   const errors: string[] = [];
+  const labelFiles = stages.length > 1;
 
-  const retain = async (save: () => Promise<DiagnosticFile | undefined>) => {
-    try {
-      return await save();
-    } catch (error) {
-      // One unavailable artifact must not discard other diagnostics or the test outcome.
-      errors.push(String(error));
+  const report = await retain(errors, () => retainReport(run.report.path, run.report.format));
 
-      return undefined;
-    }
+  const savedStages = await Promise.all(
+    stages.map((stage) => saveStage(run.directory, stage, errors, labelFiles)),
+  );
+
+  const diagnostics: RunDiagnostics = {
+    ...run,
+    report: { ...run.report, file: report },
+    stages: savedStages,
   };
-
-  diagnostics.report = await retain(() => retainReport(diagnostics.directory));
-
-  if (result !== undefined) {
-    diagnostics.excerpt = (result.stderr || result.stdout).slice(0, maximumExcerptLength);
-
-    diagnostics.stdout = await retain(() =>
-      saveOutput(join(diagnostics.directory, 'stdout.txt'), result.stdout, maximumStdoutBytes, {
-        observedBytes: result.stdoutBytes,
-        truncated: result.stdoutTruncated,
-      }),
-    );
-
-    diagnostics.stderr = await retain(() =>
-      saveOutput(join(diagnostics.directory, 'stderr.txt'), result.stderr, maximumTotalBytes, {
-        observedBytes: result.stderrBytes,
-        truncated: false,
-      }),
-    );
-  }
 
   if (errors.length > 0) {
     diagnostics.error = `Could not save all diagnostics:\n${errors.join('\n')}`;

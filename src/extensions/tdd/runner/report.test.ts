@@ -10,7 +10,8 @@ import {
   validReport,
   worktree,
 } from '../fixtures/reportBuilders.js';
-import { classifyReport, maximumFailures, unparseableReportResult } from './report.js';
+import { maximumFailures } from './constants.js';
+import { classifyReport, unparseableReportResult } from './report.js';
 import type { VitestReport } from './report.js';
 import type { RunnerResult, RunTestsInput } from './types.js';
 

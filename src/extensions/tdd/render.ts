@@ -3,9 +3,9 @@ import { stripVTControlCharacters } from 'node:util';
 
 import type { LoadedTddConfig, TddConfig } from './config.js';
 import { tddConfigFields } from './configLayers.js';
-import { maximumFailures } from './runner/report.js';
+import { maximumFailures, reportLabels } from './runner/constants.js';
 import { maximumRetainedRuns } from './runner/retention.js';
-import type { DiagnosticFile, RunnerResult } from './runner/types.js';
+import type { DiagnosticFile, RunnerResult, RunStage } from './runner/types.js';
 import type { Behavior, ObservationResult } from './types.js';
 
 type Observation = Omit<ObservationResult, 'hint'>;
@@ -213,34 +213,54 @@ const diagnosticFileLine = (label: string, file: DiagnosticFile): string => {
   return `${label}: ${file.path} (${size}${truncation})`;
 };
 
-const executionLines = (
-  report: RunnerResult,
-  diagnostics: NonNullable<RunnerResult['diagnostics']>,
-): string[] => {
-  if (!diagnostics.started || report.kind === 'runner-missing') {
+// Only runs with more than one stage label their stage.
+const stageLabel = (label: string, stage: RunStage, labelStages: boolean): string =>
+  labelStages ? `${label} (${stage.name})` : label;
+
+const stageExecutionLine = (stage: RunStage): string =>
+  `${stage.name}: elapsed ${stage.durationMs} ms; exit: ${stage.exitCode ?? 'unavailable'}.`;
+
+const executionLines = (diagnostics: NonNullable<RunnerResult['diagnostics']>): string[] => {
+  const startedStages = diagnostics.stages.filter((stage) => stage.started);
+
+  if (startedStages.length === 0) {
     return ['Execution did not start.'];
   }
 
-  return [
-    `Elapsed: ${diagnostics.durationMs} ms; timeout: ${diagnostics.timeoutMs} ms; exit: ${diagnostics.exitCode ?? 'unavailable'}.`,
-  ];
+  if (diagnostics.stages.length > 1) {
+    return [
+      `Elapsed: ${diagnostics.durationMs} ms; timeout: ${diagnostics.timeoutMs} ms per stage.`,
+      ...diagnostics.stages.map(stageExecutionLine),
+    ];
+  }
+
+  return startedStages.map(
+    (stage) =>
+      `Elapsed: ${diagnostics.durationMs} ms; timeout: ${diagnostics.timeoutMs} ms; exit: ${stage.exitCode ?? 'unavailable'}.`,
+  );
 };
 
 const savedFileLines = (diagnostics: NonNullable<RunnerResult['diagnostics']>): string[] => {
   const lines: string[] = [];
+  const labelStages = diagnostics.stages.length > 1;
 
-  for (const [label, file] of [
-    ['stdout', diagnostics.stdout],
-    ['stderr', diagnostics.stderr],
-    ['JSON report', diagnostics.report],
-  ] as const) {
-    if (file !== undefined) {
-      lines.push(diagnosticFileLine(label, file));
+  for (const stage of diagnostics.stages) {
+    for (const [label, file] of [
+      ['stdout', stage.stdout],
+      ['stderr', stage.stderr],
+    ] as const) {
+      if (file !== undefined) {
+        lines.push(diagnosticFileLine(stageLabel(label, stage, labelStages), file));
+      }
     }
   }
 
-  if (diagnostics.report === undefined) {
-    lines.push('No JSON report was saved.');
+  const reportLabel = reportLabels[diagnostics.report.format];
+
+  if (diagnostics.report.file === undefined) {
+    lines.push(`No ${reportLabel} was saved.`);
+  } else {
+    lines.push(diagnosticFileLine(reportLabel, diagnostics.report.file));
   }
 
   if (diagnostics.error !== undefined) {
@@ -248,6 +268,27 @@ const savedFileLines = (diagnostics: NonNullable<RunnerResult['diagnostics']>): 
   }
 
   return lines;
+};
+
+const excerptLines = (
+  report: RunnerResult,
+  diagnostics: NonNullable<RunnerResult['diagnostics']>,
+): string[] => {
+  if (report.kind === 'pass') {
+    return [];
+  }
+
+  const labelStages = diagnostics.stages.length > 1;
+
+  return diagnostics.stages.flatMap((stage) => {
+    if (stage.excerpt == null || stage.excerpt === '') {
+      return [];
+    }
+
+    const label = labelStages ? ` (${stage.name})` : '';
+
+    return [`Runner output excerpt${label} (not a test verdict):\n${printable(stage.excerpt)}`];
+  });
 };
 
 export const runContext = (behavior: Behavior, observation: Observation): string => {
@@ -271,7 +312,7 @@ export const runContext = (behavior: Behavior, observation: Observation): string
     return lines.join('\n');
   }
 
-  lines.push(...executionLines(report, diagnostics));
+  lines.push(...executionLines(diagnostics));
 
   if (runPath !== undefined) {
     lines.push(`Run record (command, selection, input fingerprints): ${runPath}`);
@@ -283,9 +324,7 @@ export const runContext = (behavior: Behavior, observation: Observation): string
     `Saved diagnostics are not reusable verification. Cleanup keeps up to ${maximumRetainedRuns} completed runs for seven days.`,
   );
 
-  if (report.kind !== 'pass' && diagnostics.excerpt != null && diagnostics.excerpt !== '') {
-    lines.push(`Runner output excerpt (not a test verdict):\n${printable(diagnostics.excerpt)}`);
-  }
+  lines.push(...excerptLines(report, diagnostics));
 
   return cap(lines.join('\n'), maximumResultLength);
 };
@@ -298,13 +337,16 @@ const configLabels: Record<keyof TddConfig, string> = {
   verificationArgv: 'Command',
 };
 
+const configValueText = (value: string | readonly string[], separator: string): string =>
+  typeof value === 'string' ? value : value.join(separator);
+
 export const configSummary = ({ config, sources, ignored }: LoadedTddConfig): string => {
   const lines = [
     'TDD config (repository .pi/tau.json overrides user tau.json):',
     ...tddConfigFields.map((field) => {
       const separator = field === 'verificationArgv' ? ' ' : ', ';
 
-      return `${configLabels[field]} (${sources[field]}): ${config[field].join(separator)}`;
+      return `${configLabels[field]} (${sources[field]}): ${configValueText(config[field], separator)}`;
     }),
   ];
 
