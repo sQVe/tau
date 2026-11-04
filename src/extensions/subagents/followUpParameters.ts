@@ -11,7 +11,6 @@ export const followUpParameters = Type.Object(
     acceptance: launchParameters.properties.acceptance,
     label: launchParameters.properties.label,
     timeoutSeconds: launchParameters.properties.timeoutSeconds,
-    visibility: launchParameters.properties.visibility,
   },
   { additionalProperties: false },
 );

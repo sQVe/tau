@@ -125,6 +125,7 @@ const pureModules = [
   'src/extensions/subagents/workerMessage.ts',
   'src/extensions/subagents/workerModels.ts',
   'src/extensions/subagents/workerPackages.ts',
+  'src/extensions/subagents/workerPlacement.ts',
   'src/extensions/subagents/workerResume.ts',
   'src/extensions/subagents/workerTools.ts',
   'src/extensions/tauSkills/requiredFor.ts',

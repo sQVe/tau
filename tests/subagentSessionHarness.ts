@@ -46,7 +46,6 @@ export interface FollowUpWorkerOptions {
   task: string;
   acceptance?: string[];
   label?: string;
-  visibility?: 'foreground' | 'background';
   timeoutSeconds?: number;
 }
 
@@ -207,7 +206,6 @@ export const launchWorkerSession = async (
         task: options.task,
         profile: 'worker',
         acceptance: options.acceptance,
-        visibility: 'background',
         ...(options.timeoutSeconds === undefined ? {} : { timeoutSeconds: options.timeoutSeconds }),
       },
       startedAt: { wall: Date.now(), monotonic: performance.now() },
@@ -274,7 +272,6 @@ export const followUpWorkerSession = async (
         task: options.task,
         ...(options.acceptance === undefined ? {} : { acceptance: options.acceptance }),
         ...(options.label === undefined ? {} : { label: options.label }),
-        visibility: options.visibility ?? 'background',
         ...(options.timeoutSeconds === undefined ? {} : { timeoutSeconds: options.timeoutSeconds }),
       },
       startedAt: { wall: Date.now(), monotonic: performance.now() },

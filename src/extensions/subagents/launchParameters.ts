@@ -1,15 +1,6 @@
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import { stringEnum } from '../../schema.js';
-
-const visibility = Type.Optional(
-  stringEnum(['foreground', 'background'] as const, {
-    description:
-      'Foreground opens in the manager tab, background under the parent. Defaults to foreground for editing profiles.',
-  }),
-);
-
 export const launchParameters = Type.Object(
   {
     task: Type.String({ minLength: 1, maxLength: 32_000 }),
@@ -37,7 +28,6 @@ export const launchParameters = Type.Object(
       }),
     ),
     model: Type.Optional(Type.String()),
-    visibility,
     timeoutSeconds: Type.Optional(
       Type.Integer({
         minimum: 10,

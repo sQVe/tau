@@ -88,6 +88,15 @@ const setup = (): { directory: string; fake: HcFake; runtime: LaunchRuntime } =>
 
   fake.reply('ls', JSON.stringify({ terminals: [] }));
 
+  fake.reply(
+    'get',
+    JSON.stringify({
+      address: manager,
+      state: 'live',
+      labels: { 'herdr.space': 'space-1', 'herdr.tab': 'tab-2' },
+    }),
+  );
+
   const runtime: LaunchRuntime = {
     pi: { getCommands: () => [], getAllTools: () => [] } as unknown as ExtensionAPI,
     hc: { exec: fake.exec, connect: fake.connect, cwd: directory },
@@ -114,7 +123,6 @@ const followUp = (
         sourceAssignmentId,
         task: 'Continue the work.',
         acceptance: ['The follow-up is done.'],
-        visibility: 'background',
         ...overrides,
       },
       startedAt: { wall: 1000, monotonic: 2 },
@@ -344,10 +352,37 @@ it('starts a follow-up without reading finished terminals', async () => {
   fake.replyConnect('terminal.run', 2, { address: 't-new', state: 'live', parent: manager });
 
   const result = await followUp(runtime, source.assignmentId);
-  const reads = fake.calls.filter((call) => call.commandArguments.includes('get'));
+  const reads = fake.calls.filter((call) => call.commandArguments.includes('t-old'));
 
   expect(result.isError).not.toBe(true);
   expect(reads).toEqual([]);
+});
+
+it('places a follow-up of an investigation worker in the workers tab of the manager', async () => {
+  const { directory, fake, runtime } = setup();
+
+  const source = sourceAssignment(directory, {
+    loadout: { ...fixtureLoadout(directory), role: 'investigation' },
+  });
+
+  await writeAssignment(source);
+
+  fake.replyConnect('hello', 1, {
+    generation: 1,
+    version: 'test',
+    core: { id: 'core', name: 'core' },
+    framed: false,
+    methods: [],
+    features: [],
+  });
+
+  fake.replyConnect('terminal.run', 2, { address: 't-new', state: 'live', parent: manager });
+
+  const result = await followUp(runtime, source.assignmentId);
+
+  expect(result.isError).not.toBe(true);
+  expect(terminalRun(fake)?.labels['herdr.space']).toBe('space-1');
+  expect(terminalRun(fake)?.labels['herdr.tab']).toBe('tab-2-workers');
 });
 
 it('starts a new child that resumes the source session', async () => {
@@ -419,7 +454,6 @@ it('refuses a cancelled follow-up before it writes or starts anything', async ()
         sourceAssignmentId: source.assignmentId,
         task: 'Continue the work.',
         acceptance: ['The follow-up is done.'],
-        visibility: 'background',
       },
       startedAt: { wall: 1000, monotonic: 2 },
       parentSession: '/work/parent.jsonl',

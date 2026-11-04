@@ -64,7 +64,9 @@ only the worker writes its report and its questions into it.
   unclear.
 - A failed launch removes its package snapshot. A worker that ends keeps its snapshot and session
   file.
-- A foreground worker takes the manager's herdr space and tab. A background worker gets no pane.
+- Every worker gets a herdr pane by its role. An editing worker takes the manager's herdr space and
+  tab. Any other worker takes the manager's herdr space and a tab named `<manager tab>-workers`. A
+  manager without both labels gives its workers no herdr labels. Tau has no `visibility` parameter.
 
 ### Report
 
