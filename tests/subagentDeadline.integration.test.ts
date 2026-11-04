@@ -13,7 +13,7 @@ import { runWithEnvironment } from '../src/hc/connect.js';
 import { get, label, ls } from '../src/hc/hc.js';
 import { startHcSession } from './hcSessionHarness.js';
 import type { HcSession } from './hcSessionHarness.js';
-import { launchWorkerSession } from './subagentSessionHarness.js';
+import { launchWorkerSession, managerSessionFile } from './subagentSessionHarness.js';
 import type { WorkerSession } from './subagentSessionHarness.js';
 
 interface Notice {
@@ -82,7 +82,7 @@ const managerView = (): ManagerView => {
   } as unknown as ExtensionAPI;
 
   const context = {
-    sessionManager: { getEntries: () => entries },
+    sessionManager: { getEntries: () => entries, getSessionFile: () => managerSessionFile },
     ui: {
       notify: (message: string, level: string) => {
         notices.push({ message, level });
@@ -159,6 +159,12 @@ const workerAddress = async (hc: HcSession, worker: WorkerSession): Promise<stri
   return child.address;
 };
 
+const endedLabelIsSet = async (hc: HcSession, worker: WorkerSession): Promise<boolean> => {
+  const terminal = await get(hc.runtime, await workerAddress(hc, worker));
+
+  return terminal.labels?.['tau.ended'] === 'deadline';
+};
+
 const workerState = async (hc: HcSession, worker: WorkerSession): Promise<string> => {
   const terminal = await get(hc.runtime, await workerAddress(hc, worker));
 
@@ -189,6 +195,16 @@ it('warns a worker at its short deadline, then ends it', async () => {
   expect(view.notices).toEqual([]);
   expect(Date.now()).toBeGreaterThanOrEqual(deadline);
   expect(await workerState(hc, worker)).toBe('finished');
+
+  const labelDeadline = Date.now() + waitMilliseconds;
+
+  while (!(await endedLabelIsSet(hc, worker))) {
+    if (Date.now() > labelDeadline) {
+      throw new Error('The worker never received the ended label.');
+    }
+
+    await delay(pollMilliseconds);
+  }
 });
 
 it('ends an overdue worker after a manager reload builds a new watchdog', async () => {

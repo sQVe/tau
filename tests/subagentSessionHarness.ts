@@ -55,6 +55,9 @@ export interface FollowUpWorkerSession {
   workerAddress: string;
 }
 
+// Launches record this parent session, so a fake manager context must return it from getSessionFile.
+export const managerSessionFile = '/sessions/manager.jsonl';
+
 const observationDeadlineMilliseconds = 90_000;
 const observationPollMilliseconds = 100;
 
@@ -208,7 +211,7 @@ export const launchWorkerSession = async (
         ...(options.timeoutSeconds === undefined ? {} : { timeoutSeconds: options.timeoutSeconds }),
       },
       startedAt: { wall: Date.now(), monotonic: performance.now() },
-      parentSession: join(agentDirectory, 'parent.jsonl'),
+      parentSession: managerSessionFile,
     },
     undefined,
     { sessionManager: { getSessionId: () => 'manager-one' } } as unknown as ExtensionContext,
@@ -275,7 +278,7 @@ export const followUpWorkerSession = async (
         ...(options.timeoutSeconds === undefined ? {} : { timeoutSeconds: options.timeoutSeconds }),
       },
       startedAt: { wall: Date.now(), monotonic: performance.now() },
-      parentSession: join(source.agentDirectory, 'parent.jsonl'),
+      parentSession: managerSessionFile,
     },
     undefined,
     { sessionManager: { getSessionId: () => 'manager-one' } } as unknown as ExtensionContext,

@@ -8,10 +8,12 @@ import { isRecord } from '../../schema.js';
 import { createWake } from '../../wake/wake.js';
 import { readAssignment } from './assignment.js';
 import type { Assignment, SavedQuestion } from './assignment.js';
+import { deadlineEndLabel } from './deadlineDecision.js';
 import {
   deadlineKey,
   decideWorkerDelivery,
   endedKey,
+  isCurrentSession,
   questionKey,
   reportKey,
 } from './workerDecision.js';
@@ -27,7 +29,9 @@ type WorkerDeliveryContext = Pick<ExtensionContext, 'sessionManager' | 'ui' | 'i
 
 export interface WorkerDelivery {
   deliver: (context: WorkerDeliveryContext, children: readonly WorkerChildRead[]) => void;
-  showEnded: (context: WorkerDeliveryContext, assignmentId: string) => void;
+  showEnded: (context: WorkerDeliveryContext, assignmentId: string, parentSession: string) => void;
+  markDeadlinePending: (assignmentId: string) => void;
+  clearDeadlinePending: (assignmentId: string) => void;
 }
 
 export type ChildAssignment =
@@ -55,6 +59,9 @@ const reportText = (assignmentId: string, report: Assignment['report']): string 
 
 const endedText = (assignmentId: string, address: string): string =>
   `Worker ${assignmentId} at ${address} ended without a report. Read its screen with hc read ${address}.`;
+
+const deadlineText = (assignmentId: string): string =>
+  `Worker ${assignmentId} was ended at its deadline.`;
 
 const questionText = (assignmentId: string, address: string, question: SavedQuestion): string =>
   `Worker question ${assignmentId} from ${address}:\n\n${question.text}\n\nAnswer with \`hc send ${address} "<answer>"\`. Never use --force. If hc refuses the send, report that to the user and do not force it.`;
@@ -153,7 +160,14 @@ export const readWorkerChildren = async (
   return Promise.all(children.map((child) => readWorkerChild(hc, child)));
 };
 
-const deliveryFact = (child: WorkerChildRead): WorkerReadFact => {
+const isEndedAtDeadline = (labels: HcTerminal['labels']): boolean =>
+  labels?.[deadlineEndLabel.key] === deadlineEndLabel.value;
+
+const deliveryFact = (
+  child: WorkerChildRead,
+  sessionFile: string | undefined,
+  isDeadlinePending: (assignmentId: string) => boolean,
+): WorkerReadFact => {
   const { assignment } = child;
 
   if (assignment.kind === 'none') {
@@ -172,6 +186,10 @@ const deliveryFact = (child: WorkerChildRead): WorkerReadFact => {
     return { kind: 'error', message: assignment.message };
   }
 
+  if (!isCurrentSession(assignment.assignment.parentSession, sessionFile)) {
+    return { kind: 'skip' };
+  }
+
   return {
     kind: 'assignment',
     assignmentId: assignment.assignment.assignmentId,
@@ -179,15 +197,34 @@ const deliveryFact = (child: WorkerChildRead): WorkerReadFact => {
     state: child.terminal.state,
     report: assignment.assignment.report,
     questions: assignment.assignment.questions,
+    endedAtDeadline:
+      isEndedAtDeadline(child.terminal.labels) ||
+      isDeadlinePending(assignment.assignment.assignmentId),
   };
 };
 
 export const createWorkerDelivery = (pi: ExtensionAPI): WorkerDelivery => {
   const queuedKeys = new Set<string>();
+  const deadlinePending = new Set<string>();
   const wake = createWake(pi);
 
+  const showDeadline = (context: WorkerDeliveryContext, assignmentId: string): void => {
+    queuedKeys.add(deadlineKey(assignmentId));
+
+    wake(context, {
+      customType: deadlineMessageType,
+      content: deadlineText(assignmentId),
+      display: true,
+      details: { assignmentId },
+    });
+  };
+
   const deliver = (context: WorkerDeliveryContext, children: readonly WorkerChildRead[]): void => {
-    const facts = children.map((child) => deliveryFact(child));
+    const sessionFile = context.sessionManager.getSessionFile();
+
+    const facts = children.map((child) =>
+      deliveryFact(child, sessionFile, (assignmentId) => deadlinePending.has(assignmentId)),
+    );
 
     const shownKeys = new Set([...restoreShownKeys(context), ...queuedKeys]);
 
@@ -229,9 +266,21 @@ export const createWorkerDelivery = (pi: ExtensionAPI): WorkerDelivery => {
 
       queuedKeys.add(endedKey(assignmentId));
     }
+
+    for (const { assignmentId } of plan.deadlines) {
+      showDeadline(context, assignmentId);
+    }
   };
 
-  const showEnded = (context: WorkerDeliveryContext, assignmentId: string): void => {
+  const showEnded = (
+    context: WorkerDeliveryContext,
+    assignmentId: string,
+    parentSession: string,
+  ): void => {
+    if (!isCurrentSession(parentSession, context.sessionManager.getSessionFile())) {
+      return;
+    }
+
     const key = deadlineKey(assignmentId);
     const ended = endedKey(assignmentId);
     const shown = restoreShownKeys(context);
@@ -244,15 +293,16 @@ export const createWorkerDelivery = (pi: ExtensionAPI): WorkerDelivery => {
       return;
     }
 
-    queuedKeys.add(key);
-
-    wake(context, {
-      customType: deadlineMessageType,
-      content: `Worker ${assignmentId} was ended at its deadline.`,
-      display: true,
-      details: { assignmentId },
-    });
+    showDeadline(context, assignmentId);
   };
 
-  return { deliver, showEnded };
+  const markDeadlinePending = (assignmentId: string): void => {
+    deadlinePending.add(assignmentId);
+  };
+
+  const clearDeadlinePending = (assignmentId: string): void => {
+    deadlinePending.delete(assignmentId);
+  };
+
+  return { deliver, showEnded, markDeadlinePending, clearDeadlinePending };
 };

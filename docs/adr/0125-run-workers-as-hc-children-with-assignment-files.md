@@ -75,6 +75,11 @@ only the worker writes its report and its questions into it.
   change. A failed label keeps the saved report.
 - The manager reads its children's assignment files on a child event, at session start, and after
   compaction. It shows each report once for each assignment ID.
+- The manager shows reports, questions, and ended messages only for assignments whose parent session
+  is its own session file. A new session in the same terminal shows none of these messages for
+  earlier sessions' workers, because the record of shown messages lives in each session. A resumed
+  session keeps its file and its workers' news. Capacity counting and deadline enforcement still
+  cover every child of the terminal.
 
 ### Question
 
@@ -107,7 +112,15 @@ only the worker writes its report and its questions into it.
   such a worker as having unlimited time.
 - A `tau.deadline` label that is missing, malformed, or different from the assignment is shown as an
   error. The assignment deadline still applies.
-- After a kill, the manager shows one "ended at its deadline" message for each assignment ID.
+- After a successful kill, Tau sets the label `tau.ended=deadline` on the finished worker's
+  terminal. A failed kill sets no label and keeps the retry schedule. A failed label after a kill is
+  reported once and does not start a retry.
+- The launching session shows one "ended at its deadline" message for each assignment ID, even when
+  another session in the same terminal performed the kill. The label keeps that fact until the
+  launching session reads the worker. A finished worker with no report and this label gets the
+  deadline message, not the generic "ended without a report" message. When the label write failed,
+  the launching session has no label to read and shows the generic "ended without a report" message
+  when another session performed the kill.
 
 ### Tools
 
@@ -155,6 +168,11 @@ new fact.
 
 Put the full report in the `hc` event payload. Rejected because a report can hold up to 100 evidence
 items, and the payload would repeat text that the assignment file already holds.
+
+### Deliver worker news to every session in the terminal
+
+Select workers by parent terminal alone, as capacity does. Rejected because a new session has no
+shown messages, so it would show every earlier worker's report and question again.
 
 ### One shared record folder
 

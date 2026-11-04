@@ -19,12 +19,14 @@ const manager = 't-manager';
 const now = 1_000_000;
 const path = '/agent/assignment.json';
 const assignmentId = '11111111-1111-1111-1111-111111111111';
+const parentSession = '/sessions/manager.jsonl';
 const reserve = deadlineWarningReserve;
 
 const saved = (deadline: number, reported = false): DeadlineAssignment => ({
   kind: 'saved',
   path,
   assignmentId,
+  parentSession,
   deadline,
   reported,
 });
@@ -33,6 +35,7 @@ const timer = (warnAt: number, killAt: number): DeadlineTimer => ({
   address: 't-child',
   assignmentPath: path,
   assignmentId,
+  parentSession,
   warnAt,
   killAt,
 });
@@ -40,7 +43,7 @@ const timer = (warnAt: number, killAt: number): DeadlineTimer => ({
 const kill = (withAssignment = true): DeadlineKill => ({
   address: 't-child',
   assignmentPath: path,
-  ...(withAssignment ? { assignmentId } : {}),
+  ...(withAssignment ? { assignmentId, parentSession } : {}),
 });
 
 const labelError = (label: string | undefined, deadline: number): string =>

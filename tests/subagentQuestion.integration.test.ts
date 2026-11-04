@@ -15,7 +15,11 @@ import type { WorkerScan } from '../src/extensions/subagents/workerScan.js';
 import { get, ls, send } from '../src/hc/hc.js';
 import { startHcSession } from './hcSessionHarness.js';
 import type { HcSession } from './hcSessionHarness.js';
-import { launchWorkerSession, waitForReport } from './subagentSessionHarness.js';
+import {
+  launchWorkerSession,
+  managerSessionFile,
+  waitForReport,
+} from './subagentSessionHarness.js';
 
 interface SentMessage {
   customType?: unknown;
@@ -149,7 +153,7 @@ const noDeadline: DeadlineWatchdog = { apply: () => Promise.resolve(), clear: ()
 
 const deliveryContext = (entries: SessionEntry[]): DeliveryContext =>
   ({
-    sessionManager: { getEntries: () => entries },
+    sessionManager: { getEntries: () => entries, getSessionFile: () => managerSessionFile },
     ui: { notify: () => undefined },
     isIdle: () => true,
     signal: undefined,

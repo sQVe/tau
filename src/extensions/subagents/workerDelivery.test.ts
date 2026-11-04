@@ -29,6 +29,8 @@ interface SessionEntryLike {
 }
 
 const manager = 't-manager';
+const managerSession = '/sessions/manager.jsonl';
+const otherSession = '/sessions/previous.jsonl';
 
 beforeEach(() => {
   vi.stubEnv('HC_TERMINAL_ID', manager);
@@ -134,7 +136,7 @@ const createManager = (options: { idle?: boolean; running?: boolean } = {}) => {
   } as unknown as ExtensionAPI;
 
   const context = {
-    sessionManager: { getEntries: () => entries },
+    sessionManager: { getEntries: () => entries, getSessionFile: () => managerSession },
     ui: {
       notify: (message: string, kind: string | undefined) => notifications.push([message, kind]),
     },
@@ -179,7 +181,7 @@ const savedAssignment = (
     routing: null,
     packageSnapshot: null,
     session: { id: sessionId, file: join(assignmentDirectory(assignmentId), `${sessionId}.jsonl`) },
-    parentSession: join(directory, 'parent.jsonl'),
+    parentSession: managerSession,
     cwd: directory,
     parentTerminal: manager,
     deadline: Date.now() + 30_000,
@@ -323,7 +325,9 @@ it('ignores an assignment whose report is not written yet', async () => {
   expect(managerState.messages).toEqual([]);
 });
 
-const finishedWorker = async (): Promise<{
+const finishedWorker = async (
+  extraLabels: Record<string, string> = {},
+): Promise<{
   managerState: ReturnType<typeof createManager>;
   hc: HcRuntime;
   assignmentId: string;
@@ -337,11 +341,70 @@ const finishedWorker = async (): Promise<{
   const managerState = createManager();
 
   const hc = createHc([
-    { address: 't-child', state: 'finished', parent: manager, labels: { 'tau.assignment': path } },
+    {
+      address: 't-child',
+      state: 'finished',
+      parent: manager,
+      labels: { 'tau.assignment': path, ...extraLabels },
+    },
   ]);
 
   return { managerState, hc, assignmentId: saved.assignmentId };
 };
+
+it('does not show a report from a worker of another manager session', async () => {
+  const directory = stubAgentDirectory();
+  const saved = { ...savedAssignment(directory, savedReport()), parentSession: otherSession };
+
+  await writeAssignment(saved);
+
+  const path = join(assignmentDirectory(saved.assignmentId), 'assignment.json');
+  const managerState = createManager();
+  const hc = createHc([liveTerminal('t-child', manager, { 'tau.assignment': path })]);
+
+  await deliverPending(createWorkerDelivery(managerState.pi), hc, managerState.context);
+
+  expect(managerState.messages).toEqual([]);
+});
+
+it('does not show an ended message for a worker of another manager session', async () => {
+  const directory = stubAgentDirectory();
+  const saved = { ...savedAssignment(directory, null), parentSession: otherSession };
+
+  await writeAssignment(saved);
+
+  const path = join(assignmentDirectory(saved.assignmentId), 'assignment.json');
+  const managerState = createManager();
+
+  const hc = createHc([
+    { address: 't-child', state: 'finished', parent: manager, labels: { 'tau.assignment': path } },
+  ]);
+
+  await deliverPending(createWorkerDelivery(managerState.pi), hc, managerState.context);
+
+  expect(managerState.messages).toEqual([]);
+});
+
+it('does not show a report when the manager session has no session file', async () => {
+  const directory = stubAgentDirectory();
+  const saved = savedAssignment(directory, savedReport());
+
+  await writeAssignment(saved);
+
+  const path = join(assignmentDirectory(saved.assignmentId), 'assignment.json');
+  const managerState = createManager();
+
+  const context = {
+    ...managerState.context,
+    sessionManager: { ...managerState.context.sessionManager, getSessionFile: () => undefined },
+  } as unknown as DeliveryContext;
+
+  const hc = createHc([liveTerminal('t-child', manager, { 'tau.assignment': path })]);
+
+  await deliverPending(createWorkerDelivery(managerState.pi), hc, context);
+
+  expect(managerState.messages).toEqual([]);
+});
 
 it('shows one ended message for a finished worker without a report', async () => {
   const { managerState, hc, assignmentId } = await finishedWorker();
@@ -418,10 +481,48 @@ it('does not show the deadline message when the ended message was already shown'
 
   expect(managerState.messages).toHaveLength(1);
 
-  delivery.showEnded(managerState.context, assignmentId);
+  delivery.showEnded(managerState.context, assignmentId, managerSession);
 
   expect(managerState.messages).toHaveLength(1);
   expect(managerState.messages[0]?.customType).toBe('tau-worker-ended');
+});
+
+it('shows the deadline message, not the ended message, for a worker that ended at its deadline', async () => {
+  const { managerState, hc, assignmentId } = await finishedWorker({ 'tau.ended': 'deadline' });
+
+  await deliverPending(createWorkerDelivery(managerState.pi), hc, managerState.context);
+
+  expect(managerState.messages).toHaveLength(1);
+
+  expect(managerState.messages[0]).toMatchObject({
+    customType: 'tau-worker-deadline',
+    details: { assignmentId },
+  });
+});
+
+it('does not show the deadline message twice while it is still queued', async () => {
+  const { managerState, hc } = await finishedWorker({ 'tau.ended': 'deadline' });
+
+  managerState.setStreaming(true);
+
+  const delivery = createWorkerDelivery(managerState.pi);
+
+  await deliverPending(delivery, hc, managerState.context);
+  await deliverPending(delivery, hc, managerState.context);
+
+  expect(managerState.messages).toHaveLength(1);
+});
+
+it('shows the deadline message once when the launching session already showed it', async () => {
+  const { managerState, hc, assignmentId } = await finishedWorker({ 'tau.ended': 'deadline' });
+
+  const delivery = createWorkerDelivery(managerState.pi);
+
+  delivery.showEnded(managerState.context, assignmentId, managerSession);
+  await deliverPending(delivery, hc, managerState.context);
+
+  expect(managerState.messages).toHaveLength(1);
+  expect(managerState.messages[0]?.customType).toBe('tau-worker-deadline');
 });
 
 it('skips a terminal that is not the manager child', async () => {

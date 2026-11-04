@@ -36,6 +36,8 @@ const createSteps = () => {
       delivered.push([...children]);
     },
     showEnded: () => undefined,
+    markDeadlinePending: () => undefined,
+    clearDeadlinePending: () => undefined,
   };
 
   const deadline: DeadlineWatchdog = {

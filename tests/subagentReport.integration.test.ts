@@ -15,7 +15,11 @@ import { subscribeEvents } from '../src/hc/events.js';
 import { get } from '../src/hc/hc.js';
 import type { HcSession } from './hcSessionHarness.js';
 import { startHcSession } from './hcSessionHarness.js';
-import { launchWorkerSession, waitForReport } from './subagentSessionHarness.js';
+import {
+  launchWorkerSession,
+  managerSessionFile,
+  waitForReport,
+} from './subagentSessionHarness.js';
 
 interface SentReportMessage {
   customType?: unknown;
@@ -55,7 +59,7 @@ const recordingManager = () => {
   } as unknown as ExtensionAPI;
 
   const context = {
-    sessionManager: { getEntries: () => entries },
+    sessionManager: { getEntries: () => entries, getSessionFile: () => managerSessionFile },
     ui: { notify: () => undefined },
     isIdle: () => true,
     signal: undefined,

@@ -5,6 +5,7 @@ import {
   decideWorkerDelivery,
   deadlineKey,
   endedKey,
+  isCurrentSession,
   questionKey,
   reportKey,
 } from './workerDecision.js';
@@ -24,7 +25,12 @@ const question = (questionId: string, text: string): SavedQuestion => ({
 
 const assignment = (
   assignmentId: string,
-  saved: { report?: SavedReport | null; questions?: SavedQuestion[]; state?: string },
+  saved: {
+    report?: SavedReport | null;
+    questions?: SavedQuestion[];
+    state?: string;
+    endedAtDeadline?: boolean;
+  },
 ): WorkerReadFact => ({
   kind: 'assignment',
   assignmentId,
@@ -32,6 +38,7 @@ const assignment = (
   state: saved.state ?? 'live',
   report: saved.report ?? null,
   questions: saved.questions ?? [],
+  endedAtDeadline: saved.endedAtDeadline ?? false,
 });
 
 const table: {
@@ -49,6 +56,7 @@ const table: {
       reports: [{ assignmentId: 'assignment-a', report: report('first') }],
       questions: [],
       ended: [],
+      deadlines: [],
       errors: [],
     },
   },
@@ -58,7 +66,7 @@ const table: {
       shownKeys: [reportKey('assignment-a')],
       facts: [assignment('assignment-a', { report: report('first') })],
     },
-    expected: { reports: [], questions: [], ended: [], errors: [] },
+    expected: { reports: [], questions: [], ended: [], deadlines: [], errors: [] },
   },
   {
     name: 'shows a second report whose ID is not shown',
@@ -70,6 +78,7 @@ const table: {
       reports: [{ assignmentId: 'assignment-b', report: report('second') }],
       questions: [],
       ended: [],
+      deadlines: [],
       errors: [],
     },
   },
@@ -86,6 +95,7 @@ const table: {
       reports: [{ assignmentId: 'assignment-a', report: report('first') }],
       questions: [],
       ended: [],
+      deadlines: [],
       errors: [],
     },
   },
@@ -108,6 +118,7 @@ const table: {
         },
       ],
       ended: [],
+      deadlines: [],
       errors: [],
     },
   },
@@ -127,6 +138,7 @@ const table: {
         },
       ],
       ended: [],
+      deadlines: [],
       errors: [],
     },
   },
@@ -136,7 +148,7 @@ const table: {
       shownKeys: [questionKey('assignment-a', 'q-1')],
       facts: [assignment('assignment-a', { questions: [question('q-1', 'Which branch?')] })],
     },
-    expected: { reports: [], questions: [], ended: [], errors: [] },
+    expected: { reports: [], questions: [], ended: [], deadlines: [], errors: [] },
   },
   {
     name: 'shows a second question of the same assignment',
@@ -158,6 +170,7 @@ const table: {
         },
       ],
       ended: [],
+      deadlines: [],
       errors: [],
     },
   },
@@ -177,6 +190,7 @@ const table: {
         },
       ],
       ended: [],
+      deadlines: [],
       errors: [],
     },
   },
@@ -195,6 +209,7 @@ const table: {
       reports: [{ assignmentId: 'assignment-a', report: report('first') }],
       questions: [],
       ended: [],
+      deadlines: [],
       errors: [],
     },
   },
@@ -204,7 +219,7 @@ const table: {
       shownKeys: [],
       facts: [assignment('assignment-a', {})],
     },
-    expected: { reports: [], questions: [], ended: [], errors: [] },
+    expected: { reports: [], questions: [], ended: [], deadlines: [], errors: [] },
   },
   {
     name: 'shows an ended message for a finished assignment without a report',
@@ -216,6 +231,7 @@ const table: {
       reports: [],
       questions: [],
       ended: [{ assignmentId: 'assignment-a', address: 't-child' }],
+      deadlines: [],
       errors: [],
     },
   },
@@ -232,6 +248,7 @@ const table: {
       reports: [],
       questions: [],
       ended: [{ assignmentId: 'assignment-a', address: 't-child' }],
+      deadlines: [],
       errors: [],
     },
   },
@@ -241,7 +258,7 @@ const table: {
       shownKeys: [],
       facts: [assignment('assignment-a', { state: 'live' })],
     },
-    expected: { reports: [], questions: [], ended: [], errors: [] },
+    expected: { reports: [], questions: [], ended: [], deadlines: [], errors: [] },
   },
   {
     name: 'does not show an ended message when the assignment reported',
@@ -253,6 +270,7 @@ const table: {
       reports: [{ assignmentId: 'assignment-a', report: report('first') }],
       questions: [],
       ended: [],
+      deadlines: [],
       errors: [],
     },
   },
@@ -262,7 +280,7 @@ const table: {
       shownKeys: [reportKey('assignment-a')],
       facts: [assignment('assignment-a', { state: 'finished', report: report('first') })],
     },
-    expected: { reports: [], questions: [], ended: [], errors: [] },
+    expected: { reports: [], questions: [], ended: [], deadlines: [], errors: [] },
   },
   {
     name: 'does not show an ended message when the deadline message is shown',
@@ -270,7 +288,7 @@ const table: {
       shownKeys: [deadlineKey('assignment-a')],
       facts: [assignment('assignment-a', { state: 'finished' })],
     },
-    expected: { reports: [], questions: [], ended: [], errors: [] },
+    expected: { reports: [], questions: [], ended: [], deadlines: [], errors: [] },
   },
   {
     name: 'does not show an ended message when the ended key is shown',
@@ -278,7 +296,74 @@ const table: {
       shownKeys: [endedKey('assignment-a')],
       facts: [assignment('assignment-a', { state: 'finished' })],
     },
-    expected: { reports: [], questions: [], ended: [], errors: [] },
+    expected: { reports: [], questions: [], ended: [], deadlines: [], errors: [] },
+  },
+  {
+    name: 'shows the deadline message for a finished worker that ended at its deadline',
+    facts: {
+      shownKeys: [],
+      facts: [assignment('assignment-a', { state: 'finished', endedAtDeadline: true })],
+    },
+    expected: {
+      reports: [],
+      questions: [],
+      ended: [],
+      deadlines: [{ assignmentId: 'assignment-a' }],
+      errors: [],
+    },
+  },
+  {
+    name: 'shows the deadline message once when two children share an assignment ID',
+    facts: {
+      shownKeys: [],
+      facts: [
+        assignment('assignment-a', { state: 'finished', endedAtDeadline: true }),
+        assignment('assignment-a', { state: 'finished', endedAtDeadline: true }),
+      ],
+    },
+    expected: {
+      reports: [],
+      questions: [],
+      ended: [],
+      deadlines: [{ assignmentId: 'assignment-a' }],
+      errors: [],
+    },
+  },
+  {
+    name: 'does not show a deadline message whose key is shown',
+    facts: {
+      shownKeys: [deadlineKey('assignment-a')],
+      facts: [assignment('assignment-a', { state: 'finished', endedAtDeadline: true })],
+    },
+    expected: { reports: [], questions: [], ended: [], deadlines: [], errors: [] },
+  },
+  {
+    name: 'does not show a deadline message for a live worker with the deadline label',
+    facts: {
+      shownKeys: [],
+      facts: [assignment('assignment-a', { state: 'live', endedAtDeadline: true })],
+    },
+    expected: { reports: [], questions: [], ended: [], deadlines: [], errors: [] },
+  },
+  {
+    name: 'shows the report and no deadline message when the worker reported before its deadline',
+    facts: {
+      shownKeys: [],
+      facts: [
+        assignment('assignment-a', {
+          state: 'finished',
+          report: report('first'),
+          endedAtDeadline: true,
+        }),
+      ],
+    },
+    expected: {
+      reports: [{ assignmentId: 'assignment-a', report: report('first') }],
+      questions: [],
+      ended: [],
+      deadlines: [],
+      errors: [],
+    },
   },
   {
     name: 'skips a child without an assignment label',
@@ -286,7 +371,7 @@ const table: {
       shownKeys: [],
       facts: [{ kind: 'skip' }],
     },
-    expected: { reports: [], questions: [], ended: [], errors: [] },
+    expected: { reports: [], questions: [], ended: [], deadlines: [], errors: [] },
   },
   {
     name: 'reports a missing assignment file as an error',
@@ -298,6 +383,7 @@ const table: {
       reports: [],
       questions: [],
       ended: [],
+      deadlines: [],
       errors: ['Missing assignment file: /agent/assignment.json.'],
     },
   },
@@ -311,6 +397,7 @@ const table: {
       reports: [],
       questions: [],
       ended: [],
+      deadlines: [],
       errors: ['Malformed assignment /agent/assignment.json: not JSON.'],
     },
   },
@@ -318,4 +405,40 @@ const table: {
 
 it.each(table.map((row) => [row.name, row] as const))('%s', (_name, { facts, expected }) => {
   expect(decideWorkerDelivery(facts)).toStrictEqual(expected);
+});
+
+const sessionTable: {
+  name: string;
+  parentSession: string;
+  sessionFile: string | undefined;
+  expected: boolean;
+}[] = [
+  {
+    name: 'accepts a matching session file',
+    parentSession: '/sessions/manager.jsonl',
+    sessionFile: '/sessions/manager.jsonl',
+    expected: true,
+  },
+  {
+    name: 'rejects a different session file',
+    parentSession: '/sessions/previous.jsonl',
+    sessionFile: '/sessions/manager.jsonl',
+    expected: false,
+  },
+  {
+    name: 'rejects a missing session file',
+    parentSession: '/sessions/manager.jsonl',
+    sessionFile: undefined,
+    expected: false,
+  },
+  {
+    name: 'rejects an empty session file',
+    parentSession: '/sessions/manager.jsonl',
+    sessionFile: '',
+    expected: false,
+  },
+];
+
+it.each(sessionTable.map((row) => [row.name, row] as const))('%s', (_name, row) => {
+  expect(isCurrentSession(row.parentSession, row.sessionFile)).toBe(row.expected);
 });

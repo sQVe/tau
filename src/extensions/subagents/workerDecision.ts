@@ -10,6 +10,7 @@ export type WorkerReadFact =
       state: string;
       report: SavedReport | null;
       questions: SavedQuestion[];
+      endedAtDeadline: boolean;
     };
 
 export interface WorkerDecisionFacts {
@@ -21,6 +22,7 @@ export interface WorkerDeliveryPlan {
   reports: { assignmentId: string; report: SavedReport }[];
   questions: { assignmentId: string; address: string; question: SavedQuestion }[];
   ended: { assignmentId: string; address: string }[];
+  deadlines: { assignmentId: string }[];
   errors: string[];
 }
 
@@ -32,6 +34,9 @@ export const questionKey = (assignmentId: string, questionId: string): string =>
 export const deadlineKey = (assignmentId: string): string => `deadline:${assignmentId}`;
 
 export const endedKey = (assignmentId: string): string => `ended:${assignmentId}`;
+
+export const isCurrentSession = (parentSession: string, sessionFile: string | undefined): boolean =>
+  parentSession === sessionFile;
 
 const takeReport = (
   fact: Extract<WorkerReadFact, { kind: 'assignment' }>,
@@ -70,11 +75,14 @@ const takeQuestions = (
   return taken;
 };
 
+const finishedWithoutReport = (fact: Extract<WorkerReadFact, { kind: 'assignment' }>): boolean =>
+  fact.state === 'finished' && fact.report === null;
+
 const takeEnded = (
   fact: Extract<WorkerReadFact, { kind: 'assignment' }>,
   shown: Set<string>,
 ): boolean => {
-  if (fact.state !== 'finished' || fact.report !== null) {
+  if (!finishedWithoutReport(fact) || fact.endedAtDeadline) {
     return false;
   }
 
@@ -89,9 +97,35 @@ const takeEnded = (
   return true;
 };
 
+const takeDeadline = (
+  fact: Extract<WorkerReadFact, { kind: 'assignment' }>,
+  shown: Set<string>,
+): boolean => {
+  if (!finishedWithoutReport(fact) || !fact.endedAtDeadline) {
+    return false;
+  }
+
+  const key = deadlineKey(fact.assignmentId);
+
+  if (shown.has(key)) {
+    return false;
+  }
+
+  shown.add(key);
+
+  return true;
+};
+
 export const decideWorkerDelivery = (facts: WorkerDecisionFacts): WorkerDeliveryPlan => {
   const shown = new Set(facts.shownKeys);
-  const plan: WorkerDeliveryPlan = { reports: [], questions: [], ended: [], errors: [] };
+
+  const plan: WorkerDeliveryPlan = {
+    reports: [],
+    questions: [],
+    ended: [],
+    deadlines: [],
+    errors: [],
+  };
 
   for (const fact of facts.facts) {
     if (fact.kind === 'skip') {
@@ -118,6 +152,10 @@ export const decideWorkerDelivery = (facts: WorkerDecisionFacts): WorkerDelivery
 
     if (takeEnded(fact, shown)) {
       plan.ended.push({ assignmentId: fact.assignmentId, address: fact.address });
+    }
+
+    if (takeDeadline(fact, shown)) {
+      plan.deadlines.push({ assignmentId: fact.assignmentId });
     }
   }
 
