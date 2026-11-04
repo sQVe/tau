@@ -102,7 +102,7 @@ This list is the one approval rule; other skills link here.
    4. Request changes: act on the comments, edits, and typed answer. With none, ask what to change,
       then revise, `open`, and ask again.
    5. Closed dialog: write nothing. Report each comment and edit with its status, and stop.
-   - Stop: before a new ticket, or a title or body edit except on an agent ticket, ask with
+   - Stop: before a new ticket or a title or body edit, except on an agent ticket, ask with
      `ask_user_question`: Write as drafted (Accept), or Request changes. Comments, relations, and
      status changes get no stop. An approval preview, or a calling skill's own dialog, uses the same
      rule, with its approve options as Accept. A review is never approval.
@@ -110,8 +110,8 @@ This list is the one approval rule; other skills link here.
      shows them. Show each ticket's type, title, team, project, labels, and parent, and each
      relation or status change.
 
-6. Write in the previewed order. Write each `'` in a single-quoted value as `'\''`. After each
-   create, note its identifier; if none shows, search before a retry.
+6. Write in the previewed order, with each `'` in a single-quoted value as `'\''`. Note each new
+   identifier; if none shows, stop and search the parent's children or the team before any retry.
    - Containers and slices: use the [slice skill](../slice/SKILL.md), which uses the `slice` tool.
    - Bug or human ticket:
      `linear issue create --team <team> --project '<project>' --title '<title>' --description-file <file> --no-interactive`.
