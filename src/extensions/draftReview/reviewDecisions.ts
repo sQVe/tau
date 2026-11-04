@@ -31,6 +31,32 @@ export type DestinationDecision = 'writable' | 'symlink' | 'not-file' | 'hard-li
 
 export type EditDecision = 'unchanged' | 'apply' | 'conflict';
 
+export type ViewerReplyState =
+  | { kind: 'open' }
+  | { kind: 'submitted' }
+  | { kind: 'error'; reason: string };
+
+export interface ViewerReplyFacts {
+  state: ViewerReplyState;
+  claimedReviewId: string;
+  reviewId: string;
+  files: readonly string[];
+  stagedPaths: readonly string[];
+}
+
+export type ViewerReplyDecision =
+  | { kind: 'accepted' }
+  | { kind: 'viewer-error'; reason: string }
+  | { kind: 'foreign-review'; claimedReviewId: string }
+  | { kind: 'unknown-file'; file: string };
+
+export interface ViewerSourceFacts {
+  savedTuicrComments: number;
+  viewerReplyExists: boolean;
+}
+
+export type ViewerSourceDecision = 'accepted' | 'refuse-switch';
+
 export interface WaitFacts {
   ended: boolean;
   reason: string;
@@ -99,6 +125,24 @@ export const selectReviewedComments = (
 
     return file === undefined ? [] : [{ ...comment, path: file.path }];
   });
+
+export const decideViewerReply = (facts: ViewerReplyFacts): ViewerReplyDecision => {
+  if (facts.state.kind === 'error') {
+    return { kind: 'viewer-error', reason: facts.state.reason };
+  }
+
+  if (facts.claimedReviewId !== facts.reviewId) {
+    return { kind: 'foreign-review', claimedReviewId: facts.claimedReviewId };
+  }
+
+  const staged = new Set(facts.stagedPaths);
+  const stranger = facts.files.find((file) => !staged.has(file));
+
+  return stranger === undefined ? { kind: 'accepted' } : { kind: 'unknown-file', file: stranger };
+};
+
+export const decideViewerSource = (facts: ViewerSourceFacts): ViewerSourceDecision =>
+  facts.savedTuicrComments > 0 && facts.viewerReplyExists ? 'refuse-switch' : 'accepted';
 
 // A changed file is written back only while the real file still matches what the review began with.
 // A real file that already holds the staged text is a retry of an earlier write, so it applies.

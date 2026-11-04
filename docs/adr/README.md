@@ -38,6 +38,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0109: Keep action behavior out of extension roots](./0109-keep-action-behavior-out-of-extension-roots.md)
 - [0120: Capability modules with an enforced import table](./0120-capability-modules-with-an-enforced-import-table.md)
 - [0123: Patch Pi loaders to show no spinner](./0123-patch-pi-loaders-to-show-no-spinner.md)
+- [0127: Version the draft review viewer protocol](./0127-version-the-draft-review-viewer-protocol.md)
 
 ## Documentation and writing
 

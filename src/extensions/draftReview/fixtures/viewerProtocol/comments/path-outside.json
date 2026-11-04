@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "reviewId": "review-AbC123",
+  "state": "open",
+  "comments": [
+    {
+      "file": "01-notes/1-title.md",
+      "startLine": 1,
+      "endLine": 1,
+      "type": "issue",
+      "content": "On the title."
+    },
+    {
+      "file": "01-notes/3-other.md",
+      "startLine": 1,
+      "endLine": 1,
+      "type": "issue",
+      "content": "Off the record."
+    }
+  ]
+}

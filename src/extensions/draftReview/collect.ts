@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { errorMessage } from '../../errors.js';
 import { readOptionalText } from '../../record.js';
@@ -10,12 +10,14 @@ import {
   writeDestination,
 } from './destination.js';
 import { diffFiles } from './diff.js';
-import { decideEdit, selectReviewedComments } from './reviewDecisions.js';
+import { decideEdit, decideViewerSource, selectReviewedComments } from './reviewDecisions.js';
 import type { FileComment } from './reviewDecisions.js';
 import { removeReview } from './stage.js';
 import type { Review, ReviewFile } from './stage.js';
 import { deleteSessionComment, listSessionPaths, readSessionComments } from './tuicrSession.js';
 import type { RunTuicr } from './tuicrSession.js';
+import { readViewerComments, ViewerProtocolRefusalError } from './viewerProtocol.js';
+import type { ViewerComment } from './viewerProtocol.js';
 
 interface ReviewedComment {
   path: string;
@@ -41,6 +43,11 @@ export interface Collected {
 interface SessionCommentRef {
   sessionPath: string;
   comment: FileComment;
+}
+
+interface PreparedCollect {
+  record: CollectedRecord;
+  viewerComments: ViewerComment[] | undefined;
 }
 
 // tuicr names each file by its staged path; collect names it by its `.tau` path.
@@ -82,7 +89,9 @@ const readRequired = async (review: Review, path: string): Promise<string> => {
 };
 
 const isRefusal = (error: unknown) =>
-  error instanceof CollectRefusalError || error instanceof DestinationRefusalError;
+  error instanceof CollectRefusalError ||
+  error instanceof DestinationRefusalError ||
+  error instanceof ViewerProtocolRefusalError;
 
 // Says what collect already changed, from the record of an earlier or the current try.
 const progressOf = (record: CollectedRecord | undefined): string => {
@@ -120,16 +129,28 @@ const planEdit = async (review: Review, { path, stagedPath }: ReviewFile, origin
   return [{ path, diff, staged, status: 'pending' as const }];
 };
 
-const planCollect = async (
+const planEdits = async (review: Review, originals: ReadonlyMap<string, string>) => {
+  const planned = await Promise.all(
+    review.files.map((file) => planEdit(review, file, originals.get(file.path) ?? '')),
+  );
+
+  return planned.flat();
+};
+
+const planViewerRecord = async (
+  review: Review,
+  originals: ReadonlyMap<string, string>,
+): Promise<CollectedRecord> => ({
+  comments: [],
+  edits: await planEdits(review, originals),
+});
+
+const planTuicrRecord = async (
   run: RunTuicr,
   review: Review,
   originals: ReadonlyMap<string, string>,
 ): Promise<CollectedRecord> => {
   const reviewed = await readReviewedComments(run, review);
-
-  const planned = await Promise.all(
-    review.files.map((file) => planEdit(review, file, originals.get(file.path) ?? '')),
-  );
 
   const comments = reviewed.map(({ sessionPath, comment }) => ({
     sessionPath,
@@ -142,7 +163,7 @@ const planCollect = async (
     content: comment.content,
   }));
 
-  return { comments, edits: planned.flat() };
+  return { comments, edits: await planEdits(review, originals) };
 };
 
 // Deletes the comments not yet deleted, saving after each. A failure names the comments already
@@ -239,48 +260,71 @@ const checkBeforeChanges = async (
   run: RunTuicr,
   review: Review,
   saved: CollectedRecord | undefined,
-): Promise<CollectedRecord> => {
+): Promise<PreparedCollect> => {
   const originals = await readOriginals(review);
 
   if (saved !== undefined) {
     requireReviewedPaths(review, saved);
   }
 
-  const record = saved ?? (await planCollect(run, review, originals));
+  const viewerComments = await readViewerComments(
+    review.recordDirectory,
+    basename(review.recordDirectory),
+    review.files,
+  );
+
+  const source = decideViewerSource({
+    savedTuicrComments: saved?.comments.length ?? 0,
+    viewerReplyExists: viewerComments !== undefined,
+  });
+
+  if (source === 'refuse-switch') {
+    throw new CollectRefusalError(
+      `draft_review refused the viewer reply in ${review.recordDirectory}: the review began collecting tuicr comments, so a retry cannot switch to a viewer reply. Finish the tuicr collect or open a new review.`,
+    );
+  }
+
+  const record =
+    saved ??
+    (viewerComments === undefined
+      ? await planTuicrRecord(run, review, originals)
+      : await planViewerRecord(review, originals));
 
   await requireWritableEdits(review, record);
 
-  return record;
+  return { record, viewerComments };
 };
 
 // The one gate before collect changes anything. It checks the originals, the saved plan paths, and
 // every pending destination, so a refusal leaves the comments, the files, and the record as they
 // were.
-const prepareCollect = async (run: RunTuicr, review: Review): Promise<CollectedRecord> => {
+const prepareCollect = async (run: RunTuicr, review: Review): Promise<PreparedCollect> => {
   const saved = await loadCollectedRecord(review.recordDirectory);
-  let record: CollectedRecord;
+  let prepared: PreparedCollect;
 
   try {
-    record = await checkBeforeChanges(run, review, saved);
+    prepared = await checkBeforeChanges(run, review, saved);
   } catch (error) {
     throw refusalWithProgress(error, saved);
   }
 
   if (saved === undefined) {
-    await saveCollectedRecord(review.recordDirectory, record);
+    await saveCollectedRecord(review.recordDirectory, prepared.record);
   }
 
-  return record;
+  return prepared;
 };
 
 export const collectReview = async (run: RunTuicr, review: Review): Promise<Collected> => {
-  const record = await prepareCollect(run, review);
+  const { record, viewerComments } = await prepareCollect(run, review);
 
   await deleteComments(run, review, record);
   await writeBack(review, record);
   await removeReview(review);
 
-  const comments = record.comments.map((comment) => ({
+  const commentSource = viewerComments ?? record.comments;
+
+  const comments = commentSource.map((comment) => ({
     path: join(review.tauDirectory, comment.path),
     startLine: comment.startLine,
     endLine: comment.endLine,
