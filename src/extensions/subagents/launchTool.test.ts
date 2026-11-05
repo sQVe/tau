@@ -447,7 +447,7 @@ it('scans the children after a launch whose reconciliation failed', async ({ onT
   expect(resultText(result)).toContain('unclear');
 
   await vi.waitFor(() => {
-    expect(vi.getTimerCount()).toBe(2);
+    expect(vi.getTimerCount()).toBe(1);
   });
 });
 

@@ -2,9 +2,9 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { notifyOnce } from '../../config/config.js';
 import { errorMessage } from '../../errors.js';
-import { currentTerminalAddress, get, kill, label, send } from '../../hc/hc.js';
+import { currentTerminalAddress, get, kill, label } from '../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
-import { readAssignment } from './assignment.js';
+import { hasSavedReport } from './assignment.js';
 import {
   decideDeadline,
   deadlineEndLabel,
@@ -34,12 +34,9 @@ export interface DeadlineWatchdog {
 }
 
 interface ArmedTimers {
-  warn: ReturnType<typeof setTimeout>;
   killTimer: ReturnType<typeof setTimeout>;
   killAt: number;
 }
-
-const millisecondsPerSecond = 1000;
 
 const deadlineAssignment = (assignment: ChildAssignment): DeadlineAssignment => {
   if (assignment.kind === 'none') {
@@ -68,16 +65,6 @@ const deadlineAssignment = (assignment: ChildAssignment): DeadlineAssignment => 
   };
 };
 
-const savedReport = async (path: string): Promise<boolean> => {
-  try {
-    const assignment = await readAssignment(path);
-
-    return assignment?.report != null;
-  } catch {
-    return false;
-  }
-};
-
 const childFact = (child: WorkerChildRead): DeadlineChildFact => ({
   address: child.terminal.address,
   parent: child.terminal.parent ?? undefined,
@@ -85,12 +72,6 @@ const childFact = (child: WorkerChildRead): DeadlineChildFact => ({
   labels: child.terminal.labels,
   assignment: deadlineAssignment(child.assignment),
 });
-
-const warningText = (timer: DeadlineTimer): string => {
-  const seconds = Math.max(0, Math.ceil((timer.killAt - Date.now()) / millisecondsPerSecond));
-
-  return `Deadline in ${seconds} s: call subagent_report now with what you have; blockerKind time is accepted.`;
-};
 
 const isLiveTarget = (
   terminal: HcTerminal,
@@ -117,7 +98,6 @@ export const createDeadlineWatchdog = (
       return;
     }
 
-    clearTimeout(entry.warn);
     clearTimeout(entry.killTimer);
     armed.delete(address);
   };
@@ -209,28 +189,6 @@ export const createDeadlineWatchdog = (
     }
   };
 
-  const warn = async (context: DeadlineWatchdogContext, timer: DeadlineTimer): Promise<void> => {
-    if (isStopped()) {
-      return;
-    }
-
-    try {
-      await send(hc, timer.address, { text: warningText(timer) });
-    } catch (error) {
-      if (isStopped()) {
-        return;
-      }
-
-      notifyOnce(
-        context.ui,
-        'worker-deadline-warning',
-        timer.address,
-        `Warning ${timer.address} failed: ${errorMessage(error)}`,
-        'error',
-      );
-    }
-  };
-
   const setKillPending = (target: DeadlineTimer | DeadlineKill, pending: boolean): void => {
     if (target.assignmentId === undefined) {
       return;
@@ -294,7 +252,7 @@ export const createDeadlineWatchdog = (
       return;
     }
 
-    if (await savedReport(target.assignmentPath)) {
+    if (await hasSavedReport(target.assignmentPath)) {
       return;
     }
 
@@ -335,25 +293,6 @@ export const createDeadlineWatchdog = (
       return;
     }
 
-    const warnTimer = setTimeout(
-      () => {
-        warn(context, timer).catch((error: unknown) => {
-          if (isStopped()) {
-            return;
-          }
-
-          notifyOnce(
-            context.ui,
-            'worker-deadline',
-            `warn:${timer.address}`,
-            `Deadline warning for ${timer.address} failed: ${errorMessage(error)}`,
-            'error',
-          );
-        });
-      },
-      Math.max(0, timer.warnAt - Date.now()),
-    );
-
     const killTimer = setTimeout(
       () => {
         killAtDeadline(context, timer).catch((error: unknown) => {
@@ -374,7 +313,6 @@ export const createDeadlineWatchdog = (
     );
 
     armed.set(timer.address, {
-      warn: warnTimer,
       killTimer,
       killAt: timer.killAt,
     });

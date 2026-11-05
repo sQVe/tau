@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 
 import {
+  deadlineWarningDelay,
   deadlineWarningReserve,
   decideDeadline,
   retryDelay,
@@ -31,12 +32,11 @@ const saved = (deadline: number, reported = false): DeadlineAssignment => ({
   reported,
 });
 
-const timer = (warnAt: number, killAt: number): DeadlineTimer => ({
+const timer = (killAt: number): DeadlineTimer => ({
   address: 't-child',
   assignmentPath: path,
   assignmentId,
   parentSession,
-  warnAt,
   killAt,
 });
 
@@ -83,7 +83,7 @@ it.each<{ name: string; given: DeadlineFacts; expected: DeadlinePlan }>([
   {
     name: 'arms a future deadline',
     given: facts(child(now + 600_000)),
-    expected: { armed: [timer(now + 600_000 - reserve, now + 600_000)], kills: [], errors: [] },
+    expected: { armed: [timer(now + 600_000)], kills: [], errors: [] },
   },
   {
     name: 'kills a passed deadline at once',
@@ -96,14 +96,14 @@ it.each<{ name: string; given: DeadlineFacts; expected: DeadlinePlan }>([
     expected: { armed: [], kills: [kill()], errors: [] },
   },
   {
-    name: 'warns at once under the reserve',
+    name: 'arms a near deadline',
     given: facts(child(now + 30_000)),
-    expected: { armed: [timer(now, now + 30_000)], kills: [], errors: [] },
+    expected: { armed: [timer(now + 30_000)], kills: [], errors: [] },
   },
   {
-    name: 'warns at once at the reserve',
+    name: 'arms a deadline at the reserve',
     given: facts(child(now + reserve)),
-    expected: { armed: [timer(now, now + reserve)], kills: [], errors: [] },
+    expected: { armed: [timer(now + reserve)], kills: [], errors: [] },
   },
   {
     name: 'arms nothing for a saved report',
@@ -168,7 +168,7 @@ it.each<{ name: string; given: DeadlineFacts; expected: DeadlinePlan }>([
     name: 'reports a missing deadline label',
     given: facts(child(now + 600_000, { labels: label(undefined) })),
     expected: {
-      armed: [timer(now + 600_000 - reserve, now + 600_000)],
+      armed: [timer(now + 600_000)],
       kills: [],
       errors: [{ key: `label:${assignmentId}`, message: labelError(undefined, now + 600_000) }],
     },
@@ -177,7 +177,7 @@ it.each<{ name: string; given: DeadlineFacts; expected: DeadlinePlan }>([
     name: 'reports a malformed deadline label',
     given: facts(child(now + 600_000, { labels: label('soon') })),
     expected: {
-      armed: [timer(now + 600_000 - reserve, now + 600_000)],
+      armed: [timer(now + 600_000)],
       kills: [],
       errors: [{ key: `label:${assignmentId}`, message: labelError('soon', now + 600_000) }],
     },
@@ -186,7 +186,7 @@ it.each<{ name: string; given: DeadlineFacts; expected: DeadlinePlan }>([
     name: 'reports a differing deadline label',
     given: facts(child(now + 600_000, { labels: label(String(now + 900_000)) })),
     expected: {
-      armed: [timer(now + 600_000 - reserve, now + 600_000)],
+      armed: [timer(now + 600_000)],
       kills: [],
       errors: [
         { key: `label:${assignmentId}`, message: labelError(String(now + 900_000), now + 600_000) },
@@ -214,6 +214,27 @@ it.each<{ name: string; given: DeadlineFacts; expected: DeadlinePlan }>([
   },
 ])('$name', ({ given, expected }) => {
   expect(decideDeadline(given)).toStrictEqual(expected);
+});
+
+it.each<{ name: string; deadline: number; expected: number }>([
+  {
+    name: 'waits the reserve when more than the reserve is left',
+    deadline: now + 120_000,
+    expected: 30_000,
+  },
+  {
+    name: 'warns at once with exactly the reserve left',
+    deadline: now + reserve,
+    expected: 0,
+  },
+  {
+    name: 'warns at once with less than the reserve left',
+    deadline: now + 30_000,
+    expected: 0,
+  },
+  { name: 'warns at once after the deadline', deadline: now - 1, expected: 0 },
+])('$name', ({ deadline, expected }) => {
+  expect(deadlineWarningDelay(deadline, now)).toBe(expected);
 });
 
 it.each<{ name: string; attempt: number; expected: number | undefined }>([

@@ -108,9 +108,11 @@ only the worker writes its report and its questions into it.
   for display only.
 - The manager's deadline watchdog arms its timers at session start, after each launch, and on each
   delivery scan. A reload builds a new watchdog. Session shutdown clears every timer.
-- Tau warns the worker 90 seconds before its deadline, or at once when less time is left. The
-  warning is an `hc send` that asks the worker to call `subagent_report` now. Tau never uses
-  `hc send --force`. A refused or failed warning is reported and does not cancel the kill.
+- The worker times its own deadline warning. After Pi startup it arms its warning from the
+  assignment `deadline`, 90 seconds before it or at once when less time is left. It clears the
+  warning after its report.
+- The manager's watchdog only kills and sends no warning. A worker that loaded older code before
+  this change gets no warning from a newer manager, and the kill still applies.
 - At the deadline, Tau reads the terminal again. It kills the worker only when the terminal is still
   live, its parent is this manager's terminal, its `tau.assignment` label is the same path, and the
   assignment has no saved report.

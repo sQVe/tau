@@ -151,9 +151,7 @@ const harness = (hcFake: HcFake) => {
   return { context, ended, order, notifications, scanner, hc, emit, commands };
 };
 
-const setup = async (
-  options: { deadline?: number; sendFails?: boolean; reported?: boolean } = {},
-) => {
+const setup = async (options: { deadline?: number; reported?: boolean } = {}) => {
   const deadline = options.deadline ?? now + 300_000;
   const directory = temporaryDirectory(onTestFinished, 'tau-deadline-');
 
@@ -164,13 +162,8 @@ const setup = async (
 
   hcFake.reply('ls', JSON.stringify({ terminals: [childRow] }));
   hcFake.reply('get', JSON.stringify(terminal(path, deadline)));
-  hcFake.reply('send', JSON.stringify({ turn: 1 }));
   hcFake.reply('kill', JSON.stringify({ address: 't-child', state: 'finished' }));
   hcFake.reply('label', JSON.stringify(terminal(path, deadline)));
-
-  if (options.sendFails === true) {
-    hcFake.fail('send', JSON.stringify({ error: { kind: 'blocked', message: 'blocked' } }), 1);
-  }
 
   return { path, deadline, hcFake, ...harness(hcFake) };
 };
@@ -182,51 +175,19 @@ const standalone = (hcFake: HcFake) => {
   return harness(hcFake);
 };
 
-it('warns at the reserve and kills at the deadline', async () => {
-  const { context, scanner, deadline, ended, commands } = await setup();
+it('kills at the deadline without sending a warning', async () => {
+  const { context, scanner, deadline, ended, commands } = await setup({ deadline: now + 120_000 });
 
   await scanner.scan(context);
 
-  await vi.advanceTimersByTimeAsync(deadline - reserve - now - 1);
+  await vi.advanceTimersByTimeAsync(deadline - now);
+
+  await vi.waitFor(() => {
+    expect(commands('kill')).toHaveLength(1);
+  });
 
   expect(commands('send')).toHaveLength(0);
-
-  await vi.advanceTimersByTimeAsync(1);
-
-  expect(commands('send')).toHaveLength(1);
-
-  expect(commands('send')[0]?.commandArguments.at(-1)).toBe(
-    'Deadline in 90 s: call subagent_report now with what you have; blockerKind time is accepted.',
-  );
-
-  expect(commands('kill')).toHaveLength(0);
-
-  await vi.advanceTimersByTimeAsync(reserve);
-
-  await vi.waitFor(() => {
-    expect(commands('kill')).toHaveLength(1);
-  });
-
   expect(ended).toHaveLength(1);
-});
-
-it('kills after hc refuses the warning', async () => {
-  const { context, scanner, deadline, notifications, commands } = await setup({ sendFails: true });
-
-  await scanner.scan(context);
-  await vi.advanceTimersByTimeAsync(deadline - reserve - now);
-
-  expect(commands('send')).toHaveLength(1);
-
-  await vi.advanceTimersByTimeAsync(reserve);
-
-  await vi.waitFor(() => {
-    expect(commands('kill')).toHaveLength(1);
-  });
-
-  expect(notifications).toHaveLength(1);
-  expect(notifications[0]?.[0]).toContain('Warning t-child failed');
-  expect(notifications[0]?.[1]).toBe('error');
 });
 
 it('labels the worker as ended at its deadline after the kill, once the deadline message is shown', async () => {
@@ -572,7 +533,7 @@ it('starts the newer scan read only after the older scan finishes', async () => 
   await Promise.all([oldScan, newScan]);
 
   expect(listCalls).toBe(2);
-  expect(vi.getTimerCount()).toBe(2);
+  expect(vi.getTimerCount()).toBe(1);
 });
 
 it('keeps a known deadline when a child read fails', async () => {
@@ -580,12 +541,12 @@ it('keeps a known deadline when a child read fails', async () => {
 
   await scanner.scan(context);
 
-  expect(vi.getTimerCount()).toBe(2);
+  expect(vi.getTimerCount()).toBe(1);
 
   hcFake.fail('get', 'temporary read failure', 1);
   await scanner.scan(context);
 
-  expect(vi.getTimerCount()).toBe(2);
+  expect(vi.getTimerCount()).toBe(1);
   expect(notifications.some(([message]) => message.includes('Reading t-child failed'))).toBe(true);
 });
 
@@ -661,19 +622,6 @@ it('arms nothing for a child whose assignment already reported', async () => {
   expect(commands('kill')).toHaveLength(0);
 });
 
-it('warns at once when less than the reserve is left', async () => {
-  const { context, scanner, commands } = await setup({ deadline: now + 30_000 });
-
-  await scanner.scan(context);
-  await vi.advanceTimersByTimeAsync(0);
-
-  expect(commands('send')).toHaveLength(1);
-
-  expect(commands('send')[0]?.commandArguments.at(-1)).toBe(
-    'Deadline in 30 s: call subagent_report now with what you have; blockerKind time is accepted.',
-  );
-});
-
 it('kills at once when the assignment file is missing', async () => {
   const hcFake = createHcFake();
 
@@ -719,21 +667,6 @@ it('reports an unread child without killing it', async () => {
   expect(notifications).toHaveLength(1);
   expect(notifications[0]?.[0]).toContain('Reading t-child failed');
   expect(commands('kill')).toHaveLength(0);
-});
-
-it('sends one warning when a rescan clamps the warning time', async () => {
-  const { context, scanner, commands } = await setup({ deadline: now + 30_000 });
-
-  await scanner.scan(context);
-  await vi.advanceTimersByTimeAsync(0);
-
-  expect(commands('send')).toHaveLength(1);
-
-  await vi.advanceTimersByTimeAsync(1_000);
-  await scanner.scan(context);
-  await vi.advanceTimersByTimeAsync(0);
-
-  expect(commands('send')).toHaveLength(1);
 });
 
 it('retries a kill after hc get fails, then succeeds', async () => {

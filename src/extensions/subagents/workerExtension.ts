@@ -20,6 +20,7 @@ import type { HcRuntime } from '../../hc/hc.js';
 import { instructionSetNames, readInstructionSet } from '../../instructions/instructions.js';
 import { appendSystemPrompt, guidelineLines } from '../../instructions/systemPrompt.js';
 import { skillTools } from '../../skillTools.js';
+import { createWake } from '../../wake/wake.js';
 import { isWorkerProcess } from '../../worker.js';
 import { readAssignment } from './assignment.js';
 import { checkWorkerRuntime } from './loadout.js';
@@ -29,6 +30,8 @@ import { reportParameters, reportToParent } from './report.js';
 import type { ReportRefusalState, ReportTarget } from './report.js';
 import { remindToReport } from './reportReminder.js';
 import type { Loadout } from './types.js';
+import { createWorkerDeadlineWarning } from './workerDeadlineWarning.js';
+import type { WorkerDeadlineWarning } from './workerDeadlineWarning.js';
 import { decideWorkerResume, decideWorkerStart } from './workerResume.js';
 import type { WorkerStart } from './workerResume.js';
 import { startPromptText } from './workerStart.js';
@@ -118,7 +121,11 @@ const handleToolCall = (
   return undefined;
 };
 
-const registerReportTool = (pi: ExtensionAPI, state: WorkerState): void => {
+const registerReportTool = (
+  pi: ExtensionAPI,
+  state: WorkerState,
+  warning: WorkerDeadlineWarning,
+): void => {
   pi.registerTool({
     name: 'subagent_report',
     exposure: 'model-only',
@@ -128,12 +135,16 @@ const registerReportTool = (pi: ExtensionAPI, state: WorkerState): void => {
       'Do not retry uncertain delivery.',
     ].join(' '),
     parameters: reportParameters,
-    execute(...argumentsList) {
+    async execute(...argumentsList) {
       if (state.target === undefined) {
         throw new Error('Worker has no loaded assignment to report against.');
       }
 
-      return reportToParent(state.target, argumentsList[1]);
+      const result = await reportToParent(state.target, argumentsList[1]);
+
+      warning.clear();
+
+      return result;
     },
   });
 };
@@ -263,8 +274,32 @@ const startWorker = async (
   }
 };
 
-const registerStartInput = (pi: ExtensionAPI, state: WorkerState): void => {
-  pi.on('input', (event) => handleStartInput(state.startInput, event.text, state.ready));
+const armDeadlineWarning = (
+  warning: WorkerDeadlineWarning,
+  context: ExtensionContext,
+  state: WorkerState,
+): void => {
+  if (state.target === undefined || state.target.assignment.report !== null) {
+    return;
+  }
+
+  warning.arm(context, state.target);
+};
+
+const registerStartInput = (
+  pi: ExtensionAPI,
+  state: WorkerState,
+  warning: WorkerDeadlineWarning,
+): void => {
+  pi.on('input', async (event, context) => {
+    const result = await handleStartInput(state.startInput, event.text, state.ready);
+
+    if (result.action !== 'continue') {
+      armDeadlineWarning(warning, context, state);
+    }
+
+    return result;
+  });
 };
 
 const lastRunError = (event: AgentEndEvent): string | undefined => {
@@ -331,24 +366,27 @@ export default function workerExtension(pi: ExtensionAPI): void {
     startInput: { pending: true, startText: undefined },
   };
 
+  const wake = createWake(pi);
+  const deadlineWarning = createWorkerDeadlineWarning(wake);
+
   pi.on('session_start', (_event, context) => {
     state.ready = startWorker(pi, state, context);
 
     return state.ready;
   });
 
-  registerStartInput(pi, state);
-  registerReportTool(pi, state);
+  pi.on('session_shutdown', () => {
+    deadlineWarning.clear();
+  });
+
+  registerStartInput(pi, state, deadlineWarning);
+  registerReportTool(pi, state, deadlineWarning);
   registerQuestionTool(pi, state);
   registerToolCallHandler(pi);
   registerSystemPromptHandler(pi, state);
   registerSessionSwitchBlock(pi);
   registerReportReminder(pi, state);
   registerAgentSettledHandler(pi, state);
-
-  pi.on('agent_start', () => {
-    state.questionAsked = false;
-  });
 
   pi.on('message_start', (event) => {
     if (event.message.role === 'user') {
