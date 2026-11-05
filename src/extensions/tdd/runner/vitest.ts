@@ -110,14 +110,18 @@ const classifyResult = async (
   outputFile: string,
   version: string,
 ): Promise<RunnerResult> => {
-  const report = await readReport(outputFile);
-
   if (input.signal?.aborted === true) {
     return { kind: 'cancelled' };
   }
 
   if (result.timedOut) {
     return { kind: 'timeout' };
+  }
+
+  const report = await readReport(outputFile);
+
+  if (input.signal?.aborted === true) {
+    return { kind: 'cancelled' };
   }
 
   if (report == null) {

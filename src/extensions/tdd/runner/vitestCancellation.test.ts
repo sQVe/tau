@@ -46,3 +46,19 @@ it('reports an abort during the report read as cancelled', async () => {
 
   expect(result.kind).toBe('cancelled');
 });
+
+it('reports a timed-out run as a timeout without reading its report', async () => {
+  const reads: string[] = [];
+
+  fileReads.read = (path) => {
+    reads.push(path);
+  };
+
+  const result = await runTests(
+    fullRun(),
+    makeDeps({ spawn: fakeSpawn({ report: validReport, timedOut: true }) }),
+  );
+
+  expect(result.kind).toBe('timeout');
+  expect(reads.filter((path) => path.endsWith('report.json'))).toEqual([]);
+});
