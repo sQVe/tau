@@ -34,6 +34,8 @@ verdicts. A checker checks the finder's decision evidence as well as its finding
   violation also cites the rule's file and lines. Mark pre-existing issues apart.
 - For each changed condition or guard, name the test that fails if it is inverted. Report a guard
   that no test defends.
+- For each changed or rewritten test, name any behavior the old version checked that the new one no
+  longer checks. Report each loss.
 - A behavioral finding needs a production path that reaches the harmful state. A type or fixture
   that can represent the state is not enough.
 ```
