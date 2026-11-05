@@ -141,7 +141,6 @@ export const sendStartMessage = (
     ),
   );
 
-// createWake adds agent_start and agent_settled handlers, so every handler must run.
 export const dispatch = (
   pi: ReturnType<typeof setup>['pi'],
   name: string,
