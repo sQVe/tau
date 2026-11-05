@@ -133,6 +133,7 @@ const pureModules = [
   'src/extensions/subagents/workerTools.ts',
   'src/extensions/tauSkills/requiredFor.ts',
   'src/extensions/tdd/configLayers.ts',
+  'src/extensions/tdd/fileRoles.ts',
   'src/extensions/tdd/inputGlob.ts',
   'src/extensions/tdd/observationTransition.ts',
   'src/extensions/tdd/runner/constants.ts',

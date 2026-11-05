@@ -8,29 +8,48 @@ import type { ConfigWarnings } from '../../config/config.js';
 import { classifyPath, configurationGlobs, defaultTddConfig, loadTddConfig } from './config.js';
 import { unsupportedGlobReason } from './inputGlob.js';
 
-const classify = (path: string) => classifyPath(defaultTddConfig, path);
+const classify = (path: string, testFilesCanBeProduction = false) =>
+  classifyPath(defaultTddConfig, path, testFilesCanBeProduction);
 
 describe('TDD config', () => {
-  it('gives test globs precedence, then production globs, then other', () => {
-    expect(classify('src/example.test.ts')).toBe('test');
-    expect(classify('src/component.spec.tsx')).toBe('test');
-    expect(classify('tests/example.test.ts')).toBe('test');
-    expect(classify('tests/commitTool.ts')).toBe('other');
-    expect(classify('tests/fixtures/helper.ts')).toBe('other');
-    expect(classify('example.spec.ts')).toBe('test');
-    expect(classify('src/example.ts')).toBe('production');
-    expect(classify('src/component.tsx')).toBe('production');
+  it('gives a test role to test globs and a production role to production globs', () => {
+    expect(classify('src/example.test.ts')).toEqual({ test: true, production: false });
+    expect(classify('src/component.spec.tsx')).toEqual({ test: true, production: false });
+    expect(classify('tests/example.test.ts')).toEqual({ test: true, production: false });
+    expect(classify('tests/commitTool.ts')).toEqual({ test: false, production: false });
+    expect(classify('tests/fixtures/helper.ts')).toEqual({ test: false, production: false });
+    expect(classify('example.spec.ts')).toEqual({ test: true, production: false });
+    expect(classify('src/example.ts')).toEqual({ test: false, production: true });
+    expect(classify('src/component.tsx')).toEqual({ test: false, production: true });
 
     for (const path of ['src/x.js', 'src/x.jsx', 'src/x.mjs', 'src/x.cjs']) {
-      expect(classify(path)).toBe('production');
+      expect(classify(path)).toEqual({ test: false, production: true });
     }
 
-    expect(classify('src/x.test.js')).toBe('test');
-    expect(classify('src/x.spec.mjs')).toBe('test');
-    expect(classify('scripts/check.js')).toBe('other');
-    expect(classify('README.md')).toBe('other');
-    expect(classify('docs/example.md')).toBe('other');
-    expect(classify('src/example.css')).toBe('other');
+    expect(classify('src/x.test.js')).toEqual({ test: true, production: false });
+    expect(classify('src/x.spec.mjs')).toEqual({ test: true, production: false });
+    expect(classify('scripts/check.js')).toEqual({ test: false, production: false });
+    expect(classify('README.md')).toEqual({ test: false, production: false });
+    expect(classify('docs/example.md')).toEqual({ test: false, production: false });
+    expect(classify('src/example.css')).toEqual({ test: false, production: false });
+  });
+
+  it('counts a file matching both glob lists as production when the runner allows overlap', () => {
+    const config = {
+      ...defaultTddConfig,
+      testGlobs: ['**/*.test.ts'],
+      productionGlobs: ['src/**/*.ts'],
+    };
+
+    expect(classifyPath(config, 'src/example.test.ts', true)).toEqual({
+      test: true,
+      production: true,
+    });
+
+    expect(classifyPath(config, 'src/example.test.ts', false)).toEqual({
+      test: true,
+      production: false,
+    });
   });
 
   it('classifies the supported production layouts without treating every script as production', () => {
@@ -42,13 +61,13 @@ describe('TDD config', () => {
       'infra/stacks/main.ts',
       'packages\\core\\index.ts',
     ]) {
-      expect(classify(path)).toBe('production');
+      expect(classify(path)).toEqual({ test: false, production: true });
     }
 
-    expect(classify('apps/web/src/page.test.tsx')).toBe('test');
-    expect(classify('packages/core/index.spec.ts')).toBe('test');
-    expect(classify('scripts/release.ts')).toBe('other');
-    expect(classify('docs/example.ts')).toBe('other');
+    expect(classify('apps/web/src/page.test.tsx')).toEqual({ test: true, production: false });
+    expect(classify('packages/core/index.spec.ts')).toEqual({ test: true, production: false });
+    expect(classify('scripts/release.ts')).toEqual({ test: false, production: false });
+    expect(classify('docs/example.ts')).toEqual({ test: false, production: false });
   });
 
   it('excludes dependencies and generated directories before classifying source or tests', () => {
@@ -67,18 +86,31 @@ describe('TDD config', () => {
       '__generated__',
     ]) {
       for (const file of ['value.ts', 'value.test.ts']) {
-        expect(classify(`apps/web/${directory}/${file}`)).toBe('other');
-        expect(classify(`${directory}/src/${file}`)).toBe('other');
-        expect(classify(`packages\\core\\${directory}\\${file}`)).toBe('other');
+        expect(classify(`apps/web/${directory}/${file}`)).toEqual({
+          test: false,
+          production: false,
+        });
+
+        expect(classify(`${directory}/src/${file}`)).toEqual({ test: false, production: false });
+
+        expect(classify(`packages\\core\\${directory}\\${file}`)).toEqual({
+          test: false,
+          production: false,
+        });
       }
     }
   });
 
   it('classifies backslash-separated paths like their forward-slash form', () => {
-    expect(classify('src\\example.test.ts')).toBe('test');
-    expect(classify('tests\\nested\\component.spec.tsx')).toBe('test');
-    expect(classify('src\\example.ts')).toBe('production');
-    expect(classify('src\\nested\\value.ts')).toBe('production');
+    expect(classify('src\\example.test.ts')).toEqual({ test: true, production: false });
+
+    expect(classify('tests\\nested\\component.spec.tsx')).toEqual({
+      test: true,
+      production: false,
+    });
+
+    expect(classify('src\\example.ts')).toEqual({ test: false, production: true });
+    expect(classify('src\\nested\\value.ts')).toEqual({ test: false, production: true });
   });
 
   it('reads the grove layout from .pi/tau.json and ignores other top-level keys', async ({
@@ -101,8 +133,12 @@ describe('TDD config', () => {
       { notify: () => undefined },
     );
 
-    expect(classifyPath(config, 'internal/git/status.go')).toBe('production');
-    expect(classifyPath(config, 'src/value.ts')).toBe('other');
+    expect(classifyPath(config, 'internal/git/status.go', false)).toEqual({
+      test: false,
+      production: true,
+    });
+
+    expect(classifyPath(config, 'src/value.ts', false)).toEqual({ test: false, production: false });
   });
 
   it('reads known fields past unknown tdd keys and warns about each', async ({
@@ -209,11 +245,23 @@ describe('TDD config', () => {
       productionGlobs: ['./lib/**/*.ts'],
     };
 
-    expect(classifyPath(config, 'src/a.test.ts')).toBe('test');
-    expect(classifyPath(config, 'lib/a.ts')).toBe('production');
-    expect(classifyPath(defaultTddConfig, 'src/.hidden.test.ts')).toBe('test');
-    expect(classifyPath(defaultTddConfig, '.hidden/a.test.ts')).toBe('test');
-    expect(classifyPath(defaultTddConfig, 'src/.hidden.ts')).toBe('production');
+    expect(classifyPath(config, 'src/a.test.ts', false)).toEqual({ test: true, production: false });
+    expect(classifyPath(config, 'lib/a.ts', false)).toEqual({ test: false, production: true });
+
+    expect(classifyPath(defaultTddConfig, 'src/.hidden.test.ts', false)).toEqual({
+      test: true,
+      production: false,
+    });
+
+    expect(classifyPath(defaultTddConfig, '.hidden/a.test.ts', false)).toEqual({
+      test: true,
+      production: false,
+    });
+
+    expect(classifyPath(defaultTddConfig, 'src/.hidden.ts', false)).toEqual({
+      test: false,
+      production: true,
+    });
   });
 
   it('supports every built-in glob', () => {

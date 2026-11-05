@@ -208,5 +208,6 @@ export const vitestRunner = {
   testNameFormat,
   focusedTimeoutMs: defaultTimeoutMilliseconds,
   fullTimeoutMs: fullTimeoutMilliseconds,
+  testFilesCanBeProduction: false,
   run: runTests,
 } satisfies TestRunner;
