@@ -120,11 +120,15 @@ name, such as `scout`. `profiles.default.model` applies to every profile without
 A model passed on a launch overrides both keys. A worker launch with none of them fails. Tau fails a
 model that Pi does not list, or a model outside `allowedModels`.
 
+`profiles.<name>.thinking` is optional. It sets the worker thinking level and overrides the
+`thinking` in the profile file. A route label's `thinking` overrides it when that label runs. The
+levels are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`.
+
 ```json
 {
   "profiles": {
     "default": { "model": "claude-bridge/claude-opus-5-5" },
-    "scout": { "model": "openai-codex/gpt-6.1-sol" }
+    "scout": { "model": "openai-codex/gpt-6.1-sol", "thinking": "high" }
   }
 }
 ```
@@ -139,12 +143,17 @@ these keys:
 - `labels`: an object with exactly two labels. Each label name maps to:
   - `criterion`: non-empty text that says when the label fits.
   - `model`: `provider/model-id` that runs when the label is chosen.
+  - `thinking`: optional. One of the levels above. It overrides `profiles.<name>.thinking` when this
+    label runs.
 - `confidence`: number from 0 to 1. This is the lowest confidence that keeps the chosen label. The
   default is 0.7.
 
 `profiles.<name>.model` still applies. Tau runs it when the classifier gives no usable answer, when
 the answer is below `confidence`, or when `allowedModels` excludes the classifier. Tau does not
 refuse the launch in those cases. A label's `model` outside `allowedModels` fails the launch.
+
+Tau applies the chosen label's `thinking` when the route picks that label. Otherwise it applies
+`profiles.<name>.thinking`, then the profile file's `thinking:`, then `medium`.
 
 Without `route`, the profile runs on `model` alone. A route that fails these rules turns routing off
 for its profile and shows an error. The profile model still runs. Use `route`, not `routes`. A
@@ -161,7 +170,8 @@ for its profile and shows an error. The profile model still runs. Use `route`, n
         "labels": {
           "narrow": {
             "criterion": "A lookup about known code.",
-            "model": "claude-bridge/claude-haiku-5-5"
+            "model": "claude-bridge/claude-haiku-5-5",
+            "thinking": "low"
           },
           "wide": {
             "criterion": "An investigation across many files.",
@@ -196,7 +206,7 @@ Frontmatter keys:
 - `role`: required. `investigation` gives the tools `read` and `bash`. `editing` gives `read`,
   `bash`, `edit`, and `write`.
 - `thinking`: optional. One of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`.
-  Default: `medium`.
+  Default: `medium`. `profiles.<name>.thinking` in the user file overrides it.
 - `cli`: optional. Only `pi` is allowed, and it is the default.
 - `tools`: optional. Comma-separated tool names, such as `read, bash`. Replaces the tools of the
   role.

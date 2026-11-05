@@ -1,9 +1,12 @@
 // Decides the shadow model pick from facts the caller read. tests/structure.test.ts keeps this
 // module pure.
 
+import type { ThinkingLevel } from './types.js';
+
 export interface RouteLabel {
   criterion: string;
   model: string;
+  thinking?: ThinkingLevel;
 }
 
 // Exactly two labels, in config order.
@@ -87,6 +90,14 @@ export const pickRoutedModel = (facts: RouteFacts): RoutePick => {
   }
 
   return { shadowPick: routed.model, label, confidence, confidenceCutoff };
+};
+
+export const routedThinking = (route: ModelRoute, pick: RoutePick): ThinkingLevel | undefined => {
+  if (!('label' in pick) || pick.fallbackReason !== undefined) {
+    return undefined;
+  }
+
+  return route.labels.get(pick.label)?.thinking;
 };
 
 const describeRoutedPick = (pick: RoutePick): string => {

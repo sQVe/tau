@@ -25,7 +25,10 @@ export const resolveRoutedLoadout = (
   signal?: AbortSignal,
 ): Promise<RoutedLoadout> => loadoutModule.resolveRoutedLoadout(input, context, commands, signal);
 
-const createWorkerFixture = async (onTestFinished: (callback: () => void) => void) => {
+const createWorkerFixture = async (
+  onTestFinished: (callback: () => void) => void,
+  reasoning = false,
+) => {
   const directory = realpathSync(temporaryDirectory(onTestFinished, 'tau-pi-loadout-'));
 
   onTestFinished(() => {
@@ -36,7 +39,10 @@ const createWorkerFixture = async (onTestFinished: (callback: () => void) => voi
 
   const provider = fauxProvider({
     provider: 'tau-worker-fixture',
-    models: [{ id: 'faux-1' }, { id: 'haiku' }],
+    models: [
+      { id: 'faux-1', reasoning },
+      { id: 'haiku', reasoning },
+    ],
   });
 
   const runtime = await ModelRuntime.create({
@@ -68,7 +74,12 @@ export type WorkerFixture = Awaited<ReturnType<typeof createWorkerFixture>>;
 
 export const workerFixture: (
   onTestFinished: (callback: () => void) => void,
+  reasoning?: boolean,
 ) => Promise<WorkerFixture> = createWorkerFixture;
+
+export const thinkingWorkerFixture = (
+  onTestFinished: (callback: () => void) => void,
+): Promise<WorkerFixture> => createWorkerFixture(onTestFinished, true);
 
 export const allowModels = (path: string, allowedModels: string[] | undefined): void => {
   if (allowedModels !== undefined) {
@@ -93,8 +104,9 @@ const classifierReference = `${classifierProvider}/${classifierId}`;
 const createRoutedFixture = async (
   onTestFinished: (callback: () => void) => void,
   confidence?: number,
+  reasoning = false,
 ) => {
-  const fixture = await workerFixture(onTestFinished);
+  const fixture = await workerFixture(onTestFinished, reasoning);
   const { directory, model } = fixture;
   const profileModel = `${model.provider}/${model.id}`;
 
@@ -143,3 +155,8 @@ export const routedFixture: (
   onTestFinished: (callback: () => void) => void,
   confidence?: number,
 ) => Promise<RoutedFixture> = createRoutedFixture;
+
+export const thinkingRoutedFixture = (
+  onTestFinished: (callback: () => void) => void,
+  confidence?: number,
+): Promise<RoutedFixture> => createRoutedFixture(onTestFinished, confidence, true);

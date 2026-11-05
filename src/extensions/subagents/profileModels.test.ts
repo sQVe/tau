@@ -3,7 +3,12 @@ import { expect, it, vi } from 'vitest';
 import { temporaryTauConfig } from '../../../tests/tauConfigHarness.js';
 import { readAllowedModels } from '../../config/models.js';
 import { defaultRouteConfidence } from './modelRoutes.js';
-import { readProfileModel, readProfileModels, readProfileRoute } from './profileModels.js';
+import {
+  readProfileModel,
+  readProfileModels,
+  readProfileRoute,
+  readProfileThinking,
+} from './profileModels.js';
 
 const uiFixture = () => ({ notify: vi.fn<(message: string, level?: string) => void>() });
 
@@ -432,4 +437,126 @@ it('refuses a profile model that is not a string', ({ onTestFinished }) => {
   writeUser({ profiles: { scout: { model: ['a/scout'] } } });
 
   expect(() => readProfileModel(location, 'scout', uiFixture())).toThrow('profiles.scout.model');
+});
+
+it('reads a profile thinking level and leaves an absent one undefined', ({ onTestFinished }) => {
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
+
+  writeUser({
+    profiles: { scout: { model: 'a/scout', thinking: 'high' }, plain: { model: 'a/plain' } },
+  });
+
+  expect(readProfileThinking(location, 'scout', uiFixture())).toBe('high');
+  expect(readProfileThinking(location, 'plain', uiFixture())).toBeUndefined();
+  expect(readProfileThinking(location, 'missing', uiFixture())).toBeUndefined();
+});
+
+it('refuses an invalid profile thinking and names the field', ({ onTestFinished }) => {
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-profile-models-',
+  );
+
+  writeUser({ profiles: { scout: { model: 'a/scout', thinking: 'bogus' } } });
+
+  const read = () => readProfileThinking(location, 'scout', uiFixture());
+
+  expect(read).toThrow(userFile);
+  expect(read).toThrow('profiles.scout.thinking');
+});
+
+it('refuses a profile thinking that is not a string and names the field', ({ onTestFinished }) => {
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
+
+  writeUser({ profiles: { scout: { model: 'a/scout', thinking: 5 } } });
+
+  expect(() => readProfileThinking(location, 'scout', uiFixture())).toThrow(
+    'profiles.scout.thinking',
+  );
+});
+
+it('reads a route label thinking and leaves an absent one undefined', ({ onTestFinished }) => {
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
+
+  writeUser({
+    profiles: {
+      scout: {
+        model: 'a/scout',
+        route: {
+          ...scoutRoute,
+          labels: {
+            ...scoutRoute.labels,
+            narrow: { ...scoutRoute.labels.narrow, thinking: 'low' },
+          },
+        },
+      },
+    },
+  });
+
+  const route = readProfileRoute(location, 'scout', uiFixture());
+
+  expect(route?.labels.get('narrow')?.thinking).toBe('low');
+  expect(route?.labels.get('wide')?.thinking).toBeUndefined();
+});
+
+it('turns routing off for a bad label thinking and names the field', ({ onTestFinished }) => {
+  const { location, userFile, writeUser } = temporaryTauConfig(
+    onTestFinished,
+    'tau-profile-models-',
+  );
+
+  writeUser({
+    profiles: {
+      scout: {
+        model: 'a/scout',
+        route: {
+          ...scoutRoute,
+          labels: {
+            ...scoutRoute.labels,
+            narrow: { ...scoutRoute.labels.narrow, thinking: 'bogus' },
+          },
+        },
+      },
+    },
+  });
+
+  const ui = uiFixture();
+
+  expect(readProfileRoute(location, 'scout', ui)).toBeUndefined();
+  expect(ui.notify).toHaveBeenCalledWith(expect.stringContaining(userFile), 'error');
+
+  expect(ui.notify).toHaveBeenCalledWith(
+    expect.stringContaining('profiles.scout.route.labels.narrow.thinking'),
+    'error',
+  );
+});
+
+it('warns about no unknown key for thinking at the profile and label levels', ({
+  onTestFinished,
+}) => {
+  const { location, writeUser } = temporaryTauConfig(onTestFinished, 'tau-profile-models-');
+
+  writeUser({
+    profiles: {
+      scout: {
+        model: 'a/scout',
+        thinking: 'high',
+        route: {
+          ...scoutRoute,
+          labels: {
+            ...scoutRoute.labels,
+            narrow: { ...scoutRoute.labels.narrow, thinking: 'low' },
+          },
+        },
+      },
+    },
+  });
+
+  const ui = uiFixture();
+
+  readProfileModel(location, 'scout', ui);
+  readProfileThinking(location, 'scout', ui);
+  readProfileRoute(location, 'scout', ui);
+
+  expect(ui.notify).not.toHaveBeenCalled();
 });
