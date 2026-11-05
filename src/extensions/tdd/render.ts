@@ -5,7 +5,7 @@ import type { LoadedTddConfig, TddConfig } from './config.js';
 import { tddConfigFields } from './configLayers.js';
 import { maximumFailures, reportLabels } from './runner/constants.js';
 import { maximumRetainedRuns } from './runner/retention.js';
-import type { DiagnosticFile, RunnerResult, RunStage } from './runner/types.js';
+import type { DiagnosticFile, RunnerResult, RunStage, TestAttribution } from './runner/types.js';
 import type { Behavior, ObservationResult } from './types.js';
 
 type Observation = Omit<ObservationResult, 'hint'>;
@@ -162,6 +162,18 @@ const fileFailureLines = (report: RunnerResult): string[] => {
   return [`${qualifier}${fileFailures} file/setup failures (separate from failed tests).`];
 };
 
+const attributionSuffix = (attribution: TestAttribution | undefined): string => {
+  if (attribution === undefined) {
+    return '';
+  }
+
+  if (attribution.kind === 'unknown') {
+    return ` [attribution unknown: ${attribution.reason}]`;
+  }
+
+  return ` [ambiguous: ${(attribution.files ?? attribution.binaryIds).join(', ')}]`;
+};
+
 export const summarize = (cwd: string, observation: Observation): string => {
   const { report, scope, freshness } = observation;
   const scopeLabel = scope === 'full' ? 'full suite' : 'focused';
@@ -179,7 +191,7 @@ export const summarize = (cwd: string, observation: Observation): string => {
 
   for (const failure of failures.slice(0, maximumFailures)) {
     const file = isAbsolute(failure.file) ? relative(cwd, failure.file) : failure.file;
-    const entry = `✗ ${file} › ${failure.fullname}\n    ${failure.message}`;
+    const entry = `✗ ${file} › ${failure.fullname}${attributionSuffix(failure.attribution)}\n    ${failure.message}`;
 
     if ([...lines, entry].join('\n').length > maximumSummaryCharacters - trailingLinesRoom) {
       break;

@@ -109,6 +109,7 @@ const selectedFailed = (cwd: string, behavior: Behavior, report: RunnerResult) =
     const matches = report.tests.filter(
       (test) =>
         test.fullname === name &&
+        test.attribution === undefined &&
         behavior.files.some((file) => resolve(cwd, test.file) === resolve(cwd, file)),
     );
 
@@ -137,6 +138,7 @@ const selectedThrownErrorType = (cwd: string, behavior: Behavior, report: Runner
 
   const selectedFailures = report.failures.filter(
     (failure) =>
+      failure.attribution === undefined &&
       testNames(behavior).includes(failure.fullname) &&
       behavior.files.some((file) => resolve(cwd, failure.file) === resolve(cwd, file)),
   );

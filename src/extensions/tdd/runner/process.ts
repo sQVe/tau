@@ -1,5 +1,6 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
+import { closeSync, openSync, writeSync } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 
 import { signalGroup } from '../../../process/process.js';
@@ -14,6 +15,7 @@ interface SpawnState {
   settled: boolean;
   stdoutDecoder: StringDecoder;
   stderrDecoder: StringDecoder;
+  stdoutFileDescriptor: number | undefined;
 }
 
 interface SettleRequest {
@@ -29,6 +31,7 @@ const bytesPerKibibyte = 1024;
 const bytesPerMebibyte = bytesPerKibibyte * bytesPerKibibyte;
 const maximumTotalKibibytes = 32;
 const maximumStdoutMebibytes = 8;
+const ownerReadWriteMode = 0o600;
 
 export const maximumTotalBytes = maximumTotalKibibytes * bytesPerKibibyte;
 // Bound captured process output separately from the shorter diagnostic messages.
@@ -47,6 +50,25 @@ const appendChunk = (
   return current + decoder.write(chunk.subarray(0, remaining));
 };
 
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const failedSpawnResult = (command: string[], error: unknown): SpawnResult => {
+  const message = errorMessage(error);
+
+  return {
+    stdout: '',
+    stderr: message,
+    code: null,
+    timedOut: false,
+    command,
+    started: false,
+    stdoutTruncated: false,
+    stdoutBytes: 0,
+    stderrBytes: Buffer.byteLength(message),
+  };
+};
+
 const settleSpawn = (request: SettleRequest): void => {
   const { state, child, resolve, code, command, release } = request;
 
@@ -58,6 +80,11 @@ const settleSpawn = (request: SettleRequest): void => {
   release();
   state.stdout += state.stdoutDecoder.end();
   state.stderr += state.stderrDecoder.end();
+
+  if (state.stdoutFileDescriptor !== undefined) {
+    closeSync(state.stdoutFileDescriptor);
+    state.stdoutFileDescriptor = undefined;
+  }
 
   resolve({
     stdout: state.stdout,
@@ -98,6 +125,17 @@ const captureStderr = (state: SpawnState, chunk: Buffer): void => {
 export const defaultSpawn: SpawnCommand = (executable, argumentsList, options) =>
   new Promise<SpawnResult>((resolve) => {
     const commandLine = [executable, ...argumentsList];
+    let captureDescriptor: number | undefined;
+
+    if (options.stdoutFile !== undefined) {
+      try {
+        captureDescriptor = openSync(options.stdoutFile, 'w', ownerReadWriteMode);
+      } catch (error) {
+        resolve(failedSpawnResult(commandLine, error));
+
+        return;
+      }
+    }
 
     const child = nodeSpawn(executable, argumentsList, {
       cwd: options.cwd,
@@ -114,6 +152,7 @@ export const defaultSpawn: SpawnCommand = (executable, argumentsList, options) =
       settled: false,
       stdoutDecoder: new StringDecoder('utf8'),
       stderrDecoder: new StringDecoder('utf8'),
+      stdoutFileDescriptor: captureDescriptor,
     };
 
     const abortListener = new AbortController();
@@ -140,6 +179,18 @@ export const defaultSpawn: SpawnCommand = (executable, argumentsList, options) =
 
     child.stdout.on('data', (chunk: Buffer) => {
       captureStdout(state, chunk);
+
+      if (state.stdoutFileDescriptor === undefined) {
+        return;
+      }
+
+      try {
+        writeSync(state.stdoutFileDescriptor, chunk);
+      } catch (error) {
+        captureStderr(state, Buffer.from(errorMessage(error)));
+        signalGroup(child, 'SIGKILL');
+        settle(null);
+      }
     });
 
     child.stderr.on('data', (chunk: Buffer) => {

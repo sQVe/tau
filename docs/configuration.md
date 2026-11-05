@@ -77,6 +77,14 @@ A Rust source file under `src/` matches both `productionGlobs` and `testGlobs`, 
 and a production file at once. An edit to only a unit test in that file still counts as a production
 edit, so the freshness hint can appear after that edit.
 
+A Rust result matches a requested file when the compiler built the result's binary from that file.
+Tau reads each binary's dep-info. A result is exact when its binary's dep-info lists exactly one
+requested file. It is ambiguous when that dep-info lists several requested files, or when the same
+test name appears in two binaries. It is unknown when the binary lists no requested file or has no
+dep-info. A binary can be built from other files too, so another file in the same binary can match.
+Only an exact result establishes RED. A missing dep-info file gives unknown results, never
+no-tests-collected.
+
 Glob entries accept literal segments, `*`, `**`, `?`, comma brace groups such as `{src,scripts}`, a
 leading `./`, and numeric ranges such as `{1..3}`. A range may have at most 1000 values. Tau fails
 other glob syntax.

@@ -1,0 +1,91 @@
+{
+  "test-count": 5,
+  "rust-suites": {
+    "member": {
+      "package-name": "member",
+      "binary-id": "member",
+      "binary-name": "member",
+      "package-id": "path+file:///workspace/crates/member#0.1.0",
+      "kind": "lib",
+      "binary-path": "/workspace/target/debug/deps/member-99c961402645c91b",
+      "build-platform": "target",
+      "cwd": "/workspace/crates/member",
+      "status": "listed",
+      "testcases": {
+        "sub::tests::fails": {
+          "kind": "test",
+          "ignored": false,
+          "filter-match": {
+            "status": "matches"
+          }
+        },
+        "sub::tests::passes": {
+          "kind": "test",
+          "ignored": false,
+          "filter-match": {
+            "status": "matches"
+          }
+        },
+        "tests::lib_adds": {
+          "kind": "test",
+          "ignored": false,
+          "filter-match": {
+            "status": "matches"
+          }
+        }
+      }
+    },
+    "member::nested": {
+      "package-name": "member",
+      "binary-id": "member::nested",
+      "binary-name": "nested",
+      "package-id": "path+file:///workspace/crates/member#0.1.0",
+      "kind": "test",
+      "binary-path": "/workspace/target/debug/deps/nested-9edaf2a5e75abd64",
+      "build-platform": "target",
+      "cwd": "/workspace/crates/member",
+      "status": "listed",
+      "testcases": {
+        "integration_passes": {
+          "kind": "test",
+          "ignored": false,
+          "filter-match": {
+            "status": "matches"
+          }
+        }
+      }
+    },
+    "member::bin/tool": {
+      "package-name": "member",
+      "binary-id": "member::bin/tool",
+      "binary-name": "tool",
+      "package-id": "path+file:///workspace/crates/member#0.1.0",
+      "kind": "bin",
+      "binary-path": "/workspace/target/debug/deps/tool-ffd382ccd30df933",
+      "build-platform": "target",
+      "cwd": "/workspace/crates/member",
+      "status": "listed",
+      "testcases": {}
+    },
+    "other": {
+      "package-name": "other",
+      "binary-id": "other",
+      "binary-name": "other",
+      "package-id": "path+file:///workspace/crates/other#0.1.0",
+      "kind": "lib",
+      "binary-path": "/workspace/target/debug/deps/other-aec183b1674b0048",
+      "build-platform": "target",
+      "cwd": "/workspace/crates/other",
+      "status": "listed",
+      "testcases": {
+        "other_test": {
+          "kind": "test",
+          "ignored": false,
+          "filter-match": {
+            "status": "matches"
+          }
+        }
+      }
+    }
+  }
+}
