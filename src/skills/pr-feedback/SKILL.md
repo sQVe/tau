@@ -100,21 +100,24 @@ see for themselves.
      from us. It does not when our reply settled it and the reviewer has not pushed back. It does
      again when the reviewer answered, or when our reply promised a fix that is not in the code.
    - Author mode, failing checks: each check from the script with `bucket` `fail` or `cancel` is a
-     finding. Judge it from its log excerpt. A check with a gap stays unread.
+     finding. Judge it from its log. When `omittedLines` is above zero, first read the whole failed
+     log with `gh run view <run> --repo <repo> --job <job> --log-failed`, using the run and job IDs
+     in the check's `link`. A check with a gap stays unread.
      - Compare with the trunk, which is `baseRefName`, or the stack's `trunk` when the PR is in a
        stack:
        `gh run list --repo <repo> --branch <trunk> --workflow <workflow> --limit 5 --json conclusion,headSha,url`.
-       In a stack, also compare with the script results of the PRs below. Run the script for each PR
-       below that step 1 did not cover.
+       A failed trunk run counts only when its log for the same job shows the same failure. Read it
+       with `gh run view <run> --repo <repo> --log-failed`. In a stack, also compare with the script
+       results of the PRs below. Run the script for each PR below that step 1 did not cover.
      - A failure belongs to the PR only when its cause is in the PR's own commits and still in the
        pinned code. Fetch the base repository's remote and list those commits with
        `git log --oneline HEAD --not <base remote>/<baseRefName>`. In a stack, add the branch's
        `base` SHA from `gh stack view --json` after `--not`. The local parent branch can be stale
        and the remote one can be rewritten, so either alone can let a lower PR's commits in.
-     - Report the rest: failing on the trunk, caused by a PR below, a cause outside the PR such as a
-       network timeout, gone after the rebase, or unread when the check has a gap. Name a cause
-       outside the PR only when a log line shows it. Report a failure with no such line and no trunk
-       failure as unexplained.
+     - Report the rest: failing the same way on the trunk, caused by a PR below, a cause outside the
+       PR such as a network timeout, gone after the rebase, or unread when the check has a gap. Name
+       a cause outside the PR only when a log line shows it. Report a failure with no such line and
+       no matching trunk failure as unexplained.
 
 4. Verify each remaining finding with the [triage findings](../triage-findings/SKILL.md) rules.
    Split a comment with several findings and verify each one. Verify an outdated thread against the
@@ -143,8 +146,8 @@ see for themselves.
      on the PR's branch and on each branch above that the restack changed, since step 7 pushes them
      all. If you cannot check a branch, report it and stop before you push.
    - A failure is the round's, the rebase included, unless the matching check also failed in the
-     script's result or fails on the trunk. Fix the round's failures. In a stack, restack again
-     after each fix commit. Then run the affected checks again.
+     script's result or fails the same way on the trunk. Fix the round's failures. In a stack,
+     restack again after each fix commit. Then run the affected checks again.
    - Push past any other failure only when you report it. Otherwise stop before you push.
 
 7. Author mode: push once to the PR's head repository `<remote>`. A round without a rebase or a new
