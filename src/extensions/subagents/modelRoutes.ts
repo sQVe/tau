@@ -92,7 +92,6 @@ export const pickRoutedModel = (facts: RouteFacts): RoutePick => {
   return { shadowPick: routed.model, label, confidence, confidenceCutoff };
 };
 
-// A successful pick chose a label; a fallback runs the profile model, so it has no label thinking.
 export const routedThinking = (route: ModelRoute, pick: RoutePick): ThinkingLevel | undefined => {
   if (!('label' in pick) || pick.fallbackReason !== undefined) {
     return undefined;
