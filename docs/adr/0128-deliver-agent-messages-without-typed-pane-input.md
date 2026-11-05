@@ -46,7 +46,8 @@ The ended message appears once for a finished worker that has a saved assignment
   expiry, which it renews while its watch is live. A lease replaces a plain flag, because it ends on
   its own when the session stops renewing it.
 - A sender refuses a receiver with no live lease, its own terminal, or a terminal on another
-  machine. The error names `handover start`. Nothing is typed as a fallback, and nothing is written.
+  machine. For a handover, the error names `handover start`. For an answer, it says to restart the
+  worker on a current Tau. Nothing is typed as a fallback, and nothing is written.
 - The sender copies the message bytes at send time into a versioned envelope that names the target
   terminal, session ID, family, and message ID. A prepared file can change before the receiver reads
   it, and a label can point at any file, so the receiver checks the envelope's location, type, size,
@@ -82,9 +83,9 @@ A bash guard in every Tau session will refuse the common forms of `hc send` and 
 prevents accidents only. It is not a security boundary: a command in a variable or a direct
 `hc connect` call passes it, and any process of the same user can write labels and envelopes.
 
-Later changes move worker answers to the inbox and move the deadline warning to a timer inside the
-worker, so the warning needs no transport. A later change also adds the guard. Until then, worker
-answers and the deadline warning still type.
+Worker answers go through the inbox. A later change moves the deadline warning to a timer inside the
+worker, so the warning needs no transport. A later change also adds the guard. Until then, the
+deadline warning still types.
 
 ## Consequences
 

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
 import { createHcFake } from '../../tests/hcFake.js';
 import type { HcFake } from '../../tests/hcFake.js';
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import type { HcRuntime } from '../hc/hc.js';
 import { readEnvelope } from './envelope.js';
 import { checkInboxTarget, sendInboxMessage } from './inbox.js';
@@ -163,4 +164,24 @@ it('queues a send when the lease names the expected session', async () => {
       expectedSessionId: 'session-1',
     }),
   ).resolves.toMatchObject({ status: 'queued', terminal: 't7' });
+});
+
+it('names the answer tool when the sender is outside a Git checkout', async () => {
+  const fake = createHcFake();
+  const outside = temporaryDirectory(onTestFinished, 'tau-answer-outside-');
+
+  fake.reply('get', terminalReply({ 'tau.inbox': liveLease('session-1') }));
+
+  const refusal = await caughtError(
+    sendInboxMessage({
+      hc: runtimeOf(fake),
+      target: 't7',
+      family: 'answer',
+      text: answerText,
+      cwd: outside,
+    }),
+  );
+
+  expect(refusal.message).toContain('subagent_answer');
+  expect(labelArguments(fake)).toEqual([]);
 });

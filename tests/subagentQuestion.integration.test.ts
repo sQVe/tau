@@ -1,18 +1,24 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import type { Assignment } from '../src/extensions/subagents/assignment.js';
 import { readAssignment } from '../src/extensions/subagents/assignment.js';
 import type { DeadlineWatchdog } from '../src/extensions/subagents/deadlineWatchdog.js';
-import { registerWorkerScan } from '../src/extensions/subagents/subagents.js';
+import subagentsExtension, {
+  registerCapacityRefusal,
+  registerWorkerScan,
+} from '../src/extensions/subagents/subagents.js';
 import { createWorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
 import { createWorkerScan } from '../src/extensions/subagents/workerScan.js';
 import type { WorkerScan } from '../src/extensions/subagents/workerScan.js';
-import { get, ls, send } from '../src/hc/hc.js';
+import { get } from '../src/hc/hc.js';
+import { inboxMessageType } from '../src/inbox/inbox.js';
+import { fakeExtensionApi } from './extensionApi.js';
+import { initializeRepository } from './gitRepository.js';
 import { startHcSession } from './hcSessionHarness.js';
 import type { HcSession } from './hcSessionHarness.js';
 import {
@@ -31,6 +37,13 @@ interface SessionEntry {
   type: string;
   customType?: string;
   details?: unknown;
+}
+
+interface WorkerSessionEntry {
+  type: string;
+  customType?: string;
+  details?: unknown;
+  message?: { role?: string; content?: unknown };
 }
 
 type DeliveryContext = Parameters<ReturnType<typeof createWorkerDelivery>['deliver']>[0];
@@ -98,15 +111,46 @@ const waitForTerminalLabel = async (
   }
 };
 
-const childAddress = async (hc: HcSession, parent: string): Promise<string> => {
-  const list = await ls(hc.runtime, { all: true });
-  const child = list.terminals.find((terminal) => terminal.parent === parent);
+const waitForInboxLease = async (
+  hc: HcSession,
+  address: string,
+  sessionId: string,
+): Promise<void> => {
+  const deadline = Date.now() + questionDeadlineMilliseconds;
 
-  if (child === undefined) {
-    throw new Error(`No worker terminal under ${parent}.`);
+  for (;;) {
+    const terminal = await get(hc.runtime, address);
+
+    if (terminal.labels?.['tau.inbox']?.startsWith(`${sessionId}:`) === true) {
+      return;
+    }
+
+    if (Date.now() > deadline) {
+      throw new Error(`Worker ${address} never took an inbox lease.`);
+    }
+
+    await delay(questionPollMilliseconds);
+  }
+};
+
+const readSessionEntries = (path: string): WorkerSessionEntry[] =>
+  readFileSync(path, 'utf8')
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .map((line) => JSON.parse(line) as WorkerSessionEntry);
+
+const answerTool = (hc: HcSession) => {
+  const pi = fakeExtensionApi({ exec: hc.runtime.exec });
+
+  subagentsExtension(pi.pi, registerCapacityRefusal(pi.pi));
+
+  const tool = pi.tools.get('subagent_answer');
+
+  if (tool === undefined) {
+    throw new Error('The subagent_answer tool was not registered.');
   }
 
-  return child.address;
+  return tool;
 };
 
 const recordingExtension = (
@@ -180,6 +224,9 @@ it('shows a real worker question once and carries the manager answer into its re
     task: `${questionTaskMarker} Ask which value the report should hold.`,
     acceptance: ['Report the answer.'],
     probe: { source: managerQuestionProbe },
+    inbox: true,
+    // The answer envelope is saved in the worker's Git checkout.
+    prepareWorker: initializeRepository,
   });
 
   const assignment = await waitForQuestion(worker.assignmentFilePath);
@@ -235,17 +282,53 @@ it('shows a real worker question once and carries the manager answer into its re
     questionId: question.questionId,
   });
 
-  const workerAddress = await childAddress(hc, worker.managerAddress);
+  expect(questionMessage?.content).toContain(assignment.assignmentId);
+  expect(questionMessage?.content).toContain(question.questionId);
 
-  expect(questionMessage?.content).toContain(`hc send ${workerAddress} "<answer>"`);
+  await waitForInboxLease(hc, worker.workerAddress, assignment.session.id);
 
   const reply = `manager-reply-${randomBytes(6).toString('hex')}`;
+  const answer = answerTool(hc);
 
-  await send(hc.runtime, workerAddress, { text: reply });
+  const answered = await answer.execute(
+    'call',
+    { assignmentId: assignment.assignmentId, questionId: question.questionId, answer: reply },
+    undefined,
+    undefined,
+    {
+      cwd: assignment.cwd,
+      sessionManager: { getSessionFile: () => managerSessionFile },
+    } as unknown as ExtensionToolContext,
+  );
+
+  expect(answered.details).toMatchObject({ status: 'queued', terminal: worker.workerAddress });
+
+  const { messageId } = answered.details as { messageId: string };
 
   const reported = await waitForReport(worker.assignmentFilePath);
 
   expect(reported.report?.evidence).toContain(reply);
+
+  const workerEntries = readSessionEntries(assignment.session.file);
+
+  expect(workerEntries.filter((entry) => entry.customType === inboxMessageType)).toMatchObject([
+    {
+      type: 'custom_message',
+      details: {
+        messageId,
+        sessionId: assignment.session.id,
+        family: 'answer',
+      },
+    },
+  ]);
+
+  const typedReferences = workerEntries.filter(
+    (entry) =>
+      entry.message?.role === 'user' &&
+      JSON.stringify(entry.message.content).includes(question.questionId),
+  );
+
+  expect(typedReferences).toEqual([]);
 
   await delay(500);
 

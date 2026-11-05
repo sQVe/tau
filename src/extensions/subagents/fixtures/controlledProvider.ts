@@ -17,6 +17,7 @@ import type {
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../../errors.js';
+import { parseAnswerReference } from '../answerRecord.js';
 
 interface FixtureAssignment {
   task: string;
@@ -122,21 +123,23 @@ const contentText = (content: string | (TextContent | ImageContent)[]): string =
         .map((block) => block.text)
         .join('\n');
 
-const typedAnswer = (context: TranscriptContext): string => {
+// The answer message carries a reference to the answer file, not the answer text.
+const deliveredAnswer = (context: TranscriptContext): string => {
   const userMessages = context.messages.filter((message) => message.role === 'user');
-  const answer = userMessages.at(-1);
+  const message = userMessages.at(-1);
 
-  if (userMessages.length < 2 || answer === undefined) {
-    throw new Error('The fixture question got no typed answer from the manager.');
+  if (userMessages.length < 2 || message === undefined) {
+    throw new Error('The fixture question got no answer message from the manager.');
   }
 
-  const text = contentText(answer.content).trim();
+  const reference = parseAnswerReference(contentText(message.content).trim());
+  const record = JSON.parse(readFileSync(reference.answerPath, 'utf8')) as { answer?: unknown };
 
-  if (text === '') {
-    throw new Error('The fixture question got an empty typed answer from the manager.');
+  if (typeof record.answer !== 'string' || record.answer === '') {
+    throw new Error(`The fixture answer file has no answer: ${reference.answerPath}.`);
   }
 
-  return text;
+  return record.answer;
 };
 
 const asksTheManager = (): boolean => savedAssignment?.task.includes(questionTaskMarker) ?? false;
@@ -171,7 +174,7 @@ const questionResponses = (): FauxResponseStep[] => [
       fauxToolCall('subagent_report', {
         outcome: 'success',
         summary: fixtureSummary,
-        evidence: [typedAnswer(context)],
+        evidence: [deliveredAnswer(context)],
       }),
     ]),
 ];

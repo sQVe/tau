@@ -18,7 +18,8 @@ export const publishEnvelope = async (cwd: string, envelope: InboxEnvelope): Pro
     );
   }
 
-  const root = await findTauRoot(cwd, 'handover');
+  const toolName = envelope.family === 'answer' ? 'subagent_answer' : 'handover';
+  const root = await findTauRoot(cwd, toolName);
   const directory = await ensureTauDirectory(root, inboxDirectory);
   const path = join(directory, `${envelope.messageId}.json`);
 

@@ -52,7 +52,11 @@ only the worker writes its report and its questions into it.
   agent directory. A follow-up writes a new assignment file in its own folder and points at the
   session file of the earlier assignment. Each Tau checkout has its own folder, so a branch that
   changes the format does not break another checkout.
-- The manager never writes the file after launch.
+- The manager never writes the file after launch. The worker is the only writer of `assignment.json`
+  after that.
+- Each answer is its own immutable file in an `answers` folder beside `assignment.json`, named by
+  the question ID. An answer is never written into `assignment.json`, so the manager and the worker
+  never write the same file.
 
 ### Launch
 
@@ -93,14 +97,18 @@ only the worker writes its report and its questions into it.
   assignment file with a new question ID and the time. Then Tau sets a `tau.question` label on the
   worker's terminal. A failed label keeps the saved question.
 - The worker's turn ends after the question is saved. The worker process keeps running and waits for
-  typed input.
+  an answer.
 - The manager shows each question once for each assignment ID and question ID. It reads the
-  questions on the same triggers as reports.
-- The shown question names the worker's `hc` address and tells the manager to answer with
-  `hc send <address> "<answer>"`. Tau never uses `hc send --force`. When `hc send` refuses a blocked
-  worker, the manager reports that and does not force it.
-- Tau keeps no answer state. A saved shown message for a question is the only record that the
-  question was handled.
+  questions on the same triggers as reports. The shown question carries both IDs, and the manager
+  answers with `subagent_answer`.
+- `subagent_answer` saves the answer file, then queues one `answer` message to the worker's inbox.
+  It never types into the worker's terminal. It refuses before it saves anything when the assignment
+  belongs to another manager, the question is not the last one saved, no single live child carries
+  the assignment, or the worker has no live inbox lease for its session. The manager reports a
+  refusal to the user.
+- The worker ends its wait only on a valid answer file for its open question or on a user message.
+  Other inbox messages do not end it. A resumed worker whose open question already has a saved
+  answer continues from that file.
 
 ### Deadline
 
@@ -130,10 +138,10 @@ only the worker writes its report and its questions into it.
 
 ### Tools
 
-- The manager has two worker tools. `subagent` launches one, and `subagent_follow_up` resumes an
-  ended worker from its saved Pi session in a new child with a new assignment file and deadline. The
-  manager has no other tool that reads or changes a worker. It answers a question with `hc send`
-  through bash.
+- The manager has three worker tools. `subagent` launches one, `subagent_follow_up` resumes an ended
+  worker from its saved Pi session in a new child with a new assignment file and deadline, and
+  `subagent_answer` answers a worker's open question. The manager has no other tool that reads or
+  changes a worker.
 - The worker has `subagent_report`, `subagent_question`, and the tools of its profile. It has no
   tool to report progress.
 

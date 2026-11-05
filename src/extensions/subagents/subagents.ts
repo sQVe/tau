@@ -167,7 +167,7 @@ const registerLaunchTool = (
       ...modelLine,
       'Editing workers require acceptance criteria. Brief them with, when it applies: outcome, scope and non-goals, entry files, decisions already made, baseline, and checks to run. Give the worktree; one editor per worktree. The deadline includes waits and cleanup.',
       'A worker event starts a new turn when a worker reports, asks a question, or stops. End your turn to wait; never sleep or poll.',
-      'Answer a worker question with `hc send <address> "<answer>"`, never `--force`; report a refused send to the user.',
+      'Answer a worker question with `subagent_answer`; report a refusal to the user.',
     ].join(' '),
     parameters: launchParameters,
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
