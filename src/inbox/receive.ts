@@ -7,6 +7,7 @@ import { get, label } from '../hc/hc.js';
 import type { HcRuntime } from '../hc/hc.js';
 import type { Wake } from '../wake/wake.js';
 import { readEnvelope } from './envelope.js';
+import type { InboxEnvelope } from './envelope.js';
 import {
   decideCandidate,
   decideEnvelopeSession,
@@ -59,19 +60,19 @@ const deliver = (
   dependencies: ReceiverDependencies,
   context: InboxScanContext,
   messageId: string,
-  text: string,
+  envelope: InboxEnvelope,
 ): void => {
   dependencies.receipts.markQueued(messageId);
 
   dependencies.wake(context, {
     customType: inboxMessageType,
-    content: text,
+    content: envelope.text,
     display: true,
     details: {
       version: inboxReceiptVersion,
       messageId,
       sessionId: dependencies.sessionId,
-      family: 'handover',
+      family: envelope.family,
     },
   });
 };
@@ -181,7 +182,7 @@ const handleLabel = async (
     return;
   }
 
-  deliver(dependencies, context, messageId, read.envelope.text);
+  deliver(dependencies, context, messageId, read.envelope);
 };
 
 const readLabels = async (dependencies: ReceiverDependencies): Promise<LabelRead> => {

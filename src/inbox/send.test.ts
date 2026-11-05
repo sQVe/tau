@@ -103,7 +103,7 @@ it('queues one envelope and one label for a receiver with a live lease', async (
   expect(result.messageId).toMatch(/^[0-9a-f-]{36}$/);
 
   expect(await savedEnvelope(root, result.messageId)).toEqual({
-    version: 1,
+    version: 2,
     messageId: result.messageId,
     targetTerminal: 't7',
     targetSessionId: 'session-1',

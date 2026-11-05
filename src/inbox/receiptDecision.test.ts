@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { expect, it } from 'vitest';
 
 import {
@@ -6,6 +9,7 @@ import {
   inboxMessageType,
   readInboxReceipt,
 } from './receiptDecision.js';
+import type { ReceiptEntryFact } from './receiptDecision.js';
 
 const readTable = [
   {
@@ -15,7 +19,34 @@ const readTable = [
       customType: inboxMessageType,
       details: { version: 1, messageId: 'm1', sessionId: 's1', family: 'handover' },
     },
-    receipt: { version: 1, messageId: 'm1', sessionId: 's1', family: 'handover' },
+    receipt: { version: 2, messageId: 'm1', sessionId: 's1', family: 'handover' },
+  },
+  {
+    name: 'a version 2 answer receipt entry',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: { version: 2, messageId: 'm1', sessionId: 's1', family: 'answer' },
+    },
+    receipt: { version: 2, messageId: 'm1', sessionId: 's1', family: 'answer' },
+  },
+  {
+    name: 'a version 1 answer receipt',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: { version: 1, messageId: 'm1', sessionId: 's1', family: 'answer' },
+    },
+    receipt: undefined,
+  },
+  {
+    name: 'a version 2 receipt of an unknown family',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: { version: 2, messageId: 'm1', sessionId: 's1', family: 'other' },
+    },
+    receipt: undefined,
   },
   {
     name: 'an entry of another custom type',
@@ -28,11 +59,11 @@ const readTable = [
     receipt: undefined,
   },
   {
-    name: 'a version 2 receipt',
+    name: 'a version 3 receipt',
     entry: {
       type: 'custom_message',
       customType: inboxMessageType,
-      details: { version: 2, messageId: 'm1', sessionId: 's1', family: 'handover' },
+      details: { version: 3, messageId: 'm1', sessionId: 's1', family: 'handover' },
     },
     receipt: undefined,
   },
@@ -67,6 +98,33 @@ const readTable = [
 
 it.each(readTable.map((row) => [row.name, row] as const))('reads %s', (_name, row) => {
   expect(readInboxReceipt(row.entry)).toEqual(row.receipt);
+});
+
+const receiptFixture = (name: string): ReceiptEntryFact =>
+  JSON.parse(
+    readFileSync(join(import.meta.dirname, 'fixtures', 'receipt', name), 'utf8'),
+  ) as ReceiptEntryFact;
+
+const fixtureMessageId = '11111111-1111-4111-8111-111111111111';
+
+it.each([
+  {
+    fixture: 'v1.json',
+    receipt: {
+      version: 2,
+      messageId: fixtureMessageId,
+      sessionId: 'session-1',
+      family: 'handover',
+    },
+  },
+  {
+    fixture: 'v2.json',
+    receipt: { version: 2, messageId: fixtureMessageId, sessionId: 'session-1', family: 'answer' },
+  },
+  { fixture: 'newer.json', receipt: undefined },
+  { fixture: 'malformed.json', receipt: undefined },
+])('reads the frozen receipt fixture $fixture', ({ fixture, receipt }) => {
+  expect(readInboxReceipt(receiptFixture(fixture))).toEqual(receipt);
 });
 
 const candidateTable = [

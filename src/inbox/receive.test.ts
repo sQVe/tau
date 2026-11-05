@@ -71,7 +71,7 @@ const labelArguments = (fake: HcFake): string[][] =>
     .map((call) => call.commandArguments);
 
 const currentEnvelope = (): InboxEnvelope => ({
-  version: 1,
+  version: 2,
   messageId,
   targetTerminal: terminal,
   targetSessionId: sessionId,
@@ -201,7 +201,7 @@ it('shows a queued message once and removes its label only after the receipt is 
   expect(harness.notifications).toEqual([]);
 
   expect(harness.messages[0]?.details).toEqual({
-    version: 1,
+    version: 2,
     messageId,
     sessionId,
     family: 'handover',
@@ -279,7 +279,7 @@ it.each([
     write: async (directory: string) => {
       await writeFile(
         join(directory, `${messageId}.json`),
-        JSON.stringify({ ...currentEnvelope(), version: 2 }),
+        JSON.stringify({ ...currentEnvelope(), version: 3 }),
       );
     },
   },

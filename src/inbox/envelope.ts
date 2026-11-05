@@ -5,12 +5,13 @@ import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
 import { errorMessage } from '../errors.js';
-import { parseVersionedRecord, readContainedText } from '../record.js';
-import { isRecord } from '../schema.js';
+import { parseVersionedRecord, readContainedText, savedVersion } from '../record.js';
+import { isRecord, stringEnum } from '../schema.js';
 import { checkTauDirectory, findTauRoot } from '../tauDirectory.js';
 import { judgeEnvelopeIdentity } from './envelopeDecision.js';
 import type { ExpectedEnvelope } from './envelopeDecision.js';
 import { isSessionId } from './leaseDecision.js';
+import { inboxFamilies } from './receiptDecision.js';
 
 export type EnvelopeRead =
   | { kind: 'valid'; envelope: InboxEnvelope }
@@ -18,14 +19,25 @@ export type EnvelopeRead =
 
 export const envelopeByteLimit = 102_400;
 
+export const envelopeVersion = 2;
+
+const envelopeFields = {
+  messageId: Type.String({ minLength: 1, maxLength: 200 }),
+  targetTerminal: Type.String({ minLength: 1, maxLength: 500 }),
+  targetSessionId: Type.String({ minLength: 1 }),
+  text: Type.String(),
+};
+
+const envelopeVersion1Schema = Type.Object(
+  { version: Type.Literal(1), ...envelopeFields, family: Type.Literal('handover') },
+  { additionalProperties: false },
+);
+
 const envelopeSchema = Type.Object(
   {
-    version: Type.Literal(1),
-    messageId: Type.String({ minLength: 1, maxLength: 200 }),
-    targetTerminal: Type.String({ minLength: 1, maxLength: 500 }),
-    targetSessionId: Type.String({ minLength: 1 }),
-    family: Type.Literal('handover'),
-    text: Type.String(),
+    version: Type.Literal(envelopeVersion),
+    ...envelopeFields,
+    family: stringEnum(inboxFamilies),
   },
   { additionalProperties: false },
 );
@@ -34,8 +46,8 @@ export type InboxEnvelope = Static<typeof envelopeSchema>;
 
 const envelopeOptions = {
   label: 'envelope',
-  version: 1,
-  schema: envelopeSchema,
+  version: envelopeVersion,
+  schema: (value: unknown) => (savedVersion(value) === 1 ? envelopeVersion1Schema : envelopeSchema),
   check: (value: unknown) => {
     if (!isRecord(value)) {
       return undefined;
@@ -116,7 +128,9 @@ export const readEnvelope = async (
   let envelope: InboxEnvelope;
 
   try {
-    envelope = parseVersionedRecord(path, text, envelopeOptions);
+    const saved = parseVersionedRecord(path, text, envelopeOptions);
+
+    envelope = { ...saved, version: envelopeVersion };
   } catch (error) {
     return { kind: 'refused', reason: errorMessage(error) };
   }

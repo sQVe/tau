@@ -46,7 +46,7 @@ const queuedEnvelope = async (root: string, targetSessionId: string): Promise<st
   const directory = await ensureTauDirectory(root, 'inbox');
 
   const envelope: InboxEnvelope = {
-    version: 1,
+    version: 2,
     messageId,
     targetTerminal: terminal,
     targetSessionId,

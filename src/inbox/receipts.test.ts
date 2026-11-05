@@ -44,3 +44,19 @@ it('clears a queued id once its receipt is saved', () => {
   store.restore([receiptEntry('m1', 's1')]);
   expect(store.isQueued('m1')).toBe(false);
 });
+
+it('restores a version 2 answer receipt beside a version 1 handover receipt', () => {
+  const store = createReceiptStore('s1');
+
+  store.restore([
+    receiptEntry('m1', 's1'),
+    {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: { version: 2, messageId: 'm2', sessionId: 's1', family: 'answer' },
+    },
+  ]);
+
+  expect(store.hasReceipt('m1')).toBe(true);
+  expect(store.hasReceipt('m2')).toBe(true);
+});

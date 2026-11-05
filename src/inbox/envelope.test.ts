@@ -12,7 +12,7 @@ import type { InboxEnvelope } from './envelope.js';
 const fixtures = join(import.meta.dirname, 'fixtures');
 
 const envelope: InboxEnvelope = {
-  version: 1,
+  version: 2,
   messageId: 'm1',
   targetTerminal: 't7',
   targetSessionId: 'session-1',
@@ -132,12 +132,44 @@ it.each([
   expect(result.kind).toBe('refused');
 });
 
-it('reads the current fixture as valid', async () => {
+it('reads the current fixture as an answer envelope', async () => {
   const { path } = await repositoryWithFixture('current.json', 'current-message.json');
 
   await expect(
     readEnvelope(path, { messageId: 'current-message', terminal: 't7' }),
-  ).resolves.toMatchObject({ kind: 'valid' });
+  ).resolves.toMatchObject({ kind: 'valid', envelope: { version: 2, family: 'answer' } });
+});
+
+it('reads the version 1 fixture as a version 2 handover', async () => {
+  const { path } = await repositoryWithFixture('v1.json', 'current-message.json');
+
+  await expect(
+    readEnvelope(path, { messageId: 'current-message', terminal: 't7' }),
+  ).resolves.toEqual({
+    kind: 'valid',
+    envelope: {
+      version: 2,
+      messageId: 'current-message',
+      targetTerminal: 't7',
+      targetSessionId: 'session-1',
+      family: 'handover',
+      text: 'Next steps\n',
+    },
+  });
+});
+
+it.each([
+  { case: 'a version 1 answer', value: { ...envelope, version: 1, family: 'answer' } },
+  { case: 'a version 2 envelope of an unknown family', value: { ...envelope, family: 'other' } },
+])('refuses $case', async ({ value }) => {
+  const { path } = await repositoryWithFile(serializeRecord(value), 'm1.json');
+  const result = await readEnvelope(path, { messageId: 'm1', terminal: 't7' });
+
+  if (result.kind !== 'refused') {
+    throw new Error(`Expected a refused envelope, got ${result.kind}`);
+  }
+
+  expect(result.reason).toMatch(/Malformed envelope/);
 });
 
 it.each([
@@ -196,6 +228,12 @@ it.each([
   {
     case: 'normal',
     fixture: 'current.json',
+    fileName: 'current-message.json',
+    messageId: 'current-message',
+  },
+  {
+    case: 'version 1',
+    fixture: 'v1.json',
     fileName: 'current-message.json',
     messageId: 'current-message',
   },

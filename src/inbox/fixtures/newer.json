@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "messageId": "newer-message",
   "targetTerminal": "t7",
   "targetSessionId": "session-1",
