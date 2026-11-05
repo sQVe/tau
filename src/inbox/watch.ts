@@ -30,7 +30,6 @@ export const createInboxWatch = (options: InboxWatchOptions): InboxWatch => {
   let active: InboxSession | undefined;
   let draining: Promise<void> = Promise.resolve();
 
-  // Every earlier session finishes its lease cleanup before a replacement writes its own lease.
   const stop = (): Promise<void> => {
     generation += 1;
 

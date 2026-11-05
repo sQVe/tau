@@ -29,8 +29,6 @@ export interface InboxScanContext {
   signal: AbortSignal | undefined;
 }
 
-// The session generation that owns this receiver. `isCurrent` is false once the generation stops
-// or its subscription closes. `confirmOwnership` reads the lease again right before a wake.
 export interface ReceiverFence {
   observe: (observed: string | undefined) => void;
   isCurrent: () => boolean;

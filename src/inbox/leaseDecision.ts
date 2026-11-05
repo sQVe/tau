@@ -12,7 +12,6 @@ export interface LeaseOwnershipFacts {
   now: number;
 }
 
-// The envelope schema's check rejects a longer value, so a lease that carries one cannot be queued.
 const sessionIdLimit = 500;
 
 export const isSessionId = (value: string): boolean =>
@@ -53,8 +52,6 @@ export const judgeLease = (label: string | undefined, now: number): LeaseVerdict
   return { kind: 'live', sessionId, expiresAt };
 };
 
-// A live lease with this session's ID is ours even when the exact expiry differs, such as a value a
-// previous process wrote. Only another session's live lease counts as lost.
 export const judgeLeaseOwnership = (facts: LeaseOwnershipFacts): LeaseOwnership => {
   const { observed, sessionId, now } = facts;
   const verdict = judgeLease(observed, now);

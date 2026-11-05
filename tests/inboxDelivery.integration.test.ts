@@ -243,7 +243,6 @@ it('keeps a nextTurn label until a later run saves the entry', async ({ onTestFi
 
   fake.ready();
 
-  // The scan reads the labels, then reads the lease again right before the wake.
   await vi.waitFor(() => {
     expect(getCalls(fake)).toBe(2);
   });

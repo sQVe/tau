@@ -30,23 +30,16 @@ type LeaseState = 'none' | 'held' | 'lost';
 
 export const leaseLifetimeMilliseconds = 60_000;
 export const leaseRenewalMilliseconds = 20_000;
-// After this long, shutdown aborts the session's hc commands so a hung one cannot hold up the
-// replacement session or quit.
 export const leaseCleanupMilliseconds = 5_000;
 
 const leaseLabel = 'tau.inbox';
 
-// One owner per session generation. After each await on hc, a step writes a label or wakes Pi only
-// while this generation is running and its subscription is ready. Lease steps run one at a time,
-// so a late write can never land after a newer one.
 export const createInboxSession = (options: InboxSessionOptions): InboxSession => {
   const cancel = new AbortController();
   const hc: HcRuntime = { ...options.hc, signal: cancel.signal };
   let stopped = false;
   let ready = false;
   let lease: LeaseState = 'none';
-  // The last value an `hc label` call confirmed. A failed write never changes it, so ownership and
-  // shutdown removal judge only values that reached the terminal.
   let written: string | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
   let leaseWork: Promise<void> = Promise.resolve();
@@ -65,8 +58,6 @@ export const createInboxSession = (options: InboxSessionOptions): InboxSession =
     return current.labels?.[leaseLabel];
   };
 
-  // Only a session that has held the lease can lose it. Before its first successful claim, another
-  // live lease belongs to a predecessor, which the retried claim overrides.
   const observe = (observed: string | undefined): void => {
     if (lease !== 'held') {
       return;
@@ -84,8 +75,6 @@ export const createInboxSession = (options: InboxSessionOptions): InboxSession =
     }
   };
 
-  // The first write claims the terminal outright, so the newest session wins. Every later write
-  // reads first and yields to another session's live lease.
   const refreshLease = async (): Promise<void> => {
     if (!isCurrent()) {
       return;
@@ -133,7 +122,6 @@ export const createInboxSession = (options: InboxSessionOptions): InboxSession =
 
   const isHeld = (): boolean => lease === 'held';
 
-  // A claim that a retry tick wins starts a scan, because earlier scans skipped delivery.
   const renewOrRetry = async (): Promise<void> => {
     const wasHeld = isHeld();
 
@@ -173,7 +161,6 @@ export const createInboxSession = (options: InboxSessionOptions): InboxSession =
         return;
       }
 
-      // The claim from ready settles first, so the first scan already knows whether it owns the lease.
       await leaseWork;
       await receiver.scan(options.context);
     },

@@ -53,8 +53,6 @@ const waitForRelease = async (hold: Hold, signal: AbortSignal | undefined): Prom
   return Promise.race([hold.released.promise.then(() => true), aborted]);
 };
 
-// A terminal whose labels change with each `hc label` call. A hold keeps one matching call open
-// until the test releases it; the label change lands at release.
 const createTerminal = () => {
   const labels: Record<string, string> = {};
   const calls: string[][] = [];
@@ -175,7 +173,6 @@ const createGate = () => {
     isReady: () => open,
   };
 
-  // Resolves once a scan has waited on the gate `count` times.
   const reached = (count: number): Promise<void> =>
     new Promise<void>((resolve) => {
       listeners.push({ count, resolve });
@@ -243,7 +240,6 @@ const createHarness = () => {
   };
 };
 
-// Lets pending hc replies and the scans they start finish. Timers stay fake.
 const settle = async (): Promise<void> => {
   for (let round = 0; round < 10; round += 1) {
     await new Promise((resolve) => {
@@ -335,7 +331,6 @@ it('renews the lease with a later expiry while ready', async () => {
     leaseOf(sessionId, now + leaseRenewalMilliseconds + leaseLifetimeMilliseconds),
   ]);
 
-  // One read for the first scan and one for the renewal; a renewal starts no scan.
   expect(harness.terminal.getCalls()).toBe(2);
 
   await harness.watch.stop();
@@ -482,7 +477,6 @@ it('stays lost and never writes the lease again after another session takes it',
 
   const readsAfterReconnect = harness.terminal.getCalls();
 
-  // Only the scan reads after the reconnect; a lost session does no lease work.
   expect(readsAfterReconnect).toBe(readsWhenLost + 1);
 
   await vi.advanceTimersByTimeAsync(leaseRenewalMilliseconds * 3);

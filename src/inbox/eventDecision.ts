@@ -5,7 +5,6 @@ export interface InboxEventFact {
 
 export type InboxEventScan = 'scan' | 'ignore';
 
-// A label change or a missed snapshot starts a scan; heartbeats and status events do nothing.
 export const decideInboxEventScan = (event: InboxEventFact): InboxEventScan => {
   if (event.method === 'missed') {
     return 'scan';

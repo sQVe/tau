@@ -127,7 +127,6 @@ const writeCurrentEnvelope = async (directory: string): Promise<string> => {
 const createHarness = (path: string): Harness => {
   const fake = createHcFake();
 
-  // An empty message ID and an unrelated label must both be skipped.
   fake.reply(
     'get',
     terminalReply({
@@ -487,7 +486,6 @@ it('shows no notice when the generation ends during the envelope read', async ({
   const harness = createHarness(path);
   let checks = 0;
 
-  // The generation is current when the label snapshot arrives and ends before the read finishes.
   const isCurrent = (): boolean => {
     checks += 1;
 

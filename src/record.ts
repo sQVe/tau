@@ -183,10 +183,6 @@ const firstSymlinkComponent = async (
   return components.find((_, index) => linked[index] === true);
 };
 
-// Reads a regular file only when the path is already canonical, stays inside the approved
-// directory, and has no symlink from the approved directory down. The file is opened without
-// following a final link and read from the same descriptor, so a link swapped in after the check
-// cannot redirect the read.
 export const readContainedText = async (request: ContainedTextRequest): Promise<string> => {
   const { directory, path, byteLimit, label } = request;
 
