@@ -107,6 +107,8 @@ export const readVersionedRecord = async <Schema extends TSchema>(
   return parseVersionedRecord(path, text, options);
 };
 
+export const serializeRecord = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+
 // Writes a new file and renames it over the record, so a failed write keeps the old record or none.
 // The rename replaces a link at the path instead of following it.
 export const writeRecord = async (path: string, value: unknown): Promise<void> => {
@@ -117,7 +119,7 @@ export const writeRecord = async (path: string, value: unknown): Promise<void> =
   }
 
   try {
-    await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx' });
+    await writeFile(temporary, serializeRecord(value), { flag: 'wx' });
     await rename(temporary, path);
   } catch (error) {
     await rm(temporary, { force: true });
@@ -157,35 +159,6 @@ export const publishTextSync = (path: string, text: string, options: { mode: num
     fsyncPath(dirname(path), 'r');
   } finally {
     unlinkSync(temporary);
-  }
-};
-
-// Returns undefined when the file holds more than `byteLimit` bytes. Read errors, a missing file
-// included, are thrown.
-export const readTextWithinSync = (path: string, byteLimit: number): string | undefined => {
-  const descriptor = openSync(path, 'r');
-
-  try {
-    const buffer = Buffer.alloc(byteLimit + 1);
-    let bytesRead = 0;
-
-    while (bytesRead < buffer.length) {
-      const read = readSync(descriptor, buffer, {
-        offset: bytesRead,
-        length: buffer.length - bytesRead,
-        position: bytesRead,
-      });
-
-      if (read === 0) {
-        break;
-      }
-
-      bytesRead += read;
-    }
-
-    return bytesRead > byteLimit ? undefined : buffer.subarray(0, bytesRead).toString('utf8');
-  } finally {
-    closeSync(descriptor);
   }
 };
 

@@ -2,15 +2,15 @@ import { join } from 'node:path';
 
 import { label } from '../hc/hc.js';
 import type { HcRuntime } from '../hc/hc.js';
-import { writeRecord } from '../record.js';
+import { serializeRecord, writeRecord } from '../record.js';
 import { ensureTauDirectory, findTauRoot } from '../tauDirectory.js';
-import { envelopeByteLimit, serializeEnvelope } from './envelope.js';
+import { envelopeByteLimit } from './envelope.js';
 import type { InboxEnvelope } from './envelope.js';
 
 const inboxDirectory = 'inbox';
 
 export const publishEnvelope = async (cwd: string, envelope: InboxEnvelope): Promise<string> => {
-  const text = serializeEnvelope(envelope);
+  const text = serializeRecord(envelope);
 
   if (Buffer.byteLength(text, 'utf8') > envelopeByteLimit) {
     throw new Error(

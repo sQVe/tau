@@ -9,12 +9,8 @@ import { parseVersionedRecord, readContainedText } from '../record.js';
 import { isRecord } from '../schema.js';
 import { checkTauDirectory, findTauRoot } from '../tauDirectory.js';
 import { judgeEnvelopeIdentity } from './envelopeDecision.js';
+import type { ExpectedEnvelope } from './envelopeDecision.js';
 import { isSessionId } from './leaseDecision.js';
-
-export interface ExpectedEnvelope {
-  messageId: string;
-  terminal: string;
-}
 
 export type EnvelopeRead =
   | { kind: 'valid'; envelope: InboxEnvelope }
@@ -35,9 +31,6 @@ const envelopeSchema = Type.Object(
 );
 
 export type InboxEnvelope = Static<typeof envelopeSchema>;
-
-export const serializeEnvelope = (envelope: InboxEnvelope): string =>
-  `${JSON.stringify(envelope, null, 2)}\n`;
 
 const envelopeOptions = {
   label: 'envelope',

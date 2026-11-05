@@ -1,6 +1,5 @@
 export interface EnvelopeIdentity {
   filenameMessageId: string;
-  labelMessageId?: string | undefined;
   envelopeMessageId: string;
   targetTerminal: string;
 }
@@ -20,13 +19,6 @@ export const judgeEnvelopeIdentity = (
     return {
       kind: 'refuse',
       reason: `The envelope filename names message "${identity.filenameMessageId}", not "${expected.messageId}".`,
-    };
-  }
-
-  if (identity.labelMessageId !== undefined && identity.labelMessageId !== expected.messageId) {
-    return {
-      kind: 'refuse',
-      reason: `The inbox label names message "${identity.labelMessageId}", not "${expected.messageId}".`,
     };
   }
 

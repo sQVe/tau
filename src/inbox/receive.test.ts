@@ -9,11 +9,11 @@ import { createHcFake } from '../../tests/hcFake.js';
 import type { HcFake } from '../../tests/hcFake.js';
 import type { Exec } from '../command.js';
 import type { HcRuntime } from '../hc/hc.js';
-import { writeRecord } from '../record.js';
+import { serializeRecord, writeRecord } from '../record.js';
 import { ensureTauDirectory } from '../tauDirectory.js';
 import { createWake } from '../wake/wake.js';
 import type { Wake, WakeMessage } from '../wake/wake.js';
-import { envelopeByteLimit, serializeEnvelope } from './envelope.js';
+import { envelopeByteLimit } from './envelope.js';
 import type { InboxEnvelope } from './envelope.js';
 import { inboxMessageType } from './receiptDecision.js';
 import { createReceiptStore } from './receipts.js';
@@ -111,7 +111,7 @@ const receiptEntry = (): SessionEntry => ({
 });
 
 const writeCurrentEnvelope = async (directory: string): Promise<string> => {
-  const text = serializeEnvelope(currentEnvelope());
+  const text = serializeRecord(currentEnvelope());
 
   if (Buffer.byteLength(text, 'utf8') > envelopeByteLimit) {
     throw new Error('fixture envelope is too large');

@@ -10,7 +10,8 @@ import { createHcFake } from '../../tests/hcFake.js';
 import type { HcFake } from '../../tests/hcFake.js';
 import type { Exec } from '../command.js';
 import type { HcRuntime } from '../hc/hc.js';
-import { envelopeByteLimit, serializeEnvelope } from './envelope.js';
+import { serializeRecord } from '../record.js';
+import { envelopeByteLimit } from './envelope.js';
 import { sendInboxMessage } from './inbox.js';
 
 interface TerminalFacts {
@@ -498,7 +499,7 @@ it('accepts an envelope whose written bytes are exactly the limit', async () => 
     text: '',
   };
 
-  const overhead = Buffer.byteLength(serializeEnvelope(placeholder), 'utf8');
+  const overhead = Buffer.byteLength(serializeRecord(placeholder), 'utf8');
   const text = 'x'.repeat(envelopeByteLimit - overhead);
 
   fake.reply('get', terminalReply('t7', { labels: { 'tau.inbox': liveLease() } }));

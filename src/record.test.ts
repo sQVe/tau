@@ -11,7 +11,6 @@ import {
   publishTextSync,
   readContainedText,
   readOptionalText,
-  readTextWithinSync,
   readVersionedRecord,
   savedVersion,
   writeRecord,
@@ -196,17 +195,6 @@ it('publishes text once and leaves no receipt file', async () => {
 
   expect(await readFile(path, 'utf8')).toBe('first');
   expect(await readdir(directory)).toEqual(['a.json']);
-});
-
-it('reads text within the byte limit and refuses more', async () => {
-  const directory = await directoryFixture();
-  const path = join(directory, 'a.json');
-
-  await writeFile(path, 'abcd');
-
-  expect(readTextWithinSync(path, 4)).toBe('abcd');
-  expect(readTextWithinSync(path, 3)).toBeUndefined();
-  expect(() => readTextWithinSync(join(directory, 'missing.json'), 4)).toThrow('ENOENT');
 });
 
 it('reads the saved version of an object only', () => {

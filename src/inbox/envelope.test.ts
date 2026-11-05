@@ -4,8 +4,9 @@ import { dirname, join } from 'node:path';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { serializeRecord } from '../record.js';
 import { ensureTauDirectory } from '../tauDirectory.js';
-import { readEnvelope, serializeEnvelope } from './envelope.js';
+import { readEnvelope } from './envelope.js';
 import type { InboxEnvelope } from './envelope.js';
 
 const fixtures = join(import.meta.dirname, 'fixtures');
@@ -39,12 +40,8 @@ const repositoryWithFixture = async (fixture: string, fileName: string) => {
   return { root, path };
 };
 
-it('serializes indented JSON with a trailing newline', () => {
-  expect(serializeEnvelope(envelope)).toBe(`${JSON.stringify(envelope, null, 2)}\n`);
-});
-
 it('reads a valid envelope', async () => {
-  const { path } = await repositoryWithFile(serializeEnvelope(envelope), 'm1.json');
+  const { path } = await repositoryWithFile(serializeRecord(envelope), 'm1.json');
 
   await expect(readEnvelope(path, { messageId: 'm1', terminal: 't7' })).resolves.toEqual({
     kind: 'valid',
@@ -64,7 +61,7 @@ it('refuses a missing envelope', async () => {
 });
 
 it('refuses a path outside .tau/inbox', async () => {
-  const { path } = await repositoryWithFile(serializeEnvelope(envelope), 'm1.json');
+  const { path } = await repositoryWithFile(serializeRecord(envelope), 'm1.json');
   const outside = join(path, '..', '..', '..', 'm1.json');
 
   const result = await readEnvelope(outside, { messageId: 'm1', terminal: 't7' });
@@ -73,21 +70,21 @@ it('refuses a path outside .tau/inbox', async () => {
 });
 
 it('refuses an id mismatch between the filename and the expected id', async () => {
-  const { path } = await repositoryWithFile(serializeEnvelope(envelope), 'm1.json');
+  const { path } = await repositoryWithFile(serializeRecord(envelope), 'm1.json');
   const result = await readEnvelope(path, { messageId: 'other', terminal: 't7' });
 
   expect(result.kind).toBe('refused');
 });
 
 it('refuses an id mismatch between the filename and the envelope', async () => {
-  const { path } = await repositoryWithFile(serializeEnvelope(envelope), 'other.json');
+  const { path } = await repositoryWithFile(serializeRecord(envelope), 'other.json');
   const result = await readEnvelope(path, { messageId: 'other', terminal: 't7' });
 
   expect(result.kind).toBe('refused');
 });
 
 it('refuses another target terminal', async () => {
-  const { path } = await repositoryWithFile(serializeEnvelope(envelope), 'm1.json');
+  const { path } = await repositoryWithFile(serializeRecord(envelope), 'm1.json');
   const result = await readEnvelope(path, { messageId: 'm1', terminal: 't8' });
 
   expect(result.kind).toBe('refused');
@@ -97,7 +94,7 @@ it('reads a session ID at the length limit', async () => {
   const sessionId = 's'.repeat(500);
 
   const { path } = await repositoryWithFile(
-    serializeEnvelope({ ...envelope, targetSessionId: sessionId }),
+    serializeRecord({ ...envelope, targetSessionId: sessionId }),
     'm1.json',
   );
 
@@ -109,7 +106,7 @@ it('reads a session ID at the length limit', async () => {
 
 it('refuses a session ID over the length limit', async () => {
   const { path } = await repositoryWithFile(
-    serializeEnvelope({ ...envelope, targetSessionId: 's'.repeat(501) }),
+    serializeRecord({ ...envelope, targetSessionId: 's'.repeat(501) }),
     'm1.json',
   );
 
@@ -128,7 +125,7 @@ it.each([
   const path = join(directory, fileName);
 
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, serializeEnvelope(envelope));
+  await writeFile(path, serializeRecord(envelope));
 
   const result = await readEnvelope(path, { messageId, terminal: 't7' });
 
@@ -183,7 +180,7 @@ it('refuses a path that reaches the inbox through a symlink and ..', async () =>
   const root = await createTemporaryRepository(onTestFinished);
   const directory = await ensureTauDirectory(root, 'inbox');
 
-  await writeFile(join(directory, 'm1.json'), serializeEnvelope(envelope));
+  await writeFile(join(directory, 'm1.json'), serializeRecord(envelope));
   await mkdir(join(directory, 'nested'));
   await symlink(join(directory, 'nested'), join(directory, 'linked'), 'dir');
 

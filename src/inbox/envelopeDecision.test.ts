@@ -21,16 +21,6 @@ it.each([
     kind: 'refuse',
   },
   {
-    case: 'a label mismatch',
-    identity: {
-      filenameMessageId: 'm1',
-      labelMessageId: 'm2',
-      envelopeMessageId: 'm1',
-      targetTerminal: 't7',
-    },
-    kind: 'refuse',
-  },
-  {
     case: 'another target terminal',
     identity: { filenameMessageId: 'm1', envelopeMessageId: 'm1', targetTerminal: 't8' },
     kind: 'refuse',
