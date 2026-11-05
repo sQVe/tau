@@ -14,6 +14,7 @@ import type { ToolResult } from './errorResult.js';
 import type { FollowUpParameters } from './followUpParameters.js';
 import { capacityRefusal, startReservedWorker } from './launch.js';
 import type { LaunchRuntime, LaunchStatus } from './launch.js';
+import { ownerRefusal } from './ownerRefusal.js';
 import { decideSessionUse } from './sessionUse.js';
 import type { SessionUse, SessionUseTerminal } from './sessionUse.js';
 import { skillToolsRefusal } from './skillToolsRefusal.js';
@@ -112,8 +113,10 @@ const followUpSource = async (
     throw new Error(`Missing source assignment ${sourcePath}; no follow-up can start.`);
   }
 
-  if (source.parentSession !== parentSession) {
-    throw new Error(`Assignment ${source.assignmentId} belongs to another manager session.`);
+  const ownerProblem = ownerRefusal(source, parentSession);
+
+  if (ownerProblem !== undefined) {
+    throw new Error(ownerProblem);
   }
 
   const acceptanceProblem = acceptanceRefusal(source.loadout.role, parameters.acceptance);

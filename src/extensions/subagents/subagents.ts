@@ -15,6 +15,8 @@ import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
 import { isWorkerProcess } from '../../worker.js';
+import { executeAnswer } from './answer.js';
+import { answerParameters } from './answerParameters.js';
 import { readBrowserLoginCommand } from './browserLogin.js';
 import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.js';
 import { createDeadlineWatchdog } from './deadlineWatchdog.js';
@@ -237,6 +239,28 @@ const registerFollowUpTool = (runtime: LaunchRuntime, scan: WorkerScan): void =>
   });
 };
 
+const registerAnswerTool = (runtime: LaunchRuntime): void => {
+  runtime.pi.registerTool({
+    name: 'subagent_answer',
+    exposure: 'model-only',
+    label: 'Answer worker',
+    description: [
+      "Answer a running worker's open question with the IDs from its question message.",
+      'Tau saves the answer and queues it to the worker inbox. Queued is not a read receipt.',
+    ].join(' '),
+    parameters: answerParameters,
+    async execute(_toolCallId, parameters, signal, _onUpdate, context) {
+      const parentSession = context.sessionManager.getSessionFile();
+
+      if (parentSession == null || parentSession === '') {
+        throw new Error('Answering a worker requires a saved parent Pi session.');
+      }
+
+      return executeAnswer(runtime, { parameters, parentSession, cwd: context.cwd }, signal);
+    },
+  });
+};
+
 export const registerCapacityRefusal = (pi: ExtensionAPI): CapacityRefusal => {
   if (isWorkerProcess()) {
     return { refuse: () => undefined };
@@ -342,6 +366,7 @@ export default function subagentsExtension(
 
     registerLaunchTool(runtime, profiles, scan, launchModelLine(context, profiles));
     registerFollowUpTool(runtime, scan);
+    registerAnswerTool(runtime);
 
     if (delegating) {
       guidelines = delegationGuidelines(browserLoginCommand(context));
@@ -368,4 +393,5 @@ export default function subagentsExtension(
   );
 
   registerFollowUpTool(fallbackRuntime, scan);
+  registerAnswerTool(fallbackRuntime);
 }
