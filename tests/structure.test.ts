@@ -151,6 +151,7 @@ const pureModules = [
   'src/extensions/tracker/promptLines.ts',
   'src/fileLock/lockHolderDecision.ts',
   'src/github/repositoryTargetDecisions.ts',
+  'src/hc/reconnect.ts',
   'src/process/stateDecision.ts',
   'src/reviewCapture/coverageDecision.ts',
   'src/reviewCapture/endpointDecision.ts',

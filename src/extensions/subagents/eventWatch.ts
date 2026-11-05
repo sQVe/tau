@@ -3,7 +3,8 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { notifyOnce } from '../../config/config.js';
 import type { EventSubscription, HcEvent, SubscribeEvents } from '../../hc/events.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
-import { decideEventScan, decideReconnect } from './eventDecision.js';
+import { decideReconnect } from '../../hc/reconnect.js';
+import { decideEventScan } from './eventDecision.js';
 import type { WorkerScan } from './workerScan.js';
 
 export type EventWatchContext = Pick<
@@ -90,55 +91,58 @@ export const createEventWatch = (subscribe: SubscribeEvents, scan: WorkerScan): 
     connection += 1;
     const connectionId = connection;
 
-    subscription = subscribe(managerTerminal, {
-      onReady: () => {
-        if (connectionId !== connection) {
-          return;
-        }
+    subscription = subscribe(
+      { childrenOf: managerTerminal },
+      {
+        onReady: () => {
+          if (connectionId !== connection) {
+            return;
+          }
 
-        attempt = 0;
-        generation += 1;
-        requestScan();
-      },
-      onEvent: (event: HcEvent) => {
-        if (connectionId !== connection) {
-          return;
-        }
-
-        if (decideEventScan(event) === 'scan') {
+          attempt = 0;
+          generation += 1;
           requestScan();
-        }
+        },
+        onEvent: (event: HcEvent) => {
+          if (connectionId !== connection) {
+            return;
+          }
+
+          if (decideEventScan(event) === 'scan') {
+            requestScan();
+          }
+        },
+        onClose: (reason) => {
+          if (connectionId !== connection) {
+            return;
+          }
+
+          subscription = undefined;
+
+          if (stopped) {
+            return;
+          }
+
+          notify(`Worker event subscription closed: ${reason}`, `closed:${generation}`);
+
+          if (retry !== undefined) {
+            return;
+          }
+
+          const plan = decideReconnect(attempt);
+
+          if (plan.lasting) {
+            notify('Worker event subscription keeps failing; retrying.', `lasting:${generation}`);
+          }
+
+          retry = setTimeout(() => {
+            retry = undefined;
+            attempt += 1;
+            connect();
+          }, plan.delay);
+        },
       },
-      onClose: (reason) => {
-        if (connectionId !== connection) {
-          return;
-        }
-
-        subscription = undefined;
-
-        if (stopped) {
-          return;
-        }
-
-        notify(`Worker event subscription closed: ${reason}`, `closed:${generation}`);
-
-        if (retry !== undefined) {
-          return;
-        }
-
-        const plan = decideReconnect(attempt);
-
-        if (plan.lasting) {
-          notify('Worker event subscription keeps failing; retrying.', `lasting:${generation}`);
-        }
-
-        retry = setTimeout(() => {
-          retry = undefined;
-          attempt += 1;
-          connect();
-        }, plan.delay);
-      },
-    });
+    );
   };
 
   return {

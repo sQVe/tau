@@ -1,11 +1,6 @@
 import { expect, it } from 'vitest';
 
-import {
-  deadlineWarningReserve,
-  decideDeadline,
-  retryDelay,
-  reuseArmedTimer,
-} from './deadlineDecision.js';
+import { deadlineWarningReserve, decideDeadline, reuseArmedTimer } from './deadlineDecision.js';
 import type {
   DeadlineAssignment,
   DeadlineChildFact,
@@ -214,15 +209,6 @@ it.each<{ name: string; given: DeadlineFacts; expected: DeadlinePlan }>([
   },
 ])('$name', ({ given, expected }) => {
   expect(decideDeadline(given)).toStrictEqual(expected);
-});
-
-it.each<{ name: string; attempt: number; expected: number | undefined }>([
-  { name: 'waits 5 s after the first failure', attempt: 0, expected: 5_000 },
-  { name: 'waits 15 s after the second failure', attempt: 1, expected: 15_000 },
-  { name: 'waits 45 s after the third failure', attempt: 2, expected: 45_000 },
-  { name: 'stops after the bounded schedule', attempt: 3, expected: undefined },
-])('$name', ({ attempt, expected }) => {
-  expect(retryDelay(attempt)).toBe(expected);
 });
 
 it.each<{

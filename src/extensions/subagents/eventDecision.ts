@@ -1,15 +1,8 @@
-import { lastRetryDelay, retryDelay } from './deadlineDecision.js';
-
 export type EventScanAction = 'scan' | 'ignore';
 
 export interface EventFact {
   method: string;
   type?: string | undefined;
-}
-
-export interface ReconnectPlan {
-  delay: number;
-  lasting: boolean;
 }
 
 const scanEventTypes: ReadonlySet<string> = new Set(['labels', 'finished']);
@@ -24,12 +17,4 @@ export const decideEventScan = (event: EventFact): EventScanAction => {
   }
 
   return 'ignore';
-};
-
-export const decideReconnect = (attempt: number): ReconnectPlan => {
-  const next = retryDelay(attempt);
-
-  return next === undefined
-    ? { delay: lastRetryDelay, lasting: true }
-    : { delay: next, lasting: false };
 };

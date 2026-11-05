@@ -4,13 +4,9 @@ import { notifyOnce } from '../../config/config.js';
 import { errorMessage } from '../../errors.js';
 import { currentTerminalAddress, get, kill, label, send } from '../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
+import { retryDelay } from '../../hc/reconnect.js';
 import { readAssignment } from './assignment.js';
-import {
-  decideDeadline,
-  deadlineEndLabel,
-  retryDelay,
-  reuseArmedTimer,
-} from './deadlineDecision.js';
+import { decideDeadline, deadlineEndLabel, reuseArmedTimer } from './deadlineDecision.js';
 import type {
   DeadlineAssignment,
   DeadlineChildFact,

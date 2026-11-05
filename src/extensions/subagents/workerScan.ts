@@ -3,7 +3,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { errorMessage } from '../../errors.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
-import { retryDelay } from './deadlineDecision.js';
+import { retryDelay } from '../../hc/reconnect.js';
 import type { DeadlineWatchdog } from './deadlineWatchdog.js';
 import { readWorkerChildren } from './workerDelivery.js';
 import type { WorkerChildRead, WorkerDelivery } from './workerDelivery.js';

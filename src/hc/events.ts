@@ -26,8 +26,12 @@ interface SubscribeOptions {
   signal?: AbortSignal | undefined;
 }
 
+export type EventSelector =
+  | { terminal: string; childrenOf?: never }
+  | { childrenOf: string; terminal?: never };
+
 export type SubscribeEvents = (
-  childrenOf: string,
+  selector: EventSelector,
   handlers: SubscribeHandlers,
   options?: SubscribeOptions,
 ) => EventSubscription;
@@ -73,7 +77,15 @@ const start = (options: SubscribeOptions): ChildProcessWithoutNullStreams => {
   return child;
 };
 
-export const subscribeEvents: SubscribeEvents = (childrenOf, handlers, options = {}) => {
+const subscribeParams = (selector: EventSelector): Record<string, string> => {
+  if ('terminal' in selector) {
+    return { terminal: selector.terminal };
+  }
+
+  return { children_of: selector.childrenOf };
+};
+
+export const subscribeEvents: SubscribeEvents = (selector, handlers, options = {}) => {
   let child: ChildProcessWithoutNullStreams;
 
   try {
@@ -213,7 +225,7 @@ export const subscribeEvents: SubscribeEvents = (childrenOf, handlers, options =
 
   child.stdin.write(
     requestLine(1, 'hello', { generation: helloGeneration }) +
-      requestLine(2, 'events.subscribe', { children_of: childrenOf }),
+      requestLine(2, 'events.subscribe', subscribeParams(selector)),
   );
 
   return {

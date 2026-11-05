@@ -61,16 +61,6 @@ export const deadlineWarningReserve = 90_000;
 
 export const deadlineEndLabel = { key: 'tau.ended', value: 'deadline' } as const;
 
-const firstRetryMilliseconds = 5_000;
-const secondRetryMilliseconds = 15_000;
-const thirdRetryMilliseconds = 45_000;
-
-const retryDelays = [firstRetryMilliseconds, secondRetryMilliseconds, thirdRetryMilliseconds];
-
-export const retryDelay = (attempt: number): number | undefined => retryDelays[attempt];
-
-export const lastRetryDelay = retryDelays.at(-1) ?? 0;
-
 export const reuseArmedTimer = (
   current: ArmedTimerFact | undefined,
   next: ArmedTimerFact,

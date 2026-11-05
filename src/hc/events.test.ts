@@ -6,7 +6,7 @@ import { PassThrough } from 'node:stream';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { subscribeEvents } from './events.js';
-import type { HcEvent, SubscribeHandlers } from './events.js';
+import type { EventSelector, HcEvent, SubscribeHandlers } from './events.js';
 
 interface FakeChild {
   stdin: PassThrough;
@@ -15,6 +15,11 @@ interface FakeChild {
   kill: ReturnType<typeof vi.fn>;
   on: (event: string, listener: (...argumentsList: unknown[]) => void) => FakeChild;
   emit: (event: string, ...argumentsList: unknown[]) => boolean;
+}
+
+interface SubscribeMessage {
+  method: string;
+  params: unknown;
 }
 
 vi.mock(import('node:child_process'), async (importOriginal) => {
@@ -79,26 +84,42 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it('writes hello and events.subscribe with the manager terminal', () => {
+const subscribeMessages = (selector: EventSelector): SubscribeMessage[] => {
   const child = createFakeChild();
   spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
 
   const { handlers } = createHandlers();
   const write = vi.spyOn(child.stdin, 'write');
 
-  subscribeEvents('t-manager', handlers);
+  subscribeEvents(selector, handlers);
 
   const written = write.mock.calls.map((call) => String(call[0])).join('');
 
-  const messages = written
+  return written
     .trim()
     .split('\n')
-    .map((line) => JSON.parse(line) as unknown);
+    .map((line) => JSON.parse(line) as SubscribeMessage);
+};
 
-  expect(messages).toEqual([
+const subscribeParams = (selector: EventSelector): unknown =>
+  subscribeMessages(selector).find((message) => message.method === 'events.subscribe')?.params;
+
+it('writes hello and events.subscribe with only the children filter', () => {
+  expect(subscribeMessages({ childrenOf: 't-manager' })).toEqual([
     { jsonrpc: '2.0', id: 1, method: 'hello', params: { generation: 1 } },
     { jsonrpc: '2.0', id: 2, method: 'events.subscribe', params: { children_of: 't-manager' } },
   ]);
+});
+
+it('writes events.subscribe with only the terminal filter', () => {
+  expect(subscribeParams({ terminal: 't-self' })).toEqual({ terminal: 't-self' });
+});
+
+it('rejects a selector that names both a terminal and its children', () => {
+  // @ts-expect-error terminal and childrenOf are mutually exclusive
+  const selector: EventSelector = { terminal: 't-self', childrenOf: 't-manager' };
+
+  expect(selector.terminal).toBe('t-self');
 });
 
 it('reports ready after the subscribe reply and dispatches label and finished events', () => {
@@ -107,7 +128,7 @@ it('reports ready after the subscribe reply and dispatches label and finished ev
 
   const { handlers, ready, events } = createHandlers();
 
-  subscribeEvents('t-manager', handlers);
+  subscribeEvents({ childrenOf: 't-manager' }, handlers);
 
   child.stdout.emit('data', helloLine);
   child.stdout.emit('data', subscribeLine);
@@ -128,7 +149,7 @@ it('dispatches a heartbeat and a missed snapshot as notifications', () => {
 
   const { handlers, events } = createHandlers();
 
-  subscribeEvents('t-manager', handlers);
+  subscribeEvents({ childrenOf: 't-manager' }, handlers);
 
   child.stdout.emit('data', notification('heartbeat', { seq: 3 }));
   child.stdout.emit('data', notification('missed', { seq: 4 }));
@@ -142,7 +163,7 @@ it('joins a split JSON line before dispatching it', () => {
 
   const { handlers, events } = createHandlers();
 
-  subscribeEvents('t-manager', handlers);
+  subscribeEvents({ childrenOf: 't-manager' }, handlers);
 
   const line = notification('event', { type: 'labels' });
 
@@ -158,7 +179,7 @@ it('closes with the exit code when hc connect ends', () => {
 
   const { handlers, closes } = createHandlers();
 
-  subscribeEvents('t-manager', handlers);
+  subscribeEvents({ childrenOf: 't-manager' }, handlers);
   child.emit('close', 7, null);
 
   expect(closes).toEqual(['hc connect exited with code 7']);
@@ -170,7 +191,7 @@ it('closes when the subscribe reply has no result', () => {
 
   const { handlers, ready, closes } = createHandlers();
 
-  subscribeEvents('t-manager', handlers);
+  subscribeEvents({ childrenOf: 't-manager' }, handlers);
   child.stdout.emit('data', `${JSON.stringify({ jsonrpc: '2.0', id: 2 })}\n`);
 
   expect(ready).toHaveLength(0);
@@ -183,7 +204,7 @@ it('closes when a reply is an error', () => {
 
   const { handlers, closes } = createHandlers();
 
-  subscribeEvents('t-manager', handlers);
+  subscribeEvents({ childrenOf: 't-manager' }, handlers);
 
   child.stdout.emit(
     'data',
@@ -199,7 +220,7 @@ it('closes when a line is not JSON', () => {
 
   const { handlers, closes } = createHandlers();
 
-  subscribeEvents('t-manager', handlers);
+  subscribeEvents({ childrenOf: 't-manager' }, handlers);
   child.stdout.emit('data', 'not-json\n');
 
   expect(closes).toEqual(['hc connect printed a line that is not JSON']);
@@ -213,7 +234,7 @@ it('sends no signal when the child closes on its own', () => {
 
   const { handlers, closes } = createHandlers();
 
-  subscribeEvents('t-manager', handlers);
+  subscribeEvents({ childrenOf: 't-manager' }, handlers);
   child.emit('close', 7, null);
 
   expect(child.kill).not.toHaveBeenCalled();
@@ -229,7 +250,7 @@ it('escalates a failed child to SIGKILL when it ignores SIGTERM', () => {
 
   const { handlers } = createHandlers();
 
-  subscribeEvents('t-manager', handlers);
+  subscribeEvents({ childrenOf: 't-manager' }, handlers);
   child.stdin.emit('error', new Error('write broke'));
 
   expect(child.kill).toHaveBeenNthCalledWith(1, 'SIGTERM');
@@ -249,7 +270,7 @@ it('does not send SIGKILL when the child closes after SIGTERM', () => {
 
   const { handlers } = createHandlers();
 
-  subscribeEvents('t-manager', handlers);
+  subscribeEvents({ childrenOf: 't-manager' }, handlers);
   child.stdin.emit('error', new Error('write broke'));
   child.emit('close', null, 'SIGTERM');
 
@@ -264,7 +285,7 @@ it('stops the child without a close report when the subscription is stopped', ()
 
   const { handlers, closes } = createHandlers();
 
-  const subscription = subscribeEvents('t-manager', handlers);
+  const subscription = subscribeEvents({ childrenOf: 't-manager' }, handlers);
 
   subscription.stop();
   child.emit('close', null, 'SIGTERM');

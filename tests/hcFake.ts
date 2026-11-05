@@ -1,6 +1,11 @@
 import type { Exec } from '../src/command.js';
 import type { Connect } from '../src/hc/connect.js';
-import type { HcEvent, SubscribeEvents, SubscribeHandlers } from '../src/hc/events.js';
+import type {
+  EventSelector,
+  HcEvent,
+  SubscribeEvents,
+  SubscribeHandlers,
+} from '../src/hc/events.js';
 import { createExecFake, failedResult, succeededResult } from './execFake.js';
 import type { ExecCall } from './execFake.js';
 
@@ -32,7 +37,7 @@ export interface HcFake {
   appendConnectOutput: (text: string) => void;
   setConnectExit: (code: number | null, signal?: NodeJS.Signals | null) => void;
   subscribe: SubscribeEvents;
-  subscribeCalls: string[];
+  subscribeCalls: EventSelector[];
   liveSubscriptions: () => number;
   closeSubscriptionAt: (index: number, reason: string) => void;
   ready: () => void;
@@ -135,8 +140,13 @@ export const createHcFake = (): HcFake => {
     return Promise.resolve(result);
   };
 
-  const subscriptions: { childrenOf: string; handlers: SubscribeHandlers; stopped: boolean }[] = [];
-  const subscribeCalls: string[] = [];
+  const subscriptions: {
+    selector: EventSelector;
+    handlers: SubscribeHandlers;
+    stopped: boolean;
+  }[] = [];
+
+  const subscribeCalls: EventSelector[] = [];
 
   const activeSubscription = () =>
     [...subscriptions].toReversed().find((subscription) => !subscription.stopped);
@@ -155,11 +165,11 @@ export const createHcFake = (): HcFake => {
     entry.handlers.onClose(reason);
   };
 
-  const subscribe: SubscribeEvents = (childrenOf, handlers) => {
-    const entry = { childrenOf, handlers, stopped: false };
+  const subscribe: SubscribeEvents = (selector, handlers) => {
+    const entry = { selector, handlers, stopped: false };
 
     subscriptions.push(entry);
-    subscribeCalls.push(childrenOf);
+    subscribeCalls.push(selector);
 
     return {
       stop: () => {
