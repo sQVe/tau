@@ -23,6 +23,13 @@ format only, never a worker kind or another value the reader can derive. Giving 
 version, and keeping strict readers, lets a reader tell a newer record from a broken one, and it
 still rejects fields it does not know.
 
+### Version only records that Tau reads back
+
+A saved file counts as a record when Tau code parses it again, in this session or a later one. A
+write-only diagnostic file that no Tau reader parses, such as the `run.json` of a TDD run, needs no
+version or fixtures. Its readers are people and agents who inspect it. Once Tau code starts to read
+such a file, it becomes a record and gets a version with that change.
+
 ### Change the version with the format
 
 - Any change to the saved fields is a format change, including a new optional field. A strict older

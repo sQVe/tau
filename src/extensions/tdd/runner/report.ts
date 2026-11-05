@@ -1,6 +1,7 @@
 import { isAbsolute, relative } from 'node:path';
 
 import { isRecord } from '../../../schema.js';
+import { maximumFailures } from './constants.js';
 import type { RunnerResult, RunTestsInput, TestFailure, TestResult } from './types.js';
 
 type VitestAssertionStatus = TestResult['status'] | 'pending' | 'disabled';
@@ -31,7 +32,6 @@ export interface VitestReport {
   testResults: VitestTestFile[];
 }
 
-export const maximumFailures = 10;
 const maximumMessageCharacters = 300;
 
 const assertionStatuses = new Set<string>([

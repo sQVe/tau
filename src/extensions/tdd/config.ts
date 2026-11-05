@@ -1,20 +1,15 @@
-import { CONFIG_DIR_NAME } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
 
-import {
-  configFileName,
-  readTauConfig,
-  requireKnownKey,
-  warnUnknownKeys,
-} from '../../config/config.js';
+import { readTauConfig, requireKnownKey, warnUnknownKeys } from '../../config/config.js';
 import type { ConfigFile, ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import type { KnownKeys } from '../../schema.js';
 import { mergeConfigLayers } from './configLayers.js';
 import type { ConfigLayer, MergedTddConfig } from './configLayers.js';
 import { createInputRules, unsupportedGlobReason } from './inputGlob.js';
 import type { InputRules } from './inputGlob.js';
+import { lookupRunner } from './runner/runners.js';
 
 export type TddConfig = Static<typeof tddConfigSchema>;
 
@@ -53,26 +48,12 @@ const configFileSchema = Type.Object({
 
 const defaultSource = 'built-in default';
 
-export const defaultTddConfig: TddConfig = {
-  productionGlobs: ['{src,apps,packages,functions,infra}/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
-  testGlobs: ['**/*.test.{ts,tsx,js,jsx,mjs,cjs}', '**/*.spec.{ts,tsx,js,jsx,mjs,cjs}'],
-  testSupportGlobs: ['tests/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
-  excludedGlobs: [
-    '**/{node_modules,.git,dist,build,coverage,.next,.nuxt,.output,.turbo,.cache,generated,__generated__}/**',
-  ],
-  // The default reporter keeps console and setup diagnostics; JSON alone omits them.
-  verificationArgv: ['vitest', 'run', '--reporter=json', '--reporter=default', '--no-color'],
-};
+const vitestRunner = lookupRunner('vitest');
+
+export const defaultTddConfig: TddConfig = vitestRunner.defaults;
 
 // Vitest loads its own configuration before Vite's. Hash both because either can change which tests run.
-export const configurationGlobs = [
-  `${CONFIG_DIR_NAME}/${configFileName}`,
-  '**/package.json',
-  '**/{vite,vitest}.config.{ts,mts,cts,js,mjs,cjs}',
-  '**/vitest.workspace.{ts,mts,cts,js,mjs,cjs,json}',
-  '**/tsconfig*.json',
-  '**/{pnpm-lock.yaml,package-lock.json,npm-shrinkwrap.json,yarn.lock,bun.lock,bun.lockb,pnpm-workspace.yaml}',
-];
+export const configurationGlobs = vitestRunner.configurationGlobs;
 
 const problem = (value: unknown): string => {
   const [error] = Value.Errors(configFileSchema, value);

@@ -15,8 +15,8 @@ import {
 } from './observationTransition.js';
 import type { CheckpointInput, CycleState, HintDecision } from './observationTransition.js';
 import { finishDiagnostics } from './runner/retention.js';
+import { lookupRunner } from './runner/runners.js';
 import type { RunDiagnostics, RunnerResult } from './runner/types.js';
-import { runTests } from './runner/vitest.js';
 import type { Behavior, ObservationResult, TestObservation, TestScope } from './types.js';
 
 interface ObservationState {
@@ -206,7 +206,9 @@ const runTestsFor = (
   state: ObservationState,
   behavior: Behavior,
   request: RunRequest,
-): ReturnType<typeof runTests> => {
+): Promise<RunnerResult> => {
+  const runner = lookupRunner('vitest');
+
   const input = {
     cwd: state.cwd,
     verificationArgv: state.config.verificationArgv,
@@ -214,10 +216,10 @@ const runTestsFor = (
   };
 
   if (request.scope === 'full') {
-    return runTests({ ...input, scope: 'full' });
+    return runner.run({ ...input, scope: 'full' });
   }
 
-  return runTests({
+  return runner.run({
     ...input,
     scope: 'focused',
     files: behavior.files,

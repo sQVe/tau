@@ -1,10 +1,11 @@
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { delimiter, join } from 'node:path';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
-import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
-import { defaultSpawn, maximumStdoutBytes, maximumTotalBytes, nodeExecutable } from './process.js';
+import { defaultSpawn, maximumStdoutBytes, maximumTotalBytes } from './process.js';
+import { nodeExecutable } from './resolution.js';
 
 const scriptDirectory = async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-process-');
@@ -62,6 +63,18 @@ const expectStopped = async (pids: number[]) => {
   );
 };
 
+it('spawns the executable directly and captures its stdout', async () => {
+  const directory = await scriptDirectory();
+
+  expect(
+    await defaultSpawn('/bin/echo', ['hello'], { cwd: directory, timeoutMs: 10_000 }),
+  ).toMatchObject({
+    stdout: 'hello\n',
+    code: 0,
+    started: true,
+  });
+});
+
 it('returns the output, exit code, and byte counts of a finished process', async () => {
   const directory = await scriptDirectory();
 
@@ -70,7 +83,9 @@ it('returns the output, exit code, and byte counts of a finished process', async
     "process.stdout.write('hello');\nprocess.stderr.write('warn');\nprocess.exitCode = 3;\n",
   );
 
-  expect(await defaultSpawn(script, [], { cwd: directory, timeoutMs: 10_000 })).toMatchObject({
+  expect(
+    await defaultSpawn(nodeExecutable(), [script], { cwd: directory, timeoutMs: 10_000 }),
+  ).toMatchObject({
     stdout: 'hello',
     stderr: 'warn',
     code: 3,
@@ -90,7 +105,9 @@ it('gives the process no stdin so a read ends at once', async () => {
     "process.stdin.resume();\nprocess.stdin.on('end', () => process.stdout.write('end'));\n",
   );
 
-  expect(await defaultSpawn(script, [], { cwd: directory, timeoutMs: 2_000 })).toMatchObject({
+  expect(
+    await defaultSpawn(nodeExecutable(), [script], { cwd: directory, timeoutMs: 2_000 }),
+  ).toMatchObject({
     stdout: 'end',
     code: 0,
     timedOut: false,
@@ -119,7 +136,10 @@ it.for([
         `write(process.stderr, 'e', ${stderrLength});\n`,
     );
 
-    const result = await defaultSpawn(script, [], { cwd: directory, timeoutMs: 10_000 });
+    const result = await defaultSpawn(nodeExecutable(), [script], {
+      cwd: directory,
+      timeoutMs: 10_000,
+    });
 
     expect(result.stdout).toBe('o'.repeat(maximumStdoutBytes));
     expect(result.stderr).toBe('e'.repeat(maximumTotalBytes));
@@ -148,7 +168,7 @@ it('kills the process and its descendants when the timeout expires', async () =>
     vi.useRealTimers();
   });
 
-  const pending = defaultSpawn(script, [], {
+  const pending = defaultSpawn(nodeExecutable(), [script], {
     cwd: directory,
     timeoutMs,
     signal: controller.signal,
@@ -173,7 +193,7 @@ it('kills the process and its descendants when the signal aborts', async () => {
     controller.abort();
   });
 
-  const pending = defaultSpawn(script, [], {
+  const pending = defaultSpawn(nodeExecutable(), [script], {
     cwd: directory,
     timeoutMs: 60_000,
     signal: controller.signal,
@@ -194,7 +214,11 @@ it('stops at once when the signal aborted before the run', async () => {
   controller.abort();
 
   expect(
-    await defaultSpawn(script, [], { cwd: directory, timeoutMs: 2_000, signal: controller.signal }),
+    await defaultSpawn(nodeExecutable(), [script], {
+      cwd: directory,
+      timeoutMs: 2_000,
+      signal: controller.signal,
+    }),
   ).toMatchObject({ code: null, timedOut: false });
 });
 
@@ -209,7 +233,7 @@ it('sends no kill after a finished run when its timeout would have expired', asy
     vi.useRealTimers();
   });
 
-  const result = await defaultSpawn(script, [], { cwd: directory, timeoutMs });
+  const result = await defaultSpawn(nodeExecutable(), [script], { cwd: directory, timeoutMs });
   const kill = vi.spyOn(process, 'kill').mockReturnValue(true);
 
   onTestFinished(() => {
@@ -226,112 +250,11 @@ it('reports a spawn error as an unstarted run without an exit code', async () =>
   const directory = await scriptDirectory();
   const script = await writeScript(directory, '');
 
-  const result = await defaultSpawn(script, [], {
+  const result = await defaultSpawn(nodeExecutable(), [script], {
     cwd: join(directory, 'missing'),
     timeoutMs: 10_000,
   });
 
   expect(result).toMatchObject({ code: null, started: false, timedOut: false });
   expect(result.stderr).toContain('ENOENT');
-});
-
-describe('nodeExecutable', () => {
-  it('ignores a directory named node on PATH', async () => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-node-');
-
-    onTestFinished(async () => {
-      vi.unstubAllEnvs();
-    });
-
-    await mkdir(join(directory, 'node'));
-    vi.stubEnv('PATH', directory);
-
-    expect(nodeExecutable('/usr/bin/nodejs')).toBe('/usr/bin/nodejs');
-  });
-
-  it.each(['node', 'nodejs'])('finds %s on PATH for a compiled agent', async (name) => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-node-');
-
-    onTestFinished(async () => {
-      vi.unstubAllEnvs();
-    });
-
-    const executable = join(directory, name);
-
-    await writeFile(executable, '');
-    await chmod(executable, 0o755);
-
-    vi.stubEnv('PATH', directory);
-
-    expect(nodeExecutable('/usr/bin/pi')).toBe(executable);
-    expect(nodeExecutable('/opt/pi-coding-agent/pi')).toBe(executable);
-  });
-
-  it('skips a node file on PATH that is not executable', async () => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-node-');
-
-    onTestFinished(async () => {
-      vi.unstubAllEnvs();
-    });
-
-    const plain = join(directory, 'plain');
-    const runnable = join(directory, 'runnable');
-
-    await mkdir(plain);
-    await mkdir(runnable);
-    await writeFile(join(plain, 'node'), '');
-    await writeFile(join(runnable, 'node'), '');
-    await chmod(join(runnable, 'node'), 0o755);
-
-    vi.stubEnv('PATH', [plain, runnable].join(delimiter));
-
-    expect(nodeExecutable('/usr/bin/pi')).toBe(join(runnable, 'node'));
-  });
-
-  it.for(['/opt/bin/mynode', '/opt/bin/node-agent'])(
-    'looks up node on PATH for the agent executable %s',
-    async (executablePath) => {
-      const directory = temporaryDirectory(onTestFinished, 'tau-node-');
-
-      onTestFinished(async () => {
-        vi.unstubAllEnvs();
-      });
-
-      const executable = join(directory, 'node');
-
-      await writeFile(executable, '');
-      await chmod(executable, 0o755);
-
-      vi.stubEnv('PATH', directory);
-
-      expect(nodeExecutable(executablePath)).toBe(executable);
-    },
-  );
-
-  it('keeps a node executable regardless of PATH', async () => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-node-');
-
-    onTestFinished(() => {
-      vi.unstubAllEnvs();
-    });
-
-    const executable = join(directory, 'node');
-
-    await writeFile(executable, '');
-    await chmod(executable, 0o755);
-
-    vi.stubEnv('PATH', directory);
-
-    expect(nodeExecutable('/usr/bin/node')).toBe('/usr/bin/node');
-  });
-
-  it('keeps a nonstandard node name when no node command resolves', () => {
-    vi.stubEnv('PATH', '');
-
-    onTestFinished(() => {
-      vi.unstubAllEnvs();
-    });
-
-    expect(nodeExecutable('/usr/bin/nodejs')).toBe('/usr/bin/nodejs');
-  });
 });

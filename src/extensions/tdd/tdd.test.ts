@@ -17,14 +17,19 @@ import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { loadTddConfig } from './config.js';
 import { configSummary, runContext, summarize } from './render.js';
-import type { RunnerResult } from './runner/types.js';
-import { runTests } from './runner/vitest.js';
+import type { RunnerResult, TestRunner } from './runner/types.js';
 import tddExtension from './tdd.js';
 
-vi.mock(import('./runner/vitest.js'), async (importOriginal) => ({
-  ...(await importOriginal()),
-  runTests: vi.fn<typeof runTests>(),
-}));
+const runTests = vi.hoisted(() => vi.fn<TestRunner['run']>());
+
+vi.mock(import('./runner/runners.js'), async (importOriginal) => {
+  const original = await importOriginal();
+
+  return {
+    ...original,
+    lookupRunner: () => ({ ...original.lookupRunner('vitest'), run: runTests }),
+  };
+});
 
 const redHint =
   'Hint: No RED observed for this behavior; start the next behavior with a failing focused test.';
@@ -206,13 +211,25 @@ it.for(['ordinary', 'long'] as const)(
 
     const diagnostics = {
       directory,
-      started: true,
-      command: ['vitest'],
       durationMs: 10,
       timeoutMs: 30_000,
-      exitCode: size === 'ordinary' ? 0 : 1,
-      stdout: { path: join(directory, 'stdout.txt'), bytes: 12, savedBytes: 12, truncated: false },
-      excerpt: 'Runner diagnostic output',
+      report: { path: join(directory, 'report.json'), format: 'json' as const },
+      stages: [
+        {
+          name: 'run',
+          command: ['vitest'],
+          started: true,
+          exitCode: size === 'ordinary' ? 0 : 1,
+          durationMs: 10,
+          stdout: {
+            path: join(directory, 'stdout.txt'),
+            bytes: 12,
+            savedBytes: 12,
+            truncated: false,
+          },
+          excerpt: 'Runner diagnostic output',
+        },
+      ],
     };
 
     const report: RunnerResult =
@@ -347,7 +364,7 @@ it.for(['ordinary', 'long'] as const)(
     }
 
     expect(expanded).toContain(join(directory, 'run.json'));
-    expect(expanded).toContain(diagnostics.stdout.path);
+    expect(expanded).toContain(join(directory, 'stdout.txt'));
     expect(expanded).not.toContain('more lines,');
   },
 );

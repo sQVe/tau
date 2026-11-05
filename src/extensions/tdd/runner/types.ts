@@ -1,3 +1,5 @@
+import type { TddConfig } from '../config.js';
+
 export type RunTestsInput =
   | {
       scope: 'focused';
@@ -35,7 +37,29 @@ export interface DiagnosticFile {
   truncated: boolean;
 }
 
-export interface VitestResolutionDiagnostic {
+export type ReportFormat = 'json' | 'junit';
+
+export interface ReportTarget {
+  path: string;
+  format: ReportFormat;
+}
+
+interface ReportEntry extends ReportTarget {
+  file?: DiagnosticFile | undefined;
+}
+
+export interface RunStage {
+  name: string;
+  command: string[];
+  started: boolean;
+  exitCode: number | null;
+  durationMs: number;
+  stdout?: DiagnosticFile | undefined;
+  stderr?: DiagnosticFile | undefined;
+  excerpt?: string;
+}
+
+export interface PackageResolutionDiagnostic {
   cwd: string;
   request: 'vitest/package.json';
   stage: 'lookup' | 'manifest' | 'binary' | 'resolver';
@@ -45,25 +69,20 @@ export interface VitestResolutionDiagnostic {
   errorType: string;
 }
 
-export interface VitestResolutionFailure {
+export interface RunnerResolutionFailure {
   kind: 'runner-missing' | 'runner-resolution-error';
   message: string;
-  resolution: VitestResolutionDiagnostic;
+  resolution: PackageResolutionDiagnostic;
 }
 
 export interface RunDiagnostics {
   directory: string;
   durationMs: number;
   timeoutMs: number;
-  started: boolean;
-  command: string[] | undefined;
-  exitCode: number | null;
-  stdout?: DiagnosticFile | undefined;
-  stderr?: DiagnosticFile | undefined;
-  report?: DiagnosticFile | undefined;
-  excerpt?: string;
+  report: ReportEntry;
+  stages: RunStage[];
   error?: string;
-  resolution?: VitestResolutionDiagnostic;
+  resolution?: PackageResolutionDiagnostic;
 }
 
 export type RunnerResult = { diagnostics?: RunDiagnostics } & (
@@ -78,7 +97,7 @@ export type RunnerResult = { diagnostics?: RunDiagnostics } & (
   | { kind: 'no-tests-collected'; tests: TestResult[]; message?: string }
   | { kind: 'timeout' }
   | { kind: 'cancelled' }
-  | VitestResolutionFailure
+  | RunnerResolutionFailure
 );
 
 export interface SpawnResult {
@@ -100,20 +119,17 @@ interface SpawnOptions {
 }
 
 export type SpawnCommand = (
-  command: string,
+  executable: string,
   argumentsList: string[],
   options: SpawnOptions,
 ) => Promise<SpawnResult>;
 
-interface ResolvedVitest {
-  path: string;
-  version: string;
-}
-
-export type ResolveVitest = (cwd: string) => ResolvedVitest | VitestResolutionFailure;
-
-export interface RunnerDeps {
-  resolveVitest: ResolveVitest;
-  spawn: SpawnCommand;
-  timeoutMs: number;
+export interface TestRunner {
+  name: string;
+  defaults: TddConfig;
+  configurationGlobs: string[];
+  testNameFormat: string;
+  focusedTimeoutMs: number;
+  fullTimeoutMs: number;
+  run: (input: RunTestsInput) => Promise<RunnerResult>;
 }

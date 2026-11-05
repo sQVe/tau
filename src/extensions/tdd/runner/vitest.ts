@@ -1,22 +1,61 @@
 import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { CONFIG_DIR_NAME } from '@earendil-works/pi-coding-agent';
+
+import { configFileName } from '../../../config/config.js';
+import type { TddConfig } from '../config.js';
 import { saveDiagnostics } from './diagnostics.js';
+import type { StageSpawn } from './diagnostics.js';
 import { defaultSpawn } from './process.js';
 import { classifyReport, parseReport, unparseableReportResult } from './report.js';
 import type { VitestReport } from './report.js';
-import { defaultResolveVitest, explainSessionCwd, resolutionFailure } from './resolution.js';
+import {
+  defaultResolveVitest,
+  explainSessionCwd,
+  nodeExecutable,
+  resolutionFailure,
+} from './resolution.js';
+import type { ResolveVitest } from './resolution.js';
 import { createDiagnosticsDirectory } from './retention.js';
 import type {
-  ResolveVitest,
+  ReportTarget,
   RunTestsInput,
-  RunnerDeps,
   RunnerResult,
+  SpawnCommand,
   SpawnResult,
+  TestRunner,
 } from './types.js';
+
+interface RunnerDeps {
+  resolveVitest: ResolveVitest;
+  spawn: SpawnCommand;
+  timeoutMs: number;
+}
 
 const defaultTimeoutMilliseconds = 30_000;
 const fullTimeoutMilliseconds = 120_000;
+
+const testNameFormat = 'Vitest 4 joins nested names with spaces, Vitest 5 with " > "';
+
+const vitestDefaults: TddConfig = {
+  productionGlobs: ['{src,apps,packages,functions,infra}/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+  testGlobs: ['**/*.test.{ts,tsx,js,jsx,mjs,cjs}', '**/*.spec.{ts,tsx,js,jsx,mjs,cjs}'],
+  testSupportGlobs: ['tests/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+  excludedGlobs: [
+    '**/{node_modules,.git,dist,build,coverage,.next,.nuxt,.output,.turbo,.cache,generated,__generated__}/**',
+  ],
+  verificationArgv: ['vitest', 'run', '--reporter=json', '--reporter=default', '--no-color'],
+};
+
+const configurationGlobs = [
+  `${CONFIG_DIR_NAME}/${configFileName}`,
+  '**/package.json',
+  '**/{vite,vitest}.config.{ts,mts,cts,js,mjs,cjs}',
+  '**/vitest.workspace.{ts,mts,cts,js,mjs,cjs,json}',
+  '**/tsconfig*.json',
+  '**/{pnpm-lock.yaml,package-lock.json,npm-shrinkwrap.json,yarn.lock,bun.lock,bun.lockb,pnpm-workspace.yaml}',
+];
 
 // The report is read from the reporter's own output file: stdout carries test-controlled
 // text, so a report scraped from it could be forged by the code under test.
@@ -94,7 +133,7 @@ const runInDirectory = async (
   input: RunTestsInput,
   dependencies: RunnerDeps,
   outputFile: string,
-): Promise<{ report: RunnerResult; result?: SpawnResult }> => {
+): Promise<{ report: RunnerResult; stage?: StageSpawn }> => {
   const runnerArguments = buildArguments(input, outputFile);
 
   if (runnerArguments == null) {
@@ -113,13 +152,20 @@ const runInDirectory = async (
     return { report: explainSessionCwd(runner, input.cwd, scopedPaths(input)) };
   }
 
-  const result = await dependencies.spawn(runner.path, runnerArguments, {
+  const spawnStarted = performance.now();
+
+  const result = await dependencies.spawn(nodeExecutable(), [runner.path, ...runnerArguments], {
     cwd: input.cwd,
     timeoutMs: dependencies.timeoutMs,
     signal: input.signal,
   });
 
-  return { report: await classifyResult(input, result, outputFile, runner.version), result };
+  const durationMs = Math.round(performance.now() - spawnStarted);
+
+  return {
+    report: await classifyResult(input, result, outputFile, runner.version),
+    stage: { name: 'run', durationMs, result },
+  };
 };
 
 export const runTests = async (
@@ -129,24 +175,21 @@ export const runTests = async (
   const directory = await createDiagnosticsDirectory();
   const started = performance.now();
 
+  const reportTarget: ReportTarget = { path: join(directory, 'report.json'), format: 'json' };
+
   try {
-    const { report, result } = await runInDirectory(
-      input,
-      dependencies,
-      join(directory, 'report.json'),
-    );
+    const { report, stage } = await runInDirectory(input, dependencies, reportTarget.path);
+    const stages = stage === undefined ? [] : [stage];
 
     const diagnostics = await saveDiagnostics(
       {
         directory,
         durationMs: Math.round(performance.now() - started),
         timeoutMs: dependencies.timeoutMs,
-        command: result?.command,
-        started: result?.started ?? false,
-        exitCode: result?.code ?? null,
+        report: reportTarget,
         ...('resolution' in report ? { resolution: report.resolution } : {}),
       },
-      result,
+      stages,
     );
 
     return { ...report, diagnostics };
@@ -157,3 +200,13 @@ export const runTests = async (
     throw error;
   }
 };
+
+export const vitestRunner = {
+  name: 'vitest',
+  defaults: vitestDefaults,
+  configurationGlobs,
+  testNameFormat,
+  focusedTimeoutMs: defaultTimeoutMilliseconds,
+  fullTimeoutMs: fullTimeoutMilliseconds,
+  run: runTests,
+} satisfies TestRunner;

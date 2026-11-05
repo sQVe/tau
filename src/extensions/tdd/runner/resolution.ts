@@ -1,13 +1,25 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { accessSync, constants, existsSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from 'node:path';
+import {
+  basename,
+  delimiter,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve as resolvePath,
+  sep,
+} from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
-import type {
-  ResolveVitest,
-  VitestResolutionDiagnostic,
-  VitestResolutionFailure,
-} from './types.js';
+import type { PackageResolutionDiagnostic, RunnerResolutionFailure } from './types.js';
+
+interface ResolvedVitest {
+  path: string;
+  version: string;
+}
+
+export type ResolveVitest = (cwd: string) => ResolvedVitest | RunnerResolutionFailure;
 
 const nodeRequire = createRequire(import.meta.url);
 
@@ -82,7 +94,7 @@ const validVersion = (version: unknown): version is string =>
   /^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(version);
 
 const resolutionExplanation = (
-  stage: VitestResolutionDiagnostic['stage'],
+  stage: PackageResolutionDiagnostic['stage'],
   errorType: string,
   errorCode: string | undefined,
   missing: boolean,
@@ -107,13 +119,13 @@ const declaresMissingRequest = (error: unknown): boolean =>
 
 export const resolutionFailure = (
   cwd: string,
-  stage: VitestResolutionDiagnostic['stage'],
+  stage: PackageResolutionDiagnostic['stage'],
   error: unknown,
   paths: { manifestPath?: string; binaryPath?: string } = {},
-): VitestResolutionFailure => {
+): RunnerResolutionFailure => {
   const { errorCode, errorType } = resolutionErrorDetails(error);
 
-  const resolution: VitestResolutionDiagnostic = {
+  const resolution: PackageResolutionDiagnostic = {
     cwd: diagnosticPath(cwd),
     request: 'vitest/package.json',
     stage,
@@ -167,10 +179,10 @@ const packageRoot = (path: string): string | undefined => {
 // Name the package root when a requested file lies outside the cwd's package, such as in a sibling
 // worktree, so the lookup failure does not read as a broken install.
 export const explainSessionCwd = (
-  failure: VitestResolutionFailure,
+  failure: RunnerResolutionFailure,
   cwd: string,
   files: string[],
-): VitestResolutionFailure => {
+): RunnerResolutionFailure => {
   const foreign = files
     .map((file) => ({ file, root: packageRoot(resolvePath(cwd, file)) }))
     .find(({ root }) => root !== undefined && root !== resolvePath(cwd));
@@ -210,7 +222,7 @@ const resolveBinary = (
   manifest: unknown,
   manifestPath: string,
   paths: { manifestPath?: string; binaryPath?: string },
-): VitestResolutionFailure | { path: string } => {
+): RunnerResolutionFailure | { path: string } => {
   const binary = extractBinPath(manifest);
 
   if (binary === null || isInvalidBinEntry(binary)) {
@@ -240,7 +252,7 @@ const resolveBinary = (
 };
 
 export const defaultResolveVitest: ResolveVitest = (cwd) => {
-  let stage: VitestResolutionDiagnostic['stage'] = 'lookup';
+  let stage: PackageResolutionDiagnostic['stage'] = 'lookup';
   const paths: { manifestPath?: string; binaryPath?: string } = {};
 
   try {
@@ -276,3 +288,23 @@ export const defaultResolveVitest: ResolveVitest = (cwd) => {
     return resolutionFailure(cwd, stage, error, paths);
   }
 };
+
+const nodeNames = ['node', 'nodejs'];
+
+// oxlint-disable-next-line node/no-process-env -- Compiled Pi needs a real Node executable from the caller's PATH.
+const nodeOnPath = (path = process.env.PATH ?? '') =>
+  path
+    .split(delimiter)
+    .flatMap((directory) => nodeNames.map((name) => join(directory, name)))
+    .find((executable) => {
+      try {
+        accessSync(executable, constants.X_OK);
+
+        return statSync(executable).isFile();
+      } catch {
+        return false;
+      }
+    });
+
+export const nodeExecutable = (executablePath = process.execPath): string =>
+  /^node$/i.test(basename(executablePath)) ? executablePath : (nodeOnPath() ?? executablePath);

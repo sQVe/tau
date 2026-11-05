@@ -63,8 +63,10 @@ export const moduleList: readonly ModuleDeclaration[] = [
     name: 'extensions/tdd/runner',
     entry: 'extensions/tdd/runner/vitest',
     publicFiles: [
+      'extensions/tdd/runner/constants',
       'extensions/tdd/runner/report',
       'extensions/tdd/runner/retention',
+      'extensions/tdd/runner/runners',
       'extensions/tdd/runner/types',
       'extensions/tdd/runner/vitest',
     ],

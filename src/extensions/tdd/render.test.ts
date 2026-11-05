@@ -81,22 +81,15 @@ it('keeps run scope outcome and input freshness distinct', () => {
 
 it('distinguishes an execution that did not start from a completed run', () => {
   const report: RunnerResult = {
-    kind: 'runner-missing',
-    message: 'vitest not found',
-    resolution: {
-      cwd: '/repo',
-      request: 'vitest/package.json',
-      stage: 'lookup',
-      errorType: 'Error',
-      errorCode: 'MODULE_NOT_FOUND',
-    },
+    kind: 'compile-error',
+    message: 'spawn ENOENT',
+    tests: [],
     diagnostics: {
       directory: '/tmp/run',
       durationMs: 0,
       timeoutMs: 30_000,
-      exitCode: null,
-      started: false,
-      command: undefined,
+      report: { path: '/tmp/run/report.json', format: 'json' },
+      stages: [{ name: 'run', command: ['vitest'], started: false, exitCode: null, durationMs: 0 }],
     },
   };
 
@@ -112,13 +105,25 @@ it('shows bounded process diagnostics and readable artifact paths', () => {
     kind: 'timeout',
     diagnostics: {
       directory: '/tmp/run',
-      started: true,
-      command: ['vitest'],
       durationMs: 120_000,
       timeoutMs: 120_000,
-      exitCode: null,
-      stderr: { path: '/tmp/run/stderr.txt', bytes: 40_000, savedBytes: 32_768, truncated: true },
-      excerpt: '\u001b[31mSetup failed\u001b[0m\u0007',
+      report: { path: '/tmp/run/report.json', format: 'json' },
+      stages: [
+        {
+          name: 'run',
+          command: ['vitest'],
+          started: true,
+          exitCode: null,
+          durationMs: 120_000,
+          stderr: {
+            path: '/tmp/run/stderr.txt',
+            bytes: 40_000,
+            savedBytes: 32_768,
+            truncated: true,
+          },
+          excerpt: '\u001b[31mSetup failed\u001b[0m\u0007',
+        },
+      ],
     },
   };
 
@@ -130,11 +135,94 @@ it('shows bounded process diagnostics and readable artifact paths', () => {
   expect(text).toContain('Elapsed: 120000 ms; timeout: 120000 ms; exit: unavailable');
   expect(text).toContain('/tmp/run/run.json');
   expect(text).toContain('/tmp/run/stderr.txt (32768/40000 bytes, truncated)');
+  expect(text).not.toContain('stderr (run)');
   expect(text).toContain('No JSON report was saved');
   expect(text).toContain('Setup failed');
+  expect(text).toContain('Runner output excerpt (not a test verdict):');
   expect(text).not.toContain('\u001b');
   expect(text).not.toContain('\u0007');
   expect(text.length).toBeLessThanOrEqual(4000);
+});
+
+it('labels each stage and its excerpt when a run has two stages', () => {
+  const report: RunnerResult = {
+    kind: 'fail',
+    tests: [],
+    failures: [],
+    truncated: false,
+    diagnostics: {
+      directory: '/tmp/run',
+      durationMs: 300,
+      timeoutMs: 30_000,
+      report: { path: '/tmp/run/report.xml', format: 'junit' },
+      stages: [
+        {
+          name: 'list',
+          command: ['cargo', 'nextest', 'list'],
+          started: true,
+          exitCode: 0,
+          durationMs: 100,
+          stdout: { path: '/tmp/run/list.stdout.txt', bytes: 6, savedBytes: 6, truncated: false },
+          excerpt: 'listed',
+        },
+        {
+          name: 'run',
+          command: ['cargo', 'nextest', 'run'],
+          started: true,
+          exitCode: 1,
+          durationMs: 200,
+          stderr: { path: '/tmp/run/run.stderr.txt', bytes: 10, savedBytes: 10, truncated: false },
+          excerpt: 'run failed',
+        },
+      ],
+    },
+  };
+
+  const text = runContext(behavior, observation(report));
+
+  expect(text).toContain('Elapsed: 300 ms; timeout: 30000 ms per stage.');
+  expect(text).toContain('list: elapsed 100 ms; exit: 0.');
+  expect(text).toContain('run: elapsed 200 ms; exit: 1.');
+  expect(text).toContain('stdout (list): /tmp/run/list.stdout.txt');
+  expect(text).toContain('stderr (run): /tmp/run/run.stderr.txt');
+  expect(text).toContain('No JUnit report was saved.');
+  expect(text).toContain('Runner output excerpt (list) (not a test verdict):\nlisted');
+  expect(text).toContain('Runner output excerpt (run) (not a test verdict):\nrun failed');
+});
+
+it('keeps the line of a later stage that never started', () => {
+  const report: RunnerResult = {
+    kind: 'compile-error',
+    message: 'list failed',
+    tests: [],
+    diagnostics: {
+      directory: '/tmp/run',
+      durationMs: 100,
+      timeoutMs: 30_000,
+      report: { path: '/tmp/run/report.xml', format: 'junit' },
+      stages: [
+        {
+          name: 'list',
+          command: ['cargo', 'nextest', 'list'],
+          started: true,
+          exitCode: 101,
+          durationMs: 100,
+        },
+        {
+          name: 'run',
+          command: ['cargo', 'nextest', 'run'],
+          started: false,
+          exitCode: null,
+          durationMs: 0,
+        },
+      ],
+    },
+  };
+
+  const text = runContext(behavior, observation(report));
+
+  expect(text).toContain('list: elapsed 100 ms; exit: 101.');
+  expect(text).toContain('run: elapsed 0 ms; exit: unavailable.');
 });
 
 const timed = (file: string, fullname: string, durationMs?: number) => ({
@@ -383,18 +471,21 @@ it('labels the scope of the run', () => {
 it('reports a missing JSON report and a diagnostics error only when they exist', () => {
   const diagnostics = {
     directory: '/tmp/run',
-    started: true,
-    command: ['vitest'],
     durationMs: 5,
     timeoutMs: 1000,
-    exitCode: 0,
+    report: { path: '/tmp/run/report.json', format: 'json' as const },
+    stages: [{ name: 'run', command: ['vitest'], started: true, exitCode: 0, durationMs: 5 }],
   };
 
   const saved = { path: '/tmp/run/report.json', bytes: 10, savedBytes: 10, truncated: false };
 
   const withReport = runContext(
     behavior,
-    observation({ kind: 'pass', tests: [], diagnostics: { ...diagnostics, report: saved } }),
+    observation({
+      kind: 'pass',
+      tests: [],
+      diagnostics: { ...diagnostics, report: { ...diagnostics.report, file: saved } },
+    }),
   );
 
   const withError = runContext(

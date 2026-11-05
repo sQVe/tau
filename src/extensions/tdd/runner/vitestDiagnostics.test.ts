@@ -6,7 +6,8 @@ import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { defaultTddConfig } from '../config.js';
 import { fakeSpawn, makeDeps, outputFileFrom, runTests } from '../fixtures/vitestRunner.js';
-import { defaultSpawn, maximumStdoutBytes, maximumTotalBytes, nodeExecutable } from './process.js';
+import { defaultSpawn, maximumStdoutBytes, maximumTotalBytes } from './process.js';
+import { nodeExecutable } from './resolution.js';
 import { runTests as runTestsWithDiagnostics } from './vitest.js';
 
 const verificationArgv = defaultTddConfig.verificationArgv;
@@ -155,25 +156,30 @@ describe('runTests', () => {
       directories.add(diagnostics.directory);
 
       expect(diagnostics.durationMs).toBeGreaterThanOrEqual(0);
+      expect(diagnostics.stages[0]!.durationMs).toBeLessThanOrEqual(diagnostics.durationMs);
 
-      expect(diagnostics.command).toEqual(
+      expect(diagnostics.stages[0]!.command).toEqual(
         expect.arrayContaining(['/fake/vitest.js', 'run', '--reporter=json', '--reporter=default']),
       );
 
-      expect(diagnostics).toMatchObject({
-        timeoutMs: 30_000,
+      expect(diagnostics).toMatchObject({ timeoutMs: 30_000 });
+
+      expect(diagnostics.stages[0]).toMatchObject({
         exitCode: fixture.code,
         stdout: { bytes: 20, truncated: fixture.stdoutTruncated ?? false },
         stderr: { bytes: 14, truncated: false },
       });
 
-      expect(await readFile(diagnostics.stdout!.path, 'utf8')).toBe('test console output\n');
-      expect(await readFile(diagnostics.stderr!.path, 'utf8')).toBe('setup warning\n');
+      expect(await readFile(diagnostics.stages[0]!.stdout!.path, 'utf8')).toBe(
+        'test console output\n',
+      );
+
+      expect(await readFile(diagnostics.stages[0]!.stderr!.path, 'utf8')).toBe('setup warning\n');
 
       const savedReport: unknown =
-        diagnostics.report === undefined
+        diagnostics.report.file === undefined
           ? undefined
-          : JSON.parse(await readFile(diagnostics.report.path, 'utf8'));
+          : JSON.parse(await readFile(diagnostics.report.file.path, 'utf8'));
 
       expect(savedReport).toEqual(fixture.report);
 
@@ -216,22 +222,22 @@ describe('runTests', () => {
       tests: [{ fullname: 'works', status: 'passed' }],
     });
 
-    expect(diagnostics.stdout).toMatchObject({
+    expect(diagnostics.stages[0]!.stdout).toMatchObject({
       savedBytes: maximumStdoutBytes,
       bytes: maximumStdoutBytes + 1,
       truncated: true,
     });
 
-    expect(diagnostics.stderr).toMatchObject({
+    expect(diagnostics.stages[0]!.stderr).toMatchObject({
       savedBytes: maximumTotalBytes,
       bytes: maximumTotalBytes + 1,
       truncated: true,
     });
 
-    expect(diagnostics.report).toMatchObject({ savedBytes: reportLimit, truncated: true });
-    expect((await stat(diagnostics.stdout!.path)).size).toBe(maximumStdoutBytes);
-    expect((await stat(diagnostics.stderr!.path)).size).toBe(maximumTotalBytes);
-    expect((await stat(diagnostics.report!.path)).size).toBe(reportLimit);
+    expect(diagnostics.report.file).toMatchObject({ savedBytes: reportLimit, truncated: true });
+    expect((await stat(diagnostics.stages[0]!.stdout!.path)).size).toBe(maximumStdoutBytes);
+    expect((await stat(diagnostics.stages[0]!.stderr!.path)).size).toBe(maximumTotalBytes);
+    expect((await stat(diagnostics.report.file!.path)).size).toBe(reportLimit);
   });
 
   it('keeps the verdict and reports artifact write failures without overwriting files', async () => {
@@ -283,10 +289,14 @@ describe('runTests', () => {
       const result = await runTests({ scope: 'full', verificationArgv, cwd });
 
       expect(result.kind).toBe(expected === 1 ? 'pass' : 'fail');
-      expect(result.diagnostics?.stdout?.truncated).toBe(true);
-      expect(result.diagnostics?.stdout?.savedBytes).toBeLessThanOrEqual(maximumStdoutBytes);
-      expect(result.diagnostics?.command?.[0]).toBe(nodeExecutable());
-      expect(result.diagnostics?.command?.[1]).toContain('vitest');
+      expect(result.diagnostics?.stages[0]?.stdout?.truncated).toBe(true);
+
+      expect(result.diagnostics?.stages[0]?.stdout?.savedBytes).toBeLessThanOrEqual(
+        maximumStdoutBytes,
+      );
+
+      expect(result.diagnostics?.stages[0]?.command[0]).toBe(nodeExecutable());
+      expect(result.diagnostics?.stages[0]?.command[1]).toContain('vitest');
     }
   }, 125_000);
 
@@ -299,9 +309,9 @@ describe('runTests', () => {
     );
 
     expect(result.kind).toBe('compile-error');
-    expect(result.diagnostics?.started).toBe(false);
-    expect(result.diagnostics?.excerpt).toContain('ENOENT');
-    expect(result.diagnostics?.command?.[0]).toBe(nodeExecutable());
+    expect(result.diagnostics?.stages[0]?.started).toBe(false);
+    expect(result.diagnostics?.stages[0]?.excerpt).toContain('ENOENT');
+    expect(result.diagnostics?.stages[0]?.command[0]).toBe(nodeExecutable());
   });
 
   it('returns fail (never pass) when JSON parse fails on exit 0', async () => {
@@ -310,7 +320,10 @@ describe('runTests', () => {
     const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
 
     expect(result).toMatchObject({ kind: 'fail', tests: [], truncated: false });
-    expect(await readFile(result.diagnostics!.stdout!.path, 'utf8')).toBe('{not valid json');
+
+    expect(await readFile(result.diagnostics!.stages[0]!.stdout!.path, 'utf8')).toBe(
+      '{not valid json',
+    );
   });
 
   it('returns fail and retains the report when a malformed report exits 0', async () => {
@@ -327,7 +340,13 @@ describe('runTests', () => {
     );
 
     expect(result).toMatchObject({ kind: 'fail', tests: [] });
-    expect(result.diagnostics?.report?.path).toBeDefined();
+    expect(result.diagnostics?.report.file).toBeDefined();
+
+    const savedReport: unknown = JSON.parse(
+      await readFile(result.diagnostics!.report.file!.path, 'utf8'),
+    );
+
+    expect(savedReport).toEqual(report);
     expect((await stat(result.diagnostics!.directory)).isDirectory()).toBe(true);
   });
 
@@ -345,7 +364,13 @@ describe('runTests', () => {
     );
 
     expect(result).toMatchObject({ kind: 'compile-error', tests: [] });
-    expect(result.diagnostics?.report?.path).toBeDefined();
+    expect(result.diagnostics?.report.file).toBeDefined();
+
+    const savedReport: unknown = JSON.parse(
+      await readFile(result.diagnostics!.report.file!.path, 'utf8'),
+    );
+
+    expect(savedReport).toEqual(report);
     expect((await stat(result.diagnostics!.directory)).isDirectory()).toBe(true);
   });
 
@@ -362,6 +387,6 @@ describe('runTests', () => {
       }),
     );
 
-    expect(result.diagnostics?.command).toEqual(command);
+    expect(result.diagnostics?.stages[0]?.command).toEqual(command);
   });
 });

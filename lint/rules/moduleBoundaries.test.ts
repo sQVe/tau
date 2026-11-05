@@ -84,7 +84,7 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
       filename: '/repository/src/extensions/subagents/subagents.ts',
     },
     {
-      code: "import { runTests } from './runner/vitest.js';\n\nexport const value = runTests;",
+      code: "import { lookupRunner } from './runner/runners.js';\n\nexport const value = lookupRunner;",
       filename: '/repository/src/extensions/tdd/observation.ts',
     },
     {

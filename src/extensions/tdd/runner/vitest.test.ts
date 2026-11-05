@@ -7,8 +7,9 @@ import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.
 import { defaultTddConfig } from '../config.js';
 import { fakeSpawn, makeDeps, runTests } from '../fixtures/vitestRunner.js';
 import { thrownErrorType } from '../observation.js';
+import { maximumFailures } from './constants.js';
 import { defaultSpawn, maximumTotalBytes } from './process.js';
-import { maximumFailures } from './report.js';
+import { nodeExecutable } from './resolution.js';
 import type { RunTestsInput, SpawnCommand } from './types.js';
 import { defaultDeps } from './vitest.js';
 
@@ -87,8 +88,8 @@ describe('runTests', () => {
       );
 
       expect(spawn).toHaveBeenCalledExactlyOnceWith(
-        '/fake/vitest.js',
-        expect.arrayContaining(['-t', filter]),
+        nodeExecutable(),
+        expect.arrayContaining(['/fake/vitest.js', '-t', filter]),
         expect.objectContaining({ cwd: '/repo' }),
       );
 
@@ -547,7 +548,10 @@ describe('runTests', () => {
     expect(result.kind).toBe('compile-error');
     expect(result).not.toHaveProperty('stdout');
     expect(result).not.toHaveProperty('stderr');
-    expect(await readFile(result.diagnostics!.stderr!.path, 'utf8')).toBe('Unhandled rejection');
+
+    expect(await readFile(result.diagnostics!.stages[0]!.stderr!.path, 'utf8')).toBe(
+      'Unhandled rejection',
+    );
   });
 
   it.each<RunTestsInput>([

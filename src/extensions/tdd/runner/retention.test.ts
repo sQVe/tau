@@ -257,9 +257,8 @@ it('adds a retention failure to the diagnostics error', async ({ onTestFinished 
     directory,
     durationMs: 1,
     timeoutMs: 30_000,
-    started: true,
-    command: ['vitest'],
-    exitCode: 1,
+    report: { path: join(directory, 'report.json'), format: 'json' as const },
+    stages: [],
     error: 'earlier failure',
   };
 

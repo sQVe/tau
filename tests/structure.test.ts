@@ -135,6 +135,7 @@ const pureModules = [
   'src/extensions/tdd/configLayers.ts',
   'src/extensions/tdd/inputGlob.ts',
   'src/extensions/tdd/observationTransition.ts',
+  'src/extensions/tdd/runner/constants.ts',
   'src/extensions/tdd/runner/report.ts',
   'src/extensions/tdd/worktreePath.ts',
   'src/extensions/tracker/candidateFit.ts',
