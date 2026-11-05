@@ -33,6 +33,3 @@ and say whether the change caused it, it was already there, or you cannot tell.
 List findings in Decisions, most severe first, or say what you exercised. Keep the summary under
 3,000 characters and save longer details to a `mktemp` file outside the repository. Finding defects
 is still success.
-
-When only the parent can answer, call `subagent_question` with one clear question. Your turn then
-ends; wait for the parent's answer in a new message.

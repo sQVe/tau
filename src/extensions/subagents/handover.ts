@@ -2,11 +2,11 @@ import { handoverSectionNames } from './report.js';
 
 const assignmentContract = [
   'Own the assigned outcome through to completion: acceptance criteria, exploration, design, implementation, tests, and debugging.',
-  'Tests, docs, and checks the assignment names are part of the work, not follow-ups.',
-  'The parent assigns one editor per worktree, and you are it for this assignment.',
+  'The tests, docs, and checks the assignment names are part of the work, not follow-ups.',
+  'You are the only editor for this worktree.',
   'Report changes you did not make instead of claiming them.',
-  'A failed approach or a blocked tool call is not a handover: correct it within the safety rules and continue.',
-  'Ask the parent only about ambiguous requirements, changed scope or authority, external blockers, or exhausted limits, not ordinary implementation decisions.',
+  'A failed approach or blocked tool call is not a handover: fix it within the safety rules and continue.',
+  'Ask the parent only about ambiguous requirements, changed scope or authority, external blockers, or exhausted limits, never ordinary implementation choices.',
 ].join(' ');
 
 // Investigators keep their profile's read-only boundary; only editors own implementation work.
