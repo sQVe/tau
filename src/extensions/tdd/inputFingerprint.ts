@@ -4,9 +4,9 @@ import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import { hasErrorCode, isMissingFile } from '../../errors.js';
-import { configurationGlobs } from './config.js';
 import type { TddConfig } from './config.js';
 import { closesLoop, createInputRules } from './inputGlob.js';
+import { lookupRunner } from './runner/runners.js';
 
 const isVanishedEntry = (error: unknown) => isMissingFile(error) || hasErrorCode(error, 'ENOTDIR');
 
@@ -41,7 +41,7 @@ export const listInputs = async (cwd: string, config: TddConfig): Promise<string
     ...config.productionGlobs,
     ...config.testGlobs,
     ...config.testSupportGlobs,
-    ...configurationGlobs,
+    ...lookupRunner(config.runner).configurationGlobs,
   ];
 
   const rules = createInputRules(includeGlobs, config.excludedGlobs);

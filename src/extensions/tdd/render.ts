@@ -329,6 +329,7 @@ export const runContext = (behavior: Behavior, observation: Observation): string
 };
 
 const configLabels: Record<keyof TddConfig, string> = {
+  runner: 'Runner',
   productionGlobs: 'Production',
   testGlobs: 'Tests',
   testSupportGlobs: 'Test support',

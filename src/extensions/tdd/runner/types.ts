@@ -137,5 +137,6 @@ export interface TestRunner {
    * hint can come early.
    */
   testFilesCanBeProduction: boolean;
+  verificationArgvError: (verificationArgv: readonly string[]) => string | null;
   run: (input: RunTestsInput) => Promise<RunnerResult>;
 }

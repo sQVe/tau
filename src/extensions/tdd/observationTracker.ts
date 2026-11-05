@@ -4,6 +4,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { loadTddConfig } from './config.js';
 import type { LoadedTddConfig } from './config.js';
 import { createTestObservation, observationDirectory } from './observation.js';
+import { runners } from './runner/runners.js';
 import type { TestObservation } from './types.js';
 
 interface TrackedObservation {
@@ -46,7 +47,7 @@ export const createObservationTracker = (): ObservationTracker => {
       projectTrusted: context.isProjectTrusted(),
     };
 
-    const loaded = loadTddConfig(location, context.ui);
+    const loaded = loadTddConfig(location, context.ui, runners);
 
     const key = JSON.stringify(loaded);
 

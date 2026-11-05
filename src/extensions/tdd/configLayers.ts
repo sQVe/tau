@@ -11,6 +11,7 @@ export interface MergedTddConfig {
 }
 
 export const tddConfigFields: (keyof TddConfig)[] = [
+  'runner',
   'productionGlobs',
   'testGlobs',
   'testSupportGlobs',
@@ -18,28 +19,52 @@ export const tddConfigFields: (keyof TddConfig)[] = [
   'verificationArgv',
 ];
 
-// Later layers win per field. A list replaces the earlier one instead of extending it.
+const sourcesFrom = (source: string): Record<keyof TddConfig, string> => ({
+  runner: source,
+  productionGlobs: source,
+  testGlobs: source,
+  testSupportGlobs: source,
+  excludedGlobs: source,
+  verificationArgv: source,
+});
+
 export const mergeConfigLayers = (
-  defaults: TddConfig,
+  defaultRunner: string,
+  defaultsFor: (runnerName: string) => TddConfig | undefined,
   defaultSource: string,
   layers: ConfigLayer[],
 ): MergedTddConfig => {
-  const config = { ...defaults };
+  const initial = defaultsFor(defaultRunner);
 
-  const sources: Record<keyof TddConfig, string> = {
-    productionGlobs: defaultSource,
-    testGlobs: defaultSource,
-    testSupportGlobs: defaultSource,
-    excludedGlobs: defaultSource,
-    verificationArgv: defaultSource,
-  };
+  if (initial === undefined) {
+    throw new Error(`Unknown TDD runner: ${defaultRunner}`);
+  }
+
+  const config = { ...initial };
+  const sources = sourcesFrom(defaultSource);
 
   for (const { source, values } of layers) {
+    const nextRunner = values.runner;
+
+    if (nextRunner !== undefined && nextRunner !== config.runner) {
+      const nextDefaults = defaultsFor(nextRunner);
+
+      if (nextDefaults === undefined) {
+        throw new Error(`Unknown TDD runner: ${nextRunner}`);
+      }
+
+      Object.assign(config, nextDefaults);
+
+      for (const key of tddConfigFields) {
+        sources[key] = defaultSource;
+      }
+    }
+
     for (const key of tddConfigFields) {
       const value = values[key];
 
       if (value !== undefined) {
-        config[key] = value;
+        Object.assign(config, { [key]: value });
         sources[key] = source;
       }
     }

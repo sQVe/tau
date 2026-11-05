@@ -11,7 +11,13 @@ import { fileRoles } from './fileRoles.js';
 import type { FileRoles } from './fileRoles.js';
 import { createInputRules, unsupportedGlobReason } from './inputGlob.js';
 import type { InputRules } from './inputGlob.js';
-import { lookupRunner } from './runner/runners.js';
+import {
+  defaultRunner,
+  defaultRunnerName,
+  findRunner,
+  knownRunnerNames,
+} from './runner/runners.js';
+import type { RunnerTable } from './runner/runners.js';
 
 export type TddConfig = Static<typeof tddConfigSchema>;
 
@@ -28,6 +34,7 @@ export interface LoadedTddConfig extends MergedTddConfig {
 const globs = Type.Array(Type.String({ minLength: 1 }));
 
 const tddConfigSchema = Type.Object({
+  runner: Type.String({ minLength: 1 }),
   productionGlobs: globs,
   testGlobs: globs,
   testSupportGlobs: globs,
@@ -36,6 +43,7 @@ const tddConfigSchema = Type.Object({
 });
 
 const knownTddKeys: KnownKeys = {
+  runner: true,
   productionGlobs: true,
   testGlobs: true,
   testSupportGlobs: true,
@@ -50,12 +58,7 @@ const configFileSchema = Type.Object({
 
 const defaultSource = 'built-in default';
 
-const vitestRunner = lookupRunner('vitest');
-
-export const defaultTddConfig: TddConfig = vitestRunner.defaults;
-
-// Vitest loads its own configuration before Vite's. Hash both because either can change which tests run.
-export const configurationGlobs = vitestRunner.configurationGlobs;
+export const defaultTddConfig: TddConfig = defaultRunner.defaults;
 
 const problem = (value: unknown): string => {
   const [error] = Value.Errors(configFileSchema, value);
@@ -92,12 +95,16 @@ const rejectUnsupportedGlobs = (source: string, values: Partial<TddConfig>) => {
   }
 };
 
-const tddLayer = ({ source, value }: ConfigFile, ui: ConfigWarnings): ConfigLayer => {
+const tddLayer = (
+  { source, value }: ConfigFile,
+  ui: ConfigWarnings,
+  runnerTable: RunnerTable,
+): ConfigLayer => {
   requireKnownKey('tdd');
 
   if (!Value.Check(configFileSchema, value)) {
     throw new Error(
-      `Invalid TDD config ${source}: ${problem(value)}. Expected {"tdd": {...}} with productionGlobs, testGlobs, testSupportGlobs, and excludedGlobs as string arrays, and verificationArgv starting with "vitest". Fix the file; Tau does not fall back to another config.`,
+      `Invalid TDD config ${source}: ${problem(value)}. Expected {"tdd": {...}} with runner as a non-empty string, productionGlobs, testGlobs, testSupportGlobs, and excludedGlobs as string arrays, and verificationArgv as an array of non-empty strings. Fix the file; Tau does not fall back to another config.`,
     );
   }
 
@@ -105,10 +112,11 @@ const tddLayer = ({ source, value }: ConfigFile, ui: ConfigWarnings): ConfigLaye
 
   warnUnknownKeys(ui, source, values, knownTddKeys, 'tdd');
 
-  // Only the Vitest runner exists, so the command must start with vitest.
-  if (values.verificationArgv !== undefined && values.verificationArgv[0] !== 'vitest') {
+  const runnerName = values.runner;
+
+  if (runnerName !== undefined && findRunner(runnerName, runnerTable) === undefined) {
     throw new Error(
-      `Invalid TDD config ${source}: verificationArgv must start with "vitest", the only supported runner.`,
+      `Invalid TDD config ${source}: runner "${runnerName}" is unknown. Known runners: ${knownRunnerNames(runnerTable).join(', ')}. Fix the file; Tau does not fall back to another config.`,
     );
   }
 
@@ -117,12 +125,43 @@ const tddLayer = ({ source, value }: ConfigFile, ui: ConfigWarnings): ConfigLaye
   return { source, values };
 };
 
-// Repository config overrides user config, which overrides the defaults.
-export const loadTddConfig = (location: ConfigLocation, ui: ConfigWarnings): LoadedTddConfig => {
-  const { files, ignored } = readTauConfig(location);
-  const layers = files.map((file) => tddLayer(file, ui));
+const validateVerificationArgv = (merged: MergedTddConfig, runnerTable: RunnerTable): void => {
+  const runner = findRunner(merged.config.runner, runnerTable);
 
-  return { ...mergeConfigLayers(defaultTddConfig, defaultSource, layers), ignored };
+  if (runner === undefined) {
+    throw new Error(
+      `Invalid TDD config ${merged.sources.runner}: runner "${merged.config.runner}" is unknown. Known runners: ${knownRunnerNames(runnerTable).join(', ')}. Fix the file; Tau does not fall back to another config.`,
+    );
+  }
+
+  const error = runner.verificationArgvError(merged.config.verificationArgv);
+
+  if (error !== null) {
+    throw new Error(
+      `Invalid TDD config ${merged.sources.verificationArgv}: ${error} Fix the file; Tau does not fall back to another config.`,
+    );
+  }
+};
+
+export const loadTddConfig = (
+  location: ConfigLocation,
+  ui: ConfigWarnings,
+  runnerTable: RunnerTable,
+  initialRunner = defaultRunnerName,
+): LoadedTddConfig => {
+  const { files, ignored } = readTauConfig(location);
+  const layers = files.map((file) => tddLayer(file, ui, runnerTable));
+
+  const merged = mergeConfigLayers(
+    initialRunner,
+    (name) => findRunner(name, runnerTable)?.defaults,
+    defaultSource,
+    layers,
+  );
+
+  validateVerificationArgv(merged, runnerTable);
+
+  return { ...merged, ignored };
 };
 
 // Configs are not changed after loading, so the compiled rules stay valid for each config object.

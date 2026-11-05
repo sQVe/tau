@@ -55,8 +55,11 @@ export const handleToolResult = async (
   const productionEdit =
     !event.isError &&
     editablePath &&
-    classifyPath(loaded.config, editedPath, lookupRunner('vitest').testFilesCanBeProduction)
-      .production;
+    classifyPath(
+      loaded.config,
+      editedPath,
+      lookupRunner(loaded.config.runner).testFilesCanBeProduction,
+    ).production;
 
   const hint = await observation.checkpoint(productionEdit);
 
