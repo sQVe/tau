@@ -29,6 +29,7 @@ import { reportParameters, reportToParent } from './report.js';
 import type { ReportRefusalState, ReportTarget } from './report.js';
 import { remindToReport } from './reportReminder.js';
 import type { Loadout } from './types.js';
+import { answersOpenQuestion, readSavedAnswer } from './workerAnswer.js';
 import { decideWorkerResume, decideWorkerStart } from './workerResume.js';
 import type { WorkerStart } from './workerResume.js';
 import { startPromptText } from './workerStart.js';
@@ -247,14 +248,23 @@ const startWorker = async (
       workerTools(loaded.assignment.loadout, skillTools),
     );
 
-    const resume = decideWorkerResume(context.sessionManager.getBranch(), loaded.assignment);
+    const resume = decideWorkerResume(
+      context.sessionManager.getBranch(),
+      loaded.assignment,
+      await readSavedAnswer(loaded.assignment),
+    );
+
     const hasReport = loaded.assignment.report !== null;
 
     state.questionAsked = resume.waitingForQuestion;
 
     const start = decideWorkerStart(resume, hasReport);
 
-    state.startInput.startText = startPromptText(start, workerPrompt(loaded.assignment));
+    state.startInput.startText = startPromptText(
+      start,
+      workerPrompt(loaded.assignment),
+      resume.answerPath,
+    );
 
     runStartAction(context, start);
   } catch (error) {
@@ -310,6 +320,37 @@ const registerAgentSettledHandler = (pi: ExtensionAPI, state: WorkerState): void
   });
 };
 
+const endQuestionWait = (state: WorkerState): void => {
+  state.questionAsked = false;
+  state.refusal.reminderSent = false;
+};
+
+const registerQuestionWaitEnd = (pi: ExtensionAPI, state: WorkerState): void => {
+  pi.on('message_start', async (event, context) => {
+    const { message } = event;
+
+    if (message.role === 'user') {
+      endQuestionWait(state);
+
+      return;
+    }
+
+    if (message.role !== 'custom' || !state.questionAsked || state.target === undefined) {
+      return;
+    }
+
+    const answered = await answersOpenQuestion({
+      assignment: state.target.assignment,
+      sessionId: context.sessionManager.getSessionId(),
+      message,
+    });
+
+    if (answered) {
+      endQuestionWait(state);
+    }
+  });
+};
+
 // The worker pane is bound to its saved native session, so /new, /resume, and /fork would orphan the task.
 const registerSessionSwitchBlock = (pi: ExtensionAPI): void => {
   pi.on('session_before_switch', () => ({ cancel: true }));
@@ -345,17 +386,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
   registerSessionSwitchBlock(pi);
   registerReportReminder(pi, state);
   registerAgentSettledHandler(pi, state);
-
-  pi.on('agent_start', () => {
-    state.questionAsked = false;
-  });
-
-  pi.on('message_start', (event) => {
-    if (event.message.role === 'user') {
-      state.questionAsked = false;
-      state.refusal.reminderSent = false;
-    }
-  });
+  registerQuestionWaitEnd(pi, state);
 
   pi.on('agent_end', (event) => {
     state.runError = lastRunError(event);

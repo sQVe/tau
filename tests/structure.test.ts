@@ -124,6 +124,7 @@ const pureModules = [
   'src/extensions/subagents/skillToolsRefusal.ts',
   'src/extensions/subagents/summaryLength.ts',
   'src/extensions/subagents/ticketPath.ts',
+  'src/extensions/subagents/workerAnswerDecision.ts',
   'src/extensions/subagents/workerDecision.ts',
   'src/extensions/subagents/workerMessage.ts',
   'src/extensions/subagents/workerModels.ts',

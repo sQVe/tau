@@ -522,7 +522,11 @@ it('shuts the worker down when the turn that answers its question settles', asyn
     context,
   );
 
-  pi.handler('agent_start')({}, context);
+  pi.handler('message_start')(
+    { type: 'message_start', message: { role: 'user', content: 'Use A.' } },
+    context,
+  );
+
   pi.handler('agent_settled')({}, context);
 
   expect(shutdown).toHaveBeenCalledOnce();

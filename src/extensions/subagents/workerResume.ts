@@ -7,6 +7,8 @@ import { taskPromptHeader } from './workerMessage.js';
 export interface WorkerResume {
   sendTaskPrompt: boolean;
   waitingForQuestion: boolean;
+  // Set when a saved answer ended the question wait, so the worker is told to read it.
+  answerPath: string | undefined;
 }
 
 export type WorkerStart = 'shutdown' | 'sendTask' | 'wait' | 'continue';
@@ -78,8 +80,11 @@ const isFirstAssignmentSentByMessage = (
 export const decideWorkerResume = (
   branch: readonly SessionEntry[],
   assignment: Pick<Assignment, 'assignmentId' | 'previousAssignmentId'>,
+  savedAnswerPath: string | undefined,
 ): WorkerResume => {
   const questionIndex = branch.findLastIndex(isQuestionResult);
+  const questionOpen = questionIndex !== -1 && waitsAfterQuestion(branch, questionIndex);
+  const answerPath = questionOpen ? savedAnswerPath : undefined;
   const taskSent = branch.some((entry) => namesAssignment(entry, assignment.assignmentId));
 
   const firstSentByMessage = isFirstAssignmentSentByMessage(
@@ -89,7 +94,8 @@ export const decideWorkerResume = (
 
   return {
     sendTaskPrompt: !taskSent && !firstSentByMessage,
-    waitingForQuestion: questionIndex !== -1 && waitsAfterQuestion(branch, questionIndex),
+    waitingForQuestion: questionOpen && answerPath === undefined,
+    answerPath,
   };
 };
 

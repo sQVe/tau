@@ -19,9 +19,15 @@ it.each([
 ] satisfies { name: string; start: WorkerStart; prompt: string | undefined }[])(
   '$name',
   ({ start, prompt }) => {
-    expect(startPromptText(start, taskPrompt)).toBe(prompt);
+    expect(startPromptText(start, taskPrompt, undefined)).toBe(prompt);
   },
 );
+
+it('names the saved answer in the continuation prompt', () => {
+  const answerPath = '/agent/assignments/a/answers/q.json';
+
+  expect(startPromptText('continue', taskPrompt, answerPath)).toContain(answerPath);
+});
 
 it.each([
   {

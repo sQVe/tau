@@ -13,14 +13,21 @@ export const isStartInput = (pending: boolean, text: string): boolean =>
 export const startInputResult = (startText: string | undefined): InputEventResult =>
   startText === undefined ? { action: 'handled' } : { action: 'transform', text: startText };
 
-export const startPromptText = (start: WorkerStart, taskPrompt: string): string | undefined => {
+const answeredContinuation = (answerPath: string): string =>
+  `Your session restarted. The parent answered your question in ${answerPath}. Read that file, finish the assigned work, then call subagent_report.`;
+
+export const startPromptText = (
+  start: WorkerStart,
+  taskPrompt: string,
+  answerPath: string | undefined,
+): string | undefined => {
   if (start === 'sendTask') {
     return taskPrompt;
   }
 
-  if (start === 'continue') {
-    return workerContinuation;
+  if (start !== 'continue') {
+    return undefined;
   }
 
-  return undefined;
+  return answerPath === undefined ? workerContinuation : answeredContinuation(answerPath);
 };

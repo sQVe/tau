@@ -1,9 +1,15 @@
-import type { SessionEntry } from '@earendil-works/pi-coding-agent';
-import { expect, it } from 'vitest';
+import { mkdirSync } from 'node:fs';
 
-import type { Assignment } from './assignment.js';
+import type { SessionEntry } from '@earendil-works/pi-coding-agent';
+import { expect, it, onTestFinished, vi } from 'vitest';
+
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { answerPath, publishAnswer } from './answerRecord.js';
+import { assignmentDirectory } from './assignment.js';
+import type { Assignment, SavedQuestion } from './assignment.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import { workerPrompt } from './profiles.js';
+import { readSavedAnswer } from './workerAnswer.js';
 import { decideWorkerResume, decideWorkerStart } from './workerResume.js';
 
 const entry = (message: unknown, type = 'message') =>
@@ -172,12 +178,97 @@ it.each([
   sendTaskPrompt: boolean;
   waitingForQuestion: boolean;
 }[])('$name', ({ branch, assignment: target, sendTaskPrompt, waitingForQuestion }) => {
-  expect(decideWorkerResume(branch, target)).toEqual({ sendTaskPrompt, waitingForQuestion });
+  expect(decideWorkerResume(branch, target, undefined)).toEqual({
+    sendTaskPrompt,
+    waitingForQuestion,
+    answerPath: undefined,
+  });
+});
+
+const firstQuestion: SavedQuestion = {
+  questionId: '8a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d',
+  text: 'Which config file wins?',
+  askedAt: 1_800_000_000_000,
+};
+
+const secondQuestion: SavedQuestion = {
+  questionId: '9b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e',
+  text: 'Which test runner?',
+  askedAt: 1_800_000_100_000,
+};
+
+const inboxMessage = (family: string) =>
+  ({
+    type: 'custom_message',
+    customType: 'tau-inbox-message',
+    content: 'A note from the parent.',
+    display: true,
+    details: { version: 2, messageId: 'message-1', sessionId: assignmentId, family },
+  }) as unknown as SessionEntry;
+
+const useAgentDirectory = (): void => {
+  vi.stubEnv('PI_CODING_AGENT_DIR', temporaryDirectory(onTestFinished, 'tau-worker-resume-'));
+
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+};
+
+const answer = (saved: SavedQuestion): void => {
+  mkdirSync(assignmentDirectory(assignmentId), { recursive: true, mode: 0o700 });
+
+  publishAnswer({
+    version: 1,
+    assignmentId,
+    questionId: saved.questionId,
+    answeredAt: saved.askedAt + 1,
+    answer: 'Use A.',
+  });
+};
+
+const resumeWith = async (branch: SessionEntry[], questions: SavedQuestion[]) => {
+  const target = { ...first, questions };
+
+  return decideWorkerResume(branch, target, await readSavedAnswer(target));
+};
+
+it('keeps waiting when a handover arrives after the question', async () => {
+  useAgentDirectory();
+
+  const resume = await resumeWith([user(), question(), inboxMessage('handover')], [firstQuestion]);
+
+  expect(resume.waitingForQuestion).toBe(true);
+});
+
+it('ends the wait when the open question has a saved answer', async () => {
+  useAgentDirectory();
+  answer(firstQuestion);
+
+  const resume = await resumeWith([user(), question()], [firstQuestion]);
+
+  expect(resume).toEqual({
+    sendTaskPrompt: false,
+    waitingForQuestion: false,
+    answerPath: answerPath(assignmentId, firstQuestion.questionId),
+  });
+});
+
+it('waits again for a second question after an answered one', async () => {
+  useAgentDirectory();
+  answer(firstQuestion);
+
+  const resume = await resumeWith(
+    [user(), question(), inboxMessage('answer'), question()],
+    [firstQuestion, secondQuestion],
+  );
+
+  expect(resume.waitingForQuestion).toBe(true);
 });
 
 const resume = (sendTaskPrompt: boolean, waitingForQuestion: boolean) => ({
   sendTaskPrompt,
   waitingForQuestion,
+  answerPath: undefined,
 });
 
 it.each([
