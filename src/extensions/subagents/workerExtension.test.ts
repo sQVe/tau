@@ -1,125 +1,20 @@
-import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-import type {
-  ExtensionAPI,
-  ExtensionContext,
-  ExtensionToolContext,
-} from '@earendil-works/pi-coding-agent';
-import { expect, it, onTestFinished, vi } from 'vitest';
+import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
+import { expect, it } from 'vitest';
 
-import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { createHcFake } from '../../../tests/hcFake.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { nestedChangeCallReason, nestedControlCallReason } from '../../codemode/controlTools.js';
-import { skillTools } from '../../skillTools.js';
-import { assignmentDirectory, writeAssignment } from './assignment.js';
+import { writeAssignment } from './assignment.js';
 import type { Assignment, SavedReport } from './assignment.js';
-import { fixtureLoadout } from './fixtures/loadout.js';
+import { setupWorkerExtension, workerAssignment } from './fixtures/workerExtension.js';
 import { workerPrompt } from './profiles.js';
-import workerExtension from './workerExtension.js';
 import { workerContinuation, workerStartMessage } from './workerStart.js';
-import { workerTools } from './workerTools.js';
-
-const workerTerminal = 'worker-1';
-const parentTerminal = 'manager-1';
-const assignmentId = '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f';
-const sessionId = '11111111-1111-1111-1111-111111111111';
-
-const safetyPath = join(
-  dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
-  'dist',
-  'pi',
-  'index.js',
-);
-
-const setup = (assignmentPath?: string) => {
-  const directory = realpathSync(temporaryDirectory(onTestFinished, 'tau-worker-extension-'));
-
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-    vi.restoreAllMocks();
-  });
-
-  vi.stubEnv('TAU_ROLE', 'worker');
-  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
-  vi.stubEnv('HC_TERMINAL_ID', workerTerminal);
-
-  const loadout = fixtureLoadout(directory);
-  const tools = workerTools(loadout, skillTools);
-  const fake = createHcFake();
-  const path = assignmentPath ?? join(assignmentDirectory(assignmentId), 'assignment.json');
-
-  fake.reply(
-    'get',
-    JSON.stringify({
-      address: workerTerminal,
-      state: 'live',
-      parent: parentTerminal,
-      labels: { 'tau.assignment': path },
-    }),
-  );
-
-  const activeTools = vi.fn<(names: string[]) => void>();
-
-  const pi = fakeExtensionApi({
-    exec: fake.exec,
-    getThinkingLevel: () => 'off',
-    getCommands: () => [
-      { name: 'cc-safety-net', source: 'extension', sourceInfo: { path: safetyPath } },
-    ],
-    getAllTools: () => tools.map((name) => ({ name })),
-    setActiveTools: activeTools,
-  } as unknown as Partial<ExtensionAPI>);
-
-  const shutdown = vi.fn<ExtensionContext['shutdown']>();
-
-  const context = {
-    sessionManager: {
-      getBranch: () => [],
-      getSessionId: () => sessionId,
-      getSessionFile: () => join(directory, `${sessionId}.jsonl`),
-    },
-    shutdown,
-    cwd: directory,
-    model: { provider: 'faux', id: 'test' },
-    isProjectTrusted: () => true,
-    ui: { notify: vi.fn<ExtensionToolContext['ui']['notify']>() },
-  } as unknown as ExtensionToolContext;
-
-  workerExtension(pi.pi);
-
-  return { activeTools, assignmentPath: path, context, directory, loadout, pi, shutdown, tools };
-};
-
-const assignmentFor = (directory: string): Assignment => ({
-  version: 3,
-  assignmentId,
-  task: 'Inspect the fixture.',
-  acceptance: [],
-  label: null,
-  profile: 'worker',
-  loadout: fixtureLoadout(directory),
-  routing: null,
-  packageSnapshot: null,
-  session: {
-    id: sessionId,
-    file: join(assignmentDirectory(assignmentId), `${sessionId}.jsonl`),
-  },
-  parentSession: join(directory, 'parent.jsonl'),
-  cwd: directory,
-  parentTerminal,
-  deadline: Date.now() + 60_000,
-  createdAt: Date.now(),
-  previousAssignmentId: null,
-  extensionPackages: null,
-  questions: [],
-  report: null,
-});
 
 it('stops the worker with a visible error when the assignment file is missing', async () => {
-  const { context, pi, shutdown } = setup(join('/nonexistent', 'assignment.json'));
+  const { context, pi, shutdown } = setupWorkerExtension({
+    assignmentPath: join('/nonexistent', 'assignment.json'),
+  });
 
   await pi.handler('session_start')({}, context);
 
@@ -132,7 +27,7 @@ it('stops the worker with a visible error when the assignment file is missing', 
 });
 
 it('stops the worker with a visible error when the assignment file is malformed', async () => {
-  const { assignmentPath, context, pi, shutdown } = setup();
+  const { assignmentPath, context, pi, shutdown } = setupWorkerExtension();
 
   mkdirSync(dirname(assignmentPath), { recursive: true });
   writeFileSync(assignmentPath, '{ not json');
@@ -148,9 +43,9 @@ it('stops the worker with a visible error when the assignment file is malformed'
 });
 
 it('reads the assignment and activates its tools without sending a message at session start', async () => {
-  const { activeTools, context, directory, loadout, pi, shutdown, tools } = setup();
+  const { activeTools, context, directory, loadout, pi, shutdown, tools } = setupWorkerExtension();
 
-  await writeAssignment(assignmentFor(directory));
+  await writeAssignment(workerAssignment(directory));
 
   await pi.handler('session_start')({}, context);
 
@@ -163,7 +58,7 @@ it('reads the assignment and activates its tools without sending a message at se
 });
 
 const sendStartMessage = (
-  pi: ReturnType<typeof setup>['pi'],
+  pi: ReturnType<typeof setupWorkerExtension>['pi'],
   context: ExtensionToolContext,
 ): Promise<unknown> =>
   Promise.resolve(
@@ -222,8 +117,8 @@ it.each([
     shutdownCalled: true,
   },
 ] as const)('$name', async ({ branch, report, expected, shutdownCalled }) => {
-  const { context, directory, pi, shutdown } = setup();
-  const assignment = assignmentFor(directory);
+  const { context, directory, pi, shutdown } = setupWorkerExtension();
+  const assignment = workerAssignment(directory);
 
   await writeAssignment({ ...assignment, report });
 
@@ -237,7 +132,9 @@ it.each([
 });
 
 it('handles the start message without a run when startup fails', async () => {
-  const { context, pi, shutdown } = setup(join('/nonexistent', 'assignment.json'));
+  const { context, pi, shutdown } = setupWorkerExtension({
+    assignmentPath: join('/nonexistent', 'assignment.json'),
+  });
 
   await pi.handler('session_start')({}, context);
 
@@ -246,9 +143,9 @@ it('handles the start message without a run when startup fails', async () => {
 });
 
 it('passes unrelated input through unchanged', async () => {
-  const { context, directory, pi } = setup();
+  const { context, directory, pi } = setupWorkerExtension();
 
-  await writeAssignment(assignmentFor(directory));
+  await writeAssignment(workerAssignment(directory));
 
   await pi.handler('session_start')({}, context);
 
@@ -260,9 +157,9 @@ it('passes unrelated input through unchanged', async () => {
 });
 
 it('passes a second start message through unchanged', async () => {
-  const { context, directory, pi } = setup();
+  const { context, directory, pi } = setupWorkerExtension();
 
-  await writeAssignment(assignmentFor(directory));
+  await writeAssignment(workerAssignment(directory));
 
   await pi.handler('session_start')({}, context);
   await sendStartMessage(pi, context);
@@ -271,9 +168,9 @@ it('passes a second start message through unchanged', async () => {
 });
 
 it('keeps a reloaded worker waiting without a second task prompt', async () => {
-  const { context, directory, pi, shutdown } = setup();
+  const { context, directory, pi, shutdown } = setupWorkerExtension();
 
-  await writeAssignment(assignmentFor(directory));
+  await writeAssignment(workerAssignment(directory));
 
   Object.assign(context.sessionManager, {
     getBranch: () => [
@@ -293,10 +190,10 @@ it('keeps a reloaded worker waiting without a second task prompt', async () => {
 });
 
 it('shuts a reloaded worker down without a message when its assignment already has a report', async () => {
-  const { context, directory, pi, shutdown } = setup();
+  const { context, directory, pi, shutdown } = setupWorkerExtension();
 
   await writeAssignment({
-    ...assignmentFor(directory),
+    ...workerAssignment(directory),
     report: {
       outcome: 'success',
       summary: 'Changes: None\nEvidence: None\nDecisions: None\nConcerns: None',
@@ -315,9 +212,9 @@ it('shuts a reloaded worker down without a message when its assignment already h
 });
 
 it('reminds again for a report after the parent answers a question the reminded worker asked', async () => {
-  const { context, directory, pi } = setup();
+  const { context, directory, pi } = setupWorkerExtension();
 
-  await writeAssignment(assignmentFor(directory));
+  await writeAssignment(workerAssignment(directory));
   await pi.handler('session_start')({}, context);
 
   expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toMatchObject({
@@ -349,9 +246,9 @@ it('reminds again for a report after the parent answers a question the reminded 
 });
 
 it('does not restart the report reminder when a non-user message starts', async () => {
-  const { context, directory, pi } = setup();
+  const { context, directory, pi } = setupWorkerExtension();
 
-  await writeAssignment(assignmentFor(directory));
+  await writeAssignment(workerAssignment(directory));
   await pi.handler('session_start')({}, context);
 
   expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toMatchObject({
@@ -367,9 +264,9 @@ it('does not restart the report reminder when a non-user message starts', async 
 });
 
 it('shuts the worker down after a settled report', async () => {
-  const { context, directory, pi, shutdown } = setup();
+  const { context, directory, pi, shutdown } = setupWorkerExtension();
 
-  await writeAssignment(assignmentFor(directory));
+  await writeAssignment(workerAssignment(directory));
   await pi.handler('session_start')({}, context);
 
   const tool = pi.tools.get('subagent_report');
@@ -408,9 +305,9 @@ it('shuts the worker down after a settled report', async () => {
 });
 
 it('keeps the worker running and skips the report reminder when its turn ends on a question', async () => {
-  const { context, directory, pi, shutdown } = setup();
+  const { context, directory, pi, shutdown } = setupWorkerExtension();
 
-  await writeAssignment(assignmentFor(directory));
+  await writeAssignment(workerAssignment(directory));
   await pi.handler('session_start')({}, context);
 
   const tool = pi.tools.get('subagent_question');
@@ -435,9 +332,9 @@ it('keeps the worker running and skips the report reminder when its turn ends on
 });
 
 it('shuts the worker down when a report is saved after a question in the same run', async () => {
-  const { context, directory, pi, shutdown } = setup();
+  const { context, directory, pi, shutdown } = setupWorkerExtension();
 
-  await writeAssignment(assignmentFor(directory));
+  await writeAssignment(workerAssignment(directory));
   await pi.handler('session_start')({}, context);
 
   const question = pi.tools.get('subagent_question');
@@ -473,9 +370,9 @@ it('shuts the worker down when a report is saved after a question in the same ru
 });
 
 it('reminds for a report after a reply is consumed while the turn streams', async () => {
-  const { context, directory, pi } = setup();
+  const { context, directory, pi } = setupWorkerExtension();
 
-  await writeAssignment(assignmentFor(directory));
+  await writeAssignment(workerAssignment(directory));
   await pi.handler('session_start')({}, context);
 
   const question = pi.tools.get('subagent_question');
@@ -503,9 +400,9 @@ it('reminds for a report after a reply is consumed while the turn streams', asyn
 });
 
 it('shuts the worker down when the turn that answers its question settles', async () => {
-  const { context, directory, pi, shutdown } = setup();
+  const { context, directory, pi, shutdown } = setupWorkerExtension();
 
-  await writeAssignment(assignmentFor(directory));
+  await writeAssignment(workerAssignment(directory));
   await pi.handler('session_start')({}, context);
 
   const tool = pi.tools.get('subagent_question');
@@ -533,9 +430,9 @@ it('shuts the worker down when the turn that answers its question settles', asyn
 });
 
 it('reminds once for a report and shares that state', async () => {
-  const { context, directory, pi } = setup();
+  const { context, directory, pi } = setupWorkerExtension();
 
-  await writeAssignment(assignmentFor(directory));
+  await writeAssignment(workerAssignment(directory));
   await pi.handler('session_start')({}, context);
 
   const first = pi.handler('agent_before_settle')({ entries: [] }, context);
@@ -546,7 +443,7 @@ it('reminds once for a report and shares that state', async () => {
 });
 
 it('blocks a control tool called from a codemode script', () => {
-  const { context, pi } = setup();
+  const { context, pi } = setupWorkerExtension();
 
   const result = pi.handler('tool_call')(
     { toolName: 'subagent_report', toolCallId: 'call', parentToolCallId: 'script' },
@@ -557,7 +454,7 @@ it('blocks a control tool called from a codemode script', () => {
 });
 
 it('blocks a change tool called from a codemode script', () => {
-  const { context, pi } = setup();
+  const { context, pi } = setupWorkerExtension();
 
   const result = pi.handler('tool_call')(
     { toolName: 'edit', toolCallId: 'call', parentToolCallId: 'script', input: {} },
@@ -568,7 +465,7 @@ it('blocks a change tool called from a codemode script', () => {
 });
 
 it('blocks a direct worker questionnaire', () => {
-  const { context, pi } = setup();
+  const { context, pi } = setupWorkerExtension();
 
   const result = pi.handler('tool_call')(
     { toolName: 'ask_user_question', toolCallId: 'call', input: {} },
@@ -581,7 +478,7 @@ it('blocks a direct worker questionnaire', () => {
 it.each(['subagent_report', 'subagent_question'])(
   'blocks %s when it shares its turn with another tool call',
   (toolName) => {
-    const { context, pi } = setup();
+    const { context, pi } = setupWorkerExtension();
 
     Object.assign(context.sessionManager, {
       getBranch: () => [

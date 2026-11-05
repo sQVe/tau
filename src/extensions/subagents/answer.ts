@@ -146,7 +146,7 @@ const checkTarget = async (
   const changeProblem = targetChangeRefusal({
     managerTerminal: target.managerTerminal,
     path: target.path,
-    terminal: await get(hc, target.terminal),
+    terminal: inbox.snapshot,
   });
 
   if (changeProblem !== undefined) {

@@ -1,116 +1,18 @@
-import { realpathSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import type { AgentToolResult, SessionEntry } from '@earendil-works/pi-coding-agent';
+import { expect, it } from 'vitest';
 
-import type {
-  AgentToolResult,
-  ExtensionAPI,
-  ExtensionContext,
-  ExtensionToolContext,
-  SessionEntry,
-} from '@earendil-works/pi-coding-agent';
-import { expect, it, onTestFinished, vi } from 'vitest';
-
-import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { createHcFake } from '../../../tests/hcFake.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { skillTools } from '../../skillTools.js';
 import { answerPath, formatAnswerReference, publishAnswer } from './answerRecord.js';
-import { assignmentDirectory, writeAssignment } from './assignment.js';
-import type { Assignment, SavedQuestion } from './assignment.js';
-import { fixtureLoadout } from './fixtures/loadout.js';
-import workerExtension from './workerExtension.js';
-import { workerStartMessage } from './workerStart.js';
-import { workerTools } from './workerTools.js';
-
-const workerTerminal = 'worker-1';
-const parentTerminal = 'manager-1';
-const assignmentId = '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f';
-const sessionId = '11111111-1111-4111-8111-111111111111';
-
-const safetyPath = join(
-  dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
-  'dist',
-  'pi',
-  'index.js',
-);
-
-const setup = (branch: SessionEntry[] = []) => {
-  const directory = realpathSync(temporaryDirectory(onTestFinished, 'tau-worker-answer-'));
-
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-  });
-
-  vi.stubEnv('TAU_ROLE', 'worker');
-  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
-  vi.stubEnv('HC_TERMINAL_ID', workerTerminal);
-
-  const tools = workerTools(fixtureLoadout(directory), skillTools);
-  const fake = createHcFake();
-
-  fake.reply(
-    'get',
-    JSON.stringify({
-      address: workerTerminal,
-      state: 'live',
-      parent: parentTerminal,
-      labels: { 'tau.assignment': join(assignmentDirectory(assignmentId), 'assignment.json') },
-    }),
-  );
-
-  const pi = fakeExtensionApi({
-    exec: fake.exec,
-    getThinkingLevel: () => 'off',
-    getCommands: () => [
-      { name: 'cc-safety-net', source: 'extension', sourceInfo: { path: safetyPath } },
-    ],
-    getAllTools: () => tools.map((name) => ({ name })),
-    setActiveTools: () => undefined,
-  } as unknown as Partial<ExtensionAPI>);
-
-  const shutdown = vi.fn<ExtensionContext['shutdown']>();
-
-  const context = {
-    sessionManager: { getBranch: () => branch, getSessionId: () => sessionId },
-    shutdown,
-    cwd: directory,
-    model: { provider: 'faux', id: 'test' },
-    isProjectTrusted: () => true,
-    ui: { notify: vi.fn<ExtensionToolContext['ui']['notify']>() },
-  } as unknown as ExtensionToolContext;
-
-  workerExtension(pi.pi);
-
-  return { context, directory, pi, shutdown };
-};
-
-type Harness = ReturnType<typeof setup>;
-
-const assignmentFor = (directory: string, questions: SavedQuestion[] = []): Assignment => ({
-  version: 3,
+import { writeAssignment } from './assignment.js';
+import type { SavedQuestion } from './assignment.js';
+import {
   assignmentId,
-  task: 'Inspect the fixture.',
-  acceptance: [],
-  label: null,
-  profile: 'worker',
-  loadout: fixtureLoadout(directory),
-  routing: null,
-  packageSnapshot: null,
-  session: {
-    id: sessionId,
-    file: join(assignmentDirectory(assignmentId), `${sessionId}.jsonl`),
-  },
-  parentSession: join(directory, 'parent.jsonl'),
-  cwd: directory,
-  parentTerminal,
-  deadline: Date.now() + 60_000,
-  createdAt: Date.now(),
-  previousAssignmentId: null,
-  extensionPackages: null,
-  questions,
-  report: null,
-});
+  sessionId,
+  setupWorkerExtension,
+  workerAssignment,
+} from './fixtures/workerExtension.js';
+import { workerStartMessage } from './workerStart.js';
+
+type Harness = ReturnType<typeof setupWorkerExtension>;
 
 const answer = (questionId: string): void => {
   publishAnswer({
@@ -123,7 +25,7 @@ const answer = (questionId: string): void => {
 };
 
 const askQuestion = async ({ context, directory, pi }: Harness): Promise<string> => {
-  await writeAssignment(assignmentFor(directory));
+  await writeAssignment(workerAssignment(directory));
   await pi.handler('session_start')({}, context);
 
   const tool = pi.tools.get('subagent_question');
@@ -168,7 +70,7 @@ const runInboxWake = async (
 };
 
 it('keeps waiting for the answer across a handover wake', async () => {
-  const harness = setup();
+  const harness = setupWorkerExtension();
 
   await askQuestion(harness);
   await runInboxWake(harness, inboxMessage('handover', 'Pick up the parser work.'));
@@ -177,7 +79,7 @@ it('keeps waiting for the answer across a handover wake', async () => {
 });
 
 it('keeps waiting when the answer message has no answer file', async () => {
-  const harness = setup();
+  const harness = setupWorkerExtension();
   const questionId = await askQuestion(harness);
 
   await runInboxWake(
@@ -189,7 +91,7 @@ it('keeps waiting when the answer message has no answer file', async () => {
 });
 
 it('ends the wait when the answer for the open question is delivered', async () => {
-  const harness = setup();
+  const harness = setupWorkerExtension();
   const questionId = await askQuestion(harness);
 
   answer(questionId);
@@ -203,7 +105,7 @@ it('ends the wait when the answer for the open question is delivered', async () 
 });
 
 it('keeps the sent reminder when an answer arrives after a user ended the wait', async () => {
-  const harness = setup();
+  const harness = setupWorkerExtension();
   const { context, pi } = harness;
   const questionId = await askQuestion(harness);
 
@@ -237,9 +139,9 @@ it('tells a resumed worker where its saved answer is', async () => {
     { type: 'message', message: { role: 'toolResult', toolName: 'subagent_question' } },
   ] as unknown as SessionEntry[];
 
-  const { context, directory, pi } = setup(branch);
+  const { context, directory, pi } = setupWorkerExtension({ branch });
 
-  await writeAssignment(assignmentFor(directory, [question]));
+  await writeAssignment(workerAssignment(directory, [question]));
   answer(question.questionId);
   await pi.handler('session_start')({}, context);
 

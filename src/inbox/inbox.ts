@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { SubscribeEvents } from '../hc/events.js';
 import { currentTerminalAddress, get } from '../hc/hc.js';
-import type { HcRuntime } from '../hc/hc.js';
+import type { HcRuntime, HcTerminal } from '../hc/hc.js';
 import type { Wake } from '../wake/wake.js';
 import { envelopeVersion } from './envelope.js';
 import type { InboxEnvelope } from './envelope.js';
@@ -40,6 +40,7 @@ export interface InboxTargetRequest {
 export interface InboxTarget {
   terminal: string;
   sessionId: string;
+  snapshot: HcTerminal;
 }
 
 export interface SendInboxRequest extends InboxTargetRequest {
@@ -108,7 +109,7 @@ export const checkInboxTarget = async (request: InboxTargetRequest): Promise<Inb
     throw refuseError(sender, leaseProblem(lease, receiver.address));
   }
 
-  return { terminal: receiver.address, sessionId: lease.sessionId };
+  return { terminal: receiver.address, sessionId: lease.sessionId, snapshot: receiver };
 };
 
 export const sendInboxMessage = async (request: SendInboxRequest): Promise<SendInboxResult> => {

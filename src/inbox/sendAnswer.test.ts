@@ -88,16 +88,18 @@ it('writes an answer envelope at version 2 that the receiver reads', async () =>
   });
 });
 
-it('returns the terminal and lease session of a live receiver', async () => {
+it('returns the terminal, lease session, and checked snapshot of a live receiver', async () => {
   const fake = createHcFake();
+  const labels = { 'tau.inbox': liveLease('session-1') };
 
-  fake.reply('get', terminalReply({ 'tau.inbox': liveLease('session-1') }));
+  fake.reply('get', terminalReply(labels));
 
   await expect(
     checkInboxTarget({ hc: runtimeOf(fake), target: 't7', sender: answerSender }),
   ).resolves.toEqual({
     terminal: 't7',
     sessionId: 'session-1',
+    snapshot: { address: 't7', name: null, state: 'live', labels },
   });
 
   expect(labelArguments(fake)).toEqual([]);

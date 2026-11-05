@@ -263,7 +263,7 @@ it.each([
       reads += 1;
     }
 
-    if (reads === 2) {
+    if (reads === 1) {
       const { labels } = workerTerminal(fixture.assignment);
 
       replyWorker(fixture, {
@@ -415,7 +415,7 @@ it('saves nothing when the call is aborted during the final terminal read', asyn
       reads += 1;
     }
 
-    if (reads === 3) {
+    if (reads === 2) {
       controller.abort();
     }
 
@@ -424,7 +424,7 @@ it('saves nothing when the call is aborted during the final terminal read', asyn
 
   const result = await answer(fixture, {}, abortingExec, controller.signal);
 
-  expect(reads).toBe(3);
+  expect(reads).toBe(2);
   expect(result.isError).toBe(true);
   expectNothingWritten(fixture);
   expect(readFileSync(path)).toEqual(before);
