@@ -1,3 +1,5 @@
+import { Value } from 'typebox/value';
+
 import {
   notifyOnce,
   readUserOnlyKey,
@@ -11,6 +13,8 @@ import { anyKey, isRecord } from '../../schema.js';
 import type { KnownKeys } from '../../schema.js';
 import { defaultRouteConfidence } from './modelRoutes.js';
 import type { ModelRoute, RouteLabel } from './modelRoutes.js';
+import { thinkingSchema } from './types.js';
+import type { ThinkingLevel } from './types.js';
 import type { ProfileModels } from './workerModels.js';
 
 interface ProfileEntries {
@@ -67,6 +71,22 @@ const parseRatio = (source: string, field: string, value: unknown, missing: numb
   return value;
 };
 
+const parseThinking = (
+  source: string,
+  field: string,
+  value: unknown,
+): ThinkingLevel | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Value.Check(thinkingSchema, value)) {
+    throw invalid(source, `${field} ${JSON.stringify(value)} is not a thinking level.`);
+  }
+
+  return value;
+};
+
 const parseLabel = (source: string, field: string, entry: unknown): RouteLabel => {
   if (!isRecord(entry)) {
     throw invalid(
@@ -75,9 +95,12 @@ const parseLabel = (source: string, field: string, entry: unknown): RouteLabel =
     );
   }
 
+  const thinking = parseThinking(source, `${field}.thinking`, entry.thinking);
+
   return {
     criterion: parseText(source, `${field}.criterion`, entry.criterion),
     model: parseModel(source, `${field}.model`, entry.model),
+    ...(thinking === undefined ? {} : { thinking }),
   };
 };
 
@@ -125,12 +148,13 @@ const parseRoute = (source: string, field: string, entry: unknown): ModelRoute =
 
 const knownProfileKeys: KnownKeys = {
   model: true,
+  thinking: true,
   routes: true,
   route: {
     classifier: true,
     question: true,
     confidence: true,
-    labels: { [anyKey]: { criterion: true, model: true } },
+    labels: { [anyKey]: { criterion: true, model: true, thinking: true } },
   },
 };
 
@@ -191,6 +215,20 @@ export const readProfileModel = (
   }
 
   return parseModel(record.source, `${record.field}.model`, record.entry.model);
+};
+
+export const readProfileThinking = (
+  location: ConfigLocation,
+  name: string,
+  ui: ConfigWarnings,
+): ThinkingLevel | undefined => {
+  const record = readProfileRecord(location, name, ui);
+
+  if (record === undefined) {
+    return undefined;
+  }
+
+  return parseThinking(record.source, `${record.field}.thinking`, record.entry.thinking);
 };
 
 // A bad entry is left out here and fails only the launch of that profile.

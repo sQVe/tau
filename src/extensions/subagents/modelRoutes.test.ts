@@ -1,7 +1,13 @@
 import { expect, it } from 'vitest';
 
-import { defaultRouteConfidence, describeModelChoice, pickRoutedModel } from './modelRoutes.js';
+import {
+  defaultRouteConfidence,
+  describeModelChoice,
+  pickRoutedModel,
+  routedThinking,
+} from './modelRoutes.js';
 import type { ClassifierOutcome, ModelChoice, ModelRoute, RoutePick } from './modelRoutes.js';
+import type { ThinkingLevel } from './types.js';
 
 const profileModel = 'claude-bridge/claude-opus-5-5';
 const haiku = 'claude-bridge/claude-haiku-5-5';
@@ -191,4 +197,64 @@ it.for<[string, ModelChoice, string[]]>([
   const reason = describeModelChoice(choice);
 
   expect(facts.filter((fact) => !reason.includes(fact))).toEqual([]);
+});
+
+const thinkingRoute: ModelRoute = {
+  ...route,
+  labels: new Map([
+    ['narrow', { criterion: 'A lookup about known code.', model: haiku, thinking: 'low' }],
+    ['wide', { criterion: 'An investigation across many files.', model: profileModel }],
+  ]),
+};
+
+it.for<[string, RoutePick, ThinkingLevel | undefined]>([
+  [
+    'an answered label with thinking returns its level',
+    { shadowPick: haiku, label: 'narrow', confidence: 0.9, confidenceCutoff: 0.7 },
+    'low',
+  ],
+  [
+    'an answered label without thinking returns undefined',
+    { shadowPick: profileModel, label: 'wide', confidence: 0.9, confidenceCutoff: 0.7 },
+    undefined,
+  ],
+  [
+    'an unknown label fallback returns undefined',
+    {
+      shadowPick: profileModel,
+      label: 'medium',
+      confidence: 0.95,
+      fallbackReason: 'unknownLabel',
+      confidenceCutoff: 0.7,
+    },
+    undefined,
+  ],
+  [
+    'a below-confidence fallback returns undefined',
+    {
+      shadowPick: profileModel,
+      label: 'narrow',
+      confidence: 0.5,
+      fallbackReason: 'lowConfidence',
+      confidenceCutoff: 0.7,
+    },
+    undefined,
+  ],
+  [
+    'a classifier error fallback returns undefined',
+    { shadowPick: profileModel, fallbackReason: 'error', confidenceCutoff: 0.7 },
+    undefined,
+  ],
+  [
+    'a classifier timeout fallback returns undefined',
+    { shadowPick: profileModel, fallbackReason: 'timeout', confidenceCutoff: 0.7 },
+    undefined,
+  ],
+  [
+    'a skipped classification returns undefined',
+    { shadowPick: profileModel, fallbackReason: 'noRoute', confidenceCutoff: 0.7 },
+    undefined,
+  ],
+])('routedThinking: %s', ([, pick, expected]) => {
+  expect(routedThinking(thinkingRoute, pick)).toBe(expected);
 });

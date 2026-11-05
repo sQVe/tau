@@ -20,6 +20,8 @@ import {
   skillCommand,
   tddCommand,
   tddPath,
+  thinkingRoutedFixture,
+  thinkingWorkerFixture,
   workerFixture,
 } from './fixtures/routedLoadout.js';
 import * as loadoutModule from './loadout.js';
@@ -99,6 +101,41 @@ it('resolves an explicit worker model and names the configured models when none 
 const writeConfig = (path: string, value: unknown) => {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(value));
+};
+
+const setRouteThinking = (
+  directory: string,
+  profileThinking: string | undefined,
+  labelThinking: Readonly<Record<string, string>>,
+) => {
+  const path = join(directory, 'tau.json');
+
+  const config = JSON.parse(readFileSync(path, 'utf8')) as {
+    profiles: Record<
+      string,
+      { thinking?: string; route?: { labels: Record<string, { thinking?: string }> } }
+    >;
+  };
+
+  const scout = config.profiles['scout'];
+
+  if (scout === undefined) {
+    throw new Error('The routed fixture has no scout profile.');
+  }
+
+  if (profileThinking !== undefined) {
+    scout.thinking = profileThinking;
+  }
+
+  for (const [label, thinking] of Object.entries(labelThinking)) {
+    const entry = scout.route?.labels[label];
+
+    if (entry !== undefined) {
+      entry.thinking = thinking;
+    }
+  }
+
+  writeFileSync(path, JSON.stringify(config));
 };
 
 const bundledFixture = async (onTestFinished: (callback: () => void) => void) => {
@@ -1029,6 +1066,111 @@ it('keeps an explicit launch model and skips routing', async ({ onTestFinished }
   );
 
   expect(loadout.model).toBe(request.model);
+  expect(routing).toBeUndefined();
+  expect(classify).not.toHaveBeenCalled();
+});
+
+it('applies the user file profile thinking to a profile launch', async ({ onTestFinished }) => {
+  const { directory, context, request } = await thinkingWorkerFixture(onTestFinished);
+
+  writeConfig(join(directory, 'tau.json'), {
+    profiles: { reviewer: { model: request.model, thinking: 'high' } },
+  });
+
+  expect(resolveLoadout({ profile: 'reviewer' }, context).thinking).toBe('high');
+});
+
+it('uses the profile file thinking, then medium, without a user file value', async ({
+  onTestFinished,
+}) => {
+  const { directory, context, request } = await thinkingWorkerFixture(onTestFinished);
+
+  mkdirSync(join(directory, 'agents'));
+
+  const saveProfile = (name: string, thinking?: string) => {
+    const line = thinking === undefined ? '' : `thinking: ${thinking}\n`;
+
+    writeFileSync(
+      join(directory, 'agents', `${name}.md`),
+      `---\nname: ${name}\nrole: editing\n${line}---\nTask.\n`,
+    );
+  };
+
+  saveProfile('lowprofile', 'low');
+  saveProfile('plainprofile');
+
+  const launch = (profileName: string) =>
+    resolveLoadout({ profile: profileName, model: request.model }, context);
+
+  expect(launch('lowprofile').thinking).toBe('low');
+  expect(launch('plainprofile').thinking).toBe('medium');
+});
+
+it('refuses a launch whose user file profile thinking is invalid', async ({ onTestFinished }) => {
+  const { directory, context, request } = await workerFixture(onTestFinished);
+  const userFile = join(directory, 'tau.json');
+
+  writeConfig(userFile, { profiles: { worker: { model: request.model, thinking: 'bogus' } } });
+
+  const launch = () => resolveLoadout(request, context);
+
+  expect(launch).toThrow(userFile);
+  expect(launch).toThrow('profiles.worker.thinking');
+});
+
+it('uses the chosen label thinking for a routed launch', async ({ onTestFinished }) => {
+  const { directory, context, classify } = await thinkingRoutedFixture(onTestFinished);
+
+  setRouteThinking(directory, 'high', { narrow: 'low' });
+  classify.mockResolvedValue(answered('narrow', 0.9));
+
+  const { loadout } = await resolveRoutedLoadout({ profile: 'scout', task: 'Find it.' }, context);
+
+  expect(loadout.model).toBe(haiku);
+  expect(loadout.thinking).toBe('low');
+});
+
+it('falls back to the profile thinking when the route keeps the profile model', async ({
+  onTestFinished,
+}) => {
+  const { directory, context, classify, profileModel } =
+    await thinkingRoutedFixture(onTestFinished);
+
+  setRouteThinking(directory, 'high', { narrow: 'low' });
+  classify.mockResolvedValue(answered('narrow', 0.5));
+
+  const { loadout } = await resolveRoutedLoadout({ profile: 'scout', task: 'Find it.' }, context);
+
+  expect(loadout.model).toBe(profileModel);
+  expect(loadout.thinking).toBe('high');
+});
+
+it('uses the label thinking when the chosen label runs the profile model', async ({
+  onTestFinished,
+}) => {
+  const { directory, context, classify, profileModel } =
+    await thinkingRoutedFixture(onTestFinished);
+
+  setRouteThinking(directory, 'high', { wide: 'low' });
+  classify.mockResolvedValue(answered('wide', 0.9));
+
+  const { loadout } = await resolveRoutedLoadout({ profile: 'scout', task: 'Find it.' }, context);
+
+  expect(loadout.model).toBe(profileModel);
+  expect(loadout.thinking).toBe('low');
+});
+
+it('uses the profile thinking for an explicit-model launch', async ({ onTestFinished }) => {
+  const { directory, context, request, classify } = await thinkingRoutedFixture(onTestFinished);
+
+  setRouteThinking(directory, 'high', { narrow: 'low' });
+
+  const { loadout, routing } = await resolveRoutedLoadout(
+    { ...request, profile: 'scout', task: 'Find it.' },
+    context,
+  );
+
+  expect(loadout.thinking).toBe('high');
   expect(routing).toBeUndefined();
   expect(classify).not.toHaveBeenCalled();
 });

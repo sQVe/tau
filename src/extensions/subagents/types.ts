@@ -31,6 +31,8 @@ export const thinkingSchema = stringEnum([
   'max',
 ] as const);
 
+export type ThinkingLevel = Static<typeof thinkingSchema>;
+
 // Pi takes the tool allowlist as one comma-separated argument.
 export const toolNamePattern = '^[A-Za-z0-9_-]{1,64}$';
 

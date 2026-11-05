@@ -19,13 +19,13 @@ import {
   requireAllowedModel,
 } from '../../config/models.js';
 import { acceptanceRefusal } from './acceptanceRefusal.js';
-import { pickRoutedModel } from './modelRoutes.js';
+import { pickRoutedModel, routedThinking } from './modelRoutes.js';
 import type { ModelChoice, RoutedLaunch } from './modelRoutes.js';
-import { readProfileModel, readProfileRoute } from './profileModels.js';
+import { readProfileModel, readProfileRoute, readProfileThinking } from './profileModels.js';
 import { resolveProfile } from './profiles.js';
 import { classifierAllowed, classifyRoute } from './routeClassifier.js';
 import type { Classification } from './routeClassifier.js';
-import type { Loadout, Profile } from './types.js';
+import type { Loadout, Profile, ThinkingLevel } from './types.js';
 import { availableModels, defaultProfileName } from './workerModels.js';
 
 type ModelContext = Pick<ExtensionContext, 'modelRegistry' | 'scopedModels'> & {
@@ -168,24 +168,32 @@ const resolveLaunchPlan = (
   return { cwd, agentDirectory, profile };
 };
 
+const resolveProfileThinking = (
+  profile: Profile,
+  context: ModelContext,
+  location: ConfigLocation,
+): ThinkingLevel => readProfileThinking(location, profile.name, context.ui) ?? profile.thinking;
+
 export const resolveLoadout = (
   input: LaunchRequest,
   context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'scopedModels' | 'isProjectTrusted'> & {
     ui: ConfigWarnings;
   },
   commands: SlashCommandInfo[] = [],
+  thinkingOverride?: ThinkingLevel,
 ): Loadout => {
   const { cwd, agentDirectory, profile } = resolveLaunchPlan(input, context);
   // The launch plan already requires a trusted project.
   const location = { cwd, agentDirectory, projectTrusted: true };
   const model = resolveModel(input.model, profile, context, location);
+  const thinking = thinkingOverride ?? resolveProfileThinking(profile, context, location);
 
   return {
     harness: 'pi',
     profile: profile.name,
     role: profile.role,
     model: `${model.provider}/${model.id}`,
-    thinking: clampThinkingLevel(model, profile.thinking),
+    thinking: clampThinkingLevel(model, thinking),
     cwd,
     agentDirectory,
     permissions: 'trusted-full-tools',
@@ -246,12 +254,19 @@ export const resolveRoutedLoadout = async (
   const routing = { ...pick, ticketSent };
   const choice: ModelChoice = { kind: 'routed', pick };
 
-  if (pick.shadowPick === loadout.model) {
+  const labelThinking = routedThinking(route, pick);
+
+  if (labelThinking === undefined && pick.shadowPick === loadout.model) {
     return { loadout, routing, choice };
   }
 
   // The routed model passes the same checks as an explicit launch model.
-  const routedLoadout = resolveLoadout({ ...input, model: pick.shadowPick }, context, commands);
+  const routedLoadout = resolveLoadout(
+    { ...input, model: pick.shadowPick },
+    context,
+    commands,
+    labelThinking,
+  );
 
   return { loadout: routedLoadout, routing, choice };
 };
