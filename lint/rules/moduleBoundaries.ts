@@ -83,6 +83,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
     entry: 'hc/hc',
     publicFiles: ['hc/connect', 'hc/eventWatch', 'hc/events', 'hc/reconnect'],
   },
+  { name: 'inbox', entry: 'inbox/inbox', publicFiles: [] },
   {
     name: 'instructions',
     entry: 'instructions/instructions',
@@ -118,6 +119,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   git: ['errors'],
   github: ['command', 'errors', 'git', 'schema'],
   hc: ['command', 'errors', 'schema'],
+  inbox: ['errors', 'hc', 'record', 'schema', 'tauDirectory', 'wake'],
   instructions: [],
   linear: ['command', 'errors'],
   process: ['errors'],

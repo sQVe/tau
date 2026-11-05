@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   closeSync,
+  constants,
   fsyncSync,
   linkSync,
   openSync,
@@ -8,15 +9,15 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { open, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { isMissingFile } from './errors.js';
+import { hasErrorCode, isMissingFile } from './errors.js';
 import { describeSchemaProblem, isRecord } from './schema.js';
-import { isSymlink } from './tauDirectory.js';
+import { climbsOut, isSymlink } from './tauDirectory.js';
 
 export interface VersionedRecordOptions<Schema extends TSchema> {
   // Names the record in error messages, such as `capture record`.
@@ -27,6 +28,13 @@ export interface VersionedRecordOptions<Schema extends TSchema> {
   schema: Schema | ((value: unknown) => Schema);
   // Returns a problem the schema would report badly, such as one inside a union member.
   check?: (value: unknown) => string | undefined;
+}
+
+export interface ContainedTextRequest {
+  directory: string;
+  path: string;
+  byteLimit: number;
+  label: string;
 }
 
 const capitalize = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
@@ -178,5 +186,116 @@ export const readTextWithinSync = (path: string, byteLimit: number): string | un
     return bytesRead > byteLimit ? undefined : buffer.subarray(0, bytesRead).toString('utf8');
   } finally {
     closeSync(descriptor);
+  }
+};
+
+const firstSymlinkComponent = async (
+  directory: string,
+  path: string,
+): Promise<string | undefined> => {
+  const relativeParent = relative(directory, dirname(path));
+  const names = relativeParent === '' ? [] : relativeParent.split(sep);
+  const components = [directory];
+  let current = directory;
+
+  for (const name of names) {
+    current = join(current, name);
+    components.push(current);
+  }
+
+  components.push(path);
+
+  const linked = await Promise.all(components.map((component) => isSymlink(component)));
+
+  return components.find((_, index) => linked[index] === true);
+};
+
+// Reads a regular file only when the path is already canonical, stays inside the approved
+// directory, and has no symlink from the approved directory down. The file is opened without
+// following a final link and read from the same descriptor, so a link swapped in after the check
+// cannot redirect the read.
+export const readContainedText = async (request: ContainedTextRequest): Promise<string> => {
+  const { directory, path, byteLimit, label } = request;
+
+  if (resolve(path) !== path || resolve(directory) !== directory) {
+    throw new Error(`Refusing to read ${label} from a path that is not canonical: ${path}`);
+  }
+
+  const realDirectory = await realpath(directory).catch((error: unknown) => {
+    if (isMissingFile(error)) {
+      throw new Error(`${label} directory does not exist: ${directory}`, { cause: error });
+    }
+
+    throw error;
+  });
+
+  if (realDirectory !== directory) {
+    throw new Error(`Refusing to read ${label} from a symlinked approved directory: ${directory}`);
+  }
+
+  if (climbsOut(relative(directory, path))) {
+    throw new Error(`${label} is outside the allowed directory: ${path}`);
+  }
+
+  const symlink = await firstSymlinkComponent(directory, path);
+
+  if (symlink !== undefined) {
+    throw new Error(`Refusing to read ${label} through a symlink: ${symlink}`);
+  }
+
+  const realFile = await realpath(path).catch((error: unknown) => {
+    if (isMissingFile(error)) {
+      throw new Error(`${label} does not exist: ${path}`, { cause: error });
+    }
+
+    throw error;
+  });
+
+  if (climbsOut(relative(realDirectory, realFile))) {
+    throw new Error(`${label} is outside the allowed directory: ${path}`);
+  }
+
+  const handle = await open(
+    path,
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+  ).catch((error: unknown) => {
+    if (hasErrorCode(error, 'ELOOP')) {
+      throw new Error(`Refusing to read ${label} through a symlink: ${path}`, { cause: error });
+    }
+
+    throw error;
+  });
+
+  try {
+    const stats = await handle.stat();
+
+    if (!stats.isFile()) {
+      throw new Error(`${label} is not a regular file: ${path}`);
+    }
+
+    if (stats.size === 0) {
+      throw new Error(`${label} is empty: ${path}`);
+    }
+
+    const buffer = Buffer.alloc(byteLimit + 1);
+    let bytesRead = 0;
+
+    while (bytesRead < buffer.length) {
+      const read = readSync(handle.fd, buffer, bytesRead, buffer.length - bytesRead, bytesRead);
+
+      if (read === 0) {
+        break;
+      }
+
+      bytesRead += read;
+    }
+
+    if (bytesRead > byteLimit) {
+      throw new Error(`${label} is larger than ${byteLimit} bytes: ${path}`);
+    }
+
+    return buffer.subarray(0, bytesRead).toString('utf8');
+  } finally {
+    await handle.close();
   }
 };

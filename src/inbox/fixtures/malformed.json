@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "messageId": "malformed-message",
+  "targetTerminal": "t7",
+  "targetSessionId": "session-1",
+  "family": "handover",
+  "text": 5
+}

@@ -1,4 +1,5 @@
-import { readFile, readdir, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Type } from 'typebox';
@@ -8,6 +9,7 @@ import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.js';
 import {
   parseVersionedRecord,
   publishTextSync,
+  readContainedText,
   readOptionalText,
   readTextWithinSync,
   readVersionedRecord,
@@ -16,6 +18,7 @@ import {
 } from './record.js';
 
 const writeState = vi.hoisted(() => ({ failMidway: false, failFsync: false }));
+const raceState = vi.hoisted(() => ({ path: '', target: '' }));
 
 vi.mock(import('node:fs'), async (importOriginal) => {
   const actual = await importOriginal();
@@ -46,6 +49,17 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 
       return actual.writeFile(...parameters);
     },
+    open: async (...parameters: Parameters<typeof actual.open>) => {
+      const path = parameters[0];
+
+      if (raceState.path !== '' && path === raceState.path) {
+        await actual.unlink(path);
+        await actual.symlink(raceState.target, path, 'file');
+        raceState.path = '';
+      }
+
+      return actual.open(...parameters);
+    },
   };
 });
 
@@ -61,6 +75,8 @@ const directoryFixture = async () => {
   onTestFinished(() => {
     writeState.failMidway = false;
     writeState.failFsync = false;
+    raceState.path = '';
+    raceState.target = '';
   });
 
   return directory;
@@ -209,4 +225,170 @@ it('leaves no receipt file when the file fsync fails', async () => {
   }).toThrow('fsync failed');
 
   expect(await readdir(directory)).toEqual([]);
+});
+
+const containedRequest = (directory: string, path: string, byteLimit = 100) => ({
+  directory,
+  path,
+  byteLimit,
+  label: 'message' as const,
+});
+
+it('reads contained text within the byte limit', async () => {
+  const directory = await directoryFixture();
+  const path = join(directory, 'message.txt');
+
+  await writeFile(path, 'hello');
+
+  expect(await readContainedText(containedRequest(directory, path, 5))).toBe('hello');
+});
+
+it('refuses a symlink inside the allowed directory', async () => {
+  const directory = await directoryFixture();
+  const target = join(directory, 'target.txt');
+  const link = join(directory, 'link.txt');
+
+  await writeFile(target, 'hello');
+  await symlink(target, link, 'file');
+
+  await expect(readContainedText(containedRequest(directory, link))).rejects.toThrow(/symlink/);
+});
+
+it('refuses a symlinked parent directory', async () => {
+  const directory = await directoryFixture();
+  const real = join(directory, 'real');
+  const link = join(directory, 'link');
+
+  await mkdir(real);
+  await writeFile(join(real, 'message.txt'), 'hello');
+  await symlink(real, link, 'dir');
+
+  await expect(
+    readContainedText(containedRequest(directory, join(link, 'message.txt'))),
+  ).rejects.toThrow(/symlink/);
+});
+
+it('refuses a directory', async () => {
+  const directory = await directoryFixture();
+  const subdirectory = join(directory, 'sub');
+
+  await mkdir(subdirectory);
+
+  await expect(readContainedText(containedRequest(directory, subdirectory))).rejects.toThrow(
+    /not a regular file/,
+  );
+});
+
+it('refuses an empty file', async () => {
+  const directory = await directoryFixture();
+  const path = join(directory, 'message.txt');
+
+  await writeFile(path, '');
+
+  await expect(readContainedText(containedRequest(directory, path))).rejects.toThrow(/is empty/);
+});
+
+it('refuses a file over the byte limit', async () => {
+  const directory = await directoryFixture();
+  const path = join(directory, 'message.txt');
+
+  await writeFile(path, 'hello');
+
+  await expect(readContainedText(containedRequest(directory, path, 4))).rejects.toThrow(
+    /larger than 4 bytes/,
+  );
+});
+
+it('refuses a missing file', async () => {
+  const directory = await directoryFixture();
+
+  await expect(
+    readContainedText(containedRequest(directory, join(directory, 'missing.txt'))),
+  ).rejects.toThrow(/does not exist/);
+});
+
+it('refuses a path with a parent component', async () => {
+  const directory = await directoryFixture();
+  const path = `${directory}/nested/../message.txt`;
+
+  await writeFile(join(directory, 'message.txt'), 'hello');
+
+  await expect(readContainedText(containedRequest(directory, path))).rejects.toThrow(
+    /not canonical/,
+  );
+});
+
+it('refuses an approved directory reached through a symlink', async () => {
+  const directory = await directoryFixture();
+  const real = join(directory, 'real');
+  const alias = join(directory, 'alias');
+
+  await mkdir(real);
+  await writeFile(join(real, 'message.txt'), 'hello');
+  await symlink(real, alias, 'dir');
+
+  await expect(
+    readContainedText(containedRequest(alias, join(alias, 'message.txt'))),
+  ).rejects.toThrow(/symlinked approved directory/);
+});
+
+it('refuses a symlink that appears at open time', async () => {
+  const directory = await directoryFixture();
+  const outsideDirectory = await directoryFixture();
+  const link = join(directory, 'link.txt');
+  const outside = join(outsideDirectory, 'outside.txt');
+
+  await writeFile(link, 'hello');
+  await writeFile(outside, 'outside bytes');
+
+  raceState.path = link;
+  raceState.target = outside;
+
+  await expect(readContainedText(containedRequest(directory, link))).rejects.toThrow(/symlink/);
+});
+
+it('refuses a FIFO without waiting for a writer', async () => {
+  const directory = await directoryFixture();
+  const path = join(directory, 'message.fifo');
+
+  execFileSync('mkfifo', [path]);
+
+  await expect(readContainedText(containedRequest(directory, path))).rejects.toThrow(
+    /not a regular file/,
+  );
+});
+
+it('refuses a missing approved directory', async () => {
+  const directory = await directoryFixture();
+  const missing = join(directory, 'missing');
+
+  await expect(
+    readContainedText(containedRequest(missing, join(missing, 'message.txt'))),
+  ).rejects.toThrow(/directory does not exist/);
+});
+
+it.each([
+  { case: 'normal', content: 'hello' as string | undefined },
+  { case: 'missing', content: undefined },
+  { case: 'malformed', content: 'x'.repeat(200) },
+])('leaves the approved directory unchanged for a $case read', async ({ content }) => {
+  const directory = await directoryFixture();
+  const path = join(directory, 'message.txt');
+
+  if (content !== undefined) {
+    await writeFile(path, content);
+  }
+
+  const snapshot = async () =>
+    Promise.all(
+      (await readdir(directory))
+        .toSorted()
+        .map(async (name) => [name, await readFile(join(directory, name), 'utf8')]),
+    );
+
+  const before = await snapshot();
+
+  await readContainedText(containedRequest(directory, path)).catch(() => undefined);
+
+  expect(await snapshot()).toEqual(before);
 });

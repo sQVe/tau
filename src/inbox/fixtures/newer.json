@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "messageId": "newer-message",
+  "targetTerminal": "t7",
+  "targetSessionId": "session-1",
+  "family": "handover",
+  "text": "Next steps\n"
+}

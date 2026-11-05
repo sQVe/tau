@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "messageId": "unknown-message",
+  "targetTerminal": "t7",
+  "targetSessionId": "session-1",
+  "family": "handover",
+  "text": "Next steps\n",
+  "extra": true
+}

@@ -39,29 +39,30 @@ every agent the same answer to "where does this go" and "may this import that".
 
 The target shared modules and the modules each may import:
 
-| Module          | May import                                          |
-| --------------- | --------------------------------------------------- |
-| `errors`        | nothing                                             |
-| `schema`        | nothing                                             |
-| `command`       | `schema`                                            |
-| `instructions`  | nothing                                             |
-| `codemode`      | nothing                                             |
-| `shell`         | nothing                                             |
-| `skillTools`    | nothing                                             |
-| `worker`        | `schema`                                            |
-| `dialog`        | `worker`                                            |
-| `process`       | `errors`                                            |
-| `fileLock`      | `errors`, `process`, `schema`                       |
-| `git`           | `errors`                                            |
-| `config`        | `errors`, `schema`                                  |
-| `linear`        | `command`, `errors`                                 |
-| `github`        | `command`, `errors`, `git`, `schema`                |
-| `hc`            | `command`, `errors`, `schema`                       |
-| `tauDirectory`  | `errors`, `git`                                     |
-| `wake`          | nothing                                             |
-| `record`        | `errors`, `schema`, `tauDirectory`                  |
-| `checkRecord`   | `errors`, `git`, `record`                           |
-| `reviewCapture` | `errors`, `git`, `record`, `schema`, `tauDirectory` |
+| Module          | May import                                                 |
+| --------------- | ---------------------------------------------------------- |
+| `errors`        | nothing                                                    |
+| `schema`        | nothing                                                    |
+| `command`       | `schema`                                                   |
+| `instructions`  | nothing                                                    |
+| `codemode`      | nothing                                                    |
+| `shell`         | nothing                                                    |
+| `skillTools`    | nothing                                                    |
+| `worker`        | `schema`                                                   |
+| `dialog`        | `worker`                                                   |
+| `process`       | `errors`                                                   |
+| `fileLock`      | `errors`, `process`, `schema`                              |
+| `git`           | `errors`                                                   |
+| `config`        | `errors`, `schema`                                         |
+| `linear`        | `command`, `errors`                                        |
+| `github`        | `command`, `errors`, `git`, `schema`                       |
+| `hc`            | `command`, `errors`, `schema`                              |
+| `inbox`         | `errors`, `hc`, `record`, `schema`, `tauDirectory`, `wake` |
+| `tauDirectory`  | `errors`, `git`                                            |
+| `wake`          | nothing                                                    |
+| `record`        | `errors`, `schema`, `tauDirectory`                         |
+| `checkRecord`   | `errors`, `git`, `record`                                  |
+| `reviewCapture` | `errors`, `git`, `record`, `schema`, `tauDirectory`        |
 
 `skillTools`, `tauDirectory`, and `reviewCapture` keep the edges they have today, renamed to the
 target modules. Shared modules never import extensions, and no module imports `src/tau.ts`.
