@@ -1,0 +1,41 @@
+{
+  "workspace_root": "/workspace",
+  "workspace_members": [
+    "path+file:///workspace/crates/member#0.1.0",
+    "path+file:///workspace/crates/other#0.1.0"
+  ],
+  "packages": [
+    {
+      "id": "path+file:///workspace/crates/member#0.1.0",
+      "name": "member",
+      "targets": [
+        {
+          "name": "member",
+          "kind": ["lib"],
+          "src_path": "/workspace/crates/member/src/lib.rs"
+        },
+        {
+          "name": "tool",
+          "kind": ["bin"],
+          "src_path": "/workspace/crates/member/src/bin/tool.rs"
+        },
+        {
+          "name": "nested",
+          "kind": ["test"],
+          "src_path": "/workspace/crates/member/tests/nested/main.rs"
+        }
+      ]
+    },
+    {
+      "id": "path+file:///workspace/crates/other#0.1.0",
+      "name": "other",
+      "targets": [
+        {
+          "name": "other",
+          "kind": ["lib"],
+          "src_path": "/workspace/crates/other/src/lib.rs"
+        }
+      ]
+    }
+  ]
+}

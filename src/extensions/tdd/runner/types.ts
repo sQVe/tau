@@ -16,11 +16,16 @@ export type RunTestsInput =
       signal?: AbortSignal | undefined;
     };
 
+export type TestAttribution =
+  | { kind: 'ambiguous'; binaryIds: string[]; files?: string[] }
+  | { kind: 'unknown'; reason: string };
+
 export interface TestFailure {
   file: string;
   fullname: string;
   message: string;
   binaryId?: string;
+  attribution?: TestAttribution;
 }
 
 export interface TestResult {
@@ -29,6 +34,7 @@ export interface TestResult {
   binaryId?: string;
   status: 'passed' | 'failed' | 'skipped' | 'todo';
   durationMs?: number;
+  attribution?: TestAttribution;
 }
 
 export interface DiagnosticFile {

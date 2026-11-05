@@ -1,4 +1,4 @@
-import { chmod, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 
 import { afterAll, beforeAll, expect, it, onTestFinished, vi } from 'vitest';
@@ -7,7 +7,7 @@ import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.
 import { defaultDeps, nextestRunner, runTests } from './nextest.js';
 import type { RunnerResult, RunTestsInput, SpawnCommand, SpawnResult } from './types.js';
 
-type Stage = 'list' | 'run';
+type Stage = 'list' | 'metadata' | 'run';
 
 interface StageReply extends Partial<SpawnResult> {
   report?: string;
@@ -49,6 +49,27 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 
 const emptyReport = '<?xml version="1.0" encoding="UTF-8"?>\n<testsuites name="nextest-run"/>\n';
 
+const defaultList = JSON.stringify({
+  'rust-suites': {
+    demo: {
+      'binary-id': 'demo',
+      'binary-name': 'demo',
+      kind: 'lib',
+      'binary-path': '/repo/target/debug/deps/demo',
+      'package-id': 'path+file:///repo#0.1.0',
+      cwd: '/repo',
+      testcases: {},
+    },
+  },
+});
+
+const defaultMetadata = JSON.stringify({ workspace_root: '/repo', packages: [] });
+
+const defaultReplies: Partial<Record<Stage, StageReply>> = {
+  list: { stdout: defaultList },
+  metadata: { stdout: defaultMetadata },
+};
+
 const fixture = (name: string) => readFile(new URL(`fixtures/${name}`, import.meta.url), 'utf8');
 
 const toolConfigPathFrom = (argumentsList: string[]): string => {
@@ -64,14 +85,22 @@ const junitPathFrom = async (argumentsList: string[]): Promise<string> => {
   return JSON.parse(quoted) as string;
 };
 
+const stageOf = (argumentsList: string[]): Stage => {
+  if (argumentsList[0] === 'metadata') {
+    return 'metadata';
+  }
+
+  return argumentsList[1] === 'list' ? 'list' : 'run';
+};
+
 const fakeNextest = (replies: Partial<Record<Stage, StageReply>>) => {
   const calls: SpawnCall[] = [];
 
   const spawn: SpawnCommand = async (command, argumentsList, options) => {
     calls.push({ command, argumentsList, timeoutMs: options.timeoutMs });
 
-    const stage: Stage = argumentsList[1] === 'list' ? 'list' : 'run';
-    const { report, during, ...result } = replies[stage] ?? {};
+    const stage = stageOf(argumentsList);
+    const { report, during, ...result } = { ...defaultReplies[stage], ...replies[stage] };
 
     during?.();
 
@@ -93,7 +122,7 @@ const fakeNextest = (replies: Partial<Record<Stage, StageReply>>) => {
     };
   };
 
-  return { spawn, calls, stages: () => calls.map((call) => call.argumentsList[1]) };
+  return { spawn, calls, stages: () => calls.map((call) => stageOf(call.argumentsList)) };
 };
 
 let searchPath = '';
@@ -122,6 +151,46 @@ const focused = (testNames: string[], signal?: AbortSignal): RunTestsInput => ({
   testNames,
   signal,
 });
+
+const focusedIn = (
+  cwd: string,
+  files: string[],
+  testNames: string[],
+  signal?: AbortSignal,
+): RunTestsInput => ({
+  scope: 'focused',
+  cwd,
+  verificationArgv: ['cargo', 'nextest', 'run'],
+  files,
+  testNames,
+  signal,
+});
+
+const listWithSources = (binaryPath: string, cwd: string, testNames: string[]): string =>
+  JSON.stringify({
+    'rust-suites': {
+      demo: {
+        'binary-id': 'demo',
+        'binary-name': 'demo',
+        kind: 'lib',
+        'binary-path': binaryPath,
+        'package-id': 'package',
+        cwd,
+        testcases: Object.fromEntries(
+          testNames.map((name) => [
+            name,
+            { kind: 'test', ignored: false, 'filter-match': { status: 'matches' } },
+          ]),
+        ),
+      },
+    },
+  });
+
+const metadataWithRoot = (workspaceRoot: string, srcPath: string): string =>
+  JSON.stringify({
+    workspace_root: workspaceRoot,
+    packages: [{ id: 'package', targets: [{ name: 'demo', kind: ['lib'], src_path: srcPath }] }],
+  });
 
 const run = async (
   input: RunTestsInput,
@@ -158,7 +227,7 @@ it('reports a build failure during list with the compiler output and starts no r
     message: 'cargo nextest list could not build the tests:\nerror[E0425]: cannot find value `x`',
   });
 
-  expect(nextest.stages()).toEqual(['list']);
+  expect(nextest.stages()).toEqual(['metadata', 'list']);
 });
 
 it('names the exit code when list fails without a build error', async () => {
@@ -171,7 +240,18 @@ it('names the exit code when list fails without a build error', async () => {
     message: 'cargo nextest list exited with code 2.',
   });
 
-  expect(nextest.stages()).toEqual(['list']);
+  expect(nextest.stages()).toEqual(['metadata', 'list']);
+});
+
+it('reports unreadable list JSON as a compile error instead of an empty binary list', async () => {
+  const nextest = fakeNextest({ list: { stdout: '{"rust-suites":' } });
+
+  const result = await run(focused(['tests::adds']), nextest.spawn);
+
+  expect(result).toMatchObject({ kind: 'compile-error' });
+  expect('message' in result && result.message).toContain('nextest list');
+  expect('message' in result && result.message).toContain('{"rust-suites":');
+  expect(nextest.stages()).toEqual(['metadata', 'list']);
 });
 
 it.for([
@@ -185,7 +265,7 @@ it.for([
   const result = await run(focused(['tests::same', 'tests::fails']), nextest.spawn);
 
   expect(result.kind).toBe(kind);
-  expect(nextest.stages()).toEqual(['list', 'run']);
+  expect(nextest.stages()).toEqual(['metadata', 'list', 'run']);
 });
 
 it('reads test results and failures from the JUnit report', async () => {
@@ -268,7 +348,7 @@ it('gives the run only the time that list left of the deadline', async () => {
   const result = await run(focused(['tests::same']), nextest.spawn, { timeoutMs: 1000 });
 
   expect(result.kind).toBe('pass');
-  expect(nextest.calls.map((call) => call.timeoutMs)).toEqual([1000, 600]);
+  expect(nextest.calls.map((call) => call.timeoutMs)).toEqual([1000, 1000, 600]);
 });
 
 it.for([
@@ -286,7 +366,7 @@ it.for([
   const result = await run(focused(['tests::adds']), nextest.spawn, { timeoutMs: 1000 });
 
   expect(result).toMatchObject({ kind: 'timeout', stage: 'list' });
-  expect(nextest.stages()).toEqual(['list']);
+  expect(nextest.stages()).toEqual(['metadata', 'list']);
 });
 
 it('reports an abort during list as cancelled and starts no run', async () => {
@@ -304,7 +384,7 @@ it('reports an abort during list as cancelled and starts no run', async () => {
   const result = await run(focused(['tests::adds'], controller.signal), nextest.spawn);
 
   expect(result.kind).toBe('cancelled');
-  expect(nextest.stages()).toEqual(['list']);
+  expect(nextest.stages()).toEqual(['metadata', 'list']);
 });
 
 it('reports an abort during the tool-config write as cancelled and starts no run', async () => {
@@ -324,7 +404,7 @@ it('reports an abort during the tool-config write as cancelled and starts no run
   const result = await run(focused(['tests::adds'], controller.signal), nextest.spawn);
 
   expect(result.kind).toBe('cancelled');
-  expect(nextest.stages()).toEqual(['list']);
+  expect(nextest.stages()).toEqual(['metadata', 'list']);
 });
 
 const useFakeClock = () => {
@@ -350,7 +430,136 @@ it('reports a deadline that expires during the tool-config write as a timeout an
   const result = await run(focused(['tests::same']), nextest.spawn, { timeoutMs: 1000 });
 
   expect(result).toMatchObject({ kind: 'timeout', stage: 'list' });
-  expect(nextest.stages()).toEqual(['list']);
+  expect(nextest.stages()).toEqual(['metadata', 'list']);
+});
+
+it('reports an abort during metadata as cancelled and starts no run', async () => {
+  const controller = new AbortController();
+
+  const nextest = fakeNextest({
+    metadata: {
+      during: () => {
+        controller.abort();
+      },
+    },
+  });
+
+  const result = await run(focused(['tests::adds'], controller.signal), nextest.spawn);
+
+  expect(result.kind).toBe('cancelled');
+  expect(nextest.stages()).toEqual(['metadata']);
+});
+
+it('reports a metadata stage that uses up the deadline as a timeout and starts no run', async () => {
+  useFakeClock();
+
+  const nextest = fakeNextest({ metadata: { during: () => vi.advanceTimersByTime(1000) } });
+
+  const result = await run(focused(['tests::adds']), nextest.spawn, { timeoutMs: 1000 });
+
+  expect(result).toMatchObject({ kind: 'timeout', stage: 'metadata' });
+  expect(nextest.stages()).toEqual(['metadata']);
+});
+
+it('starts no list stage when the deadline expires after metadata parsing', async () => {
+  let calls = 0;
+
+  const now = vi.spyOn(performance, 'now').mockImplementation(() => {
+    calls += 1;
+
+    return calls <= 5 ? 0 : 1000;
+  });
+
+  onTestFinished(() => {
+    now.mockRestore();
+  });
+
+  const nextest = fakeNextest({
+    metadata: { stdout: metadataWithRoot('/repo', '/repo/src/lib.rs') },
+  });
+
+  const result = await run(focused(['tests::adds']), nextest.spawn, { timeoutMs: 1000 });
+
+  expect(result).toMatchObject({ kind: 'timeout', stage: 'metadata' });
+  expect(nextest.stages()).toEqual(['metadata']);
+});
+
+const writeReadableCrate = async (
+  workspace: string,
+): Promise<{ binaryPath: string; readDepInfo: string }> => {
+  await mkdir(join(workspace, 'src'), { recursive: true });
+  await writeFile(join(workspace, 'src/lib.rs'), 'pub mod sub;\n', 'utf8');
+  await writeFile(join(workspace, 'src/sub.rs'), 'mod tests {}\n', 'utf8');
+
+  const binaryPath = join(workspace, 'demo-abc');
+
+  await writeFile(`${binaryPath}.d`, `${binaryPath}.d: src/lib.rs src/sub.rs\n`, 'utf8');
+
+  return { binaryPath, readDepInfo: `${binaryPath}.d` };
+};
+
+it('reports an abort during the dep-info reads as cancelled, not no-tests-collected', async ({
+  onTestFinished: cleanup,
+}) => {
+  const workspace = temporaryDirectory(cleanup, 'tau-nextest-read-abort-');
+  const { binaryPath, readDepInfo } = await writeReadableCrate(workspace);
+  const controller = new AbortController();
+
+  const nextest = fakeNextest({
+    list: { stdout: listWithSources(binaryPath, workspace, ['sub::tests::fails']) },
+    metadata: { stdout: metadataWithRoot(workspace, join(workspace, 'src/lib.rs')) },
+  });
+
+  fileWrites.read = (path) => {
+    if (path === readDepInfo) {
+      controller.abort();
+    }
+  };
+
+  cleanup(() => {
+    fileWrites.read = () => undefined;
+  });
+
+  const result = await run(
+    focusedIn(workspace, ['src/other.rs'], ['sub::tests::fails'], controller.signal),
+    nextest.spawn,
+  );
+
+  expect(result.kind).toBe('cancelled');
+  expect(nextest.stages()).toEqual(['metadata', 'list']);
+});
+
+it('reports an expired deadline during the dep-info reads as a timeout, not no-tests-collected', async ({
+  onTestFinished: cleanup,
+}) => {
+  useFakeClock();
+
+  const workspace = temporaryDirectory(cleanup, 'tau-nextest-read-deadline-');
+  const { binaryPath, readDepInfo } = await writeReadableCrate(workspace);
+
+  const nextest = fakeNextest({
+    list: { stdout: listWithSources(binaryPath, workspace, ['sub::tests::fails']) },
+    metadata: { stdout: metadataWithRoot(workspace, join(workspace, 'src/lib.rs')) },
+  });
+
+  fileWrites.read = (path) => {
+    if (path === readDepInfo) {
+      vi.advanceTimersByTime(1000);
+    }
+  };
+
+  cleanup(() => {
+    fileWrites.read = () => undefined;
+  });
+
+  const result = await run(
+    focusedIn(workspace, ['src/other.rs'], ['sub::tests::fails']),
+    nextest.spawn,
+    { timeoutMs: 1000 },
+  );
+
+  expect(result).toMatchObject({ kind: 'timeout', stage: 'list' });
+  expect(nextest.stages()).toEqual(['metadata', 'list']);
 });
 
 it.for<{ stage: Stage; code: number }>([
@@ -412,7 +621,7 @@ it('writes absolute tool-config and JUnit paths under a relative agent directory
 
   await run(focused(['tests::same']), nextest.spawn);
 
-  const runArgumentsList = nextest.calls[1]?.argumentsList ?? [];
+  const runArgumentsList = nextest.calls.at(-1)?.argumentsList ?? [];
 
   expect(isAbsolute(toolConfigPathFrom(runArgumentsList))).toBe(true);
   expect(isAbsolute(await junitPathFrom(runArgumentsList))).toBe(true);
@@ -466,7 +675,8 @@ it('keeps the tool config and the JUnit report in the diagnostics directory', as
 
   const result = await run(focused(['tests::same']), nextest.spawn);
   const directory = result.diagnostics?.directory;
-  const [list, runCall] = nextest.calls;
+  const list = nextest.calls[1];
+  const runCall = nextest.calls.at(-1);
   const toolConfigPath = toolConfigPathFrom(runCall?.argumentsList ?? []);
   const junitPath = await junitPathFrom(runCall?.argumentsList ?? []);
 
@@ -477,13 +687,18 @@ it('keeps the tool config and the JUnit report in the diagnostics directory', as
   expect(list?.argumentsList).not.toContain('--tool-config-file');
 });
 
-it('saves a diagnostics record for each stage and spawns cargo for both', async () => {
+it('saves a diagnostics record for each stage and spawns cargo for all three', async () => {
   const nextest = fakeNextest({ run: { report: await fixture('two-binaries.xml') } });
 
   const result = await run(focused(['tests::same']), nextest.spawn);
 
-  expect(result.diagnostics?.stages.map((stage) => stage.name)).toEqual(['list', 'run']);
-  expect(nextest.calls.map((call) => call.command)).toEqual(['cargo', 'cargo']);
+  expect(result.diagnostics?.stages.map((stage) => stage.name)).toEqual([
+    'metadata',
+    'list',
+    'run',
+  ]);
+
+  expect(nextest.calls.map((call) => call.command)).toEqual(['cargo', 'cargo', 'cargo']);
 });
 
 it('passes the focused names to run as a filter', async () => {
@@ -491,7 +706,7 @@ it('passes the focused names to run as a filter', async () => {
 
   await run(focused(['tests::same']), nextest.spawn);
 
-  expect(nextest.calls[1]?.argumentsList.slice(-2)).toEqual(['-E', 'test(=tests::same)']);
+  expect(nextest.calls.at(-1)?.argumentsList.slice(-2)).toEqual(['-E', 'test(=tests::same)']);
 });
 
 it('runs every test in a full run', async () => {
@@ -503,7 +718,7 @@ it('runs every test in a full run', async () => {
   );
 
   expect(result.kind).toBe('pass');
-  expect(nextest.calls[1]?.argumentsList).not.toContain('-E');
+  expect(nextest.calls.at(-1)?.argumentsList).not.toContain('-E');
 });
 
 it('keeps the first failures and marks the rest as not collected', async () => {

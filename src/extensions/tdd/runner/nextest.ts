@@ -7,14 +7,25 @@ import { CONFIG_DIR_NAME } from '@earendil-works/pi-coding-agent';
 
 import { configFileName } from '../../../config/config.js';
 import type { TddConfig } from '../config.js';
+import { parseCargoMetadata } from './cargoMetadata.js';
 import { runWithDiagnostics } from './diagnostics.js';
 import type { StageSpawn } from './diagnostics.js';
 import { parseJunitReport } from './junit.js';
 import type { JunitReport } from './junit.js';
-import { listArguments, runArguments, toolConfig } from './nextestArguments.js';
-import { listOutcome, runOutcome } from './nextestResult.js';
+import {
+  listArguments,
+  metadataArguments,
+  runArguments,
+  targetArguments,
+  toolConfig,
+} from './nextestArguments.js';
+import { planFocus } from './nextestFocus.js';
+import { parseNextestList } from './nextestList.js';
+import { listOutcome, metadataOutcome, runOutcome } from './nextestResult.js';
+import { buildBinarySources } from './nextestSources.js';
 import { defaultSpawn } from './process.js';
 import { executableOnPath } from './resolution.js';
+import type { RustBinarySources } from './rustAttribution.js';
 import type {
   RunnerResolutionFailure,
   RunnerResult,
@@ -34,6 +45,15 @@ interface StagesOutcome {
   report: RunnerResult;
   stages: StageSpawn[];
 }
+
+type StageOutcome =
+  | { kind: 'stop'; report: RunnerResult; stages: StageSpawn[] }
+  | {
+      kind: 'continue';
+      stages: StageSpawn[];
+      binaries: RustBinarySources[];
+      targets: string[];
+    };
 
 const focusedTimeoutMilliseconds = 120_000;
 const fullTimeoutMilliseconds = 300_000;
@@ -63,6 +83,8 @@ const configurationGlobs = [
   'rust-toolchain.toml',
 ];
 
+const maximumOutputExcerptLength = 500;
+
 export const defaultDeps = (scope: RunTestsInput['scope'] = 'focused'): NextestDeps => ({
   spawn: defaultSpawn,
   // oxlint-disable-next-line node/no-process-env -- cargo finds its nextest subcommand on the caller's PATH.
@@ -87,10 +109,24 @@ const readJunitReport = async (path: string): Promise<JunitReport | null> => {
   }
 };
 
+const isAborted = (input: RunTestsInput): boolean => input.signal?.aborted === true;
+
+const stageInterruption = (
+  input: RunTestsInput,
+  deadline: number,
+  stage: string,
+): RunnerResult | undefined => {
+  if (isAborted(input)) {
+    return { kind: 'cancelled' };
+  }
+
+  return performance.now() >= deadline ? { kind: 'timeout', stage } : undefined;
+};
+
 const stageFacts = (input: RunTestsInput, result: SpawnResult, deadline: number) => ({
   code: result.code,
   timedOut: result.timedOut || performance.now() >= deadline,
-  aborted: input.signal?.aborted === true,
+  aborted: isAborted(input),
 });
 
 const spawnStage = async (
@@ -114,12 +150,96 @@ const runStageArguments = (
   input: RunTestsInput,
   profileName: string,
   toolConfigPath: string,
+  targets: readonly string[],
+  binaryIds: string[] | undefined,
 ): string[] => {
-  const request = { profileName, toolConfigPath };
+  const request = { profileName, toolConfigPath, targets };
 
-  return runArguments(
-    input.scope === 'focused' ? { ...request, testNames: input.testNames } : request,
-  );
+  if (input.scope === 'focused') {
+    const focused = { ...request, testNames: input.testNames };
+
+    return runArguments(binaryIds === undefined ? focused : { ...focused, binaryIds });
+  }
+
+  return runArguments(request);
+};
+
+const unreadableJson = (command: string, stdout: string): RunnerResult => {
+  const excerpt = stdout.trim().slice(0, maximumOutputExcerptLength);
+  const detail = excerpt === '' ? '' : `\n${excerpt}`;
+
+  return {
+    kind: 'compile-error',
+    message: `cargo ${command} did not return readable JSON, so Tau found no test binaries.${detail}`,
+    tests: [],
+  };
+};
+
+const buildStages = async (
+  input: RunTestsInput,
+  request: { spawn: SpawnCommand; deadline: number },
+): Promise<StageOutcome> => {
+  const metadata = await spawnStage('metadata', metadataArguments(), input, request);
+
+  const metadataReport = metadataOutcome({
+    ...stageFacts(input, metadata.result, request.deadline),
+    stderr: metadata.result.stderr,
+  });
+
+  if (metadataReport !== undefined) {
+    return { kind: 'stop', report: metadataReport, stages: [metadata] };
+  }
+
+  const parsedMetadata = metadata.result.stdoutTruncated
+    ? null
+    : parseCargoMetadata(metadata.result.stdout);
+
+  if (parsedMetadata === null) {
+    return {
+      kind: 'stop',
+      report: unreadableJson('metadata', metadata.result.stdout),
+      stages: [metadata],
+    };
+  }
+
+  const metadataInterruption = stageInterruption(input, request.deadline, 'metadata');
+
+  if (metadataInterruption !== undefined) {
+    return { kind: 'stop', report: metadataInterruption, stages: [metadata] };
+  }
+
+  const targets = targetArguments(parsedMetadata);
+  const list = await spawnStage('list', listArguments(targets), input, request);
+
+  const listReport = listOutcome({
+    ...stageFacts(input, list.result, request.deadline),
+    stderr: list.result.stderr,
+  });
+
+  const stages = [metadata, list];
+
+  if (listReport !== undefined) {
+    return { kind: 'stop', report: listReport, stages };
+  }
+
+  const parsedList = list.result.stdoutTruncated ? null : parseNextestList(list.result.stdout);
+
+  if (parsedList === null) {
+    return {
+      kind: 'stop',
+      report: unreadableJson('nextest list', list.result.stdout),
+      stages,
+    };
+  }
+
+  const binaries = await buildBinarySources(input.cwd, parsedMetadata, parsedList.binaries);
+
+  return {
+    kind: 'continue',
+    stages,
+    binaries,
+    targets,
+  };
 };
 
 const runStages = async (
@@ -133,43 +253,66 @@ const runStages = async (
     deadline: performance.now() + dependencies.timeoutMs,
   };
 
-  const list = await spawnStage('list', listArguments(), input, request);
+  const built = await buildStages(input, request);
 
-  const listReport = listOutcome({
-    ...stageFacts(input, list.result, request.deadline),
-    stderr: list.result.stderr,
-  });
-
-  if (listReport !== undefined) {
-    return { report: listReport, stages: [list] };
+  if (built.kind === 'stop') {
+    return { report: built.report, stages: built.stages };
   }
 
-  // A per-run profile name cannot match a profile the repository's nextest config defines.
+  const { stages, binaries, targets } = built;
+
+  if (isAborted(input)) {
+    return { report: { kind: 'cancelled' }, stages };
+  }
+
+  if (performance.now() >= request.deadline) {
+    return { report: { kind: 'timeout', stage: 'list' }, stages };
+  }
+
+  const requestedFiles = input.scope === 'focused' ? input.files : [];
+
+  const focus =
+    input.scope === 'full' ? { kind: 'unscoped' as const } : planFocus(binaries, requestedFiles);
+
+  if (focus.kind === 'collect-none') {
+    return { report: { kind: 'no-tests-collected', tests: [] }, stages };
+  }
+
   const profileName = `tau-${randomUUID()}`;
   const toolConfigPath = join(directory, 'tool-config.toml');
 
   await writeFile(toolConfigPath, toolConfig(profileName, reportPath), { mode: 0o600, flag: 'wx' });
 
-  if (input.signal?.aborted === true) {
-    return { report: { kind: 'cancelled' }, stages: [list] };
+  if (isAborted(input)) {
+    return { report: { kind: 'cancelled' }, stages };
   }
 
   if (performance.now() >= request.deadline) {
-    return { report: { kind: 'timeout', stage: 'list' }, stages: [list] };
+    return { report: { kind: 'timeout', stage: 'list' }, stages };
   }
 
-  const runArgumentsList = runStageArguments(input, profileName, toolConfigPath);
-  const runSpawn = await spawnStage('run', runArgumentsList, input, request);
+  const binaryIds = focus.kind === 'scoped' ? focus.binaryIds : undefined;
 
+  const runArgumentsList = runStageArguments(
+    input,
+    profileName,
+    toolConfigPath,
+    targets,
+    binaryIds,
+  );
+
+  const runSpawn = await spawnStage('run', runArgumentsList, input, request);
   const junitReport = await readJunitReport(reportPath);
 
   const report = runOutcome({
     ...stageFacts(input, runSpawn.result, request.deadline),
     report: junitReport,
     reportPath,
+    binaries,
+    requestedFiles,
   });
 
-  return { report, stages: [list, runSpawn] };
+  return { report, stages: [...stages, runSpawn] };
 };
 
 const runInDirectory = async (

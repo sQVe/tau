@@ -34,7 +34,15 @@ const timedOut: JunitReport = {
 
 const skipped: JunitReport = { testCases: [testCase('tests::later', 'skipped')] };
 
-const stage = { code: 0, timedOut: false, aborted: false };
+const stage = {
+  code: 0,
+  timedOut: false,
+  aborted: false,
+  binaries: [],
+  requestedFiles: [],
+};
+
+const unknown = { kind: 'unknown' as const, reason: 'no binary named demo' };
 
 describe('listOutcome', () => {
   it.for<{ name: string; facts: ListFacts; outcome: ReturnType<typeof listOutcome> }>([
@@ -95,12 +103,26 @@ describe('listOutcome', () => {
 });
 
 const passedTests: TestResult[] = [
-  { file: '', fullname: 'tests::adds', binaryId: 'demo', status: 'passed', durationMs: 1 },
+  {
+    file: '',
+    fullname: 'tests::adds',
+    binaryId: 'demo',
+    status: 'passed',
+    durationMs: 1,
+    attribution: unknown,
+  },
 ];
 
 const failedTests: TestResult[] = [
   ...passedTests,
-  { file: '', fullname: 'tests::fails', binaryId: 'demo', status: 'failed', durationMs: 1 },
+  {
+    file: '',
+    fullname: 'tests::fails',
+    binaryId: 'demo',
+    status: 'failed',
+    durationMs: 1,
+    attribution: unknown,
+  },
 ];
 
 const reportPath = '/diagnostics/report.xml';
@@ -141,7 +163,15 @@ describe('runOutcome', () => {
       facts: { ...stage, code: 100, report: failed, reportPath },
       outcome: {
         kind: 'fail',
-        failures: [{ file: '', fullname: 'tests::fails', binaryId: 'demo', message: 'boom' }],
+        failures: [
+          {
+            file: '',
+            fullname: 'tests::fails',
+            binaryId: 'demo',
+            message: 'boom',
+            attribution: unknown,
+          },
+        ],
         tests: failedTests,
         truncated: false,
       },
@@ -167,6 +197,7 @@ describe('runOutcome', () => {
             binaryId: 'demo',
             status: 'skipped',
             durationMs: 1,
+            attribution: unknown,
           },
         ],
       },

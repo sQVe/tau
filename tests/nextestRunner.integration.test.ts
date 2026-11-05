@@ -1,5 +1,5 @@
-import { mkdir, readdir, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { readdir } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 
@@ -11,35 +11,16 @@ import type {
   RunTestsInput,
   SpawnCommand,
 } from '../src/extensions/tdd/runner/types.js';
+import {
+  cargoPackage,
+  createCrate,
+  libraryWith,
+  useSharedCargoEnvironment,
+  writeFiles,
+} from './nextestHarness.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
-
-const writeFiles = async (directory: string, files: Record<string, string>) => {
-  for (const [path, content] of Object.entries(files)) {
-    const target = join(directory, path);
-
-    await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, content);
-  }
-};
-
-const createCrate = async (
-  cleanup: Parameters<typeof temporaryDirectory>[0],
-  name: string,
-  files: Record<string, string>,
-): Promise<string> => {
-  const directory = temporaryDirectory(cleanup, `tau-nextest-${name}-`);
-
-  await writeFiles(directory, files);
-
-  return directory;
-};
-
-const cargoPackage = (name: string) =>
-  `[package]\nname = "${name}"\nversion = "0.1.0"\nedition = "2021"\n`;
-
-const libraryWith = (body: string) => `#[cfg(test)]\nmod tests {\n${body}\n}\n`;
 
 const focusedInput = (cwd: string, testNames: string[], signal?: AbortSignal): RunTestsInput => ({
   scope: 'focused',
@@ -57,16 +38,10 @@ const testNamesOf = (result: RunnerResult): string[] =>
   'tests' in result ? result.tests.map((test) => test.fullname) : [];
 
 let basicCrate = '';
-let previousTargetDirectory: string | undefined;
-let previousAgentDirectory: string | undefined;
+
+useSharedCargoEnvironment('nextest-runner');
 
 beforeAll(async () => {
-  previousTargetDirectory = process.env.CARGO_TARGET_DIR;
-  previousAgentDirectory = process.env.PI_CODING_AGENT_DIR;
-
-  process.env.CARGO_TARGET_DIR = temporaryDirectory(afterAll, 'tau-nextest-target-');
-  process.env.PI_CODING_AGENT_DIR = temporaryDirectory(afterAll, 'tau-nextest-agent-');
-
   basicCrate = temporaryDirectory(afterAll, 'tau-nextest-basic-');
 
   await writeFiles(basicCrate, {
@@ -90,20 +65,6 @@ beforeAll(async () => {
       ),
     ].join('\n'),
   });
-});
-
-afterAll(() => {
-  if (previousTargetDirectory === undefined) {
-    delete process.env.CARGO_TARGET_DIR;
-  } else {
-    process.env.CARGO_TARGET_DIR = previousTargetDirectory;
-  }
-
-  if (previousAgentDirectory === undefined) {
-    delete process.env.PI_CODING_AGENT_DIR;
-  } else {
-    process.env.PI_CODING_AGENT_DIR = previousAgentDirectory;
-  }
 });
 
 it('gives pass for a focused passing test on a real crate', async () => {
@@ -222,7 +183,7 @@ it('reports a missing cargo-nextest with an install hint and a resolution record
   expect(missing).toEqual({ executable: 'cargo-nextest', searchedPath: emptyPath });
 });
 
-it('reports a deadline shorter than the build as a list timeout and starts no run', async () => {
+it('reports a deadline shorter than the first stage as a timeout and starts no run', async () => {
   const started: string[] = [];
   const realSpawn = defaultDeps('focused').spawn;
 
@@ -237,11 +198,11 @@ it('reports a deadline shorter than the build as a list timeout and starts no ru
     timeoutMs: 1,
   });
 
-  expect(result).toMatchObject({ kind: 'timeout', stage: 'list' });
-  expect(started).toEqual(['list']);
+  expect(result).toMatchObject({ kind: 'timeout', stage: 'metadata' });
+  expect(started).toEqual(['--no-deps']);
 });
 
-it('reports an aborted list as cancelled and starts no run process', async () => {
+it('reports an aborted first stage as cancelled and starts no run process', async () => {
   const started: string[] = [];
   const controller = new AbortController();
   const realSpawn = defaultDeps('focused').spawn;
@@ -262,8 +223,8 @@ it('reports an aborted list as cancelled and starts no run process', async () =>
   });
 
   expect(result.kind).toBe('cancelled');
-  expect(started).toEqual(['list']);
-  expect(result.diagnostics?.stages.map((stage) => stage.name)).toEqual(['list']);
+  expect(started).toEqual(['--no-deps']);
+  expect(result.diagnostics?.stages.map((stage) => stage.name)).toEqual(['metadata']);
 });
 
 it('runs a test in a non-default member of a virtual workspace', async ({ onTestFinished }) => {
