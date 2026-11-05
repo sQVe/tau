@@ -65,11 +65,13 @@ Select it with `tdd.runner`:
 
 The `nextest` runner needs `cargo-nextest` on `PATH`. Install it with
 `cargo install --locked cargo-nextest`. Without it, `run_tests` returns `runner-missing` and names
-that command.
+that command. It runs `cargo` in the session directory, and Cargo looks for `Cargo.toml` there and
+in its parent directories. A project only in a subdirectory, such as `backend/Cargo.toml`, is not
+found.
 
 Tau fingerprints these nextest configuration files: `.pi/tau.json`, `**/Cargo.toml`, `Cargo.lock`,
-`**/build.rs`, `.cargo/config.toml`, `.config/nextest.toml`, and `rust-toolchain{,.toml}`. A file
-that a build script reads at build time is not fingerprinted.
+`**/build.rs`, `.cargo/config`, `.cargo/config.toml`, `.config/nextest.toml`, and
+`rust-toolchain{,.toml}`. A file that a build script reads at build time is not fingerprinted.
 
 A Rust source file under `src/` matches both `productionGlobs` and `testGlobs`, so it is a test file
 and a production file at once. An edit to only a unit test in that file still counts as a production
