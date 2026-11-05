@@ -33,7 +33,32 @@ const listRelative = async (root: string) => {
   }
 };
 
-const readText = async (path: string) => readFile(path, 'utf8').catch(() => undefined);
+const readText = async (path: string) => {
+  try {
+    return await readFile(path, 'utf8');
+  } catch (error) {
+    // A missing file holds no record; any other failure would fake an empty window.
+    if (isMissingFile(error)) {
+      return undefined;
+    }
+
+    throw error;
+  }
+};
+
+const statTime = async (path: string) => {
+  try {
+    const info = await stat(path);
+
+    return info.mtimeMs;
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return undefined;
+    }
+
+    throw error;
+  }
+};
 
 const assignmentSessionFile = (source: string): string | undefined => {
   let value: unknown;
@@ -61,9 +86,7 @@ const readReport = async (path: string) => {
     return {};
   }
 
-  const reportTime = await stat(reportPath)
-    .then((info) => info.mtimeMs)
-    .catch(() => undefined);
+  const reportTime = await statTime(reportPath);
 
   return { reportText, ...(reportTime === undefined ? {} : { reportTime }) };
 };

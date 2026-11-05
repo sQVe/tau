@@ -1,5 +1,15 @@
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -283,4 +293,21 @@ it('counts launches whose report files are missing', async () => {
   expect(noReportCount(beforeSection)).toBe(1);
   expect(timeToReport(afterSection)?.missing).toBe(1);
   expect(noReportCount(afterSection)).toBe(1);
+});
+
+it('fails when a record file cannot be read', async () => {
+  const path = await write(
+    'tau-archive/proj/unreadable/task.json',
+    taskRecord(8, 'unreadable', before),
+  );
+
+  await chmod(path, 0o000);
+
+  const result = run();
+  // A root process reads the file despite its mode, so only a non-root run must fail.
+  const readable = process.getuid?.() === 0;
+
+  expect(result.status !== 0).toBe(!readable);
+  expect(result.stderr.includes(path)).toBe(!readable);
+  expect(result.stdout.includes('Route comparison')).toBe(readable);
 });
