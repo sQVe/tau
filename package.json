@@ -28,6 +28,7 @@
     "style:check": "seam",
     "style:fix": "seam --fix",
     "prepare": "node scripts/prepare.ts",
+    "route-comparison": "node scripts/routeComparison.ts",
     "test": "vp test",
     "test:changed": "vp test --changed",
     "test:coverage": "vp test --coverage",

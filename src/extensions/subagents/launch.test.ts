@@ -193,6 +193,7 @@ const uncertainSetup = (
   vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
     loadout: uncertainLoadout,
     routing: undefined,
+    choice: { kind: 'profileWithoutRoute' },
   });
 
   const runtime: LaunchRuntime = {
@@ -244,7 +245,11 @@ const snapshotNames = (directory: string): string[] => {
 };
 
 it('starts one of two concurrent launches and refuses the other', async () => {
-  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
+  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
+    loadout,
+    routing: undefined,
+    choice: { kind: 'profileWithoutRoute' },
+  });
 
   const { fake, runtime, refuseCapacity } = setup({ children: [existingChild] });
 
@@ -266,7 +271,11 @@ it('refuses a launch when the fresh skill table needs an unregistered tool', asy
     getAllTools: () => [{ name: 'read' }],
   } as unknown as ExtensionAPI;
 
-  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
+  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
+    loadout,
+    routing: undefined,
+    choice: { kind: 'profileWithoutRoute' },
+  });
 
   const result = await launch(runtime, {});
 
@@ -301,7 +310,11 @@ it('reports a failed loadout check', async () => {
 });
 
 it('writes the tau labels and no space and tab labels when the manager has no tab', async () => {
-  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
+  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
+    loadout,
+    routing: undefined,
+    choice: { kind: 'profileWithoutRoute' },
+  });
 
   const { fake, runtime } = setup({ managerLabels: { 'herdr.space': 'space-1' } });
 
@@ -324,7 +337,11 @@ it('writes the tau labels and no space and tab labels when the manager has no ta
 });
 
 it('places an editing worker in the manager space and tab', async () => {
-  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
+  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
+    loadout,
+    routing: undefined,
+    choice: { kind: 'profileWithoutRoute' },
+  });
 
   const { fake, runtime } = setup({
     managerLabels: { 'herdr.space': 'space-1', 'herdr.tab': 'tab-2' },
@@ -540,7 +557,11 @@ it('removes the snapshot after a failed assignment write', async () => {
 });
 
 it('refuses a launch aborted while it waits for admission', async () => {
-  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
+  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
+    loadout,
+    routing: undefined,
+    choice: { kind: 'profileWithoutRoute' },
+  });
 
   const { fake, runtime } = setup();
   const controller = new AbortController();
@@ -570,6 +591,7 @@ it('frees the slot and removes the snapshot when the signal aborts after admissi
   vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
     loadout: packagedLoadout,
     routing: undefined,
+    choice: { kind: 'profileWithoutRoute' },
   });
 
   const controller = new AbortController();
@@ -620,7 +642,11 @@ it('frees the slot and removes the snapshot when the signal aborts after admissi
 });
 
 it('frees a confirmed slot when hc removed the child before the next launch', async () => {
-  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
+  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
+    loadout,
+    routing: undefined,
+    choice: { kind: 'profileWithoutRoute' },
+  });
 
   const { runtime } = setup();
 
@@ -669,6 +695,7 @@ it('refuses a foreground launch whose signal aborts during the manager label rea
   vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
     loadout: packagedLoadout,
     routing: undefined,
+    choice: { kind: 'profileWithoutRoute' },
   });
 
   const controller = new AbortController();
@@ -721,7 +748,11 @@ it('refuses a foreground launch whose signal aborts during the manager label rea
   expect(fake.connectCalls).toHaveLength(0);
   expect(snapshotNames(runtime.agentDirectory)).toEqual([]);
 
-  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
+  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
+    loadout,
+    routing: undefined,
+    choice: { kind: 'profileWithoutRoute' },
+  });
 
   const second = await launch(runtime, {});
 
@@ -785,7 +816,11 @@ it('frees an unclear reservation once hc shows that terminal finished', async ()
 });
 
 it('refuses a launch without HC_TERMINAL_ID', async () => {
-  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({ loadout, routing: undefined });
+  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
+    loadout,
+    routing: undefined,
+    choice: { kind: 'profileWithoutRoute' },
+  });
 
   const { runtime } = setup();
 
