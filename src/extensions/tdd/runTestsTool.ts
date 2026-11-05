@@ -7,15 +7,12 @@ import type { ObservationTracker } from './observationTracker.js';
 import { configSummary, runContext, selectionSummary, summarize } from './render.js';
 import { runners } from './runner/runners.js';
 
-const configuredRunners = Object.values(runners);
-const runnerNames = configuredRunners.map((runner) => runner.name).join(' or ');
-
-const nameFormats = configuredRunners
+const nameFormats = Object.values(runners)
   .map((runner) => `${runner.name}: ${runner.testNameFormat}.`)
   .join(' ');
 
 const runTestsDescription = [
-  `Runs the configured runner, ${runnerNames}; use the project runner for other test frameworks.`,
+  'Runs the configured runner; use bash for other test frameworks.',
   'Run a failing focused test (RED), implement, and rerun the same selection (GREEN). The PR step runs the full suite.',
   'RED and GREEN are observations, never edit permissions. Duplicate, skipped, and missing tests cannot establish RED.',
   'Returns the runner report, input freshness (fresh, stale, or unknown), and at most one hint. Bash test runs do not update these observations.',

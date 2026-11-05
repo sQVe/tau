@@ -40,8 +40,7 @@ const fullTimeoutMilliseconds = 300_000;
 
 const executableName = 'cargo-nextest';
 
-const testNameFormat =
-  'Nextest names are module paths such as "tests::adds" or "sub::tests::inner"';
+const testNameFormat = 'module paths such as "sub::tests::adds"';
 
 const nextestDefaults: TddConfig = {
   runner: 'nextest',
