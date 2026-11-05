@@ -15,7 +15,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { hasErrorCode, isMissingFile } from './errors.js';
+import { errorMessage, hasErrorCode, isMissingFile } from './errors.js';
 import { describeSchemaProblem, isRecord } from './schema.js';
 import { climbsOut, isSymlink } from './tauDirectory.js';
 
@@ -36,6 +36,12 @@ export interface ContainedTextRequest {
   byteLimit: number;
   label: string;
 }
+
+// `exists`: another file holds the path, and nothing was published. `notLinked`: a step before the
+// link failed, and nothing was published. `linked`: the file was published, then a later step failed.
+export type PublishFailure = 'exists' | 'notLinked' | 'linked';
+
+type PublishStep = 'write' | 'link' | 'linked';
 
 const capitalize = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 
@@ -141,24 +147,56 @@ const fsyncPath = (path: string, flags: string) => {
   }
 };
 
-// Publishes a complete file without replacing an existing record. The temporary name starts with
-// `.receipt-`, which readers of unpublished folders match.
+export class PublishError extends Error {
+  readonly failure: PublishFailure;
+
+  constructor(failure: PublishFailure, cause: unknown) {
+    super(errorMessage(cause), { cause });
+    this.name = 'PublishError';
+    this.failure = failure;
+  }
+}
+
+const publishFailure = (step: PublishStep, error: unknown): PublishFailure => {
+  if (step === 'linked') {
+    return 'linked';
+  }
+
+  const isExisting = step === 'link' && hasErrorCode(error, 'EEXIST');
+
+  return isExisting ? 'exists' : 'notLinked';
+};
+
+const writeSynced = (descriptor: number, text: string): void => {
+  try {
+    writeFileSync(descriptor, text);
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+};
+
+// Publishes a complete file without replacing an existing record, and throws a PublishError that
+// says whether the file was published. The temporary name starts with `.receipt-`, which readers of
+// unpublished folders match.
 export const publishTextSync = (path: string, text: string, options: { mode: number }): void => {
   const temporary = join(dirname(path), `.receipt-${randomUUID()}`);
-  const descriptor = openSync(temporary, 'wx', options.mode);
+  let step: PublishStep = 'write';
 
   try {
-    try {
-      writeFileSync(descriptor, text);
-      fsyncSync(descriptor);
-    } finally {
-      closeSync(descriptor);
-    }
+    const descriptor = openSync(temporary, 'wx', options.mode);
 
-    linkSync(temporary, path);
-    fsyncPath(dirname(path), 'r');
-  } finally {
-    unlinkSync(temporary);
+    try {
+      writeSynced(descriptor, text);
+      step = 'link';
+      linkSync(temporary, path);
+      step = 'linked';
+      fsyncPath(dirname(path), 'r');
+    } finally {
+      unlinkSync(temporary);
+    }
+  } catch (error) {
+    throw new PublishError(publishFailure(step, error), error);
   }
 };
 

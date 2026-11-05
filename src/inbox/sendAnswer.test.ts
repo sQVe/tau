@@ -10,8 +10,14 @@ import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import type { HcRuntime } from '../hc/hc.js';
 import { readEnvelope } from './envelope.js';
 import { checkInboxTarget, sendInboxMessage } from './inbox.js';
+import type { InboxSender } from './inbox.js';
 
 const callerAddress = 'caller';
+
+const answerSender: InboxSender = {
+  toolName: 'subagent_answer',
+  recovery: 'The worker has no live inbox; restart the worker on a current Tau.',
+};
 
 const answerText = '{"assignmentId":"a","questionId":"q","answerPath":"/answers/q.json"}';
 
@@ -60,6 +66,7 @@ it('writes an answer envelope at version 2 that the receiver reads', async () =>
     hc: runtimeOf(fake),
     target: 't7',
     family: 'answer',
+    sender: answerSender,
     text: answerText,
     cwd: root,
   });
@@ -87,7 +94,7 @@ it('returns the terminal and lease session of a live receiver', async () => {
   fake.reply('get', terminalReply({ 'tau.inbox': liveLease('session-1') }));
 
   await expect(
-    checkInboxTarget({ hc: runtimeOf(fake), target: 't7', family: 'answer' }),
+    checkInboxTarget({ hc: runtimeOf(fake), target: 't7', sender: answerSender }),
   ).resolves.toEqual({
     terminal: 't7',
     sessionId: 'session-1',
@@ -107,7 +114,7 @@ it.each([
   fake.reply('get', terminalReply(labels));
 
   const checkRefusal = await caughtError(
-    checkInboxTarget({ hc: runtimeOf(fake), target: 't7', family: 'answer' }),
+    checkInboxTarget({ hc: runtimeOf(fake), target: 't7', sender: answerSender }),
   );
 
   const sendRefusal = await caughtError(
@@ -115,12 +122,14 @@ it.each([
       hc: runtimeOf(fake),
       target: 't7',
       family: 'answer',
+      sender: answerSender,
       text: answerText,
       cwd: root,
     }),
   );
 
   expect(checkRefusal.message).toBe(sendRefusal.message);
+  expect(sendRefusal.message).toContain(answerSender.recovery);
   expect(existsSync(join(root, '.tau'))).toBe(false);
   expect(labelArguments(fake)).toEqual([]);
 });
@@ -136,6 +145,7 @@ it('refuses a send when the lease names another session than expected and writes
       hc: runtimeOf(fake),
       target: 't7',
       family: 'answer',
+      sender: answerSender,
       text: answerText,
       cwd: root,
       expectedSessionId: 'session-1',
@@ -159,6 +169,7 @@ it('queues a send when the lease names the expected session', async () => {
       hc: runtimeOf(fake),
       target: 't7',
       family: 'answer',
+      sender: answerSender,
       text: answerText,
       cwd: root,
       expectedSessionId: 'session-1',
@@ -177,11 +188,35 @@ it('names the answer tool when the sender is outside a Git checkout', async () =
       hc: runtimeOf(fake),
       target: 't7',
       family: 'answer',
+      sender: answerSender,
       text: answerText,
       cwd: outside,
     }),
   );
 
   expect(refusal.message).toContain('subagent_answer');
+  expect(labelArguments(fake)).toEqual([]);
+});
+
+it('gives the answer recovery advice when the envelope is too large', async () => {
+  const fake = createHcFake();
+  const root = await createTemporaryRepository(onTestFinished);
+
+  fake.reply('get', terminalReply({ 'tau.inbox': liveLease('session-1') }));
+
+  const refusal = await caughtError(
+    sendInboxMessage({
+      hc: runtimeOf(fake),
+      target: 't7',
+      family: 'answer',
+      sender: answerSender,
+      text: 'x'.repeat(102_400),
+      cwd: root,
+    }),
+  );
+
+  expect(refusal.message).toMatch(/larger than/);
+  expect(refusal.message).toContain(answerSender.recovery);
+  expect(existsSync(join(root, '.tau'))).toBe(false);
   expect(labelArguments(fake)).toEqual([]);
 });

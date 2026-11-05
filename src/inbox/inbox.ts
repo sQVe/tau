@@ -11,10 +11,12 @@ import type { LeaseVerdict } from './leaseDecision.js';
 import type { InboxFamily } from './receiptDecision.js';
 import type { InboxScanContext, StartupGate } from './receive.js';
 import { publishEnvelope, setMessageLabel } from './send.js';
+import type { InboxSender } from './send.js';
 import { createInboxWatch } from './watch.js';
 import type { InboxWatch } from './watch.js';
 
 export type { InboxEnvelope } from './envelope.js';
+export type { InboxSender } from './send.js';
 export { inboxMessageType, readInboxReceipt } from './receiptDecision.js';
 export type { InboxReceipt, ReceiptEntryFact } from './receiptDecision.js';
 export type { InboxWatch } from './watch.js';
@@ -31,7 +33,7 @@ interface InboxReceiverDependencies {
 export interface InboxTargetRequest {
   hc: HcRuntime;
   target: string;
-  family: InboxFamily;
+  sender: InboxSender;
   signal?: AbortSignal | undefined;
 }
 
@@ -41,6 +43,7 @@ export interface InboxTarget {
 }
 
 export interface SendInboxRequest extends InboxTargetRequest {
+  family: InboxFamily;
   text: string;
   cwd: string;
   expectedSessionId?: string | undefined;
@@ -55,13 +58,8 @@ export interface SendInboxResult {
 export const createInboxReceiver = (dependencies: InboxReceiverDependencies): InboxWatch =>
   createInboxWatch(dependencies);
 
-const refusalAdvice: Record<InboxFamily, string> = {
-  handover: 'Use handover start to open a receiver instead.',
-  answer: 'The worker has no live inbox; restart the worker on a current Tau.',
-};
-
-const refuseError = (family: InboxFamily, reason: string): Error =>
-  new Error(`${reason} Nothing was queued. ${refusalAdvice[family]}`);
+const refuseError = (sender: InboxSender, reason: string): Error =>
+  new Error(`${reason} Nothing was queued. ${sender.recovery}`);
 
 const leaseProblem = (lease: Exclude<LeaseVerdict, { kind: 'live' }>, terminal: string): string => {
   if (lease.kind === 'absent') {
@@ -76,16 +74,16 @@ const leaseProblem = (lease: Exclude<LeaseVerdict, { kind: 'live' }>, terminal: 
 };
 
 export const checkInboxTarget = async (request: InboxTargetRequest): Promise<InboxTarget> => {
-  const { hc, target, family, signal } = request;
+  const { hc, target, sender, signal } = request;
   const hcWithSignal: HcRuntime = signal === undefined ? hc : { ...hc, signal };
   const caller = currentTerminalAddress();
 
   if (caller === undefined) {
-    throw refuseError(family, 'This session has no terminal address.');
+    throw refuseError(sender, 'This session has no terminal address.');
   }
 
   if (target.includes('/')) {
-    throw refuseError(family, `The target ${target} is on another machine.`);
+    throw refuseError(sender, `The target ${target} is on another machine.`);
   }
 
   const receiver = await get(hcWithSignal, target);
@@ -93,37 +91,37 @@ export const checkInboxTarget = async (request: InboxTargetRequest): Promise<Inb
   signal?.throwIfAborted();
 
   if (receiver.address.includes('/')) {
-    throw refuseError(family, `The target ${receiver.address} is on another machine.`);
+    throw refuseError(sender, `The target ${receiver.address} is on another machine.`);
   }
 
   if (receiver.address === caller) {
-    throw refuseError(family, "The target is this session's own terminal.");
+    throw refuseError(sender, "The target is this session's own terminal.");
   }
 
   if (receiver.state !== 'live') {
-    throw refuseError(family, `The target ${receiver.address} is not live.`);
+    throw refuseError(sender, `The target ${receiver.address} is not live.`);
   }
 
   const lease = judgeLease(receiver.labels?.['tau.inbox'], Date.now());
 
   if (lease.kind !== 'live') {
-    throw refuseError(family, leaseProblem(lease, receiver.address));
+    throw refuseError(sender, leaseProblem(lease, receiver.address));
   }
 
   return { terminal: receiver.address, sessionId: lease.sessionId };
 };
 
 export const sendInboxMessage = async (request: SendInboxRequest): Promise<SendInboxResult> => {
-  const { hc, target, family, text, cwd, signal, expectedSessionId } = request;
+  const { hc, target, family, sender, text, cwd, signal, expectedSessionId } = request;
   const hcWithSignal: HcRuntime = signal === undefined ? hc : { ...hc, signal };
-  const receiver = await checkInboxTarget({ hc, target, family, signal });
+  const receiver = await checkInboxTarget({ hc, target, sender, signal });
 
   const hasMovedSession =
     expectedSessionId !== undefined && receiver.sessionId !== expectedSessionId;
 
   if (hasMovedSession) {
     throw refuseError(
-      family,
+      sender,
       `${receiver.terminal} now has inbox session ${receiver.sessionId}, not ${expectedSessionId}.`,
     );
   }
@@ -139,7 +137,7 @@ export const sendInboxMessage = async (request: SendInboxRequest): Promise<SendI
     text,
   };
 
-  const path = await publishEnvelope(cwd, envelope);
+  const path = await publishEnvelope(cwd, envelope, sender);
 
   try {
     signal?.throwIfAborted();

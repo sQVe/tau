@@ -13,6 +13,7 @@ import type { HcRuntime } from '../hc/hc.js';
 import { serializeRecord } from '../record.js';
 import { envelopeByteLimit } from './envelope.js';
 import { sendInboxMessage } from './inbox.js';
+import type { InboxSender } from './inbox.js';
 
 interface TerminalFacts {
   state?: string;
@@ -21,6 +22,11 @@ interface TerminalFacts {
 }
 
 const callerAddress = 'caller';
+
+const handoverSender: InboxSender = {
+  toolName: 'handover',
+  recovery: 'Use handover start to open a receiver instead.',
+};
 
 beforeEach(() => {
   vi.stubEnv('HC_TERMINAL_ID', callerAddress);
@@ -95,6 +101,7 @@ it('queues one envelope and one label for a receiver with a live lease', async (
     hc: runtimeOf(fake),
     target: 't7',
     family: 'handover',
+    sender: handoverSender,
     text: 'Next steps\n',
     cwd: root,
   });
@@ -200,6 +207,7 @@ it.each([
     hc: runtimeOf(fake),
     target,
     family: 'handover',
+    sender: handoverSender,
     text: 'Next steps\n',
     cwd: root,
   }).catch((error: unknown) => error);
@@ -221,6 +229,7 @@ it('refuses when the caller has no terminal', async () => {
     hc: runtimeOf(fake),
     target: 't7',
     family: 'handover',
+    sender: handoverSender,
     text: 'Next steps\n',
     cwd: root,
   }).catch((error: unknown) => error);
@@ -259,6 +268,7 @@ it('writes nothing when the caller aborts during the target lookup', async () =>
       hc,
       target: 't7',
       family: 'handover',
+      sender: handoverSender,
       text: 'Next steps\n',
       cwd: root,
       signal: controller.signal,
@@ -310,6 +320,7 @@ it('writes nothing when request.signal aborts a pending target lookup', async ()
     hc,
     target: 't7',
     family: 'handover',
+    sender: handoverSender,
     text: 'Next steps\n',
     cwd: root,
     signal: controller.signal,
@@ -339,6 +350,7 @@ it('reports the envelope path when the label write fails and sets no second labe
     hc: runtimeOf(fake),
     target: 't7',
     family: 'handover',
+    sender: handoverSender,
     text: 'Next steps\n',
     cwd: root,
   }).catch((error: unknown) => error);
@@ -399,6 +411,7 @@ it('rejects when the caller aborts a pending label write', async () => {
     hc,
     target: 't7',
     family: 'handover',
+    sender: handoverSender,
     text: 'Next steps\n',
     cwd: root,
     signal: controller.signal,
@@ -427,6 +440,7 @@ it('reports the written envelope and sets no label when the caller aborts after 
     hc: runtimeOf(fake),
     target: 't7',
     family: 'handover',
+    sender: handoverSender,
     text: 'Next steps\n',
     cwd: root,
     signal: abortOnSecondCheck(),
@@ -455,6 +469,7 @@ it('keeps the text as it was at send time after the source file changes', async 
     hc: runtimeOf(fake),
     target: 't7',
     family: 'handover',
+    sender: handoverSender,
     text,
     cwd: root,
   });
@@ -477,6 +492,7 @@ it.each([
     hc: runtimeOf(fake),
     target: 't7',
     family: 'handover',
+    sender: handoverSender,
     text,
     cwd: root,
   }).catch((error: unknown) => error);
@@ -509,6 +525,7 @@ it('accepts an envelope whose written bytes are exactly the limit', async () => 
     hc: runtimeOf(fake),
     target: 't7',
     family: 'handover',
+    sender: handoverSender,
     text,
     cwd: root,
   });

@@ -1,9 +1,9 @@
-import { existsSync } from 'node:fs';
-
-import { errorMessage, hasErrorCode } from '../../errors.js';
+import { errorMessage } from '../../errors.js';
 import { currentTerminalAddress, get, ls } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { checkInboxTarget, sendInboxMessage } from '../../inbox/inbox.js';
+import type { InboxSender } from '../../inbox/inbox.js';
+import { PublishError } from '../../record.js';
 import {
   decideAssignment,
   decideTarget,
@@ -43,6 +43,11 @@ interface AnswerTarget {
   managerTerminal: string;
   terminal: string;
 }
+
+const answerSender: InboxSender = {
+  toolName: 'subagent_answer',
+  recovery: 'The worker has no live inbox; restart the worker on a current Tau.',
+};
 
 const readAssignmentFact = async (path: string): Promise<AssignmentFact> => {
   try {
@@ -121,7 +126,12 @@ const checkTarget = async (
   target: AnswerTarget,
   signal: AbortSignal | undefined,
 ): Promise<void> => {
-  const inbox = await checkInboxTarget({ hc, target: target.terminal, family: 'answer', signal });
+  const inbox = await checkInboxTarget({
+    hc,
+    target: target.terminal,
+    sender: answerSender,
+    signal,
+  });
 
   const leaseProblem = leaseRefusal({
     terminal: inbox.terminal,
@@ -162,13 +172,8 @@ const savedNotQueued = (path: string, error: unknown): ToolResult<undefined> =>
     ),
   );
 
-// Publication links the final file before it syncs the folder and removes the temporary file, so a
-// failure can leave this call's answer saved. An existing answer from an earlier call stays refused.
-const isSavedByFailedPublish = (error: unknown, path: string): boolean => {
-  const isExistingAnswer = error instanceof Error && hasErrorCode(error.cause, 'EEXIST');
-
-  return !isExistingAnswer && existsSync(path);
-};
+const isSavedByFailedPublish = (error: unknown): boolean =>
+  error instanceof PublishError && error.failure === 'linked';
 
 const publish = (
   assignmentId: string,
@@ -180,9 +185,7 @@ const publish = (
   } catch (error) {
     const path = answerPath(assignmentId, questionId);
 
-    return isSavedByFailedPublish(error, path)
-      ? savedNotQueued(path, error)
-      : launchErrorResult(error);
+    return isSavedByFailedPublish(error) ? savedNotQueued(path, error) : launchErrorResult(error);
   }
 
   return undefined;
@@ -217,6 +220,7 @@ export const executeAnswer = async (
       hc: runtime.hc,
       target: target.terminal,
       family: 'answer',
+      sender: answerSender,
       text: formatAnswerReference(assignmentId, questionId),
       cwd: request.cwd,
       signal,

@@ -7,19 +7,28 @@ import { ensureTauDirectory, findTauRoot } from '../tauDirectory.js';
 import { envelopeByteLimit } from './envelope.js';
 import type { InboxEnvelope } from './envelope.js';
 
+// The sending feature's tool name and the advice it gives when nothing was queued.
+export interface InboxSender {
+  toolName: string;
+  recovery: string;
+}
+
 const inboxDirectory = 'inbox';
 
-export const publishEnvelope = async (cwd: string, envelope: InboxEnvelope): Promise<string> => {
+export const publishEnvelope = async (
+  cwd: string,
+  envelope: InboxEnvelope,
+  sender: InboxSender,
+): Promise<string> => {
   const text = serializeRecord(envelope);
 
   if (Buffer.byteLength(text, 'utf8') > envelopeByteLimit) {
     throw new Error(
-      `The envelope is larger than ${envelopeByteLimit} bytes. Nothing was queued. Use handover start instead.`,
+      `The envelope is larger than ${envelopeByteLimit} bytes. Nothing was queued. ${sender.recovery}`,
     );
   }
 
-  const toolName = envelope.family === 'answer' ? 'subagent_answer' : 'handover';
-  const root = await findTauRoot(cwd, toolName);
+  const root = await findTauRoot(cwd, sender.toolName);
   const directory = await ensureTauDirectory(root, inboxDirectory);
   const path = join(directory, `${envelope.messageId}.json`);
 

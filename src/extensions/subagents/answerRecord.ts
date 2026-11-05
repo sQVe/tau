@@ -9,6 +9,7 @@ import { Value } from 'typebox/value';
 import { errorMessage, hasErrorCode, isMissingFile } from '../../errors.js';
 import {
   parseVersionedRecord,
+  PublishError,
   publishTextSync,
   readContainedText,
   serializeRecord,
@@ -127,7 +128,7 @@ export const publishAnswer = (record: AnswerRecord): string => {
   try {
     publishTextSync(path, serializeRecord(record), { mode: 0o600 });
   } catch (error) {
-    if (hasErrorCode(error, 'EEXIST')) {
+    if (error instanceof PublishError && error.failure === 'exists') {
       throw new Error(
         `Question ${record.questionId} already has an answer: ${path}. The first answer stays.`,
         { cause: error },

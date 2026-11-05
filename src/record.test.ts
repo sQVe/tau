@@ -8,6 +8,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.js';
 import {
   parseVersionedRecord,
+  PublishError,
   publishTextSync,
   readContainedText,
   readOptionalText,
@@ -16,7 +17,12 @@ import {
   writeRecord,
 } from './record.js';
 
-const writeState = vi.hoisted(() => ({ failMidway: false, failFsync: false }));
+const writeState = vi.hoisted(() => ({
+  failMidway: false,
+  fsyncCalls: 0,
+  failFsyncCall: undefined as number | undefined,
+}));
+
 const raceState = vi.hoisted(() => ({ path: '', target: '' }));
 
 vi.mock(import('node:fs'), async (importOriginal) => {
@@ -25,7 +31,9 @@ vi.mock(import('node:fs'), async (importOriginal) => {
   return {
     ...actual,
     fsyncSync: (descriptor: number) => {
-      if (writeState.failFsync) {
+      writeState.fsyncCalls += 1;
+
+      if (writeState.fsyncCalls === writeState.failFsyncCall) {
         throw new Error('fsync failed');
       }
 
@@ -73,7 +81,8 @@ const directoryFixture = async () => {
 
   onTestFinished(() => {
     writeState.failMidway = false;
-    writeState.failFsync = false;
+    writeState.fsyncCalls = 0;
+    writeState.failFsyncCall = undefined;
     raceState.path = '';
     raceState.target = '';
   });
@@ -183,36 +192,78 @@ it('keeps the old record and leaves no temporary file when a write fails', async
   expect(await readdir(directory)).toEqual(['a.json']);
 });
 
-it('publishes text once and leaves no receipt file', async () => {
+it('publishes text and leaves no receipt file', async () => {
   const directory = await directoryFixture();
   const path = join(directory, 'a.json');
 
   publishTextSync(path, 'first', { mode: 0o600 });
 
-  expect(() => {
-    publishTextSync(path, 'second', { mode: 0o600 });
-  }).toThrow('EEXIST');
-
   expect(await readFile(path, 'utf8')).toBe('first');
   expect(await readdir(directory)).toEqual(['a.json']);
+});
+
+it.each([
+  {
+    case: 'the path already exists',
+    existing: true,
+    failFsyncCall: undefined,
+    failure: 'exists',
+    files: { 'a.json': 'first' },
+  },
+  {
+    case: 'the file fsync fails',
+    existing: false,
+    failFsyncCall: 1,
+    failure: 'notLinked',
+    files: {},
+  },
+  {
+    case: 'the folder fsync fails',
+    existing: false,
+    failFsyncCall: 2,
+    failure: 'linked',
+    files: { 'a.json': 'second' },
+  },
+])('reports $failure and leaves no receipt file when $case', async (row) => {
+  const directory = await directoryFixture();
+  const path = join(directory, 'a.json');
+
+  if (row.existing) {
+    await writeFile(path, 'first');
+  }
+
+  writeState.failFsyncCall = row.failFsyncCall;
+
+  const caught = (() => {
+    try {
+      publishTextSync(path, 'second', { mode: 0o600 });
+    } catch (error) {
+      return error;
+    }
+
+    return undefined;
+  })();
+
+  const names = await readdir(directory);
+
+  const entries = await Promise.all(
+    names.map(async (name): Promise<[string, string]> => [
+      name,
+      await readFile(join(directory, name), 'utf8'),
+    ]),
+  );
+
+  const files = Object.fromEntries(entries);
+
+  expect(caught).toBeInstanceOf(PublishError);
+  expect((caught as PublishError).failure).toBe(row.failure);
+  expect(files).toEqual(row.files);
 });
 
 it('reads the saved version of an object only', () => {
   expect(savedVersion({ version: 2 })).toBe(2);
   expect(savedVersion('text')).toBeUndefined();
   expect(savedVersion(null)).toBeUndefined();
-});
-
-it('leaves no receipt file when the file fsync fails', async () => {
-  const directory = await directoryFixture();
-
-  writeState.failFsync = true;
-
-  expect(() => {
-    publishTextSync(join(directory, 'a.json'), 'text', { mode: 0o600 });
-  }).toThrow('fsync failed');
-
-  expect(await readdir(directory)).toEqual([]);
 });
 
 const containedRequest = (directory: string, path: string, byteLimit = 100) => ({
