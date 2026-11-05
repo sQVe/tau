@@ -41,10 +41,7 @@ export const createSessionResume = (hc: HcRuntime): SessionResume => {
   const listenForSignals = () => {
     signalReceived = false;
     process.on('SIGTERM', noteSignal);
-
-    if (process.platform !== 'win32') {
-      process.on('SIGHUP', noteSignal);
-    }
+    process.on('SIGHUP', noteSignal);
   };
 
   const stopListeningForSignals = () => {

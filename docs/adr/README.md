@@ -39,6 +39,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0120: Capability modules with an enforced import table](./0120-capability-modules-with-an-enforced-import-table.md)
 - [0123: Patch Pi loaders to show no spinner](./0123-patch-pi-loaders-to-show-no-spinner.md)
 - [0127: Version the draft review viewer protocol](./0127-version-the-draft-review-viewer-protocol.md)
+- [0128: Support Linux and macOS only](./0128-support-linux-and-macos-only.md)
 
 ## Documentation and writing
 
