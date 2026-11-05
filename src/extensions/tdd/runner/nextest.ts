@@ -133,7 +133,7 @@ const spawnStage = async (
   name: string,
   argumentsList: string[],
   input: RunTestsInput,
-  spawnRequest: { spawn: SpawnCommand; deadline: number },
+  spawnRequest: { spawn: SpawnCommand; deadline: number; stdoutFile?: string },
 ): Promise<StageSpawn> => {
   const started = performance.now();
 
@@ -141,6 +141,7 @@ const spawnStage = async (
     cwd: input.cwd,
     timeoutMs: Math.max(0, spawnRequest.deadline - started),
     signal: input.signal,
+    stdoutFile: spawnRequest.stdoutFile,
   });
 
   return { name, durationMs: Math.round(performance.now() - started), result };
@@ -175,11 +176,25 @@ const unreadableJson = (command: string, stdout: string): RunnerResult => {
   };
 };
 
+const readFullStdout = async (path: string, result: SpawnResult): Promise<string | null> => {
+  try {
+    return await readFile(path, 'utf8');
+  } catch {
+    return result.stdoutTruncated ? null : result.stdout;
+  }
+};
+
 const buildStages = async (
   input: RunTestsInput,
-  request: { spawn: SpawnCommand; deadline: number },
+  request: { spawn: SpawnCommand; deadline: number; directory: string },
 ): Promise<StageOutcome> => {
-  const metadata = await spawnStage('metadata', metadataArguments(), input, request);
+  const metadataPath = join(request.directory, 'metadata.stdout.json');
+
+  const metadata = await spawnStage('metadata', metadataArguments(), input, {
+    spawn: request.spawn,
+    deadline: request.deadline,
+    stdoutFile: metadataPath,
+  });
 
   const metadataReport = metadataOutcome({
     ...stageFacts(input, metadata.result, request.deadline),
@@ -190,9 +205,8 @@ const buildStages = async (
     return { kind: 'stop', report: metadataReport, stages: [metadata] };
   }
 
-  const parsedMetadata = metadata.result.stdoutTruncated
-    ? null
-    : parseCargoMetadata(metadata.result.stdout);
+  const metadataStdout = await readFullStdout(metadataPath, metadata.result);
+  const parsedMetadata = metadataStdout === null ? null : parseCargoMetadata(metadataStdout);
 
   if (parsedMetadata === null) {
     return {
@@ -209,7 +223,13 @@ const buildStages = async (
   }
 
   const targets = targetArguments(parsedMetadata);
-  const list = await spawnStage('list', listArguments(targets), input, request);
+  const listPath = join(request.directory, 'list.stdout.json');
+
+  const list = await spawnStage('list', listArguments(targets), input, {
+    spawn: request.spawn,
+    deadline: request.deadline,
+    stdoutFile: listPath,
+  });
 
   const listReport = listOutcome({
     ...stageFacts(input, list.result, request.deadline),
@@ -222,7 +242,8 @@ const buildStages = async (
     return { kind: 'stop', report: listReport, stages };
   }
 
-  const parsedList = list.result.stdoutTruncated ? null : parseNextestList(list.result.stdout);
+  const listStdout = await readFullStdout(listPath, list.result);
+  const parsedList = listStdout === null ? null : parseNextestList(listStdout);
 
   if (parsedList === null) {
     return {
@@ -251,6 +272,7 @@ const runStages = async (
   const request = {
     spawn: dependencies.spawn,
     deadline: performance.now() + dependencies.timeoutMs,
+    directory,
   };
 
   const built = await buildStages(input, request);

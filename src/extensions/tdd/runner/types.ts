@@ -131,6 +131,7 @@ interface SpawnOptions {
   cwd: string;
   timeoutMs: number;
   signal?: AbortSignal | undefined;
+  stdoutFile?: string | undefined;
 }
 
 export type SpawnCommand = (

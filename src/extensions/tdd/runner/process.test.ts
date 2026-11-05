@@ -41,6 +41,15 @@ const processTreeSource = (pidFile: string) =>
   `renameSync(${JSON.stringify(`${pidFile}.partial`)}, ${JSON.stringify(pidFile)});\n` +
   'setTimeout(() => {}, 60000);\n';
 
+const failingStdoutTreeSource = (pidFile: string) =>
+  "const { spawn } = require('node:child_process');\n" +
+  "const { renameSync, writeFileSync } = require('node:fs');\n" +
+  "const descendant = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' });\n" +
+  `writeFileSync(${JSON.stringify(`${pidFile}.partial`)}, JSON.stringify([process.pid, descendant.pid]));\n` +
+  `renameSync(${JSON.stringify(`${pidFile}.partial`)}, ${JSON.stringify(pidFile)});\n` +
+  "process.stdout.write('x'.repeat(70000));\n" +
+  'setTimeout(() => {}, 60000);\n';
+
 const readProcessTree = async (pidFile: string): Promise<number[]> => {
   await vi.waitFor(() => readFile(pidFile), { timeout: 5_000, interval: 20 });
   const pids = JSON.parse(await readFile(pidFile, 'utf8')) as number[];
@@ -152,6 +161,32 @@ it.for([
   },
 );
 
+it('writes the complete stdout to a file while the captured stdout stays capped', async () => {
+  const directory = await scriptDirectory();
+  const stdoutFile = join(directory, 'full-stdout.txt');
+  const stdoutLength = maximumStdoutBytes + 200_000;
+
+  const script = await writeScript(
+    directory,
+    'const write = (stream, character, length) => {\n' +
+      '  for (let written = 0; written < length; written += 1000) {\n' +
+      '    stream.write(character.repeat(Math.min(1000, length - written)));\n' +
+      '  }\n' +
+      '};\n' +
+      `write(process.stdout, 'o', ${stdoutLength});\n`,
+  );
+
+  const result = await defaultSpawn(nodeExecutable(), [script], {
+    cwd: directory,
+    timeoutMs: 10_000,
+    stdoutFile,
+  });
+
+  expect(result.stdout).toBe('o'.repeat(maximumStdoutBytes));
+  expect(result.stdoutTruncated).toBe(true);
+  expect(await readFile(stdoutFile, 'utf8')).toBe('o'.repeat(stdoutLength));
+});
+
 it('kills the process and its descendants when the timeout expires', async () => {
   const directory = await scriptDirectory();
   const pidFile = join(directory, 'pids.json');
@@ -257,4 +292,37 @@ it('reports a spawn error as an unstarted run without an exit code', async () =>
 
   expect(result).toMatchObject({ code: null, started: false, timedOut: false });
   expect(result.stderr).toContain('ENOENT');
+});
+
+it('reports an unopenable capture file as an unstarted run without spawning', async () => {
+  const directory = await scriptDirectory();
+  const script = await writeScript(directory, "process.stdout.write('never');\n");
+
+  const result = await defaultSpawn(nodeExecutable(), [script], {
+    cwd: directory,
+    timeoutMs: 10_000,
+    stdoutFile: join(directory, 'missing', 'stdout.txt'),
+  });
+
+  expect(result).toMatchObject({ code: null, started: false, timedOut: false });
+  expect(result.stderr).toContain('ENOENT');
+});
+
+it('settles as a failure and stops the child when the capture write fails', async () => {
+  const directory = await scriptDirectory();
+  const pidFile = join(directory, 'pids.json');
+  const script = await writeScript(directory, failingStdoutTreeSource(pidFile));
+
+  const pending = defaultSpawn(nodeExecutable(), [script], {
+    cwd: directory,
+    timeoutMs: 60_000,
+    stdoutFile: '/dev/full',
+  });
+
+  const pids = await readProcessTree(pidFile);
+  const result = await pending;
+
+  expect(result).toMatchObject({ code: null, started: true, timedOut: false });
+  expect(result.stderr).toContain('ENOSPC');
+  await expectStopped(pids);
 });

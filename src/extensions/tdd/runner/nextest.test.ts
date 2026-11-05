@@ -93,7 +93,10 @@ const stageOf = (argumentsList: string[]): Stage => {
   return argumentsList[1] === 'list' ? 'list' : 'run';
 };
 
-const fakeNextest = (replies: Partial<Record<Stage, StageReply>>) => {
+const fakeNextest = (
+  replies: Partial<Record<Stage, StageReply>>,
+  config: { writeCapture?: boolean } = {},
+) => {
   const calls: SpawnCall[] = [];
 
   const spawn: SpawnCommand = async (command, argumentsList, options) => {
@@ -103,6 +106,10 @@ const fakeNextest = (replies: Partial<Record<Stage, StageReply>>) => {
     const { report, during, ...result } = { ...defaultReplies[stage], ...replies[stage] };
 
     during?.();
+
+    if (options.stdoutFile !== undefined && config.writeCapture !== false) {
+      await writeFile(options.stdoutFile, result.stdout ?? '');
+    }
 
     if (report !== undefined) {
       await writeFile(await junitPathFrom(argumentsList), report);
@@ -252,6 +259,66 @@ it('reports unreadable list JSON as a compile error instead of an empty binary l
   expect('message' in result && result.message).toContain('nextest list');
   expect('message' in result && result.message).toContain('{"rust-suites":');
   expect(nextest.stages()).toEqual(['metadata', 'list']);
+});
+
+it('reports unreadable metadata JSON as a compile error and starts no list', async () => {
+  const nextest = fakeNextest({ metadata: { stdout: '{"workspace_root":' } });
+
+  const result = await run(focused(['tests::adds']), nextest.spawn);
+
+  expect(result).toMatchObject({ kind: 'compile-error' });
+  expect('message' in result && result.message).toContain('metadata');
+  expect(nextest.stages()).toEqual(['metadata']);
+});
+
+it('reports a missing list capture with truncated stdout as a compile error and starts no run', async () => {
+  const nextest = fakeNextest(
+    { list: { stdout: defaultList, stdoutTruncated: true } },
+    { writeCapture: false },
+  );
+
+  const result = await run(focused(['tests::adds']), nextest.spawn);
+
+  expect(result).toMatchObject({ kind: 'compile-error' });
+  expect('message' in result && result.message).toContain('nextest list');
+  expect(nextest.stages()).toEqual(['metadata', 'list']);
+});
+
+it('reports a missing metadata capture with truncated stdout as a compile error and starts no list', async () => {
+  const nextest = fakeNextest(
+    { metadata: { stdout: defaultMetadata, stdoutTruncated: true } },
+    { writeCapture: false },
+  );
+
+  const result = await run(focused(['tests::adds']), nextest.spawn);
+
+  expect(result).toMatchObject({ kind: 'compile-error' });
+  expect('message' in result && result.message).toContain('metadata');
+  expect(nextest.stages()).toEqual(['metadata']);
+});
+
+it('parses complete discovery output when the capture file is missing', async () => {
+  const nextest = fakeNextest(
+    { run: { report: await fixture('two-binaries.xml') } },
+    { writeCapture: false },
+  );
+
+  const result = await run(focused(['tests::same']), nextest.spawn);
+
+  expect(result.kind).toBe('pass');
+  expect(nextest.stages()).toEqual(['metadata', 'list', 'run']);
+});
+
+it('reports a failed discovery capture as a compile error and starts no later stage', async () => {
+  const nextest = fakeNextest({
+    metadata: { code: null, stderr: 'ENOSPC: no space left on device, write' },
+  });
+
+  const result = await run(focused(['tests::adds']), nextest.spawn);
+
+  expect(result).toMatchObject({ kind: 'compile-error' });
+  expect('message' in result && result.message).toContain('ENOSPC');
+  expect(nextest.stages()).toEqual(['metadata']);
 });
 
 it.for([

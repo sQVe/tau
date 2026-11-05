@@ -6,6 +6,7 @@ import type { TestContext } from 'vitest';
 
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { runTests } from './nextest.js';
+import { maximumStdoutBytes } from './process.js';
 import type { RunnerResult, RunTestsInput, SpawnCommand } from './types.js';
 
 interface NextestBinaryFixture {
@@ -97,11 +98,27 @@ const stageOf = (argumentsList: string[]): 'list' | 'metadata' | 'run' => {
   return argumentsList[1] === 'list' ? 'list' : 'run';
 };
 
-const fakeNextest = (list: string, metadata: string, report: string, runCode = 100) => {
+const paddedListDocument = (binary: NextestBinaryFixture, paddingLength: number): string => {
+  const document = JSON.parse(listDocument([binary])) as {
+    'rust-suites': Record<string, Record<string, unknown>>;
+  };
+
+  document['rust-suites'][binary.binaryId]!.padding = 'x'.repeat(paddingLength);
+
+  return JSON.stringify(document);
+};
+
+const fakeNextest = (
+  list: string,
+  metadata: string,
+  report: string,
+  runCode = 100,
+  fullList = list,
+) => {
   const stages: string[] = [];
   const runExpressions: string[] = [];
 
-  const spawn: SpawnCommand = async (command, argumentsList) => {
+  const spawn: SpawnCommand = async (command, argumentsList, options) => {
     const stage = stageOf(argumentsList);
 
     stages.push(stage);
@@ -110,8 +127,16 @@ const fakeNextest = (list: string, metadata: string, report: string, runCode = 1
 
     if (stage === 'list') {
       stdout = list;
+
+      if (options.stdoutFile !== undefined) {
+        await writeFile(options.stdoutFile, fullList);
+      }
     } else if (stage === 'metadata') {
       stdout = metadata;
+
+      if (options.stdoutFile !== undefined) {
+        await writeFile(options.stdoutFile, metadata);
+      }
     }
 
     if (stage === 'run') {
@@ -126,8 +151,8 @@ const fakeNextest = (list: string, metadata: string, report: string, runCode = 1
       timedOut: false,
       command: [command, ...argumentsList],
       started: true,
-      stdoutTruncated: false,
-      stdoutBytes: stdout.length,
+      stdoutTruncated: stage === 'list' && fullList.length > list.length,
+      stdoutBytes: stage === 'list' ? fullList.length : stdout.length,
       stderrBytes: 0,
     };
   };
@@ -218,6 +243,57 @@ it('attributes a failing unit test in the requested src/sub.rs', async ({ onTest
   const tests = 'tests' in result ? result.tests : [];
 
   expect(tests[0]?.attribution).toBeUndefined();
+});
+
+it('attributes an exact test when list stdout exceeds the diagnostics cap', async ({
+  onTestFinished,
+}) => {
+  const workspace = temporaryDirectory(onTestFinished, 'tau-nextest-attr-cap-');
+
+  await mkdir(join(workspace, 'src'), { recursive: true });
+  await writeFile(join(workspace, 'src/lib.rs'), 'pub mod sub;\n', 'utf8');
+  await writeFile(join(workspace, 'src/sub.rs'), '#[cfg(test)]\nmod tests {\n}\n', 'utf8');
+
+  const binaryPath = await writeDepInfo(workspace, 'demo-abc', ['src/lib.rs', 'src/sub.rs']);
+
+  const binary: NextestBinaryFixture = {
+    binaryId: 'demo',
+    binaryName: 'demo',
+    kind: 'lib',
+    binaryPath,
+    packageId: 'package',
+    cwd: workspace,
+    testNames: ['sub::tests::fails'],
+  };
+
+  const fullList = paddedListDocument(binary, maximumStdoutBytes);
+  const boundedList = fullList.slice(0, maximumStdoutBytes);
+
+  const metadata = metadataDocument(workspace, 'package', [
+    { packageId: 'package', name: 'demo', kind: 'lib', srcPath: join(workspace, 'src/lib.rs') },
+  ]);
+
+  const nextest = fakeNextest(
+    boundedList,
+    metadata,
+    failingReport('demo', 'sub::tests::fails'),
+    100,
+    fullList,
+  );
+
+  const result = await run(
+    focused(workspace, ['src/sub.rs'], ['sub::tests::fails']),
+    nextest.spawn,
+    onTestFinished,
+  );
+
+  expect(result).toMatchObject({
+    kind: 'fail',
+    tests: [{ file: 'src/sub.rs', fullname: 'sub::tests::fails', status: 'failed' }],
+    failures: [{ file: 'src/sub.rs', fullname: 'sub::tests::fails' }],
+  });
+
+  expect(nextest.runExpressions[0]).toBe('binary_id(demo) & test(=sub::tests::fails)');
 });
 
 it('gives unknown attribution when a dep-info file is missing, not no-tests-collected', async ({
