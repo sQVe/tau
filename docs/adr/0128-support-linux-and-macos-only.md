@@ -20,8 +20,9 @@ Tau supports Linux and macOS, and does not support Windows.
 
 - Code has no `process.platform === 'win32'` branches.
 - Code uses Unix signals such as `SIGHUP` directly, without a platform guard.
-- The package states the limit: `package.json` excludes `win32` in its `os` field, and the README
-  names the supported platforms.
+- The package states the limit: the `os` field in `package.json` lists only `darwin` and `linux`,
+  and the README names the supported platforms. An allowlist also refuses other Unix-like systems,
+  such as FreeBSD, that Tau does not test.
 - Guards that protect every platform stay, such as rejecting backslashes in paths and parsing CRLF
   line endings.
 
