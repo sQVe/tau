@@ -190,6 +190,41 @@ it('labels each stage and its excerpt when a run has two stages', () => {
   expect(text).toContain('Runner output excerpt (run) (not a test verdict):\nrun failed');
 });
 
+it('keeps the line of a later stage that never started', () => {
+  const report: RunnerResult = {
+    kind: 'compile-error',
+    message: 'list failed',
+    tests: [],
+    diagnostics: {
+      directory: '/tmp/run',
+      durationMs: 100,
+      timeoutMs: 30_000,
+      report: { path: '/tmp/run/report.xml', format: 'junit' },
+      stages: [
+        {
+          name: 'list',
+          command: ['cargo', 'nextest', 'list'],
+          started: true,
+          exitCode: 101,
+          durationMs: 100,
+        },
+        {
+          name: 'run',
+          command: ['cargo', 'nextest', 'run'],
+          started: false,
+          exitCode: null,
+          durationMs: 0,
+        },
+      ],
+    },
+  };
+
+  const text = runContext(behavior, observation(report));
+
+  expect(text).toContain('list: elapsed 100 ms; exit: 101.');
+  expect(text).toContain('run: elapsed 0 ms; exit: unavailable.');
+});
+
 const timed = (file: string, fullname: string, durationMs?: number) => ({
   file,
   fullname,
