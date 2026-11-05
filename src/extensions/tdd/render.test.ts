@@ -180,7 +180,7 @@ it('labels each stage and its excerpt when a run has two stages', () => {
 
   const text = runContext(behavior, observation(report));
 
-  expect(text).toContain('Elapsed: 300 ms; timeout: 30000 ms per stage.');
+  expect(text).toContain('Elapsed: 300 ms; timeout: 30000 ms for the run.');
   expect(text).toContain('list: elapsed 100 ms; exit: 0.');
   expect(text).toContain('run: elapsed 200 ms; exit: 1.');
   expect(text).toContain('stdout (list): /tmp/run/list.stdout.txt');

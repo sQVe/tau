@@ -5,19 +5,20 @@ import { Type } from 'typebox';
 
 import type { ObservationTracker } from './observationTracker.js';
 import { configSummary, runContext, selectionSummary, summarize } from './render.js';
-import { lookupRunner } from './runner/runners.js';
+import { runners } from './runner/runners.js';
 
-const runner = lookupRunner('vitest');
-const runnerName = runner.name.charAt(0).toUpperCase() + runner.name.slice(1);
+const nameFormats = Object.values(runners)
+  .map((runner) => `${runner.name}: ${runner.testNameFormat}.`)
+  .join(' ');
 
 const runTestsDescription = [
-  `Runs ${runnerName} only; use the project runner for other test frameworks.`,
+  'Runs the configured runner; use bash for other test frameworks.',
   'Run a failing focused test (RED), implement, and rerun the same selection (GREEN). The PR step runs the full suite.',
   'RED and GREEN are observations, never edit permissions. Duplicate, skipped, and missing tests cannot establish RED.',
   'Returns the runner report, input freshness (fresh, stale, or unknown), and at most one hint. Bash test runs do not update these observations.',
 ].join(' ');
 
-const testFullNameDescription = `Exact literal test name. ${runner.testNameFormat}. An array selects names that prove one behavior.`;
+const testFullNameDescription = `Exact literal test name. ${nameFormats} An array selects names that prove one behavior.`;
 
 const runTestsParameters = Type.Object({
   behavior: Type.String({

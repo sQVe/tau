@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="nextest-run" tests="2" skipped="0" failures="0" errors="0" uuid="66efb1fe-3cfa-4a12-a3e0-7d3f1152e85a" timestamp="2026-11-04T21:13:38.401+01:00" time="0.008">
+    <testsuite name="demo::bin/demo" tests="1" skipped="0" errors="0" failures="0">
+        <testcase name="tests::same" classname="demo::bin/demo" timestamp="2026-11-04T21:13:38.401+01:00" time="0.007"/>
+    </testsuite>
+    <testsuite name="demo" tests="1" skipped="0" errors="0" failures="0">
+        <testcase name="tests::same" classname="demo" timestamp="2026-11-04T21:13:38.401+01:00" time="0.008"/>
+    </testsuite>
+</testsuites>

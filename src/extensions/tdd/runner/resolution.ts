@@ -291,20 +291,27 @@ export const defaultResolveVitest: ResolveVitest = (cwd) => {
 
 const nodeNames = ['node', 'nodejs'];
 
-// oxlint-disable-next-line node/no-process-env -- Compiled Pi needs a real Node executable from the caller's PATH.
-const nodeOnPath = (path = process.env.PATH ?? '') =>
-  path
-    .split(delimiter)
-    .flatMap((directory) => nodeNames.map((name) => join(directory, name)))
-    .find((executable) => {
-      try {
-        accessSync(executable, constants.X_OK);
+const isExecutableFile = (path: string): boolean => {
+  try {
+    accessSync(path, constants.X_OK);
 
-        return statSync(executable).isFile();
-      } catch {
-        return false;
-      }
-    });
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+};
+
+export const executableOnPath = (
+  names: readonly string[],
+  searchPath: string,
+): string | undefined =>
+  searchPath
+    .split(delimiter)
+    .flatMap((directory) => names.map((name) => join(directory, name)))
+    .find(isExecutableFile);
+
+// oxlint-disable-next-line node/no-process-env -- Compiled Pi needs a real Node executable from the caller's PATH.
+const nodeOnPath = (path = process.env.PATH ?? '') => executableOnPath(nodeNames, path);
 
 export const nodeExecutable = (executablePath = process.execPath): string =>
   /^node$/i.test(basename(executablePath)) ? executablePath : (nodeOnPath() ?? executablePath);

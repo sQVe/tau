@@ -1,7 +1,7 @@
 import { isAbsolute, relative } from 'node:path';
 
 import { isRecord } from '../../../schema.js';
-import { maximumFailures } from './constants.js';
+import { capMessage, maximumFailures } from './constants.js';
 import type { RunnerResult, RunTestsInput, TestFailure, TestResult } from './types.js';
 
 type VitestAssertionStatus = TestResult['status'] | 'pending' | 'disabled';
@@ -31,8 +31,6 @@ export interface VitestReport {
   success?: boolean;
   testResults: VitestTestFile[];
 }
-
-const maximumMessageCharacters = 300;
 
 const assertionStatuses = new Set<string>([
   'passed',
@@ -239,11 +237,6 @@ const frameLocation = (line: string, cwd: string): string | null => {
 
   return `${location}:${match?.[2]}`;
 };
-
-const capMessage = (text: string) =>
-  text.length > maximumMessageCharacters
-    ? `${text.slice(0, maximumMessageCharacters).replace(/[\uD800-\uDBFF]$/, '')}…`
-    : text;
 
 // Keep the assertion and its worktree location. Omit the rest of the stack to limit output.
 const assertionMessage = (messages: string[], cwd: string): string => {

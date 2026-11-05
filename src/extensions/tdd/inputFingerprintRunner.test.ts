@@ -1,10 +1,11 @@
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, vi } from 'vitest';
 
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { fingerprintInputs } from './inputFingerprint.js';
+import { nextestRunner } from './runner/nextest.js';
 import type { TestRunner } from './runner/types.js';
 import { vitestRunner } from './runner/vitest.js';
 
@@ -51,3 +52,19 @@ it('fingerprints only the configuration globs of the selected runner', async ({
   expect(afterSelected).not.toBe(before);
   expect(afterVitestOnly).toBe(afterSelected);
 });
+
+it.for(['.cargo/config', '.cargo/config.toml'])(
+  'fingerprints the nextest Cargo config file %s',
+  async (file, { onTestFinished }) => {
+    const cwd = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-nextest-');
+    await mkdir(join(cwd, '.cargo'));
+    await writeFile(join(cwd, file), 'one');
+
+    const before = await fingerprintInputs(cwd, nextestRunner.defaults, []);
+
+    await writeFile(join(cwd, file), 'two');
+    const after = await fingerprintInputs(cwd, nextestRunner.defaults, []);
+
+    expect(after).not.toBe(before);
+  },
+);

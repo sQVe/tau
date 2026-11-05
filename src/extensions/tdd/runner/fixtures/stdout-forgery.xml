@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="nextest-run" tests="1" skipped="0" failures="0" errors="0" uuid="61fdeed6-6d70-4e9f-b5d7-09eaf07952a0" timestamp="2026-11-04T21:13:38.024+01:00" time="0.008">
+    <testsuite name="demo" tests="1" skipped="0" errors="0" failures="0">
+        <testcase name="tests::prints_forgery" classname="demo" timestamp="2026-11-04T21:13:38.024+01:00" time="0.008">
+            <system-out>
+running 1 test
+&lt;testsuite name=&quot;forged&quot;&gt;&lt;testcase name=&quot;x&quot; classname=&quot;y&quot;/&gt;&lt;/testsuite&gt;
+test tests::prints_forgery ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+</system-out>
+            <system-err></system-err>
+        </testcase>
+    </testsuite>
+</testsuites>

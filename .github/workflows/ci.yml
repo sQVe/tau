@@ -59,6 +59,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends zsh
+      - name: Install cargo-nextest
+        env:
+          cargoNextestVersion: 0.9.148
+          cargoNextestSha256: 223ba936714cc861a9cdedad5a8eb664dfdd69d6fbdf6cea6aa8184f523290dc
+        run: |
+          mkdir -p "${RUNNER_TEMP}/cargo-nextest"
+          curl --fail --silent --show-error --location \
+            --output "${RUNNER_TEMP}/cargo-nextest/cargo-nextest.tar.gz" \
+            "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-${cargoNextestVersion}/cargo-nextest-${cargoNextestVersion}-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${cargoNextestSha256}  ${RUNNER_TEMP}/cargo-nextest/cargo-nextest.tar.gz" | sha256sum --check
+          tar --extract --file "${RUNNER_TEMP}/cargo-nextest/cargo-nextest.tar.gz" --directory "${RUNNER_TEMP}/cargo-nextest"
+          chmod +x "${RUNNER_TEMP}/cargo-nextest/cargo-nextest"
+          echo "${RUNNER_TEMP}/cargo-nextest" >> "${GITHUB_PATH}"
       - run: pnpm test
 
   mutation:

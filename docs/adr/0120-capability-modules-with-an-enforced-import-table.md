@@ -98,8 +98,9 @@ rule reports an import, change the table or the module list instead of silencing
   imports dynamically, or reads the clock, randomness, or the environment. The caller reads those
   values and passes them in as facts. The outside libraries a registered module may import are
   `typebox` and `typebox/value` in `src/schema.ts`, whose schema builders and checks are pure, and
-  `minimatch` in `src/extensions/tdd/inputGlob.ts`, which only compiles and matches strings. The
-  check follows imports, not names, so renaming a file does not escape it.
+  `minimatch` in `src/extensions/tdd/inputGlob.ts`, which only compiles and matches strings, and
+  `@xmldom/xmldom` in `src/extensions/tdd/runner/junit.ts`, which only parses a string into a
+  document. The check follows imports, not names, so renaming a file does not escape it.
 
 ### File names
 

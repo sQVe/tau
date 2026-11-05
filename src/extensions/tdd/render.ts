@@ -141,6 +141,11 @@ const pushDurations = (lines: string[], { header, entries, limit }: DurationList
 const messageLines = (report: RunnerResult): string[] =>
   'message' in report ? [report.message] : [];
 
+const timeoutStageLines = (report: RunnerResult): string[] =>
+  report.kind === 'timeout' && report.stage !== undefined
+    ? [`Timed out during ${report.stage}.`]
+    : [];
+
 const fileFailureLines = (report: RunnerResult): string[] => {
   if (!('failures' in report)) {
     return [];
@@ -164,6 +169,7 @@ export const summarize = (cwd: string, observation: Observation): string => {
   const lines = [
     `${report.kind} · ${scopeLabel} · ${freshness}`,
     ...messageLines(report),
+    ...timeoutStageLines(report),
     ...testSummary(report),
     ...fileFailureLines(report),
   ];
@@ -228,7 +234,7 @@ const executionLines = (diagnostics: NonNullable<RunnerResult['diagnostics']>): 
 
   if (diagnostics.stages.length > 1) {
     return [
-      `Elapsed: ${diagnostics.durationMs} ms; timeout: ${diagnostics.timeoutMs} ms per stage.`,
+      `Elapsed: ${diagnostics.durationMs} ms; timeout: ${diagnostics.timeoutMs} ms for the run.`,
       ...diagnostics.stages.map(stageExecutionLine),
     ];
   }
@@ -237,6 +243,19 @@ const executionLines = (diagnostics: NonNullable<RunnerResult['diagnostics']>): 
     (stage) =>
       `Elapsed: ${diagnostics.durationMs} ms; timeout: ${diagnostics.timeoutMs} ms; exit: ${stage.exitCode ?? 'unavailable'}.`,
   );
+};
+
+// The Vitest package diagnostic is already explained in the result message.
+const resolutionLines = (diagnostics: NonNullable<RunnerResult['diagnostics']>): string[] => {
+  const resolution = diagnostics.resolution;
+
+  if (resolution === undefined || !('executable' in resolution)) {
+    return [];
+  }
+
+  const searched = cap(printable(resolution.searchedPath), maximumFilesLength);
+
+  return [`Searched PATH for ${resolution.executable}: ${searched}`];
 };
 
 const savedFileLines = (diagnostics: NonNullable<RunnerResult['diagnostics']>): string[] => {
@@ -311,7 +330,7 @@ export const runContext = (behavior: Behavior, observation: Observation): string
     return lines.join('\n');
   }
 
-  lines.push(...executionLines(diagnostics));
+  lines.push(...executionLines(diagnostics), ...resolutionLines(diagnostics));
 
   if (runPath !== undefined) {
     lines.push(`Run record (command, selection, input fingerprints): ${runPath}`);

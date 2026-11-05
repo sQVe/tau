@@ -20,11 +20,13 @@ export interface TestFailure {
   file: string;
   fullname: string;
   message: string;
+  binaryId?: string;
 }
 
 export interface TestResult {
   file: string;
   fullname: string;
+  binaryId?: string;
   status: 'passed' | 'failed' | 'skipped' | 'todo';
   durationMs?: number;
 }
@@ -69,10 +71,17 @@ export interface PackageResolutionDiagnostic {
   errorType: string;
 }
 
+export interface ExecutableResolutionDiagnostic {
+  executable: string;
+  searchedPath: string;
+}
+
+export type ResolutionDiagnostic = PackageResolutionDiagnostic | ExecutableResolutionDiagnostic;
+
 export interface RunnerResolutionFailure {
   kind: 'runner-missing' | 'runner-resolution-error';
   message: string;
-  resolution: PackageResolutionDiagnostic;
+  resolution: ResolutionDiagnostic;
 }
 
 export interface RunDiagnostics {
@@ -82,7 +91,7 @@ export interface RunDiagnostics {
   report: ReportEntry;
   stages: RunStage[];
   error?: string;
-  resolution?: PackageResolutionDiagnostic;
+  resolution?: ResolutionDiagnostic;
 }
 
 export type RunnerResult = { diagnostics?: RunDiagnostics } & (
@@ -95,7 +104,7 @@ export type RunnerResult = { diagnostics?: RunDiagnostics } & (
     }
   | { kind: 'compile-error'; message: string; tests: TestResult[] }
   | { kind: 'no-tests-collected'; tests: TestResult[]; message?: string }
-  | { kind: 'timeout' }
+  | { kind: 'timeout'; stage?: string }
   | { kind: 'cancelled' }
   | RunnerResolutionFailure
 );
