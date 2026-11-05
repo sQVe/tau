@@ -112,7 +112,9 @@ see for themselves.
        `base` SHA from `gh stack view --json` after `--not`. The local parent branch can be stale
        and the remote one can be rewritten, so either alone can let a lower PR's commits in.
      - Report the rest: failing on the trunk, caused by a PR below, a cause outside the PR such as a
-       network timeout, gone after the rebase, or unread when the check has a gap.
+       network timeout, gone after the rebase, or unread when the check has a gap. Name a cause
+       outside the PR only when a log line shows it. Report a failure with no such line and no trunk
+       failure as unexplained.
 
 4. Verify each remaining finding with the [triage findings](../triage-findings/SKILL.md) rules.
    Split a comment with several findings and verify each one. Verify an outdated thread against the
