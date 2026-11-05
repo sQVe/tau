@@ -47,6 +47,15 @@ const labelCalls = (fake: HcFake): string[][] =>
     .filter((call) => call.commandArguments[0] === 'label')
     .map((call) => call.commandArguments.slice(3));
 
+// signal-exit kills the process with the signal when its own listener is the only one left.
+const keepProcessAlive = () => {};
+
+const emitSignal = (signal: 'SIGTERM' | 'SIGHUP') => {
+  process.on(signal, keepProcessAlive);
+  process.emit(signal);
+  process.off(signal, keepProcessAlive);
+};
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });
@@ -128,7 +137,7 @@ it.each(['SIGTERM', 'SIGHUP'] as const)(
       buildContext(),
     );
 
-    process.emit(signal);
+    emitSignal(signal);
     releaseGet?.();
     await started;
 
@@ -165,7 +174,7 @@ it.each(['SIGTERM', 'SIGHUP'] as const)('makes no hc call after %s', async (sign
 
   const callsBeforeSignal = fake.calls.length;
 
-  process.emit(signal);
+  emitSignal(signal);
 
   await resume.shutdown();
 
