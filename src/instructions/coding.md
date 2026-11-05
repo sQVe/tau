@@ -9,7 +9,7 @@ and repository conventions over these defaults.
 - Prefer deleting code over adding it.
 - Use descriptive names. No abbreviations, even idiomatic: `getUserByIdentifier` not `getUsr`, and
   no `btn`, `cb`, or `errMsg`.
-- Search for an existing helper before writing one; reuse or extend it when it serves the same
+- Search for an existing helper before writing one. Reuse or extend it when it serves the same
   purpose.
 - Use the standard library or an installed dependency before adding one.
 - Fix a bug once at its root cause, in the function all callers share, not only the caller the
@@ -34,7 +34,8 @@ and repository conventions over these defaults.
 - Keep related control flow and state together when splitting hurts traceability.
 - Do not add inheritance or parameter objects only to meet a size threshold.
 - Extract a phase or callback when its name and boundary make the caller clearer.
-- Declare a helper before the function that uses it; do not define one mid-unrelated-steps.
+- Declare a helper before the function that uses it. Do not define one in the middle of unrelated
+  steps.
 - When a linter flags complexity, simplify first. Suppress narrowly with a comment explaining why.
 
 ## Separate logical steps
@@ -45,12 +46,13 @@ and repository conventions over these defaults.
 
 - Join at most 3 checks in one condition and move the rest into named booleans or predicates, one
   per idea: `escapesRepository(file)` not `file === '..' || file.startsWith('../')`.
-- Do not mix "and" with "or" in one condition; name the inner group first.
+- Do not mix "and" with "or" in one condition. Name the inner group first.
 - When a condition appears twice, replace both with one named predicate.
 
 ## Keep statements readable
 
-- Give each statement one job. Split a line that computes a value from deciding what to do with it.
+- Give each statement one job. Split a line that computes a value and also decides what to do with
+  it.
 - Assign call chains and ternaries to named variables before using them in arguments, conditions,
   templates, or literals.
 - Spread a ternary only for an optional property: `...(model === undefined ? {} : { model })`.

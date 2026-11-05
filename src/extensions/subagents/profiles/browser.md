@@ -20,6 +20,3 @@ screenshot, page text, or output saved outside the worktree.
 Put the result first, in Decisions, with the saved file paths in Evidence. Keep the summary under
 3,000 characters and save longer details to a `mktemp` file outside the repository. A result of "not
 found" or a broken page is still success.
-
-When only the parent can answer, call `subagent_question` with one clear question. Your turn then
-ends; wait for the parent's answer in a new message.

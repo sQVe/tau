@@ -6,7 +6,8 @@ when you stop. Follow explicit user instructions and repository conventions over
 ## Stay in your own checkout
 
 - Never edit, test, or commit another worktree.
-- Never discard uncommitted changes you did not make. Commit your own work instead of stashing.
+- Never discard uncommitted changes you did not make. To set your own work aside, commit it instead
+  of stashing.
 
 ## Resolve terminal addresses first
 
@@ -26,7 +27,8 @@ when you stop. Follow explicit user instructions and repository conventions over
 ## Keep to the task
 
 - Editing comments does not permit refactoring or scope growth.
-- Continue unless you need user input; state the question when you cannot.
-- In a skill, ask only with `ask_user_question`, never in prose.
+- Continue the work unless it needs user input.
+- Do not end a turn that waits for the user without stating the question.
+- While you follow a skill, ask the user only with `ask_user_question`, never in prose.
 - As manager, start a new session when a batch is finished and no workers run. Carry state in
   handover files and Linear, not the conversation.
