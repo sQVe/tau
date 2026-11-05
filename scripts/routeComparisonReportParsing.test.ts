@@ -124,18 +124,28 @@ describe('parseRouteRecord', () => {
     expect(result.record.outcome).toBe(outcome);
   });
 
-  it('reads the version 3 report time from the session file', () => {
+  it.each([
+    {
+      rule: 'an assignment with its own report',
+      report: { outcome: 'success', summary: 'Done' },
+      reportTime: Date.parse('2026-11-01T00:03:00Z'),
+    },
+    {
+      rule: 'an assignment with a null report',
+      report: null,
+      reportTime: undefined,
+    },
+  ])('$rule derives reportTime $reportTime from the session file', ({ report, reportTime }) => {
     const text = JSON.stringify({
       version: 3,
       assignmentId: 'a',
       createdAt: before,
-      routing: { label: 'routine' },
+      report,
       session: { file: '/worker.jsonl' },
     });
 
     const sessionText = [
       sessionMessage('subagent_report', true, '2026-11-01T00:01:00Z'),
-      sessionMessage('bash', false, '2026-11-01T00:02:00Z'),
       sessionMessage('subagent_report', false, '2026-11-01T00:03:00Z'),
     ].join('\n');
 
@@ -147,7 +157,7 @@ describe('parseRouteRecord', () => {
       throw new Error('expected a record');
     }
 
-    expect(result.record.reportTime).toBe(Date.parse('2026-11-01T00:03:00Z'));
+    expect(result.record.reportTime).toBe(reportTime);
   });
 });
 

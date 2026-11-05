@@ -118,6 +118,9 @@ export const reportTimeFromSession = (source: string): number | undefined => {
   return undefined;
 };
 
+const assignmentReportTime = (value: Record<string, unknown>, sessionText: string | undefined) =>
+  isRecord(value.report) ? reportTimeFromSession(sessionText ?? '') : undefined;
+
 const buildRecord = (
   file: RecordFile,
   value: Record<string, unknown>,
@@ -148,7 +151,7 @@ const buildRecord = (
     outcome: optionalText(report.outcome),
     summary: optionalText(report.summary),
     reportTime:
-      file.kind === 'assignment' ? reportTimeFromSession(file.sessionText ?? '') : file.reportTime,
+      file.kind === 'assignment' ? assignmentReportTime(value, file.sessionText) : file.reportTime,
   };
 };
 
