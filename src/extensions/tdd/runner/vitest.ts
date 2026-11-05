@@ -75,6 +75,8 @@ const scopedPaths = (input: RunTestsInput): string[] => {
   return paths.filter((path) => path.trim().length > 0);
 };
 
+const isAborted = (input: RunTestsInput): boolean => input.signal?.aborted === true;
+
 const exactNamePattern = (testNames: readonly string[]) =>
   `^(?:${testNames.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$`;
 
@@ -110,7 +112,7 @@ const classifyResult = async (
   outputFile: string,
   version: string,
 ): Promise<RunnerResult> => {
-  if (input.signal?.aborted === true) {
+  if (isAborted(input)) {
     return { kind: 'cancelled' };
   }
 
@@ -120,7 +122,7 @@ const classifyResult = async (
 
   const report = await readReport(outputFile);
 
-  if (input.signal?.aborted === true) {
+  if (isAborted(input)) {
     return { kind: 'cancelled' };
   }
 
