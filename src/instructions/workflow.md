@@ -22,7 +22,7 @@ these defaults.
 - Save the output of a long check to a file. Do not rerun a check only to see output you cut off.
 - When a check, test, or tool run fails, read all of its output, not only the tail.
 - Call a failure unrelated or pre-existing only after you reproduce it on the base or cite the log
-  line that shows its cause. Until then, it is unexplained.
+  line that shows its cause outside this change. Until then, it is unexplained.
 - Run commands so they never wait for input. Pass every value a prompt would ask for, and set
   `GIT_EDITOR=true` for `git rebase --continue`.
 
