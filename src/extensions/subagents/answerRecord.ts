@@ -34,7 +34,6 @@ const escapedByteGrowth = 6;
 
 const recordFieldBytes = 4096;
 
-// JSON escapes can grow each answer byte to six record bytes.
 const recordByteLimit = answerByteLimit * escapedByteGrowth + recordFieldBytes;
 
 const answerVersion = 1;
@@ -116,7 +115,6 @@ const makeAnswersDirectory = (directory: string): void => {
   refuseSymlink(directory);
 };
 
-// Publishes without replacement, so the first answer to a question always stays.
 export const publishAnswer = (record: AnswerRecord): string => {
   checkAnswer(record);
 
@@ -164,8 +162,6 @@ const readAnswerText = async (
   assignmentId: string,
   questionId: string,
 ): Promise<string | undefined> => {
-  // Only the folders above the assignment folder may resolve, so a linked assignment folder is
-  // refused as the approved directory.
   const directory = join(await realpath(dirname(assignmentDirectory(assignmentId))), assignmentId);
 
   try {

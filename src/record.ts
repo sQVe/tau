@@ -37,8 +37,6 @@ export interface ContainedTextRequest {
   label: string;
 }
 
-// `exists`: another file holds the path, and nothing was published. `notLinked`: a step before the
-// link failed, and nothing was published. `linked`: the file was published, then a later step failed.
 export type PublishFailure = 'exists' | 'notLinked' | 'linked';
 
 type PublishStep = 'write' | 'link' | 'linked';
@@ -176,9 +174,6 @@ const writeSynced = (descriptor: number, text: string): void => {
   }
 };
 
-// Publishes a complete file without replacing an existing record, and throws a PublishError that
-// says whether the file was published. The temporary name starts with `.receipt-`, which readers of
-// unpublished folders match.
 export const publishTextSync = (path: string, text: string, options: { mode: number }): void => {
   const temporary = join(dirname(path), `.receipt-${randomUUID()}`);
   let step: PublishStep = 'write';

@@ -7,7 +7,6 @@ import { ensureTauDirectory, findTauRoot } from '../tauDirectory.js';
 import { envelopeByteLimit } from './envelope.js';
 import type { InboxEnvelope } from './envelope.js';
 
-// The sending feature's tool name and the advice it gives when nothing was queued.
 export interface InboxSender {
   toolName: string;
   recovery: string;

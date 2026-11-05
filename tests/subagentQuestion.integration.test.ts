@@ -225,7 +225,6 @@ it('shows a real worker question once and carries the manager answer into its re
     acceptance: ['Report the answer.'],
     probe: { source: managerQuestionProbe },
     inbox: true,
-    // The answer envelope is saved in the worker's Git checkout.
     prepareWorker: initializeRepository,
   });
 

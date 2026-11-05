@@ -15,7 +15,6 @@ export interface DeliveredMessage {
 export interface WorkerAnswerFacts {
   assignmentId: string;
   question: OpenQuestion | undefined;
-  // A resumed worker has no delivered message; only its saved answer file counts.
   message: DeliveredMessage | undefined;
 }
 

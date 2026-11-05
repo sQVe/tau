@@ -123,7 +123,6 @@ const contentText = (content: string | (TextContent | ImageContent)[]): string =
         .map((block) => block.text)
         .join('\n');
 
-// The answer message carries a reference to the answer file, not the answer text.
 const deliveredAnswer = (context: TranscriptContext): string => {
   const userMessages = context.messages.filter((message) => message.role === 'user');
   const message = userMessages.at(-1);

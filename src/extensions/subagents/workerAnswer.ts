@@ -65,7 +65,6 @@ export const answersOpenQuestion = async (delivery: AnswerDelivery): Promise<boo
   return decision === 'answered';
 };
 
-// Returns the answer path, so a resumed worker can be told where its answer is.
 export const readSavedAnswer = async (
   assignment: QuestionAssignment,
 ): Promise<string | undefined> => {

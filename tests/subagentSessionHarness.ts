@@ -27,7 +27,6 @@ export interface WorkerSessionOptions {
   command?: { source: string };
   timeoutSeconds?: number;
   prepareWorker?: (workerDirectory: string) => void | Promise<void>;
-  // A real worker gets the inbox from Tau in the user's settings, which this harness does not load.
   inbox?: boolean;
   // Runs after the manager terminal exists and HC_TERMINAL_ID points at it, before the worker.
   beforeLaunch?: (managerAddress: string) => Promise<void>;

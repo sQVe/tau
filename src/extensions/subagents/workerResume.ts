@@ -7,7 +7,6 @@ import { taskPromptHeader } from './workerMessage.js';
 export interface WorkerResume {
   sendTaskPrompt: boolean;
   waitingForQuestion: boolean;
-  // Set when a saved answer ended the question wait, so the worker is told to read it.
   answerPath: string | undefined;
 }
 
