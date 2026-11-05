@@ -1,4 +1,4 @@
-import { mkdir, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
@@ -7,6 +7,7 @@ import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
 import type { Exec } from '../../command.js';
+import { isMissingFile } from '../../errors.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { sendHandover } from './send.js';
 
@@ -39,104 +40,97 @@ const writeHandover = async (root: string, content: string): Promise<string> => 
   return file;
 };
 
-const sendArguments = (fake: HcFake): string[][] =>
+const leasedReply = (address: string, lease: string): string =>
+  JSON.stringify({ address, name: null, state: 'live', labels: { 'tau.inbox': lease } });
+
+const liveLease = (): string => `session-1:${Date.now() + 60_000}`;
+
+const argumentsOf = (fake: HcFake, command: string): string[][] =>
   fake.calls
-    .filter((call) => call.commandArguments[0] === 'send')
+    .filter((call) => call.commandArguments[0] === command)
     .map((call) => call.commandArguments);
 
-const expectNoSend = (fake: HcFake) => {
-  expect(sendArguments(fake)).toEqual([]);
-};
+const inboxFiles = async (root: string): Promise<string[]> => {
+  try {
+    return await readdir(join(root, '.tau', 'inbox'));
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return [];
+    }
 
-const expectNoForceOrWait = (fake: HcFake) => {
-  for (const argument of sendArguments(fake).flat()) {
-    expect(['--force', '--wait']).not.toContain(argument);
+    throw error;
   }
 };
 
-it('sends the file text with no force or wait and reports started', async () => {
+const expectNothingQueued = async (fake: HcFake, root: string) => {
+  expect(await inboxFiles(root)).toEqual([]);
+  expect(argumentsOf(fake, 'label')).toEqual([]);
+  expect(argumentsOf(fake, 'send')).toEqual([]);
+};
+
+it('queues the file text in the inbox of a receiver with a live lease', async () => {
   const fake = createHcFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
 
-  fake.reply('get', terminalReply('t7'));
-  fake.reply('send', JSON.stringify({ turn: 3, started: true }));
+  fake.reply('get', leasedReply('t7', liveLease()));
+  fake.reply('label', terminalReply('t7'));
 
   const result = await sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file });
 
-  expect(result).toEqual({ status: 'started', terminal: 't7', turn: 3 });
-  expect(sendArguments(fake)).toEqual([['send', '--json', '--', 't7', 'Next steps\n']]);
-  expectNoForceOrWait(fake);
+  expect(result).toMatchObject({ status: 'queued', terminal: 't7' });
+  expect(result.messageId).toMatch(/^[0-9a-f-]{36}$/);
+
+  const envelopePath = join(root, '.tau', 'inbox', `${result.messageId}.json`);
+  const envelope = JSON.parse(await readFile(envelopePath, 'utf8')) as Record<string, unknown>;
+
+  expect(await inboxFiles(root)).toEqual([`${result.messageId}.json`]);
+
+  expect(envelope).toMatchObject({
+    family: 'handover',
+    targetTerminal: 't7',
+    text: 'Next steps\n',
+  });
+
+  expect(argumentsOf(fake, 'label')).toEqual([
+    ['label', '--json', '--', 't7', `tau.inbox.${result.messageId}=${envelopePath}`],
+  ]);
+
+  expect(argumentsOf(fake, 'send')).toEqual([]);
 });
 
 it.each([
-  { name: 'false', started: false },
-  { name: 'null', started: null },
-])('reports notStarted when the reply has started $name', async ({ started }) => {
+  { name: 'no lease', reply: () => terminalReply('t7') },
+  { name: 'an expired lease', reply: () => leasedReply('t7', `session-1:${Date.now() - 1}`) },
+])('refuses a receiver with $name and queues nothing', async ({ reply }) => {
   const fake = createHcFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
 
-  fake.reply('get', terminalReply('t7'));
-  fake.reply('send', JSON.stringify({ turn: 4, started }));
-
-  const result = await sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file });
-
-  expect(result).toEqual({ status: 'notStarted', terminal: 't7', turn: 4 });
-  expectNoForceOrWait(fake);
-});
-
-it('reports notStarted when the reply has no started field', async () => {
-  const fake = createHcFake();
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root, 'Next steps\n');
-
-  fake.reply('get', terminalReply('t7'));
-  fake.reply('send', JSON.stringify({ turn: 5 }));
-
-  const result = await sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file });
-
-  expect(result).toEqual({ status: 'notStarted', terminal: 't7', turn: 5 });
-  expectNoForceOrWait(fake);
-});
-
-it('reports blocked without a turn when hc exits with the blocked error', async () => {
-  const fake = createHcFake();
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root, 'Next steps\n');
-
-  const blocked = JSON.stringify({
-    error: { kind: 'blocked', message: 'the terminal is busy' },
-  });
-
-  fake.reply('get', terminalReply('t7'));
-  fake.fail('send', blocked, 9);
-
-  const result = await sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file });
-
-  expect(result).toEqual({ status: 'blocked', terminal: 't7' });
-  expect(sendArguments(fake)).toHaveLength(1);
-  expectNoForceOrWait(fake);
-});
-
-it('rethrows other hc errors from the send', async () => {
-  const fake = createHcFake();
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root, 'Next steps\n');
-  const notFound = JSON.stringify({ error: { kind: 'not_found', message: 'gone' } });
-
-  fake.reply('get', terminalReply('t7'));
-  fake.fail('send', notFound, 2);
+  fake.reply('get', reply());
 
   await expect(sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file })).rejects.toThrow(
-    'gone',
+    /handover start/,
   );
 
-  expect(sendArguments(fake)).toHaveLength(1);
-  expectNoForceOrWait(fake);
+  await expectNothingQueued(fake, root);
 });
 
-it('refuses a file outside the handovers directory without sending', async () => {
+it('refuses a receiver on another machine and queues nothing', async () => {
+  const fake = createHcFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  fake.reply('get', leasedReply('machine/t7', liveLease()));
+
+  await expect(
+    sendHandover(runtimeOf(fake), { cwd: root, terminal: 'machine/t7', file }),
+  ).rejects.toThrow(/another machine.*handover start/);
+
+  await expectNothingQueued(fake, root);
+});
+
+it('refuses a file outside the handovers directory and queues nothing', async () => {
   const fake = createHcFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = join(root, 'outside.md');
@@ -148,10 +142,10 @@ it('refuses a file outside the handovers directory without sending', async () =>
     /outside the .tau\/handovers directory/,
   );
 
-  expectNoSend(fake);
+  await expectNothingQueued(fake, root);
 });
 
-it('refuses a symlink that leaves the handovers directory without sending', async () => {
+it('refuses a symlink that leaves the handovers directory and queues nothing', async () => {
   const fake = createHcFake();
   const root = await createTemporaryRepository(onTestFinished);
   const outside = join(root, 'outside.md');
@@ -166,10 +160,10 @@ it('refuses a symlink that leaves the handovers directory without sending', asyn
     sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file: link }),
   ).rejects.toThrow(/outside the .tau\/handovers directory/);
 
-  expectNoSend(fake);
+  await expectNothingQueued(fake, root);
 });
 
-it('refuses an empty file without sending', async () => {
+it('refuses an empty file and queues nothing', async () => {
   const fake = createHcFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, '');
@@ -180,10 +174,10 @@ it('refuses an empty file without sending', async () => {
     /is empty/,
   );
 
-  expectNoSend(fake);
+  await expectNothingQueued(fake, root);
 });
 
-it('refuses a missing file without sending', async () => {
+it('refuses a missing file and queues nothing', async () => {
   const fake = createHcFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = join(root, '.tau', 'handovers', 'absent.md');
@@ -195,10 +189,10 @@ it('refuses a missing file without sending', async () => {
     /does not exist/,
   );
 
-  expectNoSend(fake);
+  await expectNothingQueued(fake, root);
 });
 
-it("refuses the caller's own terminal by address without sending", async () => {
+it("refuses the caller's own terminal by address and queues nothing", async () => {
   const fake = createHcFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
@@ -207,12 +201,12 @@ it("refuses the caller's own terminal by address without sending", async () => {
 
   await expect(
     sendHandover(runtimeOf(fake), { cwd: root, terminal: callerAddress, file }),
-  ).rejects.toThrow(/own terminal/);
+  ).rejects.toThrow(/own terminal.*handover start/);
 
-  expectNoSend(fake);
+  await expectNothingQueued(fake, root);
 });
 
-it("refuses the caller's own terminal by name without sending", async () => {
+it("refuses the caller's own terminal by name and queues nothing", async () => {
   const fake = createHcFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
@@ -221,12 +215,12 @@ it("refuses the caller's own terminal by name without sending", async () => {
 
   await expect(
     sendHandover(runtimeOf(fake), { cwd: root, terminal: 'worker', file }),
-  ).rejects.toThrow(/own terminal/);
+  ).rejects.toThrow(/own terminal.*handover start/);
 
-  expectNoSend(fake);
+  await expectNothingQueued(fake, root);
 });
 
-it('sends nothing when the caller aborts while the terminal lookup is pending', async () => {
+it('queues nothing when the caller aborts while the terminal lookup is pending', async () => {
   const fake = createHcFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
@@ -242,8 +236,8 @@ it('sends nothing when the caller aborts while the terminal lookup is pending', 
     return result;
   };
 
-  fake.reply('get', terminalReply('t7'));
-  fake.reply('send', JSON.stringify({ turn: 3, started: true }));
+  fake.reply('get', leasedReply('t7', liveLease()));
+  fake.reply('label', terminalReply('t7'));
 
   const runtime = { exec, connect: fake.connect, cwd: '/repository', signal: controller.signal };
 
@@ -251,5 +245,5 @@ it('sends nothing when the caller aborts while the terminal lookup is pending', 
     name: 'AbortError',
   });
 
-  expectNoSend(fake);
+  await expectNothingQueued(fake, root);
 });

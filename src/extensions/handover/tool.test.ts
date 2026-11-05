@@ -230,16 +230,22 @@ it('accepts the send action with its terminal and file in the parameters Pi vali
   );
 });
 
-it('sends the handover file through hc and returns the status as JSON text', async () => {
+it('queues the handover file and returns the queued result as JSON text', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const fake = createHcFake();
   const file = join(root, '.tau', 'handovers', 'message.md');
+  const lease = `session-1:${Date.now() + 60_000}`;
 
   vi.stubEnv('HC_TERMINAL_ID', 'caller');
   await mkdir(join(root, '.tau', 'handovers'), { recursive: true });
   await writeFile(file, 'Next steps\n');
-  fake.reply('get', JSON.stringify({ address: 't7', state: 'live', labels: {} }));
-  fake.reply('send', JSON.stringify({ turn: 3, started: true }));
+
+  fake.reply(
+    'get',
+    JSON.stringify({ address: 't7', state: 'live', labels: { 'tau.inbox': lease } }),
+  );
+
+  fake.reply('label', JSON.stringify({ address: 't7', state: 'live', labels: {} }));
 
   const result = await createHandoverTool(runtimeOf(fake)).execute(
     'call',
@@ -249,13 +255,12 @@ it('sends the handover file through hc and returns the status as JSON text', asy
     noUiContext(root),
   );
 
-  expect(result.details).toEqual({ status: 'started', terminal: 't7', turn: 3 });
+  expect(result.details).toMatchObject({ status: 'queued', terminal: 't7' });
+  expect(Object.keys(result.details)).toEqual(['status', 'terminal', 'messageId']);
 
-  expect(JSON.parse(result.content[0]?.type === 'text' ? result.content[0].text : '')).toEqual({
-    status: 'started',
-    terminal: 't7',
-    turn: 3,
-  });
+  expect(JSON.parse(result.content[0]?.type === 'text' ? result.content[0].text : '')).toEqual(
+    result.details,
+  );
 });
 
 it('refuses a send without a terminal before any hc call', async () => {

@@ -117,7 +117,7 @@ export const createHandoverTool = (
     label: 'Handover',
     description: `Prepare, send, and start handover messages.
 - action prepare: creates .tau/handovers in the checkout or bare repository root. Returns {directory}, an absolute path. Reuses an existing directory.
-- action send: sends the file's text to terminal with hc send, never forced or waiting. Needs terminal (hc address or name) and file (from prepare). Returns {status, terminal, turn}: started, notStarted, or blocked (the receiver waits on its user; no turn).
+- action send: queues a copy of the file's current text in the inbox of the Pi session at terminal. Needs terminal (hc address or name) and file (from prepare). Returns {status: queued, terminal, messageId}. Queued means the message waits in the receiver's inbox; it is not a delivery receipt. Throws when the receiver is not listening; nothing is queued then.
 - action start: opens a Pi tab with the file's text as its task. Needs file and folder, plus space or name. Returns {reply}, herdr-app's output.`,
     promptSnippet: 'Prepare, send, and start handover messages.',
     parameters,
