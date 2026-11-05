@@ -13,6 +13,9 @@ export interface EventWatchOptions {
   scan: () => Promise<void>;
   isRelevant: (event: HcEvent) => boolean;
   notify: (message: string, key: string) => void;
+  // Called after each ready subscription, before its first scan, and when that subscription closes.
+  onReady?: (() => void) | undefined;
+  onClose?: (() => void) | undefined;
 }
 
 // The generation that last reported a close or a lasting outage. A generation changes after a
@@ -121,6 +124,7 @@ export const createEventWatch = (options: EventWatchOptions): EventWatch => {
 
         attempt = 0;
         generation += 1;
+        options.onReady?.();
         requestScan();
       },
       onEvent: (event: HcEvent) => {
@@ -138,6 +142,7 @@ export const createEventWatch = (options: EventWatchOptions): EventWatch => {
         }
 
         subscription = undefined;
+        options.onClose?.();
 
         if (stopped) {
           return;

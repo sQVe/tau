@@ -4,6 +4,14 @@ export type LeaseVerdict =
   | { kind: 'absent' }
   | { kind: 'malformed' };
 
+export type LeaseOwnership = 'own' | 'other-live' | 'claimable';
+
+export interface LeaseOwnershipFacts {
+  observed: string | undefined;
+  sessionId: string;
+  now: number;
+}
+
 // The envelope schema's check rejects a longer value, so a lease that carries one cannot be queued.
 const sessionIdLimit = 500;
 
@@ -43,4 +51,17 @@ export const judgeLease = (label: string | undefined, now: number): LeaseVerdict
   }
 
   return { kind: 'live', sessionId, expiresAt };
+};
+
+// A live lease with this session's ID is ours even when the exact expiry differs, such as a value a
+// previous process wrote. Only another session's live lease counts as lost.
+export const judgeLeaseOwnership = (facts: LeaseOwnershipFacts): LeaseOwnership => {
+  const { observed, sessionId, now } = facts;
+  const verdict = judgeLease(observed, now);
+
+  if (verdict.kind !== 'live') {
+    return 'claimable';
+  }
+
+  return verdict.sessionId === sessionId ? 'own' : 'other-live';
 };

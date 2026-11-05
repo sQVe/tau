@@ -4,7 +4,7 @@ import { decideDeliveryStep } from './deliveryStep.js';
 
 type WakeContext = Pick<ExtensionContext, 'isIdle' | 'signal'>;
 
-interface WakeMessage {
+export interface WakeMessage {
   customType: string;
   content: string;
   display: boolean;

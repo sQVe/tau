@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { judgeLease } from './leaseDecision.js';
+import { judgeLease, judgeLeaseOwnership } from './leaseDecision.js';
 
 it.each([
   { case: 'a live lease', label: 'session-1:2000', now: 1000, kind: 'live' },
@@ -51,4 +51,44 @@ it('keeps the session id and expiry of a live lease', () => {
     sessionId: 'session-1',
     expiresAt: 2000,
   });
+});
+
+it.each([
+  {
+    case: 'a live lease with this session ID',
+    facts: { observed: 's1:2000', sessionId: 's1', now: 1000 },
+    ownership: 'own',
+  },
+  {
+    case: 'another live lease',
+    facts: { observed: 's2:2000', sessionId: 's1', now: 1000 },
+    ownership: 'other-live',
+  },
+  {
+    case: 'an absent lease',
+    facts: { observed: undefined, sessionId: 's1', now: 1000 },
+    ownership: 'claimable',
+  },
+  {
+    case: 'an empty lease',
+    facts: { observed: '', sessionId: 's1', now: 1000 },
+    ownership: 'claimable',
+  },
+  {
+    case: 'an expired lease with this session ID',
+    facts: { observed: 's1:999', sessionId: 's1', now: 1000 },
+    ownership: 'claimable',
+  },
+  {
+    case: 'an expired other lease',
+    facts: { observed: 's2:999', sessionId: 's1', now: 1000 },
+    ownership: 'claimable',
+  },
+  {
+    case: 'a malformed other lease',
+    facts: { observed: 's2:soon', sessionId: 's1', now: 1000 },
+    ownership: 'claimable',
+  },
+])('judges $case as $ownership', ({ facts, ownership }) => {
+  expect(judgeLeaseOwnership(facts)).toBe(ownership);
 });

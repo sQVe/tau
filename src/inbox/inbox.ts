@@ -1,11 +1,27 @@
 import { randomUUID } from 'node:crypto';
 
+import type { SubscribeEvents } from '../hc/events.js';
 import { currentTerminalAddress, get } from '../hc/hc.js';
 import type { HcRuntime } from '../hc/hc.js';
+import type { Wake } from '../wake/wake.js';
 import type { InboxEnvelope } from './envelope.js';
 import { judgeLease } from './leaseDecision.js';
 import type { LeaseVerdict } from './leaseDecision.js';
+import type { InboxScanContext, StartupGate } from './receive.js';
 import { publishEnvelope, setMessageLabel } from './send.js';
+import { createInboxWatch } from './watch.js';
+import type { InboxWatch } from './watch.js';
+
+export type { InboxWatch } from './watch.js';
+
+interface InboxReceiverDependencies {
+  hc: HcRuntime;
+  subscribe: SubscribeEvents;
+  terminal: () => string | undefined;
+  gate: StartupGate;
+  wake: Wake;
+  notify: (context: InboxScanContext, message: string, key: string) => void;
+}
 
 export interface SendInboxRequest {
   hc: HcRuntime;
@@ -21,6 +37,9 @@ export interface SendInboxResult {
   terminal: string;
   messageId: string;
 }
+
+export const createInboxReceiver = (dependencies: InboxReceiverDependencies): InboxWatch =>
+  createInboxWatch(dependencies);
 
 const refuseError = (reason: string): Error =>
   new Error(`${reason} Nothing was queued. Use handover start to open a receiver instead.`);
