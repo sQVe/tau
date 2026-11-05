@@ -57,6 +57,7 @@ const configurationGlobs = [
   '**/Cargo.toml',
   'Cargo.lock',
   '**/build.rs',
+  '.cargo/config',
   '.cargo/config.toml',
   '.config/nextest.toml',
   'rust-toolchain',
