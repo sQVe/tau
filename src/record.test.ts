@@ -21,6 +21,7 @@ const writeState = vi.hoisted(() => ({
   failMidway: false,
   fsyncCalls: 0,
   failFsyncCall: undefined as number | undefined,
+  failUnlink: false,
 }));
 
 const raceState = vi.hoisted(() => ({ path: '', target: '' }));
@@ -38,6 +39,13 @@ vi.mock(import('node:fs'), async (importOriginal) => {
       }
 
       actual.fsyncSync(descriptor);
+    },
+    unlinkSync: (path: Parameters<typeof actual.unlinkSync>[0]) => {
+      if (writeState.failUnlink) {
+        throw new Error('unlink failed');
+      }
+
+      actual.unlinkSync(path);
     },
   };
 });
@@ -83,6 +91,7 @@ const directoryFixture = async () => {
     writeState.failMidway = false;
     writeState.fsyncCalls = 0;
     writeState.failFsyncCall = undefined;
+    writeState.failUnlink = false;
     raceState.path = '';
     raceState.target = '';
   });
@@ -258,6 +267,31 @@ it.each([
   expect(caught).toBeInstanceOf(PublishError);
   expect((caught as PublishError).failure).toBe(row.failure);
   expect(files).toEqual(row.files);
+});
+
+it('reports exists with the link error when removing the receipt file also fails', async () => {
+  const directory = await directoryFixture();
+  const path = join(directory, 'a.json');
+
+  await writeFile(path, 'first');
+
+  writeState.failUnlink = true;
+
+  const caught = (() => {
+    try {
+      publishTextSync(path, 'second', { mode: 0o600 });
+    } catch (error) {
+      return error;
+    }
+
+    return undefined;
+  })();
+
+  expect(caught).toBeInstanceOf(PublishError);
+  expect((caught as PublishError).failure).toBe('exists');
+  expect((caught as PublishError).cause).toMatchObject({ code: 'EEXIST' });
+  expect((caught as PublishError).message).toContain('unlink failed');
+  expect(await readFile(path, 'utf8')).toBe('first');
 });
 
 it('reads the saved version of an object only', () => {

@@ -148,8 +148,8 @@ const fsyncPath = (path: string, flags: string) => {
 export class PublishError extends Error {
   readonly failure: PublishFailure;
 
-  constructor(failure: PublishFailure, cause: unknown) {
-    super(errorMessage(cause), { cause });
+  constructor(failure: PublishFailure, cause: unknown, note = '') {
+    super(`${errorMessage(cause)}${note}`, { cause });
     this.name = 'PublishError';
     this.failure = failure;
   }
@@ -174,24 +174,41 @@ const writeSynced = (descriptor: number, text: string): void => {
   }
 };
 
+const removeAfterFailure = (temporary: string): string => {
+  try {
+    unlinkSync(temporary);
+
+    return '';
+  } catch (error) {
+    return ` Removing ${temporary} also failed: ${errorMessage(error)}`;
+  }
+};
+
 export const publishTextSync = (path: string, text: string, options: { mode: number }): void => {
   const temporary = join(dirname(path), `.receipt-${randomUUID()}`);
   let step: PublishStep = 'write';
+  let descriptor: number;
 
   try {
-    const descriptor = openSync(temporary, 'wx', options.mode);
-
-    try {
-      writeSynced(descriptor, text);
-      step = 'link';
-      linkSync(temporary, path);
-      step = 'linked';
-      fsyncPath(dirname(path), 'r');
-    } finally {
-      unlinkSync(temporary);
-    }
+    descriptor = openSync(temporary, 'wx', options.mode);
   } catch (error) {
     throw new PublishError(publishFailure(step, error), error);
+  }
+
+  try {
+    writeSynced(descriptor, text);
+    step = 'link';
+    linkSync(temporary, path);
+    step = 'linked';
+    fsyncPath(dirname(path), 'r');
+  } catch (error) {
+    throw new PublishError(publishFailure(step, error), error, removeAfterFailure(temporary));
+  }
+
+  try {
+    unlinkSync(temporary);
+  } catch (error) {
+    throw new PublishError('linked', error);
   }
 };
 
