@@ -21,7 +21,6 @@ const makeReadEvent = (): ToolCallEvent => ({
   input: { path: 'missing.txt' },
 });
 
-// Puts the fake hc on PATH outside a terminal and returns a reader of its log.
 const installHcOutsideTerminal = () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-inbox-guard-');
   const { bin, log } = installHcCommand(directory);

@@ -12,7 +12,6 @@ import type { Endpoint } from './endpoint.js';
 let root = '';
 const endpoints: Endpoint[] = [];
 
-// Unix socket paths have a short byte limit, so tests use a short root under /tmp.
 beforeEach(() => {
   root = mkdtempSync('/tmp/tau-endpoint-');
   chmodSync(root, 0o700);
@@ -63,7 +62,6 @@ const exchange = (path: string, chunks: readonly (string | Buffer)[]): Promise<s
 const listenerScript =
   "require('node:net').createServer().listen(process.argv[1], () => process.stdout.write('ready'))";
 
-// A killed owner leaves its socket file behind, and a connect to it is refused.
 const leaveStaleSocket = async (path: string): Promise<void> => {
   const child = spawn(process.execPath, ['-e', listenerScript, path], {
     stdio: ['ignore', 'pipe', 'inherit'],

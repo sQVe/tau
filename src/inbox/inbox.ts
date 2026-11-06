@@ -17,12 +17,8 @@ export interface InboxStartOptions {
   sessionId: string;
   terminal: string;
   directory: string;
-  // Saves a message addressed to this inbox and returns the reply.
   accept: (request: MessageRequest) => Promise<MessageReply>;
-  // Called after a message was queued, so the receiver can drain it.
   onQueued: () => void;
-  // Publish and remove the terminal's advertisement. They run inside the start and stop
-  // transitions, so a withdrawal never interleaves with a replacement's advertisement.
   advertise: (path: string) => Promise<void>;
   withdraw: (path: string) => Promise<void>;
 }
@@ -53,16 +49,12 @@ const slot: InboxSlot = globalThis.tauInboxSlot ?? {
 
 globalThis.tauInboxSlot = slot;
 
-// The extension that owns a family's state sets its check, and the inbox extension reads the checks
-// when it creates the session's receiver.
 export const setAcceptCheck = (family: Family, check: AcceptCheck): void => {
   slot.checks[family] = check;
 };
 
 export const acceptChecks = (): Partial<Record<Family, AcceptCheck>> => slot.checks;
 
-// Tau and a worker's command line can both load the inbox extension, so only the first load of an
-// extension set registers. A shutdown, which precedes a reload, releases the claim.
 export const claimRegistration = (): boolean => {
   if (slot.registered) {
     return false;
@@ -77,7 +69,6 @@ export const releaseRegistration = (): void => {
   slot.registered = false;
 };
 
-// Runs start and stop one at a time, so a replacement binds only after the earlier one closed.
 const serialize = <T>(work: () => Promise<T>): Promise<T> => {
   const next = slot.transition.then(work, work);
 
@@ -158,6 +149,5 @@ const open = async (options: InboxStartOptions): Promise<InboxListener> => {
   };
 };
 
-// Closes an earlier listener first, also when no shutdown ran between two session starts.
 export const startInbox = (options: InboxStartOptions): Promise<InboxListener> =>
   serialize(() => open(options));

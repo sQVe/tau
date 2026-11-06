@@ -8,11 +8,9 @@ interface ReceiptIdentity {
   sessionId: string;
 }
 
-// An answer's receipt names its question, so a resumed worker knows which wait it ended.
 export type InboxReceipt = ReceiptIdentity &
   ({ family: 'handover' } | { family: 'answer'; questionId?: string });
 
-// A message Pi started has no entry type, so the message and the saved entry share this reader.
 interface InboxMessageFact {
   customType?: string | undefined;
   details?: unknown;
@@ -37,7 +35,6 @@ const isFamily = (value: unknown): value is Family => families.some((family) => 
 const questionDetails = (questionId: unknown): { questionId?: string } =>
   typeof questionId === 'string' ? { questionId } : {};
 
-// A newer or malformed receipt is skipped, so it never hides the valid ones beside it.
 const readInboxMessage = (message: InboxMessageFact): InboxReceipt | undefined => {
   if (message.customType !== inboxMessageType || !isRecord(message.details)) {
     return undefined;

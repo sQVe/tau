@@ -28,8 +28,6 @@ interface Entry {
   details?: unknown;
 }
 
-// Holds every record read after the first until the test releases it. The first read is the
-// duplicate check before saving; a later one is the drain's, so a replacement can start during it.
 const readHold = vi.hoisted(() => ({
   held: undefined as Promise<void> | undefined,
   reads: 0,
@@ -119,7 +117,6 @@ const startReceiver = async (sessionId: string) => {
   await emit('session_start');
   cleanups.push(() => emit('session_shutdown'));
 
-  // Pi saves a displayed custom message as a session entry; that entry is the receipt.
   const saveReceipts = () => {
     for (const [message] of fake.sendMessage.mock.calls) {
       entries.push({
@@ -357,7 +354,6 @@ it('wakes nothing when the session shuts down during a record read', async () =>
   expect(receiver.sendMessage).not.toHaveBeenCalled();
 });
 
-// A receiver used without the extension, for one session that accepts the given families.
 const directReceiver = (sessionId: string, accepts: ReceiverOptions['accepts']) => {
   const woken: unknown[] = [];
 

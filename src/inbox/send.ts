@@ -10,14 +10,10 @@ import { decideTarget } from './targetDecision.js';
 
 export interface InboxSendRequest {
   hc: HcRuntime;
-  // The hc address or name of the receiving terminal.
   target: string;
   body: MessageBody;
-  // An explicit retry passes the ID an earlier send returned; a new message omits it.
   messageId?: string | undefined;
-  // The session of the earlier unknown result; a retry is refused when the receiver changed session.
   sessionId?: string | undefined;
-  // Ends every refusal message, such as the action that replaces a refused send.
   refusal: string;
 }
 
@@ -26,7 +22,6 @@ export interface InboxSendResult {
   terminal: string;
   sessionId: string;
   messageId: string;
-  // Explains an unknown result and how to retry it.
   note?: string;
 }
 
@@ -42,11 +37,8 @@ type Exchange =
 
 const exchangeMilliseconds = 5000;
 
-// One connection carries one request frame and one reply frame. `written` tells whether any request
-// bytes may have reached the receiver.
 const exchange = (path: string, request: string, signal: AbortSignal | undefined) =>
   new Promise<Exchange>((resolve) => {
-    // Aborting destroys the socket, which reports the abort as its error.
     const socket = createConnection({ path, ...(signal === undefined ? {} : { signal }) });
     const chunks: Buffer[] = [];
     let size = 0;
@@ -97,7 +89,6 @@ const exchange = (path: string, request: string, signal: AbortSignal | undefined
     });
   });
 
-// A refusal is definite: the receiver saved nothing.
 const refuse = (request: InboxSendRequest, reason: string): never => {
   throw new Error(`${reason} ${request.refusal}`);
 };
@@ -172,8 +163,6 @@ const deliver = async (
   return { status: 'queued', terminal: reply.terminal, sessionId: reply.sessionId, messageId };
 };
 
-// Returns queued only after the receiver saved the message. Throws when the message was refused or
-// never sent, and returns unknown when it may have been saved.
 export const sendInboxMessage = async (request: InboxSendRequest): Promise<InboxSendResult> => {
   const messageId = request.messageId ?? randomUUID();
 

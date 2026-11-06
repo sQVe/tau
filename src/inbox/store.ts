@@ -15,7 +15,6 @@ export type InboxRead =
   | { kind: 'missing' }
   | { kind: 'malformed'; reason: string };
 
-// `changed`: a record with this message ID holds another message.
 export type SaveOutcome = 'saved' | 'existing' | 'changed';
 
 const recordVersion = 1;
@@ -24,8 +23,6 @@ const recordSchema = withBody({ version: Type.Literal(recordVersion), messageId:
 
 const recordOptions = { label: 'inbox record', version: recordVersion, schema: recordSchema };
 
-// The record holds the request's payload with JSON escapes and a few small fields, so twice the
-// frame limit bounds every record a valid request can produce.
 const recordByteLimit = 2 * requestByteLimit;
 
 const recordPath = (directory: string, messageId: string): string =>
@@ -56,7 +53,6 @@ export const readMessage = async (directory: string, messageId: string): Promise
 const sameMessage = (saved: InboxRead, record: InboxRecord): boolean =>
   saved.kind === 'record' && JSON.stringify(saved.record) === JSON.stringify(record);
 
-// Saves once; a record already saved under the message ID is never replaced.
 export const saveMessage = async (directory: string, record: InboxRecord): Promise<SaveOutcome> => {
   await mkdir(directory, { recursive: true, mode: 0o700 });
 
@@ -71,7 +67,6 @@ export const saveMessage = async (directory: string, record: InboxRecord): Promi
   return 'saved';
 };
 
-// Lists saved records by message ID. Temporary files never match.
 export const pendingMessages = async (directory: string): Promise<string[]> => {
   try {
     const names = await readdir(directory);

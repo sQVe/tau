@@ -15,7 +15,6 @@ import { createInboxExtension } from './inbox.js';
 interface HcState {
   labels: Map<string, string>;
   failLabel: boolean;
-  // Runs after `hc get` read the labels and before it returns them.
   afterRead?: (() => Promise<void>) | undefined;
 }
 
@@ -44,7 +43,6 @@ afterEach(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-// Answers `hc get` and `hc label` for terminal t7 from one label map.
 const hcExec = (state: HcState): Exec => {
   const terminal = () =>
     JSON.stringify({ address: 't7', state: 'live', labels: Object.fromEntries(state.labels) });
@@ -144,7 +142,6 @@ const startHarness = (options: HarnessOptions = {}) => {
 
 const socketOf = (sessionId: string): string => join(root, 'sockets', `${sessionId}.sock`);
 
-// Sends a string as raw bytes and any other value as one JSON frame.
 const exchange = (path: string, request: unknown): Promise<unknown> =>
   new Promise((resolve, reject) => {
     const frame = typeof request === 'string' ? request : `${JSON.stringify(request)}\n`;
@@ -534,8 +531,6 @@ it('keeps the label a replacement wrote while an earlier shutdown was reading it
 
   const starting = replacement.start(second);
 
-  // Without ordering, the replacement advertises while the read is held. With ordering it waits
-  // for the shutdown, so the read is released after a bounded real wait instead.
   await Promise.race([
     starting,
     new Promise((resolve) => {

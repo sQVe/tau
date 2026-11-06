@@ -36,7 +36,6 @@ afterEach(async () => {
 
 const startReceiver = (terminal: string) => startHandoverReceiver(onTestFinished, root, terminal);
 
-// Answers `hc get` with one terminal snapshot.
 const hcFor = (terminal: Record<string, unknown>): HcRuntime => ({
   exec: () => Promise.resolve(succeededResult(JSON.stringify(terminal))),
   connect: () => Promise.reject(new Error('no connect')),
@@ -57,7 +56,6 @@ const liveTarget = (path: string) => ({
   labels: { 'tau.inbox': `rpc1:${path}` },
 });
 
-// A socket server for session `sessionId` that runs `answer` once the client finished its request.
 const scriptedServer = async (
   sessionId: string,
   answer: (socket: Socket, request: string) => void,

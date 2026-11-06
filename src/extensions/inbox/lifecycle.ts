@@ -22,7 +22,6 @@ export interface InboxLifecycleDependencies {
   hc: HcRuntime;
   terminal: () => string | undefined;
   socketDirectory: () => string;
-  // Holds one directory of pending handover records per receiver session.
   inboxDirectory: () => string;
   gate: StartupGate;
   wake: Wake;
@@ -35,14 +34,12 @@ interface Generation {
   receiver: Receiver | undefined;
 }
 
-// Only a worker receives answers, so another session ignores the checks a worker extension set.
 const familyChecks = () => (isWorkerProcess() ? acceptChecks() : {});
 
 const notifyError = (context: ExtensionContext, message: string): void => {
   context.ui.notify(message, 'error');
 };
 
-// Removes the label only while it still names this listener's socket.
 const removeOwnLabel = async (hc: HcRuntime, address: string, path: string): Promise<void> => {
   const terminal = await get(hc, address);
 
@@ -68,7 +65,6 @@ export const registerInboxLifecycle = (
     await current.receiver?.deliver(signal);
   };
 
-  // Drains run one at a time, and each drain belongs to the generation that requested it.
   const requestDrain = (current: Generation, context: ExtensionContext): void => {
     current.drain = current.drain
       .then(() => deliverAll(current))
@@ -136,7 +132,6 @@ export const registerInboxLifecycle = (
     endGeneration();
     await withdraw().catch(() => undefined);
 
-    // The first drain waits for the ended one, so two generations never deliver at once.
     const current: Generation = {
       controller: new AbortController(),
       sessionId: context.sessionManager.getSessionId(),
@@ -157,7 +152,6 @@ export const registerInboxLifecycle = (
     requestDrain(current, context);
   });
 
-  // A finished run may have saved receipts, so the drain can delete delivered records.
   pi.on('agent_end', (_event, context) => {
     if (generation !== undefined) {
       requestDrain(generation, context);

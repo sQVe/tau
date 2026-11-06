@@ -27,8 +27,6 @@ const differsFromShown = (
       entry.content !== answer,
   );
 
-// The answer's message ID is its question ID, so a second pending answer to one question is saved
-// under the same ID and refused as different content.
 export const workerAnswerRefusal = ({
   assignment,
   request,

@@ -1,8 +1,6 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 export interface StartupGate {
-  // Rejects when the signal aborts. A wait from an ended generation never resolves, so it never
-  // runs into its replacement.
   whenReady: (signal: AbortSignal) => Promise<void>;
   isReady: () => boolean;
 }

@@ -28,7 +28,6 @@ export interface WorkerSessionOptions {
   command?: { source: string };
   timeoutSeconds?: number;
   prepareWorker?: (workerDirectory: string) => void;
-  // Loads the Tau package in the worker, as a loadout that installs Tau does.
   tauPackage?: boolean;
   // Runs after the manager terminal exists and HC_TERMINAL_ID points at it, before the worker.
   beforeLaunch?: (managerAddress: string) => Promise<void>;
@@ -150,8 +149,6 @@ const writeFixtureProfile = (
   );
 };
 
-// The manager context the launch reads. Tau's resolver reads the loadout from the fixture profile
-// and tau.json, so only the model registry is faked.
 const launchContext = (
   model: { provider: string; id: string },
   workerDirectory: string,

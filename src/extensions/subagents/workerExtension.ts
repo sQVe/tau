@@ -52,7 +52,6 @@ interface WorkerState {
   runError: string | undefined;
   questionAsked: boolean;
   startInput: WorkerStartInput;
-  // Orders question, report, and answer acceptance, so each sees the others' saves.
   steps: Promise<unknown>;
   branch: () => readonly SessionEntry[];
 }

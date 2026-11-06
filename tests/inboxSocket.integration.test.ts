@@ -32,35 +32,26 @@ interface ReceiverSession {
   session: AgentSession;
   terminal: string;
   sessionId: string;
-  // The socket path the receiver advertises.
   path: string;
   socketRoot: string;
-  // Names of the receiver's saved records.
   savedRecords: () => string[];
-  // How many times Pi saved message `messageId` as an inbox entry.
   shownCount: (messageId: string) => number;
 }
 
 interface StartupHold {
-  // Holds the first session start after the inbox extension's handler, so the inbox listens while
-  // its startup gate stays closed.
   extension: (pi: ExtensionAPI) => void;
-  // Resolves once the inbox listens and the first session start is held.
   reached: Promise<void>;
   release: () => void;
 }
 
 interface HeldProvider {
   provider: FauxProviderHandle;
-  // Resolves when Pi asks the model for its first reply.
   called: Promise<void>;
   release: () => void;
 }
 
-// /proc/net/unix lists Unix sockets only on Linux.
 const onLinux = process.platform === 'linux';
 
-// A listening socket has the accept flag 00010000 in /proc/net/unix.
 const listenerCount = (path: string): number =>
   readFileSync('/proc/net/unix', 'utf8')
     .split('\n')
@@ -117,8 +108,6 @@ const startupHold = (): StartupHold => {
   };
 };
 
-// Starts a real Pi session in a live hc terminal with the inbox extension, which listens on a
-// private socket directory and saves records beside it.
 const startReceiverSession = async (
   finished: typeof onTestFinished,
   provider: FauxProviderHandle,
@@ -131,7 +120,6 @@ const startReceiverSession = async (
     await kill(hc.runtime, terminal).catch(() => undefined);
   });
 
-  // Unix socket paths have a short byte limit, so the socket directory sits directly in /tmp.
   const socketRoot = mkdtempSync('/tmp/tau-inbox-');
 
   chmodSync(socketRoot, 0o700);
@@ -164,7 +152,6 @@ const startReceiverSession = async (
 
   expect(extensionsResult.errors).toEqual([]);
 
-  // Pi's reload emits session_start only for a session with bindings.
   const bound = session.bindExtensions({ onError: () => undefined });
 
   await (hold === undefined ? bound : hold.reached);
@@ -198,7 +185,6 @@ const startReceiverSession = async (
   };
 };
 
-// A provider whose first reply waits until the test releases it.
 const heldProvider = (): HeldProvider => {
   const provider = fauxProvider();
   const called = Promise.withResolvers<undefined>();
@@ -222,7 +208,6 @@ const heldProvider = (): HeldProvider => {
   };
 };
 
-// The test process sends as another terminal, because a session refuses its own terminal.
 const sendHandover = (receiver: ReceiverSession, messageId?: string) => {
   vi.stubEnv('HC_TERMINAL_ID', undefined);
 
@@ -235,13 +220,9 @@ const sendHandover = (receiver: ReceiverSession, messageId?: string) => {
   });
 };
 
-// Forwards each request to `target`. Once the receiver's whole reply reached the proxy, it records
-// the reply and destroys the sender's connection, so the reply is lost after the receiver saved the
-// message. Returns the replies the proxy dropped.
 const startReplyDroppingProxy = async (path: string, target: string): Promise<string[]> => {
   const dropped: string[] = [];
 
-  // A half-open sender connection stays open after the request's end, until the reply arrived.
   const server = createServer({ allowHalfOpen: true }, (sender: Socket) => {
     const chunks: Buffer[] = [];
 
@@ -292,8 +273,6 @@ it.skipIf(!onLinux)(
 
     const messageId = randomUUID();
 
-    // The inbox checks the target before the family, so this refusal comes from this session's
-    // listener, and nothing is saved or shown.
     const answer = {
       protocol: 'rpc1',
       kind: 'message',
@@ -346,10 +325,8 @@ it.skipIf(!onLinux)(
 
     expect(sent).toMatchObject({ status: 'queued', sessionId: receiver.sessionId });
 
-    // Delivery would show the message well within this time if the startup gate were open.
     await delay(500);
 
-    // The startup gate is still closed, so the receiver saved the message and showed nothing.
     expect({
       records: receiver.savedRecords(),
       shown: receiver.shownCount(sent.messageId),
@@ -435,7 +412,6 @@ it.skipIf(!onLinux)(
 
     mkdirSync(staleDirectory, { mode: 0o700 });
 
-    // A listener killed without cleanup leaves a socket file that refuses connections.
     const stalePath = join(staleDirectory, `${sessionId}.sock`);
 
     spawnSync(process.execPath, [

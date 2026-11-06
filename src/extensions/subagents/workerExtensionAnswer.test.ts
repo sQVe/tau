@@ -23,7 +23,6 @@ const startWorker = async () => {
 
   await writeAssignment(assignment);
 
-  // The worker resumes waiting on its saved question.
   Object.assign(worker.context.sessionManager, {
     getBranch: () => [
       { type: 'message', message: { role: 'toolResult', toolName: 'subagent_question' } },

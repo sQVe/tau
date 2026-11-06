@@ -16,7 +16,6 @@ export interface AnswerRequest {
 const restartRecovery =
   'Nothing was queued. A worker without a live inbox needs a restart on a current Tau before it can get an answer.';
 
-// The worker checks the question again when the answer arrives; this check gives early feedback.
 const checkAnswerable = async (request: AnswerRequest): Promise<void> => {
   const { assignmentId, questionId } = request.parameters;
   const assignment = await readAssignment(assignmentPath(assignmentId));
@@ -70,7 +69,6 @@ const resultText = (sent: InboxSendResult): string =>
     ? `Queued the answer for ${sent.terminal} as message ${sent.messageId}. Queued is not a read receipt. End your turn to wait for the worker.`
     : (sent.note ?? `Acceptance unknown for message ${sent.messageId}.`);
 
-// The message ID is the question ID, so a repeated answer reaches the worker as the same message.
 export const executeAnswer = async (
   hc: HcRuntime,
   request: AnswerRequest,

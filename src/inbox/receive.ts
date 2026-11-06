@@ -12,19 +12,15 @@ interface InboxMessage {
   details: unknown;
 }
 
-// Returns why a message is refused, or the reply of `save`. A check that holds its own lock while
-// `save` runs keeps its check and the save one step.
 export type AcceptCheck = (
   request: MessageRequest,
   save: () => Promise<MessageReply>,
 ) => Promise<MessageReply | string>;
 
 export interface ReceiverOptions {
-  // The session's own record directory.
   directory: string;
   terminal: string;
   sessionId: string;
-  // The families this session accepts; a message of any other family is refused.
   accepts: Partial<Record<Family, AcceptCheck>>;
   receipts: ReceiptStore;
   entries: () => readonly ReceiptEntryFact[];
@@ -32,8 +28,6 @@ export interface ReceiverOptions {
   notify: (message: string) => void;
 }
 
-// `accept` saves a request and returns the reply the socket sends; it never waits on the startup
-// gate. `deliver` runs later from the drain, with the signal of the generation that requested it.
 export interface Receiver {
   accept: (request: MessageRequest) => Promise<MessageReply>;
   deliver: (signal: AbortSignal) => Promise<void>;
@@ -47,7 +41,6 @@ const queuedReply = (options: ReceiverOptions, messageId: string): MessageReply 
   sessionId: options.sessionId,
 });
 
-// Narrowing on the family keeps each payload paired with its own family.
 const bodyOf = (request: MessageRequest): MessageBody =>
   request.family === 'handover'
     ? { family: 'handover', payload: request.payload }
@@ -58,8 +51,6 @@ const save = async (options: ReceiverOptions, request: MessageRequest): Promise<
 
   options.receipts.restore(options.entries());
 
-  // A receipted message was shown already, and its record may be gone, so a retry must not save
-  // it again.
   if (options.receipts.hasReceipt(messageId)) {
     return queuedReply(options, messageId);
   }
@@ -151,7 +142,6 @@ const deliverOne = async (
 
   const read = await readMessage(directory, messageId);
 
-  // A replacement generation owns delivery once this one ended during the read.
   if (signal.aborted || read.kind === 'missing') {
     return;
   }
@@ -168,12 +158,8 @@ const deliverOne = async (
   wakeOnce(options, messageId, read.record);
 };
 
-// Accepting saves the record and replies; delivery shows each saved record once and deletes it only
-// after Pi saved its receipt.
 export const createReceiver = (options: ReceiverOptions): Receiver => {
   const reported = new Set<string>();
-  // The socket can hand over overlapping connections. Accepting one at a time lets the check
-  // before a save see every earlier save.
   let accepting: Promise<unknown> = Promise.resolve();
 
   return {

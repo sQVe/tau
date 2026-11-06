@@ -28,7 +28,6 @@ export interface Endpoint {
 
 type ProbeResult = 'live' | 'refused' | 'missing';
 
-// macOS limits a socket path to 104 bytes, including the terminating NUL.
 const socketPathByteLimit = 103;
 
 const readMilliseconds = 5000;
@@ -175,7 +174,6 @@ const unlinkIfPresent = async (path: string): Promise<void> => {
   }
 };
 
-// Binds first. Only a refused connect proves a dead owner, so only then is the file removed.
 const bind = async (server: Server, path: string): Promise<void> => {
   try {
     await listen(server, path);
@@ -264,8 +262,6 @@ const closeServer = (server: Server): Promise<void> =>
     });
   });
 
-// Node unlinks the bound path on close; the unlink after it covers runtimes that leave the file.
-// `closed` settles once open connections end.
 const stopListening = async (server: Server, path: string): Promise<{ closed: Promise<void> }> => {
   const closed = closeServer(server);
 
@@ -287,7 +283,6 @@ const settleWithin = async (work: Promise<unknown>, milliseconds: number): Promi
 
 export const openEndpoint = async (options: EndpointOptions): Promise<Endpoint> => {
   const { path, respond } = options;
-  // The sender half-closes after its request, and the reply still has to go out.
   const server = createServer({ allowHalfOpen: true });
   const sockets = new Set<Socket>();
   const pending = new Set<Promise<void>>();

@@ -24,7 +24,6 @@ export type Family = (typeof families)[number];
 
 export const inboxLabelKey = 'tau.inbox';
 
-// Escaped JSON counts toward the limit, because the bound is on encoded bytes.
 export const requestByteLimit = 102_400;
 
 export const replyByteLimit = 4096;
@@ -65,7 +64,6 @@ type WithBody<Fields extends TProperties> = TUnion<
   [TObject<Fields & typeof handoverBody>, TObject<Fields & typeof answerBody>]
 >;
 
-// Builds one object schema per family from shared fields, so `family` picks the payload shape.
 export const withBody = <Fields extends TProperties>(fields: Fields): WithBody<Fields> =>
   Type.Union([
     Type.Object({ ...fields, ...handoverBody }, strict),
@@ -142,7 +140,6 @@ const parseJson = (text: string): unknown => {
   }
 };
 
-// Reads one newline-terminated JSON object, the whole of a connection's input.
 const decodeFrame = (bytes: Uint8Array, limit: number): FrameDecision<unknown> => {
   if (bytes.length > limit) {
     return { kind: 'refused', reason: oversizedReason(limit) };

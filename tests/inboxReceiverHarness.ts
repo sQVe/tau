@@ -9,16 +9,12 @@ import type { ReceiverOptions } from '../src/inbox/inbox.js';
 
 export interface HandoverReceiver {
   sessionId: string;
-  // The socket path a `tau.inbox` label names.
   path: string;
-  // Paths of saved records, relative to the record root.
   savedRecords: () => string[];
 }
 
 const acceptHandovers: ReceiverOptions['accepts'] = { handover: (_request, save) => save() };
 
-// Starts a real inbox for terminal `terminal` that saves the accepted families below `root` and
-// shows nothing. `root` must be a private directory with a short path, because it holds the socket.
 export const startHandoverReceiver = async (
   finished: typeof onTestFinished,
   root: string,

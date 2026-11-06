@@ -30,8 +30,6 @@ export const firstTaskMarker = 'fixture-first-task-marker';
 
 export const followUpTaskMarker = 'fixture-follow-up-marker';
 
-// With this marker, the worker reports only after the test creates the release file in its
-// working directory, so the question stays open after the answer arrives.
 export const holdReportTaskMarker = 'fixture-holds-the-report';
 
 export const reportReleaseFile = 'fixture-release-report';
@@ -129,7 +127,6 @@ const contentText = (content: string | (TextContent | ImageContent)[]): string =
         .map((block) => block.text)
         .join('\n');
 
-// Pi passes the inbox answer to the model as the latest user message.
 const managerAnswer = (context: TranscriptContext): string => {
   const userMessages = context.messages.filter((message) => message.role === 'user');
   const answer = userMessages.at(-1);

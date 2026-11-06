@@ -400,7 +400,6 @@ it('keeps registered pure modules free of reads and effects', () => {
   expect(found, pureAdvice).toEqual([]);
 });
 
-// Each versioned record format: the module that writes it and its frozen fixtures.
 const versionedRecords = [
   { writer: 'src/inbox/store.ts', fixtures: 'src/inbox/fixtures/handover' },
 ];

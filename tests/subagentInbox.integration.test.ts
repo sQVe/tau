@@ -34,7 +34,6 @@ interface SessionLine {
 
 vi.setConfig({ testTimeout: 120_000 });
 
-// Inbox answer entries in a worker's saved session file.
 const savedAnswerEntries = (sessionFile: string): AnswerEntry[] =>
   readFileSync(sessionFile, 'utf8')
     .split('\n')
@@ -63,7 +62,6 @@ const resultText = (result: Awaited<ReturnType<typeof executeAnswer>>): string =
 
 const recordDirectory = (agentDirectory: string): string => join(agentDirectory, 'tau', 'inbox');
 
-// Saved records below the per-session directories, which stay after their records are deleted.
 const savedRecords = (agentDirectory: string): string[] => {
   try {
     return readdirSync(recordDirectory(agentDirectory), { recursive: true })
@@ -120,7 +118,6 @@ it('queues an answer on the worker socket, shows it once, and leaves the assignm
     { timeout: 30_000 },
   );
 
-  // The worker holds its report, so the question is still open and only the text differs.
   const conflicting = await answerQuestion(hc, asked, 'Use another value.');
 
   expect(conflicting.isError).toBe(true);
@@ -148,7 +145,6 @@ it('queues an answer on the worker socket, shows it once, and leaves the assignm
   expect(savedAnswerEntries(asked.session.file)).toHaveLength(1);
 });
 
-// A worker terminal whose own program idles, so this process can run its Pi session in-process.
 const idleWorkerProgram = { source: 'setInterval(() => undefined, 60_000);\n' };
 
 const safetyPackage = dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json')));
@@ -159,7 +155,6 @@ const workerExtensionPaths = [
   safetyPackage,
 ];
 
-// Points this process's hc calls at the test's core, and makes this process the worker.
 const becomeWorker = (hc: HcSession, worker: WorkerSession): void => {
   for (const [name, value] of Object.entries(hc.environment)) {
     if (name !== 'PATH') {
@@ -238,7 +233,6 @@ it('resumes a saved worker session without waiting once it holds the answer rece
 
   const asked = await waitForQuestion(worker.assignmentFilePath);
 
-  // The reloaded inbox takes the answer, so the worker's answer check survives a reload.
   await session.reload();
 
   vi.stubEnv('HC_TERMINAL_ID', worker.managerAddress);

@@ -107,7 +107,6 @@ it('returns unknown when the receiver closes without a reply, and a retry with t
   const sockets = socketRoot();
   const receiver = await startHandoverReceiver(onTestFinished, sockets, 't7');
 
-  // The receiver cannot create its record directory, so it closes the connection without a reply.
   writeFileSync(join(sockets, 'records'), '');
   fake.reply('get', terminalReply('t7', null, receiver.path));
 

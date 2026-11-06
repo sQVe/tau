@@ -7,7 +7,6 @@ export interface SendHandoverRequest {
   cwd: string;
   terminal: string;
   file: string;
-  // Set only to retry a send whose result was unknown.
   messageId?: string | undefined;
   sessionId?: string | undefined;
 }

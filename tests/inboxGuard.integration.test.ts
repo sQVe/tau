@@ -15,7 +15,6 @@ import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 const packageRoot = fileURLToPath(new URL('../', import.meta.url));
 
-// The extension paths a worker's Pi command line loads, in order, with Tau as its package.
 const workerExtensionPaths = (directory: string): string[] => {
   const commandLine = workerArguments(
     join(directory, 'worker.jsonl'),
@@ -41,7 +40,6 @@ const workerExtensionPaths = (directory: string): string[] => {
   return commandLine.flatMap((word, index) => (commandLine[index - 1] === '-e' ? [word] : []));
 };
 
-// Runs one bash call in a session that loads the given extensions, and returns the tool result.
 const bashResult = async (extensionPaths: (directory: string) => string[], command: string) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-inbox-guard-');
   const { bin, log } = installHcCommand(directory);
@@ -90,7 +88,6 @@ const bashResult = async (extensionPaths: (directory: string) => string[], comma
 const typedSendResult = (extensionPaths: (directory: string) => string[]) =>
   bashResult(extensionPaths, 'cd . && hc keys t1 enter');
 
-// Tool results hold the reason as JSON text.
 const reasonText = JSON.stringify(terminalTypingReason).slice(1, -1);
 
 const refusalOf = ({ results, hcLog }: Awaited<ReturnType<typeof bashResult>>) => ({

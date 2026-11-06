@@ -1,12 +1,10 @@
 import { inboxLabelKey, isUuid, parseInboxLabel } from './protocol.js';
 
 export interface TargetFacts {
-  // The address `hc get` returned, after alias resolution.
   address: string;
   state: string;
   labels: Readonly<Record<string, string>>;
   ownAddress: string | undefined;
-  // A retry names the session of its unknown result, so it never reaches a newer session.
   retrySessionId: string | undefined;
 }
 
@@ -14,10 +12,8 @@ export type TargetDecision =
   | { kind: 'connect'; path: string; sessionId: string }
   | { kind: 'refuse'; reason: string };
 
-// A machine-qualified address such as `machine/t7` names a terminal on another host.
 const isRemote = (address: string): boolean => address.includes('/');
 
-// A socket is named `<session>.sock`, so its path names the session that owns it.
 const socketSession = (path: string): string | undefined => {
   const name = path.slice(path.lastIndexOf('/') + 1);
   const sessionId = name.slice(0, -'.sock'.length);
