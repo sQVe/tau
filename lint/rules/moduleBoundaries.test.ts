@@ -48,6 +48,14 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
       filename: '/repository/src/command.ts',
     },
     {
+      code: "import { withFileLock } from '../fileLock/fileLock.js';\n\nexport const value = withFileLock;",
+      filename: '/repository/src/inbox/endpoint.ts',
+    },
+    {
+      code: "import { startInbox } from '../../inbox/inbox.js';\n\nexport const value = startInbox;",
+      filename: '/repository/src/extensions/inbox/lifecycle.ts',
+    },
+    {
       code: "import { parseModelEntry } from './models.js';\nimport { readConfig } from './config.js';\n\nexport const value = [parseModelEntry, readConfig];",
       filename: '/repository/src/config/allowedModels.ts',
     },
@@ -218,6 +226,16 @@ ruleTester.run('module-boundaries', moduleBoundariesRule, {
       code: "export const load = () => import('./skillTools.js');",
       filename: '/repository/src/command.ts',
       errors: [{ messageId: 'notAllowed' }],
+    },
+    {
+      code: "import { getAgentDirectory } from '../tauDirectory.js';\n\nexport const value = getAgentDirectory;",
+      filename: '/repository/src/inbox/endpoint.ts',
+      errors: [{ messageId: 'notAllowed', data: { source: 'inbox', target: 'tauDirectory' } }],
+    },
+    {
+      code: "import { openEndpoint } from '../../inbox/endpoint.js';\n\nexport const value = openEndpoint;",
+      filename: '/repository/src/extensions/inbox/lifecycle.ts',
+      errors: [{ messageId: 'private', data: { folder: 'inbox', file: 'endpoint' } }],
     },
     {
       code: "import { keys } from '../skillTools.js';\n\nexport const value = keys;",

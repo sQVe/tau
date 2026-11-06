@@ -151,6 +151,8 @@ const pureModules = [
   'src/extensions/tracker/promptLines.ts',
   'src/fileLock/lockHolderDecision.ts',
   'src/github/repositoryTargetDecisions.ts',
+  'src/inbox/protocol.ts',
+  'src/inbox/targetDecision.ts',
   'src/process/stateDecision.ts',
   'src/reviewCapture/coverageDecision.ts',
   'src/reviewCapture/endpointDecision.ts',
@@ -214,6 +216,7 @@ const pureLibraries: Readonly<Record<string, readonly string[]>> = {
   'src/extensions/tdd/inputGlob.ts': ['minimatch'],
   'src/extensions/tdd/runner/junit.ts': ['@xmldom/xmldom'],
   'src/extensions/tdd/runner/report.ts': ['node:path'],
+  'src/inbox/protocol.ts': ['typebox', 'typebox/value'],
   'src/schema.ts': ['typebox', 'typebox/value'],
 };
 
