@@ -6,6 +6,7 @@ import { errorMessage } from '../../errors.js';
 import { get, label } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import {
+  acceptChecks,
   createReceiptStore,
   createReceiver,
   formatInboxLabel,
@@ -14,6 +15,7 @@ import {
 } from '../../inbox/inbox.js';
 import type { InboxListener, Receiver } from '../../inbox/inbox.js';
 import type { Wake } from '../../wake/wake.js';
+import { isWorkerProcess } from '../../worker.js';
 import type { StartupGate } from './startup.js';
 
 export interface InboxLifecycleDependencies {
@@ -32,6 +34,9 @@ interface Generation {
   drain: Promise<void>;
   receiver: Receiver | undefined;
 }
+
+// Only a worker receives answers, so another session ignores the checks a worker extension set.
+const familyChecks = () => (isWorkerProcess() ? acceptChecks() : {});
 
 const notifyError = (context: ExtensionContext, message: string): void => {
   context.ui.notify(message, 'error');
@@ -92,7 +97,7 @@ export const registerInboxLifecycle = (
       directory: join(dependencies.inboxDirectory(), current.sessionId),
       terminal,
       sessionId: current.sessionId,
-      accepts: { handover: () => undefined },
+      accepts: { ...familyChecks(), handover: (_request, save) => save() },
       receipts: createReceiptStore(current.sessionId),
       entries: () => context.sessionManager.getEntries(),
       wake: (message) => {

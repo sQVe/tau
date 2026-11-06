@@ -64,7 +64,7 @@ const deadlineText = (assignmentId: string): string =>
   `Worker ${assignmentId} was ended at its deadline.`;
 
 const questionText = (assignmentId: string, address: string, question: SavedQuestion): string =>
-  `Worker question ${assignmentId} from ${address}:\n\n${question.text}\n\nAnswer with \`hc send ${address} "<answer>"\`. Never use --force. If hc refuses the send, report that to the user and do not force it.`;
+  `Worker question ${assignmentId} from ${address}:\n\n${question.text}\n\nAnswer with \`subagent_answer\` for assignment ${assignmentId}, question ${question.questionId}. If it refuses the answer, report that to the user.`;
 
 const shownKeyFromEntry = (entry: {
   type: string;

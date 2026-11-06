@@ -122,18 +122,19 @@ const contentText = (content: string | (TextContent | ImageContent)[]): string =
         .map((block) => block.text)
         .join('\n');
 
-const typedAnswer = (context: TranscriptContext): string => {
+// Pi passes the inbox answer to the model as the latest user message.
+const managerAnswer = (context: TranscriptContext): string => {
   const userMessages = context.messages.filter((message) => message.role === 'user');
   const answer = userMessages.at(-1);
 
   if (userMessages.length < 2 || answer === undefined) {
-    throw new Error('The fixture question got no typed answer from the manager.');
+    throw new Error('The fixture question got no answer from the manager.');
   }
 
   const text = contentText(answer.content).trim();
 
   if (text === '') {
-    throw new Error('The fixture question got an empty typed answer from the manager.');
+    throw new Error('The fixture question got an empty answer from the manager.');
   }
 
   return text;
@@ -171,7 +172,7 @@ const questionResponses = (): FauxResponseStep[] => [
       fauxToolCall('subagent_report', {
         outcome: 'success',
         summary: fixtureSummary,
-        evidence: [typedAnswer(context)],
+        evidence: [managerAnswer(context)],
       }),
     ]),
 ];

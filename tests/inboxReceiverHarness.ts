@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { onTestFinished } from 'vitest';
 
 import { createReceiptStore, createReceiver, startInbox } from '../src/inbox/inbox.js';
+import type { ReceiverOptions } from '../src/inbox/inbox.js';
 
 export interface HandoverReceiver {
   sessionId: string;
@@ -14,12 +15,15 @@ export interface HandoverReceiver {
   savedRecords: () => string[];
 }
 
-// Starts a real inbox for terminal `terminal` that saves handovers below `root` and shows nothing.
-// `root` must be a private directory with a short path, because it holds the socket.
+const acceptHandovers: ReceiverOptions['accepts'] = { handover: (_request, save) => save() };
+
+// Starts a real inbox for terminal `terminal` that saves the accepted families below `root` and
+// shows nothing. `root` must be a private directory with a short path, because it holds the socket.
 export const startHandoverReceiver = async (
   finished: typeof onTestFinished,
   root: string,
   terminal: string,
+  accepts = acceptHandovers,
 ): Promise<HandoverReceiver> => {
   const sessionId = randomUUID();
   const records = join(root, 'records');
@@ -29,7 +33,7 @@ export const startHandoverReceiver = async (
     directory: join(records, sessionId),
     terminal,
     sessionId,
-    accepts: { handover: () => undefined },
+    accepts,
     receipts: createReceiptStore(sessionId),
     entries: () => [],
     wake: () => undefined,

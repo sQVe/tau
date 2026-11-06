@@ -2,6 +2,8 @@ import type {
   AgentEndEvent,
   ExtensionAPI,
   ExtensionContext,
+  MessageStartEvent,
+  SessionEntry,
   ToolCallEvent,
   ToolCallEventResult,
 } from '@earendil-works/pi-coding-agent';
@@ -17,6 +19,7 @@ import { codemodeGuidelines } from '../../codemode/guidelines.js';
 import { connect } from '../../hc/connect.js';
 import { currentTerminalAddress, readCurrentTerminal } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
+import { setAcceptCheck } from '../../inbox/inbox.js';
 import { instructionSetNames, readInstructionSet } from '../../instructions/instructions.js';
 import { appendSystemPrompt, guidelineLines } from '../../instructions/systemPrompt.js';
 import { skillTools } from '../../skillTools.js';
@@ -30,9 +33,10 @@ import { reportParameters, reportToParent } from './report.js';
 import type { ReportRefusalState, ReportTarget } from './report.js';
 import { remindToReport } from './reportReminder.js';
 import type { Loadout } from './types.js';
+import { workerAnswerRefusal } from './workerAnswer.js';
 import { createWorkerDeadlineWarning } from './workerDeadlineWarning.js';
 import type { WorkerDeadlineWarning } from './workerDeadlineWarning.js';
-import { decideWorkerResume, decideWorkerStart } from './workerResume.js';
+import { answeredQuestionId, decideWorkerResume, decideWorkerStart } from './workerResume.js';
 import type { WorkerStart } from './workerResume.js';
 import { startPromptText } from './workerStart.js';
 import { handleStartInput } from './workerStartInput.js';
@@ -47,7 +51,18 @@ interface WorkerState {
   runError: string | undefined;
   questionAsked: boolean;
   startInput: WorkerStartInput;
+  // Orders question, report, and answer acceptance, so each sees the others' saves.
+  steps: Promise<unknown>;
+  branch: () => readonly SessionEntry[];
 }
+
+const inOrder = <Result>(state: WorkerState, step: () => Promise<Result>): Promise<Result> => {
+  const next = state.steps.then(step, step);
+
+  state.steps = next.catch(() => undefined);
+
+  return next;
+};
 
 const readLoadoutInstructionSets = (loadout: Loadout): Promise<string[]> =>
   Promise.all(
@@ -140,7 +155,9 @@ const registerReportTool = (
         throw new Error('Worker has no loaded assignment to report against.');
       }
 
-      return reportToParent(state.target, argumentsList[1], warning);
+      const { target } = state;
+
+      return inOrder(state, () => reportToParent(target, argumentsList[1], warning));
     },
   });
 };
@@ -160,13 +177,46 @@ const registerQuestionTool = (pi: ExtensionAPI, state: WorkerState): void => {
         throw new Error('Worker has no loaded assignment to ask against.');
       }
 
-      const result = await askParent(state.target, argumentsList[1]);
+      const { target } = state;
 
-      state.questionAsked = true;
+      return inOrder(state, async () => {
+        const result = await askParent(target, argumentsList[1]);
 
-      return result;
+        state.questionAsked = true;
+
+        return result;
+      });
     },
   });
+};
+
+const registerAnswerCheck = (state: WorkerState): void => {
+  setAcceptCheck('answer', (request, save) =>
+    inOrder(state, async () => {
+      await state.ready;
+
+      if (request.family !== 'answer') {
+        return `This check accepts answers, not ${request.family} messages.`;
+      }
+
+      const assignment = state.target?.assignment;
+
+      return workerAnswerRefusal({ assignment, request, branch: state.branch() }) ?? save();
+    }),
+  );
+};
+
+const answersOpenQuestion = (
+  state: WorkerState,
+  message: MessageStartEvent['message'],
+): boolean => {
+  const openQuestionId = state.target?.assignment.questions.at(-1)?.questionId;
+
+  return (
+    message.role === 'custom' &&
+    openQuestionId !== undefined &&
+    answeredQuestionId(message) === openQuestionId
+  );
 };
 
 const registerToolCallHandler = (pi: ExtensionAPI): void => {
@@ -254,7 +304,9 @@ const startWorker = async (
       workerTools(loaded.assignment.loadout, skillTools),
     );
 
-    const resume = decideWorkerResume(context.sessionManager.getBranch(), loaded.assignment);
+    state.branch = () => context.sessionManager.getBranch();
+
+    const resume = decideWorkerResume(state.branch(), loaded.assignment);
     const hasReport = loaded.assignment.report !== null;
 
     state.questionAsked = resume.waitingForQuestion;
@@ -360,6 +412,8 @@ export default function workerExtension(pi: ExtensionAPI): void {
     runError: undefined,
     questionAsked: false,
     startInput: { pending: true, startText: undefined },
+    steps: Promise.resolve(),
+    branch: () => [],
   };
 
   const wake = createWake(pi);
@@ -378,6 +432,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
   registerStartInput(pi, state, deadlineWarning);
   registerReportTool(pi, state, deadlineWarning);
   registerQuestionTool(pi, state);
+  registerAnswerCheck(state);
   registerToolCallHandler(pi);
   registerSystemPromptHandler(pi, state);
   registerSessionSwitchBlock(pi);
@@ -385,7 +440,7 @@ export default function workerExtension(pi: ExtensionAPI): void {
   registerAgentSettledHandler(pi, state);
 
   pi.on('message_start', (event) => {
-    if (event.message.role === 'user') {
+    if (event.message.role === 'user' || answersOpenQuestion(state, event.message)) {
       state.questionAsked = false;
       state.refusal.reminderSent = false;
     }

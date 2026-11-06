@@ -15,6 +15,8 @@ import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
 import { isWorkerProcess } from '../../worker.js';
+import { executeAnswer } from './answer.js';
+import { answerParameters } from './answerParameters.js';
 import { readBrowserLoginCommand } from './browserLogin.js';
 import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.js';
 import { createDeadlineWatchdog } from './deadlineWatchdog.js';
@@ -165,7 +167,7 @@ const registerLaunchTool = (
       ...modelLine,
       'Editing workers require acceptance criteria. Brief them with, when it applies: outcome, scope and non-goals, entry files, decisions already made, baseline, and checks to run. Give the worktree; one editor per worktree. The deadline includes waits and cleanup.',
       'A worker event starts a new turn when a worker reports, asks a question, or stops. End your turn to wait; never sleep or poll.',
-      'Answer a worker question with `hc send <address> "<answer>"`, never `--force`; report a refused send to the user.',
+      'Answer a worker question with `subagent_answer`.',
     ].join(' '),
     parameters: launchParameters,
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
@@ -233,6 +235,26 @@ const registerFollowUpTool = (runtime: LaunchRuntime, scan: WorkerScan): void =>
       startScan(scan, context);
 
       return result;
+    },
+  });
+};
+
+const registerAnswerTool = (pi: ExtensionAPI, hc: HcRuntime): void => {
+  pi.registerTool({
+    name: 'subagent_answer',
+    exposure: 'model-only',
+    label: 'Answer worker',
+    description:
+      "Answer a worker's open question with the IDs from its question message. After an unknown result, call again with the same answer.",
+    parameters: answerParameters,
+    async execute(_toolCallId, parameters, signal, _onUpdate, context) {
+      const parentSession = context.sessionManager.getSessionFile();
+
+      if (parentSession == null || parentSession === '') {
+        throw new Error('Answering a worker requires a saved parent Pi session.');
+      }
+
+      return executeAnswer({ ...hc, signal }, { parameters, parentSession });
     },
   });
 };
@@ -342,6 +364,7 @@ export default function subagentsExtension(
 
     registerLaunchTool(runtime, profiles, scan, launchModelLine(context, profiles));
     registerFollowUpTool(runtime, scan);
+    registerAnswerTool(pi, hc);
 
     if (delegating) {
       guidelines = delegationGuidelines(browserLoginCommand(context));
@@ -368,4 +391,5 @@ export default function subagentsExtension(
   );
 
   registerFollowUpTool(fallbackRuntime, scan);
+  registerAnswerTool(pi, hc);
 }

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { failedResult, succeededResult } from '../../../tests/execFake.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import type { Exec } from '../../command.js';
+import { setAcceptCheck } from '../../inbox/inbox.js';
 import { createInboxExtension } from './inbox.js';
 
 interface HcState {
@@ -301,21 +302,30 @@ it('leaves a label that names another socket at shutdown', async () => {
   });
 });
 
-it('refuses a family the session does not accept', async () => {
-  const harness = startHarness();
-  const sessionId = randomUUID();
-  const messageId = randomUUID();
+it.each([
+  { role: '', kind: 'refused' },
+  { role: 'worker', kind: 'queued' },
+])(
+  'answers a worker answer check as $kind in a session with role "$role"',
+  async ({ role, kind }) => {
+    vi.stubEnv('TAU_ROLE', role);
+    setAcceptCheck('answer', (_request, save) => save());
 
-  await harness.start(sessionId);
-  cleanups.push(() => harness.shutdown(sessionId));
+    const harness = startHarness();
+    const sessionId = randomUUID();
+    const messageId = randomUUID();
 
-  await expect(exchange(socketOf(sessionId), answerTo(sessionId, messageId))).resolves.toEqual({
-    protocol: 'rpc1',
-    kind: 'refused',
-    reason: 'This session does not accept answer messages.',
-    messageId,
-  });
-});
+    await harness.start(sessionId);
+    cleanups.push(() => harness.shutdown(sessionId));
+
+    await expect(
+      exchange(socketOf(sessionId), answerTo(sessionId, messageId)),
+    ).resolves.toMatchObject({
+      kind,
+      messageId,
+    });
+  },
+);
 
 it('refuses a message addressed to another session', async () => {
   const harness = startHarness();

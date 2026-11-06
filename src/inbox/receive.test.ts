@@ -388,7 +388,10 @@ const messageRequest = (sessionId: string, messageId: string): MessageRequest =>
 it('refuses a message its family check rejects and saves nothing', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
-  const { receiver } = directReceiver(sessionId, { handover: () => 'The question is closed.' });
+
+  const { receiver } = directReceiver(sessionId, {
+    handover: () => Promise.resolve('The question is closed.'),
+  });
 
   await expect(receiver.accept(messageRequest(sessionId, messageId))).resolves.toEqual({
     protocol: 'rpc1',
@@ -403,14 +406,16 @@ it('refuses a message its family check rejects and saves nothing', async () => {
 it('saves an accepted answer and wakes with its answer text', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
-  const { receiver, woken } = directReceiver(sessionId, { answer: () => undefined });
+  const { receiver, woken } = directReceiver(sessionId, { answer: (_request, save) => save() });
+
+  const questionId = randomUUID();
 
   const request: MessageRequest = {
     ...messageRequest(sessionId, messageId),
     family: 'answer',
     payload: {
       assignmentId: randomUUID(),
-      questionId: randomUUID(),
+      questionId,
       parentSession: 'parent',
       answer: 'Use option A.',
     },
@@ -424,7 +429,7 @@ it('saves an accepted answer and wakes with its answer text', async () => {
       customType: 'tau-inbox-message',
       content: 'Use option A.',
       display: true,
-      details: { version: 2, messageId, sessionId, family: 'answer' },
+      details: { version: 2, messageId, sessionId, family: 'answer', questionId },
     },
   ]);
 });
@@ -432,7 +437,7 @@ it('saves an accepted answer and wakes with its answer text', async () => {
 it('queues the first of two overlapping saves of one message ID and refuses the other', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
-  const { receiver } = directReceiver(sessionId, { handover: () => undefined });
+  const { receiver } = directReceiver(sessionId, { handover: (_request, save) => save() });
   const first = messageRequest(sessionId, messageId);
   const second: MessageRequest = { ...first, family: 'handover', payload: { text: 'other text' } };
 

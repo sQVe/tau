@@ -79,7 +79,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
     publicFiles: ['github/repositoryTarget', 'github/repositoryTargetDecisions'],
   },
   { name: 'hc', entry: 'hc/hc', publicFiles: ['hc/connect', 'hc/events'] },
-  { name: 'inbox', entry: 'inbox/inbox', publicFiles: [] },
+  { name: 'inbox', entry: 'inbox/inbox', publicFiles: ['inbox/receiptDecision'] },
   {
     name: 'instructions',
     entry: 'instructions/instructions',

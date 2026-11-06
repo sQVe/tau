@@ -27,6 +27,8 @@ export interface WorkerSessionOptions {
   command?: { source: string };
   timeoutSeconds?: number;
   prepareWorker?: (workerDirectory: string) => void;
+  // Loads the inbox extension in the worker, as Tau's package does outside tests.
+  inbox?: boolean;
   // Runs after the manager terminal exists and HC_TERMINAL_ID points at it, before the worker.
   beforeLaunch?: (managerAddress: string) => Promise<void>;
 }
@@ -103,6 +105,15 @@ const writeControlledProvider = (agentDirectory: string): void => {
   );
 };
 
+const writeInboxExtension = (agentDirectory: string): void => {
+  const inboxPath = fileURLToPath(new URL('../src/extensions/inbox/inbox.ts', import.meta.url));
+
+  writeFileSync(
+    join(agentDirectory, 'extensions', 'inbox.js'),
+    `export { default } from ${JSON.stringify(inboxPath)};\n`,
+  );
+};
+
 const managerInvocation = (
   agentDirectory: string,
   probe: { source: string } | undefined,
@@ -167,6 +178,10 @@ export const launchWorkerSession = async (
 
   writeAgentSettings(agentDirectory);
   writeControlledProvider(agentDirectory);
+
+  if (options.inbox === true) {
+    writeInboxExtension(agentDirectory);
+  }
 
   options.prepareWorker?.(workerDirectory);
 

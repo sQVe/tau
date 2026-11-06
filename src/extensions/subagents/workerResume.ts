@@ -1,5 +1,6 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 
+import { inboxMessageType } from '../../inbox/receiptDecision.js';
 import { isRecord } from '../../schema.js';
 import type { Assignment } from './assignment.js';
 import { taskPromptHeader } from './workerMessage.js';
@@ -67,8 +68,33 @@ const isQuestionResult = (entry: SessionEntry): boolean => {
   );
 };
 
-const waitsAfterQuestion = (branch: readonly SessionEntry[], questionIndex: number): boolean =>
-  !branch.slice(questionIndex + 1).some(isUserMessage);
+// Returns the question an inbox answer message answers, for a session entry or a started message.
+export const answeredQuestionId = (message: {
+  customType?: string;
+  details?: unknown;
+}): string | undefined => {
+  if (message.customType !== inboxMessageType || !isRecord(message.details)) {
+    return undefined;
+  }
+
+  const { family, questionId } = message.details;
+
+  return family === 'answer' && typeof questionId === 'string' ? questionId : undefined;
+};
+
+const answers = (entry: SessionEntry, questionId: string | undefined): boolean =>
+  entry.type === 'custom_message' &&
+  questionId !== undefined &&
+  answeredQuestionId(entry) === questionId;
+
+const waitsAfterQuestion = (
+  branch: readonly SessionEntry[],
+  questionIndex: number,
+  questionId: string | undefined,
+): boolean =>
+  !branch
+    .slice(questionIndex + 1)
+    .some((entry) => isUserMessage(entry) || answers(entry, questionId));
 
 const isFirstAssignmentSentByMessage = (
   branch: readonly SessionEntry[],
@@ -77,9 +103,10 @@ const isFirstAssignmentSentByMessage = (
 
 export const decideWorkerResume = (
   branch: readonly SessionEntry[],
-  assignment: Pick<Assignment, 'assignmentId' | 'previousAssignmentId'>,
+  assignment: Pick<Assignment, 'assignmentId' | 'previousAssignmentId' | 'questions'>,
 ): WorkerResume => {
   const questionIndex = branch.findLastIndex(isQuestionResult);
+  const openQuestionId = assignment.questions.at(-1)?.questionId;
   const taskSent = branch.some((entry) => namesAssignment(entry, assignment.assignmentId));
 
   const firstSentByMessage = isFirstAssignmentSentByMessage(
@@ -89,7 +116,8 @@ export const decideWorkerResume = (
 
   return {
     sendTaskPrompt: !taskSent && !firstSentByMessage,
-    waitingForQuestion: questionIndex !== -1 && waitsAfterQuestion(branch, questionIndex),
+    waitingForQuestion:
+      questionIndex !== -1 && waitsAfterQuestion(branch, questionIndex, openQuestionId),
   };
 };
 

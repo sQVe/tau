@@ -12,8 +12,12 @@ interface InboxMessage {
   details: unknown;
 }
 
-// Returns why a message is refused before it is saved, or undefined to accept it.
-type AcceptCheck = (body: MessageBody) => string | undefined;
+// Returns why a message is refused, or the reply of `save`. A check that holds its own lock while
+// `save` runs keeps its check and the save one step.
+export type AcceptCheck = (
+  request: MessageRequest,
+  save: () => Promise<MessageReply>,
+) => Promise<MessageReply | string>;
 
 export interface ReceiverOptions {
   // The session's own record directory.
@@ -49,13 +53,8 @@ const bodyOf = (request: MessageRequest): MessageBody =>
     ? { family: 'handover', payload: request.payload }
     : { family: 'answer', payload: request.payload };
 
-const accept = async (options: ReceiverOptions, request: MessageRequest): Promise<MessageReply> => {
-  const { messageId, family } = request;
-  const check = options.accepts[family];
-
-  if (check === undefined) {
-    return refusedReply(`This session does not accept ${family} messages.`, messageId);
-  }
+const save = async (options: ReceiverOptions, request: MessageRequest): Promise<MessageReply> => {
+  const { messageId } = request;
 
   options.receipts.restore(options.entries());
 
@@ -65,14 +64,11 @@ const accept = async (options: ReceiverOptions, request: MessageRequest): Promis
     return queuedReply(options, messageId);
   }
 
-  const body = bodyOf(request);
-  const refusal = check(body);
-
-  if (refusal !== undefined) {
-    return refusedReply(refusal, messageId);
-  }
-
-  const outcome = await saveMessage(options.directory, { version: 1, messageId, ...body });
+  const outcome = await saveMessage(options.directory, {
+    version: 1,
+    messageId,
+    ...bodyOf(request),
+  });
 
   if (outcome === 'changed') {
     return refusedReply(`Message ${messageId} is already saved with different content.`, messageId);
@@ -81,8 +77,25 @@ const accept = async (options: ReceiverOptions, request: MessageRequest): Promis
   return queuedReply(options, messageId);
 };
 
+const accept = async (options: ReceiverOptions, request: MessageRequest): Promise<MessageReply> => {
+  const { messageId, family } = request;
+  const check = options.accepts[family];
+
+  if (check === undefined) {
+    return refusedReply(`This session does not accept ${family} messages.`, messageId);
+  }
+
+  const reply = await check(request, () => save(options, request));
+
+  return typeof reply === 'string' ? refusedReply(reply, messageId) : reply;
+};
+
 const messageText = (body: MessageBody): string =>
   body.family === 'handover' ? body.payload.text : body.payload.answer;
+
+// An answer's receipt names its question, so a resumed worker knows which wait it ended.
+const familyDetails = (body: MessageBody) =>
+  body.family === 'answer' ? { questionId: body.payload.questionId } : {};
 
 const wakeOnce = (options: ReceiverOptions, messageId: string, body: MessageBody): void => {
   options.receipts.markQueued(messageId);
@@ -97,6 +110,7 @@ const wakeOnce = (options: ReceiverOptions, messageId: string, body: MessageBody
         messageId,
         sessionId: options.sessionId,
         family: body.family,
+        ...familyDetails(body),
       },
     });
   } catch (error) {

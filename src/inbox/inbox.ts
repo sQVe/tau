@@ -1,12 +1,14 @@
 import { ensurePrivateDirectory, openEndpoint, socketPathFor } from './endpoint.js';
 import type { Endpoint } from './endpoint.js';
 import { decodeRequest, encodeFrame, refusedReply } from './protocol.js';
-import type { MessageReply, MessageRequest } from './protocol.js';
+import type { Family, MessageReply, MessageRequest } from './protocol.js';
+import type { AcceptCheck } from './receive.js';
 
 export { socketDirectoryFor } from './endpoint.js';
 export { formatInboxLabel, inboxLabelKey } from './protocol.js';
+export type { MessageRequest } from './protocol.js';
 export { createReceiver } from './receive.js';
-export type { Receiver } from './receive.js';
+export type { AcceptCheck, Receiver, ReceiverOptions } from './receive.js';
 export { createReceiptStore } from './receipts.js';
 export { sendInboxMessage } from './send.js';
 export type { InboxSendRequest, InboxSendResult } from './send.js';
@@ -32,6 +34,7 @@ export interface InboxListener {
 interface InboxSlot {
   endpoint: Endpoint | undefined;
   transition: Promise<unknown>;
+  checks: Partial<Record<Family, AcceptCheck>>;
 }
 
 declare global {
@@ -43,9 +46,18 @@ declare global {
 const slot: InboxSlot = globalThis.tauInboxSlot ?? {
   endpoint: undefined,
   transition: Promise.resolve(),
+  checks: {},
 };
 
 globalThis.tauInboxSlot = slot;
+
+// The extension that owns a family's state sets its check, and the inbox extension reads the checks
+// when it creates the session's receiver.
+export const setAcceptCheck = (family: Family, check: AcceptCheck): void => {
+  slot.checks[family] = check;
+};
+
+export const acceptChecks = (): Partial<Record<Family, AcceptCheck>> => slot.checks;
 
 // Runs start and stop one at a time, so a replacement binds only after the earlier one closed.
 const serialize = <T>(work: () => Promise<T>): Promise<T> => {

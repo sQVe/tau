@@ -1,10 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
+import { executeAnswer } from '../src/extensions/subagents/answer.js';
 import type { Assignment } from '../src/extensions/subagents/assignment.js';
 import { readAssignment } from '../src/extensions/subagents/assignment.js';
 import type { DeadlineWatchdog } from '../src/extensions/subagents/deadlineWatchdog.js';
@@ -12,7 +13,7 @@ import { registerWorkerScan } from '../src/extensions/subagents/subagents.js';
 import { createWorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
 import { createWorkerScan } from '../src/extensions/subagents/workerScan.js';
 import type { WorkerScan } from '../src/extensions/subagents/workerScan.js';
-import { get, ls, send } from '../src/hc/hc.js';
+import { get } from '../src/hc/hc.js';
 import { startHcSession } from './hcSessionHarness.js';
 import type { HcSession } from './hcSessionHarness.js';
 import {
@@ -30,6 +31,7 @@ interface SentMessage {
 interface SessionEntry {
   type: string;
   customType?: string;
+  content?: unknown;
   details?: unknown;
 }
 
@@ -98,16 +100,11 @@ const waitForTerminalLabel = async (
   }
 };
 
-const childAddress = async (hc: HcSession, parent: string): Promise<string> => {
-  const list = await ls(hc.runtime, { all: true });
-  const child = list.terminals.find((terminal) => terminal.parent === parent);
-
-  if (child === undefined) {
-    throw new Error(`No worker terminal under ${parent}.`);
-  }
-
-  return child.address;
-};
+const sessionEntries = (assignment: Assignment): SessionEntry[] =>
+  readFileSync(assignment.session.file, 'utf8')
+    .split('\n')
+    .filter((line) => line !== '')
+    .map((line) => JSON.parse(line) as SessionEntry);
 
 const recordingExtension = (
   messages: SentMessage[],
@@ -159,7 +156,7 @@ const deliveryContext = (entries: SessionEntry[]): DeliveryContext =>
     signal: undefined,
   }) as unknown as DeliveryContext;
 
-it('shows a real worker question once and carries the manager answer into its report', async () => {
+it('shows a real worker question once and carries the subagent_answer reply into its report', async () => {
   const hc = await startHcSession(onTestFinished);
 
   onTestFinished(() => {
@@ -180,6 +177,7 @@ it('shows a real worker question once and carries the manager answer into its re
     task: `${questionTaskMarker} Ask which value the report should hold.`,
     acceptance: ['Report the answer.'],
     probe: { source: managerQuestionProbe },
+    inbox: true,
   });
 
   const assignment = await waitForQuestion(worker.assignmentFilePath);
@@ -235,17 +233,31 @@ it('shows a real worker question once and carries the manager answer into its re
     questionId: question.questionId,
   });
 
-  const workerAddress = await childAddress(hc, worker.managerAddress);
-
-  expect(questionMessage?.content).toContain(`hc send ${workerAddress} "<answer>"`);
+  expect(questionMessage?.content).toContain(question.questionId);
 
   const reply = `manager-reply-${randomBytes(6).toString('hex')}`;
 
-  await send(hc.runtime, workerAddress, { text: reply });
+  const answered = await executeAnswer(hc.runtime, {
+    parameters: {
+      assignmentId: assignment.assignmentId,
+      questionId: question.questionId,
+      answer: reply,
+    },
+    parentSession: assignment.parentSession,
+  });
+
+  expect(answered.details).toMatchObject({ status: 'queued', messageId: question.questionId });
 
   const reported = await waitForReport(worker.assignmentFilePath);
 
   expect(reported.report?.evidence).toContain(reply);
+
+  const answerEntry = sessionEntries(reported).find(
+    (entry) => entry.type === 'custom_message' && entry.customType === 'tau-inbox-message',
+  );
+
+  expect(answerEntry?.content).toBe(reply);
+  expect(answerEntry?.details).toMatchObject({ family: 'answer', questionId: question.questionId });
 
   await delay(500);
 
