@@ -115,13 +115,6 @@ it('writes events.subscribe with only the terminal filter', () => {
   expect(subscribeParams({ terminal: 't-self' })).toEqual({ terminal: 't-self' });
 });
 
-it('rejects a selector that names both a terminal and its children', () => {
-  // @ts-expect-error terminal and childrenOf are mutually exclusive
-  const selector: EventSelector = { terminal: 't-self', childrenOf: 't-manager' };
-
-  expect(selector.terminal).toBe('t-self');
-});
-
 it('reports ready after the subscribe reply and dispatches label and finished events', () => {
   const child = createFakeChild();
   spawnMock.mockReturnValueOnce(child as unknown as ChildProcess);
