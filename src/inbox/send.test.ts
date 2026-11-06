@@ -8,7 +8,6 @@ import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { succeededResult } from '../../tests/execFake.js';
 import { startHandoverReceiver } from '../../tests/inboxReceiverHarness.js';
-import { errorMessage } from '../errors.js';
 import type { HcRuntime } from '../hc/hc.js';
 import { sendInboxMessage } from './inbox.js';
 import type { InboxSendRequest } from './inbox.js';
@@ -58,9 +57,12 @@ const liveTarget = (path: string) => ({
   labels: { 'tau.inbox': `rpc1:${path}` },
 });
 
-// A socket server that runs `answer` once the client finished its request.
-const scriptedServer = async (answer: (socket: Socket, request: string) => void) => {
-  const path = join(root, 'scripted.sock');
+// A socket server for session `sessionId` that runs `answer` once the client finished its request.
+const scriptedServer = async (
+  sessionId: string,
+  answer: (socket: Socket, request: string) => void,
+) => {
+  const path = join(root, `${sessionId}.sock`);
   const sockets = new Set<Socket>();
 
   const server: Server = createServer({ allowHalfOpen: true }, (socket) => {
@@ -99,6 +101,39 @@ const scriptedServer = async (answer: (socket: Socket, request: string) => void)
 
   return path;
 };
+
+it('sends one message frame over one connection and returns the queued reply', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+  const requests: string[] = [];
+
+  const path = await scriptedServer(sessionId, (socket, text) => {
+    requests.push(text);
+
+    socket.end(
+      `${JSON.stringify({ protocol: 'rpc1', kind: 'queued', messageId, terminal: 't7', sessionId })}\n`,
+    );
+  });
+
+  await expect(sendInboxMessage(request(hcFor(liveTarget(path)), messageId))).resolves.toEqual({
+    status: 'queued',
+    terminal: 't7',
+    sessionId,
+    messageId,
+  });
+
+  expect(requests.map((text) => JSON.parse(text) as unknown)).toEqual([
+    {
+      protocol: 'rpc1',
+      kind: 'message',
+      messageId,
+      targetTerminal: 't7',
+      targetSessionId: sessionId,
+      family: 'handover',
+      payload: { text: 'handover text' },
+    },
+  ]);
+});
 
 it('queues a handover after the receiver saved it', async () => {
   const receiver = await startReceiver('t7');
@@ -143,14 +178,35 @@ it('refuses a peer whose inbox answers for another terminal', async () => {
   const receiver = await startReceiver('t9');
 
   await expect(sendInboxMessage(request(hcFor(liveTarget(receiver.path))))).rejects.toThrow(
-    `The inbox of t7 answers for terminal t9. ${refusal}`,
+    `This inbox is terminal t9, session ${receiver.sessionId}. ${refusal}`,
   );
 
   expect(receiver.savedRecords()).toEqual([]);
 });
 
+it('refuses a family the receiver does not accept', async () => {
+  const receiver = await startReceiver('t7');
+
+  await expect(
+    sendInboxMessage({
+      ...request(hcFor(liveTarget(receiver.path))),
+      body: {
+        family: 'answer',
+        payload: {
+          assignmentId: randomUUID(),
+          questionId: randomUUID(),
+          parentSession: 'manager-session',
+          answer: 'Use option A.',
+        },
+      },
+    }),
+  ).rejects.toThrow(`This session does not accept answer messages. ${refusal}`);
+
+  expect(receiver.savedRecords()).toEqual([]);
+});
+
 it('refuses a socket that refuses connections', async () => {
-  const path = join(root, 'stale.sock');
+  const path = join(root, `${randomUUID()}.sock`);
 
   writeFileSync(path, '');
 
@@ -159,19 +215,18 @@ it('refuses a socket that refuses connections', async () => {
   );
 });
 
-it('refuses when the handshake gets no reply in time and sends no message', async () => {
+it('returns unknown with the same message ID when the message gets no reply in time', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
   const requests: string[] = [];
 
-  const path = await scriptedServer((_socket, text) => {
+  const path = await scriptedServer(sessionId, (_socket, text) => {
     requests.push(text);
   });
 
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
 
-  const failure = sendInboxMessage(request(hcFor(liveTarget(path)))).then(
-    () => undefined,
-    (error: unknown) => errorMessage(error),
-  );
+  const result = sendInboxMessage(request(hcFor(liveTarget(path)), messageId));
 
   await vi.waitFor(() => {
     expect(requests).toHaveLength(1);
@@ -179,24 +234,19 @@ it('refuses when the handshake gets no reply in time and sends no message', asyn
 
   await vi.advanceTimersByTimeAsync(5000);
 
-  expect(await failure).toBe(`The inbox of t7 did not answer: No reply within 5000 ms. ${refusal}`);
-
-  expect(requests).toEqual(['{"protocol":"rpc1","kind":"hello"}\n']);
+  await expect(result).resolves.toMatchObject({
+    status: 'unknown',
+    sessionId,
+    messageId,
+    note: expect.stringContaining('No reply within 5000 ms.') as string,
+  });
 });
 
 it('returns unknown with the same message ID when the message reply is lost', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
 
-  const path = await scriptedServer((socket, text) => {
-    if (text.includes('"hello"')) {
-      socket.end(
-        `${JSON.stringify({ protocol: 'rpc1', kind: 'ready', terminal: 't7', sessionId, families: ['handover'] })}\n`,
-      );
-
-      return;
-    }
-
+  const path = await scriptedServer(sessionId, (socket) => {
     socket.destroy();
   });
 
@@ -220,4 +270,20 @@ it('refuses a message larger than the frame limit before sending it', async () =
   ).rejects.toThrow(`The message is larger than the 102400-byte frame limit. ${refusal}`);
 
   expect(receiver.savedRecords()).toEqual([]);
+});
+
+it('returns unknown when the receiver queues another message ID', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+
+  const path = await scriptedServer(sessionId, (socket) => {
+    socket.end(
+      `${JSON.stringify({ protocol: 'rpc1', kind: 'queued', messageId: randomUUID(), terminal: 't7', sessionId })}\n`,
+    );
+  });
+
+  const result = await sendInboxMessage(request(hcFor(liveTarget(path)), messageId));
+
+  expect(result).toMatchObject({ status: 'unknown', sessionId, messageId });
+  expect(result.note).toContain('The receiver sent an unexpected reply.');
 });

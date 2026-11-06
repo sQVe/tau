@@ -1,11 +1,12 @@
 import { ensurePrivateDirectory, openEndpoint, socketPathFor } from './endpoint.js';
 import type { Endpoint } from './endpoint.js';
-import { decodeRequest, encodeFrame, families, refusedReply } from './protocol.js';
-import type { Family, MessageReply, MessageRequest, Reply } from './protocol.js';
+import { decodeRequest, encodeFrame, refusedReply } from './protocol.js';
+import type { MessageReply, MessageRequest } from './protocol.js';
 
 export { socketDirectoryFor } from './endpoint.js';
 export { formatInboxLabel, inboxLabelKey } from './protocol.js';
-export { createHandoverReceiver } from './receive.js';
+export { createReceiver } from './receive.js';
+export type { Receiver } from './receive.js';
 export { createReceiptStore } from './receipts.js';
 export { sendInboxMessage } from './send.js';
 export type { InboxSendRequest, InboxSendResult } from './send.js';
@@ -14,7 +15,9 @@ export interface InboxStartOptions {
   sessionId: string;
   terminal: string;
   directory: string;
-  // Called after a handler queued a message, so the receiver can drain it.
+  // Saves a message addressed to this inbox and returns the reply.
+  accept: (request: MessageRequest) => Promise<MessageReply>;
+  // Called after a message was queued, so the receiver can drain it.
   onQueued: () => void;
   // Publish and remove the terminal's advertisement. They run inside the start and stop
   // transitions, so a withdrawal never interleaves with a replacement's advertisement.
@@ -26,30 +29,9 @@ export interface InboxListener {
   stop: () => Promise<void>;
 }
 
-// A family handler has two steps. `accept` validates and publishes a request, then returns the
-// reply the socket sends; it never waits on the startup gate. `deliver` runs later from the
-// receiver's drain, with the signal of the session generation that requested it.
-export interface FamilyHandler {
-  accept: (request: MessageRequest) => Promise<MessageReply>;
-  deliver: (signal: AbortSignal) => Promise<void>;
-}
-
-interface Registration {
-  sessionId: string;
-  family: Family;
-  handler: FamilyHandler;
-}
-
-interface OpenListener {
-  sessionId: string;
-  terminal: string;
-  endpoint: Endpoint;
-}
-
 interface InboxSlot {
-  listener: OpenListener | undefined;
+  endpoint: Endpoint | undefined;
   transition: Promise<unknown>;
-  registrations: Registration[];
 }
 
 declare global {
@@ -57,11 +39,10 @@ declare global {
 }
 
 // Pi imports an extension again on reload, and a worker loads its own extension file, so module
-// state is not shared. The listener and handlers live in one process-wide slot instead.
+// state is not shared. The listener lives in one process-wide slot instead.
 const slot: InboxSlot = globalThis.tauInboxSlot ?? {
-  listener: undefined,
+  endpoint: undefined,
   transition: Promise.resolve(),
-  registrations: [],
 };
 
 globalThis.tauInboxSlot = slot;
@@ -75,70 +56,10 @@ const serialize = <T>(work: () => Promise<T>): Promise<T> => {
   return next;
 };
 
-const registrationFor = (sessionId: string, family: Family): Registration | undefined =>
-  slot.registrations.findLast(
-    (registration) => registration.sessionId === sessionId && registration.family === family,
-  );
+const targetsInbox = (request: MessageRequest, options: InboxStartOptions): boolean =>
+  request.targetTerminal === options.terminal && request.targetSessionId === options.sessionId;
 
-// The latest registration wins, and a disposer removes only its own entry.
-export const registerFamilyHandler = (
-  sessionId: string,
-  family: Family,
-  handler: FamilyHandler,
-): (() => void) => {
-  const registration: Registration = { sessionId, family, handler };
-
-  slot.registrations.push(registration);
-
-  return () => {
-    slot.registrations = slot.registrations.filter((entry) => entry !== registration);
-  };
-};
-
-export const familyHandlers = (sessionId: string): FamilyHandler[] =>
-  families.flatMap((family) => registrationFor(sessionId, family)?.handler ?? []);
-
-const availableFamilies = (sessionId: string): Family[] =>
-  families.filter((family) => registrationFor(sessionId, family) !== undefined);
-
-const targetsListener = (request: MessageRequest, listener: OpenListener): boolean =>
-  request.targetTerminal === listener.terminal && request.targetSessionId === listener.sessionId;
-
-const answerMessage = async (
-  request: MessageRequest,
-  listener: OpenListener,
-  onQueued: () => void,
-): Promise<MessageReply> => {
-  if (!targetsListener(request, listener)) {
-    return refusedReply(
-      `This inbox is terminal ${listener.terminal}, session ${listener.sessionId}.`,
-      request.messageId,
-    );
-  }
-
-  const registration = registrationFor(listener.sessionId, request.family);
-
-  if (registration === undefined) {
-    return refusedReply(
-      `This session does not accept ${request.family} messages.`,
-      request.messageId,
-    );
-  }
-
-  const reply = await registration.handler.accept(request);
-
-  if (reply.kind === 'queued') {
-    onQueued();
-  }
-
-  return reply;
-};
-
-const answerFrame = async (
-  bytes: Buffer,
-  listener: OpenListener,
-  onQueued: () => void,
-): Promise<Reply> => {
+const answerFrame = async (bytes: Buffer, options: InboxStartOptions) => {
   const decision = decodeRequest(bytes);
 
   if (decision.kind === 'refused') {
@@ -147,24 +68,27 @@ const answerFrame = async (
 
   const request = decision.value;
 
-  if (request.kind === 'hello') {
-    return {
-      protocol: request.protocol,
-      kind: 'ready',
-      terminal: listener.terminal,
-      sessionId: listener.sessionId,
-      families: availableFamilies(listener.sessionId),
-    };
+  if (!targetsInbox(request, options)) {
+    return refusedReply(
+      `This inbox is terminal ${options.terminal}, session ${options.sessionId}.`,
+      request.messageId,
+    );
   }
 
-  return answerMessage(request, listener, onQueued);
+  const reply = await options.accept(request);
+
+  if (reply.kind === 'queued') {
+    options.onQueued();
+  }
+
+  return reply;
 };
 
 const closeCurrent = async (): Promise<void> => {
-  const current = slot.listener;
+  const current = slot.endpoint;
 
-  slot.listener = undefined;
-  await current?.endpoint.close();
+  slot.endpoint = undefined;
+  await current?.close();
 };
 
 const open = async (options: InboxStartOptions): Promise<InboxListener> => {
@@ -173,30 +97,13 @@ const open = async (options: InboxStartOptions): Promise<InboxListener> => {
   ensurePrivateDirectory(options.directory);
 
   const path = socketPathFor(options.directory, options.sessionId);
-  const pending: { listener?: OpenListener } = {};
 
   const endpoint = await openEndpoint({
     path,
-    respond: async (bytes) => {
-      const { listener } = pending;
-
-      const reply =
-        listener === undefined
-          ? refusedReply('The inbox is starting.')
-          : await answerFrame(bytes, listener, options.onQueued);
-
-      return encodeFrame(reply);
-    },
+    respond: async (bytes) => encodeFrame(await answerFrame(bytes, options)),
   });
 
-  const listener: OpenListener = {
-    sessionId: options.sessionId,
-    terminal: options.terminal,
-    endpoint,
-  };
-
-  pending.listener = listener;
-  slot.listener = listener;
+  slot.endpoint = endpoint;
 
   try {
     await options.advertise(path);
@@ -209,7 +116,7 @@ const open = async (options: InboxStartOptions): Promise<InboxListener> => {
   return {
     stop: () =>
       serialize(async () => {
-        if (slot.listener !== listener) {
+        if (slot.endpoint !== endpoint) {
           await endpoint.close();
 
           return;

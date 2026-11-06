@@ -8,7 +8,6 @@ import {
   parseInboxLabel,
   refusedReply,
 } from './protocol.js';
-import type { ReadyReply } from './protocol.js';
 
 const messageId = '0190c1d2-0000-7000-8000-000000000001';
 const sessionId = '0190c1d2-0000-7000-8000-000000000002';
@@ -35,10 +34,7 @@ const answer = {
   payload: { assignmentId, questionId, parentSession: 'manager-session', answer: 'Use option A.' },
 } as const;
 
-const hello = { protocol: 'rpc1', kind: 'hello' } as const;
-
 const requestCases: [string, Uint8Array, ReturnType<typeof decodeRequest>][] = [
-  ['a hello', line(hello), { kind: 'frame', value: hello }],
   ['a handover message', line(handover), { kind: 'frame', value: handover }],
   ['an answer message', line(answer), { kind: 'frame', value: answer }],
   [
@@ -53,12 +49,12 @@ const requestCases: [string, Uint8Array, ReturnType<typeof decodeRequest>][] = [
   ],
   [
     'a frame without its newline',
-    bytes(JSON.stringify(hello)),
+    bytes(JSON.stringify(handover)),
     { kind: 'refused', reason: 'The frame does not end with a newline.' },
   ],
   [
     'a second frame',
-    bytes(`${JSON.stringify(hello)}\n${JSON.stringify(hello)}\n`),
+    bytes(`${JSON.stringify(handover)}\n${JSON.stringify(handover)}\n`),
     { kind: 'refused', reason: 'The connection carries more than one frame.' },
   ],
   [
@@ -73,7 +69,7 @@ const requestCases: [string, Uint8Array, ReturnType<typeof decodeRequest>][] = [
   ],
   [
     'an unknown protocol',
-    line({ ...hello, protocol: 'rpc2' }),
+    line({ ...handover, protocol: 'rpc2' }),
     { kind: 'refused', reason: 'The frame is not an rpc1 request.' },
   ],
   [
@@ -107,18 +103,9 @@ it.each(requestCases)('decodes %s', (_name, input, expected) => {
   expect(decodeRequest(input)).toEqual(expected);
 });
 
-const ready: ReadyReply = {
-  protocol: 'rpc1',
-  kind: 'ready',
-  terminal: 't1',
-  sessionId,
-  families: ['handover'],
-};
-
 const queued = { protocol: 'rpc1', kind: 'queued', messageId, terminal: 't1', sessionId } as const;
 
 const replyCases: [string, Uint8Array, ReturnType<typeof decodeReply>][] = [
-  ['a ready reply', line(ready), { kind: 'frame', value: ready }],
   ['a queued reply', line(queued), { kind: 'frame', value: queued }],
   [
     'a refused reply',
@@ -134,8 +121,8 @@ const replyCases: [string, Uint8Array, ReturnType<typeof decodeReply>][] = [
     { kind: 'refused', reason: 'The frame is larger than 4096 bytes.' },
   ],
   [
-    'a ready reply with an unknown family',
-    line({ ...ready, families: ['note'] }),
+    'a queued reply with an unknown field',
+    line({ ...queued, families: ['handover'] }),
     { kind: 'refused', reason: 'The frame is not an rpc1 reply.' },
   ],
 ];
@@ -162,7 +149,7 @@ it('leaves an invalid message ID out of a refusal', () => {
 });
 
 it('encodes one newline-terminated frame that decodes back', () => {
-  expect(decodeRequest(bytes(encodeFrame(hello)))).toEqual({ kind: 'frame', value: hello });
+  expect(decodeRequest(bytes(encodeFrame(handover)))).toEqual({ kind: 'frame', value: handover });
 });
 
 const labelCases: [string, string, ReturnType<typeof parseInboxLabel>][] = [

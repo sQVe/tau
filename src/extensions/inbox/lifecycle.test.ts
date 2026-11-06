@@ -9,8 +9,6 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { failedResult, succeededResult } from '../../../tests/execFake.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import type { Exec } from '../../command.js';
-import { registerFamilyHandler } from '../../inbox/inbox.js';
-import type { FamilyHandler } from '../../inbox/inbox.js';
 import { createInboxExtension } from './inbox.js';
 
 interface HcState {
@@ -90,6 +88,8 @@ const contextFor = (sessionId: string, notify: (message: string) => void): Exten
         notify(message);
       },
     },
+    isIdle: () => true,
+    signal: undefined,
   }) as unknown as ExtensionContext;
 
 const startHarness = (options: HarnessOptions = {}) => {
@@ -130,7 +130,15 @@ const startHarness = (options: HarnessOptions = {}) => {
   const discover = (sessionId: string) =>
     emit('resources_discover', { type: 'resources_discover' }, contextFor(sessionId, notify));
 
-  return { state, notices, firstNotice: firstNotice.promise, start, shutdown, discover };
+  return {
+    state,
+    notices,
+    firstNotice: firstNotice.promise,
+    sendMessage: fake.sendMessage,
+    start,
+    shutdown,
+    discover,
+  };
 };
 
 const socketOf = (sessionId: string): string => join(root, 'sockets', `${sessionId}.sock`);
@@ -163,14 +171,18 @@ const exchange = (path: string, request: unknown): Promise<unknown> =>
     socket.once('error', reject);
   });
 
-const hello = { protocol: 'rpc1', kind: 'hello' };
-
-const answerTo = (sessionId: string, messageId = randomUUID()) => ({
+const handoverTo = (sessionId: string, messageId = randomUUID()) => ({
   protocol: 'rpc1',
   kind: 'message',
   messageId,
   targetTerminal: 't7',
   targetSessionId: sessionId,
+  family: 'handover',
+  payload: { text: 'handover text' },
+});
+
+const answerTo = (sessionId: string, messageId = randomUUID()) => ({
+  ...handoverTo(sessionId, messageId),
   family: 'answer',
   payload: {
     assignmentId: randomUUID(),
@@ -180,46 +192,25 @@ const answerTo = (sessionId: string, messageId = randomUUID()) => ({
   },
 });
 
-const recordingHandler = (sessionId: string) => {
-  const deliveries: AbortSignal[] = [];
-  let next = Promise.withResolvers<undefined>();
+const settle = () =>
+  new Promise((resolve) => {
+    setTimeout(resolve, 20);
+  });
 
-  const handler: FamilyHandler = {
-    accept: (request) =>
-      Promise.resolve({
-        protocol: 'rpc1',
-        kind: 'queued',
-        messageId: request.messageId,
-        terminal: 't7',
-        sessionId,
-      }),
-    deliver: (signal) => {
-      deliveries.push(signal);
-      next.resolve(undefined);
-      next = Promise.withResolvers<undefined>();
-
-      return Promise.resolve();
-    },
-  };
-
-  cleanups.push(registerFamilyHandler(sessionId, 'answer', handler));
-
-  return { deliveries, nextDelivery: () => next.promise };
-};
-
-it('answers a handshake and advertises its socket after session start', async () => {
+it('queues a message and advertises its socket after session start', async () => {
   const harness = startHarness();
   const sessionId = randomUUID();
+  const messageId = randomUUID();
 
   await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
 
-  await expect(exchange(socketOf(sessionId), hello)).resolves.toEqual({
+  await expect(exchange(socketOf(sessionId), handoverTo(sessionId, messageId))).resolves.toEqual({
     protocol: 'rpc1',
-    kind: 'ready',
+    kind: 'queued',
+    messageId,
     terminal: 't7',
     sessionId,
-    families: ['handover'],
   });
 
   expect(Object.fromEntries(harness.state.labels)).toEqual({
@@ -237,7 +228,10 @@ it('closes the earlier listener when a second session start arrives without shut
   cleanups.push(() => harness.shutdown(second));
 
   expect(existsSync(socketOf(first))).toBe(false);
-  await expect(exchange(socketOf(second), hello)).resolves.toMatchObject({ sessionId: second });
+
+  await expect(exchange(socketOf(second), handoverTo(second))).resolves.toMatchObject({
+    sessionId: second,
+  });
 
   expect(Object.fromEntries(harness.state.labels)).toEqual({
     'tau.inbox': `rpc1:${socketOf(second)}`,
@@ -252,7 +246,9 @@ it('keeps one answering listener when the same session starts twice', async () =
   await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
 
-  await expect(exchange(socketOf(sessionId), hello)).resolves.toMatchObject({ sessionId });
+  await expect(exchange(socketOf(sessionId), handoverTo(sessionId))).resolves.toMatchObject({
+    sessionId,
+  });
 });
 
 it('closes the unadvertised socket and reports when the label cannot be set', async () => {
@@ -305,39 +301,13 @@ it('leaves a label that names another socket at shutdown', async () => {
   });
 });
 
-it('advertises and routes a registered family, and refuses it after disposal', async () => {
+it('refuses a family the session does not accept', async () => {
   const harness = startHarness();
   const sessionId = randomUUID();
   const messageId = randomUUID();
 
-  const dispose = registerFamilyHandler(sessionId, 'answer', {
-    accept: (request) =>
-      Promise.resolve({
-        protocol: 'rpc1',
-        kind: 'queued',
-        messageId: request.messageId,
-        terminal: 't7',
-        sessionId,
-      }),
-    deliver: () => Promise.resolve(),
-  });
-
   await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
-
-  await expect(exchange(socketOf(sessionId), hello)).resolves.toMatchObject({
-    families: ['handover', 'answer'],
-  });
-
-  await expect(exchange(socketOf(sessionId), answerTo(sessionId, messageId))).resolves.toEqual({
-    protocol: 'rpc1',
-    kind: 'queued',
-    messageId,
-    terminal: 't7',
-    sessionId,
-  });
-
-  dispose();
 
   await expect(exchange(socketOf(sessionId), answerTo(sessionId, messageId))).resolves.toEqual({
     protocol: 'rpc1',
@@ -353,73 +323,76 @@ it('refuses a message addressed to another session', async () => {
   const otherSession = randomUUID();
   const messageId = randomUUID();
 
-  recordingHandler(sessionId);
-
   await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
 
-  await expect(exchange(socketOf(sessionId), answerTo(otherSession, messageId))).resolves.toEqual({
-    protocol: 'rpc1',
-    kind: 'refused',
-    reason: `This inbox is terminal t7, session ${sessionId}.`,
-    messageId,
-  });
+  await expect(exchange(socketOf(sessionId), handoverTo(otherSession, messageId))).resolves.toEqual(
+    {
+      protocol: 'rpc1',
+      kind: 'refused',
+      reason: `This inbox is terminal t7, session ${sessionId}.`,
+      messageId,
+    },
+  );
 });
 
 it('delivers queued messages only after the startup gate opens', async () => {
   const harness = startHarness();
   const sessionId = randomUUID();
-  const { deliveries, nextDelivery } = recordingHandler(sessionId);
-  const delivered = nextDelivery();
 
   await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
-  await exchange(socketOf(sessionId), answerTo(sessionId));
+  await exchange(socketOf(sessionId), handoverTo(sessionId));
+  await settle();
 
-  expect(deliveries).toEqual([]);
+  expect(harness.sendMessage).not.toHaveBeenCalled();
 
   await harness.discover(sessionId);
-  await delivered;
 
-  expect(deliveries.every((signal) => !signal.aborted)).toBe(true);
+  await vi.waitFor(() => {
+    expect(harness.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
   expect(harness.notices).toEqual([]);
 });
 
 it('cancels delivery of an ended generation and delivers only in the next one', async () => {
   const harness = startHarness();
   const sessionId = randomUUID();
-  const { deliveries, nextDelivery } = recordingHandler(sessionId);
-  const delivered = nextDelivery();
 
   await harness.start(sessionId);
-  await exchange(socketOf(sessionId), answerTo(sessionId));
+  await exchange(socketOf(sessionId), handoverTo(sessionId));
   await harness.shutdown(sessionId);
+  await settle();
+
+  expect(harness.sendMessage).not.toHaveBeenCalled();
 
   await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
   await harness.discover(sessionId);
-  await delivered;
 
-  expect(deliveries.filter((signal) => signal.aborted)).toEqual([]);
+  await vi.waitFor(() => {
+    expect(harness.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  await settle();
+
+  expect(harness.sendMessage).toHaveBeenCalledTimes(1);
 });
 
-it('drains again when a handler queues a message after startup', async () => {
+it('drains again when a message is queued after startup', async () => {
   const harness = startHarness();
   const sessionId = randomUUID();
-  const { deliveries, nextDelivery } = recordingHandler(sessionId);
-  const startupDelivery = nextDelivery();
 
   await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
   await harness.discover(sessionId);
-  await startupDelivery;
+  await settle();
+  await exchange(socketOf(sessionId), handoverTo(sessionId));
 
-  const queuedDelivery = nextDelivery();
-
-  await exchange(socketOf(sessionId), answerTo(sessionId));
-  await queuedDelivery;
-
-  expect(deliveries).toHaveLength(2);
+  await vi.waitFor(() => {
+    expect(harness.sendMessage).toHaveBeenCalledTimes(1);
+  });
 });
 
 it('refuses a frame that is not valid JSON', async () => {
@@ -441,66 +414,16 @@ it('refuses a message addressed to another terminal', async () => {
   const sessionId = randomUUID();
   const messageId = randomUUID();
 
-  recordingHandler(sessionId);
-
   await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
 
-  const request = { ...answerTo(sessionId, messageId), targetTerminal: 't9' };
+  const request = { ...handoverTo(sessionId, messageId), targetTerminal: 't9' };
 
   await expect(exchange(socketOf(sessionId), request)).resolves.toEqual({
     protocol: 'rpc1',
     kind: 'refused',
     reason: `This inbox is terminal t7, session ${sessionId}.`,
     messageId,
-  });
-});
-
-it('advertises no answer handler registered only for another session', async () => {
-  const harness = startHarness();
-  const sessionId = randomUUID();
-
-  recordingHandler(randomUUID());
-
-  await harness.start(sessionId);
-  cleanups.push(() => harness.shutdown(sessionId));
-
-  await expect(exchange(socketOf(sessionId), hello)).resolves.toMatchObject({
-    families: ['handover'],
-  });
-});
-
-it('keeps a later registration when an earlier one disposes', async () => {
-  const harness = startHarness();
-  const sessionId = randomUUID();
-  const messageId = randomUUID();
-
-  const refusing: FamilyHandler = {
-    accept: (request) =>
-      Promise.resolve({
-        protocol: 'rpc1',
-        kind: 'refused',
-        reason: 'earlier',
-        messageId: request.messageId,
-      }),
-    deliver: () => Promise.resolve(),
-  };
-
-  const disposeEarlier = registerFamilyHandler(sessionId, 'answer', refusing);
-
-  recordingHandler(sessionId);
-
-  await harness.start(sessionId);
-  cleanups.push(() => harness.shutdown(sessionId));
-
-  disposeEarlier();
-
-  await expect(exchange(socketOf(sessionId), answerTo(sessionId, messageId))).resolves.toEqual({
-    protocol: 'rpc1',
-    kind: 'queued',
-    messageId,
-    terminal: 't7',
-    sessionId,
   });
 });
 
@@ -535,7 +458,9 @@ it('leaves a replacement listener and its label when a replaced lifecycle shuts 
   cleanups.push(() => replacement.shutdown(second));
   await replaced.shutdown(first);
 
-  await expect(exchange(socketOf(second), hello)).resolves.toMatchObject({ sessionId: second });
+  await expect(exchange(socketOf(second), handoverTo(second))).resolves.toMatchObject({
+    sessionId: second,
+  });
 
   expect(Object.fromEntries(state.labels)).toEqual({ 'tau.inbox': `rpc1:${socketOf(second)}` });
 });
@@ -551,7 +476,9 @@ it('leaves the label of a replacement with the same session when a replaced life
   cleanups.push(() => replacement.shutdown(sessionId));
   await replaced.shutdown(sessionId);
 
-  await expect(exchange(socketOf(sessionId), hello)).resolves.toMatchObject({ sessionId });
+  await expect(exchange(socketOf(sessionId), handoverTo(sessionId))).resolves.toMatchObject({
+    sessionId,
+  });
 
   expect(Object.fromEntries(state.labels)).toEqual({ 'tau.inbox': `rpc1:${socketOf(sessionId)}` });
 });
@@ -559,26 +486,19 @@ it('leaves the label of a replacement with the same session when a replaced life
 it('reports a delivery that fails in the current generation', async () => {
   const harness = startHarness();
   const sessionId = randomUUID();
-  const failed = Promise.withResolvers<undefined>();
 
-  cleanups.push(
-    registerFamilyHandler(sessionId, 'answer', {
-      accept: () => Promise.reject(new Error('unused')),
-      deliver: () => {
-        failed.resolve(undefined);
-
-        return Promise.reject(new Error('record unreadable'));
-      },
-    }),
-  );
+  harness.sendMessage.mockImplementation(() => {
+    throw new Error('display failed');
+  });
 
   await harness.start(sessionId);
   cleanups.push(() => harness.shutdown(sessionId));
   await harness.discover(sessionId);
-  await failed.promise;
+  await settle();
+  await exchange(socketOf(sessionId), handoverTo(sessionId));
   await harness.firstNotice;
 
-  expect(harness.notices).toEqual(['Tau inbox delivery failed: record unreadable']);
+  expect(harness.notices).toEqual(['Tau inbox delivery failed: display failed']);
 });
 
 it('keeps the label a replacement wrote while an earlier shutdown was reading it', async () => {
@@ -617,7 +537,9 @@ it('keeps the label a replacement wrote while an earlier shutdown was reading it
   await Promise.all([shutdown, starting]);
   cleanups.push(() => replacement.shutdown(second));
 
-  await expect(exchange(socketOf(second), hello)).resolves.toMatchObject({ sessionId: second });
+  await expect(exchange(socketOf(second), handoverTo(second))).resolves.toMatchObject({
+    sessionId: second,
+  });
 
   expect(Object.fromEntries(state.labels)).toEqual({ 'tau.inbox': `rpc1:${socketOf(second)}` });
 });

@@ -4,19 +4,15 @@ import { createConnection } from 'node:net';
 import { errorMessage } from '../errors.js';
 import { currentTerminalAddress, get } from '../hc/hc.js';
 import type { HcRuntime } from '../hc/hc.js';
-import { decodeReply, encodeFrame, isUuid, requestByteLimit } from './protocol.js';
-import type { MessageRequest, ReadyReply, Reply } from './protocol.js';
-import { decideReady, decideTarget } from './targetDecision.js';
-
-type MessageBody<Request> = Request extends MessageRequest
-  ? Pick<Request, 'family' | 'payload'>
-  : never;
+import { decodeReply, encodeFrame, isUuid, replyByteLimit, requestByteLimit } from './protocol.js';
+import type { MessageBody, MessageReply } from './protocol.js';
+import { decideTarget } from './targetDecision.js';
 
 export interface InboxSendRequest {
   hc: HcRuntime;
   // The hc address or name of the receiving terminal.
   target: string;
-  body: MessageBody<MessageRequest>;
+  body: MessageBody;
   // An explicit retry passes the ID an earlier send returned; a new message omits it.
   messageId?: string | undefined;
   // Ends every refusal message, such as the action that replaces a refused send.
@@ -32,13 +28,17 @@ export interface InboxSendResult {
   note?: string;
 }
 
+interface Target {
+  address: string;
+  path: string;
+  sessionId: string;
+}
+
 type Exchange =
-  | { kind: 'reply'; reply: Reply }
+  | { kind: 'reply'; reply: MessageReply }
   | { kind: 'failed'; reason: string; written: boolean };
 
 const exchangeMilliseconds = 5000;
-
-const replyByteLimit = 4096;
 
 // One connection carries one request frame and one reply frame. `written` tells whether any request
 // bytes may have reached the receiver.
@@ -100,9 +100,7 @@ const refuse = (request: InboxSendRequest, reason: string): never => {
   throw new Error(`${reason} ${request.refusal}`);
 };
 
-const resolveTarget = async (
-  request: InboxSendRequest,
-): Promise<{ address: string; path: string }> => {
+const resolveTarget = async (request: InboxSendRequest): Promise<Target> => {
   const terminal = await get(request.hc, request.target).catch((error: unknown) =>
     refuse(request, errorMessage(error)),
   );
@@ -118,61 +116,28 @@ const resolveTarget = async (
     return refuse(request, decision.reason);
   }
 
-  return { address: terminal.address, path: decision.path };
+  return { address: terminal.address, path: decision.path, sessionId: decision.sessionId };
 };
 
-const handshake = async (
-  request: InboxSendRequest,
-  address: string,
-  path: string,
-): Promise<ReadyReply> => {
-  const result = await exchange(
-    path,
-    encodeFrame({ protocol: 'rpc1', kind: 'hello' }),
-    request.hc.signal,
-  );
-
-  if (result.kind === 'failed') {
-    return refuse(request, `The inbox of ${address} did not answer: ${result.reason}`);
-  }
-
-  if (result.reply.kind !== 'ready') {
-    return refuse(request, `The inbox of ${address} did not answer the handshake.`);
-  }
-
-  const decision = decideReady(result.reply, {
-    address,
-    sessionId: undefined,
-    family: request.body.family,
-  });
-
-  if (decision.kind === 'refuse') {
-    return refuse(request, decision.reason);
-  }
-
-  return result.reply;
-};
-
-const unknownResult = (ready: ReadyReply, messageId: string, reason: string): InboxSendResult => ({
+const unknownResult = (target: Target, messageId: string, reason: string): InboxSendResult => ({
   status: 'unknown',
-  terminal: ready.terminal,
-  sessionId: ready.sessionId,
+  terminal: target.address,
+  sessionId: target.sessionId,
   messageId,
-  note: `${reason} Acceptance unknown for message ${messageId} to terminal ${ready.terminal}, session ${ready.sessionId}; the receiver may have saved it. A retry must reuse this message ID and the same text.`,
+  note: `${reason} Acceptance unknown for message ${messageId} to terminal ${target.address}, session ${target.sessionId}; the receiver may have saved it. A retry must reuse this message ID and the same text.`,
 });
 
 const deliver = async (
   request: InboxSendRequest,
-  ready: ReadyReply,
-  path: string,
+  target: Target,
   messageId: string,
 ): Promise<InboxSendResult> => {
   const frame = encodeFrame({
     protocol: 'rpc1',
     kind: 'message',
     messageId,
-    targetTerminal: ready.terminal,
-    targetSessionId: ready.sessionId,
+    targetTerminal: target.address,
+    targetSessionId: target.sessionId,
     ...request.body,
   });
 
@@ -183,12 +148,12 @@ const deliver = async (
     );
   }
 
-  const result = await exchange(path, frame, request.hc.signal);
+  const result = await exchange(target.path, frame, request.hc.signal);
 
   if (result.kind === 'failed') {
     return result.written
-      ? unknownResult(ready, messageId, result.reason)
-      : refuse(request, `The inbox of ${ready.terminal} did not answer: ${result.reason}`);
+      ? unknownResult(target, messageId, result.reason)
+      : refuse(request, `The inbox of ${target.address} did not answer: ${result.reason}`);
   }
 
   const { reply } = result;
@@ -197,8 +162,8 @@ const deliver = async (
     return refuse(request, reply.reason);
   }
 
-  if (reply.kind !== 'queued' || reply.messageId !== messageId) {
-    return unknownResult(ready, messageId, 'The receiver sent an unexpected reply.');
+  if (reply.messageId !== messageId) {
+    return unknownResult(target, messageId, 'The receiver sent an unexpected reply.');
   }
 
   return { status: 'queued', terminal: reply.terminal, sessionId: reply.sessionId, messageId };
@@ -213,13 +178,9 @@ export const sendInboxMessage = async (request: InboxSendRequest): Promise<Inbox
     return refuse(request, `The message ID is not a UUID: ${messageId}`);
   }
 
-  const { address, path } = await resolveTarget(request);
+  const target = await resolveTarget(request);
 
   request.hc.signal?.throwIfAborted();
 
-  const ready = await handshake(request, address, path);
-
-  request.hc.signal?.throwIfAborted();
-
-  return deliver(request, ready, path, messageId);
+  return deliver(request, target, messageId);
 };

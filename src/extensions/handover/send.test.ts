@@ -28,8 +28,11 @@ const runtimeOf = (fake: HcFake): HcRuntime => ({
   cwd: '/repository',
 });
 
-const terminalReply = (address: string, name: string | null = null, path = '/tmp/none.sock') =>
-  JSON.stringify({ address, name, state: 'live', labels: { 'tau.inbox': `rpc1:${path}` } });
+const terminalReply = (
+  address: string,
+  name: string | null = null,
+  path = '/tmp/00000000-0000-4000-8000-000000000000.sock',
+) => JSON.stringify({ address, name, state: 'live', labels: { 'tau.inbox': `rpc1:${path}` } });
 
 const socketRoot = (): string => {
   const root = mkdtempSync('/tmp/tau-handover-');

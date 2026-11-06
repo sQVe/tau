@@ -1,18 +1,11 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 export interface StartupGate {
-  // Rejects when the signal aborts or the session generation ends, so a waiter from an earlier
-  // generation never resolves into its replacement.
+  // Rejects when the signal aborts. A wait from an ended generation never resolves, so it never
+  // runs into its replacement.
   whenReady: (signal: AbortSignal) => Promise<void>;
   isReady: () => boolean;
 }
-
-interface Waiter {
-  resolve: () => void;
-  reject: (reason: Error) => void;
-}
-
-const generationEnded = (): Error => new Error('The session generation ended before startup.');
 
 const abortReason = (signal: AbortSignal): Error =>
   signal.reason instanceof Error ? signal.reason : new Error('The startup wait was aborted.');
@@ -24,89 +17,57 @@ const abortReason = (signal: AbortSignal): Error =>
 // reports its status, so the status shows idle until that run settles.
 export const createStartupGate = (pi: ExtensionAPI): StartupGate => {
   let active = false;
+  let opened = Promise.withResolvers<undefined>();
   let open = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let waiters = new Set<Waiter>();
 
-  const endGeneration = (): void => {
+  const reset = (): void => {
+    clearTimeout(timer);
+    timer = undefined;
     open = false;
-
-    if (timer !== undefined) {
-      clearTimeout(timer);
-      timer = undefined;
-    }
-
-    const ended = waiters;
-
-    waiters = new Set();
-
-    for (const waiter of ended) {
-      waiter.reject(generationEnded());
-    }
-  };
-
-  const scheduleOpen = (): void => {
-    if (!active || timer !== undefined) {
-      return;
-    }
-
-    timer = setTimeout(() => {
-      timer = undefined;
-      open = true;
-
-      const ready = waiters;
-
-      waiters = new Set();
-
-      for (const waiter of ready) {
-        waiter.resolve();
-      }
-    }, 0);
+    opened = Promise.withResolvers();
   };
 
   pi.on('session_start', () => {
     active = true;
-    endGeneration();
+    reset();
   });
 
   pi.on('resources_discover', () => {
-    scheduleOpen();
+    if (!active || timer !== undefined) {
+      return;
+    }
+
+    const { resolve } = opened;
+
+    timer = setTimeout(() => {
+      timer = undefined;
+      open = true;
+      resolve(undefined);
+    }, 0);
   });
 
   pi.on('session_shutdown', () => {
     active = false;
-    endGeneration();
+    reset();
   });
 
-  const whenReady = (signal: AbortSignal): Promise<void> => {
-    if (signal.aborted) {
-      return Promise.reject(abortReason(signal));
+  const whenReady = async (signal: AbortSignal): Promise<void> => {
+    signal.throwIfAborted();
+
+    const aborted = Promise.withResolvers<undefined>();
+
+    const onAbort = (): void => {
+      aborted.reject(abortReason(signal));
+    };
+
+    signal.addEventListener('abort', onAbort, { once: true });
+
+    try {
+      await Promise.race([opened.promise, aborted.promise]);
+    } finally {
+      signal.removeEventListener('abort', onAbort);
     }
-
-    if (open) {
-      return Promise.resolve();
-    }
-
-    return new Promise<void>((resolve, reject) => {
-      const onAbort = (): void => {
-        waiters.delete(waiter);
-        reject(abortReason(signal));
-      };
-
-      const waiter: Waiter = {
-        resolve: () => {
-          signal.removeEventListener('abort', onAbort);
-          resolve();
-        },
-        reject: (reason) => {
-          signal.removeEventListener('abort', onAbort);
-          reject(reason);
-        },
-      };
-
-      waiters.add(waiter);
-      signal.addEventListener('abort', onAbort, { once: true });
-    });
   };
 
   return { whenReady, isReady: () => open };

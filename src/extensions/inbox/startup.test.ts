@@ -112,7 +112,7 @@ it('closes again on session_start and stays closed after session_shutdown', asyn
   expect(gate.isReady()).toBe(false);
 });
 
-it('rejects a waiter from an ended generation and never resolves it into the next one', async () => {
+it('never resolves a waiter from an ended generation into the next one', async () => {
   const fake = fakeExtensionApi();
   const gate = createStartupGate(fake.pi);
   const outcomes: string[] = [];
@@ -127,10 +127,10 @@ it('rejects a waiter from an ended generation and never resolves it into the nex
   fake.handler('session_start')({ reason: 'reload' }, context);
   fake.handler('resources_discover')({ type: 'resources_discover' }, context);
   await vi.advanceTimersByTimeAsync(0);
-  await earlier;
+  await Promise.race([earlier, gate.whenReady(new AbortController().signal)]);
 
   expect(gate.isReady()).toBe(true);
-  expect(outcomes).toEqual(['rejected']);
+  expect(outcomes).toEqual([]);
 });
 
 it('rejects a waiter whose signal aborts and still opens for later waiters', async () => {

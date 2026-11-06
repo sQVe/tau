@@ -4,12 +4,7 @@ import { join } from 'node:path';
 
 import type { onTestFinished } from 'vitest';
 
-import {
-  createHandoverReceiver,
-  createReceiptStore,
-  registerFamilyHandler,
-  startInbox,
-} from '../src/inbox/inbox.js';
+import { createReceiptStore, createReceiver, startInbox } from '../src/inbox/inbox.js';
 
 export interface HandoverReceiver {
   sessionId: string;
@@ -30,24 +25,22 @@ export const startHandoverReceiver = async (
   const records = join(root, 'records');
   const paths: string[] = [];
 
-  const dispose = registerFamilyHandler(
+  const receiver = createReceiver({
+    directory: join(records, sessionId),
+    terminal,
     sessionId,
-    'handover',
-    createHandoverReceiver({
-      directory: join(records, sessionId),
-      terminal,
-      sessionId,
-      receipts: createReceiptStore(sessionId),
-      entries: () => [],
-      wake: () => undefined,
-      notify: () => undefined,
-    }),
-  );
+    accepts: { handover: () => undefined },
+    receipts: createReceiptStore(sessionId),
+    entries: () => [],
+    wake: () => undefined,
+    notify: () => undefined,
+  });
 
   const listener = await startInbox({
     sessionId,
     terminal,
     directory: join(root, 'sockets'),
+    accept: receiver.accept,
     onQueued: () => undefined,
     advertise: (path) => {
       paths.push(path);
@@ -59,7 +52,6 @@ export const startHandoverReceiver = async (
 
   finished(async () => {
     await listener.stop();
-    dispose();
   });
 
   const savedRecords = (): string[] => {

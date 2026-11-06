@@ -6,15 +6,13 @@ import { errorMessage } from '../../errors.js';
 import { get, label } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import {
-  createHandoverReceiver,
   createReceiptStore,
-  familyHandlers,
+  createReceiver,
   formatInboxLabel,
   inboxLabelKey,
-  registerFamilyHandler,
   startInbox,
 } from '../../inbox/inbox.js';
-import type { InboxListener } from '../../inbox/inbox.js';
+import type { InboxListener, Receiver } from '../../inbox/inbox.js';
 import type { Wake } from '../../wake/wake.js';
 import type { StartupGate } from './startup.js';
 
@@ -32,7 +30,7 @@ interface Generation {
   controller: AbortController;
   sessionId: string;
   drain: Promise<void>;
-  disposeReceiver: () => void;
+  receiver: Receiver | undefined;
 }
 
 const notifyError = (context: ExtensionContext, message: string): void => {
@@ -62,15 +60,7 @@ export const registerInboxLifecycle = (
     const { signal } = current.controller;
 
     await gate.whenReady(signal);
-
-    for (const handler of familyHandlers(current.sessionId)) {
-      if (signal.aborted) {
-        return;
-      }
-
-      // oxlint-disable-next-line no-await-in-loop -- Deliveries run one at a time.
-      await handler.deliver(signal);
-    }
+    await current.receiver?.deliver(signal);
   };
 
   // Drains run one at a time, and each drain belongs to the generation that requested it.
@@ -98,10 +88,11 @@ export const registerInboxLifecycle = (
       return;
     }
 
-    const receiver = createHandoverReceiver({
+    const receiver = createReceiver({
       directory: join(dependencies.inboxDirectory(), current.sessionId),
       terminal,
       sessionId: current.sessionId,
+      accepts: { handover: () => undefined },
       receipts: createReceiptStore(current.sessionId),
       entries: () => context.sessionManager.getEntries(),
       wake: (message) => {
@@ -112,12 +103,13 @@ export const registerInboxLifecycle = (
       },
     });
 
-    current.disposeReceiver = registerFamilyHandler(current.sessionId, 'handover', receiver);
+    current.receiver = receiver;
 
     listener = await startInbox({
       sessionId: current.sessionId,
       terminal,
       directory: dependencies.socketDirectory(),
+      accept: receiver.accept,
       onQueued: () => {
         requestDrain(current, context);
       },
@@ -130,7 +122,6 @@ export const registerInboxLifecycle = (
 
   const endGeneration = (): void => {
     generation?.controller.abort();
-    generation?.disposeReceiver();
     generation = undefined;
   };
 
@@ -145,7 +136,7 @@ export const registerInboxLifecycle = (
       controller: new AbortController(),
       sessionId: context.sessionManager.getSessionId(),
       drain: endedDrain,
-      disposeReceiver: () => undefined,
+      receiver: undefined,
     };
 
     generation = current;

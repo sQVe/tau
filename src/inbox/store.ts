@@ -1,52 +1,49 @@
-import { mkdir, readdir, unlink } from 'node:fs/promises';
+import { mkdir, readdir, readFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
 import { errorMessage, isMissingFile } from '../errors.js';
-import { parseVersionedRecord, publishRecord, PublishError, readBoundedText } from '../record.js';
-import { isUuid, requestByteLimit, uuidSchema } from './protocol.js';
+import { parseVersionedRecord, writeRecord } from '../record.js';
+import { isUuid, requestByteLimit, uuidSchema, withBody } from './protocol.js';
 
-export type HandoverRecord = Static<typeof recordSchema>;
+export type InboxRecord = Static<typeof recordSchema>;
 
-export type HandoverRead =
-  | { kind: 'record'; record: HandoverRecord }
+export type InboxRead =
+  | { kind: 'record'; record: InboxRecord }
   | { kind: 'missing' }
   | { kind: 'malformed'; reason: string };
 
-// `changed`: a record with this message ID holds other text.
-export type PublishOutcome = 'published' | 'existing' | 'changed';
+// `changed`: a record with this message ID holds another message.
+export type SaveOutcome = 'saved' | 'existing' | 'changed';
 
 const recordVersion = 1;
 
-const recordSchema = Type.Object(
-  {
-    version: Type.Literal(recordVersion),
-    messageId: uuidSchema,
-    targetTerminal: Type.String({ minLength: 1 }),
-    targetSessionId: uuidSchema,
-    text: Type.String({ minLength: 1 }),
-  },
-  { additionalProperties: false },
-);
+const recordSchema = withBody({ version: Type.Literal(recordVersion), messageId: uuidSchema });
 
-const recordOptions = { label: 'handover record', version: recordVersion, schema: recordSchema };
+const recordOptions = { label: 'inbox record', version: recordVersion, schema: recordSchema };
 
-// The record holds the request's text with JSON escapes and a few small fields, so twice the frame
-// limit bounds every record a valid request can produce.
+// The record holds the request's payload with JSON escapes and a few small fields, so twice the
+// frame limit bounds every record a valid request can produce.
 const recordByteLimit = 2 * requestByteLimit;
 
 const recordPath = (directory: string, messageId: string): string =>
   join(directory, `${messageId}.json`);
 
-export const readHandover = async (directory: string, messageId: string): Promise<HandoverRead> => {
-  const path = recordPath(directory, messageId);
+const readRecord = async (path: string): Promise<InboxRecord> => {
+  const text = await readFile(path, 'utf8');
 
+  if (Buffer.byteLength(text) > recordByteLimit) {
+    throw new Error(`Inbox record ${path} is larger than ${String(recordByteLimit)} bytes.`);
+  }
+
+  return parseVersionedRecord(path, text, recordOptions);
+};
+
+export const readMessage = async (directory: string, messageId: string): Promise<InboxRead> => {
   try {
-    const text = await readBoundedText(path, recordByteLimit, 'Handover record');
-
-    return { kind: 'record', record: parseVersionedRecord(path, text, recordOptions) };
+    return { kind: 'record', record: await readRecord(recordPath(directory, messageId)) };
   } catch (error) {
     if (isMissingFile(error)) {
       return { kind: 'missing' };
@@ -56,36 +53,26 @@ export const readHandover = async (directory: string, messageId: string): Promis
   }
 };
 
-const sameMessage = (saved: HandoverRead, record: HandoverRecord): boolean =>
+const sameMessage = (saved: InboxRead, record: InboxRecord): boolean =>
   saved.kind === 'record' && JSON.stringify(saved.record) === JSON.stringify(record);
 
-// Publishes once; a record already saved under the message ID is never replaced.
-export const publishHandover = async (
-  directory: string,
-  record: HandoverRecord,
-): Promise<PublishOutcome> => {
+// Saves once; a record already saved under the message ID is never replaced.
+export const saveMessage = async (directory: string, record: InboxRecord): Promise<SaveOutcome> => {
   await mkdir(directory, { recursive: true, mode: 0o700 });
 
-  try {
-    publishRecord(recordPath(directory, record.messageId), record, {
-      ...recordOptions,
-      mode: 0o600,
-    });
+  const saved = await readMessage(directory, record.messageId);
 
-    return 'published';
-  } catch (error) {
-    if (!(error instanceof PublishError) || error.failure !== 'exists') {
-      throw error;
-    }
+  if (saved.kind !== 'missing') {
+    return sameMessage(saved, record) ? 'existing' : 'changed';
   }
 
-  const saved = await readHandover(directory, record.messageId);
+  await writeRecord(recordPath(directory, record.messageId), record);
 
-  return sameMessage(saved, record) ? 'existing' : 'changed';
+  return 'saved';
 };
 
-// Lists saved records by message ID. Unpublished temporary files never match.
-export const pendingHandovers = async (directory: string): Promise<string[]> => {
+// Lists saved records by message ID. Temporary files never match.
+export const pendingMessages = async (directory: string): Promise<string[]> => {
   try {
     const names = await readdir(directory);
 
@@ -103,7 +90,7 @@ export const pendingHandovers = async (directory: string): Promise<string[]> => 
   }
 };
 
-export const deleteHandover = async (directory: string, messageId: string): Promise<void> => {
+export const deleteMessage = async (directory: string, messageId: string): Promise<void> => {
   try {
     await unlink(recordPath(directory, messageId));
   } catch (error) {

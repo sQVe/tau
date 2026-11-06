@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
 
@@ -10,6 +18,9 @@ import { succeededResult } from '../../tests/execFake.js';
 import { fakeExtensionApi } from '../../tests/extensionApi.js';
 import type { Exec } from '../command.js';
 import { createInboxExtension } from '../extensions/inbox/inbox.js';
+import { createReceiptStore, createReceiver } from './inbox.js';
+import type { MessageRequest } from './protocol.js';
+import type { ReceiverOptions } from './receive.js';
 
 interface Entry {
   type: string;
@@ -17,9 +28,11 @@ interface Entry {
   details?: unknown;
 }
 
-// Holds every record read until the test releases it, so a replacement can start during a read.
+// Holds every record read after the first until the test releases it. The first read is the
+// duplicate check before saving; a later one is the drain's, so a replacement can start during it.
 const readHold = vi.hoisted(() => ({
   held: undefined as Promise<void> | undefined,
+  reads: 0,
   reached: Promise.withResolvers<undefined>(),
 }));
 
@@ -28,16 +41,20 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 
   return {
     ...actual,
-    open: async (...parameters: Parameters<typeof actual.open>) => {
+    readFile: (async (...parameters: Parameters<typeof actual.readFile>) => {
       const { held } = readHold;
+      const [path] = parameters;
 
-      if (held !== undefined && String(parameters[0]).includes('/records/')) {
+      const recordRead =
+        held !== undefined && typeof path === 'string' && path.includes('/records/');
+
+      if (recordRead && readHold.reads++ > 0) {
         readHold.reached.resolve(undefined);
         await held;
       }
 
-      return actual.open(...parameters);
-    },
+      return actual.readFile(...parameters);
+    }) as typeof actual.readFile,
   };
 });
 
@@ -56,6 +73,7 @@ afterEach(async () => {
   }
 
   readHold.held = undefined;
+  readHold.reads = 0;
   readHold.reached = Promise.withResolvers<undefined>();
   vi.unstubAllEnvs();
   rmSync(root, { recursive: true, force: true });
@@ -263,7 +281,7 @@ it('answers a pending retry with the same text as queued and refuses different t
   ).resolves.toEqual({
     protocol: 'rpc1',
     kind: 'refused',
-    reason: `Message ${messageId} is already saved with different text.`,
+    reason: `Message ${messageId} is already saved with different content.`,
     messageId,
   });
 });
@@ -299,7 +317,7 @@ it('reports a malformed record once and still delivers a valid one', async () =>
   await receiver.emit('agent_end');
 
   expect(receiver.notices).toEqual([
-    `Tau inbox skipped handover ${malformedId}: Malformed handover record ${recordOf(sessionId, malformedId)}: not JSON.`,
+    `Tau inbox skipped message ${malformedId}: Malformed inbox record ${recordOf(sessionId, malformedId)}: not JSON.`,
   ]);
 
   expect(receiver.sendMessage).toHaveBeenCalledTimes(1);
@@ -337,4 +355,100 @@ it('wakes nothing when the session shuts down during a record read', async () =>
   await flush();
 
   expect(receiver.sendMessage).not.toHaveBeenCalled();
+});
+
+// A receiver used without the extension, for one session that accepts the given families.
+const directReceiver = (sessionId: string, accepts: ReceiverOptions['accepts']) => {
+  const woken: unknown[] = [];
+
+  const receiver = createReceiver({
+    directory: join(root, 'records', sessionId),
+    terminal: 't7',
+    sessionId,
+    accepts,
+    receipts: createReceiptStore(sessionId),
+    entries: () => [],
+    wake: (message) => woken.push(message),
+    notify: () => undefined,
+  });
+
+  return { receiver, woken };
+};
+
+const messageRequest = (sessionId: string, messageId: string): MessageRequest => ({
+  protocol: 'rpc1',
+  kind: 'message',
+  messageId,
+  targetTerminal: 't7',
+  targetSessionId: sessionId,
+  family: 'handover',
+  payload: { text: 'handover text' },
+});
+
+it('refuses a message its family check rejects and saves nothing', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+  const { receiver } = directReceiver(sessionId, { handover: () => 'The question is closed.' });
+
+  await expect(receiver.accept(messageRequest(sessionId, messageId))).resolves.toEqual({
+    protocol: 'rpc1',
+    kind: 'refused',
+    reason: 'The question is closed.',
+    messageId,
+  });
+
+  expect(existsSync(join(root, 'records', sessionId))).toBe(false);
+});
+
+it('saves an accepted answer and wakes with its answer text', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+  const { receiver, woken } = directReceiver(sessionId, { answer: () => undefined });
+
+  const request: MessageRequest = {
+    ...messageRequest(sessionId, messageId),
+    family: 'answer',
+    payload: {
+      assignmentId: randomUUID(),
+      questionId: randomUUID(),
+      parentSession: 'parent',
+      answer: 'Use option A.',
+    },
+  };
+
+  await expect(receiver.accept(request)).resolves.toEqual(queued(sessionId, messageId));
+  await receiver.deliver(new AbortController().signal);
+
+  expect(woken).toEqual([
+    {
+      customType: 'tau-inbox-message',
+      content: 'Use option A.',
+      display: true,
+      details: { version: 2, messageId, sessionId, family: 'answer' },
+    },
+  ]);
+});
+
+it('queues the first of two overlapping saves of one message ID and refuses the other', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+  const { receiver } = directReceiver(sessionId, { handover: () => undefined });
+  const first = messageRequest(sessionId, messageId);
+  const second: MessageRequest = { ...first, family: 'handover', payload: { text: 'other text' } };
+
+  const replies = await Promise.all([receiver.accept(first), receiver.accept(second)]);
+
+  expect(replies).toEqual([
+    queued(sessionId, messageId),
+    {
+      protocol: 'rpc1',
+      kind: 'refused',
+      reason: `Message ${messageId} is already saved with different content.`,
+      messageId,
+    },
+  ]);
+
+  expect(JSON.parse(readFileSync(recordOf(sessionId, messageId), 'utf8'))).toMatchObject({
+    payload: { text: 'handover text' },
+  });
 });

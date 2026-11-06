@@ -1,20 +1,20 @@
 import { randomUUID } from 'node:crypto';
 import {
   closeSync,
-  constants,
   fsyncSync,
   linkSync,
   openSync,
+  readSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { open, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { errorMessage, hasErrorCode, isMissingFile } from './errors.js';
+import { isMissingFile } from './errors.js';
 import { describeSchemaProblem, isRecord } from './schema.js';
 import { isSymlink } from './tauDirectory.js';
 
@@ -28,10 +28,6 @@ export interface VersionedRecordOptions<Schema extends TSchema> {
   // Returns a problem the schema would report badly, such as one inside a union member.
   check?: (value: unknown) => string | undefined;
 }
-
-// `exists`: another record holds the path. `notLinked`: nothing was published. `linked`: the record
-// was published, but a later step failed, so it may not survive a crash.
-export type PublishFailure = 'exists' | 'notLinked' | 'linked';
 
 const capitalize = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 
@@ -125,14 +121,6 @@ export const writeRecord = async (path: string, value: unknown): Promise<void> =
 export const savedVersion = (value: unknown): unknown =>
   isRecord(value) ? value['version'] : undefined;
 
-const unlinkQuietly = (path: string): void => {
-  try {
-    unlinkSync(path);
-  } catch {
-    // The temporary name is never read as a record.
-  }
-};
-
 const fsyncPath = (path: string, flags: string) => {
   const descriptor = openSync(path, flags);
 
@@ -143,98 +131,42 @@ const fsyncPath = (path: string, flags: string) => {
   }
 };
 
-export class PublishError extends Error {
-  readonly failure: PublishFailure;
-
-  constructor(failure: PublishFailure, cause: unknown) {
-    super(errorMessage(cause), { cause });
-    this.name = 'PublishError';
-    this.failure = failure;
-  }
-}
-
-const linkFailure = (error: unknown): PublishFailure =>
-  hasErrorCode(error, 'EEXIST') ? 'exists' : 'notLinked';
-
 // Publishes a complete file without replacing an existing record. The temporary name starts with
 // `.receipt-`, which readers of unpublished folders match.
 export const publishTextSync = (path: string, text: string, options: { mode: number }): void => {
   const temporary = join(dirname(path), `.receipt-${randomUUID()}`);
+  const descriptor = openSync(temporary, 'wx', options.mode);
 
   try {
-    const descriptor = openSync(temporary, 'wx', options.mode);
-
     try {
       writeFileSync(descriptor, text);
       fsyncSync(descriptor);
     } finally {
       closeSync(descriptor);
     }
-  } catch (error) {
-    unlinkQuietly(temporary);
 
-    throw new PublishError('notLinked', error);
-  }
-
-  try {
     linkSync(temporary, path);
-  } catch (error) {
-    unlinkQuietly(temporary);
-
-    throw new PublishError(linkFailure(error), error);
-  }
-
-  try {
     fsyncPath(dirname(path), 'r');
-  } catch (error) {
-    unlinkQuietly(temporary);
-
-    throw new PublishError('linked', error);
-  }
-
-  try {
+  } finally {
     unlinkSync(temporary);
-  } catch (error) {
-    throw new PublishError('linked', error);
   }
 };
 
-export const publishRecord = <Schema extends TSchema>(
-  path: string,
-  value: Static<Schema>,
-  options: { label: string; schema: Schema; mode: number },
-): void => {
-  if (!Value.Check(options.schema, value)) {
-    throw new Error(
-      `Refusing to save a malformed ${options.label}: ${describeSchemaProblem(options.schema, value)}.`,
-    );
-  }
-
-  publishTextSync(path, `${JSON.stringify(value, null, 2)}\n`, { mode: options.mode });
-};
-
-// Reads a regular file without following a symlink at the path. Throws when it holds more than
-// `byteLimit` bytes; read errors, a missing file included, are thrown too.
-export const readBoundedText = async (
-  path: string,
-  byteLimit: number,
-  label: string,
-): Promise<string> => {
-  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+// Returns undefined when the file holds more than `byteLimit` bytes. Read errors, a missing file
+// included, are thrown.
+export const readTextWithinSync = (path: string, byteLimit: number): string | undefined => {
+  const descriptor = openSync(path, 'r');
 
   try {
-    const stats = await handle.stat();
-
-    if (!stats.isFile()) {
-      throw new Error(`${label} is not a regular file: ${path}`);
-    }
-
     const buffer = Buffer.alloc(byteLimit + 1);
     let bytesRead = 0;
 
     while (bytesRead < buffer.length) {
-      // oxlint-disable-next-line no-await-in-loop -- each read continues the previous one.
-      const { bytesRead: read } = await handle.read(buffer, bytesRead, buffer.length - bytesRead);
+      const read = readSync(descriptor, buffer, {
+        offset: bytesRead,
+        length: buffer.length - bytesRead,
+        position: bytesRead,
+      });
 
       if (read === 0) {
         break;
@@ -243,12 +175,8 @@ export const readBoundedText = async (
       bytesRead += read;
     }
 
-    if (bytesRead > byteLimit) {
-      throw new Error(`${label} is larger than ${String(byteLimit)} bytes: ${path}`);
-    }
-
-    return buffer.subarray(0, bytesRead).toString('utf8');
+    return bytesRead > byteLimit ? undefined : buffer.subarray(0, bytesRead).toString('utf8');
   } finally {
-    await handle.close();
+    closeSync(descriptor);
   }
 };

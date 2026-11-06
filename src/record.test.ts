@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Type } from 'typebox';
@@ -7,22 +7,15 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.js';
 import {
   parseVersionedRecord,
-  publishRecord,
-  PublishError,
   publishTextSync,
-  readBoundedText,
   readOptionalText,
+  readTextWithinSync,
   readVersionedRecord,
   savedVersion,
   writeRecord,
 } from './record.js';
 
-const writeState = vi.hoisted(() => ({
-  failMidway: false,
-  failFsync: false,
-  failDirectoryFsync: false,
-  failLink: false,
-}));
+const writeState = vi.hoisted(() => ({ failMidway: false, failFsync: false }));
 
 vi.mock(import('node:fs'), async (importOriginal) => {
   const actual = await importOriginal();
@@ -34,18 +27,7 @@ vi.mock(import('node:fs'), async (importOriginal) => {
         throw new Error('fsync failed');
       }
 
-      if (writeState.failDirectoryFsync && actual.fstatSync(descriptor).isDirectory()) {
-        throw new Error('directory fsync failed');
-      }
-
       actual.fsyncSync(descriptor);
-    },
-    linkSync: (...parameters: Parameters<typeof actual.linkSync>) => {
-      if (writeState.failLink) {
-        throw new Error('link failed');
-      }
-
-      actual.linkSync(...parameters);
     },
   };
 });
@@ -79,8 +61,6 @@ const directoryFixture = async () => {
   onTestFinished(() => {
     writeState.failMidway = false;
     writeState.failFsync = false;
-    writeState.failDirectoryFsync = false;
-    writeState.failLink = false;
   });
 
   return directory;
@@ -208,82 +188,9 @@ it('reads text within the byte limit and refuses more', async () => {
 
   await writeFile(path, 'abcd');
 
-  await expect(readBoundedText(path, 4, 'sample record')).resolves.toBe('abcd');
-
-  await expect(readBoundedText(path, 3, 'sample record')).rejects.toThrow(
-    `sample record is larger than 3 bytes: ${path}`,
-  );
-
-  await expect(
-    readBoundedText(join(directory, 'missing.json'), 4, 'sample record'),
-  ).rejects.toThrow('ENOENT');
-});
-
-it('refuses to read through a symlink or from a directory', async () => {
-  const directory = await directoryFixture();
-  const target = join(directory, 'a.json');
-  const link = join(directory, 'link.json');
-  const folder = join(directory, 'folder');
-
-  await writeFile(target, 'abcd');
-  await symlink(target, link);
-  await mkdir(folder);
-
-  await expect(readBoundedText(link, 4, 'sample record')).rejects.toThrow('ELOOP');
-
-  await expect(readBoundedText(folder, 4, 'sample record')).rejects.toThrow(
-    `sample record is not a regular file: ${folder}`,
-  );
-});
-
-const publishFailure = (path: string): PublishError | undefined => {
-  try {
-    publishTextSync(path, 'text', { mode: 0o600 });
-  } catch (error) {
-    return error instanceof PublishError ? error : undefined;
-  }
-
-  return undefined;
-};
-
-it('names the publication stage that failed', async () => {
-  const directory = await directoryFixture();
-  const path = join(directory, 'a.json');
-
-  publishTextSync(path, 'first', { mode: 0o600 });
-
-  expect(publishFailure(path)?.failure).toBe('exists');
-
-  writeState.failLink = true;
-  expect(publishFailure(join(directory, 'b.json'))?.failure).toBe('notLinked');
-  writeState.failLink = false;
-
-  writeState.failFsync = true;
-  expect(publishFailure(join(directory, 'c.json'))?.failure).toBe('notLinked');
-  writeState.failFsync = false;
-
-  writeState.failDirectoryFsync = true;
-  expect(publishFailure(join(directory, 'd.json'))?.failure).toBe('linked');
-  writeState.failDirectoryFsync = false;
-
-  expect(await readFile(path, 'utf8')).toBe('first');
-  expect((await readdir(directory)).toSorted()).toEqual(['a.json', 'd.json']);
-});
-
-it('publishes a record that matches its schema and refuses one that does not', async () => {
-  const directory = await directoryFixture();
-  const path = join(directory, 'a.json');
-  const bad = join(directory, 'b.json');
-  const publishOptions = { ...options, mode: 0o600 };
-
-  publishRecord(path, { version: 2, name: 'first' }, publishOptions);
-
-  expect(() => {
-    publishRecord(bad, { version: 2 } as never, publishOptions);
-  }).toThrow('Refusing to save a malformed sample record');
-
-  expect(await readFile(path, 'utf8')).toBe('{\n  "version": 2,\n  "name": "first"\n}\n');
-  expect(await readdir(directory)).toEqual(['a.json']);
+  expect(readTextWithinSync(path, 4)).toBe('abcd');
+  expect(readTextWithinSync(path, 3)).toBeUndefined();
+  expect(() => readTextWithinSync(join(directory, 'missing.json'), 4)).toThrow('ENOENT');
 });
 
 it('reads the saved version of an object only', () => {

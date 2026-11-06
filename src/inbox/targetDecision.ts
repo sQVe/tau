@@ -1,5 +1,4 @@
-import { inboxLabelKey, parseInboxLabel } from './protocol.js';
-import type { Family, ReadyReply } from './protocol.js';
+import { inboxLabelKey, isUuid, parseInboxLabel } from './protocol.js';
 
 export interface TargetFacts {
   // The address `hc get` returned, after alias resolution.
@@ -9,18 +8,20 @@ export interface TargetFacts {
   ownAddress: string | undefined;
 }
 
-export type TargetDecision = { kind: 'connect'; path: string } | { kind: 'refuse'; reason: string };
-
-export interface ReadyExpectation {
-  address: string;
-  sessionId: string | undefined;
-  family: Family;
-}
-
-export type ReadyDecision = { kind: 'send' } | { kind: 'refuse'; reason: string };
+export type TargetDecision =
+  | { kind: 'connect'; path: string; sessionId: string }
+  | { kind: 'refuse'; reason: string };
 
 // A machine-qualified address such as `machine/t7` names a terminal on another host.
 const isRemote = (address: string): boolean => address.includes('/');
+
+// A socket is named `<session>.sock`, so its path names the session that owns it.
+const socketSession = (path: string): string | undefined => {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  const sessionId = name.slice(0, -'.sock'.length);
+
+  return name.endsWith('.sock') && isUuid(sessionId) ? sessionId : undefined;
+};
 
 export const decideTarget = (facts: TargetFacts): TargetDecision => {
   const { address } = facts;
@@ -52,32 +53,11 @@ export const decideTarget = (facts: TargetFacts): TargetDecision => {
     };
   }
 
-  return { kind: 'connect', path: parsed.path };
-};
+  const sessionId = socketSession(parsed.path);
 
-export const decideReady = (ready: ReadyReply, expected: ReadyExpectation): ReadyDecision => {
-  if (ready.terminal !== expected.address) {
-    return {
-      kind: 'refuse',
-      reason: `The inbox of ${expected.address} answers for terminal ${ready.terminal}.`,
-    };
+  if (sessionId === undefined) {
+    return { kind: 'refuse', reason: `Terminal ${address} advertises a socket without a session.` };
   }
 
-  const sessionMatches = expected.sessionId === undefined || ready.sessionId === expected.sessionId;
-
-  if (!sessionMatches) {
-    return {
-      kind: 'refuse',
-      reason: `The inbox of ${expected.address} belongs to session ${ready.sessionId}, not ${String(expected.sessionId)}.`,
-    };
-  }
-
-  if (!ready.families.includes(expected.family)) {
-    return {
-      kind: 'refuse',
-      reason: `The inbox of ${expected.address} does not accept ${expected.family} messages.`,
-    };
-  }
-
-  return { kind: 'send' };
+  return { kind: 'connect', path: parsed.path, sessionId };
 };

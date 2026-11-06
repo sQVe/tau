@@ -1,11 +1,9 @@
-import { PublishError } from '../record.js';
-import type { FamilyHandler } from './inbox.js';
-import type { MessageReply, MessageRequest } from './protocol.js';
+import type { Family, MessageBody, MessageReply, MessageRequest } from './protocol.js';
 import { refusedReply } from './protocol.js';
 import { decideCandidate, inboxMessageType, inboxReceiptVersion } from './receiptDecision.js';
 import type { ReceiptEntryFact } from './receiptDecision.js';
 import type { ReceiptStore } from './receipts.js';
-import { deleteHandover, pendingHandovers, publishHandover, readHandover } from './store.js';
+import { deleteMessage, pendingMessages, readMessage, saveMessage } from './store.js';
 
 interface InboxMessage {
   customType: string;
@@ -14,18 +12,30 @@ interface InboxMessage {
   details: unknown;
 }
 
-export interface HandoverReceiverOptions {
+// Returns why a message is refused before it is saved, or undefined to accept it.
+type AcceptCheck = (body: MessageBody) => string | undefined;
+
+export interface ReceiverOptions {
   // The session's own record directory.
   directory: string;
   terminal: string;
   sessionId: string;
+  // The families this session accepts; a message of any other family is refused.
+  accepts: Partial<Record<Family, AcceptCheck>>;
   receipts: ReceiptStore;
   entries: () => readonly ReceiptEntryFact[];
   wake: (message: InboxMessage) => void;
   notify: (message: string) => void;
 }
 
-const queuedReply = (options: HandoverReceiverOptions, messageId: string): MessageReply => ({
+// `accept` saves a request and returns the reply the socket sends; it never waits on the startup
+// gate. `deliver` runs later from the drain, with the signal of the generation that requested it.
+export interface Receiver {
+  accept: (request: MessageRequest) => Promise<MessageReply>;
+  deliver: (signal: AbortSignal) => Promise<void>;
+}
+
+const queuedReply = (options: ReceiverOptions, messageId: string): MessageReply => ({
   protocol: 'rpc1',
   kind: 'queued',
   messageId,
@@ -33,71 +43,60 @@ const queuedReply = (options: HandoverReceiverOptions, messageId: string): Messa
   sessionId: options.sessionId,
 });
 
-const publishReply = async (
-  options: HandoverReceiverOptions,
-  request: MessageRequest & { family: 'handover' },
-): Promise<MessageReply> => {
-  const { messageId } = request;
+// Narrowing on the family keeps each payload paired with its own family.
+const bodyOf = (request: MessageRequest): MessageBody =>
+  request.family === 'handover'
+    ? { family: 'handover', payload: request.payload }
+    : { family: 'answer', payload: request.payload };
 
-  const outcome = await publishHandover(options.directory, {
-    version: 1,
-    messageId,
-    targetTerminal: request.targetTerminal,
-    targetSessionId: request.targetSessionId,
-    text: request.payload.text,
-  });
+const accept = async (options: ReceiverOptions, request: MessageRequest): Promise<MessageReply> => {
+  const { messageId, family } = request;
+  const check = options.accepts[family];
 
-  if (outcome === 'changed') {
-    return refusedReply(`Message ${messageId} is already saved with different text.`, messageId);
-  }
-
-  return queuedReply(options, messageId);
-};
-
-const accept = async (
-  options: HandoverReceiverOptions,
-  request: MessageRequest,
-): Promise<MessageReply> => {
-  if (request.family !== 'handover') {
-    return refusedReply('This handler accepts handover messages only.', request.messageId);
+  if (check === undefined) {
+    return refusedReply(`This session does not accept ${family} messages.`, messageId);
   }
 
   options.receipts.restore(options.entries());
 
   // A receipted message was shown already, and its record may be gone, so a retry must not save
   // it again.
-  if (options.receipts.hasReceipt(request.messageId)) {
-    return queuedReply(options, request.messageId);
+  if (options.receipts.hasReceipt(messageId)) {
+    return queuedReply(options, messageId);
   }
 
-  try {
-    return await publishReply(options, request);
-  } catch (error) {
-    // Any other failure may follow publication; the connection then closes without a reply.
-    if (error instanceof PublishError && error.failure === 'notLinked') {
-      return refusedReply(
-        `The receiver could not save the message: ${error.message}`,
-        request.messageId,
-      );
-    }
+  const body = bodyOf(request);
+  const refusal = check(body);
 
-    throw error;
+  if (refusal !== undefined) {
+    return refusedReply(refusal, messageId);
   }
+
+  const outcome = await saveMessage(options.directory, { version: 1, messageId, ...body });
+
+  if (outcome === 'changed') {
+    return refusedReply(`Message ${messageId} is already saved with different content.`, messageId);
+  }
+
+  return queuedReply(options, messageId);
 };
 
-const wakeOnce = (options: HandoverReceiverOptions, messageId: string, text: string): void => {
+const messageText = (body: MessageBody): string =>
+  body.family === 'handover' ? body.payload.text : body.payload.answer;
+
+const wakeOnce = (options: ReceiverOptions, messageId: string, body: MessageBody): void => {
   options.receipts.markQueued(messageId);
 
   try {
     options.wake({
       customType: inboxMessageType,
-      content: text,
+      content: messageText(body),
       display: true,
       details: {
         version: inboxReceiptVersion,
         messageId,
         sessionId: options.sessionId,
-        family: 'handover',
+        family: body.family,
       },
     });
   } catch (error) {
@@ -108,7 +107,7 @@ const wakeOnce = (options: HandoverReceiverOptions, messageId: string, text: str
 };
 
 const deliverOne = async (
-  options: HandoverReceiverOptions,
+  options: ReceiverOptions,
   messageId: string,
   reported: Set<string>,
   signal: AbortSignal,
@@ -121,7 +120,7 @@ const deliverOne = async (
   });
 
   if (step === 'cleanup') {
-    await deleteHandover(directory, messageId);
+    await deleteMessage(directory, messageId);
 
     return;
   }
@@ -130,7 +129,7 @@ const deliverOne = async (
     return;
   }
 
-  const read = await readHandover(directory, messageId);
+  const read = await readMessage(directory, messageId);
 
   // A replacement generation owns delivery once this one ended during the read.
   if (signal.aborted || read.kind === 'missing') {
@@ -140,26 +139,35 @@ const deliverOne = async (
   if (read.kind === 'malformed') {
     if (!reported.has(messageId)) {
       reported.add(messageId);
-      options.notify(`Tau inbox skipped handover ${messageId}: ${read.reason}`);
+      options.notify(`Tau inbox skipped message ${messageId}: ${read.reason}`);
     }
 
     return;
   }
 
-  wakeOnce(options, messageId, read.record.text);
+  wakeOnce(options, messageId, read.record);
 };
 
 // Accepting saves the record and replies; delivery shows each saved record once and deletes it only
 // after Pi saved its receipt.
-export const createHandoverReceiver = (options: HandoverReceiverOptions): FamilyHandler => {
+export const createReceiver = (options: ReceiverOptions): Receiver => {
   const reported = new Set<string>();
+  // The socket can hand over overlapping connections. Accepting one at a time lets the check
+  // before a save see every earlier save.
+  let accepting: Promise<unknown> = Promise.resolve();
 
   return {
-    accept: (request) => accept(options, request),
+    accept: (request) => {
+      const reply = accepting.then(() => accept(options, request));
+
+      accepting = reply.catch(() => undefined);
+
+      return reply;
+    },
     deliver: async (signal) => {
       options.receipts.restore(options.entries());
 
-      for (const messageId of await pendingHandovers(options.directory)) {
+      for (const messageId of await pendingMessages(options.directory)) {
         if (signal.aborted) {
           return;
         }

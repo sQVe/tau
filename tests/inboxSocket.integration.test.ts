@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
@@ -20,7 +21,7 @@ const listenerCount = (path: string): number =>
     .filter((line) => line.endsWith(` ${path}`))
     .filter((line) => line.split(/\s+/)[3] === '00010000').length;
 
-const handshake = (path: string): Promise<unknown> =>
+const exchange = (path: string, request: unknown): Promise<unknown> =>
   new Promise((resolve, reject) => {
     const socket = createConnection(path);
     let reply = '';
@@ -28,7 +29,7 @@ const handshake = (path: string): Promise<unknown> =>
     socket.setEncoding('utf8');
 
     socket.once('connect', () => {
-      socket.end(`${JSON.stringify({ protocol: 'rpc1', kind: 'hello' })}\n`);
+      socket.end(`${JSON.stringify(request)}\n`);
     });
 
     socket.on('data', (chunk: string) => {
@@ -94,15 +95,33 @@ it.skipIf(!onLinux)(
     const sessionId = session.sessionManager.getSessionId();
     const path = join(socketDirectory, `${sessionId}.sock`);
 
-    const ready = {
+    const messageId = randomUUID();
+
+    // The inbox checks the target before the family, so this refusal comes from this session's
+    // listener, and nothing is saved or shown.
+    const answer = {
       protocol: 'rpc1',
-      kind: 'ready',
-      terminal: terminal.address,
-      sessionId,
-      families: ['handover'],
+      kind: 'message',
+      messageId,
+      targetTerminal: terminal.address,
+      targetSessionId: sessionId,
+      family: 'answer',
+      payload: {
+        assignmentId: randomUUID(),
+        questionId: randomUUID(),
+        parentSession: 'parent',
+        answer: 'Use option A.',
+      },
     };
 
-    await expect(handshake(path)).resolves.toEqual(ready);
+    const refused = {
+      protocol: 'rpc1',
+      kind: 'refused',
+      reason: 'This session does not accept answer messages.',
+      messageId,
+    };
+
+    await expect(exchange(path, answer)).resolves.toEqual(refused);
     expect((await get(hc.runtime, terminal.address)).labels?.['tau.inbox']).toBe(`rpc1:${path}`);
 
     const socketBeforeReload = statSync(path).ino;
@@ -110,7 +129,7 @@ it.skipIf(!onLinux)(
     await session.reload();
 
     expect(statSync(path).ino).not.toBe(socketBeforeReload);
-    await expect(handshake(path)).resolves.toEqual(ready);
+    await expect(exchange(path, answer)).resolves.toEqual(refused);
     expect(listenerCount(path)).toBe(1);
     expect((await get(hc.runtime, terminal.address)).labels?.['tau.inbox']).toBe(`rpc1:${path}`);
 
