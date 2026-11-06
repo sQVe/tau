@@ -90,7 +90,7 @@ const savedEnvelope = async (root: string, messageId: string): Promise<Record<st
   return JSON.parse(text) as Record<string, unknown>;
 };
 
-it('queues one envelope and one label for a receiver with a live lease', async () => {
+it('queues one version 1 handover envelope and one label for a receiver with a live lease', async () => {
   const fake = createHcFake();
   const root = await createTemporaryRepository(onTestFinished);
 
@@ -110,7 +110,7 @@ it('queues one envelope and one label for a receiver with a live lease', async (
   expect(result.messageId).toMatch(/^[0-9a-f-]{36}$/);
 
   expect(await savedEnvelope(root, result.messageId)).toEqual({
-    version: 2,
+    version: 1,
     messageId: result.messageId,
     targetTerminal: 't7',
     targetSessionId: 'session-1',

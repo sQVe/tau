@@ -4,8 +4,7 @@ import type { SubscribeEvents } from '../hc/events.js';
 import { currentTerminalAddress, get } from '../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../hc/hc.js';
 import type { Wake } from '../wake/wake.js';
-import { envelopeVersion } from './envelope.js';
-import type { InboxEnvelope } from './envelope.js';
+import { envelopeToWrite } from './envelope.js';
 import { judgeLease } from './leaseDecision.js';
 import type { LeaseVerdict } from './leaseDecision.js';
 import type { InboxFamily } from './receiptDecision.js';
@@ -129,14 +128,13 @@ export const sendInboxMessage = async (request: SendInboxRequest): Promise<SendI
 
   const messageId = randomUUID();
 
-  const envelope: InboxEnvelope = {
-    version: envelopeVersion,
+  const envelope = envelopeToWrite({
     messageId,
     targetTerminal: receiver.terminal,
     targetSessionId: receiver.sessionId,
     family,
     text,
-  };
+  });
 
   const path = await publishEnvelope(cwd, envelope, sender);
 

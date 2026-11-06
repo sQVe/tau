@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
@@ -72,6 +72,8 @@ it('writes an answer envelope at version 2 that the receiver reads', async () =>
   });
 
   const path = join(root, '.tau', 'inbox', `${result.messageId}.json`);
+
+  expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ version: 2, family: 'answer' });
 
   await expect(
     readEnvelope(path, { messageId: result.messageId, terminal: 't7' }),

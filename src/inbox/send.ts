@@ -5,7 +5,7 @@ import type { HcRuntime } from '../hc/hc.js';
 import { serializeRecord, writeRecord } from '../record.js';
 import { ensureTauDirectory, findTauRoot } from '../tauDirectory.js';
 import { envelopeByteLimit } from './envelope.js';
-import type { InboxEnvelope } from './envelope.js';
+import type { WrittenEnvelope } from './envelope.js';
 
 export interface InboxSender {
   toolName: string;
@@ -16,7 +16,7 @@ const inboxDirectory = 'inbox';
 
 export const publishEnvelope = async (
   cwd: string,
-  envelope: InboxEnvelope,
+  envelope: WrittenEnvelope,
   sender: InboxSender,
 ): Promise<string> => {
   const text = serializeRecord(envelope);

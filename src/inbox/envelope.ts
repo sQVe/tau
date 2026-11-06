@@ -19,7 +19,7 @@ export type EnvelopeRead =
 
 export const envelopeByteLimit = 102_400;
 
-export const envelopeVersion = 2;
+const envelopeVersion = 2;
 
 const envelopeFields = {
   messageId: Type.String({ minLength: 1, maxLength: 200 }),
@@ -43,6 +43,14 @@ const envelopeSchema = Type.Object(
 );
 
 export type InboxEnvelope = Static<typeof envelopeSchema>;
+
+export type WrittenEnvelope = Static<typeof envelopeVersion1Schema> | InboxEnvelope;
+
+// A receiver on an older Tau reads only version 1, so a handover keeps that version.
+export const envelopeToWrite = (fields: Omit<InboxEnvelope, 'version'>): WrittenEnvelope =>
+  fields.family === 'handover'
+    ? { ...fields, version: 1, family: 'handover' }
+    : { ...fields, version: envelopeVersion };
 
 const envelopeOptions = {
   label: 'envelope',
