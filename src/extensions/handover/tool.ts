@@ -44,9 +44,10 @@ const parameters = Type.Object({
   name: Type.Optional(Type.String({ description: 'start without space: name of the new space.' })),
   messageId: Type.Optional(
     Type.String({
-      description: 'send retry only: the messageId of an earlier unknown result.',
+      description: 'send retry: messageId of an unknown result.',
     }),
   ),
+  sessionId: Type.Optional(Type.String({ description: 'send retry: its sessionId.' })),
 });
 
 type HandoverInput = Static<typeof parameters>;
@@ -66,7 +67,17 @@ const sendRequest = (cwd: string, input: HandoverInput): SendHandoverRequest => 
     throw new Error('send needs a file.');
   }
 
-  return { cwd, terminal: input.terminal, file: input.file, messageId: input.messageId };
+  if (input.messageId !== undefined && input.sessionId === undefined) {
+    throw new Error('A send retry needs the sessionId of its unknown result.');
+  }
+
+  return {
+    cwd,
+    terminal: input.terminal,
+    file: input.file,
+    messageId: input.messageId,
+    sessionId: input.sessionId,
+  };
 };
 
 const startTarget = (input: HandoverInput): StartHandoverTarget => {
@@ -122,9 +133,9 @@ export const createHandoverTool = (
     label: 'Handover',
     description: `Prepare, send, and start handover messages.
 - action prepare: creates .tau/handovers in the checkout or bare repository root. Returns {directory}, an absolute path. Reuses an existing directory.
-- action send: sends the file's text to the inbox of the Pi session at terminal. Needs terminal (hc address or name) and file (from prepare). Returns {status, terminal, sessionId, messageId}.
-  - queued: the receiver saved it and shows it once. Never send it again.
-  - unknown: the receiver may have saved it; see note. A retry must pass this messageId and the unchanged file.
+- action send: sends the file's text to the inbox of the Pi session at terminal (hc address or name). Needs file (from prepare). Returns {status, terminal, sessionId, messageId}.
+  - queued: saved and shown once. Never resend it.
+  - unknown: it may be saved; see note. Retry with the same file, messageId, and sessionId.
   - An error ending "Nothing was queued." is a refusal.
 - action start: opens a Pi tab with the file's text as its task. Needs file and folder, plus space or name. Returns {reply}, herdr-app's output.`,
     promptSnippet: 'Prepare, send, and start handover messages.',

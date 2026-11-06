@@ -1,7 +1,7 @@
 import type { Family, MessageBody, MessageReply, MessageRequest } from './protocol.js';
 import { refusedReply } from './protocol.js';
 import { decideCandidate, inboxMessageType, inboxReceiptVersion } from './receiptDecision.js';
-import type { ReceiptEntryFact } from './receiptDecision.js';
+import type { InboxReceipt, ReceiptEntryFact } from './receiptDecision.js';
 import type { ReceiptStore } from './receipts.js';
 import { deleteMessage, pendingMessages, readMessage, saveMessage } from './store.js';
 
@@ -93,9 +93,21 @@ const accept = async (options: ReceiverOptions, request: MessageRequest): Promis
 const messageText = (body: MessageBody): string =>
   body.family === 'handover' ? body.payload.text : body.payload.answer;
 
-// An answer's receipt names its question, so a resumed worker knows which wait it ended.
-const familyDetails = (body: MessageBody) =>
-  body.family === 'answer' ? { questionId: body.payload.questionId } : {};
+const receiptOf = (
+  options: ReceiverOptions,
+  messageId: string,
+  body: MessageBody,
+): InboxReceipt => {
+  const identity = {
+    version: inboxReceiptVersion,
+    messageId,
+    sessionId: options.sessionId,
+  } as const;
+
+  return body.family === 'answer'
+    ? { ...identity, family: body.family, questionId: body.payload.questionId }
+    : { ...identity, family: body.family };
+};
 
 const wakeOnce = (options: ReceiverOptions, messageId: string, body: MessageBody): void => {
   options.receipts.markQueued(messageId);
@@ -105,13 +117,7 @@ const wakeOnce = (options: ReceiverOptions, messageId: string, body: MessageBody
       customType: inboxMessageType,
       content: messageText(body),
       display: true,
-      details: {
-        version: inboxReceiptVersion,
-        messageId,
-        sessionId: options.sessionId,
-        family: body.family,
-        ...familyDetails(body),
-      },
+      details: receiptOf(options, messageId, body),
     });
   } catch (error) {
     options.receipts.clearQueued(messageId);

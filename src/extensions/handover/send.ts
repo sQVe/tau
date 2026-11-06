@@ -9,6 +9,7 @@ export interface SendHandoverRequest {
   file: string;
   // Set only to retry a send whose result was unknown.
   messageId?: string | undefined;
+  sessionId?: string | undefined;
 }
 
 export type SendHandoverResult = InboxSendResult;
@@ -24,6 +25,7 @@ export const sendHandover = async (
     target: request.terminal,
     body: { family: 'handover', payload: { text } },
     messageId: request.messageId,
+    sessionId: request.sessionId,
     refusal: 'Nothing was queued. Use handover start to open a receiver instead.',
   });
 };

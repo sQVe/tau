@@ -35,6 +35,7 @@ interface InboxSlot {
   endpoint: Endpoint | undefined;
   transition: Promise<unknown>;
   checks: Partial<Record<Family, AcceptCheck>>;
+  registered: boolean;
 }
 
 declare global {
@@ -47,6 +48,7 @@ const slot: InboxSlot = globalThis.tauInboxSlot ?? {
   endpoint: undefined,
   transition: Promise.resolve(),
   checks: {},
+  registered: false,
 };
 
 globalThis.tauInboxSlot = slot;
@@ -58,6 +60,22 @@ export const setAcceptCheck = (family: Family, check: AcceptCheck): void => {
 };
 
 export const acceptChecks = (): Partial<Record<Family, AcceptCheck>> => slot.checks;
+
+// Tau and a worker's command line can both load the inbox extension, so only the first load of an
+// extension set registers. A shutdown, which precedes a reload, releases the claim.
+export const claimRegistration = (): boolean => {
+  if (slot.registered) {
+    return false;
+  }
+
+  slot.registered = true;
+
+  return true;
+};
+
+export const releaseRegistration = (): void => {
+  slot.registered = false;
+};
 
 // Runs start and stop one at a time, so a replacement binds only after the earlier one closed.
 const serialize = <T>(work: () => Promise<T>): Promise<T> => {

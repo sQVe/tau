@@ -42,8 +42,6 @@ interface RecordingExtension {
   handlers: Map<string, (event: unknown, context: unknown) => unknown>;
 }
 
-vi.mock(import('../src/extensions/subagents/loadout.js'), { spy: true });
-
 vi.setConfig({ testTimeout: 120_000 });
 
 const questionDeadlineMilliseconds = 90_000;
@@ -143,7 +141,6 @@ it('shows a real worker question once and carries the subagent_answer reply into
   const hc = await startHcSession(onTestFinished);
 
   onTestFinished(() => {
-    vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 
@@ -251,7 +248,6 @@ it('shows a question once across repeated delivery scans', async () => {
   const hc = await startHcSession(onTestFinished);
 
   onTestFinished(() => {
-    vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 

@@ -15,6 +15,8 @@ export interface InboxSendRequest {
   body: MessageBody;
   // An explicit retry passes the ID an earlier send returned; a new message omits it.
   messageId?: string | undefined;
+  // The session of the earlier unknown result; a retry is refused when the receiver changed session.
+  sessionId?: string | undefined;
   // Ends every refusal message, such as the action that replaces a refused send.
   refusal: string;
 }
@@ -110,6 +112,7 @@ const resolveTarget = async (request: InboxSendRequest): Promise<Target> => {
     state: terminal.state,
     labels: terminal.labels ?? {},
     ownAddress: currentTerminalAddress(),
+    retrySessionId: request.sessionId,
   });
 
   if (decision.kind === 'refuse') {

@@ -203,6 +203,17 @@ it.each([
     waitingForQuestion: true,
   },
   {
+    name: 'a newer answer keeps waiting',
+    branch: [
+      user(),
+      question(),
+      inboxEntry({ version: 3, family: 'answer', questionId: firstQuestionId }),
+    ],
+    assignment: asked(firstQuestionId),
+    sendTaskPrompt: false,
+    waitingForQuestion: true,
+  },
+  {
     name: 'another answer keeps waiting',
     branch: [user(), question(), answer(secondQuestionId)],
     assignment: asked(firstQuestionId),

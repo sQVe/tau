@@ -11,15 +11,12 @@ import {
   waitForTerminalFinished,
 } from './subagentSessionHarness.js';
 
-vi.mock(import('../src/extensions/subagents/loadout.js'), { spy: true });
-
 vi.setConfig({ testTimeout: 120_000 });
 
 it('resumes an ended worker with its first task in context', async () => {
   const hc = await startHcSession(onTestFinished);
 
   onTestFinished(() => {
-    vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 

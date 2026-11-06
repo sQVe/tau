@@ -118,7 +118,13 @@ it('returns unknown when the receiver closes without a reply, and a retry with t
 
   rmSync(join(sockets, 'records'));
 
-  const retry = { cwd: root, terminal: 't7', file, messageId: lost.messageId };
+  const retry = {
+    cwd: root,
+    terminal: 't7',
+    file,
+    messageId: lost.messageId,
+    sessionId: lost.sessionId,
+  };
 
   await expect(sendHandover(runtimeOf(fake), retry)).resolves.toMatchObject({
     status: 'queued',
@@ -129,6 +135,31 @@ it('returns unknown when the receiver closes without a reply, and a retry with t
     receiver.sessionId,
     join(receiver.sessionId, `${lost.messageId}.json`),
   ]);
+});
+
+it('refuses a retry after the receiver changed session and saves nothing', async () => {
+  const fake = createHcFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+  const receiver = await startHandoverReceiver(onTestFinished, socketRoot(), 't7');
+  const messageId = '11111111-1111-4111-8111-111111111111';
+  const originalSessionId = '22222222-2222-4222-8222-222222222222';
+
+  fake.reply('get', terminalReply('t7', null, receiver.path));
+
+  await expect(
+    sendHandover(runtimeOf(fake), {
+      cwd: root,
+      terminal: 't7',
+      file,
+      messageId,
+      sessionId: originalSessionId,
+    }),
+  ).rejects.toThrow(
+    `Terminal t7 changed session from ${originalSessionId} to ${receiver.sessionId}; the original message may have arrived in session ${originalSessionId}. ${refusal}`,
+  );
+
+  expect(receiver.savedRecords()).toEqual([]);
 });
 
 it('refuses a retry ID that is not a UUID before any hc call', async () => {

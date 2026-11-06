@@ -7,7 +7,7 @@ import type { Exec } from '../../command.js';
 import { connect } from '../../hc/connect.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
-import { socketDirectoryFor } from '../../inbox/inbox.js';
+import { claimRegistration, releaseRegistration, socketDirectoryFor } from '../../inbox/inbox.js';
 import { createWake } from '../../wake/wake.js';
 import { guardTerminalTyping } from './guard.js';
 import { registerInboxLifecycle } from './lifecycle.js';
@@ -50,6 +50,12 @@ const piExec =
     pi.exec(command, commandArguments, options);
 
 export default function inboxExtension(pi: ExtensionAPI): void {
+  if (!claimRegistration()) {
+    return;
+  }
+
+  pi.on('session_shutdown', releaseRegistration);
+
   createInboxExtension({
     hc: { exec: piExec(pi), connect, cwd: process.cwd() },
     socketDirectory: currentSocketDirectory,

@@ -232,9 +232,15 @@ it('accepts the send action with its terminal, file, and retry ID in the paramet
     true,
   );
 
-  expect(Value.Check(parameters, { action: 'send', terminal: 't7', file: 'm.md', messageId })).toBe(
-    true,
-  );
+  expect(
+    Value.Check(parameters, {
+      action: 'send',
+      terminal: 't7',
+      file: 'm.md',
+      messageId,
+      sessionId: '22222222-2222-4222-8222-222222222222',
+    }),
+  ).toBe(true);
 });
 
 it('sends the handover file to the receiver inbox and returns queued as JSON text', async () => {
@@ -267,7 +273,7 @@ it('sends the handover file to the receiver inbox and returns queued as JSON tex
 
   const result = await createHandoverTool(runtimeOf(fake)).execute(
     'call',
-    { action: 'send', terminal: 't7', file, messageId },
+    { action: 'send', terminal: 't7', file, messageId, sessionId: receiver.sessionId },
     undefined,
     undefined,
     noUiContext(root),
@@ -295,6 +301,28 @@ it('refuses a send without a terminal before any hc call', async () => {
       noUiContext(root),
     ),
   ).rejects.toThrow(/send needs a terminal/);
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses a retry without the session of the unknown result before any hc call', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const fake = createHcFake();
+
+  await expect(
+    createHandoverTool(runtimeOf(fake)).execute(
+      'call',
+      {
+        action: 'send',
+        terminal: 't7',
+        file: join(root, 'message.md'),
+        messageId: '11111111-1111-4111-8111-111111111111',
+      },
+      undefined,
+      undefined,
+      noUiContext(root),
+    ),
+  ).rejects.toThrow(/send retry needs the sessionId/);
 
   expect(fake.calls).toEqual([]);
 });

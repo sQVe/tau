@@ -10,7 +10,10 @@ const target: TargetFacts = {
   state: 'live',
   labels: { 'tau.inbox': `rpc1:/tmp/tau-1000/${sessionId}.sock` },
   ownAddress: 't2',
+  retrySessionId: undefined,
 };
+
+const otherSessionId = '0190c1d2-0000-7000-8000-000000000003';
 
 const targetCases: [string, TargetFacts, ReturnType<typeof decideTarget>][] = [
   [
@@ -57,6 +60,19 @@ const targetCases: [string, TargetFacts, ReturnType<typeof decideTarget>][] = [
     'a socket not named after a session',
     { ...target, labels: { 'tau.inbox': 'rpc1:/tmp/tau-1000/a.sock' } },
     { kind: 'refuse', reason: 'Terminal t1 advertises a socket without a session.' },
+  ],
+  [
+    'a retry to the same session',
+    { ...target, retrySessionId: sessionId },
+    { kind: 'connect', path: `/tmp/tau-1000/${sessionId}.sock`, sessionId },
+  ],
+  [
+    'a retry after the receiver changed session',
+    { ...target, retrySessionId: otherSessionId },
+    {
+      kind: 'refuse',
+      reason: `Terminal t1 changed session from ${otherSessionId} to ${sessionId}; the original message may have arrived in session ${otherSessionId}.`,
+    },
   ],
 ];
 

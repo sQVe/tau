@@ -42,7 +42,7 @@ const workerExtensionPaths = (directory: string): string[] => {
 };
 
 // Runs one bash call in a session that loads the given extensions, and returns the tool result.
-const typedSendResult = async (extensionPaths: (directory: string) => string[]) => {
+const bashResult = async (extensionPaths: (directory: string) => string[], command: string) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-inbox-guard-');
   const { bin, log } = installHcCommand(directory);
 
@@ -76,23 +76,26 @@ const typedSendResult = async (extensionPaths: (directory: string) => string[]) 
   });
 
   provider.setResponses([
-    fauxAssistantMessage([fauxToolCall('bash', { command: 'cd . && hc keys t1 enter' })]),
+    fauxAssistantMessage([fauxToolCall('bash', { command })]),
     fauxAssistantMessage('Done.'),
   ]);
 
-  await session.prompt('Press enter in t1.');
+  await session.prompt('Run the command.');
 
-  const typed = existsSync(log) && readFileSync(log, 'utf8').includes('keys');
+  const hcLog = existsSync(log) ? readFileSync(log, 'utf8') : '';
 
-  return { results, typed };
+  return { results, hcLog };
 };
+
+const typedSendResult = (extensionPaths: (directory: string) => string[]) =>
+  bashResult(extensionPaths, 'cd . && hc keys t1 enter');
 
 // Tool results hold the reason as JSON text.
 const reasonText = JSON.stringify(terminalTypingReason).slice(1, -1);
 
-const refusalOf = ({ results, typed }: Awaited<ReturnType<typeof typedSendResult>>) => ({
+const refusalOf = ({ results, hcLog }: Awaited<ReturnType<typeof bashResult>>) => ({
   results: results.map(({ isError, text }) => ({ isError, refused: text.includes(reasonText) })),
-  typed,
+  typed: hcLog.includes('keys'),
 });
 
 const refused = { results: [{ isError: true, refused: true }], typed: false };
@@ -105,4 +108,11 @@ it('refuses a typed send in a worker session loaded like a worker command line',
   vi.stubEnv('TAU_ROLE', 'worker');
 
   expect(refusalOf(await typedSendResult(workerExtensionPaths))).toEqual(refused);
+});
+
+it('lets other hc commands run in a session that loads the Tau package', async () => {
+  const { results, hcLog } = await bashResult(() => [packageRoot], 'hc get t1');
+
+  expect(results.map(({ text }) => text.includes(reasonText))).toEqual([false]);
+  expect(hcLog).toBe('get t1\n');
 });

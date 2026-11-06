@@ -12,7 +12,6 @@ import { readAssignment } from '../src/extensions/subagents/assignment.js';
 import { executeFollowUp } from '../src/extensions/subagents/followUp.js';
 import { Admission, executeLaunch } from '../src/extensions/subagents/launch.js';
 import type { LaunchRuntime } from '../src/extensions/subagents/launch.js';
-import * as loadouts from '../src/extensions/subagents/loadout.js';
 import { workerCommand } from '../src/extensions/subagents/workerCommand.js';
 import { runWithEnvironment } from '../src/hc/connect.js';
 import { get } from '../src/hc/hc.js';
@@ -31,9 +30,6 @@ export interface WorkerSessionOptions {
   prepareWorker?: (workerDirectory: string) => void;
   // Loads the Tau package in the worker, as a loadout that installs Tau does.
   tauPackage?: boolean;
-  // Resolves the loadout from a fixture profile and tau.json through Tau's own resolver, instead
-  // of the test file's mocked resolver. Only the model registry is faked.
-  configuredLoadout?: boolean;
   // Runs after the manager terminal exists and HC_TERMINAL_ID points at it, before the worker.
   beforeLaunch?: (managerAddress: string) => Promise<void>;
 }
@@ -154,21 +150,14 @@ const writeFixtureProfile = (
   );
 };
 
-// The manager context the launch reads. A configured loadout reads the cwd, trust, and models too.
+// The manager context the launch reads. Tau's resolver reads the loadout from the fixture profile
+// and tau.json, so only the model registry is faked.
 const launchContext = (
-  options: WorkerSessionOptions,
+  model: { provider: string; id: string },
   workerDirectory: string,
-): ExtensionContext => {
-  const sessionManager = { getSessionId: () => 'manager-one' };
-
-  if (options.configuredLoadout !== true) {
-    return { sessionManager } as unknown as ExtensionContext;
-  }
-
-  const { model } = options;
-
-  return {
-    sessionManager,
+): ExtensionContext =>
+  ({
+    sessionManager: { getSessionId: () => 'manager-one' },
     cwd: workerDirectory,
     isProjectTrusted: () => true,
     scopedModels: [],
@@ -177,8 +166,7 @@ const launchContext = (
         provider === model.provider && id === model.id ? model : undefined,
     },
     ui: { notify: () => undefined },
-  } as unknown as ExtensionContext;
-};
+  }) as unknown as ExtensionContext;
 
 const managerInvocation = (
   agentDirectory: string,
@@ -216,26 +204,6 @@ const workerCommandArgv = (
   return ['node', commandPath, agentDirectory];
 };
 
-const fixtureLoadout = (
-  workerDirectory: string,
-  agentDirectory: string,
-  model: { provider: string; id: string },
-): Assignment['loadout'] => ({
-  harness: 'pi',
-  profile: 'worker',
-  role: 'editing',
-  model: `${model.provider}/${model.id}`,
-  thinking: 'off',
-  cwd: workerDirectory,
-  agentDirectory,
-  permissions: 'trusted-full-tools',
-  instructions: 'Follow the fixture task exactly.',
-  tools: ['read', 'bash', 'edit', 'write'],
-  skills: [],
-  instructionSets: ['writing', 'coding', 'workflow'],
-  packages: [],
-});
-
 export const launchWorkerSession = async (
   options: WorkerSessionOptions,
 ): Promise<WorkerSession> => {
@@ -267,15 +235,7 @@ export const launchWorkerSession = async (
 
   const managerPath = `${join(agentDirectory, 'bin')}:${process.env.PATH ?? ''}`;
 
-  if (options.configuredLoadout === true) {
-    writeFixtureProfile(agentDirectory, options.model);
-  } else {
-    vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
-      loadout: fixtureLoadout(workerDirectory, agentDirectory, options.model),
-      routing: undefined,
-      choice: { kind: 'profileWithoutRoute' },
-    });
-  }
+  writeFixtureProfile(agentDirectory, options.model);
 
   const runtime: LaunchRuntime = {
     pi: { getCommands: () => [], getAllTools: () => [] } as unknown as ExtensionAPI,
@@ -302,7 +262,7 @@ export const launchWorkerSession = async (
       parentSession: managerSessionFile,
     },
     undefined,
-    launchContext(options, workerDirectory),
+    launchContext(options.model, workerDirectory),
   );
 
   expect(result.isError).not.toBe(true);

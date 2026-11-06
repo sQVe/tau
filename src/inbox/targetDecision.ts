@@ -6,6 +6,8 @@ export interface TargetFacts {
   state: string;
   labels: Readonly<Record<string, string>>;
   ownAddress: string | undefined;
+  // A retry names the session of its unknown result, so it never reaches a newer session.
+  retrySessionId: string | undefined;
 }
 
 export type TargetDecision =
@@ -57,6 +59,15 @@ export const decideTarget = (facts: TargetFacts): TargetDecision => {
 
   if (sessionId === undefined) {
     return { kind: 'refuse', reason: `Terminal ${address} advertises a socket without a session.` };
+  }
+
+  const { retrySessionId } = facts;
+
+  if (retrySessionId !== undefined && retrySessionId !== sessionId) {
+    return {
+      kind: 'refuse',
+      reason: `Terminal ${address} changed session from ${retrySessionId} to ${sessionId}; the original message may have arrived in session ${retrySessionId}.`,
+    };
   }
 
   return { kind: 'connect', path: parsed.path, sessionId };

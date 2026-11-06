@@ -1,19 +1,28 @@
 import { existsSync, readFileSync } from 'node:fs';
 
-import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
+import type { ToolCallEvent } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { installHcCommand } from '../../../tests/hcCommandHarness.js';
-import { createBoundSession } from '../../../tests/piSession.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { terminalTypingReason } from './guard.js';
-import inboxExtension from './inbox.js';
+import { guardTerminalTyping, terminalTypingReason } from './guard.js';
 
-// Tool results hold the reason as JSON text.
-const reasonText = JSON.stringify(terminalTypingReason).slice(1, -1);
+const makeBashEvent = (command: string): ToolCallEvent => ({
+  type: 'tool_call',
+  toolCallId: 'tool-call-1',
+  toolName: 'bash',
+  input: { command },
+});
 
-// Runs the given tool calls in a session that loads only the inbox extension, outside a terminal.
-const runToolCalls = async (calls: ReturnType<typeof fauxToolCall>[]) => {
+const makeReadEvent = (): ToolCallEvent => ({
+  type: 'tool_call',
+  toolCallId: 'tool-call-1',
+  toolName: 'read',
+  input: { path: 'missing.txt' },
+});
+
+// Puts the fake hc on PATH outside a terminal and returns a reader of its log.
+const installHcOutsideTerminal = () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-inbox-guard-');
   const { bin, log } = installHcCommand(directory);
 
@@ -25,52 +34,25 @@ const runToolCalls = async (calls: ReturnType<typeof fauxToolCall>[]) => {
   vi.stubEnv('HC_FAKE_LOG', log);
   vi.stubEnv('HC_SESSION', 'tau-test-inbox-guard');
   vi.stubEnv('HC_TERMINAL_ID', undefined);
-  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
 
-  const provider = fauxProvider({ provider: 'tau-inbox-guard' });
-
-  const { session } = await createBoundSession(onTestFinished, {
-    cwd: directory,
-    agentDirectory: directory,
-    providers: [provider],
-    tools: ['bash', 'read'],
-    extensionFactories: [inboxExtension],
-  });
-
-  const results: { isError: boolean; text: string }[] = [];
-
-  session.subscribe((event) => {
-    if (event.type === 'tool_execution_end') {
-      results.push({ isError: event.isError, text: JSON.stringify(event.result) });
-    }
-  });
-
-  provider.setResponses([fauxAssistantMessage(calls), fauxAssistantMessage('Done.')]);
-
-  await session.prompt('Run the calls.');
-
-  const hcLog = existsSync(log) ? readFileSync(log, 'utf8') : '';
-
-  return { results, hcLog };
+  return () => (existsSync(log) ? readFileSync(log, 'utf8') : '');
 };
 
-it('refuses a typed send before bash runs, even without a terminal', async () => {
-  const { results, hcLog } = await runToolCalls([
-    fauxToolCall('bash', { command: 'hc send t1 hello' }),
-  ]);
+it('refuses a typed send without running hc, even without a terminal', () => {
+  const hcLog = installHcOutsideTerminal();
 
-  expect(results).toHaveLength(1);
-  expect(results[0]?.isError).toBe(true);
-  expect(results[0]?.text).toContain(reasonText);
-  expect(hcLog).toBe('');
+  expect(guardTerminalTyping(makeBashEvent('hc send t1 hello'))).toEqual({
+    block: true,
+    reason: terminalTypingReason,
+  });
+
+  expect(hcLog()).toBe('');
 });
 
-it('lets other hc commands and other tools run', async () => {
-  const { results, hcLog } = await runToolCalls([
-    fauxToolCall('bash', { command: 'hc get t1' }),
-    fauxToolCall('read', { path: 'missing.txt' }),
-  ]);
+it('lets other hc commands and other tools run', () => {
+  const hcLog = installHcOutsideTerminal();
 
-  expect(results.map(({ text }) => text.includes(reasonText))).toEqual([false, false]);
-  expect(hcLog).toBe('get t1\n');
+  expect(guardTerminalTyping(makeBashEvent('hc get t1'))).toBeUndefined();
+  expect(guardTerminalTyping(makeReadEvent())).toBeUndefined();
+  expect(hcLog()).toBe('');
 });

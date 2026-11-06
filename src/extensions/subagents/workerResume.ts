@@ -1,6 +1,6 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 
-import { inboxMessageType } from '../../inbox/receiptDecision.js';
+import { answeredQuestionId } from '../../inbox/receiptDecision.js';
 import { isRecord } from '../../schema.js';
 import type { Assignment } from './assignment.js';
 import { taskPromptHeader } from './workerMessage.js';
@@ -66,20 +66,6 @@ const isQuestionResult = (entry: SessionEntry): boolean => {
     message.toolName === 'subagent_question' &&
     message.isError !== true
   );
-};
-
-// Returns the question an inbox answer message answers, for a session entry or a started message.
-export const answeredQuestionId = (message: {
-  customType?: string;
-  details?: unknown;
-}): string | undefined => {
-  if (message.customType !== inboxMessageType || !isRecord(message.details)) {
-    return undefined;
-  }
-
-  const { family, questionId } = message.details;
-
-  return family === 'answer' && typeof questionId === 'string' ? questionId : undefined;
 };
 
 const answers = (entry: SessionEntry, questionId: string | undefined): boolean =>

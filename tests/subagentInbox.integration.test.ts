@@ -101,7 +101,6 @@ it('queues an answer on the worker socket, shows it once, and leaves the assignm
     task: `${questionTaskMarker} ${holdReportTaskMarker} Ask which value the report should hold.`,
     acceptance: ['Report the answer.'],
     tauPackage: true,
-    configuredLoadout: true,
   });
 
   const asked = await waitForQuestion(worker.assignmentFilePath);
@@ -193,7 +192,6 @@ it('resumes a saved worker session without waiting once it holds the answer rece
     task: 'Ask which value the report should hold.',
     acceptance: ['Report the answer.'],
     command: idleWorkerProgram,
-    configuredLoadout: true,
   });
 
   const launched = await readAssignment(worker.assignmentFilePath);

@@ -1,8 +1,8 @@
 import type { SessionEntry } from '@earendil-works/pi-coding-agent';
 
 import type { MessageRequest } from '../../inbox/inbox.js';
+import { answeredQuestionId } from '../../inbox/receiptDecision.js';
 import type { Assignment } from './assignment.js';
-import { answeredQuestionId } from './workerResume.js';
 
 export type AnswerAssignment = Pick<
   Assignment,

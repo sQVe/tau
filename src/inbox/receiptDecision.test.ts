@@ -3,7 +3,12 @@ import { join } from 'node:path';
 
 import { expect, it } from 'vitest';
 
-import { decideCandidate, inboxMessageType, readInboxReceipt } from './receiptDecision.js';
+import {
+  answeredQuestionId,
+  decideCandidate,
+  inboxMessageType,
+  readInboxReceipt,
+} from './receiptDecision.js';
 import type { ReceiptEntryFact } from './receiptDecision.js';
 
 const readTable = [
@@ -24,6 +29,39 @@ const readTable = [
       details: { version: 2, messageId: 'm1', sessionId: 's1', family: 'answer' },
     },
     receipt: { version: 2, messageId: 'm1', sessionId: 's1', family: 'answer' },
+  },
+  {
+    name: 'an answer receipt with its question',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: { version: 2, messageId: 'm1', sessionId: 's1', family: 'answer', questionId: 'q1' },
+    },
+    receipt: { version: 2, messageId: 'm1', sessionId: 's1', family: 'answer', questionId: 'q1' },
+  },
+  {
+    name: 'an answer receipt with a malformed question',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: { version: 2, messageId: 'm1', sessionId: 's1', family: 'answer', questionId: 1 },
+    },
+    receipt: { version: 2, messageId: 'm1', sessionId: 's1', family: 'answer' },
+  },
+  {
+    name: 'a handover receipt with a question',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: {
+        version: 2,
+        messageId: 'm1',
+        sessionId: 's1',
+        family: 'handover',
+        questionId: 'q1',
+      },
+    },
+    receipt: { version: 2, messageId: 'm1', sessionId: 's1', family: 'handover' },
   },
   {
     name: 'a version 1 receipt',
@@ -116,6 +154,49 @@ const readTable = [
 it.each(readTable.map((row) => [row.name, row] as const))('reads %s', (_name, row) => {
   expect(readInboxReceipt(row.entry)).toEqual(row.receipt);
 });
+
+const answerDetails = { version: 2, messageId: 'm1', sessionId: 's1', family: 'answer' };
+
+const answeredTable = [
+  {
+    name: 'a started answer message',
+    message: { customType: inboxMessageType, details: { ...answerDetails, questionId: 'q1' } },
+    questionId: 'q1',
+  },
+  {
+    name: 'an answer message without a question',
+    message: { customType: inboxMessageType, details: answerDetails },
+    questionId: undefined,
+  },
+  {
+    name: 'a newer answer message',
+    message: {
+      customType: inboxMessageType,
+      details: { ...answerDetails, version: 3, questionId: 'q1' },
+    },
+    questionId: undefined,
+  },
+  {
+    name: 'a handover message with a question',
+    message: {
+      customType: inboxMessageType,
+      details: { ...answerDetails, family: 'handover', questionId: 'q1' },
+    },
+    questionId: undefined,
+  },
+  {
+    name: 'a message of another custom type',
+    message: { customType: 'other', details: { ...answerDetails, questionId: 'q1' } },
+    questionId: undefined,
+  },
+] as const;
+
+it.each(answeredTable.map((row) => [row.name, row] as const))(
+  'reads the question of %s',
+  (_name, row) => {
+    expect(answeredQuestionId(row.message)).toBe(row.questionId);
+  },
+);
 
 const receiptFixture = (name: string): ReceiptEntryFact =>
   JSON.parse(
