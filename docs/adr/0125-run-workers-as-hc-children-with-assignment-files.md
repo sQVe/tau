@@ -106,6 +106,8 @@ only the worker writes its report and its questions into it.
   belongs to another manager, the question is not the last one saved, no single live child carries
   the assignment, or the worker has no live inbox lease for its session. The manager reports a
   refusal to the user.
+- When the open question already has an answer file, `subagent_answer` keeps the file, queues a new
+  `answer` message for it, and says when it ignored new answer text.
 - The worker ends its wait only on a valid answer file for its open question or on a user message.
   Other inbox messages do not end it. A resumed worker whose open question already has a saved
   answer continues from that file.

@@ -12,7 +12,13 @@ import type { Exec } from '../../command.js';
 import { readEnvelope } from '../../inbox/envelope.js';
 import { executeAnswer } from './answer.js';
 import { answerPath } from './answerRecord.js';
-import { assignmentDirectory, assignmentPath, writeAssignment } from './assignment.js';
+import {
+  assignmentDirectory,
+  assignmentPath,
+  saveQuestion,
+  saveReport,
+  writeAssignment,
+} from './assignment.js';
 import type { Assignment } from './assignment.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 
@@ -282,20 +288,41 @@ it.each([
   expectNothingWritten(fixture);
 });
 
-it('refuses a second answer to the same question and keeps the first', async () => {
+it.each([
+  { case: 'the same text', text: 'Use the second counter.', ignored: false },
+  { case: 'different text', text: 'Use the first counter.', ignored: true },
+])('resends the saved answer and keeps the file when asked again with $case', async (row) => {
+  const fixture = await setup();
+  const saved = answerPath(fixture.assignment.assignmentId, fixture.questionId);
+  const first = await answer(fixture);
+  const firstBytes = readFileSync(saved);
+
+  const result = await answer(fixture, { answer: row.text });
+
+  expect(result.isError).toBeUndefined();
+  expect(result.details).toMatchObject({ status: 'queued', answerPath: saved, terminal: worker });
+  expect(result.details?.messageId).not.toBe(first.details?.messageId);
+  expect(readFileSync(saved)).toEqual(firstBytes);
+  expect(messageLabels(fixture.fake)).toHaveLength(2);
+  expect(inboxFiles(fixture.root)).toHaveLength(2);
+  expect(resultText(result)).toContain(`Resent the saved answer ${saved}`);
+  expect(resultText(result).includes('ignored')).toBe(row.ignored);
+});
+
+it('refuses to resend a malformed saved answer and queues nothing', async () => {
   const fixture = await setup();
   const saved = answerPath(fixture.assignment.assignmentId, fixture.questionId);
 
   await answer(fixture);
+  writeFileSync(saved, '{"version":1}\n');
 
-  const first = readFileSync(saved);
-
-  const result = await answer(fixture, { answer: 'Use the first counter.' });
+  const result = await answer(fixture);
 
   expect(result.isError).toBe(true);
-  expect(resultText(result)).toContain('already has an answer');
-  expect(readFileSync(saved)).toEqual(first);
+  expect(resultText(result)).toContain('Malformed');
+  expect(readFileSync(saved, 'utf8')).toBe('{"version":1}\n');
   expect(messageLabels(fixture.fake)).toHaveLength(1);
+  expect(inboxFiles(fixture.root)).toHaveLength(1);
 });
 
 it('reports the saved answer path and does not retry when queueing fails', async () => {
@@ -428,4 +455,57 @@ it('saves nothing when the call is aborted during the final terminal read', asyn
   expect(result.isError).toBe(true);
   expectNothingWritten(fixture);
   expect(readFileSync(path)).toEqual(before);
+});
+
+it.each([
+  {
+    case: 'another question',
+    change: (path: string) =>
+      saveQuestion(path, { questionId: randomUUID(), text: 'Which file?', askedAt: Date.now() }),
+    refusal: 'is not the open question',
+  },
+  {
+    case: 'a report',
+    change: (path: string) =>
+      saveReport(path, { outcome: 'success', summary: 'Done.', evidence: [] }),
+    refusal: 'already has a report',
+  },
+])('refuses and saves nothing when the worker saves $case during the lookups', async (row) => {
+  const fixture = await setup();
+  const exec = fixture.fake.exec;
+
+  const changingExec: Exec = async (command, commandArguments, options) => {
+    if (commandArguments[0] === 'ls') {
+      await row.change(assignmentPath(fixture.assignment.assignmentId));
+    }
+
+    return exec(command, commandArguments, options);
+  };
+
+  const result = await answer(fixture, {}, changingExec);
+
+  expect(result.isError).toBe(true);
+  expect(resultText(result)).toContain(row.refusal);
+  expectNothingWritten(fixture);
+});
+
+it('rejects and saves nothing when the call is aborted during the terminal list', async () => {
+  const fixture = await setup();
+  const controller = new AbortController();
+  const exec = fixture.fake.exec;
+
+  const abortingExec: Exec = async (command, commandArguments, options) => {
+    if (commandArguments[0] === 'ls') {
+      controller.abort();
+      options?.signal?.throwIfAborted();
+    }
+
+    return exec(command, commandArguments, options);
+  };
+
+  const result = await answer(fixture, {}, abortingExec, controller.signal);
+
+  expect(result.isError).toBe(true);
+  expect(resultText(result)).toContain('hc ls was aborted');
+  expectNothingWritten(fixture);
 });

@@ -12,7 +12,8 @@ import {
 } from './answerDecision.js';
 import type { AssignmentFact } from './answerDecision.js';
 import type { AnswerParameters } from './answerParameters.js';
-import { answerPath, formatAnswerReference, publishAnswer } from './answerRecord.js';
+import { answerPath, formatAnswerReference, publishAnswer, readAnswer } from './answerRecord.js';
+import type { AnswerRecord } from './answerRecord.js';
 import { assignmentPath, readAssignment } from './assignment.js';
 import type { Assignment } from './assignment.js';
 import { launchErrorResult } from './errorResult.js';
@@ -98,10 +99,7 @@ const findWorkerTerminal = async (
   return decision.terminal;
 };
 
-const findTarget = async (
-  runtime: AnswerRuntime,
-  request: AnswerRequest,
-): Promise<AnswerTarget> => {
+const findTarget = async (hc: HcRuntime, request: AnswerRequest): Promise<AnswerTarget> => {
   const managerTerminal = currentTerminalAddress();
 
   if (managerTerminal === undefined) {
@@ -116,7 +114,7 @@ const findTarget = async (
     request.parentSession,
   );
 
-  const terminal = await findWorkerTerminal(runtime.hc, managerTerminal, path);
+  const terminal = await findWorkerTerminal(hc, managerTerminal, path);
 
   return { assignment, path, managerTerminal, terminal };
 };
@@ -154,11 +152,45 @@ const checkTarget = async (
   }
 };
 
-const queuedResult = (details: AnswerStatus): ToolResult<AnswerStatus> => ({
+const readSavedAnswer = async (
+  assignmentId: string,
+  questionId: string,
+): Promise<AnswerRecord | undefined> => {
+  const read = await readAnswer(assignmentId, questionId);
+
+  if (read.kind === 'refused') {
+    throw new Error(read.reason);
+  }
+
+  return read.kind === 'answered' ? read.record : undefined;
+};
+
+const deliveryText = (
+  details: AnswerStatus,
+  saved: AnswerRecord | undefined,
+  answer: string,
+): string => {
+  const delivery = `${details.answerPath} for ${details.terminal} as message ${details.messageId}.`;
+
+  if (saved === undefined) {
+    return `Queued answer ${delivery}`;
+  }
+
+  const ignored =
+    saved.answer === answer ? '' : ' The new answer text was ignored; the saved answer stays.';
+
+  return `Resent the saved answer ${delivery}${ignored}`;
+};
+
+const queuedResult = (
+  details: AnswerStatus,
+  saved: AnswerRecord | undefined,
+  answer: string,
+): ToolResult<AnswerStatus> => ({
   content: [
     {
       type: 'text',
-      text: `Queued answer ${details.answerPath} for ${details.terminal} as message ${details.messageId}. Queued is not a read receipt. End your turn to wait for the worker.`,
+      text: `${deliveryText(details, saved, answer)} Queued is not a read receipt. End your turn to wait for the worker.`,
     },
   ],
   details,
@@ -167,7 +199,7 @@ const queuedResult = (details: AnswerStatus): ToolResult<AnswerStatus> => ({
 const savedNotQueued = (path: string, error: unknown): ToolResult<undefined> =>
   launchErrorResult(
     new Error(
-      `Answer saved at ${path}, queueing not confirmed: ${errorMessage(error)} Nothing is retried; do not answer this question again.`,
+      `Answer saved at ${path}, queueing not confirmed: ${errorMessage(error)} Nothing is retried; call subagent_answer again for this question to resend the saved answer.`,
       { cause: error },
     ),
   );
@@ -191,33 +223,19 @@ const publish = (
   return undefined;
 };
 
-export const executeAnswer = async (
-  runtime: AnswerRuntime,
+const queueAnswer = async (
+  hc: HcRuntime,
   request: AnswerRequest,
+  target: AnswerTarget,
+  saved: AnswerRecord | undefined,
   signal: AbortSignal | undefined,
 ): Promise<ToolResult<AnswerStatus | undefined>> => {
   const { assignmentId, questionId, answer } = request.parameters;
-  let target: AnswerTarget;
-
-  try {
-    target = await findTarget(runtime, request);
-    await checkTarget(runtime.hc, target, signal);
-    signal?.throwIfAborted();
-  } catch (error) {
-    return launchErrorResult(error);
-  }
-
-  const publishFailure = publish(assignmentId, questionId, answer);
-
-  if (publishFailure !== undefined) {
-    return publishFailure;
-  }
-
   const path = answerPath(assignmentId, questionId);
 
   try {
     const sent = await sendInboxMessage({
-      hc: runtime.hc,
+      hc,
       target: target.terminal,
       family: 'answer',
       sender: answerSender,
@@ -227,15 +245,50 @@ export const executeAnswer = async (
       expectedSessionId: target.assignment.session.id,
     });
 
-    return queuedResult({
+    const details: AnswerStatus = {
       status: 'queued',
       assignmentId,
       questionId,
       answerPath: path,
       terminal: sent.terminal,
       messageId: sent.messageId,
-    });
+    };
+
+    return queuedResult(details, saved, answer);
   } catch (error) {
     return savedNotQueued(path, error);
   }
+};
+
+// The worker can save another question or its report during the terminal lookups, so the
+// assignment is read again right before the answer is saved.
+export const executeAnswer = async (
+  runtime: AnswerRuntime,
+  request: AnswerRequest,
+  signal: AbortSignal | undefined,
+): Promise<ToolResult<AnswerStatus | undefined>> => {
+  const { assignmentId, questionId, answer } = request.parameters;
+  const hc: HcRuntime = signal === undefined ? runtime.hc : { ...runtime.hc, signal };
+  let target: AnswerTarget;
+  let saved: AnswerRecord | undefined;
+
+  try {
+    target = await findTarget(hc, request);
+    await checkTarget(hc, target, signal);
+    saved = await readSavedAnswer(assignmentId, questionId);
+    await readAnswerableAssignment(request.parameters, target.path, request.parentSession);
+    signal?.throwIfAborted();
+  } catch (error) {
+    return launchErrorResult(error);
+  }
+
+  if (saved === undefined) {
+    const publishFailure = publish(assignmentId, questionId, answer);
+
+    if (publishFailure !== undefined) {
+      return publishFailure;
+    }
+  }
+
+  return queueAnswer(hc, request, target, saved, signal);
 };
