@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -35,9 +35,6 @@ vi.setConfig({ testTimeout: 120_000 });
 const waitMilliseconds = 90_000;
 const pollMilliseconds = 100;
 const workerTimeoutSeconds = 10;
-
-const warningPattern =
-  /Deadline in \d+ s: call subagent_report now with what you have; blockerKind time is accepted\./;
 
 const neverReportingProgram = `
 import { appendFileSync, writeFileSync } from 'node:fs';
@@ -171,7 +168,7 @@ const workerState = async (hc: HcSession, worker: WorkerSession): Promise<string
   return terminal.state;
 };
 
-it('warns a worker at its short deadline, then ends it', async () => {
+it('ends a worker at its short deadline without typing into it', async () => {
   const hc = await startHcSession(onTestFinished);
 
   prepareTest();
@@ -182,19 +179,13 @@ it('warns a worker at its short deadline, then ends it', async () => {
 
   await startWatchdog(hc, view).scan.scan(view.context);
 
-  const inputPath = join(worker.agentDirectory, 'input.txt');
-
-  await waitUntil(
-    () => existsSync(inputPath) && warningPattern.test(readFileSync(inputPath, 'utf8')),
-    'The worker never received the deadline warning.',
-  );
-
   await waitUntil(() => view.messages.length === 1, 'The manager never showed the worker end.');
 
   expect(view.messages).toEqual([expect.stringContaining('ended at its deadline')]);
   expect(view.notices).toEqual([]);
   expect(Date.now()).toBeGreaterThanOrEqual(deadline);
   expect(await workerState(hc, worker)).toBe('finished');
+  expect(existsSync(join(worker.agentDirectory, 'input.txt'))).toBe(false);
 
   const labelDeadline = Date.now() + waitMilliseconds;
 

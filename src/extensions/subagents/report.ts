@@ -156,6 +156,7 @@ const resultText = (failures: readonly string[]): string =>
 export const reportToParent = async (
   target: ReportTarget,
   parameters: ReportInput,
+  deadlineWarning: { clear: () => void },
 ): Promise<AgentToolResult<SavedReport>> => {
   const { assignment } = target;
 
@@ -195,6 +196,7 @@ export const reportToParent = async (
 
   await saveReport(target.assignmentPath, report);
   assignment.report = report;
+  deadlineWarning.clear();
 
   const failures: string[] = [];
 

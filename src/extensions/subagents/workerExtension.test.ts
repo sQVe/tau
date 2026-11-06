@@ -1,122 +1,19 @@
-import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-import type {
-  ExtensionAPI,
-  ExtensionContext,
-  ExtensionToolContext,
-} from '@earendil-works/pi-coding-agent';
-import { expect, it, onTestFinished, vi } from 'vitest';
+import { expect, it } from 'vitest';
 
-import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { createHcFake } from '../../../tests/hcFake.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { nestedChangeCallReason, nestedControlCallReason } from '../../codemode/controlTools.js';
-import { skillTools } from '../../skillTools.js';
-import { assignmentDirectory, writeAssignment } from './assignment.js';
+import { writeAssignment } from './assignment.js';
 import type { Assignment, SavedReport } from './assignment.js';
-import { fixtureLoadout } from './fixtures/loadout.js';
+import {
+  assignmentFor,
+  dispatch,
+  sendStartMessage,
+  setup,
+} from './fixtures/workerExtensionHarness.js';
 import { workerPrompt } from './profiles.js';
-import workerExtension from './workerExtension.js';
-import { workerContinuation, workerStartMessage } from './workerStart.js';
-import { workerTools } from './workerTools.js';
-
-const workerTerminal = 'worker-1';
-const parentTerminal = 'manager-1';
-const assignmentId = '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f';
-const sessionId = '11111111-1111-1111-1111-111111111111';
-
-const safetyPath = join(
-  dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json'))),
-  'dist',
-  'pi',
-  'index.js',
-);
-
-const setup = (assignmentPath?: string) => {
-  const directory = realpathSync(temporaryDirectory(onTestFinished, 'tau-worker-extension-'));
-
-  onTestFinished(() => {
-    vi.unstubAllEnvs();
-    vi.restoreAllMocks();
-  });
-
-  vi.stubEnv('TAU_ROLE', 'worker');
-  vi.stubEnv('PI_CODING_AGENT_DIR', directory);
-  vi.stubEnv('HC_TERMINAL_ID', workerTerminal);
-
-  const loadout = fixtureLoadout(directory);
-  const tools = workerTools(loadout, skillTools);
-  const fake = createHcFake();
-  const path = assignmentPath ?? join(assignmentDirectory(assignmentId), 'assignment.json');
-
-  fake.reply(
-    'get',
-    JSON.stringify({
-      address: workerTerminal,
-      state: 'live',
-      parent: parentTerminal,
-      labels: { 'tau.assignment': path },
-    }),
-  );
-
-  const activeTools = vi.fn<(names: string[]) => void>();
-
-  const pi = fakeExtensionApi({
-    exec: fake.exec,
-    getThinkingLevel: () => 'off',
-    getCommands: () => [
-      { name: 'cc-safety-net', source: 'extension', sourceInfo: { path: safetyPath } },
-    ],
-    getAllTools: () => tools.map((name) => ({ name })),
-    setActiveTools: activeTools,
-  } as unknown as Partial<ExtensionAPI>);
-
-  const shutdown = vi.fn<ExtensionContext['shutdown']>();
-
-  const context = {
-    sessionManager: {
-      getBranch: () => [],
-      getSessionId: () => sessionId,
-      getSessionFile: () => join(directory, `${sessionId}.jsonl`),
-    },
-    shutdown,
-    cwd: directory,
-    model: { provider: 'faux', id: 'test' },
-    isProjectTrusted: () => true,
-    ui: { notify: vi.fn<ExtensionToolContext['ui']['notify']>() },
-  } as unknown as ExtensionToolContext;
-
-  workerExtension(pi.pi);
-
-  return { activeTools, assignmentPath: path, context, directory, loadout, pi, shutdown, tools };
-};
-
-const assignmentFor = (directory: string): Assignment => ({
-  version: 3,
-  assignmentId,
-  task: 'Inspect the fixture.',
-  acceptance: [],
-  label: null,
-  profile: 'worker',
-  loadout: fixtureLoadout(directory),
-  routing: null,
-  packageSnapshot: null,
-  session: {
-    id: sessionId,
-    file: join(assignmentDirectory(assignmentId), `${sessionId}.jsonl`),
-  },
-  parentSession: join(directory, 'parent.jsonl'),
-  cwd: directory,
-  parentTerminal,
-  deadline: Date.now() + 60_000,
-  createdAt: Date.now(),
-  previousAssignmentId: null,
-  extensionPackages: null,
-  questions: [],
-  report: null,
-});
+import { workerContinuation } from './workerStart.js';
 
 it('stops the worker with a visible error when the assignment file is missing', async () => {
   const { context, pi, shutdown } = setup(join('/nonexistent', 'assignment.json'));
@@ -161,17 +58,6 @@ it('reads the assignment and activates its tools without sending a message at se
 
   expect(loadout.model).toBe('faux/test');
 });
-
-const sendStartMessage = (
-  pi: ReturnType<typeof setup>['pi'],
-  context: ExtensionToolContext,
-): Promise<unknown> =>
-  Promise.resolve(
-    pi.handler('input')(
-      { type: 'input', text: workerStartMessage, source: 'interactive' },
-      context,
-    ),
-  );
 
 const savedReport: SavedReport = {
   outcome: 'success',
@@ -287,7 +173,7 @@ it('keeps a reloaded worker waiting without a second task prompt', async () => {
   expect(pi.sendUserMessage).not.toHaveBeenCalled();
   expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toBeUndefined();
 
-  pi.handler('agent_settled')({}, context);
+  dispatch(pi, 'agent_settled', {}, context);
 
   expect(shutdown).not.toHaveBeenCalled();
 });
@@ -402,7 +288,7 @@ it('shuts the worker down after a settled report', async () => {
     context,
   );
 
-  pi.handler('agent_settled')({}, context);
+  dispatch(pi, 'agent_settled', {}, context);
 
   expect(shutdown).toHaveBeenCalledOnce();
 });
@@ -429,7 +315,7 @@ it('keeps the worker running and skips the report reminder when its turn ends on
 
   expect(pi.handler('agent_before_settle')({ entries: [] }, context)).toBeUndefined();
 
-  pi.handler('agent_settled')({}, context);
+  dispatch(pi, 'agent_settled', {}, context);
 
   expect(shutdown).not.toHaveBeenCalled();
 });
@@ -467,7 +353,7 @@ it('shuts the worker down when a report is saved after a question in the same ru
     context,
   );
 
-  pi.handler('agent_settled')({}, context);
+  dispatch(pi, 'agent_settled', {}, context);
 
   expect(shutdown).toHaveBeenCalledOnce();
 });
@@ -522,8 +408,13 @@ it('shuts the worker down when the turn that answers its question settles', asyn
     context,
   );
 
-  pi.handler('agent_start')({}, context);
-  pi.handler('agent_settled')({}, context);
+  pi.handler('message_start')(
+    { type: 'message_start', message: { role: 'user', content: 'Use A.' } },
+    context,
+  );
+
+  dispatch(pi, 'agent_start', {}, context);
+  dispatch(pi, 'agent_settled', {}, context);
 
   expect(shutdown).toHaveBeenCalledOnce();
 });

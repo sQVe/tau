@@ -31,7 +31,6 @@ export interface DeadlineTimer {
   assignmentPath: string;
   assignmentId: string;
   parentSession: string;
-  warnAt: number;
   killAt: number;
 }
 
@@ -58,6 +57,9 @@ export interface ArmedTimerFact {
 }
 
 export const deadlineWarningReserve = 90_000;
+
+export const deadlineWarningDelay = (deadline: number, now: number): number =>
+  Math.max(0, deadline - deadlineWarningReserve - now);
 
 export const deadlineEndLabel = { key: 'tau.ended', value: 'deadline' } as const;
 
@@ -119,7 +121,6 @@ const decideSaved = (
     assignmentPath: assignment.path,
     assignmentId: assignment.assignmentId,
     parentSession: assignment.parentSession,
-    warnAt: Math.max(facts.now, assignment.deadline - deadlineWarningReserve),
     killAt: assignment.deadline,
   });
 };

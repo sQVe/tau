@@ -180,6 +180,16 @@ export const readAssignment = async (path: string): Promise<Assignment | undefin
   return record.version === 2 ? fromVersion2(record) : record;
 };
 
+export const hasSavedReport = async (path: string): Promise<boolean> => {
+  try {
+    const assignment = await readAssignment(path);
+
+    return assignment?.report != null;
+  } catch {
+    return false;
+  }
+};
+
 const checkAssignment = (path: string, assignment: Assignment): void => {
   if (!Value.Check(assignmentSchema, assignment)) {
     throw new Error(

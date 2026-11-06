@@ -9,6 +9,7 @@ import {
   assignmentDirectory,
   assignmentPath,
   checkoutFolder,
+  hasSavedReport,
   readAssignment,
   saveQuestion,
   saveReport,
@@ -140,6 +141,23 @@ it('refuses an assignment file in a newer format without changing it', async () 
   await expect(readAssignment(path)).rejects.toThrow('newer format');
 
   expect(readFileSync(path)).toEqual(before);
+});
+
+it('reports a saved report and treats missing or malformed files as absent', async () => {
+  useAgentDirectory();
+  const assignment = assignmentWithSessionInFolder();
+  const path = assignmentPath(assignment.assignmentId);
+
+  await writeAssignment(assignment);
+  expect(await hasSavedReport(path)).toBe(false);
+
+  await saveReport(path, { outcome: 'success', summary: 'Found it.', evidence: [] });
+  expect(await hasSavedReport(path)).toBe(true);
+
+  const directory = temporaryDirectory(onTestFinished, 'tau-assignment-');
+  expect(await hasSavedReport(join(directory, 'assignment.json'))).toBe(false);
+
+  expect(await hasSavedReport(fixturePath('malformed.json'))).toBe(false);
 });
 
 it('writes the assignment in a private folder and reads it back', async () => {
