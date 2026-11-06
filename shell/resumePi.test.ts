@@ -45,6 +45,7 @@ interface ShellCase {
   getCalls: number | undefined;
   maxElapsedMs: number | undefined;
   firstCallFailure?: 'exit' | 'malformed';
+  pathSuffix?: string;
 }
 
 interface ShellResult {
@@ -290,7 +291,7 @@ case "$FAKE_HC_PID_MODE" in
 esac
 
 if [ "$FAKE_HC_LABELS" = 'session' ]; then
-  labels="{\\"pi.session\\":\\"$FAKE_HC_SESSION\\",\\"pi.cwd\\":\\"$FAKE_HC_CWD\\"}"
+  labels="{\\"pi.session\\":$FAKE_HC_SESSION,\\"pi.cwd\\":$FAKE_HC_CWD}"
 else
   labels='{}'
 fi
@@ -446,6 +447,54 @@ const shellCases: ShellCase[] = [
     getCalls: 2,
     maxElapsedMs: undefined,
   },
+  {
+    name: 'keeps a tab in the session and cwd labels',
+    terminalId: 't7',
+    scope: 'core-1',
+    guard: '',
+    labels: 'session',
+    pidMode: 'match',
+    sessionExists: true,
+    cwdExists: true,
+    delay: '',
+    waitSeconds: '',
+    pathSuffix: '\tpart',
+    pi: true,
+    getCalls: 1,
+    maxElapsedMs: undefined,
+  },
+  {
+    name: 'keeps a newline in the session and cwd labels',
+    terminalId: 't7',
+    scope: 'core-1',
+    guard: '',
+    labels: 'session',
+    pidMode: 'match',
+    sessionExists: true,
+    cwdExists: true,
+    delay: '',
+    waitSeconds: '',
+    pathSuffix: '\npart',
+    pi: true,
+    getCalls: 1,
+    maxElapsedMs: undefined,
+  },
+  {
+    name: 'keeps quotes and backslashes in the session and cwd labels',
+    terminalId: 't7',
+    scope: 'core-1',
+    guard: '',
+    labels: 'session',
+    pidMode: 'match',
+    sessionExists: true,
+    cwdExists: true,
+    delay: '',
+    waitSeconds: '',
+    pathSuffix: '"quoted" \\part',
+    pi: true,
+    getCalls: 1,
+    maxElapsedMs: undefined,
+  },
 ];
 
 const writeExecutable = (path: string, contents: string): void => {
@@ -465,13 +514,14 @@ const runCase = (row: ShellCase): ShellResult => {
     const zdotdir = join(root, 'zdotdir');
     mkdirSync(zdotdir);
 
-    const sessionFile = join(root, 'session.jsonl');
+    const pathSuffix = row.pathSuffix ?? '';
+    const sessionFile = join(root, `session${pathSuffix}.jsonl`);
 
     if (row.sessionExists) {
       writeFileSync(sessionFile, '{}\n');
     }
 
-    const cwd = join(root, 'work');
+    const cwd = join(root, `work${pathSuffix}`);
 
     if (row.cwdExists) {
       mkdirSync(cwd);
@@ -498,8 +548,8 @@ const runCase = (row: ShellCase): ShellResult => {
         FAKE_HC_COUNTER: hcCounter,
         FAKE_HC_PID_MODE: row.pidMode,
         FAKE_HC_LABELS: row.labels,
-        FAKE_HC_SESSION: sessionFile,
-        FAKE_HC_CWD: cwd,
+        FAKE_HC_SESSION: JSON.stringify(sessionFile),
+        FAKE_HC_CWD: JSON.stringify(cwd),
         FAKE_HC_DELAY: row.delay,
         FAKE_HC_FIRST_CALL_FAILURE: row.firstCallFailure ?? '',
         FAKE_PI_ARGS_FILE: piArgsFile,
