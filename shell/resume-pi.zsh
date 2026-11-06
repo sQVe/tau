@@ -38,6 +38,8 @@
     local -F deadline=$((EPOCHREALTIME + wait_seconds))
     local -F remaining
     local terminal_json=''
+    local terminal_fields=''
+    local -a fields
     local terminal_read=0
     local session_label=''
     local cwd_label=''
@@ -53,16 +55,19 @@
         break
       fi
 
-      if terminal_json="$(timeout "$remaining" hc get "$terminal_id" --json 2>/dev/null)" && print -r -- "$terminal_json" | jq -e . >/dev/null 2>&1; then
+      # NUL separates the fields because labels may hold tabs and newlines.
+      if terminal_json="$(timeout "$remaining" hc get "$terminal_id" --json 2>/dev/null)" \
+        && terminal_fields="$(print -r -- "$terminal_json" | jq -j 'if type == "object" then [.labels["pi.session"], .labels["pi.cwd"], .pid | . // "" | tostring] | join("\u0000") else error end' 2>/dev/null)"; then
         terminal_read=1
+        fields=("${(@0)terminal_fields}")
       else
         terminal_read=0
-        terminal_json=''
+        fields=()
       fi
 
-      session_label="$(print -r -- "$terminal_json" | jq -r '.labels["pi.session"] // empty' 2>/dev/null)"
-      cwd_label="$(print -r -- "$terminal_json" | jq -r '.labels["pi.cwd"] // empty' 2>/dev/null)"
-      recorded_pid="$(print -r -- "$terminal_json" | jq -r '.pid // empty' 2>/dev/null)"
+      session_label=${fields[1]-}
+      cwd_label=${fields[2]-}
+      recorded_pid=${fields[3]-}
 
       if [[ -f "$session_label" ]]; then
         session_file_exists=1
@@ -99,7 +104,7 @@
         break
       fi
 
-      sleep 0.25
+      sleep 0.1
     done
   }
 } always {
