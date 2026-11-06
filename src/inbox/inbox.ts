@@ -5,6 +5,10 @@ import type { Family, MessageReply, MessageRequest, Reply } from './protocol.js'
 
 export { socketDirectoryFor } from './endpoint.js';
 export { formatInboxLabel, inboxLabelKey } from './protocol.js';
+export { createHandoverReceiver } from './receive.js';
+export { createReceiptStore } from './receipts.js';
+export { sendInboxMessage } from './send.js';
+export type { InboxSendRequest, InboxSendResult } from './send.js';
 
 export interface InboxStartOptions {
   sessionId: string;

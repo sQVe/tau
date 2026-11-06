@@ -1,7 +1,8 @@
-import { readFile, realpath, stat } from 'node:fs/promises';
+import { realpath } from 'node:fs/promises';
 import { relative, resolve } from 'node:path';
 
 import { isMissingFile } from '../../errors.js';
+import { readBoundedText } from '../../record.js';
 import { climbsOut, ensureTauDirectory, findTauRoot } from '../../tauDirectory.js';
 
 // hc send and herdr-app pass the text as one argument, and Linux refuses one above 128 KiB.
@@ -31,19 +32,11 @@ export const readHandoverText = async (cwd: string, file: string): Promise<strin
     throw new Error(`handover file is outside the .tau/handovers directory: ${file}`);
   }
 
-  const stats = await stat(realFile);
+  const text = await readBoundedText(realFile, handoverByteLimit, 'handover file');
 
-  if (!stats.isFile()) {
-    throw new Error(`handover file is not a regular file: ${file}`);
-  }
-
-  if (stats.size === 0) {
+  if (text === '') {
     throw new Error(`handover file is empty: ${file}`);
   }
 
-  if (stats.size > handoverByteLimit) {
-    throw new Error(`handover file is larger than ${handoverByteLimit} bytes: ${file}`);
-  }
-
-  return readFile(realFile, 'utf8');
+  return text;
 };

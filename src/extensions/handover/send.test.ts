@@ -1,3 +1,4 @@
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -6,6 +7,7 @@ import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
+import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import type { Exec } from '../../command.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { sendHandover } from './send.js';
@@ -26,8 +28,22 @@ const runtimeOf = (fake: HcFake): HcRuntime => ({
   cwd: '/repository',
 });
 
-const terminalReply = (address: string, name: string | null = null): string =>
-  JSON.stringify({ address, name, state: 'live', labels: {} });
+const terminalReply = (address: string, name: string | null = null, path = '/tmp/none.sock') =>
+  JSON.stringify({ address, name, state: 'live', labels: { 'tau.inbox': `rpc1:${path}` } });
+
+const socketRoot = (): string => {
+  const root = mkdtempSync('/tmp/tau-handover-');
+
+  chmodSync(root, 0o700);
+
+  onTestFinished(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  return root;
+};
+
+const refusal = 'Nothing was queued. Use handover start to open a receiver instead.';
 
 const writeHandover = async (root: string, content: string): Promise<string> => {
   const directory = join(root, '.tau', 'handovers');
@@ -39,101 +55,101 @@ const writeHandover = async (root: string, content: string): Promise<string> => 
   return file;
 };
 
-const sendArguments = (fake: HcFake): string[][] =>
-  fake.calls
-    .filter((call) => call.commandArguments[0] === 'send')
-    .map((call) => call.commandArguments);
-
 const expectNoSend = (fake: HcFake) => {
-  expect(sendArguments(fake)).toEqual([]);
+  expect(fake.calls.map((call) => call.commandArguments[0])).not.toContain('send');
 };
 
-const expectNoForceOrWait = (fake: HcFake) => {
-  for (const argument of sendArguments(fake).flat()) {
-    expect(['--force', '--wait']).not.toContain(argument);
-  }
-};
-
-it('sends the file text with no force or wait and reports started', async () => {
+it('sends the file text to the receiver inbox and returns queued with its message ID', async () => {
   const fake = createHcFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
+  const receiver = await startHandoverReceiver(onTestFinished, socketRoot(), 't7');
 
-  fake.reply('get', terminalReply('t7'));
-  fake.reply('send', JSON.stringify({ turn: 3, started: true }));
+  fake.reply('get', terminalReply('t7', null, receiver.path));
 
   const result = await sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file });
 
-  expect(result).toEqual({ status: 'started', terminal: 't7', turn: 3 });
-  expect(sendArguments(fake)).toEqual([['send', '--json', '--', 't7', 'Next steps\n']]);
-  expectNoForceOrWait(fake);
+  expect(result).toMatchObject({ status: 'queued', terminal: 't7', sessionId: receiver.sessionId });
+  expect(receiver.savedRecords()).toContain(join(receiver.sessionId, `${result.messageId}.json`));
+  expectNoSend(fake);
 });
 
-it.each([
-  { name: 'false', started: false },
-  { name: 'null', started: null },
-])('reports notStarted when the reply has started $name', async ({ started }) => {
+it('keeps the message ID of a retry, so the receiver saves the message once', async () => {
   const fake = createHcFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
+  const receiver = await startHandoverReceiver(onTestFinished, socketRoot(), 't7');
+  const messageId = '11111111-1111-4111-8111-111111111111';
+  const request = { cwd: root, terminal: 't7', file, messageId };
 
-  fake.reply('get', terminalReply('t7'));
-  fake.reply('send', JSON.stringify({ turn: 4, started }));
+  fake.reply('get', terminalReply('t7', null, receiver.path));
 
-  const result = await sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file });
+  await expect(sendHandover(runtimeOf(fake), request)).resolves.toMatchObject({ messageId });
 
-  expect(result).toEqual({ status: 'notStarted', terminal: 't7', turn: 4 });
-  expectNoForceOrWait(fake);
-});
-
-it('reports notStarted when the reply has no started field', async () => {
-  const fake = createHcFake();
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root, 'Next steps\n');
-
-  fake.reply('get', terminalReply('t7'));
-  fake.reply('send', JSON.stringify({ turn: 5 }));
-
-  const result = await sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file });
-
-  expect(result).toEqual({ status: 'notStarted', terminal: 't7', turn: 5 });
-  expectNoForceOrWait(fake);
-});
-
-it('reports blocked without a turn when hc exits with the blocked error', async () => {
-  const fake = createHcFake();
-  const root = await createTemporaryRepository(onTestFinished);
-  const file = await writeHandover(root, 'Next steps\n');
-
-  const blocked = JSON.stringify({
-    error: { kind: 'blocked', message: 'the terminal is busy' },
+  await expect(sendHandover(runtimeOf(fake), request)).resolves.toMatchObject({
+    status: 'queued',
+    messageId,
   });
 
-  fake.reply('get', terminalReply('t7'));
-  fake.fail('send', blocked, 9);
-
-  const result = await sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file });
-
-  expect(result).toEqual({ status: 'blocked', terminal: 't7' });
-  expect(sendArguments(fake)).toHaveLength(1);
-  expectNoForceOrWait(fake);
+  expect(receiver.savedRecords()).toEqual([
+    receiver.sessionId,
+    join(receiver.sessionId, `${messageId}.json`),
+  ]);
 });
 
-it('rethrows other hc errors from the send', async () => {
+it('returns unknown when the receiver closes without a reply, and a retry with that ID queues once', async () => {
   const fake = createHcFake();
   const root = await createTemporaryRepository(onTestFinished);
   const file = await writeHandover(root, 'Next steps\n');
-  const notFound = JSON.stringify({ error: { kind: 'not_found', message: 'gone' } });
+  const sockets = socketRoot();
+  const receiver = await startHandoverReceiver(onTestFinished, sockets, 't7');
 
-  fake.reply('get', terminalReply('t7'));
-  fake.fail('send', notFound, 2);
+  // The receiver cannot create its record directory, so it closes the connection without a reply.
+  writeFileSync(join(sockets, 'records'), '');
+  fake.reply('get', terminalReply('t7', null, receiver.path));
+
+  const lost = await sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file });
+
+  expect(lost).toMatchObject({ status: 'unknown', terminal: 't7', sessionId: receiver.sessionId });
+  expect(lost.note).toContain(`A retry must reuse this message ID and the same text.`);
+
+  rmSync(join(sockets, 'records'));
+
+  const retry = { cwd: root, terminal: 't7', file, messageId: lost.messageId };
+
+  await expect(sendHandover(runtimeOf(fake), retry)).resolves.toMatchObject({
+    status: 'queued',
+    messageId: lost.messageId,
+  });
+
+  expect(receiver.savedRecords()).toEqual([
+    receiver.sessionId,
+    join(receiver.sessionId, `${lost.messageId}.json`),
+  ]);
+});
+
+it('refuses a retry ID that is not a UUID before any hc call', async () => {
+  const fake = createHcFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'Next steps\n');
+
+  await expect(
+    sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file, messageId: 'retry' }),
+  ).rejects.toThrow(`The message ID is not a UUID: retry ${refusal}`);
+
+  expect(fake.calls).toEqual([]);
+});
+
+it('refuses a file larger than the handover limit without sending', async () => {
+  const fake = createHcFake();
+  const root = await createTemporaryRepository(onTestFinished);
+  const file = await writeHandover(root, 'x'.repeat(102_401));
 
   await expect(sendHandover(runtimeOf(fake), { cwd: root, terminal: 't7', file })).rejects.toThrow(
-    'gone',
+    /handover file is larger than 102400 bytes/,
   );
 
-  expect(sendArguments(fake)).toHaveLength(1);
-  expectNoForceOrWait(fake);
+  expect(fake.calls).toEqual([]);
 });
 
 it('refuses a file outside the handovers directory without sending', async () => {
@@ -207,7 +223,7 @@ it("refuses the caller's own terminal by address without sending", async () => {
 
   await expect(
     sendHandover(runtimeOf(fake), { cwd: root, terminal: callerAddress, file }),
-  ).rejects.toThrow(/own terminal/);
+  ).rejects.toThrow(`own terminal. ${refusal}`);
 
   expectNoSend(fake);
 });
@@ -221,7 +237,7 @@ it("refuses the caller's own terminal by name without sending", async () => {
 
   await expect(
     sendHandover(runtimeOf(fake), { cwd: root, terminal: 'worker', file }),
-  ).rejects.toThrow(/own terminal/);
+  ).rejects.toThrow(`own terminal. ${refusal}`);
 
   expectNoSend(fake);
 });
@@ -243,8 +259,6 @@ it('sends nothing when the caller aborts while the terminal lookup is pending', 
   };
 
   fake.reply('get', terminalReply('t7'));
-  fake.reply('send', JSON.stringify({ turn: 3, started: true }));
-
   const runtime = { exec, connect: fake.connect, cwd: '/repository', signal: controller.signal };
 
   await expect(sendHandover(runtime, { cwd: root, terminal: 't7', file })).rejects.toMatchObject({

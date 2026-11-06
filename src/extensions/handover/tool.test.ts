@@ -1,3 +1,4 @@
+import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { link, mkdir, readdir, readFile, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -13,6 +14,7 @@ import {
 } from '../../../tests/gitRepository.js';
 import { createHcFake } from '../../../tests/hcFake.js';
 import type { HcFake } from '../../../tests/hcFake.js';
+import { startHandoverReceiver } from '../../../tests/inboxReceiverHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { createHandoverTool } from './tool.js';
 
@@ -222,40 +224,62 @@ it('gives the model the directory as JSON text in the tool content', async () =>
   });
 });
 
-it('accepts the send action with its terminal and file in the parameters Pi validates', () => {
+it('accepts the send action with its terminal, file, and retry ID in the parameters Pi validates', () => {
   const { parameters } = createTool();
+  const messageId = '11111111-1111-4111-8111-111111111111';
 
   expect(Value.Check(parameters, { action: 'send', terminal: 't7', file: 'message.md' })).toBe(
     true,
   );
+
+  expect(Value.Check(parameters, { action: 'send', terminal: 't7', file: 'm.md', messageId })).toBe(
+    true,
+  );
 });
 
-it('sends the handover file through hc and returns the status as JSON text', async () => {
+it('sends the handover file to the receiver inbox and returns queued as JSON text', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const fake = createHcFake();
   const file = join(root, '.tau', 'handovers', 'message.md');
+  const sockets = mkdtempSync('/tmp/tau-tool-');
+  const messageId = '11111111-1111-4111-8111-111111111111';
+
+  chmodSync(sockets, 0o700);
+
+  onTestFinished(() => {
+    rmSync(sockets, { recursive: true, force: true });
+  });
+
+  const receiver = await startHandoverReceiver(onTestFinished, sockets, 't7');
 
   vi.stubEnv('HC_TERMINAL_ID', 'caller');
   await mkdir(join(root, '.tau', 'handovers'), { recursive: true });
   await writeFile(file, 'Next steps\n');
-  fake.reply('get', JSON.stringify({ address: 't7', state: 'live', labels: {} }));
-  fake.reply('send', JSON.stringify({ turn: 3, started: true }));
+
+  fake.reply(
+    'get',
+    JSON.stringify({
+      address: 't7',
+      state: 'live',
+      labels: { 'tau.inbox': `rpc1:${receiver.path}` },
+    }),
+  );
 
   const result = await createHandoverTool(runtimeOf(fake)).execute(
     'call',
-    { action: 'send', terminal: 't7', file },
+    { action: 'send', terminal: 't7', file, messageId },
     undefined,
     undefined,
     noUiContext(root),
   );
 
-  expect(result.details).toEqual({ status: 'started', terminal: 't7', turn: 3 });
+  const queued = { status: 'queued', terminal: 't7', sessionId: receiver.sessionId, messageId };
 
-  expect(JSON.parse(result.content[0]?.type === 'text' ? result.content[0].text : '')).toEqual({
-    status: 'started',
-    terminal: 't7',
-    turn: 3,
-  });
+  expect(result.details).toEqual(queued);
+
+  expect(JSON.parse(result.content[0]?.type === 'text' ? result.content[0].text : '')).toEqual(
+    queued,
+  );
 });
 
 it('refuses a send without a terminal before any hc call', async () => {

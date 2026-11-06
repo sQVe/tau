@@ -1,23 +1,38 @@
+import { join } from 'node:path';
+
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../errors.js';
 import { get, label } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
-import { familyHandlers, formatInboxLabel, inboxLabelKey, startInbox } from '../../inbox/inbox.js';
+import {
+  createHandoverReceiver,
+  createReceiptStore,
+  familyHandlers,
+  formatInboxLabel,
+  inboxLabelKey,
+  registerFamilyHandler,
+  startInbox,
+} from '../../inbox/inbox.js';
 import type { InboxListener } from '../../inbox/inbox.js';
+import type { Wake } from '../../wake/wake.js';
 import type { StartupGate } from './startup.js';
 
 export interface InboxLifecycleDependencies {
   hc: HcRuntime;
   terminal: () => string | undefined;
   socketDirectory: () => string;
+  // Holds one directory of pending handover records per receiver session.
+  inboxDirectory: () => string;
   gate: StartupGate;
+  wake: Wake;
 }
 
 interface Generation {
   controller: AbortController;
   sessionId: string;
   drain: Promise<void>;
+  disposeReceiver: () => void;
 }
 
 const notifyError = (context: ExtensionContext, message: string): void => {
@@ -83,6 +98,22 @@ export const registerInboxLifecycle = (
       return;
     }
 
+    const receiver = createHandoverReceiver({
+      directory: join(dependencies.inboxDirectory(), current.sessionId),
+      terminal,
+      sessionId: current.sessionId,
+      receipts: createReceiptStore(current.sessionId),
+      entries: () => context.sessionManager.getEntries(),
+      wake: (message) => {
+        dependencies.wake(context, message);
+      },
+      notify: (message) => {
+        notifyError(context, message);
+      },
+    });
+
+    current.disposeReceiver = registerFamilyHandler(current.sessionId, 'handover', receiver);
+
     listener = await startInbox({
       sessionId: current.sessionId,
       terminal,
@@ -97,14 +128,24 @@ export const registerInboxLifecycle = (
     });
   };
 
-  pi.on('session_start', async (_event, context) => {
+  const endGeneration = (): void => {
     generation?.controller.abort();
+    generation?.disposeReceiver();
+    generation = undefined;
+  };
+
+  pi.on('session_start', async (_event, context) => {
+    const endedDrain = generation?.drain ?? Promise.resolve();
+
+    endGeneration();
     await withdraw().catch(() => undefined);
 
+    // The first drain waits for the ended one, so two generations never deliver at once.
     const current: Generation = {
       controller: new AbortController(),
       sessionId: context.sessionManager.getSessionId(),
-      drain: Promise.resolve(),
+      drain: endedDrain,
+      disposeReceiver: () => undefined,
     };
 
     generation = current;
@@ -120,9 +161,15 @@ export const registerInboxLifecycle = (
     requestDrain(current, context);
   });
 
+  // A finished run may have saved receipts, so the drain can delete delivered records.
+  pi.on('agent_end', (_event, context) => {
+    if (generation !== undefined) {
+      requestDrain(generation, context);
+    }
+  });
+
   pi.on('session_shutdown', async () => {
-    generation?.controller.abort();
-    generation = undefined;
+    endGeneration();
     await withdraw();
   });
 };

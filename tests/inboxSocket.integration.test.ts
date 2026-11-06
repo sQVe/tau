@@ -80,7 +80,11 @@ it.skipIf(!onLinux)(
         agentDirectory: join(hc.root, 'agent'),
         providers: [fauxProvider()],
         extensionFactories: [
-          createInboxExtension({ hc: hc.runtime, socketDirectory: () => socketDirectory }),
+          createInboxExtension({
+            hc: hc.runtime,
+            socketDirectory: () => socketDirectory,
+            inboxDirectory: () => join(socketRoot, 'records'),
+          }),
         ],
       },
       // Pi's reload emits session_start only for a session with bindings.
@@ -95,7 +99,7 @@ it.skipIf(!onLinux)(
       kind: 'ready',
       terminal: terminal.address,
       sessionId,
-      families: [],
+      families: ['handover'],
     };
 
     await expect(handshake(path)).resolves.toEqual(ready);

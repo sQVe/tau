@@ -37,7 +37,7 @@ const uuidExpression = new RegExp(uuidPattern, 'u');
 
 export const isUuid = (value: string): boolean => uuidExpression.test(value);
 
-const uuid = Type.String({ pattern: uuidPattern });
+export const uuidSchema = Type.String({ pattern: uuidPattern });
 
 const strict = { additionalProperties: false } as const;
 
@@ -48,9 +48,9 @@ const helloSchema = Type.Object({ protocol: protocolField, kind: Type.Literal('h
 const messageHeader = {
   protocol: protocolField,
   kind: Type.Literal('message'),
-  messageId: uuid,
+  messageId: uuidSchema,
   targetTerminal: Type.String({ minLength: 1 }),
-  targetSessionId: uuid,
+  targetSessionId: uuidSchema,
 };
 
 const handoverSchema = Type.Object(
@@ -68,8 +68,8 @@ const answerSchema = Type.Object(
     family: Type.Literal('answer'),
     payload: Type.Object(
       {
-        assignmentId: uuid,
-        questionId: uuid,
+        assignmentId: uuidSchema,
+        questionId: uuidSchema,
         parentSession: Type.String({ minLength: 1 }),
         answer: Type.String({ minLength: 1 }),
       },
@@ -84,7 +84,7 @@ const readySchema = Type.Object(
     protocol: protocolField,
     kind: Type.Literal('ready'),
     terminal: Type.String({ minLength: 1 }),
-    sessionId: uuid,
+    sessionId: uuidSchema,
     families: Type.Array(Type.Union([Type.Literal('handover'), Type.Literal('answer')])),
   },
   strict,
@@ -94,9 +94,9 @@ const queuedSchema = Type.Object(
   {
     protocol: protocolField,
     kind: Type.Literal('queued'),
-    messageId: uuid,
+    messageId: uuidSchema,
     terminal: Type.String({ minLength: 1 }),
-    sessionId: uuid,
+    sessionId: uuidSchema,
   },
   strict,
 );
@@ -106,7 +106,7 @@ const refusedSchema = Type.Object(
     protocol: protocolField,
     kind: Type.Literal('refused'),
     reason: Type.String({ minLength: 1 }),
-    messageId: Type.Optional(uuid),
+    messageId: Type.Optional(uuidSchema),
   },
   strict,
 );

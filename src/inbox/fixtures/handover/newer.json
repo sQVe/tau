@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "messageId": "11111111-1111-4111-8111-111111111111",
+  "targetTerminal": "t7",
+  "targetSessionId": "22222222-2222-4222-8222-222222222222",
+  "text": "handover text",
+  "priority": "high"
+}

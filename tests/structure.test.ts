@@ -82,7 +82,6 @@ const pureModules = [
   'src/extensions/draftReview/reviewDecisions.ts',
   'src/extensions/fullCheck/idleDecision.ts',
   'src/extensions/fullCheck/mutationVerdict.ts',
-  'src/extensions/handover/sendStatus.ts',
   'src/extensions/mergeWatch/autoMergeRequest.ts',
   'src/extensions/mergeWatch/watchOutcome.ts',
   'src/extensions/mergeWatch/watchStart.ts',
@@ -152,6 +151,7 @@ const pureModules = [
   'src/fileLock/lockHolderDecision.ts',
   'src/github/repositoryTargetDecisions.ts',
   'src/inbox/protocol.ts',
+  'src/inbox/receiptDecision.ts',
   'src/inbox/targetDecision.ts',
   'src/process/stateDecision.ts',
   'src/reviewCapture/coverageDecision.ts',
@@ -396,6 +396,47 @@ it('keeps registered pure modules free of reads and effects', () => {
   );
 
   expect(found, pureAdvice).toEqual([]);
+});
+
+// Each versioned record format: the module that writes it and its frozen fixtures.
+const versionedRecords = [
+  { writer: 'src/inbox/store.ts', fixtures: 'src/inbox/fixtures/handover' },
+];
+
+// Writers of records that predate versionedRecords; a new format must not join them.
+const plainPublishers = ['src/record.ts', 'src/reviewCapture/generation.ts'];
+
+const recordFormatProblems = ({ writer, fixtures }: (typeof versionedRecords)[number]) => {
+  const source = readFileSync(join(root, writer), 'utf8');
+  const problems: string[] = [];
+
+  if (!/version: Type\.Literal\(/u.test(source)) {
+    problems.push(`${writer} has no version literal`);
+  }
+
+  if (!source.includes('publishRecord(')) {
+    problems.push(`${writer} does not publish through publishRecord`);
+  }
+
+  for (const name of ['current.json', 'newer.json', 'malformed.json']) {
+    if (!repositoryFiles().includes(`${fixtures}/${name}`)) {
+      problems.push(`${fixtures} has no ${name}`);
+    }
+  }
+
+  return problems;
+};
+
+it('writes each versioned record format through publishRecord, with a version and fixtures', () => {
+  expect(versionedRecords.flatMap((format) => recordFormatProblems(format))).toEqual([]);
+});
+
+it('publishes plain text only from the writers that predate versioned records', () => {
+  const publishers = sourceFiles
+    .filter((path) => !isTest(path))
+    .filter((path) => readFileSync(join(root, path), 'utf8').includes('publishTextSync('));
+
+  expect(publishers).toEqual(plainPublishers);
 });
 
 // Lists each entry that sorts before the one above it or repeats it.
