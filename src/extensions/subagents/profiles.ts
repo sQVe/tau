@@ -274,6 +274,7 @@ export const workerInstructions = (loadout: Loadout): string =>
       'Your tools and CC Safety Net are not a sandbox.',
       'Do not commit, merge, or reset unless the task says so, and never run extra model trials.',
       'Preserve unrelated edits.',
+      "Never type into another agent's terminal.",
     ].join(' '),
   ].join('\n\n');
 

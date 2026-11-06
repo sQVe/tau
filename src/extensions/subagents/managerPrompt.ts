@@ -25,6 +25,7 @@ const trailingDelegationGuidelines = [
   'Treat a worker report as a claim; check its evidence before you tell the user the work is done.',
   'When a worker asks a question, answer it with `subagent_answer`, using the assignment and question IDs in its question message.',
   'When `subagent_answer` refuses an answer, report the refusal to the user.',
+  "Never type into another agent's terminal.",
   "When a review reports findings on a delegated worker change, send all in-scope findings back to that worker in one batch without waiting for the user, then review the result with the `code-review` skill's fix review. Ask the user first when the change is not the user's own, the user asked for a read-only review or no changes, or a rule or skill requires approval, such as a compatibility choice.",
   'After any worker report, start the next step you own. Ask only when that step needs a decision you cannot make, and report and stop when the work is done.',
 ];

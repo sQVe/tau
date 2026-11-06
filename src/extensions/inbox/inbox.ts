@@ -9,6 +9,7 @@ import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import { socketDirectoryFor } from '../../inbox/inbox.js';
 import { createWake } from '../../wake/wake.js';
+import { guardTerminalTyping } from './guard.js';
 import { registerInboxLifecycle } from './lifecycle.js';
 import { createStartupGate } from './startup.js';
 
@@ -21,6 +22,8 @@ export interface InboxExtensionDependencies {
 export const createInboxExtension =
   (dependencies: InboxExtensionDependencies) =>
   (pi: ExtensionAPI): void => {
+    pi.on('tool_call', guardTerminalTyping);
+
     registerInboxLifecycle(pi, {
       hc: dependencies.hc,
       terminal: currentTerminalAddress,

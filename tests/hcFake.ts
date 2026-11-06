@@ -4,7 +4,7 @@ import type { HcEvent, SubscribeEvents, SubscribeHandlers } from '../src/hc/even
 import { createExecFake, failedResult, succeededResult } from './execFake.js';
 import type { ExecCall } from './execFake.js';
 
-type HcCommand = 'run' | 'get' | 'ls' | 'send' | 'wait' | 'kill' | 'rm' | 'label';
+type HcCommand = 'run' | 'get' | 'ls' | 'wait' | 'kill' | 'rm' | 'label';
 
 interface HcRequestMessage {
   jsonrpc: string;
@@ -40,7 +40,7 @@ export interface HcFake {
   closeSubscription: (reason: string) => void;
 }
 
-const commands = new Set<HcCommand>(['run', 'get', 'ls', 'send', 'wait', 'kill', 'rm', 'label']);
+const commands = new Set<HcCommand>(['run', 'get', 'ls', 'wait', 'kill', 'rm', 'label']);
 
 const isCommand = (value: string | undefined): value is HcCommand =>
   value !== undefined && commands.has(value as HcCommand);
