@@ -7,7 +7,6 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { executeAnswer } from '../src/extensions/subagents/answer.js';
 import type { Assignment } from '../src/extensions/subagents/assignment.js';
-import { readAssignment } from '../src/extensions/subagents/assignment.js';
 import type { DeadlineWatchdog } from '../src/extensions/subagents/deadlineWatchdog.js';
 import { registerWorkerScan } from '../src/extensions/subagents/subagents.js';
 import { createWorkerDelivery } from '../src/extensions/subagents/workerDelivery.js';
@@ -19,6 +18,7 @@ import type { HcSession } from './hcSessionHarness.js';
 import {
   launchWorkerSession,
   managerSessionFile,
+  waitForQuestion,
   waitForReport,
 } from './subagentSessionHarness.js';
 
@@ -48,23 +48,6 @@ vi.setConfig({ testTimeout: 120_000 });
 
 const questionDeadlineMilliseconds = 90_000;
 const questionPollMilliseconds = 100;
-
-const waitForQuestion = async (path: string): Promise<Assignment> => {
-  const deadline = Date.now() + questionDeadlineMilliseconds;
-
-  let assignment = await readAssignment(path);
-
-  while (assignment === undefined || assignment.questions.length === 0) {
-    if (Date.now() > deadline) {
-      throw new Error(`Worker never saved a question to ${path}.`);
-    }
-
-    await delay(questionPollMilliseconds);
-    assignment = await readAssignment(path);
-  }
-
-  return assignment;
-};
 
 const managerQuestionProbe = `
 import { appendFileSync } from 'node:fs';
@@ -177,7 +160,7 @@ it('shows a real worker question once and carries the subagent_answer reply into
     task: `${questionTaskMarker} Ask which value the report should hold.`,
     acceptance: ['Report the answer.'],
     probe: { source: managerQuestionProbe },
-    inbox: true,
+    tauPackage: true,
   });
 
   const assignment = await waitForQuestion(worker.assignmentFilePath);

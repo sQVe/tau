@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import {
   fauxAssistantMessage,
@@ -28,6 +29,12 @@ export const questionTaskMarker = 'fixture-asks-the-manager';
 export const firstTaskMarker = 'fixture-first-task-marker';
 
 export const followUpTaskMarker = 'fixture-follow-up-marker';
+
+// With this marker, the worker reports only after the test creates the release file in its
+// working directory, so the question stays open after the answer arrives.
+export const holdReportTaskMarker = 'fixture-holds-the-report';
+
+export const reportReleaseFile = 'fixture-release-report';
 
 const fixtureQuestion = 'Which value should the report hold?';
 
@@ -165,16 +172,27 @@ const followUpResponses = (): FauxResponseStep[] => [
   },
 ];
 
+const holdsTheReport = (): boolean => savedAssignment?.task.includes(holdReportTaskMarker) ?? false;
+
+const waitForRelease = async (): Promise<void> => {
+  while (holdsTheReport() && !existsSync(join(process.cwd(), reportReleaseFile))) {
+    await delay(50);
+  }
+};
+
 const questionResponses = (): FauxResponseStep[] => [
   fauxAssistantMessage([fauxToolCall('subagent_question', { question: fixtureQuestion })]),
-  (context) =>
-    fauxAssistantMessage([
+  async (context) => {
+    await waitForRelease();
+
+    return fauxAssistantMessage([
       fauxToolCall('subagent_report', {
         outcome: 'success',
         summary: fixtureSummary,
         evidence: [managerAnswer(context)],
       }),
-    ]),
+    ]);
+  },
 ];
 
 const reportResponses = (): FauxResponseStep[] => [

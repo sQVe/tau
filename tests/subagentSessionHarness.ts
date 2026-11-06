@@ -13,8 +13,10 @@ import { executeFollowUp } from '../src/extensions/subagents/followUp.js';
 import { Admission, executeLaunch } from '../src/extensions/subagents/launch.js';
 import type { LaunchRuntime } from '../src/extensions/subagents/launch.js';
 import * as loadouts from '../src/extensions/subagents/loadout.js';
+import { workerCommand } from '../src/extensions/subagents/workerCommand.js';
 import { runWithEnvironment } from '../src/hc/connect.js';
 import { get } from '../src/hc/hc.js';
+import { skillTools } from '../src/skillTools.js';
 import type { HcSession } from './hcSessionHarness.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
@@ -27,8 +29,11 @@ export interface WorkerSessionOptions {
   command?: { source: string };
   timeoutSeconds?: number;
   prepareWorker?: (workerDirectory: string) => void;
-  // Loads the inbox extension in the worker, as Tau's package does outside tests.
-  inbox?: boolean;
+  // Loads the Tau package in the worker, as a loadout that installs Tau does.
+  tauPackage?: boolean;
+  // Resolves the loadout from a fixture profile and tau.json through Tau's own resolver, instead
+  // of the test file's mocked resolver. Only the model registry is faked.
+  configuredLoadout?: boolean;
   // Runs after the manager terminal exists and HC_TERMINAL_ID points at it, before the worker.
   beforeLaunch?: (managerAddress: string) => Promise<void>;
 }
@@ -79,6 +84,23 @@ export const waitForReport = async (path: string): Promise<Assignment> => {
   return assignment;
 };
 
+export const waitForQuestion = async (path: string): Promise<Assignment> => {
+  const deadline = Date.now() + observationDeadlineMilliseconds;
+
+  let assignment = await readAssignment(path);
+
+  while (assignment === undefined || assignment.questions.length === 0) {
+    if (Date.now() > deadline) {
+      throw new Error(`Worker never saved a question to ${path}.`);
+    }
+
+    await delay(observationPollMilliseconds);
+    assignment = await readAssignment(path);
+  }
+
+  return assignment;
+};
+
 const writeAgentSettings = (agentDirectory: string): void => {
   const safetyPackage = dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json')));
 
@@ -105,13 +127,57 @@ const writeControlledProvider = (agentDirectory: string): void => {
   );
 };
 
-const writeInboxExtension = (agentDirectory: string): void => {
-  const inboxPath = fileURLToPath(new URL('../src/extensions/inbox/inbox.ts', import.meta.url));
+const writeFixtureProfile = (
+  agentDirectory: string,
+  model: { provider: string; id: string },
+): void => {
+  mkdirSync(join(agentDirectory, 'agents'), { recursive: true });
 
   writeFileSync(
-    join(agentDirectory, 'extensions', 'inbox.js'),
-    `export { default } from ${JSON.stringify(inboxPath)};\n`,
+    join(agentDirectory, 'agents', 'worker.md'),
+    [
+      '---',
+      'name: worker',
+      'role: editing',
+      'tools: read, bash, edit, write',
+      'thinking: off',
+      '---',
+      '',
+      'Follow the fixture task exactly.',
+      '',
+    ].join('\n'),
   );
+
+  writeFileSync(
+    join(agentDirectory, 'tau.json'),
+    JSON.stringify({ profiles: { worker: { model: `${model.provider}/${model.id}` } } }),
+  );
+};
+
+// The manager context the launch reads. A configured loadout reads the cwd, trust, and models too.
+const launchContext = (
+  options: WorkerSessionOptions,
+  workerDirectory: string,
+): ExtensionContext => {
+  const sessionManager = { getSessionId: () => 'manager-one' };
+
+  if (options.configuredLoadout !== true) {
+    return { sessionManager } as unknown as ExtensionContext;
+  }
+
+  const { model } = options;
+
+  return {
+    sessionManager,
+    cwd: workerDirectory,
+    isProjectTrusted: () => true,
+    scopedModels: [],
+    modelRegistry: {
+      find: (provider: string, id: string) =>
+        provider === model.provider && id === model.id ? model : undefined,
+    },
+    ui: { notify: () => undefined },
+  } as unknown as ExtensionContext;
 };
 
 const managerInvocation = (
@@ -129,6 +195,11 @@ const managerInvocation = (
 
   return { argv: ['node', probePath, observationPath], observationPath };
 };
+
+const packageRoot = fileURLToPath(new URL('../', import.meta.url));
+
+const tauPackageCommand: NonNullable<LaunchRuntime['buildCommand']> = (sessionFile, loadout) =>
+  workerCommand(sessionFile, loadout, [{ path: packageRoot }], skillTools);
 
 const workerCommandArgv = (
   agentDirectory: string,
@@ -179,10 +250,6 @@ export const launchWorkerSession = async (
   writeAgentSettings(agentDirectory);
   writeControlledProvider(agentDirectory);
 
-  if (options.inbox === true) {
-    writeInboxExtension(agentDirectory);
-  }
-
   options.prepareWorker?.(workerDirectory);
 
   const { argv: managerArgv, observationPath } = managerInvocation(agentDirectory, options.probe);
@@ -199,13 +266,16 @@ export const launchWorkerSession = async (
   await options.beforeLaunch?.(manager.address);
 
   const managerPath = `${join(agentDirectory, 'bin')}:${process.env.PATH ?? ''}`;
-  const loadout = fixtureLoadout(workerDirectory, agentDirectory, options.model);
 
-  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
-    loadout,
-    routing: undefined,
-    choice: { kind: 'profileWithoutRoute' },
-  });
+  if (options.configuredLoadout === true) {
+    writeFixtureProfile(agentDirectory, options.model);
+  } else {
+    vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
+      loadout: fixtureLoadout(workerDirectory, agentDirectory, options.model),
+      routing: undefined,
+      choice: { kind: 'profileWithoutRoute' },
+    });
+  }
 
   const runtime: LaunchRuntime = {
     pi: { getCommands: () => [], getAllTools: () => [] } as unknown as ExtensionAPI,
@@ -216,6 +286,7 @@ export const launchWorkerSession = async (
     agentDirectory,
     processEnvironment: { ...options.hc.environment, PATH: managerPath },
     ...(workerArgv === undefined ? {} : { buildCommand: () => workerArgv }),
+    ...(options.tauPackage === true ? { buildCommand: tauPackageCommand } : {}),
   };
 
   const result = await executeLaunch(
@@ -231,7 +302,7 @@ export const launchWorkerSession = async (
       parentSession: managerSessionFile,
     },
     undefined,
-    { sessionManager: { getSessionId: () => 'manager-one' } } as unknown as ExtensionContext,
+    launchContext(options, workerDirectory),
   );
 
   expect(result.isError).not.toBe(true);
