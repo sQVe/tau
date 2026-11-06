@@ -36,7 +36,7 @@ interface ShellCase {
   scope: string;
   guard: string;
   labels: 'session' | 'none';
-  pidMode: 'match' | 'different' | 'empty';
+  pidMode: 'match' | 'different' | 'empty' | 'empty-then-match';
   sessionExists: boolean;
   cwdExists: boolean;
   delay: string;
@@ -398,6 +398,21 @@ const shellCases: ShellCase[] = [
     pi: false,
     getCalls: undefined,
     maxElapsedMs: 5500,
+  },
+  {
+    name: 'resumes soon after the core records the pid',
+    terminalId: 't7',
+    scope: 'core-1',
+    guard: '',
+    labels: 'session',
+    pidMode: 'empty-then-match',
+    sessionExists: true,
+    cwdExists: true,
+    delay: '',
+    waitSeconds: '',
+    pi: true,
+    getCalls: 2,
+    maxElapsedMs: 240,
   },
   {
     name: 'retries when hc get exits non-zero once, then resumes',
