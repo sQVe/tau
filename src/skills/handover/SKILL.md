@@ -21,8 +21,10 @@ commit another worktree from your session, even over bash.
 
 - Requires `HC_TERMINAL_ID`. Otherwise tell the user you cannot reach the other agent and stop.
 - The message is one-way. Do not ask for a reply, poll, or wait for the receiver to finish.
-- When receiving a handover, report to your own user and send nothing back. If the message asks for
-  a reply, reply only through the `handover` tool's `send` action, never with `hc send` in bash.
+- When receiving a handover, report to your own user and send nothing back unless the message asks
+  for a reply.
+- Send a requested reply only through the `handover` tool's `send` action, never with `hc send` in
+  bash.
 - A handover links to records, such as tickets or `.tau/` working copies, and is not a record
   itself.
 - Work is ready to implement when the ticket or a task the user approved states the goal, the scope
