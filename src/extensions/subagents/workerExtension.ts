@@ -140,11 +140,7 @@ const registerReportTool = (
         throw new Error('Worker has no loaded assignment to report against.');
       }
 
-      const result = await reportToParent(state.target, argumentsList[1]);
-
-      warning.clear();
-
-      return result;
+      return reportToParent(state.target, argumentsList[1], warning);
     },
   });
 };

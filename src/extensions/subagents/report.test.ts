@@ -69,17 +69,23 @@ const setup = () => {
     evidence: ['src/config.ts'],
   };
 
-  return { assignment, fake, report, target };
+  const deadlineWarning = { clears: 0, clear: () => undefined };
+
+  deadlineWarning.clear = () => {
+    deadlineWarning.clears += 1;
+  };
+
+  return { assignment, deadlineWarning, fake, report, target };
 };
 
 const reportCommandCalls = (fake: ReturnType<typeof setup>['fake']) =>
   fake.calls.map((call) => call.commandArguments[0]);
 
 it('saves the report then labels it for the manager', async () => {
-  const { fake, report, target } = setup();
+  const { deadlineWarning, fake, report, target } = setup();
 
   await writeAssignment(target.assignment);
-  const result = await reportToParent(target, report);
+  const result = await reportToParent(target, report, deadlineWarning);
 
   expect(reportCommandCalls(fake)).toEqual(['label']);
 
@@ -103,13 +109,13 @@ it('saves the report then labels it for the manager', async () => {
 });
 
 it('keeps the saved report and names the failed label', async () => {
-  const { fake, report, target } = setup();
+  const { deadlineWarning, fake, report, target } = setup();
 
   fake.fail('label', 'label refused', 1);
 
   await writeAssignment(target.assignment);
 
-  const result = await reportToParent(target, report);
+  const result = await reportToParent(target, report, deadlineWarning);
   const content = result.content[0];
 
   expect(content?.type).toBe('text');
@@ -120,7 +126,7 @@ it('keeps the saved report and names the failed label', async () => {
 });
 
 it('accepts an incomplete time blocker only near the deadline', async () => {
-  const { fake, target } = setup();
+  const { deadlineWarning, fake, target } = setup();
 
   await writeAssignment(target.assignment);
 
@@ -134,29 +140,62 @@ it('accepts an incomplete time blocker only near the deadline', async () => {
 
   target.assignment.deadline = target.assignment.createdAt + 3_600_000;
 
-  await expect(reportToParent(target, incomplete)).rejects.toThrow('Report refused');
+  await expect(reportToParent(target, incomplete, deadlineWarning)).rejects.toThrow(
+    'Report refused',
+  );
 
   expect((await readAssignment(target.assignmentPath))?.report).toBeNull();
   expect(fake.calls).toEqual([]);
 
   target.assignment.deadline = target.assignment.createdAt + 30_000;
 
-  await reportToParent(target, incomplete);
+  await reportToParent(target, incomplete, deadlineWarning);
 
   expect((await readAssignment(target.assignmentPath))?.report?.outcome).toBe('incomplete');
   expect(reportCommandCalls(fake)).toEqual(['label']);
 });
 
 it('writes nothing and labels nothing for an invalid report', async () => {
-  const { fake, target } = setup();
+  const { deadlineWarning, fake, target } = setup();
 
   await writeAssignment(target.assignment);
 
   await expect(
-    reportToParent(target, { outcome: 'success', summary: 'No sections.', evidence: [] }),
+    reportToParent(
+      target,
+      { outcome: 'success', summary: 'No sections.', evidence: [] },
+      deadlineWarning,
+    ),
   ).rejects.toThrow('missing the');
 
   expect((await readAssignment(target.assignmentPath))?.report).toBeNull();
   expect(fake.calls).toEqual([]);
   expect(target.refusal.remindAfterRefusal).toBe(true);
+});
+
+it('clears the deadline warning once the report is saved, even when the label fails', async () => {
+  const { deadlineWarning, fake, report, target } = setup();
+
+  fake.fail('label', 'label refused', 1);
+
+  await writeAssignment(target.assignment);
+  await reportToParent(target, report, deadlineWarning);
+
+  expect(deadlineWarning.clears).toBe(1);
+});
+
+it('keeps the deadline warning when the report is refused', async () => {
+  const { deadlineWarning, target } = setup();
+
+  await writeAssignment(target.assignment);
+
+  await expect(
+    reportToParent(
+      target,
+      { outcome: 'success', summary: 'No sections.', evidence: [] },
+      deadlineWarning,
+    ),
+  ).rejects.toThrow('missing the');
+
+  expect(deadlineWarning.clears).toBe(0);
 });
