@@ -1,4 +1,4 @@
-import { symlink, writeFile } from 'node:fs/promises';
+import { access, chmod, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
@@ -597,4 +597,125 @@ it('removes every saved label in one scan', async ({ onTestFinished }) => {
     ['label', '--json', '--', terminal, `tau.inbox.${messageId}=`],
     ['label', '--json', '--', terminal, `tau.inbox.${savedMessageId}=`],
   ]);
+});
+
+const fileExists = async (path: string): Promise<boolean> =>
+  access(path).then(
+    () => true,
+    () => false,
+  );
+
+it('deletes a delivered envelope after its receipt is saved and its label removed', async ({
+  onTestFinished,
+}) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const directory = await ensureTauDirectory(root, 'inbox');
+  const path = await writeCurrentEnvelope(directory);
+  const harness = createHarness(path);
+
+  harness.release();
+  harness.entries.push(receiptEntry());
+  await harness.receiver().scan(harness.context);
+
+  expect(labelArguments(harness.fake)).toHaveLength(1);
+  expect(await fileExists(path)).toBe(false);
+});
+
+it.each([
+  {
+    name: 'an envelope for another session',
+    envelope: { ...currentEnvelope(), targetSessionId: 'other-session' },
+  },
+  {
+    name: 'a refused envelope',
+    envelope: { ...currentEnvelope(), targetTerminal: 't9' },
+  },
+])('keeps $name after removing a saved label', async ({ envelope }) => {
+  const root = await createTemporaryRepository(registerCleanup);
+  const directory = await ensureTauDirectory(root, 'inbox');
+  const path = join(directory, `${messageId}.json`);
+
+  await writeRecord(path, envelope);
+
+  const harness = createHarness(path);
+
+  harness.release();
+  harness.entries.push(receiptEntry());
+  await harness.receiver().scan(harness.context);
+
+  expect(labelArguments(harness.fake)).toHaveLength(1);
+  expect(await fileExists(path)).toBe(true);
+});
+
+it('keeps the envelope when the label removal fails', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const directory = await ensureTauDirectory(root, 'inbox');
+  const path = await writeCurrentEnvelope(directory);
+  const harness = createHarness(path);
+
+  harness.release();
+  harness.entries.push(receiptEntry());
+  harness.fake.fail('label', 'label failed', 1);
+  await harness.receiver().scan(harness.context);
+
+  expect(labelArguments(harness.fake)).toHaveLength(1);
+  expect(await fileExists(path)).toBe(true);
+});
+
+it('keeps the envelope when the generation ends during the label removal', async ({
+  onTestFinished,
+}) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const directory = await ensureTauDirectory(root, 'inbox');
+  const path = await writeCurrentEnvelope(directory);
+  const harness = createHarness(path);
+  let current = true;
+
+  const exec: Exec = async (command, commandArguments, options) => {
+    const result = await harness.fake.exec(command, commandArguments, options);
+
+    if (commandArguments[0] === 'label') {
+      current = false;
+    }
+
+    return result;
+  };
+
+  harness.release();
+  harness.entries.push(receiptEntry());
+
+  await createReceiver({
+    hc: { ...runtimeOf(harness.fake), exec },
+    terminal,
+    sessionId,
+    gate: harness.gate,
+    wake: () => undefined,
+    notify: (_context, message) => harness.notifications.push(message),
+    receipts: createReceiptStore(sessionId),
+    fence: fenceStub({ isCurrent: () => current }),
+  }).scan(harness.context);
+
+  expect(labelArguments(harness.fake)).toHaveLength(1);
+  expect(await fileExists(path)).toBe(true);
+});
+
+it('keeps the receipt and the removed label when the delete fails', async ({ onTestFinished }) => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const directory = await ensureTauDirectory(root, 'inbox');
+  const path = await writeCurrentEnvelope(directory);
+  const harness = createHarness(path);
+  const receipts = createReceiptStore(sessionId);
+
+  await chmod(directory, 0o500);
+  onTestFinished(() => chmod(directory, 0o700));
+
+  harness.release();
+  harness.entries.push(receiptEntry());
+  await harness.receiver({ receipts }).scan(harness.context);
+
+  expect(labelArguments(harness.fake)).toHaveLength(1);
+  expect(receipts.hasReceipt(messageId)).toBe(true);
+  expect(harness.notifications).toEqual([]);
+  expect(harness.messages).toEqual([]);
+  expect(await fileExists(path)).toBe(true);
 });

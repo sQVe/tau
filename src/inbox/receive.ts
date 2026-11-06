@@ -1,3 +1,5 @@
+import { unlink } from 'node:fs/promises';
+
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../errors.js';
@@ -77,14 +79,55 @@ const deliver = (
 const removeLabel = async (
   dependencies: ReceiverDependencies,
   messageId: string,
-): Promise<void> => {
+): Promise<boolean> => {
   try {
     await label(dependencies.hc, dependencies.terminal, {
       [`${inboxLabelPrefix}${messageId}`]: '',
     });
+
+    return true;
   } catch {
     // A failed removal keeps the receipt, so the next scan retries it without another wake.
+    return false;
   }
+};
+
+const deleteEnvelope = async (
+  dependencies: ReceiverDependencies,
+  messageId: string,
+  path: string,
+): Promise<void> => {
+  const read = await readEnvelope(path, { messageId, terminal: dependencies.terminal });
+
+  if (!dependencies.fence.isCurrent() || read.kind === 'refused') {
+    return;
+  }
+
+  const sessionStep = decideEnvelopeSession(read.envelope.targetSessionId, dependencies.sessionId);
+
+  if (sessionStep === 'defer') {
+    return;
+  }
+
+  try {
+    await unlink(path);
+  } catch {
+    // A leftover envelope is harmless: its label is gone, so no scan reads it again.
+  }
+};
+
+const cleanUp = async (
+  dependencies: ReceiverDependencies,
+  messageId: string,
+  path: string,
+): Promise<void> => {
+  const removed = await removeLabel(dependencies, messageId);
+
+  if (!removed || !dependencies.fence.isCurrent()) {
+    return;
+  }
+
+  await deleteEnvelope(dependencies, messageId, path);
 };
 
 const handleLabel = async (
@@ -99,7 +142,7 @@ const handleLabel = async (
   });
 
   if (step === 'cleanup') {
-    await removeLabel(dependencies, messageId);
+    await cleanUp(dependencies, messageId, path);
 
     return;
   }

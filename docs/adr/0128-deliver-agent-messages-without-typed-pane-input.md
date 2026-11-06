@@ -57,6 +57,8 @@ The ended message appears once for a finished worker that has a saved assignment
 - Messages have no order. Delivery is at least once: the receiver saves a receipt per message ID in
   its session before it removes the label, and it skips a message that has a receipt. A crash before
   the receipt is saved can show a message twice. A reload after it is saved does not.
+- The receiver deletes an envelope after its receipt is saved and its label is removed. A file left
+  behind by a crash is harmless, because no label names it.
 - A woken session first waits for a best-effort startup gate, which opens after Pi's startup events.
   Pi has no session-ready event, so another extension's slow `resources_discover` handler can still
   let the first woken run show idle status.
