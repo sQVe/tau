@@ -11,7 +11,7 @@ import {
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
 
-import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { succeededResult } from '../../tests/execFake.js';
@@ -34,6 +34,15 @@ const readHold = vi.hoisted(() => ({
   reached: Promise.withResolvers<undefined>(),
 }));
 
+// Delivery runs after the handler that starts it returns, so tests wait for the outcome it reports.
+const outcomeWaiters = vi.hoisted(() => new Set<() => void>());
+
+const reportOutcome = vi.hoisted(() => () => {
+  for (const check of outcomeWaiters) {
+    check();
+  }
+});
+
 vi.mock(import('node:fs/promises'), async (importOriginal) => {
   const actual = await importOriginal();
 
@@ -53,6 +62,13 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
 
       return actual.readFile(...parameters);
     }) as typeof actual.readFile,
+    unlink: async (...parameters: Parameters<typeof actual.unlink>) => {
+      try {
+        await actual.unlink(...parameters);
+      } finally {
+        reportOutcome();
+      }
+    },
   };
 });
 
@@ -83,13 +99,37 @@ const hcExec: Exec = (_command, commandArguments) => {
   return Promise.resolve(succeededResult(JSON.stringify({ address: 't7', state: 'live', labels })));
 };
 
+const until = (condition: () => boolean) =>
+  new Promise<void>((resolve) => {
+    const check = () => {
+      if (condition()) {
+        outcomeWaiters.delete(check);
+        resolve();
+      }
+    };
+
+    outcomeWaiters.add(check);
+    check();
+  });
+
 const flush = () =>
   new Promise((resolve) => {
     setTimeout(resolve, 20);
   });
 
 const startReceiver = async (sessionId: string) => {
-  const fake = fakeExtensionApi();
+  const sendMessage = vi.fn<ExtensionAPI['sendMessage']>();
+
+  const fake = fakeExtensionApi({
+    sendMessage: (...parameters) => {
+      try {
+        sendMessage(...parameters);
+      } finally {
+        reportOutcome();
+      }
+    },
+  });
+
   const entries: Entry[] = [];
   const notices: string[] = [];
 
@@ -101,7 +141,12 @@ const startReceiver = async (sessionId: string) => {
 
   const context = {
     sessionManager: { getSessionId: () => sessionId, getEntries: () => entries },
-    ui: { notify: (message: string) => notices.push(message) },
+    ui: {
+      notify: (message: string) => {
+        notices.push(message);
+        reportOutcome();
+      },
+    },
     isIdle: () => true,
     signal: undefined,
   } as unknown as ExtensionContext;
@@ -118,7 +163,7 @@ const startReceiver = async (sessionId: string) => {
   cleanups.push(() => emit('session_shutdown'));
 
   const saveReceipts = () => {
-    for (const [message] of fake.sendMessage.mock.calls) {
+    for (const [message] of sendMessage.mock.calls) {
       entries.push({
         type: 'custom_message',
         customType: message.customType,
@@ -127,7 +172,9 @@ const startReceiver = async (sessionId: string) => {
     }
   };
 
-  return { sendMessage: fake.sendMessage, entries, notices, emit, saveReceipts };
+  const shown = (count: number) => () => sendMessage.mock.calls.length >= count;
+
+  return { sendMessage, entries, notices, emit, saveReceipts, shown };
 };
 
 const exchange = (path: string, request: unknown): Promise<unknown> =>
@@ -167,6 +214,9 @@ const socketOf = (sessionId: string) => join(root, 'sockets', `${sessionId}.sock
 const recordOf = (sessionId: string, messageId: string) =>
   join(root, 'records', sessionId, `${messageId}.json`);
 
+const deleted = (sessionId: string, messageId: string) => () =>
+  !existsSync(recordOf(sessionId, messageId));
+
 const queued = (sessionId: string, messageId: string) => ({
   protocol: 'rpc1',
   kind: 'queued',
@@ -191,6 +241,7 @@ it('replies queued after saving the record and shows nothing until the startup g
   expect(receiver.sendMessage).not.toHaveBeenCalled();
 
   await receiver.emit('resources_discover');
+  await until(receiver.shown(1));
 
   expect(receiver.sendMessage.mock.calls).toEqual([
     [
@@ -212,7 +263,7 @@ it('wakes once per message across repeated drains and deletes the record only af
 
   await receiver.emit('resources_discover');
   await exchange(socketOf(sessionId), handover(sessionId, messageId));
-  await flush();
+  await until(receiver.shown(1));
   await receiver.emit('agent_end');
 
   expect(receiver.sendMessage).toHaveBeenCalledTimes(1);
@@ -220,6 +271,7 @@ it('wakes once per message across repeated drains and deletes the record only af
 
   receiver.saveReceipts();
   await receiver.emit('agent_end');
+  await until(deleted(sessionId, messageId));
 
   expect(existsSync(recordOf(sessionId, messageId))).toBe(false);
   expect(receiver.sendMessage).toHaveBeenCalledTimes(1);
@@ -232,10 +284,11 @@ it('restores receipts after a reload and deletes a delivered record without anot
 
   await receiver.emit('resources_discover');
   await exchange(socketOf(sessionId), handover(sessionId, messageId));
-  await flush();
+  await until(receiver.shown(1));
   receiver.saveReceipts();
   await receiver.emit('session_start');
   await receiver.emit('resources_discover');
+  await until(deleted(sessionId, messageId));
 
   expect(receiver.sendMessage).toHaveBeenCalledTimes(1);
   expect(existsSync(recordOf(sessionId, messageId))).toBe(false);
@@ -248,9 +301,10 @@ it('answers a retry of a receipted message as queued without saving or showing i
 
   await receiver.emit('resources_discover');
   await exchange(socketOf(sessionId), handover(sessionId, messageId));
-  await flush();
+  await until(receiver.shown(1));
   receiver.saveReceipts();
   await receiver.emit('agent_end');
+  await until(deleted(sessionId, messageId));
 
   await expect(exchange(socketOf(sessionId), handover(sessionId, messageId))).resolves.toEqual(
     queued(sessionId, messageId),
@@ -294,8 +348,9 @@ it('wakes again in a later drain when showing a message failed', async () => {
 
   await receiver.emit('resources_discover');
   await exchange(socketOf(sessionId), handover(sessionId, messageId));
-  await flush();
+  await until(receiver.shown(1));
   await receiver.emit('agent_end');
+  await until(receiver.shown(2));
 
   expect(receiver.notices).toEqual(['Tau inbox delivery failed: display failed']);
   expect(receiver.sendMessage).toHaveBeenCalledTimes(2);
@@ -311,6 +366,7 @@ it('reports a malformed record once and still delivers a valid one', async () =>
   writeFileSync(recordOf(sessionId, malformedId), '{');
   await exchange(socketOf(sessionId), handover(sessionId, messageId));
   await receiver.emit('resources_discover');
+  await until(() => receiver.shown(1)() && receiver.notices.length > 0);
   await receiver.emit('agent_end');
 
   expect(receiver.notices).toEqual([
@@ -333,6 +389,7 @@ it('wakes a message once when a same-session replacement starts during a record 
   await receiver.emit('session_start');
   await receiver.emit('resources_discover');
   release.resolve(undefined);
+  await until(receiver.shown(1));
   await flush();
 
   expect(receiver.sendMessage).toHaveBeenCalledTimes(1);

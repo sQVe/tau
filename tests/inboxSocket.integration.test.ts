@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -300,6 +301,9 @@ it.skipIf(!onLinux)(
 
     const socketBeforeReload = statSync(path).ino;
 
+    // The link keeps the old socket's inode allocated, so a file system that reuses freed inodes
+    // cannot give the new socket the same number.
+    linkSync(path, join(receiver.socketRoot, 'before-reload.sock'));
     await session.reload();
 
     expect(statSync(path).ino).not.toBe(socketBeforeReload);

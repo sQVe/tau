@@ -13,6 +13,7 @@ import workerExtension, {
   workerSystemPrompt,
 } from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
+import { releaseRegistration } from '../src/inbox/inbox.js';
 import { skillTools } from '../src/skillTools.js';
 import tauExtension from '../src/tau.js';
 import { fakeExtensionApi } from './extensionApi.js';
@@ -59,6 +60,8 @@ const loadTools = async (workerRecord: string, agentDirectory: string) => {
   const fake = fakeExtensionApi();
 
   await tauExtension(fake.pi);
+  // No session starts, so no session_shutdown releases the inbox that loading Tau claimed.
+  releaseRegistration();
 
   if (workerRecord !== '') {
     workerExtension(fake.pi);

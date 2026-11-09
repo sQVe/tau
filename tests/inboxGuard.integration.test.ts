@@ -3,17 +3,21 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
+import { DefaultPackageManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { terminalTypingReason } from '../src/extensions/inbox/guard.js';
 import { workerArguments } from '../src/extensions/subagents/workerCommand.js';
 import { skillTools } from '../src/skillTools.js';
+import tauExtension from '../src/tau.js';
 import { installHcCommand } from './hcCommandHarness.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createBoundSession } from './piSession.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
 const packageRoot = fileURLToPath(new URL('../', import.meta.url));
+
+const tauEntry = join(packageRoot, 'src', 'tau.ts');
 
 const workerExtensionPaths = (directory: string): string[] => {
   const commandLine = workerArguments(
@@ -40,7 +44,27 @@ const workerExtensionPaths = (directory: string): string[] => {
   return commandLine.flatMap((word, index) => (commandLine[index - 1] === '-e' ? [word] : []));
 };
 
-const bashResult = async (extensionPaths: (directory: string) => string[], command: string) => {
+// Resolves extension sources the way Pi does for `-e`, without importing any extension.
+const resolvedExtensions = async (sources: string[]): Promise<string[]> => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-inbox-guard-');
+
+  const packageManager = new DefaultPackageManager({
+    cwd: directory,
+    agentDir: directory,
+    settingsManager: SettingsManager.inMemory(),
+  });
+
+  const { extensions } = await packageManager.resolveExtensionSources(sources, {
+    temporary: true,
+  });
+
+  return extensions.filter(({ enabled }) => enabled).map(({ path }) => path);
+};
+
+// Each test loads Tau as a factory into its own session. Loading the package path instead makes
+// Pi transform every Tau module again, which takes seconds. The path test below covers that a
+// manager and a worker load this same entry point.
+const bashResult = async (command: string) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-inbox-guard-');
   const { bin, log } = installHcCommand(directory);
 
@@ -62,7 +86,7 @@ const bashResult = async (extensionPaths: (directory: string) => string[], comma
     agentDirectory: directory,
     providers: [provider],
     tools: ['bash'],
-    extensionPaths: extensionPaths(directory),
+    extensionFactories: [tauExtension],
   });
 
   const results: { isError: boolean; text: string }[] = [];
@@ -85,8 +109,7 @@ const bashResult = async (extensionPaths: (directory: string) => string[], comma
   return { results, hcLog };
 };
 
-const typedSendResult = (extensionPaths: (directory: string) => string[]) =>
-  bashResult(extensionPaths, 'cd . && hc keys t1 enter');
+const typedSendResult = () => bashResult('cd . && hc keys t1 enter');
 
 const reasonText = JSON.stringify(terminalTypingReason).slice(1, -1);
 
@@ -97,18 +120,25 @@ const refusalOf = ({ results, hcLog }: Awaited<ReturnType<typeof bashResult>>) =
 
 const refused = { results: [{ isError: true, refused: true }], typed: false };
 
-it('refuses a typed send in a manager session that loads the Tau package', async () => {
-  expect(refusalOf(await typedSendResult(() => [packageRoot]))).toEqual(refused);
+it('loads Tau from the package path and from the worker command line', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-inbox-guard-');
+
+  expect(await resolvedExtensions([packageRoot])).toContain(tauEntry);
+  expect(await resolvedExtensions(workerExtensionPaths(directory))).toContain(tauEntry);
 });
 
-it('refuses a typed send in a worker session loaded like a worker command line', async () => {
+it('refuses a typed send in a manager session that loads Tau', async () => {
+  expect(refusalOf(await typedSendResult())).toEqual(refused);
+});
+
+it('refuses a typed send in a worker session that loads Tau', async () => {
   vi.stubEnv('TAU_ROLE', 'worker');
 
-  expect(refusalOf(await typedSendResult(workerExtensionPaths))).toEqual(refused);
+  expect(refusalOf(await typedSendResult())).toEqual(refused);
 });
 
-it('lets other hc commands run in a session that loads the Tau package', async () => {
-  const { results, hcLog } = await bashResult(() => [packageRoot], 'hc get t1');
+it('lets other hc commands run in a session that loads Tau', async () => {
+  const { results, hcLog } = await bashResult('hc get t1');
 
   expect(results.map(({ text }) => text.includes(reasonText))).toEqual([false]);
   expect(hcLog).toBe('get t1\n');
