@@ -62,6 +62,10 @@ export const run = (runtime: CommandRuntime, commandArguments: string[]): Promis
   return runCommand(runtime, 'gh', commandArguments, commandLabel);
 };
 
+export const checkAuth = async (runtime: CommandRuntime, host: string): Promise<void> => {
+  await run(runtime, ['auth', 'status', '--active', '--hostname', host]);
+};
+
 export const runOutcome = async (
   runtime: CommandRuntime,
   commandArguments: string[],

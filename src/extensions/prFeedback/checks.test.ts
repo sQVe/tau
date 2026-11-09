@@ -1,19 +1,13 @@
 import { readdir } from 'node:fs/promises';
 
-import { describe, expect, it, onTestFinished } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { noUiContext } from '../../../tests/toolContext.js';
-import { createGhFake } from './fixtures/ghFake.js';
+import { fakePullRequest } from './fixtures/ghFake.js';
 import type { FakeCheck, GhFake } from './fixtures/ghFake.js';
+import { setUp } from './fixtures/toolSetup.js';
+import type { ChecksResult } from './fixtures/toolSetup.js';
 import { createPrFeedbackTool } from './tool.js';
-import type { PrFeedbackInput } from './tool.js';
-
-interface ChecksResult {
-  pr: number;
-  checks: Record<string, unknown>[];
-  gaps: Record<string, unknown>[];
-}
 
 const jobLink = (run: number, job: number, host = 'github.com') =>
   `https://${host}/sQVe/tau/actions/runs/${run}/job/${job}`;
@@ -27,27 +21,6 @@ const check = (overrides: Partial<FakeCheck> & { name: string }): FakeCheck => (
 });
 
 const failingCheck = check({ name: 'test', bucket: 'fail', state: 'FAILURE' });
-
-const setUp = async () => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const fake = createGhFake();
-
-  const readChecks = async (input: Partial<PrFeedbackInput> = {}) => {
-    const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
-
-    const result = await tool.execute(
-      'call',
-      { action: 'checks', repository: 'github.com/sQVe/tau', pr: 7, head: 'abc123', ...input },
-      undefined,
-      undefined,
-      noUiContext(root),
-    );
-
-    return result.details as unknown as ChecksResult;
-  };
-
-  return { root, fake, readChecks };
-};
 
 const logLines = (count: number) =>
   Array.from({ length: count }, (_, index) => `line ${index + 1}`);
@@ -226,7 +199,12 @@ describe('checks', () => {
         bucket: 'fail',
         state: 'FAILURE',
         link: jobLink(11, 21),
-        log: { excerpt: lines.slice(-200).join('\n'), omittedLines: 4800 },
+        log: {
+          excerpt: lines.slice(-200).join('\n'),
+          omittedLines: 4800,
+          command: 'gh run view 11 --repo github.com/sQVe/tau --job 21 --log-failed',
+        },
+        trunkMatches: [],
       },
     ]);
 
@@ -273,6 +251,7 @@ describe('checks', () => {
             state: 'FAILURE',
             link: jobLink(14, 24),
             log: { excerpt: 'test\tRun tests\tError: expected 1', omittedLines: 0 },
+            trunkMatches: [],
           },
         ],
         gaps: [],
@@ -495,6 +474,7 @@ describe('checks gaps', () => {
         state: 'FAILURE',
         link: jobLink(11, 21),
         gap,
+        trunkMatches: [],
       },
     ]);
 
@@ -535,7 +515,7 @@ describe('checks killed commands', () => {
 
     expect(await readChecks()).toEqual({
       pr: 7,
-      checks: [{ ...failingCheck, gap }],
+      checks: [{ ...failingCheck, gap, trunkMatches: [] }],
       gaps: [gap],
     });
   });
@@ -547,7 +527,7 @@ describe('checks head', () => {
     const head = 'a'.repeat(40);
     const host = 'ghe.example.com';
 
-    fake.pullRequest = { number: 7, state: 'OPEN', author: 'sqve', headRefOid: head };
+    fake.pullRequest = { ...fakePullRequest(), headRefOid: head };
     fake.checks = [check({ name: 'huge', workflow: 'x'.repeat(40_000) })];
 
     const result = await readChecks({ repository: `${host}/sQVe/tau`, head });
@@ -607,6 +587,17 @@ describe('checks input', () => {
     fake.checks = [check({ name: 'test', bucket: 'fail', state: 'FAILURE', link })];
     fake.jobLogs = { '21': { log: 'Error: boom\n' } };
 
+    fake.trunkRuns = [
+      {
+        id: 31,
+        branch: 'main',
+        workflow: 'CI',
+        conclusion: 'failure',
+        headSha: 'sha-31',
+        jobs: [{ name: 'test', conclusion: 'failure' }],
+      },
+    ];
+
     const result = await readChecks({ repository: 'ghe.example.com/sQVe/tau' });
 
     expect(result.gaps).toEqual([]);
@@ -619,7 +610,7 @@ describe('checks input', () => {
       '--repo',
       'ghe.example.com/sQVe/tau',
       '--json',
-      'number,url,state,author,headRefOid',
+      'number,url,state,author,headRefOid,baseRefName,headRefName,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify,mergeable',
     ];
 
     expect(fake.calls.map((call) => call.commandArguments)).toEqual([
@@ -635,6 +626,24 @@ describe('checks input', () => {
       ],
       view,
       ['run', 'view', '11', '--repo', 'ghe.example.com/sQVe/tau', '--job', '21', '--log-failed'],
+      [
+        'run',
+        'list',
+        '--repo',
+        'ghe.example.com/sQVe/tau',
+        '--branch',
+        'main',
+        '--event',
+        'push',
+        '--workflow',
+        'CI',
+        '--all',
+        '--limit',
+        '5',
+        '--json',
+        'databaseId,conclusion,headSha,url',
+      ],
+      ['run', 'view', '31', '--repo', 'ghe.example.com/sQVe/tau', '--json', 'jobs'],
     ]);
   });
 
@@ -647,9 +656,8 @@ describe('checks input', () => {
   ])('rejects repository $repository with pr $pr and head $head', async (row) => {
     const { repository, pr, error } = row;
     const head = 'head' in row ? row.head : 'abc123';
-    const { fake } = await setUp();
+    const { root, fake } = await setUp();
     const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
-    const root = await createTemporaryRepository(onTestFinished);
 
     const input = {
       action: 'checks' as const,

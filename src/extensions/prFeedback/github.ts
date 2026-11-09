@@ -59,6 +59,13 @@ const pullRequestSchema = Type.Object({
   state: Type.String(),
   author: Type.Object({ login: Type.String() }),
   headRefOid: Type.String(),
+  baseRefName: Type.String(),
+  headRefName: Type.String(),
+  headRepository: Type.Union([Type.Object({ name: Type.String() }), Type.Null()]),
+  headRepositoryOwner: Type.Object({ login: Type.String() }),
+  isCrossRepository: Type.Boolean(),
+  maintainerCanModify: Type.Boolean(),
+  mergeable: Type.String(),
 });
 
 const threadCommentSchema = Type.Object({
@@ -173,7 +180,7 @@ export const readPullRequest = async (
     '--repo',
     formatRepository(repository),
     '--json',
-    'number,url,state,author,headRefOid',
+    'number,url,state,author,headRefOid,baseRefName,headRefName,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify,mergeable',
   ];
 
   const pullRequest = await readJson(runtime, commandArguments);
