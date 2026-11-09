@@ -105,8 +105,13 @@ export const fingerprintInputs = async (
   cwd: string,
   config: TddConfig,
   files: string[],
+  repositoryRoot = cwd,
 ): Promise<string> => {
-  const paths = [...files, ...(await listInputs(cwd, config))];
+  const paths = [
+    ...files,
+    ...lookupRunner(config.runner).configurationFiles(config, cwd, repositoryRoot),
+    ...(await listInputs(cwd, config)),
+  ];
 
   const digest = createHash('sha256');
 

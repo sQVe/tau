@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import { CONFIG_DIR_NAME } from '@earendil-works/pi-coding-agent';
 
 import { configFileName } from '../../../config/config.js';
 import type { TddConfig } from '../config.js';
+import { cargoInputFiles } from './cargoInputFiles.js';
 import { parseCargoMetadata } from './cargoMetadata.js';
 import { runWithDiagnostics } from './diagnostics.js';
 import type { StageSpawn } from './diagnostics.js';
@@ -14,6 +15,7 @@ import { parseJunitReport } from './junit.js';
 import type { JunitReport } from './junit.js';
 import {
   listArguments,
+  manifestArguments,
   metadataArguments,
   runArguments,
   targetArguments,
@@ -82,6 +84,17 @@ const configurationGlobs = [
   'rust-toolchain',
   'rust-toolchain.toml',
 ];
+
+const configurationFiles = (
+  { cargoManifestPath }: TddConfig,
+  cwd: string,
+  repositoryRoot: string,
+): string[] => {
+  const manifestPath =
+    cargoManifestPath === undefined ? undefined : resolve(repositoryRoot, cargoManifestPath);
+
+  return cargoInputFiles(manifestPath, cwd, repositoryRoot);
+};
 
 const maximumOutputExcerptLength = 500;
 
@@ -189,8 +202,9 @@ const buildStages = async (
   request: { spawn: SpawnCommand; deadline: number; directory: string },
 ): Promise<StageOutcome> => {
   const metadataPath = join(request.directory, 'metadata.stdout.json');
+  const manifest = manifestArguments(input.cargoManifestPath, input.cargoLocked === true);
 
-  const metadata = await spawnStage('metadata', metadataArguments(), input, {
+  const metadata = await spawnStage('metadata', [...metadataArguments(), ...manifest], input, {
     spawn: request.spawn,
     deadline: request.deadline,
     stdoutFile: metadataPath,
@@ -222,7 +236,8 @@ const buildStages = async (
     return { kind: 'stop', report: metadataInterruption, stages: [metadata] };
   }
 
-  const targets = targetArguments(parsedMetadata);
+  // List and run must build the same package with the same lock file rules.
+  const targets = [...targetArguments(parsedMetadata), ...manifest];
   const listPath = join(request.directory, 'list.stdout.json');
 
   const list = await spawnStage('list', listArguments(targets), input, {
@@ -372,6 +387,7 @@ export const nextestRunner = {
   name: 'nextest',
   defaults: nextestDefaults,
   configurationGlobs,
+  configurationFiles,
   testNameFormat,
   focusedTimeoutMs: focusedTimeoutMilliseconds,
   fullTimeoutMs: fullTimeoutMilliseconds,

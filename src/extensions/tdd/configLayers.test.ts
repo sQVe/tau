@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 
 import type { TddConfig } from './config.js';
 import { mergeConfigLayers } from './configLayers.js';
+import type { TddConfigSources } from './configLayers.js';
 
 const runnerDefaults = (runner: string, testGlobs: string[]): TddConfig => ({
   runner,
@@ -19,7 +20,7 @@ const table: Record<string, TddConfig> = { alpha, beta };
 
 const defaultsFor = (runnerName: string): TddConfig | undefined => table[runnerName];
 
-const sourceOf = (source: string): Record<keyof TddConfig, string> => ({
+const sourceOf = (source: string): TddConfigSources => ({
   runner: source,
   productionGlobs: source,
   testGlobs: source,
@@ -40,6 +41,20 @@ it('starts a changed runner from its defaults and resets every source', () => {
 
   expect(merged.config).toEqual(beta);
 
+  expect(merged.sources).toEqual({ ...sourceOf('built-in default'), runner: 'repository' });
+});
+
+it('drops the Cargo options and their sources when a layer changes the runner', () => {
+  const user = {
+    source: 'user',
+    values: { runner: 'beta', cargoManifestPath: 'backend/Cargo.toml', cargoLocked: true },
+  };
+
+  const repository = { source: 'repository', values: { runner: 'alpha' } };
+
+  const merged = mergeConfigLayers('alpha', defaultsFor, 'built-in default', [user, repository]);
+
+  expect(merged.config).toEqual(alpha);
   expect(merged.sources).toEqual({ ...sourceOf('built-in default'), runner: 'repository' });
 });
 

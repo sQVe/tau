@@ -768,6 +768,33 @@ it('saves a diagnostics record for each stage and spawns cargo for all three', a
   expect(nextest.calls.map((call) => call.command)).toEqual(['cargo', 'cargo', 'cargo']);
 });
 
+it.for([
+  { name: 'no Cargo options', options: {}, manifest: [] },
+  {
+    name: 'a manifest path and --locked',
+    options: { cargoManifestPath: '/repo/backend/Cargo.toml', cargoLocked: true },
+    manifest: ['--manifest-path', '/repo/backend/Cargo.toml', '--locked'],
+  },
+])('passes $name to every cargo stage', async ({ options, manifest }) => {
+  const nextest = fakeNextest({ run: { report: await fixture('two-binaries.xml') } });
+  const targets = ['--workspace', '--bins', '--tests'];
+
+  await run({ ...focused(['tests::same']), ...options }, nextest.spawn);
+
+  const [metadata, list, runCall] = nextest.calls.map((call) => call.argumentsList);
+
+  expect(metadata).toEqual(['metadata', '--no-deps', '--format-version', '1', ...manifest]);
+
+  expect(list).toEqual(['nextest', 'list', ...targets, ...manifest, '--message-format', 'json']);
+
+  expect(runCall?.slice(0, 5 + manifest.length)).toEqual([
+    'nextest',
+    'run',
+    ...targets,
+    ...manifest,
+  ]);
+});
+
 it('passes the focused names to run as a filter', async () => {
   const nextest = fakeNextest({ run: { report: await fixture('two-binaries.xml') } });
 

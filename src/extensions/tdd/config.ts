@@ -1,3 +1,6 @@
+import { statSync } from 'node:fs';
+import { basename, resolve } from 'node:path';
+
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 import { Value } from 'typebox/value';
@@ -11,11 +14,13 @@ import { fileRoles } from './fileRoles.js';
 import type { FileRoles } from './fileRoles.js';
 import { createInputRules, unsupportedGlobReason } from './inputGlob.js';
 import type { InputRules } from './inputGlob.js';
+import type { RepositoryRoot } from './repositoryRoot.js';
 import {
   defaultRunner,
   defaultRunnerName,
   findRunner,
   knownRunnerNames,
+  runners,
 } from './runner/runners.js';
 import type { RunnerTable } from './runner/runners.js';
 
@@ -24,6 +29,11 @@ export type TddConfig = Static<typeof tddConfigSchema>;
 interface ClassificationRules {
   test: InputRules;
   production: InputRules;
+}
+
+// The repository root is the Git checkout root, or the session directory outside a checkout.
+export interface TddConfigLocation extends ConfigLocation {
+  repositoryRoot?: RepositoryRoot;
 }
 
 export interface LoadedTddConfig extends MergedTddConfig {
@@ -40,6 +50,8 @@ const tddConfigSchema = Type.Object({
   testSupportGlobs: globs,
   excludedGlobs: globs,
   verificationArgv: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
+  cargoManifestPath: Type.Optional(Type.String({ minLength: 1 })),
+  cargoLocked: Type.Optional(Type.Boolean()),
 });
 
 const knownTddKeys: KnownKeys = {
@@ -49,6 +61,8 @@ const knownTddKeys: KnownKeys = {
   testSupportGlobs: true,
   excludedGlobs: true,
   verificationArgv: true,
+  cargoManifestPath: true,
+  cargoLocked: true,
 };
 
 // Other top-level keys belong to other consumers, possibly from a newer Tau sharing the user file.
@@ -104,7 +118,7 @@ const tddLayer = (
 
   if (!Value.Check(configFileSchema, value)) {
     throw new Error(
-      `Invalid TDD config ${source}: ${problem(value)}. Expected {"tdd": {...}} with runner as a non-empty string, productionGlobs, testGlobs, testSupportGlobs, and excludedGlobs as string arrays, and verificationArgv as an array of non-empty strings. Fix the file; Tau does not fall back to another config.`,
+      `Invalid TDD config ${source}: ${problem(value)}. Expected {"tdd": {...}} with runner as a non-empty string, productionGlobs, testGlobs, testSupportGlobs, and excludedGlobs as string arrays, verificationArgv as an array of non-empty strings, cargoManifestPath as a non-empty string, and cargoLocked as a boolean. Fix the file; Tau does not fall back to another config.`,
     );
   }
 
@@ -143,8 +157,68 @@ const validateVerificationArgv = (merged: MergedTddConfig, runnerTable: RunnerTa
   }
 };
 
+const isFile = (path: string): boolean =>
+  statSync(path, { throwIfNoEntry: false })?.isFile() === true;
+
+const validateCargoOptions = (
+  { config, sources }: MergedTddConfig,
+  repositoryRoot: string,
+): void => {
+  const nextest = runners.nextest.name;
+
+  if (config.cargoManifestPath !== undefined && config.runner !== nextest) {
+    throw new Error(
+      `Invalid TDD config ${sources.cargoManifestPath ?? defaultSource}: cargoManifestPath works only with the nextest runner, not "${config.runner}". Remove it or set runner to nextest. Fix the file; Tau does not fall back to another config.`,
+    );
+  }
+
+  if (config.cargoLocked !== undefined && config.runner !== nextest) {
+    throw new Error(
+      `Invalid TDD config ${sources.cargoLocked ?? defaultSource}: cargoLocked works only with the nextest runner, not "${config.runner}". Remove it or set runner to nextest. Fix the file; Tau does not fall back to another config.`,
+    );
+  }
+
+  const manifestPath = config.cargoManifestPath;
+
+  if (manifestPath === undefined) {
+    return;
+  }
+
+  const source = sources.cargoManifestPath ?? defaultSource;
+
+  if (basename(manifestPath) !== 'Cargo.toml') {
+    throw new Error(
+      `Invalid TDD config ${source}: cargoManifestPath "${manifestPath}" must name a Cargo.toml file. Fix the file; Tau does not fall back to another config.`,
+    );
+  }
+
+  const resolvedPath = resolve(repositoryRoot, manifestPath);
+
+  if (!isFile(resolvedPath)) {
+    throw new Error(
+      `Invalid TDD config ${source}: cargoManifestPath "${manifestPath}" names no file; Tau looked for ${resolvedPath} from the repository root. Fix the file; Tau does not fall back to another config.`,
+    );
+  }
+};
+
+// Only the nextest runner reads files above the session directory, so a failed Git lookup stops
+// only that runner.
+const repositoryRootPath = ({ config }: MergedTddConfig, location: TddConfigLocation): string => {
+  const root = location.repositoryRoot ?? { kind: 'root', path: location.cwd };
+
+  if (root.kind === 'root') {
+    return root.path;
+  }
+
+  if (config.runner === runners.nextest.name) {
+    throw new Error(root.message);
+  }
+
+  return location.cwd;
+};
+
 export const loadTddConfig = (
-  location: ConfigLocation,
+  location: TddConfigLocation,
   ui: ConfigWarnings,
   runnerTable: RunnerTable,
   initialRunner = defaultRunnerName,
@@ -160,6 +234,7 @@ export const loadTddConfig = (
   );
 
   validateVerificationArgv(merged, runnerTable);
+  validateCargoOptions(merged, repositoryRootPath(merged, location));
 
   return { ...merged, ignored };
 };

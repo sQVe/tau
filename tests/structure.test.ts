@@ -138,6 +138,8 @@ const pureModules = [
   'src/extensions/tdd/fileRoles.ts',
   'src/extensions/tdd/inputGlob.ts',
   'src/extensions/tdd/observationTransition.ts',
+  'src/extensions/tdd/repositoryRoot.ts',
+  'src/extensions/tdd/runner/cargoInputFiles.ts',
   'src/extensions/tdd/runner/cargoMetadata.ts',
   'src/extensions/tdd/runner/constants.ts',
   'src/extensions/tdd/runner/junit.ts',
@@ -217,6 +219,7 @@ const findingLines = (found: string[]) => found.map((finding) => Number(finding.
 // The outside libraries a registered module may import, by module path.
 const pureLibraries: Readonly<Record<string, readonly string[]>> = {
   'src/extensions/tdd/inputGlob.ts': ['minimatch'],
+  'src/extensions/tdd/runner/cargoInputFiles.ts': ['node:path'],
   'src/extensions/tdd/runner/junit.ts': ['@xmldom/xmldom'],
   'src/extensions/tdd/runner/report.ts': ['node:path'],
   'src/inbox/protocol.ts': ['typebox', 'typebox/value'],

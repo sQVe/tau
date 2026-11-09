@@ -295,6 +295,12 @@ describe('TDD config', () => {
     ['.pi/tau.json', '{"tdd": {"verificationArgv": []}}', 'verificationArgv'],
     ['.pi/tau.json', '{"tdd": {"verificationArgv": ["vitest", ""]}}', 'verificationArgv'],
     ['agent/tau.json', '{"tdd": {"excludedGlobs": "dist"}}', 'excludedGlobs'],
+    ['.pi/tau.json', '{"tdd": {"runner": "nextest", "cargoLocked": "yes"}}', 'cargoLocked'],
+    [
+      '.pi/tau.json',
+      '{"tdd": {"runner": "nextest", "cargoManifestPath": ""}}',
+      'cargoManifestPath',
+    ],
   ])('names %s and the problem for %s', async ([file, content, problem], { onTestFinished }) => {
     const cwd = temporaryDirectory(onTestFinished, 'tau-config-invalid-');
     await mkdir(join(cwd, '.pi'));
@@ -310,6 +316,103 @@ describe('TDD config', () => {
 
     expect(loading).toThrow(join(cwd, file));
     expect(loading).toThrow(problem);
+  });
+
+  it('loads the Cargo manifest path and --locked for the nextest runner', async ({
+    onTestFinished,
+  }) => {
+    const cwd = temporaryDirectory(onTestFinished, 'tau-config-cargo-');
+    const source = join(cwd, '.pi', 'tau.json');
+    await mkdir(join(cwd, '.pi'));
+    await mkdir(join(cwd, 'backend'));
+    await writeFile(join(cwd, 'backend', 'Cargo.toml'), '');
+
+    await writeFile(
+      source,
+      JSON.stringify({
+        tdd: { runner: 'nextest', cargoManifestPath: 'backend/Cargo.toml', cargoLocked: true },
+      }),
+    );
+
+    const { config, sources } = loadTddConfig(
+      { cwd, agentDirectory: join(cwd, 'agent'), projectTrusted: true },
+      { notify: () => undefined },
+      runners,
+    );
+
+    expect(config).toMatchObject({ cargoManifestPath: 'backend/Cargo.toml', cargoLocked: true });
+    expect(sources).toMatchObject({ cargoManifestPath: source, cargoLocked: source });
+  });
+
+  it.for(['agent/tau.json', 'sub/.pi/tau.json'])(
+    'resolves the Cargo manifest path from the repository root when %s sets it in a nested session',
+    async (file, { onTestFinished }) => {
+      const root = temporaryDirectory(onTestFinished, 'tau-config-cargo-nested-');
+      const cwd = join(root, 'sub');
+      await mkdir(join(cwd, '.pi'), { recursive: true });
+      await mkdir(join(root, 'agent'));
+      await mkdir(join(root, 'backend'));
+      await writeFile(join(root, 'backend', 'Cargo.toml'), '');
+
+      await writeFile(
+        join(root, file),
+        JSON.stringify({ tdd: { runner: 'nextest', cargoManifestPath: 'backend/Cargo.toml' } }),
+      );
+
+      const { config } = loadTddConfig(
+        {
+          cwd,
+          repositoryRoot: { kind: 'root', path: root },
+          agentDirectory: join(root, 'agent'),
+          projectTrusted: true,
+        },
+        { notify: () => undefined },
+        runners,
+      );
+
+      expect(config.cargoManifestPath).toBe('backend/Cargo.toml');
+    },
+  );
+
+  it.for<{ name: string; tdd: Record<string, unknown>; problem: string }>([
+    {
+      name: 'a manifest path to a missing file',
+      tdd: { runner: 'nextest', cargoManifestPath: 'missing/Cargo.toml' },
+      problem: 'cargoManifestPath "missing/Cargo.toml" names no file',
+    },
+    {
+      name: 'a manifest not named Cargo.toml',
+      tdd: { runner: 'nextest', cargoManifestPath: 'backend/Manifest.toml' },
+      problem: 'cargoManifestPath "backend/Manifest.toml" must name a Cargo.toml file',
+    },
+    {
+      name: 'a manifest path for another runner',
+      tdd: { cargoManifestPath: 'backend/Cargo.toml' },
+      problem: 'cargoManifestPath works only with the nextest runner, not "vitest"',
+    },
+    {
+      name: 'cargoLocked for another runner',
+      tdd: { cargoLocked: false },
+      problem: 'cargoLocked works only with the nextest runner, not "vitest"',
+    },
+  ])('rejects $name', async ({ tdd, problem }, { onTestFinished }) => {
+    const cwd = temporaryDirectory(onTestFinished, 'tau-config-cargo-invalid-');
+    const source = join(cwd, '.pi', 'tau.json');
+    await mkdir(join(cwd, '.pi'));
+    await mkdir(join(cwd, 'backend'));
+    await writeFile(join(cwd, 'backend', 'Cargo.toml'), '');
+    await writeFile(join(cwd, 'backend', 'Manifest.toml'), '');
+    await writeFile(source, JSON.stringify({ tdd }));
+
+    const loading = () =>
+      loadTddConfig(
+        { cwd, agentDirectory: join(cwd, 'agent'), projectTrusted: true },
+        { notify: () => undefined },
+        runners,
+      );
+
+    expect(loading).toThrow(`Invalid TDD config ${source}: ${problem}`);
+    expect(loading).toThrow('Fix the file; Tau does not fall back to another config.');
   });
 
   it.for<[string, string]>([

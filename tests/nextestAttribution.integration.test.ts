@@ -1,6 +1,9 @@
+import { join } from 'node:path';
+
 import { expect, it, vi } from 'vitest';
 
 import type { RunnerResult, TestResult } from '../src/extensions/tdd/runner/types.js';
+import { initializeRepository } from './gitRepository.js';
 import {
   cargoPackage,
   createCrate,
@@ -304,6 +307,57 @@ it('resolves workspace dep-info against the root when the suite runs from a memb
   expect(result.details.report).toMatchObject({
     kind: 'pass',
     tests: [{ file: 'src/lib.rs', fullname: 'tests::b_passes', status: 'passed' }],
+  });
+});
+
+it('attributes a test in backend/Cargo.toml to its file from the repository root', async ({
+  onTestFinished,
+}) => {
+  const crate = await createCrate(onTestFinished, 'subdirectory', {
+    'backend/Cargo.toml': cargoPackage('probe_backend'),
+    'backend/src/lib.rs': libraryWith('    #[test]\n    fn backend_passes() {}'),
+    '.pi/tau.json': JSON.stringify({
+      tdd: { runner: 'nextest', cargoManifestPath: 'backend/Cargo.toml' },
+    }),
+  });
+
+  await prebuildCrate(join(crate, 'backend'));
+
+  const result = await run(crate, {
+    files: ['backend/src/lib.rs'],
+    testFullName: 'tests::backend_passes',
+  });
+
+  expect(result.details.report).toMatchObject({
+    kind: 'pass',
+    tests: [{ file: 'backend/src/lib.rs', fullname: 'tests::backend_passes', status: 'passed' }],
+  });
+
+  expect(testsOf(result)[0]?.attribution).toBeUndefined();
+});
+
+it('resolves the manifest path from the Git root when the session is the project directory', async ({
+  onTestFinished,
+}) => {
+  const repository = await createCrate(onTestFinished, 'nested-session', {
+    'backend/Cargo.toml': cargoPackage('probe_nested_session'),
+    'backend/src/lib.rs': libraryWith('    #[test]\n    fn nested_passes() {}'),
+    'backend/.pi/tau.json': JSON.stringify({
+      tdd: { runner: 'nextest', cargoManifestPath: 'backend/Cargo.toml' },
+    }),
+  });
+
+  await initializeRepository(repository);
+  await prebuildCrate(join(repository, 'backend'));
+
+  const result = await run(join(repository, 'backend'), {
+    files: ['src/lib.rs'],
+    testFullName: 'tests::nested_passes',
+  });
+
+  expect(result.details.report).toMatchObject({
+    kind: 'pass',
+    tests: [{ file: 'src/lib.rs', fullname: 'tests::nested_passes', status: 'passed' }],
   });
 });
 

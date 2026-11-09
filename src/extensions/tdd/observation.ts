@@ -21,6 +21,7 @@ import type { Behavior, ObservationResult, TestObservation, TestScope } from './
 
 interface ObservationState {
   cwd: string;
+  repositoryRoot: string;
   config: TddConfig;
   cycle: CycleState;
   pending: Promise<unknown>;
@@ -90,7 +91,10 @@ const normalizeBehavior = async (
 
 const hashInputs = async (state: ObservationState, files: string[]): Promise<InputHash> => {
   try {
-    return { hash: await fingerprintInputs(state.cwd, state.config, files), error: undefined };
+    return {
+      hash: await fingerprintInputs(state.cwd, state.config, files, state.repositoryRoot),
+      error: undefined,
+    };
   } catch (error) {
     // A reminder must not discard a test report or turn a successful edit into an error.
     return { hash: null, error: errorMessage(error) };
@@ -210,6 +214,11 @@ const checkpointWork = async (
 const checkpointObservation = (state: ObservationState, productionEdit: boolean) =>
   enqueue(state, () => checkpointWork(state, productionEdit));
 
+const manifestPath = ({ config, repositoryRoot }: ObservationState): string | undefined =>
+  config.cargoManifestPath === undefined
+    ? undefined
+    : resolve(repositoryRoot, config.cargoManifestPath);
+
 const runTestsFor = (
   state: ObservationState,
   runner: TestRunner,
@@ -219,6 +228,8 @@ const runTestsFor = (
   const input = {
     cwd: state.cwd,
     verificationArgv: state.config.verificationArgv,
+    cargoManifestPath: manifestPath(state),
+    cargoLocked: state.config.cargoLocked,
     signal: request.signal,
   };
 
@@ -300,9 +311,11 @@ const runObservation = (state: ObservationState, request: RunRequest) =>
 export const createTestObservation = (
   cwd: string,
   config: TddConfig = defaultTddConfig,
+  repositoryRoot = cwd,
 ): TestObservation => {
   const state: ObservationState = {
     cwd,
+    repositoryRoot,
     config,
     cycle: {
       active: null,
