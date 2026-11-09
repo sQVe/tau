@@ -114,7 +114,6 @@ export const readRepositoryArgv = (
 const isLockScope = (value: unknown): value is LockScope =>
   lockScopes.some((scope) => scope === value);
 
-// Full checks and mutation checks share one lock, so both read the scope from `fullCheck`.
 export const readLockScope = (location: ConfigLocation): LockScope => {
   const { project } = findRepositoryFile(location, 'fullCheck');
 

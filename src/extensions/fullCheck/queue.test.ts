@@ -37,7 +37,6 @@ const timer = setInterval(() => {
 }, 10);
 `;
 
-// A failed check saves no reusable log, so a second call in the same state runs the command again.
 const failingGatedSource = `${gatedSource}
 process.on('exit', () => {
   process.exitCode = 1;
