@@ -285,3 +285,32 @@ it('returns unknown when the receiver queues another message ID', async () => {
   expect(result).toMatchObject({ status: 'unknown', sessionId, messageId });
   expect(result.note).toContain('The receiver sent an unexpected reply.');
 });
+
+const mismatchedQueuedResult = async (reply: Record<string, string>) => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+
+  const path = await scriptedServer(sessionId, (socket) => {
+    socket.end(
+      `${JSON.stringify({ protocol: 'rpc1', kind: 'queued', messageId, terminal: 't7', sessionId, ...reply })}\n`,
+    );
+  });
+
+  const result = await sendInboxMessage(request(hcFor(liveTarget(path)), messageId));
+
+  return { result, expected: { status: 'unknown', terminal: 't7', sessionId, messageId } };
+};
+
+it('returns unknown when the receiver queues for another terminal', async () => {
+  const { result, expected } = await mismatchedQueuedResult({ terminal: 't8' });
+
+  expect(result).toMatchObject(expected);
+  expect(result.note).toContain('The receiver sent an unexpected reply.');
+});
+
+it('returns unknown when the receiver queues for another session', async () => {
+  const { result, expected } = await mismatchedQueuedResult({ sessionId: randomUUID() });
+
+  expect(result).toMatchObject(expected);
+  expect(result.note).toContain('The receiver sent an unexpected reply.');
+});

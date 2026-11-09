@@ -121,6 +121,16 @@ const unknownResult = (target: Target, messageId: string, reason: string): Inbox
   note: `${reason} Acceptance unknown for message ${messageId} to terminal ${target.address}, session ${target.sessionId}; the receiver may have saved it. A retry must reuse this message ID and the same text.`,
 });
 
+const answersFor = (
+  reply: Extract<MessageReply, { kind: 'queued' }>,
+  target: Target,
+  messageId: string,
+): boolean => {
+  const sameTarget = reply.terminal === target.address && reply.sessionId === target.sessionId;
+
+  return sameTarget && reply.messageId === messageId;
+};
+
 const deliver = async (
   request: InboxSendRequest,
   target: Target,
@@ -156,11 +166,11 @@ const deliver = async (
     return refuse(request, reply.reason);
   }
 
-  if (reply.messageId !== messageId) {
+  if (!answersFor(reply, target, messageId)) {
     return unknownResult(target, messageId, 'The receiver sent an unexpected reply.');
   }
 
-  return { status: 'queued', terminal: reply.terminal, sessionId: reply.sessionId, messageId };
+  return { status: 'queued', terminal: target.address, sessionId: target.sessionId, messageId };
 };
 
 export const sendInboxMessage = async (request: InboxSendRequest): Promise<InboxSendResult> => {
