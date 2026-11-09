@@ -24,6 +24,19 @@ it.for<{
     expected: { kind: 'root', path: '/repo/sub' },
   },
   {
+    name: 'reports a Git refusal other than a missing checkout',
+    git: {
+      exitCode: 128,
+      stdout: '',
+      stderr: "fatal: detected dubious ownership in repository at '/repo'\n",
+    },
+    expected: {
+      kind: 'error',
+      message:
+        "Tau could not find the Git checkout root of /repo/sub: fatal: detected dubious ownership in repository at '/repo'",
+    },
+  },
+  {
     name: 'reports a Git call that timed out',
     git: {
       exitCode: null,

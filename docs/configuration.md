@@ -73,12 +73,12 @@ not `nextest`.
 
 - `cargoManifestPath`: path to the `Cargo.toml` of the project to test. Tau resolves it from the
   root of the Git checkout, also when the session directory is below that root. Outside a Git
-  checkout, Tau resolves it from the session directory. When Git fails or times out while Tau looks
-  for the root, `run_tests` fails and names the Git error. Tau fails the key when the file is
-  missing or is not named `Cargo.toml`. Tau passes `--manifest-path` with the resolved path to
-  `cargo metadata`, `cargo nextest list`, and `cargo nextest run`, and runs them from the manifest's
-  directory. Cargo then reads `.cargo/config.toml` from that directory and its parents. Unset by
-  default, so Cargo runs from the session directory and searches from there.
+  checkout, Tau resolves it from the session directory. When Git fails, times out, or refuses the
+  checkout, such as for dubious ownership, `run_tests` fails and names the Git error. Tau fails the
+  key when the file is missing or is not named `Cargo.toml`. Tau passes `--manifest-path` with the
+  resolved path to `cargo metadata`, `cargo nextest list`, and `cargo nextest run`, and runs them
+  from the manifest's directory. Cargo then reads `.cargo/config.toml` from that directory and its
+  parents. Unset by default, so Cargo runs from the session directory and searches from there.
 - `cargoLocked`: boolean. When `true`, Tau passes `--locked` to the same three commands, so a run
   with an out-of-date `Cargo.lock` fails with the Cargo error and leaves the file unchanged.
   Default: `false`.
