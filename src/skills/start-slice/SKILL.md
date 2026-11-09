@@ -124,6 +124,9 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
     - Delegate each agent ticket to a worker with its body file path, such as
       `$slicedir/agent-1.md`. Copy its `## Acceptance` items word for word, in order, into
       `acceptance`.
+    - Do not review a finished agent ticket. When a later ticket in the slice builds on a contract
+      it changes, such as a type, tool schema, or file format, run one fast review of it before the
+      dependent ticket starts.
     - After the last worker, decide on code-quality without asking. Measure
       `git merge-base <base> HEAD` to the working tree, counting untracked new files as added lines.
     - Skip when the diff touches only docs, config, or tests; when the source lines changed, added
@@ -135,7 +138,10 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
     - On the user's own branch, reused branches included, code-quality triage and the review fixes
       proceed without asking. The code-review skill's ownership rule decides this.
     - Run a full review with the [code-review skill](../code-review/SKILL.md) on the whole slice,
-      not only the code-quality fixes, with the slice as the ticket under review.
+      not only the code-quality fixes, with the slice as the ticket under review. Run it once.
+    - Send all in-scope findings to one fix round. Run at most one fix review, on the fix diff and
+      its callers. Report findings that remain after the fix review to the user, and do not start
+      triage-findings or another fix round for them.
     - Audit with the [finish-slice skill](../finish-slice/SKILL.md). Delegate each fix ticket it
       creates, as the first bullet says, then audit once more. Items still unmet go to the pr skill
       as required actions.
