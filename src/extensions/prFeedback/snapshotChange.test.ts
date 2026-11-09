@@ -45,7 +45,6 @@ it.each([
     change: undefined,
   },
 ])('reports the first changed field when $name', ({ current, change }) => {
-  // read keeps mergeable beside these fields, so a snapshot can carry it.
   const read = { ...first, mergeable: 'UNKNOWN' };
 
   expect(snapshotChange(read, current)).toEqual(change);

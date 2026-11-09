@@ -61,7 +61,6 @@ const pullRequestSchema = Type.Object({
   headRefOid: Type.String(),
   baseRefName: Type.String(),
   headRefName: Type.String(),
-  // null is a deleted fork.
   headRepository: Type.Union([Type.Object({ name: Type.String() }), Type.Null()]),
   headRepositoryOwner: Type.Object({ login: Type.String() }),
   isCrossRepository: Type.Boolean(),

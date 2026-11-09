@@ -14,7 +14,6 @@ export interface FakeTrunkRun {
   jobs: FakeJob[];
 }
 
-// Answers `gh run list --branch <trunk> --workflow <workflow> --limit <n>`.
 export const trunkRunList = (
   trunkRuns: readonly FakeTrunkRun[],
   repository: string,
@@ -34,7 +33,6 @@ export const trunkRunList = (
       url: `https://${repository}/actions/runs/${run.id}`,
     }));
 
-// Answers `gh run view <id> --json jobs`.
 export const trunkRunJobs = (
   trunkRuns: readonly FakeTrunkRun[],
   commandArguments: readonly string[],

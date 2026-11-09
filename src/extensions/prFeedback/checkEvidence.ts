@@ -21,7 +21,6 @@ export interface CheckGap {
 export interface LogExcerpt {
   excerpt: string;
   omittedLines: number;
-  // Characters cut from the start of the first kept line.
   omittedCharacters?: number;
   budgetLimited?: true;
   command?: string;
@@ -72,7 +71,6 @@ export interface CommandResult {
   stderr: string;
 }
 
-// Checks parsed JSON against the shape a gh command prints, and names the problem when it differs.
 export type OutputValidation<Parsed> = (value: unknown) => Parsed | { problem: string };
 
 export type CheckListValidation = OutputValidation<{ checks: CheckItem[] }>;
@@ -94,7 +92,6 @@ const jobLinkPattern = /^https:\/\/([^/]+)\/([^/]+)\/([^/]+)\/actions\/runs\/(\d
 
 const shellSafeArgument = /^[\w./:=,@%+-]+$/u;
 
-// Quotes an argument for a POSIX shell, so a caller can run the returned command as printed.
 const quoteArgument = (argument: string) =>
   shellSafeArgument.test(argument) ? argument : `'${argument.replaceAll("'", String.raw`'\''`)}'`;
 
@@ -297,7 +294,6 @@ export const isFailing = (check: CheckItem): boolean =>
 export const failedTrunkRuns = (runs: TrunkRun[]): TrunkRun[] =>
   runs.filter((run) => run.conclusion === 'failure');
 
-// A trunk run matches a check when a job with exactly the check's name failed in it.
 export const isTrunkMatch = (checkName: string, jobs: TrunkJob[]): boolean =>
   jobs.some((job) => job.name === checkName && job.conclusion === 'failure');
 

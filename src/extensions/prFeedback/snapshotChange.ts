@@ -1,4 +1,3 @@
-// The pull request fields read returns, apart from mergeable.
 export interface PullRequestSnapshot {
   number: number;
   url: string;
@@ -33,8 +32,6 @@ const snapshotFields = [
   'maintainerCanModify',
 ] as const satisfies readonly (keyof PullRequestSnapshot)[];
 
-// Returns the first field a reread changed, or undefined when the snapshots agree. Fields outside
-// the snapshot, such as mergeable, never count.
 export const snapshotChange = (
   first: PullRequestSnapshot,
   current: PullRequestSnapshot,

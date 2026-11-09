@@ -53,7 +53,6 @@ describe('read output of the wrong shape', () => {
     ...change,
   });
 
-  // Every field gh pr view prints for read, so a case that changes one field fails only on it.
   const pullRequest = {
     number: 7,
     url: 'https://github.com/sQVe/tau/pull/7',

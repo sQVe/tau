@@ -165,8 +165,6 @@ const runJobsArguments = (repository: Repository, run: number) => [
   'jobs',
 ];
 
-// Reads the latest trunk runs of each failing check's workflow and the jobs of its failed runs.
-// Caches each command's result, failed ones included, so a workflow or a run is read once.
 const createTrunkReader = (runtime: CommandRuntime, repository: Repository, trunk: string) => {
   const results = new Map<string, CommandResult>();
 
@@ -254,10 +252,6 @@ const requireHead = async (
   return pullRequest;
 };
 
-// Reads the checks of a pull request at head, the failed-step logs of its failing jobs, and the
-// trunk runs where the same jobs failed. trunk defaults to the base branch. Writes nothing.
-// Returns a gap for each piece of evidence it could not read instead of failing, and throws when
-// the head is not head before or after the check list.
 export const readChecks = async (
   runtime: CommandRuntime,
   repository: Repository,

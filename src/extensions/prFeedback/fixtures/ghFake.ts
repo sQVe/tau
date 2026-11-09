@@ -39,7 +39,6 @@ interface FakePullRequest {
   headRefOid: string;
   baseRefName: string;
   headRefName: string;
-  // null is a deleted fork.
   headRepository: string | null;
   headRepositoryOwner: string;
   isCrossRepository: boolean;
@@ -89,11 +88,8 @@ export interface GhFake {
   pullRequest: FakePullRequest | undefined;
   // Each gh pr view moves the head to the next SHA here first, as a push between reads does.
   nextHeads: string[];
-  // Each gh pr view moves mergeable to the next value here first. The last value stays.
   nextMergeable: string[];
-  // Each gh pr view moves state to the next value here first, as a close between reads does.
   nextStates: string[];
-  // Each gh pr view moves the base branch to the next value here first, as a retarget does.
   nextBases: string[];
   threads: FakeThread[];
   reviews: FakeReview[];
@@ -104,7 +100,6 @@ export interface GhFake {
   checksExitCode: number;
   // Pi stops gh pr checks after it printed the list.
   checksKilled: boolean;
-  // Pi stops gh run list after it printed the list.
   trunkRunsKilled: boolean;
   jobLogs: Record<string, FakeJobLog>;
   // Newest first, as gh run list prints them.

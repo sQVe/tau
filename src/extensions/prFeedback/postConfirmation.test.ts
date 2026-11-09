@@ -228,7 +228,6 @@ describe('post refusals', () => {
       comment: null,
     });
 
-    // The first check reads twice at abc123. The final check rereads and sees def456.
     fake.nextHeads = ['abc123', 'abc123', 'abc123', 'def456'];
     fake.nextMergeable = ['UNKNOWN', 'MERGEABLE', 'UNKNOWN', 'MERGEABLE'];
 
@@ -253,7 +252,6 @@ describe('post refusals', () => {
       comment: null,
     });
 
-    // The first check reads twice while OPEN. The final check rereads and sees CLOSED.
     fake.nextStates = ['OPEN', 'OPEN', 'OPEN', 'CLOSED'];
     fake.nextMergeable = ['UNKNOWN', 'MERGEABLE', 'UNKNOWN', 'MERGEABLE'];
 

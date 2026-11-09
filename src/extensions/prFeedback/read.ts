@@ -77,9 +77,6 @@ const requireUnchanged = (first: PullRequest, current: PullRequest) => {
   }
 };
 
-// GitHub computes mergeable in the background and reports UNKNOWN until it is done. A reread
-// that shows a closed pull request or any other changed field refuses, because the rest of the
-// read belongs to the first read.
 const settleMergeable = async (
   runtime: CommandRuntime,
   repository: Repository,
@@ -100,7 +97,6 @@ const settleMergeable = async (
   return mergeable;
 };
 
-// Reads the pull request and its feedback once, and rereads only mergeable. Writes nothing.
 export const readFeedback = async (
   runtime: CommandRuntime,
   repository: Repository,
