@@ -95,8 +95,16 @@ const writeRepositoryFile = async (root: string, value: unknown) => {
 const configure = (root: string, argv: string[]) =>
   writeRepositoryFile(root, { fullCheck: { argv } });
 
-const configureRepositoryLock = (root: string, argv: string[]) =>
-  writeRepositoryFile(root, { fullCheck: { argv, lockScope: 'repository' } });
+const configureRepositoryLock = async (agentDirectory: string, root: string, argv: string[]) => {
+  await writeFile(
+    join(agentDirectory, 'tau.json'),
+    JSON.stringify({
+      fullCheck: { repositories: { 'owner/first': { lockScope: 'repository' } } },
+    }),
+  );
+
+  await configure(root, argv);
+};
 
 // Lists the lock files whose owner has not released them.
 const heldLocks = async (agentDirectory: string) => {
@@ -221,8 +229,15 @@ it('queues full checks of one repository from two checkouts with the repository 
   const first = await repositoryNamed('first');
   const second = await repositoryNamed('first', 'https://github.com/Owner/First.git');
 
-  await configureRepositoryLock(first, [process.execPath, gated, record, 'first', release]);
-  await configureRepositoryLock(second, [process.execPath, gated, record, 'first', release]);
+  await configureRepositoryLock(agentDirectory, first, [
+    process.execPath,
+    gated,
+    record,
+    'first',
+    release,
+  ]);
+
+  await configure(second, [process.execPath, gated, record, 'first', release]);
 
   const firstRun = runTool(agentDirectory, first);
   await waitForLine(record, 'start first');
@@ -347,7 +362,7 @@ it('starts the next check only after a cancelled command has exited', async () =
 
   await writeFile(stubborn, stubbornSource);
 
-  await configureRepositoryLock(first, [process.execPath, stubborn, record]);
+  await configureRepositoryLock(agentDirectory, first, [process.execPath, stubborn, record]);
 
   const controller = new AbortController();
 
@@ -360,7 +375,7 @@ it('starts the next check only after a cancelled command has exited', async () =
     expect(await readFile(record, 'utf8')).toContain('start stubborn');
   });
 
-  await configureRepositoryLock(second, [process.execPath, script, record, 'second']);
+  await configure(second, [process.execPath, script, record, 'second']);
 
   const queuedUpdates: string[] = [];
   const queued = runTool(agentDirectory, second, undefined, queuedUpdates);
@@ -387,8 +402,8 @@ it('lets only one of two sessions that recover the same stale lock run at a time
   const first = await repositoryNamed('first');
   const second = await repositoryNamed('second', 'git@github.com:owner/first.git');
 
-  await configureRepositoryLock(first, [process.execPath, script, record, 'first']);
-  await configureRepositoryLock(second, [process.execPath, script, record, 'first']);
+  await configureRepositoryLock(agentDirectory, first, [process.execPath, script, record, 'first']);
+  await configure(second, [process.execPath, script, record, 'first']);
 
   const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
   const deadPid = child.pid ?? 0;
@@ -448,7 +463,12 @@ it('starts the next check only after a descendant of a cancelled command is gone
   await writeFile(descendant, descendantSource);
   await writeFile(launcher, launcherSource);
 
-  await configureRepositoryLock(first, [process.execPath, launcher, descendant, record]);
+  await configureRepositoryLock(agentDirectory, first, [
+    process.execPath,
+    launcher,
+    descendant,
+    record,
+  ]);
 
   const controller = new AbortController();
 
@@ -461,7 +481,7 @@ it('starts the next check only after a descendant of a cancelled command is gone
     expect(await readFile(record, 'utf8').catch(() => '')).toContain('start descendant');
   });
 
-  await configureRepositoryLock(second, [process.execPath, script, record, 'second']);
+  await configure(second, [process.execPath, script, record, 'second']);
 
   const queuedUpdates: string[] = [];
   const queued = runTool(agentDirectory, second, undefined, queuedUpdates);

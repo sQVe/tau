@@ -16,12 +16,11 @@ import type { CheckOutput, CheckResult } from './run.js';
 export type Recorded<Verdict> = Verdict & { reused: boolean; recordError?: string };
 
 export interface CheckPlan {
-  name: string;
   root: string;
   argv: string[];
   exec: Exec;
   agentDirectory: string;
-  lockScope: LockScope;
+  readLockScope: (repository: string | undefined) => LockScope;
   checksPath: string;
   output: CheckOutput;
   idleLimitMilliseconds: number;
@@ -90,25 +89,21 @@ const withCheckLock = <T>(
     run,
   );
 
-const noRepositoryMessage = (name: string): string =>
-  `This checkout has an origin remote that does not name an owner/name repository, so the ${name} has no lock to share with other checkouts of the repository. Remove fullCheck.lockScope from .pi/tau.json to lock this checkout only.`;
-
 const readLockPath = async (plan: CheckPlan): Promise<string> => {
-  if (plan.lockScope === 'checkout') {
-    return checkoutLockPath(plan.agentDirectory, plan.root);
-  }
-
   const repository = await readRepository({
     exec: plan.exec,
     cwd: plan.root,
     signal: plan.signal,
   });
 
-  if (repository === undefined) {
-    throw new Error(noRepositoryMessage(plan.name));
+  const repositoryKey = repository === undefined ? undefined : repositoryLockKey(repository);
+  const scope = plan.readLockScope(repositoryKey);
+
+  if (scope === 'repository' && repositoryKey !== undefined) {
+    return repositoryLockPath(plan.agentDirectory, repositoryKey);
   }
 
-  return repositoryLockPath(plan.agentDirectory, repositoryLockKey(repository));
+  return checkoutLockPath(plan.agentDirectory, plan.root);
 };
 
 const reuseSaved = async <Verdict extends { passed: boolean }>(

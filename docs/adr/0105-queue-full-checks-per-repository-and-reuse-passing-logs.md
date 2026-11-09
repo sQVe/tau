@@ -29,14 +29,16 @@ log when the state has not changed. Checks in different checkouts run at once by
 check runs per work state, at the PR step.
 
 The tool takes a lock in the `tau/full-check` directory under the agent directory. Its scope comes
-from `fullCheck.lockScope` in the repository's `.pi/tau.json`:
+from `fullCheck.repositories.<owner/name>.lockScope` in the user's `<agent directory>/tau.json`. The
+origin selects the entry without case sensitivity. No matching entry or no `owner/name` origin means
+the checkout scope. The user file gives every worktree the same scope, whatever its branch. The
+values are:
 
 - `"checkout"`, the default, locks the checkout. The lock file name comes from a SHA-256 hash of the
   checkout path, so a deep path fits in a file name. The checkout needs no `owner/name` origin.
 - `"repository"` locks every checkout of `owner/name`, for a repository whose checks share a
   resource such as a Docker port or a database. The lock file name comes from the lowercase
-  `owner/name`, encoded so it holds no path separator. The tool refuses to run when the origin names
-  no `owner/name`.
+  `owner/name`, encoded so it holds no path separator.
 
 The tool waits while another check holds the lock. Full checks and mutation checks share the lock
 and its scope, because they share the same files and resources.
@@ -126,8 +128,8 @@ session-local observation is not a reason to repeat a check.
 - A check that reads state outside the checkout, such as the network or a database, can pass again
   with different results. Reuse hides that change.
 - Checks in different checkouts compete for CPU. No limit applies across checkouts or repositories.
-- A repository that shares a resource across checkouts must set `"repository"`, or its checks
-  collide.
+- A user whose repository shares a resource across checkouts must set `"repository"` for that
+  repository in the user file, or its checks collide.
 - Git keeps the stored blob of a tracked file whose stat data did not change. When a normalizing
   rule, such as `*.txt text eol=lf`, made that blob differ from the file's bytes, a later edit to
   those same bytes, such as a switch between CRLF and LF, keeps the tree ID. A check that reads raw
@@ -173,6 +175,12 @@ and can use different output limits, failing on diffs the evidence reader can ha
 
 Rejected because worktrees of one repository waited minutes for each other, while most repositories,
 Tau included, share no resource across checkouts.
+
+### Set the lock scope in the repository file
+
+Rejected because worktrees on older branches can lack that setting. They would use checkout locks
+while newer branches use a repository lock, allowing checks that share a resource to overlap. The
+user file keeps one per-repository choice across branches on the machine.
 
 ### No lock
 

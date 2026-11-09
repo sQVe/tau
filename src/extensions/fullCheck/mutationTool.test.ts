@@ -91,10 +91,10 @@ const fixture = async () => {
       JSON.stringify({ mutation: { argv: scriptArgv(report, code, gated, ending) } }),
     );
 
-  const configureFullCheck = async (argv: string[], lockScope?: string) => {
+  const configureFullCheck = async (argv: string[]) => {
     const path = join(root, '.pi', 'tau.json');
     const current = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
-    const fullCheck = lockScope === undefined ? { argv } : { argv, lockScope };
+    const fullCheck = { argv };
 
     await writeFile(path, JSON.stringify({ ...current, fullCheck }));
   };
@@ -586,16 +586,22 @@ it('fails and says so when the script writes nothing for the idle limit', async 
   expect(first?.type === 'text' ? first.text : '').toContain('it was hung');
 });
 
-it('rejects the repository lock scope when the origin names no owner and name', async () => {
-  const { root, configure, configureFullCheck, run, runCount } = await fixture();
+it('runs with an unnamed origin when the user file configures a named repository lock', async () => {
+  const { root, directory, configure, run, runCount } = await fixture();
 
   await configure(passReport, 0);
-  await configureFullCheck(['true'], 'repository');
+
+  await writeFile(
+    join(directory, 'tau.json'),
+    JSON.stringify({
+      fullCheck: { repositories: { 'owner/mutation': { lockScope: 'repository' } } },
+    }),
+  );
+
   await git(root, 'remote', 'set-url', 'origin', '/tmp/some-path');
 
-  await expect(run()).rejects.toThrow('owner/name');
-  await expect(run()).rejects.toThrow('mutation check');
-  expect(await runCount()).toBe(0);
+  expect((await run()).details?.passed).toBe(true);
+  expect(await runCount()).toBe(1);
 });
 
 it('reuses a passing audit run after origin/HEAD moves', async () => {

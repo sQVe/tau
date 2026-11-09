@@ -83,12 +83,11 @@ const execute = async (
 
   const result = await executeRecordedCheck(
     {
-      name: 'full check',
       root,
       argv,
       exec: options.exec,
       agentDirectory,
-      lockScope: readLockScope(location),
+      readLockScope: (repository) => readLockScope(location, context.ui, repository),
       checksPath: defaultChecksPath,
       output: 'combined',
       idleLimitMilliseconds: options.idleLimitMilliseconds ?? defaultIdleLimitMilliseconds,
@@ -114,7 +113,7 @@ export const createFullCheckTool = (
     description: `Run the repository's configured full check and save its output. Call it once on the final work state. After a failure, fix with focused tests and the failing stage before you call it again.
 - Returns pass or fail, the exit status, the log path, and the last lines of the output. A failed check is a result, not an error.
 - A later call for the same command and file content returns the saved passing log without a run, and says so. A commit or amend that changes no files keeps the file content.
-- Checks queue per checkout, or per repository with fullCheck.lockScope "repository". A waiting call names the checkout holding the lock.
+- Checks queue per checkout. User tau.json can set fullCheck.repositories.<owner/name>.lockScope to "repository". A waiting call names the holder.
 - Without fullCheck.argv in .pi/tau.json, it errors. Run the check as before.`,
     promptSnippet: 'Run the repository full check, queued per checkout, with a saved log.',
     parameters,

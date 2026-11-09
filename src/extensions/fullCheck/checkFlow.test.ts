@@ -51,7 +51,7 @@ const fixture = async (kind: ToolKind) => {
   const checksPath = kind === 'full_check' ? 'checks' : 'checks/mutation';
   const printReport = kind === 'mutation_check';
 
-  const configure = (
+  const configure = async (
     options: { gate?: boolean; edit?: boolean; repositoryLock?: boolean } = {},
   ) => {
     const source = commandSource(
@@ -66,7 +66,12 @@ const fixture = async (kind: ToolKind) => {
     };
 
     if (options.repositoryLock === true) {
-      sections.fullCheck = { ...sections.fullCheck, lockScope: 'repository' };
+      await writeFile(
+        join(directory, 'tau.json'),
+        JSON.stringify({
+          fullCheck: { repositories: { 'owner/flow': { lockScope: 'repository' } } },
+        }),
+      );
     }
 
     return writeFile(join(root, '.pi', 'tau.json'), JSON.stringify(sections));
@@ -122,7 +127,7 @@ setInterval(() => { if (fs.existsSync(${JSON.stringify(gate)})) process.exit(0);
   await writeFile(
     join(root, '.pi', 'tau.json'),
     JSON.stringify({
-      fullCheck: { argv: [process.execPath, '-e', source], lockScope: 'repository' },
+      fullCheck: { argv: [process.execPath, '-e', source] },
     }),
   );
 
@@ -187,6 +192,45 @@ it.each(toolKinds)(
     expect(resolved.details).toMatchObject({ passed: true, reused: true });
     expect(resolved.details?.logPath).toBe(first.details?.logPath);
     expect(holderResult.details?.passed).toBe(true);
+    expect(await state.runCount()).toBe(1);
+  },
+);
+
+it.each(toolKinds)(
+  '$name waits for another checkout using the user repository lock scope',
+  async ({ name }) => {
+    const state = await fixture(name);
+    const started = join(state.directory, `started-${name}`);
+    const holderGate = join(state.directory, `holder-gate-${name}`);
+
+    await state.configure({ repositoryLock: true });
+
+    const holder = startHoldingFullCheck(state.directory, started, holderGate);
+
+    onTestFinished(async () => {
+      await writeFile(holderGate, '');
+      await holder.catch(() => undefined);
+    });
+
+    await vi.waitFor(() => {
+      expect(existsSync(started)).toBe(true);
+    });
+
+    const updates: string[] = [];
+    const waiting = state.run(updates);
+
+    await vi.waitFor(() => {
+      expect(updates).toHaveLength(1);
+    });
+
+    expect(await state.runCount()).toBe(0);
+
+    await writeFile(holderGate, '');
+
+    const [holderResult, result] = await Promise.all([holder, waiting]);
+
+    expect(holderResult.details?.passed).toBe(true);
+    expect(result.details).toMatchObject({ passed: true, reused: false });
     expect(await state.runCount()).toBe(1);
   },
 );

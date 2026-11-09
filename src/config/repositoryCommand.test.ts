@@ -57,14 +57,32 @@ it.each([
   });
 });
 
-it('fails a fullCheck key in the user file even when the repository file sets one', () => {
+it.each([
+  { name: 'argv', section: { argv: ['pnpm', 'check'] } },
+  { name: 'lockScope', section: { lockScope: 'repository' } },
+  { name: 'an unknown key', section: { other: true } },
+  { name: 'argv alongside repositories', section: { argv: ['x'], repositories: {} } },
+  { name: 'a null section', section: null },
+  { name: 'an array section', section: [] },
+])('rejects $name in the user fullCheck section', ({ section }) => {
   const { location, writeUser, writeRepository, userFile } = fixture();
 
-  writeUser({ fullCheck: { argv: ['pnpm', 'check'] } });
+  writeUser({ fullCheck: section });
   writeRepository({ fullCheck: { argv: ['pnpm', 'check'] } });
 
   expect(() => readRepositoryArgv(location, ui, 'fullCheck')).toThrow(
     `Invalid Tau config ${userFile}: fullCheck belongs in .pi/tau.json`,
+  );
+});
+
+it('rejects repository settings in the user mutation section', () => {
+  const { location, writeUser, writeRepository, userFile } = fixture();
+
+  writeUser({ mutation: { repositories: {} } });
+  writeRepository({ mutation: { argv: ['x'] } });
+
+  expect(() => readRepositoryArgv(location, ui, 'mutation')).toThrow(
+    `Invalid Tau config ${userFile}: mutation belongs in .pi/tau.json`,
   );
 });
 
@@ -104,20 +122,27 @@ it.each([
 });
 
 it.each([
-  { name: 'the repository file is missing', value: undefined, scope: 'checkout' },
+  { name: 'the user file is missing', value: undefined, scope: 'checkout' },
+  { name: 'the user section is missing', value: {}, scope: 'checkout' },
+  { name: 'repositories is missing', value: { fullCheck: {} }, scope: 'checkout' },
   {
-    name: 'fullCheck sets no lock scope',
-    value: { fullCheck: { argv: ['x'] } },
+    name: 'the entry has no scope',
+    value: { fullCheck: { repositories: { 'owner/name': {} } } },
+    scope: 'checkout',
+  },
+  {
+    name: 'another repository sets a scope',
+    value: { fullCheck: { repositories: { 'other/repo': { lockScope: 'repository' } } } },
     scope: 'checkout',
   },
   {
     name: 'fullCheck sets the checkout scope',
-    value: { fullCheck: { argv: ['x'], lockScope: 'checkout' } },
+    value: { fullCheck: { repositories: { 'Owner/Name': { lockScope: 'checkout' } } } },
     scope: 'checkout',
   },
   {
     name: 'fullCheck sets the repository scope',
-    value: { fullCheck: { argv: ['x'], lockScope: 'repository' } },
+    value: { fullCheck: { repositories: { 'Owner/Name': { lockScope: 'repository' } } } },
     scope: 'repository',
   },
   {
@@ -126,41 +151,67 @@ it.each([
     scope: 'checkout',
   },
 ])('reads the $scope lock scope when $name', ({ value, scope }) => {
-  const { location, writeRepository } = fixture();
+  const { location, writeUser } = fixture();
+  const notify = vi.fn<ConfigWarnings['notify']>();
 
   if (value !== undefined) {
-    writeRepository(value);
+    writeUser(value);
   }
 
-  expect(readLockScope(location)).toBe(scope);
+  expect(readLockScope(location, { notify }, 'owner/name')).toBe(scope);
+  expect(notify).not.toHaveBeenCalled();
 });
 
-it('ignores the repository lock scope of an untrusted project', () => {
+it('ignores the repository lock scope in a trusted project', () => {
   const { location, writeRepository } = fixture();
 
   writeRepository({ fullCheck: { argv: ['x'], lockScope: 'repository' } });
 
-  expect(readLockScope({ ...location, projectTrusted: false })).toBe('checkout');
+  expect(readLockScope(location, ui, 'owner/name')).toBe('checkout');
 });
 
 it.each([
-  { name: 'an unknown scope', lockScope: 'machine', field: 'fullCheck.lockScope' },
-  { name: 'a non-string scope', lockScope: 1, field: 'fullCheck.lockScope' },
-  { name: 'a fullCheck string', section: 'pnpm check', field: 'fullCheck' },
-])('fails naming the repository file and $field for $name', ({ lockScope, section, field }) => {
-  const { location, writeRepository, repositoryFile } = fixture();
+  {
+    name: 'an unknown scope',
+    entry: { lockScope: 'machine' },
+    field: 'fullCheck.repositories.owner/name.lockScope',
+  },
+  {
+    name: 'a non-string scope',
+    entry: { lockScope: 1 },
+    field: 'fullCheck.repositories.owner/name.lockScope',
+  },
+  { name: 'a non-object entry', entry: 'repository', field: 'fullCheck.repositories.owner/name' },
+])('fails naming the user file and $field for $name', ({ entry, field }) => {
+  const { location, writeUser, userFile } = fixture();
 
-  writeRepository({ fullCheck: section ?? { argv: ['x'], lockScope } });
+  writeUser({ fullCheck: { repositories: { 'owner/name': entry } } });
 
-  expect(() => readLockScope(location)).toThrow(`Invalid Tau config ${repositoryFile}: ${field} `);
+  expect(() => readLockScope(location, ui, 'owner/name')).toThrow(
+    `Invalid Tau config ${userFile}: ${field} `,
+  );
 });
 
-it('warns about a lock scope in the mutation section but not in the fullCheck section', () => {
+it('reads user lock scope in an untrusted project and permits repository commands', () => {
+  const { location, writeUser, writeRepository } = fixture();
+
+  writeUser({ fullCheck: { repositories: { 'owner/name': { lockScope: 'repository' } } } });
+  writeRepository({ fullCheck: { argv: ['x'] } });
+
+  expect(readLockScope({ ...location, projectTrusted: false }, ui, 'owner/name')).toBe(
+    'repository',
+  );
+
+  expect(readLockScope(location, ui, undefined)).toBe('checkout');
+  expect(readRepositoryArgv(location, ui, 'fullCheck').argv).toEqual(['x']);
+});
+
+it('warns about repository lock scope keys in both command sections', () => {
   const { location, writeRepository } = fixture();
   const notify = vi.fn<ConfigWarnings['notify']>();
 
   writeRepository({
-    fullCheck: { argv: ['x'], lockScope: 'repository' },
+    fullCheck: { argv: ['x'], lockScope: 'repository', repositories: {} },
     mutation: { argv: ['y'], lockScope: 'repository' },
   });
 
@@ -169,6 +220,8 @@ it('warns about a lock scope in the mutation section but not in the fullCheck se
 
   const messages = notify.mock.calls.map(([message]) => message);
 
-  expect(messages).toHaveLength(1);
-  expect(messages[0]).toContain('mutation.lockScope');
+  expect(messages).toHaveLength(3);
+  expect(messages[0]).toContain('fullCheck.lockScope');
+  expect(messages[1]).toContain('fullCheck.repositories');
+  expect(messages[2]).toContain('mutation.lockScope');
 });

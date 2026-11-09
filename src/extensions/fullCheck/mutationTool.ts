@@ -297,12 +297,11 @@ const execute = async (
 
   const result = await executeRecordedCheck(
     {
-      name: 'mutation check',
       root,
       argv,
       exec: options.exec,
       agentDirectory,
-      lockScope: readLockScope(location),
+      readLockScope: (repository) => readLockScope(location, context.ui, repository),
       checksPath: mutationChecksPath,
       output: 'report',
       idleLimitMilliseconds: options.idleLimitMilliseconds ?? defaultIdleLimitMilliseconds,
@@ -330,7 +329,7 @@ export const createMutationCheckTool = (
 - Survivors are advice: a run with survivors passes. Fails on an error report, unmutated files, or a script that writes no output for 10 minutes.
 - Returns pass or fail, the log path, the error text, the unmutated files, and the covered survivors grouped by <file>:<line>, apart from no-coverage mutants.
 - A later call for the same arguments and file content returns the saved passing report without a run, and says so.
-- Shares the lock and lock scope of full_check, so the two run one at a time. A waiting call sends an update naming the checkout that holds the lock.
+- Shares full_check's lock scope from user tau.json. A waiting call names the checkout holding the lock.
 - Requires mutation.argv in .pi/tau.json; without it the tool errors.`,
     promptSnippet:
       'Run the repository mutation script, queued with the full check, and list the survivors.',

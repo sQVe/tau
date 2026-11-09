@@ -8,6 +8,7 @@ import {
   warnUnknownKeys,
 } from './config.js';
 import type { ConfigFile, ConfigLocation, ConfigWarnings } from './config.js';
+import { readRepositorySection } from './repositorySection.js';
 
 export interface RepositoryArgv {
   argv: string[] | undefined;
@@ -19,7 +20,7 @@ export type LockScope = 'checkout' | 'repository';
 export type RepositoryCommandKey = 'fullCheck' | 'mutation';
 
 const knownSectionKeys: Readonly<Record<RepositoryCommandKey, KnownKeys>> = {
-  fullCheck: { argv: true, lockScope: true },
+  fullCheck: { argv: true },
   mutation: { argv: true },
 };
 
@@ -87,9 +88,17 @@ const findRepositoryFile = (
   const user = files.find((file) => file.source === userPath);
 
   if (user !== undefined && setsKey(user, key)) {
-    throw new Error(
-      `Invalid Tau config ${userPath}: ${key} belongs in .pi/tau.json in the repository. Move it there.`,
-    );
+    const section = sectionOf(user, key);
+    const repositorySettings = key === 'fullCheck' && isRecord(section);
+
+    const allowed =
+      repositorySettings && Object.keys(section).every((field) => field === 'repositories');
+
+    if (!allowed) {
+      throw new Error(
+        `Invalid Tau config ${userPath}: ${key} belongs in .pi/tau.json in the repository. Move it there.`,
+      );
+    }
   }
 
   const project = files.find((file) => file.source !== userPath && setsKey(file, key));
@@ -114,20 +123,12 @@ export const readRepositoryArgv = (
 const isLockScope = (value: unknown): value is LockScope =>
   lockScopes.some((scope) => scope === value);
 
-export const readLockScope = (location: ConfigLocation): LockScope => {
-  const { project } = findRepositoryFile(location, 'fullCheck');
-
-  if (project === undefined) {
-    return 'checkout';
+const readLockEntry = (source: string, field: string, value: unknown): LockScope => {
+  if (!isRecord(value)) {
+    throw new Error(`Invalid Tau config ${source}: ${field} must be an object.`);
   }
 
-  const section = requireSectionObject(
-    project.source,
-    'fullCheck',
-    sectionOf(project, 'fullCheck'),
-  );
-
-  const scope = section.lockScope;
+  const scope = value.lockScope;
 
   if (scope === undefined) {
     return 'checkout';
@@ -135,9 +136,30 @@ export const readLockScope = (location: ConfigLocation): LockScope => {
 
   if (!isLockScope(scope)) {
     throw new Error(
-      `Invalid Tau config ${project.source}: fullCheck.lockScope must be "checkout" or "repository".`,
+      `Invalid Tau config ${source}: ${field}.lockScope must be "checkout" or "repository".`,
     );
   }
 
   return scope;
+};
+
+export const readLockScope = (
+  location: ConfigLocation,
+  ui: ConfigWarnings,
+  repository: string | undefined,
+): LockScope => {
+  // fullCheck has separate user settings and repository commands. The scope reads only the user file.
+  const userLocation = { ...location, projectTrusted: false };
+
+  findRepositoryFile(userLocation, 'fullCheck');
+
+  const section = readRepositorySection(userLocation, ui, {
+    key: 'fullCheck',
+    knownEntryKeys: { lockScope: true },
+    example: '{"repositories": {"owner/name": {"lockScope": "repository"}}}',
+    repository,
+    readEntry: readLockEntry,
+  });
+
+  return section?.entry ?? 'checkout';
 };
