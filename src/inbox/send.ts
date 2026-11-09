@@ -94,9 +94,11 @@ const refuse = (request: InboxSendRequest, reason: string): never => {
 };
 
 const resolveTarget = async (request: InboxSendRequest): Promise<Target> => {
-  const terminal = await get(request.hc, request.target).catch((error: unknown) =>
-    refuse(request, errorMessage(error)),
-  );
+  const terminal = await get(request.hc, request.target).catch((error: unknown) => {
+    request.hc.signal?.throwIfAborted();
+
+    return refuse(request, errorMessage(error));
+  });
 
   const decision = decideTarget({
     address: terminal.address,

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
-import { succeededResult } from '../../tests/execFake.js';
+import { failedResult, succeededResult } from '../../tests/execFake.js';
 import { startHandoverReceiver } from '../../tests/inboxReceiverHarness.js';
 import type { HcRuntime } from '../hc/hc.js';
 import { sendInboxMessage } from './inbox.js';
@@ -201,6 +201,23 @@ it('refuses a family the receiver does not accept', async () => {
   ).rejects.toThrow(`This session does not accept answer messages. ${refusal}`);
 
   expect(receiver.savedRecords()).toEqual([]);
+});
+
+it('reports a cancellation during the terminal lookup as a cancellation', async () => {
+  const controller = new AbortController();
+
+  const hc: HcRuntime = {
+    exec: () => {
+      controller.abort();
+
+      return Promise.resolve({ ...failedResult(''), killed: true });
+    },
+    connect: () => Promise.reject(new Error('no connect')),
+    cwd: root,
+    signal: controller.signal,
+  };
+
+  await expect(sendInboxMessage(request(hc))).rejects.toMatchObject({ name: 'AbortError' });
 });
 
 it('refuses a socket that refuses connections', async () => {
