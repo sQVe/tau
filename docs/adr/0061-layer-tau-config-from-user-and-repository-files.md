@@ -59,7 +59,7 @@ check that code.
 | `tracker`       | yes       | no              | `agentTeam`, and `repositories` with a Linear route per entry                                                     |
 | `qa`            | yes       | no              | `repositories` with URL and test-account commands, and `dataWrites`                                               |
 | `reviews`       | yes       | no              | `repositories` with the review bots per entry                                                                     |
-| `fullCheck`     | no        | yes             | `argv` is the full check command, read only in a trusted project                                                  |
+| `fullCheck`     | yes       | yes             | User file: `repositories` with the lock scope per entry. Repository file: `argv`, read only in a trusted project  |
 
 A key in the wrong file is an error. The error names the file and the file the key belongs in.
 `tdd.verificationArgv` is validated by the selected `tdd.runner`; the Vitest runner's command must
@@ -152,8 +152,10 @@ checks. `mutation.argv` already runs the same kind of script from the repository
 
 ### Let the user file override the repository file for the full check
 
-Rejected because two sources give two answers to which command runs. A `fullCheck` key in the user
-file is an error, like any key in the wrong file.
+Rejected because two sources give two answers to which command runs. `fullCheck.argv` in the user
+file is an error, like any key in the wrong file. The user file holds only `fullCheck.repositories`,
+the lock scope per repository, so every checkout of a repository reads one scope whatever its
+branch.
 
 ### XDG folder, root `tau.json`, or `package.json`
 
