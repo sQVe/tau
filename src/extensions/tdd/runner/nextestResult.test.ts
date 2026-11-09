@@ -89,6 +89,20 @@ describe('listOutcome', () => {
       },
     },
     {
+      name: 'another exit quotes stderr',
+      facts: {
+        ...stage,
+        code: 102,
+        stderr: 'info: probing\nerror: cannot update the lock file because --locked was passed\n',
+      },
+      outcome: {
+        kind: 'compile-error',
+        message:
+          'cargo nextest list exited with code 102:\nerror: cannot update the lock file because --locked was passed',
+        tests: [],
+      },
+    },
+    {
       name: 'a missing exit code is named unavailable',
       facts: { ...stage, code: null, stderr: '' },
       outcome: {

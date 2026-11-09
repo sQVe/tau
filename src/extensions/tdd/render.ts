@@ -366,20 +366,26 @@ const configLabels: Record<keyof TddConfig, string> = {
   testSupportGlobs: 'Test support',
   excludedGlobs: 'Excluded',
   verificationArgv: 'Command',
+  cargoManifestPath: 'Cargo manifest',
+  cargoLocked: 'Cargo --locked',
 };
 
-const configValueText = (value: string | readonly string[], separator: string): string =>
-  typeof value === 'string' ? value : value.join(separator);
+const configValueText = (value: string | boolean | readonly string[], separator: string): string =>
+  typeof value === 'object' ? value.join(separator) : String(value);
 
 export const configSummary = ({ config, sources, ignored }: LoadedTddConfig): string => {
-  const lines = [
-    'TDD config (repository .pi/tau.json overrides user tau.json):',
-    ...tddConfigFields.map((field) => {
-      const separator = field === 'verificationArgv' ? ' ' : ', ';
+  const lines = ['TDD config (repository .pi/tau.json overrides user tau.json):'];
 
-      return `${configLabels[field]} (${sources[field]}): ${configValueText(config[field], separator)}`;
-    }),
-  ];
+  for (const field of tddConfigFields) {
+    const value = config[field];
+    const separator = field === 'verificationArgv' ? ' ' : ', ';
+
+    if (value !== undefined) {
+      lines.push(
+        `${configLabels[field]} (${sources[field] ?? 'unknown'}): ${configValueText(value, separator)}`,
+      );
+    }
+  }
 
   if (ignored !== undefined) {
     lines.push(`Ignored ${ignored}: the project is not trusted.`);
