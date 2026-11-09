@@ -46,6 +46,17 @@ folder, and replies before the sender reports success.
   in the session, and then deletes the record. A receipt stops a repeated delivery after a reload.
 - Delivery is at least once. A crash after the message is shown but before Pi saves the session can
   show the message again on the next start.
+- Pi can drop a queued message before its receipt, as Escape does. Pi exposes no read of its queue
+  when a run settles. A run that settles without an abort has emptied the queue, so Tau shows each
+  queued message without a receipt again. After an aborted settle, Tau does so only in Pi's terminal
+  UI, which clears its queue before every abort. Outside the terminal UI, a message Pi dropped on an
+  abort is recovered at the next settle without an abort.
+- Tau steers a newly arriving message into a running session only while the run's abort signal is
+  live. Pi's terminal UI clears its queue and aborts in one step, so every steered message predates
+  any clear. A message that arrives after the abort or after the agent loop ended is held until the
+  run settles, and then wakes the session. The settle releases only messages queued before it.
+- A recovered message is shown without starting a new turn. The agent sees it on the next prompt. A
+  newly arriving message still wakes the session.
 
 ### Answers
 
@@ -71,7 +82,8 @@ the question rules.
 ### Bash guard
 
 Every Tau session refuses a bash call that runs `hc send` or `hc keys` in command position, also
-inside a literal `sh -c` or `bash -c` script. The refusal names `handover` action `send` and
+inside a literal `sh -c` or `bash -c` script and behind the `command`, `env`, `exec`, `nohup`,
+`time`, `sudo`, and `xargs` wrappers. The refusal names `handover` action `send` and
 `subagent_answer`. Mentions such as `echo hc send`, `printf` text, quoted heredoc bodies, and
 `hc send --help` pass. The guard prevents accidents and is not a security boundary: a command built
 from variables, source the shell parser rejects, and a direct `hc connect` call pass.

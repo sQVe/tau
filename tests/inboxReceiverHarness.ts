@@ -32,7 +32,7 @@ export const startHandoverReceiver = async (
     accepts,
     receipts: createReceiptStore(sessionId),
     entries: () => [],
-    wake: () => undefined,
+    wake: () => true,
     notify: () => undefined,
   });
 

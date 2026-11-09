@@ -1,7 +1,14 @@
 import type { Family, MessageBody, MessageReply, MessageRequest } from './protocol.js';
 import { refusedReply } from './protocol.js';
-import { decideCandidate, inboxMessageType, inboxReceiptVersion } from './receiptDecision.js';
-import type { InboxReceipt, ReceiptEntryFact } from './receiptDecision.js';
+import {
+  decideCandidate,
+  inboxMessageType,
+  inboxReceiptVersion,
+  matchesReceipt,
+  messageText,
+  piQueueEmptyAtSettle,
+} from './receiptDecision.js';
+import type { InboxReceipt, ReceiptEntryFact, SettleFacts } from './receiptDecision.js';
 import type { ReceiptStore } from './receipts.js';
 import { deleteMessage, pendingMessages, readMessage, saveMessage } from './store.js';
 
@@ -11,6 +18,10 @@ interface InboxMessage {
   display: boolean;
   details: unknown;
 }
+
+// An arrived message starts a turn. A recovered message is one Pi dropped after the user
+// interrupted, so it is shown without starting one.
+type Arrival = 'arrived' | 'recovered';
 
 export type AcceptCheck = (
   request: MessageRequest,
@@ -24,13 +35,16 @@ export interface ReceiverOptions {
   accepts: Partial<Record<Family, AcceptCheck>>;
   receipts: ReceiptStore;
   entries: () => readonly ReceiptEntryFact[];
-  wake: (message: InboxMessage) => void;
+  // Returns false when the caller holds the message. A held message is delivered by a later drain.
+  wake: (message: InboxMessage, arrival: Arrival) => boolean;
   notify: (message: string) => void;
 }
 
 export interface Receiver {
   accept: (request: MessageRequest) => Promise<MessageReply>;
   deliver: (signal: AbortSignal) => Promise<void>;
+  // Makes deliverable again each queued message that Pi dropped before saving its receipt.
+  releaseDropped: (facts: SettleFacts) => void;
 }
 
 const queuedReply = (options: ReceiverOptions, messageId: string): MessageReply => ({
@@ -46,26 +60,26 @@ const bodyOf = (request: MessageRequest): MessageBody =>
     ? { family: 'handover', payload: request.payload }
     : { family: 'answer', payload: request.payload };
 
+const changedReply = (messageId: string): MessageReply =>
+  refusedReply(`Message ${messageId} is already saved with different content.`, messageId);
+
 const save = async (options: ReceiverOptions, request: MessageRequest): Promise<MessageReply> => {
   const { messageId } = request;
+  const body = bodyOf(request);
 
   options.receipts.restore(options.entries());
 
-  if (options.receipts.hasReceipt(messageId)) {
-    return queuedReply(options, messageId);
+  const receipted = options.receipts.receiptedMessage(messageId);
+
+  if (receipted !== undefined) {
+    return matchesReceipt(receipted, body)
+      ? queuedReply(options, messageId)
+      : changedReply(messageId);
   }
 
-  const outcome = await saveMessage(options.directory, {
-    version: 1,
-    messageId,
-    ...bodyOf(request),
-  });
+  const outcome = await saveMessage(options.directory, { version: 1, messageId, ...body });
 
-  if (outcome === 'changed') {
-    return refusedReply(`Message ${messageId} is already saved with different content.`, messageId);
-  }
-
-  return queuedReply(options, messageId);
+  return outcome === 'changed' ? changedReply(messageId) : queuedReply(options, messageId);
 };
 
 const accept = async (options: ReceiverOptions, request: MessageRequest): Promise<MessageReply> => {
@@ -80,9 +94,6 @@ const accept = async (options: ReceiverOptions, request: MessageRequest): Promis
 
   return typeof reply === 'string' ? refusedReply(reply, messageId) : reply;
 };
-
-const messageText = (body: MessageBody): string =>
-  body.family === 'handover' ? body.payload.text : body.payload.answer;
 
 const receiptOf = (
   options: ReceiverOptions,
@@ -101,15 +112,23 @@ const receiptOf = (
 };
 
 const wakeOnce = (options: ReceiverOptions, messageId: string, body: MessageBody): void => {
+  const arrival = options.receipts.isRecovered(messageId) ? 'recovered' : 'arrived';
+
   options.receipts.markQueued(messageId);
 
   try {
-    options.wake({
+    const message = {
       customType: inboxMessageType,
       content: messageText(body),
       display: true,
       details: receiptOf(options, messageId, body),
-    });
+    };
+
+    const shown = options.wake(message, arrival);
+
+    if (!shown) {
+      options.receipts.clearQueued(messageId);
+    }
   } catch (error) {
     options.receipts.clearQueued(messageId);
 
@@ -181,6 +200,14 @@ export const createReceiver = (options: ReceiverOptions): Receiver => {
         // oxlint-disable-next-line no-await-in-loop -- Deliveries run one at a time.
         await deliverOne(options, messageId, reported, signal);
       }
+    },
+    releaseDropped: (facts) => {
+      if (!piQueueEmptyAtSettle(facts)) {
+        return;
+      }
+
+      options.receipts.restore(options.entries());
+      options.receipts.releaseQueued();
     },
   };
 };

@@ -45,7 +45,7 @@ const startWorker = async () => {
     accepts: { answer: check },
     receipts: createReceiptStore(sessionId),
     entries: () => [],
-    wake: () => undefined,
+    wake: () => true,
     notify: () => undefined,
   });
 

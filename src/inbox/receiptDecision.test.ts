@@ -7,6 +7,8 @@ import {
   answeredQuestionId,
   decideCandidate,
   inboxMessageType,
+  matchesReceipt,
+  piQueueEmptyAtSettle,
   readInboxReceipt,
 } from './receiptDecision.js';
 import type { ReceiptEntryFact } from './receiptDecision.js';
@@ -242,3 +244,102 @@ const candidateTable = [
 it.each(candidateTable.map((row) => [row.name, row] as const))('decides %s', (_name, row) => {
   expect(decideCandidate(row.facts)).toBe(row.step);
 });
+
+const handoverReceipt = {
+  version: 2,
+  messageId: 'm1',
+  sessionId: 's1',
+  family: 'handover',
+} as const;
+
+const answerReceipt = { ...handoverReceipt, family: 'answer', questionId: 'q1' } as const;
+
+const answerPayload = {
+  assignmentId: 'a1',
+  questionId: 'q1',
+  parentSession: 'parent',
+  answer: 'Use option A.',
+};
+
+const retryTable = [
+  {
+    name: 'a handover retry with the shown text',
+    receipted: { receipt: handoverReceipt, content: 'handover text' },
+    body: { family: 'handover', payload: { text: 'handover text' } },
+    matches: true,
+  },
+  {
+    name: 'a handover retry with other text',
+    receipted: { receipt: handoverReceipt, content: 'handover text' },
+    body: { family: 'handover', payload: { text: 'other text' } },
+    matches: false,
+  },
+  {
+    name: 'a handover retry of a shown answer with the same text',
+    receipted: { receipt: answerReceipt, content: 'Use option A.' },
+    body: { family: 'handover', payload: { text: 'Use option A.' } },
+    matches: false,
+  },
+  {
+    name: 'a handover retry of a shown answer without a question',
+    receipted: { receipt: { ...handoverReceipt, family: 'answer' }, content: 'handover text' },
+    body: { family: 'handover', payload: { text: 'handover text' } },
+    matches: false,
+  },
+  {
+    name: 'an answer retry with the shown answer and question',
+    receipted: { receipt: answerReceipt, content: 'Use option A.' },
+    body: { family: 'answer', payload: answerPayload },
+    matches: true,
+  },
+  {
+    name: 'an answer retry for another question',
+    receipted: { receipt: answerReceipt, content: 'Use option A.' },
+    body: { family: 'answer', payload: { ...answerPayload, questionId: 'q2' } },
+    matches: false,
+  },
+  {
+    name: 'a retry of a receipt whose entry holds no text',
+    receipted: { receipt: handoverReceipt, content: undefined },
+    body: { family: 'handover', payload: { text: 'handover text' } },
+    matches: false,
+  },
+] as const;
+
+it.each(retryTable.map((row) => [row.name, row] as const))(
+  'matches the receipt for %s',
+  (_name, row) => {
+    expect(matchesReceipt(row.receipted, row.body)).toBe(row.matches);
+  },
+);
+
+const settleTable = [
+  {
+    name: 'a settle without an abort in the terminal UI',
+    facts: { aborted: false, mode: 'tui' },
+    empty: true,
+  },
+  {
+    name: 'a settle without an abort over RPC',
+    facts: { aborted: false, mode: 'rpc' },
+    empty: true,
+  },
+  {
+    name: 'an aborted settle in the terminal UI',
+    facts: { aborted: true, mode: 'tui' },
+    empty: true,
+  },
+  { name: 'an aborted settle over RPC', facts: { aborted: true, mode: 'rpc' }, empty: false },
+  {
+    name: 'an aborted settle in print mode',
+    facts: { aborted: true, mode: 'print' },
+    empty: false,
+  },
+] as const;
+
+it.each(settleTable.map((row) => [row.name, row] as const))(
+  'decides whether the Pi queue is empty after %s',
+  (_name, row) => {
+    expect(piQueueEmptyAtSettle(row.facts)).toBe(row.empty);
+  },
+);

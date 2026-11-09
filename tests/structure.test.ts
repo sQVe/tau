@@ -82,6 +82,7 @@ const pureModules = [
   'src/extensions/draftReview/reviewDecisions.ts',
   'src/extensions/fullCheck/idleDecision.ts',
   'src/extensions/fullCheck/mutationVerdict.ts',
+  'src/extensions/inbox/arrivalDecision.ts',
   'src/extensions/inbox/guardDecision.ts',
   'src/extensions/mergeWatch/autoMergeRequest.ts',
   'src/extensions/mergeWatch/watchOutcome.ts',

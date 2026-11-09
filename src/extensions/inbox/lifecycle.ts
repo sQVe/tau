@@ -16,6 +16,8 @@ import {
 import type { InboxListener, Receiver } from '../../inbox/inbox.js';
 import type { Wake } from '../../wake/wake.js';
 import { isWorkerProcess } from '../../worker.js';
+import { holdsArrival } from './arrivalDecision.js';
+import type { ArrivalFacts } from './arrivalDecision.js';
 import type { StartupGate } from './startup.js';
 
 export interface InboxLifecycleDependencies {
@@ -33,6 +35,14 @@ interface Generation {
   drain: Promise<void>;
   receiver: Receiver | undefined;
 }
+
+const signalState = (signal: AbortSignal | undefined): ArrivalFacts['signal'] => {
+  if (signal === undefined) {
+    return 'none';
+  }
+
+  return signal.aborted ? 'aborted' : 'live';
+};
 
 const familyChecks = () => (isWorkerProcess() ? acceptChecks() : {});
 
@@ -57,6 +67,7 @@ export const registerInboxLifecycle = (
   const { hc, gate } = dependencies;
   let generation: Generation | undefined;
   let listener: InboxListener | undefined;
+  let runActive = false;
 
   const deliverAll = async (current: Generation): Promise<void> => {
     const { signal } = current.controller;
@@ -96,8 +107,20 @@ export const registerInboxLifecycle = (
       accepts: { ...familyChecks(), handover: (_request, save) => save() },
       receipts: createReceiptStore(current.sessionId),
       entries: () => context.sessionManager.getEntries(),
-      wake: (message) => {
+      wake: (message, arrival) => {
+        if (arrival === 'recovered') {
+          pi.sendMessage(message, { triggerTurn: false });
+
+          return true;
+        }
+
+        if (holdsArrival({ runActive, signal: signalState(context.signal) })) {
+          return false;
+        }
+
         dependencies.wake(context, message);
+
+        return true;
       },
       notify: (message) => {
         notifyError(context, message);
@@ -154,6 +177,19 @@ export const registerInboxLifecycle = (
 
   pi.on('agent_end', (_event, context) => {
     if (generation !== undefined) {
+      requestDrain(generation, context);
+    }
+  });
+
+  pi.on('agent_start', () => {
+    runActive = true;
+  });
+
+  pi.on('agent_settled', (event, context) => {
+    runActive = false;
+
+    if (generation !== undefined) {
+      generation.receiver?.releaseDropped({ aborted: event.aborted, mode: context.mode });
       requestDrain(generation, context);
     }
   });
