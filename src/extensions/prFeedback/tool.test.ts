@@ -1,90 +1,14 @@
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { ToolCall } from '@earendil-works/pi-ai';
-import { validateToolArguments } from '@earendil-works/pi-ai';
-import { describe, expect, it, onTestFinished } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { createTemporaryRepository } from '../../../tests/gitRepository.js';
-import { noUiContext } from '../../../tests/toolContext.js';
-import { isMissingFile } from '../../errors.js';
-import { createGhFake } from './fixtures/ghFake.js';
-import type { FakeThread, GhFake } from './fixtures/ghFake.js';
-import { createPrFeedbackTool } from './tool.js';
-import type { PrFeedbackInput } from './tool.js';
+import type { ExecCall } from '../../../tests/execFake.js';
+import { fakePullRequest } from './fixtures/ghFake.js';
+import type { GhFake } from './fixtures/ghFake.js';
+import { feedbackDirectories, holdFeedback, person, setUp, thread } from './fixtures/toolSetup.js';
 
-const person = { login: 'reviewer', bot: false };
-const bot = { login: 'coderabbitai', bot: true };
-
-const thread = (overrides: Partial<FakeThread> & { id: string }): FakeThread => ({
-  path: 'src/tau.ts',
-  line: 12,
-  isResolved: false,
-  isOutdated: false,
-  viewerCanReply: true,
-  viewerCanResolve: true,
-  hasMoreComments: false,
-  comments: [{ id: 101, author: person, body: 'Rename this.' }],
-  ...overrides,
-});
-
-const setUp = async () => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const fake = createGhFake();
-
-  const read = async (input: Partial<PrFeedbackInput> = {}) => {
-    const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
-
-    const result = await tool.execute(
-      'call',
-      { action: 'read', repository: 'github.com/sQVe/tau', pr: 7, ...input },
-      undefined,
-      undefined,
-      noUiContext(root),
-    );
-
-    return result.details as Record<string, unknown> & { directory: string; stateToken: string };
-  };
-
-  return { root, fake, read };
-};
-
-const feedbackDirectories = (root: string) =>
-  readdir(join(root, '.tau', 'pr-feedback')).catch((error: unknown) => {
-    if (isMissingFile(error)) {
-      return [];
-    }
-
-    throw error;
-  });
-
-const holdFeedback = (fake: GhFake) => {
-  fake.threads = [
-    thread({
-      id: 'thread-resolved',
-      isResolved: true,
-      comments: [{ id: 90, author: person, body: 'Fixed already.' }],
-    }),
-    thread({
-      id: 'thread-open',
-      line: null,
-      isOutdated: true,
-      viewerCanResolve: false,
-      comments: [
-        { id: 101, author: person, body: 'Rename this.' },
-        { id: 102, author: { login: 'sqve', bot: false }, body: 'Will do.' },
-        { id: 103, author: bot, body: 'Agreed.' },
-      ],
-    }),
-  ];
-
-  fake.reviews = [
-    { id: 201, author: bot, state: 'COMMENTED', body: 'Summary of the changes.' },
-    { id: 202, author: person, state: 'APPROVED', body: '' },
-  ];
-
-  fake.comments = [{ id: 301, author: person, body: 'Can this land today?' }];
-};
+const commandName = (call: ExecCall) => call.commandArguments.slice(0, 2).join(' ');
 
 describe('read', () => {
   it('returns the unresolved threads, reviews with a body, and conversation comments', async () => {
@@ -107,6 +31,14 @@ describe('read', () => {
         url: 'https://github.com/sQVe/tau/pull/7',
         author: 'sqve',
         headRefOid: 'abc123',
+        state: 'OPEN',
+        baseRefName: 'main',
+        headRefName: 'feature',
+        headRepository: 'tau',
+        headRepositoryOwner: 'sQVe',
+        isCrossRepository: false,
+        maintainerCanModify: false,
+        mergeable: 'MERGEABLE',
       },
       threads: [
         {
@@ -282,9 +214,116 @@ describe('read', () => {
     expect(second.directory).not.toBe(first.directory);
     expect(third.stateToken).not.toBe(first.stateToken);
   });
+
+  it('reads the pull request again while mergeable is UNKNOWN', async () => {
+    const { fake, read } = await setUp();
+
+    fake.nextMergeable = ['UNKNOWN', 'MERGEABLE'];
+
+    const result = await read();
+    const views = fake.calls.filter((call) => commandName(call) === 'pr view');
+
+    expect(result.pr).toEqual(expect.objectContaining({ mergeable: 'MERGEABLE' }));
+    expect(views).toHaveLength(2);
+  });
+
+  it('refuses when the head moves while it rereads mergeable', async () => {
+    const { root, fake, read } = await setUp();
+
+    fake.nextHeads = ['abc123', 'def456'];
+    fake.nextMergeable = ['UNKNOWN', 'MERGEABLE'];
+
+    await expect(read()).rejects.toThrow(
+      'The pull request headRefOid changed from abc123 to def456 during the read. Read again.',
+    );
+
+    expect(await feedbackDirectories(root)).toEqual([]);
+  });
+
+  it('refuses when the base branch changes while it rereads mergeable', async () => {
+    const { root, fake, read } = await setUp();
+
+    fake.nextBases = ['main', 'release'];
+    fake.nextMergeable = ['UNKNOWN', 'MERGEABLE'];
+
+    await expect(read()).rejects.toThrow(
+      'The pull request baseRefName changed from main to release during the read. Read again.',
+    );
+
+    expect(await feedbackDirectories(root)).toEqual([]);
+  });
+
+  it('refuses when the pull request closes while it rereads mergeable', async () => {
+    const { root, fake, read } = await setUp();
+
+    fake.nextStates = ['OPEN', 'CLOSED'];
+    fake.nextMergeable = ['UNKNOWN', 'MERGEABLE'];
+
+    await expect(read()).rejects.toThrow(
+      'Pull request https://github.com/sQVe/tau/pull/7 is CLOSED, not OPEN.',
+    );
+
+    expect(await feedbackDirectories(root)).toEqual([]);
+  });
+
+  it('returns mergeable UNKNOWN after four reads that stay UNKNOWN', async () => {
+    const { fake, read } = await setUp();
+
+    fake.nextMergeable = ['UNKNOWN'];
+
+    const result = await read();
+    const views = fake.calls.filter((call) => commandName(call) === 'pr view');
+
+    expect(result.pr).toEqual(expect.objectContaining({ mergeable: 'UNKNOWN' }));
+    expect(views).toHaveLength(4);
+  });
+
+  it.each([
+    { name: 'a fork', headRepository: 'tau-fork' },
+    { name: 'a deleted fork', headRepository: null },
+  ])('returns the branches and head repository of $name', async ({ headRepository }) => {
+    const { fake, read } = await setUp();
+
+    fake.pullRequest = {
+      ...fakePullRequest(),
+      baseRefName: 'release',
+      headRefName: 'fix-typo',
+      headRepository,
+      headRepositoryOwner: 'contributor',
+      isCrossRepository: true,
+      maintainerCanModify: true,
+    };
+
+    const result = await read();
+
+    expect(result.pr).toEqual(
+      expect.objectContaining({
+        state: 'OPEN',
+        baseRefName: 'release',
+        headRefName: 'fix-typo',
+        headRepository,
+        headRepositoryOwner: 'contributor',
+        isCrossRepository: true,
+        maintainerCanModify: true,
+      }),
+    );
+  });
 });
 
 describe('read errors', () => {
+  it('fails before other gh calls when gh auth status fails', async () => {
+    const { root, fake, read } = await setUp();
+
+    fake.failCommand('auth status', 'You are not logged into any GitHub hosts.');
+
+    await expect(read()).rejects.toThrow(
+      'gh auth status --active --hostname github.com failed: You are not logged into any GitHub hosts.',
+    );
+
+    expect(fake.calls.map((call) => commandName(call))).toEqual(['auth status']);
+    expect(await feedbackDirectories(root)).toEqual([]);
+  });
+
   it('passes --hostname to every gh api call', async () => {
     const { fake, read } = await setUp();
 
@@ -302,26 +341,13 @@ describe('read errors', () => {
   });
 
   it.each([
-    { repository: 'sQVe/tau', pr: 7, error: 'repository must be <host>/<owner>/<name>' },
-    { repository: 'github.com/sQVe/tau/pulls', pr: 7, error: 'repository must be' },
-    { repository: 'github.com/sQVe/tau', pr: 0, error: 'pr must be a pull request number' },
-    { repository: 'github.com/sQVe/tau', pr: 1.5, error: 'pr must be a pull request number' },
-  ])('rejects repository $repository with pr $pr', async ({ repository, pr, error }) => {
-    const { root, fake, read } = await setUp();
-
-    await expect(read({ repository, pr })).rejects.toThrow(error);
-    expect(fake.calls).toEqual([]);
-    expect(await feedbackDirectories(root)).toEqual([]);
-  });
-
-  it.each([
     {
       name: 'a missing pull request',
       arrange: (fake: GhFake) => {
         fake.pullRequest = undefined;
       },
       error:
-        'gh pr view 7 --repo github.com/sQVe/tau --json number,url,state,author,headRefOid failed: no pull requests found',
+        'gh pr view 7 --repo github.com/sQVe/tau --json number,url,state,author,headRefOid,baseRefName,headRefName,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify,mergeable failed: no pull requests found',
     },
     {
       name: 'a failing gh call',
@@ -378,7 +404,7 @@ describe('read errors', () => {
     {
       name: 'a pull request that is not open',
       arrange: (fake: GhFake) => {
-        fake.pullRequest = { number: 7, state: 'MERGED', author: 'sqve', headRefOid: 'abc123' };
+        fake.pullRequest = { ...fakePullRequest(), state: 'MERGED' };
       },
       error: 'Pull request https://github.com/sQVe/tau/pull/7 is MERGED, not OPEN.',
     },
@@ -398,148 +424,5 @@ describe('read errors', () => {
 
     await expect(read()).rejects.toThrow(error);
     expect(await feedbackDirectories(root)).toEqual([]);
-  });
-});
-
-const threadPage = (node: unknown) => [
-  { data: { repository: { pullRequest: { reviewThreads: { nodes: [node] } } } } },
-];
-
-describe('read output of the wrong shape', () => {
-  const author = { login: 'reviewer', typename: 'User' };
-
-  const threadNode = (change: Record<string, unknown> = {}) => ({
-    id: 'thread-1',
-    isResolved: false,
-    isOutdated: false,
-    path: 'src/tau.ts',
-    line: 12,
-    viewerCanReply: true,
-    viewerCanResolve: true,
-    comments: {
-      pageInfo: { hasNextPage: false },
-      nodes: [
-        {
-          databaseId: 101,
-          author,
-          body: 'Rename this.',
-          url: 'u',
-          createdAt: 'c',
-          updatedAt: 'u',
-        },
-      ],
-    },
-    ...change,
-  });
-
-  const pullRequest = {
-    number: 7,
-    url: 'https://github.com/sQVe/tau/pull/7',
-    state: 'OPEN',
-    author: { login: 'sqve' },
-    headRefOid: 'abc123',
-  };
-
-  it.each([
-    { key: 'user' as const, output: {} },
-    { key: 'pr view' as const, output: {} },
-    { key: 'pr view' as const, output: { ...pullRequest, author: {} } },
-    { key: 'graphql' as const, output: threadPage(threadNode({ comments: { nodes: [] } })) },
-    {
-      key: 'graphql' as const,
-      output: threadPage(
-        threadNode({
-          comments: {
-            pageInfo: {},
-            nodes: [
-              {
-                databaseId: 101,
-                author,
-                body: 'b',
-                url: 'u',
-                createdAt: 'c',
-                updatedAt: 'u',
-              },
-            ],
-          },
-        }),
-      ),
-    },
-    {
-      key: 'graphql' as const,
-      output: threadPage(
-        threadNode({
-          comments: {
-            pageInfo: { hasNextPage: false },
-            nodes: [
-              {
-                databaseId: 101,
-                author: {},
-                body: 'b',
-                url: 'u',
-                createdAt: 'c',
-                updatedAt: 'u',
-              },
-            ],
-          },
-        }),
-      ),
-    },
-    { key: 'reviews' as const, output: [[{}]] },
-    {
-      key: 'reviews' as const,
-      output: [[{ id: 1, user: {}, state: 'COMMENTED', body: 'b', html_url: 'u' }]],
-    },
-    { key: 'comments' as const, output: [[{ id: 1, user: {}, body: 'b', html_url: 'u' }]] },
-  ])('refuses the $key output $output and creates no directory', async ({ key, output }) => {
-    const { root, fake, read } = await setUp();
-
-    holdFeedback(fake);
-    fake.overrideOutput(key, JSON.stringify(output));
-
-    await expect(read()).rejects.toThrow('printed unexpected output');
-    expect(await feedbackDirectories(root)).toEqual([]);
-  });
-});
-
-const validated = (tool: ReturnType<typeof createPrFeedbackTool>, call: unknown) =>
-  validateToolArguments(tool, {
-    type: 'toolCall',
-    id: 'call',
-    name: tool.name,
-    arguments: call as ToolCall['arguments'],
-  }) as PrFeedbackInput;
-
-describe('tool arguments', () => {
-  it.each([
-    { call: {} },
-    { call: { action: 'merge' } },
-    { call: { action: 'read', repository: 'github.com/sQVe/tau', pr: 0 } },
-    { call: { action: 'read', repository: {}, pr: 7 } },
-    { call: { action: 'post', directory: {} } },
-    { call: { action: 'post', stateToken: [] } },
-    { call: { action: 'checks', head: {} } },
-  ])('refuses the arguments $call before anything runs', async ({ call }) => {
-    const { root, fake } = await setUp();
-    const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
-
-    expect(() => validated(tool, call)).toThrow(Error);
-    expect(fake.calls).toEqual([]);
-    expect(await feedbackDirectories(root)).toEqual([]);
-  });
-
-  it('accepts the arguments of a read and runs it', async () => {
-    const { root, fake } = await setUp();
-    const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
-
-    const parameters = validated(tool, {
-      action: 'read',
-      repository: 'github.com/sQVe/tau',
-      pr: 7,
-    });
-
-    await tool.execute('call', parameters, undefined, undefined, noUiContext(root));
-
-    expect(await feedbackDirectories(root)).toHaveLength(1);
   });
 });

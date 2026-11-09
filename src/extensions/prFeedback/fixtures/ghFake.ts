@@ -2,6 +2,8 @@ import { createExecFake, failedResult, succeededResult } from '../../../../tests
 import type { ExecCall, ExecResult } from '../../../../tests/execFake.js';
 import type { Exec } from '../../../command.js';
 import type { GroupExec } from '../../../process/process.js';
+import { trunkRunJobs, trunkRunList } from './trunkRunsFake.js';
+import type { FakeTrunkRun } from './trunkRunsFake.js';
 
 interface FakeAuthor {
   login: string;
@@ -35,6 +37,14 @@ interface FakePullRequest {
   state: string;
   author: string;
   headRefOid: string;
+  baseRefName: string;
+  headRefName: string;
+  // null is a deleted fork.
+  headRepository: string | null;
+  headRepositoryOwner: string;
+  isCrossRepository: boolean;
+  maintainerCanModify: boolean;
+  mergeable: string;
 }
 
 export interface FakeCheck {
@@ -49,7 +59,16 @@ export interface FakeCheck {
 // means Pi stopped gh after it printed the log.
 type FakeJobLog = { log: string; killed?: boolean } | { code: number; stderr: string };
 
-type ReadKey = 'user' | 'pr view' | 'pr checks' | 'graphql' | 'reviews' | 'comments';
+type ReadKey =
+  | 'auth status'
+  | 'user'
+  | 'pr view'
+  | 'pr checks'
+  | 'run list'
+  | 'run jobs'
+  | 'graphql'
+  | 'reviews'
+  | 'comments';
 
 type WriteKey = 'reply' | 'resolve' | 'issue comment';
 
@@ -70,6 +89,12 @@ export interface GhFake {
   pullRequest: FakePullRequest | undefined;
   // Each gh pr view moves the head to the next SHA here first, as a push between reads does.
   nextHeads: string[];
+  // Each gh pr view moves mergeable to the next value here first. The last value stays.
+  nextMergeable: string[];
+  // Each gh pr view moves state to the next value here first, as a close between reads does.
+  nextStates: string[];
+  // Each gh pr view moves the base branch to the next value here first, as a retarget does.
+  nextBases: string[];
   threads: FakeThread[];
   reviews: FakeReview[];
   comments: FakeComment[];
@@ -79,7 +104,11 @@ export interface GhFake {
   checksExitCode: number;
   // Pi stops gh pr checks after it printed the list.
   checksKilled: boolean;
+  // Pi stops gh run list after it printed the list.
+  trunkRunsKilled: boolean;
   jobLogs: Record<string, FakeJobLog>;
+  // Newest first, as gh run list prints them.
+  trunkRuns: FakeTrunkRun[];
   overrideOutput: (key: CommandKey, stdout: string) => void;
   failCommand: (key: CommandKey, stderr?: string) => void;
   failWrite: (number: number) => void;
@@ -117,12 +146,18 @@ const writeKey = (commandArguments: readonly string[]): WriteKey | undefined => 
 };
 
 const subcommandKeys: Record<string, CommandKey> = {
+  'auth status': 'auth status',
   'pr view': 'pr view',
   'pr checks': 'pr checks',
+  'run list': 'run list',
   'run view': 'run view',
 };
 
 const readKey = (commandArguments: readonly string[]): CommandKey | undefined => {
+  if (commandArguments.slice(0, 2).join(' ') === 'run view' && commandArguments.includes('jobs')) {
+    return 'run jobs';
+  }
+
   const subcommandKey = subcommandKeys[commandArguments.slice(0, 2).join(' ')];
 
   if (subcommandKey !== undefined) {
@@ -164,6 +199,20 @@ export const groupExecOf =
 
     return exec(command, commandArguments, { cwd, ...(signal === undefined ? {} : { signal }) });
   };
+
+export const fakePullRequest = (): FakePullRequest => ({
+  number: 7,
+  state: 'OPEN',
+  author: 'sqve',
+  headRefOid: 'abc123',
+  baseRefName: 'main',
+  headRefName: 'feature',
+  headRepository: 'tau',
+  headRepositoryOwner: 'sQVe',
+  isCrossRepository: false,
+  maintainerCanModify: false,
+  mergeable: 'MERGEABLE',
+});
 
 export const createGhFake = (): GhFake => {
   const failingWrites = new Set<number>();
@@ -262,14 +311,40 @@ export const createGhFake = (): GhFake => {
       fake.pullRequest.headRefOid = nextHead;
     }
 
-    const { number, state, author, headRefOid } = fake.pullRequest;
+    const nextMergeable = fake.nextMergeable.shift();
+
+    if (nextMergeable !== undefined) {
+      fake.pullRequest.mergeable = nextMergeable;
+    }
+
+    const nextState = fake.nextStates.shift();
+
+    if (nextState !== undefined) {
+      fake.pullRequest.state = nextState;
+    }
+
+    const nextBase = fake.nextBases.shift();
+
+    if (nextBase !== undefined) {
+      fake.pullRequest.baseRefName = nextBase;
+    }
+
+    const { number, author, headRepository, headRepositoryOwner, ...fields } = fake.pullRequest;
 
     return {
+      ...fields,
       number,
       url: `https://${repository}/pull/${number}`,
-      state,
       author: { login: author, is_bot: false },
-      headRefOid,
+      headRepository:
+        headRepository === null
+          ? null
+          : {
+              id: 'R_1',
+              name: headRepository,
+              nameWithOwner: `${headRepositoryOwner}/${headRepository}`,
+            },
+      headRepositoryOwner: { id: 'U_1', login: headRepositoryOwner },
     };
   };
 
@@ -290,10 +365,13 @@ export const createGhFake = (): GhFake => {
       html_url: `https://${repository}/pull/7#issuecomment-${comment.id}`,
     }));
 
-  const responses: Record<ReadKey, () => unknown> = {
+  const responses: Record<ReadKey, (commandArguments: readonly string[]) => unknown> = {
+    'auth status': () => ({ hosts: {} }),
     user: () => ({ login: fake.viewer, type: 'User' }),
     'pr view': pullRequest,
     'pr checks': () => fake.checks,
+    'run list': (commandArguments) => trunkRunList(fake.trunkRuns, repository, commandArguments),
+    'run jobs': (commandArguments) => trunkRunJobs(fake.trunkRuns, commandArguments),
     graphql: threadPages,
     reviews: () => pages(reviewItems()),
     comments: () => pages(commentItems()),
@@ -323,7 +401,9 @@ export const createGhFake = (): GhFake => {
   };
 
   const respond = (key: Exclude<CommandKey, 'run view'>, commandArguments: readonly string[]) =>
-    JSON.stringify(isWriteKey(key) ? writers[key](commandArguments) : responses[key]());
+    JSON.stringify(
+      isWriteKey(key) ? writers[key](commandArguments) : responses[key](commandArguments),
+    );
 
   const answer = (key: Exclude<CommandKey, 'run view'>, commandArguments: readonly string[]) => {
     if (isWriteKey(key)) {
@@ -352,6 +432,10 @@ export const createGhFake = (): GhFake => {
         };
       }
 
+      if (key === 'run list') {
+        return { ...succeededResult(stdout), killed: fake.trunkRunsKilled };
+      }
+
       return succeededResult(stdout);
     } catch (error) {
       return failedResult((error as Error).message);
@@ -376,8 +460,11 @@ export const createGhFake = (): GhFake => {
     commandGroup: undefined,
     calls: shared.calls,
     viewer: 'sqve',
-    pullRequest: { number: 7, state: 'OPEN', author: 'sqve', headRefOid: 'abc123' },
+    pullRequest: fakePullRequest(),
     nextHeads: [],
+    nextMergeable: [],
+    nextStates: [],
+    nextBases: [],
     threads: [],
     reviews: [],
     comments: [],
@@ -385,7 +472,9 @@ export const createGhFake = (): GhFake => {
     checks: [],
     checksExitCode: 0,
     checksKilled: false,
+    trunkRunsKilled: false,
     jobLogs: {},
+    trunkRuns: [],
     overrideOutput: shared.overrideOutput,
     failCommand: shared.failCommand,
     failWrite: (number) => {

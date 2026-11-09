@@ -1,4 +1,5 @@
 import { Type } from 'typebox';
+import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
 import type { CommandRuntime } from '../../command.js';
@@ -9,11 +10,17 @@ import { describeSchemaProblem } from '../../schema.js';
 import {
   boundChecks,
   checkListEvidence,
+  commandGap,
   commandResult,
+  failedCommandReason,
   failedLogEvidence,
+  failedTrunkRuns,
+  gapsOf,
   isFailing,
+  isTrunkMatch,
   jobOf,
   logCharacterBudget,
+  parseOutput,
   unreadableLinkGap,
 } from './checkEvidence.js';
 import type {
@@ -21,10 +28,17 @@ import type {
   CheckGap,
   CheckItem,
   CheckListValidation,
+  CommandResult,
   LogExcerpt,
   PullRequestChecks,
+  TrunkMatch,
 } from './checkEvidence.js';
 import { readPullRequest } from './github.js';
+
+interface TrunkEvidence {
+  trunkMatches: TrunkMatch[];
+  trunkGaps?: CheckGap[];
+}
 
 const checkListSchema = Type.Array(
   Type.Object({
@@ -41,6 +55,21 @@ const checkListSchema = Type.Array(
     link: Type.String(),
   }),
 );
+
+const trunkRunListSchema = Type.Array(
+  Type.Object({
+    databaseId: Type.Integer(),
+    conclusion: Type.String(),
+    headSha: Type.String(),
+    url: Type.String(),
+  }),
+);
+
+const trunkRunJobsSchema = Type.Object({
+  jobs: Type.Array(Type.Object({ name: Type.String(), conclusion: Type.String() })),
+});
+
+const trunkRunLimit = 5;
 
 const validateCheckList: CheckListValidation = (value) =>
   Value.Check(checkListSchema, value)
@@ -91,11 +120,105 @@ const readFailedLog = async (
   return failedLogEvidence(check, result, remainingCharacters);
 };
 
+const outputEvidence = <Schema extends TSchema>(
+  check: CheckItem,
+  result: CommandResult,
+  schema: Schema,
+): { value: Static<Schema> } | { gap: CheckGap } => {
+  if (result.code !== 0 || result.killed) {
+    return { gap: commandGap(check.name, result, failedCommandReason(result)) };
+  }
+
+  const parsed = parseOutput(result.stdout, (value) =>
+    Value.Check(schema, value)
+      ? { value }
+      : { problem: `printed unexpected output: ${describeSchemaProblem(schema, value)}` },
+  );
+
+  return 'problem' in parsed
+    ? { gap: commandGap(check.name, result, `${result.command} ${parsed.problem}`) }
+    : parsed;
+};
+
+const runListArguments = (repository: Repository, trunk: string, workflow: string) => [
+  'run',
+  'list',
+  '--repo',
+  formatRepository(repository),
+  '--branch',
+  trunk,
+  '--workflow',
+  workflow,
+  '--limit',
+  String(trunkRunLimit),
+  '--json',
+  'databaseId,conclusion,headSha,url',
+];
+
+const runJobsArguments = (repository: Repository, run: number) => [
+  'run',
+  'view',
+  String(run),
+  '--repo',
+  formatRepository(repository),
+  '--json',
+  'jobs',
+];
+
+// Reads the latest trunk runs of each failing check's workflow and the jobs of its failed runs.
+// Caches each command's result, failed ones included, so a workflow or a run is read once.
+const createTrunkReader = (runtime: CommandRuntime, repository: Repository, trunk: string) => {
+  const results = new Map<string, CommandResult>();
+
+  const read = async (commandArguments: string[]) => {
+    const key = commandArguments.join(' ');
+    const cached = results.get(key);
+
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const result = commandResult(commandArguments, await runOutcome(runtime, commandArguments));
+
+    results.set(key, result);
+
+    return result;
+  };
+
+  return async (check: CheckItem): Promise<TrunkEvidence> => {
+    const listResult = await read(runListArguments(repository, trunk, check.workflow));
+    const runs = outputEvidence(check, listResult, trunkRunListSchema);
+
+    if ('gap' in runs) {
+      return { trunkMatches: [], trunkGaps: [runs.gap] };
+    }
+
+    const trunkMatches: TrunkMatch[] = [];
+    const trunkGaps: CheckGap[] = [];
+
+    for (const run of failedTrunkRuns(runs.value)) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- One gh run view at a time, as for logs.
+      const jobsResult = await read(runJobsArguments(repository, run.databaseId));
+      const jobs = outputEvidence(check, jobsResult, trunkRunJobsSchema);
+
+      if ('gap' in jobs) {
+        trunkGaps.push(jobs.gap);
+      } else if (isTrunkMatch(check.name, jobs.value.jobs)) {
+        trunkMatches.push({ url: run.url, headSha: run.headSha });
+      }
+    }
+
+    return trunkGaps.length === 0 ? { trunkMatches } : { trunkMatches, trunkGaps };
+  };
+};
+
+type TrunkReader = ReturnType<typeof createTrunkReader>;
+
 const readCheck = async (
   runtime: CommandRuntime,
   repository: Repository,
   check: CheckItem,
-  remainingCharacters: number,
+  evidence: { remainingCharacters: number; readTrunk: TrunkReader },
 ): Promise<Check> => {
   const { name, workflow, bucket, state, link } = check;
   const metadata = { name, workflow, bucket, state, link };
@@ -104,7 +227,13 @@ const readCheck = async (
     return metadata;
   }
 
-  return { ...metadata, ...(await readFailedLog(runtime, repository, check, remainingCharacters)) };
+  const log = await readFailedLog(runtime, repository, check, evidence.remainingCharacters);
+
+  if (jobOf(repository, link) === undefined) {
+    return { ...metadata, ...log };
+  }
+
+  return { ...metadata, ...log, ...(await evidence.readTrunk(check)) };
 };
 
 // gh pr checks reads the live head, so a push during the read can mix in another head's checks.
@@ -121,19 +250,22 @@ const requireHead = async (
       `The pull request head is ${pullRequest.headRefOid}, not ${head}. The checks may belong to another head. Read the pull request again.`,
     );
   }
+
+  return pullRequest;
 };
 
-// Reads the checks of a pull request at head and the failed-step logs of its failing jobs. Writes
-// nothing. Returns a gap for each piece of evidence it could not read instead of failing, and
-// throws when the head is not head before or after the check list.
+// Reads the checks of a pull request at head, the failed-step logs of its failing jobs, and the
+// trunk runs where the same jobs failed. trunk defaults to the base branch. Writes nothing.
+// Returns a gap for each piece of evidence it could not read instead of failing, and throws when
+// the head is not head before or after the check list.
 export const readChecks = async (
   runtime: CommandRuntime,
   repository: Repository,
-  pull: { pr: number; head: string },
+  pull: { pr: number; head: string; trunk: string | undefined },
 ): Promise<PullRequestChecks> => {
   const { pr, head } = pull;
-
-  await requireHead(runtime, repository, pr, head);
+  const pullRequest = await requireHead(runtime, repository, pr, head);
+  const readTrunk = createTrunkReader(runtime, repository, pull.trunk ?? pullRequest.baseRefName);
 
   const list = await readCheckList(runtime, repository, pr);
 
@@ -148,13 +280,16 @@ export const readChecks = async (
 
   for (const check of list.checks) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- One gh run view at a time, so many failing jobs start no burst of calls.
-    const evidence = await readCheck(runtime, repository, check, remainingCharacters);
+    const evidence = await readCheck(runtime, repository, check, {
+      remainingCharacters,
+      readTrunk,
+    });
 
     checks.push(evidence);
     remainingCharacters -= evidence.log?.excerpt.length ?? 0;
   }
 
-  const gaps = checks.flatMap((check) => (check.gap === undefined ? [] : [check.gap]));
+  const gaps = checks.flatMap((check) => gapsOf(check));
 
   return boundChecks({ pr, checks, gaps }, repository, head);
 };

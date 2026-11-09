@@ -46,26 +46,25 @@ see for themselves.
 ## Procedure
 
 1. Resolve the target.
+   - Use `<host>/<owner>/<name>` as `<repo>`, and pass `--hostname <host>` to every `gh api` call.
    - Take the PR from the request. Otherwise, when the stack skill finds the current branch in a
-     stack, read each open PR's `mergeable` with the `gh pr view` command below and run the evidence
-     script for it. List the PRs with a conflict, failing checks, gaps, or comments that step 3
-     keeps, and ask which to handle with `ask_user_question`. Otherwise use
-     `gh pr view --json number` on the current branch. Ask when nothing gives a PR.
-   - Run `gh auth status --active --hostname <host>` and stop if it fails. Use
-     `<host>/<owner>/<name>` as `<repo>`, and pass `--hostname <host>` to every `gh api` call.
-   - Read the PR with
-     `gh pr view <pr> --repo <repo> --json number,url,state,baseRefName,headRefName,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify,mergeable,mergeStateStatus`.
-     Stop unless the state is `OPEN`.
-   - `mergeable` reads `UNKNOWN` while GitHub computes it. Read it again up to three times. If it
-     stays `UNKNOWN`, report it and skip the rebase.
+     stack, run the evidence script for each open PR. List the PRs with a `mergeable` of
+     `CONFLICTING`, failing checks, gaps, or comments that step 3 keeps, and ask which to handle
+     with `ask_user_question`. Otherwise run
+     `gh pr list --repo <repo> --head <branch> --state open --json number,headRepository,headRepositoryOwner`
+     for the current branch. Keep only PRs whose head owner and repository name match the remote
+     that `git rev-parse --abbrev-ref @{push}` names, since another fork can use the same branch
+     name. Ask when none or several remain.
    - Gather the evidence with one read-only `codemode` script. It calls the `pr_feedback` tool's
-     `read` with `<repo>` and the PR number, then `checks` with `read`'s `headRefOid` as `head`.
-     When `read` fails, it skips `checks` and records that as a gap. It returns each call's status,
-     the viewer, the author, `headRefOid`, the `bodies` notice, the threads, reviews, and comments,
-     `stateToken`, `directory`, the `feedback` path, the checks with their failed-log excerpts, and
-     one list of gaps: every gap from `read` and `checks`, and the error of a call that failed or
-     did not run. The script never calls `post`, and writes nothing beyond the directory `read`
-     creates.
+     `read` with `<repo>` and the PR number, then `checks` with `read`'s `pr.headRefOid` as `head`,
+     and the stack's `trunk` as `trunk` when the PR is in a stack. When `read` fails, it skips
+     `checks` and records that as a gap. It returns each call's status, the viewer, `read`'s `pr`
+     fields, the `bodies` notice, the threads, reviews, and comments, `stateToken`, `directory`, the
+     `feedback` path, the checks with their failed-log excerpts and `trunkMatches`, and one list of
+     gaps: every gap from `read` and `checks`, and the error of a call that failed or did not run.
+     The script never calls `post`, and writes nothing beyond the directory `read` creates.
+   - Stop unless `pr.state` is `OPEN`. When `pr.mergeable` is `UNKNOWN`, report it and skip the
+     rebase.
    - `read` omits a thread the viewer started while every comment in it is by the viewer, such as a
      self-review comment. It lists the thread once anyone else replies. This holds in both modes.
    - When gaps show omitted feedback, use the read tool on the returned `feedback.json` path before
@@ -100,15 +99,13 @@ see for themselves.
      from us. It does not when our reply settled it and the reviewer has not pushed back. It does
      again when the reviewer answered, or when our reply promised a fix that is not in the code.
    - Author mode, failing checks: each check from the script with `bucket` `fail` or `cancel` is a
-     finding. Judge it from its log. When `omittedLines` is above zero, first read the whole failed
-     log with `gh run view <run> --repo <repo> --job <job> --log-failed`, using the run and job IDs
-     in the check's `link`. A check with a gap stays unread.
-     - Compare with the trunk, which is `baseRefName`, or the stack's `trunk` when the PR is in a
-       stack:
-       `gh run list --repo <repo> --branch <trunk> --workflow <workflow> --limit 5 --json conclusion,headSha,url`.
-       A failed trunk run counts only when its log for the same job shows the same failure. Read it
-       with `gh run view <run> --repo <repo> --log-failed`. In a stack, also compare with the script
-       results of the PRs below. Run the script for each PR below that step 1 did not cover.
+     finding. Judge it from its log. When `omittedLines` or `omittedCharacters` is above zero, first
+     read the whole failed log with the log's `command`. A check with a gap stays unread.
+     - Compare with the trunk through the check's `trunkMatches`, the trunk runs where a job of the
+       same name failed. A match counts only when its log for the same job shows the same failure.
+       Read it with `gh run view <run> --repo <repo> --log-failed`, using the run ID in the match's
+       `url`. A check with `trunkGaps` has unread trunk runs. In a stack, also compare with the
+       script results of the PRs below. Run the script for each PR below that step 1 did not cover.
      - A failure belongs to the PR only when its cause is in the PR's own commits and still in the
        pinned code. Fetch the base repository's remote and list those commits with
        `git log --oneline HEAD --not <base remote>/<baseRefName>`. In a stack, add the branch's

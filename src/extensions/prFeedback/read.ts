@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import type { CommandRuntime } from '../../command.js';
+import { checkAuth } from '../../github/github.js';
 import type { Repository } from '../../github/github.js';
 import { formatRepository } from '../../github/repositoryTargetDecisions.js';
 import {
@@ -10,6 +11,9 @@ import {
   readThreads,
   readViewer,
 } from './github.js';
+import type { PullRequest } from './github.js';
+import { snapshotChange } from './snapshotChange.js';
+import type { PullRequestSnapshot } from './snapshotChange.js';
 import {
   conversationComments,
   rejectLongThreads,
@@ -21,19 +25,89 @@ import type { Comment, Review, Thread } from './threads.js';
 
 export interface PullRequestFeedback {
   viewer: string;
-  pr: { number: number; url: string; author: string; headRefOid: string };
+  pr: {
+    number: number;
+    url: string;
+    author: string;
+    headRefOid: string;
+    state: string;
+    baseRefName: string;
+    headRefName: string;
+    headRepository: string | null;
+    headRepositoryOwner: string;
+    isCrossRepository: boolean;
+    maintainerCanModify: boolean;
+    mergeable: string;
+  };
   threads: Thread[];
   reviews: Review[];
   comments: Comment[];
   stateToken: string;
 }
 
-// Reads the pull request and its feedback once. Writes nothing.
+const mergeableRereads = 3;
+
+const requireOpen = (pullRequest: PullRequest) => {
+  if (pullRequest.state !== 'OPEN') {
+    throw new Error(`Pull request ${pullRequest.url} is ${pullRequest.state}, not OPEN.`);
+  }
+};
+
+const pullRequestFields = (pullRequest: PullRequest): PullRequestSnapshot => ({
+  number: pullRequest.number,
+  url: pullRequest.url,
+  author: pullRequest.author.login,
+  headRefOid: pullRequest.headRefOid,
+  state: pullRequest.state,
+  baseRefName: pullRequest.baseRefName,
+  headRefName: pullRequest.headRefName,
+  headRepository: pullRequest.headRepository?.name ?? null,
+  headRepositoryOwner: pullRequest.headRepositoryOwner.login,
+  isCrossRepository: pullRequest.isCrossRepository,
+  maintainerCanModify: pullRequest.maintainerCanModify,
+});
+
+const requireUnchanged = (first: PullRequest, current: PullRequest) => {
+  const change = snapshotChange(pullRequestFields(first), pullRequestFields(current));
+
+  if (change !== undefined) {
+    throw new Error(
+      `The pull request ${change.field} changed from ${String(change.before)} to ${String(change.after)} during the read. Read again.`,
+    );
+  }
+};
+
+// GitHub computes mergeable in the background and reports UNKNOWN until it is done. A reread
+// that shows a closed pull request or any other changed field refuses, because the rest of the
+// read belongs to the first read.
+const settleMergeable = async (
+  runtime: CommandRuntime,
+  repository: Repository,
+  pullRequest: PullRequest,
+): Promise<string> => {
+  let { mergeable } = pullRequest;
+
+  for (let reread = 0; reread < mergeableRereads && mergeable === 'UNKNOWN'; reread += 1) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Each read waits for GitHub to settle mergeable.
+    const current = await readPullRequest(runtime, repository, pullRequest.number);
+
+    requireOpen(current);
+    requireUnchanged(pullRequest, current);
+
+    ({ mergeable } = current);
+  }
+
+  return mergeable;
+};
+
+// Reads the pull request and its feedback once, and rereads only mergeable. Writes nothing.
 export const readFeedback = async (
   runtime: CommandRuntime,
   repository: Repository,
   pr: number,
 ): Promise<PullRequestFeedback> => {
+  await checkAuth(runtime, repository.host);
+
   const [viewer, pullRequest, threadNodes, reviewItems, commentItems] = await Promise.all([
     readViewer(runtime, repository),
     readPullRequest(runtime, repository, pr),
@@ -42,11 +116,11 @@ export const readFeedback = async (
     readIssueComments(runtime, repository, pr),
   ]);
 
-  if (pullRequest.state !== 'OPEN') {
-    throw new Error(`Pull request ${pullRequest.url} is ${pullRequest.state}, not OPEN.`);
-  }
+  requireOpen(pullRequest);
 
   rejectLongThreads(threadNodes);
+
+  const mergeable = await settleMergeable(runtime, repository, pullRequest);
 
   const feedback = { viewer, threads: threadNodes, reviews: reviewItems, comments: commentItems };
 
@@ -56,12 +130,7 @@ export const readFeedback = async (
 
   return {
     viewer,
-    pr: {
-      number: pullRequest.number,
-      url: pullRequest.url,
-      author: pullRequest.author.login,
-      headRefOid: pullRequest.headRefOid,
-    },
+    pr: { ...pullRequestFields(pullRequest), mergeable },
     threads: unresolvedThreads(feedback),
     reviews: reviewsWithBody(feedback),
     comments: conversationComments(feedback),

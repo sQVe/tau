@@ -38,23 +38,25 @@ export const prFeedbackToolParameters = Type.Object({
       description: 'post, checks: the SHA the pull request head must be at.',
     }),
   ),
+  trunk: Type.Optional(Type.String({ description: 'checks: the trunk branch.' })),
 });
 
 export type PrFeedbackInput = Static<typeof prFeedbackToolParameters>;
 
-const description = `Read a pull request's review feedback and checks on GitHub and post replies to it. Call it as the pr-feedback skill directs.
-- read {repository, pr}: repository is <host>/<owner>/<name>, such as github.com/sQVe/tau. It saves the full feedback in <directory>/feedback.json, where each comment or review body is an array of chunks; join them with no separator to restore the body. Returns {bodies, directory, feedback, viewer, pr {number, url, author, headRefOid}, threads, reviews, comments, stateToken, gaps}.
-  - threads: unresolved threads only, each {id, path, line, isOutdated, viewerCanReply, viewerCanResolve, replyTo (the first comment's ID, to reply to), fromPerson (any comment not by a bot), startedByViewer, comments [{id, author, isBot, body, url, createdAt, updatedAt}]}. A thread the viewer started is left out while every comment in it is by the viewer.
-  - reviews: each {id, author, isBot, state, body, url}. comments: each {id, author, isBot, body, url}. author null is a deleted account, which counts as a person.
-  - The result is capped. gaps names each cut: {kind: truncatedBody, list, id, kept, total} or {kind: truncatedList, list, kept, total}. Read feedback.json for the omitted evidence.
+const description = `Read a GitHub pull request's feedback and checks, and post replies, as the pr-feedback skill directs.
+- read {repository, pr}: saves the full feedback in <directory>/feedback.json, where each body is an array of chunks to join with no separator. Returns {bodies, directory, feedback, viewer, pr, threads, reviews, comments, stateToken, gaps}.
+  - pr: {number, url, author, headRefOid, state, baseRefName, headRefName, headRepository (name, or null), headRepositoryOwner (login), isCrossRepository, maintainerCanModify, mergeable (may stay UNKNOWN)}.
+  - threads: unresolved threads only, each {id, path, line, isOutdated, viewerCanReply, viewerCanResolve, replyTo (the first comment's ID), fromPerson (any comment not by a bot), startedByViewer, comments [{id, author, isBot, body, url, createdAt, updatedAt}]}. Threads with only viewer comments are left out.
+  - reviews: each {id, author, isBot, state, body, url}. comments: each {id, author, isBot, body, url}. author null is a deleted account and counts as a person.
+  - The result is capped; gaps names each cut, {kind: truncatedBody|truncatedList, list, id (bodies only), kept, total}. feedback.json holds the rest.
   - stateToken changes when a person other than the viewer adds, edits, or deletes a comment.
-- checks {repository, pr, head}: head is the SHA the checks must belong to, such as read's pr.headRefOid. Returns {pr, checks, gaps}.
-  - checks: each {name, workflow, bucket, state, link}. bucket is pass, fail, pending, skipping, or cancel. A fail or cancel check has log {excerpt, omittedLines} or a gap. A log cut by the shared budget also has budgetLimited: true and command, which reads the full log.
-  - An omitted-checks gap has a command that reads them at the validated head.
-  - gaps: one {check, command, code, stderr, reason} per piece of evidence the tool could not read. When gh pr checks fails without usable JSON, checks is empty and one gap has check null. A gap means unread evidence, never a passing check.
-- post {directory, stateToken, head}: directory and stateToken come from read. head is the SHA the pull request head must be at: the round's push, or pr.headRefOid when the round pushed nothing. Write <directory>/replies.json first:
+- checks {repository, pr, head, trunk}: head is the SHA the checks must belong to (read's pr.headRefOid). trunk defaults to pr.baseRefName. Returns {pr, checks, gaps}.
+  - checks: each {name, workflow, bucket, state, link}. bucket is pass, fail, pending, skipping, or cancel. A fail or cancel check has log {excerpt, omittedLines, omittedCharacters} or a gap. A cut log has a command to read it whole; budgetLimited: true means the shared budget cut it.
+  - A failing Actions check has trunkMatches [{url, headSha}]: the latest five trunk runs of its workflow where a job of its name failed. Matches are candidates, not verdicts. trunkGaps lists unread trunk evidence.
+  - gaps: every {check, command, code, stderr, reason} for unread evidence, trunkGaps included; never a passing check. When the check list is unreadable, checks is empty and one gap has check null. An omitted-checks gap has a command to read them.
+- post {directory, stateToken, head}: directory and stateToken come from read. head is the SHA the PR head must be at: the round's push, or pr.headRefOid when the round pushed nothing. Write <directory>/replies.json first:
   {"version": 1, "threads": [{"id": "<thread id>", "reply": "<text or null>", "resolve": true}], "comment": {"body": "<text>", "answers": ["<review or comment id>"]}}
-  comment may be null. Posts in file order: per thread the reply, then the resolve, and the PR comment last. When any write goes to a person, it asks the user to confirm once; writes to bots post without asking. It refuses everything when the stateToken or head no longer matches, so read again. A retry with the same directory skips posted writes and reconciles uncertain ones. Returns {status: posted|declined|unchanged, posted, skipped}. declined means the user refused; unchanged means every write was already posted.`;
+  comment may be null. Only writes to a person need user confirmation, asked once. If the stateToken or head no longer matches, it posts nothing; read again. A retry with the same directory skips posted writes. Returns {status: posted, declined (the user refused), or unchanged (all were posted), posted, skipped}.`;
 
 const parsePullRequestNumber = (action: string, pr: number | undefined) => {
   if (pr === undefined) {
@@ -137,7 +139,9 @@ const checks = async (runtime: CommandRuntime, parameters: PrFeedbackInput) => {
     throw new Error('checks needs head.');
   }
 
-  return { ...(await readChecks(runtime, repository, { pr, head: parameters.head })) };
+  const pull = { pr, head: parameters.head, trunk: parameters.trunk };
+
+  return { ...(await readChecks(runtime, repository, pull)) };
 };
 
 const runAction = (

@@ -215,6 +215,53 @@ describe('post refusals', () => {
     expect(await readPosted(details.directory)).toBeUndefined();
   });
 
+  it('posts nothing when the head moves while the final check rereads mergeable', async () => {
+    const { fake, read, post } = await setUp();
+
+    fake.threads = [botThread()];
+
+    const details = await read();
+
+    await writeReplies(details.directory, {
+      version: 1,
+      threads: [replyTo('thread-bot', 'Added.')],
+      comment: null,
+    });
+
+    // The first check reads twice at abc123. The final check rereads and sees def456.
+    fake.nextHeads = ['abc123', 'abc123', 'abc123', 'def456'];
+    fake.nextMergeable = ['UNKNOWN', 'MERGEABLE', 'UNKNOWN', 'MERGEABLE'];
+
+    await expect(post(details)).rejects.toThrow(
+      /headRefOid changed from abc123 to def456.*Read again/u,
+    );
+
+    expect(fake.writes).toEqual([]);
+    expect(await readPosted(details.directory)).toBeUndefined();
+  });
+
+  it('posts nothing when the pull request closes while the final check rereads mergeable', async () => {
+    const { fake, read, post } = await setUp();
+
+    fake.threads = [botThread()];
+
+    const details = await read();
+
+    await writeReplies(details.directory, {
+      version: 1,
+      threads: [replyTo('thread-bot', 'Added.')],
+      comment: null,
+    });
+
+    // The first check reads twice while OPEN. The final check rereads and sees CLOSED.
+    fake.nextStates = ['OPEN', 'OPEN', 'OPEN', 'CLOSED'];
+    fake.nextMergeable = ['UNKNOWN', 'MERGEABLE', 'UNKNOWN', 'MERGEABLE'];
+
+    await expect(post(details)).rejects.toThrow('is CLOSED, not OPEN.');
+    expect(fake.writes).toEqual([]);
+    expect(await readPosted(details.directory)).toBeUndefined();
+  });
+
   it('posts nothing, bot writes included, without a UI to confirm a person write', async () => {
     const { fake, read, post } = await setUp();
 

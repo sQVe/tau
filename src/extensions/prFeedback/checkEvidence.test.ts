@@ -1,10 +1,15 @@
+import { execFileSync } from 'node:child_process';
+
 import { expect, it } from 'vitest';
 
 import {
   boundChecks,
   checkListEvidence,
+  commandResult,
   failedLogEvidence,
+  failedTrunkRuns,
   isFailing,
+  isTrunkMatch,
   jobOf,
 } from './checkEvidence.js';
 import type {
@@ -291,20 +296,48 @@ it.each([
     excerpt: { excerpt: 'Error: boom', omittedLines: 0 },
   },
   {
+    name: 'a log of 20000 characters on one line',
+    log: 'x'.repeat(20_000),
+    excerpt: { excerpt: 'x'.repeat(20_000), omittedLines: 0 },
+  },
+  {
     name: 'a log past 200 lines',
     log: `${logLines(5000).join('\n')}\n`,
-    excerpt: { excerpt: logLines(5000).slice(-200).join('\n'), omittedLines: 4800 },
+    excerpt: {
+      excerpt: logLines(5000).slice(-200).join('\n'),
+      omittedLines: 4800,
+      command: logCommand,
+    },
   },
   // 20 lines of 999 characters and their 19 line breaks fill 19999 characters.
   {
     name: 'a log past 20000 characters',
     log: logLines(100, 999).join('\n'),
-    excerpt: { excerpt: logLines(100, 999).slice(-20).join('\n'), omittedLines: 80 },
+    excerpt: {
+      excerpt: logLines(100, 999).slice(-20).join('\n'),
+      omittedLines: 80,
+      command: logCommand,
+    },
   },
   {
     name: 'a last line past 20000 characters',
     log: `first\n${longLastLine}`,
-    excerpt: { excerpt: longLastLine.slice(-20_000), omittedLines: 1 },
+    excerpt: {
+      excerpt: longLastLine.slice(-20_000),
+      omittedLines: 1,
+      omittedCharacters: longLastLine.length - 20_000,
+      command: logCommand,
+    },
+  },
+  {
+    name: 'a one-line log past 20000 characters',
+    log: longLastLine,
+    excerpt: {
+      excerpt: longLastLine.slice(-20_000),
+      omittedLines: 0,
+      omittedCharacters: longLastLine.length - 20_000,
+      command: logCommand,
+    },
   },
 ])('keeps a bounded excerpt of $name', ({ log, excerpt }) => {
   expect(failedLogEvidence(failingCheck, result(logCommand, { stdout: log }), 30_000)).toEqual({
@@ -313,17 +346,32 @@ it.each([
 });
 
 it.each([
-  { name: 'no remaining budget', remaining: 0, excerpt: '', omittedLines: 3, limited: true },
-  { name: 'a partial last line', remaining: 2, excerpt: 'rd', omittedLines: 2, limited: true },
-  { name: 'one full line', remaining: 5, excerpt: 'third', omittedLines: 2, limited: true },
+  {
+    name: 'no remaining budget',
+    remaining: 0,
+    excerpt: '',
+    omittedLines: 3,
+    cut: 0,
+    limited: true,
+  },
+  {
+    name: 'a partial last line',
+    remaining: 2,
+    excerpt: 'rd',
+    omittedLines: 2,
+    cut: 3,
+    limited: true,
+  },
+  { name: 'one full line', remaining: 5, excerpt: 'third', omittedLines: 2, cut: 0, limited: true },
   {
     name: 'the full log',
     remaining: 18,
     excerpt: 'first\nsecond\nthird',
     omittedLines: 0,
+    cut: 0,
     limited: false,
   },
-])('keeps the log tail with $name', ({ remaining, excerpt, omittedLines, limited }) => {
+])('keeps the log tail with $name', ({ remaining, excerpt, omittedLines, cut, limited }) => {
   const evidence = failedLogEvidence(
     failingCheck,
     result(logCommand, { stdout: 'first\nsecond\nthird\n' }),
@@ -333,6 +381,7 @@ it.each([
   const expected = {
     excerpt,
     omittedLines,
+    ...(cut === 0 ? {} : { omittedCharacters: cut }),
     ...(limited ? { budgetLimited: true, command: logCommand } : {}),
   };
 
@@ -363,4 +412,83 @@ it.each([
   expect(failedLogEvidence(failingCheck, command, 30_000)).toEqual({
     gap: { check: 'test', command: logCommand, ...gap },
   });
+});
+
+const trunkRun = (databaseId: number, conclusion: string) => ({
+  databaseId,
+  conclusion,
+  headSha: `sha-${databaseId}`,
+  url: `https://github.com/sQVe/tau/actions/runs/${databaseId}`,
+});
+
+it.each([
+  { conclusion: 'failure', failed: true },
+  { conclusion: 'success', failed: false },
+  { conclusion: 'cancelled', failed: false },
+  { conclusion: 'timed_out', failed: false },
+  { conclusion: '', failed: false },
+])(
+  'counts a trunk run with conclusion $conclusion as failed: $failed',
+  ({ conclusion, failed }) => {
+    const run = trunkRun(31, conclusion);
+
+    expect(failedTrunkRuns([run])).toEqual(failed ? [run] : []);
+  },
+);
+
+it.each([
+  { name: 'the same job failed', jobs: [{ name: 'test', conclusion: 'failure' }], match: true },
+  { name: 'another job failed', jobs: [{ name: 'lint', conclusion: 'failure' }], match: false },
+  {
+    name: 'the same job was cancelled',
+    jobs: [{ name: 'test', conclusion: 'cancelled' }],
+    match: false,
+  },
+  {
+    name: 'the same job passed',
+    jobs: [{ name: 'test', conclusion: 'success' }],
+    match: false,
+  },
+  {
+    name: 'a job whose name only contains the check name failed',
+    jobs: [{ name: 'test (ubuntu)', conclusion: 'failure' }],
+    match: false,
+  },
+  {
+    name: 'a job whose name differs in case failed',
+    jobs: [{ name: 'Test', conclusion: 'failure' }],
+    match: false,
+  },
+  {
+    name: 'one of several jobs is the same failed job',
+    jobs: [
+      { name: 'lint', conclusion: 'success' },
+      { name: 'test', conclusion: 'failure' },
+    ],
+    match: true,
+  },
+  { name: 'the run has no jobs', jobs: [], match: false },
+])('matches the check test when $name: $match', ({ jobs, match }) => {
+  expect(isTrunkMatch('test', jobs)).toBe(match);
+});
+
+const outcome = { exitCode: 1, cancelled: false, stdout: '', stderr: '' };
+
+it('quotes each unsafe argument so a POSIX shell splits the command back into its arguments', () => {
+  const commandArguments = ['run', 'list', '--workflow', "CI Tests's $HOME; `x` *", ''];
+  const { command } = commandResult(commandArguments, outcome);
+
+  const printed = execFileSync('sh', ['-c', `printf '%s\\0' ${command.slice('gh '.length)}`], {
+    encoding: 'utf8',
+  });
+
+  expect(printed.split('\0').slice(0, -1)).toEqual(commandArguments);
+});
+
+it('leaves plain arguments unquoted', () => {
+  const commandArguments = ['run', 'view', '11', '--repo', 'github.com/sQVe/tau', '--json', 'a,b'];
+
+  expect(commandResult(commandArguments, outcome).command).toBe(
+    'gh run view 11 --repo github.com/sQVe/tau --json a,b',
+  );
 });

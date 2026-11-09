@@ -21,11 +21,35 @@ export interface CheckGap {
 export interface LogExcerpt {
   excerpt: string;
   omittedLines: number;
+  // Characters cut from the start of the first kept line.
+  omittedCharacters?: number;
   budgetLimited?: true;
   command?: string;
 }
 
-export type Check = CheckItem & { log?: LogExcerpt; gap?: CheckGap };
+export interface TrunkMatch {
+  url: string;
+  headSha: string;
+}
+
+export interface TrunkRun {
+  databaseId: number;
+  conclusion: string;
+  headSha: string;
+  url: string;
+}
+
+export interface TrunkJob {
+  name: string;
+  conclusion: string;
+}
+
+export type Check = CheckItem & {
+  log?: LogExcerpt;
+  gap?: CheckGap;
+  trunkMatches?: TrunkMatch[];
+  trunkGaps?: CheckGap[];
+};
 
 interface CheckListGap extends CheckGap {
   kind: 'truncatedList';
@@ -48,8 +72,10 @@ export interface CommandResult {
   stderr: string;
 }
 
-// Checks parsed JSON against the shape gh pr checks prints, and names the problem when it differs.
-export type CheckListValidation = (value: unknown) => { checks: CheckItem[] } | { problem: string };
+// Checks parsed JSON against the shape a gh command prints, and names the problem when it differs.
+export type OutputValidation<Parsed> = (value: unknown) => Parsed | { problem: string };
+
+export type CheckListValidation = OutputValidation<{ checks: CheckItem[] }>;
 
 const excerptLineLimit = 200;
 const excerptCharacterLimit = 20_000;
@@ -66,18 +92,31 @@ const listedExitCodes = new Set([0, failingChecksExitCode, pendingChecksExitCode
 
 const jobLinkPattern = /^https:\/\/([^/]+)\/([^/]+)\/([^/]+)\/actions\/runs\/(\d+)\/job\/(\d+)$/u;
 
+const shellSafeArgument = /^[\w./:=,@%+-]+$/u;
+
+// Quotes an argument for a POSIX shell, so a caller can run the returned command as printed.
+const quoteArgument = (argument: string) =>
+  shellSafeArgument.test(argument) ? argument : `'${argument.replaceAll("'", String.raw`'\''`)}'`;
+
+const formatCommand = (commandArguments: readonly string[]) =>
+  ['gh', ...commandArguments].map((argument) => quoteArgument(argument)).join(' ');
+
 export const commandResult = (
   commandArguments: readonly string[],
   outcome: GhOutcome,
 ): CommandResult => ({
-  command: ['gh', ...commandArguments].join(' '),
+  command: formatCommand(commandArguments),
   code: outcome.exitCode,
   killed: outcome.cancelled,
   stdout: outcome.stdout,
   stderr: outcome.stderr,
 });
 
-const commandGap = (check: string | null, result: CommandResult, reason: string): CheckGap => {
+export const commandGap = (
+  check: string | null,
+  result: CommandResult,
+  reason: string,
+): CheckGap => {
   const stderr = result.stderr.trim();
 
   const gap: CheckGap = {
@@ -95,13 +134,13 @@ const commandGap = (check: string | null, result: CommandResult, reason: string)
   return gap;
 };
 
-const failedCommandReason = (result: CommandResult) =>
+export const failedCommandReason = (result: CommandResult): string =>
   result.killed ? `${result.command} was stopped.` : `${result.command} failed.`;
 
-const parseCheckList = (
+export const parseOutput = <Parsed>(
   stdout: string,
-  validate: CheckListValidation,
-): { checks: CheckItem[] } | { problem: string } => {
+  validate: OutputValidation<Parsed>,
+): Parsed | { problem: string } => {
   if (stdout.trim() === '') {
     return { problem: 'printed no output' };
   }
@@ -130,7 +169,7 @@ export const checkListEvidence = (
     return { gap: commandGap(null, result, `${result.command} exited with code ${result.code}.`) };
   }
 
-  const parsed = parseCheckList(result.stdout, validate);
+  const parsed = parseOutput(result.stdout, validate);
 
   if ('problem' in parsed) {
     return { gap: commandGap(null, result, `${result.command} ${parsed.problem}`) };
@@ -168,19 +207,36 @@ const boundedExcerpt = (log: string, characterLimit: number): LogExcerpt => {
   if (kept.length === 0) {
     const lastLine = lines.at(-1) ?? '';
 
-    return { excerpt: lastLine.slice(-characterLimit), omittedLines: lines.length - 1 };
+    return {
+      excerpt: lastLine.slice(-characterLimit),
+      omittedLines: lines.length - 1,
+      omittedCharacters: lastLine.length - characterLimit,
+    };
   }
 
   return { excerpt: kept.join('\n'), omittedLines: lines.length - kept.length };
 };
 
+export const gapsOf = (check: Check): CheckGap[] => [
+  ...(check.gap === undefined ? [] : [check.gap]),
+  ...(check.trunkGaps ?? []),
+];
+
 const serializedSize = (result: PullRequestChecks) => JSON.stringify(result, null, 2).length;
 
 const checksRecoveryCommand = (repository: Repository, head: string) => {
-  const command = `gh api --hostname ${repository.host}`;
   const commitPath = `repos/${repository.owner}/${repository.name}/commits/${head}`;
 
-  return `${command} ${commitPath}/check-runs --paginate && ${command} ${commitPath}/status --paginate`;
+  const read = (endpoint: string) =>
+    formatCommand([
+      'api',
+      '--hostname',
+      repository.host,
+      `${commitPath}/${endpoint}`,
+      '--paginate',
+    ]);
+
+  return `${read('check-runs')} && ${read('status')}`;
 };
 
 export const boundChecks = (
@@ -221,9 +277,7 @@ export const boundChecks = (
     result.checks.push(check);
     gap.kept += 1;
 
-    if (check.gap !== undefined) {
-      result.gaps.push(check.gap);
-    }
+    result.gaps.push(...gapsOf(check));
 
     if (serializedSize(result) > resultCharacterLimit) {
       result.checks.pop();
@@ -239,6 +293,13 @@ export const boundChecks = (
 
 export const isFailing = (check: CheckItem): boolean =>
   check.bucket === 'fail' || check.bucket === 'cancel';
+
+export const failedTrunkRuns = (runs: TrunkRun[]): TrunkRun[] =>
+  runs.filter((run) => run.conclusion === 'failure');
+
+// A trunk run matches a check when a job with exactly the check's name failed in it.
+export const isTrunkMatch = (checkName: string, jobs: TrunkJob[]): boolean =>
+  jobs.some((job) => job.name === checkName && job.conclusion === 'failure');
 
 const sameRepository = (repository: Repository, host: string, owner: string, name: string) =>
   formatRepository(repository).toLowerCase() === `${host}/${owner}/${name}`.toLowerCase();
@@ -259,6 +320,9 @@ export const unreadableLinkGap = (repository: Repository, check: CheckItem): Che
   stderr: null,
   reason: `The link "${check.link}" is not a GitHub Actions job of ${formatRepository(repository)}, so its log was not read.`,
 });
+
+const omitsText = (excerpt: LogExcerpt) =>
+  excerpt.omittedLines > 0 || excerpt.omittedCharacters !== undefined;
 
 export const failedLogEvidence = (
   check: CheckItem,
@@ -282,7 +346,7 @@ export const failedLogEvidence = (
   const excerpt = boundedExcerpt(result.stdout, excerptCharacterLimit);
 
   if (excerpt.excerpt.length <= remainingCharacters) {
-    return { log: excerpt };
+    return { log: omitsText(excerpt) ? { ...excerpt, command: result.command } : excerpt };
   }
 
   return {

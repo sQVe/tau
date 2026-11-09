@@ -36,7 +36,20 @@ const thread = (id: string, bodies: string[]): Thread => ({
 
 const feedback = (overrides: Partial<PullRequestFeedback> = {}): PullRequestFeedback => ({
   viewer: 'author',
-  pr: { number: 1, url: 'https://github.com/o/r/pull/1', author: 'author', headRefOid: 'head' },
+  pr: {
+    number: 1,
+    url: 'https://github.com/o/r/pull/1',
+    author: 'author',
+    headRefOid: 'head',
+    state: 'OPEN',
+    baseRefName: 'main',
+    headRefName: 'feature',
+    headRepository: 'r',
+    headRepositoryOwner: 'o',
+    isCrossRepository: false,
+    maintainerCanModify: false,
+    mergeable: 'MERGEABLE',
+  },
   threads: [],
   reviews: [],
   comments: [],
