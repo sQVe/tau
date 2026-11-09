@@ -18,6 +18,7 @@ interface SpawnCall {
   command: string;
   argumentsList: string[];
   timeoutMs: number;
+  cwd: string;
 }
 
 const fileWrites = vi.hoisted(() => ({
@@ -100,7 +101,7 @@ const fakeNextest = (
   const calls: SpawnCall[] = [];
 
   const spawn: SpawnCommand = async (command, argumentsList, options) => {
-    calls.push({ command, argumentsList, timeoutMs: options.timeoutMs });
+    calls.push({ command, argumentsList, timeoutMs: options.timeoutMs, cwd: options.cwd });
 
     const stage = stageOf(argumentsList);
     const { report, during, ...result } = { ...defaultReplies[stage], ...replies[stage] };
@@ -793,6 +794,21 @@ it.for([
     ...targets,
     ...manifest,
   ]);
+});
+
+it.for([
+  { name: 'the session directory without a manifest', options: {}, cwd: '/repo' },
+  {
+    name: 'the manifest directory with a manifest',
+    options: { cargoManifestPath: '/repo/backend/Cargo.toml' },
+    cwd: '/repo/backend',
+  },
+])('runs every cargo stage from $name', async ({ options, cwd }) => {
+  const nextest = fakeNextest({ run: { report: await fixture('two-binaries.xml') } });
+
+  await run({ ...focused(['tests::same']), ...options }, nextest.spawn);
+
+  expect(nextest.calls.map((call) => call.cwd)).toEqual([cwd, cwd, cwd]);
 });
 
 it('passes the focused names to run as a filter', async () => {

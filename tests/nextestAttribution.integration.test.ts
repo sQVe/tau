@@ -361,6 +361,33 @@ it('resolves the manifest path from the Git root when the session is the project
   });
 });
 
+it('applies the Cargo config beside the chosen manifest when the session is the repository root', async ({
+  onTestFinished,
+}) => {
+  const crate = await createCrate(onTestFinished, 'manifest-config', {
+    'backend/Cargo.toml': cargoPackage('probe_manifest_config'),
+    'backend/.cargo/config.toml': '[env]\nTAU_PROBE = "loaded"\n',
+    'backend/src/lib.rs': libraryWith(
+      '    #[test]\n    fn reads_config() { assert_eq!(env!("TAU_PROBE"), "loaded"); }',
+    ),
+    '.pi/tau.json': JSON.stringify({
+      tdd: { runner: 'nextest', cargoManifestPath: 'backend/Cargo.toml' },
+    }),
+  });
+
+  await initializeRepository(crate);
+
+  const result = await run(crate, {
+    files: ['backend/src/lib.rs'],
+    testFullName: 'tests::reads_config',
+  });
+
+  expect(result.details.report).toMatchObject({
+    kind: 'pass',
+    tests: [{ file: 'backend/src/lib.rs', fullname: 'tests::reads_config', status: 'passed' }],
+  });
+});
+
 it('gives unknown attribution when a binary dep-info file is missing', async ({
   onTestFinished,
 }) => {

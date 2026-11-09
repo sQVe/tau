@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import { CONFIG_DIR_NAME } from '@earendil-works/pi-coding-agent';
@@ -142,6 +142,11 @@ const stageFacts = (input: RunTestsInput, result: SpawnResult, deadline: number)
   aborted: isAborted(input),
 });
 
+// Cargo reads .cargo/config.toml from its working directory and the parents, not from beside the
+// manifest, so a chosen project runs from its own directory.
+const cargoDirectory = (input: RunTestsInput): string =>
+  input.cargoManifestPath === undefined ? input.cwd : dirname(input.cargoManifestPath);
+
 const spawnStage = async (
   name: string,
   argumentsList: string[],
@@ -151,7 +156,7 @@ const spawnStage = async (
   const started = performance.now();
 
   const result = await spawnRequest.spawn('cargo', argumentsList, {
-    cwd: input.cwd,
+    cwd: cargoDirectory(input),
     timeoutMs: Math.max(0, spawnRequest.deadline - started),
     signal: input.signal,
     stdoutFile: spawnRequest.stdoutFile,
