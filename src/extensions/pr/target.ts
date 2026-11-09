@@ -3,11 +3,11 @@ import { Type } from 'typebox';
 import type { CommandRuntime } from '../../command.js';
 import { readGit } from '../../git.js';
 import {
+  checkAuth,
   incompleteListProblem,
   label,
   pullRequestListArguments,
   readChecked,
-  run,
 } from '../../github/github.js';
 import type { Repository } from '../../github/github.js';
 import { resolveBaseRepository, resolveHead } from '../../github/repositoryTarget.js';
@@ -94,7 +94,7 @@ export const readTarget = async (
   const head = await resolveHead(runtime, request);
   const { host } = head.repository;
 
-  await run(runtime, ['auth', 'status', '--active', '--hostname', host]);
+  await checkAuth(runtime, host);
 
   const base = await resolveBaseRepository(runtime, head.repository);
 
