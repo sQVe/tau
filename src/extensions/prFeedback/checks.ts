@@ -149,6 +149,7 @@ const runListArguments = (repository: Repository, trunk: string, workflow: strin
   trunk,
   '--workflow',
   workflow,
+  '--all',
   '--limit',
   String(trunkRunLimit),
   '--json',

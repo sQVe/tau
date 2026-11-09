@@ -83,10 +83,21 @@ describe('checks trunk matches', () => {
     const result = await readChecks();
 
     expect(callsOf(fake, 'run list')).toEqual([
-      'run list --repo github.com/sQVe/tau --branch release --workflow CI --limit 5 --json databaseId,conclusion,headSha,url',
+      'run list --repo github.com/sQVe/tau --branch release --workflow CI --all --limit 5 --json databaseId,conclusion,headSha,url',
     ]);
 
     expect(result.checks[0]?.trunkMatches).toHaveLength(5);
+  });
+
+  it('matches trunk runs of a workflow that was disabled after they ran', async () => {
+    const { fake, readChecks } = await setUp();
+
+    fake.checks = [failingCheck('test')];
+    fake.trunkRuns = [{ ...trunkRun(31, 'test'), workflowDisabled: true }];
+
+    const result = await readChecks();
+
+    expect(result.checks[0]?.trunkMatches).toEqual([{ url: runUrl(31), headSha: 'sha-31' }]);
   });
 
   it('uses the trunk parameter over the base branch', async () => {
@@ -127,7 +138,7 @@ describe('checks trunk matches', () => {
       expect.objectContaining({
         check: 'test',
         command:
-          "gh run list --repo github.com/sQVe/tau --branch main --workflow 'CI Tests' --limit 5 --json databaseId,conclusion,headSha,url",
+          "gh run list --repo github.com/sQVe/tau --branch main --workflow 'CI Tests' --all --limit 5 --json databaseId,conclusion,headSha,url",
       }),
     ]);
   });

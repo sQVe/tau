@@ -12,7 +12,12 @@ export interface FakeTrunkRun {
   conclusion: string;
   headSha: string;
   jobs: FakeJob[];
+  // gh run list --workflow skips a disabled workflow's runs unless --all is passed.
+  workflowDisabled?: boolean;
 }
+
+const includesDisabled = (commandArguments: readonly string[]) =>
+  commandArguments.includes('--all');
 
 export const trunkRunList = (
   trunkRuns: readonly FakeTrunkRun[],
@@ -25,6 +30,7 @@ export const trunkRunList = (
         run.branch === argumentAfter(commandArguments, '--branch') &&
         run.workflow === argumentAfter(commandArguments, '--workflow'),
     )
+    .filter((run) => run.workflowDisabled !== true || includesDisabled(commandArguments))
     .slice(0, Number(argumentAfter(commandArguments, '--limit')))
     .map((run) => ({
       databaseId: run.id,

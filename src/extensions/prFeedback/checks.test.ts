@@ -635,6 +635,7 @@ describe('checks input', () => {
         'main',
         '--workflow',
         'CI',
+        '--all',
         '--limit',
         '5',
         '--json',
