@@ -5,7 +5,6 @@ export interface ConfigLayer {
   values: Partial<TddConfig>;
 }
 
-// An optional key that no layer sets has no source.
 export type TddConfigSources = { [Key in keyof TddConfig]: string };
 
 export interface MergedTddConfig {

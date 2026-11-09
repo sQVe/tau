@@ -236,7 +236,6 @@ const buildStages = async (
     return { kind: 'stop', report: metadataInterruption, stages: [metadata] };
   }
 
-  // List and run must build the same package with the same lock file rules.
   const targets = [...targetArguments(parsedMetadata), ...manifest];
   const listPath = join(request.directory, 'list.stdout.json');
 

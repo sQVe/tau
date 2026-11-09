@@ -31,7 +31,6 @@ interface ClassificationRules {
   production: InputRules;
 }
 
-// The repository root is the Git checkout root, or the session directory outside a checkout.
 export interface TddConfigLocation extends ConfigLocation {
   repositoryRoot?: RepositoryRoot;
 }
@@ -201,8 +200,6 @@ const validateCargoOptions = (
   }
 };
 
-// Only the nextest runner reads files above the session directory, so a failed Git lookup stops
-// only that runner.
 const repositoryRootPath = ({ config }: MergedTddConfig, location: TddConfigLocation): string => {
   const root = location.repositoryRoot ?? { kind: 'root', path: location.cwd };
 

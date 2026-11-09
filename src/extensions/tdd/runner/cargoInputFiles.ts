@@ -11,7 +11,6 @@ const besideManifestFiles = [
   'rust-toolchain.toml',
 ];
 
-// A workspace keeps its Cargo.toml and Cargo.lock at the workspace root, any ancestor of a member.
 const workspaceFiles = ['Cargo.lock', 'Cargo.toml'];
 
 const isInside = (root: string, directory: string): boolean => {
@@ -34,8 +33,6 @@ const ancestorFiles = (directory: string, repositoryRoot: string): string[] => {
   return files;
 };
 
-// The configuration globs cover only the session directory, so the files above it, or beside and
-// above a chosen manifest, are added by absolute path, present or not.
 export const cargoInputFiles = (
   manifestPath: string | undefined,
   cwd: string,

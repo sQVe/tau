@@ -74,8 +74,6 @@ export const createObservationTracker = (): ObservationTracker => {
 
     const loaded = loadTddConfig(location, context.ui, runners);
 
-    // Loading fails a nextest config without a root. Other runners never read it, so they keep the
-    // session directory and a Git failure cannot reset their observation.
     const readsRepositoryRoot = loaded.config.runner === runners.nextest.name;
     const repositoryRoot = readsRepositoryRoot && root.kind === 'root' ? root.path : cwd;
 
