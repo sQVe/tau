@@ -30,7 +30,6 @@ export const footerTheme: Pick<Theme, 'fg'> = {
   fg: (color, text) => `\x1b[38;2;${colors[color] ?? colors.text}m${text}\x1b[39m`,
 };
 
-// Model names can contain terminal controls. Strip them before adding colors.
 const sanitizeText = (text: string): string =>
   stripVTControlCharacters(text).replace(/\p{Cc}/gu, ' ');
 
