@@ -20,9 +20,10 @@ setTimeout(() => {
 }, 300);
 `;
 
-// Records its start, then waits for every file in `gates` to exist. Exits with an error after a
-// bounded wait, so a command that is never released fails the test instead of hanging it.
-const gatedSource = `
+// Records its start, then waits for every file in `gates` to exist and exits with `exitCode`. Exits
+// with an error after a bounded wait, so a command that is never released fails the test instead of
+// hanging it.
+const gatedSourceExiting = (exitCode: number) => `
 const { appendFileSync, existsSync } = require('node:fs');
 const [record, name, ...gates] = process.argv.slice(2);
 appendFileSync(record, 'start ' + name + '\\n');
@@ -31,17 +32,15 @@ const timer = setInterval(() => {
   if (gates.every((gate) => existsSync(gate))) {
     clearInterval(timer);
     appendFileSync(record, 'end ' + name + '\\n');
+    process.exit(${exitCode});
   } else if (Date.now() > deadline) {
     process.exit(1);
   }
 }, 10);
 `;
 
-const failingGatedSource = `${gatedSource}
-process.on('exit', () => {
-  process.exitCode = 1;
-});
-`;
+const gatedSource = gatedSourceExiting(0);
+const failingGatedSource = gatedSourceExiting(1);
 
 const fixture = async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-full-check-');
