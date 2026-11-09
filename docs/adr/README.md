@@ -63,7 +63,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 
 - [0005: Integration testing against a real Pi session](./0005-integration-testing-with-pi.md)
 - [0023: Use advisory TDD observations instead of edit permissions](./0023-advisory-tdd-observations.md)
-- [0105: Queue full checks per repository and reuse checks by identity](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md)
+- [0105: Queue full checks per checkout and reuse checks by identity](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md)
 - [0106: Replay unchanged test projects in `pnpm check`](./0106-replay-unchanged-test-projects-in-pnpm-check.md)
 - [0113: Mutation-test changed lines and list survivors as advice](./0113-run-diff-scoped-mutation-testing-by-hand.md)
 - [0119: Share the mutation script as one npm package](./0119-share-the-mutation-script-as-one-npm-package.md)

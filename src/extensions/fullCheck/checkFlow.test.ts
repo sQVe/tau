@@ -51,7 +51,9 @@ const fixture = async (kind: ToolKind) => {
   const checksPath = kind === 'full_check' ? 'checks' : 'checks/mutation';
   const printReport = kind === 'mutation_check';
 
-  const configure = (options: { gate?: boolean; edit?: boolean } = {}) => {
+  const configure = (
+    options: { gate?: boolean; edit?: boolean; repositoryLock?: boolean } = {},
+  ) => {
     const source = commandSource(
       counter,
       options.gate === true ? gate : undefined,
@@ -59,10 +61,15 @@ const fixture = async (kind: ToolKind) => {
       options.edit === true,
     );
 
-    return writeFile(
-      join(root, '.pi', 'tau.json'),
-      JSON.stringify({ [key]: { argv: [process.execPath, '-e', source] } }),
-    );
+    const sections: Record<string, Record<string, unknown>> = {
+      [key]: { argv: [process.execPath, '-e', source] },
+    };
+
+    if (options.repositoryLock === true) {
+      sections.fullCheck = { ...sections.fullCheck, lockScope: 'repository' };
+    }
+
+    return writeFile(join(root, '.pi', 'tau.json'), JSON.stringify(sections));
   };
 
   const context = { cwd: root, isProjectTrusted: () => true, ui: { notify: () => undefined } };
@@ -114,7 +121,9 @@ setInterval(() => { if (fs.existsSync(${JSON.stringify(gate)})) process.exit(0);
 
   await writeFile(
     join(root, '.pi', 'tau.json'),
-    JSON.stringify({ fullCheck: { argv: [process.execPath, '-e', source] } }),
+    JSON.stringify({
+      fullCheck: { argv: [process.execPath, '-e', source], lockScope: 'repository' },
+    }),
   );
 
   return createFullCheckTool({
@@ -135,7 +144,7 @@ it.each(toolKinds)(
     const started = join(state.directory, `started-${name}`);
     const holderGate = join(state.directory, `holder-gate-${name}`);
 
-    await state.configure();
+    await state.configure({ repositoryLock: true });
     const first = await state.run();
 
     const holder = startHoldingFullCheck(state.directory, started, holderGate);

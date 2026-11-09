@@ -2,7 +2,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { temporaryTauConfig } from '../../tests/tauConfigHarness.js';
 import type { ConfigWarnings } from './config.js';
-import { readRepositoryArgv } from './repositoryCommand.js';
+import { readLockScope, readRepositoryArgv } from './repositoryCommand.js';
 
 const fixture = () => temporaryTauConfig(onTestFinished, 'tau-full-check-config-');
 
@@ -101,4 +101,74 @@ it.each([
   expect(() => readRepositoryArgv(location, ui, 'fullCheck')).toThrow(
     `Invalid Tau config ${repositoryFile}: ${field} `,
   );
+});
+
+it.each([
+  { name: 'the repository file is missing', value: undefined, scope: 'checkout' },
+  {
+    name: 'fullCheck sets no lock scope',
+    value: { fullCheck: { argv: ['x'] } },
+    scope: 'checkout',
+  },
+  {
+    name: 'fullCheck sets the checkout scope',
+    value: { fullCheck: { argv: ['x'], lockScope: 'checkout' } },
+    scope: 'checkout',
+  },
+  {
+    name: 'fullCheck sets the repository scope',
+    value: { fullCheck: { argv: ['x'], lockScope: 'repository' } },
+    scope: 'repository',
+  },
+  {
+    name: 'only the mutation section sets a scope',
+    value: { mutation: { argv: ['x'], lockScope: 'repository' } },
+    scope: 'checkout',
+  },
+])('reads the $scope lock scope when $name', ({ value, scope }) => {
+  const { location, writeRepository } = fixture();
+
+  if (value !== undefined) {
+    writeRepository(value);
+  }
+
+  expect(readLockScope(location)).toBe(scope);
+});
+
+it('ignores the repository lock scope of an untrusted project', () => {
+  const { location, writeRepository } = fixture();
+
+  writeRepository({ fullCheck: { argv: ['x'], lockScope: 'repository' } });
+
+  expect(readLockScope({ ...location, projectTrusted: false })).toBe('checkout');
+});
+
+it.each([
+  { name: 'an unknown scope', lockScope: 'machine', field: 'fullCheck.lockScope' },
+  { name: 'a non-string scope', lockScope: 1, field: 'fullCheck.lockScope' },
+  { name: 'a fullCheck string', section: 'pnpm check', field: 'fullCheck' },
+])('fails naming the repository file and $field for $name', ({ lockScope, section, field }) => {
+  const { location, writeRepository, repositoryFile } = fixture();
+
+  writeRepository({ fullCheck: section ?? { argv: ['x'], lockScope } });
+
+  expect(() => readLockScope(location)).toThrow(`Invalid Tau config ${repositoryFile}: ${field} `);
+});
+
+it('warns about a lock scope in the mutation section but not in the fullCheck section', () => {
+  const { location, writeRepository } = fixture();
+  const notify = vi.fn<ConfigWarnings['notify']>();
+
+  writeRepository({
+    fullCheck: { argv: ['x'], lockScope: 'repository' },
+    mutation: { argv: ['y'], lockScope: 'repository' },
+  });
+
+  readRepositoryArgv(location, { notify }, 'fullCheck');
+  readRepositoryArgv(location, { notify }, 'mutation');
+
+  const messages = notify.mock.calls.map(([message]) => message);
+
+  expect(messages).toHaveLength(1);
+  expect(messages[0]).toContain('mutation.lockScope');
 });

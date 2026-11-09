@@ -3,7 +3,11 @@ import type { ExtensionToolContext, ToolDefinition } from '@earendil-works/pi-co
 import { Type } from 'typebox';
 
 import type { Exec } from '../../command.js';
-import { readRepositoryArgv, withIgnoredNote } from '../../config/repositoryCommand.js';
+import {
+  readLockScope,
+  readRepositoryArgv,
+  withIgnoredNote,
+} from '../../config/repositoryCommand.js';
 import { findTauRoot } from '../../tauDirectory.js';
 import { executeRecordedCheck } from './checkFlow.js';
 import type { Recorded } from './checkFlow.js';
@@ -84,6 +88,7 @@ const execute = async (
       argv,
       exec: options.exec,
       agentDirectory,
+      lockScope: readLockScope(location),
       checksPath: defaultChecksPath,
       output: 'combined',
       idleLimitMilliseconds: options.idleLimitMilliseconds ?? defaultIdleLimitMilliseconds,
@@ -109,10 +114,9 @@ export const createFullCheckTool = (
     description: `Run the repository's configured full check and save its output. Call it once on the final work state. After a failure, fix with focused tests and the failing stage before you call it again.
 - Returns pass or fail, the exit status, the log path, and the last lines of the output. A failed check is a result, not an error.
 - A later call for the same command and file content returns the saved passing log without a run, and says so. A commit or amend that changes no files keeps the file content.
-- Full checks of one repository run one at a time across its checkouts. A waiting call sends an update that names the checkout that holds the lock.
+- Checks queue per checkout, or per repository with fullCheck.lockScope "repository". A waiting call names the checkout holding the lock.
 - Without fullCheck.argv in .pi/tau.json, it errors. Run the check as before.`,
-    promptSnippet:
-      'Run the repository full check, queued per repository across checkouts, with a saved log.',
+    promptSnippet: 'Run the repository full check, queued per checkout, with a saved log.',
     parameters,
     executionMode: 'sequential',
     async execute(_toolCallId, _toolParameters, signal, onUpdate, context) {

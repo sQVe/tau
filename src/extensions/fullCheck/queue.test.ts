@@ -8,7 +8,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 import { declinedExec } from '../../../tests/declinedExecFake.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { defaultLockPath } from './queue.js';
+import { checkoutLockPath, repositoryLockPath } from './queue.js';
 import { createFullCheckTool } from './tool.js';
 
 const recorderSource = `
@@ -37,6 +37,13 @@ const timer = setInterval(() => {
 }, 10);
 `;
 
+// A failed check saves no reusable log, so a second call in the same state runs the command again.
+const failingGatedSource = `${gatedSource}
+process.on('exit', () => {
+  process.exitCode = 1;
+});
+`;
+
 const fixture = async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-full-check-');
 
@@ -45,17 +52,16 @@ const fixture = async () => {
   const script = join(directory, 'recorder.cjs');
 
   const gated = join(directory, 'gated.cjs');
+  const failingGated = join(directory, 'failing-gated.cjs');
   const release = join(directory, 'release');
 
   await mkdir(agentDirectory);
   await writeFile(script, recorderSource);
   await writeFile(gated, gatedSource);
+  await writeFile(failingGated, failingGatedSource);
 
-  return { agentDirectory, directory, record, script, gated, release };
+  return { agentDirectory, directory, record, script, gated, failingGated, release };
 };
-
-const lockPathFor = (agentDirectory: string, repository = 'owner/first') =>
-  defaultLockPath(agentDirectory, repository);
 
 const repositoryNamed = async (name: string, remote = `git@github.com:owner/${name}.git`) => {
   const root = await createTemporaryRepository(onTestFinished, `tau-full-check-${name}-`);
@@ -90,6 +96,9 @@ const writeRepositoryFile = async (root: string, value: unknown) => {
 
 const configure = (root: string, argv: string[]) =>
   writeRepositoryFile(root, { fullCheck: { argv } });
+
+const configureRepositoryLock = (root: string, argv: string[]) =>
+  writeRepositoryFile(root, { fullCheck: { argv, lockScope: 'repository' } });
 
 // Lists the lock files whose owner has not released them.
 const heldLocks = async (agentDirectory: string) => {
@@ -148,10 +157,10 @@ const waitForLine = (record: string, line: string) =>
     { timeout: 4000 },
   );
 
-it('runs full checks of different repositories at once without a wait', async () => {
+it('runs full checks in two checkouts of one repository at once by default', async () => {
   const { agentDirectory, directory, record, gated } = await fixture();
   const first = await repositoryNamed('first');
-  const second = await repositoryNamed('second');
+  const second = await repositoryNamed('first');
   const startedFirst = join(directory, 'started-first');
   const startedSecond = join(directory, 'started-second');
 
@@ -176,13 +185,46 @@ it('runs full checks of different repositories at once without a wait', async ()
   expect(await heldLocks(agentDirectory)).toEqual([]);
 });
 
-it('queues full checks of one repository from two checkouts and reports the wait', async () => {
+it('runs two full checks in one checkout one at a time and reports the wait', async () => {
+  const { agentDirectory, record, failingGated, release } = await fixture();
+  const root = await repositoryNamed('first');
+
+  await configure(root, [process.execPath, failingGated, record, 'first', release]);
+
+  const firstRun = runTool(agentDirectory, root);
+  await waitForLine(record, 'start first');
+
+  const updates: string[] = [];
+  const secondRun = runTool(agentDirectory, root, undefined, updates);
+
+  await vi.waitFor(
+    () => {
+      expect(updates).toHaveLength(1);
+    },
+    { timeout: 4000 },
+  );
+
+  expect(await readLines(record)).toEqual(['start first']);
+
+  await writeFile(release, '');
+
+  const [firstDone, secondDone] = await Promise.all([firstRun, secondRun]);
+
+  expect(await readLines(record)).toEqual(['start first', 'end first', 'start first', 'end first']);
+  expect(firstDone.updates).toEqual([]);
+  expect(updates[0]).toContain('Waiting');
+  expect(updates[0]).toContain(root);
+  expect(secondDone.result.details).toMatchObject({ passed: false, reused: false });
+  expect(await heldLocks(agentDirectory)).toEqual([]);
+});
+
+it('queues full checks of one repository from two checkouts with the repository lock scope', async () => {
   const { agentDirectory, record, gated, release } = await fixture();
   const first = await repositoryNamed('first');
   const second = await repositoryNamed('first', 'https://github.com/Owner/First.git');
 
-  await configure(first, [process.execPath, gated, record, 'first', release]);
-  await configure(second, [process.execPath, gated, record, 'first', release]);
+  await configureRepositoryLock(first, [process.execPath, gated, record, 'first', release]);
+  await configureRepositoryLock(second, [process.execPath, gated, record, 'first', release]);
 
   const firstRun = runTool(agentDirectory, first);
   await waitForLine(record, 'start first');
@@ -212,11 +254,19 @@ it('queues full checks of one repository from two checkouts and reports the wait
 });
 
 it('keys the lock by repository without case or path separators', () => {
-  const lower = defaultLockPath('/agent', 'owner/name');
+  const lower = repositoryLockPath('/agent', 'owner/name');
 
-  expect(defaultLockPath('/agent', 'Owner/Name')).toBe(lower);
+  expect(repositoryLockPath('/agent', 'Owner/Name')).toBe(lower);
   expect(dirname(lower)).toBe(join('/agent', 'tau', 'full-check'));
-  expect(defaultLockPath('/agent', 'owner/other')).not.toBe(lower);
+  expect(repositoryLockPath('/agent', 'owner/other')).not.toBe(lower);
+});
+
+it('keys the checkout lock by the exact checkout path in the lock directory', () => {
+  const lock = checkoutLockPath('/agent', '/code/tau/main');
+
+  expect(dirname(lock)).toBe(join('/agent', 'tau', 'full-check'));
+  expect(checkoutLockPath('/agent', '/code/tau/Main')).not.toBe(lock);
+  expect(checkoutLockPath('/agent', `/${'deep/'.repeat(100)}`).length).toBe(lock.length);
 });
 
 it('takes over a lock left by a dead process', async () => {
@@ -232,10 +282,10 @@ it('takes over a lock left by a dead process', async () => {
     child.once('close', resolve);
   });
 
-  await mkdir(dirname(lockPathFor(agentDirectory)), { recursive: true });
+  await mkdir(dirname(checkoutLockPath(agentDirectory, root)), { recursive: true });
 
   await writeFile(
-    `${lockPathFor(agentDirectory)}.1`,
+    `${checkoutLockPath(agentDirectory, root)}.1`,
     JSON.stringify({
       pid: deadPid,
       checkout: '/gone',
@@ -299,7 +349,7 @@ it('starts the next check only after a cancelled command has exited', async () =
 
   await writeFile(stubborn, stubbornSource);
 
-  await configure(first, [process.execPath, stubborn, record]);
+  await configureRepositoryLock(first, [process.execPath, stubborn, record]);
 
   const controller = new AbortController();
 
@@ -312,13 +362,13 @@ it('starts the next check only after a cancelled command has exited', async () =
     expect(await readFile(record, 'utf8')).toContain('start stubborn');
   });
 
-  await configure(second, [process.execPath, script, record, 'second']);
+  await configureRepositoryLock(second, [process.execPath, script, record, 'second']);
 
-  const queued = runTool(agentDirectory, second);
+  const queuedUpdates: string[] = [];
+  const queued = runTool(agentDirectory, second, undefined, queuedUpdates);
 
-  // Lets the queued check start waiting for the lock.
-  await new Promise((resolve) => {
-    setTimeout(resolve, 100);
+  await vi.waitFor(() => {
+    expect(queuedUpdates).toHaveLength(1);
   });
 
   controller.abort();
@@ -339,8 +389,8 @@ it('lets only one of two sessions that recover the same stale lock run at a time
   const first = await repositoryNamed('first');
   const second = await repositoryNamed('second', 'git@github.com:owner/first.git');
 
-  await configure(first, [process.execPath, script, record, 'first']);
-  await configure(second, [process.execPath, script, record, 'first']);
+  await configureRepositoryLock(first, [process.execPath, script, record, 'first']);
+  await configureRepositoryLock(second, [process.execPath, script, record, 'first']);
 
   const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
   const deadPid = child.pid ?? 0;
@@ -349,10 +399,10 @@ it('lets only one of two sessions that recover the same stale lock run at a time
     child.once('close', resolve);
   });
 
-  await mkdir(dirname(lockPathFor(agentDirectory)), { recursive: true });
+  await mkdir(dirname(repositoryLockPath(agentDirectory, 'owner/first')), { recursive: true });
 
   await writeFile(
-    `${lockPathFor(agentDirectory)}.1`,
+    `${repositoryLockPath(agentDirectory, 'owner/first')}.1`,
     JSON.stringify({
       pid: deadPid,
       checkout: '/gone',
@@ -400,7 +450,7 @@ it('starts the next check only after a descendant of a cancelled command is gone
   await writeFile(descendant, descendantSource);
   await writeFile(launcher, launcherSource);
 
-  await configure(first, [process.execPath, launcher, descendant, record]);
+  await configureRepositoryLock(first, [process.execPath, launcher, descendant, record]);
 
   const controller = new AbortController();
 
@@ -413,13 +463,13 @@ it('starts the next check only after a descendant of a cancelled command is gone
     expect(await readFile(record, 'utf8').catch(() => '')).toContain('start descendant');
   });
 
-  await configure(second, [process.execPath, script, record, 'second']);
+  await configureRepositoryLock(second, [process.execPath, script, record, 'second']);
 
-  const queued = runTool(agentDirectory, second);
+  const queuedUpdates: string[] = [];
+  const queued = runTool(agentDirectory, second, undefined, queuedUpdates);
 
-  // Lets the queued check start waiting for the lock.
-  await new Promise((resolve) => {
-    setTimeout(resolve, 100);
+  await vi.waitFor(() => {
+    expect(queuedUpdates).toHaveLength(1);
   });
 
   controller.abort();
@@ -458,10 +508,10 @@ it('waits for the command group of a dead session before running a new check', a
     { stdio: 'ignore', detached: true },
   );
 
-  await mkdir(dirname(lockPathFor(agentDirectory)), { recursive: true });
+  await mkdir(dirname(checkoutLockPath(agentDirectory, root)), { recursive: true });
 
   await writeFile(
-    `${lockPathFor(agentDirectory)}.1`,
+    `${checkoutLockPath(agentDirectory, root)}.1`,
     JSON.stringify({
       pid: deadPid,
       checkout: '/gone',

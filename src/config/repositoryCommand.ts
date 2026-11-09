@@ -14,7 +14,16 @@ export interface RepositoryArgv {
   ignored: string | undefined;
 }
 
-const knownSectionKeys: KnownKeys = { argv: true };
+export type LockScope = 'checkout' | 'repository';
+
+export type RepositoryCommandKey = 'fullCheck' | 'mutation';
+
+const knownSectionKeys: Readonly<Record<RepositoryCommandKey, KnownKeys>> = {
+  fullCheck: { argv: true, lockScope: true },
+  mutation: { argv: true },
+};
+
+const lockScopes: readonly LockScope[] = ['checkout', 'repository'];
 
 const readArgv = (source: string, field: string, value: unknown): string[] => {
   const expected = `${field} must be a non-empty array of non-empty strings, such as ["pnpm", "check"].`;
@@ -32,16 +41,31 @@ const readArgv = (source: string, field: string, value: unknown): string[] => {
   return items;
 };
 
-const readSection = (ui: ConfigWarnings, source: string, key: string, value: unknown): string[] => {
+const requireSectionObject = (
+  source: string,
+  key: string,
+  value: unknown,
+): Record<string, unknown> => {
   if (!isRecord(value)) {
     throw new Error(
       `Invalid Tau config ${source}: ${key} must be an object such as {"argv": ["pnpm", "check"]}.`,
     );
   }
 
-  warnUnknownKeys(ui, source, value, knownSectionKeys, key);
+  return value;
+};
 
-  return readArgv(source, `${key}.argv`, value.argv);
+const readSection = (
+  ui: ConfigWarnings,
+  source: string,
+  key: RepositoryCommandKey,
+  value: unknown,
+): string[] => {
+  const section = requireSectionObject(source, key, value);
+
+  warnUnknownKeys(ui, source, section, knownSectionKeys[key], key);
+
+  return readArgv(source, `${key}.argv`, section.argv);
 };
 
 const sectionOf = ({ value }: ConfigFile, key: string): unknown =>
@@ -52,11 +76,10 @@ export const withIgnoredNote = (message: string, ignored: string | undefined): s
     ? message
     : `${message} Tau ignored ${ignored} because the project is not trusted.`;
 
-export const readRepositoryArgv = (
+const findRepositoryFile = (
   location: ConfigLocation,
-  ui: ConfigWarnings,
   key: string,
-): RepositoryArgv => {
+): { project: ConfigFile | undefined; ignored: string | undefined } => {
   requireKnownKey(key);
 
   const { files, ignored } = readTauConfig(location);
@@ -71,9 +94,51 @@ export const readRepositoryArgv = (
 
   const project = files.find((file) => file.source !== userPath && setsKey(file, key));
 
+  return { project, ignored };
+};
+
+export const readRepositoryArgv = (
+  location: ConfigLocation,
+  ui: ConfigWarnings,
+  key: RepositoryCommandKey,
+): RepositoryArgv => {
+  const { project, ignored } = findRepositoryFile(location, key);
+
   if (project === undefined) {
     return { argv: undefined, ignored };
   }
 
   return { argv: readSection(ui, project.source, key, sectionOf(project, key)), ignored };
+};
+
+const isLockScope = (value: unknown): value is LockScope =>
+  lockScopes.some((scope) => scope === value);
+
+// Full checks and mutation checks share one lock, so both read the scope from `fullCheck`.
+export const readLockScope = (location: ConfigLocation): LockScope => {
+  const { project } = findRepositoryFile(location, 'fullCheck');
+
+  if (project === undefined) {
+    return 'checkout';
+  }
+
+  const section = requireSectionObject(
+    project.source,
+    'fullCheck',
+    sectionOf(project, 'fullCheck'),
+  );
+
+  const scope = section.lockScope;
+
+  if (scope === undefined) {
+    return 'checkout';
+  }
+
+  if (!isLockScope(scope)) {
+    throw new Error(
+      `Invalid Tau config ${project.source}: fullCheck.lockScope must be "checkout" or "repository".`,
+    );
+  }
+
+  return scope;
 };

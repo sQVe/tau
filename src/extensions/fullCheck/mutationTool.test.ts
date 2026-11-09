@@ -91,11 +91,12 @@ const fixture = async () => {
       JSON.stringify({ mutation: { argv: scriptArgv(report, code, gated, ending) } }),
     );
 
-  const configureFullCheck = async (argv: string[]) => {
+  const configureFullCheck = async (argv: string[], lockScope?: string) => {
     const path = join(root, '.pi', 'tau.json');
     const current = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
+    const fullCheck = lockScope === undefined ? { argv } : { argv, lockScope };
 
-    await writeFile(path, JSON.stringify({ ...current, fullCheck: { argv } }));
+    await writeFile(path, JSON.stringify({ ...current, fullCheck }));
   };
 
   const context = { cwd: root, isProjectTrusted: () => true, ui: { notify: () => undefined } };
@@ -585,10 +586,11 @@ it('fails and says so when the script writes nothing for the idle limit', async 
   expect(first?.type === 'text' ? first.text : '').toContain('it was hung');
 });
 
-it('rejects a repository whose origin names no owner and name', async () => {
-  const { root, configure, run, runCount } = await fixture();
+it('rejects the repository lock scope when the origin names no owner and name', async () => {
+  const { root, configure, configureFullCheck, run, runCount } = await fixture();
 
   await configure(passReport, 0);
+  await configureFullCheck(['true'], 'repository');
   await git(root, 'remote', 'set-url', 'origin', '/tmp/some-path');
 
   await expect(run()).rejects.toThrow('owner/name');

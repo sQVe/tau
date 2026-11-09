@@ -227,8 +227,22 @@ it('refuses a repository file that sets no fullCheck command and names the key a
   expect(await runCount()).toBe(0);
 });
 
-it('refuses a repository whose origin names no owner and name', async () => {
+it('runs in a checkout whose origin names no owner and name with the default lock scope', async () => {
   const { root, run, runCount } = await fixture();
+
+  await git(root, 'remote', 'set-url', 'origin', '/tmp/some-path');
+
+  expect((await run()).details?.passed).toBe(true);
+  expect(await runCount()).toBe(1);
+});
+
+it('refuses the repository lock scope when the origin names no owner and name', async () => {
+  const { root, counter, run, runCount } = await fixture();
+
+  await writeFile(
+    join(root, '.pi', 'tau.json'),
+    JSON.stringify({ fullCheck: { argv: countingArgv(counter), lockScope: 'repository' } }),
+  );
 
   await git(root, 'remote', 'set-url', 'origin', '/tmp/some-path');
 

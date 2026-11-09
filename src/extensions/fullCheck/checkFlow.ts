@@ -5,10 +5,11 @@ import { readCheckIdentity } from '../../checkRecord/identity.js';
 import { decideReuse, sameReusableState } from '../../checkRecord/reuseDecision.js';
 import type { CheckIdentity } from '../../checkRecord/reuseDecision.js';
 import type { CommandRuntime, Exec } from '../../command.js';
+import type { LockScope } from '../../config/repositoryCommand.js';
 import { errorMessage } from '../../errors.js';
 import type { Repository } from '../../github/github.js';
 import { readOriginRepository } from '../../github/repositoryTarget.js';
-import { defaultLockPath, withFullCheckLock } from './queue.js';
+import { checkoutLockPath, repositoryLockPath, withFullCheckLock } from './queue.js';
 import { readTail, runCheck } from './run.js';
 import type { CheckOutput, CheckResult } from './run.js';
 
@@ -20,6 +21,7 @@ export interface CheckPlan {
   argv: string[];
   exec: Exec;
   agentDirectory: string;
+  lockScope: LockScope;
   checksPath: string;
   output: CheckOutput;
   idleLimitMilliseconds: number;
@@ -66,14 +68,14 @@ const findReusedLog = async (
   };
 };
 
-const withRepositoryLock = <T>(
+const withCheckLock = <T>(
   plan: CheckPlan,
-  repository: Repository,
+  lockPath: string,
   run: (recordCommandGroup: (groupId: number) => Promise<void>) => Promise<T>,
 ): Promise<T> =>
   withFullCheckLock(
     {
-      lockPath: defaultLockPath(plan.agentDirectory, repositoryLockKey(repository)),
+      lockPath,
       checkout: plan.root,
       signal: plan.signal,
       pollMilliseconds: plan.pollMilliseconds,
@@ -89,7 +91,25 @@ const withRepositoryLock = <T>(
   );
 
 const noRepositoryMessage = (name: string): string =>
-  `This checkout has an origin remote that does not name an owner/name repository, so the ${name} has no lock to share with other checkouts of the repository.`;
+  `This checkout has an origin remote that does not name an owner/name repository, so the ${name} has no lock to share with other checkouts of the repository. Remove fullCheck.lockScope from .pi/tau.json to lock this checkout only.`;
+
+const readLockPath = async (plan: CheckPlan): Promise<string> => {
+  if (plan.lockScope === 'checkout') {
+    return checkoutLockPath(plan.agentDirectory, plan.root);
+  }
+
+  const repository = await readRepository({
+    exec: plan.exec,
+    cwd: plan.root,
+    signal: plan.signal,
+  });
+
+  if (repository === undefined) {
+    throw new Error(noRepositoryMessage(plan.name));
+  }
+
+  return repositoryLockPath(plan.agentDirectory, repositoryLockKey(repository));
+};
 
 const reuseSaved = async <Verdict extends { passed: boolean }>(
   plan: CheckPlan,
@@ -147,16 +167,7 @@ export const executeRecordedCheck = async <Verdict extends { passed: boolean }>(
   plan: CheckPlan,
   policy: CheckPolicy<Verdict>,
 ): Promise<Recorded<Verdict>> => {
-  const repository = await readRepository({
-    exec: plan.exec,
-    cwd: plan.root,
-    signal: plan.signal,
-  });
-
-  if (repository === undefined) {
-    throw new Error(noRepositoryMessage(plan.name));
-  }
-
+  const lockPath = await readLockPath(plan);
   const before = await readCheckIdentity(plan.root, plan.argv);
   const reusedBeforeWaiting = await reuseSaved(plan, policy, before);
 
@@ -164,7 +175,7 @@ export const executeRecordedCheck = async <Verdict extends { passed: boolean }>(
     return reusedBeforeWaiting;
   }
 
-  return withRepositoryLock(plan, repository, (recordCommandGroup) =>
+  return withCheckLock(plan, lockPath, (recordCommandGroup) =>
     runWithRecord(plan, policy, recordCommandGroup),
   );
 };

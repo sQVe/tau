@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 
 import { withFileLock } from '../../fileLock/fileLock.js';
@@ -12,7 +13,16 @@ export const withFullCheckLock = <Value>(
     run,
   );
 
-// Checks of one repository share a lock, since they share resources such as Docker ports. The names
-// ignore case like GitHub names do, and encoding keeps the path separator out of the file name.
-export const defaultLockPath = (agentDirectory: string, repository: string): string =>
-  join(agentDirectory, 'tau', 'full-check', `${encodeURIComponent(repository.toLowerCase())}.lock`);
+const lockDirectory = (agentDirectory: string): string => join(agentDirectory, 'tau', 'full-check');
+
+// The names ignore case like GitHub names do, and encoding keeps the path separator out of the file
+// name.
+export const repositoryLockPath = (agentDirectory: string, repository: string): string =>
+  join(lockDirectory(agentDirectory), `${encodeURIComponent(repository.toLowerCase())}.lock`);
+
+// A hash keeps a deep checkout path within the file name length limit.
+export const checkoutLockPath = (agentDirectory: string, checkout: string): string => {
+  const digest = createHash('sha256').update(checkout).digest('hex');
+
+  return join(lockDirectory(agentDirectory), `checkout-${digest}.lock`);
+};

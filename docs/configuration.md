@@ -149,6 +149,21 @@ Without a `fullCheck` key in the repository file, `full_check` refuses to run an
 add. In an untrusted project, Tau ignores the file, so the same refusal applies. A `fullCheck`
 object without `argv` fails the call. A `fullCheck` key in the user file fails the call.
 
+`fullCheck.lockScope` sets which checks wait for each other. Both `full_check` and `mutation_check`
+use it. It takes one of these values:
+
+- `"checkout"`, the default: checks in one checkout run one at a time. Checks in other checkouts of
+  the repository run at the same time.
+- `"repository"`: checks run one at a time across all checkouts of the origin's `owner/name`. Use it
+  when checks share a resource across checkouts, such as a Docker port or a database. The tools
+  refuse to run when the origin names no `owner/name`.
+
+```json
+{ "fullCheck": { "argv": ["pnpm", "check"], "lockScope": "repository" } }
+```
+
+Any other value fails the call.
+
 ### `mutation` (repository file)
 
 `mutation.argv` is the command that the `mutation_check` tool runs. It has the same format as the
