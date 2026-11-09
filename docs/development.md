@@ -153,9 +153,9 @@ that the message appears once.
 
 ### Statusbar
 
-Check that the footer stays on one line and shows the directory, branch, cost, context usage, model,
-and thinking level. Edit a file through a tool and check that `*` appears beside the branch. Narrow
-the terminal and check that the right group truncates before the left.
+Check that the footer stays on one line and shows only the cost, context usage, model, and thinking
+level. Run a tool and check that the cost and context usage update after its result. Narrow the
+terminal and check that the line truncates to its width.
 
 ### Commits
 

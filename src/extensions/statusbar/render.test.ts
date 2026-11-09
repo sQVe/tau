@@ -7,9 +7,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { footerTheme, renderFooterLine } from './render.js';
 
 const input = {
-  directory: 'tau/abu-347',
-  branch: 'main',
-  dirty: false,
   cost: 0.412,
   contextPercent: 23.4,
   contextWindow: 200000,
@@ -23,41 +20,27 @@ const theme = { fg: foreground };
 describe('statusbar rendering', () => {
   it('renders external text without terminal controls or extra lines', () => {
     const line = renderFooterLine(
-      {
-        ...input,
-        directory: 'tau/line\nbreak',
-        branch: '\x1b[31mmain\x1b[0m',
-        modelId: 'model\tname\x1b[2J',
-      },
+      { ...input, modelId: '\x1b[31mmodel\x1b[0m\nline\tname\x1b[2J' },
       100,
       footerTheme,
     );
 
     const text = stripVTControlCharacters(line);
 
-    expect(text).toContain('tau/line break  main');
-    expect(text).toContain('model name');
+    expect(text).toContain('model line name');
     expect(text).not.toMatch(/[\n\r\t]/);
     expect(line).not.toContain('\x1b[31m');
     expect(line).not.toContain('\x1b[2J');
     expect(visibleWidth(line)).toBe(100);
   });
 
-  it('aligns groups and truncates the right group before the left', () => {
-    const left = 'tau/abu-347  main';
-    const right = '$0.412  23.4%/200k  model';
+  it('right-aligns the facts and truncates them to the width', () => {
+    const line = '$0.412  23.4%/200k  model';
 
-    expect(renderFooterLine(input, 80, theme)).toBe(
-      left + ' '.repeat(80 - left.length - right.length) + right,
-    );
-
-    expect(renderFooterLine(input, 24, theme)).toBe(
-      left + '  ' + truncateToWidth(right, 24 - left.length - 2),
-    );
-
-    expect(renderFooterLine(input, 8, theme)).toBe(truncateToWidth(left, 8));
+    expect(renderFooterLine(input, 80, theme)).toBe(' '.repeat(80 - line.length) + line);
+    expect(renderFooterLine(input, 12, theme)).toBe(truncateToWidth(line, 12));
     expect(renderFooterLine(input, 0, theme)).toBe('');
-    expect(visibleWidth(renderFooterLine({ ...input, directory: '界/界' }, 25, theme))).toBe(25);
+    expect(visibleWidth(renderFooterLine({ ...input, modelId: '界界' }, 23, theme))).toBe(23);
   });
 
   it('keeps colored text within the width', () => {
@@ -69,19 +52,6 @@ describe('statusbar rendering', () => {
     for (const width of [80, 40, 24]) {
       expect(visibleWidth(renderFooterLine(input, width, footerTheme))).toBe(width);
     }
-  });
-
-  it('colors the directory branch and dirty marker and omits missing branches', () => {
-    foreground.mockClear();
-
-    expect(renderFooterLine({ ...input, dirty: true }, 80, theme)).toContain('main*');
-    expect(foreground).toHaveBeenCalledWith('dim', 'tau/abu-347');
-    expect(foreground).toHaveBeenCalledWith('accent', 'main');
-    expect(foreground).toHaveBeenCalledWith('warning', '*');
-
-    expect(renderFooterLine({ ...input, branch: null, dirty: true }, 80, theme)).not.toMatch(
-      /main|\*/,
-    );
   });
 
   it('colors context at strict thresholds and shows unknown context', () => {
