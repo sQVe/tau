@@ -9,6 +9,7 @@ import type {
 import { classifyPath } from './config.js';
 import { observationDirectory } from './observation.js';
 import type { ObservationTracker } from './observationTracker.js';
+import { classificationPath, projectDirectoryFromSession } from './projectPath.js';
 import { lookupRunner } from './runner/runners.js';
 import { worktreePath } from './worktreePath.js';
 
@@ -45,19 +46,27 @@ export const handleToolResult = async (
     return lookup.notify ? withNotice(event, context, lookup.message, 'warning') : undefined;
   }
 
-  const { cwd, loaded, observation } = lookup.tracked;
+  const { cwd, repositoryRoot, loaded, observation } = lookup.tracked;
   const path = typeof event.input.path === 'string' ? event.input.path.replace(/^@/, '') : '';
   const target = resolve(context.cwd, path);
   const editablePath = event.toolName !== 'bash' && path.length > 0;
   const canonicalTarget = await observationDirectory(target);
   const editedPath = worktreePath(relative(context.cwd, target), relative(cwd, canonicalTarget));
 
+  const projectDirectory = projectDirectoryFromSession(
+    cwd,
+    repositoryRoot,
+    loaded.config.cargoManifestPath,
+  );
+
+  const classified = classificationPath(cwd, editedPath, projectDirectory) ?? editedPath;
+
   const productionEdit =
     !event.isError &&
     editablePath &&
     classifyPath(
       loaded.config,
-      editedPath,
+      classified,
       lookupRunner(loaded.config.runner).testFilesCanBeProduction,
     ).production;
 

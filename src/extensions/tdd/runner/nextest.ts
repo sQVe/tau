@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import { CONFIG_DIR_NAME } from '@earendil-works/pi-coding-agent';
 
 import { configFileName } from '../../../config/config.js';
 import type { TddConfig } from '../config.js';
+import { cargoInputFiles } from './cargoInputFiles.js';
 import { parseCargoMetadata } from './cargoMetadata.js';
 import { runWithDiagnostics } from './diagnostics.js';
 import type { StageSpawn } from './diagnostics.js';
@@ -14,6 +15,7 @@ import { parseJunitReport } from './junit.js';
 import type { JunitReport } from './junit.js';
 import {
   listArguments,
+  manifestArguments,
   metadataArguments,
   runArguments,
   targetArguments,
@@ -83,6 +85,17 @@ const configurationGlobs = [
   'rust-toolchain.toml',
 ];
 
+const configurationFiles = (
+  { cargoManifestPath }: TddConfig,
+  cwd: string,
+  repositoryRoot: string,
+): string[] => {
+  const manifestPath =
+    cargoManifestPath === undefined ? undefined : resolve(repositoryRoot, cargoManifestPath);
+
+  return cargoInputFiles(manifestPath, cwd, repositoryRoot);
+};
+
 const maximumOutputExcerptLength = 500;
 
 export const defaultDeps = (scope: RunTestsInput['scope'] = 'focused'): NextestDeps => ({
@@ -129,6 +142,11 @@ const stageFacts = (input: RunTestsInput, result: SpawnResult, deadline: number)
   aborted: isAborted(input),
 });
 
+// Cargo reads .cargo/config.toml from its working directory and the parents, not from beside the
+// manifest, so a chosen project runs from its own directory.
+const cargoDirectory = (input: RunTestsInput): string =>
+  input.cargoManifestPath === undefined ? input.cwd : dirname(input.cargoManifestPath);
+
 const spawnStage = async (
   name: string,
   argumentsList: string[],
@@ -138,7 +156,7 @@ const spawnStage = async (
   const started = performance.now();
 
   const result = await spawnRequest.spawn('cargo', argumentsList, {
-    cwd: input.cwd,
+    cwd: cargoDirectory(input),
     timeoutMs: Math.max(0, spawnRequest.deadline - started),
     signal: input.signal,
     stdoutFile: spawnRequest.stdoutFile,
@@ -189,8 +207,9 @@ const buildStages = async (
   request: { spawn: SpawnCommand; deadline: number; directory: string },
 ): Promise<StageOutcome> => {
   const metadataPath = join(request.directory, 'metadata.stdout.json');
+  const manifest = manifestArguments(input.cargoManifestPath, input.cargoLocked === true);
 
-  const metadata = await spawnStage('metadata', metadataArguments(), input, {
+  const metadata = await spawnStage('metadata', [...metadataArguments(), ...manifest], input, {
     spawn: request.spawn,
     deadline: request.deadline,
     stdoutFile: metadataPath,
@@ -222,7 +241,7 @@ const buildStages = async (
     return { kind: 'stop', report: metadataInterruption, stages: [metadata] };
   }
 
-  const targets = targetArguments(parsedMetadata);
+  const targets = [...targetArguments(parsedMetadata), ...manifest];
   const listPath = join(request.directory, 'list.stdout.json');
 
   const list = await spawnStage('list', listArguments(targets), input, {
@@ -372,6 +391,7 @@ export const nextestRunner = {
   name: 'nextest',
   defaults: nextestDefaults,
   configurationGlobs,
+  configurationFiles,
   testNameFormat,
   focusedTimeoutMs: focusedTimeoutMilliseconds,
   fullTimeoutMs: fullTimeoutMilliseconds,

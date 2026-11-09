@@ -1,7 +1,13 @@
 import { expect, it } from 'vitest';
 
 import type { CargoMetadata } from './cargoMetadata.js';
-import { listArguments, runArguments, targetArguments, toolConfig } from './nextestArguments.js';
+import {
+  listArguments,
+  manifestArguments,
+  runArguments,
+  targetArguments,
+  toolConfig,
+} from './nextestArguments.js';
 
 const scope = ['--workspace', '--lib', '--bins', '--tests'];
 
@@ -113,6 +119,25 @@ it('runs every test without a filter in a full run', () => {
 
 it('lists the same build targets as a run, as JSON', () => {
   expect(listArguments(scope)).toEqual(['nextest', 'list', ...scope, '--message-format', 'json']);
+});
+
+it.for([
+  { name: 'no manifest options', manifestPath: undefined, locked: false, expected: [] },
+  {
+    name: 'a manifest path',
+    manifestPath: '/repo/backend/Cargo.toml',
+    locked: false,
+    expected: ['--manifest-path', '/repo/backend/Cargo.toml'],
+  },
+  { name: 'a locked lock file', manifestPath: undefined, locked: true, expected: ['--locked'] },
+  {
+    name: 'both',
+    manifestPath: '/repo/backend/Cargo.toml',
+    locked: true,
+    expected: ['--manifest-path', '/repo/backend/Cargo.toml', '--locked'],
+  },
+])('passes $name to Cargo', ({ manifestPath, locked, expected }) => {
+  expect(manifestArguments(manifestPath, locked)).toEqual(expected);
 });
 
 it('writes a profile that keeps running after failures and saves a JUnit report', () => {

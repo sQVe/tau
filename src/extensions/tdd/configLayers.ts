@@ -5,9 +5,11 @@ export interface ConfigLayer {
   values: Partial<TddConfig>;
 }
 
+export type TddConfigSources = { [Key in keyof TddConfig]: string };
+
 export interface MergedTddConfig {
   config: TddConfig;
-  sources: Record<keyof TddConfig, string>;
+  sources: TddConfigSources;
 }
 
 export const tddConfigFields: (keyof TddConfig)[] = [
@@ -17,9 +19,11 @@ export const tddConfigFields: (keyof TddConfig)[] = [
   'testSupportGlobs',
   'excludedGlobs',
   'verificationArgv',
+  'cargoManifestPath',
+  'cargoLocked',
 ];
 
-const sourcesFrom = (source: string): Record<keyof TddConfig, string> => ({
+const sourcesFrom = (source: string): TddConfigSources => ({
   runner: source,
   productionGlobs: source,
   testGlobs: source,
@@ -40,8 +44,8 @@ export const mergeConfigLayers = (
     throw new Error(`Unknown TDD runner: ${defaultRunner}`);
   }
 
-  const config = { ...initial };
-  const sources = sourcesFrom(defaultSource);
+  let config = { ...initial };
+  let sources = sourcesFrom(defaultSource);
 
   for (const { source, values } of layers) {
     const nextRunner = values.runner;
@@ -53,11 +57,8 @@ export const mergeConfigLayers = (
         throw new Error(`Unknown TDD runner: ${nextRunner}`);
       }
 
-      Object.assign(config, nextDefaults);
-
-      for (const key of tddConfigFields) {
-        sources[key] = defaultSource;
-      }
+      config = { ...nextDefaults };
+      sources = sourcesFrom(defaultSource);
     }
 
     for (const key of tddConfigFields) {

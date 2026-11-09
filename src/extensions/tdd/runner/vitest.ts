@@ -194,6 +194,7 @@ export const vitestRunner = {
   name: 'vitest',
   defaults: vitestDefaults,
   configurationGlobs,
+  configurationFiles: () => [],
   testNameFormat,
   focusedTimeoutMs: defaultTimeoutMilliseconds,
   fullTimeoutMs: fullTimeoutMilliseconds,

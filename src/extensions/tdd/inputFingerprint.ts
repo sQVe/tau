@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { hasErrorCode, isMissingFile } from '../../errors.js';
 import type { TddConfig } from './config.js';
 import { closesLoop, createInputRules } from './inputGlob.js';
+import { projectDirectoryFromSession } from './projectPath.js';
 import { lookupRunner } from './runner/runners.js';
 
 const isVanishedEntry = (error: unknown) => isMissingFile(error) || hasErrorCode(error, 'ENOTDIR');
@@ -105,8 +106,19 @@ export const fingerprintInputs = async (
   cwd: string,
   config: TddConfig,
   files: string[],
+  repositoryRoot = cwd,
 ): Promise<string> => {
-  const paths = [...files, ...(await listInputs(cwd, config))];
+  const project = projectDirectoryFromSession(cwd, repositoryRoot, config.cargoManifestPath);
+
+  const projectInputs =
+    project === undefined ? [] : await listInputs(resolve(cwd, project), config);
+
+  const paths = [
+    ...files,
+    ...lookupRunner(config.runner).configurationFiles(config, cwd, repositoryRoot),
+    ...(await listInputs(cwd, config)),
+    ...projectInputs.map((path) => join(project ?? '', path)),
+  ];
 
   const digest = createHash('sha256');
 

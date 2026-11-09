@@ -1,20 +1,17 @@
 import type { TddConfig } from '../config.js';
 
+interface RunTestsBase {
+  cwd: string;
+  verificationArgv: readonly string[];
+  // An absolute path. Only the nextest runner reads the Cargo options.
+  cargoManifestPath?: string | undefined;
+  cargoLocked?: boolean | undefined;
+  signal?: AbortSignal | undefined;
+}
+
 export type RunTestsInput =
-  | {
-      scope: 'focused';
-      cwd: string;
-      verificationArgv: readonly string[];
-      files: string[];
-      testNames: string[];
-      signal?: AbortSignal | undefined;
-    }
-  | {
-      scope: 'full';
-      cwd: string;
-      verificationArgv: readonly string[];
-      signal?: AbortSignal | undefined;
-    };
+  | (RunTestsBase & { scope: 'focused'; files: string[]; testNames: string[] })
+  | (RunTestsBase & { scope: 'full' });
 
 export type TestAttribution =
   | { kind: 'ambiguous'; binaryIds: string[]; files?: string[] }
@@ -144,6 +141,8 @@ export interface TestRunner {
   name: string;
   defaults: TddConfig;
   configurationGlobs: string[];
+  // Absolute paths that the config adds to the fingerprint, present or not.
+  configurationFiles: (config: TddConfig, cwd: string, repositoryRoot: string) => string[];
   testNameFormat: string;
   focusedTimeoutMs: number;
   fullTimeoutMs: number;

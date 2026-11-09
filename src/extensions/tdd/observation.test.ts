@@ -944,3 +944,67 @@ it('starts a new advice cycle after a run of another behavior stopped at its sta
   await observation.run(behavior, 'focused');
   expect(await observation.checkpoint(true)).toContain('RED');
 });
+
+it.for<{ name: string; file: (root: string) => string; accepted: string | undefined }>([
+  {
+    name: 'a relative test file in the chosen project',
+    file: () => '../backend/src/lib.rs',
+    accepted: '../backend/src/lib.rs',
+  },
+  {
+    name: 'an absolute test file in the chosen project',
+    file: (root) => join(root, 'backend/src/lib.rs'),
+    accepted: '../backend/src/lib.rs',
+  },
+  {
+    name: 'an absolute test file in the session',
+    file: (root) => join(root, 'tools/src/lib.rs'),
+    accepted: undefined,
+  },
+  {
+    name: 'a test file beside the chosen project',
+    file: () => '../frontend/src/lib.rs',
+    accepted: undefined,
+  },
+  {
+    name: 'a test file outside the checkout',
+    file: () => '../../outside/src/lib.rs',
+    accepted: undefined,
+  },
+])(
+  'accepts only $name inside a chosen project beside the session',
+  async ({ file, accepted }, { onTestFinished }) => {
+    const root = temporaryDirectory(onTestFinished, 'tau-observation-project-');
+    const cwd = join(root, 'tools');
+    await mkdir(join(root, 'backend/src'), { recursive: true });
+    await mkdir(join(root, 'frontend/src'), { recursive: true });
+    await mkdir(join(cwd, 'src'), { recursive: true });
+
+    const config = {
+      ...defaultTddConfig,
+      productionGlobs: ['**/src/**/*.rs'],
+      testGlobs: ['**/src/**/*.rs'],
+      cargoManifestPath: 'backend/Cargo.toml',
+    };
+
+    runTests.mockResolvedValueOnce({ kind: 'pass', tests: [] });
+
+    const running = createTestObservation(cwd, config, root).run(
+      { behavior: 'adds', testFullName: 'tests::adds', files: [file(root)] },
+      'focused',
+    );
+
+    const failure = await running.then(
+      () => undefined,
+      (error: unknown) => String(error),
+    );
+
+    const requested = runTests.mock.calls.map(([input]) => ('files' in input ? input.files : []));
+    const rejected = failure?.includes('Expected a test file inside the worktree') === true;
+
+    expect({ rejected, requested }).toEqual({
+      rejected: accepted === undefined,
+      requested: accepted === undefined ? [] : [[accepted]],
+    });
+  },
+);

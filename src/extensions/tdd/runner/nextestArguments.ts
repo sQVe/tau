@@ -49,6 +49,20 @@ export const listArguments = (targets: readonly string[]): string[] => [
   'json',
 ];
 
+export const manifestArguments = (manifestPath: string | undefined, locked: boolean): string[] => {
+  const argumentsList: string[] = [];
+
+  if (manifestPath !== undefined) {
+    argumentsList.push('--manifest-path', manifestPath);
+  }
+
+  if (locked) {
+    argumentsList.push('--locked');
+  }
+
+  return argumentsList;
+};
+
 export const metadataArguments = (): string[] => ['metadata', '--no-deps', '--format-version', '1'];
 
 export const runArguments = ({

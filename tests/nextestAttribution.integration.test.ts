@@ -1,6 +1,9 @@
+import { join } from 'node:path';
+
 import { expect, it, vi } from 'vitest';
 
 import type { RunnerResult, TestResult } from '../src/extensions/tdd/runner/types.js';
+import { initializeRepository } from './gitRepository.js';
 import {
   cargoPackage,
   createCrate,
@@ -305,6 +308,119 @@ it('resolves workspace dep-info against the root when the suite runs from a memb
     kind: 'pass',
     tests: [{ file: 'src/lib.rs', fullname: 'tests::b_passes', status: 'passed' }],
   });
+});
+
+it('attributes a test in backend/Cargo.toml to its file from the repository root', async ({
+  onTestFinished,
+}) => {
+  const crate = await createCrate(onTestFinished, 'subdirectory', {
+    'backend/Cargo.toml': cargoPackage('probe_backend'),
+    'backend/src/lib.rs': libraryWith('    #[test]\n    fn backend_passes() {}'),
+    '.pi/tau.json': JSON.stringify({
+      tdd: { runner: 'nextest', cargoManifestPath: 'backend/Cargo.toml' },
+    }),
+  });
+
+  await prebuildCrate(join(crate, 'backend'));
+
+  const result = await run(crate, {
+    files: ['backend/src/lib.rs'],
+    testFullName: 'tests::backend_passes',
+  });
+
+  expect(result.details.report).toMatchObject({
+    kind: 'pass',
+    tests: [{ file: 'backend/src/lib.rs', fullname: 'tests::backend_passes', status: 'passed' }],
+  });
+
+  expect(testsOf(result)[0]?.attribution).toBeUndefined();
+});
+
+it('resolves the manifest path from the Git root when the session is the project directory', async ({
+  onTestFinished,
+}) => {
+  const repository = await createCrate(onTestFinished, 'nested-session', {
+    'backend/Cargo.toml': cargoPackage('probe_nested_session'),
+    'backend/src/lib.rs': libraryWith('    #[test]\n    fn nested_passes() {}'),
+    'backend/.pi/tau.json': JSON.stringify({
+      tdd: { runner: 'nextest', cargoManifestPath: 'backend/Cargo.toml' },
+    }),
+  });
+
+  await initializeRepository(repository);
+  await prebuildCrate(join(repository, 'backend'));
+
+  const result = await run(join(repository, 'backend'), {
+    files: ['src/lib.rs'],
+    testFullName: 'tests::nested_passes',
+  });
+
+  expect(result.details.report).toMatchObject({
+    kind: 'pass',
+    tests: [{ file: 'src/lib.rs', fullname: 'tests::nested_passes', status: 'passed' }],
+  });
+});
+
+it('applies the Cargo config beside the chosen manifest when the session is the repository root', async ({
+  onTestFinished,
+}) => {
+  const crate = await createCrate(onTestFinished, 'manifest-config', {
+    'backend/Cargo.toml': cargoPackage('probe_manifest_config'),
+    'backend/.cargo/config.toml': '[env]\nTAU_PROBE = "loaded"\n',
+    'backend/src/lib.rs': libraryWith(
+      '    #[test]\n    fn reads_config() { assert_eq!(env!("TAU_PROBE"), "loaded"); }',
+    ),
+    '.pi/tau.json': JSON.stringify({
+      tdd: { runner: 'nextest', cargoManifestPath: 'backend/Cargo.toml' },
+    }),
+  });
+
+  await initializeRepository(crate);
+
+  const result = await run(crate, {
+    files: ['backend/src/lib.rs'],
+    testFullName: 'tests::reads_config',
+  });
+
+  expect(result.details.report).toMatchObject({
+    kind: 'pass',
+    tests: [{ file: 'backend/src/lib.rs', fullname: 'tests::reads_config', status: 'passed' }],
+  });
+});
+
+it('records RED for a test in a chosen project beside the session', async ({ onTestFinished }) => {
+  const repository = await createCrate(onTestFinished, 'sibling-project', {
+    'backend/Cargo.toml': cargoPackage('probe_sibling_project'),
+    'backend/src/lib.rs': libraryWith('    #[test]\n    fn sibling_fails() { assert_eq!(1, 2); }'),
+    'tools/.pi/tau.json': JSON.stringify({
+      tdd: { runner: 'nextest', cargoManifestPath: 'backend/Cargo.toml' },
+    }),
+  });
+
+  await initializeRepository(repository);
+  await prebuildCrate(join(repository, 'backend'));
+
+  const session = join(repository, 'tools');
+
+  expect(
+    hintOf(await tool.edit(session, '../backend/src/lib.rs', '\npub fn before_red() {}\n')),
+  ).toBe(redHint);
+
+  const result = await run(session, {
+    files: ['../backend/src/lib.rs'],
+    testFullName: 'tests::sibling_fails',
+  });
+
+  expect(result.details.report).toMatchObject({
+    kind: 'fail',
+    tests: [{ file: '../backend/src/lib.rs', fullname: 'tests::sibling_fails', status: 'failed' }],
+  });
+
+  expect(testsOf(result)[0]?.attribution).toBeUndefined();
+
+  expect(
+    hintOf(await tool.edit(session, '../backend/src/lib.rs', '\npub fn implemented() {}\n')),
+  ).toBeUndefined();
 });
 
 it('gives unknown attribution when a binary dep-info file is missing', async ({
