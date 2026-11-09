@@ -8,6 +8,7 @@ interface FakeJob {
 export interface FakeTrunkRun {
   id: number;
   branch: string;
+  event?: string;
   workflow: string;
   conclusion: string;
   headSha: string;
@@ -30,6 +31,11 @@ export const trunkRunList = (
         run.branch === argumentAfter(commandArguments, '--branch') &&
         run.workflow === argumentAfter(commandArguments, '--workflow'),
     )
+    .filter((run) => {
+      const event = argumentAfter(commandArguments, '--event');
+
+      return event === undefined || (run.event ?? 'push') === event;
+    })
     .filter((run) => run.workflowDisabled !== true || includesDisabled(commandArguments))
     .slice(0, Number(argumentAfter(commandArguments, '--limit')))
     .map((run) => ({

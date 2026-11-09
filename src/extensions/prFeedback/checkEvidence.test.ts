@@ -11,6 +11,7 @@ import {
   isFailing,
   isTrunkMatch,
   jobOf,
+  refusesChangedBase,
 } from './checkEvidence.js';
 import type {
   Check,
@@ -414,6 +415,18 @@ it.each([
   });
 });
 
+it.each([
+  { firstBase: 'main', secondBase: 'main', explicitTrunk: false, refuses: false },
+  { firstBase: 'main', secondBase: 'release', explicitTrunk: false, refuses: true },
+  { firstBase: 'main', secondBase: 'main', explicitTrunk: true, refuses: false },
+  { firstBase: 'main', secondBase: 'release', explicitTrunk: true, refuses: false },
+])(
+  'refuses base $firstBase to $secondBase with explicit trunk $explicitTrunk: $refuses',
+  ({ firstBase, secondBase, explicitTrunk, refuses }) => {
+    expect(refusesChangedBase(firstBase, secondBase, explicitTrunk)).toBe(refuses);
+  },
+);
+
 const trunkRun = (databaseId: number, conclusion: string) => ({
   databaseId,
   conclusion,
@@ -424,7 +437,7 @@ const trunkRun = (databaseId: number, conclusion: string) => ({
 it.each([
   { conclusion: 'failure', failed: true },
   { conclusion: 'success', failed: false },
-  { conclusion: 'cancelled', failed: false },
+  { conclusion: 'cancelled', failed: true },
   { conclusion: 'timed_out', failed: false },
   { conclusion: '', failed: false },
 ])(

@@ -633,6 +633,8 @@ describe('checks input', () => {
         'ghe.example.com/sQVe/tau',
         '--branch',
         'main',
+        '--event',
+        'push',
         '--workflow',
         'CI',
         '--all',

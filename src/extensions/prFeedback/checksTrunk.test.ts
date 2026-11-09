@@ -53,6 +53,29 @@ describe('checks trunk matches', () => {
     expect(result.gaps).toEqual([]);
   });
 
+  it('ignores pull request runs whose branch has the trunk name', async () => {
+    const { fake, readChecks } = await setUp();
+
+    fake.checks = [failingCheck('test')];
+    fake.trunkRuns = [{ ...trunkRun(31, 'test'), event: 'pull_request' }];
+
+    const result = await readChecks();
+
+    expect(result.checks[0]?.trunkMatches).toEqual([]);
+    expect(callsOf(fake, 'run view 31')).toEqual([]);
+  });
+
+  it('matches a failed job in a cancelled trunk run', async () => {
+    const { fake, readChecks } = await setUp();
+
+    fake.checks = [failingCheck('test')];
+    fake.trunkRuns = [{ ...trunkRun(31, 'test'), conclusion: 'cancelled' }];
+
+    const result = await readChecks();
+
+    expect(result.checks[0]?.trunkMatches).toEqual([{ url: runUrl(31), headSha: 'sha-31' }]);
+  });
+
   it('ignores runs that did not fail and jobs that did not fail', async () => {
     const { fake, readChecks } = await setUp();
 
@@ -83,10 +106,16 @@ describe('checks trunk matches', () => {
     const result = await readChecks();
 
     expect(callsOf(fake, 'run list')).toEqual([
-      'run list --repo github.com/sQVe/tau --branch release --workflow CI --all --limit 5 --json databaseId,conclusion,headSha,url',
+      'run list --repo github.com/sQVe/tau --branch release --event push --workflow CI --all --limit 5 --json databaseId,conclusion,headSha,url',
     ]);
 
-    expect(result.checks[0]?.trunkMatches).toHaveLength(5);
+    expect(result.checks[0]?.trunkMatches).toEqual([
+      { url: runUrl(31), headSha: 'sha-31' },
+      { url: runUrl(32), headSha: 'sha-32' },
+      { url: runUrl(33), headSha: 'sha-33' },
+      { url: runUrl(34), headSha: 'sha-34' },
+      { url: runUrl(35), headSha: 'sha-35' },
+    ]);
   });
 
   it('matches trunk runs of a workflow that was disabled after they ran', async () => {
@@ -100,11 +129,27 @@ describe('checks trunk matches', () => {
     expect(result.checks[0]?.trunkMatches).toEqual([{ url: runUrl(31), headSha: 'sha-31' }]);
   });
 
+  it('refuses when the base changes during the checks read', async () => {
+    const { fake, readChecks } = await setUp();
+
+    fake.checks = [failingCheck('test')];
+    fake.nextBases = ['main', 'release'];
+
+    await expect(readChecks()).rejects.toThrow(
+      'The pull request baseRefName changed from main to release during the read. Read again.',
+    );
+
+    expect(callsOf(fake, 'run')).toEqual([]);
+    expect(fake.writes).toEqual([]);
+  });
+
   it('uses the trunk parameter over the base branch', async () => {
     const { fake, readChecks } = await setUp();
 
     fake.checks = [failingCheck('test')];
     fake.trunkRuns = [trunkRun(31, 'test', 'main'), trunkRun(32, 'test', 'stack-trunk')];
+
+    fake.nextBases = ['main', 'release'];
 
     const result = await readChecks({ trunk: 'stack-trunk' });
 
@@ -138,7 +183,7 @@ describe('checks trunk matches', () => {
       expect.objectContaining({
         check: 'test',
         command:
-          "gh run list --repo github.com/sQVe/tau --branch main --workflow 'CI Tests' --all --limit 5 --json databaseId,conclusion,headSha,url",
+          "gh run list --repo github.com/sQVe/tau --branch main --event push --workflow 'CI Tests' --all --limit 5 --json databaseId,conclusion,headSha,url",
       }),
     ]);
   });

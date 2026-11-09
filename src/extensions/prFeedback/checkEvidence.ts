@@ -291,8 +291,14 @@ export const boundChecks = (
 export const isFailing = (check: CheckItem): boolean =>
   check.bucket === 'fail' || check.bucket === 'cancel';
 
+export const refusesChangedBase = (
+  firstBase: string,
+  secondBase: string,
+  explicitTrunk: boolean,
+): boolean => !explicitTrunk && firstBase !== secondBase;
+
 export const failedTrunkRuns = (runs: TrunkRun[]): TrunkRun[] =>
-  runs.filter((run) => run.conclusion === 'failure');
+  runs.filter((run) => run.conclusion === 'failure' || run.conclusion === 'cancelled');
 
 export const isTrunkMatch = (checkName: string, jobs: TrunkJob[]): boolean =>
   jobs.some((job) => job.name === checkName && job.conclusion === 'failure');

@@ -21,6 +21,7 @@ import {
   jobOf,
   logCharacterBudget,
   parseOutput,
+  refusesChangedBase,
   unreadableLinkGap,
 } from './checkEvidence.js';
 import type {
@@ -147,6 +148,8 @@ const runListArguments = (repository: Repository, trunk: string, workflow: strin
   formatRepository(repository),
   '--branch',
   trunk,
+  '--event',
+  'push',
   '--workflow',
   workflow,
   '--all',
@@ -264,7 +267,19 @@ export const readChecks = async (
 
   const list = await readCheckList(runtime, repository, pr);
 
-  await requireHead(runtime, repository, pr, head);
+  const currentPullRequest = await requireHead(runtime, repository, pr, head);
+
+  if (
+    refusesChangedBase(
+      pullRequest.baseRefName,
+      currentPullRequest.baseRefName,
+      pull.trunk !== undefined,
+    )
+  ) {
+    throw new Error(
+      `The pull request baseRefName changed from ${pullRequest.baseRefName} to ${currentPullRequest.baseRefName} during the read. Read again.`,
+    );
+  }
 
   if ('gap' in list) {
     return boundChecks({ pr, checks: [], gaps: [list.gap] }, repository, head);
