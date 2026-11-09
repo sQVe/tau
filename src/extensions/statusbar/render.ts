@@ -4,9 +4,6 @@ import type { ExtensionAPI, Theme, ThemeColor } from '@earendil-works/pi-coding-
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 
 interface FooterInput {
-  directory: string;
-  branch: string | null;
-  dirty: boolean;
   cost: number;
   contextPercent: number | null;
   contextWindow: number;
@@ -16,10 +13,8 @@ interface FooterInput {
 
 // Footer-only colors from Catppuccin Latte (Muted). Keep the terminal background unchanged.
 const colors: Partial<Record<ThemeColor, string>> = {
-  dim: '97;100;117',
   text: '30;32;40',
   muted: '62;65;82',
-  accent: '32;112;104',
   warning: '128;96;16',
   error: '184;37;48',
   thinkingOff: '97;100;117',
@@ -35,7 +30,6 @@ export const footerTheme: Pick<Theme, 'fg'> = {
   fg: (color, text) => `\x1b[38;2;${colors[color] ?? colors.text}m${text}\x1b[39m`,
 };
 
-// Directory and model names can contain terminal controls. Strip them before adding colors.
 const sanitizeText = (text: string): string =>
   stripVTControlCharacters(text).replace(/\p{Cc}/gu, ' ');
 
@@ -88,15 +82,6 @@ export const renderFooterLine = (
     return '';
   }
 
-  const left = [theme.fg('dim', sanitizeText(input.directory))];
-
-  if (input.branch !== null) {
-    left.push(
-      theme.fg('accent', sanitizeText(input.branch)) +
-        (input.dirty ? theme.fg('warning', '*') : ''),
-    );
-  }
-
   const percent = input.contextPercent;
   let contextColor: ThemeColor = 'text';
 
@@ -115,21 +100,13 @@ export const renderFooterLine = (
     model += ` ${theme.fg(thinkingColors[input.thinkingLevel], `• ${input.thinkingLevel}`)}`;
   }
 
-  const right = [
+  const line = [
     theme.fg('muted', `$${input.cost.toFixed(costDecimals)}`),
     theme.fg(contextColor, context),
     model,
   ].join('  ');
 
-  const leftText = truncateToWidth(left.join('  '), width);
-  const leftWidth = visibleWidth(leftText);
-  const rightWidth = width - leftWidth - 2;
+  const text = truncateToWidth(line, width);
 
-  if (rightWidth <= 0) {
-    return leftText;
-  }
-
-  const rightText = truncateToWidth(right, rightWidth);
-
-  return leftText + ' '.repeat(width - leftWidth - visibleWidth(rightText)) + rightText;
+  return ' '.repeat(width - visibleWidth(text)) + text;
 };

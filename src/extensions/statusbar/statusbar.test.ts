@@ -1,26 +1,17 @@
-import { execFile } from 'node:child_process';
-import { readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { promisify, stripVTControlCharacters } from 'node:util';
+import { stripVTControlCharacters } from 'node:util';
 
 import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { installCommandShim } from '../../../tests/commandShimFake.js';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import { initializeRepository } from '../../../tests/gitRepository.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import statusbarExtension from './statusbar.js';
 
-const executeFile = promisify(execFile);
-
-const setup = (directory: string, mode = 'tui') => {
+const setup = (mode = 'tui') => {
   const fake = fakeExtensionApi({ getThinkingLevel: () => 'high' });
   const setFooter = vi.fn<ExtensionContext['ui']['setFooter']>();
   const session = { id: 'session-1', leafId: 'entry-1' as string | null, entryCount: 1 };
 
   const context = {
-    cwd: directory,
     mode,
     ui: { setFooter },
     sessionManager: {
@@ -45,21 +36,13 @@ const setup = (directory: string, mode = 'tui') => {
       throw new Error('No footer factory registered');
     }
 
-    const requestRender = vi.fn<() => void>();
-    let branchChange: (() => void) | undefined;
-    const unsubscribe = vi.fn<() => void>();
-
     const component = factory(
-      { requestRender } as never,
+      { requestRender: () => {} } as never,
       { fg: (_color: string, text: string) => text } as Theme,
       {
         getGitBranch: () => 'main',
         getAvailableProviderCount: () => 1,
-        onBranchChange: (callback: () => void) => {
-          branchChange = callback;
-
-          return unsubscribe;
-        },
+        onBranchChange: () => () => {},
         getExtensionStatuses: () => new Map([['hidden', 'HIDDEN']]),
       },
     );
@@ -67,15 +50,7 @@ const setup = (directory: string, mode = 'tui') => {
     const rawRender = component.render.bind(component);
     component.render = (width) => rawRender(width).map(stripVTControlCharacters);
 
-    return {
-      rawRender,
-      component,
-      requestRender,
-      unsubscribe,
-      branchChange: () => {
-        branchChange?.();
-      },
-    };
+    return { rawRender, component };
   };
 
   statusbarExtension(fake.pi);
@@ -88,132 +63,8 @@ describe('statusbar extension', () => {
     vi.useRealTimers();
   });
 
-  it('shows a clean checkout as clean when Pi inherits a missing index', async ({
-    onTestFinished,
-  }) => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
-    await initializeRepository(directory);
-    await writeFile(join(directory, 'tracked'), 'original bytes');
-    await executeFile('git', ['add', 'tracked'], { cwd: directory });
-    await executeFile('git', ['commit', '-qm', 'base'], { cwd: directory });
-
-    vi.stubEnv('GIT_INDEX_FILE', join(directory, 'missing-index'));
-
-    onTestFinished(() => {
-      vi.unstubAllEnvs();
-    });
-
-    const application = setup(directory);
-    await application.emit('session_start');
-    const footer = application.mount();
-    onTestFinished(() => footer.component.dispose?.());
-
-    await vi.waitFor(() => {
-      expect(footer.requestRender).toHaveBeenCalled();
-    });
-
-    expect(footer.component.render(100)[0]).not.toContain('main*');
-  });
-
-  it('shows an edited checkout as dirty when Pi inherits an invalid GIT_DIR', async ({
-    onTestFinished,
-  }) => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
-    await initializeRepository(directory);
-    await writeFile(join(directory, 'tracked'), 'original bytes');
-    await executeFile('git', ['add', 'tracked'], { cwd: directory });
-    await executeFile('git', ['commit', '-qm', 'base'], { cwd: directory });
-    await writeFile(join(directory, 'tracked'), 'edited bytes');
-
-    vi.stubEnv('GIT_DIR', join(directory, 'missing-git-directory'));
-
-    onTestFinished(() => {
-      vi.unstubAllEnvs();
-    });
-
-    const application = setup(directory);
-    await application.emit('session_start');
-    const footer = application.mount();
-    onTestFinished(() => footer.component.dispose?.());
-
-    await vi.waitFor(() => {
-      expect(footer.component.render(100)[0]).toContain('main*');
-    });
-  });
-
-  it('reads dirty state without refreshing the shared index', async ({ onTestFinished }) => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
-    await initializeRepository(directory);
-    await writeFile(join(directory, 'tracked'), 'same bytes');
-    await executeFile('git', ['add', 'tracked'], { cwd: directory });
-
-    await executeFile(
-      'git',
-      [
-        '-c',
-        'user.name=Test',
-        '-c',
-        'user.email=test@example.com',
-        '-c',
-        'commit.gpgsign=false',
-        'commit',
-        '-qm',
-        'base',
-      ],
-      { cwd: directory },
-    );
-
-    const index = await readFile(join(directory, '.git/index'));
-    await writeFile(join(directory, 'replacement'), 'same bytes');
-    await rename(join(directory, 'replacement'), join(directory, 'tracked'));
-    await writeFile(join(directory, 'dirty'), 'user work');
-    const application = setup(directory);
-    await application.emit('session_start');
-    const footer = application.mount();
-    onTestFinished(() => footer.component.dispose?.());
-
-    await vi.waitFor(() => {
-      expect(footer.requestRender).toHaveBeenCalled();
-    });
-
-    expect(footer.component.render(100)[0]).toContain('main*');
-    expect(await readFile(join(directory, '.git/index'))).toEqual(index);
-  });
-
-  it('refreshes a replacement footer after the old footer is disposed', async ({
-    onTestFinished,
-  }) => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
-
-    await initializeRepository(directory);
-
-    const application = setup(directory);
-    await application.emit('session_start');
-
-    const previous = application.mount();
-
-    await vi.waitFor(() => {
-      expect(previous.requestRender).toHaveBeenCalled();
-    });
-
-    await writeFile(join(directory, 'file'), 'dirty');
-    await application.emit('session_start');
-
-    // Pi disposes the old component before calling the replacement factory.
-    previous.component.dispose?.();
-    const replacement = application.mount();
-
-    await vi.waitFor(() => {
-      expect(replacement.component.render(100)[0]).toContain('main*');
-    });
-
-    expect(previous.unsubscribe).toHaveBeenCalledOnce();
-
-    replacement.component.dispose?.();
-  });
-
   it('uses the Latte colors without a background', async () => {
-    const application = setup('/missing/tau/abu-347');
+    const application = setup();
     application.context.model = { id: 'model', reasoning: true, contextWindow: 200000 } as never;
 
     application.context.getContextUsage = () => ({
@@ -227,8 +78,6 @@ describe('statusbar extension', () => {
     const footer = application.mount();
     const line = footer.rawRender(100)[0];
 
-    expect(line).toContain('\x1b[38;2;97;100;117mtau/abu-347\x1b[39m');
-    expect(line).toContain('\x1b[38;2;32;112;104mmain\x1b[39m');
     expect(line).toContain('\x1b[38;2;30;32;40m23.4%/200k\x1b[39m');
     expect(line).toContain('\x1b[38;2;62;65;82m$0.000\x1b[39m');
     expect(line).toContain('\x1b[38;2;62;65;82mmodel\x1b[39m');
@@ -263,208 +112,16 @@ describe('statusbar extension', () => {
     footer.component.dispose?.();
   });
 
-  it('refreshes dirty state on tool results and branch changes outside render', async ({
-    onTestFinished,
-  }) => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
-
-    await initializeRepository(directory);
-
-    const application = setup(directory);
-    await application.emit('session_start');
-
-    const footer = application.mount();
-
-    await vi.waitFor(() => {
-      expect(footer.requestRender).toHaveBeenCalled();
-    });
-
-    expect(footer.component.render(100)[0]).not.toContain('main*');
-
-    await writeFile(join(directory, 'file'), 'dirty');
-
-    expect(footer.component.render(100)[0]).not.toContain('main*');
-
-    // The handler returns before Git finishes, so the marker changes on a later render.
-    await application.emit('tool_result');
-
-    expect(footer.component.render(100)[0]).not.toContain('main*');
-
-    await vi.waitFor(() => {
-      expect(footer.component.render(100)[0]).toContain('main*');
-    });
-
-    await rm(join(directory, 'file'));
-    footer.branchChange();
-
-    await vi.waitFor(() => {
-      expect(footer.component.render(100)[0]).not.toContain('main*');
-    });
-
-    footer.component.dispose?.();
-
-    expect(footer.unsubscribe).toHaveBeenCalledOnce();
-  });
-
-  it('ignores a git status that finishes after its footer was replaced', async ({
-    onTestFinished,
-  }) => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
-    const log = join(directory, 'git.log');
-    const finished = join(directory, 'finished.log');
-
-    const startedCount = async () => (await readFile(log, 'utf8')).split('\n').length - 1;
-
-    const finishedCount = async () => {
-      const text = await readFile(finished, 'utf8').catch(() => '');
-
-      return text.split('\n').length - 1;
-    };
-
-    const footers: { dispose?: () => void }[] = [];
-
-    // Releases every gate and waits for each started shim, so none outlives the directory.
-    onTestFinished(async () => {
-      for (const footer of footers) {
-        footer.dispose?.();
-      }
-
-      await writeFile(join(directory, 'release1'), '');
-      await writeFile(join(directory, 'release2'), '');
-
-      await vi.waitFor(async () => {
-        expect(await finishedCount()).toBe(await startedCount());
-      });
-    });
-
-    // The first status waits for the first release and reports a change. The second waits for the
-    // second release and reports a clean tree.
-    const script = [
-      `echo start >> '${log}'`,
-      `count=$(wc -l < '${log}')`,
-      `gate='${directory}'/release$count`,
-      'while [ ! -f "$gate" ]; do sleep 0.01; done',
-      `if [ "$count" = 1 ]; then echo ' M file'; fi`,
-      `echo end >> '${finished}'`,
-    ].join('\n');
-
-    await installCommandShim('git', { otherCalls: 'fail', overrides: [{ match: ' ', script }] });
-
-    const application = setup(directory);
-    await application.emit('session_start');
-    const previous = application.mount();
-    footers.push(previous.component);
-
-    await vi.waitFor(async () => {
-      expect(await startedCount()).toBe(1);
-    });
-
-    previous.component.dispose?.();
-    await application.emit('session_start');
-    const replacement = application.mount();
-    footers.push(replacement.component);
-
-    await writeFile(join(directory, 'release1'), '');
-
-    await vi.waitFor(async () => {
-      expect(await startedCount()).toBe(2);
-    });
-
-    expect(replacement.requestRender).not.toHaveBeenCalled();
-    expect(replacement.component.render(100)[0]).not.toContain('main*');
-
-    await writeFile(join(directory, 'release2'), '');
-
-    await vi.waitFor(async () => {
-      expect(await finishedCount()).toBe(2);
-    });
-  });
-
-  it('runs one git status at a time and merges overlapping refreshes', async ({
-    onTestFinished,
-  }) => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
-    const log = join(directory, 'git.log');
-    const release = join(directory, 'release');
-
-    const script = `echo start >> '${log}'\nwhile [ ! -f '${release}' ]; do sleep 0.01; done\necho end >> '${log}'`;
-
-    await installCommandShim('git', { otherCalls: 'fail', overrides: [{ match: ' ', script }] });
-
-    const application = setup(directory);
-    await application.emit('session_start');
-    const footer = application.mount();
-    onTestFinished(() => footer.component.dispose?.());
-
-    await vi.waitFor(async () => {
-      expect(await readFile(log, 'utf8')).toBe('start\n');
-    });
-
-    for (let index = 0; index < 4; index += 1) {
-      await application.emit('tool_result');
-    }
-
-    await writeFile(release, '');
-
-    await vi.waitFor(() => {
-      expect(footer.requestRender).toHaveBeenCalledTimes(2);
-    });
-
-    expect(await readFile(log, 'utf8')).toBe('start\nend\nstart\nend\n');
-  });
-
-  it('marks a new file dirty at startup even when git hides untracked files', async ({
-    onTestFinished,
-  }) => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
-
-    await initializeRepository(directory);
-    await executeFile('git', ['config', 'status.showUntrackedFiles', 'no'], { cwd: directory });
-    await writeFile(join(directory, 'file'), 'untracked');
-
-    const application = setup(directory);
-    await application.emit('session_start');
-
-    const footer = application.mount().component;
-
-    expect(footer.render(100)[0]).not.toContain('main*');
-
-    await vi.waitFor(() => {
-      expect(footer.render(100)[0]).toContain('main*');
-    });
-
-    footer.dispose?.();
-  });
-
-  it('handles non-repositories', async ({ onTestFinished }) => {
-    const directory = temporaryDirectory(onTestFinished, 'tau-statusbar-');
-
-    const application = setup(directory);
-
-    await application.emit('session_start');
-
-    const footer = application.mount();
-
-    await vi.waitFor(() => {
-      expect(footer.requestRender).toHaveBeenCalled();
-    });
-
-    expect(footer.component.render(100)[0]).not.toContain('main*');
-
-    footer.component.dispose?.();
-  });
-
   it.each(['rpc', 'json', 'print'])('does not install in %s mode', async (mode) => {
-    const application = setup('/missing/tau/abu-347', mode);
+    const application = setup(mode);
 
     await application.emit('session_start');
-    await application.emit('tool_result');
 
     expect(application.setFooter).not.toHaveBeenCalled();
   });
 
   it('reads all usage categories and live model context and thinking state', async () => {
-    const application = setup('/missing/tau/abu-347');
+    const application = setup();
     const usage = { cost: { total: 0.103 } };
 
     application.context.sessionManager.getEntries = () =>
@@ -490,9 +147,7 @@ describe('statusbar extension', () => {
 
     const footer = application.mount().component;
 
-    expect(footer.render(100)[0]).toMatch(
-      /^tau\/abu-347  main +\$0.412  23.4%\/100k  model • high$/,
-    );
+    expect(footer.render(100)[0]).toMatch(/^ +\$0.412  23.4%\/100k  model • high$/);
 
     application.context.getContextUsage = () => undefined;
     application.context.model = { id: 'plain', reasoning: false, contextWindow: 200000 } as never;
@@ -509,7 +164,7 @@ describe('statusbar extension', () => {
   });
 
   it('counts cache warmer usage entries in the session cost', async () => {
-    const application = setup('/missing/tau/abu-347');
+    const application = setup();
 
     application.context.sessionManager.getEntries = () =>
       [{ type: 'usage', kind: 'cache_warm', usage: { cost: { total: 0.25 } } }] as never;
@@ -518,7 +173,7 @@ describe('statusbar extension', () => {
 
     const footer = application.mount().component;
 
-    expect(footer.render(100)[0]).toMatch(/main +\$0\.250 /);
+    expect(footer.render(100)[0]).toMatch(/^ +\$0\.250 /);
 
     footer.dispose?.();
   });
@@ -526,7 +181,7 @@ describe('statusbar extension', () => {
   const mountCountingFooter = async () => {
     vi.useFakeTimers({ now: 10_000 });
 
-    const application = setup('/missing/tau/abu-347');
+    const application = setup();
     const getEntries = vi.fn<() => never[]>(() => []);
     const getContextUsage = vi.fn<() => undefined>(() => undefined);
 
@@ -637,7 +292,7 @@ describe('statusbar extension', () => {
   });
 
   it('counts entries from the entry list when the session manager cannot count them', async () => {
-    const application = setup('/missing/tau/abu-347');
+    const application = setup();
     const entries: never[] = [];
     const getContextUsage = vi.fn<() => undefined>(() => undefined);
 
@@ -662,7 +317,7 @@ describe('statusbar extension', () => {
   it('shows changed routed model limits within a second', async () => {
     vi.useFakeTimers({ now: 10_000 });
 
-    const application = setup('/missing/tau/abu-347');
+    const application = setup();
     const routed = { contextWindow: 100000 };
 
     application.context.model = { id: 'smart', api: 'pi-virtual', contextWindow: 0 } as never;

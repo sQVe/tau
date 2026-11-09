@@ -1,5 +1,3 @@
-import { sep } from 'node:path';
-
 import type {
   ContextUsage,
   ExtensionAPI,
@@ -7,7 +5,6 @@ import type {
   SessionManager,
 } from '@earendil-works/pi-coding-agent';
 
-import { runGit } from '../../git.js';
 import { footerTheme, renderFooterLine } from './render.js';
 import { decideReuse } from './reuseDecision.js';
 import type { SessionKey } from './reuseDecision.js';
@@ -28,22 +25,6 @@ interface SessionStats {
   cost: CostReading;
   contextUsage: ContextUsageReading;
 }
-
-interface StatusbarState {
-  dirty: boolean;
-  requestRender: (() => void) | undefined;
-  footerGeneration: number;
-  refreshing: boolean;
-  pendingContext: ExtensionContext | undefined;
-}
-
-export interface StatusbarFooter {
-  install: (context: ExtensionContext) => void;
-  refreshAfterToolResult: (context: ExtensionContext) => void;
-}
-
-const gitTimeoutMilliseconds = 5000;
-const shownDirectoryDepth = 2;
 
 const getSessionCost = (context: ExtensionContext): number => {
   let cost = 0;
@@ -108,75 +89,11 @@ const readSessionStats = (
   return { cost, contextUsage };
 };
 
-const readDirty = async (context: ExtensionContext): Promise<boolean> => {
-  const result = await runGit(context.cwd, ['status', '--porcelain', '--untracked-files=normal'], {
-    timeoutMilliseconds: gitTimeoutMilliseconds,
-    environment: { GIT_OPTIONAL_LOCKS: '0' },
-  });
-
-  return result.exitCode === 0 && result.stdout.length > 0;
-};
-
-const refreshDirty = async (state: StatusbarState, context: ExtensionContext): Promise<void> => {
-  state.pendingContext = context;
-
-  if (state.refreshing) {
-    return;
-  }
-
-  state.refreshing = true;
-
-  try {
-    while (state.pendingContext !== undefined) {
-      const current = state.pendingContext;
-
-      state.pendingContext = undefined;
-      const generation = state.footerGeneration;
-      // oxlint-disable-next-line eslint/no-await-in-loop -- Serial reruns are the point.
-      const nextDirty = await readDirty(current);
-
-      if (generation === state.footerGeneration) {
-        state.dirty = nextDirty;
-        state.requestRender?.();
-      }
-    }
-  } finally {
-    state.refreshing = false;
-  }
-};
-
-const startRefresh = (state: StatusbarState, context: ExtensionContext): void => {
-  // oxlint-disable-next-line typescript/no-floating-promises -- readDirty turns every git failure into a clean result, and requestRender only schedules a frame, so a refresh cannot reject.
-  void refreshDirty(state, context);
-};
-
-const createFooter = (
-  pi: ExtensionAPI,
-  state: StatusbarState,
-  context: ExtensionContext,
-): FooterFactory => {
-  return (terminal, _theme, footerData) => {
-    state.dirty = false;
-
-    state.requestRender = () => {
-      terminal.requestRender();
-    };
-
-    const unsubscribe = footerData.onBranchChange(() => {
-      startRefresh(state, context);
-    });
-
-    startRefresh(state, context);
-
+export const createFooter = (pi: ExtensionAPI, context: ExtensionContext): FooterFactory => {
+  return () => {
     let stats: SessionStats | undefined;
 
     return {
-      dispose() {
-        unsubscribe();
-
-        state.requestRender = undefined;
-        state.footerGeneration += 1;
-      },
       invalidate() {
         stats = undefined;
       },
@@ -187,10 +104,6 @@ const createFooter = (
         return [
           renderFooterLine(
             {
-              directory:
-                context.cwd.split(sep).filter(Boolean).slice(-shownDirectoryDepth).join(sep) || sep,
-              branch: footerData.getGitBranch(),
-              dirty: state.dirty,
               cost: stats.cost.cost,
               contextPercent: usage?.percent ?? null,
               contextWindow: usage?.contextWindow ?? context.model?.contextWindow ?? 0,
@@ -203,26 +116,5 @@ const createFooter = (
         ];
       },
     };
-  };
-};
-
-export const createStatusbarFooter = (pi: ExtensionAPI): StatusbarFooter => {
-  const state: StatusbarState = {
-    dirty: false,
-    requestRender: undefined,
-    footerGeneration: 0,
-    refreshing: false,
-    pendingContext: undefined,
-  };
-
-  return {
-    install(context) {
-      context.ui.setFooter(createFooter(pi, state, context));
-    },
-    refreshAfterToolResult(context) {
-      if (state.requestRender !== undefined) {
-        startRefresh(state, context);
-      }
-    },
   };
 };
