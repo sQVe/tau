@@ -4,8 +4,8 @@
 
 `pr_feedback read` checks `gh` auth first. It returns the PR's state, base and head branches, head
 repository and owner, fork fields, and `mergeable`, read again up to three times while it is
-`UNKNOWN`. It refuses with a read-again error when the PR closes or any other field changes during
-those reads.
+`UNKNOWN`. It refuses when the PR is no longer open after one of those reads, and refuses with a
+read-again error when any other field changes during them.
 
 `pr_feedback checks` adds `trunkMatches` to each failing GitHub Actions check: the latest five trunk
 runs of its workflow where a job with the same name failed. The trunk is the PR's base branch, or
