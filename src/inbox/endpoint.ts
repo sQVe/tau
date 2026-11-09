@@ -8,7 +8,7 @@ import { hasErrorCode, isMissingFile } from '../errors.js';
 import { withFileLock } from '../fileLock/fileLock.js';
 import {
   encodeFrame,
-  isUuid,
+  isSessionId,
   oversizedReason,
   refusedReply,
   requestByteLimit,
@@ -55,8 +55,10 @@ export class LiveOwnerError extends Error {
 export const socketDirectoryFor = (uid: number): string => `/tmp/tau-${String(uid)}`;
 
 export const socketPathFor = (directory: string, sessionId: string): string => {
-  if (!isUuid(sessionId)) {
-    throw new Error(`Session "${sessionId}" is not a UUID, so it cannot name an inbox socket.`);
+  if (!isSessionId(sessionId)) {
+    throw new Error(
+      `Session "${sessionId}" is not a Pi session ID, so it cannot name an inbox socket.`,
+    );
   }
 
   const path = join(directory, `${sessionId}.sock`);
@@ -64,7 +66,7 @@ export const socketPathFor = (directory: string, sessionId: string): string => {
 
   if (bytes > socketPathByteLimit) {
     throw new Error(
-      `Inbox socket path ${path} is ${String(bytes)} bytes; the limit is ${String(socketPathByteLimit)}.`,
+      `Session ${sessionId} is too long for an inbox socket: ${path} is ${String(bytes)} bytes; the limit is ${String(socketPathByteLimit)}.`,
     );
   }
 

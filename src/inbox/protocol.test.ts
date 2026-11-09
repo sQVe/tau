@@ -38,6 +38,31 @@ const requestCases: [string, Uint8Array, ReturnType<typeof decodeRequest>][] = [
   ['a handover message', line(handover), { kind: 'frame', value: handover }],
   ['an answer message', line(answer), { kind: 'frame', value: answer }],
   [
+    'a handover message to a custom Pi session ID',
+    line({ ...handover, targetSessionId: 'job-1' }),
+    { kind: 'frame', value: { ...handover, targetSessionId: 'job-1' } },
+  ],
+  [
+    'a target session ID that Pi does not accept',
+    line({ ...handover, targetSessionId: '../escape' }),
+    { kind: 'refused', reason: 'The frame is not an rpc1 request.' },
+  ],
+  [
+    'a message ID that is a custom session ID but not a UUID',
+    line({ ...handover, messageId: 'job-1' }),
+    { kind: 'refused', reason: 'The frame is not an rpc1 request.' },
+  ],
+  [
+    'an assignment ID that is not a UUID',
+    line({ ...answer, payload: { ...answer.payload, assignmentId: 'job-1' } }),
+    { kind: 'refused', reason: 'The frame is not an rpc1 request.' },
+  ],
+  [
+    'a question ID that is not a UUID',
+    line({ ...answer, payload: { ...answer.payload, questionId: 'job-1' } }),
+    { kind: 'refused', reason: 'The frame is not an rpc1 request.' },
+  ],
+  [
     'a frame over 102400 bytes',
     line({ ...handover, payload: { text: 'a'.repeat(102_400) } }),
     { kind: 'refused', reason: 'The frame is larger than 102400 bytes.' },
@@ -107,6 +132,16 @@ const queued = { protocol: 'rpc1', kind: 'queued', messageId, terminal: 't1', se
 
 const replyCases: [string, Uint8Array, ReturnType<typeof decodeReply>][] = [
   ['a queued reply', line(queued), { kind: 'frame', value: queued }],
+  [
+    'a queued reply from a custom Pi session ID',
+    line({ ...queued, sessionId: 'job-1' }),
+    { kind: 'frame', value: { ...queued, sessionId: 'job-1' } },
+  ],
+  [
+    'a queued reply from a session ID that Pi does not accept',
+    line({ ...queued, sessionId: '../escape' }),
+    { kind: 'refused', reason: 'The frame is not an rpc1 reply.' },
+  ],
   [
     'a refused reply',
     line(refusedReply('No handler.', messageId)),

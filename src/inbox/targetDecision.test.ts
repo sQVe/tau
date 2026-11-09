@@ -22,6 +22,11 @@ const targetCases: [string, TargetFacts, ReturnType<typeof decideTarget>][] = [
     { kind: 'connect', path: `/tmp/tau-1000/${sessionId}.sock`, sessionId },
   ],
   [
+    'a live peer with a custom Pi session ID',
+    { ...target, labels: { 'tau.inbox': 'rpc1:/tmp/tau-1000/job-1.sock' } },
+    { kind: 'connect', path: '/tmp/tau-1000/job-1.sock', sessionId: 'job-1' },
+  ],
+  [
     'a remote terminal',
     { ...target, address: 'machine/t1' },
     { kind: 'refuse', reason: 'Terminal machine/t1 is on another machine.' },
@@ -58,7 +63,7 @@ const targetCases: [string, TargetFacts, ReturnType<typeof decideTarget>][] = [
   ],
   [
     'a socket not named after a session',
-    { ...target, labels: { 'tau.inbox': 'rpc1:/tmp/tau-1000/a.sock' } },
+    { ...target, labels: { 'tau.inbox': 'rpc1:/tmp/tau-1000/-a.sock' } },
     { kind: 'refuse', reason: 'Terminal t1 advertises a socket without a session.' },
   ],
   [

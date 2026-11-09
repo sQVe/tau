@@ -1,4 +1,4 @@
-import { inboxLabelKey, isUuid, parseInboxLabel } from './protocol.js';
+import { inboxLabelKey, isSessionId, parseInboxLabel } from './protocol.js';
 
 export interface TargetFacts {
   address: string;
@@ -18,7 +18,7 @@ const socketSession = (path: string): string | undefined => {
   const name = path.slice(path.lastIndexOf('/') + 1);
   const sessionId = name.slice(0, -'.sock'.length);
 
-  return name.endsWith('.sock') && isUuid(sessionId) ? sessionId : undefined;
+  return name.endsWith('.sock') && isSessionId(sessionId) ? sessionId : undefined;
 };
 
 export const decideTarget = (facts: TargetFacts): TargetDecision => {

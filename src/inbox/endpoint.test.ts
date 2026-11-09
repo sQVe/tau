@@ -227,10 +227,27 @@ it('builds a socket path from a session UUID', () => {
   expect(socketPathFor('/tmp/tau-1000', sessionId)).toBe(`/tmp/tau-1000/${sessionId}.sock`);
 });
 
-it('refuses a session identifier that is not a UUID', () => {
-  expect(() => socketPathFor(root, '../escape')).toThrow(
-    'Session "../escape" is not a UUID, so it cannot name an inbox socket.',
+it('builds a socket path from a custom Pi session ID', () => {
+  expect(socketPathFor('/tmp/tau-1000', 'job-1')).toBe('/tmp/tau-1000/job-1.sock');
+});
+
+it.each(['../escape', '.hidden', 'job-', 'job/1', ''])(
+  'refuses the session identifier "%s" that Pi does not accept',
+  (sessionId) => {
+    expect(() => socketPathFor(root, sessionId)).toThrow(
+      `Session "${sessionId}" is not a Pi session ID, so it cannot name an inbox socket.`,
+    );
+  },
+);
+
+it('refuses a session ID too long for the socket path', () => {
+  const sessionId = 'j'.repeat(85);
+
+  expect(() => socketPathFor('/tmp/tau-1000', sessionId)).toThrow(
+    `Session ${sessionId} is too long for an inbox socket: /tmp/tau-1000/${sessionId}.sock is 104 bytes; the limit is 103.`,
   );
+
+  expect(socketPathFor('/tmp/tau-1000', sessionId.slice(1))).toHaveLength(103);
 });
 
 it('refuses a socket path of 104 bytes or more', () => {
@@ -240,7 +257,7 @@ it('refuses a socket path of 104 bytes or more', () => {
   expect(Buffer.byteLength(`${directory}/${sessionId}.sock`)).toBe(104);
 
   expect(() => socketPathFor(directory, sessionId)).toThrow(
-    `Inbox socket path ${directory}/${sessionId}.sock is 104 bytes; the limit is 103.`,
+    `Session ${sessionId} is too long for an inbox socket: ${directory}/${sessionId}.sock is 104 bytes; the limit is 103.`,
   );
 
   expect(socketPathFor(directory.slice(0, -1), sessionId)).toHaveLength(103);

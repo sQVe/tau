@@ -36,6 +36,15 @@ export const isUuid = (value: string): boolean => uuidExpression.test(value);
 
 export const uuidSchema = Type.String({ pattern: uuidPattern });
 
+// Pi's own rule for `--session-id`. It also keeps a session ID safe as a file name.
+const sessionIdPattern = '^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$';
+
+const sessionIdExpression = new RegExp(sessionIdPattern, 'u');
+
+export const isSessionId = (value: string): boolean => sessionIdExpression.test(value);
+
+const sessionIdSchema = Type.String({ pattern: sessionIdPattern });
+
 const strict = { additionalProperties: false } as const;
 
 const protocolField = Type.Literal(protocolName);
@@ -75,7 +84,7 @@ const requestSchema = withBody({
   kind: Type.Literal('message'),
   messageId: uuidSchema,
   targetTerminal: Type.String({ minLength: 1 }),
-  targetSessionId: uuidSchema,
+  targetSessionId: sessionIdSchema,
 });
 
 const queuedSchema = Type.Object(
@@ -84,7 +93,7 @@ const queuedSchema = Type.Object(
     kind: Type.Literal('queued'),
     messageId: uuidSchema,
     terminal: Type.String({ minLength: 1 }),
-    sessionId: uuidSchema,
+    sessionId: sessionIdSchema,
   },
   strict,
 );
