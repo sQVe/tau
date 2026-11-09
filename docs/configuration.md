@@ -78,7 +78,12 @@ not `nextest`.
   key when the file is missing or is not named `Cargo.toml`. Tau passes `--manifest-path` with the
   resolved path to `cargo metadata`, `cargo nextest list`, and `cargo nextest run`, and runs them
   from the manifest's directory. Cargo then reads `.cargo/config.toml` from that directory and its
-  parents. Unset by default, so Cargo runs from the session directory and searches from there.
+  parents. Unset by default, so Cargo runs from the session directory and searches from there. When
+  the manifest's directory is in the Git checkout but outside the session directory, `run_tests`
+  accepts test files in that project, such as `../backend/src/lib.rs` or an absolute path. Tau
+  matches them against the TDD globs as seen from the manifest's directory. It still rejects other
+  paths outside the session directory. Tau then also fingerprints the files under the manifest's
+  directory that the TDD globs match.
 - `cargoLocked`: boolean. When `true`, Tau passes `--locked` to the same three commands, so a run
   with an out-of-date `Cargo.lock` fails with the Cargo error and leaves the file unchanged.
   Default: `false`.

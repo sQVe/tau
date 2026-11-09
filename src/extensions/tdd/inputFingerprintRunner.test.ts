@@ -176,6 +176,22 @@ it.for(['.cargo/config', '.cargo/config.toml'])(
   },
 );
 
+it('fingerprints the source of a chosen project beside the session', async ({ onTestFinished }) => {
+  const root = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-sibling-project-');
+  const cwd = join(root, 'tools');
+  const config = { ...nextestRunner.defaults, cargoManifestPath: 'backend/Cargo.toml' };
+  await mkdir(join(root, 'backend', 'src'), { recursive: true });
+  await mkdir(cwd);
+  await writeFile(join(root, 'backend', 'src', 'lib.rs'), 'pub fn one() {}\n');
+
+  const before = await fingerprintInputs(cwd, config, [], root);
+
+  await writeFile(join(root, 'backend', 'src', 'lib.rs'), 'pub fn two() {}\n');
+  const after = await fingerprintInputs(cwd, config, [], root);
+
+  expect(after).not.toBe(before);
+});
+
 it('fingerprints no Cargo.lock above the repository root', async ({ onTestFinished }) => {
   const outer = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-outer-');
   const root = join(outer, 'repo');

@@ -101,9 +101,10 @@ rule reports an import, change the table or the module list instead of silencing
   `typebox` and `typebox/value` in `src/schema.ts` and `src/inbox/protocol.ts`, whose schema
   builders and checks are pure, and `minimatch` in `src/extensions/tdd/inputGlob.ts`, which only
   compiles and matches strings, and `@xmldom/xmldom` in `src/extensions/tdd/runner/junit.ts`, which
-  only parses a string into a document, and `node:path` in `src/extensions/tdd/runner/report.ts` and
-  `src/extensions/tdd/runner/cargoInputFiles.ts`, which resolve repository paths without touching
-  the filesystem. The check follows imports, not names, so renaming a file does not escape it.
+  only parses a string into a document, and `node:path` in `src/extensions/tdd/runner/report.ts`,
+  `src/extensions/tdd/runner/cargoInputFiles.ts`, and `src/extensions/tdd/projectPath.ts`, which
+  resolve repository paths without touching the filesystem. The check follows imports, not names, so
+  renaming a file does not escape it.
 
 ### File names
 

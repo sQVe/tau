@@ -14,6 +14,7 @@ import {
   testNames,
 } from './observationTransition.js';
 import type { CheckpointInput, CycleState, HintDecision } from './observationTransition.js';
+import { classificationPath, projectDirectoryFromSession } from './projectPath.js';
 import { finishDiagnostics } from './runner/retention.js';
 import { lookupRunner } from './runner/runners.js';
 import type { RunDiagnostics, RunnerResult, TestRunner } from './runner/types.js';
@@ -39,15 +40,29 @@ interface RunRequest {
   onStart?: ((behavior: Behavior) => void) | undefined;
 }
 
+interface TestFileRules {
+  config: TddConfig;
+  projectDirectory: string | undefined;
+  testFilesCanBeProduction: boolean;
+}
+
 const normalizeTestFile = async (
   cwd: string,
-  config: TddConfig,
+  rules: TestFileRules,
   file: string,
-  testFilesCanBeProduction: boolean,
 ): Promise<string> => {
   const path = relative(cwd, resolve(cwd, file));
 
-  if (isAbsolute(file) || isAbsolute(path)) {
+  const classified = isAbsolute(path)
+    ? null
+    : classificationPath(cwd, path, rules.projectDirectory);
+
+  if (classified === null) {
+    throw new Error(`Expected a test file inside the worktree: ${file}`);
+  }
+
+  // Only a file in a chosen project outside the session may be named by an absolute path.
+  if (isAbsolute(file) && classified === path) {
     throw new Error(`Expected a test file inside the worktree: ${file}`);
   }
 
@@ -63,7 +78,7 @@ const normalizeTestFile = async (
       () => false,
     );
 
-  if (path.startsWith('../') || !classifyPath(config, path, testFilesCanBeProduction).test) {
+  if (!classifyPath(rules.config, classified, rules.testFilesCanBeProduction).test) {
     throw new Error(`Expected a test file inside the worktree: ${file}`);
   }
 
@@ -76,12 +91,11 @@ const normalizeTestFile = async (
 
 const normalizeBehavior = async (
   cwd: string,
-  config: TddConfig,
+  rules: TestFileRules,
   behavior: Behavior,
-  testFilesCanBeProduction: boolean,
 ): Promise<Behavior> => {
   const normalized = await Promise.all(
-    behavior.files.map((file) => normalizeTestFile(cwd, config, file, testFilesCanBeProduction)),
+    behavior.files.map((file) => normalizeTestFile(cwd, rules, file)),
   );
 
   const files = [...new Set(normalized)].toSorted();
@@ -251,12 +265,17 @@ const performRun = async (
 ): Promise<ObservationResult> => {
   const runner = lookupRunner(state.config.runner);
 
-  const behavior = await normalizeBehavior(
-    state.cwd,
-    state.config,
-    request.requested,
-    runner.testFilesCanBeProduction,
-  );
+  const rules = {
+    config: state.config,
+    projectDirectory: projectDirectoryFromSession(
+      state.cwd,
+      state.repositoryRoot,
+      state.config.cargoManifestPath,
+    ),
+    testFilesCanBeProduction: runner.testFilesCanBeProduction,
+  };
+
+  const behavior = await normalizeBehavior(state.cwd, rules, request.requested);
 
   state.cycle = startRun(state.cycle, behavior);
 

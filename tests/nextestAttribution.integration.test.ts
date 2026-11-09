@@ -388,6 +388,41 @@ it('applies the Cargo config beside the chosen manifest when the session is the 
   });
 });
 
+it('records RED for a test in a chosen project beside the session', async ({ onTestFinished }) => {
+  const repository = await createCrate(onTestFinished, 'sibling-project', {
+    'backend/Cargo.toml': cargoPackage('probe_sibling_project'),
+    'backend/src/lib.rs': libraryWith('    #[test]\n    fn sibling_fails() { assert_eq!(1, 2); }'),
+    'tools/.pi/tau.json': JSON.stringify({
+      tdd: { runner: 'nextest', cargoManifestPath: 'backend/Cargo.toml' },
+    }),
+  });
+
+  await initializeRepository(repository);
+  await prebuildCrate(join(repository, 'backend'));
+
+  const session = join(repository, 'tools');
+
+  expect(
+    hintOf(await tool.edit(session, '../backend/src/lib.rs', '\npub fn before_red() {}\n')),
+  ).toBe(redHint);
+
+  const result = await run(session, {
+    files: ['../backend/src/lib.rs'],
+    testFullName: 'tests::sibling_fails',
+  });
+
+  expect(result.details.report).toMatchObject({
+    kind: 'fail',
+    tests: [{ file: '../backend/src/lib.rs', fullname: 'tests::sibling_fails', status: 'failed' }],
+  });
+
+  expect(testsOf(result)[0]?.attribution).toBeUndefined();
+
+  expect(
+    hintOf(await tool.edit(session, '../backend/src/lib.rs', '\npub fn implemented() {}\n')),
+  ).toBeUndefined();
+});
+
 it('gives unknown attribution when a binary dep-info file is missing', async ({
   onTestFinished,
 }) => {
