@@ -15,6 +15,8 @@ import { createInboxExtension } from './inbox.js';
 interface HcState {
   labels: Map<string, string>;
   failLabel: boolean;
+  malformedLabelReply?: boolean;
+  failGet?: boolean;
   afterRead?: (() => Promise<void>) | undefined;
 }
 
@@ -51,6 +53,10 @@ const hcExec = (state: HcState): Exec => {
     const subcommand = commandArguments[0];
     const assignments = commandArguments.slice(4);
 
+    if (subcommand === 'get' && state.failGet === true) {
+      return failedResult('get refused');
+    }
+
     if (subcommand === 'get') {
       const snapshot = terminal();
       const { afterRead } = state;
@@ -73,6 +79,10 @@ const hcExec = (state: HcState): Exec => {
       } else {
         state.labels.set(key, value);
       }
+    }
+
+    if (state.malformedLabelReply === true) {
+      return succeededResult('{');
     }
 
     return succeededResult(terminal());
@@ -258,6 +268,35 @@ it('closes the unadvertised socket and reports when the label cannot be set', as
 
   expect(existsSync(socketOf(sessionId))).toBe(false);
   expect(harness.notices).toEqual([expect.stringContaining('Tau inbox could not start:')]);
+});
+
+it('removes the label it applied when the label reply is malformed', async () => {
+  const harness = startHarness({
+    state: { labels: new Map(), failLabel: false, malformedLabelReply: true },
+  });
+
+  const sessionId = randomUUID();
+
+  await harness.start(sessionId);
+  cleanups.push(() => harness.shutdown(sessionId));
+
+  expect(Object.fromEntries(harness.state.labels)).toEqual({});
+  expect(existsSync(socketOf(sessionId))).toBe(false);
+  expect(harness.notices).toEqual([expect.stringContaining('Tau inbox could not start:')]);
+});
+
+it('reports the label error when removing the applied label also fails', async () => {
+  const harness = startHarness({
+    state: { labels: new Map(), failLabel: false, malformedLabelReply: true, failGet: true },
+  });
+
+  const sessionId = randomUUID();
+
+  await harness.start(sessionId);
+  cleanups.push(() => harness.shutdown(sessionId));
+
+  expect(existsSync(socketOf(sessionId))).toBe(false);
+  expect(harness.notices).toEqual([expect.stringContaining('hc label t7')]);
 });
 
 it('starts no listener without a terminal address', async () => {
