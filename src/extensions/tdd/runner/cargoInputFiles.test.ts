@@ -14,9 +14,11 @@ const besideManifest = (directory: string): string[] =>
     'rust-toolchain.toml',
   ].map((file) => `${directory}/${file}`);
 
-const workspaceFiles = (directory: string): string[] => [
+const ancestorFiles = (directory: string): string[] => [
   `${directory}/Cargo.lock`,
   `${directory}/Cargo.toml`,
+  `${directory}/.cargo/config`,
+  `${directory}/.cargo/config.toml`,
 ];
 
 it.for<{
@@ -34,11 +36,11 @@ it.for<{
     expected: [],
   },
   {
-    name: 'adds the workspace files of each directory above a member session up to the root',
+    name: 'adds the workspace and Cargo config files of each directory above a member session',
     manifestPath: undefined,
     cwd: '/repo/backend/member',
     root: '/repo',
-    expected: [...workspaceFiles('/repo/backend'), ...workspaceFiles('/repo')],
+    expected: [...ancestorFiles('/repo/backend'), ...ancestorFiles('/repo')],
   },
   {
     name: 'adds nothing above a session outside the root',
@@ -62,14 +64,14 @@ it.for<{
     expected: besideManifest('/repo'),
   },
   {
-    name: 'adds the files beside a member manifest and the workspace files above it',
+    name: 'adds the files beside a member manifest and the workspace and config files above it',
     manifestPath: '/repo/backend/member/Cargo.toml',
     cwd: '/repo',
     root: '/repo',
     expected: [
       ...besideManifest('/repo/backend/member'),
-      ...workspaceFiles('/repo/backend'),
-      ...workspaceFiles('/repo'),
+      ...ancestorFiles('/repo/backend'),
+      ...ancestorFiles('/repo'),
     ],
   },
   {
@@ -84,7 +86,7 @@ it.for<{
     manifestPath: '/repo/backend/Cargo.toml',
     cwd: '/repo/a/b',
     root: '/repo',
-    expected: [...besideManifest('/repo/backend'), ...workspaceFiles('/repo')],
+    expected: [...besideManifest('/repo/backend'), ...ancestorFiles('/repo')],
   },
 ])('$name', ({ manifestPath, cwd, root, expected }) => {
   expect(cargoInputFiles(manifestPath, cwd, root)).toEqual(expected);

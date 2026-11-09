@@ -11,7 +11,13 @@ const besideManifestFiles = [
   'rust-toolchain.toml',
 ];
 
-const workspaceFiles = ['Cargo.lock', 'Cargo.toml'];
+// Cargo reads its config from the invocation directory and each parent.
+const ancestorConfigurationFiles = [
+  'Cargo.lock',
+  'Cargo.toml',
+  '.cargo/config',
+  '.cargo/config.toml',
+];
 
 const isInside = (root: string, directory: string): boolean => {
   const path = relative(root, directory);
@@ -26,7 +32,7 @@ const ancestorFiles = (directory: string, repositoryRoot: string): string[] => {
   while (current !== repositoryRoot && isInside(repositoryRoot, current)) {
     const parent = dirname(current);
 
-    files.push(...workspaceFiles.map((file) => join(parent, file)));
+    files.push(...ancestorConfigurationFiles.map((file) => join(parent, file)));
     current = parent;
   }
 

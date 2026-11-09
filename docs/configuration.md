@@ -76,8 +76,9 @@ not `nextest`.
   checkout, Tau resolves it from the session directory. When Git fails or times out while Tau looks
   for the root, `run_tests` fails and names the Git error. Tau fails the key when the file is
   missing or is not named `Cargo.toml`. Tau passes `--manifest-path` with the resolved path to
-  `cargo metadata`, `cargo nextest list`, and `cargo nextest run`. Unset by default, so Cargo
-  searches from the session directory.
+  `cargo metadata`, `cargo nextest list`, and `cargo nextest run`, and runs them from the manifest's
+  directory. Cargo then reads `.cargo/config.toml` from that directory and its parents. Unset by
+  default, so Cargo runs from the session directory and searches from there.
 - `cargoLocked`: boolean. When `true`, Tau passes `--locked` to the same three commands, so a run
   with an out-of-date `Cargo.lock` fails with the Cargo error and leaves the file unchanged.
   Default: `false`.
@@ -99,11 +100,13 @@ Tau fingerprints these nextest configuration files: `.pi/tau.json`, `**/Cargo.to
 `rust-toolchain{,.toml}`, matched from the session directory. With `cargoManifestPath`, it also
 fingerprints `Cargo.toml`, `Cargo.lock`, `build.rs`, `.cargo/config`, `.cargo/config.toml`,
 `.config/nextest.toml`, and `rust-toolchain{,.toml}` in the manifest's directory. A workspace keeps
-its `Cargo.toml` and `Cargo.lock` at the workspace root. So Tau also fingerprints `Cargo.toml` and
-`Cargo.lock`, and their absence, in each directory above the manifest's directory up to the Git
-checkout root. Without `cargoManifestPath`, it does the same for each directory above the session
-directory. Outside a Git checkout, it adds no file above the session directory. A file that a build
-script reads at build time is not fingerprinted. Without `cargoLocked`, a run can rewrite
+its `Cargo.toml` and `Cargo.lock` at the workspace root, and Cargo reads its config from each parent
+of the directory it runs in. So Tau also fingerprints `Cargo.toml`, `Cargo.lock`, `.cargo/config`,
+and `.cargo/config.toml`, and their absence, in each directory above the manifest's directory up to
+the Git checkout root. Without `cargoManifestPath`, it does the same for each directory above the
+session directory. Tau does not fingerprint files above the Git checkout root or under
+`$CARGO_HOME`. Outside a Git checkout, it adds no file above the session directory. A file that a
+build script reads at build time is not fingerprinted. Without `cargoLocked`, a run can rewrite
 `Cargo.lock`, and that run then reports its results as stale.
 
 A Rust source file under `src/` matches both `productionGlobs` and `testGlobs`, so it is a test file

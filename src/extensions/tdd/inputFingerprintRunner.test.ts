@@ -155,6 +155,27 @@ it('fingerprints the workspace Cargo.lock above a member session without a chose
   expect(after).not.toBe(before);
 });
 
+it.for(['.cargo/config', '.cargo/config.toml'])(
+  'fingerprints the repository root %s from a nested session',
+  async (file, { onTestFinished }) => {
+    const root = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-root-config-');
+    const cwd = join(root, 'sub');
+    await mkdir(join(root, '.cargo'));
+    await mkdir(cwd);
+
+    const before = await fingerprintInputs(cwd, nextestRunner.defaults, [], root);
+
+    await writeFile(join(root, file), '[env]\nPROBE = "one"\n');
+    const created = await fingerprintInputs(cwd, nextestRunner.defaults, [], root);
+
+    await writeFile(join(root, file), '[env]\nPROBE = "two"\n');
+    const changed = await fingerprintInputs(cwd, nextestRunner.defaults, [], root);
+
+    expect(created).not.toBe(before);
+    expect(changed).not.toBe(created);
+  },
+);
+
 it('fingerprints no Cargo.lock above the repository root', async ({ onTestFinished }) => {
   const outer = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-outer-');
   const root = join(outer, 'repo');
