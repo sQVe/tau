@@ -1,5 +1,6 @@
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
@@ -104,6 +105,13 @@ it('ends the Pi arguments with the start message after the extension flags', () 
       skillTools,
     ).slice(-3),
   ).toEqual(['-e', '/ext/package.ts', workerStartMessage]);
+});
+
+it('loads the inbox extension without saved Tau settings', () => {
+  const commandLine = workerArguments(sessionFile, fixtureLoadout('/tmp'), [], skillTools);
+  const inboxPath = fileURLToPath(new URL('../inbox/inbox.ts', import.meta.url));
+
+  expect(commandLine[commandLine.indexOf(inboxPath) - 1]).toBe('-e');
 });
 
 it('passes the session file after --session', () => {

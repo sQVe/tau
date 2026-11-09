@@ -77,16 +77,6 @@ const successCases = [
     },
   },
   {
-    name: 'the send reply',
-    parse: () =>
-      parseCommandReply(
-        'hc send',
-        'send',
-        JSON.stringify({ turn: 2, started: true, status: 'working', wait: null }),
-      ),
-    expected: { turn: 2, started: true, status: 'working', wait: null },
-  },
-  {
     name: 'the wait reply',
     parse: () =>
       parseCommandReply(

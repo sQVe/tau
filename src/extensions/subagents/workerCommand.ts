@@ -39,6 +39,8 @@ export const workerArguments = (
     fileURLToPath(new URL('./workerBashGuard.ts', import.meta.url)),
     '-e',
     fileURLToPath(new URL('./workerExtension.ts', import.meta.url)),
+    '-e',
+    fileURLToPath(new URL('../inbox/inbox.ts', import.meta.url)),
     ...extensionPackages.flatMap(({ path }) => ['-e', path]),
     workerStartMessage,
   ];

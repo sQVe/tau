@@ -12,9 +12,10 @@ import { readAssignment } from '../src/extensions/subagents/assignment.js';
 import { executeFollowUp } from '../src/extensions/subagents/followUp.js';
 import { Admission, executeLaunch } from '../src/extensions/subagents/launch.js';
 import type { LaunchRuntime } from '../src/extensions/subagents/launch.js';
-import * as loadouts from '../src/extensions/subagents/loadout.js';
+import { workerCommand } from '../src/extensions/subagents/workerCommand.js';
 import { runWithEnvironment } from '../src/hc/connect.js';
 import { get } from '../src/hc/hc.js';
+import { skillTools } from '../src/skillTools.js';
 import type { HcSession } from './hcSessionHarness.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 
@@ -27,6 +28,7 @@ export interface WorkerSessionOptions {
   command?: { source: string };
   timeoutSeconds?: number;
   prepareWorker?: (workerDirectory: string) => void;
+  tauPackage?: boolean;
   // Runs after the manager terminal exists and HC_TERMINAL_ID points at it, before the worker.
   beforeLaunch?: (managerAddress: string) => Promise<void>;
 }
@@ -77,6 +79,23 @@ export const waitForReport = async (path: string): Promise<Assignment> => {
   return assignment;
 };
 
+export const waitForQuestion = async (path: string): Promise<Assignment> => {
+  const deadline = Date.now() + observationDeadlineMilliseconds;
+
+  let assignment = await readAssignment(path);
+
+  while (assignment === undefined || assignment.questions.length === 0) {
+    if (Date.now() > deadline) {
+      throw new Error(`Worker never saved a question to ${path}.`);
+    }
+
+    await delay(observationPollMilliseconds);
+    assignment = await readAssignment(path);
+  }
+
+  return assignment;
+};
+
 const writeAgentSettings = (agentDirectory: string): void => {
   const safetyPackage = dirname(fileURLToPath(import.meta.resolve('cc-safety-net/package.json')));
 
@@ -103,6 +122,49 @@ const writeControlledProvider = (agentDirectory: string): void => {
   );
 };
 
+const writeFixtureProfile = (
+  agentDirectory: string,
+  model: { provider: string; id: string },
+): void => {
+  mkdirSync(join(agentDirectory, 'agents'), { recursive: true });
+
+  writeFileSync(
+    join(agentDirectory, 'agents', 'worker.md'),
+    [
+      '---',
+      'name: worker',
+      'role: editing',
+      'tools: read, bash, edit, write',
+      'thinking: off',
+      '---',
+      '',
+      'Follow the fixture task exactly.',
+      '',
+    ].join('\n'),
+  );
+
+  writeFileSync(
+    join(agentDirectory, 'tau.json'),
+    JSON.stringify({ profiles: { worker: { model: `${model.provider}/${model.id}` } } }),
+  );
+};
+
+const launchContext = (
+  model: { provider: string; id: string },
+  workerDirectory: string,
+): ExtensionContext =>
+  ({
+    sessionManager: { getSessionId: () => 'manager-one' },
+    cwd: workerDirectory,
+    isProjectTrusted: () => true,
+    scopedModels: [],
+    modelRegistry: {
+      find: (provider: string, id: string) =>
+        provider === model.provider && id === model.id ? model : undefined,
+    },
+    ui: { notify: () => undefined },
+  }) as unknown as ExtensionContext;
+
 const managerInvocation = (
   agentDirectory: string,
   probe: { source: string } | undefined,
@@ -119,6 +181,11 @@ const managerInvocation = (
   return { argv: ['node', probePath, observationPath], observationPath };
 };
 
+const packageRoot = fileURLToPath(new URL('../', import.meta.url));
+
+const tauPackageCommand: NonNullable<LaunchRuntime['buildCommand']> = (sessionFile, loadout) =>
+  workerCommand(sessionFile, loadout, [{ path: packageRoot }], skillTools);
+
 const workerCommandArgv = (
   agentDirectory: string,
   command: { source: string } | undefined,
@@ -133,26 +200,6 @@ const workerCommandArgv = (
 
   return ['node', commandPath, agentDirectory];
 };
-
-const fixtureLoadout = (
-  workerDirectory: string,
-  agentDirectory: string,
-  model: { provider: string; id: string },
-): Assignment['loadout'] => ({
-  harness: 'pi',
-  profile: 'worker',
-  role: 'editing',
-  model: `${model.provider}/${model.id}`,
-  thinking: 'off',
-  cwd: workerDirectory,
-  agentDirectory,
-  permissions: 'trusted-full-tools',
-  instructions: 'Follow the fixture task exactly.',
-  tools: ['read', 'bash', 'edit', 'write'],
-  skills: [],
-  instructionSets: ['writing', 'coding', 'workflow'],
-  packages: [],
-});
 
 export const launchWorkerSession = async (
   options: WorkerSessionOptions,
@@ -184,13 +231,8 @@ export const launchWorkerSession = async (
   await options.beforeLaunch?.(manager.address);
 
   const managerPath = `${join(agentDirectory, 'bin')}:${process.env.PATH ?? ''}`;
-  const loadout = fixtureLoadout(workerDirectory, agentDirectory, options.model);
 
-  vi.mocked(loadouts.resolveRoutedLoadout).mockResolvedValue({
-    loadout,
-    routing: undefined,
-    choice: { kind: 'profileWithoutRoute' },
-  });
+  writeFixtureProfile(agentDirectory, options.model);
 
   const runtime: LaunchRuntime = {
     pi: { getCommands: () => [], getAllTools: () => [] } as unknown as ExtensionAPI,
@@ -201,6 +243,7 @@ export const launchWorkerSession = async (
     agentDirectory,
     processEnvironment: { ...options.hc.environment, PATH: managerPath },
     ...(workerArgv === undefined ? {} : { buildCommand: () => workerArgv }),
+    ...(options.tauPackage === true ? { buildCommand: tauPackageCommand } : {}),
   };
 
   const result = await executeLaunch(
@@ -216,7 +259,7 @@ export const launchWorkerSession = async (
       parentSession: managerSessionFile,
     },
     undefined,
-    { sessionManager: { getSessionId: () => 'manager-one' } } as unknown as ExtensionContext,
+    launchContext(options.model, workerDirectory),
   );
 
   expect(result.isError).not.toBe(true);

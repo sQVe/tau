@@ -35,8 +35,6 @@ interface SessionEntry {
 
 type DeliveryContext = Parameters<ReturnType<typeof createWorkerDelivery>['deliver']>[0];
 
-vi.mock(import('../src/extensions/subagents/loadout.js'), { spy: true });
-
 vi.setConfig({ testTimeout: 120_000 });
 
 const noDeadline: DeadlineWatchdog = { apply: () => Promise.resolve(), clear: () => undefined };
@@ -118,7 +116,6 @@ it('shows a real worker report once before it gives the worker the manager envir
   const hc = await startHcSession(onTestFinished);
 
   onTestFinished(() => {
-    vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 
@@ -174,7 +171,6 @@ it('delivers one worker report through the real hc event watch', async () => {
   const hc = await startHcSession(onTestFinished);
 
   onTestFinished(() => {
-    vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 

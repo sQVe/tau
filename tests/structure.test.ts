@@ -82,7 +82,8 @@ const pureModules = [
   'src/extensions/draftReview/reviewDecisions.ts',
   'src/extensions/fullCheck/idleDecision.ts',
   'src/extensions/fullCheck/mutationVerdict.ts',
-  'src/extensions/handover/sendStatus.ts',
+  'src/extensions/inbox/arrivalDecision.ts',
+  'src/extensions/inbox/guardDecision.ts',
   'src/extensions/mergeWatch/autoMergeRequest.ts',
   'src/extensions/mergeWatch/watchOutcome.ts',
   'src/extensions/mergeWatch/watchStart.ts',
@@ -123,6 +124,7 @@ const pureModules = [
   'src/extensions/subagents/skillToolsRefusal.ts',
   'src/extensions/subagents/summaryLength.ts',
   'src/extensions/subagents/ticketPath.ts',
+  'src/extensions/subagents/workerAnswer.ts',
   'src/extensions/subagents/workerDecision.ts',
   'src/extensions/subagents/workerMessage.ts',
   'src/extensions/subagents/workerModels.ts',
@@ -151,6 +153,9 @@ const pureModules = [
   'src/extensions/tracker/promptLines.ts',
   'src/fileLock/lockHolderDecision.ts',
   'src/github/repositoryTargetDecisions.ts',
+  'src/inbox/protocol.ts',
+  'src/inbox/receiptDecision.ts',
+  'src/inbox/targetDecision.ts',
   'src/process/stateDecision.ts',
   'src/reviewCapture/coverageDecision.ts',
   'src/reviewCapture/endpointDecision.ts',
@@ -214,6 +219,7 @@ const pureLibraries: Readonly<Record<string, readonly string[]>> = {
   'src/extensions/tdd/inputGlob.ts': ['minimatch'],
   'src/extensions/tdd/runner/junit.ts': ['@xmldom/xmldom'],
   'src/extensions/tdd/runner/report.ts': ['node:path'],
+  'src/inbox/protocol.ts': ['typebox', 'typebox/value'],
   'src/schema.ts': ['typebox', 'typebox/value'],
 };
 
@@ -393,6 +399,31 @@ it('keeps registered pure modules free of reads and effects', () => {
   );
 
   expect(found, pureAdvice).toEqual([]);
+});
+
+const versionedRecords = [
+  { writer: 'src/inbox/store.ts', fixtures: 'src/inbox/fixtures/handover' },
+];
+
+const recordFormatProblems = ({ writer, fixtures }: (typeof versionedRecords)[number]) => {
+  const source = readFileSync(join(root, writer), 'utf8');
+  const problems: string[] = [];
+
+  if (!/version: Type\.Literal\(/u.test(source)) {
+    problems.push(`${writer} has no version literal`);
+  }
+
+  for (const name of ['current.json', 'newer.json', 'malformed.json']) {
+    if (!repositoryFiles().includes(`${fixtures}/${name}`)) {
+      problems.push(`${fixtures} has no ${name}`);
+    }
+  }
+
+  return problems;
+};
+
+it('gives each versioned record format a version and fixtures', () => {
+  expect(versionedRecords.flatMap((format) => recordFormatProblems(format))).toEqual([]);
 });
 
 // Lists each entry that sorts before the one above it or repeats it.

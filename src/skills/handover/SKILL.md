@@ -63,12 +63,15 @@ commit another worktree from your session, even over bash.
 3. Send the file in a separate step, after the write. Never write and send in the same parallel tool
    batch: the send can run first and read an empty file. Then end your turn.
    - With a target, call the `handover` tool with action `send`, the target's address as `terminal`,
-     and the message path as `file`. Then read its status:
-     - `started`: the receiver began its turn. End your turn.
-     - `notStarted`: the text arrived but no turn started. Do not send again. Tell your user.
-     - `blocked`: nothing was sent, and the receiver waits on its user. Tell your user.
+     and the message path as `file`. Then read the result:
+     - `queued`: the receiver saved the message. End your turn. Do not send it again, even with no
+       sign that the receiver read it.
+     - `unknown`: the receiver may have saved it. Report the result to your user and stop. Retry
+       only when your user asks.
+     - A refusal: nothing was queued. Tell your user why. You may offer `handover start` as an
+       option, but do not start a receiver unless your user asks.
      - Any other error: report it to your user and stop.
-   - Never force a send or wait for the receiver's turn.
+   - Never wait for the receiver's turn.
    - With no target, find the space for the checkout by its folder in `herdr-app ls`, never by its
      name. Then call the `handover` tool with action `start`, the checkout as `folder`, and the
      message path as `file`:

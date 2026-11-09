@@ -80,7 +80,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0076: Give browser workers one shared set of browser rules](./0076-give-browser-workers-one-shared-set-of-browser-rules.md)
 - [0102: Require acceptance criteria on editing worker launches](./0102-require-acceptance-criteria-on-editing-worker-launches.md)
 - [0125: Run workers as hc children with one assignment file each](./0125-run-workers-as-hc-children-with-assignment-files.md)
-- [0126: Deliver worker news through `hc` events, not typed pane input](./0126-deliver-worker-news-through-hc-events.md)
+- [0129: Deliver agent messages through each session's inbox socket](./0129-deliver-agent-messages-through-inbox-sockets.md)
 
 ## Manager sessions
 
@@ -197,3 +197,4 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 | 0117 | List mutation survivors as advice instead of a gate                            | [0113](./0113-run-diff-scoped-mutation-testing-by-hand.md)                                                                                                                                                                        | `b0980b75`  |
 | 0118 | List equivalent mutants instead of adding disable comments                     | [0113](./0113-run-diff-scoped-mutation-testing-by-hand.md)                                                                                                                                                                        | `b0980b75`  |
 | 0123 | Delete stopped worker records 14 days after their last write                   | [0125](./0125-run-workers-as-hc-children-with-assignment-files.md)                                                                                                                                                                | `86c1f2cf`  |
+| 0126 | Deliver worker news through `hc` events, not typed pane input                  | [0129](./0129-deliver-agent-messages-through-inbox-sockets.md)                                                                                                                                                                    | `d9d52e00`  |

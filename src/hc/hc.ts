@@ -6,7 +6,6 @@ import type {
   HcCommand,
   HcCommandReply,
   HcRemoveResult,
-  HcSendResult,
   HcTerminal,
   HcTerminalList,
   HcWaitResult,
@@ -34,25 +33,12 @@ export interface LsRequest {
   labels?: Record<string, string> | undefined;
 }
 
-export interface SendRequest {
-  text: string;
-  force?: boolean | undefined;
-  wait?: boolean | undefined;
-  timeout?: number | undefined;
-}
-
 export interface WaitRequest {
   output?: string | undefined;
   timeout?: number | undefined;
 }
 
-export type {
-  HcRemoveResult,
-  HcSendResult,
-  HcTerminal,
-  HcTerminalList,
-  HcWaitResult,
-} from './replies.js';
+export type { HcRemoveResult, HcTerminal, HcTerminalList, HcWaitResult } from './replies.js';
 
 export { HcError } from './replies.js';
 
@@ -126,33 +112,6 @@ export const ls = (runtime: HcRuntime, request: LsRequest = {}): Promise<HcTermi
   const flags = request.all === true ? ['--all'] : [];
 
   return runHc(runtime, 'ls', ['ls', '--json', ...flags, ...labelFlags(request.labels)], 'hc ls');
-};
-
-export const send = (
-  runtime: HcRuntime,
-  terminal: string,
-  request: SendRequest,
-): Promise<HcSendResult> => {
-  const flags: string[] = [];
-
-  if (request.force === true) {
-    flags.push('--force');
-  }
-
-  if (request.wait === true) {
-    flags.push('--wait');
-  }
-
-  if (request.timeout !== undefined) {
-    flags.push('--timeout', String(request.timeout));
-  }
-
-  return runHc(
-    runtime,
-    'send',
-    ['send', '--json', ...flags, '--', terminal, request.text],
-    `hc send ${terminal}`,
-  );
 };
 
 export const wait = (

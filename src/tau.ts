@@ -11,6 +11,7 @@ import compactionExtension from './extensions/compaction/compaction.js';
 import draftReviewExtension from './extensions/draftReview/draftReview.js';
 import fullCheckExtension from './extensions/fullCheck/fullCheck.js';
 import handoverExtension from './extensions/handover/handover.js';
+import inboxExtension from './extensions/inbox/inbox.js';
 import instructionsExtension from './extensions/instructions.js';
 import mergeWatchExtension from './extensions/mergeWatch/mergeWatch.js';
 import piResumeExtension from './extensions/piResume/piResume.js';
@@ -45,6 +46,7 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   sliceExtension(pi);
   fullCheckExtension(pi);
   handoverExtension(pi);
+  inboxExtension(pi);
   draftReviewExtension(pi);
   trackerExtension(pi);
   piResumeExtension(pi);

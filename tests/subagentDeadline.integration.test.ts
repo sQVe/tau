@@ -28,8 +28,6 @@ interface ManagerView {
   notices: Notice[];
 }
 
-vi.mock(import('../src/extensions/subagents/loadout.js'), { spy: true });
-
 vi.setConfig({ testTimeout: 120_000 });
 
 const waitMilliseconds = 90_000;
@@ -101,7 +99,6 @@ const startWatchdog = (hc: HcSession, view: ManagerView) => {
 
 const prepareTest = (): void => {
   onTestFinished(() => {
-    vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 };

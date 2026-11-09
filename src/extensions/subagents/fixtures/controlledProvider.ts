@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import {
   fauxAssistantMessage,
@@ -28,6 +29,10 @@ export const questionTaskMarker = 'fixture-asks-the-manager';
 export const firstTaskMarker = 'fixture-first-task-marker';
 
 export const followUpTaskMarker = 'fixture-follow-up-marker';
+
+export const holdReportTaskMarker = 'fixture-holds-the-report';
+
+export const reportReleaseFile = 'fixture-release-report';
 
 const fixtureQuestion = 'Which value should the report hold?';
 
@@ -122,18 +127,18 @@ const contentText = (content: string | (TextContent | ImageContent)[]): string =
         .map((block) => block.text)
         .join('\n');
 
-const typedAnswer = (context: TranscriptContext): string => {
+const managerAnswer = (context: TranscriptContext): string => {
   const userMessages = context.messages.filter((message) => message.role === 'user');
   const answer = userMessages.at(-1);
 
   if (userMessages.length < 2 || answer === undefined) {
-    throw new Error('The fixture question got no typed answer from the manager.');
+    throw new Error('The fixture question got no answer from the manager.');
   }
 
   const text = contentText(answer.content).trim();
 
   if (text === '') {
-    throw new Error('The fixture question got an empty typed answer from the manager.');
+    throw new Error('The fixture question got an empty answer from the manager.');
   }
 
   return text;
@@ -164,16 +169,27 @@ const followUpResponses = (): FauxResponseStep[] => [
   },
 ];
 
+const holdsTheReport = (): boolean => savedAssignment?.task.includes(holdReportTaskMarker) ?? false;
+
+const waitForRelease = async (): Promise<void> => {
+  while (holdsTheReport() && !existsSync(join(process.cwd(), reportReleaseFile))) {
+    await delay(50);
+  }
+};
+
 const questionResponses = (): FauxResponseStep[] => [
   fauxAssistantMessage([fauxToolCall('subagent_question', { question: fixtureQuestion })]),
-  (context) =>
-    fauxAssistantMessage([
+  async (context) => {
+    await waitForRelease();
+
+    return fauxAssistantMessage([
       fauxToolCall('subagent_report', {
         outcome: 'success',
         summary: fixtureSummary,
-        evidence: [typedAnswer(context)],
+        evidence: [managerAnswer(context)],
       }),
-    ]),
+    ]);
+  },
 ];
 
 const reportResponses = (): FauxResponseStep[] => [

@@ -22,7 +22,8 @@
 [ADR 0123 (Delete stopped worker records 14 days after their last write)](./README.md#retired)\
 **Related**: [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
 [ADR 0067 (Give each worker profile one loadout of tools, skills, instruction sets, and packages)](./0067-give-workers-only-their-profile-tools-and-skills.md),
-[ADR 0102 (Require acceptance criteria on editing worker launches)](./0102-require-acceptance-criteria-on-editing-worker-launches.md)
+[ADR 0102 (Require acceptance criteria on editing worker launches)](./0102-require-acceptance-criteria-on-editing-worker-launches.md),
+[ADR 0129 (Deliver agent messages through each session's inbox socket)](./0129-deliver-agent-messages-through-inbox-sockets.md)
 
 ## Context
 
@@ -93,14 +94,19 @@ only the worker writes its report and its questions into it.
   assignment file with a new question ID and the time. Then Tau sets a `tau.question` label on the
   worker's terminal. A failed label keeps the saved question.
 - The worker's turn ends after the question is saved. The worker process keeps running and waits for
-  typed input.
+  an answer.
 - The manager shows each question once for each assignment ID and question ID. It reads the
   questions on the same triggers as reports.
-- The shown question names the worker's `hc` address and tells the manager to answer with
-  `hc send <address> "<answer>"`. Tau never uses `hc send --force`. When `hc send` refuses a blocked
-  worker, the manager reports that and does not force it.
-- Tau keeps no answer state. A saved shown message for a question is the only record that the
-  question was handled.
+- The shown question names the worker's `hc` address, the assignment ID, and the question ID, and
+  tells the manager to answer with `subagent_answer`.
+- `subagent_answer` sends one `answer` message to the worker's inbox socket, with the question ID as
+  the message ID. The worker accepts it only while that question is its open question and no report
+  is saved. An answer to a worker with no live inbox is refused.
+- The stored inbox message, then its receipt in the worker's session, is the durable answer. Tau
+  writes no answer file, and the worker stays the only writer of the assignment file. A resumed
+  worker stops waiting when it finds the stored message or its receipt.
+- A retry with the same ID and the same text stores nothing new and returns `queued`. A different
+  second answer to the same question is refused, and the manager reports the refusal to the user.
 
 ### Deadline
 
@@ -134,8 +140,8 @@ only the worker writes its report and its questions into it.
 
 - The manager has two worker tools. `subagent` launches one, and `subagent_follow_up` resumes an
   ended worker from its saved Pi session in a new child with a new assignment file and deadline. The
-  manager has no other tool that reads or changes a worker. It answers a question with `hc send`
-  through bash.
+  manager answers a question with `subagent_answer`. It has no other tool that reads or changes a
+  worker.
 - The worker has `subagent_report`, `subagent_question`, and the tools of its profile. It has no
   tool to report progress.
 

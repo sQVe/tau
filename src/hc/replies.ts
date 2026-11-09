@@ -77,13 +77,6 @@ const hcWaitResultSchema = Type.Cyclic(
   'WaitResult',
 );
 
-const hcSendResultSchema = Type.Object({
-  turn: Type.Number(),
-  started: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
-  status: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  wait: Type.Optional(Type.Union([hcWaitResultSchema, Type.Null()])),
-});
-
 const hcRemoveResultSchema = Type.Object({
   removed: Type.String(),
 });
@@ -106,7 +99,6 @@ const commandSchemas = {
   run: hcTerminalSchema,
   get: hcTerminalSchema,
   ls: hcTerminalListSchema,
-  send: hcSendResultSchema,
   wait: hcWaitResultSchema,
   kill: hcTerminalSchema,
   rm: hcRemoveResultSchema,
@@ -117,7 +109,6 @@ export type HcCommand = keyof typeof commandSchemas;
 
 export type HcTerminal = Static<typeof hcTerminalSchema>;
 export type HcTerminalList = Static<typeof hcTerminalListSchema>;
-export type HcSendResult = Static<typeof hcSendResultSchema>;
 export type HcWaitResult = Static<typeof hcWaitResultSchema>;
 export type HcRemoveResult = Static<typeof hcRemoveResultSchema>;
 export type HelloResult = Static<typeof helloResultSchema>;

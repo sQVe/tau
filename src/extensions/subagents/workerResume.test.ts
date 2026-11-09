@@ -57,6 +57,36 @@ const taskBlocksMessage = (id: string) =>
     ],
   });
 
+const firstQuestionId = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
+const secondQuestionId = '2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e';
+
+const asked = (...questionIds: string[]): Assignment => ({
+  ...first,
+  questions: questionIds.map((questionId) => ({ questionId, text: 'Which?', askedAt: 1 })),
+});
+
+const inboxEntry = (details: Record<string, unknown>) =>
+  ({
+    type: 'custom_message',
+    customType: 'tau-inbox-message',
+    content: 'Use A.',
+    display: true,
+    details: { version: 2, messageId: firstQuestionId, sessionId: assignmentId, ...details },
+  }) as unknown as SessionEntry;
+
+const answer = (questionId: string) => inboxEntry({ family: 'answer', questionId });
+
+const otherTypeAnswer = () =>
+  ({
+    type: 'custom_message',
+    customType: 'other-extension',
+    content: 'Use A.',
+    display: true,
+    details: { family: 'answer', questionId: firstQuestionId },
+  }) as unknown as SessionEntry;
+
+const handover = () => inboxEntry({ family: 'handover' });
+
 const malformedMessage = () => entry({ role: 'user', content: { text: 'not a list' } });
 
 it.each([
@@ -134,6 +164,66 @@ it.each([
     name: 'a second question waits again',
     branch: [user(), question(), user(), question()],
     assignment: first,
+    sendTaskPrompt: false,
+    waitingForQuestion: true,
+  },
+  {
+    name: 'an open answer ends the wait',
+    branch: [user(), question(), answer(firstQuestionId)],
+    assignment: asked(firstQuestionId),
+    sendTaskPrompt: false,
+    waitingForQuestion: false,
+  },
+  {
+    name: 'a handover does not end the wait',
+    branch: [user(), question(), handover()],
+    assignment: asked(firstQuestionId),
+    sendTaskPrompt: false,
+    waitingForQuestion: true,
+  },
+  {
+    name: 'a handover with an ID waits',
+    branch: [user(), question(), inboxEntry({ family: 'handover', questionId: firstQuestionId })],
+    assignment: asked(firstQuestionId),
+    sendTaskPrompt: false,
+    waitingForQuestion: true,
+  },
+  {
+    name: 'another message type waits',
+    branch: [user(), question(), otherTypeAnswer()],
+    assignment: asked(firstQuestionId),
+    sendTaskPrompt: false,
+    waitingForQuestion: true,
+  },
+  {
+    name: 'no saved question waits',
+    branch: [user(), question(), handover()],
+    assignment: first,
+    sendTaskPrompt: false,
+    waitingForQuestion: true,
+  },
+  {
+    name: 'a newer answer keeps waiting',
+    branch: [
+      user(),
+      question(),
+      inboxEntry({ version: 3, family: 'answer', questionId: firstQuestionId }),
+    ],
+    assignment: asked(firstQuestionId),
+    sendTaskPrompt: false,
+    waitingForQuestion: true,
+  },
+  {
+    name: 'another answer keeps waiting',
+    branch: [user(), question(), answer(secondQuestionId)],
+    assignment: asked(firstQuestionId),
+    sendTaskPrompt: false,
+    waitingForQuestion: true,
+  },
+  {
+    name: 'a second question waits',
+    branch: [user(), question(), answer(firstQuestionId), question()],
+    assignment: asked(firstQuestionId, secondQuestionId),
     sendTaskPrompt: false,
     waitingForQuestion: true,
   },

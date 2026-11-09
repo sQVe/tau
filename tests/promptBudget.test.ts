@@ -13,6 +13,7 @@ import workerExtension, {
   workerSystemPrompt,
 } from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
+import { releaseRegistration } from '../src/inbox/inbox.js';
 import { skillTools } from '../src/skillTools.js';
 import tauExtension from '../src/tau.js';
 import { fakeExtensionApi } from './extensionApi.js';
@@ -26,13 +27,13 @@ const descriptionExceptions: Readonly<Record<string, number>> = { pr: 3300 };
 // Each ceiling caps a session at about its measured size, so a cut must lower it. The target is
 // beside each ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
-  manager: 57_663, // target 38,000
-  worker: 18_607, // target 14,000
-  reviewer: 14_962, // target 11,000
-  checker: 15_115,
-  qa: 11_984, // target 9,000
-  browser: 10_812, // target 9,000
-  scout: 10_371, // target 9,000
+  manager: 58_442, // target 38,000
+  worker: 18_649, // target 14,000
+  reviewer: 15_004, // target 11,000
+  checker: 15_157,
+  qa: 12_026, // target 9,000
+  browser: 10_854, // target 9,000
+  scout: 10_413, // target 9,000
 };
 
 const profileNames = ['worker', 'reviewer', 'checker', 'qa', 'browser', 'scout'];
@@ -59,6 +60,8 @@ const loadTools = async (workerRecord: string, agentDirectory: string) => {
   const fake = fakeExtensionApi();
 
   await tauExtension(fake.pi);
+  // No session starts, so no session_shutdown releases the inbox that loading Tau claimed.
+  releaseRegistration();
 
   if (workerRecord !== '') {
     workerExtension(fake.pi);

@@ -12,7 +12,6 @@ import {
   readCurrentTerminal,
   rm,
   run,
-  send,
   wait,
 } from './hc.js';
 import type { HcRuntime } from './hc.js';
@@ -206,36 +205,6 @@ it('passes --all only when all terminals are requested', async () => {
     ['ls', '--json', '--all'],
     ['ls', '--json'],
   ]);
-});
-
-it('passes the send flags and separates text that starts with dashes', async () => {
-  const fake = createHcFake();
-
-  fake.reply('send', JSON.stringify({ turn: 2 }));
-
-  await send(runtimeOf(fake), 't7', { text: '--probe', force: true, wait: true, timeout: 30 });
-
-  expect(fake.calls[0]?.commandArguments).toEqual([
-    'send',
-    '--json',
-    '--force',
-    '--wait',
-    '--timeout',
-    '30',
-    '--',
-    't7',
-    '--probe',
-  ]);
-});
-
-it('sends text without flags by default', async () => {
-  const fake = createHcFake();
-
-  fake.reply('send', JSON.stringify({ turn: 2 }));
-
-  await send(runtimeOf(fake), 't7', { text: 'hello' });
-
-  expect(fake.calls[0]?.commandArguments).toEqual(['send', '--json', '--', 't7', 'hello']);
 });
 
 it('separates a get terminal that starts with a dash from the flags', async () => {

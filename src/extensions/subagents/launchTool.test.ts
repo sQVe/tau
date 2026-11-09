@@ -334,6 +334,38 @@ it('refuses a follow-up without a saved parent session', async ({ onTestFinished
   expect(fake.connectCalls).toEqual([]);
 });
 
+it('refuses an answer without a saved parent session', async ({ onTestFinished }) => {
+  vi.stubEnv('HC_TERMINAL_ID', manager);
+
+  const fixture = await workerFixture(onTestFinished);
+  const fake = hcSetup();
+  const { pi } = registerTool(fake);
+  const tool = pi.tools.get('subagent_answer');
+
+  if (tool === undefined) {
+    throw new Error('The subagent_answer tool was not registered.');
+  }
+
+  const context = {
+    ...toolContext(fixture),
+    sessionManager: { getSessionFile: () => undefined },
+  } as unknown as ExtensionToolContext;
+
+  await expect(
+    execute(
+      tool,
+      {
+        assignmentId: '3f9a2c1d-6b7e-4c2a-9d1f-0a1b2c3d4e5f',
+        questionId: '6c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f',
+        answer: 'Use 42.',
+      },
+      context,
+    ),
+  ).rejects.toThrow('saved parent Pi session');
+
+  expect(fake.calls).toEqual([]);
+});
+
 it('refuses a launch when a listed skill tool is not registered', async ({ onTestFinished }) => {
   vi.stubEnv('HC_TERMINAL_ID', manager);
 

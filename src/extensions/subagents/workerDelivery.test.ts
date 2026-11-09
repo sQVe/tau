@@ -723,13 +723,15 @@ it('does not show a queued question twice while its message is still queued', as
   expect(managerState.messages).toHaveLength(1);
 });
 
-it('names the worker address and the hc send answer in the question message', async () => {
-  const { managerState, deliver } = await reportDelivery(null, [savedQuestion()]);
+it('names the assignment and question IDs the answer needs in the question message', async () => {
+  const question = savedQuestion();
+  const { managerState, deliver, assignmentId } = await reportDelivery(null, [question]);
 
   await deliver(managerState.context);
 
   const message = managerState.messages[0] as { content: string };
 
   expect(message.content).toContain('Which branch should I use?');
-  expect(message.content).toContain('hc send t-child "<answer>"');
+  expect(message.content).toContain(assignmentId);
+  expect(message.content).toContain(question.questionId);
 });
