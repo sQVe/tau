@@ -109,8 +109,9 @@ to ready. Neither choice completes a required action.
    changes in the session report.
 
 3. Run the [prune-comments skill](../prune-comments/SKILL.md) on the commits added after the review.
-   - Take `<reviewed head>` from the `head` field of `capture.json` in the newest link of step 1's
-     chain. Run it on `<reviewed head>..HEAD`, and skip it when the two are equal.
+   - Run it on the diff since the newest link of step 1's chain: a `fix` target with that link's
+     directory as `review` and empty `findingPaths`. The diff starts at the content the review read,
+     so work that was uncommitted during the review stays out.
    - With no saved review for this branch, run it on `<merge base>..HEAD`.
    - It commits its own removals. Do not commit them here.
    - Later commits that add comments before the preview: run it again on those commits only.

@@ -34,6 +34,8 @@ code. For that, use [code-quality](../code-quality/SKILL.md) or
 1. Resolve the target as in [Resolve the target](../code-review/phases.md#resolve-the-target).
    - A branch diff is the default: a `workingTree` from `git merge-base <default> HEAD`.
    - A commit or range is a `range`. Named files are a `files` target.
+   - The diff since a saved review is a `fix` target with that review directory and empty
+     `findingPaths`. Ignore its `scope`; prune-comments judges the whole fix diff.
 
 2. Prepare and capture as in
    [Handle the capture result](../code-review/phases.md#handle-the-capture-result).
