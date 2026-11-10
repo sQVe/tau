@@ -262,8 +262,6 @@ const confirmMessage = (state: StartState, foreign: readonly string[], start: St
   return `${owner}\n\nWrites:\n${bulletList(writes)}\n\nChanges:\n${foreignChanges(state, foreign).join('\n\n')}`;
 };
 
-// Asks the user before changing a ticket another person owns. The state can change while
-// the user answers, so a changed state stops the apply before any write.
 const confirmForeignUpdates = async (
   runtime: Runtime,
   context: ExtensionContext,

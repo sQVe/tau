@@ -187,7 +187,6 @@ const toChild = async (
     merged: pullRequests.some((request) => request.state === 'MERGED'),
     assignee: node.assignee?.id ?? null,
     creator: node.creator?.id ?? null,
-    // Linear saves "A blocked by B" as a `blocks` relation on B.
     blockedBy: node.inverseRelations.nodes
       .filter((relation) => relation.type === 'blocks')
       .map((relation) => relation.issue.identifier),
