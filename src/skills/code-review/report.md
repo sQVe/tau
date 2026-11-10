@@ -9,6 +9,9 @@ Use this shape for the files in `$dir` and for the reply.
   `Comment ID:` line once the comment exists. Include the target kind, the base and HEAD SHAs, the
   capture `hash`, the capture `identity`, the source of any check result, every finding in full, and
   refuted candidates with the checker's reason.
+- For a fast review, also include an `Unread files` section copied from the reviewer report, which
+  lists the captured files it did not read or says "None". When the report lacks it, write
+  `unavailable` and list it as a gap.
 - For a fix review, also include the predecessor review directory (`target.review` in
   `capture.json`) and its identity (`target.predecessor.identity`). When `capture.json` has no
   `target.predecessor`, as for a fix on a legacy review, write the identity as `unavailable`. Never
@@ -26,8 +29,8 @@ not replace this assessment.
 ## Reply
 
 - Header: the target, mode, elapsed time when you observed it, freshness (fresh, stale, or unknown),
-  and a link to `report.md`. Say once how findings were checked: fast has one self-checking
-  reviewer; deep adds a fresh checker.
+  and a link to `report.md`. For a fast review, add the unread files, or "None". Say once how
+  findings were checked: fast has one self-checking reviewer; deep adds a fresh checker.
 - Findings: one table, most severe first, with the columns `#`, `Problem and impact`, `Evidence`,
   and `Recommendation`. Put long evidence and fix directions in numbered notes after it.
   - Evidence: the `file:line` and the decisive fact, such as a caller, guard, test, or reproduction.

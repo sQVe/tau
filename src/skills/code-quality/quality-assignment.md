@@ -1,6 +1,6 @@
 # Quality assignment
 
-Give every worker `## Common` of the
+Give every worker `## Common` and `## First review` of the
 [shared review rules](../code-review/review-assignment.md#common), with `$dir` replaced by the
 review directory, and `## Quality lens`. Paste the whole of
 [structure-criteria.md](structure-criteria.md) into every worker task, finder and checker, right

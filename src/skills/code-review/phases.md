@@ -37,7 +37,8 @@ fails, record a gap and continue with `input.md` alone.
 
 ## Run the workers
 
-- On the user's own work, add "Also list worthwhile pre-existing issues in touched code."
+- On the user's own work, add "Also list worthwhile pre-existing issues in touched code." to a first
+  review, never to a fix review.
 - Before each launch, check the elapsed time. Past the aim, show the findings so far and ask whether
   to continue.
 - Do not relaunch a worker that fails or stops without a report, beyond the one retry. Show its
