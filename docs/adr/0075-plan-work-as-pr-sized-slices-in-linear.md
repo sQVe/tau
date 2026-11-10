@@ -18,6 +18,15 @@ Plan each agreed design as an ordered list of slices, where one slice is exactly
 PR against `main`. Agent tickets are created when their slice starts. Every ticket then maps to one
 branch or one worker task, and each detailed plan meets the current code.
 
+### Planning constraints
+
+Planning reads the applicable decision records from the base the work builds on before it proposes
+choices. Slices and agent tickets link those records instead of copying them. Each needed record
+update or mechanical check becomes acceptance work of the slice that makes the choice. Records can
+change between planning and the start of a slice, so agent ticket constraints come from the tree the
+workers use. A plan that changes no lasting choice needs no new record, only a change-specific
+reason.
+
 ### Lifecycle
 
 1. The user and the manager agree on a design.
@@ -81,6 +90,11 @@ mapping and closing rules.
 
 Add a plan layer of AI tickets between the human ticket and the slices. Rejected because it adds one
 more state to reconcile with the tickets it describes.
+
+### Discover decisions at publication
+
+Check decision records only when the PR is published. Rejected because a missing record or a broken
+constraint then surfaces after the work is done, when fixing it costs a rework round.
 
 ### Task text only
 

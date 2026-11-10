@@ -55,7 +55,8 @@ design it follows in its Design section. The container has one sub-ticket per sl
    - Show each entry in `problems` and ask the user how to resolve it. Never call `apply` while
      `problems` is not empty.
 
-3. Split the design into slices.
+3. Follow the [decision evidence planning guidance](../shared/decision-evidence.md#plan-the-change)
+   before splitting the design into slices.
    - Each slice leaves `main` working and fits one review sitting, ideally a few hundred changed
      lines.
    - Make each refactor in the design's Structure an earlier groundwork slice. Put new helpers the
@@ -75,7 +76,8 @@ design it follows in its Design section. The container has one sub-ticket per sl
      decision in `## Decisions`, not the full design. For an existing container, keep all text
      outside the changed sections unchanged.
    - `slice-<n>.md`, numbered in plan order, in the [slice template](../tracker/templates/slice.md),
-     with the rules the slice follows in its `## Design`.
+     with its rules and applicable record links in `## Design`. Put each needed record or
+     mechanical-check change in `## Acceptance`.
    - `plan.json`: the route from the tracker skill, the container, and the slices in plan order.
      Keep the identifier of each ticket that exists, even when the plan renames or renumbers it.
    - `plan.md`: a readable summary of the plan: the container title, then each slice with its title,
@@ -95,9 +97,9 @@ design it follows in its Design section. The container has one sub-ticket per sl
 
 5. Check the plan.
    - Map each acceptance criterion of the design to the slice numbers that cover it. Map each
-     refactor in the design's Structure to the slice that delivers it, alongside that coverage. When
-     a criterion or refactor has no delivering slice, change the draft and call `read` again. Do not
-     proceed to `apply` until both are covered.
+     refactor, record update, and mechanical-check change to the slice that delivers it, alongside
+     that coverage. When any item has no delivering slice, change the draft and call `read` again.
+     Do not proceed to `apply` until all are covered.
    - Judge each `## Acceptance` item in the slice body files. An item passes when it names a test, a
      command, or a manual observation, with its expected result. When the design says what to check,
      rewrite the item and call `read` again. Before step 6, list each item that still names no
