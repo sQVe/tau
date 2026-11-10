@@ -32,6 +32,93 @@ it('refuses cancel for a merged PR without a write or confirmation', async () =>
   expect(await readdir(directory)).toEqual(['.git']);
 });
 
+it('refuses cancellation when a linked PR merges during confirmation', async () => {
+  const fake = createLinearFake();
+  const issue = fake.addIssue({ title: 'Work in review', pullRequests: [pullRequest] });
+
+  const context = confirmContext('/repo', async () => {
+    fake.mergedPullRequests.add(pullRequest);
+
+    return true;
+  });
+
+  await expect(cancel(fake.exec, context, issue.identifier)).rejects.toThrow(pullRequest);
+
+  expect(fake.writes()).toEqual([]);
+  expect(issue.stateType).toBe('started');
+});
+
+it('refuses cancellation when the ticket completes during confirmation', async () => {
+  const fake = createLinearFake();
+  const issue = fake.addIssue({ title: 'Work in progress' });
+
+  const context = confirmContext('/repo', async () => {
+    issue.stateType = 'completed';
+
+    return true;
+  });
+
+  await expect(cancel(fake.exec, context, issue.identifier)).rejects.toThrow('completed');
+
+  expect(fake.writes()).toEqual([]);
+  expect(issue.stateType).toBe('completed');
+});
+
+it('returns unchanged when the ticket is canceled during confirmation', async () => {
+  const fake = createLinearFake();
+  const issue = fake.addIssue({ title: 'Work in progress' });
+
+  const context = confirmContext('/repo', async () => {
+    issue.stateType = 'canceled';
+
+    return true;
+  });
+
+  expect(await cancel(fake.exec, context, issue.identifier)).toEqual({
+    status: 'unchanged',
+    identifier: issue.identifier,
+  });
+
+  expect(fake.writes()).toEqual([]);
+});
+
+it('refuses cancellation when a merged PR is attached during confirmation', async () => {
+  const fake = createLinearFake();
+  const issue = fake.addIssue({ title: 'Work in progress' });
+  fake.mergedPullRequests.add(pullRequest);
+
+  const context = confirmContext('/repo', async () => {
+    issue.pullRequests.push(pullRequest);
+
+    return true;
+  });
+
+  await expect(cancel(fake.exec, context, issue.identifier)).rejects.toThrow(pullRequest);
+
+  expect(fake.writes()).toEqual([]);
+  expect(issue.stateType).toBe('started');
+});
+
+it.each(['ticket', 'PR'])(
+  'refuses cancellation when the %s reread fails after confirmation',
+  async (failedRead) => {
+    const fake = createLinearFake();
+    const issue = fake.addIssue({ title: 'Work in progress', pullRequests: [pullRequest] });
+    const key = failedRead === 'ticket' ? 'attachments(' : 'pr view';
+
+    const context = confirmContext('/repo', async () => {
+      fake.failCall(key, 'network error');
+
+      return true;
+    });
+
+    await expect(cancel(fake.exec, context, issue.identifier)).rejects.toThrow('network error');
+
+    expect(fake.writes()).toEqual([]);
+    expect(issue.stateType).toBe('started');
+  },
+);
+
 it('cancels after approval and reads only GitHub PR attachments', async () => {
   const directory = await createTemporaryRepository(onTestFinished);
   const fake = createLinearFake();
@@ -64,6 +151,7 @@ it('cancels after approval and reads only GitHub PR attachments', async () => {
   ]);
 
   expect(fake.calls.filter((call) => call.command === 'gh')).toEqual([
+    { command: 'gh', commandArguments: ['pr', 'view', pullRequest, '--json', 'state'] },
     { command: 'gh', commandArguments: ['pr', 'view', pullRequest, '--json', 'state'] },
   ]);
 

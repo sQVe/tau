@@ -29,11 +29,7 @@ const readPullRequests = async (exec: Exec, context: ExtensionContext, urls: str
   );
 };
 
-export const cancel = async (
-  exec: Exec,
-  context: ExtensionContext,
-  ticket: string,
-): Promise<CancelDetails> => {
+const readGuardedCancellation = async (exec: Exec, context: ExtensionContext, ticket: string) => {
   const issue = await readCancellation(exec, context.cwd, ticket);
   const urls = issue.attachments.nodes.map((attachment) => attachment.url);
   const pullRequests = await readPullRequests(exec, context, urls);
@@ -43,6 +39,17 @@ export const cancel = async (
   if (decision.kind === 'refuse') {
     throw new Error(`Cannot cancel ${identifier}: ${decision.reason} Nothing was written.`);
   }
+
+  return { issue, decision };
+};
+
+export const cancel = async (
+  exec: Exec,
+  context: ExtensionContext,
+  ticket: string,
+): Promise<CancelDetails> => {
+  const { issue, decision } = await readGuardedCancellation(exec, context, ticket);
+  const identifier = issue.identifier;
 
   if (decision.kind === 'unchanged') {
     return { status: 'unchanged', identifier };
@@ -60,6 +67,12 @@ export const cancel = async (
 
   if (!approved) {
     return { status: 'declined', identifier };
+  }
+
+  const current = await readGuardedCancellation(exec, context, ticket);
+
+  if (current.decision.kind === 'unchanged') {
+    return { status: 'unchanged', identifier: current.issue.identifier };
   }
 
   await run(exec, context.cwd, ['issue', 'update', ticket, '--state', 'canceled', '--no-input']);

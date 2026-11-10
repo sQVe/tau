@@ -235,6 +235,110 @@ it('declines a new foreign comment without an ID or a saved draft', async () => 
   });
 });
 
+it('refuses to overwrite a comment edited during confirmation', async () => {
+  const state = await setup();
+  state.ticket.assigneeId = 'someone-else';
+
+  const existing = state.fake.addComment({
+    ticket: state.ticket.identifier,
+    body: `${state.heading}\nOld report`,
+  });
+
+  const draftPath = join(state.prepared.directory, 'draft.json');
+
+  const draft = JSON.stringify({
+    version: 3,
+    identifier: state.ticket.identifier,
+    comments: { [state.heading]: existing.id },
+  });
+
+  await writeFile(draftPath, draft);
+  const editedBody = `${state.heading}\nNew findings from another session`;
+
+  const context = confirmContext(state.directory, async () => {
+    existing.body = editedBody;
+
+    return true;
+  });
+
+  await expect(comment(state.fake.exec, context, state.request)).rejects.toThrow(
+    /changed.*confirm|changed.*answer/,
+  );
+
+  expect(state.fake.writes()).toEqual([]);
+  expect(existing.body).toBe(editedBody);
+  expect(await readFile(draftPath, 'utf8')).toBe(draft);
+});
+
+it('refuses to add a duplicate when a matching comment appears during confirmation', async () => {
+  const state = await setup();
+  state.ticket.assigneeId = 'someone-else';
+  const appearedBody = `${state.heading}\nReport from another session`;
+
+  const context = confirmContext(state.directory, async () => {
+    state.fake.addComment({ ticket: state.ticket.identifier, body: appearedBody });
+
+    return true;
+  });
+
+  await expect(comment(state.fake.exec, context, state.request)).rejects.toThrow(
+    /changed.*confirm|changed.*answer/,
+  );
+
+  expect(state.fake.writes()).toEqual([]);
+  expect([...state.fake.comments.values()].map((saved) => saved.body)).toEqual([appearedBody]);
+
+  await expect(readFile(join(state.prepared.directory, 'draft.json'))).rejects.toMatchObject({
+    code: 'ENOENT',
+  });
+});
+
+it.each(['ownership changed', 'ticket missing', 'response malformed', 'read failed'])(
+  'refuses a comment after confirmation when %s',
+  async (change) => {
+    const state = await setup();
+    state.ticket.assigneeId = 'someone-else';
+
+    const existing = state.fake.addComment({
+      ticket: state.ticket.identifier,
+      body: `${state.heading}\nOld report`,
+    });
+
+    const originalBody = existing.body;
+
+    const context = confirmContext(state.directory, async () => {
+      if (change === 'ownership changed') {
+        state.ticket.assigneeId = 'another-person';
+      }
+
+      if (change === 'ticket missing') {
+        state.fake.issues.clear();
+      }
+
+      if (change === 'response malformed') {
+        state.fake.overrideOutput('comments(', '{"data":{}}');
+      }
+
+      if (change === 'read failed') {
+        state.fake.failCall('comments(', 'network error');
+      }
+
+      return true;
+    });
+
+    await expect(comment(state.fake.exec, context, state.request)).rejects.toThrow(
+      /changed while you answered|no issue|unexpected output|network error/,
+    );
+
+    expect(state.fake.writes()).toEqual([]);
+    expect(existing.body).toBe(originalBody);
+
+    await expect(readFile(join(state.prepared.directory, 'draft.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  },
+);
+
 it('updates a foreign ticket after showing the old and new comment', async () => {
   const state = await setup();
   state.ticket.assigneeId = 'someone-else';

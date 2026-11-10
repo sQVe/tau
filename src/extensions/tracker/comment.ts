@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
@@ -46,6 +47,24 @@ const approveComment = async (
     title: `Comment on ${ticket.identifier} in Linear`,
     message: `Previous comment:\n${previousBody ?? '(none)'}\n\nNew comment:\n${body}`,
   });
+};
+
+const rejectChangedComments = async (
+  exec: Exec,
+  context: ExtensionContext,
+  ticket: Awaited<ReturnType<typeof readComments>>,
+) => {
+  if (isViewersTicket(ticket.viewer, ticket)) {
+    return;
+  }
+
+  const current = await readComments(exec, context.cwd, ticket.identifier);
+
+  if (!isDeepStrictEqual(current, ticket)) {
+    throw new Error(
+      'The ticket or comments changed while you answered. Call comment again. Nothing was written.',
+    );
+  }
 };
 
 const previousDetails = (previous: TicketComment | null) => ({
@@ -104,6 +123,7 @@ export const comment = async (
     };
   }
 
+  await rejectChangedComments(exec, context, ticket);
   await ensureTauDirectory(root, `tickets/${found.name}`);
 
   const saved =
