@@ -13,7 +13,8 @@ One or two sentences on what the slice makes true when it merges.
 
 ## Design
 
-Optional. The rules and decisions the slice follows.
+Optional. The rules and decisions the slice follows. Link applicable records with their constraints,
+one line each; do not copy their contents.
 
 ## Delivers
 

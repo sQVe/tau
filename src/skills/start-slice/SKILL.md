@@ -69,23 +69,25 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
    `origin/<parent>` as the base and the `trunk` from `chain`.
 5. Read the tree the workers use: the branch when
    `git rev-parse --verify --quiet refs/heads/<branchName>` finds it, else the base. Use
-   `git ls-tree -r --name-only <tree>` and `git show <tree>:<path>` without switching. Answer the
+   `git ls-tree -r --name-only <tree>` and `git show <tree>:<path>` without switching. Follow the
+   [decision evidence planning guidance](../shared/decision-evidence.md#plan-the-change), reading
+   the repository instructions and decision records from this tree. Answer the
    [structure criteria](../code-quality/structure-criteria.md) plan questions for the slice's files:
    where each change goes, which helper it reuses, and which files would pass 500 lines. Without
    structure rules, also answer the module questions: which module owns the concept, what deletes
    branches or layers, and what gets more tangled.
 6. Write the draft in `$slicedir`: `agent-<n>.md` per agent ticket in work order, from the
    [tracker skill](../tracker/SKILL.md) template, one worker task each, with the step 5 answers in
-   `## Files`. Write `start.json` as the `start_slice` tool describes, with the tickets in work
-   order. Take label IDs from the agent team's label list, as the tracker skill says, or use `[]`.
-   Keep existing identifiers; new ones stay `null`. The tickets together cover every acceptance
-   criterion.
+   `## Files`. Give each ticket the record links and rules it needs in `## Constraints`. Write
+   `start.json` as the `start_slice` tool describes, with the tickets in work order. Take label IDs
+   from the agent team's label list, as the tracker skill says, or use `[]`. Keep existing
+   identifiers; new ones stay `null`. The tickets together cover every acceptance criterion.
 
-7. Map each slice criterion to its tickets, and change the draft until none is uncovered. Each
-   `## Acceptance` item must name a test, a command, or a manual observation, with its expected
-   result. Rewrite an item when the slice or step 5 says what to check. Before step 9, list each
-   item with no check and its body file, and tell the user the worker gets a vague task. Say nothing
-   when all pass; the list never stops a launch.
+7. Map each slice criterion, record update, and mechanical-check change to its tickets. Change the
+   draft until none is uncovered. Each `## Acceptance` item must name a test, a command, or a manual
+   observation, with its expected result. Rewrite an item when the slice or step 5 says what to
+   check. Before step 9, list each item with no check and its body file, and tell the user the
+   worker gets a vague task. Say nothing when all pass; the list never stops a launch.
 8. For each new ticket (`identifier` is `null`), launch one fresh default-model `scout` in one turn.
    Brief it with the body file path, the step 5 tree, and the plan questions. It reads the body file
    with `read` and the named files with `git show <tree>:<path>`. It searches with

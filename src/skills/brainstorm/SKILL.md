@@ -36,14 +36,15 @@ unclear. Do not use it for a design the user already agreed on. Use the
    exists in the returned directory, read it and resume from its open questions. Do not repeat a
    dead end or a rejected approach it lists unless the condition to revisit it holds.
 
-2. Research first. Read the code the request touches. Send wide reading to a `scout` when the
-   `subagent` tools can launch one, and otherwise read it yourself. When an answer is observable,
-   probe for it: run the command, read the output, or check the actual data. Ask the user only about
-   priorities, preferences, and constraints that need human judgment. Read the
-   [structure criteria](../code-quality/structure-criteria.md) and answer all its plan questions
-   except the file-size question. Record the module that owns the concept, the existing helpers and
-   patterns to reuse, with paths, and each refactor the change needs first. Leave its file-size
-   question to `start-slice`.
+2. Research first. Read the code the request touches and follow the
+   [decision evidence planning guidance](../shared/decision-evidence.md#plan-the-change). Send wide
+   reading to a `scout` when the `subagent` tools can launch one, and otherwise read it yourself.
+   When an answer is observable, probe for it: run the command, read the output, or check the actual
+   data. Ask the user only about priorities, preferences, and constraints that need human judgment.
+   Read the [structure criteria](../code-quality/structure-criteria.md) and answer all its plan
+   questions except the file-size question. Record the module that owns the concept, the existing
+   helpers and patterns to reuse, with paths, and each refactor the change needs first. Leave its
+   file-size question to `start-slice`.
 
 3. Ask a few frontier questions in each round. A frontier question is one whose prerequisites are
    settled. A question that depends on an open question waits for a later round. Research still
@@ -54,11 +55,11 @@ unclear. Do not use it for a design the user already agreed on. Use the
 4. Present the research findings. Stop for the user.
 
 5. Derive three to six criteria, each traced to a research finding or a decision. Draw them from the
-   structure facts as well: the owning module, the helpers to reuse, and the prerequisite refactors.
-   Each criterion names what this idea turns on, such as "migrates the existing rows without a
-   backfill window". A criterion that fits any project, such as maintainability, means you skipped
-   this step. Propose two or three approaches and grade each against the criteria. Recommend one and
-   say why. Stop for the user.
+   structure facts and record constraints from step 2 as well: the owning module, the helpers to
+   reuse, and the prerequisite refactors. Each criterion names what this idea turns on, such as
+   "migrates the existing rows without a backfill window". A criterion that fits any project, such
+   as maintainability, means you skipped this step. Propose two or three approaches and grade each
+   against the criteria. Recommend one and say why. Stop for the user.
 
 6. Write the design summary, using the [design template](templates/design.md): the problem, the
    decisions table, the chosen approach, the architecture, the structure, the rejected approaches

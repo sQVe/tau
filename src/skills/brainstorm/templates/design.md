@@ -53,6 +53,8 @@ Recommendation: <The approach, and why.>
 - Reuse: <Existing modules or helpers to use, with paths>. Reason: <Why each fits.>
 - Refactors: <A refactor that must land before this design>. Reason: <Why the design needs it
   first.>
+- Records: <Applicable record paths and their constraints, one line each; needed record or check
+  changes assigned in Acceptance criteria, or the change-specific reason no new record is needed.>
 
 ## Acceptance criteria
 

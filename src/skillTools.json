@@ -4,7 +4,7 @@
   "prune-comments": ["code_review"],
   "brainstorm": ["slice", "draft_review"],
   "slice": ["slice", "draft_review"],
-  "finish-slice": ["slice", "start_slice"],
+  "finish-slice": ["slice", "start_slice", "pr", "stack"],
   "start-slice": ["slice", "start_slice", "stack", "mutation_check"],
   "handover": ["handover"],
   "stack": ["stack"],

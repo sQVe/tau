@@ -9,6 +9,10 @@ longer details in linked files.
 
 One or two sentences on what is true when the worker is done.
 
+## Constraints
+
+Optional. Linked records and rules this worker needs, one line each.
+
 ## Files
 
 - `path/to/file.ts`: what changes in it.

@@ -1,8 +1,22 @@
 # Decision evidence
 
-Use this guidance for the change under review or publication, with or without a ticket. Keep the
-evidence in the existing review report and PR artifacts. Do not create a document just to prove that
-this check happened.
+Use this guidance when planning, reviewing, or publishing a change, with or without a ticket. Keep
+the evidence in the existing plan, tickets, review report, and PR artifacts. Do not create a
+document just to prove that this check happened.
+
+## Plan the change
+
+- Before proposing choices, read the repository instructions, recording policy, and decision records
+  that govern the touched code from the base the work builds on.
+- For brainstorm and slice, use the default branch on origin after `git fetch`. For start-slice, use
+  the step 5 tree, not ticket text. When no remote base is known, use the current checkout and name
+  it as the source.
+- Name each applicable record by repository path with the constraint it sets, one line each. Link
+  records instead of copying their contents.
+- Assign each needed record update as acceptance work of the work that makes the choice, following
+  the repository's recording policy.
+- Assign each mechanical check that would enforce a constraint as acceptance work of that same work.
+- A plan that changes no lasting choice needs no new record. State the change-specific reason.
 
 ## Assess the change
 
@@ -30,9 +44,10 @@ this check happened.
   existing capture identities, pinned revisions, or saved evidence references. Include relevant
   policy and callers outside the capture. If their checked content cannot be established, report a
   gap rather than assume it is unchanged.
-- Reuse a conclusion only when the change and its supporting evidence still support it. Recheck
-  after relevant implementation, caller, policy, decision-record, or publication-claim changes.
-  Capture freshness cannot establish that outside sources stayed unchanged.
+- A current slice audit's decision-evidence row is reusable publication evidence; an old or missing
+  audit is not. Reuse a conclusion only when the change and its supporting evidence still support
+  it. Recheck after relevant implementation, caller, policy, decision-record, or publication-claim
+  changes. Capture freshness cannot establish that outside sources stayed unchanged.
 - Reassess affected conclusions and gaps after relevant changes, including user edits in a preview.
   An exception applies only to the change and gap the user approved. Invalidate it when that scope,
   gap, or supporting evidence changes, and obtain new approval if the gap remains.
