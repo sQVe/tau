@@ -17,7 +17,7 @@ export interface DraftLookup {
 
 const draftFileName = 'draft.json';
 
-const currentVersion = 2;
+const currentVersion = 3;
 
 const identifierSchema = Type.Union([
   Type.String({ pattern: '^[A-Z][A-Z0-9]*-[0-9]+$' }),
@@ -35,9 +35,9 @@ const previousDraftSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const draftSchema = Type.Object(
+const versionTwoSchema = Type.Object(
   {
-    version: Type.Literal(currentVersion),
+    version: Type.Literal(2),
     identifier: identifierSchema,
     reviewCommentId: commentIdSchema,
     qualityCommentId: commentIdSchema,
@@ -45,10 +45,24 @@ const draftSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const draftSchema = Type.Object(
+  {
+    version: Type.Literal(currentVersion),
+    identifier: identifierSchema,
+    comments: Type.Record(Type.String(), Type.String({ minLength: 1 })),
+  },
+  { additionalProperties: false },
+);
+
 export type DraftRecord = Static<typeof draftSchema>;
 
-const chooseSchema = (value: unknown) =>
-  Value.Check(previousDraftSchema, value) ? previousDraftSchema : draftSchema;
+const chooseSchema = (value: unknown) => {
+  if (Value.Check(previousDraftSchema, value)) {
+    return previousDraftSchema;
+  }
+
+  return Value.Check(versionTwoSchema, value) ? versionTwoSchema : draftSchema;
+};
 
 export const readDraftRecord = async (directory: string): Promise<DraftRecord | null> => {
   const path = join(directory, draftFileName);
@@ -63,11 +77,26 @@ export const readDraftRecord = async (directory: string): Promise<DraftRecord | 
     return null;
   }
 
-  if (saved.version === 1) {
-    return { ...saved, version: currentVersion, qualityCommentId: null };
+  if (saved.version === currentVersion) {
+    return saved;
   }
 
-  return saved;
+  const comments: Record<string, string> = {};
+
+  const directoryIdentifier = basename(directory).toUpperCase();
+  const headingIdentifier = saved.identifier ?? directoryIdentifier;
+
+  if (/^[A-Z][A-Z0-9]*-[0-9]+$/.test(headingIdentifier)) {
+    if (saved.reviewCommentId !== null) {
+      comments[`# Code review: ${headingIdentifier}`] = saved.reviewCommentId;
+    }
+
+    if (saved.version === 2 && saved.qualityCommentId !== null) {
+      comments[`# Code quality: ${headingIdentifier}`] = saved.qualityCommentId;
+    }
+  }
+
+  return { version: currentVersion, identifier: saved.identifier, comments };
 };
 
 const toError = (error: unknown) => (error instanceof Error ? error : new Error(String(error)));
@@ -142,56 +171,11 @@ export const findDraftFor = async (root: string, id: string): Promise<DraftLooku
   };
 };
 
-const fieldSchemas = {
-  identifier: identifierSchema,
-  reviewCommentId: commentIdSchema,
-  qualityCommentId: commentIdSchema,
-};
-
-type DraftField = keyof typeof fieldSchemas;
-
-const isDraftField = (field: string): field is DraftField => Object.hasOwn(fieldSchemas, field);
-
-export const checkDraftField = (field: string, value: unknown): DraftField => {
-  if (!isDraftField(field)) {
-    throw new Error(
-      `Invalid field ${JSON.stringify(field)}: use identifier, reviewCommentId, or qualityCommentId.`,
-    );
+export const writeDraftRecord = async (directory: string, draft: DraftRecord): Promise<void> => {
+  if (!Value.Check(draftSchema, draft)) {
+    throw new Error(`Invalid ticket draft: ${describeSchemaProblem(draftSchema, draft)}.`);
   }
 
-  const schema = fieldSchemas[field];
-
-  if (typeof value !== 'string' || !Value.Check(schema, value)) {
-    throw new Error(
-      `Invalid value ${JSON.stringify(value)} for ${field}: ${describeSchemaProblem(schema, value)}.`,
-    );
-  }
-
-  return field;
-};
-
-// Sets one field of the directory's draft.json and keeps the others. A missing record starts with
-// every field null. It writes nothing when the existing record or the value is invalid.
-export const writeDraftField = async (
-  directory: string,
-  field: string,
-  value: unknown,
-): Promise<DraftRecord> => {
-  checkDraftField(field, value);
-
-  const existing = await readDraftRecord(directory);
-
-  const base: DraftRecord = existing ?? {
-    version: currentVersion,
-    identifier: null,
-    reviewCommentId: null,
-    qualityCommentId: null,
-  };
-
-  const written: DraftRecord = { ...base, [field]: value };
-  const path = join(directory, draftFileName);
-
-  await writeRecord(path, written);
-
-  return written;
+  await readDraftRecord(directory);
+  await writeRecord(join(directory, draftFileName), draft);
 };

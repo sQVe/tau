@@ -1,9 +1,9 @@
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
-import type { Exec, CommandRuntime } from '../../command.js';
-import { checkOutput, readJson } from '../../github/github.js';
-import { api, openStateTypes, readTeamId, run } from '../../linear.js';
+import type { Exec } from '../../command.js';
+import { isPullRequestUrl, readPullRequestState } from '../../github/github.js';
+import { api, openStateTypes, run } from '../../linear/linear.js';
 import type { PickPullRequest } from './startPickDecisions.js';
 import type { LinearChild, LinearContainer } from './writes.js';
 
@@ -19,18 +19,6 @@ type ReadContainer = Omit<LinearContainer, 'children'> &
     children: (LinearChild & PickEvidence)[];
   };
 
-export interface CreatedIssue {
-  id: string;
-  identifier: string;
-  url: string;
-}
-
-interface IssueInput {
-  title?: string;
-  description?: string;
-  subIssueSortOrder?: number;
-}
-
 const containerQuery =
   'query($id: String!) { viewer { id } issue(id: $id) { id identifier title description url branchName inverseRelations(first: 100) { pageInfo { hasNextPage } nodes { type issue { identifier } } } assignee { id } creator { id } state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } team { id key } project { id name } children(first: 100) { pageInfo { hasNextPage } nodes { identifier title description url branchName team { id } subIssueSortOrder assignee { id } creator { id } state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } inverseRelations(first: 100) { pageInfo { hasNextPage } nodes { type issue { identifier } } } } } } }';
 
@@ -39,18 +27,6 @@ const issuePullRequestsQuery =
 
 const issuesQuery =
   'query($filter: IssueFilter!) { issues(first: 50, filter: $filter) { nodes { identifier } } }';
-
-const teamProjectQuery =
-  'query($key: String!, $name: String!) { team(id: $key) { id projects(filter: { name: { eq: $name } }) { nodes { id } } } }';
-
-// `linear issue create --parent` copies the parent's project, so create through the API with the
-// team, project, and parent set explicitly. Linear's schema documents
-// preserveSortOrderOnCreate as the way to keep a passed sort order, and Linear rejects null for it.
-const createMutation =
-  'mutation($team: String!, $project: String, $parent: String, $title: String!, $description: String!, $subIssueSortOrder: Float, $preserveSortOrderOnCreate: Boolean, $labels: [String!]) { issueCreate(input: { teamId: $team, projectId: $project, parentId: $parent, title: $title, labelIds: $labels, description: $description, subIssueSortOrder: $subIssueSortOrder, preserveSortOrderOnCreate: $preserveSortOrderOnCreate }) { issue { id identifier url } } }';
-
-const updateMutation =
-  'mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }';
 
 const pageInfoSchema = Type.Object({ hasNextPage: Type.Boolean() });
 
@@ -116,38 +92,7 @@ const issuesSchema = Type.Object({
   issues: Type.Object({ nodes: Type.Array(Type.Object({ identifier: Type.String() })) }),
 });
 
-const teamProjectSchema = Type.Object({
-  team: Type.Union([
-    Type.Object({
-      id: Type.String(),
-      projects: Type.Object({ nodes: Type.Array(Type.Object({ id: Type.String() })) }),
-    }),
-    Type.Null(),
-  ]),
-});
-
-const createSchema = Type.Object({
-  issueCreate: Type.Object({
-    issue: Type.Object({ id: Type.String(), identifier: Type.String(), url: Type.String() }),
-  }),
-});
-
-const updateSchema = Type.Object({ issueUpdate: Type.Object({ success: Type.Literal(true) }) });
-const pullRequestSchema = Type.Object({ state: Type.String() });
-
-const pullRequestUrl = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/u;
-
 type ChildNode = Static<typeof childSchema>;
-
-const readPullRequestState = async (exec: Exec, cwd: string, url: string) => {
-  const runtime: CommandRuntime = { exec, cwd, signal: undefined };
-  const commandArguments = ['pr', 'view', url, '--json', 'state'];
-  const value = await readJson(runtime, commandArguments);
-
-  checkOutput(commandArguments, pullRequestSchema, value);
-
-  return value.state;
-};
 
 const readPullRequests = async (
   exec: Exec,
@@ -155,14 +100,15 @@ const readPullRequests = async (
   urls: readonly string[],
   states: Map<string, Promise<string>>,
 ) => {
-  const pullRequests = urls.filter((candidate) => pullRequestUrl.test(candidate));
+  const runtime = { exec, cwd, signal: undefined };
+  const pullRequests = urls.filter(isPullRequestUrl);
 
   return Promise.all(
     pullRequests.map(async (url) => {
       let state = states.get(url);
 
       if (state === undefined) {
-        state = readPullRequestState(exec, cwd, url);
+        state = readPullRequestState(runtime, url);
         states.set(url, state);
       }
 
@@ -318,96 +264,6 @@ export const findOpenIssues = async (
   return data.issues.nodes.map((issue) => issue.identifier);
 };
 
-// Looks the project up among the team's projects, since another team may use the same name.
-const readTeamProjectIds = async (
-  exec: Exec,
-  cwd: string,
-  route: { team: string; project: string },
-) => {
-  const { team } = await api(
-    exec,
-    cwd,
-    teamProjectQuery,
-    { key: route.team, name: route.project },
-    teamProjectSchema,
-  );
-
-  if (team === null) {
-    throw new Error(`Linear has no team ${route.team}.`);
-  }
-
-  const [project, ...others] = team.projects.nodes;
-
-  if (project === undefined || others.length > 0) {
-    throw new Error(
-      `Linear team ${route.team} does not have exactly one project named ${route.project}.`,
-    );
-  }
-
-  return { team: team.id, project: project.id };
-};
-
-export const readRouteIds = async (
-  exec: Exec,
-  cwd: string,
-  route: { team: string; project: string | null },
-): Promise<{ team: string; project: string | null }> => {
-  if (route.project === null) {
-    return { team: await readTeamId(exec, cwd, route.team), project: null };
-  }
-
-  return readTeamProjectIds(exec, cwd, { team: route.team, project: route.project });
-};
-
-export const createIssue = async (
-  exec: Exec,
-  cwd: string,
-  issue: {
-    team: string;
-    project: string | null;
-    parent: string | null;
-    title: string;
-    description: string;
-    subIssueSortOrder: number | undefined;
-    labels: readonly string[];
-  },
-): Promise<CreatedIssue> => {
-  const preserveSortOrderOnCreate = issue.subIssueSortOrder !== undefined;
-
-  const data = await api(
-    exec,
-    cwd,
-    createMutation,
-    { ...issue, preserveSortOrderOnCreate },
-    createSchema,
-  );
-
-  return data.issueCreate.issue;
-};
-
-const update = async (exec: Exec, cwd: string, identifier: string, input: IssueInput) => {
-  await api(exec, cwd, updateMutation, { id: identifier, input }, updateSchema);
-};
-
-export const updateIssue = async (
-  exec: Exec,
-  cwd: string,
-  identifier: string,
-  change: { title: string | undefined; description: string | undefined },
-): Promise<void> => {
-  const input: IssueInput = {};
-
-  if (change.title !== undefined) {
-    input.title = change.title;
-  }
-
-  if (change.description !== undefined) {
-    input.description = change.description;
-  }
-
-  await update(exec, cwd, identifier, input);
-};
-
 export const changeBlockedBy = async (
   exec: Exec,
   cwd: string,
@@ -428,13 +284,4 @@ export const changeBlockedBy = async (
   }
 
   await run(exec, cwd, commandArguments);
-};
-
-export const moveIssue = async (
-  exec: Exec,
-  cwd: string,
-  identifier: string,
-  sortOrder: number,
-): Promise<void> => {
-  await update(exec, cwd, identifier, { subIssueSortOrder: sortOrder });
 };

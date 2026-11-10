@@ -4,28 +4,35 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { Value } from 'typebox/value';
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import {
   createTemporaryBareRoot,
   createTemporaryRepository,
 } from '../../../tests/gitRepository.js';
+import { createLinearFake } from '../../../tests/linearFake.js';
 import { noUiContext } from '../../../tests/toolContext.js';
-import { createTrackerDraftTool } from './draftTool.js';
+import { createTicketTool } from './ticketTool.js';
 
 interface PrepareParameters {
   action: 'prepare';
   id?: string;
 }
 
+const createTool = () => createTicketTool(createLinearFake().exec);
+
 const prepare = async (cwd: string, parameters: PrepareParameters) => {
-  const result = await createTrackerDraftTool().execute(
+  const result = await createTool().execute(
     'call',
-    parameters as { action: 'prepare'; id: string },
+    parameters,
     undefined,
     undefined,
     noUiContext(cwd),
   );
+
+  if (!('directory' in result.details) || !('draft' in result.details)) {
+    throw new Error('Expected prepared draft');
+  }
 
   return result.details;
 };
@@ -69,7 +76,7 @@ it('returns the directory whose draft.json records the identifier', async () => 
 
   expect(prepared).toEqual({
     directory: saved,
-    draft: { version: 2, identifier: 'ME-600', reviewCommentId: 'c1', qualityCommentId: null },
+    draft: { version: 3, identifier: 'ME-600', comments: { '# Code review: ME-600': 'c1' } },
     malformed: [],
   });
 
@@ -103,7 +110,7 @@ it('returns a directory named for the id whose draft records no identifier', asy
 
   expect(await prepare(root, { action: 'prepare', id: 'me-600' })).toEqual({
     directory,
-    draft: { version: 2, identifier: null, reviewCommentId: null, qualityCommentId: null },
+    draft: { version: 3, identifier: null, comments: {} },
     malformed: [],
   });
 });
@@ -193,7 +200,7 @@ it.each(refusedIds)('refuses id $label and creates nothing', async ({ parameters
 it('returns the details as JSON text beside the details', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  const result = await createTrackerDraftTool().execute(
+  const result = await createTool().execute(
     'call',
     { action: 'prepare', id: 'me-600' },
     undefined,
@@ -240,44 +247,7 @@ it.each([
   { name: 'another action', input: { action: 'delete', id: 'me-600' }, valid: false },
   { name: 'an id that is not text', input: { action: 'prepare', id: 6 }, valid: false },
 ])('checks the tool input for $name', ({ input, valid }) => {
-  expect(Value.Check(createTrackerDraftTool().parameters, input)).toBe(valid);
-});
-
-const record = (cwd: string, field: string, value: string, id = 'me-600') =>
-  createTrackerDraftTool().execute(
-    'call',
-    { action: 'record', id, field, value } as never,
-    undefined,
-    undefined,
-    noUiContext(cwd),
-  );
-
-it('records a field of the draft found by identifier and writes version 2', async () => {
-  const root = await createTemporaryRepository(onTestFinished);
-  const saved = await saveDraft(root, 'fix-login', 'version-1.json');
-
-  const result = await record(root, 'qualityCommentId', 'q7');
-
-  const expected = {
-    version: 2,
-    identifier: 'ME-600',
-    reviewCommentId: 'c1',
-    qualityCommentId: 'q7',
-  };
-
-  expect(result.details).toEqual({ directory: saved, draft: expected });
-  expect(JSON.parse(await readFile(join(saved, 'draft.json'), 'utf8'))).toEqual(expected);
-});
-
-it('creates draft.json for a new directory', async () => {
-  const root = await createTemporaryRepository(onTestFinished);
-
-  const result = await record(root, 'identifier', 'ME-601', 'me-601');
-
-  expect(result.details).toEqual({
-    directory: join(root, '.tau', 'tickets', 'me-601'),
-    draft: { version: 2, identifier: 'ME-601', reviewCommentId: null, qualityCommentId: null },
-  });
+  expect(Value.Check(createTool().parameters, input)).toBe(valid);
 });
 
 it('refuses a newer draft.json and leaves it unchanged', async () => {
@@ -285,42 +255,179 @@ it('refuses a newer draft.json and leaves it unchanged', async () => {
   const saved = await saveDraft(root, 'me-600', 'newer.json');
   const before = await readFile(join(saved, 'draft.json'), 'utf8');
 
-  await expect(record(root, 'identifier', 'ME-600')).rejects.toThrow(/newer/);
+  await expect(prepare(root, { action: 'prepare', id: 'me-600' })).rejects.toThrow(/newer/);
 
   expect(await readFile(join(saved, 'draft.json'), 'utf8')).toBe(before);
 });
 
-it('refuses an invalid value and creates no ticket directory or ignore file', async () => {
+it.each([
+  {
+    name: 'ticket',
+    input: { action: 'comment', heading: '# Report', bodyFile: 'body.md' },
+    error: /ticket/,
+  },
+  {
+    name: 'heading',
+    input: { action: 'comment', ticket: 'ME-1', bodyFile: 'body.md' },
+    error: /heading/,
+  },
+  {
+    name: 'bodyFile',
+    input: { action: 'comment', ticket: 'ME-1', heading: '# Report' },
+    error: /bodyFile/,
+  },
+  { name: 'cancel ticket', input: { action: 'cancel' }, error: /ticket/ },
+  { name: 'read directory', input: { action: 'read' }, error: /read needs directory/u },
+  {
+    name: 'apply directory',
+    input: { action: 'apply', stateToken: 'token' },
+    error: /apply needs directory/u,
+  },
+  {
+    name: 'apply stateToken',
+    input: { action: 'apply', directory: '.tau/tickets/example' },
+    error: /apply needs stateToken/u,
+  },
+  {
+    name: 'valid ticket',
+    input: { action: 'cancel', ticket: '../escape' },
+    error: /Invalid ticket/,
+  },
+])('refuses a request without $name and writes nothing', async ({ input, error }) => {
   const root = await createTemporaryRepository(onTestFinished);
+  const fake = createLinearFake();
 
-  await expect(record(root, 'identifier', 'nope', 'me-602')).rejects.toThrow(/Invalid value/);
+  await expect(
+    createTicketTool(fake.exec).execute('call', input as never, undefined, undefined, {
+      ...noUiContext(root),
+      isProjectTrusted: () => false,
+    }),
+  ).rejects.toThrow(error);
 
+  expect(fake.calls).toEqual([]);
+  expect(fake.writes()).toEqual([]);
   expect(await readdir(root)).toEqual(['.git']);
-});
-
-it('checks the tool input for record', () => {
-  const tool = createTrackerDraftTool();
-  const input = { action: 'record', id: 'me-600', field: 'identifier', value: 'ME-600' };
-
-  expect(Value.Check(tool.parameters, input)).toBe(true);
-  expect(Value.Check(tool.parameters, { ...input, field: 'version' })).toBe(false);
 });
 
 it.each([
-  { name: 'field', input: { action: 'record', id: 'me-600', value: 'ME-600' }, error: /field/ },
-  { name: 'value', input: { action: 'record', id: 'me-600', field: 'identifier' }, error: /value/ },
-])('refuses record without a $name and creates nothing', async ({ input, error }) => {
+  {
+    name: 'without metadata',
+    metadata: {},
+    status: 'created',
+    identifier: 'ME-13',
+    projectId: 'project-tau',
+    count: 2,
+  },
+  {
+    name: 'with parent and labels',
+    metadata: { parent: 'ME-12', labels: ['label-bug'] },
+    status: 'created',
+    identifier: 'ME-13',
+    projectId: 'project-tau',
+    count: 2,
+  },
+  {
+    name: 'with an existing ticket',
+    metadata: { ticket: 'ME-12' },
+    status: 'updated',
+    identifier: 'ME-12',
+    projectId: null,
+    count: 1,
+  },
+])(
+  'routes read and apply using the session repository configuration $name',
+  async ({ metadata, status, identifier, projectId, count }) => {
+    const root = await createTemporaryRepository(onTestFinished);
+    vi.stubEnv('PI_CODING_AGENT_DIR', root);
+
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+
+    await promisify(execFile)(
+      'git',
+      ['remote', 'add', 'origin', 'https://github.com/sQVe/tau.git'],
+      {
+        cwd: root,
+      },
+    );
+
+    await writeFile(
+      join(root, 'tau.json'),
+      JSON.stringify({ tracker: { repositories: { 'sQVe/tau': { team: 'ME', project: 'Tau' } } } }),
+    );
+
+    const { directory } = await prepare(root, { action: 'prepare', id: 'new-ticket' });
+    await writeFile(join(directory, 'title.md'), 'New ticket\n');
+    await writeFile(join(directory, 'ticket.md'), 'Details');
+    const fake = createLinearFake();
+    fake.addIssue({ identifier: 'ME-12', title: 'Parent', projectId: null });
+
+    const tool = createTicketTool(fake.exec);
+    const context = { ...noUiContext(root), isProjectTrusted: () => false };
+
+    const read = await tool.execute(
+      'read',
+      { action: 'read', directory, ...metadata },
+      undefined,
+      undefined,
+      context,
+    );
+
+    expect(read.details).toMatchObject({ route: { team: 'ME', project: 'Tau' }, problems: [] });
+    expect(fake.writes()).toEqual([]);
+
+    if (!('stateToken' in read.details)) {
+      throw new Error('Expected ticket state token');
+    }
+
+    const result = await tool.execute(
+      'apply',
+      { action: 'apply', directory, stateToken: read.details.stateToken, ...metadata },
+      undefined,
+      undefined,
+      context,
+    );
+
+    expect(result.details).toMatchObject({ status, identifier });
+    expect(fake.issues.size).toBe(count);
+
+    expect(fake.issues.get(identifier)).toMatchObject({
+      title: 'New ticket',
+      description: 'Details',
+      parent: metadata.parent ?? null,
+      labelIds: metadata.labels ?? [],
+      teamId: 'team-me',
+      projectId,
+    });
+  },
+);
+
+it('routes comments and cancellation through the ticket tool', async () => {
   const root = await createTemporaryRepository(onTestFinished);
+  const fake = createLinearFake();
+  const issue = fake.addIssue({ title: 'Target', state: { type: 'canceled', name: 'Canceled' } });
+  const tool = createTicketTool(fake.exec);
+  const bodyFile = join(root, 'body.md');
+  await writeFile(bodyFile, '# Report\nDone');
 
-  await expect(
-    createTrackerDraftTool().execute(
-      'call',
-      input as never,
-      undefined,
-      undefined,
-      noUiContext(root),
-    ),
-  ).rejects.toThrow(error);
+  const added = await tool.execute(
+    'call',
+    { action: 'comment', ticket: issue.identifier, heading: '# Report', bodyFile },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
 
-  expect(await readdir(root)).toEqual(['.git']);
+  const canceled = await tool.execute(
+    'call',
+    { action: 'cancel', ticket: issue.identifier },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  expect(added.details).toMatchObject({ status: 'added' });
+  expect(canceled.details).toEqual({ status: 'unchanged', identifier: issue.identifier });
+  expect(fake.comments.size).toBe(1);
 });

@@ -466,12 +466,12 @@ it('refuses worker startup without the saved model, cwd, CC Safety Net, or profi
       getAllTools: () => [
         ...pi.getAllTools(),
         { name: 'tracker_evidence' },
-        { name: 'tracker_draft' },
+        { name: 'ticket' },
         { name: 'draft_review' },
       ],
     } as typeof pi,
     worker,
-    [...parentTools, 'tracker_evidence', 'tracker_draft', 'draft_review'],
+    [...parentTools, 'tracker_evidence', 'ticket', 'draft_review'],
   );
 
   expect(setActiveTools).toHaveBeenLastCalledWith([
@@ -483,7 +483,7 @@ it('refuses worker startup without the saved model, cwd, CC Safety Net, or profi
     'subagent_report',
     'subagent_question',
     'tracker_evidence',
-    'tracker_draft',
+    'ticket',
     'draft_review',
   ]);
 

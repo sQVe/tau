@@ -1,7 +1,11 @@
+import type { Exec } from '../../command.js';
 import { readTauConfig, requireKnownKey } from '../../config/config.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { readRepositorySection } from '../../config/repositorySection.js';
 import { errorMessage } from '../../errors.js';
+import { readOriginRepository } from '../../github/repositoryTarget.js';
+import type { OriginRepository } from '../../github/repositoryTarget.js';
+import { configRepositoryKey } from '../../github/repositoryTargetDecisions.js';
 import { isRecord } from '../../schema.js';
 
 export interface TrackerRoute {
@@ -125,4 +129,16 @@ export const readTrackerSetup = (
   } catch (error) {
     return { status: 'invalid', message: errorMessage(error) };
   }
+};
+
+export const readRepositorySetup = async (
+  exec: Exec,
+  location: ConfigLocation,
+  ui: ConfigWarnings,
+): Promise<{ setup: TrackerSetup; origin: OriginRepository }> => {
+  const origin = await readOriginRepository({ exec, cwd: location.cwd });
+  const repository = origin.status === 'named' ? configRepositoryKey(origin.repository) : undefined;
+  const setup = readTrackerSetup(location, ui, repository);
+
+  return { setup, origin };
 };

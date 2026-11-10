@@ -21,7 +21,7 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
 
 - Until the report is saved, change nothing: no edits, fixes, stages, commits, pushes, publishes,
   checkouts, resets, or stashes. The one outside write is the report comment of step 7, made with
-  the [tracker skill](../tracker/SKILL.md)'s comment commands under its
+  `ticket` `comment` under the [tracker skill](../tracker/SKILL.md)'s
   [Hard rules](../tracker/SKILL.md#hard-rules). Stop when the user says stop.
 - The work is the user's own only when its branch is, never decided from the checkout alone: the
   user often checks out other people's PRs. A branch is the user's own when its PR author is the
@@ -93,17 +93,14 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
    sources outside the capture too; tool freshness alone does not check them.
 
 7. Post `$dir/report.md` to the ticket, before any fixing. Skip this step without a ticket.
-   - Call `tracker_draft` `prepare` with the ticket identifier in lower case. Find the earlier
-     report with the tracker skill's comment list command: the comment with ID
-     `draft.reviewCommentId`, or with none recorded, the one whose first line is
-     `# Code review: <ticket>`. Read its text from that list.
-   - Post without asking, as [Hard rules](../tracker/SKILL.md#hard-rules) allows, only when the work
-     and the ticket are both the user's own, as the tracker skill defines a ticket. Otherwise ask
-     with `ask_user_question` first, and skip the post if the user declines.
-   - Update the earlier comment when one exists, and never add a second one. Otherwise add one.
-     Record its ID at once, in `$dir/report.md` and by calling `tracker_draft` with action `record`,
-     the ticket `id`, field `reviewCommentId`, and the comment ID as `value`.
-   - If the post fails, keep the local report and say so in the reply.
+   - When the work is not the user's own, ask with `ask_user_question` before posting and skip the
+     post if declined. On the user's own work, do not ask separately. The tool confirms for another
+     person's ticket under [Hard rules](../tracker/SKILL.md#hard-rules).
+   - Call `ticket` `comment` once with the ticket, heading `# Code review: <ticket>`, and
+     `bodyFile: "$dir/report.md"`. Ensure the report's first line matches the heading.
+   - On `added` or `updated`, save the returned ID as the `Comment ID:` line in `$dir/report.md`.
+     Use `previousBody` to name any Linear edits the update replaced.
+   - On `declined` or failure, keep the local report and say it was not posted.
 
 8. Reply with the [report template](report.md). Name the comment URL, or say the report stays local.
    Name any Linear edits the update replaced.

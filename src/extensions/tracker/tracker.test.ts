@@ -8,8 +8,35 @@ import { expect, it, vi } from 'vitest';
 
 import { appendedSystemPrompt, fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { initializeRepository } from '../../../tests/gitRepository.js';
+import { createLinearFake } from '../../../tests/linearFake.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
+import { noUiContext } from '../../../tests/toolContext.js';
 import trackerExtension from './tracker.js';
+
+it('runs ticket actions through the registered extension executor', async () => {
+  const linear = createLinearFake();
+
+  const issue = linear.addIssue({
+    title: 'Finished cancellation',
+    state: { type: 'canceled', name: 'Canceled' },
+  });
+
+  const fake = fakeExtensionApi({ exec: linear.exec });
+  trackerExtension(fake.pi);
+
+  const result = await fake.tools
+    .get('ticket')!
+    .execute(
+      'call',
+      { action: 'cancel', ticket: issue.identifier },
+      undefined,
+      undefined,
+      noUiContext('/repo'),
+    );
+
+  expect(result.details).toEqual({ status: 'unchanged', identifier: issue.identifier });
+  expect(linear.writes()).toEqual([]);
+});
 
 const addOrigin = async (directory: string, originUrl: string) => {
   await promisify(execFile)('git', ['remote', 'add', 'origin', originUrl], { cwd: directory });

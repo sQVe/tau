@@ -2,7 +2,7 @@
 name: tracker
 description:
   Write Linear tickets by Tau's rules. Pick the type and template, route it, search for duplicates,
-  and run the `linear` commands for tickets and the two allowed status changes. Use it for "file a
+  and use checked tools for ticket writes and the two allowed status changes. Use it for "file a
   bug", "create a ticket", or "add a follow-up ticket". It does not split designs or start slices.
 metadata:
   required-for: creating or updating a Linear ticket, its relations, or its status
@@ -37,31 +37,17 @@ This list is the one approval rule; other skills link here.
 
 ## Procedure
 
-1. Pick the type and its template; every template ends with `## Acceptance` and checkboxes. The
-   [slice skill](../slice/SKILL.md) writes containers and slices.
-   - Human ticket, for other work for a person: [template](templates/human-ticket.md).
-   - Container, for an agreed design with slices: [template](templates/container.md).
-   - Slice, for one branch and PR under a container: [template](templates/slice.md).
-   - Agent ticket, for one worker under a slice: [template](templates/agent-ticket.md).
-   - Bug, for a defect a person should see: [template](templates/bug.md).
+1. Pick the type and its template, which ends with `## Acceptance`:
+   [human ticket](templates/human-ticket.md), [bug](templates/bug.md),
+   [container](templates/container.md) and [slice](templates/slice.md) for the
+   [slice skill](../slice/SKILL.md), or [agent ticket](templates/agent-ticket.md) for `start_slice`.
 
 2. Route the ticket from the tracker lines in the prompt.
-   - Every ticket needs the `Tracker repository:` line, agent tickets included. A container, slice,
-     bug, or human ticket goes to that line's team and project, or without a project if it has none.
-   - An agent ticket goes to the `Tracker agent team:` line's team, with no project.
-   - A non-agent ticket with a parent still takes the `Tracker repository:` route.
+   - Every ticket needs `Tracker repository:`. Non-agent tickets use its team and optional project,
+     even with a parent. Agent tickets use `Tracker agent team:` with no project.
    - If a needed line is missing, stop. Show each `Tracker setup needed:` line, and tell the user to
      add the missing part to `~/.pi/agent/tau.json`, then run `/reload` or start a new session. The
-     repository key is the `origin` remote's `owner/name`, and `project` is optional:
-
-     ```json
-     {
-       "tracker": {
-         "agentTeam": "AI",
-         "repositories": { "<owner>/<name>": { "team": "<team key>", "project": "<project name>" } }
-       }
-     }
-     ```
+     repository key is the `origin` remote's `owner/name`, and `project` is optional.
 
 3. Gather evidence before any write. Run one read-only `codemode` script that calls
    `tracker_evidence` once per planned ticket, with its route, parent, and title keywords. Return
@@ -77,24 +63,17 @@ This list is the one approval rule; other skills link here.
 4. Write the title and body.
    - Title: an imperative in sentence case, about 70 characters at most, no prefix. A bug title
      starts with `Fix <symptom>`. Fill the template, drop an empty section, keep `## Acceptance`.
-   - Labels: add only a fitting step 3 label, as listed, with its `id`. Never create one. Containers
-     and slices get none.
-   - Draft: save `ticket.md` and `title.md` in the calling skill's draft directory. Otherwise call
-     `tracker_draft` with action `prepare`, with the lower-case identifier when the ticket exists,
-     else a title slug. Write the title from `title.md`. Keep the type, route, parent, and labels in
-     the preview only.
-   - Record: right after each create, call `tracker_draft` with action `record`, the same `id` as
-     `prepare`, field `identifier`, and the identifier as `value`. Saved comment IDs stay.
-   - A recorded identifier makes the write an update, never a create. Read the ticket with
-     `linear issue view <id> --json --no-pager`. Name each changed field and Linear edit the draft
-     would drop.
+   - Labels: use only fitting step 3 label IDs. Never create labels. Containers and slices get none.
+   - For a bug or human ticket, call `ticket` `prepare` with the lower-case identifier when it
+     exists, else a title slug. Save `title.md` and `ticket.md` in the returned `directory`; never
+     write `draft.json`. Keep the type, route, parent, and labels in the preview.
+   - Before review, call `ticket` `read` with `ticket` for an existing ID. Resolve `problems`.
+     Review `current` and `writes` for changed fields and dropped Linear edits. Repeat on changes.
 
 5. Approval rule for each draft, in this order.
-   1. Before the question, call `draft_review` with action `open` on the draft files, in reading
-      order (title before body). On status `opened`, tell the user to submit tuicr comments and save
-      edits before answering, since `collect` ends tuicr and unsubmitted text is lost. On status
-      `manual`, tell the user its `command` and to quit tuicr first, since `collect` cannot end
-      tuicr outside an `hc` terminal.
+   1. Before the question, call `draft_review` `open`, title before body. On `opened`, tell the user
+      to submit comments and save edits before answering; `collect` loses unsubmitted text. On
+      `manual`, give its `command` and tell the user to quit tuicr before answering.
    2. Ask with the skill's own options and no review option. After any answer, including a closed
       dialog, call `draft_review` with action `collect` and the `directory` that `open` returned.
    3. Accept with no comments, or with only `applied` edits. Merge a `conflict` edit by hand, then
@@ -110,38 +89,19 @@ This list is the one approval rule; other skills link here.
      shows them. Show each ticket's type, title, team, project, labels, and parent, and each
      relation or status change.
 
-6. Write in the previewed order, with each `'` in a single-quoted value as `'\''`. Note each new
-   identifier; if none shows, stop and search the parent's children or the team before any retry.
+6. Write in the previewed order. Stop on a partial failure and report what was written.
    - Containers and slices: use the [slice skill](../slice/SKILL.md), which uses the `slice` tool.
-   - Bug or human ticket:
-     `linear issue create --team <team> --project '<project>' --title '<title>' --description-file <file> --no-interactive`.
-     Leave out `--project` when the route has none. Add `--parent <parent>` and `--label '<label>'`
-     for each label when they apply.
-   - Agent ticket: use the API, since `--parent` copies the parent's project, which fails for an
-     agent team outside it. Write the title as a JSON string, escaping `"` and `\`. Pass the chosen
-     label IDs, or `[]`. Read the agent team's ID with
-     `linear api 'query($key: String!) { team(id: $key) { id } }' --variable key=<agent team>`, then
-     run:
-     ```sh
-     linear api 'mutation($team: String!, $parent: String!, $title: String!, $description: String!, $labels: [String!]) { issueCreate(input: { teamId: $team, parentId: $parent, title: $title, description: $description, labelIds: $labels }) { issue { identifier url } } }' --variable team=<team id> --variable parent=<slice> --variable description=@<file> --variables-json '{"title": "<title>", "labels": ["<label id>"]}'
-     ```
-   - Update: `linear issue update <ticket> --title '<title>' --description-file <file>`, without
-     unchanged flags.
-   - Comments: approval follows [Hard rules](#hard-rules). Add with
-     `linear issue comment add <ticket> --body-file <file> --yes`, then read the ID from
-     `linear issue comment list <ticket> --json --no-pager`. Replace text with
-     `linear issue comment update <comment> --body-file <file> --yes`. Run a `--body-file` command
-     in a later message than its file write.
+   - Bug or human ticket: `read` again, then `apply` with its `stateToken` and the same arguments.
+     Pass `ticket` to both for an existing ticket; `parent` and label IDs only for a create. Report
+     `declined` without retry. If a create save fails, report its ID; never recreate it.
+   - Comments: `ticket` `comment` with the ticket, a heading, and a body file that starts with it.
+     Report the ID and URL, or `declined`, and the edits `previousBody` shows it replaced.
    - Other relations: add with `linear issue relation add <ticket> blocked-by <other>`, remove with
      `linear issue relation delete <ticket> blocked-by <other> --yes`.
    - In Progress: the [start-slice skill](../start-slice/SKILL.md) uses `start_slice` `apply` to
      move the slice. It skips `In Progress`; every other state, `In Review` included, moves. Stop
      and ask if the team lacks that state.
-   - Cancel an approved ticket: read its state and links with
-     `linear api 'query($id: String!) { issue(id: $id) { state { type } attachments { nodes { url } } } }' --variable id=<ticket>`.
-     Skip it if the type is `canceled`. Stop and ask if it is `completed`, or if
-     `gh pr view <url> --json state` returns `MERGED` for a linked PR. Stop and report any failed
-     read or command. Otherwise run `linear issue update <ticket> --state canceled --no-input`.
+   - Cancel: call `ticket` `cancel`. Its confirm supplies approval. Report the returned status.
 
 7. Link the ticket from the PR. Write `Fixes <id>` only for the ticket the PR completes, such as the
    slice, and `Related to <id>` for the rest. Never list an agent ticket or a container as fixed.
