@@ -40,6 +40,14 @@ Recommendation: <The approach, and why.>
 
 <The approach the user agreed to, in a few sentences.>
 
+## Usage
+
+<2-3 realistic flows from a caller or user, each with its inputs and observable result. A flow can
+be a code call site, a CLI command, or user steps. Ground existing call sites in source, with file
+paths, and label proposed interfaces as proposed. Skip this section for a design with no interface.>
+
+- <Flow name>: <The call, command, or steps, with inputs.> Result: <What the caller or user sees.>
+
 ## Architecture
 
 - Components: <The parts and what each does.>

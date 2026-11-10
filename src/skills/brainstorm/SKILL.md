@@ -62,10 +62,10 @@ unclear. Do not use it for a design the user already agreed on. Use the
    against the criteria. Recommend one and say why. Stop for the user.
 
 6. Write the design summary, using the [design template](templates/design.md): the problem, the
-   decisions table, the chosen approach, the architecture, the structure, the rejected approaches
-   with the condition to revisit each, the dead ends, the acceptance criteria, the non-goals with
-   reasons, and the open risks. In Structure, name the owning module, the modules and helpers to
-   reuse, and each prerequisite refactor, with a reason for each.
+   decisions table, the chosen approach, the usage flows, the architecture, the structure, the
+   rejected approaches with the condition to revisit each, the dead ends, the acceptance criteria,
+   the non-goals with reasons, and the open risks. In Structure, name the owning module, the modules
+   and helpers to reuse, and each prerequisite refactor, with a reason for each.
 
 7. For an architectural or hard-to-reverse design, ask the user with `ask_user_question` whether to
    run a premortem. When the user accepts, send `design.md` to a fresh `scout`. Ask it to assume the
