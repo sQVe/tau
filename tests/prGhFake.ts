@@ -13,6 +13,7 @@ export interface FakePullRequest {
   state: 'OPEN' | 'MERGED' | 'CLOSED';
   title: string;
   body: string;
+  author?: string;
   baseRefName: string;
   isDraft: boolean;
   headRefOid: string;
@@ -28,11 +29,19 @@ export interface FakePullRequest {
   comments?: { body: string; createdAt: string }[];
 }
 
-type CommandKey = 'auth status' | 'repo view' | 'pr list' | 'pr view' | 'api' | 'check-suites';
+type CommandKey =
+  | 'auth status'
+  | 'repo view'
+  | 'pr list'
+  | 'pr view'
+  | 'api'
+  | 'api user'
+  | 'check-suites';
 
 export interface GhFake {
   exec: Exec;
   calls: ExecCall[];
+  viewer: string;
   // Keyed by <host>/<owner>/<name>.
   repositories: Record<string, FakeRepository>;
   // Keyed by the base repository, <host>/<owner>/<name>.
@@ -53,6 +62,7 @@ const commandKeys: Record<string, CommandKey> = {
   'pr list': 'pr list',
   'pr view': 'pr view',
   'api --hostname': 'api',
+  'api user': 'api user',
 };
 
 const parentOutput = (parent: string | undefined) => {
@@ -94,6 +104,7 @@ export const createGhFake = (): GhFake => {
       state: pr.state,
       title: pr.title,
       body: pr.body,
+      author: { login: pr.author ?? 'sQVe' },
       baseRefName: pr.baseRefName,
       isDraft: pr.isDraft,
       headRefOid: pr.headRefOid,
@@ -129,7 +140,7 @@ export const createGhFake = (): GhFake => {
   };
 
   const view = (
-    key: Exclude<CommandKey, 'auth status' | 'api' | 'check-suites'>,
+    key: Exclude<CommandKey, 'auth status' | 'api' | 'api user' | 'check-suites'>,
     commandArguments: readonly string[],
   ) => {
     if (key === 'repo view') {
@@ -162,6 +173,10 @@ export const createGhFake = (): GhFake => {
   const output = (key: CommandKey, commandArguments: readonly string[]) => {
     if (key === 'auth status') {
       return '';
+    }
+
+    if (key === 'api user') {
+      return JSON.stringify({ login: fake.viewer });
     }
 
     if (key === 'api' || key === 'check-suites') {
@@ -220,6 +235,7 @@ export const createGhFake = (): GhFake => {
 
   const fake: GhFake = {
     calls: shared.calls,
+    viewer: 'sQVe',
     repositories: {},
     pullRequests: {},
     sshHostnames: {},

@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import type { CommandRuntime } from '../command.js';
 import { errorMessage, hasErrorCode } from '../errors.js';
 import { publishTextSync } from '../record.js';
 import { existingEntry } from '../tauDirectory.js';
@@ -13,6 +14,8 @@ import { pinFixTarget, saveVerifiedSnapshot } from './fixCapture.js';
 import type { PredecessorIdentity } from './fixCapture.js';
 import { decideFixScope } from './fixScope.js';
 import type { FixScope } from './fixScope.js';
+import { readCaptureOwnership } from './ownership.js';
+import type { Ownership } from './ownershipDecision.js';
 import { captureReview } from './pinnedCapture.js';
 import {
   generationFolderName,
@@ -376,8 +379,12 @@ export const captureReviewDirectory = async (
   root: string,
   directory: string,
   target: ReviewTarget,
-): Promise<CapturedGeneration> => {
+  runtime: CommandRuntime,
+): Promise<CapturedGeneration & { ownership: Ownership }> => {
   const checked = await checkReviewDirectory(root, directory);
+  const captured = await captureGeneration(root, checked, target);
+  const range = target.kind === 'rootCommit' ? { base: null, head: target.commit } : captured;
+  const ownership = await readCaptureOwnership({ ...runtime, cwd: root }, range);
 
-  return captureGeneration(root, checked, target);
+  return { ...captured, ownership };
 };

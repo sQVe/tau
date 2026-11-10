@@ -10,6 +10,7 @@ import {
   preparedReview,
   captureWorkingTree,
   savedArtifactState,
+  reviewRuntime,
 } from './fixtures/reviewDirectoryHarness.js';
 import { captureReviewDirectory } from './generation.js';
 
@@ -89,7 +90,12 @@ it.each([
 
   expect(
     await failureOf(() =>
-      captureReviewDirectory(root, directory, { kind: 'workingTree', base: 'HEAD' }),
+      captureReviewDirectory(
+        root,
+        directory,
+        { kind: 'workingTree', base: 'HEAD' },
+        reviewRuntime(root),
+      ),
     ),
   ).toContain(row.message);
 
@@ -121,7 +127,9 @@ it('keeps a snapshot folder it did not create when a capture without a snapshot 
   });
 
   expect(
-    await failureOf(() => captureReviewDirectory(root, directory, { kind: 'rootCommit', commit })),
+    await failureOf(() =>
+      captureReviewDirectory(root, directory, { kind: 'rootCommit', commit }, reviewRuntime(root)),
+    ),
   ).toContain('link failed');
 
   expect(await readFile(join(directory, 'snapshot', 'unrelated.txt'), 'utf8')).toBe('keep\n');
@@ -140,10 +148,15 @@ it('removes the snapshot, names both failures, and keeps the cause when restorin
     failures.restore = false;
   });
 
-  const failure = await captureReviewDirectory(root, directory, {
-    kind: 'workingTree',
-    base: 'HEAD',
-  }).then(
+  const failure = await captureReviewDirectory(
+    root,
+    directory,
+    {
+      kind: 'workingTree',
+      base: 'HEAD',
+    },
+    reviewRuntime(root),
+  ).then(
     () => new Error('no error'),
     (error: unknown) => error as Error,
   );
@@ -171,7 +184,12 @@ it('names every failed cleanup step when restoring input.md and removing the sna
   });
 
   const message = await failureOf(() =>
-    captureReviewDirectory(root, directory, { kind: 'workingTree', base: 'HEAD' }),
+    captureReviewDirectory(
+      root,
+      directory,
+      { kind: 'workingTree', base: 'HEAD' },
+      reviewRuntime(root),
+    ),
   );
 
   expect(message).toContain('link failed');
@@ -195,7 +213,12 @@ it('restores input.md and throws the capture error when removing the snapshot fa
 
   expect(
     await failureOf(() =>
-      captureReviewDirectory(root, directory, { kind: 'workingTree', base: 'HEAD' }),
+      captureReviewDirectory(
+        root,
+        directory,
+        { kind: 'workingTree', base: 'HEAD' },
+        reviewRuntime(root),
+      ),
     ),
   ).toContain('link failed');
 

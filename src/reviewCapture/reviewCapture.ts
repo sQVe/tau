@@ -3,6 +3,8 @@ export { readCoverage } from './coverage.js';
 export type { CoverageLinkRequest } from './coverage.js';
 export type { CoverageDecision, CoverageStatus } from './coverageDecision.js';
 export { captureReviewDirectory } from './generation.js';
+export { readOwnership } from './ownership.js';
+export type { Ownership } from './ownershipDecision.js';
 export { checkReviewFreshness } from './pinnedCapture.js';
 export { prepareReviewDirectory } from './reviewPrepare.js';
 export { checkReviewDirectory } from './reviewDirectory.js';

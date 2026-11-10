@@ -7,11 +7,13 @@ import type {
   CoverageDecision,
   CoverageLinkRequest,
   ReviewInspection,
+  Ownership,
 } from '../../reviewCapture/reviewCapture.js';
 import {
   checkReviewDirectory,
   fixedDiffOptions,
   inspectReview,
+  readOwnership,
 } from '../../reviewCapture/reviewCapture.js';
 import { readCheckEvidence } from './checkEvidence.js';
 import type { FullCheckEvidence, PublicationConfig } from './checkEvidence.js';
@@ -30,6 +32,7 @@ export interface PublicationRequest {
 }
 
 export interface PublicationEvidence {
+  ownership: Ownership;
   target: Target | null;
   branch: string | null;
   subjects: string[];
@@ -188,6 +191,7 @@ export const readPublicationEvidence = async (
   config: PublicationConfig,
 ): Promise<PublicationEvidence> => {
   const evidence: PublicationEvidence = {
+    ownership: { status: 'unclear', reasons: ['The publication target could not be read.'] },
     target: null,
     branch: null,
     subjects: [],
@@ -206,6 +210,18 @@ export const readPublicationEvidence = async (
     );
   } catch (error) {
     evidence.gaps.push(readFailure('target', error));
+    evidence.ownership = { status: 'unclear', reasons: [errorMessage(error)] };
+  }
+
+  if (evidence.target !== null) {
+    const { target } = evidence;
+    const pr = target.pr === null ? null : { host: target.host, author: target.pr.author };
+
+    evidence.ownership = await readOwnership(
+      { ...runtime, cwd: root },
+      { base: target.mergeBase, head: 'HEAD' },
+      pr,
+    );
   }
 
   try {

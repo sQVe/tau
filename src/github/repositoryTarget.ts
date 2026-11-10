@@ -6,6 +6,7 @@ import { parseRepository, readChecked } from './github.js';
 import type { Repository } from './github.js';
 import {
   formatRepository,
+  hasRepository,
   parseRemoteUrl,
   pickBaseRepository,
   pickHead,
@@ -360,6 +361,29 @@ export const resolveHead = async (
   }
 
   return { localBranch: branch, remotes, ...head, repository: pickPushRepository(remote) };
+};
+
+export const resolveOptionalHead = async (
+  runtime: CommandRuntime,
+): Promise<ResolvedHead | undefined> => {
+  const branch = await readUnlessMissing(runtime.cwd, [
+    'symbolic-ref',
+    '--quiet',
+    '--short',
+    'HEAD',
+  ]);
+
+  if (branch === undefined) {
+    return undefined;
+  }
+
+  const remotes = await readRemotes(runtime);
+
+  if (!hasRepository(remotes)) {
+    return undefined;
+  }
+
+  return resolveHead(runtime, { remote: undefined, branch });
 };
 
 const viewRepository = async (

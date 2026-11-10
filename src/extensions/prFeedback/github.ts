@@ -51,8 +51,6 @@ const restUserSchema = Type.Union([
   Type.Null(),
 ]);
 
-const viewerSchema = Type.Object({ login: Type.String() });
-
 const pullRequestSchema = Type.Object({
   number: Type.Integer(),
   url: Type.String(),
@@ -171,18 +169,6 @@ export class UnreadWriteOutputError extends Error {
     this.name = 'UnreadWriteOutputError';
   }
 }
-
-export const readViewer = async (
-  runtime: CommandRuntime,
-  repository: Repository,
-): Promise<string> => {
-  const commandArguments = ['api', 'user', '--hostname', repository.host];
-  const viewer = await readJson(runtime, commandArguments);
-
-  checkOutput(commandArguments, viewerSchema, viewer);
-
-  return viewer.login;
-};
 
 export const readPullRequest = async (
   runtime: CommandRuntime,

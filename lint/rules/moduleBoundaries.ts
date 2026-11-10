@@ -126,7 +126,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   process: ['errors'],
   record: ['errors', 'schema', 'tauDirectory'],
   reviewBots: ['command', 'config', 'github', 'schema'],
-  reviewCapture: ['errors', 'git', 'record', 'schema', 'tauDirectory'],
+  reviewCapture: ['command', 'errors', 'git', 'github', 'record', 'schema', 'tauDirectory'],
   schema: [],
   shell: [],
   skillTools: [],

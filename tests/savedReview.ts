@@ -5,10 +5,13 @@ import { createCodeReviewTool } from '../src/extensions/codeReview/tool.js';
 import type { CodeReviewInput } from '../src/extensions/codeReview/tool.js';
 import type { ReviewTarget } from '../src/reviewCapture/reviewCapture.js';
 import { git } from './gitRepository.js';
+import { createGhFake } from './prGhFake.js';
 import { noUiContext } from './toolContext.js';
 
 const runCodeReview = async (root: string, input: CodeReviewInput) => {
-  const result = await createCodeReviewTool().execute(
+  const fake = createGhFake();
+
+  const result = await createCodeReviewTool(fake.exec).execute(
     'call',
     input,
     undefined,

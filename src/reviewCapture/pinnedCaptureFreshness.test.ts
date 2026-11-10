@@ -13,6 +13,7 @@ import {
   preparedReview,
   prepareDirectory,
   fixRepository,
+  reviewRuntime,
 } from './fixtures/reviewDirectoryHarness.js';
 import { captureReviewDirectory } from './generation.js';
 import { checkReviewFreshness } from './pinnedCapture.js';
@@ -135,7 +136,12 @@ it('reports unknown when the earlier review of a fix capture became a symlink', 
 
   const directory = await prepareDirectory(root);
 
-  await captureReviewDirectory(root, directory, { kind: 'fix', review, findingPaths: [] });
+  await captureReviewDirectory(
+    root,
+    directory,
+    { kind: 'fix', review, findingPaths: [] },
+    reviewRuntime(root),
+  );
 
   const record = JSON.parse(await readFile(join(directory, 'capture.json'), 'utf8')) as {
     target: Record<string, unknown>;

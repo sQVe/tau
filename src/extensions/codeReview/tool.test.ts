@@ -5,12 +5,14 @@ import { Value } from 'typebox/value';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
+import { createGhFake } from '../../../tests/prGhFake.js';
 import { noUiContext } from '../../../tests/toolContext.js';
 import { codeReviewToolParameters, createCodeReviewTool } from './tool.js';
 import type { CodeReviewInput } from './tool.js';
 
 const run = async (root: string, input: CodeReviewInput) => {
-  const tool = createCodeReviewTool();
+  const fake = createGhFake();
+  const tool = createCodeReviewTool(fake.exec);
   const result = await tool.execute('call', input, undefined, undefined, noUiContext(root));
 
   return result.details;
@@ -93,7 +95,9 @@ it('gives the model the result as JSON text in the tool content', async () => {
 
   await writeFile(join(root, 'tracked.txt'), 'two\n');
 
-  const result = await createCodeReviewTool().execute(
+  const fake = createGhFake();
+
+  const result = await createCodeReviewTool(fake.exec).execute(
     'call',
     { action: 'capture', directory, target: { kind: 'workingTree', base: 'HEAD' } },
     undefined,

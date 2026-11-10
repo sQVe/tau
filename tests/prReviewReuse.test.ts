@@ -14,7 +14,8 @@ import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 import { noUiContext } from './toolContext.js';
 
 const runCodeReview = async (root: string, input: CodeReviewInput) => {
-  const tool = createCodeReviewTool();
+  const fake = createGhFake();
+  const tool = createCodeReviewTool(fake.exec);
   const result = await tool.execute('call', input, undefined, undefined, noUiContext(root));
 
   return result.details;

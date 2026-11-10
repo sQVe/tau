@@ -7,6 +7,11 @@ import {
   runCommand,
 } from '../command.js';
 import type { CommandRuntime } from '../command.js';
+import type { ListedPullRequest } from './pullRequestDecisions.js';
+import { formatRepository } from './repositoryTargetDecisions.js';
+
+export { pickPullRequests } from './pullRequestDecisions.js';
+export type { PullRequest } from './pullRequestDecisions.js';
 
 export interface Repository {
   host: string;
@@ -131,6 +136,37 @@ export const readPullRequestState = async (
   return value.state;
 };
 
+const viewerSchema = Type.Object({ login: Type.String({ minLength: 1 }) });
+
+export const readViewer = async (
+  runtime: CommandRuntime,
+  repository: Pick<Repository, 'host'>,
+): Promise<string> => {
+  const commandArguments = ['api', 'user', '--hostname', repository.host];
+  const viewer = await readChecked(runtime, commandArguments, viewerSchema);
+
+  return viewer.login;
+};
+
+const pullRequestListSchema = Type.Array(
+  Type.Object({
+    number: Type.Integer(),
+    url: Type.String(),
+    state: Type.String(),
+    title: Type.String(),
+    body: Type.String(),
+    author: Type.Object({ login: Type.String({ minLength: 1 }) }),
+    baseRefName: Type.String(),
+    isDraft: Type.Boolean(),
+    headRefOid: Type.String(),
+    headRepositoryOwner: Type.Object({ login: Type.String() }),
+    headRepository: Type.Union([Type.Object({ name: Type.String() }), Type.Null()]),
+  }),
+);
+
+const pullRequestFields =
+  'number,url,state,title,body,author,baseRefName,isDraft,headRefOid,headRepositoryOwner,headRepository';
+
 const listLimit = 100;
 
 export const pullRequestListArguments = (query: PullRequestListQuery): string[] => [
@@ -151,3 +187,27 @@ export const incompleteListProblem = (listed: readonly unknown[]): string | unde
   listed.length >= listLimit
     ? `printed ${listed.length} pull requests, the limit, so the list may be incomplete.`
     : undefined;
+
+export const readPullRequestList = async (
+  runtime: CommandRuntime,
+  repository: Repository,
+  branch: string,
+): Promise<ListedPullRequest[]> => {
+  const commandArguments = pullRequestListArguments({
+    repository: formatRepository(repository),
+    filter: ['--head', branch],
+    state: 'all',
+    fields: pullRequestFields,
+  });
+
+  const listed = await readChecked(runtime, commandArguments, pullRequestListSchema);
+  const problem = incompleteListProblem(listed);
+
+  if (problem !== undefined) {
+    throw new Error(
+      `${label(commandArguments)} ${problem} Check the pull requests for this branch on GitHub.`,
+    );
+  }
+
+  return listed;
+};

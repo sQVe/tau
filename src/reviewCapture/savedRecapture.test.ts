@@ -8,7 +8,7 @@ import { expect, it, onTestFinished } from 'vitest';
 import { installCommandShim } from '../../tests/commandShimFake.js';
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
-import { savedArtifactState } from './fixtures/reviewDirectoryHarness.js';
+import { savedArtifactState, reviewRuntime } from './fixtures/reviewDirectoryHarness.js';
 import { captureReviewDirectory } from './generation.js';
 import { checkReviewFreshness } from './pinnedCapture.js';
 import { prepareReviewDirectory } from './reviewPrepare.js';
@@ -22,10 +22,15 @@ const savedReview = async (root: string) => {
   await writeFile(join(directory, 'input.md'), '# Review input\n\n## Capture\n');
   await writeFile(join(root, 'tracked.txt'), 'a\r\nb\r\n');
 
-  const captured = await captureReviewDirectory(root, directory, {
-    kind: 'workingTree',
-    base: 'HEAD',
-  });
+  const captured = await captureReviewDirectory(
+    root,
+    directory,
+    {
+      kind: 'workingTree',
+      base: 'HEAD',
+    },
+    reviewRuntime(root),
+  );
 
   await checkReviewFreshness(root, directory);
 

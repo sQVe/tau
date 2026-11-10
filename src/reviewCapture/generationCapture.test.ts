@@ -7,6 +7,7 @@ import { git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
 import {
   failureOf,
+  reviewRuntime,
   inputHeader,
   preparedReview,
   captureWorkingTree,
@@ -23,11 +24,16 @@ it('appends the capture and its gaps after the Capture heading and saves the rec
   await writeFile(join(root, 'tracked.txt'), 'two\n');
   await writeFile(join(root, 'untracked.txt'), 'new\n');
 
-  const result = await captureReviewDirectory(root, directory, {
-    kind: 'workingTree',
-    base: 'HEAD',
-    exclude: ['generated.txt'],
-  });
+  const result = await captureReviewDirectory(
+    root,
+    directory,
+    {
+      kind: 'workingTree',
+      base: 'HEAD',
+      exclude: ['generated.txt'],
+    },
+    reviewRuntime(root),
+  );
 
   const head = (await git(root, 'rev-parse', 'HEAD')).trim();
   const input = await readFile(join(directory, 'input.md'), 'utf8');
@@ -62,6 +68,7 @@ it('appends the capture and its gaps after the Capture heading and saves the rec
     paths: ['tracked.txt', 'untracked.txt'],
     gaps: [{ kind: 'excluded', path: 'generated.txt' }],
     identity: identity.trim(),
+    ownership: { status: 'own', reasons: [] },
   });
 
   expect(await readFile(join(directory, 'capture', 'input.md'), 'utf8')).toBe(input);
@@ -91,11 +98,16 @@ it('writes a gap path with a newline and a backtick on one list line', async () 
 
   await writeFile(join(root, 'tracked.txt'), 'two\n');
 
-  await captureReviewDirectory(root, directory, {
-    kind: 'workingTree',
-    base: 'HEAD',
-    exclude: [path],
-  });
+  await captureReviewDirectory(
+    root,
+    directory,
+    {
+      kind: 'workingTree',
+      base: 'HEAD',
+      exclude: [path],
+    },
+    reviewRuntime(root),
+  );
 
   const input = await readFile(join(directory, 'input.md'), 'utf8');
   const gaps = input.slice(input.indexOf('## Gaps')).split('\n');
@@ -124,7 +136,12 @@ it('refuses an input.md without the Capture heading and writes nothing', async (
 
   expect(
     await failureOf(() =>
-      captureReviewDirectory(root, directory, { kind: 'workingTree', base: 'HEAD' }),
+      captureReviewDirectory(
+        root,
+        directory,
+        { kind: 'workingTree', base: 'HEAD' },
+        reviewRuntime(root),
+      ),
     ),
   ).toContain('## Capture');
 
@@ -145,7 +162,12 @@ it('refuses a second capture into the same directory', async () => {
   );
 
   const failure = await failureOf(() =>
-    captureReviewDirectory(root, directory, { kind: 'workingTree', base: 'HEAD' }),
+    captureReviewDirectory(
+      root,
+      directory,
+      { kind: 'workingTree', base: 'HEAD' },
+      reviewRuntime(root),
+    ),
   );
 
   expect(failure).toContain('capture.json');
@@ -157,7 +179,12 @@ it('fails the capture on a Git error and writes nothing', async () => {
   const before = await savedArtifactState(directory);
 
   const failure = await failureOf(() =>
-    captureReviewDirectory(root, directory, { kind: 'workingTree', base: 'no-such-branch' }),
+    captureReviewDirectory(
+      root,
+      directory,
+      { kind: 'workingTree', base: 'no-such-branch' },
+      reviewRuntime(root),
+    ),
   );
 
   expect(failure).toContain('no-such-branch');
@@ -189,10 +216,15 @@ it('captures a root commit with a null base in the result and the saved record',
   const { root, directory } = await preparedReview();
   const commit = (await git(root, 'rev-parse', 'HEAD')).trim();
 
-  const result = await captureReviewDirectory(root, directory, {
-    kind: 'rootCommit',
-    commit,
-  });
+  const result = await captureReviewDirectory(
+    root,
+    directory,
+    {
+      kind: 'rootCommit',
+      commit,
+    },
+    reviewRuntime(root),
+  );
 
   const record = JSON.parse(await readFile(join(directory, 'capture.json'), 'utf8')) as unknown;
 
@@ -212,7 +244,12 @@ it('refuses an incomplete capture and writes nothing', async () => {
 
   expect(
     await failureOf(() =>
-      captureReviewDirectory(root, directory, { kind: 'workingTree', base: 'HEAD' }),
+      captureReviewDirectory(
+        root,
+        directory,
+        { kind: 'workingTree', base: 'HEAD' },
+        reviewRuntime(root),
+      ),
     ),
   ).toContain('forced failure');
 
@@ -230,7 +267,12 @@ it('refuses a capture when HEAD cannot be read and writes nothing', async () => 
 
   expect(
     await failureOf(() =>
-      captureReviewDirectory(root, directory, { kind: 'workingTree', base: 'HEAD' }),
+      captureReviewDirectory(
+        root,
+        directory,
+        { kind: 'workingTree', base: 'HEAD' },
+        reviewRuntime(root),
+      ),
     ),
   ).toContain('forced failure');
 
@@ -262,7 +304,12 @@ it('names the missing heading when input.md has no heading at all', async () => 
 
   expect(
     await failureOf(() =>
-      captureReviewDirectory(root, directory, { kind: 'workingTree', base: 'HEAD' }),
+      captureReviewDirectory(
+        root,
+        directory,
+        { kind: 'workingTree', base: 'HEAD' },
+        reviewRuntime(root),
+      ),
     ),
   ).toContain('## Capture');
 
@@ -287,10 +334,15 @@ const linkedDirectoryReview = async () => {
 it('reports a named file under a directory that links outside the repository as unreadable', async () => {
   const { root, directory } = await linkedDirectoryReview();
 
-  const result = await captureReviewDirectory(root, directory, {
-    kind: 'files',
-    paths: ['src/a.test.ts'],
-  });
+  const result = await captureReviewDirectory(
+    root,
+    directory,
+    {
+      kind: 'files',
+      paths: ['src/a.test.ts'],
+    },
+    reviewRuntime(root),
+  );
 
   expect(result['gaps']).toContainEqual({ kind: 'unreadable', path: 'src/a.test.ts' });
   expect(await readFile(join(directory, 'input.md'), 'utf8')).not.toContain('outside secret');

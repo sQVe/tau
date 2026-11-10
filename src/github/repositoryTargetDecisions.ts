@@ -83,6 +83,13 @@ export const formatRepository = (repository: Repository): string =>
 export const sameRepository = (left: Repository, right: Repository): boolean =>
   formatRepository(left).toLowerCase() === formatRepository(right).toLowerCase();
 
+export const hasRepository = (remotes: readonly Remote[]): boolean =>
+  remotes.some((remote) => {
+    const hasPushRepository = remote.pushes.some((push) => push.repository !== undefined);
+
+    return remote.repository !== undefined || hasPushRepository;
+  });
+
 const remoteNames = (remotes: readonly Remote[]) => remotes.map((remote) => remote.name);
 
 const branchPrefix = 'refs/heads/';
