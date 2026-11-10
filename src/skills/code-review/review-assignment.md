@@ -63,6 +63,9 @@ verdicts. A checker checks the finder's decision evidence as well as its finding
   longer checks. Report each loss.
 - A behavioral finding needs a production path that reaches the harmful state. A type or fixture
   that can represent the state is not enough.
+- A comparative speed claim needs the timed region, run count, and spread. A labeled one-run
+  ballpark states its timed region and that spread was not measured. Report other unsupported claims
+  as findings.
 ```
 
 ## Checker
