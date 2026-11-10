@@ -53,7 +53,7 @@ export interface NumberedLine {
   text: string;
 }
 
-export interface MarkerLine {
+interface MarkerLine {
   path: string;
   // The line number in the new file.
   line: number;
@@ -61,7 +61,7 @@ export interface MarkerLine {
   text: string;
 }
 
-export interface DeletedTestMarker {
+interface DeletedTestMarker {
   path: string;
   marker: 'deleted test';
 }
