@@ -24,7 +24,6 @@ const { reporters: cliConfiguredReporters, ...normalizedOptions } = normalizeVit
   options,
 );
 
-// Vitest retains the singular CLI alias separately from configured reporters.
 if ('reporter' in normalizedOptions && Array.isArray(normalizedOptions.reporter)) {
   normalizedOptions.reporter.push(reporterPath);
 }
