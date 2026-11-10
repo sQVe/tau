@@ -15,8 +15,14 @@ const finalStep = (markdown: string): string => {
 const linkedSkills = (text: string): string[] =>
   [...text.matchAll(/\]\(\.\.\/([a-z-]+)\/SKILL\.md\)/g)].map((match) => match[1] ?? '');
 
-it('runs code-quality, then code-review, then finish-slice, then pr after the workers', () => {
+it('runs prune-comments, then code-quality, code-review, finish-slice, and pr after the workers', () => {
   const step = finalStep(readFileSync(skillFile, 'utf8'));
 
-  expect(linkedSkills(step)).toEqual(['code-quality', 'code-review', 'finish-slice', 'pr']);
+  expect(linkedSkills(step)).toEqual([
+    'prune-comments',
+    'code-quality',
+    'code-review',
+    'finish-slice',
+    'pr',
+  ]);
 });

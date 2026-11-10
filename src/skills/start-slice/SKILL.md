@@ -129,11 +129,15 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
       dependent ticket starts.
     - After the last worker, run `mutation_check` once with `mode: "changed"` and `base` set to
       `git merge-base <base> HEAD`, where `<base>` is the step 4 base. Skip it, and say so, when the
-      repository has no `mutation.argv`. Report a tool error and go on to code-quality.
+      repository has no `mutation.argv`. Report a tool error and go on to prune-comments.
     - Survivors are advice. Send at most three survivor behaviors to one worker in one round, with
       step 5 of the tdd skill as its rule. That worker then reruns the affected tests and
       `mutation_check` once with the same `base`. List the survivors left open, with file and line,
       as reviewer notes for the PR.
+    - After the mutation check and its survivor round, run the
+      [prune-comments skill](../prune-comments/SKILL.md) on the branch diff from
+      `git merge-base <base> HEAD`. It commits its own removals. Note a failed run for the PR and go
+      on.
     - After the mutation check, decide on code-quality without asking. Measure
       `git merge-base <base> HEAD` to the working tree, counting untracked new files as added lines.
     - Skip when the diff touches only docs, config, or tests; when the source lines changed, added
