@@ -216,6 +216,12 @@ it('reports a failed target read and skips comparisons that need the merge base'
   const evidence = await run();
 
   expect(evidence.target).toBeNull();
+
+  expect(evidence.ownership).toEqual({
+    status: 'unclear',
+    reasons: [expect.stringContaining('auth status')],
+  });
+
   expect(evidence.subjects).toEqual([]);
   expect(evidence.reuse).toBeNull();
   expect(evidence.review?.freshness.status).toBe('fresh');

@@ -41,7 +41,7 @@ const readCommitOwnership = async (runtime: CommandRuntime, range: OwnershipRang
 
   const revisions = range.base === null ? ['-1', range.head] : [`${range.base}..${range.head}`];
   const output = await readGit(runtime.cwd, ['log', '--format=%ae', '-z', ...revisions]);
-  const emails = output === '' ? [] : output.split('\0').slice(0, -1);
+  const emails = output.split('\0').slice(0, -1);
 
   return decideOwnership({ kind: 'commits', email, emails });
 };

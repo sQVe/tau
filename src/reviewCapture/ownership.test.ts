@@ -76,23 +76,28 @@ it.each([
 });
 
 it.each([
-  { name: 'detached HEAD', arguments: ['checkout', '--detach'] },
-  { name: 'local remote', arguments: ['remote', 'add', 'origin', '/local/repository'] },
-])(
-  'uses commit ownership with $name and makes no GitHub reads',
-  async ({ arguments: commandArguments }) => {
-    const { root } = await preparedReview();
-    const fake = createGhFake();
-    const head = await git(root, 'rev-parse', 'HEAD');
-
-    await git(root, ...commandArguments);
-
-    const result = await readCaptureOwnership({ cwd: root, exec: fake.exec }, { base: null, head });
-
-    expect(result.status).toBe('own');
-    expect(fake.calls).toEqual([]);
+  {
+    name: 'detached HEAD',
+    commands: [
+      ['remote', 'add', 'origin', 'https://github.com/sQVe/tau.git'],
+      ['checkout', '--detach'],
+    ],
   },
-);
+  { name: 'local remote', commands: [['remote', 'add', 'origin', '/local/repository']] },
+])('uses commit ownership with $name and makes no GitHub reads', async ({ commands }) => {
+  const { root } = await preparedReview();
+  const fake = createGhFake();
+  const head = await git(root, 'rev-parse', 'HEAD');
+
+  for (const commandArguments of commands) {
+    await git(root, ...commandArguments);
+  }
+
+  const result = await readCaptureOwnership({ cwd: root, exec: fake.exec }, { base: null, head });
+
+  expect(result.status).toBe('own');
+  expect(fake.calls).toEqual([]);
+});
 
 it('returns unclear when a GitHub remote has an unusable push target', async () => {
   const { root } = await preparedReview();
@@ -131,7 +136,7 @@ it('treats an empty range as own even when its head has another author', async (
   const head = await git(root, 'rev-parse', 'HEAD');
   const result = await readOwnership({ cwd: root, exec: fake.exec }, { base: head, head }, null);
 
-  expect(result.status).toBe('own');
+  expect(result).toEqual({ status: 'own', reasons: [] });
 });
 
 it('does not mistake a commit with an empty author email for an empty range', async () => {

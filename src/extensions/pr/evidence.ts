@@ -184,6 +184,25 @@ const readMarkers = async (root: string, evidence: PublicationEvidence, mergeBas
   }
 };
 
+const readPublicationTarget = async (
+  runtime: CommandRuntime,
+  request: PublicationRequest,
+): Promise<Pick<PublicationEvidence, 'target' | 'ownership' | 'gaps'>> => {
+  try {
+    const target = await readTarget(runtime, { remote: request.remote, base: request.base });
+    const pr = target.pr === null ? null : { host: target.host, author: target.pr.author };
+    const ownership = await readOwnership(runtime, { base: target.mergeBase, head: 'HEAD' }, pr);
+
+    return { target, ownership, gaps: [] };
+  } catch (error) {
+    return {
+      target: null,
+      ownership: { status: 'unclear', reasons: [errorMessage(error)] },
+      gaps: [readFailure('target', error)],
+    };
+  }
+};
+
 export const readPublicationEvidence = async (
   runtime: CommandRuntime,
   root: string,
@@ -191,8 +210,7 @@ export const readPublicationEvidence = async (
   config: PublicationConfig,
 ): Promise<PublicationEvidence> => {
   const evidence: PublicationEvidence = {
-    ownership: { status: 'unclear', reasons: ['The publication target could not be read.'] },
-    target: null,
+    ...(await readPublicationTarget({ ...runtime, cwd: root }, request)),
     branch: null,
     subjects: [],
     reuse: null,
@@ -200,29 +218,7 @@ export const readPublicationEvidence = async (
     markers: [],
     checks: [],
     fullCheck: null,
-    gaps: [],
   };
-
-  try {
-    evidence.target = await readTarget(
-      { ...runtime, cwd: root },
-      { remote: request.remote, base: request.base },
-    );
-  } catch (error) {
-    evidence.gaps.push(readFailure('target', error));
-    evidence.ownership = { status: 'unclear', reasons: [errorMessage(error)] };
-  }
-
-  if (evidence.target !== null) {
-    const { target } = evidence;
-    const pr = target.pr === null ? null : { host: target.host, author: target.pr.author };
-
-    evidence.ownership = await readOwnership(
-      { ...runtime, cwd: root },
-      { base: target.mergeBase, head: 'HEAD' },
-      pr,
-    );
-  }
 
   try {
     evidence.branch = await readGit(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
