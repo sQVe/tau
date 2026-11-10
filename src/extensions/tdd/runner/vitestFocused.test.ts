@@ -29,6 +29,54 @@ describe('focused Vitest entry', () => {
     vi.unstubAllEnvs();
   });
 
+  it.for([
+    { source: 'value.ts', expectedKind: 'pass', expectedFiles: ['value.test.ts'] },
+    { source: 'unrelated.ts', expectedKind: 'no-tests-collected', expectedFiles: [] },
+  ])(
+    'keeps requested files separate from related source $source',
+    async ({ source, expectedKind, expectedFiles }) => {
+      const cwd = await createProject();
+
+      await writeFile(join(cwd, 'value.ts'), 'export const value = 1;');
+      await writeFile(join(cwd, 'unrelated.ts'), 'export const unrelated = 2;');
+
+      await writeFile(
+        join(cwd, 'value.test.ts'),
+        "import { it, expect } from 'vitest'; import { value } from './value'; it('works', () => expect(value).toBe(1));",
+      );
+
+      await writeFile(
+        join(cwd, 'other-value.test.ts'),
+        "import { it } from 'vitest'; import './value'; it('works', () => { throw new Error('must not run'); });",
+      );
+
+      const result = await runTests({
+        scope: 'focused',
+        verificationArgv: [
+          'vitest',
+          'related',
+          source,
+          '--run',
+          '--reporter=json',
+          '--reporter=default',
+          '--no-color',
+        ],
+        cwd,
+        files: ['value.test.ts'],
+        testNames: ['works'],
+      });
+
+      const expectedTests = expectedFiles.map((file) => ({
+        file: join(cwd, file),
+        fullname: 'works',
+        status: 'passed',
+      }));
+
+      expect(result).toMatchObject({ kind: expectedKind, tests: expectedTests });
+      expect('tests' in result && result.tests).toHaveLength(expectedFiles.length);
+    },
+  );
+
   it('fails coverage thresholds that include untested source files', async () => {
     const cwd = await createProject();
 

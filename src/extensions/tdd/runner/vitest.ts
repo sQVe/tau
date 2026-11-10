@@ -101,7 +101,9 @@ const buildArguments = (input: RunTestsInput, outputFile: string): string[] | nu
       return null;
     }
 
-    runnerArguments.push(...paths.map(toFilterArgument));
+    if (input.scope === 'affected') {
+      runnerArguments.push(...paths.map(toFilterArgument));
+    }
 
     if (input.scope === 'focused') {
       runnerArguments.push('-t', exactNamePattern(input.testNames));
@@ -173,7 +175,9 @@ const runInDirectory = async (
 
   if (input.scope === 'focused') {
     const entry = fileURLToPath(new URL('./vitestFocused.ts', import.meta.url));
+    const files = scopedPaths(input);
 
+    commandArguments.splice(1, 0, String(files.length), ...files);
     commandArguments.unshift(entry);
   }
 

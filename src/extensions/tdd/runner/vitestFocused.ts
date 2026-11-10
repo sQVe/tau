@@ -6,17 +6,28 @@ import type * as Vitest from 'vitest/node';
 
 import { normalizeVitestOptions } from './vitestOptions.ts';
 
-const [binaryPath, ...runnerArguments] = process.argv.slice(2);
+const [binaryPath, fileCountArgument, ...argumentsList] = process.argv.slice(2);
 
 if (binaryPath === undefined) {
   throw new Error('The focused runner requires the project Vitest binary path.');
 }
 
+const fileCount = Number(fileCountArgument);
+
+if (!Number.isSafeInteger(fileCount) || fileCount < 1) {
+  throw new Error('The focused runner requires a positive file count.');
+}
+
+if (argumentsList.length < fileCount) {
+  throw new Error('The focused runner did not receive all requested files.');
+}
+
+const files = argumentsList.slice(0, fileCount).map((file) => resolve(process.cwd(), file));
+const runnerArguments = argumentsList.slice(fileCount);
 const projectRequire = createRequire(binaryPath);
 // oxlint-disable-next-line typescript/no-unsafe-assignment -- Node's require is untyped; this loads the resolved package's public Vitest API.
 const { startVitest, parseCLI }: typeof Vitest = projectRequire('vitest/node');
 const { filter, options } = parseCLI(['vitest', ...runnerArguments]);
-const files = filter.map((file) => resolve(process.cwd(), file));
 const reporterPath = fileURLToPath(new URL('./vitestSelectionReporter.ts', import.meta.url));
 
 const { reporters: cliConfiguredReporters, ...normalizedOptions } = normalizeVitestOptions(

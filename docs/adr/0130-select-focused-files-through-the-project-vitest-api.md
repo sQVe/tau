@@ -37,6 +37,9 @@ The TypeScript entry ships with Tau's source and uses Node's native TypeScript s
 separate build artifact. Affected and full runs keep the CLI boundary because they do not need exact
 file selection.
 
+Focused runs require Tau outside `node_modules` because Node refuses type stripping there. The
+[documented local-path and Git installs](../development.md#try-tau) meet this constraint.
+
 ## Consequences
 
 ### Positive

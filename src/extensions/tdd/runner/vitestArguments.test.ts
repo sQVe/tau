@@ -72,7 +72,9 @@ describe('runTests', () => {
         deps,
       );
 
-      expect(captured).toContain('./-a.test.ts');
+      const pathArgument = scope === 'focused' ? '-a.test.ts' : './-a.test.ts';
+
+      expect(captured).toContain(pathArgument);
       expect(captured).toContain('src/b.test.ts');
 
       await runTests(
@@ -80,8 +82,10 @@ describe('runTests', () => {
         deps,
       );
 
-      expect(captured).toContain('./-a.test.ts');
-      expect(captured).not.toContain('-a.test.ts');
+      const runnerArgumentsStart = scope === 'focused' ? 4 : 1;
+
+      expect(captured).toContain(pathArgument);
+      expect(captured.slice(runnerArgumentsStart)).not.toContain('-a.test.ts');
     },
   );
 
@@ -174,7 +178,7 @@ describe('runTests', () => {
       deps,
     );
 
-    expect(captured.slice(2, 6)).toEqual([
+    expect(captured.slice(4, 8)).toEqual([
       'run',
       '--reporter=json',
       '--reporter=default',
