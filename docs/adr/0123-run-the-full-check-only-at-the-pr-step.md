@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-26\
 **Status**: Accepted\
-**Related**: [ADR 0105 (Queue full checks per repository and reuse checks by identity)](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md)
+**Related**: [ADR 0105 (Queue full checks per checkout and reuse checks by identity)](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md)
 
 ## Context
 

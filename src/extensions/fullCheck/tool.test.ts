@@ -227,14 +227,27 @@ it('refuses a repository file that sets no fullCheck command and names the key a
   expect(await runCount()).toBe(0);
 });
 
-it('refuses a repository whose origin names no owner and name', async () => {
+it('runs in a checkout whose origin names no owner and name with the default lock scope', async () => {
   const { root, run, runCount } = await fixture();
 
   await git(root, 'remote', 'set-url', 'origin', '/tmp/some-path');
 
-  await expect(run()).rejects.toThrow('owner/name');
-  await expect(run()).rejects.toThrow('full check');
-  expect(await runCount()).toBe(0);
+  expect((await run()).details?.passed).toBe(true);
+  expect(await runCount()).toBe(1);
+});
+
+it('runs with an unnamed origin when the user file configures a named repository lock', async () => {
+  const { root, directory, run, runCount } = await fixture();
+
+  await writeFile(
+    join(directory, 'tau.json'),
+    JSON.stringify({ fullCheck: { repositories: { 'owner/reuse': { lockScope: 'repository' } } } }),
+  );
+
+  await git(root, 'remote', 'set-url', 'origin', '/tmp/some-path');
+
+  expect((await run()).details?.passed).toBe(true);
+  expect(await runCount()).toBe(1);
 });
 
 it('refuses an untrusted project and names the repository file Tau ignored', async () => {

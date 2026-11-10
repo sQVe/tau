@@ -147,7 +147,38 @@ non-empty strings. Tau reads it only in a trusted project, the same as `mutation
 
 Without a `fullCheck` key in the repository file, `full_check` refuses to run and names the key to
 add. In an untrusted project, Tau ignores the file, so the same refusal applies. A `fullCheck`
-object without `argv` fails the call. A `fullCheck` key in the user file fails the call.
+object without `argv` fails the call. The user file accepts only `fullCheck.repositories`;
+`fullCheck.argv` and any other key inside `fullCheck` fail the call.
+
+### `fullCheck.repositories` (user file)
+
+`fullCheck.repositories.<owner/name>.lockScope` sets which checks wait for each other. Both
+`full_check` and `mutation_check` use it. It lives in `<agent directory>/tau.json` so every worktree
+reads the same scope, whatever its branch. A repository-file setting could leave older branches
+using a different lock while checks share a Docker port or database.
+
+Tau matches the origin's `owner/name` without case sensitivity, as with other per-repository user
+settings. With no matching entry or no `owner/name` origin, it uses the checkout scope. The setting
+takes one of these values:
+
+- `"checkout"`, the default: checks in one checkout run one at a time. Checks in other checkouts of
+  the repository run at the same time.
+- `"repository"`: checks run one at a time across all checkouts of the origin's `owner/name`. Use it
+  when checks share a resource across checkouts, such as a Docker port or a database.
+
+```json
+{
+  "fullCheck": {
+    "repositories": {
+      "owner/name": { "lockScope": "repository" }
+    }
+  }
+}
+```
+
+Any other value fails the call. Tau reads this user setting even in an untrusted project, but the
+commands still need a trusted repository file. Repository-file `fullCheck.lockScope` and
+`fullCheck.repositories` are unknown keys: Tau warns and ignores them.
 
 ### `mutation` (repository file)
 

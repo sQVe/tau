@@ -1,4 +1,4 @@
-# ADR 0105: Queue full checks per repository and reuse checks by identity
+# ADR 0105: Queue full checks per checkout and reuse checks by identity
 
 **Date**: 2026-10-12\
 **Status**: Accepted\
@@ -12,24 +12,36 @@
 
 ## Context
 
-Several Pi sessions in different checkouts can run the same full check at the same time. The runs
-compete for CPU and for shared resources, such as Docker ports, and they fail or slow each other
-down. Checks also rerun on a state that already passed, including after a commit or amend that
-changes no files. Workers report focused checks, and a repeated check on unchanged inputs adds no
-evidence about them.
+Several Pi sessions can run the same full check at the same time. Two runs in one checkout share its
+files, such as logs, test caches, and Stryker state, and they collide. Runs in different checkouts
+have their own files, but some repositories share resources across checkouts, such as Docker ports
+or a database. When one lock covered every checkout of a repository, full checks waited about 8 to
+12 minutes behind checks in other worktrees. Checks also rerun on a state that already passed,
+including after a commit or amend that changes no files. Workers report focused checks, and a
+repeated check on unchanged inputs adds no evidence about them.
 
 ## Decision
 
 ### Full check queue and reuse
 
-The `full_check` tool runs one full check at a time for each repository, and returns a saved passing
-log when the state has not changed. Checks of different repositories run at once. One full check
-runs per work state, at the PR step.
+The `full_check` tool runs one full check at a time for each checkout, and returns a saved passing
+log when the state has not changed. Checks in different checkouts run at once by default. One full
+check runs per work state, at the PR step.
 
-The tool takes a lock for the repository in the `tau/full-check` directory under the agent
-directory. It waits while another checkout of that repository holds the lock. Full checks and
-mutation checks of one repository share the lock, because they share resources such as Docker ports.
-The lock file name comes from the lowercase `owner/name`, encoded so it holds no path separator.
+The tool takes a lock in the `tau/full-check` directory under the agent directory. Its scope comes
+from `fullCheck.repositories.<owner/name>.lockScope` in the user's `<agent directory>/tau.json`. The
+origin selects the entry without case sensitivity. No matching entry or no `owner/name` origin means
+the checkout scope. The user file gives every worktree the same scope, whatever its branch. The
+values are:
+
+- `"checkout"`, the default, locks the checkout. The lock file name comes from a SHA-256 hash of the
+  checkout path, so a deep path fits in a file name. The checkout needs no `owner/name` origin.
+- `"repository"` locks every checkout of `owner/name`, for a repository whose checks share a
+  resource such as a Docker port or a database. The lock file name comes from the lowercase
+  `owner/name`, encoded so it holds no path separator.
+
+The tool waits while another check holds the lock. Full checks and mutation checks share the lock
+and its scope, because they share the same files and resources.
 
 The tool checks for a reusable log before it waits and again after it takes the lock. Another
 session may have saved a matching log while this one waited.
@@ -105,8 +117,9 @@ session-local observation is not a reason to repeat a check.
 
 ### Positive
 
-- Concurrent checks in one repository do not collide on shared resources.
-- A short check of one repository does not wait behind a long check of another.
+- Concurrent checks in one checkout do not collide on its files.
+- A check in one worktree does not wait behind a check in another worktree.
+- A repository whose checkouts share a resource can still queue checks across them.
 - A second call for an unchanged state costs no run.
 - One full suite at the PR step satisfies the repository gate on the same inputs.
 
@@ -114,7 +127,9 @@ session-local observation is not a reason to repeat a check.
 
 - A check that reads state outside the checkout, such as the network or a database, can pass again
   with different results. Reuse hides that change.
-- Checks of different repositories compete for CPU. No limit applies across repositories.
+- Checks in different checkouts compete for CPU. No limit applies across checkouts or repositories.
+- A user whose repository shares a resource across checkouts must set `"repository"` for that
+  repository in the user file, or its checks collide.
 - Git keeps the stored blob of a tracked file whose stat data did not change. When a normalizing
   rule, such as `*.txt text eol=lf`, made that blob differ from the file's bytes, a later edit to
   those same bytes, such as a switch between CRLF and LF, keeps the tree ID. A check that reads raw
@@ -155,6 +170,22 @@ or the branch diff against the selected merge base.
 
 Give the skill scripts that hash Git output. Rejected because they duplicate the reader's mechanics
 and can use different output limits, failing on diffs the evidence reader can handle.
+
+### Lock every checkout of a repository by default
+
+Rejected because worktrees of one repository waited minutes for each other, while most repositories,
+Tau included, share no resource across checkouts.
+
+### Set the lock scope in the repository file
+
+Rejected because worktrees on older branches can lack that setting. They would use checkout locks
+while newer branches use a repository lock, allowing checks that share a resource to overlap. The
+user file keeps one per-repository choice across branches on the machine.
+
+### No lock
+
+Rejected because two checks in one checkout collide on its logs and caches, and some repositories
+share Docker ports across checkouts.
 
 ### Machine-wide lock
 

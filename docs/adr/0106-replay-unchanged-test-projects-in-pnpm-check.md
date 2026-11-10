@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-12\
 **Status**: Accepted\
-**Related**: [ADR 0105 (Queue full checks per repository and reuse checks by identity)](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md),
+**Related**: [ADR 0105 (Queue full checks per checkout and reuse checks by identity)](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md),
 [ADR 0005 (Integration testing against a real Pi session)](./0005-integration-testing-with-pi.md)
 
 ## Context
