@@ -47,6 +47,30 @@ it.each([
     input: facts({ belowStacks: stack(2) }),
     expected: { result: 'command', command: 'gh stack link --remote origin 102 3' },
   },
+  {
+    name: 'missing lower open PR',
+    input: facts({
+      localPulls: [
+        { number: 1, headRefName: 'bottom', baseRefName: 'main', state: 'OPEN' },
+        lower,
+        upper,
+      ],
+      belowStacks: stack(2),
+    }),
+    reason: 'suffix',
+  },
+  {
+    name: 'merged PR kept at bottom',
+    input: facts({
+      localPulls: [
+        { number: 1, headRefName: 'merged', baseRefName: 'main', state: 'MERGED' },
+        lower,
+        upper,
+      ],
+      belowStacks: stack(1, 2),
+    }),
+    expected: { result: 'command', command: 'gh stack link --remote origin 102 3' },
+  },
   { name: 'one open PR', input: facts({ localPulls: [upper] }), expected: { result: 'none' } },
   {
     name: 'already linked before checking the lower stack top',

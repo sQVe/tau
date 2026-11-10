@@ -89,6 +89,17 @@ const planLink = (facts: LinkFacts): LinkDecision => {
       return stop(`The GitHub stack below has another top PR, not #${below.number}.`);
     }
 
+    const lowerPulls = openPulls.slice(0, -1);
+    const offset = belowStacks.pullRequests.length - lowerPulls.length;
+
+    const matchesSuffix = lowerPulls.every(
+      (entry, index) => belowStacks.pullRequests[offset + index] === entry.number,
+    );
+
+    if (!matchesSuffix) {
+      return stop('The lower open local PRs are not a suffix of the GitHub stack below.');
+    }
+
     return {
       result: 'command',
       command: `gh stack link --remote ${remote} ${belowStacks.number} ${pull.number}`,
