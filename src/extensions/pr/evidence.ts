@@ -21,6 +21,7 @@ import { readChainCoverage } from './coverage.js';
 import type { CheckLog, PublicationGap } from './evidenceDecisions.js';
 import { decideSavedReuse } from './reuse.js';
 import type { ReuseResult } from './reuse.js';
+import { decideReviewReuse } from './reuseDecisions.js';
 import { readTarget } from './target.js';
 import type { Target } from './target.js';
 
@@ -31,13 +32,18 @@ export interface PublicationRequest {
   chain?: CoverageLinkRequest[];
 }
 
+interface PublicationReviewEvidence extends ReviewEvidence {
+  reusable: boolean;
+  reusableReasons: string[];
+}
+
 export interface PublicationEvidence {
   ownership: Ownership;
   target: Target | null;
   branch: string | null;
   subjects: string[];
   reuse: ReuseResult | null;
-  review: ReviewEvidence | null;
+  review: PublicationReviewEvidence | null;
   coverage?: CoverageDecision | null;
   markers: Marker[];
   checks: CheckLog[];
@@ -126,7 +132,20 @@ const readReview = async (
   }
 
   try {
-    evidence.review = await readInspectedEvidence(root, inspection);
+    const review = await readInspectedEvidence(root, inspection);
+
+    const decision = decideReviewReuse({
+      reuse: evidence.reuse,
+      freshness: review.freshness,
+      reports: evidence.reuse?.reports ?? [],
+      gaps: review.gaps,
+    });
+
+    evidence.review = {
+      ...review,
+      reusable: decision.reusable,
+      reusableReasons: decision.reasons,
+    };
 
     evidence.gaps.push(
       ...evidence.review.gaps.map((gap): PublicationGap => ({ kind: 'reviewEvidence', gap })),

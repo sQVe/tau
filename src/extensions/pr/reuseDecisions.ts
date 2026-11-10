@@ -1,3 +1,17 @@
+import type { ReviewEvidence } from '../../reviewCapture/evidence.js';
+
+export interface ReviewReuseFacts {
+  reuse: Reuse | null;
+  freshness: ReviewEvidence['freshness'];
+  reports: string[];
+  gaps: ReviewEvidence['gaps'];
+}
+
+interface ReviewReuseDecision {
+  reusable: boolean;
+  reasons: string[];
+}
+
 export interface DiffComparison {
   // Paths in both diffs whose sections differ.
   differing: string[];
@@ -28,6 +42,39 @@ export interface Reuse {
   status: 'match' | 'mismatch';
   reasons: string[];
 }
+
+export const decideReviewReuse = ({
+  reuse,
+  freshness,
+  reports,
+  gaps,
+}: ReviewReuseFacts): ReviewReuseDecision => {
+  const reasons: string[] = [];
+
+  if (reuse === null) {
+    reasons.push('The review has no byte comparison.');
+  } else if (reuse.status !== 'match') {
+    reasons.push(`The review bytes do not match. ${reuse.reasons.join(' ')}`.trim());
+  }
+
+  if (freshness.status !== 'fresh') {
+    reasons.push(`Review freshness is ${freshness.status}. ${freshness.reasons.join(' ')}`.trim());
+  }
+
+  const pairedReports = reports.includes('finder.md') && reports.includes('checker.md');
+
+  if (!reports.includes('reviewer.md') && !pairedReports) {
+    reasons.push('The review needs reviewer.md or both finder.md and checker.md.');
+  }
+
+  for (const gap of gaps) {
+    if (gap.kind === 'generation' || gap.kind === 'incompleteCapture') {
+      reasons.push(`Review capture has a ${gap.kind} gap. ${gap.reasons.join(' ')}`.trim());
+    }
+  }
+
+  return { reusable: reasons.length === 0, reasons };
+};
 
 const headerPrefix = 'diff --git ';
 
