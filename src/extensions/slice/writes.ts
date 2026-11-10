@@ -1,4 +1,4 @@
-import { sameDescription } from './descriptionMatch.js';
+import { sameDescription } from '../../linear/descriptionMatch.js';
 import type { Draft, Plan } from './draft.js';
 
 export interface LinearChild {

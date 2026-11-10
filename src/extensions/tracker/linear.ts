@@ -13,6 +13,15 @@ interface TicketComments extends TicketOwners {
   comments: TicketComment[];
 }
 
+interface TicketIssue extends TicketOwners {
+  id: string;
+  identifier: string;
+  title: string;
+  description: string;
+  url: string;
+  viewer: string;
+}
+
 interface SavedComment {
   id: string;
   url: string;
@@ -63,6 +72,48 @@ const labelsQuery =
 const nameSchema = Type.Union([Type.Object({ name: Type.String() }), Type.Null()]);
 const pageInfoSchema = Type.Object({ hasNextPage: Type.Boolean() });
 const userSchema = Type.Union([Type.Object({ id: Type.String() }), Type.Null()]);
+
+const ticketQuery =
+  'query($id: String!) { viewer { id } issue(id: $id) { id identifier title description url assignee { id } creator { id } } }';
+
+const ticketSchema = Type.Object({
+  viewer: Type.Object({ id: Type.String() }),
+  issue: Type.Union([
+    Type.Null(),
+    Type.Object({
+      id: Type.String(),
+      identifier: Type.String(),
+      title: Type.String(),
+      description: Type.Union([Type.String(), Type.Null()]),
+      url: Type.String(),
+      assignee: userSchema,
+      creator: userSchema,
+    }),
+  ]),
+});
+
+export const readTicketIssue = async (
+  exec: Exec,
+  cwd: string,
+  identifier: string,
+): Promise<TicketIssue> => {
+  const { viewer, issue } = await api(exec, cwd, ticketQuery, { id: identifier }, ticketSchema);
+
+  if (issue === null) {
+    throw new Error(`Linear has no issue ${identifier}.`);
+  }
+
+  return {
+    id: issue.id,
+    identifier: issue.identifier,
+    title: issue.title,
+    url: issue.url,
+    description: issue.description ?? '',
+    viewer: viewer.id,
+    assignee: issue.assignee?.id ?? null,
+    creator: issue.creator?.id ?? null,
+  };
+};
 
 const commentSchema = Type.Object({
   id: Type.String(),

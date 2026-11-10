@@ -1,9 +1,7 @@
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { readOriginRepository } from '../../github/repositoryTarget.js';
-import { configRepositoryKey } from '../../github/repositoryTargetDecisions.js';
-import { readTrackerSetup } from './config.js';
+import { readRepositorySetup } from './config.js';
 import { trackerLines } from './promptLines.js';
 
 export const readSessionPromptLines = async (
@@ -16,13 +14,11 @@ export const readSessionPromptLines = async (
     projectTrusted: context.isProjectTrusted(),
   };
 
-  const origin = await readOriginRepository({
-    exec: (command, commandArguments, options) => pi.exec(command, commandArguments, options),
-    cwd: location.cwd,
-  });
+  const facts = await readRepositorySetup(
+    (command, commandArguments, options) => pi.exec(command, commandArguments, options),
+    location,
+    context.ui,
+  );
 
-  const repository = origin.status === 'named' ? configRepositoryKey(origin.repository) : undefined;
-  const setup = readTrackerSetup(location, context.ui, repository);
-
-  return trackerLines({ setup, origin });
+  return trackerLines(facts);
 };

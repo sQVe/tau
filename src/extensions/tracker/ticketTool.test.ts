@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { Value } from 'typebox/value';
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import {
   createTemporaryBareRoot,
@@ -299,6 +299,77 @@ it.each([
   expect(fake.calls).toEqual([]);
   expect(await readdir(root)).toEqual(['.git']);
 });
+
+it.each(['without metadata', 'with parent and labels'])(
+  'routes read and apply using the session repository configuration %s',
+  async (mode) => {
+    const root = await createTemporaryRepository(onTestFinished);
+    vi.stubEnv('PI_CODING_AGENT_DIR', root);
+
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+
+    await promisify(execFile)(
+      'git',
+      ['remote', 'add', 'origin', 'https://github.com/sQVe/tau.git'],
+      {
+        cwd: root,
+      },
+    );
+
+    await writeFile(
+      join(root, 'tau.json'),
+      JSON.stringify({ tracker: { repositories: { 'sQVe/tau': { team: 'ME', project: 'Tau' } } } }),
+    );
+
+    const { directory } = await prepare(root, { action: 'prepare', id: 'new-ticket' });
+    await writeFile(join(directory, 'title.md'), 'New ticket\n');
+    await writeFile(join(directory, 'ticket.md'), 'Details');
+    const fake = createLinearFake();
+    const parent = fake.addIssue({ identifier: 'ME-12', title: 'Parent', projectId: null });
+
+    const metadata =
+      mode === 'without metadata' ? {} : { parent: parent.identifier, labels: ['label-bug'] };
+
+    const tool = createTicketTool(fake.exec);
+    const context = { ...noUiContext(root), isProjectTrusted: () => false };
+
+    const read = await tool.execute(
+      'read',
+      { action: 'read', directory, ...metadata },
+      undefined,
+      undefined,
+      context,
+    );
+
+    expect(read.details).toMatchObject({ route: { team: 'ME', project: 'Tau' }, problems: [] });
+    expect(fake.writes()).toEqual([]);
+
+    if (!('stateToken' in read.details)) {
+      throw new Error('Expected ticket state token');
+    }
+
+    const result = await tool.execute(
+      'apply',
+      { action: 'apply', directory, stateToken: read.details.stateToken, ...metadata },
+      undefined,
+      undefined,
+      context,
+    );
+
+    expect(result.details).toMatchObject({ status: 'created', identifier: 'ME-13' });
+
+    expect(fake.issues.get('ME-13')).toMatchObject({
+      title: 'New ticket',
+      description: 'Details',
+      parent: metadata.parent ?? null,
+      labelIds: metadata.labels ?? [],
+      teamId: 'team-me',
+      projectId: 'project-tau',
+    });
+  },
+);
 
 it('routes comments and cancellation through the ticket tool', async () => {
   const root = await createTemporaryRepository(onTestFinished);

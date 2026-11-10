@@ -1,5 +1,5 @@
+import { sameDescription } from '../../linear/descriptionMatch.js';
 import { isViewersTicket } from '../../linear/ownership.js';
-import { sameDescription } from './descriptionMatch.js';
 
 export interface TicketFact {
   title: string;

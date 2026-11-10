@@ -151,6 +151,19 @@ export const moveIssue = async (
   await update(exec, cwd, identifier, { subIssueSortOrder: sortOrder });
 };
 
+const teamProjectQuery =
+  'query($key: String!, $name: String!) { team(id: $key) { id projects(filter: { name: { eq: $name } }) { nodes { id } } } }';
+
+const teamProjectSchema = Type.Object({
+  team: Type.Union([
+    Type.Object({
+      id: Type.String(),
+      projects: Type.Object({ nodes: Type.Array(Type.Object({ id: Type.String() })) }),
+    }),
+    Type.Null(),
+  ]),
+});
+
 const teamQuery = 'query($key: String!) { team(id: $key) { id } }';
 
 const teamSchema = Type.Object({
@@ -166,4 +179,44 @@ export const readTeamId = async (exec: Exec, cwd: string, key: string): Promise<
   }
 
   return team.id;
+};
+
+const readTeamProjectIds = async (
+  exec: Exec,
+  cwd: string,
+  route: { team: string; project: string },
+) => {
+  const { team } = await api(
+    exec,
+    cwd,
+    teamProjectQuery,
+    { key: route.team, name: route.project },
+    teamProjectSchema,
+  );
+
+  if (team === null) {
+    throw new Error(`Linear has no team ${route.team}.`);
+  }
+
+  const [project, ...others] = team.projects.nodes;
+
+  if (project === undefined || others.length > 0) {
+    throw new Error(
+      `Linear team ${route.team} does not have exactly one project named ${route.project}.`,
+    );
+  }
+
+  return { team: team.id, project: project.id };
+};
+
+export const readRouteIds = async (
+  exec: Exec,
+  cwd: string,
+  route: { team: string; project: string | null },
+): Promise<{ team: string; project: string | null }> => {
+  if (route.project === null) {
+    return { team: await readTeamId(exec, cwd, route.team), project: null };
+  }
+
+  return readTeamProjectIds(exec, cwd, { team: route.team, project: route.project });
 };

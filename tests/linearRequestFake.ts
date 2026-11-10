@@ -21,6 +21,7 @@ export type QueryName =
   | 'container'
   | 'issuePullRequests'
   | 'routing'
+  | 'ticket'
   | 'labels'
   | 'teamProjects'
   | 'team';
@@ -74,6 +75,7 @@ export interface QueryVariables {
   container: { id: string };
   issuePullRequests: { id: string };
   routing: { id: string };
+  ticket: { id: string };
   labels: { key: string; first: number };
   teamProjects: { key: string; name: string };
   team: { key: string };
@@ -221,6 +223,13 @@ const contracts: QueryContract[] = [
     name: 'issuePullRequests',
     rootField: 'issue',
     selection: 'attachments(',
+    reads: { id: isString },
+    optional: {},
+  },
+  {
+    name: 'ticket',
+    rootField: 'issue',
+    selection: 'description',
     reads: { id: isString },
     optional: {},
   },

@@ -3,7 +3,7 @@ import type { Static } from 'typebox';
 
 import type { Exec } from '../../command.js';
 import { isPullRequestUrl, readPullRequestState } from '../../github/github.js';
-import { api, openStateTypes, readTeamId, run } from '../../linear/linear.js';
+import { api, openStateTypes, run } from '../../linear/linear.js';
 import type { PickPullRequest } from './startPickDecisions.js';
 import type { LinearChild, LinearContainer } from './writes.js';
 
@@ -27,9 +27,6 @@ const issuePullRequestsQuery =
 
 const issuesQuery =
   'query($filter: IssueFilter!) { issues(first: 50, filter: $filter) { nodes { identifier } } }';
-
-const teamProjectQuery =
-  'query($key: String!, $name: String!) { team(id: $key) { id projects(filter: { name: { eq: $name } }) { nodes { id } } } }';
 
 const pageInfoSchema = Type.Object({ hasNextPage: Type.Boolean() });
 
@@ -93,16 +90,6 @@ const issuePullRequestsSchema = Type.Object({
 
 const issuesSchema = Type.Object({
   issues: Type.Object({ nodes: Type.Array(Type.Object({ identifier: Type.String() })) }),
-});
-
-const teamProjectSchema = Type.Object({
-  team: Type.Union([
-    Type.Object({
-      id: Type.String(),
-      projects: Type.Object({ nodes: Type.Array(Type.Object({ id: Type.String() })) }),
-    }),
-    Type.Null(),
-  ]),
 });
 
 type ChildNode = Static<typeof childSchema>;
@@ -275,47 +262,6 @@ export const findOpenIssues = async (
   const data = await api(exec, cwd, issuesQuery, { filter }, issuesSchema);
 
   return data.issues.nodes.map((issue) => issue.identifier);
-};
-
-// Looks the project up among the team's projects, since another team may use the same name.
-const readTeamProjectIds = async (
-  exec: Exec,
-  cwd: string,
-  route: { team: string; project: string },
-) => {
-  const { team } = await api(
-    exec,
-    cwd,
-    teamProjectQuery,
-    { key: route.team, name: route.project },
-    teamProjectSchema,
-  );
-
-  if (team === null) {
-    throw new Error(`Linear has no team ${route.team}.`);
-  }
-
-  const [project, ...others] = team.projects.nodes;
-
-  if (project === undefined || others.length > 0) {
-    throw new Error(
-      `Linear team ${route.team} does not have exactly one project named ${route.project}.`,
-    );
-  }
-
-  return { team: team.id, project: project.id };
-};
-
-export const readRouteIds = async (
-  exec: Exec,
-  cwd: string,
-  route: { team: string; project: string | null },
-): Promise<{ team: string; project: string | null }> => {
-  if (route.project === null) {
-    return { team: await readTeamId(exec, cwd, route.team), project: null };
-  }
-
-  return readTeamProjectIds(exec, cwd, { team: route.team, project: route.project });
 };
 
 export const changeBlockedBy = async (

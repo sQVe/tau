@@ -454,6 +454,10 @@ export const createLinearFake = (): LinearFake => {
         return { issue: { attachments } };
       }
 
+      case 'ticket': {
+        return containerData(operation.variables.id);
+      }
+
       case 'routing': {
         return routingData(operation.variables.id);
       }
