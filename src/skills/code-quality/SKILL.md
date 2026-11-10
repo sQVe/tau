@@ -22,8 +22,8 @@ skill.
 
 - Until the report is saved, change nothing: no edits, fixes, stages, commits, pushes, publishes,
   checkouts, resets, or stashes. Stop when the user says stop.
-- The user's own work follows the ownership rule of
-  [code-review](../code-review/SKILL.md#hard-rules). Anything unclear is not the user's own.
+- Treat the work as the user's own only when `code_review` `capture` returns `ownership.status` as
+  `own`, following the [code-review ownership rule](../code-review/SKILL.md#hard-rules).
 - The report gives the target no approval, no verdict, and no clean result. Never call an incomplete
   or stale review clean.
 - Launch the finder with the `reviewer` profile and the checker with the `checker` profile. Give

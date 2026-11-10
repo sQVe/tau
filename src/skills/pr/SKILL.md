@@ -34,10 +34,12 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
   Outside a stack, rebase only as step 1 allows or when the user asks.
 - Commit with the [commit skill](../commit/SKILL.md). Never stash, discard, or commit unrelated
   changes. Ask when ownership is unclear or unrelated changes could affect review or checks.
-- On the user's own PR or branch, as the [code-review skill](../code-review/SKILL.md) defines it,
-  fix supported, in-scope review findings and the in-scope causes of failing checks without asking,
-  unless the user asked for a read-only review or no changes. On anyone else's, fix only with the
-  user's approval. Never weaken a check or add a retry to hide a failure.
+- Treat the PR or branch as the user's own only when `pr` `evidence` returns `ownership.status` as
+  `own`.
+- On the user's own PR or branch, fix supported, in-scope review findings and the in-scope causes of
+  failing checks without asking, unless the user asked for a read-only review or no changes. On
+  anyone else's, fix only with the user's approval. Never weaken a check or add a retry to hide a
+  failure.
 - On updates, keep title and body text you did not write this session. Change only wrong or missing
   facts, and preview each change.
 - After a partial failure, stop and report what completed. Before retrying, read the remote branch

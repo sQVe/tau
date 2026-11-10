@@ -25,8 +25,8 @@ code. For that, use [code-quality](../code-quality/SKILL.md) or
 - Launch one fresh worker with the `reviewer` profile and the [brief](brief.md). Omit `model` unless
   the user names one.
 - A failed worker deletes nothing. Report a gap and stop. Do not relaunch the worker.
-- The user's own work follows the ownership rule of
-  [code-review](../code-review/SKILL.md#hard-rules). Anything unclear is not the user's own.
+- Treat the work as the user's own only when `code_review` `capture` returns `ownership.status` as
+  `own`, following the [code-review ownership rule](../code-review/SKILL.md#hard-rules).
 - Post no ticket comment.
 
 ## Procedure

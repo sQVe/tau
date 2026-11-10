@@ -12,7 +12,7 @@ Resolve the target once as a `code_review` target, with every revision pinned by
   `git merge-base <default> HEAD`.
 - A commit: a `range` from its parent, or a `rootCommit` when it has none. `A..B`: a `range`. Named
   files: a `files` target, which reviews them even without changes.
-- Pass declared exclusions as `exclude`. Ask when the target, base, or ownership is unclear.
+- Pass declared exclusions as `exclude`. Ask when the target or base is unclear.
 
 ## Handle the capture result
 
@@ -37,8 +37,8 @@ fails, record a gap and continue with `input.md` alone.
 
 ## Run the workers
 
-- On the user's own work, add "Also list worthwhile pre-existing issues in touched code." to a first
-  review, never to a fix review.
+- Only when the capture's `ownership.status` is `own`, add "Also list worthwhile pre-existing issues
+  in touched code." to a first review, never to a fix review.
 - Before each launch, check the elapsed time. Past the aim, show the findings so far and ask whether
   to continue.
 - Do not relaunch a worker that fails or stops without a report, beyond the one retry. Show its

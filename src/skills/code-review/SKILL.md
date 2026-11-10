@@ -23,12 +23,9 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
   checkouts, resets, or stashes. The one outside write is the report comment of step 7, made with
   `ticket` `comment` under the [tracker skill](../tracker/SKILL.md)'s
   [Hard rules](../tracker/SKILL.md#hard-rules). Stop when the user says stop.
-- The work is the user's own only when its branch is, never decided from the checkout alone: the
-  user often checks out other people's PRs. A branch is the user's own when its PR author is the
-  `gh api user --hostname <PR host> --jq .login` login, or, with no PR, when each of its commits has
-  the author email `git config user.email`. A branch with no commits of its own counts when nothing
-  points to another author. Uncommitted work follows its branch. Anything unclear is not the user's
-  own.
+- Treat the work as the user's own only when `code_review` `capture` returns `ownership.status` as
+  `own`. Do not infer ownership from the checkout or compare authors yourself.
+- When `ownership.status` is not `own`, include `ownership.reasons` in the report's evidence gaps.
 - Mode: fast unless the user asks for deep. "Full diff" names the scope, not the mode. Fast launches
   one reviewer. Deep launches a finder, then a fresh checker.
 - A first review covers the whole target. A fix review covers only the fix diff, its callers, and

@@ -142,8 +142,11 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
     - Otherwise run the [code-quality skill](../code-quality/SKILL.md) on the slice branch, with the
       slice as the ticket under review. A stacked slice uses the merge-base diff. Tell the user "ran
       code-quality" before code-review starts.
+    - Treat the branch as the user's own only when `code_review` `capture` returns
+      `ownership.status` as `own`, following the
+      [code-review ownership rule](../code-review/SKILL.md#hard-rules).
     - On the user's own branch, reused branches included, code-quality triage and the review fixes
-      proceed without asking. The code-review skill's ownership rule decides this.
+      proceed without asking.
     - Run a full review with the [code-review skill](../code-review/SKILL.md) on the whole slice,
       not only the code-quality fixes, with the slice as the ticket under review. Run it once.
     - Send all in-scope findings to one fix round. Run at most one fix review, on the fix diff and
