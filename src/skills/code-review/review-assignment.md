@@ -42,8 +42,9 @@ verdicts. A checker checks the finder's decision evidence as well as its finding
 ## Fast budget
 
 ```markdown
-- Spend about five minutes. Run `date` when you start and between files, and read the riskiest
-  changed code first.
+- Spend about five minutes.
+- Run `date` when you start and between files.
+- Read the riskiest changed code first.
 - When the five minutes have passed, stop reading and write the report.
 - End the report with a `## Unread files` section that lists each captured file you did not read, or
   says "None".
