@@ -136,8 +136,8 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    when none is covered). Missing skill or worker tools leave a required action for review coverage;
    do not review in their place.
 
-   For a slice whose audit step 1 found current, reuse its decision-evidence row instead of
-   assessing again. Recheck commits from steps 2 and 3 under the
+   For a slice whose audit step 1 found current, reuse its decision-evidence row when the row is
+   met, instead of assessing again. Recheck commits from steps 2 and 3 under the
    [shared recheck rules](../shared/decision-evidence.md#reuse-and-recheck); a commit that changes
    what the conclusion rests on ends reuse. When reuse does not apply, follow the
    [decision-evidence assessment](../shared/decision-evidence.md#assess-the-change) for the selected
