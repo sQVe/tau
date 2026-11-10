@@ -61,12 +61,13 @@ not search history for others. With one review chain and no other known review, 
 Write one entry per known report. Keep each finding in its original report:
 
 ```markdown
-- <path or URL>: <scope>; identity <identity or "unavailable">.
+- <path or URL>: <scope or "unavailable">; identity <identity or "unavailable">.
   - <finding reference>: <disposition>. <evidence>.
 ```
 
 - Scope: the target kind and the range or paths the report covered. Identity: the capture
-  `identity`, the GitHub review ID, or the reviewed commit, whichever exists.
+  `identity`, the GitHub review ID, or the reviewed commit, whichever exists. Write "unavailable"
+  for a scope or identity no source states. Never infer it from the current head.
 - Finding reference: the report's number or a short title, never a copy of the finding.
 - Disposition: a [triage-findings](../triage-findings/SKILL.md) outcome, Open when nobody verified
   it, or Superseded. Give the commit, test, or `file:line` that supports it.
