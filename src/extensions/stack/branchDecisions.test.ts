@@ -76,10 +76,31 @@ const viewCases: {
   read: StackViewRead;
   phase: 'retry' | 'parent' | 'final';
   result: string;
+  reason?: string;
 }[] = [
   { name: 'parent at top', read: view(['parent']), phase: 'parent', result: 'add' },
   { name: 'branch above parent', read: view(['parent', 'other']), phase: 'parent', result: 'stop' },
-  { name: 'parent missing', read: view(['other']), phase: 'parent', result: 'stop' },
+  {
+    name: 'parent missing',
+    read: view(['other']),
+    phase: 'parent',
+    result: 'stop',
+    reason: 'does not list parent parent',
+  },
+  {
+    name: 'empty parent stack',
+    read: view([]),
+    phase: 'parent',
+    result: 'stop',
+    reason: 'does not list parent parent',
+  },
+  {
+    name: 'failed view with otherwise valid parent',
+    read: { ...view(['parent']), exitCode: 1 },
+    phase: 'parent',
+    result: 'stop',
+    reason: 'gh stack view --json exited with code 1',
+  },
   {
     name: 'retry already in place',
     read: view(['parent', 'child']),
@@ -124,10 +145,11 @@ const viewCases: {
   },
 ];
 
-it.each(viewCases)('decides stack view for $name', ({ read, phase, result }) => {
+it.each(viewCases)('decides stack view for $name', ({ read, phase, result, reason }) => {
   const decision = decideBranchView(read, request, phase);
 
-  const expected = result === 'stop' ? { result, reason: anyReason } : { result };
+  const expectedReason = reason === undefined ? anyReason : containing(reason);
+  const expected = result === 'stop' ? { result, reason: expectedReason } : { result };
 
   expect(decision).toMatchObject(expected);
 });

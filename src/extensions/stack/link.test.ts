@@ -8,7 +8,6 @@ import { createStackFake, joinedCalls } from './fixtures/stackFake.js';
 import { createStackTool } from './tool.js';
 
 const containing = (text: string): unknown => expect.stringContaining(text);
-const anyReason: unknown = expect.any(String);
 const anyEvidence: unknown = expect.any(Object);
 
 const setUp = async () => {
@@ -124,6 +123,7 @@ it('stops with a reason when the PR branch is in no local stack', async () => {
 
 it.each([
   { name: 'missing local stack', key: 'stack view', failure: 'no stack' },
+  { name: 'empty local stack', key: 'stack view', output: '' },
   { name: 'malformed local stack', key: 'stack view', output: '{}' },
   { name: 'missing target PR', key: 'pr view 3', failure: 'not found' },
   { name: 'malformed target PR', key: 'pr view 3', output: '{}' },
@@ -144,13 +144,66 @@ it.each([
 
   expect(await run()).toMatchObject({
     result: 'stop',
-    reason: anyReason,
+    reason: containing(`gh ${key}`),
     evidence: anyEvidence,
   });
 
   expect(
     joinedCalls(fake).filter((call) => !/^(stack view|pr view|api|repo view)/u.test(call)),
   ).toEqual([]);
+});
+
+it('stops with the lower stacks API failure instead of planning a link', async () => {
+  const { fake, run } = await setUp();
+  const execute = fake.exec;
+
+  fake.exec = (command, commandArguments, options) => {
+    if (commandArguments.includes('repos/sQVe/tau/stacks?pull_request=2')) {
+      fake.failCommand('api', 'lower stack unavailable');
+    }
+
+    return execute(command, commandArguments, options);
+  };
+
+  expect(await run()).toMatchObject({
+    result: 'stop',
+    reason: containing('gh api --hostname github.com repos/sQVe/tau/stacks?pull_request=2'),
+  });
+
+  expect(joinedCalls(fake).at(-1)).toBe(
+    'api --hostname github.com repos/sQVe/tau/stacks?pull_request=2',
+  );
+});
+
+it('stops with the failed PR read from the GitHub stack', async () => {
+  const { fake, run } = await setUp();
+
+  fake.stacks = { 3: [1, 2, 3] };
+  fake.failCommand('pr view 1', 'stack PR unavailable');
+
+  expect(await run()).toMatchObject({ result: 'stop', reason: containing('gh pr view 1') });
+  expect(joinedCalls(fake).filter((call) => call.startsWith('stack link'))).toEqual([]);
+});
+
+it('skips merged local layers without reading their PRs', async () => {
+  const { fake, run, view } = await setUp();
+
+  const merged = {
+    ...view.branches[0],
+    name: 'merged',
+    isMerged: true,
+    pr: { number: 1, state: 'MERGED', url: 'https://github.com/sQVe/tau/pull/1' },
+  };
+
+  fake.stackView.stdout = JSON.stringify({ ...view, branches: [merged, ...view.branches] });
+  fake.failCommand('pr view 1', 'merged PR unavailable');
+
+  expect(await run()).toMatchObject({
+    result: 'command',
+    command: 'gh stack link --remote origin --base main 2 3',
+  });
+
+  expect(joinedCalls(fake).filter((call) => call.startsWith('pr view 1 '))).toEqual([]);
 });
 
 it('stops when stacked pull requests are off', async () => {
