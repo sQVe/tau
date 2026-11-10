@@ -19,12 +19,20 @@ export interface TicketWrite {
   description: string | undefined;
 }
 
+interface TicketCandidate {
+  identifier: string;
+  title: string;
+  creator: string | null;
+  viewer: string;
+}
+
 export interface TicketWriteFacts {
   draft: TicketDraft;
   request: TicketArguments;
   route: TrackerRoute | undefined;
   routeProblem: string;
   current: TicketDraft | null;
+  candidates: readonly TicketCandidate[];
 }
 
 const planUpdate = (
@@ -56,6 +64,32 @@ const planUpdate = (
   };
 };
 
+const planCreate = (
+  draft: TicketDraft,
+  route: TrackerRoute,
+  candidates: readonly TicketCandidate[],
+): { writes: TicketWrite[]; problems: string[] } => {
+  const matches = candidates
+    .filter(
+      (candidate) => candidate.title === draft.title && candidate.creator === candidate.viewer,
+    )
+    .map((candidate) => candidate.identifier);
+
+  if (matches.length > 0) {
+    return {
+      writes: [],
+      problems: [
+        `Open tickets you created already match this draft title: ${matches.join(', ')}. Resolve the unrecorded ticket before creating another.`,
+      ],
+    };
+  }
+
+  return {
+    writes: [{ kind: 'createTicket', text: `Create ${draft.title} in ${route.team}.`, ...draft }],
+    problems: [],
+  };
+};
+
 export const planTicketWrites = (
   facts: TicketWriteFacts,
 ): { writes: TicketWrite[]; problems: string[] } => {
@@ -78,12 +112,7 @@ export const planTicketWrites = (
   }
 
   if (current === null) {
-    return {
-      writes: [
-        { kind: 'createTicket', text: `Create ${draft.title} in ${facts.route.team}.`, ...draft },
-      ],
-      problems: [],
-    };
+    return planCreate(draft, facts.route, facts.candidates);
   }
 
   return planUpdate(draft, current, request);

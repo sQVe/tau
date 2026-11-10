@@ -1,4 +1,4 @@
-import { readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
@@ -52,8 +52,127 @@ const setupUpdate = async () => {
   return { ...state, ticket, record };
 };
 
+it('reports the created ticket when saving its identifier fails and blocks a duplicate retry', async () => {
+  const { runtime, fake, directory } = await setup();
+  const recordPath = join(directory, 'draft.json');
+  const plan = await ticketApply.readTicket(runtime, { directory });
+
+  runtime.exec = async (command, commandArguments, options) => {
+    const result = await fake.exec(command, commandArguments, options);
+
+    if (commandArguments[1]?.includes('issueCreate') === true) {
+      await mkdir(recordPath);
+    }
+
+    return result;
+  };
+
+  await expect(
+    ticketApply.applyTicket(runtime, { directory, stateToken: plan.stateToken }),
+  ).rejects.toThrow(/ME-1[\s\S]*https:\/\/linear\.app\/me\/issue\/ME-1/u);
+
+  expect(fake.writes()).toHaveLength(1);
+  expect(fake.issues.get('ME-1')).toMatchObject({ title: 'Fix the failure' });
+
+  await rm(recordPath, { recursive: true });
+  const retry = await ticketApply.readTicket(runtime, { directory });
+
+  expect(retry.problems.join('\n')).toContain('ME-1');
+  expect(retry.writes).toEqual([]);
+
+  await expect(
+    ticketApply.applyTicket(runtime, { directory, stateToken: retry.stateToken }),
+  ).rejects.toThrow('ME-1');
+
+  expect(fake.writes()).toHaveLength(1);
+  expect(fake.issues.size).toBe(1);
+  await expect(readFile(recordPath)).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('refuses an unrecorded draft matching an open ticket the viewer created in the route', async () => {
+  const { runtime, fake, directory } = await setup();
+  const existing = fake.addIssue({ title: 'Fix the failure', assigneeId: 'someone-else' });
+  const before = structuredClone([...fake.issues]);
+  const plan = await ticketApply.readTicket(runtime, { directory });
+
+  expect(plan.problems.join('\n')).toContain(existing.identifier);
+  expect(plan.writes).toEqual([]);
+
+  await expect(
+    ticketApply.applyTicket(runtime, { directory, stateToken: plan.stateToken }),
+  ).rejects.toThrow(existing.identifier);
+
+  expect(fake.writes()).toEqual([]);
+  expect([...fake.issues]).toEqual(before);
+  await expect(readFile(join(directory, 'draft.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it.each([
+  { name: 'another creator', issue: { creatorId: 'someone-else', assigneeId: 'user-viewer' } },
+  { name: 'another title', issue: { title: 'Fix the failure elsewhere' } },
+  { name: 'another team', issue: { teamId: 'team-ai' } },
+  { name: 'another project', issue: { projectId: null } },
+  { name: 'a closed ticket', issue: { stateType: 'completed' as const } },
+])('allows an unrecorded draft beside $name', async ({ issue }) => {
+  const { runtime, fake, directory } = await setup();
+  fake.addIssue({ title: 'Fix the failure', ...issue });
+  const plan = await ticketApply.readTicket(runtime, { directory });
+
+  expect(plan.problems).toEqual([]);
+  expect(plan.writes).toMatchObject([{ kind: 'createTicket' }]);
+  expect(fake.writes()).toEqual([]);
+  await expect(readFile(join(directory, 'draft.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('reports a missing route for an unrecorded draft without writing', async () => {
+  const { runtime, fake, directory } = await setup();
+  await rm(join(runtime.location.agentDirectory, 'tau.json'));
+  const plan = await ticketApply.readTicket(runtime, { directory });
+
+  expect(plan.problems.join('\n')).toContain('Tracker setup needed:');
+  expect(plan.writes).toEqual([]);
+
+  await expect(
+    ticketApply.applyTicket(runtime, { directory, stateToken: plan.stateToken }),
+  ).rejects.toThrow('Tracker setup needed:');
+
+  expect(fake.writes()).toEqual([]);
+  await expect(readFile(join(directory, 'draft.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('refuses a create when a matching ticket appears after read', async () => {
+  const { runtime, fake, directory } = await setup();
+  const plan = await ticketApply.readTicket(runtime, { directory });
+  fake.addIssue({ title: 'Fix the failure' });
+
+  await expect(
+    ticketApply.applyTicket(runtime, { directory, stateToken: plan.stateToken }),
+  ).rejects.toThrow('changed');
+
+  expect(fake.writes()).toEqual([]);
+  expect(fake.issues.size).toBe(1);
+  await expect(readFile(join(directory, 'draft.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it.each([
+  {
+    name: 'partial search',
+    output: '{"data":{"searchIssues":{"nodes":[],"pageInfo":{"hasNextPage":true}}}}',
+    error: /another page/u,
+  },
+  { name: 'malformed search', output: '{"data":{}}', error: /unexpected output/u },
+])('refuses $name evidence without writing', async ({ output, error }) => {
+  const { runtime, fake, directory } = await setup();
+  fake.overrideOutput('searchIssues', output);
+
+  await expect(ticketApply.readTicket(runtime, { directory })).rejects.toThrow(error);
+  expect(fake.writes()).toEqual([]);
+  await expect(readFile(join(directory, 'draft.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
 it('updates only the changed field', async () => {
   const { runtime, fake, directory, ticket, record } = await setupUpdate();
+  fake.failCall('searchIssues', 'Search unavailable');
   const plan = await ticketApply.readTicket(runtime, { directory });
   expect(plan.current).toMatchObject({ title: ticket.title, description: ticket.description });
   const result = await ticketApply.applyTicket(runtime, { directory, stateToken: plan.stateToken });

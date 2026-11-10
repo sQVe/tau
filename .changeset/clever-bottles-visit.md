@@ -7,4 +7,5 @@ and cancel tickets after checking their state and linked pull requests. Keep sav
 version 3 drafts, while still reading versions 1 and 2. Recheck ticket and comment state after
 confirmation before writing. Add `read` and `apply` to create routed tickets from local drafts or
 update only changed text. Check the state token before writing and ask before updating another
-person's ticket.
+person's ticket. Report the created ticket if saving its identifier fails. Refuse a new ticket when
+an open ticket the viewer created in the route already has the draft's title.

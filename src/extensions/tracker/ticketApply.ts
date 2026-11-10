@@ -7,6 +7,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { Exec } from '../../command.js';
 import type { ConfigLocation } from '../../config/config.js';
 import { confirmWithUser } from '../../dialog/dialog.js';
+import { errorMessage } from '../../errors.js';
 import { createIssue, readRouteIds, updateIssue } from '../../linear/linear.js';
 import { isViewersTicket } from '../../linear/ownership.js';
 import { readOptionalText } from '../../record.js';
@@ -20,7 +21,7 @@ import { isWorkerProcess } from '../../worker.js';
 import { readRepositorySetup } from './config.js';
 import type { TrackerRoute } from './config.js';
 import { readDraftRecord, writeDraftRecord } from './draftRecord.js';
-import { readTicketIssue } from './linear.js';
+import { readTicketIssue, searchIssues } from './linear.js';
 import { trackerLines } from './promptLines.js';
 import { planTicketWrites } from './ticketWrites.js';
 import type { TicketArguments, TicketDraft, TicketWrite } from './ticketWrites.js';
@@ -97,6 +98,35 @@ const readCreateTargets = async (
   return { routeIds, parent };
 };
 
+const readCreateCandidates = async (
+  runtime: TicketRuntime,
+  route: TrackerRoute | undefined,
+  identifier: string | null,
+  title: string,
+) => {
+  if (identifier !== null || route === undefined) {
+    return [];
+  }
+
+  const { exec, context } = runtime;
+
+  const found = await searchIssues(exec, context.cwd, {
+    team: route.team,
+    project: route.project ?? null,
+    keywords: title,
+  });
+
+  if (found.hasNextPage) {
+    throw new Error(
+      'Ticket search has another page. Cannot rule out an unrecorded ticket. Nothing was written.',
+    );
+  }
+
+  return Promise.all(
+    found.issues.map((issue) => readTicketIssue(exec, context.cwd, issue.identifier)),
+  );
+};
+
 const readState = async (runtime: TicketRuntime, request: TicketArguments) => {
   const { exec, context } = runtime;
   const directory = await readDirectory(context.cwd, request.directory);
@@ -108,7 +138,8 @@ const readState = async (runtime: TicketRuntime, request: TicketArguments) => {
   const { route, routeProblem } = await readTicketRoute(runtime);
   const identifier = record?.identifier ?? null;
   const current = identifier === null ? null : await readTicketIssue(exec, context.cwd, identifier);
-  const plan = planTicketWrites({ draft, request, route, routeProblem, current });
+  const candidates = await readCreateCandidates(runtime, route, identifier, draft.title);
+  const plan = planTicketWrites({ draft, request, route, routeProblem, current, candidates });
   const creating = plan.writes[0]?.kind === 'createTicket';
   const targets = creating ? await readCreateTargets(runtime, request, route) : null;
 
@@ -123,6 +154,7 @@ const readState = async (runtime: TicketRuntime, request: TicketArguments) => {
         route,
         targets,
         current,
+        candidates,
       }),
     )
     .digest('hex');
@@ -194,11 +226,18 @@ const applyCreate = async (
     subIssueSortOrder: undefined,
   });
 
-  await writeDraftRecord(state.directory, {
-    version: 3,
-    identifier: created.identifier,
-    comments: state.record?.comments ?? {},
-  });
+  try {
+    await writeDraftRecord(state.directory, {
+      version: 3,
+      identifier: created.identifier,
+      comments: state.record?.comments ?? {},
+    });
+  } catch (error) {
+    throw new Error(
+      `Created ${created.identifier} (${created.url}), but could not save its identifier in ${state.directory}/draft.json: ${errorMessage(error)}. Call read again to check the unrecorded ticket.`,
+      { cause: error },
+    );
+  }
 
   return { status: 'created', identifier: created.identifier, url: created.url };
 };

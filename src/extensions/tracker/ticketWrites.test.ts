@@ -42,6 +42,56 @@ const cases: {
   },
   { name: 'create', facts: {}, kind: 'createTicket', problems: 0, ...draft },
   {
+    name: 'unrecorded title match created by the viewer',
+    facts: {
+      candidates: [
+        { identifier: 'ME-12', title: draft.title, creator: 'viewer', viewer: 'viewer' },
+      ],
+    },
+    kind: null,
+    problems: 1,
+  },
+  {
+    name: 'title match created by another person',
+    facts: {
+      candidates: [{ identifier: 'ME-12', title: draft.title, creator: 'other', viewer: 'viewer' }],
+    },
+    kind: 'createTicket',
+    problems: 0,
+    ...draft,
+  },
+  {
+    name: 'title match with no creator',
+    facts: {
+      candidates: [{ identifier: 'ME-12', title: draft.title, creator: null, viewer: 'viewer' }],
+    },
+    kind: 'createTicket',
+    problems: 0,
+    ...draft,
+  },
+  {
+    name: 'different title created by the viewer',
+    facts: {
+      candidates: [
+        { identifier: 'ME-12', title: 'Other title', creator: 'viewer', viewer: 'viewer' },
+      ],
+    },
+    kind: 'createTicket',
+    problems: 0,
+    ...draft,
+  },
+  {
+    name: 'recorded ticket with a title match',
+    facts: {
+      current: draft,
+      candidates: [
+        { identifier: 'ME-12', title: draft.title, creator: 'viewer', viewer: 'viewer' },
+      ],
+    },
+    kind: null,
+    problems: 0,
+  },
+  {
     name: 'title update',
     facts: { current: { ...draft, title: 'Old' } },
     kind: 'updateTicket',
@@ -78,6 +128,7 @@ it.each(cases)('plans $name', ({ facts, kind, problems, title, description }) =>
     routeProblem: 'Tracker setup needed: test route.',
     request: { directory: 'draft' },
     current: null,
+    candidates: [],
     ...facts,
   });
 

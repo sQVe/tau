@@ -277,6 +277,17 @@ it.each([
     error: /bodyFile/,
   },
   { name: 'cancel ticket', input: { action: 'cancel' }, error: /ticket/ },
+  { name: 'read directory', input: { action: 'read' }, error: /read needs directory/u },
+  {
+    name: 'apply directory',
+    input: { action: 'apply', stateToken: 'token' },
+    error: /apply needs directory/u,
+  },
+  {
+    name: 'apply stateToken',
+    input: { action: 'apply', directory: '.tau/tickets/example' },
+    error: /apply needs stateToken/u,
+  },
   {
     name: 'valid ticket',
     input: { action: 'cancel', ticket: '../escape' },
@@ -287,16 +298,14 @@ it.each([
   const fake = createLinearFake();
 
   await expect(
-    createTicketTool(fake.exec).execute(
-      'call',
-      input as never,
-      undefined,
-      undefined,
-      noUiContext(root),
-    ),
+    createTicketTool(fake.exec).execute('call', input as never, undefined, undefined, {
+      ...noUiContext(root),
+      isProjectTrusted: () => false,
+    }),
   ).rejects.toThrow(error);
 
   expect(fake.calls).toEqual([]);
+  expect(fake.writes()).toEqual([]);
   expect(await readdir(root)).toEqual(['.git']);
 });
 
