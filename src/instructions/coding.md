@@ -77,3 +77,6 @@ and repository conventions over these defaults.
 - When code must refuse, assert the error and that nothing else changed.
 - Do not assert inside a fake or callback whose errors the production code may catch. Record the
   value and assert after the call.
+- Before refactoring, reuse useful coverage or add a characterization test or equivalence check of
+  observable behavior that passes before and after. Do not force a failing test. For a rename, also
+  check strings, docs, and serialized names.
