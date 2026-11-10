@@ -7,7 +7,6 @@ import {
   readCherry,
   readCommitCount,
   readRemoteTip,
-  requireStackView,
 } from './historyDecisions.js';
 import type { CherryMark, HistoryLayer, PublishedReads } from './historyDecisions.js';
 import { readFailed, readOk } from './readResult.js';
@@ -298,25 +297,4 @@ it.each([
     status: 'unknown',
     reason: containing('bad'),
   });
-});
-
-it.each([
-  { exitCode: 2, why: 'no stack' },
-  { exitCode: 6, why: 'several stacks' },
-  { exitCode: null, why: 'a command that did not finish' },
-])('stops the history check for $why', ({ exitCode }) => {
-  expect(requireStackView({ exitCode, view: null })).toMatchObject({ ok: false });
-});
-
-it('stops the history check when exit 0 printed nothing readable', () => {
-  const view = readFailed('gh stack view --json', 'printed output that cannot be read: ');
-
-  expect(requireStackView({ exitCode: 0, view })).toBe(view);
-  expect(requireStackView({ exitCode: 0, view: null })).toMatchObject({ ok: false });
-});
-
-it('keeps the branches of a readable stack view', () => {
-  const view = readOk({ trunk: 'main', currentBranch: 'a', branches: [] });
-
-  expect(requireStackView({ exitCode: 0, view })).toBe(view);
 });

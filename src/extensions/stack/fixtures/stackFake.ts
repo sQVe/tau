@@ -5,7 +5,9 @@ import {
   succeededResult,
 } from '../../../../tests/execFake.js';
 import type { ExecCall, ExecHandler } from '../../../../tests/execFake.js';
+import { git } from '../../../../tests/gitRepository.js';
 import type { Exec } from '../../../command.js';
+import { runGit } from '../../../git.js';
 
 export interface FakePull {
   number: number;
@@ -27,6 +29,7 @@ export interface StackFake {
   // The stacks API answers 404 for every pull request.
   stackedPullRequestsOff: boolean;
   stackView: { code: number; stdout: string; stderr: string };
+  trackBranches: (root: string, branches: string[]) => void;
   // The keys are `stack view`, `pr list --head`, `pr list --base`, `pr view <number>`, `api`, and `repo view`.
   overrideOutput: (key: string, stdout: string) => void;
   failCommand: (key: string, stderr?: string) => void;
@@ -86,7 +89,11 @@ export const createStackFake = (): StackFake => {
   };
 
   const viewed = (commandArguments: readonly string[]) => {
-    const pull = fake.pulls.find((candidate) => candidate.number === Number(commandArguments[2]));
+    const reference = commandArguments[2];
+
+    const pull = fake.pulls.find(
+      (candidate) => candidate.number === Number(reference) || candidate.headBranch === reference,
+    );
 
     if (pull === undefined) {
       return failedResult('Could not resolve to a PullRequest');
@@ -138,6 +145,64 @@ export const createStackFake = (): StackFake => {
     'repo view': repositoryView,
   };
 
+  const trackBranches = (root: string, initialBranches: string[]) => {
+    let branches = [...initialBranches];
+    let trunk = 'main';
+
+    const updateView = (currentBranch: string) => {
+      fake.stackView = {
+        code: 0,
+        stderr: '',
+        stdout: JSON.stringify({
+          trunk,
+          currentBranch,
+          branches: branches.map((name, index) => ({
+            name,
+            base: branches[index - 1] ?? trunk,
+            isCurrent: name === currentBranch,
+            isMerged: false,
+            isQueued: false,
+            needsRebase: false,
+          })),
+        }),
+      };
+    };
+
+    const switchBranch = async (name: string) => {
+      const found = await runGit(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`]);
+
+      if (found.exitCode !== 0) {
+        await git(root, 'branch', name);
+      }
+
+      await git(root, 'switch', name);
+      updateView(name);
+
+      return succeededResult('');
+    };
+
+    handlers['stack checkout'] = async (commandArguments) => {
+      const name = commandArguments[2] ?? '';
+
+      return branches.includes(name) ? switchBranch(name) : failedResult('no stack', 2);
+    };
+
+    handlers['stack add'] = async (commandArguments) => {
+      const name = commandArguments[2] ?? '';
+
+      branches.push(name);
+
+      return switchBranch(name);
+    };
+
+    handlers['stack init'] = async (commandArguments) => {
+      trunk = commandArguments[3] ?? '';
+      branches = commandArguments.slice(4);
+
+      return switchBranch(branches.at(-1) ?? '');
+    };
+  };
+
   const handlerFor = (key: string): ExecHandler | undefined => {
     const handler = key.startsWith('pr view ') ? viewed : handlers[key];
 
@@ -158,6 +223,7 @@ export const createStackFake = (): StackFake => {
       callArguments[0] === 'ssh'
         ? failedResult('ssh: Could not resolve hostname', 255)
         : shared.exec(...callArguments),
+    trackBranches,
     defaultBranch: 'main',
     pulls: [],
     stacks: {},

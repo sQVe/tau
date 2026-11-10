@@ -51,33 +51,14 @@ Use this skill when a branch belongs to a stack, or when another skill sends you
    - Standalone: the branch is in no stack.
    - Unknown: stop and report the `reason`. Never treat unknown as standalone.
 
-2. Create a branch on top of a parent branch, after the calling skill's approval. Run the `check`
-   action on the parent first, with `branch: <parent>`. Stop on an unknown result, or when its
-   `basedOn` (returned for a tracked parent too) lists an open PR from a branch other than the new
-   branch: `gh stack add` adds only to the top of a stack, so a stack cannot fork. The calling skill
-   decides what happens next.
-   - When `git rev-parse --verify --quiet refs/heads/<branch>` finds the branch, an earlier run may
-     have created it. Run `gh stack checkout <branch>`. When it exits 0 and `gh stack view --json`
-     lists the parent directly below the branch, the branch is in place. Skip to the last check of
-     this step.
-   - Run `gh stack checkout <parent>`. Exit code 0 means the parent is in a stack, now tracked in
-     this worktree and checked out. It imports a stack from GitHub as step 3 describes.
-   - Exit code 2 means no local or GitHub stack holds the parent. Run
-     `git fetch <remote> refs/heads/<parent>:refs/remotes/<remote>/<parent>`. The explicit
-     destination creates `<remote>/<parent>` even when the remote's fetch refspec leaves the branch
-     out. Switch to it with `git switch <parent>`, or
-     `git switch --no-track -c <parent> <remote>/<parent>` when it has no local branch.
-     `gh stack init` would otherwise create the parent from the local trunk.
-   - Run that fetch if you have not yet. When `git log --oneline <parent>..<remote>/<parent>` lists
-     commits, fast-forward with `git merge --ff-only <remote>/<parent>`. Stop if that fails or if
-     `git log --oneline <remote>/<parent>..<parent>` lists commits.
-   - For a parent in a stack, check that `gh stack view --json` lists it as the top branch. Stop if
-     a branch sits above it. Then run `gh stack add <branch>`.
-   - For a parent in no stack, run `gh stack init --base <trunk> <parent> <branch>`. It adopts the
-     parent and creates the branch from it.
-   - Both adopt a branch that exists already, without rebasing it. Restack it with step 4.
-   - Run `gh stack view --json` and check that the new branch is the top and the parent is directly
-     below it.
+2. Create a branch on top of a parent branch, after the calling skill's approval and the clean-tree
+   and worker guards above. Call `stack_branch` with `parent`, `branch`, `trunk`, and `remote`.
+   - `created`: continue with the branch.
+   - `inPlace`: an earlier run already put the branch on top of the parent. Continue.
+   - When the branch existed before the call, it is adopted without a rebase. Restack it with
+     step 4.
+   - `stop`: stop and report `reason` and `writes`. Earlier writes stay in place. The calling skill
+     decides what happens next.
 
 3. Switch to a PR with `gh stack checkout <pr url>`. A URL always resolves to a PR, but a bare
    number is read as a stack number first.

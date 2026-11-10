@@ -14,6 +14,46 @@ import {
 
 const setUp = (kind?: 'range' | 'workingTree') => createEvidenceRepository(onTestFinished, kind);
 
+it('refuses a stale review with matching bytes', async () => {
+  const { root, directory, run } = await setUp();
+
+  await writeFile(join(directory, 'reviewer.md'), 'No findings.\n');
+  await git(root, 'commit', '--allow-empty', '--quiet', '-m', 'move head');
+
+  const before = await readSavedFiles(root);
+  const evidence = await run();
+
+  expect(evidence.reuse?.status).toBe('match');
+  expect(evidence.review?.freshness.status).toBe('stale');
+  expect(evidence.review?.reusable).toBe(false);
+
+  expect(evidence.review?.reusableReasons).toEqual(
+    expect.arrayContaining([expect.stringMatching(/freshness/i)]),
+  );
+
+  expect(await readSavedFiles(root)).toEqual(before);
+});
+
+it('accepts a fresh matching review with worker reports', async () => {
+  const { root, directory, run } = await setUp();
+
+  await writeFile(join(directory, 'finder.md'), 'No findings.\n');
+  await writeFile(join(directory, 'checker.md'), 'No findings.\n');
+
+  const before = await readSavedFiles(root);
+  const evidence = await run();
+
+  expect(evidence.reuse?.status).toBe('match');
+
+  expect(evidence.review).toMatchObject({
+    freshness: { status: 'fresh' },
+    reusable: true,
+    reusableReasons: [],
+  });
+
+  expect(await readSavedFiles(root)).toEqual(before);
+});
+
 it('returns own ownership for an open PR by the viewer', async () => {
   const { fake, run } = await setUp();
 

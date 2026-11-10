@@ -1,7 +1,91 @@
 import { expect, it } from 'vitest';
 
-import { compareDiffs, decideReuse } from './reuseDecisions.js';
-import type { ReuseFacts } from './reuseDecisions.js';
+import { compareDiffs, decideReuse, decideReviewReuse } from './reuseDecisions.js';
+import type { ReuseFacts, ReviewReuseFacts } from './reuseDecisions.js';
+
+const reviewReuseFacts = (overrides: Partial<ReviewReuseFacts> = {}): ReviewReuseFacts => ({
+  reuse: { status: 'match', reasons: [] },
+  freshness: { status: 'fresh', reasons: [] },
+  reports: ['reviewer.md'],
+  gaps: [],
+  ...overrides,
+});
+
+it.each([
+  { name: 'single reviewer', facts: reviewReuseFacts(), reusable: true, reasonCount: 0 },
+  {
+    name: 'finder and checker',
+    facts: reviewReuseFacts({ reports: ['finder.md', 'checker.md'] }),
+    reusable: true,
+    reasonCount: 0,
+  },
+  {
+    name: 'no reuse',
+    facts: reviewReuseFacts({ reuse: null, reports: null }),
+    reusable: false,
+    reasonCount: 1,
+  },
+  {
+    name: 'mismatching bytes',
+    facts: reviewReuseFacts({ reuse: { status: 'mismatch', reasons: ['Changed bytes.'] } }),
+    reusable: false,
+    reasonCount: 1,
+  },
+  {
+    name: 'mismatch without details',
+    facts: reviewReuseFacts({ reuse: { status: 'mismatch', reasons: [] } }),
+    reusable: false,
+    reasonCount: 1,
+  },
+  {
+    name: 'stale freshness',
+    facts: reviewReuseFacts({ freshness: { status: 'stale', reasons: ['HEAD moved.'] } }),
+    reusable: false,
+    reasonCount: 1,
+  },
+  {
+    name: 'unknown freshness',
+    facts: reviewReuseFacts({ freshness: { status: 'unknown', reasons: [] } }),
+    reusable: false,
+    reasonCount: 1,
+  },
+  { name: 'no reports', facts: reviewReuseFacts({ reports: [] }), reusable: false, reasonCount: 1 },
+  {
+    name: 'finder only',
+    facts: reviewReuseFacts({ reports: ['finder.md'] }),
+    reusable: false,
+    reasonCount: 1,
+  },
+  {
+    name: 'checker only',
+    facts: reviewReuseFacts({ reports: ['checker.md'] }),
+    reusable: false,
+    reasonCount: 1,
+  },
+  {
+    name: 'generation gap',
+    facts: reviewReuseFacts({ gaps: [{ kind: 'generation', status: 'altered', reasons: [] }] }),
+    reusable: false,
+    reasonCount: 1,
+  },
+  {
+    name: 'incomplete capture',
+    facts: reviewReuseFacts({ gaps: [{ kind: 'incompleteCapture', reasons: [] }] }),
+    reusable: false,
+    reasonCount: 1,
+  },
+  {
+    name: 'unrelated gap',
+    facts: reviewReuseFacts({ gaps: [{ kind: 'unsearched', path: 'one.ts', reason: 'binary' }] }),
+    reusable: true,
+    reasonCount: 0,
+  },
+])('decides full review reuse: $name', ({ facts, reusable, reasonCount }) => {
+  const decision = decideReviewReuse(facts);
+
+  expect(decision.reusable).toBe(reusable);
+  expect(decision.reasons).toHaveLength(reasonCount);
+});
 
 const section = (path: string, ...lines: string[]) =>
   [`diff --git a/${path} b/${path}`, `--- a/${path}`, `+++ b/${path}`, ...lines, ''].join('\n');

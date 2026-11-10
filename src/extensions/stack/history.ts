@@ -1,5 +1,6 @@
 import type { CommandRuntime } from '../../command.js';
 import { runGit } from '../../git.js';
+import { requireStackView } from './checkDecisions.js';
 import {
   activeLayerParents,
   decideLayer,
@@ -7,7 +8,6 @@ import {
   readCherry,
   readCommitCount,
   readRemoteTip,
-  requireStackView,
 } from './historyDecisions.js';
 import type { LayerDecision, LayerFacts, LayerParents } from './historyDecisions.js';
 import { gitCommandOutput } from './readResult.js';
