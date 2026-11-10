@@ -174,7 +174,7 @@ describe('runTests', () => {
       deps,
     );
 
-    expect(captured.slice(1, 5)).toEqual([
+    expect(captured.slice(2, 6)).toEqual([
       'run',
       '--reporter=json',
       '--reporter=default',

@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
 import { CONFIG_DIR_NAME } from '@earendil-works/pi-coding-agent';
 
@@ -168,7 +169,15 @@ const runInDirectory = async (
 
   const spawnStarted = performance.now();
 
-  const result = await dependencies.spawn(nodeExecutable(), [runner.path, ...runnerArguments], {
+  const commandArguments = [runner.path, ...runnerArguments];
+
+  if (input.scope === 'focused') {
+    const entry = fileURLToPath(new URL('./vitestFocused.ts', import.meta.url));
+
+    commandArguments.unshift(entry);
+  }
+
+  const result = await dependencies.spawn(nodeExecutable(), commandArguments, {
     cwd: input.cwd,
     timeoutMs: dependencies.timeoutMs,
     signal: input.signal,

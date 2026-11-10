@@ -253,6 +253,36 @@ describe('runTests', () => {
     },
   );
 
+  it('runs only the exact focused file with the installed Vitest runner', async () => {
+    const cwd = temporaryDirectory(onTestFinished, 'tau-exact-selection-');
+    await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
+
+    await writeFile(
+      join(cwd, 'value.test.ts'),
+      "import { it } from 'vitest'; it('works', () => {});",
+    );
+
+    await writeFile(
+      join(cwd, 'other-value.test.ts'),
+      "import { it } from 'vitest'; it('works', () => { throw new Error('must not run'); });",
+    );
+
+    const result = await runTests({
+      scope: 'focused',
+      verificationArgv,
+      cwd,
+      files: ['value.test.ts'],
+      testNames: ['works'],
+    });
+
+    expect(result).toMatchObject({
+      kind: 'pass',
+      tests: [{ file: join(cwd, 'value.test.ts'), fullname: 'works', status: 'passed' }],
+    });
+
+    expect('tests' in result && result.tests).toHaveLength(1);
+  });
+
   it('selects only an exact nested test with the installed Vitest runner', async () => {
     const cwd = temporaryDirectory(onTestFinished, 'tau-nested-selection-');
     await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
