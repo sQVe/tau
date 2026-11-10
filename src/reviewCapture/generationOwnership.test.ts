@@ -85,6 +85,28 @@ it('uses the captured root commit rather than a later HEAD for ownership', async
   expect(result.ownership.status).toBe('own');
 });
 
+it('returns own ownership for only user commits on a GitHub branch without an open PR', async () => {
+  const { root, directory } = await preparedReview();
+  const fake = createGhFake();
+  const base = await git(root, 'rev-parse', 'HEAD');
+
+  await git(root, 'checkout', '-b', 'feature');
+  await git(root, 'remote', 'add', 'origin', 'https://github.com/sQVe/tau.git');
+  fake.repositories['github.com/sQVe/tau'] = { defaultBranch: 'main' };
+
+  await writeFile(join(root, 'tracked.txt'), 'own\n');
+  await git(root, 'commit', '-am', 'own');
+
+  const result = await captureReviewDirectory(
+    root,
+    directory,
+    { kind: 'range', from: base, to: 'HEAD' },
+    { cwd: root, exec: fake.exec },
+  );
+
+  expect(result.ownership).toEqual({ status: 'own', reasons: [] });
+});
+
 it('returns unclear ownership for mixed authors in the capture range without a PR', async () => {
   const { root, directory } = await preparedReview();
   const fake = createGhFake();

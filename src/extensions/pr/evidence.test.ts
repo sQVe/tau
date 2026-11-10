@@ -24,6 +24,21 @@ it('returns own ownership for an open PR by the viewer', async () => {
   expect(evidence).toMatchObject({ ownership: { status: 'own' } });
 });
 
+it('uses commits after the merge base for ownership when the only PR is closed', async () => {
+  const { root, fake, run } = await setUp();
+
+  await git(root, 'config', 'user.email', 'tau@example.com');
+  await git(root, 'commit', '--amend', '--no-edit', '--author=Other <other@example.com>');
+  fake.pullRequests['github.com/sQVe/tau'] = [fakePullRequest({ state: 'CLOSED' })];
+
+  const before = await readSavedFiles(root);
+  const evidence = await run();
+
+  expect(evidence.target).toMatchObject({ pr: null, closedPrs: [{ number: 7 }] });
+  expect(evidence.ownership).toEqual({ status: 'other', reasons: [] });
+  expect(await readSavedFiles(root)).toEqual(before);
+});
+
 it('returns unclear ownership when the viewer read fails', async () => {
   const { root, fake, run } = await setUp();
 
