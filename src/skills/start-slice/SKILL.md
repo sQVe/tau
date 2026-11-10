@@ -65,8 +65,8 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
      with `ask_user_question` which to keep. A kept body goes to Linear in step 9. Keeping Linear's
      text means saving the description as the body file.
 4. Choose the base from the `start_slice` `read` result, which fetched every branch of origin and
-   returned `defaultBranch`. Without a parent, use `base`. With a parent, use `origin/<parent>` as
-   the base and the `trunk` from `chain`.
+   returned `defaultBranch`. Without a parent, use `origin/<defaultBranch>`. With a parent, use
+   `origin/<parent>` as the base and the `trunk` from `chain`.
 5. Read the tree the workers use: the branch when
    `git rev-parse --verify --quiet refs/heads/<branchName>` finds it, else the base. Use
    `git ls-tree -r --name-only <tree>` and `git show <tree>:<path>` without switching. Answer the
