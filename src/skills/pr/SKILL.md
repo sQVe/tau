@@ -125,11 +125,11 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    - For `mismatch` or `unknown`, use `reasons` and `links` to restore evidence or review uncovered
      scope. Name genuinely missing evidence as a required action, not a generic mismatch. Recheck
      after repairs; neither result is a pass.
-   - For `unsupported` or evidence that cannot form a chain, assess manually without asking: read
-     the full review, later fix reviews, and diff since the newest, applying the same per-link
-     checks. Record inspected paths and judgment in the session report, never as a tool match or
-     fresh. Keep missing evidence as a required action. If coverage remains unestablished, ask: fast
-     rereview of uncovered scope, or continuation with the action open.
+   - For `unsupported` or evidence that cannot form a chain, assess manually without asking.
+   - Manually read the full review, its fix reviews, and the later diff, with the checks above.
+   - Record the inspected paths and judgment in the session report, never as a match or fresh.
+   - Missing evidence from a manual assessment stays a required action.
+   - If coverage stays unestablished, ask: rereview uncovered scope fast, or keep the action open.
 
    Without saved review, or when the user chooses rereview, follow the
    [code-review skill](../code-review/SKILL.md) in fast mode on uncovered scope (the pinned range
