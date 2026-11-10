@@ -335,21 +335,20 @@ const readRepositoryView = async (runtime: CommandRuntime, repository: Repositor
   return readChecked(runtime, commandArguments, repositoryViewSchema);
 };
 
-export const resolveHead = async (
-  runtime: CommandRuntime,
-  request: HeadRequest,
+const resolveHeadFromRemotes = async (
+  cwd: string,
+  requestedRemote: string | undefined,
+  branch: string,
+  remotes: Remote[],
 ): Promise<ResolvedHead> => {
-  const { cwd } = runtime;
-  const branch = request.branch ?? (await readBranch(cwd));
-  const remotes = await readRemotes(runtime);
-  const inferRemote = request.remote === undefined;
+  const inferRemote = requestedRemote === undefined;
   const pushTarget = inferRemote ? await readPushTarget(cwd, branch) : undefined;
   const remotesWithBranch = inferRemote ? await readRemotesWithBranch(cwd, remotes, branch) : [];
 
   const head = pickHead({
     branch,
     pushTarget,
-    requestedRemote: request.remote,
+    requestedRemote,
     remotes,
     remotesWithBranch,
   });
@@ -361,6 +360,16 @@ export const resolveHead = async (
   }
 
   return { localBranch: branch, remotes, ...head, repository: pickPushRepository(remote) };
+};
+
+export const resolveHead = async (
+  runtime: CommandRuntime,
+  request: HeadRequest,
+): Promise<ResolvedHead> => {
+  const branch = request.branch ?? (await readBranch(runtime.cwd));
+  const remotes = await readRemotes(runtime);
+
+  return resolveHeadFromRemotes(runtime.cwd, request.remote, branch, remotes);
 };
 
 export const resolveOptionalHead = async (
@@ -383,7 +392,7 @@ export const resolveOptionalHead = async (
     return undefined;
   }
 
-  return resolveHead(runtime, { remote: undefined, branch });
+  return resolveHeadFromRemotes(runtime.cwd, undefined, branch, remotes);
 };
 
 const viewRepository = async (
