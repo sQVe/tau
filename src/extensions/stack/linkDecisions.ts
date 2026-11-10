@@ -1,3 +1,4 @@
+import { quoteShellArgument } from '../../shell.js';
 import type { PullView } from './chainDecisions.js';
 import type { StackedPullRequests, StackView } from './checkDecisions.js';
 
@@ -18,11 +19,6 @@ export type LinkDecision =
   | { result: 'linked' };
 
 const stop = (reason: string): LinkDecision => ({ result: 'stop', reason });
-
-const quoteArgument = (argument: string): string =>
-  /^[a-zA-Z0-9_./:-]+$/u.test(argument)
-    ? argument
-    : `'${argument.replaceAll("'", String.raw`'\''`)}'`;
 
 const belowTopOffset = -2;
 
@@ -82,7 +78,7 @@ const planLink = (facts: LinkFacts): LinkDecision => {
     return { result: 'none' };
   }
 
-  const remote = quoteArgument(facts.remote);
+  const remote = quoteShellArgument(facts.remote);
 
   if (belowStacks.kind === 'stack') {
     if (belowStacks.pullRequests.at(-1) !== below.number) {
@@ -106,7 +102,7 @@ const planLink = (facts: LinkFacts): LinkDecision => {
     };
   }
 
-  const trunk = quoteArgument(view.trunk);
+  const trunk = quoteShellArgument(view.trunk);
   const numbers = openPulls.map((entry) => entry.number).join(' ');
 
   return {

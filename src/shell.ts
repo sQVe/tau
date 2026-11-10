@@ -24,6 +24,11 @@ interface ListState {
   closesSubstitution: boolean;
 }
 
+export const quoteShellArgument = (argument: string): string =>
+  /^[A-Za-z0-9_./@%+=:,-]+$/u.test(argument)
+    ? argument
+    : `'${argument.replaceAll("'", String.raw`'\''`)}'`;
+
 const blankCharacters = new Set([' ', '\t']);
 const separatorCharacters = new Set([';', '&', '|', '\n', '(', ')']);
 const longestRedirection = '<<<';
