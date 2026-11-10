@@ -109,6 +109,7 @@ const pureModules = [
   'src/extensions/stack/chainDecisions.ts',
   'src/extensions/stack/checkDecisions.ts',
   'src/extensions/stack/historyDecisions.ts',
+  'src/extensions/stack/linkDecisions.ts',
   'src/extensions/stack/readResult.ts',
   'src/extensions/statusbar/reuseDecision.ts',
   'src/extensions/subagents/acceptanceRefusal.ts',

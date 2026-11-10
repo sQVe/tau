@@ -86,7 +86,11 @@ export const createStackFake = (): StackFake => {
   };
 
   const viewed = (commandArguments: readonly string[]) => {
-    const pull = fake.pulls.find((candidate) => candidate.number === Number(commandArguments[2]));
+    const reference = commandArguments[2];
+
+    const pull = fake.pulls.find(
+      (candidate) => candidate.number === Number(reference) || candidate.headBranch === reference,
+    );
 
     if (pull === undefined) {
       return failedResult('Could not resolve to a PullRequest');

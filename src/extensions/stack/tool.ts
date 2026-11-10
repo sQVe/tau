@@ -7,13 +7,22 @@ import type { Exec, CommandRuntime } from '../../command.js';
 import { readChain } from './chain.js';
 import { readCheck } from './check.js';
 import { readHistory } from './history.js';
+import { readLink } from './link.js';
 
 export const stackToolParameters = Type.Object({
-  action: Type.Union([Type.Literal('check'), Type.Literal('history'), Type.Literal('chain')]),
+  action: Type.Union([
+    Type.Literal('check'),
+    Type.Literal('history'),
+    Type.Literal('chain'),
+    Type.Literal('link'),
+  ]),
+  pr: Type.Optional(
+    Type.Integer({ minimum: 1, description: 'link: the PR number in the base repository.' }),
+  ),
   remote: Type.Optional(
     Type.String({
       description:
-        'check: the Git remote to resolve the branch against when it is ambiguous. history: the remote to compare with.',
+        'check: the Git remote when ambiguous. history: the comparison remote. link: the remote for the returned command.',
     }),
   ),
   branch: Type.Optional(
@@ -39,23 +48,26 @@ export const stackToolParameters = Type.Object({
 
 export type StackInput = Static<typeof stackToolParameters>;
 
-const description = `Read-only stack decisions. Every result has an evidence object with the facts and failed reads it decided from. A read that fails gives unknown or stop, never a guess.
-- action check {remote?, branch?}: the stack check of a branch, the current one by default. Another branch gets only GitHub reads, never local ones. result is one of:
-  - tracked: a local stack holds the branch. Returns trunk, parent (the nearest branch below with isMerged false, else the trunk), layers (bottom to top), and basedOn (the open pull requests based on the branch).
-  - untracked: a GitHub stack holds the branch's pull request, the pull request's base branch has an open pull request, or an open pull request is based on the branch. Returns held (githubStack, baseHasOpenPull, openPullBasedOnBranch), chain (the pull requests found, bottom to top, maybe not the whole chain), basedOn (each {branch, number, url}), chainBase (the lowest pull request's base), and githubStack ({number, pullRequests} bottom to top, or null).
+const description = `Read-only stack decisions. evidence holds the facts or failed reads. Failed reads give unknown or stop, never a guess.
+- check {remote?, branch?}: check the current branch by default. Another branch gets only GitHub reads. result:
+  - tracked: a local stack holds the branch. Returns trunk, parent (nearest unmerged branch below, else trunk), layers (bottom to top), and basedOn (open PRs based on the branch).
+  - untracked: held lists githubStack, baseHasOpenPull, or openPullBasedOnBranch. Returns chain (PRs found, bottom to top, possibly incomplete), basedOn (each {branch, number, url}), chainBase (lowest PR's base), and githubStack ({number, pullRequests} bottom to top, or null).
   - standalone: none of those hold.
-  - unknown: with a reason, such as a paused stack rebase, several stacks, several open pull requests for the branch, or any failed read.
-- action history {remote, startTips?}: the remote-history check of every active branch (not merged, not queued) of the local stack, bottom to top. startTips maps a branch to its tip from before you rebased it since its last push. Each layer has status and remoteTip (the SHA of <remote>/<branch> now, or null). Status is one of:
-  - unpublished: no <remote>/<branch>.
-  - current: the remote has no commits the tip lacks.
-  - behind: the remote has commits, the branch was not rebased since its last push, and it is an ancestor of the remote branch.
-  - rewritten: the remote branch holds the same changes as the branch before a restack, such as after a lower pull request merged.
+  - unknown: reason explains missing or ambiguous evidence.
+- history {remote, startTips?}: check every active local stack branch (not merged or queued), bottom to top. startTips maps branches to tips before their first rebase since their last push. Each layer has remoteTip (current remote SHA or null) and status:
+  - unpublished: no remote branch.
+  - current: remote has no commits the local tip lacks.
+  - behind: not rebased since the last push, and an ancestor of the remote branch.
+  - rewritten: remote holds the same changes as before a restack.
   - diverged: none of the above.
-  - unknown: a read failed. reason names it.
-  - stop is set, with no layers, when the stack branches could not be read.
-- action chain {pullRequests, slicePullRequest?}: the blocker-chain rule of start-slice. pullRequests are the open blocker pull request URLs, all in one repository. slicePullRequest is the slice's own pull request, which is not counted as above the parent. result is stop, with reason, or parent.
-  - stop: a read failed, a blocker is not open, several blockers are open and no GitHub stack holds them or they sit in different stacks, or open pull requests are based on the parent and no GitHub stack holds it.
-  - parent: the blocker highest in the GitHub stack that holds all blockers, or the only blocker. Returns parent {number, url, branch}; branchAbove (an open pull request other than slicePullRequest is based on the parent, or the parent's stack lists one above it); above (those pull request numbers); githubStack ({number, pullRequests, topBranch, topPullRequest}, or null); and trunk (the base of the bottom pull request of the parent's stack, else the default branch).`;
+  - unknown: reason names a failed read.
+  - stop is set with no layers when stack branches could not be read.
+- chain {pullRequests, slicePullRequest?}: decide the parent for start-slice. pullRequests are open blocker PR URLs in one repository. slicePullRequest is the slice's own PR URL, excluded from above-parent checks. decision.result is stop (with reason) or parent: the highest blocker in the GitHub stack holding all blockers, or the only blocker. Returns parent {number, url, branch}, branchAbove (another open PR is based on the parent or listed above it in its stack), above (those PR numbers), githubStack ({number, pullRequests, topBranch, topPullRequest}, or null), and trunk (bottom stack PR's base, else default branch).
+- link {pr, remote}: plan linking the local stack's top PR, or check a completed link. pr is its number in the base repository. result:
+  - command: command is the exact gh stack link command to run after approval. It appends to the GitHub stack below, or creates one with open local PRs bottom to top and the local trunk as base.
+  - linked: GitHub lists this PR at the top and every open PR has the expected base.
+  - none: one open PR needs no link.
+  - stop: reason explains why linking is unsafe or evidence is missing. No command runs.`;
 
 const runAction = async (
   exec: Exec,
@@ -81,6 +93,18 @@ const runAction = async (
     return { ...(await readHistory(runtime, request)) };
   }
 
+  if (parameters.action === 'link') {
+    if (parameters.pr === undefined) {
+      throw new Error('link needs pr.');
+    }
+
+    if (parameters.remote === undefined) {
+      throw new Error('link needs remote.');
+    }
+
+    return { ...(await readLink(runtime, { pr: parameters.pr, remote: parameters.remote })) };
+  }
+
   if (parameters.pullRequests === undefined) {
     throw new Error('chain needs pullRequests.');
   }
@@ -101,7 +125,7 @@ export const createStackTool = (
     label: 'Stack',
     description,
     promptSnippet:
-      'Check whether a branch is in a stack, check the remote history of the stack branches before a push, and decide the parent of a stacked slice. Reads only.',
+      "Check stack membership and remote history, decide a stacked slice's parent, or plan a PR's stack link. Reads only.",
     parameters: stackToolParameters,
     executionMode: 'sequential',
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {

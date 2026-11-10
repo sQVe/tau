@@ -261,7 +261,10 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      show it with `--force-with-lease=refs/heads/<branch>:<old-tip>`.
    - For an existing PR whose base changes, show the current base and the new one.
    - In a stack, list each branch to push with its local SHA and explain that each is force-pushed
-     with a lease. Show the `gh stack link` command, or why step 9 cannot link.
+     with a lease. For an existing PR, call `stack` with `action: "link"`, `pr`, and `remote` and
+     show its result. For a new PR, show the planned link form without its number: append to the
+     GitHub stack below, or create one from open PRs bottom to top with the local trunk as base.
+     Approval covers running the command `link` returns after creation for that plan.
    - Include the session report from earlier steps: commits, comment removals, review and check
      sources, reviewed commits, coverage and manual judgments, fixes and their purposes, rebase
      notes, non-blocking machine-local failures, reviewer notes, and the combined gap list.
@@ -307,23 +310,14 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      `--draft` for approved draft status and `--head <owner>:<branch>` for a fork. Update with
      `gh pr edit`, adding `--base <base>` when the base changes. Change existing draft status with
      `gh pr ready`, adding `--undo` for draft.
-   - After creating a stacked PR, or updating one that no GitHub stack holds, link it into a GitHub
-     stack. Never use `gh stack submit`, which publishes generated titles instead of approved ones.
-     If this PR is not the local stack's top, do not link; report GitHub's top-only limit.
-   - Read the GitHub stack holding the PR below with
-     `gh api --hostname <host> "repos/<owner>/<name>/stacks?pull_request=<number>" --jq '.[0] // {} | {number, pullRequests: ((.pull_requests // []) | map(.number))}'`.
-   - When `number` is set, check that the last entry of `pullRequests` is the PR below. If it is
-     not, stop and report before you link: link would base this PR on that other top PR. Otherwise
-     append with `gh stack link --remote <remote> <stack number> <this PR>`. It skips PRs already in
-     the stack and bases this PR on the branch of the stack's top PR.
-   - When `number` is null, link with
-     `gh stack link --remote <remote> --base <trunk> <open PR numbers, bottom to top>`, taken from
-     `gh stack view --json`. Keep `--base`; omitting it sets the bottom PR's base to the default
-     branch. Pass only open PRs: link moves each PR onto the branch of the PR before it, so a merged
-     PR would pull the PR above it back onto the merged branch. One open PR needs no link.
-   - After a link, read the remote stack again using this PR's number. Check that it lists this PR
-     at the top and that each open PR's base is the branch of the open PR below it, or the trunk.
-     `gh stack view --json` reads only the local stack and cannot confirm linking.
+   - After creating or updating a stacked PR, call `stack` with `action: "link"`, `pr`, and
+     `remote`. Never use `gh stack submit`, which publishes generated titles instead of approved
+     ones.
+   - On `stop`, report the reason and stop. On `none` or `linked`, no link command is needed.
+   - On `command`, compare the returned command with the approved link plan. If the plan changed,
+     preview and ask again. Otherwise run the returned command. Stop and report a command failure.
+   - After running the command, call `link` again with the same inputs and expect `linked`. Stop and
+     report any other result.
 
 10. Check the published PR against the approval with the `pr` tool's `verify` action. Report each
     difference and the PR URL. Stop if the call fails or shows a difference.
