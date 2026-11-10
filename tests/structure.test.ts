@@ -106,6 +106,7 @@ const pureModules = [
   'src/extensions/snippets/history.ts',
   'src/extensions/snippets/insertion.ts',
   'src/extensions/snippets/query.ts',
+  'src/extensions/stack/branchDecisions.ts',
   'src/extensions/stack/chainDecisions.ts',
   'src/extensions/stack/checkDecisions.ts',
   'src/extensions/stack/historyDecisions.ts',
