@@ -157,7 +157,9 @@ const updateParent = async (run: BranchRun, stacked: boolean): Promise<BranchSto
   return ahead.result === 'stop' ? ahead : null;
 };
 
-const createOnParent = async (run: BranchRun): Promise<BranchStop | null> => {
+const createOnParent = async (
+  run: BranchRun,
+): Promise<BranchStop | { result: 'inPlace' | 'created' }> => {
   const checked = await checkout(run, run.request.parent);
 
   if (checked.result === 'stop') {
@@ -177,6 +179,10 @@ const createOnParent = async (run: BranchRun): Promise<BranchStop | null> => {
     if (decision.result === 'stop') {
       return decision;
     }
+
+    if (decision.result === 'inPlace') {
+      return { result: 'inPlace' };
+    }
   }
 
   const { branch, parent, trunk } = run.request;
@@ -189,7 +195,7 @@ const createOnParent = async (run: BranchRun): Promise<BranchStop | null> => {
 
   requireSuccess(label(commandArguments), output);
 
-  return null;
+  return { result: 'created' };
 };
 
 const runBranch = async (run: BranchRun): Promise<BranchResult> => {
@@ -207,14 +213,16 @@ const runBranch = async (run: BranchRun): Promise<BranchResult> => {
     return { ...existing, writes };
   }
 
-  const inPlace = existing.result === 'inPlace';
+  let inPlace = existing.result === 'inPlace';
 
   if (!inPlace) {
-    const stopped = await createOnParent(run);
+    const created = await createOnParent(run);
 
-    if (stopped !== null) {
-      return { ...stopped, writes };
+    if (created.result === 'stop') {
+      return { ...created, writes };
     }
+
+    inPlace = created.result === 'inPlace';
   }
 
   const final = await viewDecision(run, 'final');

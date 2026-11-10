@@ -102,6 +102,37 @@ it('finds an existing branch in place and repeats the final check', async () => 
   expect(await git(root, 'branch', '--show-current')).toBe('child');
 });
 
+it('accepts a child imported by the parent checkout and repeats the final check', async () => {
+  const { root, fake, run } = await setUp(['parent', 'child']);
+  const execute = fake.exec;
+
+  fake.exec = async (command, commandArguments, options) => {
+    const result = await execute(command, commandArguments, options);
+
+    if (commandArguments.join(' ') === 'stack checkout parent') {
+      await git(root, 'branch', 'child', 'parent');
+    }
+
+    return result;
+  };
+
+  expect(await run()).toEqual({
+    result: 'inPlace',
+    writes: [
+      'gh stack checkout parent',
+      'git fetch origin refs/heads/parent:refs/remotes/origin/parent',
+    ],
+  });
+
+  expect(joinedCalls(fake).filter((call) => call.startsWith('stack '))).toEqual([
+    'stack checkout parent',
+    'stack view --json',
+    'stack view --json',
+  ]);
+
+  expect(await git(root, 'rev-parse', 'child')).toBe(await git(root, 'rev-parse', 'parent'));
+});
+
 it('stops before writes when the parent check is unknown', async () => {
   const { root, fake, run } = await setUp([]);
 

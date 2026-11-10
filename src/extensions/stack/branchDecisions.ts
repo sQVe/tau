@@ -67,7 +67,13 @@ export const decideBranchView = (
   const parentIndex = branches.findIndex((layer) => layer.name === request.parent);
   const branchIndex = branches.findIndex((layer) => layer.name === request.branch);
 
+  const adjacent = parentIndex !== -1 && branchIndex === parentIndex + 1;
+
   if (phase === 'parent') {
+    if (adjacent && branchIndex === branches.length - 1) {
+      return { result: 'inPlace' };
+    }
+
     if (parentIndex === -1) {
       return stop(`gh stack view --json does not list parent ${request.parent}.`);
     }
@@ -76,8 +82,6 @@ export const decideBranchView = (
       ? { result: 'add' }
       : stop(`A branch sits above ${request.parent} in its stack.`);
   }
-
-  const adjacent = parentIndex !== -1 && branchIndex === parentIndex + 1;
 
   if (!adjacent && phase === 'retry') {
     return { result: 'checkoutParent' };

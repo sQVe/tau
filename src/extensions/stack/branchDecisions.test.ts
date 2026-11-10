@@ -75,6 +75,12 @@ const viewCases: {
   result: string;
   reason?: string;
 }[] = [
+  {
+    name: 'parent checkout imports child',
+    read: view(['parent', 'child']),
+    phase: 'parent',
+    result: 'inPlace',
+  },
   { name: 'parent at top', read: view(['parent']), phase: 'parent', result: 'add' },
   { name: 'branch above parent', read: view(['parent', 'other']), phase: 'parent', result: 'stop' },
   {
