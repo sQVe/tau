@@ -69,8 +69,9 @@ Write one entry per known report. Keep each finding in its original report:
   `identity`, the GitHub review ID, or the reviewed commit, whichever exists. Write "unavailable"
   for a scope or identity no source states. Never infer it from the current head.
 - Finding reference: the report's number or a short title, never a copy of the finding.
-- Disposition: a [triage-findings](../triage-findings/SKILL.md) outcome, Open when nobody verified
-  it, or Superseded. Give the commit, test, or `file:line` that supports it.
+- Disposition: a [triage-findings](../triage-findings/SKILL.md) outcome, Open when it is unverified
+  or supported but not yet settled, or Superseded. Give the commit, test, or `file:line` that
+  supports it.
 - Settle each finding on its own against the current code. A stale report or a moved head settles
   none of its findings.
 - Superseded names the later assessment and the exact scope it covered again. Findings outside that
@@ -81,6 +82,6 @@ Write one entry per known report. Keep each finding in its original report:
 Claim that all known reviews passed only when every relevant report was read and every finding is
 Fixed, Not worth changing, Incorrect, or Superseded. Otherwise name the open findings and gaps, and
 claim only what holds, such as "the selected threads are resolved". Open findings limit the claim.
-They add no publication gate and do not start more review or fixes. The register does not replace
-capture freshness, coverage, verdicts, acceptance, branch checks, CI, deployment, or publication
-approval.
+The register adds no publication gate, and starts no review or fix by itself. The calling skill's
+rules decide those. The register does not replace capture freshness, coverage, verdicts, acceptance,
+branch checks, CI, deployment, or publication approval.
