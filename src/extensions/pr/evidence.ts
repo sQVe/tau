@@ -137,7 +137,7 @@ const readReview = async (
     const decision = decideReviewReuse({
       reuse: evidence.reuse,
       freshness: review.freshness,
-      reports: evidence.reuse?.reports ?? [],
+      reports: evidence.reuse?.reports ?? null,
       gaps: review.gaps,
     });
 

@@ -19,7 +19,12 @@ it.each([
     reusable: true,
     reasonCount: 0,
   },
-  { name: 'no reuse', facts: reviewReuseFacts({ reuse: null }), reusable: false, reasonCount: 1 },
+  {
+    name: 'no reuse',
+    facts: reviewReuseFacts({ reuse: null, reports: null }),
+    reusable: false,
+    reasonCount: 1,
+  },
   {
     name: 'mismatching bytes',
     facts: reviewReuseFacts({ reuse: { status: 'mismatch', reasons: ['Changed bytes.'] } }),
