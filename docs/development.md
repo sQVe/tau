@@ -220,3 +220,33 @@ so check it before comparing two reports.
 Claude and Codex workers write no Pi session, so the report cannot measure their tokens. The second
 line counts those that started in the window. A cut looks larger than it is when work moves from Pi
 workers to them.
+
+## Evaluating agent behavior
+
+Use this procedure to test whether a prompt or skill change improves how models behave. CI never
+runs model trials. A trial that costs money needs the user's approval and a budget before the first
+run.
+
+1. Fix the tasks, the rubric, the model settings, and the trial budget before the first run.
+2. Hold the model constant, so model and prompt effects stay separate.
+3. Give each candidate a neutral label and the user prompt as written. Hide the rubric from
+   candidates.
+4. Check objective criteria first. Then use one blinded judge that sees only the labels.
+5. Grade from artifacts and tool transcripts, never from a candidate's own report.
+6. Record the model, its settings, and the Pi version with every result. Repeat each prompt within
+   the trial budget. There is no fixed minimum run count.
+7. Report every run and its cost. Keep inconclusive results.
+
+Write four kinds of case:
+
+- The skill fires when it should.
+- The skill stays quiet when it should not fire.
+- The skill holds under pressure, such as time pressure or an authority's say-so.
+- The skill behaves correctly on a fixture.
+
+Measure routing apart from behavior. Tau routes every skill by its description. For a change to a
+skill description, count on real prompts how often the skill fires, and how often it fires when it
+must not.
+
+For a case about repository behavior, build a temporary Git repository with the setup committed. Add
+an uncommitted patch on top when the case needs one. A dialogue-only case needs no fixture.
