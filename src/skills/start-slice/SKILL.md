@@ -70,11 +70,12 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
 5. Read the tree the workers use: the branch when
    `git rev-parse --verify --quiet refs/heads/<branchName>` finds it, else the base. Use
    `git ls-tree -r --name-only <tree>` and `git show <tree>:<path>` without switching. Follow the
-   [decision evidence planning guidance](../shared/decision-evidence.md#plan-the-change) from this
-   tree. Answer the [structure criteria](../code-quality/structure-criteria.md) plan questions for
-   the slice's files: where each change goes, which helper it reuses, and which files would pass 500
-   lines. Without structure rules, also answer the module questions: which module owns the concept,
-   what deletes branches or layers, and what gets more tangled.
+   [decision evidence planning guidance](../shared/decision-evidence.md#plan-the-change), reading
+   the repository instructions and decision records from this tree. Answer the
+   [structure criteria](../code-quality/structure-criteria.md) plan questions for the slice's files:
+   where each change goes, which helper it reuses, and which files would pass 500 lines. Without
+   structure rules, also answer the module questions: which module owns the concept, what deletes
+   branches or layers, and what gets more tangled.
 6. Write the draft in `$slicedir`: `agent-<n>.md` per agent ticket in work order, from the
    [tracker skill](../tracker/SKILL.md) template, one worker task each, with the step 5 answers in
    `## Files`. Give each ticket the record links and rules it needs in `## Constraints`. Write
