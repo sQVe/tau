@@ -22,9 +22,27 @@ const child = (overrides: Partial<ChildFact> = {}): ChildFact => ({
 });
 
 const plan = (tickets: TicketFact[], children: ChildFact[]) =>
-  decideStartPlan({ slice: 'ME-700', agentTeam: 'AI', tickets, children });
+  decideStartPlan({ slice: 'ME-700', state: 'In Progress', agentTeam: 'AI', tickets, children });
 
 describe('decideStartPlan', () => {
+  it.each(['Todo', 'In Review', 'In Progress'])('plans the slice move from %s', (state) => {
+    const result = decideStartPlan({
+      slice: 'ME-700',
+      state,
+      agentTeam: 'AI',
+      tickets: [ticket()],
+      children: [],
+    });
+
+    const writes = [{ kind: 'createTicket', number: 1 }];
+
+    expect(result.writes).toEqual(
+      state === 'In Progress'
+        ? writes
+        : [{ kind: 'moveToInProgress', identifier: 'ME-700' }, ...writes],
+    );
+  });
+
   it.each([
     {
       case: 'no identifier and no child',
@@ -151,6 +169,7 @@ describe('decideStartPlan', () => {
   it('matches the agent team without regard to case', () => {
     const result = decideStartPlan({
       slice: 'ME-700',
+      state: 'In Progress',
       agentTeam: 'ai',
       tickets: [ticket()],
       children: [child()],
@@ -191,6 +210,14 @@ describe('decideForeignUpdates', () => {
     },
   ])('lists the ticket when $case', ({ overrides, foreign }) => {
     expect(decideForeignUpdates('viewer', update, [child(overrides)])).toEqual(foreign);
+  });
+
+  it('lists a foreign slice only when its move is planned', () => {
+    const slice = child({ identifier: 'ME-700', creator: 'other' });
+    const writes = [{ kind: 'moveToInProgress', identifier: 'ME-700' }] as const;
+
+    expect(decideForeignUpdates('viewer', writes, [slice])).toEqual(['ME-700']);
+    expect(decideForeignUpdates('viewer', [], [slice])).toEqual([]);
   });
 
   it('ignores writes that do not change a Linear ticket', () => {

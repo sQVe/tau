@@ -174,6 +174,39 @@ test('failWrite counts only supported writes', async () => {
   expect(fake.writes()).toHaveLength(1);
 });
 
+test('reports the stored state in container and routing reads', async () => {
+  const fake = createLinearFake();
+  fake.addIssue({ title: 'Ticket', state: { name: 'Review', type: 'started' } });
+
+  const queries = [
+    'query($id: String!) { issue(id: $id) { state { name type } children { nodes { identifier } } } }',
+    'query($id: String!) { issue(id: $id) { state { name } } }',
+  ];
+
+  for (const query of queries) {
+    const result = await fake.exec('linear', ['api', query, '--variable', 'id=ME-1']);
+
+    expect(result.code).toBe(0);
+
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      data: { issue: { state: { name: 'Review' } } },
+    });
+  }
+
+  expect(fake.writes()).toEqual([]);
+});
+
+test('replaces the state record on a supported state update', async () => {
+  const fake = createLinearFake();
+  const issue = fake.addIssue({ title: 'Ticket', state: { name: 'Todo', type: 'unstarted' } });
+
+  const result = await fake.exec('linear', ['issue', 'update', 'ME-1', '--state', 'In Progress']);
+
+  expect(result.code).toBe(0);
+  expect(issue.state).toEqual({ name: 'In Progress', type: 'started' });
+  expect(fake.writes()).toHaveLength(1);
+});
+
 test('answers a team read', async () => {
   const fake = createLinearFake();
 

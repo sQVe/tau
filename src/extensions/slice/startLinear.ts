@@ -17,11 +17,14 @@ interface StartChild {
 export interface StartSlice {
   id: string;
   viewer: string;
+  state: string;
+  assignee: string | null;
+  creator: string | null;
   children: StartChild[];
 }
 
 const sliceQuery =
-  'query($id: String!) { viewer { id } issue(id: $id) { id children(first: 100) { pageInfo { hasNextPage } nodes { identifier title description url team { key } project { name } assignee { id } creator { id } } } } }';
+  'query($id: String!) { viewer { id } issue(id: $id) { id state { name } assignee { id } creator { id } children(first: 100) { pageInfo { hasNextPage } nodes { identifier title description url team { key } project { name } assignee { id } creator { id } } } } }';
 
 const userSchema = Type.Union([Type.Object({ id: Type.String() }), Type.Null()]);
 
@@ -30,6 +33,9 @@ const sliceSchema = Type.Object({
   issue: Type.Union([
     Type.Object({
       id: Type.String(),
+      state: Type.Object({ name: Type.String() }),
+      assignee: userSchema,
+      creator: userSchema,
       children: Type.Object({
         pageInfo: Type.Object({ hasNextPage: Type.Boolean() }),
         nodes: Type.Array(
@@ -74,6 +80,9 @@ export const readStartSlice = async (
   return {
     id: issue.id,
     viewer: data.viewer.id,
+    state: issue.state.name,
+    assignee: issue.assignee?.id ?? null,
+    creator: issue.creator?.id ?? null,
     children: issue.children.nodes.map((node) => ({
       identifier: node.identifier,
       title: node.title,

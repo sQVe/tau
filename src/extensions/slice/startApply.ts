@@ -4,6 +4,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { confirmWithUser } from '../../dialog/dialog.js';
 import { errorMessage } from '../../errors.js';
+import { run } from '../../linear.js';
 import { createIssue, readRouteIds, updateIssue } from './linear.js';
 import { CreatedButNotRecordedError, runApplySteps } from './partialApply.js';
 import type { ApplyRunner, PartialApplyStep } from './partialApply.js';
@@ -48,6 +49,10 @@ interface StartProgress {
 }
 
 export const describeStartWrite = (start: Start, write: StartWrite): string => {
+  if (write.kind === 'moveToInProgress') {
+    return `Move ${write.identifier} to In Progress`;
+  }
+
   const ticket = start.tickets[write.number - 1];
   const label = `ticket ${write.number} "${ticket?.title ?? ''}"`;
 
@@ -118,6 +123,18 @@ const recordIdentifier = async (
 };
 
 const applyWrite = async (runtime: Runtime, progress: StartProgress, write: StartWrite) => {
+  if (write.kind === 'moveToInProgress') {
+    await run(runtime.exec, runtime.root, [
+      'issue',
+      'update',
+      write.identifier,
+      '--state',
+      'In Progress',
+    ]);
+
+    return;
+  }
+
   if (write.kind === 'createTicket') {
     return createTicket(runtime, progress, write.number);
   }
@@ -217,10 +234,14 @@ const summary = (progress: StartProgress, state: StartState): StartSummary => {
   };
 };
 
-const foreignBodies = (state: StartState, foreign: readonly string[]) => {
+const foreignChanges = (state: StartState, foreign: readonly string[]) => {
   const children = state.slice?.children ?? [];
 
   return state.plan.writes.flatMap((write) => {
+    if (write.kind === 'moveToInProgress' && foreign.includes(write.identifier)) {
+      return [`${write.identifier}: ${state.slice?.state ?? ''} to In Progress`];
+    }
+
     if (write.kind !== 'updateBody' || !foreign.includes(write.identifier)) {
       return [];
     }
@@ -238,11 +259,9 @@ const confirmMessage = (state: StartState, foreign: readonly string[], start: St
   const writes = state.plan.writes.map((write) => describeStartWrite(start, write));
   const owner = `${foreign.join(', ')} ${foreign.length === 1 ? 'is' : 'are'} not yours, or the owner is unknown.`;
 
-  return `${owner}\n\nWrites:\n${bulletList(writes)}\n\nBody changes:\n${foreignBodies(state, foreign).join('\n\n')}`;
+  return `${owner}\n\nWrites:\n${bulletList(writes)}\n\nChanges:\n${foreignChanges(state, foreign).join('\n\n')}`;
 };
 
-// Asks the user before a body update to a ticket another person owns. The state can change while
-// the user answers, so a changed state stops the apply before any write.
 const confirmForeignUpdates = async (
   runtime: Runtime,
   context: ExtensionContext,
@@ -255,7 +274,9 @@ const confirmForeignUpdates = async (
   const foreign = decideForeignUpdates(
     slice?.viewer ?? '',
     state.plan.writes,
-    slice?.children ?? [],
+    slice === undefined || draft === undefined
+      ? []
+      : [{ identifier: draft.start.slice, ...slice }, ...slice.children],
   );
 
   if (draft === undefined || foreign.length === 0) {

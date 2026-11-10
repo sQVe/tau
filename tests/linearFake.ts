@@ -19,6 +19,7 @@ type StateType =
 
 interface FakeIssue {
   identifier: string;
+  branchName: string;
   title: string;
   description: string;
   parent: string | null;
@@ -28,9 +29,10 @@ interface FakeIssue {
   creatorId: string | null;
   assigneeId: string | null;
   sortOrder: number;
-  stateType: StateType;
+  state: Readonly<{ type: StateType; name: string }>;
   pullRequests: string[];
   blockedBy: string[];
+  inverseRelations: { type: string; identifier: string }[];
 }
 
 interface Fence {
@@ -107,6 +109,7 @@ const savedDescription = (description: string) => {
 
 const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
   identifier: issue.identifier,
+  branchName: issue.branchName,
   title: issue.title,
   description: issue.description,
   url: `https://linear.app/me/issue/${issue.identifier}`,
@@ -115,15 +118,18 @@ const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
   project,
   creator: issue.creatorId === null ? null : { id: issue.creatorId },
   assignee: issue.assigneeId === null ? null : { id: issue.assigneeId },
-  state: { type: issue.stateType },
+  state: issue.state,
   attachments: { nodes: issue.pullRequests.map((url) => ({ url })) },
   inverseRelations: {
-    nodes: issue.blockedBy.map((identifier) => ({ type: 'blocks', issue: { identifier } })),
+    nodes: [
+      ...issue.blockedBy.map((identifier) => ({ type: 'blocks', issue: { identifier } })),
+      ...issue.inverseRelations.map(({ type, identifier }) => ({ type, issue: { identifier } })),
+    ],
   },
 });
 
 const isWrite = (operation: Operation): boolean => {
-  if (operation.kind === 'relation') {
+  if (operation.kind === 'relation' || operation.kind === 'state') {
     return true;
   }
 
@@ -152,6 +158,7 @@ export const createLinearFake = (): LinearFake => {
 
     const created: FakeIssue = {
       identifier,
+      branchName: identifier.toLowerCase(),
       description: '',
       parent: null,
       teamId: 'team-me',
@@ -160,9 +167,10 @@ export const createLinearFake = (): LinearFake => {
       creatorId: 'user-viewer',
       assigneeId: null,
       sortOrder: [...issues.values()].filter((other) => other.parent === issue.parent).length,
-      stateType: 'started',
+      state: { type: 'started', name: 'In Progress' },
       pullRequests: [],
       blockedBy: [],
+      inverseRelations: [],
       ...issue,
     };
 
@@ -289,7 +297,7 @@ export const createLinearFake = (): LinearFake => {
     const nodes = [...issues.values()]
       .filter((issue) => issue.teamId === teams.get(filter.team.key.eq)?.id)
       .filter((issue) => issue.title === filter.title.eq)
-      .filter((issue) => filter.state.type.in.includes(issue.stateType))
+      .filter((issue) => filter.state.type.in.includes(issue.state.type))
       .filter((issue) => projectIds === undefined || projectIds.includes(issue.projectId ?? ''))
       .map((issue) => ({ identifier: issue.identifier }));
 
@@ -309,7 +317,7 @@ export const createLinearFake = (): LinearFake => {
 
     const matches = [...issues.values()]
       .filter((issue) => issue.teamId === variables.teamId)
-      .filter((issue) => filter.state.type.in.includes(issue.stateType))
+      .filter((issue) => filter.state.type.in.includes(issue.state.type))
       .filter((issue) => words.some((word) => issue.title.toLowerCase().includes(word)))
       .filter((issue) => projectIds === undefined || projectIds.includes(issue.projectId ?? ''));
 
@@ -317,7 +325,7 @@ export const createLinearFake = (): LinearFake => {
       identifier: issue.identifier,
       title: issue.title,
       url: `https://linear.app/me/issue/${issue.identifier}`,
-      state: { type: issue.stateType },
+      state: { type: issue.state.type },
       team: { key: team(issue.teamId).key },
       project: issue.projectId === null ? null : { name: project(issue.projectId)!.name },
       parent: issue.parent === null ? null : { identifier: issue.parent },
@@ -341,7 +349,7 @@ export const createLinearFake = (): LinearFake => {
       issue: {
         team: { key: team(issue.teamId).key },
         project: found === null ? null : { name: found.name },
-        state: { name: issue.stateType === 'completed' ? 'Done' : 'In Progress' },
+        state: { name: issue.state.name },
       },
     };
   };
@@ -413,6 +421,18 @@ export const createLinearFake = (): LinearFake => {
         return containerData(operation.variables.id);
       }
 
+      case 'issuePullRequests': {
+        const issue = issues.get(operation.variables.id);
+
+        if (issue === undefined) {
+          return { issue: null };
+        }
+
+        const { attachments } = pagedNode(childNode(issue, project(issue.projectId)));
+
+        return { issue: { attachments } };
+      }
+
       case 'routing': {
         return routingData(operation.variables.id);
       }
@@ -454,7 +474,12 @@ export const createLinearFake = (): LinearFake => {
       return JSON.stringify({ data: apiData(operation) });
     }
 
-    changeRelation(operation);
+    if (operation.kind === 'state') {
+      const issue = issues.get(operation.identifier)!;
+      issue.state = { name: operation.state, type: 'started' };
+    } else {
+      changeRelation(operation);
+    }
 
     return '';
   };

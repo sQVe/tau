@@ -11,6 +11,8 @@ import type { PartialApplyFailureDetails } from './partialApply.js';
 import { applyStart, describeStartWrite } from './startApply.js';
 import type { StartApplyDetails } from './startApply.js';
 import type { StartWrite } from './startDecisions.js';
+import { readStartPick } from './startPick.js';
+import type { StartPick } from './startPickDecisions.js';
 import type { Start } from './startRecord.js';
 import { readStartState } from './startState.js';
 import type { Runtime } from './state.js';
@@ -21,17 +23,26 @@ export interface StartReadDetails {
   writes: (StartWrite & { text: string })[];
   problems: string[];
   stateToken: string;
+  pick?: StartPick;
 }
 
-type StartSuccessDetails = StartReadDetails | StartApplyDetails;
+type StartSuccessDetails = StartReadDetails | StartApplyDetails | { pick: StartPick };
 
 export type StartToolDetails = StartSuccessDetails | PartialApplyFailureDetails<string>;
 
 export const startToolParameters = Type.Object({
   action: Type.Union([Type.Literal('read'), Type.Literal('apply')]),
-  directory: Type.String({
-    description: 'The draft directory that the slice tool prepared, which holds start.json.',
-  }),
+  directory: Type.Optional(
+    Type.String({
+      description: 'The slice tool draft directory with start.json. Needed unless read has pick.',
+    }),
+  ),
+  pick: Type.Optional(
+    Type.String({
+      minLength: 1,
+      description: 'read: a slice or container identifier.',
+    }),
+  ),
   agentTeam: Type.String({
     minLength: 1,
     description: 'The team key from the prompt line that starts with `Tracker agent team:`.',
@@ -41,10 +52,11 @@ export const startToolParameters = Type.Object({
 
 type StartInput = Static<typeof startToolParameters>;
 
-const description = `Create and update the agent tickets of a slice in Linear. Call it as the start-slice skill directs.
-- read {directory, agentTeam}: reads directory/start.json (version 1: {version, slice, branch, base, tickets [{title, file, labels [label IDs], identifier|null}]} in work order), the body files it names, and the slice's children. Returns {directory, start, writes, problems, stateToken}. writes lists what apply would do, in order, each with kind and text: createTicket (under the slice in agentTeam, no project, with its labels), recordIdentifier (a same-title child of the slice that is in agentTeam with no project), and updateBody (the body file differs from the description in Linear). problems lists what stops apply, such as a same-title child that is not in agentTeam or has a project, or a recorded identifier that is not a child of the slice. Nothing is written.
-- apply {directory, agentTeam, stateToken}: makes the writes in order, and records each new or found identifier in start.json at once. Writes only what read checked. When a body update would change a ticket the Linear viewer does not own (not the assignee, or no assignee and not the creator; unknown counts as not owned), it first asks the user to confirm the writes, and writes nothing if the user declines, the session has no UI, or it is a worker. Returns {status: applied|unchanged|declined, directory, slice, tickets [{number, identifier, url, title, status: new|updated|unchanged}], applied}.
-Errors: a missing, malformed, or newer start.json, a missing body file, bad linear output, a stateToken that no longer matches (read again), or problems. Nothing is written in those cases. A failed or aborted step returns an error result with directory, applied, notApplied, and created. When a create fails or prints no identifier, read again before any retry: read finds the created child by title.`;
+const description = `Start a slice and write its agent tickets, as the start-slice skill directs.
+- read {pick, agentTeam}: fetches origin and picks the named slice, or a container's first ready child in sub-issue order. Returns {pick: {chosen|null, reason, slices [{identifier, status, blockers [{identifier, state, pullRequests}]}], openBlockerPullRequests, base, defaultBranch}}, plus the draft read with directory. chosen has identifier, title, url, branchName, team, description, pullRequests. status: merged, canceled, completedWithoutMergedPr, blocked, or ready. Blocker state: merged, open, or other. base is origin/<defaultBranch>, or null while a blocker PR is open.
+- read {directory, agentTeam}: reads directory/start.json (version 1: {version, slice, branch, base, tickets [{title, file, labels [label IDs], identifier|null}]} in work order), its body files, and the slice's children. Returns {directory, start, writes, problems, stateToken}. writes, in order, each with kind and text: moveToInProgress (unless already In Progress), createTicket (in agentTeam, no project), recordIdentifier (a same-title agent child exists), updateBody (the body file differs from Linear). problems stop apply.
+- apply {directory, agentTeam, stateToken}: makes only the checked writes in order, saving each identifier in start.json at once. Before changing a ticket the viewer may not own, it asks the user, and writes nothing without a yes. Returns {status: applied|unchanged|declined, directory, slice, tickets [{number, identifier, url, title, status: new|updated|unchanged}], applied}.
+Errors write nothing: a bad start.json or body file, bad linear output, a stale stateToken (read again), or problems. A failed step returns directory, applied, notApplied, and created; read again before a retry.`;
 
 const read = async (
   runtime: Runtime,
@@ -72,13 +84,35 @@ const runAction = async (
   parameters: StartInput,
   signal: AbortSignal | undefined,
 ): Promise<StartSuccessDetails> => {
+  if (parameters.action === 'apply' && parameters.pick !== undefined) {
+    throw new Error('pick is only supported for read.');
+  }
+
+  if (parameters.action === 'apply' && parameters.directory === undefined) {
+    throw new Error('apply requires directory.');
+  }
+
+  if (parameters.directory === undefined && parameters.pick === undefined) {
+    throw new Error('read requires directory or pick.');
+  }
+
   const root = await findTauRoot(context.cwd, 'start_slice');
   const runtime = { exec, root, signal };
+
+  const pick =
+    parameters.pick === undefined ? undefined : await readStartPick(runtime, parameters.pick);
+
+  if (parameters.directory === undefined && pick !== undefined) {
+    return { pick };
+  }
+
   const name = draftName(root, parameters.directory);
   const directory = await checkDraftDirectory(root, name, parameters.action);
 
   if (parameters.action === 'read') {
-    return read(runtime, parameters, directory);
+    const details = await read(runtime, parameters, directory);
+
+    return { ...details, ...(pick === undefined ? {} : { pick }) };
   }
 
   const request = {

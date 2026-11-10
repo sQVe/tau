@@ -15,6 +15,7 @@ export type QueryName =
   | 'searchIssues'
   | 'issues'
   | 'container'
+  | 'issuePullRequests'
   | 'routing'
   | 'labels'
   | 'teamProjects'
@@ -63,6 +64,7 @@ export interface QueryVariables {
   searchIssues: { term: string; first: number; teamId: string; filter: SearchFilter };
   issues: { filter: IssueFilter };
   container: { id: string };
+  issuePullRequests: { id: string };
   routing: { id: string };
   labels: { key: string; first: number };
   teamProjects: { key: string; name: string };
@@ -74,6 +76,7 @@ export type QueryOperation = {
 }[QueryName];
 
 export type Operation =
+  | { kind: 'state'; identifier: string; state: string }
   | { kind: 'pullRequest'; url: string }
   | { kind: 'relation'; action: 'add' | 'delete'; identifier: string; blocker: string }
   | QueryOperation;
@@ -177,6 +180,13 @@ const contracts: QueryContract[] = [
     reads: { id: isString },
     optional: {},
   },
+  {
+    name: 'issuePullRequests',
+    rootField: 'issue',
+    selection: 'attachments(',
+    reads: { id: isString },
+    optional: {},
+  },
   { name: 'routing', rootField: 'issue', selection: '', reads: { id: isString }, optional: {} },
   {
     name: 'labels',
@@ -274,6 +284,13 @@ const decodeQuery = (call: FakeCall): Operation => {
 };
 
 const decodeIssueCommand = (call: FakeCall): Operation => {
+  const [, command, target, flag, state] = call.commandArguments;
+  const isStateUpdate = command === 'update' && flag === '--state';
+
+  if (isStateUpdate && target !== undefined && state !== undefined) {
+    return { kind: 'state', identifier: target, state };
+  }
+
   const [, relation, action, identifier, blockedBy, blocker, ...rest] = call.commandArguments;
   const isRelationShape = relation === 'relation' && blockedBy === 'blocked-by';
   const hasTarget = identifier !== undefined && blocker !== undefined;

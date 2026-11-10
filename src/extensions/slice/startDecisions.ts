@@ -18,6 +18,7 @@ export interface ChildFact {
 }
 
 export type StartWrite =
+  | { kind: 'moveToInProgress'; identifier: string }
   | { kind: 'createTicket'; number: number }
   | { kind: 'recordIdentifier'; number: number; identifier: string }
   | { kind: 'updateBody'; number: number; identifier: string };
@@ -29,6 +30,7 @@ export interface StartPlan {
 
 interface StartFacts {
   slice: string;
+  state: string;
   agentTeam: string;
   tickets: readonly TicketFact[];
   children: readonly ChildFact[];
@@ -128,6 +130,10 @@ export const decideStartPlan = (facts: StartFacts): StartPlan => {
   const writes: StartWrite[] = [];
   const problems: string[] = [];
 
+  if (facts.state !== 'In Progress') {
+    writes.push({ kind: 'moveToInProgress', identifier: facts.slice });
+  }
+
   for (const [index, ticket] of facts.tickets.entries()) {
     const number = index + 1;
 
@@ -146,14 +152,14 @@ export const decideStartPlan = (facts: StartFacts): StartPlan => {
 export const decideForeignUpdates = (
   viewer: string,
   writes: readonly StartWrite[],
-  children: readonly ChildFact[],
+  tickets: readonly Pick<ChildFact, 'identifier' | 'assignee' | 'creator'>[],
 ): string[] =>
   writes.flatMap((write) => {
-    if (write.kind !== 'updateBody') {
+    if (write.kind !== 'updateBody' && write.kind !== 'moveToInProgress') {
       return [];
     }
 
-    const child = children.find((candidate) => candidate.identifier === write.identifier);
+    const child = tickets.find((candidate) => candidate.identifier === write.identifier);
 
     return child === undefined || isViewersTicket(viewer, child) ? [] : [write.identifier];
   });
