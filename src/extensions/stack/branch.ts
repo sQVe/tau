@@ -10,7 +10,14 @@ import {
 } from './branchDecisions.js';
 import type { BranchRequest, BranchStop } from './branchDecisions.js';
 import { readCheck } from './check.js';
-import { failedExit, ghCommandOutput, gitCommandOutput, readOk } from './readResult.js';
+import { requireStackView } from './checkDecisions.js';
+import {
+  describeFailures,
+  failedExit,
+  ghCommandOutput,
+  gitCommandOutput,
+  readOk,
+} from './readResult.js';
 import type { CommandOutput } from './readResult.js';
 import { gitLabel, readStackViewFacts } from './reads.js';
 
@@ -75,8 +82,15 @@ const checkout = async (run: BranchRun, branch: string) => {
   return decideBranchCheckout(label(commandArguments), output);
 };
 
-const viewDecision = async (run: BranchRun, phase: 'retry' | 'parent' | 'final') =>
-  decideBranchView(await readStackViewFacts(run.runtime), run.request, phase);
+const viewDecision = async (run: BranchRun, phase: 'retry' | 'parent' | 'final') => {
+  const view = requireStackView(await readStackViewFacts(run.runtime));
+
+  if (!view.ok) {
+    return { result: 'stop' as const, reason: describeFailures([view]) };
+  }
+
+  return decideBranchView(view.value, run.request, phase);
+};
 
 const checkoutExisting = async (run: BranchRun) => {
   if (!(await localBranchExists(run.runtime, run.request.branch))) {

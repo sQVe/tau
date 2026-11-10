@@ -2,6 +2,7 @@ import type { CommandRuntime } from '../../command.js';
 import type { Repository } from '../../github/github.js';
 import { resolveBaseRepository, resolveHead } from '../../github/repositoryTarget.js';
 import type { PullView } from './chainDecisions.js';
+import { requireStackView } from './checkDecisions.js';
 import type { StackView } from './checkDecisions.js';
 import { decideLink, linkPulls } from './linkDecisions.js';
 import type { LinkDecision, LinkFacts } from './linkDecisions.js';
@@ -124,23 +125,17 @@ export const readLink = async (
   const stackView = await readStackViewFacts(runtime);
   const evidence: Record<string, unknown> = { stackView };
 
-  if (stackView.exitCode !== 0 || stackView.view === null) {
+  const view = requireStackView(stackView);
+
+  if (!view.ok) {
     return {
       result: 'stop',
-      reason: `Cannot read the local stack: gh stack view exited with ${stackView.exitCode}.`,
+      reason: `${view.command} ${view.problem}`,
       evidence,
     };
   }
 
-  if (!stackView.view.ok) {
-    return {
-      result: 'stop',
-      reason: `${stackView.view.command} ${stackView.view.problem}`,
-      evidence,
-    };
-  }
-
-  const facts = await readLinkFacts(runtime, request, stackView.view.value);
+  const facts = await readLinkFacts(runtime, request, view.value);
 
   evidence.facts = facts;
 

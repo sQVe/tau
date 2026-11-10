@@ -8,7 +8,7 @@ import {
   decideParentHistory,
 } from './branchDecisions.js';
 import type { CheckResult } from './check.js';
-import type { StackViewRead } from './checkDecisions.js';
+import type { StackView } from './checkDecisions.js';
 import { readFailed, readOk } from './readResult.js';
 
 const request = { parent: 'parent', branch: 'child', trunk: 'main', remote: 'origin' };
@@ -55,25 +55,22 @@ it.each([
   expect(decision).toMatchObject(expected);
 });
 
-const view = (names: string[]): StackViewRead => ({
-  exitCode: 0,
-  view: readOk({
-    trunk: 'main',
-    currentBranch: names.at(-1) ?? '',
-    branches: names.map((name, index) => ({
-      name,
-      base: names[index - 1] ?? 'main',
-      isCurrent: index === names.length - 1,
-      isMerged: false,
-      isQueued: false,
-      needsRebase: false,
-    })),
-  }),
+const view = (names: string[]): StackView => ({
+  trunk: 'main',
+  currentBranch: names.at(-1) ?? '',
+  branches: names.map((name, index) => ({
+    name,
+    base: names[index - 1] ?? 'main',
+    isCurrent: index === names.length - 1,
+    isMerged: false,
+    isQueued: false,
+    needsRebase: false,
+  })),
 });
 
 const viewCases: {
   name: string;
-  read: StackViewRead;
+  read: StackView;
   phase: 'retry' | 'parent' | 'final';
   result: string;
   reason?: string;
@@ -93,13 +90,6 @@ const viewCases: {
     phase: 'parent',
     result: 'stop',
     reason: 'does not list parent parent',
-  },
-  {
-    name: 'failed view with otherwise valid parent',
-    read: { ...view(['parent']), exitCode: 1 },
-    phase: 'parent',
-    result: 'stop',
-    reason: 'gh stack view --json exited with code 1',
   },
   {
     name: 'retry already in place',
@@ -134,15 +124,6 @@ const viewCases: {
   },
   { name: 'final branch missing', read: view(['parent']), phase: 'final', result: 'stop' },
   { name: 'final parent missing', read: view(['child']), phase: 'final', result: 'stop' },
-  { name: 'missing view', read: { exitCode: 2, view: null }, phase: 'parent', result: 'stop' },
-  { name: 'unfinished view', read: { exitCode: null, view: null }, phase: 'final', result: 'stop' },
-  { name: 'absent parsed view', read: { exitCode: 0, view: null }, phase: 'retry', result: 'stop' },
-  {
-    name: 'malformed view',
-    read: { exitCode: 0, view: readFailed('gh stack view --json', 'bad JSON') },
-    phase: 'parent',
-    result: 'stop',
-  },
 ];
 
 it.each(viewCases)('decides stack view for $name', ({ read, phase, result, reason }) => {

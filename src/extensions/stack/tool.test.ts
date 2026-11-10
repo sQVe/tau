@@ -42,7 +42,7 @@ it('routes link to a read-only local stack check', async () => {
 
   expect(result.details).toMatchObject({
     result: 'stop',
-    reason: containing('local stack'),
+    reason: containing('gh stack view --json exited with code 2'),
   });
 
   expect(fake.calls.map((call) => call.commandArguments)).toEqual([['stack', 'view', '--json']]);

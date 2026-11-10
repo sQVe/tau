@@ -56,6 +56,20 @@ const setUp = async () => {
   return { fake, root, run, view };
 };
 
+it('stops before further reads when the local stack command fails', async () => {
+  const { fake, run } = await setUp();
+
+  fake.stackView.code = 2;
+
+  expect(await run()).toMatchObject({
+    result: 'stop',
+    reason: containing('gh stack view --json exited with code 2'),
+    evidence: { stackView: { exitCode: 2, view: null } },
+  });
+
+  expect(joinedCalls(fake)).toEqual(['stack view --json']);
+});
+
 it('plans a new GitHub stack from two open local pull requests', async () => {
   const { fake, run } = await setUp();
 

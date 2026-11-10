@@ -2,7 +2,7 @@ import type { Repository } from '../../github/github.js';
 import { fromHeadRepository } from '../../github/repositoryTargetDecisions.js';
 import type { ListedHead } from '../../github/repositoryTargetDecisions.js';
 import { isRecord } from '../../schema.js';
-import { describeFailures, failedExit, malformedOutput, readOk } from './readResult.js';
+import { describeFailures, failedExit, malformedOutput, readFailed, readOk } from './readResult.js';
 import type { CommandOutput, Read } from './readResult.js';
 
 export interface StackLayer {
@@ -115,6 +115,17 @@ export type GithubDecision =
     };
 
 const stackViewCommand = 'gh stack view --json';
+
+export const requireStackView = (stackView: StackViewRead): Read<StackView> => {
+  if (stackView.exitCode !== 0) {
+    const status =
+      stackView.exitCode === null ? 'did not finish' : `exited with code ${stackView.exitCode}`;
+
+    return readFailed(stackViewCommand, status);
+  }
+
+  return stackView.view ?? readFailed(stackViewCommand, 'printed no output');
+};
 
 const exitCodeReasons: Readonly<Record<number, string>> = {
   6: 'The branch is in several stacks. Check out a non-trunk branch first, or ask.',

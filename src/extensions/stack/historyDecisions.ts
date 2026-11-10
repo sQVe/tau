@@ -1,5 +1,4 @@
-import type { StackView, StackViewRead } from './checkDecisions.js';
-import { failedExit, malformedOutput, readFailed, readOk } from './readResult.js';
+import { failedExit, malformedOutput, readOk } from './readResult.js';
 import type { CommandOutput, FailedRead, Read } from './readResult.js';
 
 export interface HistoryLayer {
@@ -190,18 +189,4 @@ export const decideLayer = (facts: LayerFacts): LayerDecision => {
   }
 
   return decidePublished(facts.tip, facts.reads);
-};
-
-// The remote-history check needs the branches of `gh stack view --json`. Any other result stops it.
-export const requireStackView = (stackView: StackViewRead): Read<StackView> => {
-  const command = 'gh stack view --json';
-
-  if (stackView.exitCode !== 0) {
-    const status =
-      stackView.exitCode === null ? 'did not finish' : `exited with code ${stackView.exitCode}`;
-
-    return readFailed(command, status);
-  }
-
-  return stackView.view ?? readFailed(command, 'printed no output');
 };

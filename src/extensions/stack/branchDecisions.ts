@@ -1,5 +1,5 @@
 import type { CheckResult } from './check.js';
-import type { StackViewRead } from './checkDecisions.js';
+import type { StackView } from './checkDecisions.js';
 import { describeFailures, failedExit } from './readResult.js';
 import type { CommandOutput, Read } from './readResult.js';
 
@@ -59,23 +59,11 @@ export const decideBranchCheckout = (
 };
 
 export const decideBranchView = (
-  read: StackViewRead,
+  view: StackView,
   request: BranchRequest,
   phase: 'retry' | 'parent' | 'final',
 ): BranchStop | { result: 'add' | 'inPlace' | 'checkoutParent' } => {
-  if (read.exitCode !== 0) {
-    return stop(`gh stack view --json exited with code ${read.exitCode}.`);
-  }
-
-  if (read.view === null) {
-    return stop('gh stack view --json printed no view.');
-  }
-
-  if (!read.view.ok) {
-    return stop(describeFailures([read.view]));
-  }
-
-  const { branches } = read.view.value;
+  const { branches } = view;
   const parentIndex = branches.findIndex((layer) => layer.name === request.parent);
   const branchIndex = branches.findIndex((layer) => layer.name === request.branch);
 

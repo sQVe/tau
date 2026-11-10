@@ -1,11 +1,38 @@
 import { expect, it } from 'vitest';
 
-import { decideStackView, readStacksResponse } from './checkDecisions.js';
+import { decideStackView, readStacksResponse, requireStackView } from './checkDecisions.js';
 import type { StackLayer, StackView, StackViewRead } from './checkDecisions.js';
 import { readFailed, readOk } from './readResult.js';
 import type { CommandOutput } from './readResult.js';
 
 const containing = (text: string): unknown => expect.stringContaining(text);
+
+it.each([
+  { exitCode: 2, why: 'no stack' },
+  { exitCode: 6, why: 'several stacks' },
+  { exitCode: null, why: 'a command that did not finish' },
+])('requires a stack view for $why', ({ exitCode }) => {
+  expect(requireStackView({ exitCode, view: null })).toMatchObject({ ok: false });
+});
+
+it('rejects a failed command even with a readable stack view', () => {
+  const view = readOk({ trunk: 'main', currentBranch: 'a', branches: [] });
+
+  expect(requireStackView({ exitCode: 1, view })).toMatchObject({ ok: false });
+});
+
+it('rejects exit 0 when it printed nothing readable', () => {
+  const view = readFailed('gh stack view --json', 'printed output that cannot be read: ');
+
+  expect(requireStackView({ exitCode: 0, view })).toBe(view);
+  expect(requireStackView({ exitCode: 0, view: null })).toMatchObject({ ok: false });
+});
+
+it('keeps the branches of a readable stack view', () => {
+  const view = readOk({ trunk: 'main', currentBranch: 'a', branches: [] });
+
+  expect(requireStackView({ exitCode: 0, view })).toBe(view);
+});
 
 const layer = (name: string, flags: Partial<StackLayer> = {}): StackLayer => ({
   name,
