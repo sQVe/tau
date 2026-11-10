@@ -140,6 +140,130 @@ it('reads a clear snapshot without GitHub writes or filesystem changes', async (
   expect(await readdir(root)).not.toContain('.tau');
 });
 
+it.each([
+  { name: 'required pending check', requiredChecks: [{ name: 'test' }], verdict: 'waiting-checks' },
+  { name: 'optional pending check', requiredChecks: [], verdict: 'unknown' },
+])('reads required check names for $name', async ({ requiredChecks, verdict }) => {
+  const { fake, run } = await setUp();
+
+  fake.pullRequest = { ...fakePullRequest(), mergeStateStatus: 'BLOCKED' };
+  fake.checks = [{ name: 'test', workflow: 'CI', bucket: 'pending', state: 'PENDING', link: '' }];
+  fake.requiredChecks = requiredChecks;
+
+  const result = (await run()).prs[0];
+
+  expect(result?.verdict).toBe(verdict);
+  expect(result?.gaps).toEqual([]);
+
+  expect(fake.calls.filter((call) => call.commandArguments.includes('--required'))).toMatchObject([
+    {
+      command: 'gh',
+      commandArguments: [
+        'pr',
+        'checks',
+        '7',
+        '--repo',
+        'github.com/sQVe/tau',
+        '--required',
+        '--json',
+        'name',
+      ],
+    },
+  ]);
+});
+
+it.each([
+  { name: 'failed read', stdout: '', stderr: 'HTTP 502', code: 1, killed: false },
+  { name: 'missing output', stdout: '', stderr: '', code: 0, killed: false },
+  { name: 'invalid JSON', stdout: '{', stderr: '', code: 0, killed: false },
+  { name: 'invalid names', stdout: '[{"name":7}]', stderr: '', code: 0, killed: false },
+  { name: 'unexpected exit', stdout: '[]', stderr: '', code: 2, killed: false },
+  { name: 'stopped read', stdout: '[]', stderr: '', code: 0, killed: true },
+  {
+    name: 'empty success with no-required diagnostic',
+    stdout: '',
+    stderr: "no required checks reported on the 'feature' branch",
+    code: 0,
+    killed: false,
+  },
+  {
+    name: 'invalid output with no-required diagnostic',
+    stdout: '{',
+    stderr: "no required checks reported on the 'feature' branch",
+    code: 1,
+    killed: false,
+  },
+  {
+    name: 'additional error before no-required diagnostic',
+    stdout: '',
+    stderr: "HTTP 502: no required checks reported on the 'feature' branch",
+    code: 1,
+    killed: false,
+  },
+  {
+    name: 'additional error after no-required diagnostic',
+    stdout: '',
+    stderr: "no required checks reported on the 'feature' branch: HTTP 502",
+    code: 1,
+    killed: false,
+  },
+])('reports required checks $name as a gap', async ({ stdout, stderr, code, killed }) => {
+  const { fake, run } = await setUp();
+
+  const exec: Exec = (command, commandArguments, options) => {
+    if (commandArguments.includes('--required')) {
+      return Promise.resolve({ stdout, stderr, code, killed, truncated: false });
+    }
+
+    return fake.exec(command, commandArguments, options);
+  };
+
+  const result = (await run({}, exec)).prs[0];
+
+  expect(result).toMatchObject({ verdict: 'unknown', reasons: [{ code: 'readGap' }] });
+  expect(result?.gaps).toEqual([expect.stringContaining('required checks:')]);
+  expect(fake.writes).toEqual([]);
+});
+
+it.each([
+  {
+    name: 'failing checks',
+    stdout: '[{"name":"test"}]',
+    stderr: '',
+    code: 1,
+    verdict: 'waiting-checks',
+  },
+  {
+    name: 'pending checks',
+    stdout: '[{"name":"test"}]',
+    stderr: '',
+    code: 8,
+    verdict: 'waiting-checks',
+  },
+  {
+    name: 'no required checks',
+    stdout: '',
+    stderr: "no required checks reported on the 'feature' branch\n",
+    code: 1,
+    verdict: 'unknown',
+  },
+])('accepts required check data for $name', async ({ stdout, stderr, code, verdict }) => {
+  const { fake, run } = await setUp();
+
+  fake.pullRequest = { ...fakePullRequest(), mergeStateStatus: 'BLOCKED' };
+  fake.checks = [{ name: 'test', workflow: 'CI', bucket: 'pending', state: 'PENDING', link: '' }];
+
+  const exec: Exec = (command, commandArguments, options) => {
+    if (commandArguments.includes('--required')) {
+      return Promise.resolve({ stdout, stderr, code, killed: false, truncated: false });
+    }
+
+    return fake.exec(command, commandArguments, options);
+  };
+
+  expect((await run({}, exec)).prs[0]).toMatchObject({ verdict, gaps: [] });
+});
+
 it('keeps unknown mergeability after settling', async () => {
   const { fake, run } = await setUp();
 

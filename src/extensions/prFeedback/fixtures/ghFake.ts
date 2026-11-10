@@ -66,6 +66,7 @@ type ReadKey =
   | 'user'
   | 'pr view'
   | 'pr checks'
+  | 'required checks'
   | 'run list'
   | 'run jobs'
   | 'graphql'
@@ -99,6 +100,7 @@ export interface GhFake {
   comments: FakeComment[];
   writes: FakeWrite[];
   checks: FakeCheck[];
+  requiredChecks: { name: string }[];
   // gh pr checks exits 1 while a check fails and 8 while one is pending, and still prints JSON.
   checksExitCode: number;
   // Pi stops gh pr checks after it printed the list.
@@ -154,6 +156,10 @@ const subcommandKeys: Record<string, CommandKey> = {
 const readKey = (commandArguments: readonly string[]): CommandKey | undefined => {
   if (commandArguments.slice(0, 2).join(' ') === 'run view' && commandArguments.includes('jobs')) {
     return 'run jobs';
+  }
+
+  if (commandArguments[1] === 'checks' && commandArguments.includes('--required')) {
+    return 'required checks';
   }
 
   const subcommandKey = subcommandKeys[commandArguments.slice(0, 2).join(' ')];
@@ -371,6 +377,7 @@ export const createGhFake = (): GhFake => {
     user: () => ({ login: fake.viewer, type: 'User' }),
     'pr view': pullRequest,
     'pr checks': () => fake.checks,
+    'required checks': () => fake.requiredChecks,
     'run list': (commandArguments) => trunkRunList(fake.trunkRuns, repository, commandArguments),
     'run jobs': (commandArguments) => trunkRunJobs(fake.trunkRuns, commandArguments),
     graphql: threadPages,
@@ -471,6 +478,7 @@ export const createGhFake = (): GhFake => {
     comments: [],
     writes: [],
     checks: [],
+    requiredChecks: [],
     checksExitCode: 0,
     checksKilled: false,
     trunkRunsKilled: false,

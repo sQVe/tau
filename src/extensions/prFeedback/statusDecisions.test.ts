@@ -15,6 +15,7 @@ const facts = (change: Partial<StatusFacts> = {}): StatusFacts => ({
   reviewDecision: '',
   unresolvedThreads: 0,
   checks: [],
+  requiredCheckNames: [],
   reviews: [],
   bots: [],
   gaps: [],
@@ -24,6 +25,72 @@ const facts = (change: Partial<StatusFacts> = {}): StatusFacts => ({
 
 it.each<{ name: string; change: Partial<StatusFacts>; verdict: string; reasons: unknown[] }>([
   { name: 'clear snapshot', change: {}, verdict: 'clear', reasons: [] },
+  {
+    name: 'mergeable with unknown merge state',
+    change: { mergeStateStatus: 'UNKNOWN' },
+    verdict: 'unknown',
+    reasons: [{ code: 'mergeStateUnknown' }],
+  },
+  {
+    name: 'action with unknown merge state',
+    change: { mergeStateStatus: 'UNKNOWN', unresolvedThreads: 1 },
+    verdict: 'action-required',
+    reasons: [{ code: 'unresolvedThreads', count: 1 }, { code: 'mergeStateUnknown' }],
+  },
+  {
+    name: 'blocked with optional pending check',
+    change: {
+      mergeStateStatus: 'BLOCKED',
+      checks: [{ name: 'optional', bucket: 'pending' }],
+      requiredCheckNames: ['required'],
+    },
+    verdict: 'unknown',
+    reasons: [{ code: 'pendingChecks', names: ['optional'] }, { code: 'blockedUnknown' }],
+  },
+  {
+    name: 'blocked with optional failing check',
+    change: { mergeStateStatus: 'BLOCKED', checks: [{ name: 'test', bucket: 'fail' }] },
+    verdict: 'action-required',
+    reasons: [{ code: 'failingChecks', names: ['test'] }, { code: 'blockedUnknown' }],
+  },
+  ...['fail', 'cancel'].map((bucket) => ({
+    name: `blocked with required ${bucket} check`,
+    change: {
+      mergeStateStatus: 'BLOCKED',
+      checks: [{ name: 'test', bucket }],
+      requiredCheckNames: ['test'],
+    },
+    verdict: 'action-required',
+    reasons: [{ code: 'failingChecks', names: ['test'] }],
+  })),
+  {
+    name: 'blocked with required passing check',
+    change: {
+      mergeStateStatus: 'BLOCKED',
+      checks: [{ name: 'test', bucket: 'pass' }],
+      requiredCheckNames: ['test'],
+    },
+    verdict: 'unknown',
+    reasons: [{ code: 'blockedUnknown' }],
+  },
+  {
+    name: 'blocked with conflict',
+    change: { mergeStateStatus: 'BLOCKED', mergeable: 'CONFLICTING' },
+    verdict: 'action-required',
+    reasons: [{ code: 'conflict' }],
+  },
+  {
+    name: 'blocked with unresolved threads',
+    change: { mergeStateStatus: 'BLOCKED', unresolvedThreads: 1 },
+    verdict: 'action-required',
+    reasons: [{ code: 'unresolvedThreads', count: 1 }],
+  },
+  {
+    name: 'blocked with changes requested',
+    change: { mergeStateStatus: 'BLOCKED', reviewDecision: 'CHANGES_REQUESTED' },
+    verdict: 'action-required',
+    reasons: [{ code: 'changesRequested', logins: [] }],
+  },
   {
     name: 'conflict',
     change: { mergeable: 'CONFLICTING' },
@@ -150,16 +217,20 @@ it.each<{ name: string; change: Partial<StatusFacts>; verdict: string; reasons: 
     reasons: [{ code: 'blockedUnknown' }],
   },
   {
-    name: 'blocked on checks',
-    change: { mergeStateStatus: 'BLOCKED', checks: [{ name: 'test', bucket: 'pending' }] },
+    name: 'blocked on required checks',
+    change: {
+      mergeStateStatus: 'BLOCKED',
+      checks: [{ name: 'test', bucket: 'pending' }],
+      requiredCheckNames: ['test'],
+    },
     verdict: 'waiting-checks',
     reasons: [{ code: 'pendingChecks', names: ['test'] }],
   },
   {
     name: 'configured bot pending',
     change: { mergeStateStatus: 'BLOCKED', bots: [{ login: 'configured', status: 'requested' }] },
-    verdict: 'waiting-checks',
-    reasons: [{ code: 'botReviewPending', logins: ['configured'] }],
+    verdict: 'unknown',
+    reasons: [{ code: 'botReviewPending', logins: ['configured'] }, { code: 'blockedUnknown' }],
   },
   {
     name: 'unrequested bot',
@@ -176,8 +247,8 @@ it.each<{ name: string; change: Partial<StatusFacts>; verdict: string; reasons: 
   {
     name: 'draft',
     change: { draft: true, mergeStateStatus: 'BLOCKED' },
-    verdict: 'waiting-human',
-    reasons: [{ code: 'draft' }],
+    verdict: 'unknown',
+    reasons: [{ code: 'draft' }, { code: 'blockedUnknown' }],
   },
   {
     name: 'draft with conflict and gaps',

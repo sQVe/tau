@@ -11,6 +11,7 @@ export interface StatusFacts {
   reviewDecision: string;
   unresolvedThreads: number;
   checks: { name: string; bucket: string }[];
+  requiredCheckNames: string[];
   reviews: { id: number; login: string | null; state: string }[];
   bots: { login: string; status: string }[];
   gaps: string[];
@@ -113,6 +114,22 @@ const waitingReasons = (facts: StatusFacts) => {
   return { checks, human };
 };
 
+const hasKnownGate = (facts: StatusFacts, reasons: StatusReason[]): boolean => {
+  const reviewOrMergeGate = reasons.some((reason) =>
+    ['approvalRequired', 'changesRequested', 'unresolvedThreads', 'conflict', 'behind'].includes(
+      reason.code,
+    ),
+  );
+
+  const requiredCheckGate = facts.checks.some((check) => {
+    const blocksMerge = ['pending', 'fail', 'cancel'].includes(check.bucket);
+
+    return blocksMerge && facts.requiredCheckNames.includes(check.name);
+  });
+
+  return reviewOrMergeGate || requiredCheckGate;
+};
+
 const unknownReasons = (facts: StatusFacts, knownGate: boolean): StatusReason[] => {
   const reasons: StatusReason[] = [];
 
@@ -122,6 +139,10 @@ const unknownReasons = (facts: StatusFacts, knownGate: boolean): StatusReason[] 
 
   if (facts.mergeable === 'UNKNOWN') {
     reasons.push({ code: 'mergeabilityUnknown' });
+  }
+
+  if (facts.mergeStateStatus === 'UNKNOWN') {
+    reasons.push({ code: 'mergeStateUnknown' });
   }
 
   if (facts.mergeStateStatus === 'BLOCKED' && !knownGate) {
@@ -171,7 +192,8 @@ export const decideStatus = (facts: StatusFacts): StatusResult => {
   const action = actionReasons(facts);
   const waiting = waitingReasons(facts);
   const reasons = [...action, ...waiting.checks, ...waiting.human];
-  const unknown = unknownReasons(facts, reasons.length > 0);
+  const knownGate = hasKnownGate(facts, reasons);
+  const unknown = unknownReasons(facts, knownGate);
 
   const verdict = verdictFor(
     action.length > 0,
