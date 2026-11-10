@@ -16,12 +16,19 @@ export const skillCommand = (name: string, path: string): SlashCommandInfo =>
 
 export const tddPath = fileURLToPath(new URL('../../../skills/tdd/SKILL.md', import.meta.url));
 
-export const tddCommand = skillCommand('tdd', tddPath);
+export const benchmarkChecklistPath = fileURLToPath(
+  new URL('../../../skills/benchmark-checklist/SKILL.md', import.meta.url),
+);
+
+export const workerSkillCommands = [
+  skillCommand('tdd', tddPath),
+  skillCommand('benchmark-checklist', benchmarkChecklistPath),
+];
 
 export const resolveRoutedLoadout = (
   input: Parameters<typeof loadoutModule.resolveRoutedLoadout>[0],
   context: Parameters<typeof loadoutModule.resolveRoutedLoadout>[1],
-  commands: SlashCommandInfo[] = [tddCommand],
+  commands: SlashCommandInfo[] = workerSkillCommands,
   signal?: AbortSignal,
 ): Promise<RoutedLoadout> => loadoutModule.resolveRoutedLoadout(input, context, commands, signal);
 

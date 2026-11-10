@@ -14,15 +14,16 @@ import { fixtureLoadout } from './fixtures/loadout.js';
 import {
   allowModels,
   answered,
+  benchmarkChecklistPath,
   haiku,
   resolveRoutedLoadout,
   routedFixture,
   skillCommand,
-  tddCommand,
   tddPath,
   thinkingRoutedFixture,
   thinkingWorkerFixture,
   workerFixture,
+  workerSkillCommands,
 } from './fixtures/routedLoadout.js';
 import * as loadoutModule from './loadout.js';
 import { checkWorkerRuntime } from './loadout.js';
@@ -34,7 +35,7 @@ const profile = (body: string) => `---\nname: worker\nrole: editing\nthinking: o
 const resolveLoadout = (
   input: Parameters<typeof loadoutModule.resolveLoadout>[0],
   context: Parameters<typeof loadoutModule.resolveLoadout>[1],
-  commands: SlashCommandInfo[] = [tddCommand],
+  commands: SlashCommandInfo[] = workerSkillCommands,
 ) => loadoutModule.resolveLoadout(input, context, commands);
 
 const startup =
@@ -61,7 +62,7 @@ it('resolves an explicit worker model and names the configured models when none 
     permissions: 'trusted-full-tools',
     instructions: resolved.instructions,
     tools: resolved.tools,
-    skills: [tddPath],
+    skills: [tddPath, benchmarkChecklistPath],
     instructionSets: ['writing', 'coding', 'workflow'],
     packages: [],
   });
@@ -538,11 +539,14 @@ it('saves the profile tools, or the role defaults, and the paths of its skills',
   expect(() => resolve('unknown')).toThrow('Worker profile skill not found: missing-skill');
 });
 
-it('loads the tdd skill in the bundled worker profile', async ({ onTestFinished }) => {
+it('loads the tdd and benchmark-checklist skills in the bundled worker profile', async ({
+  onTestFinished,
+}) => {
   const { context, request } = await workerFixture(onTestFinished);
 
-  expect(resolveLoadout(request, context, [skillCommand('tdd', tddPath)]).skills).toEqual([
+  expect(resolveLoadout(request, context, workerSkillCommands).skills).toEqual([
     tddPath,
+    benchmarkChecklistPath,
   ]);
 
   expect(() => resolveLoadout(request, context, [])).toThrow('Worker profile skill not found: tdd');

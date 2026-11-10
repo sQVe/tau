@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { expect, it, vi } from 'vitest';
 
-import { tddCommand, workerFixture } from '../src/extensions/subagents/fixtures/routedLoadout.js';
+import {
+  workerFixture,
+  workerSkillCommands,
+} from '../src/extensions/subagents/fixtures/routedLoadout.js';
 import { Admission, executeLaunch } from '../src/extensions/subagents/launch.js';
 import type { LaunchRuntime } from '../src/extensions/subagents/launch.js';
 import { runWithEnvironment } from '../src/hc/connect.js';
@@ -30,7 +33,7 @@ it('launches a background worker as an hc child with tau labels', async ({ onTes
 
   const runtime: LaunchRuntime = {
     pi: {
-      getCommands: () => [tddCommand],
+      getCommands: () => workerSkillCommands,
       getAllTools: () => [],
     } as unknown as ExtensionAPI,
     hc: hc.runtime,
@@ -108,7 +111,7 @@ it('gives a launched worker the private session paths when the manager environme
 
   const runtime: LaunchRuntime = {
     pi: {
-      getCommands: () => [tddCommand],
+      getCommands: () => workerSkillCommands,
       getAllTools: () => [],
     } as unknown as ExtensionAPI,
     hc: hc.runtime,

@@ -43,6 +43,11 @@ export const fakeExtensionApi = (overrides: Partial<ExtensionAPI> = {}): FakeExt
     registerShortcut: () => undefined,
     getCommands: () => [
       { name: 'skill:tdd', source: 'skill', sourceInfo: { path: '/skills/tdd/SKILL.md' } },
+      {
+        name: 'skill:benchmark-checklist',
+        source: 'skill',
+        sourceInfo: { path: '/skills/benchmark-checklist/SKILL.md' },
+      },
     ],
     registerMessageRenderer: (customType: string, renderer: MessageRenderer) => {
       messageRenderers.set(customType, renderer);
