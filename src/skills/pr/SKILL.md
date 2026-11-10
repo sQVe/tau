@@ -78,10 +78,10 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      `HEAD`, ask with `ask_user_question`: run a new audit with the
      [finish-slice skill](../finish-slice/SKILL.md), recommended, or continue with the missing or
      old audit. Then each slice or agent ticket acceptance item no step 5 check covers is not run.
-   - Print target and ticket intent, coverage and reuse evidence, review freshness, added skip or
-     suppression markers, and matching check logs and `fullCheck` with paths and bounded excerpts.
-     Keep one gap list for tool gaps, failed or skipped reads, missing intent, and omitted evidence.
-     Read omitted evidence through its returned path when needed.
+   - Print target and ticket intent, coverage and reuse evidence, review freshness, skip,
+     suppression, and deleted test markers, and matching check logs and `fullCheck` with paths and
+     bounded excerpts. Keep one gap list for tool gaps, failed or skipped reads, missing intent, and
+     omitted evidence. Read omitted evidence through its returned path when needed.
    - The script gathers evidence only. It never calls `prepare` or `verify`, and writes nothing
      itself. Target questions, rebases, review runs, previews, and approvals stay outside it.
    - If `target` is null because no head remote or several were found, ask which remote to use and

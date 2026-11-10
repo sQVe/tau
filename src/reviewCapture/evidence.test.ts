@@ -662,7 +662,21 @@ it('reports no gap for the old path of a test file renamed in a range', async ()
 
   expect(evidence.paths).toEqual(['src/add.test.ts', 'src/math.test.ts']);
   expect(evidence.tests.map((test) => test.path)).toEqual(['src/add.test.ts']);
+  expect(evidence.markers).toEqual([]);
   expect(evidence.gaps).toEqual([]);
+});
+
+it('lists a deleted test file in the working tree as a marker', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const base = await commit(root, sourceFiles, 'first');
+
+  await rm(join(root, 'src/math.test.ts'));
+  await rm(join(root, 'src/use.ts'));
+
+  const directory = await savedCapture(root, { kind: 'workingTree', base });
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.markers).toEqual([{ path: 'src/math.test.ts', marker: 'deleted test' }]);
 });
 
 it('lists added skip markers in code files but not in Markdown files', async () => {
@@ -731,7 +745,7 @@ it('lists a marker a files target adds once, and none from unchanged tracked fil
   const directory = await savedCapture(root, { kind: 'files', paths, base });
   const evidence = await readReviewEvidence(root, directory);
 
-  expect(evidence.markers.map(({ path, line }) => ({ path, line }))).toEqual([
+  expect(evidence.markers).toMatchObject([
     { path: 'changed.test.ts', line: 2 },
     { path: 'staged', line: 4 },
     { path: 'dir', line: 1 },

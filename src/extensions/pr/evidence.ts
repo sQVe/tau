@@ -2,7 +2,7 @@ import type { CommandRuntime } from '../../command.js';
 import { errorMessage } from '../../errors.js';
 import { readGit } from '../../git.js';
 import { readInspectedEvidence, scanMarkers } from '../../reviewCapture/evidence.js';
-import type { MarkerLine, ReviewEvidence } from '../../reviewCapture/evidence.js';
+import type { Marker, ReviewEvidence } from '../../reviewCapture/evidence.js';
 import type {
   CoverageDecision,
   CoverageLinkRequest,
@@ -32,7 +32,7 @@ export interface PublicationEvidence {
   reuse: ReuseResult | null;
   review: ReviewEvidence | null;
   coverage?: CoverageDecision | null;
-  markers: MarkerLine[];
+  markers: Marker[];
   checks: CheckLog[];
   fullCheck: FullCheckEvidence | null;
   gaps: PublicationGap[];
