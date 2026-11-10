@@ -123,7 +123,7 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
 11. Run the slice in this order.
     - Delegate each agent ticket to a worker with its body file path, such as
       `$slicedir/agent-1.md`. Copy its `## Acceptance` items word for word, in order, into
-      `acceptance`. Tell each worker it works on an agent ticket of this slice.
+      `acceptance`. Tell each worker that the slice manager runs the mutation check.
     - Do not review a finished agent ticket. When a later ticket in the slice builds on a contract
       it changes, such as a type, tool schema, or file format, run one fast review of it before the
       dependent ticket starts.
@@ -150,6 +150,7 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
       its callers. Report findings that remain after the fix review to the user, and do not start
       triage-findings or another fix round for them.
     - Audit with the [finish-slice skill](../finish-slice/SKILL.md). Delegate each fix ticket it
-      creates, as the first bullet says, then audit once more. Items still unmet go to the pr skill
-      as required actions.
+      creates, as the first bullet says, except that its worker runs the mutation check with `base`
+      set to the `git rev-parse HEAD` from before the ticket starts. Then audit once more. Items
+      still unmet go to the pr skill as required actions.
     - Open the PR with the [pr skill](../pr/SKILL.md), and link the slice as the tracker skill says.

@@ -57,7 +57,7 @@ comments.
 ### Survivors
 
 - After the affected tests pass, the `tdd` skill runs `mutation_check` once in `changed` mode, with
-  no `base`. A repository without `mutation.argv` skips this step.
+  the `base` its task names, or no `base`. A repository without `mutation.argv` skips this step.
 - A worker on an agent ticket of a slice skips that step and says so. With no `base`, the tool
   mutates the whole diff since `origin/HEAD`, so each worker would also mutate the work of the
   workers before it. Instead, the `start-slice` skill runs `mutation_check` once after the last
@@ -65,6 +65,8 @@ comments.
   stacked slice mutates only its own diff over the parent branch.
 - In a slice, one worker fixes at most three behaviors in one round, then reruns the affected tests
   and the tool once. The manager lists the survivors left open for the pull request.
+- A fix ticket from the slice audit runs after that check, so its worker runs the `tdd` step with
+  the commit before the ticket as `base`.
 - The `tdd` skill then fixes at most three behaviors in one round. A fix is a test that kills a
   survivor, or a simplification of redundant code that a survivor points at. The affected tests and
   the tool then run at most once more.
