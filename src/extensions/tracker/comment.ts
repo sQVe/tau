@@ -6,12 +6,14 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import type { Exec } from '../../command.js';
 import { confirmWithUser } from '../../dialog/dialog.js';
+import { errorMessage } from '../../errors.js';
 import { isViewersTicket } from '../../linear/ownership.js';
 import { ensureTauDirectory, findTauRoot, isSymlink } from '../../tauDirectory.js';
 import { isWorkerProcess } from '../../worker.js';
 import { decideCommentTarget } from './commentTarget.js';
 import type { TicketComment } from './commentTarget.js';
 import { findDraftFor, writeDraftRecord } from './draftRecord.js';
+import type { DraftRecord } from './draftRecord.js';
 import { addComment, readComments, updateComment } from './linear.js';
 
 export interface CommentRequest {
@@ -73,6 +75,21 @@ const previousDetails = (previous: TicketComment | null) => ({
   previousBody: previous?.body ?? null,
 });
 
+const saveCommentRecord = async (
+  directory: string,
+  record: DraftRecord,
+  saved: { id: string; url: string; status: string },
+) => {
+  try {
+    await writeDraftRecord(directory, record);
+  } catch (error) {
+    throw new Error(
+      `Comment ${saved.id} (${saved.url}) was ${saved.status} in Linear, but could not save its ID in ${join(directory, 'draft.json')}: ${errorMessage(error)}`,
+      { cause: error },
+    );
+  }
+};
+
 export const comment = async (
   exec: Exec,
   context: ExtensionContext,
@@ -131,13 +148,17 @@ export const comment = async (
       ? await addComment(exec, context.cwd, { issue: ticket.id, body })
       : await updateComment(exec, context.cwd, { id: previous.id, body });
 
-  await writeDraftRecord(directory, {
-    version: 3,
-    identifier: found.draft?.identifier ?? ticket.identifier,
-    comments: { ...found.draft?.comments, [request.heading]: saved.id },
-  });
-
   const status = previous === null ? 'added' : 'updated';
+
+  await saveCommentRecord(
+    directory,
+    {
+      version: 3,
+      identifier: found.draft?.identifier ?? ticket.identifier,
+      comments: { ...found.draft?.comments, [request.heading]: saved.id },
+    },
+    { ...saved, status },
+  );
 
   return { status, id: saved.id, url: saved.url, directory, previousBody };
 };

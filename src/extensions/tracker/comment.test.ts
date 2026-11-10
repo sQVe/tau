@@ -90,6 +90,41 @@ it.each(['saved ID', 'heading'])('updates a comment by %s', async (match) => {
   });
 });
 
+it.each(['added', 'updated'])(
+  'reports the Linear comment %s when saving its ID fails',
+  async (status) => {
+    const state = await setup();
+
+    if (status === 'updated') {
+      state.fake.addComment({ ticket: state.ticket.identifier, body: `${state.heading}\nOld` });
+    }
+
+    const draftPath = join(state.prepared.directory, 'draft.json');
+
+    const exec: typeof state.fake.exec = async (...parameters) => {
+      const result = await state.fake.exec(...parameters);
+
+      if (state.fake.writes().length > 0) {
+        await writeFile(draftPath, '{');
+      }
+
+      return result;
+    };
+
+    const result = comment(exec, noUiContext(state.directory), state.request);
+
+    await expect(result).rejects.toThrow(`${status} in Linear`);
+    const saved = [...state.fake.comments.values()][0]!;
+    await expect(result).rejects.toThrow(saved.id);
+    await expect(result).rejects.toThrow(saved.url);
+    await expect(result).rejects.toThrow('not JSON');
+    expect(saved.body).toBe(state.body);
+    expect(state.fake.comments.size).toBe(1);
+    expect(state.fake.writes()).toHaveLength(1);
+    expect(await readFile(draftPath, 'utf8')).toBe('{');
+  },
+);
+
 it('adds a quality comment without changing a review comment', async () => {
   const state = await setup();
   const reviewBody = `# Code review: ${state.ticket.identifier}\nReview`;
