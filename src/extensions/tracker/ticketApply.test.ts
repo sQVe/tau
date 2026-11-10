@@ -334,7 +334,7 @@ it.each([
   { name: 'another title', issue: { title: 'Fix the failure elsewhere' } },
   { name: 'another team', issue: { teamId: 'team-ai' } },
   { name: 'another project', issue: { projectId: null } },
-  { name: 'a closed ticket', issue: { stateType: 'completed' as const } },
+  { name: 'a closed ticket', issue: { state: { type: 'completed' as const, name: 'Done' } } },
 ])('allows an unrecorded draft beside $name', async ({ issue }) => {
   const { runtime, fake, directory } = await setup();
   fake.addIssue({ title: 'Fix the failure', ...issue });
