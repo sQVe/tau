@@ -1,14 +1,30 @@
-// Decides whether a worker report summary is short enough to accept.
+// Decides the summary the manager receives for a worker report.
 // tests/structure.test.ts keeps this module pure.
 
 export interface SummaryLengthFacts {
-  // Characters in the summary the worker wrote, before the blocker is added.
-  length: number;
+  summary: string;
+  // The file that holds the full summary when it passes the limit.
+  file: string;
 }
-
-export type SummaryLengthStep = 'accept' | 'refuse';
 
 export const summaryLengthLimit = 3000;
 
-export const decideSummaryLength = (facts: SummaryLengthFacts): SummaryLengthStep =>
-  facts.length <= summaryLengthLimit ? 'accept' : 'refuse';
+const formatCount = (count: number): string => count.toLocaleString('en-US');
+
+const cutNote = (file: string, cutCharacters: number): string =>
+  `Full summary in ${file}; ${formatCount(cutCharacters)} characters cut.`;
+
+// Returns the summary unchanged within the limit. Otherwise it keeps the text before the last line
+// break that leaves room for the note, so the result with the note stays within the limit.
+export const shortenSummary = ({ summary, file }: SummaryLengthFacts): string => {
+  if (summary.length <= summaryLengthLimit) {
+    return summary;
+  }
+
+  const widestNote = cutNote(file, summary.length);
+  const budget = Math.max(0, summaryLengthLimit - widestNote.length - 1);
+  const lineBreak = summary.lastIndexOf('\n', budget);
+  const kept = summary.slice(0, lineBreak === -1 ? budget : lineBreak);
+
+  return `${kept}\n${cutNote(file, summary.length - kept.length)}`;
+};

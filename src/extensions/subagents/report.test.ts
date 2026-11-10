@@ -1,4 +1,5 @@
-import { join } from 'node:path';
+import { readdir, readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
@@ -155,6 +156,24 @@ it('accepts an incomplete time blocker only near the deadline', async () => {
   expect(reportCommandCalls(fake)).toEqual(['label']);
 });
 
+it('accepts an over-long summary and saves the full text to a file', async () => {
+  const { deadlineWarning, report, target } = setup();
+  const details = `${'x'.repeat(99)}\n`.repeat(35);
+  const summary = `${report.summary}\n\n${details}`;
+
+  await writeAssignment(target.assignment);
+  await reportToParent(target, { ...report, summary }, deadlineWarning);
+
+  const summaryFile = join(dirname(target.assignmentPath), 'summary.md');
+  const saved = await readAssignment(target.assignmentPath);
+
+  expect(summary.length).toBeGreaterThan(3500);
+  expect(await readFile(summaryFile, 'utf8')).toBe(summary);
+  expect(saved?.report?.evidence).toEqual([...report.evidence, summaryFile]);
+  expect(saved?.report?.summary.length).toBeLessThanOrEqual(3000);
+  expect(saved?.report?.summary).toContain(summaryFile);
+});
+
 it('writes nothing and labels nothing for an invalid report', async () => {
   const { deadlineWarning, fake, target } = setup();
 
@@ -171,6 +190,23 @@ it('writes nothing and labels nothing for an invalid report', async () => {
   expect((await readAssignment(target.assignmentPath))?.report).toBeNull();
   expect(fake.calls).toEqual([]);
   expect(target.refusal.remindAfterRefusal).toBe(true);
+});
+
+it('refuses an over-long summary without the headings and saves no file', async () => {
+  const { deadlineWarning, target } = setup();
+
+  await writeAssignment(target.assignment);
+
+  await expect(
+    reportToParent(
+      target,
+      { outcome: 'success', summary: 'x'.repeat(3500), evidence: [] },
+      deadlineWarning,
+    ),
+  ).rejects.toThrow('missing the');
+
+  expect(await readdir(dirname(target.assignmentPath))).not.toContain('summary.md');
+  expect((await readAssignment(target.assignmentPath))?.report).toBeNull();
 });
 
 it('clears the deadline warning once the report is saved, even when the label fails', async () => {
