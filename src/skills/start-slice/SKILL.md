@@ -129,7 +129,7 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
       dependent ticket starts.
     - After the last worker, run `mutation_check` once with `mode: "changed"` and `base` set to
       `git merge-base <base> HEAD`, where `<base>` is the step 4 base. Skip it, and say so, when the
-      repository has no `mutation.argv`. Report a tool error and go on to code-quality.
+      repository has no `mutation.argv`. Report a tool error and go on to prune-comments.
     - Survivors are advice. Send at most three survivor behaviors to one worker in one round, with
       step 5 of the tdd skill as its rule. That worker then reruns the affected tests and
       `mutation_check` once with the same `base`. List the survivors left open, with file and line,
