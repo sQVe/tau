@@ -12,9 +12,7 @@ const skillsDirectory = join(import.meta.dirname, '..', 'src', 'skills');
 // Existing sections and shell blocks that predate the checks. Remove an entry when its skill
 // changes; never add one.
 const tauAllowlists: SkillAllowlists = {
-  extraHeadings: {
-    'pr-feedback': ['Replies'],
-  },
+  extraHeadings: {},
   multiCommandShellBlocks: {},
 };
 

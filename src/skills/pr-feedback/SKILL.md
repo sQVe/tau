@@ -12,22 +12,9 @@ metadata:
 
 # PR feedback
 
-## When to use
-
-Use this skill for one feedback round on a GitHub pull request. It needs `gh` authenticated for the
-PR's host.
-
-## Goal
-
-Every review comment that still needs something from us is fixed, declined with a reason, answered,
-or reported as open. Every failing check is fixed, or reported with its cause when known. In author
-mode, the branch no longer conflicts with its base. Replies tell the reviewer only what they cannot
-see for themselves.
-
 ## Hard rules
 
-- Decide the mode from GitHub, never from the local checkout. The user often clones other people's
-  PRs to review them.
+- Decide the mode from GitHub, never from the local checkout.
   - Author mode: the PR author is the viewer, or the user asks you to fix this PR. The request
     authorizes fixes, commits, one push, replies, resolving threads, and a rebase when the PR
     conflicts. In a stack, the one push is one stack push, and the request also authorizes
@@ -35,17 +22,17 @@ see for themselves.
   - Reviewer mode: every other PR. Never commit, rebase, or push. Report failing checks and
     conflicts without fixing them. Resolve only threads the viewer started.
 - A request to draft only, investigate only, or approve first limits this skill. Follow it.
-- Leave approval of writes to people to the `pr_feedback` tool's `post` confirmation. The tool
-  decides who is a bot and which writes go to a person. Only in author mode on a PR the viewer did
-  not write, also show every draft, including bot drafts, and ask with `ask_user_question`.
-- Commit with the [commit skill](../commit/SKILL.md). Rebase and force-push only as steps 2 and 7
-  say. Run every stack command through the [stack skill](../stack/SKILL.md).
+- Follow the [tracker skill's write approvals](../tracker/SKILL.md#hard-rules). Leave approval of
+  writes to people to the `pr_feedback` tool's `post` confirmation; step 8 adds the other-author
+  ask.
+- Rebase and force-push only as steps 2 and 7 say. Run every stack command through the
+  [stack skill](../stack/SKILL.md).
 - Never rerun a check, or add retries, skips, or longer timeouts, to make a failure pass.
 - Never request new bot reviews.
 
 ## Procedure
 
-1. Resolve the target.
+1. Resolve the target. It needs `gh` authenticated for the PR's host.
    - Use `<host>/<owner>/<name>` as `<repo>`, and pass `--hostname <host>` to every `gh api` call.
    - Take the PR from the request. Otherwise, when the stack skill finds the current branch in a
      stack, run the evidence script for each open PR. List the PRs with a `mergeable` of
@@ -65,14 +52,11 @@ see for themselves.
      The script never calls `post`, and writes nothing beyond the directory `read` creates.
    - Stop unless `pr.state` is `OPEN`. When `pr.mergeable` is `UNKNOWN`, report it and skip the
      rebase.
-   - `read` omits a thread the viewer started while every comment in it is by the viewer, such as a
-     self-review comment. It lists the thread once anyone else replies. This holds in both modes.
    - When gaps show omitted feedback, use the read tool on the returned `feedback.json` path before
-     judging it. Saved comment and review bodies are arrays of chunks. Join each body's chunks with
-     no separator to restore its text. Read further ranges when the read tool cuts the file. When a
-     log has `budgetLimited`, use its `command` to read omitted evidence as needed. For omitted
-     checks, run the gap's command to read check-runs and commit statuses at the validated head, not
-     the PR's current head.
+     judging it. Read further ranges when the read tool cuts the file. When a log has
+     `budgetLimited`, use its `command` to read omitted evidence as needed. For omitted checks, run
+     the gap's command to read check-runs and commit statuses at the validated head, not the PR's
+     current head.
    - Use only the script's evidence and the full evidence read through its returned paths or
      commands. Cite only what you read. Do not wait for pending checks.
    - When `read` failed, stop and report its error. A thread too long to read is such a failure.
@@ -86,7 +70,7 @@ see for themselves.
      with the stack skill. Then stop and say what differs unless the worktree is on the PR's head
      branch, the tree is clean, and after a fetch `HEAD` equals `headRefOid`. On a fork, stop when
      `maintainerCanModify` is false and the viewer does not own the fork.
-   - Author mode, when `mergeable` is `CONFLICTING`: note `headRefOid` as the old head. Then run the
+   - Author mode, when `mergeable` is `CONFLICTING`: note `headRefOid` as `<old-tip>`. Then run the
      [update-branch skill](../update-branch/SKILL.md) onto `baseRefName`, without its checks and
      push steps. Rebase before you fix anything, so the SHAs in replies stay valid.
    - Reviewer mode: use the checkout only when it is clean and `HEAD` equals `headRefOid`. Otherwise
@@ -116,11 +100,10 @@ see for themselves.
        a cause outside the PR only when a log line shows it. Report a failure with no such line and
        no matching trunk failure as unexplained.
 
-4. Verify each remaining finding with the [triage findings](../triage-findings/SKILL.md) rules.
-   Split a comment with several findings and verify each one. Verify an outdated thread against the
-   pinned code, because outdated does not mean fixed. A question from a reviewer needs an answer,
-   not a verdict. Reproduce a failing check locally when you can. In reviewer mode, handle the
-   threads like this, then go to step 8:
+4. Verify each remaining finding with the [triage-findings skill](../triage-findings/SKILL.md).
+   Split a comment with several findings. Verify outdated threads against the pinned code; outdated
+   does not mean fixed. Answer reviewer questions instead of giving a verdict. Reproduce failing
+   checks locally when you can. In reviewer mode, handle threads as follows, then go to step 8:
    - For each thread the viewer started, check whether the author fixed it. Mark it to resolve when
      fixed. When the author declined with a reason, treat the reason as a claim: mark the thread to
      resolve when the reason holds, and draft a follow-up when it does not. Draft a follow-up for
@@ -130,12 +113,10 @@ see for themselves.
 5. Author mode: fix the supported findings at the root cause.
    - Make small fixes yourself. Send a fix that needs new tests or spans modules to a `worker`, then
      a `reviewer`.
-   - For a finding that is valid but outside the PR's scope, ask the user. If they approve, file an
-     issue in the tracker the repository uses, and cite it in the reply. A repository uses Linear
-     when its branches or commits name Linear IDs; file those with the
-     [tracker skill](../tracker/SKILL.md).
-   - Commit through the commit skill, one commit per thread where practical, so each reply names its
-     commit. Failing checks need no reply on the PR.
+   - For a valid finding outside the PR's scope, ask the user. Follow triage-findings for follow-up
+     filing with the [tracker skill](../tracker/SKILL.md), and cite the issue in the reply.
+   - Use the [commit skill](../commit/SKILL.md), one commit per thread where practical, so each
+     reply names its commit. Failing checks need no reply on the PR.
 
 6. Author mode: when the round rebased or committed fixes, run the repository's required checks
    once.
@@ -150,35 +131,34 @@ see for themselves.
 7. Author mode: push once to the PR's head repository `<remote>`. A round without a rebase or a new
    commit does not push.
    - In a stack, push the stack, restacked in step 6, with the stack skill.
-   - Otherwise, after a rebase, push with
-     `git push <remote> HEAD:refs/heads/<headRefName> --force-with-lease=refs/heads/<headRefName>:<old head>`.
-   - Otherwise push with `git push <remote> HEAD:refs/heads/<headRefName>`.
+   - Otherwise, after a rebase, push with the [update-branch skill](../update-branch/SKILL.md),
+     using `<old-tip>` for the lease. Without a rebase, use
+     `git push <remote> HEAD:refs/heads/<headRefName>`.
    - If the push or the lease is rejected, stop and report.
 
-8. Draft the replies with the rules in Replies below.
+8. Draft replies that say where it was done and what the reviewer cannot guess.
+   - Do not restate their point. No thanks, praise, sign-off, check counts, or process notes.
+   - A fixed thread usually needs only "Done in <sha>." Add a clause for an unexpected side effect
+     or deliberate difference. For an earlier fix, find its commit, for example with `git log -L`.
+     Ask only when history cannot show which commit fixed it.
+   - Give a declined thread's reason in one or two sentences, with the source that settles it. For a
+     tracked finding, say `Tracked in <issue>.` A thread needing nothing gets a short
+     acknowledgement or no reply.
+   - Write commits as full 40-character SHAs in plain text, never backticks, so GitHub links them.
+     Post only after the commit is on GitHub. Use `owner/repo@sha` only for another repository.
    - Author mode, review summaries and conversation comments: post one PR comment only for what a
      person raised there. Answer a person's question. Give the reason for a person's finding you
      judged Not worth changing or Incorrect. Cite the issue for a person's finding you tracked. Link
      each source comment.
    - Post nothing outside a thread for a bot's finding, whether you fixed, declined, or tracked it.
-     A bot's comment has `isBot` true. Post nothing for a person's finding you fixed, because the
-     pushed commit shows the fix. List these findings in step 10's report.
+     Post nothing for a person's finding you fixed, because the pushed commit shows the fix. List
+     these findings in step 10's report.
    - Only in author mode on a PR the viewer did not write, show every draft, including bot drafts,
      in one `ask_user_question` question. Offer post all or skip all; the user can type which drafts
      to edit or skip.
    - Apply any requested edits or skips before the post call. A skipped thread stays open. Write the
      remaining drafts and the resolves from step 9 to `replies.json` in the `directory` that the
-     script returned. The tool previews writes to people and asks for confirmation.
-   - Write `replies.json` in exactly this shape. `reply` and `comment` may be null, and `answers`
-     lists the review or comment IDs the PR comment answers.
-
-     ```json
-     {
-       "version": 1,
-       "threads": [{ "id": "<thread id>", "reply": "<text or null>", "resolve": true }],
-       "comment": { "body": "<text>", "answers": ["<review or comment id>"] }
-     }
-     ```
+     script returned, using the tool's format.
 
 9. Post and resolve with the `pr_feedback` tool's `post`. Pass the PR's head after step 7's push as
    `head`, or the script's `headRefOid` when the round did not push.
@@ -193,8 +173,8 @@ see for themselves.
      on request. If a post fails, stop and report which replies were posted.
 
 10. Report.
-    - Author mode: use the headings Fixed, Not worth changing, Incorrect, and Blocked from the
-      triage rules, then Answered or left open for questions and threads that wait on the reviewer.
+    - Author mode: use triage-findings' outcome headings, then Answered or left open for questions
+      and threads that wait on the reviewer.
     - Reviewer mode: use the headings Resolved, Follow-up drafted, and Open for other reviewers.
     - Give each bullet the thread link and what you did: replied, resolved, left open, or no reply.
       List what you judged as needing nothing, so the user can overrule it.
@@ -204,18 +184,3 @@ see for themselves.
 
 11. Author mode: when a person requested changes and the round pushed fixes, ask whether to request
     their review again with `gh pr edit <pr> --repo <repo> --add-reviewer <login>`. Default to no.
-
-## Replies
-
-- Say where it was done and anything the reviewer could not guess. Do not restate or explain their
-  point back to them. No thanks, praise, or sign-off.
-- A fixed thread usually needs one line: "Done in <sha>." Add a clause only for something the
-  reviewer cannot know, such as a side effect or a deliberate difference from the suggestion. When
-  an earlier commit fixed it, find that commit, for example with `git log -L`. Ask only when the
-  history cannot show which commit fixed it.
-- A declined thread gives the reason in one or two sentences, with the source that settles it.
-- A valid finding outside the PR's scope gets `Tracked in <issue>.`
-- A thread that needs nothing from us gets a short acknowledgement or no reply.
-- Leave out check counts and process notes. CI shows them.
-- Write a commit as its full 40-character SHA in plain text, never in backticks, so GitHub links it.
-  Post only after the commit is on GitHub. Use `owner/repo@sha` only for another repository.
