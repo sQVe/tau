@@ -118,6 +118,45 @@ describe('runTests', () => {
     ]);
   });
 
+  it.for([
+    { version: '1.6.1', focusedEntry: false },
+    { version: '4.1.11', focusedEntry: true },
+  ])('selects the focused command for Vitest $version', async ({ version, focusedEntry }) => {
+    const spawn = vi.fn<SpawnCommand>(fakeSpawn({}));
+
+    await runTests(
+      {
+        scope: 'focused',
+        verificationArgv,
+        cwd: '/repo',
+        files: ['src/a.test.ts', '-b.test.ts'],
+        testNames: ['adds (item)', 'removes item'],
+      },
+      makeDeps({
+        resolveVitest: () => ({ path: '/fake/vitest.js', version }),
+        spawn,
+      }),
+    );
+
+    const options: unknown[] = [
+      'run',
+      '--reporter=json',
+      '--reporter=default',
+      '--no-color',
+      expect.stringMatching(/^--outputFile=/),
+    ];
+
+    const nameFilter = ['-t', '^(?:adds \\(item\\)|removes item)$'];
+    const entry: unknown = expect.stringMatching(/\/vitestFocused\.ts$/);
+
+    const expected = focusedEntry
+      ? [entry, '/fake/vitest.js', '2', 'src/a.test.ts', '-b.test.ts', ...options, ...nameFilter]
+      : ['/fake/vitest.js', ...options, 'src/a.test.ts', './-b.test.ts', ...nameFilter];
+
+    expect(spawn).toHaveBeenCalledOnce();
+    expect(spawn.mock.calls[0]![1]).toEqual(expected);
+  });
+
   it('passes the changed files and an exact test name pattern to vitest', async () => {
     let captured: string[] = [];
 

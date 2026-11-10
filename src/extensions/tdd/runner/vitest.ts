@@ -24,6 +24,7 @@ import type {
   SpawnResult,
   TestRunner,
 } from './types.js';
+import { supportsFocusedVitest } from './vitestVersion.js';
 
 interface RunnerDeps {
   resolveVitest: ResolveVitest;
@@ -81,7 +82,11 @@ const isAborted = (input: RunTestsInput): boolean => input.signal?.aborted === t
 const exactNamePattern = (testNames: readonly string[]) =>
   `^(?:${testNames.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$`;
 
-const buildArguments = (input: RunTestsInput, outputFile: string): string[] | null => {
+const buildArguments = (
+  input: RunTestsInput,
+  outputFile: string,
+  focusedEntry: boolean,
+): string[] => {
   const runnerArguments = input.verificationArgv.slice(1);
 
   if (input.scope === 'affected') {
@@ -97,11 +102,7 @@ const buildArguments = (input: RunTestsInput, outputFile: string): string[] | nu
   if (input.scope !== 'full') {
     const paths = scopedPaths(input);
 
-    if (paths.length === 0) {
-      return null;
-    }
-
-    if (input.scope === 'affected') {
+    if (!focusedEntry) {
       runnerArguments.push(...paths.map(toFilterArgument));
     }
 
@@ -151,9 +152,7 @@ const runInDirectory = async (
   dependencies: RunnerDeps,
   outputFile: string,
 ): Promise<{ report: RunnerResult; stage?: StageSpawn }> => {
-  const runnerArguments = buildArguments(input, outputFile);
-
-  if (runnerArguments == null) {
+  if (input.scope !== 'full' && scopedPaths(input).length === 0) {
     return { report: { kind: 'no-tests-collected', tests: [] } };
   }
 
@@ -170,10 +169,11 @@ const runInDirectory = async (
   }
 
   const spawnStarted = performance.now();
-
+  const focusedEntry = input.scope === 'focused' && supportsFocusedVitest(runner.version);
+  const runnerArguments = buildArguments(input, outputFile, focusedEntry);
   const commandArguments = [runner.path, ...runnerArguments];
 
-  if (input.scope === 'focused') {
+  if (focusedEntry) {
     const entry = fileURLToPath(new URL('./vitestFocused.ts', import.meta.url));
     const files = scopedPaths(input);
 

@@ -15,8 +15,9 @@ project's runner.
 
 ## Decision
 
-Tau runs focused tests through the project's public Vitest node API in a Tau-owned TypeScript entry
-launched with Node.
+Tau runs focused tests on Vitest 2.1.0 or later through the project's public node API in a Tau-owned
+TypeScript entry launched with Node. Older versions use the CLI with positional file filters and
+`-t`, preserving its substring file matching.
 
 The entry uses the installation already resolved for the project's CLI. It calls `startVitest` and
 follows the CLI's bounded exit and startup-error handling. Vitest owns initialization, source

@@ -155,6 +155,7 @@ const pureModules = [
   'src/extensions/tdd/runner/rustDepInfo.ts',
   'src/extensions/tdd/runner/vitestOptions.ts',
   'src/extensions/tdd/runner/vitestSelection.ts',
+  'src/extensions/tdd/runner/vitestVersion.ts',
   'src/extensions/tdd/worktreePath.ts',
   'src/extensions/tracker/candidateFit.ts',
   'src/extensions/tracker/promptLines.ts',
