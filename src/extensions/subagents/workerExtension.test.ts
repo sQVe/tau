@@ -436,7 +436,7 @@ it('blocks a control tool called from a codemode script', () => {
   const { context, pi } = setup();
 
   const result = pi.handler('tool_call')(
-    { toolName: 'subagent_report', toolCallId: 'call', parentToolCallId: 'script' },
+    { toolName: 'subagent_report', toolCallId: 'call', parentToolCallId: 'script', input: {} },
     context,
   );
 

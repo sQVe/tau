@@ -169,6 +169,7 @@ const pureModules = [
   'src/inbox/protocol.ts',
   'src/inbox/receiptDecision.ts',
   'src/inbox/targetDecision.ts',
+  'src/instructions/typescriptRulesDecision.ts',
   'src/linear/descriptionMatch.ts',
   'src/linear/ownership.ts',
   'src/process/stateDecision.ts',

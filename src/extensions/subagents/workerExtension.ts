@@ -23,6 +23,7 @@ import { setAcceptCheck } from '../../inbox/inbox.js';
 import { answeredQuestionId } from '../../inbox/receiptDecision.js';
 import { instructionSetNames, readInstructionSet } from '../../instructions/instructions.js';
 import { appendSystemPrompt, guidelineLines } from '../../instructions/systemPrompt.js';
+import { registerTypeScriptRules } from '../../instructions/typescriptRules.js';
 import { skillTools } from '../../skillTools.js';
 import { createWake } from '../../wake/wake.js';
 import { isWorkerProcess } from '../../worker.js';
@@ -403,6 +404,8 @@ export default function workerExtension(pi: ExtensionAPI): void {
   if (!isWorkerProcess()) {
     return;
   }
+
+  registerTypeScriptRules(pi);
 
   const state: WorkerState = {
     hc: { exec: pi.exec.bind(pi), connect, cwd: process.cwd() },
