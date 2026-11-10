@@ -45,7 +45,7 @@ it('refuses cancellation when a linked PR merges during confirmation', async () 
   await expect(cancel(fake.exec, context, issue.identifier)).rejects.toThrow(pullRequest);
 
   expect(fake.writes()).toEqual([]);
-  expect(issue.stateType).toBe('started');
+  expect(issue.state.type).toBe('started');
 });
 
 it('refuses cancellation when the ticket completes during confirmation', async () => {
@@ -53,7 +53,7 @@ it('refuses cancellation when the ticket completes during confirmation', async (
   const issue = fake.addIssue({ title: 'Work in progress' });
 
   const context = confirmContext('/repo', async () => {
-    issue.stateType = 'completed';
+    issue.state = { type: 'completed', name: 'Done' };
 
     return true;
   });
@@ -61,7 +61,7 @@ it('refuses cancellation when the ticket completes during confirmation', async (
   await expect(cancel(fake.exec, context, issue.identifier)).rejects.toThrow('completed');
 
   expect(fake.writes()).toEqual([]);
-  expect(issue.stateType).toBe('completed');
+  expect(issue.state.type).toBe('completed');
 });
 
 it('returns unchanged when the ticket is canceled during confirmation', async () => {
@@ -69,7 +69,7 @@ it('returns unchanged when the ticket is canceled during confirmation', async ()
   const issue = fake.addIssue({ title: 'Work in progress' });
 
   const context = confirmContext('/repo', async () => {
-    issue.stateType = 'canceled';
+    issue.state = { type: 'canceled', name: 'Canceled' };
 
     return true;
   });
@@ -96,7 +96,7 @@ it('refuses cancellation when a merged PR is attached during confirmation', asyn
   await expect(cancel(fake.exec, context, issue.identifier)).rejects.toThrow(pullRequest);
 
   expect(fake.writes()).toEqual([]);
-  expect(issue.stateType).toBe('started');
+  expect(issue.state.type).toBe('started');
 });
 
 it.each(['ticket', 'PR'])(
@@ -115,7 +115,7 @@ it.each(['ticket', 'PR'])(
     await expect(cancel(fake.exec, context, issue.identifier)).rejects.toThrow('network error');
 
     expect(fake.writes()).toEqual([]);
-    expect(issue.stateType).toBe('started');
+    expect(issue.state.type).toBe('started');
   },
 );
 
@@ -158,7 +158,7 @@ it('cancels after approval and reads only GitHub PR attachments', async () => {
   expect(prompts).toHaveLength(1);
   expect(prompts[0]).toContain(issue.identifier);
   expect(prompts[0]).toContain(issue.title);
-  expect(prompts[0]).toContain(issue.state.name);
+  expect(prompts[0]).toContain('Current state: In Progress');
   expect(await readdir(directory)).toEqual(['.git']);
 });
 

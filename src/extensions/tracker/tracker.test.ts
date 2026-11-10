@@ -15,7 +15,12 @@ import trackerExtension from './tracker.js';
 
 it('runs ticket actions through the registered extension executor', async () => {
   const linear = createLinearFake();
-  const issue = linear.addIssue({ title: 'Finished cancellation', state: { type: 'canceled', name: 'Canceled' } });
+
+  const issue = linear.addIssue({
+    title: 'Finished cancellation',
+    state: { type: 'canceled', name: 'Canceled' },
+  });
+
   const fake = fakeExtensionApi({ exec: linear.exec });
   trackerExtension(fake.pi);
 
