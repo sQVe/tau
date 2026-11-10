@@ -28,8 +28,8 @@ Use this skill when you change behavior and `run_tests` is available.
    the tool run.
 3. Read the runner report. Implement the change. Rerun focused with the same files and names until
    it passes. You may change the label, but keep the selection.
-4. Refactor and format. Then run the affected tests with `run_tests` once on the current inputs. Do
-   not run the repository's full check; the PR step runs it.
+4. Refactor and format. Call `run_tests` with `scope: "affected"` on the changed source and test
+   files once on the current inputs. Do not run the repository's full check; the PR step runs it.
 5. After the affected tests pass, run `mutation_check` with `mode: "changed"` once, with the `base`
    your task names, or no `base`. Skip this step, and say so, when the repository has no
    `mutation.argv`. Also skip it, and say so, when your task says the slice manager runs the check.

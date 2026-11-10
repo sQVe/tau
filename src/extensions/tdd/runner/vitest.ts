@@ -70,7 +70,7 @@ const readReport = async (path: string): Promise<VitestReport | null> => {
 const toFilterArgument = (path: string) => (path.startsWith('-') ? `./${path}` : path);
 
 const scopedPaths = (input: RunTestsInput): string[] => {
-  const paths = input.scope === 'focused' ? input.files : [];
+  const paths = input.scope === 'full' ? [] : input.files;
 
   return paths.filter((path) => path.trim().length > 0);
 };
@@ -81,12 +81,19 @@ const exactNamePattern = (testNames: readonly string[]) =>
   `^(?:${testNames.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$`;
 
 const buildArguments = (input: RunTestsInput, outputFile: string): string[] | null => {
-  const runnerArguments: string[] = [
-    ...input.verificationArgv.slice(1),
-    `--outputFile=${outputFile}`,
-  ];
+  const runnerArguments = input.verificationArgv.slice(1);
 
-  if (input.scope === 'focused') {
+  if (input.scope === 'affected') {
+    if (runnerArguments[0] === 'run') {
+      runnerArguments.shift();
+    }
+
+    runnerArguments.unshift('related', '--run');
+  }
+
+  runnerArguments.push(`--outputFile=${outputFile}`);
+
+  if (input.scope !== 'full') {
     const paths = scopedPaths(input);
 
     if (paths.length === 0) {
@@ -94,7 +101,10 @@ const buildArguments = (input: RunTestsInput, outputFile: string): string[] | nu
     }
 
     runnerArguments.push(...paths.map(toFilterArgument));
-    runnerArguments.push('-t', exactNamePattern(input.testNames));
+
+    if (input.scope === 'focused') {
+      runnerArguments.push('-t', exactNamePattern(input.testNames));
+    }
   }
 
   return runnerArguments;
@@ -103,7 +113,7 @@ const buildArguments = (input: RunTestsInput, outputFile: string): string[] | nu
 export const defaultDeps = (scope: RunTestsInput['scope'] = 'focused'): RunnerDeps => ({
   resolveVitest: defaultResolveVitest,
   spawn: defaultSpawn,
-  timeoutMs: scope === 'full' ? fullTimeoutMilliseconds : defaultTimeoutMilliseconds,
+  timeoutMs: scope === 'focused' ? defaultTimeoutMilliseconds : fullTimeoutMilliseconds,
 });
 
 const classifyResult = async (

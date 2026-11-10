@@ -99,7 +99,94 @@ it('saves stale input fingerprints and preserves the outcome when the run record
   expect(await readFile(join(directory, 'run.json'), 'utf8')).toBe(existing);
 });
 
-it.each(['src/value.ts', '/absolute.test.ts', '*.test.ts'])(
+it('keeps focused RED through affected verification and later focused runs', async ({
+  onTestFinished,
+}) => {
+  const { cwd, observation } = await setup(onTestFinished);
+  vi.mocked(runTests).mockResolvedValueOnce(result('failed'));
+
+  expect(await observation.run(behavior, 'focused')).toMatchObject({ kind: 'fail' });
+  expect(await observation.run(behavior, 'focused')).toMatchObject({ kind: 'pass' });
+
+  expect(
+    await observation.run(
+      { ...behavior, files: ['src/value.ts', 'value.test.ts'], testFullName: 'ignored' },
+      'affected',
+    ),
+  ).toMatchObject({ kind: 'pass' });
+
+  await writeFile(join(cwd, 'src/value.ts'), 'first edit');
+  expect(await observation.checkpoint(true)).toBeUndefined();
+  await writeFile(join(cwd, 'src/value.ts'), 'second edit');
+  expect(await observation.checkpoint(true)).toBeUndefined();
+
+  expect(await observation.run(behavior, 'focused')).toMatchObject({ kind: 'pass' });
+  await writeFile(join(cwd, 'src/value.ts'), 'third edit');
+  expect(await observation.checkpoint(true)).toBeUndefined();
+});
+
+it('accepts affected source and test files and tracks their freshness', async ({
+  onTestFinished,
+}) => {
+  const { cwd, observation } = await setup(onTestFinished);
+  const files = ['src/value.ts', 'value.test.ts'];
+
+  const fresh = await observation.run({ ...behavior, files }, 'affected');
+
+  expect(fresh).toMatchObject({ scope: 'affected', kind: 'pass', freshness: 'fresh' });
+  expect(runTests).toHaveBeenCalledWith(expect.objectContaining({ scope: 'affected', files }));
+
+  vi.mocked(runTests).mockImplementationOnce(async () => {
+    await writeFile(join(cwd, 'src/value.ts'), 'changed during tests');
+
+    return result('passed');
+  });
+
+  const stale = await observation.run({ ...behavior, files }, 'affected');
+
+  expect(stale).toMatchObject({ scope: 'affected', kind: 'pass', freshness: 'stale' });
+  expect(stale.inputs.before).not.toBe(stale.inputs.after);
+  expect(stale.hint).toContain('stale');
+});
+
+it('accepts affected test support files without a source or test role', async ({
+  onTestFinished,
+}) => {
+  const { cwd, observation } = await setup(onTestFinished);
+  const file = 'tests/helper.ts';
+
+  await mkdir(join(cwd, 'tests'));
+  await writeFile(join(cwd, file), 'export const helper = 1;');
+
+  const observed = await observation.run({ ...behavior, files: [file] }, 'affected');
+
+  expect(observed).toMatchObject({ scope: 'affected', kind: 'pass', freshness: 'fresh' });
+
+  expect(runTests).toHaveBeenCalledWith(
+    expect.objectContaining({ scope: 'affected', files: [file] }),
+  );
+});
+
+it.each([
+  '../value.ts',
+  '/absolute.ts',
+  'src/*.ts',
+  '@value.ts',
+  'node_modules/value.ts',
+  'README.md',
+  'tests/node_modules/helper.ts',
+  'tests/[missing]/helper.ts',
+])('rejects invalid affected paths before running tests: %s', async (file) => {
+  const { observation } = await setup(registerCleanup);
+
+  await expect(observation.run({ ...behavior, files: [file] }, 'affected')).rejects.toThrow(
+    `Expected a test, source, or test support file inside the worktree: ${file}`,
+  );
+
+  expect(runTests).not.toHaveBeenCalled();
+});
+
+it.each(['src/value.ts', '/absolute.test.ts', '*.test.ts', 'tests/helper.ts'])(
   'rejects nonliteral test selection before running tests: %s',
   async (file) => {
     const { observation } = await setup(registerCleanup);

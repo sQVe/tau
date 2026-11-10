@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { defaultTddConfig } from '../config.js';
 import { fakeSpawn, makeDeps, outputFileFrom, runTests } from '../fixtures/vitestRunner.js';
+import type { SpawnCommand } from './types.js';
 
 const verificationArgv = defaultTddConfig.verificationArgv;
 
@@ -18,64 +19,99 @@ describe('runTests', () => {
     vi.unstubAllEnvs();
   });
 
-  it('drops empty changed-file entries instead of letting them match every file', async () => {
-    const deps = makeDeps({
-      spawn: () => {
-        throw new Error('must not spawn a full suite for an empty scope');
-      },
-    });
+  it.for(['focused', 'affected'] as const)(
+    'rejects empty %s file selections without spawning',
+    async (scope) => {
+      const deps = makeDeps({
+        spawn: () => {
+          throw new Error('must not spawn a full suite for an empty scope');
+        },
+      });
 
-    expect(
+      expect(
+        await runTests(
+          { scope, verificationArgv, cwd: '/repo', files: ['', ' '], testNames: [] },
+          deps,
+        ),
+      ).toMatchObject({
+        kind: 'no-tests-collected',
+        tests: [],
+      });
+    },
+  );
+
+  it.for(['focused', 'affected'] as const)(
+    'guards dash-leading %s paths from option parsing',
+    async (scope) => {
+      let captured: string[] = [];
+
+      const report = {
+        numTotalTests: 1,
+        numFailedTests: 0,
+        numPassedTests: 1,
+        testResults: [{ name: '/repo/-a.test.ts', status: 'passed', assertionResults: [] }],
+      };
+
+      const deps = makeDeps({
+        spawn: async (command, argumentsList) => {
+          captured = argumentsList;
+          await writeFile(outputFileFrom(argumentsList), JSON.stringify(report));
+
+          return fakeSpawn({})(command, argumentsList, { cwd: '/repo', timeoutMs: 30_000 });
+        },
+      });
+
       await runTests(
-        { scope: 'focused', verificationArgv, cwd: '/repo', files: ['', ' '], testNames: [] },
+        {
+          scope,
+          verificationArgv,
+          cwd: '/repo',
+          files: ['-a.test.ts', 'src/b.test.ts'],
+          testNames: [],
+        },
         deps,
-      ),
-    ).toMatchObject({
-      kind: 'no-tests-collected',
-      tests: [],
-    });
-  });
+      );
 
-  it('prefixes dash-leading scoped paths so vitest reads them as filters, not options', async () => {
-    let captured: string[] = [];
+      expect(captured).toContain('./-a.test.ts');
+      expect(captured).toContain('src/b.test.ts');
 
-    const report = {
-      numTotalTests: 1,
-      numFailedTests: 0,
-      numPassedTests: 1,
-      testResults: [{ name: '/repo/-a.test.ts', status: 'passed', assertionResults: [] }],
-    };
+      await runTests(
+        { scope, verificationArgv, cwd: '/repo', files: ['-a.test.ts'], testNames: [] },
+        deps,
+      );
 
-    const deps = makeDeps({
-      spawn: async (command, argumentsList) => {
-        captured = argumentsList;
-        await writeFile(outputFileFrom(argumentsList), JSON.stringify(report));
+      expect(captured).toContain('./-a.test.ts');
+      expect(captured).not.toContain('-a.test.ts');
+    },
+  );
 
-        return fakeSpawn({})(command, argumentsList, { cwd: '/repo', timeoutMs: 30_000 });
-      },
-    });
+  it.for([
+    { name: 'a leading run command', command: ['vitest', 'run', '--no-color'] },
+    { name: 'options without a command', command: ['vitest', '--no-color'] },
+  ])('uses related selection with $name and preserves options', async ({ command }) => {
+    const spawn = vi.fn<SpawnCommand>(fakeSpawn({}));
 
     await runTests(
       {
-        scope: 'focused',
-        verificationArgv,
+        scope: 'affected',
+        verificationArgv: command,
         cwd: '/repo',
-        files: ['-a.test.ts', 'src/b.test.ts'],
-        testNames: [],
+        files: ['src/value.ts', 'src/value.test.ts'],
+        testNames: ['ignored'],
       },
-      deps,
+      makeDeps({ spawn }),
     );
 
-    expect(captured).toContain('./-a.test.ts');
-    expect(captured).toContain('src/b.test.ts');
+    const argumentsList = spawn.mock.calls[0]![1];
 
-    await runTests(
-      { scope: 'focused', verificationArgv, cwd: '/repo', files: ['-a.test.ts'], testNames: [] },
-      deps,
-    );
-
-    expect(captured).toContain('./-a.test.ts');
-    expect(captured).not.toContain('-a.test.ts');
+    expect(argumentsList.slice(1)).toEqual([
+      'related',
+      '--run',
+      '--no-color',
+      expect.stringMatching(/^--outputFile=/),
+      'src/value.ts',
+      'src/value.test.ts',
+    ]);
   });
 
   it('passes the changed files and an exact test name pattern to vitest', async () => {

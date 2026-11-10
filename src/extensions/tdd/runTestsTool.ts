@@ -12,13 +12,13 @@ const nameFormats = Object.values(runners)
   .join(' ');
 
 const runTestsDescription = [
-  'Runs the configured runner; use bash for other test frameworks.',
+  'Runs the configured runner; use bash for other frameworks.',
   'Run a failing focused test (RED), implement, and rerun the same selection (GREEN). The PR step runs the full suite.',
-  'RED and GREEN are observations, never edit permissions. Duplicate, skipped, and missing tests cannot establish RED.',
-  'Returns the runner report, input freshness (fresh, stale, or unknown), and at most one hint. Bash test runs do not update these observations.',
+  'RED/GREEN are observations, never edit permissions. Duplicate, skipped, and missing tests cannot establish RED.',
+  'Returns report, freshness (fresh, stale, unknown), and at most one hint. Bash runs add no observations.',
 ].join(' ');
 
-const testFullNameDescription = `Exact literal test name. ${nameFormats} An array selects names that prove one behavior.`;
+const testFullNameDescription = `Exact literal test name. ${nameFormats} Arrays select names proving one behavior.`;
 
 const runTestsParameters = Type.Object({
   behavior: Type.String({
@@ -33,10 +33,11 @@ const runTestsParameters = Type.Object({
   ),
   files: Type.Array(Type.String({ minLength: 1 }), {
     minItems: 1,
-    description: 'Worktree-relative test file paths.',
+    description: 'Worktree-relative tests; affected also accepts sources and ignores names.',
   }),
-  scope: Type.Union([Type.Literal('focused'), Type.Literal('full')], {
-    description: 'focused runs the named tests in files; full runs the whole suite.',
+  scope: Type.Union([Type.Literal('focused'), Type.Literal('affected'), Type.Literal('full')], {
+    description:
+      'focused: named tests; affected: tests related to files, ignoring names; full: whole suite.',
   }),
 });
 

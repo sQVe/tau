@@ -376,11 +376,18 @@ const runInDirectory = async (
 export const runTests = async (
   input: RunTestsInput,
   dependencies: NextestDeps = defaultDeps(input.scope),
-): Promise<RunnerResult> =>
-  runWithDiagnostics(
+): Promise<RunnerResult> => {
+  if (input.scope === 'affected') {
+    throw new Error(
+      'The nextest runner does not support scope "affected" yet; use "focused" or "full".',
+    );
+  }
+
+  return runWithDiagnostics(
     { reportFileName: 'report.xml', reportFormat: 'junit', timeoutMs: dependencies.timeoutMs },
     (directory, reportPath) => runInDirectory(input, dependencies, directory, reportPath),
   );
+};
 
 const verificationArgvError = (verificationArgv: readonly string[]): string | null =>
   isDeepStrictEqual(verificationArgv, nextestDefaults.verificationArgv)

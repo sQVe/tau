@@ -10,7 +10,7 @@ interface RunTestsBase {
 }
 
 export type RunTestsInput =
-  | (RunTestsBase & { scope: 'focused'; files: string[]; testNames: string[] })
+  | (RunTestsBase & { scope: 'focused' | 'affected'; files: string[]; testNames: string[] })
   | (RunTestsBase & { scope: 'full' });
 
 export type TestAttribution =

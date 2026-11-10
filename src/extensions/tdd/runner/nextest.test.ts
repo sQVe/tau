@@ -220,6 +220,28 @@ const run = async (
   return result;
 };
 
+it('rejects affected scope before looking up or spawning nextest', async () => {
+  const nextest = fakeNextest({});
+
+  await expect(
+    run(
+      {
+        scope: 'affected',
+        cwd: '/repo',
+        verificationArgv: ['cargo', 'nextest', 'run'],
+        files: ['src/lib.rs'],
+        testNames: ['ignored'],
+      },
+      nextest.spawn,
+      { searchPath: '/missing' },
+    ),
+  ).rejects.toThrow(
+    'The nextest runner does not support scope "affected" yet; use "focused" or "full".',
+  );
+
+  expect(nextest.calls).toEqual([]);
+});
+
 it('reports a build failure during list with the compiler output and starts no run', async () => {
   const nextest = fakeNextest({
     list: {

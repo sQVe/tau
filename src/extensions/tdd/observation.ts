@@ -4,7 +4,10 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { errorMessage } from '../../errors.js';
 import { classifyPath, defaultTddConfig } from './config.js';
 import type { TddConfig } from './config.js';
+import { acceptsFileRole } from './fileRoles.js';
 import { fingerprintInputs } from './inputFingerprint.js';
+import { createInputRules } from './inputGlob.js';
+import type { InputRules } from './inputGlob.js';
 import {
   checkpoint,
   checkpointNeedsInputHash,
@@ -44,6 +47,8 @@ interface TestFileRules {
   config: TddConfig;
   projectDirectory: string | undefined;
   testFilesCanBeProduction: boolean;
+  scope: TestScope;
+  testSupport: InputRules;
 }
 
 const normalizeTestFile = async (
@@ -52,22 +57,24 @@ const normalizeTestFile = async (
   file: string,
 ): Promise<string> => {
   const path = relative(cwd, resolve(cwd, file));
+  const expectedRole = rules.scope === 'affected' ? 'test, source, or test support' : 'test';
+  const rejection = `Expected a ${expectedRole} file inside the worktree: ${file}`;
 
   const classified = isAbsolute(path)
     ? null
     : classificationPath(cwd, path, rules.projectDirectory);
 
   if (classified === null) {
-    throw new Error(`Expected a test file inside the worktree: ${file}`);
+    throw new Error(rejection);
   }
 
   // Only a file in a chosen project outside the session may be named by an absolute path.
   if (isAbsolute(file) && classified === path) {
-    throw new Error(`Expected a test file inside the worktree: ${file}`);
+    throw new Error(rejection);
   }
 
   if (/[*?{}\\\0]/.test(file) || file.startsWith('@')) {
-    throw new Error(`Expected a test file inside the worktree: ${file}`);
+    throw new Error(rejection);
   }
 
   // Vitest matches file filters as literal substrings, so brackets are safe in an existing path,
@@ -78,12 +85,15 @@ const normalizeTestFile = async (
       () => false,
     );
 
-  if (!classifyPath(rules.config, classified, rules.testFilesCanBeProduction).test) {
-    throw new Error(`Expected a test file inside the worktree: ${file}`);
+  const roles = classifyPath(rules.config, classified, rules.testFilesCanBeProduction);
+  const support = rules.testSupport.isInput(classified);
+
+  if (!acceptsFileRole(rules.scope, { ...roles, support })) {
+    throw new Error(rejection);
   }
 
   if (/[[\]]/.test(file) && !(await exists())) {
-    throw new Error(`Expected a test file inside the worktree: ${file}`);
+    throw new Error(rejection);
   }
 
   return path;
@@ -253,7 +263,7 @@ const runTestsFor = (
 
   return runner.run({
     ...input,
-    scope: 'focused',
+    scope: request.scope,
     files: behavior.files,
     testNames: testNames(behavior),
   });
@@ -273,11 +283,13 @@ const performRun = async (
       state.config.cargoManifestPath,
     ),
     testFilesCanBeProduction: runner.testFilesCanBeProduction,
+    scope: request.scope,
+    testSupport: createInputRules(state.config.testSupportGlobs, state.config.excludedGlobs),
   };
 
   const behavior = await normalizeBehavior(state.cwd, rules, request.requested);
 
-  state.cycle = startRun(state.cycle, behavior);
+  state.cycle = startRun(state.cycle, behavior, request.scope);
 
   const before = await hashInputs(state, behavior.files);
 
