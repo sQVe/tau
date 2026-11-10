@@ -69,9 +69,9 @@ interface DeletedTestMarker {
 export type Marker = MarkerLine | DeletedTestMarker;
 
 interface FileState {
-  oldPath: string | undefined;
+  sectionPath: string;
   newPath: string | undefined;
-  newPaths: Set<string>;
+  addedPaths: Set<string>;
 }
 
 interface HunkState {
@@ -446,18 +446,27 @@ const markdownPath = /\.(?:md|mdx|markdown)$/i;
 
 const hunkHeader = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
-const oldFileHeader = '--- ';
+const fileHeader = '+++ ';
 
-const newFileHeader = '+++ ';
+const sectionHeader = 'diff --git ';
 
-const headerPath = (text: string, prefix: 'a/' | 'b/'): string | undefined => {
+const headerPath = (text: string): string | undefined => {
   const name = text.startsWith('"') ? readQuoted(text).name : (text.split('\t')[0] ?? '');
 
   if (name === '/dev/null') {
     return undefined;
   }
 
-  return name.startsWith(prefix) ? name.slice(prefix.length) : name;
+  return name.startsWith('b/') ? name.slice(2) : name;
+};
+
+// The old-side path of a `diff --git` header. It holds only for an added or deleted file, whose two
+// sides name the same path, so a path with spaces splits in the middle. A deleted file has no
+// `--- ` header when it is empty or binary, so this header is the only one that names it.
+const sectionPath = (text: string): string => {
+  const name = text.startsWith('"') ? readQuoted(text).name : text.slice(0, (text.length - 1) / 2);
+
+  return name.slice('a/'.length);
 };
 
 const firstMarker = (text: string) => skipMarkers.find((marker) => text.includes(marker));
@@ -512,24 +521,17 @@ const readHeaderLine = (hunk: HunkState, file: FileState, line: string): string 
     hunk.oldRemaining = Number(header[1] ?? 1);
     hunk.newRemaining = Number(header[3] ?? 1);
     hunk.newLine = Number(header[2]);
-  } else if (line.startsWith(oldFileHeader)) {
+  } else if (line.startsWith(fileHeader)) {
     resetHunk(hunk);
-    file.oldPath = headerPath(line.slice(oldFileHeader.length), 'a/');
-  } else if (line.startsWith(newFileHeader)) {
+    file.newPath = headerPath(line.slice(fileHeader.length));
+  } else if (line.startsWith(sectionHeader)) {
     resetHunk(hunk);
-    file.newPath = headerPath(line.slice(newFileHeader.length), 'b/');
-
-    if (file.newPath !== undefined) {
-      file.newPaths.add(file.newPath);
-    }
-
-    const deleted = file.newPath === undefined ? file.oldPath : undefined;
-
-    return deleted !== undefined && isTestPath(deleted) ? deleted : undefined;
-  } else if (line.startsWith('diff --git ')) {
-    resetHunk(hunk);
-    file.oldPath = undefined;
+    file.sectionPath = sectionPath(line.slice(sectionHeader.length));
     file.newPath = undefined;
+  } else if (line.startsWith('new file mode ')) {
+    file.addedPaths.add(file.sectionPath);
+  } else if (line.startsWith('deleted file mode ') && isTestPath(file.sectionPath)) {
+    return file.sectionPath;
   }
 
   return undefined;
@@ -551,7 +553,7 @@ export const scanMarkers = (
 ): Bounded<Marker> => {
   const found: Marker[] = [];
   const hunk: HunkState = { oldRemaining: 0, newRemaining: 0, newLine: 0 };
-  const file: FileState = { oldPath: undefined, newPath: undefined, newPaths: new Set() };
+  const file: FileState = { sectionPath: '', newPath: undefined, addedPaths: new Set() };
 
   for (const line of diff.split('\n')) {
     const consumed = consumeHunkLine(hunk, line);
@@ -572,7 +574,7 @@ export const scanMarkers = (
     }
   }
 
-  const kept = found.filter((marker) => 'text' in marker || !file.newPaths.has(marker.path));
+  const kept = found.filter((marker) => 'text' in marker || !file.addedPaths.has(marker.path));
   const bounded = boundList(kept, limits.markers, { list: 'markers' });
   const cuts = bounded.items.map((item) => cutMarkerText(item, limits.callerLineCharacters));
 
