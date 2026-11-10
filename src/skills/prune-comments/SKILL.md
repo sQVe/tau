@@ -36,6 +36,9 @@ code. For that, use [code-quality](../code-quality/SKILL.md) or
    - A commit or range is a `range`. Named files are a `files` target.
    - The diff since a saved review is a `fix` target with that review directory and empty
      `findingPaths`. Ignore its `scope`; prune-comments judges the whole fix diff.
+   - When that review's `capture.json` `base` differs from `git merge-base <default> HEAD`, the
+     branch was rebased, and the fix diff also holds the new base's changes. Judge and delete only
+     comments that `git diff <merge base> HEAD` also adds.
 
 2. Prepare and capture as in
    [Handle the capture result](../code-review/phases.md#handle-the-capture-result).
@@ -43,7 +46,8 @@ code. For that, use [code-quality](../code-quality/SKILL.md) or
 3. Gather evidence as in [Gather evidence](../code-review/phases.md#gather-evidence).
 
 4. Read the captured diff in `$dir/input.md`. When no added or changed line holds a comment, launch
-   no worker. Reply that the target adds no comment, and stop.
+   no worker. Reply that the captured diff adds no comment, name every capture gap, such as an
+   unreadable file, and stop.
 
 5. Launch the worker with the [brief](brief.md). Save its report as `$dir/prune.md`. If the worker
    fails or leaves no report, delete nothing, report the gap, and stop.
