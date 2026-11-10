@@ -11,6 +11,7 @@ import {
   inputHeader,
   savedArtifactState,
   preparedReview,
+  reviewRuntime,
 } from './fixtures/reviewDirectoryHarness.js';
 import { captureReviewDirectory } from './generation.js';
 import { checkReviewFreshness } from './pinnedCapture.js';
@@ -44,7 +45,12 @@ const stateOf = async (path: string): Promise<unknown[][] | string | null> => {
 
 const operations = {
   capture: (root: string, directory: string) =>
-    captureReviewDirectory(root, directory, { kind: 'workingTree', base: 'HEAD' }),
+    captureReviewDirectory(
+      root,
+      directory,
+      { kind: 'workingTree', base: 'HEAD' },
+      reviewRuntime(root),
+    ),
   freshness: (root: string, directory: string) => checkReviewFreshness(root, directory),
   evidence: (root: string, directory: string) => readReviewEvidence(root, directory),
   savedRecapture: (root: string, directory: string) => readSavedRecapture(root, directory),

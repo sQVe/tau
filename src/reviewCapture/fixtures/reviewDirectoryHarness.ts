@@ -5,6 +5,8 @@ import { onTestFinished } from 'vitest';
 
 import { installCommandShim } from '../../../tests/commandShimFake.js';
 import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
+import { createGhFake } from '../../../tests/prGhFake.js';
+import type { CommandRuntime } from '../../command.js';
 import { captureReviewDirectory } from '../generation.js';
 import type { CapturedGeneration } from '../generation.js';
 import { prepareReviewDirectory } from '../reviewPrepare.js';
@@ -20,6 +22,7 @@ export const inputHeader = '# Review input\n\nTarget: the working tree.\n\n## Ca
 const committedRepository = async (): Promise<string> => {
   const root = await createTemporaryRepository(onTestFinished);
 
+  await git(root, 'config', 'user.email', 'tau@example.com');
   await writeFile(join(root, 'tracked.txt'), 'one\n');
   await git(root, 'add', 'tracked.txt');
   await git(root, 'commit', '--quiet', '-m', 'first');
@@ -36,8 +39,19 @@ export const preparedReview = async (): Promise<{ root: string; directory: strin
   return { root, directory };
 };
 
+export const reviewRuntime = (root: string): CommandRuntime => {
+  const fake = createGhFake();
+
+  return { cwd: root, exec: fake.exec };
+};
+
 export const captureWorkingTree = (root: string, directory: string): Promise<CapturedGeneration> =>
-  captureReviewDirectory(root, directory, { kind: 'workingTree', base: 'HEAD' });
+  captureReviewDirectory(
+    root,
+    directory,
+    { kind: 'workingTree', base: 'HEAD' },
+    reviewRuntime(root),
+  );
 
 export const savedArtifactState = async (directory: string): Promise<unknown[][]> => {
   const entries = await readdir(directory, { recursive: true, withFileTypes: true });

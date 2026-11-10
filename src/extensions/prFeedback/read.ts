@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import type { CommandRuntime } from '../../command.js';
-import { checkAuth } from '../../github/github.js';
+import { checkAuth, readViewer } from '../../github/github.js';
 import type { Repository } from '../../github/github.js';
 import { formatRepository } from '../../github/repositoryTargetDecisions.js';
 import {
@@ -10,7 +10,6 @@ import {
   readPullRequest,
   readReviews,
   readThreads,
-  readViewer,
 } from './github.js';
 import type { PullRequest } from './github.js';
 import { snapshotChange } from './snapshotChange.js';

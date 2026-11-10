@@ -12,8 +12,11 @@ description:
 ## When to use
 
 Use this skill when the user asks you to act on review findings or comments, or after a review of
-the user's own work, as the [code-review skill](../code-review/SKILL.md) defines it. Do not start it
-on your own for findings on someone else's work, or after a request for a read-only review.
+the user's own work. Read `ownership` from the review capture or PR evidence that started this
+skill. Treat the work as the user's own only when `ownership.status` is `own`, following the
+[code-review ownership rule](../code-review/SKILL.md#hard-rules). Without that evidence, do not act
+unless the user asked you to act on the findings. Do not start this skill on your own for findings
+on someone else's work, or after a request for a read-only review.
 
 ## Goal
 

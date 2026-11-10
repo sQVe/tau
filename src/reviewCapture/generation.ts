@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import type { CommandRuntime } from '../command.js';
 import { errorMessage, hasErrorCode } from '../errors.js';
 import { publishTextSync } from '../record.js';
 import { existingEntry } from '../tauDirectory.js';
@@ -13,6 +14,8 @@ import { pinFixTarget, saveVerifiedSnapshot } from './fixCapture.js';
 import type { PredecessorIdentity } from './fixCapture.js';
 import { decideFixScope } from './fixScope.js';
 import type { FixScope } from './fixScope.js';
+import { readCaptureOwnership } from './ownership.js';
+import type { Ownership } from './ownershipDecision.js';
 import { captureReview } from './pinnedCapture.js';
 import {
   generationFolderName,
@@ -36,6 +39,11 @@ export interface CapturedGeneration extends Partial<FixScope> {
   fixPaths?: string[];
   empty: boolean;
   identity?: string;
+}
+
+interface PublishedGeneration {
+  summary: CapturedGeneration;
+  target: PinnedTarget;
 }
 
 interface Owned {
@@ -269,7 +277,7 @@ const publishGeneration = async (
   target: ReviewTarget,
   originalInput: Buffer,
   owned: Owned,
-): Promise<CapturedGeneration> => {
+): Promise<PublishedGeneration> => {
   const folder = join(directory, generationFolderName);
   const { pinned, predecessor, captured, head } = await captureTarget(root, target);
   const base = baseOf(pinned);
@@ -286,7 +294,7 @@ const publishGeneration = async (
   if (captured.bytes.length === 0) {
     await rm(folder, { recursive: true });
 
-    return { ...summary, empty: true };
+    return { summary: { ...summary, empty: true }, target: pinned };
   }
 
   const appended = appendedInput(originalInput, captured);
@@ -343,14 +351,14 @@ const publishGeneration = async (
   owned.recordText = recordText;
   publishTextSync(join(directory, recordFileName), recordText, { mode: recordMode });
 
-  return { ...summary, empty: false, identity };
+  return { summary: { ...summary, empty: false, identity }, target: pinned };
 };
 
-export const captureGeneration = async (
+const capturePinnedGeneration = async (
   root: string,
   directory: string,
   target: ReviewTarget,
-): Promise<CapturedGeneration> => {
+): Promise<PublishedGeneration> => {
   await rejectSavedCapture(directory);
 
   const originalInput = await readInput(directory);
@@ -372,12 +380,35 @@ export const captureGeneration = async (
   }
 };
 
-export const captureReviewDirectory = async (
+export const captureGeneration = async (
   root: string,
   directory: string,
   target: ReviewTarget,
 ): Promise<CapturedGeneration> => {
-  const checked = await checkReviewDirectory(root, directory);
+  const captured = await capturePinnedGeneration(root, directory, target);
 
-  return captureGeneration(root, checked, target);
+  return captured.summary;
+};
+
+export const captureReviewDirectory = async (
+  root: string,
+  directory: string,
+  target: ReviewTarget,
+  runtime: CommandRuntime,
+): Promise<CapturedGeneration & { ownership: Ownership }> => {
+  const checked = await checkReviewDirectory(root, directory);
+  const { summary, target: pinned } = await capturePinnedGeneration(root, checked, target);
+  const range = { base: summary.base, head: summary.head };
+
+  if (pinned.kind === 'range') {
+    range.head = pinned.to;
+  }
+
+  if (pinned.kind === 'rootCommit') {
+    range.head = pinned.commit;
+  }
+
+  const ownership = await readCaptureOwnership({ ...runtime, cwd: root }, range);
+
+  return { ...summary, ownership };
 };

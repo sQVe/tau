@@ -6,6 +6,7 @@ import { expect, it, onTestFinished } from 'vitest';
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { readCompletedCapture } from './completedCapture.js';
 import { readReviewEvidence } from './evidence.js';
+import { reviewRuntime } from './fixtures/reviewDirectoryHarness.js';
 import { captureReviewDirectory } from './generation.js';
 import { checkReviewFreshness } from './pinnedCapture.js';
 import { readRecord as readRecordState } from './recordRead.js';
@@ -77,10 +78,15 @@ it('keeps the saved capture bytes through repeated freshness and evidence after 
 
   await writeFile(join(root, 'tracked.txt'), 'three\n');
 
-  const captured = await captureReviewDirectory(root, directory, {
-    kind: 'workingTree',
-    base: 'HEAD~1',
-  });
+  const captured = await captureReviewDirectory(
+    root,
+    directory,
+    {
+      kind: 'workingTree',
+      base: 'HEAD~1',
+    },
+    reviewRuntime(root),
+  );
 
   const saved = await readSavedState(root, directory);
   const originalRecord = await readRecord(directory);
@@ -122,7 +128,12 @@ it('reports unknown when a pinned revision cannot be read and keeps the saved ca
 
   await writeFile(join(root, 'tracked.txt'), 'three\n');
 
-  await captureReviewDirectory(root, directory, { kind: 'workingTree', base: firstCommit });
+  await captureReviewDirectory(
+    root,
+    directory,
+    { kind: 'workingTree', base: firstCommit },
+    reviewRuntime(root),
+  );
 
   const saved = await readSavedState(root, directory);
 

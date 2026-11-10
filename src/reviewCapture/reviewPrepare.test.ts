@@ -5,6 +5,7 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository, git } from '../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
+import { reviewRuntime } from './fixtures/reviewDirectoryHarness.js';
 import { captureReviewDirectory } from './generation.js';
 import { prepareReviewDirectory } from './reviewPrepare.js';
 
@@ -23,7 +24,13 @@ const capturedReview = async (root: string, text: string) => {
 
   await writeFile(join(directory, 'input.md'), '# Review input\n\n## Capture\n');
   await writeFile(join(root, 'tracked.txt'), text);
-  await captureReviewDirectory(root, directory, { kind: 'workingTree', base: 'HEAD' });
+
+  await captureReviewDirectory(
+    root,
+    directory,
+    { kind: 'workingTree', base: 'HEAD' },
+    reviewRuntime(root),
+  );
 
   return directory;
 };

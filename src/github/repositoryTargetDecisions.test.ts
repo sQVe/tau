@@ -3,6 +3,7 @@ import { expect, it } from 'vitest';
 import type { Repository } from './github.js';
 import {
   configRepositoryKey,
+  hasRepository,
   parseRemoteUrl,
   pickBaseRepository,
   pickHead,
@@ -24,6 +25,16 @@ const remote = (
   repository,
   pushes: [{ url: `https://example.com/${name}.git`, repository: pushRepository }],
   fetchRefspecs,
+});
+
+it.each([
+  { name: 'no remotes', remotes: [], expected: false },
+  { name: 'local URLs', remotes: [remote('local', undefined, undefined)], expected: false },
+  { name: 'GitHub fetch URL', remotes: [remote('origin', fork, undefined)], expected: true },
+  { name: 'GitHub push URL', remotes: [remote('origin', undefined, fork)], expected: true },
+  { name: 'GitHub fetch and push URLs', remotes: [remote('origin', fork, fork)], expected: true },
+])('finds a GitHub repository with $name', ({ remotes: candidates, expected }) => {
+  expect(hasRepository(candidates)).toBe(expected);
 });
 
 const pushTarget = (name: string, trackingRef: string, remoteRef?: string) => ({

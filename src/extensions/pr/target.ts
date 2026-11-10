@@ -1,24 +1,10 @@
-import { Type } from 'typebox';
-
 import type { CommandRuntime } from '../../command.js';
 import { readGit } from '../../git.js';
-import {
-  checkAuth,
-  incompleteListProblem,
-  label,
-  pullRequestListArguments,
-  readChecked,
-} from '../../github/github.js';
-import type { Repository } from '../../github/github.js';
+import { checkAuth, pickPullRequests, readPullRequestList } from '../../github/github.js';
+import type { PullRequest } from '../../github/github.js';
 import { resolveBaseRepository, resolveHead } from '../../github/repositoryTarget.js';
 import { formatRepository } from '../../github/repositoryTargetDecisions.js';
-import {
-  pickBaseBranch,
-  pickBaseRemote,
-  pickPullRequests,
-  rejectDefaultBranch,
-} from './targetDecisions.js';
-import type { PullRequest } from './targetDecisions.js';
+import { pickBaseBranch, pickBaseRemote, rejectDefaultBranch } from './targetDecisions.js';
 
 export interface TargetRequest {
   remote: string | undefined;
@@ -34,48 +20,6 @@ export interface Target {
   pr: PullRequest | null;
   closedPrs: PullRequest[];
 }
-
-const pullRequestListSchema = Type.Array(
-  Type.Object({
-    number: Type.Integer(),
-    url: Type.String(),
-    state: Type.String(),
-    title: Type.String(),
-    body: Type.String(),
-    baseRefName: Type.String(),
-    isDraft: Type.Boolean(),
-    headRefOid: Type.String(),
-    headRepositoryOwner: Type.Object({ login: Type.String() }),
-    headRepository: Type.Union([Type.Object({ name: Type.String() }), Type.Null()]),
-  }),
-);
-
-const pullRequestFields =
-  'number,url,state,title,body,baseRefName,isDraft,headRefOid,headRepositoryOwner,headRepository';
-
-const readPullRequestList = async (
-  runtime: CommandRuntime,
-  repository: Repository,
-  branch: string,
-) => {
-  const commandArguments = pullRequestListArguments({
-    repository: formatRepository(repository),
-    filter: ['--head', branch],
-    state: 'all',
-    fields: pullRequestFields,
-  });
-
-  const listed = await readChecked(runtime, commandArguments, pullRequestListSchema);
-  const problem = incompleteListProblem(listed);
-
-  if (problem !== undefined) {
-    throw new Error(
-      `${label(commandArguments)} ${problem} Check the pull requests for this branch on GitHub.`,
-    );
-  }
-
-  return listed;
-};
 
 // Fetches into the tracking ref itself, since the remote's fetch refspec may leave the base out.
 const pinMergeBase = async (cwd: string, remote: string, branch: string) => {

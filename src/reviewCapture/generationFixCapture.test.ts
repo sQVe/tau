@@ -13,6 +13,7 @@ import {
   savedArtifactState,
   prepareDirectory,
   fixRepository,
+  reviewRuntime,
 } from './fixtures/reviewDirectoryHarness.js';
 import { captureReviewDirectory } from './generation.js';
 import { checkReviewFreshness } from './pinnedCapture.js';
@@ -36,12 +37,17 @@ const captureFix = (
   findingPaths: string[],
   exclude?: string[],
 ) =>
-  captureReviewDirectory(root, directory, {
-    kind: 'fix',
-    review,
-    findingPaths,
-    ...(exclude === undefined ? {} : { exclude }),
-  });
+  captureReviewDirectory(
+    root,
+    directory,
+    {
+      kind: 'fix',
+      review,
+      findingPaths,
+      ...(exclude === undefined ? {} : { exclude }),
+    },
+    reviewRuntime(root),
+  );
 
 it('captures only the diff since the reviewed capture and lists the callers of the fix', async () => {
   const { root, review, directory } = await reviewedThenFixed();
@@ -132,7 +138,12 @@ it('captures the diff since a reviewed range from the working tree', async () =>
   await writeFile(join(root, 'src', 'math.ts'), 'export const add = 3;\n');
   await git(root, 'commit', '--quiet', '-am', 'second');
 
-  await captureReviewDirectory(root, review, { kind: 'range', from: 'HEAD~1', to: 'HEAD' });
+  await captureReviewDirectory(
+    root,
+    review,
+    { kind: 'range', from: 'HEAD~1', to: 'HEAD' },
+    reviewRuntime(root),
+  );
 
   await writeFile(join(root, 'src', 'math.ts'), 'export const add = 4;\n');
 
@@ -192,9 +203,9 @@ it('refuses a fix review of a directory with no capture record and writes nothin
 
   const target = { kind: 'fix' as const, review: empty, findingPaths: [] };
 
-  expect(await failureOf(() => captureReviewDirectory(root, directory, target))).toContain(
-    'holds no capture record',
-  );
+  expect(
+    await failureOf(() => captureReviewDirectory(root, directory, target, reviewRuntime(root))),
+  ).toContain('holds no capture record');
 
   expect(await savedArtifactState(directory)).toEqual(before);
 });
@@ -208,9 +219,9 @@ it('refuses a fix review of a record with no snapshot and writes nothing', async
 
   const target = { kind: 'fix' as const, review, findingPaths: [] };
 
-  expect(await failureOf(() => captureReviewDirectory(root, directory, target))).toContain(
-    'no snapshot',
-  );
+  expect(
+    await failureOf(() => captureReviewDirectory(root, directory, target, reviewRuntime(root))),
+  ).toContain('no snapshot');
 
   expect(await readdir(directory)).toEqual(['input.md']);
 });
@@ -225,9 +236,9 @@ it('refuses a fix review of a version 1 record and writes nothing', async () => 
 
   const target = { kind: 'fix' as const, review, findingPaths: [] };
 
-  expect(await failureOf(() => captureReviewDirectory(root, directory, target))).toContain(
-    'version 1',
-  );
+  expect(
+    await failureOf(() => captureReviewDirectory(root, directory, target, reviewRuntime(root))),
+  ).toContain('version 1');
 
   expect(await readdir(directory)).toEqual(['input.md']);
 });
@@ -239,9 +250,9 @@ it('refuses a fix review of an earlier capture whose saved input changed and wri
 
   const target = { kind: 'fix' as const, review, findingPaths: [] };
 
-  expect(await failureOf(() => captureReviewDirectory(root, directory, target))).toContain(
-    'altered',
-  );
+  expect(
+    await failureOf(() => captureReviewDirectory(root, directory, target, reviewRuntime(root))),
+  ).toContain('altered');
 
   expect(await readdir(directory)).toEqual(['input.md']);
 });
@@ -275,9 +286,9 @@ it('refuses a fix review of a fix capture with no complete endpoint', async () =
 
   const target = { kind: 'fix' as const, review: fix, findingPaths: [] };
 
-  expect(await failureOf(() => captureReviewDirectory(root, directory, target))).toContain(
-    'fix capture with no complete endpoint',
-  );
+  expect(
+    await failureOf(() => captureReviewDirectory(root, directory, target, reviewRuntime(root))),
+  ).toContain('fix capture with no complete endpoint');
 
   expect(await readdir(directory)).toEqual(['input.md']);
 });
@@ -362,7 +373,7 @@ const reviewOf = async (root: string, edits: Record<string, string>, target: Rev
     await writeFile(join(root, path), text);
   }
 
-  await captureReviewDirectory(root, review, target);
+  await captureReviewDirectory(root, review, target, reviewRuntime(root));
 
   return review;
 };

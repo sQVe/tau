@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { git } from '../../../tests/gitRepository.js';
+import { pullRequest as fakePullRequest } from '../../../tests/prGhFake.js';
 import {
   commitFile,
   createEvidenceRepository,
@@ -12,6 +13,46 @@ import {
 } from './fixtures/evidenceRepository.js';
 
 const setUp = (kind?: 'range' | 'workingTree') => createEvidenceRepository(onTestFinished, kind);
+
+it('returns own ownership for an open PR by the viewer', async () => {
+  const { fake, run } = await setUp();
+
+  fake.pullRequests['github.com/sQVe/tau'] = [fakePullRequest()];
+
+  const evidence = await run();
+
+  expect(evidence).toMatchObject({ ownership: { status: 'own' } });
+});
+
+it('uses commits after the merge base for ownership when the only PR is closed', async () => {
+  const { root, fake, run } = await setUp();
+
+  await git(root, 'config', 'user.email', 'tau@example.com');
+  await git(root, 'commit', '--amend', '--no-edit', '--author=Other <other@example.com>');
+  fake.pullRequests['github.com/sQVe/tau'] = [fakePullRequest({ state: 'CLOSED' })];
+
+  const before = await readSavedFiles(root);
+  const evidence = await run();
+
+  expect(evidence.target).toMatchObject({ pr: null, closedPrs: [{ number: 7 }] });
+  expect(evidence.ownership).toEqual({ status: 'other', reasons: [] });
+  expect(await readSavedFiles(root)).toEqual(before);
+});
+
+it('returns unclear ownership when the viewer read fails', async () => {
+  const { root, fake, run } = await setUp();
+
+  fake.pullRequests['github.com/sQVe/tau'] = [fakePullRequest()];
+  fake.failCommand('api user');
+
+  const before = await readSavedFiles(root);
+  const evidence = await run();
+
+  expect(evidence).toMatchObject({ ownership: { status: 'unclear' } });
+  expect(evidence.ownership.reasons).toEqual([expect.stringContaining('api user')]);
+  expect(evidence.target?.pr?.number).toBe(7);
+  expect(await readSavedFiles(root)).toEqual(before);
+});
 
 it('returns differing paths and stale freshness when the reviewed head moved', async () => {
   const { root, run } = await setUp();
@@ -81,6 +122,7 @@ it('returns a matching review, matching check log, and PR fields without changin
     ['auth', 'status'],
     ['repo', 'view'],
     ['pr', 'list'],
+    ['api', 'user'],
   ]);
 });
 
@@ -189,6 +231,12 @@ it('reports a failed target read and skips comparisons that need the merge base'
   const evidence = await run();
 
   expect(evidence.target).toBeNull();
+
+  expect(evidence.ownership).toEqual({
+    status: 'unclear',
+    reasons: [expect.stringContaining('auth status')],
+  });
+
   expect(evidence.subjects).toEqual([]);
   expect(evidence.reuse).toBeNull();
   expect(evidence.review?.freshness.status).toBe('fresh');
