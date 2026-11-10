@@ -16,9 +16,8 @@ Use this skill for the branch in this session's worktree.
 
 ## Goal
 
-Publish a PR that matches the approved preview and the pushed commits, with the draft status the
-user chose. Step 6 suggests a status. The user may publish as draft, or override a draft suggestion
-to ready. Neither choice completes a required action.
+Publish a PR matching the approved preview, pushed commits, and chosen draft status. The user may
+choose draft or override step 6's draft suggestion to ready. Neither choice completes required work.
 
 ## Hard rules
 
@@ -31,10 +30,8 @@ to ready. Neither choice completes a required action.
   continue paths. Neither a draft choice nor a ready override bypasses it.
 - Ask every question with `ask_user_question`, including review approval and preview approval. Never
   ask in prose.
-- Follow the push rules in the [update-branch skill](../update-branch/SKILL.md). Never force-push
-  unless the user asks or approves a preview that shows the force-push. Step 5 restacks locally;
-  preview approval covers the stack's force-push. Outside a stack, rebase only as step 1 allows or
-  when the user asks.
+- Never force-push unless the user asks or approves its preview, including a stack's force-push.
+  Outside a stack, rebase only as step 1 allows or when the user asks.
 - Commit with the [commit skill](../commit/SKILL.md). Never stash, discard, or commit unrelated
   changes. Ask when ownership is unclear or unrelated changes could affect review or checks.
 - On the user's own PR or branch, as the [code-review skill](../code-review/SKILL.md) defines it,
@@ -43,8 +40,8 @@ to ready. Neither choice completes a required action.
   user's approval. Never weaken a check or add a retry to hide a failure.
 - On updates, keep title and body text you did not write this session. Change only wrong or missing
   facts, and preview each change.
-- After a partial failure, stop and report what completed. Read the remote branch and PR before
-  retrying.
+- After a partial failure, stop and report what completed. Before retrying, read the remote branch
+  and PR, including bot status or reviews for a failed post: it may have landed.
 - Do not watch CI, wait for reviews, request human reviewers, or merge.
 - Before saving any file, call the `pr` tool's `prepare` action. Stop if it fails. Use the returned
   directory as `$prdir` for every saved file. Never use `/tmp` or another shared path.
@@ -71,24 +68,20 @@ to ready. Neither choice completes a required action.
      unclear ownership, missing links, or unavailable identities as evidence gaps; never invent a
      link or identity. When these prevent selecting a chain, pass the available root as `review` and
      assess the saved evidence manually in step 4.
-   - In the same script, find ticket IDs in the user's links, `branch`, commit `subjects`, and
-     `target.pr.body`. Read each distinct ticket with its service's CLI, such as
-     `linear issue view <id> --json --no-pager --no-download`. Use returned issue IDs, not branch
-     aliases. Keep only each ticket's title and `## Acceptance` section as intent.
-   - For a slice ticket found this way, also keep the acceptance of its agent tickets as intent,
-     read as the [start-slice skill](../start-slice/SKILL.md) reads children. Its audit is the
-     `# Slice audit: <slice>` comment in `linear issue comment list <slice> --json --no-pager`.
-     Print its audited commit and rows.
+   - Find ticket IDs in the user's links, `branch`, `subjects`, and `target.pr.body`. Read each
+     distinct ticket with its service's CLI, using returned issue IDs rather than branch aliases.
+     Keep its title and `## Acceptance` as intent. For slice children, follow the
+     [start-slice skill](../start-slice/SKILL.md) and keep their acceptance too.
+   - Read the slice's `# Slice audit: <slice>` comment with
+     `linear issue comment list <slice> --json --no-pager`. Print its audited commit and rows.
    - After the script, when a slice ticket has no audit comment, or its audited commit differs from
      `HEAD`, ask with `ask_user_question`: run a new audit with the
      [finish-slice skill](../finish-slice/SKILL.md), recommended, or continue with the missing or
      old audit. Then each slice or agent ticket acceptance item no step 5 check covers is not run.
-   - Print the target's head, base, merge base, repository, open PR fields, and closed PRs; ticket
-     intent; coverage status, reasons, and links; reuse status and available reports; review
-     freshness and evidence gaps; added skip or suppression markers; matching check-log paths with
-     their bounded excerpts, and `fullCheck` with its status, log path, and excerpt. Print one
-     combined list of gaps from the tool, failed or skipped reads, missing ticket intent, and
-     anything omitted to fit the limit. Read omitted evidence through its returned path when needed.
+   - Print target and ticket intent, coverage and reuse evidence, review freshness, added skip or
+     suppression markers, and matching check logs and `fullCheck` with paths and bounded excerpts.
+     Keep one gap list for tool gaps, failed or skipped reads, missing intent, and omitted evidence.
+     Read omitted evidence through its returned path when needed.
    - The script gathers evidence only. It never calls `prepare` or `verify`, and writes nothing
      itself. Target questions, rebases, review runs, previews, and approvals stay outside it.
    - If `target` is null because no head remote or several were found, ask which remote to use and
@@ -98,12 +91,11 @@ to ready. Neither choice completes a required action.
    - Use the open PR in `target.pr`. If it is null and `target.closedPrs` lists merged or closed
      PRs, ask before continuing. When its `baseRefName` differs from `target.base.branch`, step 9
      changes the PR's base.
-   - Outside a stack, when the branch conflicts with the base or needs a base change for its checks,
-     rebase it locally with the update-branch skill and tell the user. Do not ask to approve the
-     rebase, even when the branch was already pushed. The update-branch question about a dirty
-     working tree still applies. Note the remote tip before the rebase as `<old-tip>`; step 8
-     previews the force-push it needs. Stop the rebase and ask when a conflict needs a product
-     decision. Rerun the evidence script after the rebase to pin the new merge base.
+   - Outside a stack, when conflicts or checks need a base change, rebase locally with the
+     [update-branch skill](../update-branch/SKILL.md) and tell the user, without asking to approve
+     the rebase even if already pushed. Keep its dirty-tree question and product-conflict stop and
+     ask. Note the remote tip as `<old-tip>` for step 8's force-push preview. Rerun the evidence
+     script after rebasing to pin the new merge base.
 
 2. Commit the task's changes and required release notes, such as a `.changeset` file. List unrelated
    changes in the session report.
@@ -121,60 +113,46 @@ to ready. Neither choice completes a required action.
 
 4. Review `<merge base>..HEAD`, with both ends pinned. Rerun step 1's evidence script after commits
    or saved evidence changes. Coverage compares committed HEAD, not the working tree.
-   - With `coverage.status: match`, accept the chain's content coverage without a new full review. A
-     moved HEAD or stale freshness alone does not invalidate it when reviewed content was committed
-     unchanged. Keep freshness and single-review reuse facts separate from coverage.
-   - For every selected link, read `report.md` and every worker report (`reviewer.md`, or
-     `finder.md` and `checker.md`). Check completion, verdicts, findings and their dispositions,
-     whether each fix stays within its findings, and relevant caller or rule changes outside the
-     captures. Unstated completion is unknown. Content identity is not a clean verdict.
+   - For `coverage.status: match`, accept content coverage without a new full review, even after a
+     HEAD move or stale freshness when reviewed content was committed unchanged. Keep freshness and
+     single-review reuse separate from coverage; content identity is not a clean verdict.
+   - Read each link's `report.md` and worker reports (`reviewer.md`, or `finder.md` and
+     `checker.md`). Check completion, verdicts, findings, dispositions, fix scope, and relevant
+     caller or rule changes outside captures. Unstated completion is unknown.
    - An unfinished reviewer, unreadable required report, fix beyond its findings, or relevant
-     outside change leaves a named required action, even with coverage `match`. State the missing
-     review evidence or unreviewed scope and what would complete it. Step 6 recommends draft while
-     it remains open; shallow reading alone stays a note.
-   - For `mismatch` or `unknown`, inspect `reasons` and `links` to identify the missing link,
-     artifact, or changed content. Restore available evidence or review only the uncovered scope.
-     Carry genuinely missing evidence into step 6 as a named required action, never a generic
-     mismatch item. Recheck coverage after repairs; neither result is a pass.
-   - For `unsupported`, or saved evidence that cannot form a tool chain, run the manual assessment
-     without asking.
-   - Manual assessment: read the full review, each later fix review, and the diff since the newest.
-     Apply the same per-link checks above. Record the paths inspected and your coverage judgment in
-     the session report, never as a tool match or as fresh. Missing required evidence stays a named
-     required action in step 6. If assessment cannot establish coverage, ask with
-     `ask_user_question`: a fast rereview of the uncovered scope, or continuation with the action
-     open.
+     outside change leaves a named required action, even with `match`. State the missing evidence or
+     scope and its completion condition for step 6; shallow reading alone stays a note.
+   - For `mismatch` or `unknown`, use `reasons` and `links` to restore evidence or review uncovered
+     scope. Name genuinely missing evidence as a required action, not a generic mismatch. Recheck
+     after repairs; neither result is a pass.
+   - For `unsupported` or evidence that cannot form a chain, assess manually without asking.
+   - Manually read the full review, its fix reviews, and the later diff, with the checks above.
+   - Record the inspected paths and judgment in the session report, never as a match or fresh.
+   - Missing evidence from a manual assessment stays a required action.
+   - If coverage stays unestablished, ask: rereview uncovered scope fast, or keep the action open.
 
-   When no saved review exists, or when the user chooses the fast rereview, run the
-   [code-review skill](../code-review/SKILL.md) in fast mode on the uncovered scope (the pinned
-   range when none is covered). If the skill or worker tools are missing, name the missing review
-   coverage as a required action in step 6. Do not review in their place. Follow that skill's
-   ownership, fix, and approval flow.
+   Without saved review, or when the user chooses rereview, follow the
+   [code-review skill](../code-review/SKILL.md) in fast mode on uncovered scope (the pinned range
+   when none is covered). Missing skill or worker tools leave a required action for review coverage;
+   do not review in their place.
 
-   Assess [decision evidence](../shared/decision-evidence.md) from the selected reports for the
-   current change, including ordinary changes without tickets. Fill gaps from source evidence or
-   request the missing review assessment; do not infer compliance from coverage or a clean verdict.
-   Keep the assessment and its sources in the session report. Resolve contradictions before
-   publication. For remaining evidence gaps, stop or obtain the explicit change-specific exception
-   the shared guidance requires; continuing with review actions open is not that exception.
+   Follow the [decision-evidence assessment](../shared/decision-evidence.md#assess-the-change) for
+   the selected reports, with or without tickets. Keep the assessment and sources in the session
+   report. Resolve contradictions before publication. For remaining gaps, stop or obtain the shared
+   guidance's explicit change-specific exception; open review actions are not an exception.
 
 5. Run checks. Rerun the evidence script first. Reuse a required pre-merge check only when the
    script lists its log as matching and reading its result shows it passed. The full check is the
    exception below. A match does not detect every edit to an already dirty file. Otherwise run it
    once on the committed tree. Rerun affected checks after relevant changes, even if their headers
    still match.
-   - In a stack, first restack branches above with the stack skill. Check the PR's branch and every
-     branch above changed by restacking, because step 9 pushes them all. After later commits,
-     restack and rerun affected checks before previewing.
-   - Save real output of each other check, never a summary, as `$prdir/checks/<name>.log`. Before
-     the run, call the `pr` tool's `checkHeader` action with the pinned merge base as `mergeBase`.
-     Write its returned lines at the top of the log, then append the check's output and exit status.
-     Stop if the action fails.
-   - When the repository has a configured full check (`fullCheck.argv` in its `.pi/tau.json`), read
-     `fullCheck` from the evidence script. When it is `passed`, reuse it. When it is `failed`,
-     `missing`, or `malformed`, run the `full_check` tool. Then rerun the evidence script, and
-     report any `fullCheck` status other than `passed` as a required action for step 6. The log
-     stays in `.tau/checks/`; do not copy it or add header lines.
+   - In a stack, restack with the [stack skill](../stack/SKILL.md). Check this branch and changed
+     branches above it. Repeat after later commits before previewing; step 9 pushes them all.
+   - Save each other check's real output and exit status as `$prdir/checks/<name>.log`, preceded by
+     the `pr` tool's `checkHeader` lines for the pinned merge base. Stop if that action fails.
+   - For a configured full check, reuse passed `fullCheck` evidence; otherwise run `full_check`.
+     Rerun the evidence script and carry any non-passed result into step 6 as a required action.
+     Leave its log in place without copying it or adding headers.
    - When the change has user-visible behavior, also send it to a `qa` worker on the committed tree
      before the preview.
    - Leave the app URL, test account, and data writes to Tau, which fills them from the user's
@@ -198,103 +176,75 @@ to ready. Neither choice completes a required action.
      audit. It closes when a check that step 5 ran passes for it. A deferred item is not a required
      action.
 
-   These alone do not establish a required action: a coverage number, a missing assertion, an
-   untested platform, or a record-format mismatch. Missing evidence for a promised behavior can
-   still require a test or review, without a reproduced defect.
+   A coverage number, missing assertion, untested platform, or record-format mismatch alone is not a
+   required action. Missing evidence for promised behavior can still require a test or review.
+   Unrelated pre-existing failures need reproduction on the base or a cited log showing an outside
+   cause; otherwise they remain unexplained required actions. An issue is exposed only if newly
+   reachable or worsened, not another route to existing behavior. Report unrelated issues as plain
+   limitations when they affect use, otherwise in the session report.
 
-   An unrelated pre-existing issue is not a required action. A failing check, test, or tool run
-   counts as an unrelated pre-existing issue only when the same failure reproduces on the base or a
-   cited log line shows its cause outside this change. Otherwise call it unexplained, and it stays a
-   required action. A pre-existing issue counts as exposed only when this change makes it newly
-   reachable or worsens its effect. Another way into behavior users could already reach does not
-   count; mention it as a plain limitation when it affects use, otherwise in the session report. An
-   accepted follow-up is not one either, but only when it waives no promised behavior or mandatory
-   check. A finding closes when its fix is checked as above or reviewed again, or when the user
-   dismisses it as not a defect. Record the dismissal reason in the session report. Deferred,
-   Blocked, or unfixed findings stay open unless the user accepts them as such a follow-up.
+   Accepted follow-ups are not required actions only if they waive no promised behavior or mandatory
+   check. Findings close through a checked fix, rereview, or user dismissal as not a defect. Record
+   dismissal reasons. Deferred, Blocked, and unfixed findings stay open unless accepted as such a
+   follow-up. Coverage matches do not close findings or replace this judgment.
 
-   Keep every link's report path, verdict, and fix-scope assessment in the session report. A
-   coverage match does not close findings or replace this readiness judgment.
-
-   Areas a worker read shallowly are session-report notes, not required actions. Accept checked
-   fixes without asking, and list them in the session report. If other post-review commits make
-   review coverage the only open required action, such as a fix that changes behavior beyond its
-   finding, ask once: run a new fast review or continue with that action open. Run a new review when
-   the user asks for one. After a new review, suggest a status again.
+   Keep per-link report paths, verdicts, fix-scope assessments, shallow-reading notes, and accepted
+   checked fixes in the session report. Accept checked fixes without asking. If other post-review
+   commits leave only review coverage open, ask once: run a new fast review or continue with that
+   action open. Run a review when the user asks, then suggest a status again.
 
 7. Write the title and body. Save the title as `$prdir/title.md` and the body as `$prdir/body.md`.
    Publish with the title from `title.md`.
-   - Release notes: when step 2 wrote release notes, such as a `.changeset` file, also save their
-     text as `$prdir/release-notes.md`. `draft_review` reads only files under `.tau/`, so it cannot
-     review the committed file. When a review edits the copy, apply the edit to the committed
-     release notes file in a commit before you publish.
+   - Release notes: save step 2's release notes as `$prdir/release-notes.md`. Apply review edits of
+     that copy to the committed release notes file in a commit before publishing.
    - Template: for a new PR or a body not following the template, find `pull_request_template.md`
      case-insensitively in the root, `.github/`, `docs/`, or a `PULL_REQUEST_TEMPLATE/` directory.
      When several fit, use the repository's clear default and name it in the preview; ask when they
      imply different requirements. Without one, use the [fallback template](fallback-template.md).
      Show any restructuring it needs in the preview.
    - Title: match the repository's convention.
-   - Reader: write for a reviewer who knows the product but has not read the ticket, the plan, or
-     the code. Name each part by what it does, not by its type, function, hook, or file name.
-   - Length: aim for 100 to 150 words of text you write this session, and never pass 200. Kept text,
-     the template's own headings and checklist items, and the verification lines below do not count.
-     Remove repeated facts before you add length. Do not repeat the diff or commit messages anywhere
-     in the body, such as "Every production caller passes `context.ui`".
-   - Lead: one bold sentence, led by the PR type. A feature says what the user gets. A bug fix gives
-     the symptom, then the cause. A refactor says "no behavior change" and why. A tooling change
-     says what a developer can now do.
-   - Context: after the lead, one or two sentences on the cause or constraint the diff cannot show.
-   - Scope limits: state one only where a reader would assume more, such as "It adds no UI and makes
-     no AI call."
-   - Example: add a concrete one, such as "my overdue high-priority items", only when it makes the
-     purpose clearer. Do not force a user story.
+   - Reader: assume product knowledge, not the ticket, plan, or code. Name parts by what they do.
+   - Length: aim for 100 to 150 words written this session, never over 200. Exclude kept text,
+     template headings and checklist items, and verification lines. Cut repetition before adding
+     length. Never repeat the diff or commit messages in the body.
+   - Lead: one bold sentence led by PR type. Features name the user benefit; fixes give symptom then
+     cause; refactors say "no behavior change" and why; tooling names the new developer action.
+   - Context: one or two sentences on the cause or constraint the diff cannot show.
+   - Scope limits: state one only where a reader would assume more.
+   - Example: add a concrete one only when it clarifies the purpose. Do not force a user story.
    - Unrelated changes: give each one line.
-   - Parts: optional, at most four bullets. Each names a behavior in plain words and its effect for
-     the user or reviewer. Cut a bullet with no effect. Never list files, functions, hooks, or
-     types.
+   - Parts: at most four optional bullets, each naming a behavior and its effect in plain words.
+     Never list files, functions, hooks, or types.
    - Code names: use one only where a reviewer must search for it, such as a flag, an environment
      variable, or a route. Explain it at first use. Never put one in the lead.
    - Unfinished work: when the PR adds code that nothing uses yet, say what stays disconnected. Link
      any follow-up ticket in Verification. Never promise a delivery time.
-   - Decisions: list consequential choices, each with the option you rejected and why, when there
-     are any. Put code-local reasons in a code comment allowed by the coding rules, or in a commit
-     message. Leave draft upstream issues and similar attachments out of the body.
-   - Decision evidence: give the change-specific conclusion and its supporting evidence in the
-     matching template section, or Verification. Include any explicitly approved gap exception and
-     its risk, without claiming compliance. Keep detailed local evidence references in the session
-     report; no new document is needed for a supported no-change conclusion.
-   - Verification: outcomes and required actions only, in the template's verification section, such
-     as Validation, Testing, or How to test. Keep that section even if optional for low-risk
-     changes. If the template has no such section, put Verification after the summary. Give one line
-     to each check or scenario that ran, naming the behavior it exercised and its outcome. Name test
-     machinery, such as React StrictMode, or setup only when a reviewer needs it to judge coverage
-     or repeat a check. Give one line to the review result. Add a `[ ]` line only for each required
-     action that step 6 left open, with its action and completion condition. Write decision-relevant
-     limitations as plain lines, then accepted follow-ups as links, in the template's Limitations
-     and follow-up slots. Bookkeeping, record matching, and unrelated issues go to the session
-     report. Drop test counts. List deferred audit items under the template's deferred verification
-     section, such as `##### Deferred verification`.
+   - Decisions: list consequential choices with rejected options and reasons. Put code-local reasons
+     in allowed code comments or commit messages. Leave draft upstream issues and attachments out.
+   - Decision evidence: put the conclusion, supporting evidence, and approved gap exceptions with
+     risks in the matching section or Verification. Never claim an exception is compliance. Keep
+     local references in the session report; a supported no-change conclusion needs no document.
+   - Verification: keep the template's verification section even if optional, or add Verification
+     after the summary. Give each check or scenario one line naming behavior and outcome, and the
+     review result one line. Name test machinery or setup only to judge coverage or repeat a check.
+     Add a `[ ]` line only for each step 6 required action, with its completion condition. Drop test
+     counts. Put decision-relevant limitations as plain lines and accepted follow-ups as links in
+     their template slots. Put deferred audit items in its deferred verification section.
+     Bookkeeping, record matching, and unrelated issues belong in the session report.
    - Issues: link Linear tickets as the [tracker skill](../tracker/SKILL.md) says. For other issues,
      use `Fixes <issue>` only for issues this PR completes; use `Related to <issue>` for others. A
      slice with an open acceptance item gets `Related to`, since `Fixes` closes it on merge.
-   - Repository template: apply the same rules inside it. Map the lead, context, parts, decisions,
-     and verification to the template's matching sections. Leave out an optional section with
-     nothing to say. Keep a required heading and write the shortest true content under it, such as
-     "None". A Changes section holds only parts, decisions, and unrelated changes. Keep the
-     template's own checklist items as the template has them; the required-action rule covers only
-     the verification lines this skill adds. Never state one fact in two sections.
-   - Keep SHAs, worker names, local paths, and everything step 8 lists for the session report out of
-     the body, except the verification outcomes and required actions above.
-   - Self-review comments: optional, and most PRs have none. Draft an inline comment only for a hunk
-     that looks wrong but is deliberate, or where a reviewer would likely suggest an alternative
-     that was rejected for a reason the diff cannot show. Never draft a routine explanation, a
-     narration of the diff, or a fix receipt. There is no fixed limit, but a need for many comments
-     means the reasons belong in code comments or the PR is too large.
-   - Self-test before the preview: without the ticket, can a reviewer explain the purpose, what
-     changes now, what is left out, and the evidence? Check that the reader knows every word;
-     internal terms such as "slice" or "state logic" fail. Check that a test or the diff backs each
-     claim, such as "the board never shows more items than asked". Weaken or cut a claim without
-     that backing.
+   - Repository template: map these rules to matching sections. Omit empty optional sections; keep
+     required headings with the shortest true content, such as "None". Changes holds only parts,
+     decisions, and unrelated changes. Keep the template's checklist intact; the required-action
+     rule covers only added verification lines. Never state one fact in two sections.
+   - Keep SHAs, worker names, local paths, and session-report-only details out of the body.
+   - Self-review comments: optional, usually none. Comment only on a deliberate hunk that looks
+     wrong or a likely alternative rejected for a reason the diff cannot show. Never narrate the
+     diff, explain routine code, or post fix receipts. Many comments suggest code comments or a
+     smaller PR.
+   - Self-test: can a reviewer without the ticket explain the purpose, changes, limits, and
+     evidence? Remove unfamiliar internal terms. Weaken or cut claims without test or diff backing.
 
 8. Preview and ask for approval. Show title, full body, base repository and branch, head, draft
    status, commits to push, and push command. The review requests of step 11 need no preview.
@@ -303,16 +253,12 @@ to ready. Neither choice completes a required action.
    - For an existing PR whose base changes, show the current base and the new one.
    - In a stack, list each branch to push with its local SHA and explain that each is force-pushed
      with a lease. Show the `gh stack link` command, or why step 9 cannot link.
-   - Include the session report: commits made, comment removals, review and check sources, review
-     history with each link's report path, verdict, and scope assessment, coverage results and any
-     manual judgment, reviewed commits, fixes accepted without a new review and what each fixes,
-     rebase notes, machine-local failures that do not block relevant coverage, reviewer notes,
-     dismissed findings with their reasons, every open required action with its basis, next action,
-     and completion condition, and evidence that could not be read or was cut.
-   - For a self-review, show the review's top-level body and each comment's text, file, line, and
-     the head SHA it anchors to. A change to the body, a text, or an anchor needs a new preview,
-     unless the user's answer named that exact change and you apply it as stated. The anchor's side
-     is `LEFT` for a deleted line and `RIGHT` otherwise; show it with the line.
+   - Include the session report from earlier steps: commits, comment removals, review and check
+     sources, reviewed commits, coverage and manual judgments, fixes and their purposes, rebase
+     notes, non-blocking machine-local failures, reviewer notes, and the combined gap list.
+   - For a self-review, show the top-level body and each comment's text, file, line, anchor head
+     SHA, and side (`LEFT` for deleted lines, `RIGHT` otherwise). The Hard rules approval rule
+     covers changes to the body, text, or anchor.
    - Follow the approval rule in step 5 of the [tracker skill](../tracker/SKILL.md) over `title.md`,
      `body.md`, and `release-notes.md` when it exists, passed to `draft_review` in that order. When
      one review covers the drafts of several PRs in a stack, pass each PR's files bottom to top. Ask
@@ -323,37 +269,31 @@ to ready. Neither choice completes a required action.
      [publication gate](../shared/decision-evidence.md#publication-gate). Show the decision
      conclusion and any explicitly approved gap exception in the preview, matching the body. Obtain
      separate explicit gap approval before offering publication with that gap.
-   - Before the question, show every required action with its basis, next action, and completion
-     condition. Put the other preview items and the session report in visible text before the
-     question, or in the question-level `preview`.
-   - Keep `problem` to one or two sentences on the branch state, within the tool's length limit.
-   - In the publish option descriptions, mark the status step 6 suggests. For a draft suggestion,
-     give the number of open required actions and point to the session report, which lists them, so
-     the user sees what ready leaves open. For an existing PR, say whether each option keeps or
-     changes its current draft status. Keep each description within the tool's length limit.
+   - Before the question, show each required action's basis, next action, and completion condition
+     in the session report. Put it and other preview items in visible text or the question's
+     `preview`.
+   - Keep `problem` to one or two branch-state sentences within the tool's limit.
+   - Mark the suggested status in option descriptions. For draft, give the open-action count and
+     point to the report so ready's remaining work is clear. For existing PRs, say whether each
+     option keeps or changes draft status. Keep descriptions within the tool's limit.
    - Publishing as ready keeps open required actions as `[ ]` lines in the body. Approval does not
      complete them.
    - Closing the dialog publishes nothing. Report that and stop.
-   - A publish answer with only applied tuicr edits publishes the edited files without a new
-     preview, because the user made those edits. After a comment or a conflict on a publish answer,
-     or after Change something, revise, preview the new version, and ask again. A review is never
-     approval.
+   - For tuicr edits, comments, conflicts, and Change something, use that approval lifecycle: revise
+     and ask again when it requires a new preview. A review is not approval.
 
 9. Publish.
-   - Recheck [decision evidence](../shared/decision-evidence.md#reuse-and-recheck) and its
-     publication gate after user edits, including tuicr edits and release-note commits. Read the
-     final preview files and relevant supporting sources, including policy and callers outside
-     captures. If an edit changes the conclusion or gap, or removes its disclosure, refresh the
-     evidence and preview again. Obtain new exception approval when needed. The user-edit approval
-     shortcuts do not bypass this gate; harmless edits retain those shortcuts.
-   - Compare HEAD, local status, and commits to push with the preview; read the PR again. In a
-     stack, compare each branch's SHA too. If anything changed, stop, refresh affected evidence, and
-     preview again without losing new edits. A commit that only applies the user's tuicr edits of
-     `release-notes.md` to the committed release notes file, as step 7 says, is no change: rerun the
-     checks it affects and publish without a new preview.
-   - Push with `git push <remote> HEAD:refs/heads/<branch>`; add `-u` for a new branch. After a
-     rebase in step 1, push with the previewed `--force-with-lease` command instead. In a stack, use
-     the stack skill instead. Stop and report a rejected push.
+   - Follow the [decision-evidence recheck](../shared/decision-evidence.md#reuse-and-recheck) after
+     user edits, including tuicr edits and release-note commits. Read the final files and supporting
+     sources. Changed conclusions, gaps, or removed disclosures need refreshed evidence and a new
+     preview, with new exception approval when needed. Harmless edits retain the approval shortcuts.
+   - Compare HEAD, local status, commits to push, and each stacked branch's SHA with the preview;
+     read the PR again. If anything changed, stop, refresh evidence, and preview without losing
+     edits. A commit applying only approved release-note edits is covered by the Hard rules
+     exception; rerun affected checks before publishing.
+   - Push with `git push <remote> HEAD:refs/heads/<branch>`, adding `-u` for a new branch. After a
+     step 1 rebase, push as the [update-branch skill](../update-branch/SKILL.md) says; in a stack,
+     use the [stack skill](../stack/SKILL.md). Stop and report a rejected push.
    - Create with `gh pr create`: specify approved base, head, title, and `--body-file`. Add
      `--draft` for approved draft status and `--head <owner>:<branch>` for a fork. Update with
      `gh pr edit`, adding `--base <base>` when the base changes. Change existing draft status with
@@ -376,19 +316,15 @@ to ready. Neither choice completes a required action.
      at the top and that each open PR's base is the branch of the open PR below it, or the trunk.
      `gh stack view --json` reads only the local stack and cannot confirm linking.
 
-10. Check the published PR with the `pr` tool's `verify` action. Pass `$prdir` and the approved
-    repository, PR number, title, base, and draft status. Report each difference and the PR URL.
-    Stop if the call fails or shows a difference.
+10. Check the published PR against the approval with the `pr` tool's `verify` action. Report each
+    difference and the PR URL. Stop if the call fails or shows a difference.
 
 11. Request the review bots from the user's config. A request is a reply to a GitHub bot that
     follows [Hard rules](../tracker/SKILL.md#hard-rules). Run this on a new PR and on an update.
-    Call the `pr` tool's `reviewBots` action with the approved repository and PR number. For each
-    bot with status `request`, save its `comment` exactly, with no trailing newline, as
-    `$prdir/bots/<index>.md` with the `write` tool, and run
+    Call the `pr` tool's `reviewBots` action. For each `request`, save its `comment` exactly, with
+    no trailing newline, as `$prdir/bots/<index>.md` with `write`, and run
     `gh pr comment <number> --repo <repo> --body-file $prdir/bots/<index>.md`. Never put the comment
-    in the command line, where the shell would change it. Skip `reviewed` and `requested`. When the
-    action returns no bots, the config has no entry for the repository: request no bot and say so in
-    the report. Read the action again before a retry, since a failed post may still have landed.
+    in the command line, where the shell would change it. Report when no bots are configured.
     Posting a request does not prove a review started.
 
 12. Post the approved self-review as one GitHub review, if the preview showed one.
@@ -401,6 +337,4 @@ to ready. Neither choice completes a required action.
       `event` must be set, or GitHub leaves the review pending. `body` is required for `COMMENT`.
     - Post with
       `gh api --hostname <host> --method POST repos/<owner>/<name>/pulls/<number>/reviews --input $prdir/review.json`.
-      If it fails, read the PR's reviews before any retry, since a failed post may still have
-      landed.
     - Report the posted review, then stop.
