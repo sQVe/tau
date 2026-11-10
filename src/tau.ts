@@ -1,9 +1,11 @@
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import askUserQuestionExtension from './extensions/askUserQuestion/askUserQuestion.js';
 import bareRootExtension from './extensions/bareRoot.js';
+import checkoutWarningExtension from './extensions/checkoutWarning/checkoutWarning.js';
 import codemodeExtension from './extensions/codemode.js';
 import codeReviewExtension from './extensions/codeReview/codeReview.js';
 import commitExtension from './extensions/commit/commit.js';
@@ -29,6 +31,7 @@ import trackerExtension from './extensions/tracker/tracker.js';
 import webAccessExtension from './extensions/webAccess.js';
 
 const skillsDirectory = fileURLToPath(new URL('./skills/', import.meta.url));
+const checkoutDirectory = dirname(dirname(fileURLToPath(import.meta.url)));
 
 export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   // Pi stops at the first blocking hook, so capacity refusal must run before other guards.
@@ -60,4 +63,5 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   subagentsExtension(pi, capacityRefusal);
   compactionExtension(pi);
   bareRootExtension(pi);
+  checkoutWarningExtension(pi, checkoutDirectory);
 }
