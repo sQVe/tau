@@ -6,9 +6,9 @@ import { promisify } from 'node:util';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { git } from '../../../tests/gitRepository.js';
+import type { FakePullRequest, GhFake } from '../../../tests/prGhFake.js';
+import { holdPullRequests, pullRequest } from '../../../tests/prGhFake.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import type { FakePullRequest, GhFake } from './fixtures/ghFake.js';
-import { holdPullRequests, pullRequest } from './fixtures/ghFake.js';
 import { createPublicationTool } from './fixtures/publicationRepository.js';
 import type { PrInput } from './tool.js';
 

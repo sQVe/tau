@@ -3,10 +3,10 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, beforeEach, expect, it, onTestFinished } from 'vitest';
 
-import { createGhFake } from '../src/extensions/pr/fixtures/ghFake.js';
 import { createPrTool } from '../src/extensions/pr/tool.js';
 import { githubOrigin, serveGithubOriginFrom } from './githubOriginFake.js';
 import { createTemporaryRepository, git } from './gitRepository.js';
+import { createGhFake } from './prGhFake.js';
 import { createSavedFix, createSavedReview, savedReviewLink } from './savedReview.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 

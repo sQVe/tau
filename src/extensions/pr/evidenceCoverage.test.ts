@@ -5,6 +5,7 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { githubOrigin, serveGithubOriginFrom } from '../../../tests/githubOriginFake.js';
 import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
+import { createGhFake } from '../../../tests/prGhFake.js';
 import { repositorySnapshot } from '../../../tests/repositorySnapshotHarness.js';
 import { createSavedFix, createSavedReview, savedReviewLink } from '../../../tests/savedReview.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
@@ -12,7 +13,6 @@ import { noUiContext } from '../../../tests/toolContext.js';
 import type { CoverageLinkRequest } from '../../reviewCapture/coverage.js';
 import { readPublicationEvidence } from './evidence.js';
 import type { PublicationRequest } from './evidence.js';
-import { createGhFake } from './fixtures/ghFake.js';
 import { createPrTool } from './tool.js';
 
 const commitFeature = async (root: string, text: string) => {

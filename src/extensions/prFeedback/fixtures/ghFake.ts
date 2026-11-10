@@ -44,6 +44,9 @@ interface FakePullRequest {
   isCrossRepository: boolean;
   maintainerCanModify: boolean;
   mergeable: string;
+  isDraft: boolean;
+  mergeStateStatus: string;
+  reviewDecision: string;
 }
 
 export interface FakeCheck {
@@ -63,6 +66,7 @@ type ReadKey =
   | 'user'
   | 'pr view'
   | 'pr checks'
+  | 'required checks'
   | 'run list'
   | 'run jobs'
   | 'graphql'
@@ -96,6 +100,7 @@ export interface GhFake {
   comments: FakeComment[];
   writes: FakeWrite[];
   checks: FakeCheck[];
+  requiredChecks: { name: string }[];
   // gh pr checks exits 1 while a check fails and 8 while one is pending, and still prints JSON.
   checksExitCode: number;
   // Pi stops gh pr checks after it printed the list.
@@ -153,6 +158,10 @@ const readKey = (commandArguments: readonly string[]): CommandKey | undefined =>
     return 'run jobs';
   }
 
+  if (commandArguments[1] === 'checks' && commandArguments.includes('--required')) {
+    return 'required checks';
+  }
+
   const subcommandKey = subcommandKeys[commandArguments.slice(0, 2).join(' ')];
 
   if (subcommandKey !== undefined) {
@@ -207,6 +216,9 @@ export const fakePullRequest = (): FakePullRequest => ({
   isCrossRepository: false,
   maintainerCanModify: false,
   mergeable: 'MERGEABLE',
+  isDraft: false,
+  mergeStateStatus: 'CLEAN',
+  reviewDecision: '',
 });
 
 export const createGhFake = (): GhFake => {
@@ -365,6 +377,7 @@ export const createGhFake = (): GhFake => {
     user: () => ({ login: fake.viewer, type: 'User' }),
     'pr view': pullRequest,
     'pr checks': () => fake.checks,
+    'required checks': () => fake.requiredChecks,
     'run list': (commandArguments) => trunkRunList(fake.trunkRuns, repository, commandArguments),
     'run jobs': (commandArguments) => trunkRunJobs(fake.trunkRuns, commandArguments),
     graphql: threadPages,
@@ -465,6 +478,7 @@ export const createGhFake = (): GhFake => {
     comments: [],
     writes: [],
     checks: [],
+    requiredChecks: [],
     checksExitCode: 0,
     checksKilled: false,
     trunkRunsKilled: false,

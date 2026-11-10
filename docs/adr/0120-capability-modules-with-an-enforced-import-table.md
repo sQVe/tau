@@ -62,6 +62,7 @@ The target shared modules and the modules each may import:
 | `inbox`         | `errors`, `fileLock`, `hc`, `record`, `schema`, `wake` |
 | `record`        | `errors`, `schema`, `tauDirectory`                     |
 | `checkRecord`   | `errors`, `git`, `record`                              |
+| `reviewBots`    | `command`, `config`, `github`, `schema`                |
 | `reviewCapture` | `errors`, `git`, `record`, `schema`, `tauDirectory`    |
 
 `skillTools`, `tauDirectory`, and `reviewCapture` keep the edges they have today, renamed to the

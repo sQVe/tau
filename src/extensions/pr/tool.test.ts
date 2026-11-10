@@ -1,4 +1,4 @@
-import { readdir, stat } from 'node:fs/promises';
+import { readdir, stat, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
 import { validateToolArguments } from '@earendil-works/pi-ai';
@@ -6,8 +6,9 @@ import type { ToolCall } from '@earendil-works/pi-ai';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { git } from '../../../tests/gitRepository.js';
+import { createGhFake, pullRequest } from '../../../tests/prGhFake.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../tests/toolContext.js';
-import { createGhFake } from './fixtures/ghFake.js';
 import { createPublicationTool, pushFeature } from './fixtures/publicationRepository.js';
 import { createPrTool } from './tool.js';
 import type { PrInput } from './tool.js';
@@ -63,6 +64,31 @@ it.each(['prepare', 'target', 'evidence', 'checkHeader', 'reuse', 'verify', 'rev
     expect(validated(tool, { action })).toEqual({ action });
   },
 );
+
+it('reads configured review bots through the PR tool', async () => {
+  const { root, fake } = await setUp();
+  const agentDirectory = temporaryDirectory(onTestFinished, 'tau-pr-review-bots-');
+  const repository = 'github.com/sQVe/tau';
+  const bot = { login: 'configured-reviewer', comment: 'Please review' };
+  const config = { reviews: { repositories: { 'sQVe/tau': { bots: [bot] } } } };
+
+  await writeFile(join(agentDirectory, 'tau.json'), JSON.stringify(config));
+
+  fake.pullRequests[repository] = [pullRequest()];
+
+  const tool = createPrTool(fake.exec, { agentDirectory });
+  const context = { ...noUiContext(root), isProjectTrusted: () => true };
+
+  const result = await tool.execute(
+    'call',
+    { action: 'reviewBots', repository, pr: 7 },
+    undefined,
+    undefined,
+    context,
+  );
+
+  expect(result.details).toEqual({ bots: [{ ...bot, status: 'request' }] });
+});
 
 it('prepares a fresh run directory that Git ignores', async () => {
   const { root, run } = await setUp();

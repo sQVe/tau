@@ -1,11 +1,6 @@
-import {
-  argumentAfter,
-  createExecFake,
-  failedResult,
-  succeededResult,
-} from '../../../../tests/execFake.js';
-import type { ExecCall } from '../../../../tests/execFake.js';
-import type { Exec } from '../../../command.js';
+import type { Exec } from '../src/command.js';
+import { argumentAfter, createExecFake, failedResult, succeededResult } from './execFake.js';
+import type { ExecCall } from './execFake.js';
 
 interface FakeRepository {
   defaultBranch: string;

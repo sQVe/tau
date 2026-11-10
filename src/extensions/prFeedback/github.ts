@@ -66,6 +66,9 @@ const pullRequestSchema = Type.Object({
   isCrossRepository: Type.Boolean(),
   maintainerCanModify: Type.Boolean(),
   mergeable: Type.String(),
+  isDraft: Type.Boolean(),
+  mergeStateStatus: Type.String(),
+  reviewDecision: Type.String(),
 });
 
 const threadCommentSchema = Type.Object({
@@ -140,6 +143,19 @@ export type ThreadNode = Static<typeof threadSchema>;
 export type ReviewItem = Static<typeof reviewSchema>;
 export type IssueCommentItem = Static<typeof issueCommentSchema>;
 
+export class HeadMovedError extends Error {
+  readonly head: string;
+
+  constructor(head: string, expected: string) {
+    super(
+      `The pull request head is ${head}, not ${expected}. The checks may belong to another head. Read the pull request again.`,
+    );
+
+    this.head = head;
+    this.name = 'HeadMovedError';
+  }
+}
+
 // gh failed or was killed during a write, so GitHub may or may not have made it.
 export class UncertainWriteError extends Error {
   constructor(message: string, options: ErrorOptions) {
@@ -180,7 +196,7 @@ export const readPullRequest = async (
     '--repo',
     formatRepository(repository),
     '--json',
-    'number,url,state,author,headRefOid,baseRefName,headRefName,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify,mergeable',
+    'number,url,state,author,headRefOid,baseRefName,headRefName,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify,mergeable,isDraft,mergeStateStatus,reviewDecision',
   ];
 
   const pullRequest = await readJson(runtime, commandArguments);

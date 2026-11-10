@@ -1,15 +1,13 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
-import { createTemporaryRepository } from '../../../tests/gitRepository.js';
-import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { createGhFake, pullRequest } from './fixtures/ghFake.js';
+import { createTemporaryRepository } from '../../tests/gitRepository.js';
+import { createGhFake, pullRequest } from '../../tests/prGhFake.js';
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
+import { readReviewBotStatuses } from './reviewBots.js';
 import { readReviewBots } from './reviewBotSettings.js';
-import { createPrTool } from './tool.js';
-import type { PrInput } from './tool.js';
 
 const repository = 'github.com/sQVe/tau';
 const bot = { login: 'chatgpt-codex-connector', comment: '@codex review' };
@@ -26,19 +24,12 @@ const setUp = async (userConfig?: unknown) => {
     await writeFile(join(agentDirectory, 'tau.json'), JSON.stringify(userConfig));
   }
 
-  const context = {
-    cwd: root,
-    isProjectTrusted: () => true,
-    ui: { notify: (message: string) => notices.push(message) },
-  } as unknown as ExtensionToolContext;
+  const location = { cwd: root, agentDirectory, projectTrusted: true };
+  const ui = { notify: (message: string) => notices.push(message) };
+  const runtime = { cwd: root, exec: fake.exec, signal: undefined };
 
-  const run = async (input: Record<string, unknown> = {}) => {
-    const tool = createPrTool(fake.exec, { agentDirectory });
-    const parameters = { action: 'reviewBots', repository, pr: 7, ...input } as PrInput;
-    const result = await tool.execute('call', parameters, undefined, undefined, context);
-
-    return result.details;
-  };
+  const run = (input: Record<string, unknown> = {}) =>
+    readReviewBotStatuses(runtime, location, ui, { repository, pr: 7, ...input });
 
   fake.pullRequests[repository] = [pullRequest()];
 

@@ -34,7 +34,7 @@ import type {
   PullRequestChecks,
   TrunkMatch,
 } from './checkEvidence.js';
-import { readPullRequest } from './github.js';
+import { HeadMovedError, readPullRequest } from './github.js';
 
 interface TrunkEvidence {
   trunkMatches: TrunkMatch[];
@@ -248,9 +248,7 @@ const requireHead = async (
   const pullRequest = await readPullRequest(runtime, repository, pr);
 
   if (pullRequest.headRefOid !== head) {
-    throw new Error(
-      `The pull request head is ${pullRequest.headRefOid}, not ${head}. The checks may belong to another head. Read the pull request again.`,
-    );
+    throw new HeadMovedError(pullRequest.headRefOid, head);
   }
 
   return pullRequest;

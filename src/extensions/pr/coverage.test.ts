@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { createTemporaryRepository, git } from '../../../tests/gitRepository.js';
+import { createGhFake } from '../../../tests/prGhFake.js';
 import { createSavedFix, createSavedReview, savedReviewLink } from '../../../tests/savedReview.js';
 import { noUiContext } from '../../../tests/toolContext.js';
-import { createGhFake } from './fixtures/ghFake.js';
 import { createPrTool } from './tool.js';
 import type { PrInput } from './tool.js';
 

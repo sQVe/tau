@@ -347,7 +347,7 @@ describe('read errors', () => {
         fake.pullRequest = undefined;
       },
       error:
-        'gh pr view 7 --repo github.com/sQVe/tau --json number,url,state,author,headRefOid,baseRefName,headRefName,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify,mergeable failed: no pull requests found',
+        'gh pr view 7 --repo github.com/sQVe/tau --json number,url,state,author,headRefOid,baseRefName,headRefName,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify,mergeable,isDraft,mergeStateStatus,reviewDecision failed: no pull requests found',
     },
     {
       name: 'a failing gh call',

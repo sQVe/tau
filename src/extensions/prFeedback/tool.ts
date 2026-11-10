@@ -7,6 +7,7 @@ import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
 import type { Exec, CommandRuntime } from '../../command.js';
+import { readConfigLocation } from '../../config/config.js';
 import { findCheckoutRoot } from '../../git.js';
 import { parseRepository } from '../../github/github.js';
 import type { GroupExec } from '../../process/process.js';
@@ -17,15 +18,30 @@ import { postReplies } from './post.js';
 import type { PostRuntime } from './post.js';
 import { readFeedback } from './read.js';
 import { writePullRequestRecord } from './replies.js';
+import { readStatuses } from './status.js';
 import { threadsToShow } from './threads.js';
 
 const feedbackPath = 'pr-feedback';
 
 export const prFeedbackToolParameters = Type.Object({
-  action: Type.Union([Type.Literal('read'), Type.Literal('checks'), Type.Literal('post')]),
+  action: Type.Union([
+    Type.Literal('read'),
+    Type.Literal('checks'),
+    Type.Literal('post'),
+    Type.Literal('status'),
+  ]),
+  prs: Type.Optional(
+    Type.Array(
+      Type.Object({ pr: Type.Integer({ minimum: 1 }), head: Type.String({ minLength: 1 }) }),
+      {
+        minItems: 1,
+        description: 'status: PRs ordered bottom to top, with their expected head SHAs.',
+      },
+    ),
+  ),
   repository: Type.Optional(
     Type.String({
-      description: 'read, checks: <host>/<owner>/<name>, such as github.com/sQVe/tau.',
+      description: 'read, checks, status: <host>/<owner>/<name>.',
     }),
   ),
   pr: Type.Optional(
@@ -43,20 +59,19 @@ export const prFeedbackToolParameters = Type.Object({
 
 export type PrFeedbackInput = Static<typeof prFeedbackToolParameters>;
 
-const description = `Read a GitHub pull request's feedback and checks, and post replies, as the pr-feedback skill directs.
-- read {repository, pr}: saves the full feedback in <directory>/feedback.json, where each body is an array of chunks to join with no separator. Returns {bodies, directory, feedback, viewer, pr, threads, reviews, comments, stateToken, gaps}.
-  - pr: {number, url, author, headRefOid, state, baseRefName, headRefName, headRepository (name, or null), headRepositoryOwner (login), isCrossRepository, maintainerCanModify, mergeable (may stay UNKNOWN)}.
-  - threads: unresolved threads only, each {id, path, line, isOutdated, viewerCanReply, viewerCanResolve, replyTo (the first comment's ID), fromPerson (any comment not by a bot), startedByViewer, comments [{id, author, isBot, body, url, createdAt, updatedAt}]}. Threads with only viewer comments are left out.
-  - reviews: each {id, author, isBot, state, body, url}. comments: each {id, author, isBot, body, url}. author null is a deleted account and counts as a person.
-  - The result is capped; gaps names each cut, {kind: truncatedBody|truncatedList, list, id (bodies only), kept, total}. feedback.json holds the rest.
-  - stateToken changes when a person other than the viewer adds, edits, or deletes a comment.
-- checks {repository, pr, head, trunk}: head is the SHA the checks must belong to (read's pr.headRefOid). trunk defaults to pr.baseRefName. Returns {pr, checks, gaps}.
-  - checks: each {name, workflow, bucket, state, link}. bucket is pass, fail, pending, skipping, or cancel. A fail or cancel check has log {excerpt, omittedLines, omittedCharacters} or a gap. A cut log has a command to read it whole; budgetLimited: true means the shared budget cut it.
-  - A failing Actions check has trunkMatches [{url, headSha}]: the latest five trunk runs of its workflow where a job of its name failed. Matches are candidates, not verdicts. trunkGaps lists unread trunk evidence.
-  - gaps: every {check, command, code, stderr, reason} for unread evidence, trunkGaps included; never a passing check. When the check list is unreadable, checks is empty and one gap has check null. An omitted-checks gap has a command to read them.
-- post {directory, stateToken, head}: directory and stateToken come from read. head is the SHA the PR head must be at: the round's push, or pr.headRefOid when the round pushed nothing. Write <directory>/replies.json first:
-  {"version": 1, "threads": [{"id": "<thread id>", "reply": "<text or null>", "resolve": true}], "comment": {"body": "<text>", "answers": ["<review or comment id>"]}}
-  comment may be null. Only writes to a person need user confirmation, asked once. If the stateToken or head no longer matches, it posts nothing; read again. A retry with the same directory skips posted writes. Returns {status: posted, declined (the user refused), or unchanged (all were posted), posted, skipped}.`;
+const description = `Read GitHub PR status, feedback, and checks, or post replies.
+- status {repository, prs: [{pr, head}]}: one snapshot, bottom to top; no files or GitHub writes. Returns {prs, recommended, reason, attention}. Each PR: {pr, url, verdict, reasons, head, draft, gaps}. Reasons have code and optional count, names, or logins. Verdicts: action-required, unknown, waiting-checks, waiting-human, clear. clear means no known blocker, not a merge guarantee. recommended is the lowest action-required PR, else lowest unknown, else null. attention lists those PR numbers bottom to top. The user picks.
+- read {repository, pr}: returns {bodies, directory, feedback, viewer, pr, threads, reviews, comments, stateToken, gaps}. Full feedback is in feedback.json; join each body's chunks without a separator.
+  - pr includes author, headRefOid, branches, head repository/owner, state, maintainerCanModify, and mergeable (may stay UNKNOWN).
+  - threads are unresolved, excluding viewer-only conversations. replyTo is the first comment ID; fromPerson means any non-bot comment. Reviews and comments have id, author, isBot, body, url; reviews add state. author null means a deleted person.
+  - gaps reports capped bodies/lists with kind, list, id, kept, total. Read feedback.json for the rest. stateToken tracks other people's added, edited, or deleted comments.
+- checks {repository, pr, head, trunk?}: pins checks to head (read's pr.headRefOid); trunk defaults to pr.baseRefName. Returns {pr, checks, gaps}.
+  - Each check: {name, workflow, bucket, state, link}. bucket: pass, fail, pending, skipping, cancel. fail/cancel has log {excerpt, omittedLines, omittedCharacters} or a gap. Cut logs have a command; budgetLimited means the shared budget cut them.
+  - trunkMatches [{url, headSha}] lists failed same-name jobs among the latest five trunk workflow runs: candidates, not verdicts. trunkGaps are unread evidence.
+  - gaps {check, command, code, stderr, reason} includes trunkGaps, never passes. check null means unread checks. Omitted checks have a read command.
+- post {directory, stateToken, head}: use read's directory/token and the round's pushed head, or read's head if unchanged. First write replies.json:
+  {"version":1,"threads":[{"id":"<thread id>","reply":"<text or null>","resolve":true}],"comment":{"body":"<text>","answers":["<review or comment id>"]}}
+  comment may be null. Person writes ask once for confirmation. Changed token/head posts nothing: read again. Retrying the directory skips posted writes. Returns {status: posted|declined|unchanged, posted, skipped}; declined means refused, unchanged means already posted.`;
 
 const parsePullRequestNumber = (action: string, pr: number | undefined) => {
   if (pr === undefined) {
@@ -144,13 +159,47 @@ const checks = async (runtime: CommandRuntime, parameters: PrFeedbackInput) => {
   return { ...(await readChecks(runtime, repository, pull)) };
 };
 
+const status = async (
+  runtime: CommandRuntime,
+  parameters: PrFeedbackInput,
+  context: ExtensionContext,
+  options: { agentDirectory?: string },
+) => {
+  if (parameters.repository === undefined) {
+    throw new Error('status needs repository.');
+  }
+
+  const repository = parseRepository(parameters.repository);
+
+  if (parameters.prs === undefined || parameters.prs.length === 0) {
+    throw new Error('status needs prs ordered bottom to top.');
+  }
+
+  for (const request of parameters.prs) {
+    parsePullRequestNumber('status', request.pr);
+
+    if (request.head.trim() === '') {
+      throw new Error('status needs a nonempty head for each PR.');
+    }
+  }
+
+  const root = await findCheckoutRoot(runtime.cwd, 'pr_feedback');
+  const location = readConfigLocation(root, options, context);
+
+  return readStatuses({ ...runtime, location, ui: context.ui }, repository, parameters.prs);
+};
+
 const runAction = (
-  commands: { exec: Exec; execInGroup: GroupExec },
+  commands: { exec: Exec; execInGroup: GroupExec; agentDirectory?: string },
   context: ExtensionContext,
   parameters: PrFeedbackInput,
   signal: AbortSignal | undefined,
 ): Promise<Record<string, unknown>> => {
   const runtime = { ...commands, cwd: context.cwd, signal };
+
+  if (parameters.action === 'status') {
+    return status(runtime, parameters, context, commands);
+  }
 
   if (parameters.action === 'read') {
     return read(runtime, parameters);
@@ -164,6 +213,7 @@ const runAction = (
 export const createPrFeedbackTool = (
   exec: Exec,
   execInGroup: GroupExec,
+  options: { agentDirectory?: string } = {},
 ): ToolDefinition<typeof prFeedbackToolParameters, Record<string, unknown>> =>
   defineTool({
     name: 'pr_feedback',
@@ -173,7 +223,12 @@ export const createPrFeedbackTool = (
     parameters: prFeedbackToolParameters,
     executionMode: 'sequential',
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
-      const details = await runAction({ exec, execInGroup }, context, parameters, signal);
+      const details = await runAction(
+        { exec, execInGroup, ...options },
+        context,
+        parameters,
+        signal,
+      );
 
       return {
         content: [{ type: 'text', text: JSON.stringify(details, null, 2) }],
