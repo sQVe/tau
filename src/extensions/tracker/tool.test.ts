@@ -167,13 +167,13 @@ it('leaves canceled and duplicate matches out of the candidates', async () => {
   fake.addIssue({
     identifier: 'ME-4',
     title: 'Gather evidence',
-    stateType: 'canceled',
+    state: { type: 'canceled', name: 'Canceled' },
   });
 
   fake.addIssue({
     identifier: 'ME-5',
     title: 'Gather evidence',
-    stateType: 'duplicate',
+    state: { type: 'duplicate', name: 'Duplicate' },
   });
 
   const evidence = await gather(fake);

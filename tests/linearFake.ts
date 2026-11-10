@@ -29,8 +29,7 @@ interface FakeIssue {
   creatorId: string | null;
   assigneeId: string | null;
   sortOrder: number;
-  stateType: StateType;
-  stateName: string;
+  state: Readonly<{ type: StateType; name: string }>;
   pullRequests: string[];
   blockedBy: string[];
   inverseRelations: { type: string; identifier: string }[];
@@ -119,7 +118,7 @@ const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
   project,
   creator: issue.creatorId === null ? null : { id: issue.creatorId },
   assignee: issue.assigneeId === null ? null : { id: issue.assigneeId },
-  state: { type: issue.stateType, name: issue.stateName },
+  state: issue.state,
   attachments: { nodes: issue.pullRequests.map((url) => ({ url })) },
   inverseRelations: {
     nodes: [
@@ -168,8 +167,7 @@ export const createLinearFake = (): LinearFake => {
       creatorId: 'user-viewer',
       assigneeId: null,
       sortOrder: [...issues.values()].filter((other) => other.parent === issue.parent).length,
-      stateType: 'started',
-      stateName: 'In Progress',
+      state: { type: 'started', name: 'In Progress' },
       pullRequests: [],
       blockedBy: [],
       inverseRelations: [],
@@ -299,7 +297,7 @@ export const createLinearFake = (): LinearFake => {
     const nodes = [...issues.values()]
       .filter((issue) => issue.teamId === teams.get(filter.team.key.eq)?.id)
       .filter((issue) => issue.title === filter.title.eq)
-      .filter((issue) => filter.state.type.in.includes(issue.stateType))
+      .filter((issue) => filter.state.type.in.includes(issue.state.type))
       .filter((issue) => projectIds === undefined || projectIds.includes(issue.projectId ?? ''))
       .map((issue) => ({ identifier: issue.identifier }));
 
@@ -319,7 +317,7 @@ export const createLinearFake = (): LinearFake => {
 
     const matches = [...issues.values()]
       .filter((issue) => issue.teamId === variables.teamId)
-      .filter((issue) => filter.state.type.in.includes(issue.stateType))
+      .filter((issue) => filter.state.type.in.includes(issue.state.type))
       .filter((issue) => words.some((word) => issue.title.toLowerCase().includes(word)))
       .filter((issue) => projectIds === undefined || projectIds.includes(issue.projectId ?? ''));
 
@@ -327,7 +325,7 @@ export const createLinearFake = (): LinearFake => {
       identifier: issue.identifier,
       title: issue.title,
       url: `https://linear.app/me/issue/${issue.identifier}`,
-      state: { type: issue.stateType },
+      state: { type: issue.state.type },
       team: { key: team(issue.teamId).key },
       project: issue.projectId === null ? null : { name: project(issue.projectId)!.name },
       parent: issue.parent === null ? null : { identifier: issue.parent },
@@ -351,7 +349,7 @@ export const createLinearFake = (): LinearFake => {
       issue: {
         team: { key: team(issue.teamId).key },
         project: found === null ? null : { name: found.name },
-        state: { name: issue.stateType === 'completed' ? 'Done' : 'In Progress' },
+        state: { name: issue.state.name },
       },
     };
   };
@@ -423,6 +421,18 @@ export const createLinearFake = (): LinearFake => {
         return containerData(operation.variables.id);
       }
 
+      case 'issuePullRequests': {
+        const issue = issues.get(operation.variables.id);
+
+        if (issue === undefined) {
+          return { issue: null };
+        }
+
+        const { attachments } = pagedNode(childNode(issue, project(issue.projectId)));
+
+        return { issue: { attachments } };
+      }
+
       case 'routing': {
         return routingData(operation.variables.id);
       }
@@ -466,8 +476,7 @@ export const createLinearFake = (): LinearFake => {
 
     if (operation.kind === 'state') {
       const issue = issues.get(operation.identifier)!;
-      issue.stateName = operation.state;
-      issue.stateType = 'started';
+      issue.state = { name: operation.state, type: 'started' };
     } else {
       changeRelation(operation);
     }

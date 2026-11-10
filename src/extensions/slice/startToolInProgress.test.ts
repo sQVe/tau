@@ -17,7 +17,7 @@ const setUp = async (foreign = false) => {
   const slice = fake.addIssue({
     identifier: 'ME-700',
     title: 'Slice',
-    stateName: 'Todo',
+    state: { name: 'Todo', type: 'unstarted' },
     creatorId: foreign ? 'other' : 'user-viewer',
   });
 
@@ -100,7 +100,7 @@ it.each([true, false])('confirms a foreign slice move with answer %s', async (an
   expect(messages[0]).toContain('Todo');
   expect(messages[0]).toContain('In Progress');
   expect(result.details).toMatchObject({ status: answer ? 'applied' : 'declined' });
-  expect(slice.stateName).toBe(answer ? 'In Progress' : 'Todo');
+  expect(slice.state.name).toBe(answer ? 'In Progress' : 'Todo');
   expect(fake.writes()).toHaveLength(answer ? 1 : 0);
 });
 
@@ -117,7 +117,7 @@ it.each(['no UI', 'worker'])('refuses a foreign move with %s', async (mode) => {
   }
 
   await expect(apply((await read()).stateToken, context)).rejects.toThrow('Nothing was written');
-  expect(slice.stateName).toBe('Todo');
+  expect(slice.state.name).toBe('Todo');
   expect(fake.writes()).toEqual([]);
 });
 
@@ -125,7 +125,7 @@ it('rejects a state change while the user answers', async () => {
   const { root, fake, slice, read, apply } = await setUp(true);
 
   const context = confirmContext(root, async () => {
-    slice.stateName = 'In Review';
+    slice.state = { name: 'In Review', type: 'started' };
 
     return true;
   });
@@ -134,7 +134,7 @@ it('rejects a state change while the user answers', async () => {
     'changed while you answered',
   );
 
-  expect(slice.stateName).toBe('In Review');
+  expect(slice.state.name).toBe('In Review');
   expect(fake.writes()).toEqual([]);
 });
 
@@ -150,5 +150,5 @@ it('reports a failed move without applying later writes', async () => {
   });
 
   expect(JSON.stringify(result)).toContain('Team has no In Progress state');
-  expect(slice.stateName).toBe('Todo');
+  expect(slice.state.name).toBe('Todo');
 });

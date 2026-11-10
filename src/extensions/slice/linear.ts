@@ -34,6 +34,9 @@ interface IssueInput {
 const containerQuery =
   'query($id: String!) { viewer { id } issue(id: $id) { id identifier title description url branchName inverseRelations(first: 100) { pageInfo { hasNextPage } nodes { type issue { identifier } } } assignee { id } creator { id } state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } team { id key } project { id name } children(first: 100) { pageInfo { hasNextPage } nodes { identifier title description url branchName team { id } subIssueSortOrder assignee { id } creator { id } state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } inverseRelations(first: 100) { pageInfo { hasNextPage } nodes { type issue { identifier } } } } } } }';
 
+const issuePullRequestsQuery =
+  'query($id: String!) { issue(id: $id) { attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } } }';
+
 const issuesQuery =
   'query($filter: IssueFilter!) { issues(first: 50, filter: $filter) { nodes { identifier } } }';
 
@@ -102,6 +105,13 @@ const containerSchema = Type.Object({
   ]),
 });
 
+const issuePullRequestsSchema = Type.Object({
+  issue: Type.Union([
+    Type.Object({ attachments: childSchema.properties.attachments }),
+    Type.Null(),
+  ]),
+});
+
 const issuesSchema = Type.Object({
   issues: Type.Object({ nodes: Type.Array(Type.Object({ identifier: Type.String() })) }),
 });
@@ -159,6 +169,33 @@ const readPullRequests = async (
       return { url, state: await state };
     }),
   );
+};
+
+export const readIssuePullRequests = async (
+  exec: Exec,
+  cwd: string,
+  identifier: string,
+  states: Map<string, Promise<string>>,
+): Promise<PickPullRequest[] | undefined> => {
+  const { issue } = await api(
+    exec,
+    cwd,
+    issuePullRequestsQuery,
+    { id: identifier },
+    issuePullRequestsSchema,
+  );
+
+  if (issue === null) {
+    return undefined;
+  }
+
+  if (issue.attachments.pageInfo.hasNextPage) {
+    throw new Error(`${identifier} has more than one Linear page of attachments.`);
+  }
+
+  const urls = issue.attachments.nodes.map((attachment) => attachment.url);
+
+  return readPullRequests(exec, cwd, urls, states);
 };
 
 const toChild = async (

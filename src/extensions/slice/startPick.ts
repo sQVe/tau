@@ -1,5 +1,5 @@
 import { readGit, runGit } from '../../git.js';
-import { readContainer } from './linear.js';
+import { readContainer, readIssuePullRequests } from './linear.js';
 import { decidePick } from './startPickDecisions.js';
 import type { PickSlice, StartPick } from './startPickDecisions.js';
 import type { Runtime } from './state.js';
@@ -52,23 +52,28 @@ export const readStartPick = async (runtime: Runtime, identifier: string): Promi
   const candidates = container ? issue.children : [issue];
   const blockerIdentifiers = new Set(candidates.flatMap((candidate) => candidate.blockedBy));
 
-  const knownIssues = new Map(
-    [issue, ...issue.children].map((candidate) => [candidate.identifier, candidate]),
+  const knownPullRequests = new Map(
+    [issue, ...issue.children].map((candidate) => [candidate.identifier, candidate.pullRequests]),
   );
 
   await Promise.all(
     [...blockerIdentifiers].map(async (blockerIdentifier) => {
-      if (knownIssues.has(blockerIdentifier)) {
+      if (knownPullRequests.has(blockerIdentifier)) {
         return;
       }
 
-      const blocker = await readContainer(runtime.exec, runtime.root, blockerIdentifier, states);
+      const blocker = await readIssuePullRequests(
+        runtime.exec,
+        runtime.root,
+        blockerIdentifier,
+        states,
+      );
 
       if (blocker === undefined) {
         throw new Error(`Linear has no blocker ${blockerIdentifier}.`);
       }
 
-      knownIssues.set(blockerIdentifier, blocker);
+      knownPullRequests.set(blockerIdentifier, blocker);
     }),
   );
 
@@ -83,13 +88,13 @@ export const readStartPick = async (runtime: Runtime, identifier: string): Promi
     pullRequests: candidate.pullRequests,
     team: issue.team,
     blockers: candidate.blockedBy.map((blockerIdentifier) => {
-      const blocker = knownIssues.get(blockerIdentifier);
+      const blocker = knownPullRequests.get(blockerIdentifier);
 
       if (blocker === undefined) {
         throw new Error(`Missing blocker evidence for ${blockerIdentifier}.`);
       }
 
-      return { identifier: blockerIdentifier, pullRequests: blocker.pullRequests };
+      return { identifier: blockerIdentifier, pullRequests: blocker };
     }),
   }));
 

@@ -98,7 +98,7 @@ it.each([
     identifier: 'ME-2',
     title: 'Slice',
     parent,
-    stateType,
+    state: { type: stateType, name: stateType },
     pullRequests: ['https://github.com/me/repo/pull/2'],
   });
 
@@ -203,6 +203,70 @@ it('returns the open blocker URL and the named slice links', async () => {
   });
 
   expect(fake.calls.filter((call) => call.command === 'gh')).toHaveLength(2);
+  expect(fake.writes()).toEqual([]);
+});
+
+it('reads an outside blocker PR without reading its children', async () => {
+  const { fake, read } = await setUp();
+  const pullRequest = 'https://github.com/me/repo/pull/2';
+  fake.addIssue({ identifier: 'ME-1', title: 'Container' });
+  fake.addIssue({ identifier: 'ME-2', title: 'Slice', parent: 'ME-1', blockedBy: ['ME-3'] });
+  fake.addIssue({ identifier: 'ME-3', title: 'Blocker', pullRequests: [pullRequest] });
+
+  fake.addIssue({
+    title: 'First child',
+    parent: 'ME-3',
+    pullRequests: ['https://github.com/me/repo/pull/4'],
+  });
+
+  fake.addIssue({ title: 'Second child', parent: 'ME-3' });
+  fake.limitChildren(1);
+
+  const result = await read('ME-1');
+
+  expect(result.details).toMatchObject({
+    pick: {
+      chosen: { identifier: 'ME-2' },
+      openBlockerPullRequests: [pullRequest],
+      slices: [{ blockers: [{ identifier: 'ME-3', state: 'open', pullRequests: [pullRequest] }] }],
+    },
+  });
+
+  expect(fake.calls.filter((call) => call.command === 'gh')).toHaveLength(1);
+  expect(fake.writes()).toEqual([]);
+});
+
+it('rejects incomplete outside blocker attachments without writing', async () => {
+  const { fake, read } = await setUp();
+  fake.addIssue({ identifier: 'ME-1', title: 'Slice', blockedBy: ['ME-2'] });
+
+  fake.addIssue({
+    identifier: 'ME-2',
+    title: 'Blocker',
+    pullRequests: ['https://github.com/me/repo/pull/2'],
+  });
+
+  fake.limitAttachments(0);
+
+  await expect(read('ME-1')).rejects.toThrow('ME-2 has more than one Linear page of attachments');
+  expect(fake.calls.filter((call) => call.command === 'gh')).toEqual([]);
+  expect(fake.writes()).toEqual([]);
+});
+
+it('rejects a missing outside blocker without writing', async () => {
+  const { fake, read } = await setUp();
+  fake.addIssue({ identifier: 'ME-1', title: 'Slice', blockedBy: ['ME-404'] });
+
+  await expect(read('ME-1')).rejects.toThrow('Linear has no blocker ME-404.');
+  expect(fake.writes()).toEqual([]);
+});
+
+it('rejects malformed outside blocker attachments without writing', async () => {
+  const { fake, read } = await setUp();
+  fake.addIssue({ identifier: 'ME-1', title: 'Slice', blockedBy: ['ME-2'] });
+  fake.overrideOutput('issue(id: $id) { attachments(', '{"data":{"issue":{"attachments":null}}}');
+
+  await expect(read('ME-1')).rejects.toThrow('linear');
   expect(fake.writes()).toEqual([]);
 });
 
