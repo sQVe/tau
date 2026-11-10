@@ -112,7 +112,8 @@ design it follows in its Design section. The container has one sub-ticket per sl
      `plan.json` names, such as `container.md` or `ticket.md` and the `slice-<n>.md` files. Pass
      `plan.md` first, then the container body, then the slice files in plan order. After a review,
      carry `plan.md` changes into the draft as step 4 says, call `read` again, and resolve its
-     `problems`. Judge each acceptance item the review added or changed as step 5 says.
+     `problems`. Map the coverage again, and judge each acceptance item the review added or changed,
+     as step 5 says.
    - When `apply` would write to a container or slice another person owns, it asks the user first
      and writes nothing if the user declines. Do not ask again with `ask_user_question` for those
      writes; the tool's confirm is the approval the tracker skill's
