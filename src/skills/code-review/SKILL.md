@@ -31,8 +31,8 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
   own.
 - Mode: fast unless the user asks for deep. "Full diff" names the scope, not the mode. Fast launches
   one reviewer. Deep launches a finder, then a fresh checker.
-- A first review covers the whole target. A fix review captures only the fix, its callers, and the
-  findings it closes. Never reuse earlier findings or verdicts.
+- A first review covers the whole target. A fix review covers only the fix diff, its callers, and
+  the findings it closes. Never reuse earlier findings or verdicts.
 - Launch the fast reviewer and the deep finder with the `reviewer` profile, and the deep checker
   with the `checker` profile. Give each the [review assignment](review-assignment.md). Omit `model`
   unless the user names one. Omit `timeoutSeconds` unless the user names a cheap model; then set a
@@ -40,8 +40,9 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
 - If a launch fails, report it. When it failed before the worker made a model call and its pane and
   task are gone, retry it once with the same profile and model. Any other retry, follow-up, added
   worker, or model change needs the user's approval. Never switch model or provider silently.
-- Aim for about 5 minutes for fast and 10 for deep. The aim is yours: put no deadline or budget in
-  an assignment, never sleep or poll, and never cancel a worker only because the aim passed.
+- Aim for about 5 minutes for fast and 10 for deep. Give the fast reviewer the budget in the review
+  assignment. Put no deadline or budget in a deep assignment. Never sleep or poll, and never cancel
+  a worker only because the aim passed.
 - After the report, fix findings only on the user's own work, and never after a request for a
   read-only review or "no changes". Fixing never approves a publish or absorbing unrelated changes.
 
@@ -53,6 +54,10 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
      an earlier fix review, never an older link. Its `findingPaths` are the paths of the closed
      findings. Capture the whole target instead when the user asks for a full review or the earlier
      review left no usable snapshot.
+   - Otherwise, when you or a calling skill review one ticket's work on a longer branch, such as one
+     agent ticket, target only that work: a `range` of its commits, or a `workingTree` from the
+     commit before it when the work is uncommitted. Never fall back to the merge base, which reads
+     earlier tickets again.
    - The ticket under review is the one the user or a calling skill names. Otherwise, only for the
      branch's own work (merge base to `HEAD` or the working tree, or uncommitted work), use the
      branch's issue from `linear issue view --json --no-pager`. With no ticket, or a failed read,
@@ -69,7 +74,8 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
    when there is no ticket.
 
 4. Run the mode, with the rules of [Run the workers](phases.md#run-the-workers).
-   - Fast: one reviewer. Add "Try to disprove each finding before you report it."
+   - Fast: one reviewer, with the fast budget of the review assignment. Add "Try to disprove each
+     finding before you report it."
    - Deep: a finder, with "Report every plausible material candidate; the checker tests them." Then
      a fresh `checker` worker, with the `## Checker` lines of the review assignment and the finder's
      candidates, or the path `$dir/finder.md` holding its report. Launch the checker even when the
