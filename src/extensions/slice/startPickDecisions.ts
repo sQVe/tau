@@ -3,7 +3,7 @@ export interface PickPullRequest {
   state: string;
 }
 
-export interface PickBlocker {
+interface PickBlocker {
   identifier: string;
   pullRequests: PickPullRequest[];
 }
