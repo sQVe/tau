@@ -291,8 +291,9 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      read the PR again. If anything changed, stop, refresh evidence, and preview without losing
      edits. A commit applying only approved release-note edits is covered by the Hard rules
      exception; rerun affected checks before publishing.
-   - Push with the [update-branch skill](../update-branch/SKILL.md), or the
-     [stack skill](../stack/SKILL.md) in a stack, as previewed. Stop and report a rejected push.
+   - Push with `git push <remote> HEAD:refs/heads/<branch>`, adding `-u` for a new branch. After a
+     step 1 rebase, push as the [update-branch skill](../update-branch/SKILL.md) says; in a stack,
+     use the [stack skill](../stack/SKILL.md). Stop and report a rejected push.
    - Create with `gh pr create`: specify approved base, head, title, and `--body-file`. Add
      `--draft` for approved draft status and `--head <owner>:<branch>` for a fork. Update with
      `gh pr edit`, adding `--base <base>` when the base changes. Change existing draft status with

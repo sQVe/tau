@@ -113,8 +113,9 @@ metadata:
 5. Author mode: fix the supported findings at the root cause.
    - Make small fixes yourself. Send a fix that needs new tests or spans modules to a `worker`, then
      a `reviewer`.
-   - For a valid finding outside the PR's scope, ask the user. Follow triage-findings for follow-up
-     filing with the [tracker skill](../tracker/SKILL.md), and cite the issue in the reply.
+   - For a valid finding outside the PR's scope, ask the user. If they approve, file an issue in the
+     repository's tracker and cite it in the reply. A repository uses Linear when its branches or
+     commits name Linear IDs; file those with the [tracker skill](../tracker/SKILL.md).
    - Use the [commit skill](../commit/SKILL.md), one commit per thread where practical, so each
      reply names its commit. Failing checks need no reply on the PR.
 
