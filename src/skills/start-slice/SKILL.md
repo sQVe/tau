@@ -134,6 +134,10 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
       step 5 of the tdd skill as its rule. That worker then reruns the affected tests and
       `mutation_check` once with the same `base`. List the survivors left open, with file and line,
       as reviewer notes for the PR.
+    - After the mutation check and its survivor round, run the
+      [prune-comments skill](../prune-comments/SKILL.md) on the branch diff from
+      `git merge-base <base> HEAD`. It commits its own removals. Note a failed run for the PR and go
+      on.
     - After the mutation check, decide on code-quality without asking. Measure
       `git merge-base <base> HEAD` to the working tree, counting untracked new files as added lines.
     - Skip when the diff touches only docs, config, or tests; when the source lines changed, added

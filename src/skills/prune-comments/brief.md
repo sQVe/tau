@@ -18,6 +18,7 @@ Judge the comments in the target and decide which to keep. Change nothing.
   - license headers
   - generated files
   - text the program can read at runtime, such as Python docstrings
+  - a comment that is the only content of a block, such as an empty function body or `catch` block
 - Output one row per judged comment, in file and line order:
   - `file:line`, where the comment starts
   - the exact comment text

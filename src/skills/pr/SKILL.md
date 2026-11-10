@@ -108,7 +108,10 @@ to ready. Neither choice completes a required action.
 2. Commit the task's changes and required release notes, such as a `.changeset` file. List unrelated
    changes in the session report.
 
-3. Run the [prune-comments skill](../prune-comments/SKILL.md) on `<merge base>..HEAD`.
+3. Run the [prune-comments skill](../prune-comments/SKILL.md) on the commits added after the review.
+   - Take `<reviewed head>` from the `head` field of `capture.json` in the newest link of step 1's
+     chain. Run it on `<reviewed head>..HEAD`, and skip it when the two are equal.
+   - With no saved review for this branch, run it on `<merge base>..HEAD`.
    - It commits its own removals. Do not commit them here.
    - Later commits that add comments before the preview: run it again on those commits only.
    - Report each removal in the session report, not the PR body.
