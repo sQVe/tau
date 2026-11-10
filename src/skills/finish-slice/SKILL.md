@@ -43,7 +43,8 @@ for the workspace.
 
 3. Read the slice with `linear issue view <slice> --json --no-pager`, and its agent tickets as
    children, as step 3 of the start-slice skill does. Collect every `## Acceptance` item of the
-   slice and of each agent ticket. If there are none at all, stop and report that.
+   slice and of each agent ticket. Always add one decision-evidence row, even when there are no
+   acceptance items.
 
 4. Give each item a verdict with its evidence. Run the checks that are cheap and missing, except the
    full check.
@@ -53,6 +54,15 @@ for the workspace.
      must run on that commit's checkout.
    - Evidence must cover the audited commit. A check or report from before the last change to what
      it covers does not count. Rerun it, or mark the item not run.
+   - For the decision-evidence row, follow the [shared guidance](../shared/decision-evidence.md).
+     Select the newest code-review report for the slice branch and its chain using the
+     [pr skill](../pr/SKILL.md) step 1's selection rules, including its merge-base resolution. Call
+     the `pr` tool's `coverage` with that `chain`, `mergeBase`, and `head` set to the audited SHA. A
+     `match` shows content coverage only. Read the reports' decision evidence and the relevant
+     policy and callers outside the capture under the shared reuse and recheck rules. Cite the
+     reports, coverage result, supporting sources, and conclusion in the row. Missing or stale
+     review evidence gives `not run`; name each gap and what would resolve it. A contradiction or
+     missing required record update gives `not met`.
    - Save the real output of each check you run in `$slicedir`, in a file named for the check, never
      a summary. Cite that path as the evidence.
 

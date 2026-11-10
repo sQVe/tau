@@ -46,9 +46,12 @@ judgment.
 
 The skill requires current, change-specific decision evidence for draft and ready publication,
 updates, and ready transitions, including changes without tickets. Shared skill guidance owns the
-assessment used by review and publication. Existing review reports carry its sources and conclusion;
-the PR preview and body carry the publication conclusion. This requirement is separate from slice
-audits and readiness suggestions, because choosing draft does not establish decision compliance.
+assessment used by review, slice audits, and publication. Every slice audit includes decision
+evidence from current review reports. Publication reuses a current audit's decision evidence under
+the same freshness rules instead of repeating the assessment. This keeps one supported conclusion
+across review, audit, and publication. The PR preview and body carry that conclusion. The gate stays
+independent of audit verdicts and readiness suggestions, because choosing draft does not establish
+decision compliance.
 
 Missing evidence blocks publication unless the user explicitly approves the named change-specific
 gap. The preview and body disclose that exception without claiming compliance. A known contradiction

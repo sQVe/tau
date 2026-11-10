@@ -136,10 +136,14 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    when none is covered). Missing skill or worker tools leave a required action for review coverage;
    do not review in their place.
 
-   Follow the [decision-evidence assessment](../shared/decision-evidence.md#assess-the-change) for
-   the selected reports, with or without tickets. Keep the assessment and sources in the session
-   report. Resolve contradictions before publication. For remaining gaps, stop or obtain the shared
-   guidance's explicit change-specific exception; open review actions are not an exception.
+   For a slice whose audit step 1 found current, reuse its decision-evidence row instead of
+   assessing again. Recheck commits from steps 2 and 3 under the
+   [shared recheck rules](../shared/decision-evidence.md#reuse-and-recheck); a commit that changes
+   what the conclusion rests on ends reuse. When reuse does not apply, follow the
+   [decision-evidence assessment](../shared/decision-evidence.md#assess-the-change) for the selected
+   reports, with or without tickets. Keep the reused evidence or assessment and sources in the
+   session report. Resolve contradictions before publication. For remaining gaps, stop or obtain the
+   shared guidance's explicit change-specific exception; open review actions are not an exception.
 
 5. Run checks. Rerun the evidence script first. Reuse a required pre-merge check only when the
    script lists its log as matching and reading its result shows it passed. The full check is the

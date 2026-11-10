@@ -44,9 +44,10 @@ document just to prove that this check happened.
   existing capture identities, pinned revisions, or saved evidence references. Include relevant
   policy and callers outside the capture. If their checked content cannot be established, report a
   gap rather than assume it is unchanged.
-- Reuse a conclusion only when the change and its supporting evidence still support it. Recheck
-  after relevant implementation, caller, policy, decision-record, or publication-claim changes.
-  Capture freshness cannot establish that outside sources stayed unchanged.
+- A current slice audit's decision-evidence row is reusable publication evidence; an old or missing
+  audit is not. Reuse a conclusion only when the change and its supporting evidence still support
+  it. Recheck after relevant implementation, caller, policy, decision-record, or publication-claim
+  changes. Capture freshness cannot establish that outside sources stayed unchanged.
 - Reassess affected conclusions and gaps after relevant changes, including user edits in a preview.
   An exception applies only to the change and gap the user approved. Invalidate it when that scope,
   gap, or supporting evidence changes, and obtain new approval if the gap remains.
