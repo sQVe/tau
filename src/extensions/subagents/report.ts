@@ -1,3 +1,6 @@
+import { writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+
 import type { AgentToolResult } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
@@ -9,7 +12,7 @@ import { stringEnum } from '../../schema.js';
 import { saveReport } from './assignment.js';
 import type { Assignment, SavedReport } from './assignment.js';
 import { blockerKinds, decideIncompleteReport } from './incompleteReport.js';
-import { decideSummaryLength, summaryLengthLimit } from './summaryLength.js';
+import { shortenSummary, summaryLengthLimit } from './summaryLength.js';
 
 export interface ReportRefusalState {
   incompleteRefused: boolean;
@@ -42,9 +45,10 @@ export const reportParameters = Type.Object({
   summary: Type.String({
     minLength: 1,
     maxLength: 32_000,
-    description: `A short lead, then exactly these headings: ${summaryHeadings}. Write None under an empty one. A report without them is refused. At most ${summaryLengthLimitText} characters; save longer details to a file and name it in evidence.`,
+    description: `A short lead, then exactly these headings: ${summaryHeadings}. Write None under an empty one. A report without them is refused. Keep it under ${summaryLengthLimitText} characters; longer text is cut and saved in full to a file.`,
   }),
-  evidence: Type.Array(Type.String({ minLength: 1, maxLength: 32_000 }), { maxItems: 100 }),
+  // One evidence slot stays free for the full summary file.
+  evidence: Type.Array(Type.String({ minLength: 1, maxLength: 32_000 }), { maxItems: 99 }),
   blocker: Type.Optional(
     Type.String({
       minLength: 1,
@@ -122,16 +126,23 @@ const refuseMissingSections = (summary: string) => {
   );
 };
 
-const refuseLongSummary = (summary: string) => {
-  if (decideSummaryLength({ length: summary.length }) === 'accept') {
-    return;
+const summaryFileName = 'summary.md';
+
+const saveLongSummary = async (
+  assignmentPath: string,
+  summary: string,
+  evidence: readonly string[],
+): Promise<Pick<SavedReport, 'summary' | 'evidence'>> => {
+  const file = join(dirname(assignmentPath), summaryFileName);
+  const shortened = shortenSummary({ summary, file });
+
+  if (shortened === summary) {
+    return { summary, evidence: [...evidence] };
   }
 
-  const length = summary.length.toLocaleString('en-US');
+  await writeFile(file, summary, { mode: 0o600 });
 
-  throw new Error(
-    `Report refused: the summary has ${length} characters, over the limit of ${summaryLengthLimitText} characters. Save the details to a file, name it in evidence, and resend a shorter summary.`,
-  );
+  return { summary: shortened, evidence: [...evidence, file] };
 };
 
 const reportOutcome = (value: string): SavedReport['outcome'] => {
@@ -177,7 +188,6 @@ export const reportToParent = async (
   );
 
   try {
-    refuseLongSummary(handover.summary);
     refuseMissingSections(summary);
 
     if (handover.outcome === 'incomplete') {
@@ -190,8 +200,7 @@ export const reportToParent = async (
 
   const report: SavedReport = {
     outcome: reportOutcome(handover.outcome),
-    summary,
-    evidence: handover.evidence,
+    ...(await saveLongSummary(target.assignmentPath, summary, handover.evidence)),
   };
 
   await saveReport(target.assignmentPath, report);
