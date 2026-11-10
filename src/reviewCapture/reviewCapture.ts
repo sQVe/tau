@@ -1,4 +1,4 @@
-export { fixedPrefixes } from './capture.js';
+export { fixedDiffOptions } from './capture.js';
 export { readCoverage } from './coverage.js';
 export type { CoverageLinkRequest } from './coverage.js';
 export type { CoverageDecision, CoverageStatus } from './coverageDecision.js';

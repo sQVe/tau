@@ -2,13 +2,17 @@ import type { CommandRuntime } from '../../command.js';
 import { errorMessage } from '../../errors.js';
 import { readGit } from '../../git.js';
 import { readInspectedEvidence, scanMarkers } from '../../reviewCapture/evidence.js';
-import type { MarkerLine, ReviewEvidence } from '../../reviewCapture/evidence.js';
+import type { Marker, ReviewEvidence } from '../../reviewCapture/evidence.js';
 import type {
   CoverageDecision,
   CoverageLinkRequest,
   ReviewInspection,
 } from '../../reviewCapture/reviewCapture.js';
-import { checkReviewDirectory, inspectReview } from '../../reviewCapture/reviewCapture.js';
+import {
+  checkReviewDirectory,
+  fixedDiffOptions,
+  inspectReview,
+} from '../../reviewCapture/reviewCapture.js';
 import { readCheckEvidence } from './checkEvidence.js';
 import type { FullCheckEvidence, PublicationConfig } from './checkEvidence.js';
 import { readChainCoverage } from './coverage.js';
@@ -32,7 +36,7 @@ export interface PublicationEvidence {
   reuse: ReuseResult | null;
   review: ReviewEvidence | null;
   coverage?: CoverageDecision | null;
-  markers: MarkerLine[];
+  markers: Marker[];
   checks: CheckLog[];
   fullCheck: FullCheckEvidence | null;
   gaps: PublicationGap[];
@@ -163,16 +167,7 @@ const readCoverageEvidence = async (
 
 const readMarkers = async (root: string, evidence: PublicationEvidence, mergeBase: string) => {
   try {
-    const diff = await readGit(root, [
-      'diff',
-      '--no-ext-diff',
-      '--no-textconv',
-      '--no-color',
-      '--src-prefix=a/',
-      '--dst-prefix=b/',
-      mergeBase,
-      'HEAD',
-    ]);
+    const diff = await readGit(root, ['diff', ...fixedDiffOptions, mergeBase, 'HEAD']);
 
     const scan = scanMarkers(diff);
 

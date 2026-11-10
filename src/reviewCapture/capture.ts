@@ -189,6 +189,16 @@ const pathspec = (target: DirectTarget, skipped: string[] = []) => {
 // capture could not match a later diff of the same content.
 export const fixedPrefixes = ['--src-prefix=a/', '--dst-prefix=b/'];
 
+// diff.renames can turn rename detection off, which shows a rename as a deleted and an added file,
+// so --find-renames keeps the capture the same under every user config.
+export const fixedDiffOptions = [
+  '--no-ext-diff',
+  '--no-textconv',
+  '--no-color',
+  '--find-renames',
+  ...fixedPrefixes,
+];
+
 // The diff command for the target. `extra` adds options such as --numstat after the subcommand.
 // diff.autoRefreshIndex=false stops git diff from rewriting cached file metadata in .git/index,
 // and --no-textconv stops a cachetextconv driver from writing objects and notes refs.
@@ -197,7 +207,7 @@ export const diffArguments = (
   extra: string[],
   skipped: string[] = [],
 ): string[] => {
-  const options = ['--no-ext-diff', '--no-textconv', '--no-color', ...fixedPrefixes, ...extra];
+  const options = [...fixedDiffOptions, ...extra];
   const spec = pathspec(target, skipped);
 
   if (target.kind === 'range') {

@@ -27,7 +27,7 @@ import type {
   EvidenceGap,
   EvidenceLimits,
   GrepMatch,
-  MarkerLine,
+  Marker,
   NamedPath,
   NamedSection,
   NumberedLine,
@@ -40,7 +40,7 @@ import type { ReviewInspection } from './reviewInspection.js';
 import type { PinnedTarget } from './target.js';
 
 export { scanMarkers } from './evidenceDecisions.js';
-export type { MarkerLine } from './evidenceDecisions.js';
+export type { Marker } from './evidenceDecisions.js';
 
 interface FileBody {
   path: string;
@@ -63,7 +63,7 @@ export interface ReviewEvidence {
   freshness: Freshness;
   paths: string[];
   tests: FileBody[];
-  markers: MarkerLine[];
+  markers: Marker[];
   callers: CallerLine[];
   rules: NamedPath[];
   checks: NamedPath[];

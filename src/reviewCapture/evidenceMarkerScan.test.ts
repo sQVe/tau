@@ -7,7 +7,8 @@ const marked = (name: string) => `${name} @ts-ignore`;
 const fileDiff = (path: string, hunks: string[]) =>
   [`diff --git a/${path} b/${path}`, `--- a/${path}`, `+++ b/${path}`, ...hunks].join('\n');
 
-const found = (diff: string) => scanMarkers(diff).items.map(({ path, line }) => [path, line]);
+const found = (diff: string) =>
+  scanMarkers(diff).items.map((item) => [item.path, 'line' in item ? item.line : item.marker]);
 
 it('reads hunk headers whose counts are missing or have several digits', () => {
   const longHunk = [

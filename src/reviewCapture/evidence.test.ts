@@ -662,7 +662,39 @@ it('reports no gap for the old path of a test file renamed in a range', async ()
 
   expect(evidence.paths).toEqual(['src/add.test.ts', 'src/math.test.ts']);
   expect(evidence.tests.map((test) => test.path)).toEqual(['src/add.test.ts']);
+  expect(evidence.markers).toEqual([]);
   expect(evidence.gaps).toEqual([]);
+});
+
+it('lists no deleted test marker for a renamed test file when Git config turns renames off', async () => {
+  const { root, to: from } = await rangeRepository();
+
+  await git(root, 'config', 'diff.renames', 'false');
+  await git(root, 'mv', 'src/math.test.ts', 'src/add.test.ts');
+  await git(root, 'commit', '--quiet', '-m', 'rename');
+  const to = await git(root, 'rev-parse', 'HEAD');
+
+  const directory = await savedCapture(root, { kind: 'range', from, to });
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.markers).toEqual([]);
+});
+
+it('lists deleted test files in the working tree as markers', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+  const base = await commit(root, { ...sourceFiles, 'src/empty.test.ts': '' }, 'first');
+
+  await rm(join(root, 'src/empty.test.ts'));
+  await rm(join(root, 'src/math.test.ts'));
+  await rm(join(root, 'src/use.ts'));
+
+  const directory = await savedCapture(root, { kind: 'workingTree', base });
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.markers).toEqual([
+    { path: 'src/empty.test.ts', marker: 'deleted test' },
+    { path: 'src/math.test.ts', marker: 'deleted test' },
+  ]);
 });
 
 it('lists added skip markers in code files but not in Markdown files', async () => {
@@ -731,7 +763,7 @@ it('lists a marker a files target adds once, and none from unchanged tracked fil
   const directory = await savedCapture(root, { kind: 'files', paths, base });
   const evidence = await readReviewEvidence(root, directory);
 
-  expect(evidence.markers.map(({ path, line }) => ({ path, line }))).toEqual([
+  expect(evidence.markers).toMatchObject([
     { path: 'changed.test.ts', line: 2 },
     { path: 'staged', line: 4 },
     { path: 'dir', line: 1 },

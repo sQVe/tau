@@ -510,10 +510,107 @@ it.each([
   expect(scanMarkers(diff).items).toMatchObject([{ path }]);
 });
 
-it('lists no marker for a deleted file', () => {
-  const diff = ['--- a/a.ts', '+++ /dev/null', '@@ -1,1 +0,0 @@', `-${onlyCall}`, ''].join('\n');
+// `path` is the name as Git prints it without its prefix, quoted when Git quotes it.
+const sidePath = (prefix: string, path: string) =>
+  path.startsWith('"') ? `"${prefix}${path.slice(1)}` : `${prefix}${path}`;
 
-  expect(scanMarkers(diff)).toEqual({ items: [], gaps: [] });
+const textDeletion = (oldPath: string) => {
+  const separator = oldPath.includes(' ') && !oldPath.startsWith('"') ? '\t' : '';
+
+  return [`--- ${oldPath}${separator}`, '+++ /dev/null', '@@ -1,1 +0,0 @@', `-${onlyCall}`];
+};
+
+const deletedDiff = (path: string, body = textDeletion) =>
+  [
+    `diff --git ${sidePath('a/', path)} ${sidePath('b/', path)}`,
+    'deleted file mode 100644',
+    'index e1938b3..0000000',
+    ...body(sidePath('a/', path)),
+    '',
+  ].join('\n');
+
+const addedFileDiff = (path: string) =>
+  [
+    `diff --git a/${path} b/${path}`,
+    'new file mode 100644',
+    '--- /dev/null',
+    `+++ b/${path}`,
+    '@@ -0,0 +1,1 @@',
+    '+new',
+    '',
+  ].join('\n');
+
+const deletedTest = (path: string) => ({ path, marker: 'deleted test' });
+
+it.each([
+  { name: 'deleted test', diff: deletedDiff('src/a.test.ts'), items: ['src/a.test.ts'] },
+  { name: 'deleted source', diff: deletedDiff('src/a.ts'), items: [] },
+  {
+    name: 'quoted path',
+    diff: deletedDiff('"caf\\303\\251 \\t.test.ts"'),
+    items: ['café \t.test.ts'],
+  },
+  {
+    name: 'path with a space',
+    diff: deletedDiff('with space.test.ts'),
+    items: ['with space.test.ts'],
+  },
+  {
+    name: 'empty test',
+    diff: deletedDiff('a.test.ts', () => []),
+    items: ['a.test.ts'],
+  },
+  {
+    name: 'binary test',
+    diff: deletedDiff('a.test.ts', (oldPath) => [`Binary files ${oldPath} and /dev/null differ`]),
+    items: ['a.test.ts'],
+  },
+  {
+    name: 'renamed test',
+    diff: [
+      'diff --git a/a.test.ts b/b.test.ts',
+      'similarity index 90%',
+      'rename from a.test.ts',
+      'rename to b.test.ts',
+      '--- a/a.test.ts',
+      '+++ b/b.test.ts',
+      '@@ -1,1 +1,1 @@',
+      '-old',
+      '+new',
+      '',
+    ].join('\n'),
+    items: [],
+  },
+  {
+    name: 'delete and add',
+    diff: `${deletedDiff('a.test.ts')}${addedFileDiff('b.test.ts')}`,
+    items: ['a.test.ts'],
+  },
+  {
+    name: 'delete and add at the same path',
+    diff: `${deletedDiff('a.test.ts')}${addedFileDiff('a.test.ts')}`,
+    items: [],
+  },
+  {
+    name: 'empty file added again',
+    diff: `${deletedDiff('a.test.ts')}diff --git a/a.test.ts b/a.test.ts\nnew file mode 100644\n`,
+    items: [],
+  },
+])('lists deleted test markers for $name', ({ diff, items }) => {
+  expect(scanMarkers(diff)).toEqual({ items: items.map(deletedTest), gaps: [] });
+});
+
+it('counts deleted test markers toward the list limit', () => {
+  const diff = [
+    deletedDiff('a.test.ts'),
+    deletedDiff('b.test.ts'),
+    addedDiff('c.ts', [onlyCall]),
+  ].join('');
+
+  expect(scanMarkers(diff, { markers: 2, callerLineCharacters: 500 })).toEqual({
+    items: [deletedTest('a.test.ts'), deletedTest('b.test.ts')],
+    gaps: [{ kind: 'truncatedList', list: 'markers', kept: 2, total: 3 }],
+  });
 });
 
 it('lists no items and no gaps for a diff without markers', () => {
@@ -524,7 +621,10 @@ it('cuts the list and a long line and reports both', () => {
   const diff = addedDiff('a.ts', [onlyCall, onlyCall, `${onlyCall}${'x'.repeat(50)}`]);
   const result = scanMarkers(diff, { markers: 2, callerLineCharacters: 10 });
 
-  expect(result.items.map((item) => item.text.length)).toEqual([10, 10]);
+  expect(result.items).toMatchObject([
+    { text: onlyCall.slice(0, 10) },
+    { text: onlyCall.slice(0, 10) },
+  ]);
 
   expect(result.gaps).toEqual([
     { kind: 'truncatedLine', path: 'a.ts', line: 2, kept: 10, total: onlyCall.length },
@@ -556,8 +656,10 @@ it.each([
 
   expect(kept).toEqual(added.map((number) => `+${lines[number - 1] ?? ''}`));
 
-  expect(scanMarkers(result.replaceAll('x', onlyCall)).items.map((item) => item.line)).toEqual(
-    added.filter((number) => lines[number - 1] === 'x'),
+  const markedLines = added.filter((number) => lines[number - 1] === 'x');
+
+  expect(scanMarkers(result.replaceAll('x', onlyCall)).items).toMatchObject(
+    markedLines.map((line) => ({ line })),
   );
 });
 
