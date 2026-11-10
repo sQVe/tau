@@ -103,6 +103,7 @@ const pureModules = [
   'src/extensions/slice/foreignWrites.ts',
   'src/extensions/slice/ownership.ts',
   'src/extensions/slice/startDecisions.ts',
+  'src/extensions/slice/startPickDecisions.ts',
   'src/extensions/slice/writes.ts',
   'src/extensions/snippets/history.ts',
   'src/extensions/snippets/insertion.ts',

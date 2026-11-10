@@ -4,7 +4,20 @@ import type { Static } from 'typebox';
 import type { Exec, CommandRuntime } from '../../command.js';
 import { checkOutput, readJson } from '../../github/github.js';
 import { api, openStateTypes, readTeamId, run } from '../../linear.js';
+import type { PickPullRequest } from './startPickDecisions.js';
 import type { LinearChild, LinearContainer } from './writes.js';
+
+interface PickEvidence {
+  branchName: string;
+  canceled: boolean;
+  blockedBy: string[];
+  pullRequests: PickPullRequest[];
+}
+
+type ReadContainer = Omit<LinearContainer, 'children'> &
+  PickEvidence & {
+    children: (LinearChild & PickEvidence)[];
+  };
 
 export interface CreatedIssue {
   id: string;
@@ -19,7 +32,7 @@ interface IssueInput {
 }
 
 const containerQuery =
-  'query($id: String!) { viewer { id } issue(id: $id) { id identifier title description url assignee { id } creator { id } state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } team { id key } project { id name } children(first: 100) { pageInfo { hasNextPage } nodes { identifier title description url team { id } subIssueSortOrder assignee { id } creator { id } state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } inverseRelations(first: 100) { pageInfo { hasNextPage } nodes { type issue { identifier } } } } } } }';
+  'query($id: String!) { viewer { id } issue(id: $id) { id identifier title description url branchName inverseRelations(first: 100) { pageInfo { hasNextPage } nodes { type issue { identifier } } } assignee { id } creator { id } state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } team { id key } project { id name } children(first: 100) { pageInfo { hasNextPage } nodes { identifier title description url branchName team { id } subIssueSortOrder assignee { id } creator { id } state { type } attachments(first: 100) { pageInfo { hasNextPage } nodes { url } } inverseRelations(first: 100) { pageInfo { hasNextPage } nodes { type issue { identifier } } } } } } }';
 
 const issuesQuery =
   'query($filter: IssueFilter!) { issues(first: 50, filter: $filter) { nodes { identifier } } }';
@@ -46,6 +59,7 @@ const childSchema = Type.Object({
   description: Type.Union([Type.String(), Type.Null()]),
   url: Type.String(),
   subIssueSortOrder: Type.Number(),
+  branchName: Type.String(),
   assignee: userSchema,
   creator: userSchema,
   team: Type.Object({ id: Type.String() }),
@@ -71,6 +85,8 @@ const containerSchema = Type.Object({
       title: Type.String(),
       description: Type.Union([Type.String(), Type.Null()]),
       url: Type.String(),
+      branchName: Type.String(),
+      inverseRelations: childSchema.properties.inverseRelations,
       state: Type.Object({ type: Type.String() }),
       attachments: Type.Object({
         pageInfo: pageInfoSchema,
@@ -123,33 +139,60 @@ const readPullRequestState = async (exec: Exec, cwd: string, url: string) => {
   return value.state;
 };
 
-const readMerged = async (exec: Exec, cwd: string, urls: readonly string[]) => {
+const readPullRequests = async (
+  exec: Exec,
+  cwd: string,
+  urls: readonly string[],
+  states: Map<string, Promise<string>>,
+) => {
   const pullRequests = urls.filter((candidate) => pullRequestUrl.test(candidate));
-  const states = await Promise.all(pullRequests.map((url) => readPullRequestState(exec, cwd, url)));
 
-  return states.includes('MERGED');
+  return Promise.all(
+    pullRequests.map(async (url) => {
+      let state = states.get(url);
+
+      if (state === undefined) {
+        state = readPullRequestState(exec, cwd, url);
+        states.set(url, state);
+      }
+
+      return { url, state: await state };
+    }),
+  );
 };
 
-const toChild = async (exec: Exec, cwd: string, node: ChildNode): Promise<LinearChild> => ({
-  identifier: node.identifier,
-  title: node.title,
-  description: node.description ?? '',
-  url: node.url,
-  sortOrder: node.subIssueSortOrder,
-  completed: node.state.type === 'completed',
-  canceled: node.state.type === 'canceled',
-  merged: await readMerged(
+const toChild = async (
+  exec: Exec,
+  cwd: string,
+  node: ChildNode,
+  states: Map<string, Promise<string>>,
+): Promise<LinearChild & PickEvidence> => {
+  const pullRequests = await readPullRequests(
     exec,
     cwd,
     node.attachments.nodes.map((attachment) => attachment.url),
-  ),
-  assignee: node.assignee?.id ?? null,
-  creator: node.creator?.id ?? null,
-  // Linear saves "A blocked by B" as a `blocks` relation on B.
-  blockedBy: node.inverseRelations.nodes
-    .filter((relation) => relation.type === 'blocks')
-    .map((relation) => relation.issue.identifier),
-});
+    states,
+  );
+
+  return {
+    branchName: node.branchName,
+    pullRequests,
+    identifier: node.identifier,
+    title: node.title,
+    description: node.description ?? '',
+    url: node.url,
+    sortOrder: node.subIssueSortOrder,
+    completed: node.state.type === 'completed',
+    canceled: node.state.type === 'canceled',
+    merged: pullRequests.some((request) => request.state === 'MERGED'),
+    assignee: node.assignee?.id ?? null,
+    creator: node.creator?.id ?? null,
+    // Linear saves "A blocked by B" as a `blocks` relation on B.
+    blockedBy: node.inverseRelations.nodes
+      .filter((relation) => relation.type === 'blocks')
+      .map((relation) => relation.issue.identifier),
+  };
+};
 
 // Reads the container and its children, sorted by sub-issue order. Undefined when Linear has no
 // issue with that identifier.
@@ -157,7 +200,8 @@ export const readContainer = async (
   exec: Exec,
   cwd: string,
   identifier: string,
-): Promise<LinearContainer | undefined> => {
+  states = new Map<string, Promise<string>>(),
+): Promise<ReadContainer | undefined> => {
   const { viewer, issue } = await api(
     exec,
     cwd,
@@ -172,6 +216,7 @@ export const readContainer = async (
 
   const connections = [
     issue.attachments,
+    issue.inverseRelations,
     issue.children,
     ...issue.children.nodes.flatMap((child) => [child.attachments, child.inverseRelations]),
   ];
@@ -188,15 +233,22 @@ export const readContainer = async (
     .filter((child) => child.team.id === issue.team.id)
     .toSorted((left, right) => left.subIssueSortOrder - right.subIssueSortOrder);
 
-  const children = await Promise.all(nodes.map((node) => toChild(exec, cwd, node)));
+  const children = await Promise.all(nodes.map((node) => toChild(exec, cwd, node, states)));
   const attachmentUrls = issue.attachments.nodes.map((attachment) => attachment.url);
+  const pullRequests = await readPullRequests(exec, cwd, attachmentUrls, states);
 
   return {
     id: issue.id,
     viewer: viewer.id,
     identifier: issue.identifier,
     completed: issue.state.type === 'completed',
-    merged: await readMerged(exec, cwd, attachmentUrls),
+    merged: pullRequests.some((request) => request.state === 'MERGED'),
+    branchName: issue.branchName,
+    canceled: issue.state.type === 'canceled',
+    blockedBy: issue.inverseRelations.nodes
+      .filter((relation) => relation.type === 'blocks')
+      .map((relation) => relation.issue.identifier),
+    pullRequests,
     title: issue.title,
     description: issue.description ?? '',
     url: issue.url,

@@ -19,6 +19,7 @@ type StateType =
 
 interface FakeIssue {
   identifier: string;
+  branchName: string;
   title: string;
   description: string;
   parent: string | null;
@@ -107,6 +108,7 @@ const savedDescription = (description: string) => {
 
 const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
   identifier: issue.identifier,
+  branchName: issue.branchName,
   title: issue.title,
   description: issue.description,
   url: `https://linear.app/me/issue/${issue.identifier}`,
@@ -152,6 +154,7 @@ export const createLinearFake = (): LinearFake => {
 
     const created: FakeIssue = {
       identifier,
+      branchName: identifier.toLowerCase(),
       description: '',
       parent: null,
       teamId: 'team-me',

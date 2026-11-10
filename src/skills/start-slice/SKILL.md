@@ -37,25 +37,18 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
 
 ## Procedure
 
-1. Pick the slice: the ticket the user names, or else the one the conversation names. Name it in
-   step 10. Ask with `ask_user_question` when none or several fit. Any other named ticket is the
-   slice itself. For a container (a ticket with children in its team), read the children:
-   `linear api 'query($id: String!) { issue(id: $id) { team { key } children { nodes { identifier title subIssueSortOrder team { key } state { type } attachments { nodes { url } } } } } }' --variable id=<container>`.
-   Keep the container's team, sort by `subIssueSortOrder`, and take the first that passes step 2.
-   Say why in one line. If none passes, stop and report each blocker.
-2. Check readiness before any write, even for a named slice. Read its state and links:
-   `linear api 'query($id: String!) { issue(id: $id) { state { type } attachments { nodes { url } } } }' --variable id=<slice>`.
-   - A slice is merged only when an attachment PR returns `MERGED` from
-     `gh pr view <url> --json state`. Linear status does not count.
-   - Dependencies come from `linear issue relation list <slice>`: `<slice> blocked-by <other>`
-     lines.
-   - Ready means not merged, state not `canceled`, and each blocker merged or open in one chain. A
-     `completed` slice with no merged PR: ask the user. Any other reason: stop and report it.
-   - A blocker is open only when its PR returns `OPEN` from
-     `gh pr view <url> --json state,headRefName,baseRefName`.
-   - No open blocker means unstacked. Otherwise call the `stack` tool's `chain` with the open
-     blockers' URLs as `pullRequests`, and this slice's PR as `slicePullRequest` when it has one. On
-     `stop`, stop and report `reason`. Otherwise the returned `parent` is the step 4 parent.
+1. Pick the ticket the user names, or else the one the conversation names. Ask with
+   `ask_user_question` when none or several fit. Call `start_slice` `read` with that identifier as
+   `pick` and the prompt's agent team as `agentTeam`. Use its `pick` result for steps 2 and 4. Name
+   `chosen` in step 10 and say its `reason` in one line.
+2. Check readiness from the result before any write, even for a named slice.
+   - Ask the user when the named slice has status `completedWithoutMergedPr`, or a container child
+     before `chosen` has that status. When no slice is chosen, check all children for that status.
+   - If `chosen` is null, stop and report the slice statuses and blockers.
+   - No `openBlockerPullRequests` means unstacked. Otherwise call the `stack` tool's `chain` with
+     those URLs as `pullRequests`, and a URL from `chosen.pullRequests` as `slicePullRequest` when
+     it has one. On `stop`, stop and report `reason`. Otherwise the returned `parent` is the step 4
+     parent.
    - When `branchAbove` is true, ask with `ask_user_question`: wait until the parent merges
      (recommended), or stack on `topBranch`, which adds dependencies above the parent. Waiting makes
      the slice not ready. Stacking makes `topBranch` the parent.
@@ -68,11 +61,9 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
    - When a body file differs from the description, either may be newer. Show the difference and ask
      with `ask_user_question` which to keep. A kept body goes to Linear in step 9. Keeping Linear's
      text means saving the description as the body file.
-4. Choose the base. Run `git fetch origin`. The default branch is the part after `origin/` in
-   `git symbolic-ref --short refs/remotes/origin/HEAD`, or from `git ls-remote --symref origin HEAD`
-   when that ref is missing. Without a parent, the base is `origin/<default>`. With a parent, run
-   `git fetch origin refs/heads/<parent>:refs/remotes/origin/<parent>`; the base is
-   `origin/<parent>`, and the trunk is the `trunk` from `chain`.
+4. Choose the base from the `start_slice` `read` result, which fetched every branch of origin and
+   returned `defaultBranch`. Without a parent, use `base`. With a parent, use `origin/<parent>` as
+   the base and the `trunk` from `chain`.
 5. Read the tree the workers use: the branch when
    `git rev-parse --verify --quiet refs/heads/<branchName>` finds it, else the base. Use
    `git ls-tree -r --name-only <tree>` and `git show <tree>:<path>` without switching. Answer the
