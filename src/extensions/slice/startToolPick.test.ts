@@ -261,6 +261,17 @@ it('rejects a missing outside blocker without writing', async () => {
   expect(fake.writes()).toEqual([]);
 });
 
+it('rejects a named slice with more blockers than one page without writing', async () => {
+  const { fake, read } = await setUp();
+  fake.addIssue({ identifier: 'ME-2', title: 'First blocker' });
+  fake.addIssue({ identifier: 'ME-3', title: 'Second blocker' });
+  fake.addIssue({ identifier: 'ME-1', title: 'Slice', blockedBy: ['ME-2', 'ME-3'] });
+  fake.limitRelations(1);
+
+  await expect(read('ME-1')).rejects.toThrow('more than one Linear page');
+  expect(fake.writes()).toEqual([]);
+});
+
 it('rejects malformed outside blocker attachments without writing', async () => {
   const { fake, read } = await setUp();
   fake.addIssue({ identifier: 'ME-1', title: 'Slice', blockedBy: ['ME-2'] });
