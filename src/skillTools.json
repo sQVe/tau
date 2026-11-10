@@ -5,7 +5,7 @@
   "brainstorm": ["slice", "draft_review"],
   "slice": ["slice", "draft_review"],
   "finish-slice": ["slice", "start_slice"],
-  "start-slice": ["slice", "start_slice", "stack"],
+  "start-slice": ["slice", "start_slice", "stack", "mutation_check"],
   "handover": ["handover"],
   "stack": ["stack"],
   "update-branch": ["stack"],

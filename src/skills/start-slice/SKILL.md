@@ -123,11 +123,18 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
 11. Run the slice in this order.
     - Delegate each agent ticket to a worker with its body file path, such as
       `$slicedir/agent-1.md`. Copy its `## Acceptance` items word for word, in order, into
-      `acceptance`.
+      `acceptance`. Tell each worker that the slice manager runs the mutation check.
     - Do not review a finished agent ticket. When a later ticket in the slice builds on a contract
       it changes, such as a type, tool schema, or file format, run one fast review of it before the
       dependent ticket starts.
-    - After the last worker, decide on code-quality without asking. Measure
+    - After the last worker, run `mutation_check` once with `mode: "changed"` and `base` set to
+      `git merge-base <base> HEAD`, where `<base>` is the step 4 base. Skip it, and say so, when the
+      repository has no `mutation.argv`. Report a tool error and go on to code-quality.
+    - Survivors are advice. Send at most three survivor behaviors to one worker in one round, with
+      step 5 of the tdd skill as its rule. That worker then reruns the affected tests and
+      `mutation_check` once with the same `base`. List the survivors left open, with file and line,
+      as reviewer notes for the PR.
+    - After the mutation check, decide on code-quality without asking. Measure
       `git merge-base <base> HEAD` to the working tree, counting untracked new files as added lines.
     - Skip when the diff touches only docs, config, or tests; when the source lines changed, added
       and deleted, total fewer than 100; or when the change is mechanical, such as a rename. Tell
@@ -143,6 +150,7 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
       its callers. Report findings that remain after the fix review to the user, and do not start
       triage-findings or another fix round for them.
     - Audit with the [finish-slice skill](../finish-slice/SKILL.md). Delegate each fix ticket it
-      creates, as the first bullet says, then audit once more. Items still unmet go to the pr skill
-      as required actions.
+      creates, as the first bullet says, except that its worker runs the mutation check with `base`
+      set to the `git rev-parse HEAD` from before the ticket starts. Then audit once more. Items
+      still unmet go to the pr skill as required actions.
     - Open the PR with the [pr skill](../pr/SKILL.md), and link the slice as the tracker skill says.

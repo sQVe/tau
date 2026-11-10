@@ -30,12 +30,13 @@ Use this skill when you change behavior and `run_tests` is available.
    it passes. You may change the label, but keep the selection.
 4. Refactor and format. Then run the affected tests with `run_tests` once on the current inputs. Do
    not run the repository's full check; the PR step runs it.
-5. After the affected tests pass, run `mutation_check` with `mode: "changed"` and no `base` once.
-   Skip this step, and say so, when the repository has no `mutation.argv`. Report a tool error on
-   its own line and stop the step. Survivors are advice. Fix at most 3 behaviors in one round: write
-   a test that kills the survivor, or simplify redundant code it points at. After that round, rerun
-   the affected tests and `mutation_check` at most once. Then list what is left as open, with file
-   and line. Give no reason per mutant.
+5. After the affected tests pass, run `mutation_check` with `mode: "changed"` once, with the `base`
+   your task names, or no `base`. Skip this step, and say so, when the repository has no
+   `mutation.argv`. Also skip it, and say so, when your task says the slice manager runs the check.
+   Report a tool error on its own line and stop the step. Survivors are advice. Fix at most 3
+   behaviors in one round: write a test that kills the survivor, or simplify redundant code it
+   points at. After that round, rerun the affected tests and `mutation_check` at most once. Then
+   list what is left as open, with file and line. Give no reason per mutant.
 
    Place a killing test in the owner's existing behavior test file, or add a row to its decision
    table. When the owner has no test file yet, use its normal test file next to it, as step 1 says.
