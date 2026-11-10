@@ -23,7 +23,7 @@ import type { TrackerRoute } from './config.js';
 import { readDraftRecord, writeDraftRecord } from './draftRecord.js';
 import { readTicketIssue, searchIssues } from './linear.js';
 import { trackerSetupDiagnostic } from './setupDiagnostic.js';
-import { planTicketWrites } from './ticketWrites.js';
+import { planTicketWrites, resolveTicketBinding } from './ticketWrites.js';
 import type { TicketArguments, TicketDraft, TicketPlan, TicketWrite } from './ticketWrites.js';
 
 export interface TicketRuntime {
@@ -153,10 +153,29 @@ const readState = async (runtime: TicketRuntime, request: TicketArguments) => {
   const record = await readDraftRecord(directory);
   const draft = { title: titleFile.trim(), description };
   const { route, routeProblem } = await readTicketRoute(runtime);
-  const identifier = record?.identifier ?? null;
-  const current = identifier === null ? null : await readTicketIssue(exec, context.cwd, identifier);
+
+  const { identifier, problem: bindingProblem } = resolveTicketBinding(
+    record?.identifier ?? null,
+    request.ticket,
+  );
+
+  const current =
+    identifier === null || bindingProblem !== undefined
+      ? null
+      : await readTicketIssue(exec, context.cwd, identifier);
+
   const candidates = await readCreateCandidates(runtime, route, identifier, draft.title);
-  const planned = planTicketWrites({ draft, request, route, routeProblem, current, candidates });
+
+  const planned = planTicketWrites({
+    draft,
+    request,
+    route,
+    routeProblem,
+    current,
+    candidates,
+    bindingProblem,
+  });
+
   const plan = await prepareTicketPlan(runtime, request, planned);
   const targets = plan.kind === 'create' ? plan.targets : null;
 
@@ -234,6 +253,32 @@ const approveUpdate = async (runtime: TicketRuntime, state: UpdateState) => {
   });
 };
 
+const saveIdentifier = async (state: TicketState, identifier: string) => {
+  if (state.record?.identifier === identifier) {
+    return;
+  }
+
+  await writeDraftRecord(state.directory, {
+    version: 3,
+    identifier,
+    comments: state.record?.comments ?? {},
+  });
+};
+
+const bindExistingTicket = async (
+  state: TicketState,
+  current: { identifier: string; url: string },
+) => {
+  try {
+    await saveIdentifier(state, current.identifier);
+  } catch (error) {
+    throw new Error(
+      `Could not record ${current.identifier} (${current.url}) in ${state.directory}/draft.json: ${errorMessage(error)}. No Linear update was made.`,
+      { cause: error },
+    );
+  }
+};
+
 const applyCreate = async (
   runtime: TicketRuntime,
   state: CreateState,
@@ -251,11 +296,7 @@ const applyCreate = async (
   });
 
   try {
-    await writeDraftRecord(state.directory, {
-      version: 3,
-      identifier: created.identifier,
-      comments: state.record?.comments ?? {},
-    });
+    await saveIdentifier(state, created.identifier);
   } catch (error) {
     throw new Error(
       `Created ${created.identifier} (${created.url}), but could not save its identifier in ${state.directory}/draft.json: ${errorMessage(error)}. Call read again to check the unrecorded ticket.`,
@@ -285,6 +326,7 @@ const applyUpdate = async (
     rejectChangedState(reread.stateToken, state.stateToken);
   }
 
+  await bindExistingTicket(state, current);
   await updateIssue(runtime.exec, runtime.context.cwd, current.identifier, write);
 
   return { status: 'updated', ...details };
@@ -307,6 +349,8 @@ export const applyTicket = async (
     }
 
     case 'unchanged': {
+      await bindExistingTicket(state, plan.current);
+
       return { status: 'unchanged', identifier: state.identifier, url: plan.current.url };
     }
 

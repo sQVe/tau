@@ -67,8 +67,8 @@ This list is the one approval rule; other skills link here.
    - For a bug or human ticket, call `ticket` `prepare` with the lower-case identifier when it
      exists, else a title slug. Save `title.md` and `ticket.md` in the returned `directory`; never
      write `draft.json`. Keep the type, route, parent, and labels in the preview.
-   - Call `ticket` `read` before review, and resolve its `problems`. Use `current` and `writes` to
-     name each changed field and Linear edit the draft would drop. Review again if they change.
+   - Before review, call `ticket` `read` with `ticket` for an existing ID. Resolve `problems`.
+     Review `current` and `writes` for changed fields and dropped Linear edits. Repeat on changes.
 
 5. Approval rule for each draft, in this order.
    1. Before the question, call `draft_review` `open`, title before body. On `opened`, tell the user
@@ -91,9 +91,9 @@ This list is the one approval rule; other skills link here.
 
 6. Write in the previewed order. Stop on a partial failure and report what was written.
    - Containers and slices: use the [slice skill](../slice/SKILL.md), which uses the `slice` tool.
-   - Bug or human ticket: `read` again, then `apply` with its `stateToken` and the same arguments,
-     `parent` and label IDs only for a create. Report `declined` without a retry. A failed save
-     after a create names the ticket: report it and stop. Never create it again.
+   - Bug or human ticket: `read` again, then `apply` with its `stateToken` and the same arguments.
+     Pass `ticket` to both for an existing ticket; `parent` and label IDs only for a create. Report
+     `declined` without retry. If a create save fails, report its ID; never recreate it.
    - Comments: `ticket` `comment` with the ticket, a heading, and a body file that starts with it.
      Report the ID and URL, or `declined`, and the edits `previousBody` shows it replaced.
    - Other relations: add with `linear issue relation add <ticket> blocked-by <other>`, remove with

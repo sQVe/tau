@@ -9,6 +9,7 @@ export interface TicketDraft {
 
 export interface TicketArguments {
   directory: string;
+  ticket?: string;
   parent?: string;
   labels?: string[];
 }
@@ -58,7 +59,32 @@ export interface TicketWriteFacts {
   routeProblem: string;
   current: TicketIssue | null;
   candidates: readonly TicketCandidate[];
+  bindingProblem: string | undefined;
 }
+
+interface TicketBinding {
+  identifier: string | null;
+  problem: string | undefined;
+}
+
+export const resolveTicketBinding = (
+  recordedIdentifier: string | null,
+  requestedIdentifier: string | undefined,
+): TicketBinding => {
+  const conflicts =
+    recordedIdentifier !== null &&
+    requestedIdentifier !== undefined &&
+    recordedIdentifier !== requestedIdentifier;
+
+  if (conflicts) {
+    return {
+      identifier: recordedIdentifier,
+      problem: `The ticket draft records ${recordedIdentifier}, not ${requestedIdentifier}.`,
+    };
+  }
+
+  return { identifier: recordedIdentifier ?? requestedIdentifier ?? null, problem: undefined };
+};
 
 const blockedPlan = (problem: string): TicketPlan => ({
   kind: 'blocked',
@@ -137,6 +163,10 @@ const planCreate = (
 };
 
 export const planTicketWrites = (facts: TicketWriteFacts): TicketPlan => {
+  if (facts.bindingProblem !== undefined) {
+    return blockedPlan(facts.bindingProblem);
+  }
+
   if (facts.route === undefined) {
     return blockedPlan(facts.routeProblem);
   }

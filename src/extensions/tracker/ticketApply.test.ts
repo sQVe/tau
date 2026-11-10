@@ -52,6 +52,228 @@ const setupUpdate = async () => {
   return { ...state, ticket, record };
 };
 
+it('binds a prepared draft to an existing ticket without creating a duplicate', async () => {
+  const { runtime, fake } = await setup();
+
+  const existing = fake.addIssue({
+    identifier: 'ME-42',
+    title: 'Old title',
+    description: 'Original body',
+  });
+
+  const prepared = await prepare(runtime.context.cwd, 'me-42');
+  expect(prepared.draft).toBeNull();
+  await writeFile(join(prepared.directory, 'title.md'), 'Retitled ticket\n');
+  await writeFile(join(prepared.directory, 'ticket.md'), 'Updated body');
+  const request = { directory: prepared.directory, ticket: existing.identifier };
+  const plan = await ticketApply.readTicket(runtime, request);
+
+  expect(plan.identifier).toBe(existing.identifier);
+  expect(plan.current).toMatchObject({ title: 'Old title', description: 'Original body' });
+  expect(plan.writes).toMatchObject([{ kind: 'updateTicket' }]);
+
+  await expect(readFile(join(prepared.directory, 'draft.json'))).rejects.toMatchObject({
+    code: 'ENOENT',
+  });
+
+  const result = await ticketApply.applyTicket(runtime, {
+    ...request,
+    stateToken: plan.stateToken,
+  });
+
+  expect(result).toMatchObject({ status: 'updated', identifier: existing.identifier });
+  expect(existing).toMatchObject({ title: 'Retitled ticket', description: 'Updated body' });
+  expect(fake.issues.size).toBe(1);
+  expect(fake.writes()).toHaveLength(1);
+
+  expect(JSON.parse(await readFile(join(prepared.directory, 'draft.json'), 'utf8'))).toEqual({
+    version: 3,
+    identifier: existing.identifier,
+    comments: {},
+  });
+});
+
+it('refuses a requested ticket that differs from the recorded identifier', async () => {
+  const { runtime, fake, directory, ticket, record } = await setupUpdate();
+  const request = { directory, ticket: 'ME-999' };
+  fake.failCall('issue(id:', 'Ticket lookup unavailable');
+  const before = structuredClone([...fake.issues]);
+  const plan = await ticketApply.readTicket(runtime, request);
+
+  expect(plan.problems.join('\n')).toContain(ticket.identifier);
+  expect(plan.problems.join('\n')).toContain(request.ticket);
+  expect(plan.writes).toEqual([]);
+
+  await expect(
+    ticketApply.applyTicket(runtime, { ...request, stateToken: plan.stateToken }),
+  ).rejects.toThrow('ME-999');
+
+  expect(fake.writes()).toEqual([]);
+  expect([...fake.issues]).toEqual(before);
+  expect(await readFile(join(directory, 'draft.json'), 'utf8')).toBe(record);
+});
+
+it('requires an explicitly requested ticket to exist', async () => {
+  const { runtime, fake, directory } = await setup();
+  const request = { directory, ticket: 'ME-404' };
+
+  await expect(ticketApply.readTicket(runtime, request)).rejects.toThrow('ME-404');
+
+  await expect(
+    ticketApply.applyTicket(runtime, { ...request, stateToken: 'unused' }),
+  ).rejects.toThrow('ME-404');
+
+  expect(fake.writes()).toEqual([]);
+  expect(fake.issues.size).toBe(0);
+  await expect(readFile(join(directory, 'draft.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('rejects malformed evidence for an explicitly requested ticket', async () => {
+  const { runtime, fake, directory } = await setup();
+  const existing = fake.addIssue({ title: 'Old title' });
+  const request = { directory, ticket: existing.identifier };
+  fake.overrideOutput('issue(id:', '{"data":{}}');
+
+  await expect(ticketApply.readTicket(runtime, request)).rejects.toThrow('unexpected output');
+
+  await expect(
+    ticketApply.applyTicket(runtime, { ...request, stateToken: 'unused' }),
+  ).rejects.toThrow('unexpected output');
+
+  expect(fake.writes()).toEqual([]);
+  expect(existing.title).toBe('Old title');
+  await expect(readFile(join(directory, 'draft.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('records an unchanged existing ticket without a Linear write', async () => {
+  const { runtime, fake, directory } = await setup();
+
+  const existing = fake.addIssue({
+    title: 'Fix the failure',
+    description: 'Reproduction details.\n',
+  });
+
+  const request = { directory, ticket: existing.identifier };
+  const plan = await ticketApply.readTicket(runtime, request);
+
+  const result = await ticketApply.applyTicket(runtime, {
+    ...request,
+    stateToken: plan.stateToken,
+  });
+
+  expect(result).toMatchObject({ status: 'unchanged', identifier: existing.identifier });
+  expect(fake.writes()).toEqual([]);
+
+  expect(JSON.parse(await readFile(join(directory, 'draft.json'), 'utf8'))).toEqual({
+    version: 3,
+    identifier: existing.identifier,
+    comments: {},
+  });
+});
+
+it('preserves comment identifiers when binding an unrecorded draft', async () => {
+  const { runtime, fake, directory } = await setup();
+  const existing = fake.addIssue({ title: 'Old title' });
+  const comments = { '# Existing': 'comment-1' };
+
+  await writeFile(
+    join(directory, 'draft.json'),
+    JSON.stringify({ version: 3, identifier: null, comments }),
+  );
+
+  const request = { directory, ticket: existing.identifier };
+  const plan = await ticketApply.readTicket(runtime, request);
+
+  await ticketApply.applyTicket(runtime, { ...request, stateToken: plan.stateToken });
+
+  expect(JSON.parse(await readFile(join(directory, 'draft.json'), 'utf8'))).toEqual({
+    version: 3,
+    identifier: existing.identifier,
+    comments,
+  });
+
+  expect(existing.title).toBe('Fix the failure');
+});
+
+it('includes the explicit ticket argument in the state token', async () => {
+  const { runtime, fake, directory, ticket, record } = await setupUpdate();
+  const plan = await ticketApply.readTicket(runtime, { directory, ticket: ticket.identifier });
+
+  await expect(
+    ticketApply.applyTicket(runtime, { directory, stateToken: plan.stateToken }),
+  ).rejects.toThrow('changed');
+
+  expect(fake.writes()).toEqual([]);
+  expect(ticket.title).toBe('Old title');
+  expect(await readFile(join(directory, 'draft.json'), 'utf8')).toBe(record);
+});
+
+it('does not bind a declined first update', async () => {
+  const { runtime, fake, directory } = await setup();
+  const existing = fake.addIssue({ title: 'Old title', assigneeId: 'someone-else' });
+  const request = { directory, ticket: existing.identifier };
+  const plan = await ticketApply.readTicket(runtime, request);
+
+  const result = await ticketApply.applyTicket(runtime, {
+    ...request,
+    stateToken: plan.stateToken,
+  });
+
+  expect(result).toMatchObject({ status: 'declined', identifier: existing.identifier });
+  expect(fake.writes()).toEqual([]);
+  expect(existing.title).toBe('Old title');
+  await expect(readFile(join(directory, 'draft.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
+it('makes no Linear update when saving the existing identifier fails', async () => {
+  const { runtime, fake, directory } = await setup();
+  const existing = fake.addIssue({ title: 'Old title' });
+  const request = { directory, ticket: existing.identifier };
+  const plan = await ticketApply.readTicket(runtime, request);
+
+  runtime.exec = async (command, commandArguments, options) => {
+    const result = await fake.exec(command, commandArguments, options);
+
+    if (commandArguments[1]?.includes('issue(id:') === true) {
+      await mkdir(join(directory, 'draft.json'));
+    }
+
+    return result;
+  };
+
+  await expect(
+    ticketApply.applyTicket(runtime, { ...request, stateToken: plan.stateToken }),
+  ).rejects.toThrow(/Could not record ME-1.*No Linear update was made/u);
+
+  expect(fake.writes()).toEqual([]);
+  expect(existing.title).toBe('Old title');
+  expect(fake.issues.size).toBe(1);
+});
+
+it('keeps the binding when the first Linear update fails', async () => {
+  const { runtime, fake, directory } = await setup();
+  const existing = fake.addIssue({ title: 'Old title' });
+  const request = { directory, ticket: existing.identifier };
+  const plan = await ticketApply.readTicket(runtime, request);
+  fake.failCall('issueUpdate', 'Update unavailable');
+
+  await expect(
+    ticketApply.applyTicket(runtime, { ...request, stateToken: plan.stateToken }),
+  ).rejects.toThrow('Update unavailable');
+
+  expect(existing.title).toBe('Old title');
+  expect(fake.issues.size).toBe(1);
+
+  expect(JSON.parse(await readFile(join(directory, 'draft.json'), 'utf8'))).toMatchObject({
+    identifier: existing.identifier,
+  });
+
+  const retry = await ticketApply.readTicket(runtime, { directory });
+
+  expect(retry.identifier).toBe(existing.identifier);
+  expect(retry.writes).toMatchObject([{ kind: 'updateTicket' }]);
+});
+
 it('reports the created ticket when saving its identifier fails and blocks a duplicate retry', async () => {
   const { runtime, fake, directory } = await setup();
   const recordPath = join(directory, 'draft.json');

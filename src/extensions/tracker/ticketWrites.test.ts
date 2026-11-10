@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { planTicketWrites } from './ticketWrites.js';
+import { planTicketWrites, resolveTicketBinding } from './ticketWrites.js';
 import type { TicketWriteFacts } from './ticketWrites.js';
 
 const draft = { title: 'New title', description: '- Details\n' };
@@ -51,6 +51,40 @@ const cases: {
     problems: 1,
   },
   { name: 'create', facts: {}, kind: 'createTicket', problems: 0, ...draft },
+  {
+    name: 'binding conflict',
+    facts: { bindingProblem: 'The draft records ME-1, not ME-2.' },
+    kind: null,
+    problems: 1,
+  },
+  {
+    name: 'explicit ticket update',
+    facts: {
+      current: { ...ticket, title: 'Old' },
+      request: { directory: 'draft', ticket: ticket.identifier },
+    },
+    kind: 'updateTicket',
+    problems: 0,
+    title: draft.title,
+  },
+  {
+    name: 'explicit ticket with parent',
+    facts: {
+      current: ticket,
+      request: { directory: 'draft', ticket: ticket.identifier, parent: 'ME-2' },
+    },
+    kind: null,
+    problems: 1,
+  },
+  {
+    name: 'explicit ticket with labels',
+    facts: {
+      current: ticket,
+      request: { directory: 'draft', ticket: ticket.identifier, labels: [] },
+    },
+    kind: null,
+    problems: 1,
+  },
   {
     name: 'unrecorded title match created by the viewer',
     facts: {
@@ -131,6 +165,43 @@ const cases: {
   },
 ];
 
+it.each([
+  { name: 'new draft', recorded: null, requested: undefined, identifier: null, conflict: false },
+  {
+    name: 'first update',
+    recorded: null,
+    requested: 'ME-42',
+    identifier: 'ME-42',
+    conflict: false,
+  },
+  {
+    name: 'recorded ticket',
+    recorded: 'ME-42',
+    requested: undefined,
+    identifier: 'ME-42',
+    conflict: false,
+  },
+  {
+    name: 'same ticket',
+    recorded: 'ME-42',
+    requested: 'ME-42',
+    identifier: 'ME-42',
+    conflict: false,
+  },
+  {
+    name: 'different ticket',
+    recorded: 'ME-42',
+    requested: 'ME-43',
+    identifier: 'ME-42',
+    conflict: true,
+  },
+])('resolves binding for $name', ({ recorded, requested, identifier, conflict }) => {
+  const binding = resolveTicketBinding(recorded, requested);
+
+  expect(binding.identifier).toBe(identifier);
+  expect(binding.problem !== undefined).toBe(conflict);
+});
+
 it.each(cases)('plans $name', ({ facts, kind, problems, title, description }) => {
   const plan = planTicketWrites({
     draft,
@@ -138,6 +209,7 @@ it.each(cases)('plans $name', ({ facts, kind, problems, title, description }) =>
     routeProblem: 'Tracker setup needed: test route.',
     request: { directory: 'draft' },
     current: null,
+    bindingProblem: undefined,
     candidates: [],
     ...facts,
   });

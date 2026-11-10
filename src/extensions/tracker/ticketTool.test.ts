@@ -309,9 +309,34 @@ it.each([
   expect(await readdir(root)).toEqual(['.git']);
 });
 
-it.each(['without metadata', 'with parent and labels'])(
-  'routes read and apply using the session repository configuration %s',
-  async (mode) => {
+it.each([
+  {
+    name: 'without metadata',
+    metadata: {},
+    status: 'created',
+    identifier: 'ME-13',
+    projectId: 'project-tau',
+    count: 2,
+  },
+  {
+    name: 'with parent and labels',
+    metadata: { parent: 'ME-12', labels: ['label-bug'] },
+    status: 'created',
+    identifier: 'ME-13',
+    projectId: 'project-tau',
+    count: 2,
+  },
+  {
+    name: 'with an existing ticket',
+    metadata: { ticket: 'ME-12' },
+    status: 'updated',
+    identifier: 'ME-12',
+    projectId: null,
+    count: 1,
+  },
+])(
+  'routes read and apply using the session repository configuration $name',
+  async ({ metadata, status, identifier, projectId, count }) => {
     const root = await createTemporaryRepository(onTestFinished);
     vi.stubEnv('PI_CODING_AGENT_DIR', root);
 
@@ -336,10 +361,7 @@ it.each(['without metadata', 'with parent and labels'])(
     await writeFile(join(directory, 'title.md'), 'New ticket\n');
     await writeFile(join(directory, 'ticket.md'), 'Details');
     const fake = createLinearFake();
-    const parent = fake.addIssue({ identifier: 'ME-12', title: 'Parent', projectId: null });
-
-    const metadata =
-      mode === 'without metadata' ? {} : { parent: parent.identifier, labels: ['label-bug'] };
+    fake.addIssue({ identifier: 'ME-12', title: 'Parent', projectId: null });
 
     const tool = createTicketTool(fake.exec);
     const context = { ...noUiContext(root), isProjectTrusted: () => false };
@@ -367,15 +389,16 @@ it.each(['without metadata', 'with parent and labels'])(
       context,
     );
 
-    expect(result.details).toMatchObject({ status: 'created', identifier: 'ME-13' });
+    expect(result.details).toMatchObject({ status, identifier });
+    expect(fake.issues.size).toBe(count);
 
-    expect(fake.issues.get('ME-13')).toMatchObject({
+    expect(fake.issues.get(identifier)).toMatchObject({
       title: 'New ticket',
       description: 'Details',
       parent: metadata.parent ?? null,
       labelIds: metadata.labels ?? [],
       teamId: 'team-me',
-      projectId: 'project-tau',
+      projectId,
     });
   },
 );

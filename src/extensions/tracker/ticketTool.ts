@@ -63,6 +63,7 @@ const executeAction = async (
   if (input.action === 'read' || input.action === 'apply') {
     const request = {
       directory: requireText(input, 'directory'),
+      ...(input.ticket === undefined ? {} : { ticket: input.ticket }),
       ...(input.parent === undefined ? {} : { parent: input.parent }),
       ...(input.labels === undefined ? {} : { labels: input.labels }),
     };
@@ -107,9 +108,9 @@ export const createTicketTool = (exec: Exec): ToolDefinition<typeof parameters, 
     name: 'ticket',
     label: 'Ticket',
     description: `Manage tickets and local drafts.
-- prepare {id}: reuse a recorded ticket's draft or create .tau/tickets/<id>. id uses lower-case letters, digits, and hyphens. Returns {directory, draft, malformed}: absolute path, saved record or null, unreadable drafts elsewhere. Keeps existing files.
-- read {directory, parent?, labels?}: plan from title.md and ticket.md using the repository route. parent is a ticket identifier; labels are label IDs. Both are create-only. Returns {directory, identifier, route, current, writes, problems, stateToken}. current is Linear text or null. Writes nothing.
-- apply {directory, stateToken, parent?, labels?}: use read's token and arguments. Refuses changed state or problems. Saves a created identifier; updates only changed text. Returns {status: "created" | "updated" | "unchanged" | "declined", identifier, url}.
+- prepare {id}: reuse a recorded ticket's draft or create .tau/tickets/<id>. id allows a-z, 0-9, and hyphens. Returns {directory, draft, malformed}: absolute path, record or null, other unreadable drafts. Preserves files.
+- read {directory, ticket?, parent?, labels?}: plan title.md and ticket.md in the repository route. ticket selects an existing ticket; saved ID conflicts are problems. Create-only: parent ticket ID and labels (IDs). Returns {directory, identifier, route, current, writes, problems, stateToken}. current is Linear text or null. Writes nothing.
+- apply {directory, stateToken, ticket?, parent?, labels?}: use read's token and arguments. Refuses changed state or problems. Saves identifiers before updates or after creates. Updates only changed text. Returns {status: "created" | "updated" | "unchanged" | "declined", identifier, url}.
 - comment {ticket, heading, bodyFile}: upsert the viewer's comment by saved ID or matching heading. bodyFile is absolute or relative to cwd; its first line must equal heading. Returns {status: "added" | "updated" | "declined", id, url, directory, previousBody}. previousBody is replaced text or null; declined returns the existing target's id and url, or null.
 - cancel {ticket}: check ticket and PR state, then ask before canceling. Returns {status: "canceled" | "unchanged" | "declined", identifier}.
 - Updates and comments on another person's ticket ask for approval. Approval declines in workers or without UI. Refusals write nothing. Use uppercase identifiers, such as ME-600. Only this tool writes draft.json.`,
