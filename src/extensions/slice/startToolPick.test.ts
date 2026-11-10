@@ -79,6 +79,91 @@ it('picks the first ready child and reads the remote default branch', async () =
   expect(fake.writes()).toEqual([]);
 });
 
+it.each([
+  { kind: 'child', stateType: 'completed', status: 'completedWithoutMergedPr' },
+  { kind: 'child', stateType: 'canceled', status: 'canceled' },
+  { kind: 'child', stateType: 'started', status: 'ready' },
+  { kind: 'named', stateType: 'completed', status: 'completedWithoutMergedPr' },
+  { kind: 'named', stateType: 'canceled', status: 'canceled' },
+  { kind: 'named', stateType: 'started', status: 'ready' },
+] as const)('maps $kind $stateType readiness', async ({ kind, stateType, status }) => {
+  const { fake, read } = await setUp();
+  const parent = kind === 'child' ? 'ME-1' : null;
+
+  if (parent !== null) {
+    fake.addIssue({ identifier: parent, title: 'Container' });
+  }
+
+  fake.addIssue({
+    identifier: 'ME-2',
+    title: 'Slice',
+    parent,
+    stateType,
+    pullRequests: ['https://github.com/me/repo/pull/2'],
+  });
+
+  const identifier = parent ?? 'ME-2';
+  const result = await read(identifier);
+  const chosen = status === 'ready' ? { identifier: 'ME-2' } : null;
+
+  expect(result.details).toMatchObject({
+    pick: { chosen, slices: [{ identifier: 'ME-2', status }] },
+  });
+
+  expect(fake.writes()).toEqual([]);
+});
+
+it.each(['child', 'named'])(
+  'ignores non-blocking inverse relations on a %s slice',
+  async (kind) => {
+    const { fake, read } = await setUp();
+    const parent = kind === 'child' ? 'ME-1' : null;
+
+    if (parent !== null) {
+      fake.addIssue({ identifier: parent, title: 'Container' });
+    }
+
+    fake.addIssue({
+      identifier: 'ME-2',
+      title: 'Slice',
+      parent,
+      blockedBy: ['ME-3'],
+      inverseRelations: [{ type: 'related', identifier: 'ME-4' }],
+    });
+
+    fake.addIssue({
+      identifier: 'ME-3',
+      title: 'Blocker',
+      pullRequests: ['https://github.com/me/repo/pull/3'],
+    });
+
+    fake.addIssue({ identifier: 'ME-4', title: 'Related without PR' });
+    const identifier = parent ?? 'ME-2';
+    const result = await read(identifier);
+
+    expect(result.details).toMatchObject({
+      pick: {
+        chosen: { identifier: 'ME-2' },
+        slices: [
+          {
+            identifier: 'ME-2',
+            status: 'ready',
+            blockers: [
+              {
+                identifier: 'ME-3',
+                state: 'open',
+                pullRequests: ['https://github.com/me/repo/pull/3'],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(fake.writes()).toEqual([]);
+  },
+);
+
 it('returns the open blocker URL and the named slice links', async () => {
   const { root, fake, read } = await setUp();
   await git(root, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
@@ -196,14 +281,18 @@ it('returns both the pick and draft read when directory is given', async () => {
   expect(fake.writes()).toEqual([]);
 });
 
-it.each(['read', 'apply'] as const)('requires directory for %s without pick', async (action) => {
+it.each([
+  { action: 'read', message: 'read requires directory or pick.' },
+  { action: 'apply', message: 'apply requires directory.' },
+] as const)('requires directory for $action without pick', async ({ action, message }) => {
   const { root, fake, tool } = await setUp();
 
   await expect(
     tool.execute('call', { action, agentTeam: 'AI' }, undefined, undefined, noUiContext(root)),
-  ).rejects.toThrow('requires directory');
+  ).rejects.toThrow(message);
 
   expect(fake.calls).toEqual([]);
+  expect(fake.writes()).toEqual([]);
 });
 
 it('reports a blocked slice and its closed PR URL', async () => {

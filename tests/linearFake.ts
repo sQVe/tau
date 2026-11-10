@@ -33,6 +33,7 @@ interface FakeIssue {
   stateName: string;
   pullRequests: string[];
   blockedBy: string[];
+  inverseRelations: { type: string; identifier: string }[];
 }
 
 interface Fence {
@@ -121,7 +122,10 @@ const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
   state: { type: issue.stateType, name: issue.stateName },
   attachments: { nodes: issue.pullRequests.map((url) => ({ url })) },
   inverseRelations: {
-    nodes: issue.blockedBy.map((identifier) => ({ type: 'blocks', issue: { identifier } })),
+    nodes: [
+      ...issue.blockedBy.map((identifier) => ({ type: 'blocks', issue: { identifier } })),
+      ...issue.inverseRelations.map(({ type, identifier }) => ({ type, issue: { identifier } })),
+    ],
   },
 });
 
@@ -168,6 +172,7 @@ export const createLinearFake = (): LinearFake => {
       stateName: 'In Progress',
       pullRequests: [],
       blockedBy: [],
+      inverseRelations: [],
       ...issue,
     };
 

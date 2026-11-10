@@ -41,6 +41,39 @@ describe('slice tool read', () => {
     });
   });
 
+  it.each(['OPEN', 'CLOSED'])(
+    'does not mark a root or child with only a %s PR as merged',
+    async (state) => {
+      const root = await temporaryRepository();
+      const fake = createLinearFake();
+      const context = noUiContext(root);
+      const pullRequest = 'https://github.com/sQVe/tau/pull/1';
+      fake.addIssue({ identifier: 'ME-1', title: 'Container', pullRequests: [pullRequest] });
+
+      fake.addIssue({
+        identifier: 'ME-2',
+        title: 'Slice',
+        parent: 'ME-1',
+        pullRequests: [pullRequest],
+      });
+
+      fake.overrideOutput('pr view', JSON.stringify({ state }));
+      const { directory } = await run(fake, context, { action: 'prepare', id: 'me-1' });
+
+      const result = await run(fake, context, { action: 'read', directory, container: 'ME-1' });
+
+      expect(result).toMatchObject({
+        container: {
+          identifier: 'ME-1',
+          merged: false,
+          children: [{ identifier: 'ME-2', merged: false }],
+        },
+      });
+
+      expect(fake.writes()).toEqual([]);
+    },
+  );
+
   it('lists no write when Linear saved list items with other markers', async () => {
     const { fake, directory, apply, read } = await setUp();
     const body = '- one\n  - nested\n- two\n';

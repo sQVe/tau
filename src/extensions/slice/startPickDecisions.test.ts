@@ -86,6 +86,27 @@ it.each([
     open: ['open'],
   },
   {
+    name: 'lists only open blocker PRs',
+    slices: [
+      slice('ME-1', {
+        blockers: [
+          {
+            identifier: 'ME-0',
+            pullRequests: [
+              { url: 'closed', state: 'CLOSED' },
+              { url: 'open', state: 'OPEN' },
+            ],
+          },
+        ],
+      }),
+    ],
+    container: false,
+    chosen: 'ME-1',
+    statuses: ['ready'],
+    base: null,
+    open: ['open'],
+  },
+  {
     name: 'prefers merged over open blocker PRs',
     slices: [
       slice('ME-1', {
