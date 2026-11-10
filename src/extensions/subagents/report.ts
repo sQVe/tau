@@ -45,7 +45,7 @@ export const reportParameters = Type.Object({
   summary: Type.String({
     minLength: 1,
     maxLength: 32_000,
-    description: `A short lead, then exactly these headings: ${summaryHeadings}. Write None under an empty one. A report without them is refused. Keep it within ${summaryLengthLimitText} characters; the parent gets a longer one cut at that limit, with the full text in a file.`,
+    description: `A short lead, then exactly these headings: ${summaryHeadings}. Write None under an empty one. A report without them is refused. Keep it under ${summaryLengthLimitText} characters; longer text is cut and saved in full to a file.`,
   }),
   // One evidence slot stays free for the full summary file.
   evidence: Type.Array(Type.String({ minLength: 1, maxLength: 32_000 }), { maxItems: 99 }),
