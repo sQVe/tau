@@ -107,6 +107,56 @@ it('returns own ownership for only user commits on a GitHub branch without an op
   expect(result.ownership).toEqual({ status: 'own', reasons: [] });
 });
 
+it('uses the range endpoint for ownership when HEAD has a later commit by another author', async () => {
+  const { root, directory } = await preparedReview();
+  const fake = createGhFake();
+  const from = await git(root, 'rev-parse', 'HEAD');
+
+  await writeFile(join(root, 'tracked.txt'), 'own\n');
+  await git(root, 'commit', '-am', 'own');
+
+  const to = await git(root, 'rev-parse', 'HEAD');
+
+  await writeFile(join(root, 'tracked.txt'), 'other\n');
+  await git(root, 'commit', '-am', 'other', '--author=Other <other@example.com>');
+
+  const result = await captureReviewDirectory(
+    root,
+    directory,
+    { kind: 'range', from, to },
+    { cwd: root, exec: fake.exec },
+  );
+
+  expect(result.ownership).toEqual({ status: 'own', reasons: [] });
+});
+
+it('keeps root ownership pinned when its named revision moves during GitHub reads', async () => {
+  const { root, directory } = await preparedReview();
+  const fake = createGhFake();
+
+  await git(root, 'branch', 'captured-root');
+  await git(root, 'checkout', '-b', 'feature');
+  await git(root, 'remote', 'add', 'origin', 'https://github.com/sQVe/tau.git');
+  await writeFile(join(root, 'tracked.txt'), 'other\n');
+  await git(root, 'commit', '-am', 'other', '--author=Other <other@example.com>');
+  fake.repositories['github.com/sQVe/tau'] = { defaultBranch: 'main' };
+
+  const exec: typeof fake.exec = async (...callArguments) => {
+    await git(root, 'branch', '--force', 'captured-root', 'HEAD');
+
+    return fake.exec(...callArguments);
+  };
+
+  const result = await captureReviewDirectory(
+    root,
+    directory,
+    { kind: 'rootCommit', commit: 'captured-root' },
+    { cwd: root, exec },
+  );
+
+  expect(result.ownership).toEqual({ status: 'own', reasons: [] });
+});
+
 it('returns unclear ownership for mixed authors in the capture range without a PR', async () => {
   const { root, directory } = await preparedReview();
   const fake = createGhFake();
