@@ -6,6 +6,16 @@ import type { TicketWriteFacts } from './ticketWrites.js';
 const draft = { title: 'New title', description: '- Details\n' };
 const route = { team: 'ME', project: 'Tau' };
 
+const ticket = {
+  ...draft,
+  id: 'ticket-id',
+  identifier: 'ME-1',
+  url: 'https://linear.app/me/issue/ME-1',
+  viewer: 'viewer',
+  creator: 'viewer',
+  assignee: null,
+};
+
 const cases: {
   name: string;
   facts: Partial<TicketWriteFacts>;
@@ -30,13 +40,13 @@ const cases: {
   { name: 'no route', facts: { route: undefined }, kind: null, problems: 1 },
   {
     name: 'parent on an update',
-    facts: { current: draft, request: { directory: 'draft', parent: 'ME-12' } },
+    facts: { current: ticket, request: { directory: 'draft', parent: 'ME-12' } },
     kind: null,
     problems: 1,
   },
   {
     name: 'labels on an update',
-    facts: { current: draft, request: { directory: 'draft', labels: [] } },
+    facts: { current: ticket, request: { directory: 'draft', labels: [] } },
     kind: null,
     problems: 1,
   },
@@ -83,7 +93,7 @@ const cases: {
   {
     name: 'recorded ticket with a title match',
     facts: {
-      current: draft,
+      current: ticket,
       candidates: [
         { identifier: 'ME-12', title: draft.title, creator: 'viewer', viewer: 'viewer' },
       ],
@@ -93,29 +103,29 @@ const cases: {
   },
   {
     name: 'title update',
-    facts: { current: { ...draft, title: 'Old' } },
+    facts: { current: { ...ticket, title: 'Old' } },
     kind: 'updateTicket',
     problems: 0,
     title: draft.title,
   },
   {
     name: 'description update',
-    facts: { current: { ...draft, description: 'Old' } },
+    facts: { current: { ...ticket, description: 'Old' } },
     kind: 'updateTicket',
     problems: 0,
     description: draft.description,
   },
   {
     name: 'both fields update',
-    facts: { current: { title: 'Old', description: 'Old' } },
+    facts: { current: { ...ticket, title: 'Old', description: 'Old' } },
     kind: 'updateTicket',
     problems: 0,
     ...draft,
   },
-  { name: 'no change', facts: { current: draft }, kind: null, problems: 0 },
+  { name: 'no change', facts: { current: ticket }, kind: null, problems: 0 },
   {
     name: 'normalized list marker',
-    facts: { current: { ...draft, description: '* Details\n' } },
+    facts: { current: { ...ticket, description: '* Details\n' } },
     kind: null,
     problems: 0,
   },

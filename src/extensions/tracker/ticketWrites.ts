@@ -1,5 +1,6 @@
 import { sameDescription } from '../../linear/descriptionMatch.js';
 import type { TrackerRoute } from './config.js';
+import type { TicketIssue } from './linear.js';
 
 export interface TicketDraft {
   title: string;
@@ -12,12 +13,36 @@ export interface TicketArguments {
   labels?: string[];
 }
 
-export interface TicketWrite {
-  kind: 'createTicket' | 'updateTicket';
+interface CreateTicketWrite extends TicketDraft {
+  kind: 'createTicket';
   text: string;
-  title: string | undefined;
-  description: string | undefined;
 }
+
+type TicketChanges =
+  | { title: string; description: string | undefined }
+  | { title: undefined; description: string };
+
+type UpdateTicketWrite = TicketChanges & { kind: 'updateTicket'; text: string };
+
+export type TicketWrite = CreateTicketWrite | UpdateTicketWrite;
+
+export type TicketPlan =
+  | { kind: 'blocked'; writes: []; problems: string[] }
+  | { kind: 'unchanged'; current: TicketIssue; writes: []; problems: [] }
+  | {
+      kind: 'create';
+      route: TrackerRoute;
+      write: CreateTicketWrite;
+      writes: [CreateTicketWrite];
+      problems: [];
+    }
+  | {
+      kind: 'update';
+      current: TicketIssue;
+      write: UpdateTicketWrite;
+      writes: [UpdateTicketWrite];
+      problems: [];
+    };
 
 interface TicketCandidate {
   identifier: string;
@@ -31,44 +56,65 @@ export interface TicketWriteFacts {
   request: TicketArguments;
   route: TrackerRoute | undefined;
   routeProblem: string;
-  current: TicketDraft | null;
+  current: TicketIssue | null;
   candidates: readonly TicketCandidate[];
 }
 
-const planUpdate = (
-  draft: TicketDraft,
-  current: TicketDraft,
-  request: TicketArguments,
-): { writes: TicketWrite[]; problems: string[] } => {
-  if (request.parent !== undefined) {
-    return { writes: [], problems: ['parent is only accepted when creating a ticket.'] };
-  }
+const blockedPlan = (problem: string): TicketPlan => ({
+  kind: 'blocked',
+  writes: [],
+  problems: [problem],
+});
 
-  if (request.labels !== undefined) {
-    return { writes: [], problems: ['labels is only accepted when creating a ticket.'] };
-  }
-
-  const title = current.title === draft.title ? undefined : draft.title;
-
+const changedText = (draft: TicketDraft, current: TicketDraft): TicketChanges | undefined => {
   const description = sameDescription(current.description, draft.description)
     ? undefined
     : draft.description;
 
-  if (title === undefined && description === undefined) {
-    return { writes: [], problems: [] };
+  if (current.title !== draft.title) {
+    return { title: draft.title, description };
   }
 
-  return {
-    writes: [{ kind: 'updateTicket', text: `Update ${draft.title}.`, title, description }],
-    problems: [],
+  if (description !== undefined) {
+    return { title: undefined, description };
+  }
+
+  return undefined;
+};
+
+const planUpdate = (
+  draft: TicketDraft,
+  current: TicketIssue,
+  request: TicketArguments,
+): TicketPlan => {
+  if (request.parent !== undefined) {
+    return blockedPlan('parent is only accepted when creating a ticket.');
+  }
+
+  if (request.labels !== undefined) {
+    return blockedPlan('labels is only accepted when creating a ticket.');
+  }
+
+  const changes = changedText(draft, current);
+
+  if (changes === undefined) {
+    return { kind: 'unchanged', current, writes: [], problems: [] };
+  }
+
+  const write: UpdateTicketWrite = {
+    kind: 'updateTicket',
+    text: `Update ${draft.title}.`,
+    ...changes,
   };
+
+  return { kind: 'update', current, write, writes: [write], problems: [] };
 };
 
 const planCreate = (
   draft: TicketDraft,
   route: TrackerRoute,
   candidates: readonly TicketCandidate[],
-): { writes: TicketWrite[]; problems: string[] } => {
+): TicketPlan => {
   const matches = candidates
     .filter(
       (candidate) => candidate.title === draft.title && candidate.creator === candidate.viewer,
@@ -76,39 +122,37 @@ const planCreate = (
     .map((candidate) => candidate.identifier);
 
   if (matches.length > 0) {
-    return {
-      writes: [],
-      problems: [
-        `Open tickets you created already match this draft title: ${matches.join(', ')}. Resolve the unrecorded ticket before creating another.`,
-      ],
-    };
+    return blockedPlan(
+      `Open tickets you created already match this draft title: ${matches.join(', ')}. Resolve the unrecorded ticket before creating another.`,
+    );
   }
 
-  return {
-    writes: [{ kind: 'createTicket', text: `Create ${draft.title} in ${route.team}.`, ...draft }],
-    problems: [],
+  const write: CreateTicketWrite = {
+    kind: 'createTicket',
+    text: `Create ${draft.title} in ${route.team}.`,
+    ...draft,
   };
+
+  return { kind: 'create', route, write, writes: [write], problems: [] };
 };
 
-export const planTicketWrites = (
-  facts: TicketWriteFacts,
-): { writes: TicketWrite[]; problems: string[] } => {
+export const planTicketWrites = (facts: TicketWriteFacts): TicketPlan => {
   if (facts.route === undefined) {
-    return { writes: [], problems: [facts.routeProblem] };
+    return blockedPlan(facts.routeProblem);
   }
 
   const { draft, current, request } = facts;
 
   if (draft.title.trim() === '') {
-    return { writes: [], problems: ['title.md must contain a title.'] };
+    return blockedPlan('title.md must contain a title.');
   }
 
   if (/[\r\n]/u.test(draft.title)) {
-    return { writes: [], problems: ['title.md must contain one line.'] };
+    return blockedPlan('title.md must contain one line.');
   }
 
   if (request.parent !== undefined && !/^[A-Z][A-Z0-9]*-[0-9]+$/u.test(request.parent)) {
-    return { writes: [], problems: ['parent must be a ticket identifier such as ME-12.'] };
+    return blockedPlan('parent must be a ticket identifier such as ME-12.');
   }
 
   if (current === null) {

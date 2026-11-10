@@ -13,7 +13,7 @@ interface TicketComments extends TicketOwners {
   comments: TicketComment[];
 }
 
-interface TicketIssue extends TicketOwners {
+export interface TicketIssue extends TicketOwners {
   id: string;
   identifier: string;
   title: string;

@@ -463,6 +463,28 @@ it.each(['draft.json', 'title.md', 'ticket.md'])(
   },
 );
 
+it('refuses changed create targets after read', async () => {
+  const { runtime, fake, directory } = await setup();
+  const plan = await ticketApply.readTicket(runtime, { directory });
+
+  fake.overrideOutput(
+    'projects(',
+    JSON.stringify({
+      data: {
+        team: { id: 'replacement-team', projects: { nodes: [{ id: 'replacement-project' }] } },
+      },
+    }),
+  );
+
+  await expect(
+    ticketApply.applyTicket(runtime, { directory, stateToken: plan.stateToken }),
+  ).rejects.toThrow('changed');
+
+  expect(fake.writes()).toEqual([]);
+  expect(fake.issues.size).toBe(0);
+  await expect(readFile(join(directory, 'draft.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+});
+
 it('creates a routed ticket and records its identifier after read then apply', async () => {
   const { runtime, fake, directory } = await setup();
   const plan = await ticketApply.readTicket(runtime, { directory });

@@ -156,6 +156,7 @@ const pureModules = [
   'src/extensions/tracker/candidateFit.ts',
   'src/extensions/tracker/commentTarget.ts',
   'src/extensions/tracker/promptLines.ts',
+  'src/extensions/tracker/setupDiagnostic.ts',
   'src/extensions/tracker/ticketWrites.ts',
   'src/fileLock/lockHolderDecision.ts',
   'src/github/repositoryTargetDecisions.ts',

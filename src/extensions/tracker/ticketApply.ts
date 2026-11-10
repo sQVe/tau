@@ -22,9 +22,9 @@ import { readRepositorySetup } from './config.js';
 import type { TrackerRoute } from './config.js';
 import { readDraftRecord, writeDraftRecord } from './draftRecord.js';
 import { readTicketIssue, searchIssues } from './linear.js';
-import { trackerLines } from './promptLines.js';
+import { trackerSetupDiagnostic } from './setupDiagnostic.js';
 import { planTicketWrites } from './ticketWrites.js';
-import type { TicketArguments, TicketDraft, TicketWrite } from './ticketWrites.js';
+import type { TicketArguments, TicketDraft, TicketPlan, TicketWrite } from './ticketWrites.js';
 
 export interface TicketRuntime {
   exec: Exec;
@@ -48,6 +48,12 @@ export interface TicketApplyDetails {
   url: string | null;
 }
 
+type ReadyTicketPlan = ReadyCreatePlan | Exclude<TicketPlan, { kind: 'create' }>;
+
+type CreateState = TicketState & { plan: ReadyCreatePlan };
+
+type UpdateState = TicketState & { plan: Extract<TicketPlan, { kind: 'update' }> };
+
 const readDirectory = async (cwd: string, requested: string) => {
   const root = await findTauRoot(cwd, 'ticket');
   const directory = resolve(cwd, requested);
@@ -68,23 +74,16 @@ const readTicketRoute = async ({ exec, context, location }: TicketRuntime) => {
   const facts = await readRepositorySetup(exec, location, context.ui);
   const route = facts.setup.status === 'read' ? facts.setup.route : undefined;
 
-  const routeProblem =
-    trackerLines(facts)
-      .filter((line) => line.startsWith('Tracker setup needed:'))
-      .join('\n') || 'Tracker setup needed: configure tracker.repositories for this repository.';
+  const diagnostic = trackerSetupDiagnostic(facts);
 
-  return { route, routeProblem };
+  return { route, routeProblem: diagnostic.problem };
 };
 
 const readCreateTargets = async (
   runtime: TicketRuntime,
   request: TicketArguments,
-  route: TrackerRoute | undefined,
+  route: TrackerRoute,
 ) => {
-  if (route === undefined) {
-    throw new Error('Tracker setup needed: no route.');
-  }
-
   const { exec, context } = runtime;
 
   const routeIds = await readRouteIds(exec, context.cwd, {
@@ -127,6 +126,24 @@ const readCreateCandidates = async (
   );
 };
 
+type ReadyCreatePlan = Extract<TicketPlan, { kind: 'create' }> & {
+  targets: Awaited<ReturnType<typeof readCreateTargets>>;
+};
+
+const prepareTicketPlan = async (
+  runtime: TicketRuntime,
+  request: TicketArguments,
+  plan: TicketPlan,
+): Promise<ReadyTicketPlan> => {
+  if (plan.kind === 'create') {
+    const targets = await readCreateTargets(runtime, request, plan.route);
+
+    return { ...plan, targets };
+  }
+
+  return plan;
+};
+
 const readState = async (runtime: TicketRuntime, request: TicketArguments) => {
   const { exec, context } = runtime;
   const directory = await readDirectory(context.cwd, request.directory);
@@ -139,9 +156,9 @@ const readState = async (runtime: TicketRuntime, request: TicketArguments) => {
   const identifier = record?.identifier ?? null;
   const current = identifier === null ? null : await readTicketIssue(exec, context.cwd, identifier);
   const candidates = await readCreateCandidates(runtime, route, identifier, draft.title);
-  const plan = planTicketWrites({ draft, request, route, routeProblem, current, candidates });
-  const creating = plan.writes[0]?.kind === 'createTicket';
-  const targets = creating ? await readCreateTargets(runtime, request, route) : null;
+  const planned = planTicketWrites({ draft, request, route, routeProblem, current, candidates });
+  const plan = await prepareTicketPlan(runtime, request, planned);
+  const targets = plan.kind === 'create' ? plan.targets : null;
 
   const stateToken = createHash('sha256')
     .update(
@@ -164,11 +181,10 @@ const readState = async (runtime: TicketRuntime, request: TicketArguments) => {
     identifier,
     route: route ?? null,
     current,
-    ...plan,
+    plan,
     stateToken,
     record,
     draft,
-    targets,
   };
 };
 
@@ -176,12 +192,20 @@ export const readTicket = async (
   runtime: TicketRuntime,
   request: TicketArguments,
 ): Promise<TicketReadDetails> => {
-  const { directory, identifier, route, current, writes, problems, stateToken } = await readState(
+  const { directory, identifier, route, current, plan, stateToken } = await readState(
     runtime,
     request,
   );
 
-  return { directory, identifier, route, current, writes, problems, stateToken };
+  return {
+    directory,
+    identifier,
+    route,
+    current,
+    writes: plan.writes,
+    problems: plan.problems,
+    stateToken,
+  };
 };
 
 const rejectChangedState = (actual: string, expected: string) => {
@@ -190,11 +214,12 @@ const rejectChangedState = (actual: string, expected: string) => {
   }
 };
 
-const approveUpdate = async (
-  runtime: TicketRuntime,
-  state: Awaited<ReturnType<typeof readState>>,
-) => {
-  if (state.current === null || isViewersTicket(state.current.viewer, state.current)) {
+type TicketState = Awaited<ReturnType<typeof readState>>;
+
+const approveUpdate = async (runtime: TicketRuntime, state: UpdateState) => {
+  const { current } = state.plan;
+
+  if (isViewersTicket(current.viewer, current)) {
     return true;
   }
 
@@ -204,24 +229,23 @@ const approveUpdate = async (
 
   return confirmWithUser(runtime.context, {
     action: 'Updating a ticket another person owns',
-    title: `Update ${state.current.identifier} in Linear`,
-    message: `Current title:\n${state.current.title}\n\nCurrent description:\n${state.current.description}\n\nNew title:\n${state.draft.title}\n\nNew description:\n${state.draft.description}`,
+    title: `Update ${current.identifier} in Linear`,
+    message: `Current title:\n${current.title}\n\nCurrent description:\n${current.description}\n\nNew title:\n${state.draft.title}\n\nNew description:\n${state.draft.description}`,
   });
 };
 
 const applyCreate = async (
   runtime: TicketRuntime,
-  state: Awaited<ReturnType<typeof readState>>,
+  state: CreateState,
   request: TicketArguments,
 ): Promise<TicketApplyDetails> => {
-  if (state.targets === null) {
-    throw new Error('Tracker setup needed: no create targets.');
-  }
+  const { targets, write } = state.plan;
 
   const created = await createIssue(runtime.exec, runtime.context.cwd, {
-    ...state.targets.routeIds,
-    ...state.draft,
-    parent: state.targets.parent?.id ?? null,
+    ...targets.routeIds,
+    title: write.title,
+    description: write.description,
+    parent: targets.parent?.id ?? null,
     labels: request.labels ?? [],
     subIssueSortOrder: undefined,
   });
@@ -242,6 +266,30 @@ const applyCreate = async (
   return { status: 'created', identifier: created.identifier, url: created.url };
 };
 
+const applyUpdate = async (
+  runtime: TicketRuntime,
+  state: UpdateState,
+  request: TicketArguments,
+): Promise<TicketApplyDetails> => {
+  const { current, write } = state.plan;
+  const details = { identifier: state.identifier, url: current.url };
+  const approved = await approveUpdate(runtime, state);
+
+  if (!approved) {
+    return { status: 'declined', ...details };
+  }
+
+  if (!isViewersTicket(current.viewer, current)) {
+    const reread = await readState(runtime, request);
+
+    rejectChangedState(reread.stateToken, state.stateToken);
+  }
+
+  await updateIssue(runtime.exec, runtime.context.cwd, current.identifier, write);
+
+  return { status: 'updated', ...details };
+};
+
 export const applyTicket = async (
   runtime: TicketRuntime,
   request: TicketArguments & { stateToken: string },
@@ -251,34 +299,27 @@ export const applyTicket = async (
 
   rejectChangedState(state.stateToken, stateToken);
 
-  if (state.problems.length > 0) {
-    throw new Error(state.problems.join('\n'));
-  }
+  const { plan } = state;
 
-  const write = state.writes[0];
-  const details = { identifier: state.identifier, url: state.current?.url ?? null };
-
-  if (write === undefined) {
-    return { status: 'unchanged', ...details };
-  }
-
-  if (state.current !== null) {
-    const approved = await approveUpdate(runtime, state);
-
-    if (!approved) {
-      return { status: 'declined', ...details };
+  switch (plan.kind) {
+    case 'blocked': {
+      throw new Error(plan.problems.join('\n'));
     }
 
-    if (!isViewersTicket(state.current.viewer, state.current)) {
-      const reread = await readState(runtime, argumentsWithoutToken);
-
-      rejectChangedState(reread.stateToken, stateToken);
+    case 'unchanged': {
+      return { status: 'unchanged', identifier: state.identifier, url: plan.current.url };
     }
 
-    await updateIssue(runtime.exec, runtime.context.cwd, state.current.identifier, write);
+    case 'create': {
+      return applyCreate(runtime, { ...state, plan }, argumentsWithoutToken);
+    }
 
-    return { status: 'updated', ...details };
+    case 'update': {
+      return applyUpdate(runtime, { ...state, plan }, argumentsWithoutToken);
+    }
+
+    default: {
+      return plan satisfies never;
+    }
   }
-
-  return applyCreate(runtime, state, request);
 };
