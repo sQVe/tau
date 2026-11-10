@@ -69,6 +69,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0119: Share the mutation script as one npm package](./0119-share-the-mutation-script-as-one-npm-package.md)
 - [0121: Test architecture rules for placement, naming, fakes, and fixtures](./0121-test-architecture-rules.md)
 - [0123: Run the full check only at the PR step](./0123-run-the-full-check-only-at-the-pr-step.md)
+- [0130: Select focused files through the project's Vitest API](./0130-select-focused-files-through-the-project-vitest-api.md)
 
 ## Commits
 
