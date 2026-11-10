@@ -71,17 +71,15 @@ for the workspace.
    Otherwise report that the fix needs a new slice. Then go on to step 6. The audit is always saved
    and posted, and a not-met item makes draft the suggested PR status.
 
-6. Find an earlier audit comment before you write a new one. Run the tracker skill's comment list
-   command on the slice, even when `finish.md` records a comment ID. Pick the comment with the
-   recorded ID, or with none recorded, the comment whose first line is `# Slice audit: <slice>`.
-   Read its saved text from that list.
+6. Write `$slicedir/finish.md` from the [audit template](audit.md). Name the audited commit with the
+   full SHA from `git rev-parse HEAD`. Its first line must be `# Slice audit: <slice>`.
 
-7. Write `$slicedir/finish.md` from the [audit template](audit.md). Name the audited commit with the
-   full SHA from `git rev-parse HEAD`, and keep the earlier comment's ID.
+7. Call `ticket` `comment` once with the slice as `ticket`, heading `# Slice audit: <slice>`, and
+   `bodyFile: "$slicedir/finish.md"`. The tool confirms when approval is needed.
 
-8. Post the content of `finish.md` with the tracker skill's comment commands. Update the earlier
-   comment when one exists, and never add a second one. After adding a new comment, record its ID in
-   `finish.md` at once.
+8. On `added` or `updated`, save the returned ID as the `Comment ID:` line in `finish.md`. Use
+   `previousBody` to name any Linear edits the update replaced. On `declined` or failure, keep the
+   local audit and report that it was not posted.
 
 9. Report the verdict counts, the comment link, and the suggested PR status: draft when any item is
    not met or not run, otherwise ready. When you updated an earlier comment, name each edit made in
