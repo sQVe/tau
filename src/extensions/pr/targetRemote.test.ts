@@ -1,7 +1,7 @@
 import { expect, it, onTestFinished } from 'vitest';
 
 import { git } from '../../../tests/gitRepository.js';
-import { holdPullRequests, pullRequest } from './fixtures/ghFake.js';
+import { holdPullRequests, pullRequest } from '../../../tests/prGhFake.js';
 import {
   createBareRemote,
   createPublicationTool,

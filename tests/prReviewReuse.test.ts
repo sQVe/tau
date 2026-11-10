@@ -5,11 +5,11 @@ import { expect, it, onTestFinished } from 'vitest';
 
 import { createCodeReviewTool } from '../src/extensions/codeReview/tool.js';
 import type { CodeReviewInput } from '../src/extensions/codeReview/tool.js';
-import { createGhFake } from '../src/extensions/pr/fixtures/ghFake.js';
 import { createPrTool } from '../src/extensions/pr/tool.js';
 import type { PrInput } from '../src/extensions/pr/tool.js';
 import { installCommandShim } from './commandShimFake.js';
 import { createTemporaryRepository, git } from './gitRepository.js';
+import { createGhFake } from './prGhFake.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
 import { noUiContext } from './toolContext.js';
 

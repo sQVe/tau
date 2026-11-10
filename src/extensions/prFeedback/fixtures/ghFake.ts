@@ -44,6 +44,9 @@ interface FakePullRequest {
   isCrossRepository: boolean;
   maintainerCanModify: boolean;
   mergeable: string;
+  isDraft: boolean;
+  mergeStateStatus: string;
+  reviewDecision: string;
 }
 
 export interface FakeCheck {
@@ -207,6 +210,9 @@ export const fakePullRequest = (): FakePullRequest => ({
   isCrossRepository: false,
   maintainerCanModify: false,
   mergeable: 'MERGEABLE',
+  isDraft: false,
+  mergeStateStatus: 'CLEAN',
+  reviewDecision: '',
 });
 
 export const createGhFake = (): GhFake => {

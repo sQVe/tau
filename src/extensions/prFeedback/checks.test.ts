@@ -610,7 +610,7 @@ describe('checks input', () => {
       '--repo',
       'ghe.example.com/sQVe/tau',
       '--json',
-      'number,url,state,author,headRefOid,baseRefName,headRefName,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify,mergeable',
+      'number,url,state,author,headRefOid,baseRefName,headRefName,headRepository,headRepositoryOwner,isCrossRepository,maintainerCanModify,mergeable,isDraft,mergeStateStatus,reviewDecision',
     ];
 
     expect(fake.calls.map((call) => call.commandArguments)).toEqual([

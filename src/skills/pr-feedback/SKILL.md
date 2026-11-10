@@ -35,9 +35,10 @@ metadata:
 1. Resolve the target. It needs `gh` authenticated for the PR's host.
    - Use `<host>/<owner>/<name>` as `<repo>`, and pass `--hostname <host>` to every `gh api` call.
    - Take the PR from the request. Otherwise, when the stack skill finds the current branch in a
-     stack, run the evidence script for each open PR. List the PRs with a `mergeable` of
-     `CONFLICTING`, failing checks, gaps, or comments that step 3 keeps, and ask which to handle
-     with `ask_user_question`. Otherwise run
+     stack, run `git fetch <remote>`. Build `prs` from the stack check's open PRs, bottom to top,
+     with each `head` from `git rev-parse <remote>/<branch>`. Call `pr_feedback` with
+     `{action: 'status', repository: <repo>, prs}`. Ask which PR to handle with `ask_user_question`,
+     showing each PR's verdict and reasons and marking `recommended`. Otherwise run
      `gh pr list --repo <repo> --head <branch> --state open --json number,headRepository,headRepositoryOwner`
      for the current branch. Keep only PRs whose head owner and repository name match the remote
      that `git rev-parse --abbrev-ref @{push}` names, since another fork can use the same branch

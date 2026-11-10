@@ -2,12 +2,12 @@ import type { ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 import type { onTestFinished } from 'vitest';
 
 import { createTemporaryRepository, git } from '../../../../tests/gitRepository.js';
+import { createGhFake } from '../../../../tests/prGhFake.js';
+import type { GhFake } from '../../../../tests/prGhFake.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { noUiContext } from '../../../../tests/toolContext.js';
 import { createPrTool } from '../tool.js';
 import type { PrInput } from '../tool.js';
-import { createGhFake } from './ghFake.js';
-import type { GhFake } from './ghFake.js';
 
 type RegisterCleanup = typeof onTestFinished;
 

@@ -5,6 +5,7 @@ import { checkAuth } from '../../github/github.js';
 import type { Repository } from '../../github/github.js';
 import { formatRepository } from '../../github/repositoryTargetDecisions.js';
 import {
+  HeadMovedError,
   readIssueComments,
   readPullRequest,
   readReviews,
@@ -70,6 +71,14 @@ const pullRequestFields = (pullRequest: PullRequest): PullRequestSnapshot => ({
 const requireUnchanged = (first: PullRequest, current: PullRequest) => {
   const change = snapshotChange(pullRequestFields(first), pullRequestFields(current));
 
+  if (change?.field === 'headRefOid') {
+    const error = new HeadMovedError(current.headRefOid, first.headRefOid);
+
+    error.message = `The pull request headRefOid changed from ${first.headRefOid} to ${current.headRefOid} during the read. Read again.`;
+
+    throw error;
+  }
+
   if (change !== undefined) {
     throw new Error(
       `The pull request ${change.field} changed from ${String(change.before)} to ${String(change.after)} during the read. Read again.`,
@@ -77,7 +86,7 @@ const requireUnchanged = (first: PullRequest, current: PullRequest) => {
   }
 };
 
-const settleMergeable = async (
+export const settleMergeable = async (
   runtime: CommandRuntime,
   repository: Repository,
   pullRequest: PullRequest,

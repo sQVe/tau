@@ -88,6 +88,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
   { name: 'linear', entry: 'linear', publicFiles: [] },
   { name: 'process', entry: 'process/process', publicFiles: [] },
   { name: 'record', entry: 'record', publicFiles: [] },
+  { name: 'reviewBots', entry: 'reviewBots/reviewBots', publicFiles: [] },
   {
     name: 'reviewCapture',
     entry: 'reviewCapture/reviewCapture',
@@ -120,6 +121,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   linear: ['command', 'errors'],
   process: ['errors'],
   record: ['errors', 'schema', 'tauDirectory'],
+  reviewBots: ['command', 'config', 'github', 'schema'],
   reviewCapture: ['errors', 'git', 'record', 'schema', 'tauDirectory'],
   schema: [],
   shell: [],

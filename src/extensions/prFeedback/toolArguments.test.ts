@@ -66,6 +66,9 @@ describe('read output of the wrong shape', () => {
     isCrossRepository: false,
     maintainerCanModify: false,
     mergeable: 'MERGEABLE',
+    isDraft: false,
+    mergeStateStatus: 'CLEAN',
+    reviewDecision: '',
   };
 
   it('accepts the complete pr view output', async () => {
@@ -168,6 +171,23 @@ describe('tool arguments', () => {
     const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
 
     expect(() => validated(tool, call)).toThrow(Error);
+    expect(fake.calls).toEqual([]);
+    expect(await feedbackDirectories(root)).toEqual([]);
+  });
+
+  it.each([
+    { name: 'empty stack', prs: [] },
+    { name: 'invalid PR number', prs: [{ pr: 0, head: 'abc123' }] },
+    { name: 'empty head', prs: [{ pr: 7, head: '' }] },
+    { name: 'missing head', prs: [{ pr: 7 }] },
+  ])('refuses status with $name before any reads or writes', async ({ prs }) => {
+    const { root, fake } = await setUp();
+    const tool = createPrFeedbackTool(fake.exec, fake.execInGroup);
+
+    expect(() =>
+      validated(tool, { action: 'status', repository: 'github.com/sQVe/tau', prs }),
+    ).toThrow(Error);
+
     expect(fake.calls).toEqual([]);
     expect(await feedbackDirectories(root)).toEqual([]);
   });

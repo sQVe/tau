@@ -8,14 +8,14 @@ import type { onTestFinished } from 'vitest';
 
 import { githubOrigin, serveGithubOriginFrom } from '../../../../tests/githubOriginFake.js';
 import { createTemporaryRepository, git } from '../../../../tests/gitRepository.js';
+import { createGhFake } from '../../../../tests/prGhFake.js';
+import type { GhFake } from '../../../../tests/prGhFake.js';
 import { createSavedReview } from '../../../../tests/savedReview.js';
 import { temporaryDirectory } from '../../../../tests/temporaryDirectoryHarness.js';
 import { saveCheckRecord } from '../../../checkRecord/checkRecord.js';
 import { readCheckState } from '../../../checkRecord/identity.js';
 import { readPublicationEvidence } from '../evidence.js';
 import type { PublicationEvidence, PublicationRequest } from '../evidence.js';
-import { createGhFake } from './ghFake.js';
-import type { GhFake } from './ghFake.js';
 
 type RegisterCleanup = typeof onTestFinished;
 

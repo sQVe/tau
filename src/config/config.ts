@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CONFIG_DIR_NAME } from '@earendil-works/pi-coding-agent';
-import type { ExtensionUIContext } from '@earendil-works/pi-coding-agent';
+import { CONFIG_DIR_NAME, getAgentDir } from '@earendil-works/pi-coding-agent';
+import type { ExtensionUIContext, ExtensionToolContext } from '@earendil-works/pi-coding-agent';
 
 import { isMissingFile } from '../errors.js';
 import { findUnknownKeys, isRecord, reportedId, unreportedKeys } from '../schema.js';
@@ -28,6 +28,16 @@ export interface TauConfigFiles {
   // A repository config file that was skipped because the project is not trusted.
   ignored: string | undefined;
 }
+
+export const readConfigLocation = (
+  root: string,
+  options: { agentDirectory?: string },
+  context: Pick<ExtensionToolContext, 'isProjectTrusted'>,
+): ConfigLocation => ({
+  cwd: root,
+  agentDirectory: options.agentDirectory ?? getAgentDir(),
+  projectTrusted: context.isProjectTrusted(),
+});
 
 export const configFileName = 'tau.json';
 

@@ -1,17 +1,17 @@
 import type { ExtensionToolContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
-import { defineTool, getAgentDir } from '@earendil-works/pi-coding-agent';
+import { defineTool } from '@earendil-works/pi-coding-agent';
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
 import type { Exec, CommandRuntime } from '../../command.js';
-import type { ConfigLocation } from '../../config/config.js';
+import { readConfigLocation } from '../../config/config.js';
 import { findCheckoutRoot } from '../../git.js';
+import { readReviewBotStatuses } from '../../reviewBots/reviewBots.js';
 import { createFreshTauDirectory } from '../../tauDirectory.js';
 import { readCheckHeader } from './checkEvidence.js';
 import { readChainCoverage } from './coverage.js';
 import { readPublicationEvidence } from './evidence.js';
 import { readReuse } from './reuse.js';
-import { readReviewBotStatuses } from './reviewBots.js';
 import { readTarget } from './target.js';
 import { readVerify, runPath, runPrefix } from './verify.js';
 
@@ -111,16 +111,6 @@ const verify = async (runtime: CommandRuntime, parameters: PrInput) => {
 
   return { ...result };
 };
-
-const readConfigLocation = (
-  root: string,
-  options: PrToolOptions,
-  context: PrContext,
-): ConfigLocation => ({
-  cwd: root,
-  agentDirectory: options.agentDirectory ?? getAgentDir(),
-  projectTrusted: context.isProjectTrusted(),
-});
 
 const reviewBots = async (
   runtime: CommandRuntime,
