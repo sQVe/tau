@@ -69,13 +69,23 @@ Shell in a skill has no tests, and every copy drifts on its own.
 - A step may gather evidence with one read-only `codemode` script that composes tested readers, such
   as Tau tools. Target resolution, approvals, writes, and review judgment stay outside the script.
 
-## Delete before you add
+## Add a rule after a mistake
 
-Skills grow when every review finding becomes a new paragraph. Before you add text:
+Skills grow when every mistake or review finding becomes a new paragraph. Before you add a rule
+after a mistake:
 
-- Look for text the new rule replaces, and change the step that caused the problem.
+- Name the failure and the future decision the rule changes.
+- Read the skill first. If the rule exists, sharpen or move it instead of adding a copy.
+- Prefer removing the invalid path. Next, prefer a type, a lint whose error names the fix, or a
+  test. Keep prose for judgment.
+- Show that each new lint, test, or check fails on a real past mistake.
+- Let repeated failures make the case for a rule. Fix a serious first failure without waiting for a
+  second.
 - Show decisions and their effects in a preview, not raw commands.
 - Do not repeat the procedure in the checklist.
+
+To check whether a change improves how models follow a skill, follow
+[Evaluating agent behavior](./development.md#evaluating-agent-behavior).
 
 ## Checklist
 
