@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { createLinearFake } from '../tests/linearFake.js';
+import { createLinearFake } from '../../tests/linearFake.js';
 import { readTeamId } from './linear.js';
 
 test('readTeamId returns the id of a known team', async () => {

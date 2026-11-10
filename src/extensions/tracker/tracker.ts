@@ -3,12 +3,16 @@ import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { forgetReportedWarnings } from '../../config/config.js';
 import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
 import { isWorkerProcess } from '../../worker.js';
-import { createTrackerDraftTool } from './draftTool.js';
 import { readSessionPromptLines } from './sessionPrompt.js';
+import { createTicketTool } from './ticketTool.js';
 import { createTrackerEvidenceTool } from './tool.js';
 
 export default function trackerExtension(pi: ExtensionAPI): void {
-  pi.registerTool(createTrackerDraftTool());
+  pi.registerTool(
+    createTicketTool((command, commandArguments, options) =>
+      pi.exec(command, commandArguments, options),
+    ),
+  );
 
   pi.registerTool(
     createTrackerEvidenceTool((command, commandArguments, options) =>

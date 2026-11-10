@@ -1,4 +1,5 @@
 import type { Exec } from '../src/command.js';
+import { createCommentFake } from './linearCommentFake.js';
 import { decode } from './linearRequestFake.js';
 import type {
   FakeCall,
@@ -47,6 +48,9 @@ interface FakeProject {
 }
 
 export interface LinearFake {
+  comments: ReturnType<typeof createCommentFake>['comments'];
+  addComment: ReturnType<typeof createCommentFake>['addComment'];
+  limitComments: (count: number) => void;
   exec: Exec;
   calls: FakeCall[];
   issues: Map<string, FakeIssue>;
@@ -129,11 +133,11 @@ const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
 });
 
 const isWrite = (operation: Operation): boolean => {
-  if (operation.kind === 'relation' || operation.kind === 'state') {
+  if (operation.kind === 'relation' || operation.kind === 'state' || operation.kind === 'cancel') {
     return true;
   }
 
-  const writeNames: QueryName[] = ['issueCreate', 'issueUpdate'];
+  const writeNames: QueryName[] = ['issueCreate', 'issueUpdate', 'commentCreate', 'commentUpdate'];
 
   return operation.kind === 'query' && writeNames.includes(operation.name);
 };
@@ -152,6 +156,7 @@ export const createLinearFake = (): LinearFake => {
   let childLimit = Number.POSITIVE_INFINITY;
   let attachmentLimit = Number.POSITIVE_INFINITY;
   let relationLimit = Number.POSITIVE_INFINITY;
+  const commentFake = createCommentFake(issues, () => attachmentLimit);
 
   const addIssue = (issue: Partial<FakeIssue> & { title: string }): FakeIssue => {
     const identifier = issue.identifier ?? `ME-${nextNumber}`;
@@ -401,6 +406,22 @@ export const createLinearFake = (): LinearFake => {
 
   const apiData = (operation: QueryOperation) => {
     switch (operation.name) {
+      case 'comments': {
+        return commentFake.respond(operation);
+      }
+
+      case 'commentCreate': {
+        return commentFake.respond(operation);
+      }
+
+      case 'commentUpdate': {
+        return commentFake.respond(operation);
+      }
+
+      case 'cancel': {
+        return commentFake.respond(operation);
+      }
+
       case 'issueCreate': {
         return createData(operation.variables);
       }
@@ -466,6 +487,12 @@ export const createLinearFake = (): LinearFake => {
   };
 
   const respond = (operation: Operation) => {
+    if (operation.kind === 'cancel') {
+      commentFake.respond(operation);
+
+      return '';
+    }
+
     if (operation.kind === 'pullRequest') {
       return JSON.stringify({ state: mergedPullRequests.has(operation.url) ? 'MERGED' : 'OPEN' });
     }
@@ -536,6 +563,9 @@ export const createLinearFake = (): LinearFake => {
   };
 
   return {
+    comments: commentFake.comments,
+    addComment: commentFake.addComment,
+    limitComments: commentFake.limitComments,
     exec,
     calls,
     issues,

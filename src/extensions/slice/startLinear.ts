@@ -1,7 +1,7 @@
 import { Type } from 'typebox';
 
 import type { Exec } from '../../command.js';
-import { api } from '../../linear.js';
+import { api } from '../../linear/linear.js';
 
 interface StartChild {
   identifier: string;

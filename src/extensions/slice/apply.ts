@@ -3,20 +3,14 @@ import { basename, join } from 'node:path';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
+import { createIssue, moveIssue, updateIssue } from '../../linear/linear.js';
+import type { CreatedIssue } from '../../linear/linear.js';
+import { isViewersTicket } from '../../linear/ownership.js';
 import { ensureTauDirectory } from '../../tauDirectory.js';
 import { approveForeignWrites, rejectChangedDraft } from './applyApproval.js';
 import type { Draft, Plan } from './draft.js';
 import { planFileName, writePlan } from './draft.js';
-import {
-  changeBlockedBy,
-  createIssue,
-  moveIssue,
-  readContainer,
-  readRouteIds,
-  updateIssue,
-} from './linear.js';
-import type { CreatedIssue } from './linear.js';
-import { isViewersTicket } from './ownership.js';
+import { changeBlockedBy, readContainer, readRouteIds } from './linear.js';
 import { CreatedButNotRecordedError, failPartialApply, runApplySteps } from './partialApply.js';
 import type { ApplyRunner, PartialApplyStep } from './partialApply.js';
 import { readState, slicesPath } from './state.js';

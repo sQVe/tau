@@ -85,7 +85,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
     entry: 'instructions/instructions',
     publicFiles: ['instructions/systemPrompt'],
   },
-  { name: 'linear', entry: 'linear', publicFiles: [] },
+  { name: 'linear', entry: 'linear/linear', publicFiles: ['linear/ownership'] },
   { name: 'process', entry: 'process/process', publicFiles: [] },
   { name: 'record', entry: 'record', publicFiles: [] },
   {

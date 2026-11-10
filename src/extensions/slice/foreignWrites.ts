@@ -1,5 +1,5 @@
-import { isViewersTicket } from './ownership.js';
-import type { TicketOwners } from './ownership.js';
+import { isViewersTicket } from '../../linear/ownership.js';
+import type { TicketOwners } from '../../linear/ownership.js';
 import type { SliceWrite } from './writes.js';
 
 export interface ExistingTicket extends TicketOwners {

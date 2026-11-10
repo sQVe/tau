@@ -10,6 +10,10 @@ export interface FakeCall {
 }
 
 export type QueryName =
+  | 'commentCreate'
+  | 'commentUpdate'
+  | 'comments'
+  | 'cancel'
   | 'issueCreate'
   | 'issueUpdate'
   | 'searchIssues'
@@ -50,6 +54,10 @@ interface IssueInput {
 }
 
 export interface QueryVariables {
+  commentCreate: { issue: string; body: string };
+  commentUpdate: { id: string; body: string };
+  comments: { id: string };
+  cancel: { id: string };
   issueCreate: {
     team: string;
     title: string;
@@ -78,6 +86,7 @@ export type QueryOperation = {
 export type Operation =
   | { kind: 'state'; identifier: string; state: string }
   | { kind: 'pullRequest'; url: string }
+  | { kind: 'cancel'; identifier: string }
   | { kind: 'relation'; action: 'add' | 'delete'; identifier: string; blocker: string }
   | QueryOperation;
 
@@ -140,6 +149,27 @@ const isIssueInput: Check = (value) =>
 
 const contracts: QueryContract[] = [
   {
+    name: 'commentCreate',
+    rootField: 'commentCreate',
+    selection: '',
+    reads: { issue: isString, body: isString },
+    optional: {},
+  },
+  {
+    name: 'commentUpdate',
+    rootField: 'commentUpdate',
+    selection: '',
+    reads: { id: isString, body: isString },
+    optional: {},
+  },
+  {
+    name: 'comments',
+    rootField: 'issue',
+    selection: 'comments(',
+    reads: { id: isString },
+    optional: {},
+  },
+  {
     name: 'issueCreate',
     rootField: 'issueCreate',
     selection: '',
@@ -177,6 +207,13 @@ const contracts: QueryContract[] = [
     name: 'container',
     rootField: 'issue',
     selection: 'children',
+    reads: { id: isString },
+    optional: {},
+  },
+  {
+    name: 'cancel',
+    rootField: 'issue',
+    selection: 'state { type name } attachments(',
     reads: { id: isString },
     optional: {},
   },
@@ -284,6 +321,13 @@ const decodeQuery = (call: FakeCall): Operation => {
 };
 
 const decodeIssueCommand = (call: FakeCall): Operation => {
+  const [, subcommand, ticket, ...flags] = call.commandArguments;
+  const isCancel = subcommand === 'update' && flags.join(' ') === '--state canceled --no-input';
+
+  if (isCancel && ticket !== undefined) {
+    return { kind: 'cancel', identifier: ticket };
+  }
+
   const [, command, target, flag, state] = call.commandArguments;
   const isStateUpdate = command === 'update' && flag === '--state';
 

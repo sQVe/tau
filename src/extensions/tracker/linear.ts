@@ -1,7 +1,22 @@
 import { Type } from 'typebox';
+import type { Static } from 'typebox';
 
 import type { Exec } from '../../command.js';
-import { api, openStateTypes, readTeamId } from '../../linear.js';
+import { api, openStateTypes, readTeamId } from '../../linear/linear.js';
+import type { TicketOwners } from '../../linear/ownership.js';
+import type { TicketComment } from './commentTarget.js';
+
+interface TicketComments extends TicketOwners {
+  id: string;
+  identifier: string;
+  viewer: string;
+  comments: TicketComment[];
+}
+
+interface SavedComment {
+  id: string;
+  url: string;
+}
 
 export interface FoundIssue {
   identifier: string;
@@ -47,6 +62,42 @@ const labelsQuery =
 
 const nameSchema = Type.Union([Type.Object({ name: Type.String() }), Type.Null()]);
 const pageInfoSchema = Type.Object({ hasNextPage: Type.Boolean() });
+const userSchema = Type.Union([Type.Object({ id: Type.String() }), Type.Null()]);
+
+const commentSchema = Type.Object({
+  id: Type.String(),
+  url: Type.String(),
+  body: Type.String(),
+  user: userSchema,
+});
+
+const commentsQuery =
+  'query($id: String!) { viewer { id } issue(id: $id) { id identifier assignee { id } creator { id } comments(first: 250) { nodes { id url body user { id } } pageInfo { hasNextPage } } } }';
+
+const commentsSchema = Type.Object({
+  viewer: Type.Object({ id: Type.String() }),
+  issue: Type.Union([
+    Type.Null(),
+    Type.Object({
+      id: Type.String(),
+      identifier: Type.String(),
+      assignee: userSchema,
+      creator: userSchema,
+      comments: Type.Object({ nodes: Type.Array(commentSchema), pageInfo: pageInfoSchema }),
+    }),
+  ]),
+});
+
+const commentUpdateMutation =
+  'mutation($id: String!, $body: String!) { commentUpdate(id: $id, input: { body: $body }) { success comment { id url } } }';
+
+const commentCreateMutation =
+  'mutation($issue: String!, $body: String!) { commentCreate(input: { issueId: $issue, body: $body }) { success comment { id url } } }';
+
+const commentResultSchema = Type.Object({
+  success: Type.Literal(true),
+  comment: Type.Object({ id: Type.String({ minLength: 1 }), url: Type.String() }),
+});
 
 const searchSchema = Type.Object({
   searchIssues: Type.Object({
@@ -87,6 +138,89 @@ const labelsSchema = Type.Object({
     Type.Null(),
   ]),
 });
+
+export const readComments = async (
+  exec: Exec,
+  cwd: string,
+  identifier: string,
+): Promise<TicketComments> => {
+  const { viewer, issue } = await api(exec, cwd, commentsQuery, { id: identifier }, commentsSchema);
+
+  if (issue === null) {
+    throw new Error(`Linear has no issue ${identifier}.`);
+  }
+
+  if (issue.comments.pageInfo.hasNextPage) {
+    throw new Error(`The comments for ${identifier} have another page. Nothing was written.`);
+  }
+
+  return {
+    id: issue.id,
+    identifier: issue.identifier,
+    viewer: viewer.id,
+    assignee: issue.assignee?.id ?? null,
+    creator: issue.creator?.id ?? null,
+    comments: issue.comments.nodes,
+  };
+};
+
+export const addComment = async (
+  exec: Exec,
+  cwd: string,
+  input: { issue: string; body: string },
+): Promise<SavedComment> => {
+  const schema = Type.Object({ commentCreate: commentResultSchema });
+  const result = await api(exec, cwd, commentCreateMutation, input, schema);
+
+  return result.commentCreate.comment;
+};
+
+export const updateComment = async (
+  exec: Exec,
+  cwd: string,
+  input: { id: string; body: string },
+): Promise<SavedComment> => {
+  const schema = Type.Object({ commentUpdate: commentResultSchema });
+  const result = await api(exec, cwd, commentUpdateMutation, input, schema);
+
+  return result.commentUpdate.comment;
+};
+
+const cancelQuery =
+  'query($id: String!) { issue(id: $id) { identifier title state { type name } attachments(first: 100) { nodes { url } pageInfo { hasNextPage } } } }';
+
+const cancelSchema = Type.Object({
+  issue: Type.Union([
+    Type.Null(),
+    Type.Object({
+      identifier: Type.String(),
+      title: Type.String(),
+      state: Type.Object({ type: Type.String(), name: Type.String() }),
+      attachments: Type.Object({
+        nodes: Type.Array(Type.Object({ url: Type.String() })),
+        pageInfo: pageInfoSchema,
+      }),
+    }),
+  ]),
+});
+
+export const readCancellation = async (
+  exec: Exec,
+  cwd: string,
+  identifier: string,
+): Promise<NonNullable<Static<typeof cancelSchema>['issue']>> => {
+  const { issue } = await api(exec, cwd, cancelQuery, { id: identifier }, cancelSchema);
+
+  if (issue === null) {
+    throw new Error(`Linear has no issue ${identifier}.`);
+  }
+
+  if (issue.attachments.pageInfo.hasNextPage) {
+    throw new Error(`The attachments for ${identifier} have another page. Nothing was written.`);
+  }
+
+  return issue;
+};
 
 // Searches the open issues in the route's team, and its project when the route names one. The team
 // goes in teamId, not in the filter: with a team filter, Linear leaves out real matches.

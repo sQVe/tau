@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
-import { findDraftFor, readDraftRecord, writeDraftField } from './draftRecord.js';
+import { findDraftFor, readDraftRecord, writeDraftRecord } from './draftRecord.js';
+import type { DraftRecord } from './draftRecord.js';
 
 const renameFailure = vi.hoisted(() => ({ error: undefined as Error | undefined }));
 
@@ -41,26 +42,83 @@ const directoryWith = async (text: string | undefined) => {
 
 const fixtureText = (name: string) => readFile(join(fixtures, name), 'utf8');
 
-it('reads a previous version 1 record as version 2', async () => {
+it('reads a previous version 1 record as version 3', async () => {
   const directory = await directoryWith(await fixtureText('version-1.json'));
 
   expect(await readDraftRecord(directory)).toEqual({
-    version: 2,
+    version: 3,
     identifier: 'ME-600',
-    reviewCommentId: 'c1',
-    qualityCommentId: null,
+    comments: { '# Code review: ME-600': 'c1' },
   });
 });
 
-it('reads a current version 2 record with separate comment IDs', async () => {
+it('reads a previous version 2 record with heading keys', async () => {
   const directory = await directoryWith(await fixtureText('version-2.json'));
 
   expect(await readDraftRecord(directory)).toEqual({
-    version: 2,
+    version: 3,
     identifier: 'ME-600',
-    reviewCommentId: 'c1',
-    qualityCommentId: 'q1',
+    comments: { '# Code review: ME-600': 'c1', '# Code quality: ME-600': 'q1' },
   });
+});
+
+it('reads the current version 3 fixture without changing it', async () => {
+  const text = await fixtureText('version-3.json');
+  const directory = await directoryWith(text);
+
+  expect(await readDraftRecord(directory)).toEqual(JSON.parse(text));
+  expect(await readFile(join(directory, 'draft.json'), 'utf8')).toBe(text);
+});
+
+it.each([1, 2])('drops comment IDs from version %s without an identifier', async (version) => {
+  const record = {
+    version,
+    identifier: null,
+    reviewCommentId: 'review',
+    ...(version === 2 ? { qualityCommentId: 'quality' } : {}),
+  };
+
+  const text = JSON.stringify(record);
+  const directory = await directoryWith(text);
+
+  expect(await readDraftRecord(directory)).toEqual({ version: 3, identifier: null, comments: {} });
+  expect(await readFile(join(directory, 'draft.json'), 'utf8')).toBe(text);
+});
+
+it.each([
+  { label: 'version 1', version: 1, reviewCommentId: null, expected: {} },
+  {
+    label: 'version 2 both absent',
+    version: 2,
+    reviewCommentId: null,
+    qualityCommentId: null,
+    expected: {},
+  },
+  {
+    label: 'version 2 no quality',
+    version: 2,
+    reviewCommentId: 'review',
+    qualityCommentId: null,
+    expected: { '# Code review: ME-600': 'review' },
+  },
+  {
+    label: 'version 2 no review',
+    version: 2,
+    reviewCommentId: null,
+    qualityCommentId: 'quality',
+    expected: { '# Code quality: ME-600': 'quality' },
+  },
+])('omits absent legacy comment IDs: $label', async ({ label: _label, expected, ...record }) => {
+  const text = JSON.stringify({ ...record, identifier: 'ME-600' });
+  const directory = await directoryWith(text);
+
+  expect(await readDraftRecord(directory)).toEqual({
+    version: 3,
+    identifier: 'ME-600',
+    comments: expected,
+  });
+
+  expect(await readFile(join(directory, 'draft.json'), 'utf8')).toBe(text);
 });
 
 it('reads a record with no identifier or comment', async () => {
@@ -161,33 +219,26 @@ it('finds no draft when the tickets directory does not exist', async () => {
 const readJson = async (directory: string) =>
   JSON.parse(await readFile(join(directory, 'draft.json'), 'utf8')) as unknown;
 
-it.each([
-  { fixture: 'version-1.json', field: 'identifier', value: 'ME-700' },
-  { fixture: 'version-2.json', field: 'reviewCommentId', value: 'c9' },
-  { fixture: 'version-2.json', field: 'qualityCommentId', value: 'q9' },
-] as const)('sets $field, keeps the rest, and writes version 2', async (input) => {
-  const directory = await directoryWith(await fixtureText(input.fixture));
-  const before = await readDraftRecord(directory);
+const replacement: DraftRecord = { version: 3, identifier: 'ME-1', comments: { '# Report': 'c1' } };
 
-  const written = await writeDraftField(directory, input.field, input.value);
+it.each(['version-1.json', 'version-2.json', 'version-3.json'])(
+  'writes a version 3 record over %s',
+  async (fixture) => {
+    const directory = await directoryWith(await fixtureText(fixture));
 
-  expect(written).toEqual({ ...before, [input.field]: input.value });
-  expect(await readJson(directory)).toEqual(written);
-  expect(written.version).toBe(2);
-});
+    await writeDraftRecord(directory, replacement);
 
-it('creates draft.json with the other fields null when none exists', async () => {
+    expect(await readJson(directory)).toEqual(replacement);
+    expect(await readdir(directory)).toEqual(['draft.json']);
+  },
+);
+
+it('creates draft.json when none exists', async () => {
   const directory = await directoryWith(undefined);
 
-  await writeDraftField(directory, 'qualityCommentId', 'q1');
+  await writeDraftRecord(directory, replacement);
 
-  expect(await readJson(directory)).toEqual({
-    version: 2,
-    identifier: null,
-    reviewCommentId: null,
-    qualityCommentId: 'q1',
-  });
-
+  expect(await readJson(directory)).toEqual(replacement);
   expect(await readdir(directory)).toEqual(['draft.json']);
 });
 
@@ -195,25 +246,26 @@ it.each(['malformed.json', 'newer.json'])('refuses to change %s and keeps it', a
   const text = await fixtureText(fixture);
   const directory = await directoryWith(text);
 
-  await expect(writeDraftField(directory, 'identifier', 'ME-1')).rejects.toThrow(/draft/);
+  await expect(writeDraftRecord(directory, replacement)).rejects.toThrow(/draft/);
 
   expect(await readFile(join(directory, 'draft.json'), 'utf8')).toBe(text);
   expect(await readdir(directory)).toEqual(['draft.json']);
 });
 
 it.each([
-  { field: 'identifier', value: 'me-1' },
-  { field: 'identifier', value: '' },
-  { field: 'reviewCommentId', value: '' },
-  { field: 'qualityCommentId', value: 5 },
-  { field: 'reviewCommentId', value: null },
-  { field: 'version', value: 'x' },
-])('refuses $field value $value and writes nothing', async ({ field, value }) => {
+  { identifier: 'me-1' },
+  { identifier: '' },
+  { comments: { '# Report': '' } },
+  { comments: { '# Report': 5 } },
+  { comments: { '# Report': null } },
+  { version: 2 },
+])('refuses invalid record %j and writes nothing', async (invalid) => {
   const missing = await directoryWith(undefined);
   const saved = await directoryWith(await fixtureText('version-1.json'));
+  const record = { ...replacement, ...invalid } as DraftRecord;
 
-  await expect(writeDraftField(missing, field, value)).rejects.toThrow(/field|value/);
-  await expect(writeDraftField(saved, field, value)).rejects.toThrow(/field|value/);
+  await expect(writeDraftRecord(missing, record)).rejects.toThrow(/Invalid ticket draft/);
+  await expect(writeDraftRecord(saved, record)).rejects.toThrow(/Invalid ticket draft/);
 
   const original = await fixtureText('version-1.json');
 
@@ -227,7 +279,7 @@ it('keeps the error, the destination, and the directory when the rename fails', 
 
   renameFailure.error = new Error('rename failed');
 
-  await expect(writeDraftField(directory, 'identifier', 'ME-1')).rejects.toThrow('rename failed');
+  await expect(writeDraftRecord(directory, replacement)).rejects.toThrow('rename failed');
 
   expect(await readdir(directory)).toEqual(['draft.json']);
   expect(await readFile(join(directory, 'draft.json'), 'utf8')).toBe(text);

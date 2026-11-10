@@ -4,8 +4,8 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { confirmWithUser } from '../../dialog/dialog.js';
 import { errorMessage } from '../../errors.js';
-import { run } from '../../linear.js';
-import { createIssue, readRouteIds, updateIssue } from './linear.js';
+import { createIssue, run, updateIssue } from '../../linear/linear.js';
+import { readRouteIds } from './linear.js';
 import { CreatedButNotRecordedError, runApplySteps } from './partialApply.js';
 import type { ApplyRunner, PartialApplyStep } from './partialApply.js';
 import { decideForeignUpdates } from './startDecisions.js';

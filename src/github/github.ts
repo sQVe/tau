@@ -1,4 +1,5 @@
 import type { Static, TSchema } from 'typebox';
+import { Type } from 'typebox';
 
 import {
   checkOutput as checkCommandOutput,
@@ -107,6 +108,27 @@ export const readChecked = async <Schema extends TSchema>(
 
   // oxlint-disable-next-line typescript/no-unsafe-return -- the generic schema type cannot narrow the checked value.
   return value;
+};
+
+const pullRequestSchema = Type.Object({
+  state: Type.Union([Type.Literal('OPEN'), Type.Literal('CLOSED'), Type.Literal('MERGED')]),
+});
+
+const pullRequestUrl = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/u;
+
+export const isPullRequestUrl = (url: string): boolean => pullRequestUrl.test(url);
+
+export const readPullRequestState = async (
+  runtime: CommandRuntime,
+  url: string,
+): Promise<string> => {
+  const value = await readChecked(
+    runtime,
+    ['pr', 'view', url, '--json', 'state'],
+    pullRequestSchema,
+  );
+
+  return value.state;
 };
 
 const listLimit = 100;

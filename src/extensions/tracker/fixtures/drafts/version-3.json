@@ -1,0 +1,9 @@
+{
+  "version": 3,
+  "identifier": "ME-600",
+  "comments": {
+    "# Code review: ME-600": "c1",
+    "# Code quality: ME-600": "q1",
+    "# Other report": "other"
+  }
+}
