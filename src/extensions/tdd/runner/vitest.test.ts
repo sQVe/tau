@@ -219,6 +219,40 @@ describe('runTests', () => {
     });
   });
 
+  it.for(['value.ts', 'related.test.ts'])(
+    'runs only tests related to %s with the installed Vitest runner',
+    async (file) => {
+      const cwd = temporaryDirectory(onTestFinished, 'tau-related-selection-');
+      await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
+      await writeFile(join(cwd, 'value.ts'), 'export const value = 1;');
+
+      await writeFile(
+        join(cwd, 'related.test.ts'),
+        "import { it, expect } from 'vitest'; import { value } from './value'; it('related', () => expect(value).toBe(1));",
+      );
+
+      await writeFile(
+        join(cwd, 'unrelated.test.ts'),
+        "import { it } from 'vitest'; it('unrelated', () => { throw new Error('must not run'); });",
+      );
+
+      const result = await runTests({
+        scope: 'affected',
+        verificationArgv,
+        cwd,
+        files: [file],
+        testNames: ['ignored'],
+      });
+
+      expect(result).toMatchObject({
+        kind: 'pass',
+        tests: [{ file: join(cwd, 'related.test.ts'), fullname: 'related', status: 'passed' }],
+      });
+
+      expect('tests' in result && result.tests).toHaveLength(1);
+    },
+  );
+
   it('selects only an exact nested test with the installed Vitest runner', async () => {
     const cwd = temporaryDirectory(onTestFinished, 'tau-nested-selection-');
     await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
@@ -749,20 +783,26 @@ describe('runTests', () => {
     expect(result).toMatchObject({ kind: 'compile-error', tests: [] });
   });
 
-  it('returns no-tests-collected when the report has zero tests and zero files', async () => {
-    const report = {
-      numTotalTests: 0,
-      numFailedTests: 0,
-      numPassedTests: 0,
-      testResults: [],
-    };
+  it.for(['full', 'affected'] as const)(
+    'returns no-tests-collected for an empty %s report',
+    async (scope) => {
+      const report = {
+        numTotalTests: 0,
+        numFailedTests: 0,
+        numPassedTests: 0,
+        testResults: [],
+      };
 
-    const deps = makeDeps({ spawn: fakeSpawn({ report, code: 0 }) });
+      const deps = makeDeps({ spawn: fakeSpawn({ report, code: 0 }) });
 
-    const result = await runTests({ scope: 'full', verificationArgv, cwd: '/repo' }, deps);
+      const result = await runTests(
+        { scope, verificationArgv, cwd: '/repo', files: ['src/value.ts'], testNames: ['ignored'] },
+        deps,
+      );
 
-    expect(result.kind).toBe('no-tests-collected');
-  });
+      expect(result.kind).toBe('no-tests-collected');
+    },
+  );
 
   it('returns timeout when spawn reports timedOut', async () => {
     const deps = makeDeps({ spawn: fakeSpawn({ timedOut: true, code: null }) });
@@ -855,5 +895,6 @@ describe('runTests', () => {
 
 it('allows two minutes for full verification and thirty seconds for focused runs', () => {
   expect(defaultDeps('full').timeoutMs).toBe(120_000);
+  expect(defaultDeps('affected').timeoutMs).toBe(120_000);
   expect(defaultDeps('focused').timeoutMs).toBe(30_000);
 });

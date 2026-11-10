@@ -1,3 +1,5 @@
+import type { TestScope } from './types.js';
+
 export interface FileRoleFacts {
   testMatch: boolean;
   productionMatch: boolean;
@@ -17,4 +19,19 @@ export const fileRoles = ({
   const productionRoleAllowed = testFilesCanBeProduction || !testMatch;
 
   return { test: testMatch, production: productionMatch && productionRoleAllowed };
+};
+
+export const acceptsFileRole = (
+  scope: TestScope,
+  roles: FileRoles & { support: boolean },
+): boolean => {
+  if (roles.test) {
+    return true;
+  }
+
+  if (scope !== 'affected') {
+    return false;
+  }
+
+  return roles.production || roles.support;
 };

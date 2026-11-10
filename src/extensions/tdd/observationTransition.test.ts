@@ -73,7 +73,7 @@ it('does not mutate the previous cycle state or its hint set', () => {
 
   completeRun(before, facts({ kind: 'fail', selectionFailed: true, thrownErrorType: 'TypeError' }));
   checkpoint(before, { kind: 'value', hash: 'hash-new' }, true);
-  startRun(before, otherBehavior);
+  startRun(before, otherBehavior, 'focused');
 
   expect({ ...before, shownHints: [...before.shownHints].toSorted() }).toEqual(snapshot);
 });
@@ -131,6 +131,30 @@ it.each([
     start: state({ active: key }),
     facts: facts({ kind: 'fail', freshness: 'stale', selectionFailed: true }),
     expected: { observedRed: false, freshness: 'stale', hint: 'stale' },
+  },
+  {
+    name: 'a fresh affected pass keeps the current cycle',
+    start: state({ active: key, observedRed: true }),
+    facts: facts({ scope: 'affected' }),
+    expected: { active: key, observedRed: true, freshness: 'fresh', hint: undefined },
+  },
+  {
+    name: 'a fresh affected failure does not record RED',
+    start: state({ active: key }),
+    facts: facts({ scope: 'affected', kind: 'fail', selectionFailed: true }),
+    expected: { active: key, observedRed: false, hint: undefined },
+  },
+  {
+    name: 'a stale affected pass',
+    start: state({ active: key }),
+    facts: facts({ scope: 'affected', freshness: 'stale' }),
+    expected: { freshness: 'stale', hint: 'stale' },
+  },
+  {
+    name: 'an unknown affected pass',
+    start: state({ active: key }),
+    facts: facts({ scope: 'affected', freshness: 'unknown' }),
+    expected: { freshness: 'unknown', hint: 'unknown' },
   },
   {
     name: 'a fresh full pass',
@@ -329,6 +353,17 @@ it.each([
     expected: { freshness: 'unknown', hint: undefined },
   },
   {
+    name: 'an affected implementation edit after observed focused RED',
+    start: state({
+      active: key,
+      observedRed: true,
+      latest: run({ scope: 'affected', freshness: 'stale' }),
+    }),
+    input: { kind: 'value', hash: 'hash-new' } as const,
+    productionEdit: true,
+    expected: { freshness: 'stale', hint: undefined },
+  },
+  {
     name: 'an implementation edit after observed focused RED',
     start: state({ active: key, observedRed: true, latest: run({ freshness: 'stale' }) }),
     input: { kind: 'skipped' } as const,
@@ -479,6 +514,7 @@ it.each([
 it.each([
   {
     name: 'a different behavior that matches the latest idle run',
+    scope: 'focused',
     start: state({
       active: otherKey,
       observedRed: true,
@@ -490,6 +526,7 @@ it.each([
   },
   {
     name: 'the same active behavior',
+    scope: 'focused',
     start: state({
       active: key,
       observedRed: true,
@@ -500,6 +537,7 @@ it.each([
   },
   {
     name: 'the behavior of the latest run while idle',
+    scope: 'focused',
     start: state({
       active: null,
       observedRed: true,
@@ -511,6 +549,7 @@ it.each([
   },
   {
     name: 'a different behavior than the latest run',
+    scope: 'focused',
     start: state({
       active: null,
       observedRed: true,
@@ -520,8 +559,30 @@ it.each([
     }),
     expected: { active: key, observedRed: false, hints: [], staleHintInput: 'hash' },
   },
-] as const)('starts a run of $name', ({ start, expected }) => {
-  expect(stateSummary(startRun(start, behavior))).toMatchObject(expected);
+  {
+    name: 'affected with different inputs',
+    scope: 'affected',
+    start: state({ active: otherKey, observedRed: true, shownHints: new Set(['stale']) }),
+    expected: { active: otherKey, observedRed: true, hints: ['stale'] },
+  },
+  {
+    name: 'affected without a focused cycle',
+    scope: 'affected',
+    start: state(),
+    expected: { active: null, observedRed: false, hints: [] },
+  },
+  {
+    name: 'focused after affected inputs',
+    scope: 'focused',
+    start: state({
+      active: key,
+      observedRed: true,
+      latest: run({ scope: 'affected', behavior: otherBehavior }),
+    }),
+    expected: { active: key, observedRed: true, hints: [] },
+  },
+] as const)('starts a run of $name', ({ start, scope, expected }) => {
+  expect(stateSummary(startRun(start, behavior, scope))).toMatchObject(expected);
 });
 
 it.each([

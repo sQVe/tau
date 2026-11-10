@@ -58,7 +58,11 @@ export const compareInputs = (before: string | null, after: string | null): Fres
   return before === after ? 'fresh' : 'stale';
 };
 
-export const startRun = (state: CycleState, behavior: Behavior): CycleState => {
+export const startRun = (state: CycleState, behavior: Behavior, scope: TestScope): CycleState => {
+  if (scope === 'affected') {
+    return state;
+  }
+
   const key = identity(behavior);
 
   const continuesLatest =
@@ -162,7 +166,7 @@ export const checkpointNeedsInputHash = (state: CycleState): boolean => {
 };
 
 const isExpectedImplementationEdit = (state: CycleState, latest: LatestRun): boolean =>
-  state.observedRed && latest.scope === 'focused' && latest.freshness === 'stale';
+  state.observedRed && latest.scope !== 'full' && latest.freshness === 'stale';
 
 const suggestsMissingRed = (
   state: CycleState,

@@ -6,7 +6,7 @@ export interface Behavior {
   files: string[];
 }
 
-export type TestScope = 'focused' | 'full';
+export type TestScope = 'focused' | 'affected' | 'full';
 
 export type Freshness = 'fresh' | 'stale' | 'unknown';
 

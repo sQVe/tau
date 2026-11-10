@@ -725,6 +725,8 @@ it('reports an unknown config key again for the same ui after session_start', as
 it.for<[string, Record<string, unknown>, boolean]>([
   ['a named test in one file', {}, true],
   ['several names', { testFullName: ['works', 'also works'] }, true],
+  ['affected source selection', { scope: 'affected', files: ['src/value.ts'] }, true],
+  ['unknown scope', { scope: 'related' }, false],
   ['an empty name', { testFullName: '' }, false],
   ['an empty name list', { testFullName: [] }, false],
   ['an empty name in a list', { testFullName: ['works', ''] }, false],

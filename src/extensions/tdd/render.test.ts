@@ -19,6 +19,17 @@ const observation = (
   ...overrides,
 });
 
+it('shows affected scope and files without claiming an exact name selection', () => {
+  const selected = selectionSummary(behavior, 'affected');
+  const passed = observation({ kind: 'pass', tests: [] }, { scope: 'affected' });
+
+  expect(selected).toContain('affected');
+  expect(selected).toContain('value.test.ts');
+  expect(selected).not.toContain('value works');
+  expect(summarize('/repo', passed)).toContain('pass · affected · fresh');
+  expect(runContext(behavior, passed)).toContain('Affected selection passed');
+});
+
 it('shows bounded selection context and distinguishes full-suite scope', () => {
   expect(selectionSummary(behavior, 'focused')).toContain('value.test.ts');
   expect(selectionSummary(behavior, 'focused')).toContain('value works');

@@ -41,7 +41,7 @@ export const selectionSummary = (behavior: Partial<Behavior>, scope?: string): s
     return 'Scope: full suite (no file or test-name filter)';
   }
 
-  if (scope !== 'focused') {
+  if (scope !== 'focused' && scope !== 'affected') {
     return 'Waiting for test selection';
   }
 
@@ -51,11 +51,18 @@ export const selectionSummary = (behavior: Partial<Behavior>, scope?: string): s
 
   const files = behavior.files ?? [];
 
-  return [
-    'Scope: focused',
+  const lines = [
+    `Scope: ${scope}`,
     `Files (${files.length}): ${cap(printable(files.join(', ')), maximumFilesLength)}`,
-    `Exact names (${names.length}): ${cap(printable(names.join('\n  ')), maximumNamesLength)}`,
-  ].join('\n');
+  ];
+
+  if (scope === 'focused') {
+    lines.push(
+      `Exact names (${names.length}): ${cap(printable(names.join('\n  ')), maximumNamesLength)}`,
+    );
+  }
+
+  return lines.join('\n');
 };
 
 const testSummary = (report: RunnerResult): string[] => {
@@ -176,7 +183,7 @@ const attributionSuffix = (attribution: TestAttribution | undefined): string => 
 
 export const summarize = (cwd: string, observation: Observation): string => {
   const { report, scope, freshness } = observation;
-  const scopeLabel = scope === 'full' ? 'full suite' : 'focused';
+  const scopeLabel = scope === 'full' ? 'full suite' : scope;
 
   const lines = [
     `${report.kind} · ${scopeLabel} · ${freshness}`,
@@ -324,7 +331,12 @@ const excerptLines = (
 export const runContext = (behavior: Behavior, observation: Observation): string => {
   const { scope, freshness, report, runPath } = observation;
   const lines = [selectionSummary(behavior, scope)];
-  const coverage = scope === 'full' ? 'Full suite' : 'Focused selection';
+
+  const coverage = {
+    full: 'Full suite',
+    focused: 'Focused selection',
+    affected: 'Affected selection',
+  }[scope];
 
   if (report.kind === 'pass') {
     lines.push(`${coverage} passed; ${freshnessDescriptions[freshness]}.`);
