@@ -194,9 +194,11 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    follow-up. Coverage matches do not close findings or replace this judgment.
 
    Keep per-link report paths, verdicts, fix-scope assessments, shallow-reading notes, and accepted
-   checked fixes in the session report. Accept checked fixes without asking. If other post-review
-   commits leave only review coverage open, ask once: run a new fast review or continue with that
-   action open. Run a review when the user asks, then suggest a status again.
+   checked fixes in the session report. When another independent review of the change is known, add
+   the [known-review register](../code-review/report.md#known-reviews) and limit the review result
+   to what it supports. Accept checked fixes without asking. If other post-review commits leave only
+   review coverage open, ask once: run a new fast review or continue with that action open. Run a
+   review when the user asks, then suggest a status again.
 
 7. Write the title and body. Save the title as `$prdir/title.md` and the body as `$prdir/body.md`.
    Publish with the title from `title.md`.

@@ -180,6 +180,9 @@ metadata:
     - Reviewer mode: use the headings Resolved, Follow-up drafted, and Open for other reviewers.
     - Give each bullet the thread link and what you did: replied, resolved, left open, or no reply.
       List what you judged as needing nothing, so the user can overrule it.
+    - Resolved threads close only the threads this round handled. When another independent review of
+      the PR is known, add the [known-review register](../code-review/report.md#known-reviews)
+      before any overall review claim.
     - In both modes, add a CI section with each failing or pending check, its link, and its outcome.
       List each gap there as unread, never as passing. Add a Conflicts section with what the rebase
       resolved or why it did not run. End with the checks you ran.

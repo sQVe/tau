@@ -50,3 +50,36 @@ not replace this assessment.
 - Notes: areas workers read only shallowly. They are not gaps.
 - With no findings from a complete, fresh run, show no table. Say the workers found no material
   issues in the scope they read. That does not prove the change correct.
+
+## Known reviews
+
+The manager keeps this register before it claims that review is complete overall, or that a change
+is ready to publish, when more than one independent review of the change is known. A review is known
+when this session produced or read it, or when the user or a handover supplies its path or URL. Do
+not search history for others. With one review chain and no other known review, skip the register.
+
+Write one entry per known report. Keep each finding in its original report:
+
+```markdown
+- <path or URL>: <scope>; identity <identity or "unavailable">.
+  - <finding reference>: <disposition>. <evidence>.
+```
+
+- Scope: the target kind and the range or paths the report covered. Identity: the capture
+  `identity`, the GitHub review ID, or the reviewed commit, whichever exists.
+- Finding reference: the report's number or a short title, never a copy of the finding.
+- Disposition: a [triage-findings](../triage-findings/SKILL.md) outcome, Open when nobody verified
+  it, or Superseded. Give the commit, test, or `file:line` that supports it.
+- Settle each finding on its own against the current code. A stale report or a moved head settles
+  none of its findings.
+- Superseded names the later assessment and the exact scope it covered again. Findings outside that
+  scope keep their own disposition.
+- An irrelevant report gets its entry with the reason its scope misses this change, and no findings.
+- An unreadable relevant report gets its entry marked unreadable and stays a gap.
+
+Claim that all known reviews passed only when every relevant report was read and every finding is
+Fixed, Not worth changing, Incorrect, or Superseded. Otherwise name the open findings and gaps, and
+claim only what holds, such as "the selected threads are resolved". Open findings limit the claim.
+They add no publication gate and do not start more review or fixes. The register does not replace
+capture freshness, coverage, verdicts, acceptance, branch checks, CI, deployment, or publication
+approval.
