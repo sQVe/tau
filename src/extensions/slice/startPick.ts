@@ -10,6 +10,9 @@ const readDefaultBranch = async (runtime: Runtime) => {
   // An explicit refspec also updates a stack parent's branch in a clone with a narrowed refspec.
   await readGit(runtime.root, ['fetch', 'origin', '+refs/heads/*:refs/remotes/origin/*'], options);
 
+  // Fetch leaves origin/HEAD unchanged, so a renamed default branch would still read the old name.
+  await runGit(runtime.root, ['remote', 'set-head', 'origin', '--auto'], options);
+
   const symbolic = await runGit(
     runtime.root,
     ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'],

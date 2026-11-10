@@ -164,6 +164,21 @@ it.each(['child', 'named'])(
   },
 );
 
+it('reads the remote default branch when origin/HEAD is stale', async () => {
+  const { root, fake, read } = await setUp();
+  await git(root, 'fetch', 'origin');
+  const mainCommit = (await git(root, 'rev-parse', 'origin/main')).trim();
+  await git(root, 'update-ref', 'refs/remotes/origin/renamed', mainCommit);
+  await git(root, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/renamed');
+  fake.addIssue({ identifier: 'ME-1', title: 'Slice' });
+
+  const result = await read('ME-1');
+
+  expect(result.details).toMatchObject({
+    pick: { defaultBranch: 'main', base: 'origin/main' },
+  });
+});
+
 it('returns the open blocker URL and the named slice links', async () => {
   const { root, fake, read } = await setUp();
   await git(root, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
