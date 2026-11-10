@@ -6,15 +6,16 @@ import type { Exec } from '../../command.js';
 import { createBranch } from './branch.js';
 import type { BranchResult } from './branch.js';
 
+const positionalArgument = Type.String({ pattern: '^[^-]' });
+
 const parameters = Type.Object({
-  parent: Type.String(),
-  branch: Type.String(),
-  trunk: Type.String(),
-  remote: Type.String(),
+  parent: positionalArgument,
+  branch: positionalArgument,
+  trunk: positionalArgument,
+  remote: positionalArgument,
 });
 
-const description =
-  'Puts branch on top of parent with local writes only. result: created, inPlace, or stop with reason.';
+const description = 'Puts branch on parent with local writes.';
 
 export const createStackBranchTool = (
   exec: Exec,
