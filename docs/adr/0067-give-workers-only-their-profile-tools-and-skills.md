@@ -90,14 +90,14 @@ tools, and the worker reads only the listed skills.
 
 ### Bundled profiles
 
-| Profile    | Tools                                                                                    | Skills | Instruction sets                 | Packages                      |
-| ---------- | ---------------------------------------------------------------------------------------- | ------ | -------------------------------- | ----------------------------- |
-| `worker`   | `read`, `bash`, `edit`, `write`, `codemode`, `run_tests`, `commit`                       | `tdd`  | default                          | none                          |
-| `scout`    | `read`, `bash`, `write`, `codemode`, `web_search`, `fetch_content`, `get_search_content` | none   | `writing`, `workflow`            | none                          |
-| `reviewer` | `read`, `bash`, `write`, `codemode`                                                      | none   | default                          | none                          |
-| `checker`  | `read`, `bash`, `write`, `codemode`                                                      | none   | default                          | none                          |
-| `browser`  | `read`, `bash`, `write`, `agent_browser`, `agent_browser_code`                           | none   | `writing`, `workflow`, `browser` | `npm:pi-agent-browser-native` |
-| `qa`       | `read`, `bash`, `write`, `agent_browser`, `agent_browser_code`                           | none   | `writing`, `workflow`, `browser` | `npm:pi-agent-browser-native` |
+| Profile    | Tools                                                                                    | Skills                       | Instruction sets                 | Packages                      |
+| ---------- | ---------------------------------------------------------------------------------------- | ---------------------------- | -------------------------------- | ----------------------------- |
+| `worker`   | `read`, `bash`, `edit`, `write`, `codemode`, `run_tests`, `commit`                       | `tdd`, `benchmark-checklist` | default                          | none                          |
+| `scout`    | `read`, `bash`, `write`, `codemode`, `web_search`, `fetch_content`, `get_search_content` | none                         | `writing`, `workflow`            | none                          |
+| `reviewer` | `read`, `bash`, `write`, `codemode`                                                      | none                         | default                          | none                          |
+| `checker`  | `read`, `bash`, `write`, `codemode`                                                      | none                         | default                          | none                          |
+| `browser`  | `read`, `bash`, `write`, `agent_browser`, `agent_browser_code`                           | none                         | `writing`, `workflow`, `browser` | `npm:pi-agent-browser-native` |
+| `qa`       | `read`, `bash`, `write`, `agent_browser`, `agent_browser_code`                           | none                         | `writing`, `workflow`, `browser` | `npm:pi-agent-browser-native` |
 
 - `scout`, `reviewer`, `checker`, and `worker` list `codemode` by name. `browser` and `qa` do not.
   They act in a browser and do not gather repository evidence in bulk.
