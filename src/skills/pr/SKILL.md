@@ -177,8 +177,9 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    - A concrete risk that this change introduced, exposed, or worsened. An open finding is one, and
      so is user-visible behavior that QA found failing.
    - An audit item with the verdict not met or not run, and each uncovered item of a missing or old
-     audit. It closes when a check that step 5 ran passes for it. A deferred item is not a required
-     action.
+     audit. It closes when a check that step 5 ran passes for it. A decision-evidence row also
+     closes when step 4's assessment supports a conclusion for HEAD. A deferred item is not a
+     required action.
 
    A coverage number, missing assertion, untested platform, or record-format mismatch alone is not a
    required action. Missing evidence for promised behavior can still require a test or review.
