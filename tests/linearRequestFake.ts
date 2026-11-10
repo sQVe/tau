@@ -74,6 +74,7 @@ export type QueryOperation = {
 }[QueryName];
 
 export type Operation =
+  | { kind: 'state'; identifier: string; state: string }
   | { kind: 'pullRequest'; url: string }
   | { kind: 'relation'; action: 'add' | 'delete'; identifier: string; blocker: string }
   | QueryOperation;
@@ -274,6 +275,13 @@ const decodeQuery = (call: FakeCall): Operation => {
 };
 
 const decodeIssueCommand = (call: FakeCall): Operation => {
+  const [, command, target, flag, state] = call.commandArguments;
+  const isStateUpdate = command === 'update' && flag === '--state';
+
+  if (isStateUpdate && target !== undefined && state !== undefined) {
+    return { kind: 'state', identifier: target, state };
+  }
+
   const [, relation, action, identifier, blockedBy, blocker, ...rest] = call.commandArguments;
   const isRelationShape = relation === 'relation' && blockedBy === 'blocked-by';
   const hasTarget = identifier !== undefined && blocker !== undefined;

@@ -30,6 +30,7 @@ interface FakeIssue {
   assigneeId: string | null;
   sortOrder: number;
   stateType: StateType;
+  stateName: string;
   pullRequests: string[];
   blockedBy: string[];
 }
@@ -117,7 +118,7 @@ const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
   project,
   creator: issue.creatorId === null ? null : { id: issue.creatorId },
   assignee: issue.assigneeId === null ? null : { id: issue.assigneeId },
-  state: { type: issue.stateType },
+  state: { type: issue.stateType, name: issue.stateName },
   attachments: { nodes: issue.pullRequests.map((url) => ({ url })) },
   inverseRelations: {
     nodes: issue.blockedBy.map((identifier) => ({ type: 'blocks', issue: { identifier } })),
@@ -125,7 +126,7 @@ const childNode = (issue: FakeIssue, project: { name: string } | null) => ({
 });
 
 const isWrite = (operation: Operation): boolean => {
-  if (operation.kind === 'relation') {
+  if (operation.kind === 'relation' || operation.kind === 'state') {
     return true;
   }
 
@@ -164,6 +165,7 @@ export const createLinearFake = (): LinearFake => {
       assigneeId: null,
       sortOrder: [...issues.values()].filter((other) => other.parent === issue.parent).length,
       stateType: 'started',
+      stateName: 'In Progress',
       pullRequests: [],
       blockedBy: [],
       ...issue,
@@ -457,7 +459,13 @@ export const createLinearFake = (): LinearFake => {
       return JSON.stringify({ data: apiData(operation) });
     }
 
-    changeRelation(operation);
+    if (operation.kind === 'state') {
+      const issue = issues.get(operation.identifier)!;
+      issue.stateName = operation.state;
+      issue.stateType = 'started';
+    } else {
+      changeRelation(operation);
+    }
 
     return '';
   };

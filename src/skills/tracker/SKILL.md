@@ -134,10 +134,9 @@ This list is the one approval rule; other skills link here.
      in a later message than its file write.
    - Other relations: add with `linear issue relation add <ticket> blocked-by <other>`, remove with
      `linear issue relation delete <ticket> blocked-by <other> --yes`.
-   - In Progress: read the state name with
-     `linear api 'query($id: String!) { issue(id: $id) { state { name } } }' --variable id=<slice>`.
-     Skip it if the name is `In Progress`. Any other state, `In Review` included, moves, with
-     `linear issue update <slice> --state 'In Progress'`. Stop and ask if the team lacks that state.
+   - In Progress: the [start-slice skill](../start-slice/SKILL.md) uses `start_slice` `apply` to
+     move the slice. It skips `In Progress`; every other state, `In Review` included, moves. Stop
+     and ask if the team lacks that state.
    - Cancel an approved ticket: read its state and links with
      `linear api 'query($id: String!) { issue(id: $id) { state { type } attachments { nodes { url } } } }' --variable id=<ticket>`.
      Skip it if the type is `canceled`. Stop and ask if it is `completed`, or if

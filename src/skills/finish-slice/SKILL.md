@@ -22,7 +22,8 @@ for the workspace.
 
 - Write to Linear as the tracker skill's [Hard rules](../tracker/SKILL.md#hard-rules) says. Write
   only the audit comment and agent tickets inside the slice's outcome. Do not write to the container
-  or other slices, and do not change any status.
+  or other slices. Do not change any status except the In Progress move that `start_slice` `apply`
+  makes when it creates a fix ticket.
 - Do not run the full check. The pr skill owns it.
 - Worker reports and reviews only feed evidence in. This skill gives the verdict.
 - Verdicts are:

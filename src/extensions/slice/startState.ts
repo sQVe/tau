@@ -44,6 +44,7 @@ export const readStartState = async (
 
   const plan = decideStartPlan({
     slice: draft.start.slice,
+    state: slice.state,
     agentTeam,
     tickets: draft.start.tickets.map((ticket, index) => ({
       title: ticket.title,

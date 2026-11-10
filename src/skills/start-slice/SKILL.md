@@ -101,11 +101,11 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
      trunk. If it stops, report what it found and stop.
    - Otherwise run `git switch --no-track -c <branchName> <base>`, or `git switch <branchName>` when
      `git rev-parse --verify --quiet refs/heads/<branchName>` finds it.
-   - Move the slice to In Progress as the tracker skill says.
    - Call `start_slice` `read` with `directory` set to `$slicedir` and `agentTeam` set to the team
      on the `Tracker agent team:` line. Non-empty `problems`: report each and stop. Otherwise call
-     `apply` with `stateToken`. On an error, stop and report the completed steps. On
-     `status: declined`, stop and report that nothing was written and which tickets were unchanged.
+     `apply` with `stateToken` to move the slice to In Progress and write its agent tickets. On an
+     error, stop and report the completed steps. On `status: declined`, stop and report that nothing
+     was written and which tickets were unchanged.
 10. Report in about 30 lines, with no raw commands: the slice and why; the branch, base, and whether
     it existed; for a stack, the parent slice and PR, trunk, PR target, and any added dependency;
     each agent ticket's `apply` status (`new`, `updated`, or `unchanged`), identifier, URL, title,
