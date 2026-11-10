@@ -22,8 +22,9 @@ Use this skill when you change behavior and `run_tests` is available.
 
 ## Procedure
 
-1. Write a failing test next to the code, importing the production module normally. If the module
-   does not exist, create it empty, so an unresolved import is not taken for RED.
+1. For a behavior change, write a failing test next to the code, importing the production module
+   normally. If the module does not exist, create it empty, so an unresolved import is not taken for
+   RED.
 2. Call `run_tests` with `scope: "focused"`. Do not restructure tests or widen the selection to make
    the tool run.
 3. Read the runner report. Implement the change. Rerun focused with the same files and names until
