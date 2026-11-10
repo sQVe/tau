@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 
 import { readGit, runGit } from '../../git.js';
-import { fixedPrefixes, readSavedRecapture } from '../../reviewCapture/reviewCapture.js';
+import { fixedDiffOptions, readSavedRecapture } from '../../reviewCapture/reviewCapture.js';
 import type { SavedRecapture } from '../../reviewCapture/reviewCapture.js';
 import { existingEntry } from '../../tauDirectory.js';
 import { compareDiffs, decideReuse } from './reuseDecisions.js';
@@ -36,18 +36,9 @@ const isAncestor = async (root: string, ancestor: string, descendant: string) =>
   return result.exitCode === 0;
 };
 
-// --no-textconv and the fixed prefixes match the diff that code_review captures.
+// The fixed options match the diff that code_review captures.
 const readBranchDiff = async (root: string, mergeBase: string) => {
-  const commandArguments = [
-    'diff',
-    '--no-ext-diff',
-    '--no-textconv',
-    '--no-color',
-    ...fixedPrefixes,
-    '--end-of-options',
-    mergeBase,
-    'HEAD',
-  ];
+  const commandArguments = ['diff', ...fixedDiffOptions, '--end-of-options', mergeBase, 'HEAD'];
 
   const result = await runGit(root, commandArguments);
 

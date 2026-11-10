@@ -8,7 +8,11 @@ import type {
   CoverageLinkRequest,
   ReviewInspection,
 } from '../../reviewCapture/reviewCapture.js';
-import { checkReviewDirectory, inspectReview } from '../../reviewCapture/reviewCapture.js';
+import {
+  checkReviewDirectory,
+  fixedDiffOptions,
+  inspectReview,
+} from '../../reviewCapture/reviewCapture.js';
 import { readCheckEvidence } from './checkEvidence.js';
 import type { FullCheckEvidence, PublicationConfig } from './checkEvidence.js';
 import { readChainCoverage } from './coverage.js';
@@ -163,16 +167,7 @@ const readCoverageEvidence = async (
 
 const readMarkers = async (root: string, evidence: PublicationEvidence, mergeBase: string) => {
   try {
-    const diff = await readGit(root, [
-      'diff',
-      '--no-ext-diff',
-      '--no-textconv',
-      '--no-color',
-      '--src-prefix=a/',
-      '--dst-prefix=b/',
-      mergeBase,
-      'HEAD',
-    ]);
+    const diff = await readGit(root, ['diff', ...fixedDiffOptions, mergeBase, 'HEAD']);
 
     const scan = scanMarkers(diff);
 

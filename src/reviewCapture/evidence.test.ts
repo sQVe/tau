@@ -666,6 +666,20 @@ it('reports no gap for the old path of a test file renamed in a range', async ()
   expect(evidence.gaps).toEqual([]);
 });
 
+it('lists no deleted test marker for a renamed test file when Git config turns renames off', async () => {
+  const { root, to: from } = await rangeRepository();
+
+  await git(root, 'config', 'diff.renames', 'false');
+  await git(root, 'mv', 'src/math.test.ts', 'src/add.test.ts');
+  await git(root, 'commit', '--quiet', '-m', 'rename');
+  const to = await git(root, 'rev-parse', 'HEAD');
+
+  const directory = await savedCapture(root, { kind: 'range', from, to });
+  const evidence = await readReviewEvidence(root, directory);
+
+  expect(evidence.markers).toEqual([]);
+});
+
 it('lists deleted test files in the working tree as markers', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const base = await commit(root, { ...sourceFiles, 'src/empty.test.ts': '' }, 'first');
