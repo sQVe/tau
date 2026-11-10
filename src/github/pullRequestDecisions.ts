@@ -12,7 +12,6 @@ export interface ListedPullRequest {
   isDraft: boolean;
   headRefOid: string;
   headRepositoryOwner: { login: string };
-  // null when GitHub no longer has the head repository, such as a deleted fork.
   headRepository: { name: string } | null;
 }
 
@@ -29,8 +28,6 @@ const withoutHead = ({
   ...pr
 }: ListedPullRequest): PullRequest => pr;
 
-// Keeps the head repository's pull requests, since another fork, or another repository of the
-// same owner, can use the same branch name.
 export const pickPullRequests = (
   listed: readonly ListedPullRequest[],
   headRepository: Repository,
