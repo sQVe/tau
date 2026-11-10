@@ -62,6 +62,26 @@ it('reads a previous version 2 record with heading keys', async () => {
   });
 });
 
+it.each([
+  { version: 1, comments: { '# Code review: ME-869': 'review' } },
+  {
+    version: 2,
+    comments: { '# Code review: ME-869': 'review', '# Code quality: ME-869': 'quality' },
+  },
+])(
+  'preserves unbound version $version comments in an identifier directory',
+  async ({ version, comments }) => {
+    const root = await directoryWith(undefined);
+    const directory = join(root, 'me-869');
+    const text = await fixtureText(`version-${version}-unbound.json`);
+    await mkdir(directory);
+    await writeFile(join(directory, 'draft.json'), text);
+
+    expect(await readDraftRecord(directory)).toEqual({ version: 3, identifier: null, comments });
+    expect(await readFile(join(directory, 'draft.json'), 'utf8')).toBe(text);
+  },
+);
+
 it('reads the current version 3 fixture without changing it', async () => {
   const text = await fixtureText('version-3.json');
   const directory = await directoryWith(text);

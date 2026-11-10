@@ -83,13 +83,16 @@ export const readDraftRecord = async (directory: string): Promise<DraftRecord | 
 
   const comments: Record<string, string> = {};
 
-  if (saved.identifier !== null) {
+  const directoryIdentifier = basename(directory).toUpperCase();
+  const headingIdentifier = saved.identifier ?? directoryIdentifier;
+
+  if (/^[A-Z][A-Z0-9]*-[0-9]+$/.test(headingIdentifier)) {
     if (saved.reviewCommentId !== null) {
-      comments[`# Code review: ${saved.identifier}`] = saved.reviewCommentId;
+      comments[`# Code review: ${headingIdentifier}`] = saved.reviewCommentId;
     }
 
     if (saved.version === 2 && saved.qualityCommentId !== null) {
-      comments[`# Code quality: ${saved.identifier}`] = saved.qualityCommentId;
+      comments[`# Code quality: ${headingIdentifier}`] = saved.qualityCommentId;
     }
   }
 
