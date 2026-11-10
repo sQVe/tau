@@ -64,6 +64,30 @@ it('refuses cancellation when the ticket completes during confirmation', async (
   expect(issue.state.type).toBe('completed');
 });
 
+it.each(['title', 'state'])(
+  'refuses cancellation when the %s changes during confirmation',
+  async (field) => {
+    const fake = createLinearFake();
+    const issue = fake.addIssue({ title: 'Work in progress' });
+
+    const context = confirmContext('/repo', async () => {
+      if (field === 'title') {
+        issue.title = 'Different work';
+      } else {
+        issue.state = { type: 'started', name: 'In Review' };
+      }
+
+      return true;
+    });
+
+    const result = cancel(fake.exec, context, issue.identifier);
+
+    await expect(result).rejects.toThrow(`${field} changed`);
+    await expect(result).rejects.toThrow('Nothing was written');
+    expect(fake.writes()).toEqual([]);
+  },
+);
+
 it('returns unchanged when the ticket is canceled during confirmation', async () => {
   const fake = createLinearFake();
   const issue = fake.addIssue({ title: 'Work in progress' });

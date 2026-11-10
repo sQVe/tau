@@ -6,7 +6,7 @@ import { errorMessage } from '../../errors.js';
 import { isPullRequestUrl, readPullRequestState } from '../../github/github.js';
 import { run } from '../../linear/linear.js';
 import { isWorkerProcess } from '../../worker.js';
-import { decideCancel } from './cancelDecision.js';
+import { decideCancel, decideConfirmedCancel } from './cancelDecision.js';
 import type { PullRequestEvidence } from './cancelDecision.js';
 import { readCancellation } from './linear.js';
 
@@ -73,6 +73,12 @@ export const cancel = async (
 
   if (current.decision.kind === 'unchanged') {
     return { status: 'unchanged', identifier: current.issue.identifier };
+  }
+
+  const confirmed = decideConfirmedCancel(issue, current.issue);
+
+  if (confirmed.kind === 'refuse') {
+    throw new Error(`Cannot cancel ${identifier}: ${confirmed.reason} Nothing was written.`);
   }
 
   await run(exec, context.cwd, ['issue', 'update', ticket, '--state', 'canceled', '--no-input']);

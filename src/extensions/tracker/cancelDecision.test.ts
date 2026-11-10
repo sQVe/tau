@@ -1,7 +1,34 @@
 import { expect, it } from 'vitest';
 
-import { decideCancel } from './cancelDecision.js';
+import { decideCancel, decideConfirmedCancel } from './cancelDecision.js';
 import type { PullRequestEvidence } from './cancelDecision.js';
+
+it.each([
+  { label: 'same preview', title: 'Work', state: 'In Progress', kind: 'cancel', reason: '' },
+  {
+    label: 'title changed',
+    title: 'Other',
+    state: 'In Progress',
+    kind: 'refuse',
+    reason: 'title changed',
+  },
+  {
+    label: 'state changed',
+    title: 'Work',
+    state: 'In Review',
+    kind: 'refuse',
+    reason: 'state changed',
+  },
+])('checks confirmed cancellation: $label', ({ title, state, kind, reason }) => {
+  const decision = decideConfirmedCancel(
+    { title: 'Work', state: { name: 'In Progress' } },
+    { title, state: { name: state } },
+  );
+
+  expect(decision.kind).toBe(kind);
+  const message = 'reason' in decision ? decision.reason : '';
+  expect(message).toContain(reason);
+});
 
 const merged = { url: 'https://github.com/a/b/pull/1', state: 'MERGED' };
 const failed = { url: 'https://github.com/a/b/pull/2', error: 'network error' };
