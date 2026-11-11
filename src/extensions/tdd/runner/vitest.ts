@@ -25,7 +25,10 @@ import type {
   TestRunner,
 } from './types.js';
 import { passesReporters } from './vitestOptions.js';
-import { supportsFocusedVitest } from './vitestVersion.js';
+import {
+  givesConfigReporterOptionsToCliReporters,
+  supportsFocusedVitest,
+} from './vitestVersion.js';
 
 interface RunnerDeps {
   resolveVitest: ResolveVitest;
@@ -89,6 +92,7 @@ const buildArguments = (
   input: RunTestsInput,
   outputFile: string,
   focusedEntry: boolean,
+  version: string,
 ): string[] => {
   const runnerArguments = input.verificationArgv.slice(1);
 
@@ -100,7 +104,10 @@ const buildArguments = (
     runnerArguments.unshift('related', '--run');
   }
 
-  if (passesReporters(runnerArguments)) {
+  const addsReportReporter =
+    passesReporters(runnerArguments) && givesConfigReporterOptionsToCliReporters(version);
+
+  if (addsReportReporter) {
     runnerArguments.push(`--reporter=${reportReporterPath}`);
   }
 
@@ -177,7 +184,7 @@ const runInDirectory = async (
 
   const spawnStarted = performance.now();
   const focusedEntry = input.scope === 'focused' && supportsFocusedVitest(runner.version);
-  const runnerArguments = buildArguments(input, outputFile, focusedEntry);
+  const runnerArguments = buildArguments(input, outputFile, focusedEntry, runner.version);
   const commandArguments = [runner.path, ...runnerArguments];
 
   if (focusedEntry) {
