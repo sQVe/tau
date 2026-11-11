@@ -40,7 +40,6 @@ const listFiles = async (directory: string) => {
   }
 };
 
-// Workers keep their session beside the record of one assignment, or of one worker in older runs.
 const isWorkerSession = (path: string) =>
   path.endsWith('.jsonl') && ['assignments', 'workers'].includes(basename(dirname(dirname(path))));
 
@@ -65,7 +64,6 @@ const readStart = async (path: string) => {
   }
 };
 
-// A file last written before the window holds no entry inside it. Undefined means unreadable.
 const findSession = async (
   path: string,
   side: Side,

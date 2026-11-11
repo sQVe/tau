@@ -15,24 +15,17 @@ export interface TimeWindow {
 
 export interface ToolCall {
   tool: string;
-  // The UTC date of the call, such as 2026-10-01.
   day: string;
   side: Side;
   viaCodemode: boolean;
-  // Undefined when the arguments are not a JSON object. Codemode cuts long arguments, which then
-  // fail to parse.
   arguments: Record<string, unknown> | undefined;
-  // Undefined when the log holds no result details. Codemode records none for its calls.
   details: Record<string, unknown> | undefined;
-  // The error text when the call failed, otherwise undefined.
   error: string | undefined;
 }
 
 export interface HealthRule {
   tool: string;
   name: string;
-  // Returns why the rule fails for one UTC day's calls of the tool, or undefined when it holds. A
-  // day without calls of the tool passes an empty list.
   check: (calls: ToolCall[], day: string) => string | undefined;
 }
 
@@ -182,7 +175,6 @@ const addAssistantCalls = (collection: HealthCollection, message: Entry, facts: 
 const addResult = (collection: HealthCollection, message: Entry, facts: EntryFacts) => {
   const call = facts.pending.get(text(message.toolCallId) ?? '');
 
-  // A result whose call lies before the window has no call to complete.
   if (call === undefined) {
     return;
   }
@@ -215,8 +207,6 @@ const isNewInWindow = (collection: HealthCollection, entry: Entry, time: number)
   return inWindow && !copied;
 };
 
-// Collect files in the order their sessions started, so an original keeps the entries its copies
-// share.
 export const collectSessionFile = (collection: HealthCollection, file: SessionFile): void => {
   const pending = new Map<string, ToolCall>();
 
@@ -255,7 +245,6 @@ export const collectSessionFile = (collection: HealthCollection, file: SessionFi
   }
 };
 
-// Numbers vary between otherwise equal errors, such as a character count.
 const normalizeError = (error: string) => {
   const message = error
     .replaceAll(/\d+(?:[,.]\d+)*/g, 'N')
@@ -303,7 +292,6 @@ const groupKey = (day: string, tool: string) => `${day}\0${tool}`;
 const summarizeDays = (calls: ToolCall[], rules: HealthRule[]): ToolDay[] => {
   const groups = new Map<string, ToolCall[]>();
 
-  // A rule also runs on a day without calls of its tool, so a tool that stops being called shows.
   for (const day of new Set(calls.map((call) => call.day))) {
     for (const rule of rules) {
       groups.set(groupKey(day, rule.tool), []);
