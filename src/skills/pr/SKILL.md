@@ -165,6 +165,11 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    - When the repository has `.pi/qa.md`, read it first. State which of its sections apply to the
      change and why, and assign them in the brief. When the impact on a section is unclear, include
      it instead of skipping it.
+   - Do the guide's steps under "The manager starts" for those sections, ask the user for its steps
+     under "Ask the user", and put the lines it asks for in the brief. Stop what you started when
+     the worker reports.
+   - When only the guide's "Not testable" part applies, launch no `qa` worker. Record that QA did
+     not run, with the reason, for step 6 and the preview.
    - Leave the app URL, test account, and data writes to Tau, which fills them from the user's
      config. Ask the user nothing about them in advance.
    - When the QA worker asks a blocking question, pass it to the user.
