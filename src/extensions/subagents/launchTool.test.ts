@@ -562,6 +562,46 @@ it('gives the manager the configured browser login command', async ({ onTestFini
   expect(event.systemPromptOptions.appendSystemPrompt).toContain(loginCommand);
 });
 
+it.for([
+  { condition: 'has .pi/qa.md', hasGuide: true },
+  { condition: 'has no .pi/qa.md', hasGuide: false },
+])(
+  'tells the manager to read the QA guide only when the session cwd $condition',
+  async ({ hasGuide }, { onTestFinished }) => {
+    vi.stubEnv('HC_TERMINAL_ID', manager);
+
+    const fixture = await workerFixture(onTestFinished);
+
+    if (hasGuide) {
+      mkdirSync(join(fixture.directory, '.pi'), { recursive: true });
+      writeFileSync(join(fixture.directory, '.pi', 'qa.md'), '# QA\n');
+    }
+
+    const fake = hcSetup();
+
+    vi.mocked(connect).mockImplementation(fake.connect);
+
+    const pi = fakeExtensionApi({ exec: fake.exec });
+
+    subagentsExtension(pi.pi, registerCapacityRefusal(pi.pi));
+
+    const context = {
+      ...toolContext(fixture),
+      sessionManager: { getEntries: () => [], getSessionId: () => 'parent' },
+    };
+
+    for (const handler of pi.handlers.get('session_start') ?? []) {
+      await handler({} as never, context as unknown as ExtensionContext);
+    }
+
+    const event = { systemPromptOptions: { appendSystemPrompt: '', selectedTools: ['subagent'] } };
+
+    pi.handler('before_agent_start')(event, context as unknown as ExtensionContext);
+
+    expect(event.systemPromptOptions.appendSystemPrompt.includes('.pi/qa.md')).toBe(hasGuide);
+  },
+);
+
 it('reports a broken browser login command and leaves it out of the prompt', async ({
   onTestFinished,
 }) => {

@@ -162,6 +162,9 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      Leave its log in place without copying it or adding headers.
    - When the change has user-visible behavior, also send it to a `qa` worker on the committed tree
      before the preview.
+   - When the repository has `.pi/qa.md`, read it first. State which of its sections apply to the
+     change and why, and assign them in the brief. When the impact on a section is unclear, include
+     it instead of skipping it.
    - Leave the app URL, test account, and data writes to Tau, which fills them from the user's
      config. Ask the user nothing about them in advance.
    - When the QA worker asks a blocking question, pass it to the user.

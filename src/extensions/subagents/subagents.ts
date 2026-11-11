@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
+
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
@@ -34,6 +37,7 @@ import { delegationGuidelines } from './managerPrompt.js';
 import { readProfileModels } from './profileModels.js';
 import { listProfiles } from './profiles.js';
 import type { ProfileSummary } from './profiles.js';
+import { qaGuidePath } from './qaBrief.js';
 import { defaultWorkerCapacity, readWorkerCapacity } from './workerCapacityConfig.js';
 import { createWorkerDelivery } from './workerDelivery.js';
 import { workerModelLine } from './workerModels.js';
@@ -320,7 +324,7 @@ export default function subagentsExtension(
   }
 
   const admission = new Admission();
-  let guidelines = delegationGuidelines(undefined);
+  let guidelines = delegationGuidelines(undefined, false);
 
   const delegating = currentTerminalAddress() !== undefined;
 
@@ -367,7 +371,9 @@ export default function subagentsExtension(
     registerAnswerTool(pi, hc);
 
     if (delegating) {
-      guidelines = delegationGuidelines(browserLoginCommand(context));
+      const qaGuideExists = existsSync(resolvePath(context.cwd, qaGuidePath));
+
+      guidelines = delegationGuidelines(browserLoginCommand(context), qaGuideExists);
     }
   });
 

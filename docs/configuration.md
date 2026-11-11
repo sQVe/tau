@@ -376,6 +376,23 @@ optional:
 { "qa": { "repositories": { "sQVe/cape": { "urlCommand": "./scripts/dev-url" } } } }
 ```
 
+### QA guide (`.pi/qa.md`, repository file)
+
+A repository may commit one QA guide at `.pi/qa.md`. Give it one section per app or interface, such
+as a web app, a CLI, or a TUI. Each section says how to reach the app, how to use it safely, and
+what to check. A section may link feature recipes. By convention they live under `.pi/qa/`.
+
+Tau checks only that `.pi/qa.md` exists in the worker's worktree. It does not parse the guide or
+read `.pi/qa/`, and there is no config key for it. Every `qa` brief gets one line, also when the
+repository has no `qa.repositories` entry:
+
+- With the guide: `QA guide: read .pi/qa.md`.
+- Without it: `QA guide: none. This repository has no .pi/qa.md.`
+
+When the session's working directory has the guide at session start, the manager's guidelines tell
+it to read the guide before it launches a `qa` worker and to assign the sections that the change
+needs. The worker reads the guide first and follows the recipes that those sections link.
+
 ## Code reviews (`reviews`, user file)
 
 `reviews.repositories.<owner/name>.bots` lists the bots that Tau asks to review a pull request. The

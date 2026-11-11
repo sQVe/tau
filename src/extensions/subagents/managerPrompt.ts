@@ -1,3 +1,5 @@
+import { qaGuidePath } from './qaBrief.js';
+
 const leadingDelegationGuidelines = [
   'You are the manager. You own the plan, the user conversation, acceptance criteria, integration, and commits.',
   'Do small work yourself: quick questions, small local edits, obvious rebase conflicts, worker coordination, and user back-and-forth.',
@@ -41,8 +43,19 @@ const browserGuideline =
 const browserLoginGuideline = (loginCommand: string | undefined): string =>
   `Start \`browser\` and \`qa\` workers as if the agent Chrome profile is already signed in. When one reports a login wall, ${browserLoginStep(loginCommand)}. Then cancel the waiting worker and start a new one. Each new worker copies the configured Chrome profile when it starts.`;
 
-export const delegationGuidelines = (loginCommand: string | undefined): string[] => [
+const qaGuideGuidelines = (qaGuideExists: boolean): string[] =>
+  qaGuideExists
+    ? [
+        `Before a \`qa\` launch, read \`${qaGuidePath}\`. State which sections apply and why, assign them in the brief, and include a section when the impact on it is unclear.`,
+      ]
+    : [];
+
+export const delegationGuidelines = (
+  loginCommand: string | undefined,
+  qaGuideExists: boolean,
+): string[] => [
   ...leadingDelegationGuidelines,
+  ...qaGuideGuidelines(qaGuideExists),
   browserGuideline,
   browserLoginGuideline(loginCommand),
   ...trailingDelegationGuidelines,
