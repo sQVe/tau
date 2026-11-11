@@ -253,6 +253,43 @@ describe('runTests', () => {
     },
   );
 
+  it.for(['focused', 'affected'] as const)(
+    'reports a %s pass when the project config gives the JSON reporter its own outputFile',
+    async (scope) => {
+      const cwd = temporaryDirectory(onTestFinished, 'tau-own-json-output-');
+      await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');
+
+      await writeFile(
+        join(cwd, 'vitest.config.ts'),
+        "export default { test: { reporters: [['json', { outputFile: 'user-report.json' }], 'default'] } };",
+      );
+
+      await writeFile(
+        join(cwd, 'value.test.ts'),
+        "import { it } from 'vitest'; it('works', () => {});",
+      );
+
+      const result = await runTests({
+        scope,
+        verificationArgv,
+        cwd,
+        files: ['value.test.ts'],
+        testNames: ['works'],
+      });
+
+      expect(result).toMatchObject({
+        kind: 'pass',
+        tests: [{ file: join(cwd, 'value.test.ts'), fullname: 'works', status: 'passed' }],
+      });
+
+      expect('tests' in result && result.tests).toHaveLength(1);
+
+      const userReport: unknown = JSON.parse(await readFile(join(cwd, 'user-report.json'), 'utf8'));
+
+      expect(userReport).toMatchObject({ numTotalTests: 1 });
+    },
+  );
+
   it('runs only the exact focused file with the installed Vitest runner', async () => {
     const cwd = temporaryDirectory(onTestFinished, 'tau-exact-selection-');
     await symlink(join(process.cwd(), 'node_modules'), join(cwd, 'node_modules'), 'dir');

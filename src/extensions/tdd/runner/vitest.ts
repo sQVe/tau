@@ -24,6 +24,7 @@ import type {
   SpawnResult,
   TestRunner,
 } from './types.js';
+import { passesReporters } from './vitestOptions.js';
 import { supportsFocusedVitest } from './vitestVersion.js';
 
 interface RunnerDeps {
@@ -82,6 +83,10 @@ const isAborted = (input: RunTestsInput): boolean => input.signal?.aborted === t
 const exactNamePattern = (testNames: readonly string[]) =>
   `^(?:${testNames.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$`;
 
+const reportReporterPath = fileURLToPath(new URL('./vitestReportReporter.ts', import.meta.url));
+
+// A project config can give its `json` reporter its own outputFile, which beats
+// the global --outputFile. Tau's reporter has a name no config can claim.
 const buildArguments = (
   input: RunTestsInput,
   outputFile: string,
@@ -95,6 +100,10 @@ const buildArguments = (
     }
 
     runnerArguments.unshift('related', '--run');
+  }
+
+  if (passesReporters(runnerArguments)) {
+    runnerArguments.push(`--reporter=${reportReporterPath}`);
   }
 
   runnerArguments.push(`--outputFile=${outputFile}`);

@@ -9,6 +9,9 @@ import type { SpawnCommand } from './types.js';
 
 const verificationArgv = defaultTddConfig.verificationArgv;
 
+const isTauArgument = (argument: string) =>
+  argument.endsWith('/vitestReportReporter.ts') || argument.startsWith('--outputFile=');
+
 describe('runTests', () => {
   beforeAll(() => {
     const agentDirectory = temporaryDirectory(afterAll, 'tau-runner-agent-');
@@ -143,6 +146,7 @@ describe('runTests', () => {
       '--reporter=json',
       '--reporter=default',
       '--no-color',
+      expect.stringMatching(/^--reporter=\/.+\/vitestReportReporter\.ts$/),
       expect.stringMatching(/^--outputFile=/),
     ];
 
@@ -155,6 +159,27 @@ describe('runTests', () => {
 
     expect(spawn).toHaveBeenCalledOnce();
     expect(spawn.mock.calls[0]![1]).toEqual(expected);
+  });
+
+  it('adds the Tau report reporter when a reporter flag takes its name as the next argument', async () => {
+    const spawn = vi.fn<SpawnCommand>(fakeSpawn({}));
+
+    await runTests(
+      {
+        scope: 'full',
+        verificationArgv: ['vitest', 'run', '--reporter', 'json'],
+        cwd: '/repo',
+      },
+      makeDeps({ spawn }),
+    );
+
+    expect(spawn.mock.calls[0]![1].slice(1)).toEqual([
+      'run',
+      '--reporter',
+      'json',
+      expect.stringMatching(/^--reporter=\/.+\/vitestReportReporter\.ts$/),
+      expect.stringMatching(/^--outputFile=/),
+    ]);
   });
 
   it('passes the changed files and an exact test name pattern to vitest', async () => {
@@ -217,11 +242,12 @@ describe('runTests', () => {
       deps,
     );
 
-    expect(captured.slice(4, 8)).toEqual([
+    expect(captured.slice(4, 9)).toEqual([
       'run',
       '--reporter=json',
       '--reporter=default',
       '--no-color',
+      expect.stringMatching(/^--reporter=\/.+\/vitestReportReporter\.ts$/),
     ]);
 
     expect(captured).toContain('src/a.test.ts');
@@ -230,7 +256,7 @@ describe('runTests', () => {
       (argument) =>
         argument.startsWith('--') &&
         !['--reporter=json', '--reporter=default', '--no-color'].includes(argument) &&
-        !argument.startsWith('--outputFile='),
+        !isTauArgument(argument),
     );
 
     expect(disallowed).toEqual([]);
