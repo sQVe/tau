@@ -15,15 +15,15 @@ Cross-effects:
 - A change to how a script reads session logs or worker records needs "Scripts". A change to the
   code that writes them is in "Not testable".
 
-- A change to anything else under `src/`, to `shell/`, or to the `package.json` `pi` manifest needs
-  no `qa` launch. See "Not testable".
+- A change to anything else under `src/`, to another script under `scripts/`, to `shell/`, or to
+  the `package.json` `pi` manifest needs no `qa` launch. See "Not testable".
 - When the impact on a section is unclear, include the section.
 
 ## Rules for every section
 
 - The scripts read the session logs and worker records under `~/.pi/agent/` and write nothing. No
   section needs a data write.
-- Test only the script the change touches.
+- Test only the scripts the change affects, directly or through a file they import.
 - Never run `pnpm smoke:pi`, `pnpm mutation`, `pnpm changeset`, `pnpm changeset:version`, or
   `pnpm release:github`. The first starts Pi and costs model turns. The others change tracked files
   or tags, or run for minutes.
@@ -70,8 +70,9 @@ change, launch no `qa` worker. Report that QA did not run and name the reason.
   installed checkout, not this worktree.
 - No Pi session loads Tau from this worktree unless the user starts one with the steps of
   [Try Tau](../docs/development.md#try-tau).
-- The scripts read session logs and worker records that the installed checkout wrote. A change to
-  the code that writes them shows in no script run here.
+- Without such a session, the installed checkout wrote every session log and worker record that
+  the scripts read. A change to the code that writes them then shows in no script run here.
+- The other scripts under `scripts/` have no command that a `qa` worker may run.
 - GitHub and Linear have no sandbox, so no write to them is testable.
 
 The user checks rendering, keys, and live network access with the
