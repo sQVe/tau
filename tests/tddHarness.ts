@@ -78,6 +78,8 @@ export const createHarness = async (
     extensionFactories: [tauExtension, ...extensionFactories],
   });
 
+  await session.prompt('/typescript-rules');
+
   const events: AgentSessionEvent[] = [];
   session.subscribe((event) => events.push(event));
 

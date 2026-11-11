@@ -12,6 +12,9 @@ const copiedFiles = [
   'extensions/instructions.ts',
   'instructions/instructions.ts',
   'instructions/systemPrompt.ts',
+  'instructions/typescript.md',
+  'instructions/typescriptRules.ts',
+  'instructions/typescriptRulesDecision.ts',
   'schema.ts',
   'worker.ts',
 ];

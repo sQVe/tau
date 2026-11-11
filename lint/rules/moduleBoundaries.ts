@@ -83,7 +83,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
   {
     name: 'instructions',
     entry: 'instructions/instructions',
-    publicFiles: ['instructions/systemPrompt'],
+    publicFiles: ['instructions/systemPrompt', 'instructions/typescriptRules'],
   },
   {
     name: 'linear',

@@ -45,6 +45,34 @@ const safetyPath = join(
   'index.js',
 );
 
+const workerHandler =
+  (api: ReturnType<typeof fakeExtensionApi>): ReturnType<typeof fakeExtensionApi>['handler'] =>
+  (name) => {
+    if (name === 'session_start') {
+      return async (event, context) => {
+        for (const handler of api.handlers.get(name) ?? []) {
+          await handler(event as never, context);
+        }
+      };
+    }
+
+    if (name === 'tool_call') {
+      return (event, context) => {
+        for (const handler of api.handlers.get(name) ?? []) {
+          const result = handler(event as never, context);
+
+          if (result !== undefined) {
+            return result;
+          }
+        }
+
+        return undefined;
+      };
+    }
+
+    return api.handler(name);
+  };
+
 export const setup = (assignmentPath?: string): WorkerExtensionSetup => {
   const directory = realpathSync(temporaryDirectory(onTestFinished, 'tau-worker-extension-'));
 
@@ -102,7 +130,16 @@ export const setup = (assignmentPath?: string): WorkerExtensionSetup => {
 
   workerExtension(pi.pi);
 
-  return { activeTools, assignmentPath: path, context, directory, loadout, pi, shutdown, tools };
+  return {
+    activeTools,
+    assignmentPath: path,
+    context,
+    directory,
+    loadout,
+    pi: { ...pi, handler: workerHandler(pi) },
+    shutdown,
+    tools,
+  };
 };
 
 export const assignmentFor = (directory: string): Assignment => ({
