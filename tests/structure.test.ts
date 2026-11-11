@@ -63,6 +63,8 @@ const pureModules = [
   'scripts/piVersionDrift.ts',
   'scripts/routeComparisonFormat.ts',
   'scripts/routeComparisonReport.ts',
+  'scripts/sessionHealthReport.ts',
+  'scripts/sessionHealthRules.ts',
   'scripts/tokenUsageReport.ts',
   'src/checkRecord/reuseDecision.ts',
   'src/codemode/budget.ts',
