@@ -5,25 +5,19 @@ test anything that runs inside a Pi session.
 
 ## Choose sections
 
-| Section          | Test it when the change touches                                   |
-| ---------------- | ----------------------------------------------------------------- |
-| Scripts          | `scripts/` or the `package.json` script entries                   |
-| Route comparison | The `pnpm route-comparison` script or the worker records it reads |
+| Section | Test it when the change touches                                               |
+| ------- | ----------------------------------------------------------------------------- |
+| Scripts | `pnpm token-usage`, `pnpm session-health`, or their entries in `package.json` |
 
 Cross-effects:
 
-- `src/errors.ts` and `src/schema.ts`: the scripts import them, so a change there needs both
-  sections.
-- A change to how a script reads session logs or worker records needs the section of that script. A
-  change to the code that writes them is in "Not testable".
+- `src/errors.ts` and `src/schema.ts`: the scripts import them, so a change there needs "Scripts".
+- A change to how a script reads session logs or worker records needs "Scripts". A change to the
+  code that writes them is in "Not testable".
 
 - A change to anything else under `src/`, to `shell/`, or to the `package.json` `pi` manifest needs
   no `qa` launch. See "Not testable".
 - When the impact on a section is unclear, include the section.
-
-## Before a launch
-
-- Route comparison: the brief gives the `--profile`, `--label`, and `--switch` values.
 
 ## Rules for every section
 
@@ -35,8 +29,6 @@ Cross-effects:
   or tags, or run for minutes.
 
 ## Scripts
-
-Checked: 2026-11-11 at d3f911e0.
 
 ### Reach it
 
@@ -59,29 +51,12 @@ pnpm session-health --since 1d
 
 ### What to check
 
-- `pnpm token-usage` prints the window on the first line and the count of skipped records on the
-  second. Tables for tokens, turns, top sessions, and tool output follow.
+`pnpm` first prints the `node` command it runs. The script output starts on the next line.
+
+- `pnpm token-usage` prints the window on the first line of its output and the count of skipped
+  records on the second. Tables for tokens, turns, top sessions, and tool output follow.
 - `pnpm session-health` prints the window, then the count of session files, then the failed rules,
   then one table per UTC day. An empty window prints `None` under the failed rules.
-- A bad option or time exits with code 1 and names the bad value.
-
-## Route comparison
-
-Checked: never.
-
-### Reach it
-
-Same as "Scripts".
-
-### Use it safely
-
-Run `pnpm route-comparison` only with the `--profile`, `--label`, and `--switch` values from the
-brief.
-
-### What to check
-
-- `pnpm route-comparison` prints the profile and label, then the switch time, then one block for
-  each side of the switch.
 - A bad option or time exits with code 1 and names the bad value.
 
 ## Not testable
