@@ -120,7 +120,7 @@ const resultText = (content: unknown) => {
     .join('\n');
 };
 
-const codemodeCalls = (details: Entry, facts: EntryFacts): ToolCall[] => {
+const codemodeCalls = (details: Entry, script: ToolCall): ToolCall[] => {
   const calls = Array.isArray(details.calls) ? details.calls.filter(isRecord) : [];
 
   return calls.flatMap((call) => {
@@ -135,8 +135,8 @@ const codemodeCalls = (details: Entry, facts: EntryFacts): ToolCall[] => {
     return [
       {
         tool,
-        day: facts.day,
-        side: facts.side,
+        day: script.day,
+        side: script.side,
         viaCodemode: true,
         arguments: parseObject(text(call.args) ?? ''),
         details: undefined,
@@ -188,7 +188,7 @@ const addResult = (collection: HealthCollection, message: Entry, facts: EntryFac
   }
 
   if (call.tool === 'codemode' && details !== undefined) {
-    collection.calls.push(...codemodeCalls(details, facts));
+    collection.calls.push(...codemodeCalls(details, call));
   }
 };
 

@@ -234,8 +234,8 @@ pnpm session-health --since 2026-09-28 --until 2026-10-07
 The report lists failed rules first, then one table per day.
 
 Add a health rule as one entry in [scripts/sessionHealthRules.ts](../scripts/sessionHealthRules.ts).
-A rule names its tool and checks the calls of one day. It also runs on a day without calls of its
-tool.
+A rule names its tool and checks the calls of one day. It runs on every day with any logged tool
+call, also when its own tool has none that day.
 
 ## Evaluating agent behavior
 

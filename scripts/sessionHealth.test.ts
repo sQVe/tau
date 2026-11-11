@@ -70,6 +70,12 @@ it('returns nothing for an agent directory without sessions', async () => {
   expect(collection.calls).toEqual([]);
 });
 
+it('fails when a session directory cannot be read', async () => {
+  await writeFile(join(agentDirectory, 'tau'), 'not a directory');
+
+  await expect(collectSessions(agentDirectory, window)).rejects.toThrow(/ENOTDIR/);
+});
+
 it('counts a session without a readable header as unreadable', async () => {
   await write('sessions/--repo--/broken.jsonl', ['{not json', call('a', 'bash')]);
   await write('sessions/--repo--/headless.jsonl', [call('b', 'bash')]);

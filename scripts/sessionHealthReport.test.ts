@@ -109,6 +109,14 @@ describe('sessionHealthReport', () => {
       ],
     },
     {
+      name: 'skips codemode calls without a tool name',
+      lines: [
+        toolCall(at(2), 'a', 'codemode'),
+        toolResult(at(2), 'a', { details: { calls: [{ status: 'ok' }, 'read'] } }),
+      ],
+      expected: [row('2026-10-02', 'codemode')],
+    },
+    {
       name: 'counts a call without a result and no error',
       lines: [toolCall(at(2), 'a', 'bash')],
       expected: [row('2026-10-02', 'bash')],
@@ -124,6 +132,18 @@ describe('sessionHealthReport', () => {
     },
   ])('$name', ({ lines, expected }) => {
     expect(rows([session(lines)])).toEqual(expected);
+  });
+
+  it('counts codemode calls on the day the script started', () => {
+    const lines = [
+      toolCall(at(2, 23), 'a', 'codemode'),
+      toolResult(at(3, 0), 'a', { details: { calls: [{ name: 'read', status: 'ok' }] } }),
+    ];
+
+    expect(rows([session(lines)])).toEqual([
+      row('2026-10-02', 'codemode'),
+      row('2026-10-02', 'read', { codemodeCalls: 1 }),
+    ]);
   });
 
   it('counts an entry that a later session copied once', () => {
