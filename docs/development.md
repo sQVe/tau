@@ -221,6 +221,22 @@ Claude and Codex workers write no Pi session, so the report cannot measure their
 line counts those that started in the window. A cut looks larger than it is when work moves from Pi
 workers to them.
 
+## Checking Tau health in session logs
+
+Report tool calls, error rates, top errors, and health rules per tool and UTC day, from Pi manager
+sessions, worker sessions, and the calls of codemode scripts:
+
+```sh
+pnpm session-health --since 2026-09-28 --until 2026-10-07
+```
+
+`--since` and `--until` take the same values as in `pnpm token-usage`. `--since` defaults to `7d`.
+The report lists failed rules first, then one table per day.
+
+Add a health rule as one entry in [scripts/sessionHealthRules.ts](../scripts/sessionHealthRules.ts).
+A rule names its tool and checks the calls of one day. It also runs on a day without calls of its
+tool.
+
 ## Evaluating agent behavior
 
 Use this procedure to test whether a prompt or skill change improves how models behave. CI never
