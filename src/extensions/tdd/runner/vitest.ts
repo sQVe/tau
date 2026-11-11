@@ -24,7 +24,11 @@ import type {
   SpawnResult,
   TestRunner,
 } from './types.js';
-import { supportsFocusedVitest } from './vitestVersion.js';
+import { passesReporters } from './vitestOptions.js';
+import {
+  givesConfigReporterOptionsToCliReporters,
+  supportsFocusedVitest,
+} from './vitestVersion.js';
 
 interface RunnerDeps {
   resolveVitest: ResolveVitest;
@@ -82,10 +86,13 @@ const isAborted = (input: RunTestsInput): boolean => input.signal?.aborted === t
 const exactNamePattern = (testNames: readonly string[]) =>
   `^(?:${testNames.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$`;
 
+const reportReporterPath = fileURLToPath(new URL('./vitestReportReporter.ts', import.meta.url));
+
 const buildArguments = (
   input: RunTestsInput,
   outputFile: string,
   focusedEntry: boolean,
+  version: string,
 ): string[] => {
   const runnerArguments = input.verificationArgv.slice(1);
 
@@ -95,6 +102,13 @@ const buildArguments = (
     }
 
     runnerArguments.unshift('related', '--run');
+  }
+
+  const addsReportReporter =
+    passesReporters(runnerArguments) && givesConfigReporterOptionsToCliReporters(version);
+
+  if (addsReportReporter) {
+    runnerArguments.push(`--reporter=${reportReporterPath}`);
   }
 
   runnerArguments.push(`--outputFile=${outputFile}`);
@@ -170,7 +184,7 @@ const runInDirectory = async (
 
   const spawnStarted = performance.now();
   const focusedEntry = input.scope === 'focused' && supportsFocusedVitest(runner.version);
-  const runnerArguments = buildArguments(input, outputFile, focusedEntry);
+  const runnerArguments = buildArguments(input, outputFile, focusedEntry, runner.version);
   const commandArguments = [runner.path, ...runnerArguments];
 
   if (focusedEntry) {

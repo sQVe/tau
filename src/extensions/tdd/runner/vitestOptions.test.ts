@@ -1,6 +1,19 @@
 import { expect, it } from 'vitest';
 
-import { normalizeVitestOptions } from './vitestOptions.js';
+import { normalizeVitestOptions, passesReporters } from './vitestOptions.js';
+
+it.for([
+  { name: 'an inline reporter flag', runnerArguments: ['run', '--reporter=json'], expected: true },
+  {
+    name: 'a spaced reporter flag',
+    runnerArguments: ['run', '--reporter', 'json'],
+    expected: true,
+  },
+  { name: 'no reporter flag', runnerArguments: ['run', '--no-color'], expected: false },
+  { name: 'a reporter-like option', runnerArguments: ['run', '--reporters=json'], expected: false },
+])('decides that $name passes reporters: $expected', ({ runnerArguments, expected }) => {
+  expect(passesReporters(runnerArguments)).toBe(expected);
+});
 
 it.for([
   {

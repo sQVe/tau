@@ -2,6 +2,11 @@ import type { parseCLI } from 'vitest/node';
 
 type CliOptions = ReturnType<typeof parseCLI>['options'];
 
+export const passesReporters = (runnerArguments: readonly string[]): boolean =>
+  runnerArguments.some(
+    (argument) => argument === '--reporter' || argument.startsWith('--reporter='),
+  );
+
 // Vitest's public parser does not apply the CLI's private startup normalization.
 export const normalizeVitestOptions = (filters: string[], options: CliOptions): CliOptions => {
   const normalized = { ...options };
