@@ -6,7 +6,14 @@ import {
   parseWorkerTask,
   tokenUsageReport,
 } from './tokenUsageReport.js';
-import type { SessionFile, TokenUsageReport, WorkerTask } from './tokenUsageReport.js';
+import type { SkippedRecords, TokenUsageReport, WorkerTask } from './tokenUsageReport.js';
+
+interface SessionText {
+  path: string;
+  side: 'parent' | 'worker';
+  text: string;
+  tasks: WorkerTask[];
+}
 
 interface Tokens {
   input?: number;
@@ -58,7 +65,7 @@ const task = (taskId: string, profile: string, createdAt: number): WorkerTask =>
   sessionFile: undefined,
 });
 
-const session = (path: string, lines: string[], tasks: WorkerTask[] = []): SessionFile => ({
+const session = (path: string, lines: string[], tasks: WorkerTask[] = []): SessionText => ({
   path,
   side: tasks.length > 0 ? 'worker' : 'parent',
   text: `${lines.join('\n')}\n`,
@@ -67,7 +74,17 @@ const session = (path: string, lines: string[], tasks: WorkerTask[] = []): Sessi
 
 const noneSkipped = { unreadableFiles: 0, otherHarnessTasks: [] };
 
-const report = (files: SessionFile[]) => tokenUsageReport(files, window, noneSkipped);
+const report = (files: SessionText[], skipped: SkippedRecords = noneSkipped) => {
+  const texts = new Map(files.map((file) => [file.path, file.text]));
+
+  const sessions = files.map(({ text, ...file }) => {
+    const [firstLine = ''] = text.split('\n', 1);
+
+    return { ...file, firstLine };
+  });
+
+  return tokenUsageReport(sessions, window, skipped, (path) => Promise.resolve(texts.get(path)));
+};
 
 const groups = (result: TokenUsageReport) =>
   [...result.groups.values()].map((group) => ({
@@ -87,8 +104,8 @@ const totals = (result: TokenUsageReport) =>
   ]);
 
 describe('tokenUsageReport', () => {
-  it('counts only entries inside the window of a recently active session', () => {
-    const result = report([
+  it('counts only entries inside the window of a recently active session', async () => {
+    const result = await report([
       session('/p.jsonl', [
         header(0),
         assistant('a1', 5, { cacheWrite: 1000, output: 10 }),
@@ -121,8 +138,8 @@ describe('tokenUsageReport', () => {
     ]);
   });
 
-  it('attributes a shared follow-up session to each task by its start time', () => {
-    const result = report([
+  it('attributes a shared follow-up session to each task by its start time', async () => {
+    const result = await report([
       session(
         '/w/a.jsonl',
         [
@@ -164,7 +181,7 @@ describe('tokenUsageReport', () => {
     ]);
   });
 
-  it('counts entries a fork copied from its original once', () => {
+  it('counts entries a fork copied from its original once', async () => {
     const original = [
       header(11),
       assistant('a1', 12, { cacheWrite: 100 }),
@@ -178,7 +195,10 @@ describe('tokenUsageReport', () => {
       assistant('f1', 21, { cacheRead: 100, cacheWrite: 20 }),
     ];
 
-    const result = report([session('/fork.jsonl', fork), session('/original.jsonl', original)]);
+    const result = await report([
+      session('/fork.jsonl', fork),
+      session('/original.jsonl', original),
+    ]);
 
     expect(result.copiedEntries).toBe(2);
 
@@ -194,7 +214,7 @@ describe('tokenUsageReport', () => {
     expect(groups(result)[0]).toMatchObject({ sessions: 2, turns: 2, firstRequests: [100] });
   });
 
-  it('does not report copies of entries outside the window', () => {
+  it('does not report copies of entries outside the window', async () => {
     const original = [header(1), assistant('o1', 5, { cacheWrite: 100 })];
 
     const fork = [
@@ -203,13 +223,16 @@ describe('tokenUsageReport', () => {
       assistant('f1', 21, { output: 4 }),
     ];
 
-    const result = report([session('/original.jsonl', original), session('/fork.jsonl', fork)]);
+    const result = await report([
+      session('/original.jsonl', original),
+      session('/fork.jsonl', fork),
+    ]);
 
     expect(result.copiedEntries).toBe(0);
     expect(result.sessions.map((row) => [row.path, row.tokens])).toEqual([['/fork.jsonl', 4]]);
   });
 
-  it('skips malformed lines, entries without a time, and an incomplete tail', () => {
+  it('skips malformed lines, entries without a time, and an incomplete tail', async () => {
     const untimed = JSON.stringify({
       type: 'message',
       id: 'a0',
@@ -224,14 +247,14 @@ describe('tokenUsageReport', () => {
       '{"type":"message","id":"a2',
     ];
 
-    const result = report([{ ...session('/p.jsonl', lines), text: lines.join('\n') }]);
+    const result = await report([{ ...session('/p.jsonl', lines), text: lines.join('\n') }]);
 
     expect(result.malformedLines).toBe(3);
     expect(result.sessions[0]).toMatchObject({ turns: 1, tokens: 7 });
   });
 
-  it('counts assistant messages without usage apart from turns', () => {
-    const result = report([
+  it('counts assistant messages without usage apart from turns', async () => {
+    const result = await report([
       session('/p.jsonl', [
         header(11),
         assistant('a1', 12, undefined),
@@ -244,8 +267,8 @@ describe('tokenUsageReport', () => {
     expect(groups(result)[0]).toMatchObject({ turns: 1, tokens: 3, firstRequests: [0] });
   });
 
-  it('adds compaction, usage entry, and tool model usage to totals without adding turns', () => {
-    const result = report([
+  it('adds compaction, usage entry, and tool model usage to totals without adding turns', async () => {
+    const result = await report([
       session(
         '/w/a.jsonl',
         [
@@ -271,8 +294,8 @@ describe('tokenUsageReport', () => {
     expect(groups(result)[0]).toMatchObject({ turns: 1, tokens: 100 });
   });
 
-  it('splits a session across models when its model changes', () => {
-    const result = report([
+  it('splits a session across models when its model changes', async () => {
+    const result = await report([
       session('/p.jsonl', [
         header(11),
         assistant('a1', 12, { cacheWrite: 100 }, 'opus'),
@@ -300,35 +323,56 @@ describe('tokenUsageReport', () => {
     ]);
   });
 
-  it('counts the Claude and Codex worker tasks that started inside the window', () => {
+  it('counts the Claude and Codex worker tasks that started inside the window', async () => {
     const otherHarnessTasks = [
       task('a', 'worker', 5),
       task('b', 'worker', 20),
       task('c', 'worker', 55),
     ];
 
-    const result = tokenUsageReport([], window, { unreadableFiles: 0, otherHarnessTasks });
+    const result = await report([], { unreadableFiles: 0, otherHarnessTasks });
 
     expect(result.otherHarnessTasks).toBe(1);
   });
 
-  it('counts a file without a session header as unreadable and keeps the other files', () => {
-    const result = tokenUsageReport(
+  it('counts a file without a session header as unreadable and keeps the other files', async () => {
+    const result = await report(
       [
         session('/bad.jsonl', ['not json', assistant('a1', 12, { output: 5 })]),
         session('/good.jsonl', [header(11), assistant('a2', 12, { output: 2 })]),
       ],
-      window,
       { unreadableFiles: 3, otherHarnessTasks: [] },
     );
 
     expect(result.unreadableFiles).toBe(4);
     expect(result.sessions.map((row) => row.path)).toEqual(['/good.jsonl']);
   });
+
+  it('counts a file whose text cannot be read as unreadable and keeps the other files', async () => {
+    const found = (path: string, at: number) => ({
+      path,
+      side: 'parent' as const,
+      firstLine: header(at),
+      tasks: [],
+    });
+
+    const good = `${header(11)}\n${assistant('a1', 12, { output: 2 })}\n`;
+
+    const result = await tokenUsageReport(
+      [found('/gone.jsonl', 10), found('/good.jsonl', 11)],
+      window,
+      noneSkipped,
+      (path) => Promise.resolve(path === '/good.jsonl' ? good : undefined),
+    );
+
+    expect(result.unreadableFiles).toBe(1);
+    expect(result.sessionFiles).toBe(1);
+    expect(result.sessions.map((row) => row.path)).toEqual(['/good.jsonl']);
+  });
 });
 
 describe('formatTokenUsageReport', () => {
-  it('prints the median first request and final context across sessions', () => {
+  it('prints the median first request and final context across sessions', async () => {
     const file = (path: string, first: number, final: number) =>
       session(path, [
         header(11),
@@ -336,7 +380,7 @@ describe('formatTokenUsageReport', () => {
         assistant(`${path}2`, 13, { cacheRead: final }),
       ]);
 
-    const result = report([
+    const result = await report([
       file('/1', 10, 100),
       file('/2', 20, 300),
       file('/3', 60, 200),
