@@ -55,10 +55,39 @@ jobs:
           chmod +x "${RUNNER_TEMP}/hc/herdr-core"
           ln -s "${RUNNER_TEMP}/hc/herdr-core" "${RUNNER_TEMP}/hc/hc"
           echo "${RUNNER_TEMP}/hc" >> "${GITHUB_PATH}"
+      - name: Read the Ubuntu release
+        id: ubuntu
+        run: |
+          source /etc/os-release
+          echo "release=${VERSION_ID}" >> "${GITHUB_OUTPUT}"
+      # The packages come from the cache so that the job needs the Ubuntu package mirror only when the
+      # cache is empty. They link against the libraries of one Ubuntu release, so the release is part
+      # of the key.
+      - name: Restore the zsh packages
+        id: zshPackages
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/zsh-packages
+          key: zsh-packages-${{ runner.arch }}-ubuntu-${{ steps.ubuntu.outputs.release }}
+      - name: Download the zsh packages
+        if: steps.zshPackages.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "${RUNNER_TEMP}/zsh-packages"
+          cd "${RUNNER_TEMP}/zsh-packages"
+          sudo apt-get update
+          apt-get download zsh zsh-common
+      # Saving here, not after the job, keeps the packages when a later step fails.
+      - name: Save the zsh packages
+        if: steps.zshPackages.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/zsh-packages
+          key: ${{ steps.zshPackages.outputs.cache-primary-key }}
+      # Without zsh the tests of shell/resume-pi.zsh skip, so the step fails when zsh does not run.
       - name: Install zsh
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends zsh
+          sudo dpkg --install "${RUNNER_TEMP}"/zsh-packages/*.deb
+          zsh --version
       - name: Install cargo-nextest
         env:
           cargoNextestVersion: 0.9.148
