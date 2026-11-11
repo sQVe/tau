@@ -85,8 +85,6 @@ const exactNamePattern = (testNames: readonly string[]) =>
 
 const reportReporterPath = fileURLToPath(new URL('./vitestReportReporter.ts', import.meta.url));
 
-// A project config can give its `json` reporter its own outputFile, which beats
-// the global --outputFile. Tau's reporter has a name no config can claim.
 const buildArguments = (
   input: RunTestsInput,
   outputFile: string,

@@ -2,8 +2,6 @@ import type { parseCLI } from 'vitest/node';
 
 type CliOptions = ReturnType<typeof parseCLI>['options'];
 
-// Any CLI reporter replaces the reporters in the project config, so Tau may add
-// its own reporter only when the arguments already name one.
 export const passesReporters = (runnerArguments: readonly string[]): boolean =>
   runnerArguments.some(
     (argument) => argument === '--reporter' || argument.startsWith('--reporter='),
