@@ -378,9 +378,11 @@ optional:
 
 ### QA guide (`.pi/qa.md`, repository file)
 
-A repository may commit one QA guide at `.pi/qa.md`. Give it one section per app or interface, such
-as a web app, a CLI, or a TUI. Each section says how to reach the app, how to use it safely, and
-what to check. A section may link feature recipes. By convention they live under `.pi/qa/`.
+A repository may commit one QA guide at `.pi/qa.md`. Write it from the
+[QA guide template](../src/extensions/subagents/templates/qa-guide.md), which gives the headings and
+the rules. Give it one section per app or interface, such as a web app, a CLI, or a TUI. Each
+section says how to reach the app, how to use it safely, and what to check. A section may link
+feature recipes. By convention they live under `.pi/qa/`.
 
 Tau checks only that `.pi/qa.md` exists in the worker's worktree. It does not parse the guide or
 read `.pi/qa/`, and there is no config key for it. Every `qa` brief gets one line, also when the
@@ -391,7 +393,10 @@ repository has no `qa.repositories` entry:
 
 When the session's working directory has the guide at session start, the manager's guidelines tell
 it to read the guide before it launches a `qa` worker and to assign the sections that the change
-needs. The worker reads the guide first and follows the recipes that those sections link.
+needs. The manager does the guide's steps under "The manager starts" for those sections, and stops
+what it started when every worker that uses it has reported, or when the launch fails. It launches
+no `qa` worker when only the guide's "Not testable" part applies. The worker reads the guide first,
+runs each section's "Reach it" proof, and follows the recipes that those sections link.
 
 ## Code reviews (`reviews`, user file)
 

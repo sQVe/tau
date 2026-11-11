@@ -11,7 +11,7 @@ const repositoryRoot = join(import.meta.dirname, '..');
 // name them: paths in projects that use Pi, herdr source files, and the layout that older records
 // describe. Remove a document when it stops naming the path.
 const allowedPaths: AllowedPaths = {
-  '.pi/qa/': ['docs/configuration.md'],
+  '.pi/qa/': ['docs/configuration.md', 'src/extensions/subagents/templates/qa-guide.md'],
   '.pi/settings.json': [
     'docs/adr/0061-layer-tau-config-from-user-and-repository-files.md',
     'docs/development.md',
