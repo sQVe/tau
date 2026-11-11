@@ -34,10 +34,8 @@ Ask the user:
 
 - Each step that only the user may do, with its reason.
 
-The brief gives:
-
-- Each line the brief must give, such as a sandbox name, a path, an account, or a permission beyond
-  data writes, such as "paid calls allowed".
+Then the lines the brief must give, such as a sandbox name, a path, an account, or a permission
+beyond data writes, such as "paid calls allowed".
 
 ## Rules for every section
 
