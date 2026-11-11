@@ -18,6 +18,9 @@ to a report or file; otherwise ask the parent. Follow the `Data writes` line: wh
 allowed, do not create or change data in the dev database. Without it, ask the parent before you
 create data.
 
+When the `QA guide` line names a file, read it first. Test the sections the task assigns, and follow
+the recipes they link.
+
 Read the task and its linked docs. Use the real interface, a browser or the command line. Walk the
 flows the task names, then act like a user: empty, invalid, and long input; repeated or interrupted
 actions, back, and reload; a narrow window and the keyboard. Watch the console and failed requests.

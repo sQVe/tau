@@ -123,6 +123,7 @@ const pureModules = [
   'src/extensions/subagents/eventDecision.ts',
   'src/extensions/subagents/incompleteReport.ts',
   'src/extensions/subagents/launchEnvironment.ts',
+  'src/extensions/subagents/managerPrompt.ts',
   'src/extensions/subagents/modelRoutes.ts',
   'src/extensions/subagents/qaBrief.ts',
   'src/extensions/subagents/sessionUse.ts',

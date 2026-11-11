@@ -31,7 +31,7 @@ const sessionCeilings: Readonly<Record<string, number>> = {
   worker: 18_892, // target 14,000
   reviewer: 15_248, // target 11,000
   checker: 15_401,
-  qa: 12_026, // target 9,000
+  qa: 12_149, // target 9,000
   browser: 10_854, // target 9,000
   scout: 10_413, // target 9,000
 };
@@ -84,7 +84,7 @@ const managerSession = async (agentDirectory: string) => {
   }
 
   const prompt = event.systemPromptOptions.appendSystemPrompt;
-  const guidelines = delegationGuidelines(undefined);
+  const guidelines = delegationGuidelines(undefined, false);
   const missingGuidelines = guidelines.filter((guideline) => !prompt.includes(guideline));
 
   if (missingGuidelines.length > 0) {
