@@ -76,18 +76,20 @@ jobs:
           cd "${RUNNER_TEMP}/zsh-packages"
           sudo apt-get update
           apt-get download zsh zsh-common
-      # Saving here, not after the job, keeps the packages when a later step fails.
+      # Without zsh the tests of shell/resume-pi.zsh skip, so the step fails when zsh does not run.
+      - name: Install zsh
+        run: |
+          sudo dpkg --install "${RUNNER_TEMP}"/zsh-packages/*.deb
+          zsh --version
+      # A saved cache cannot be replaced under its key, so the save comes after the install: packages
+      # that do not install must not reach the cache. Saving here, not after the job, keeps the
+      # packages when a later step fails.
       - name: Save the zsh packages
         if: steps.zshPackages.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/zsh-packages
           key: ${{ steps.zshPackages.outputs.cache-primary-key }}
-      # Without zsh the tests of shell/resume-pi.zsh skip, so the step fails when zsh does not run.
-      - name: Install zsh
-        run: |
-          sudo dpkg --install "${RUNNER_TEMP}"/zsh-packages/*.deb
-          zsh --version
       - name: Install cargo-nextest
         env:
           cargoNextestVersion: 0.9.148
