@@ -14,7 +14,8 @@ export interface WorkerTask {
 export interface SessionFile {
   path: string;
   side: Side;
-  text: string;
+  // The first line holds the session header, which orders the files before their text is read.
+  firstLine: string;
   // A follow-up task continues its predecessor's session file, so one file can hold several tasks.
   tasks: WorkerTask[];
 }
@@ -377,8 +378,13 @@ const countInWindow = (
   seen.add(key);
 };
 
-const countFile = (report: TokenUsageReport, file: SessionFile, seen: Set<string>) => {
-  const entries = parseEntries(report, file.text);
+const countFile = (
+  report: TokenUsageReport,
+  file: SessionFile,
+  source: string,
+  seen: Set<string>,
+) => {
+  const entries = parseEntries(report, source);
   const header = entries.find((entry) => entry.type === 'session');
 
   if (header === undefined) {
@@ -407,10 +413,8 @@ const countFile = (report: TokenUsageReport, file: SessionFile, seen: Set<string
 };
 
 const headerTime = (file: SessionFile) => {
-  const [firstLine = ''] = file.text.split('\n', 1);
-
   try {
-    const header: unknown = JSON.parse(firstLine);
+    const header: unknown = JSON.parse(file.firstLine);
 
     return isRecord(header) ? Date.parse(text(header.timestamp) ?? '') || 0 : 0;
   } catch {
@@ -418,17 +422,18 @@ const headerTime = (file: SessionFile) => {
   }
 };
 
-export const tokenUsageReport = (
+export const tokenUsageReport = async (
   files: SessionFile[],
   window: TimeWindow,
   skipped: SkippedRecords,
-): TokenUsageReport => {
+  readText: (path: string) => Promise<string | undefined>,
+): Promise<TokenUsageReport> => {
   const inWindow = (task: WorkerTask) =>
     task.createdAt >= window.since && task.createdAt < window.until;
 
   const report: TokenUsageReport = {
     window,
-    sessionFiles: files.length,
+    sessionFiles: 0,
     unreadableFiles: skipped.unreadableFiles,
     malformedLines: 0,
     copiedEntries: 0,
@@ -444,9 +449,19 @@ export const tokenUsageReport = (
 
   // An original session starts before its forks, so the original keeps the shared entries.
   for (const file of files.toSorted((left, right) => headerTime(left) - headerTime(right))) {
+    // oxlint-disable-next-line no-await-in-loop -- Parallel reads would hold every session text at once.
+    const source = await readText(file.path);
+
+    if (source === undefined) {
+      report.unreadableFiles += 1;
+
+      continue;
+    }
+
     const tasks = file.tasks.toSorted((left, right) => left.createdAt - right.createdAt);
 
-    countFile(report, { ...file, tasks }, seen);
+    report.sessionFiles += 1;
+    countFile(report, { ...file, tasks }, source, seen);
   }
 
   return report;

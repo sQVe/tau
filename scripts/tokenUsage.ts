@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { open, readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -47,19 +47,60 @@ const readTask = async (path: string): Promise<TaskRecord | undefined> => {
   return task === undefined ? undefined : { task, directory: dirname(path) };
 };
 
+const firstLineChunkBytes = 65_536;
+
+const readFirstLine = async (path: string) => {
+  const handle = await open(path);
+  const chunks: Buffer[] = [];
+
+  try {
+    for (;;) {
+      const buffer = Buffer.alloc(firstLineChunkBytes);
+      // oxlint-disable-next-line no-await-in-loop -- Each chunk follows the one before it.
+      const { bytesRead } = await handle.read(buffer, 0, firstLineChunkBytes, null);
+      const chunk = buffer.subarray(0, bytesRead);
+      const lineEnd = chunk.indexOf('\n');
+
+      if (lineEnd !== -1) {
+        chunks.push(chunk.subarray(0, lineEnd));
+
+        break;
+      }
+
+      if (bytesRead === 0) {
+        break;
+      }
+
+      chunks.push(chunk);
+    }
+  } finally {
+    await handle.close();
+  }
+
+  return Buffer.concat(chunks).toString('utf8');
+};
+
 // A file last written before the window holds no entry inside it. Undefined means unreadable.
-const readSession = async (path: string, side: Side, tasks: WorkerTask[], since: number) => {
+const findSession = async (path: string, side: Side, tasks: WorkerTask[], since: number) => {
   try {
     const { mtimeMs } = await stat(path);
 
-    return mtimeMs < since ? null : { path, side, tasks, text: await readFile(path, 'utf8') };
+    return mtimeMs < since ? null : { path, side, tasks, firstLine: await readFirstLine(path) };
   } catch {
     return undefined;
   }
 };
 
-// Reads parent sessions under `sessions/` and worker sessions beside a task record under `tau/`.
-export const readUsageRecords = async (
+const readSessionText = async (path: string) => {
+  try {
+    return await readFile(path, 'utf8');
+  } catch {
+    return undefined;
+  }
+};
+
+// Finds parent sessions under `sessions/` and worker sessions beside a task record under `tau/`.
+export const findUsageRecords = async (
   agentDirectory: string,
   since: number,
 ): Promise<UsageRecords> => {
@@ -78,10 +119,10 @@ export const readUsageRecords = async (
   const reads = [
     ...parentPaths
       .filter((path) => path.endsWith('.jsonl'))
-      .map((path) => readSession(path, 'parent', [], since)),
+      .map((path) => findSession(path, 'parent', [], since)),
     ...workerFiles
       .filter((path) => path.endsWith('.jsonl') && taskDirectories.has(dirname(path)))
-      .map((path) => readSession(path, 'worker', tasksOf(path), since)),
+      .map((path) => findSession(path, 'worker', tasksOf(path), since)),
   ];
 
   const read = await Promise.all(reads);
@@ -156,8 +197,14 @@ const main = async () => {
     throw new Error('--since must be before --until.');
   }
 
-  const records = await readUsageRecords(resolve(homedir(), '.pi', 'agent'), since);
-  const report = tokenUsageReport(records.sessions, { since, until }, records.skipped);
+  const records = await findUsageRecords(resolve(homedir(), '.pi', 'agent'), since);
+
+  const report = await tokenUsageReport(
+    records.sessions,
+    { since, until },
+    records.skipped,
+    readSessionText,
+  );
 
   process.stdout.write(formatTokenUsageReport(report, top));
 };

@@ -7,7 +7,12 @@ import { isMissingFile } from '../src/errors.ts';
 import { isRecord } from '../src/schema.ts';
 import { formatRouteComparisonReport } from './routeComparisonFormat.ts';
 import { parseRouteRecord, routeComparisonReport } from './routeComparisonReport.ts';
-import type { ComparisonOptions, RecordFile, RecordKind } from './routeComparisonReport.ts';
+import type {
+  ComparisonOptions,
+  ParsedRecord,
+  RecordFile,
+  RecordKind,
+} from './routeComparisonReport.ts';
 
 interface Candidate {
   kind: RecordKind;
@@ -109,7 +114,7 @@ const archiveCandidates = (root: string, names: string[]) =>
     .filter((name) => archivePattern.test(name))
     .map((name) => ({ kind: 'archive' as const, path: join(root, name) }));
 
-const readCandidates = async (agentDirectory: string): Promise<RecordFile[]> => {
+const readRecords = async (agentDirectory: string): Promise<ParsedRecord[]> => {
   const archive = join(agentDirectory, 'tau-archive');
   const tau = join(agentDirectory, 'tau');
   const [archiveNames, tauNames] = await Promise.all([listRelative(archive), listRelative(tau)]);
@@ -124,7 +129,14 @@ const readCandidates = async (agentDirectory: string): Promise<RecordFile[]> => 
       .map((name) => ({ kind: 'assignment' as const, path: join(tau, name) })),
   ];
 
-  return Promise.all(candidates.map(readRecordFile));
+  const records: ParsedRecord[] = [];
+
+  for (const candidate of candidates) {
+    // oxlint-disable-next-line no-await-in-loop -- Parallel reads would hold every session log at once.
+    records.push(parseRouteRecord(await readRecordFile(candidate)));
+  }
+
+  return records;
 };
 
 const parseDate = (value: string, name: string) => {
@@ -167,8 +179,7 @@ const main = async () => {
   };
 
   const agentDirectory = values['agent-directory'] ?? resolve(homedir(), '.pi', 'agent');
-  const files = await readCandidates(agentDirectory);
-  const parsed = files.map(parseRouteRecord);
+  const parsed = await readRecords(agentDirectory);
   const report = routeComparisonReport(parsed, options);
 
   process.stdout.write(formatRouteComparisonReport(report, values.list ?? false));

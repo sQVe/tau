@@ -45,10 +45,11 @@ const taskRecord = (version: number, taskId: string, createdAt: number) =>
 
 const report = JSON.stringify({ outcome: 'success', summary: 'Done' });
 
-const run = (extra: string[] = [], directory = agentDirectory) =>
+const run = (extra: string[] = [], directory = agentDirectory, nodeOptions: string[] = []) =>
   spawnSync(
     process.execPath,
     [
+      ...nodeOptions,
       script,
       '--profile',
       'worker',
@@ -293,6 +294,52 @@ it('counts launches whose report files are missing', async () => {
   expect(noReportCount(beforeSection)).toBe(1);
   expect(timeToReport(afterSection)?.missing).toBe(1);
   expect(noReportCount(afterSection)).toBe(1);
+});
+
+it('compares many assignments that share one large session log within a 64 MiB heap', async () => {
+  const padding = { type: 'message', message: { role: 'user', content: 'x'.repeat(1024 * 1024) } };
+
+  const reported = {
+    type: 'message',
+    timestamp: new Date(after + 180_000).toISOString(),
+    message: { role: 'toolResult', toolName: 'subagent_report', isError: false },
+  };
+
+  const sessionPath = await write(
+    'shared.jsonl',
+    `${JSON.stringify(padding)}\n${JSON.stringify(reported)}\n`,
+  );
+
+  const assignments = Array.from({ length: 96 }, (_, index) => `assignment-${index}`);
+
+  await Promise.all(
+    assignments.map((assignmentId) =>
+      write(
+        `tau/proj/assignments/${assignmentId}/assignment.json`,
+        JSON.stringify({
+          version: 3,
+          assignmentId,
+          createdAt: after,
+          profile: 'worker',
+          cwd: '/repo',
+          routing: { label: 'routine' },
+          session: { file: sessionPath },
+          report: { outcome: 'success', summary: 'Done' },
+        }),
+      ),
+    ),
+  );
+
+  const result = run([], agentDirectory, ['--max-old-space-size=64']);
+
+  expect(result.stderr).toBe('');
+  expect(result.status).toBe(0);
+
+  const afterSection = sideSection(result.stdout, 'After switch');
+
+  expect(countOf(result.stdout, 'After switch')).toBe(96);
+  expect(timeToReport(afterSection)).toEqual({ median: '3.0', measured: 96, missing: 0 });
+  expect(successCount(afterSection)).toBe(96);
 });
 
 it('fails when a record file cannot be read', async () => {
