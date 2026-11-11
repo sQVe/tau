@@ -146,6 +146,15 @@ describe('sessionHealthReport', () => {
     ]);
   });
 
+  it('attaches a result that arrives after the window to its call inside it', () => {
+    const lines = [
+      toolCall(at(4, 23), 'a', 'bash'),
+      toolResult(at(5, 0), 'a', { error: 'exit 1' }),
+    ];
+
+    expect(rows([session(lines)])).toEqual([row('2026-10-04', 'bash', { errors: 1 })]);
+  });
+
   it('counts an entry that a later session copied once', () => {
     const call = toolCall(at(2), 'a', 'bash');
     const original = session([call]);

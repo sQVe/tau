@@ -192,19 +192,21 @@ const addResult = (collection: HealthCollection, message: Entry, facts: EntryFac
   }
 };
 
-const isNewInWindow = (collection: HealthCollection, entry: Entry, time: number) => {
+const isInWindow = (collection: HealthCollection, time: number) =>
+  time >= collection.window.since && time < collection.window.until;
+
+const isCopy = (collection: HealthCollection, entry: Entry, time: number) => {
   // Forks and follow-ups copy entries with their IDs and timestamps, so each copy counts once.
   const key = `${text(entry.id) ?? ''}\0${text(entry.timestamp) ?? ''}`;
   const copied = collection.seen.has(key);
-  const inWindow = time >= collection.window.since && time < collection.window.until;
 
   collection.seen.add(key);
 
-  if (copied && inWindow) {
+  if (copied && isInWindow(collection, time)) {
     collection.copiedEntries += 1;
   }
 
-  return inWindow && !copied;
+  return copied;
 };
 
 export const collectSessionFile = (collection: HealthCollection, file: SessionFile): void => {
@@ -227,7 +229,7 @@ export const collectSessionFile = (collection: HealthCollection, file: SessionFi
 
     const message = entry.message;
 
-    if (!isNewInWindow(collection, entry, time) || !isRecord(message)) {
+    if (isCopy(collection, entry, time) || !isRecord(message)) {
       continue;
     }
 
@@ -237,10 +239,11 @@ export const collectSessionFile = (collection: HealthCollection, file: SessionFi
       pending,
     };
 
-    if (message.role === 'assistant') {
-      addAssistantCalls(collection, message, facts);
-    } else if (message.role === 'toolResult') {
+    // A result after the window still completes a call inside it; one before it finds no call.
+    if (message.role === 'toolResult') {
       addResult(collection, message, facts);
+    } else if (message.role === 'assistant' && isInWindow(collection, time)) {
+      addAssistantCalls(collection, message, facts);
     }
   }
 };
