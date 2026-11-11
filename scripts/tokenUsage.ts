@@ -41,6 +41,18 @@ const listFiles = async (directory: string) => {
   }
 };
 
+// Reads started together would open more files than the process may hold.
+const readInTurn = async <Item, Result>(items: Item[], read: (item: Item) => Promise<Result>) => {
+  const results: Result[] = [];
+
+  for (const item of items) {
+    // oxlint-disable-next-line no-await-in-loop -- One open file at a time.
+    results.push(await read(item));
+  }
+
+  return results;
+};
+
 const readTask = async (path: string): Promise<TaskRecord | undefined> => {
   const task = parseWorkerTask(await readFile(path, 'utf8').catch(() => ''));
 
@@ -108,7 +120,7 @@ export const findUsageRecords = async (
   const workerFiles = await listFiles(join(agentDirectory, 'tau'));
   const taskPaths = workerFiles.filter((path) => basename(path) === 'task.json');
   const taskDirectories = new Set(taskPaths.map((path) => dirname(path)));
-  const tasks = await Promise.all(taskPaths.map(readTask));
+  const tasks = await readInTurn(taskPaths, readTask);
   const records = tasks.filter((record) => record !== undefined);
 
   const tasksOf = (path: string) =>
@@ -116,16 +128,19 @@ export const findUsageRecords = async (
       .filter((record) => ownsSession(record.task, record.directory, path))
       .map((record) => record.task);
 
-  const reads = [
-    ...parentPaths
-      .filter((path) => path.endsWith('.jsonl'))
-      .map((path) => findSession(path, 'parent', [], since)),
-    ...workerFiles
-      .filter((path) => path.endsWith('.jsonl') && taskDirectories.has(dirname(path)))
-      .map((path) => findSession(path, 'worker', tasksOf(path), since)),
-  ];
+  const parentSessions = parentPaths
+    .filter((path) => path.endsWith('.jsonl'))
+    .map((path) => ({ path, side: 'parent' as const }));
 
-  const read = await Promise.all(reads);
+  const workerSessions = workerFiles
+    .filter((path) => path.endsWith('.jsonl') && taskDirectories.has(dirname(path)))
+    .map((path) => ({ path, side: 'worker' as const }));
+
+  const read = await readInTurn([...parentSessions, ...workerSessions], ({ path, side }) => {
+    const owners = side === 'parent' ? [] : tasksOf(path);
+
+    return findSession(path, side, owners, since);
+  });
 
   const sessions: SessionFile[] = read.filter(
     (session) => session !== undefined && session !== null,

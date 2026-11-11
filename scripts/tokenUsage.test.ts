@@ -203,6 +203,61 @@ it('reports many session files that share one large log within a 64 MiB heap', a
   expect(result.stdout).toMatch(/parent +fixture +1 +1 +12 +10 +10/);
 });
 
+const fileCount = 200;
+
+// The script reads the agent directory under the home directory.
+const runWithOpenFileLimit = () =>
+  spawnSync(
+    'sh',
+    [
+      '-c',
+      'ulimit -n 64; exec "$@"',
+      'sh',
+      process.execPath,
+      join(import.meta.dirname, 'tokenUsage.ts'),
+      '--since',
+      '2026-09-01T00:00:00Z',
+      '--until',
+      '2026-09-02T00:00:00Z',
+    ],
+    { encoding: 'utf8', env: { ...process.env, HOME: agentDirectory } },
+  );
+
+it('counts every session file when they outnumber the open file limit', async () => {
+  const header = `${JSON.stringify({ type: 'session', timestamp: '2026-09-01T00:00:00Z' })}\n`;
+
+  await Promise.all(
+    Array.from({ length: fileCount }, (_, index) =>
+      write(`.pi/agent/sessions/fixture/${index}.jsonl`, header),
+    ),
+  );
+
+  const result = runWithOpenFileLimit();
+
+  expect(result.stderr).toBe('');
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain('200 session files, 0 unreadable');
+});
+
+it('counts every task record when they outnumber the open file limit', async () => {
+  const createdAt = Date.parse('2026-09-01T12:00:00Z');
+
+  await Promise.all(
+    Array.from({ length: fileCount }, (_, index) =>
+      write(
+        `.pi/agent/tau/repo-1/workers/${index}/task.json`,
+        taskRecord(String(index), createdAt, undefined, 'generic'),
+      ),
+    ),
+  );
+
+  const result = runWithOpenFileLimit();
+
+  expect(result.stderr).toBe('');
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain('200 Claude or Codex worker tasks not measured');
+});
+
 it.each([
   { rule: 'reads an age in days', value: '2d', time: since - 2 * 86_400_000 },
   {
