@@ -50,7 +50,7 @@ const qaGuideGuidelines = (qaGuideExists: boolean): string[] =>
         'Before a `qa` launch, do the QA guide\'s steps under "The manager starts" for the assigned sections.',
         'Before a `qa` launch, ask the user for the QA guide\'s steps under "Ask the user" for the assigned sections.',
         'Put the lines the QA guide asks for in the `qa` brief.',
-        'Stop what you started for a `qa` worker from the QA guide when the worker reports.',
+        'Stop what you started from the QA guide when every `qa` worker that uses it has reported, or when the launch fails.',
         'When only the QA guide\'s "Not testable" part applies to a change, launch no `qa` worker and report that QA did not run, with the reason.',
       ]
     : [];

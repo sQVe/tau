@@ -168,7 +168,7 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    - Do the guide's steps under "The manager starts" for those sections.
    - Ask the user for the guide's steps under "Ask the user" for those sections.
    - Put the lines the guide asks for in the brief.
-   - Stop what you started when the worker reports.
+   - Stop what you started when every worker that uses it has reported, or when the launch fails.
    - When only the guide's "Not testable" part applies, launch no `qa` worker. Record that QA did
      not run, with the reason, for step 6 and the preview.
    - Leave the app URL, test account, and data writes to Tau, which fills them from the user's
