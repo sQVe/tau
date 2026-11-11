@@ -16,6 +16,7 @@ import { declinedExec } from '../../../tests/declinedExecFake.js';
 import { initializeRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import type { LaunchParameters } from './launchParameters.js';
+import { qaGuideLine } from './qaBrief.js';
 import { applyQaSettings } from './qaLaunch.js';
 
 interface Fixture {
@@ -88,6 +89,13 @@ const context = (worktree: string) => ({
 
 const apply = (parameters: LaunchParameters, worktree: string) =>
   applyQaSettings(parameters, undefined, context(worktree) as never, declinedExec);
+
+const noGuideLine = qaGuideLine(false);
+
+const writeGuide = (worktree: string): void => {
+  mkdirSync(join(worktree, '.pi'));
+  writeFileSync(join(worktree, '.pi', 'qa.md'), '# QA\n');
+};
 
 const scriptPrinting = (worktree: string, output: string, exitCode = 0): string => {
   writeFileSync(
@@ -231,27 +239,56 @@ it('never runs testAccountCommand', async () => {
   expect(existsSync(marker)).toBe(false);
 });
 
+it('leaves a launch of another profile unchanged', async () => {
+  const { worktree, writeUser } = await fixture('git@github.com:sQVe/cape.git');
+
+  writeUser(settingsFor('exit 1'));
+  writeGuide(worktree);
+
+  const parameters = launch(worktree, { profile: 'browser' });
+
+  await expect(apply(parameters, worktree)).resolves.toBe(parameters);
+});
+
 it.each([
-  {
-    condition: 'the profile is browser',
-    origin: 'git@github.com:sQVe/cape.git',
-    profile: 'browser',
-  },
-  {
-    condition: 'the origin names another repository',
-    origin: 'git@github.com:sQVe/tau.git',
-    profile: 'qa',
-  },
-  { condition: 'there is no origin', origin: undefined, profile: 'qa' },
-])('leaves the launch unchanged when $condition', async ({ origin, profile }) => {
+  { condition: 'the origin names another repository', origin: 'git@github.com:sQVe/tau.git' },
+  { condition: 'there is no origin', origin: undefined },
+])('adds only the QA guide line when $condition', async ({ origin }) => {
   const { worktree, writeUser } = await fixture(origin);
 
   writeUser(settingsFor('exit 1'));
 
-  const parameters = launch(worktree, { profile });
+  const withoutGuide = await apply(launch(worktree), worktree);
 
-  await expect(apply(parameters, worktree)).resolves.toBe(parameters);
+  writeGuide(worktree);
+
+  const withGuide = await apply(launch(worktree), worktree);
+
+  expect(withoutGuide).toEqual(launch(worktree, { task: `Test it.\n\n${noGuideLine}` }));
+  expect(withGuide).toEqual(launch(worktree, { task: 'Test it.\n\nQA guide: read .pi/qa.md' }));
 });
+
+it.each([
+  { condition: 'has .pi/qa.md', hasGuide: true, line: 'QA guide: read .pi/qa.md' },
+  { condition: 'has no .pi/qa.md', hasGuide: false, line: noGuideLine },
+])(
+  'puts the QA guide line before the settings lines when the worktree $condition',
+  async ({ hasGuide, line }) => {
+    const { worktree, writeUser } = await fixture('git@github.com:sQVe/cape.git');
+
+    writeUser(settingsFor('echo http://localhost:4100'));
+
+    if (hasGuide) {
+      writeGuide(worktree);
+    }
+
+    const resolved = await apply(launch(worktree), worktree);
+
+    expect(resolved.task).toBe(
+      `Test it.\n\n${line}\nTest account: run \`op read login\` to read it.\nData writes: not allowed in the dev database.`,
+    );
+  },
+);
 
 it('fails a qa launch for a repository with a bad entry only', async () => {
   const { worktree, writeUser } = await fixture('git@github.com:sQVe/cape.git');

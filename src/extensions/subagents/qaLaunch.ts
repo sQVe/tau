@@ -11,7 +11,13 @@ import { configRepositoryKey } from '../../github/repositoryTargetDecisions.js';
 import { signalGroup } from '../../process/process.js';
 import type { LaunchParameters } from './launchParameters.js';
 import { requireSessionCwd } from './loadout.js';
-import { briefWithQaLines, qaBriefLines, urlCommandResult } from './qaBrief.js';
+import {
+  briefWithQaLines,
+  qaBriefLines,
+  qaGuideLine,
+  qaGuidePath,
+  urlCommandResult,
+} from './qaBrief.js';
 import { readQaSettings } from './qaSettings.js';
 
 type QaContext = Pick<ExtensionContext, 'cwd' | 'isProjectTrusted' | 'ui'>;
@@ -95,8 +101,9 @@ const runUrlCommand = (
     });
   });
 
-// Adds the settings of the launch worktree's repository to a `qa` launch: the app URL from
-// `urlCommand` when the caller gave none, and the brief lines. Other launches pass through.
+// Adds to a `qa` launch the QA guide line, and the settings of the launch worktree's repository:
+// the app URL from `urlCommand` when the caller gave none, and the brief lines. Other launches
+// pass through.
 export const applyQaSettings = async (
   parameters: LaunchParameters,
   signal: AbortSignal | undefined,
@@ -122,13 +129,11 @@ export const applyQaSettings = async (
     repository,
   );
 
-  if (settings === undefined) {
-    return parameters;
-  }
+  const guideLine = qaGuideLine(existsSync(resolvePath(worktree, qaGuidePath)));
+  const settingsLines = settings === undefined ? [] : qaBriefLines(settings);
+  const task = briefWithQaLines(parameters.task, [guideLine, ...settingsLines]);
 
-  const task = briefWithQaLines(parameters.task, qaBriefLines(settings));
-
-  if (parameters.url !== undefined || settings.urlCommand === undefined) {
+  if (parameters.url !== undefined || settings?.urlCommand === undefined) {
     return { ...parameters, task };
   }
 

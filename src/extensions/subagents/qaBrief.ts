@@ -41,6 +41,13 @@ export const urlCommandResult = ({ command, source, stdout }: UrlCommandRun): Ur
   return { url };
 };
 
+export const qaGuidePath = '.pi/qa.md';
+
+export const qaGuideLine = (guideExists: boolean): string =>
+  guideExists
+    ? `QA guide: read ${qaGuidePath}`
+    : `QA guide: none. This repository has no ${qaGuidePath}.`;
+
 // The worker runs the test account command itself, so its output never reaches the manager.
 export const qaBriefLines = (settings: QaSettings): string[] => {
   const lines: string[] = [];

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { briefWithQaLines, qaBriefLines, urlCommandResult } from './qaBrief.js';
+import { briefWithQaLines, qaBriefLines, qaGuideLine, urlCommandResult } from './qaBrief.js';
 
 const run = { command: './scripts/dev-url', source: '/home/u/tau.json' };
 
@@ -41,6 +41,14 @@ it.each([
   },
 ])('writes brief lines for $settings', ({ settings, lines }) => {
   expect(qaBriefLines({ urlCommand: undefined, source: 'tau.json', ...settings })).toEqual(lines);
+});
+
+it('names the QA guide when the worktree has one', () => {
+  expect(qaGuideLine(true)).toBe('QA guide: read .pi/qa.md');
+});
+
+it('says there is no QA guide when the worktree has none', () => {
+  expect(qaGuideLine(false)).toMatch(/^QA guide: none\b/);
 });
 
 it('appends lines to the brief only when there are some', () => {
