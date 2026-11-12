@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import type { ChildProcessByStdio } from 'node:child_process';
 import {
   appendFileSync,
   existsSync,
@@ -13,9 +14,11 @@ import {
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import type { Readable, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
+import { errorMessage } from '../src/errors.ts';
 import { stopGroup } from '../src/process/process.ts';
 import { isRecord } from '../src/schema.ts';
 import {
@@ -54,6 +57,11 @@ interface Session {
   options: SessionOptions;
   prompt: string;
   eventLog: string;
+}
+
+interface SessionResult {
+  end: SessionEnd;
+  state: SessionState;
 }
 
 const usage = `Usage: node scripts/piSession.ts --cwd <directory> (--prompt <text> | --prompt-file <file>)
@@ -192,18 +200,11 @@ const parseRecord = (line: string): unknown => {
   }
 };
 
-const runPi = async (session: Session): Promise<{ end: SessionEnd; state: SessionState }> => {
+const followPi = async (
+  child: ChildProcessByStdio<Writable, Readable, null>,
+  session: Session,
+): Promise<SessionResult> => {
   const { options, eventLog } = session;
-  const sessionDirectory = mkdtempSync(join(tmpdir(), 'tau-pi-session-'));
-
-  const child = spawn(session.pi, piArguments(sessionDirectory, session.model), {
-    cwd: options.cwd,
-    detached: true,
-    stdio: ['pipe', 'pipe', 'inherit'],
-    // oxlint-disable-next-line node/no-process-env -- the child environment starts from the caller's PATH.
-    env: piChildEnvironment(process.env.PATH ?? ''),
-  });
-
   let state = startState;
   let buffer = '';
 
@@ -228,7 +229,14 @@ const runPi = async (session: Session): Promise<{ end: SessionEnd; state: Sessio
 
   // RPC records are split only on LF, so readline's other separators would break a record.
   child.stdout.on('data', (chunk: string) => {
-    appendFileSync(eventLog, chunk);
+    try {
+      appendFileSync(eventLog, chunk);
+    } catch (error) {
+      finish({ kind: 'failed', cause: `The event log cannot be written: ${errorMessage(error)}` });
+
+      return;
+    }
+
     buffer += chunk;
 
     const lines = buffer.split('\n');
@@ -266,11 +274,30 @@ const runPi = async (session: Session): Promise<{ end: SessionEnd; state: Sessio
 
   const end = await ended;
 
-  child.stdin.end();
-  await stopGroup(child, stopGraceMilliseconds);
-  rmSync(sessionDirectory, { recursive: true, force: true });
-
   return { end, state };
+};
+
+const runPi = async (session: Session): Promise<SessionResult> => {
+  const sessionDirectory = mkdtempSync(join(tmpdir(), 'tau-pi-session-'));
+
+  try {
+    const child = spawn(session.pi, piArguments(sessionDirectory, session.model), {
+      cwd: session.options.cwd,
+      detached: true,
+      stdio: ['pipe', 'pipe', 'inherit'],
+      // oxlint-disable-next-line node/no-process-env -- the child environment starts from the caller's PATH.
+      env: piChildEnvironment(process.env.PATH ?? ''),
+    });
+
+    try {
+      return await followPi(child, session);
+    } finally {
+      child.stdin.end();
+      await stopGroup(child, stopGraceMilliseconds);
+    }
+  } finally {
+    rmSync(sessionDirectory, { recursive: true, force: true });
+  }
 };
 
 const runSession = async (values: {
@@ -294,10 +321,10 @@ const runSession = async (values: {
   const checkout = readCheckout(values.tau ?? checkoutRoot);
   const settings = projectSettings(checkout, readUserPackages());
   const written = settings === undefined ? undefined : writeSettings(options.cwd, settings);
-  const eventLog = createEventLog('tau-pi-session-log-');
-  const session = { pi: values.pi ?? 'pi', model: values.model, options, prompt, eventLog };
 
   try {
+    const eventLog = createEventLog('tau-pi-session-log-');
+    const session = { pi: values.pi ?? 'pi', model: values.model, options, prompt, eventLog };
     const { end, state } = await runPi(session);
     const exit = sessionExit(end, openWorkers(state), eventLog);
 
