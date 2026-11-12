@@ -32,63 +32,54 @@ export const prToolParameters = Type.Object({
     Type.Literal('reviewBots'),
     Type.Literal('coverage'),
   ]),
-  remote: Type.Optional(
-    Type.String({ description: 'target, evidence: the Git remote to push the branch to.' }),
-  ),
+  remote: Type.Optional(Type.String({ description: 'target/evidence: push remote.' })),
   base: Type.Optional(
     Type.String({
-      description:
-        'target, evidence: the base branch to use, even when an open pull request names another. verify: the approved base branch.',
+      description: 'target/evidence: override base. verify: approved base.',
     }),
   ),
   directory: Type.Optional(
     Type.String({
-      description:
-        'reuse: the .tau/workers/review-* directory of a saved review. verify: the .tau/pr/run-* directory from prepare.',
+      description: "reuse: review directory. verify: prepare's directory.",
     }),
   ),
   review: Type.Optional(
     Type.String({
-      description:
-        'evidence: the last .tau/workers/review-* directory of the wanted ambiguousChain candidate.',
+      description: "evidence: candidate chain's last directory.",
     }),
   ),
   mergeBase: Type.Optional(
     Type.String({
-      description: 'reuse, checkHeader: the merge base of the branch, such as target returns.',
+      description: "reuse/checkHeader: target's mergeBase.",
     }),
   ),
   repository: Type.Optional(
     Type.String({
-      description: 'verify, reviewBots: the base repository as <host>/<owner>/<name>.',
+      description: 'verify/reviewBots: <host>/<owner>/<name>.',
     }),
   ),
-  pr: Type.Optional(Type.Integer({ description: 'verify, reviewBots: the pull request number.' })),
-  title: Type.Optional(Type.String({ description: 'verify: the approved title.' })),
-  draft: Type.Optional(Type.Boolean({ description: 'verify: the approved draft status.' })),
+  pr: Type.Optional(Type.Integer({ description: 'verify/reviewBots: PR number.' })),
+  title: Type.Optional(Type.String({ description: 'verify: approved title.' })),
+  draft: Type.Optional(Type.Boolean({ description: 'verify: approved draft status.' })),
   chain: Type.Optional(
     Type.Array(Type.Object({ directory: Type.String(), identity: Type.String() }), {
-      description: 'coverage: the saved review links.',
+      description: 'coverage: review links.',
     }),
   ),
-  head: Type.Optional(Type.String({ description: 'coverage: the head revision. Default HEAD.' })),
+  head: Type.Optional(Type.String({ description: 'coverage: revision; default HEAD.' })),
 });
 
 export type PrInput = Static<typeof prToolParameters>;
 
-const description = `Gather PR facts, verify the PR, and read which bots to request.
-
-- prepare: call before saving a run's first file. Returns {directory}, a fresh .tau/pr/run-* path.
-- target {remote?, base?}: resolves the branch's PR target. Returns {host, repository, head: {remote, repository, owner, branch, sha}, base: {remote, branch}, mergeBase, pr, closedPrs}. repository: as verify takes it. head.sha is local HEAD. pr is the open PR or null. closedPrs lists closed and merged PRs, each with number, url, state, title, body, author, baseRefName, isDraft, headRefOid. base wins over the open PR's base, then the default branch. Pass remote if the head remote is ambiguous.
-- evidence {remote?, base?, review?}: returns {target, ownership, branch, subjects, chain, coverage, reuse, review, markers, checks, fullCheck, gaps}. chain is the selected review chain, in coverage's form; null with a reviewChain or chain gap, or no target. coverage is its result; a match closes no finding. reuse and review read its root, else the review passed. ambiguousChain candidates are directory lists, root first. ownership is {status: own | other | unclear, reasons}: PR author versus viewer, else commit emails versus your Git email. Failed reads return unclear. review.reusable needs matching bytes, a fresh complete capture, and worker reports; reusableReasons says why not. subjects: commit subjects since mergeBase. markers: added skips, suppressions, and deleted tests.
-  - checks: the newest log per name in .tau/pr/run-*/checks/*.log: {path, matches, reasons, excerpt, truncated}. matches: HEAD, Status, and Diff equal the current values. A match is not a pass; read excerpt (null otherwise).
-  - fullCheck: the newest full_check record for this tree: {status, logPath, argv, excerpt, truncated}. status: passed, failed, missing, or malformed; all but passed are gaps. missing also means no configured command, or a record of another command.
-  - gaps lists missing or unreadable evidence. Unavailable objects are null.
-- checkHeader {mergeBase}: call before a check other than full_check. Returns {lines}, three hash headers. Join them with newlines, ending with one.
-- coverage {chain, mergeBase, head?}: reads whether chain covers mergeBase..head. chain is [{directory, identity}], root first; identity is capture.json's Git blob hash. Returns {status, link, reasons, links}: match, mismatch, unsupported, or unknown; link is the 1-based deciding link.
-- reuse {directory, mergeBase}: compares the saved review in directory with git diff <mergeBase> HEAD. Returns {status, reasons, recordedBase, paths: {differing, missing, extra}, reports}; status: match or mismatch. reports lists the existing worker reports.
-- verify {repository, pr, directory, title, base, draft}: compares the PR with the approved preview. directory holds body.md. Returns {url, matches, differences: [{field, expected, actual}]}; fields: title, body, base, draft, head.
-- reviewBots {repository, pr}: reads the repository's bots from user tau.json. Returns {bots} as {login, comment, status}. status is reviewed when the bot reviewed the current head, requested when its comment came after the head commit and its first check suite, else request. Post comment for each bot with status request. Empty means request no bot.`;
+const description = `- prepare: start a run; returns {directory}.
+- target {remote?,base?}: resolve {host,repository,head:{remote,repository,owner,branch,sha},base:{remote,branch},mergeBase,pr,closedPrs}. sha: local HEAD; pr: open or null; closedPrs: closed/merged {number,url,state,title,body,author,baseRefName,isDraft,headRefOid}. Base: explicit, PR, then default.
+- evidence {remote?,base?,review?}: {target,ownership,branch,subjects,chain,coverage,reuse,review,markers,checks,fullCheck,gaps}. chain: root-first or null; ambiguousChain: directory-list candidates. reuse/review use root, else input review. ownership {status:own|other|unclear,reasons}: PR author/viewer or commit/Git emails; failed reads: unclear. review.reusable: matching bytes, fresh complete capture, reports; reusableReasons: refusal. subjects: since mergeBase; markers: skips/suppressions/deleted tests. Null objects/gaps: unavailable evidence.
+  checks: newest per name {path,matches,reasons,excerpt,truncated}; matches: HEAD/Status/Diff, not pass; unmatched excerpt: null. fullCheck: newest for tree {status,logPath,argv,excerpt,truncated}; passed|failed|missing|malformed; missing includes absent/different command.
+- checkHeader {mergeBase}: before non-full_check checks; {lines}: join with newlines, including final newline.
+- coverage {chain,mergeBase,head?}: mergeBase..head coverage. chain: [{directory,identity}], root-first; identity: capture.json Git blob hash. {status,link,reasons,links}: match|mismatch|unsupported|unknown; link: 1-based. Match closes no finding.
+- reuse: review versus mergeBase..HEAD; {status:match|mismatch,reasons,recordedBase,paths:{differing,missing,extra},reports}.
+- verify: published PR versus approval; directory holds body.md. {url,matches,differences:[{field,expected,actual}]} for title/body/base/draft/head.
+- reviewBots: configured {bots:[{login,comment,status}]}; reviewed: current head; requested: comment after head and first check suite; request: needs comment. Empty: no bots.`;
 
 const prepare = async (runtime: CommandRuntime) => {
   const root = await findCheckoutRoot(runtime.cwd, 'pr');

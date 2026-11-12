@@ -59,19 +59,12 @@ export const prFeedbackToolParameters = Type.Object({
 
 export type PrFeedbackInput = Static<typeof prFeedbackToolParameters>;
 
-const description = `Read GitHub PR status, feedback, and checks, or post replies.
-- status {repository, prs: [{pr, head}]}: one snapshot, bottom to top; no files or GitHub writes. Returns {prs, recommended, reason, attention}. Each PR: {pr, url, verdict, reasons, head, draft, gaps}. Reasons have code and optional count, names, or logins. Verdicts: action-required, unknown, waiting-checks, waiting-human, clear. clear means no known blocker, not a merge guarantee. recommended is the lowest action-required PR, else lowest unknown, else null. attention lists those PR numbers bottom to top. The user picks.
-- read {repository, pr}: returns {bodies, directory, feedback, viewer, pr, threads, reviews, comments, stateToken, gaps}. Full feedback is in feedback.json; join each body's chunks without a separator.
-  - pr includes author, headRefOid, branches, head repository/owner, state, maintainerCanModify, and mergeable (may stay UNKNOWN).
-  - threads are unresolved, excluding viewer-only conversations. replyTo is the first comment ID; fromPerson means any non-bot comment. Reviews and comments have id, author, isBot, body, url; reviews add state. author null means a deleted person.
-  - gaps reports capped bodies/lists with kind, list, id, kept, total. Read feedback.json for the rest. stateToken tracks other people's added, edited, or deleted comments.
-- checks {repository, pr, head, trunk?}: pins checks to head (read's pr.headRefOid); trunk defaults to pr.baseRefName. Returns {pr, checks, gaps}.
-  - Each check: {name, workflow, bucket, state, link}. bucket: pass, fail, pending, skipping, cancel. fail/cancel has log {excerpt, omittedLines, omittedCharacters} or a gap. Cut logs have a command; budgetLimited means the shared budget cut them.
-  - trunkMatches [{url, headSha}] lists failed same-name jobs among the latest five trunk workflow runs: candidates, not verdicts. trunkGaps are unread evidence.
-  - gaps {check, command, code, stderr, reason} includes trunkGaps, never passes. check null means unread checks. Omitted checks have a read command.
-- post {directory, stateToken, head}: use read's directory/token and the round's pushed head, or read's head if unchanged. First write replies.json:
+const description = `- status: snapshot {prs,recommended,reason,attention}, bottom-to-top. PR: {pr,url,verdict,reasons,head,draft,gaps}; reasons: code, optional count/names/logins. Verdict: action-required|unknown|waiting-checks|waiting-human|clear (no known blocker, not merge approval). recommended: lowest action-required, else unknown, else null; attention: those numbers.
+- read: feedback {bodies,directory,feedback,viewer,pr,threads,reviews,comments,stateToken,gaps}. feedback: full JSON path; join body chunks without separator. pr: author,headRefOid,branches,head repository/owner,state,maintainerCanModify,mergeable (may be UNKNOWN). threads: unresolved, not viewer-only; replyTo: first comment ID; fromPerson: any non-bot. Reviews/comments: id,author,isBot,body,url; reviews add state. Null author: deleted person. gaps {kind,list,id,kept,total}: capped feedback. stateToken: others' comment changes.
+- checks: pinned head; trunk defaults to baseRefName. {pr,checks,gaps}; check: {name,workflow,bucket:pass|fail|pending|skipping|cancel,state,link}; fail/cancel: log {excerpt,omittedLines,omittedCharacters} or gap. command reads cuts; budgetLimited: shared budget cut. trunkMatches [{url,headSha}]: same-name failures in latest five trunk runs, not verdicts. trunkGaps: unread. gaps {check,command,code,stderr,reason} includes trunkGaps; null check: unread checks. Omitted checks have command.
+- post: replies.json in read's directory:
   {"version":1,"threads":[{"id":"<thread id>","reply":"<text or null>","resolve":true}],"comment":{"body":"<text>","answers":["<review or comment id>"]}}
-  comment may be null. Person writes ask once for confirmation. Changed token/head posts nothing: read again. Retrying the directory skips posted writes. Returns {status: posted|declined|unchanged, posted, skipped}; declined means refused, unchanged means already posted.`;
+  comment may be null. Person writes require confirmation. Changed token/head writes nothing; retries skip posted writes. {status:posted|declined|unchanged,posted,skipped}; unchanged: already posted.`;
 
 const parsePullRequestNumber = (action: string, pr: number | undefined) => {
   if (pr === undefined) {

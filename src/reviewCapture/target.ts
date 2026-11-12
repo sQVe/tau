@@ -5,7 +5,7 @@ const revisionSchema = Type.String({ minLength: 1 });
 
 const exclude = Type.Optional(
   Type.Array(Type.String({ minLength: 1 }), {
-    description: 'Paths to leave out of the capture. Each is reported as a gap.',
+    description: 'Exclusions (gaps).',
   }),
 );
 
@@ -36,10 +36,10 @@ export const reviewTargetSchema = Type.Union([
       kind: Type.Literal('fix'),
       review: Type.String({
         minLength: 1,
-        description: 'The .tau/workers/review-* directory of the earlier capture.',
+        description: 'Earlier capture directory.',
       }),
       findingPaths: Type.Array(Type.String({ minLength: 1 }), {
-        description: 'The repository paths the closed findings cite.',
+        description: 'Paths of closed findings.',
       }),
       exclude,
     },
