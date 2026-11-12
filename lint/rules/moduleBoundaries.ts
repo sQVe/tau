@@ -96,7 +96,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
   {
     name: 'reviewCapture',
     entry: 'reviewCapture/reviewCapture',
-    publicFiles: ['reviewCapture/evidence'],
+    publicFiles: ['reviewCapture/evidence', 'reviewCapture/reports'],
   },
   { name: 'schema', entry: 'schema', publicFiles: [] },
   { name: 'shell', entry: 'shell', publicFiles: [] },
