@@ -50,7 +50,7 @@ export const prToolParameters = Type.Object({
   review: Type.Optional(
     Type.String({
       description:
-        'evidence: a .tau/workers/review-* directory of the wanted chain. It picks an ambiguousChain candidate.',
+        'evidence: the last .tau/workers/review-* directory of the wanted ambiguousChain candidate.',
     }),
   ),
   mergeBase: Type.Optional(

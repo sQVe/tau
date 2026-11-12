@@ -61,10 +61,11 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      Pass the stack parent for a tracked branch, otherwise the user-named base, as `base`. It wins
      over an open PR's base, so the target and merge base follow the stack. Use the returned `chain`
      and `coverage`; pass no `chain` to `evidence`. On an `ambiguousChain` gap, read the candidates'
-     `report.md` files, pass the code review's directory as `review`, and rerun. If the reports do
-     not identify the code review, ask which candidate to use. Report every other `reviewChain` gap,
-     even with a selected chain, and unclear ownership as evidence gaps. Never build a chain or
-     identity by hand. With no selected chain, assess the saved evidence manually in step 4.
+     `report.md` files, pass the last directory of the code review's candidate as `review`, and
+     rerun. If the reports do not identify the code review, ask which candidate to use. Report every
+     other `reviewChain` gap, even with a selected chain, and unclear ownership as evidence gaps.
+     Never build a chain or identity by hand. With no selected chain, assess the saved evidence
+     manually in step 4.
    - Find ticket IDs in the user's links, `branch`, `subjects`, and `target.pr.body`. Read each
      distinct ticket with its service's CLI, using returned issue IDs rather than branch aliases.
      Keep its title and `## Acceptance` as intent. For slice children, follow the

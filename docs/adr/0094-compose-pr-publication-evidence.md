@@ -27,13 +27,15 @@ action inherits the target reader's base fetch and the review reader's freshness
 writes no other worktree files.
 
 The action selects the review chain itself from the saved captures in `.tau/workers`. A chain is a
-root review with worker reports, captured from the branch's merge base, followed by the fix reviews
-that name it. The action returns the chain with the identity of each link, reads the chain's
-coverage, and inspects the chain's root for reuse and review evidence. The caller builds no chain.
-When the captures give no chain, more than one chain, or a link without an identity, the action
-returns a gap and no chain instead of a guess. The caller can name any directory of one candidate to
-pick it. A malformed capture in another review directory is a gap and hides no other evidence. A
-coverage match says which bytes the chain covers and closes no finding.
+root review with worker reports, followed by the fix reviews that name it. A root is a range or
+working tree capture from the branch's merge base, because only those captures can cover the branch.
+The action returns the chain with the identity of each link, reads the chain's coverage, and
+inspects the chain's root for reuse and review evidence. The caller builds no chain. When the
+captures give no chain, more than one chain, or a link without an identity, the action returns a gap
+and no chain instead of a guess. The caller picks one candidate by naming a directory that only that
+candidate holds, such as its last link. A directory that several candidates share picks none. A
+malformed capture in another review directory is a gap and hides no other evidence. A coverage match
+says which bytes the chain covers and closes no finding.
 
 The full check has one identity, the saved record that `full_check` writes next to its log in
 `.tau/checks` (see [ADR 0105](./0105-queue-full-checks-per-repository-and-reuse-passing-logs.md)).
