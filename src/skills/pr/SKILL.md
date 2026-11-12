@@ -165,6 +165,7 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    - When the repository has `.pi/qa.md`, read it first. State which of its sections apply to the
      change and why, and assign them in the brief. When the impact on a section is unclear, include
      it instead of skipping it.
+   - State which journeys from the guide's index apply and why, and assign their files in the brief.
    - Do the guide's steps under "The manager starts" for those sections.
    - Ask the user for the guide's steps under "Ask the user" for those sections.
    - Put the lines the guide asks for in the brief.

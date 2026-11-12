@@ -384,6 +384,12 @@ the rules. Give it one section per app or interface, such as a web app, a CLI, o
 section says how to reach the app, how to use it safely, and what to check. A section may link
 feature recipes. By convention they live under `.pi/qa/`.
 
+The optional "Journeys" index names journey files under `.pi/qa/journeys/`. The manager picks
+journeys the change touches and assigns their files in the brief. The worker reads each assigned
+file, walks its steps in order, and compares each visible result and the end state. It reports each
+step whose result differs. The template defines the journey file's five parts. Tau parses neither
+the index nor the journey files.
+
 Tau checks only that `.pi/qa.md` exists in the worker's worktree. It does not parse the guide or
 read `.pi/qa/`, and there is no config key for it. Every `qa` brief gets one line, also when the
 repository has no `qa.repositories` entry:
