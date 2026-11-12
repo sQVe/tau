@@ -81,13 +81,18 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
    `## Files`. Give each ticket the record links and rules it needs in `## Constraints`. Write
    `start.json` as the `start_slice` tool describes, with the tickets in work order. Take label IDs
    from the agent team's label list, as the tracker skill says, or use `[]`. Keep existing
-   identifiers; new ones stay `null`. The tickets together cover every acceptance criterion.
+   identifiers; new ones stay `null`. The tickets together cover every acceptance criterion. Give
+   each journey item to one agent ticket that writes the journey file, the test, and the QA guide's
+   index row together. An item marked "by hand" needs no test file. The journey file and test hold
+   only built steps, following the
+   [QA-guide template](../../extensions/subagents/templates/qa-guide.md#rules).
 
-7. Map each slice criterion, record update, and mechanical-check change to its tickets. Change the
-   draft until none is uncovered. Each `## Acceptance` item must name a test, a command, or a manual
-   observation, with its expected result. Rewrite an item when the slice or step 5 says what to
-   check. Before step 9, list each item with no check and its body file, and tell the user the
-   worker gets a vague task. Say nothing when all pass; the list never stops a launch.
+7. Map each slice criterion, record update, and mechanical-check change to its tickets. Check that
+   each journey item maps to one ticket with its journey file, test or "by hand", and index row.
+   Change the draft until none is uncovered. Each `## Acceptance` item must name a test, a command,
+   or a manual observation, with its expected result. Rewrite an item when the slice or step 5 says
+   what to check. Before step 9, list each item with no check and its body file, and tell the user
+   the worker gets a vague task. Say nothing when all pass; the list never stops a launch.
 8. For each new ticket (`identifier` is `null`), launch one fresh default-model `scout` in one turn.
    Brief it with the body file path, the step 5 tree, and the plan questions. It reads the body file
    with `read` and the named files with `git show <tree>:<path>`. It searches with

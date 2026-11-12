@@ -66,6 +66,7 @@ design it follows in its Design section. The container has one sub-ticket per sl
    - Use one slice only when the work cannot split, and say why. Then the ticket is the slice, and
      there is no container.
    - Mark a slice `blocked-by` another only when it cannot work or merge without it.
+   - Block the slice with a journey's last step by each other slice that delivers an earlier step.
    - Give every slice a title that no other slice in the plan uses.
 
 4. Write the draft in the directory, one body file per ticket. Before you write each new ticket, the
@@ -90,16 +91,23 @@ design it follows in its Design section. The container has one sub-ticket per sl
    prerequisite refactor, gets a line in `container.md`; a rule for one slice, such as reusing an
    existing helper, goes in that slice's `## Design`.
 
+   Carry flows marked as a new journey or new steps of an indexed journey from `## Usage` into
+   `container.md`'s `## Journeys`. Write each whole planned journey once, using the
+   [QA-guide template's journey shape](../../extensions/subagents/templates/qa-guide.md#rules). Give
+   each slice that delivers steps a normal journey acceptance item in the slice template's shape.
+   The item for the last step also requires that the end state holds and the whole journey passes.
+
    For a design with one slice, write `ticket.md` as the container's file, as the slice template
-   describes, and list no slices.
+   describes, and list no slices. Keep each whole planned journey in that ticket's `## Design`.
 
    Then call `read` again. Resolve its `problems` as in step 2.
 
 5. Check the plan.
    - Map each acceptance criterion of the design to the slice numbers that cover it. Map each
      refactor, record update, and mechanical-check change to the slice that delivers it, alongside
-     that coverage. When any item has no delivering slice, change the draft and call `read` again.
-     Do not proceed to `apply` until all are covered.
+     that coverage. Map every journey step to its delivering slice. When any item or journey step
+     has no delivering slice, change the draft and call `read` again. Do not proceed to `apply`
+     until all are covered.
    - Judge each `## Acceptance` item in the slice body files. An item passes when it names a test, a
      command, or a manual observation, with its expected result. When the design says what to check,
      rewrite the item and call `read` again. Before step 6, list each item that still names no
