@@ -2,13 +2,13 @@ import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.js';
-import { existingEntry } from '../tauDirectory.js';
 import { decideChainSelection } from './chainSelectionDecision.js';
 import type { ChainEntryFacts, ChainSelection } from './chainSelectionDecision.js';
 import { hashOf } from './completedCapture.js';
 import type { CaptureRecord } from './record.js';
 import { readRecord } from './recordRead.js';
-import { hasWorkerReports, reportFileNames } from './reports.js';
+import { listReports } from './reportListing.js';
+import { hasWorkerReports } from './reports.js';
 import { reviewDirectoryPath, reviewPrefix, workersPath } from './reviewDirectory.js';
 
 export interface ChainSelectionRequest {
@@ -34,20 +34,6 @@ const listReviewDirectories = async (workers: string): Promise<string[]> => {
     .filter((entry) => entry.isDirectory() && entry.name.startsWith(reviewPrefix))
     .map((entry) => join(workers, entry.name))
     .toSorted();
-};
-
-const isRegularFile = async (path: string) => {
-  const entry = await existingEntry(path);
-
-  return entry?.isFile() === true;
-};
-
-const listReports = async (directory: string) => {
-  const exists = await Promise.all(
-    reportFileNames.map((name) => isRegularFile(join(directory, name))),
-  );
-
-  return reportFileNames.filter((_, index) => exists[index] === true);
 };
 
 const targetFacts = ({ target }: CaptureRecord) => {

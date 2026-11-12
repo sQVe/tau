@@ -9,7 +9,7 @@ export { captureReviewDirectory } from './generation.js';
 export { readOwnership } from './ownership.js';
 export type { Ownership } from './ownershipDecision.js';
 export { checkReviewFreshness } from './pinnedCapture.js';
-export { reportFileNames } from './reports.js';
+export { listReports } from './reportListing.js';
 export { prepareReviewDirectory } from './reviewPrepare.js';
 export { checkReviewDirectory } from './reviewDirectory.js';
 export { inspectReview } from './reviewInspection.js';
