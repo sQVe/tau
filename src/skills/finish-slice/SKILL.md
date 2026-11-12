@@ -63,6 +63,8 @@ for the workspace.
      reports, coverage result, supporting sources, and conclusion in the row. Missing or stale
      review evidence gives `not run`; name each gap and what would resolve it. A contradiction or
      missing required record update gives `not met`.
+   - Run each manual check yourself and cite its output. A check that cannot run is "not run", with
+     the reason and the command you tried. It is never handed to the user.
    - Save the real output of each check you run in `$slicedir`, in a file named for the check, never
      a summary. Cite that path as the evidence.
 
