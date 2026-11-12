@@ -164,8 +164,8 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      procedure's reuse condition holds; run QA again when the tree changed.
    - Record what QA tested and found, or why it did not run, for step 6 and the preview.
 
-   After the checks, refresh each row in the slice's `finish.md` whose evidence changed: the full
-   check, QA, and acceptance rows these checks cover.
+   After the checks, refresh rows only when the slice has a saved `finish.md`. Refresh rows whose
+   evidence changed: the full check, QA, and acceptance rows these checks cover.
    - Keep the verdicts met, deferred, not met, and not run. Name the evidence's commit in each
      refreshed row.
    - Reuse every other row. Keep the audited-commit header and `Comment ID:` line, so reused rows
@@ -274,8 +274,8 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    - Include the session report from earlier steps: commits, comment removals, review and check
      sources, reviewed commits, coverage and manual judgments, fixes and their purposes, rebase
      notes, non-blocking machine-local failures, reviewer notes, and the combined gap list.
-   - Show the refreshed `finish.md` rows with their evidence commits in the visible preview, not in
-     the PR body.
+   - Only when the slice has a saved `finish.md`, show its refreshed rows with their evidence
+     commits in the visible preview, not in the PR body.
    - For a self-review, show the top-level body and each comment's text, file, line, anchor head
      SHA, and side (`LEFT` for deleted lines, `RIGHT` otherwise). The Hard rules approval rule
      covers changes to the body, text, or anchor.
