@@ -1,16 +1,13 @@
-import { open, readdir, readFile, stat } from 'node:fs/promises';
+import { open, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { isMissingFile } from '../src/errors.ts';
-import {
-  formatTokenUsageReport,
-  ownsSession,
-  parseWorkerTask,
-  tokenUsageReport,
-} from './tokenUsageReport.ts';
-import type { SessionFile, Side, WorkerTask } from './tokenUsageReport.ts';
+import { findSessionFiles } from './sessionFiles.ts';
+import { formatTokenUsageReport, tokenUsageReport } from './tokenUsageReport.ts';
+import type { SessionFile, Side } from './tokenUsageReport.ts';
+import { ownsSession, parseAssignment, parseWorkerTask } from './workerRecord.ts';
+import type { WorkerTask } from './workerRecord.ts';
 
 interface TaskRecord {
   task: WorkerTask;
@@ -26,21 +23,6 @@ const usage = `Usage: node scripts/tokenUsage.ts [--since 7d] [--until <time>] [
 
 --since and --until take an ISO date or time, or an age such as 12h or 3d.`;
 
-const listFiles = async (directory: string) => {
-  try {
-    const names = await readdir(directory, { recursive: true, encoding: 'utf8' });
-
-    return names.map((name) => join(directory, name));
-  } catch (error) {
-    // A missing directory holds no records; any other failure would fake an empty window.
-    if (isMissingFile(error)) {
-      return [];
-    }
-
-    throw error;
-  }
-};
-
 // Reads started together would open more files than the process may hold.
 const readInTurn = async <Item, Result>(items: Item[], read: (item: Item) => Promise<Result>) => {
   const results: Result[] = [];
@@ -54,7 +36,9 @@ const readInTurn = async <Item, Result>(items: Item[], read: (item: Item) => Pro
 };
 
 const readTask = async (path: string): Promise<TaskRecord | undefined> => {
-  const task = parseWorkerTask(await readFile(path, 'utf8').catch(() => ''));
+  const source = await readFile(path, 'utf8').catch(() => '');
+  const parse = basename(path) === 'assignment.json' ? parseAssignment : parseWorkerTask;
+  const task = parse(source);
 
   return task === undefined ? undefined : { task, directory: dirname(path) };
 };
@@ -111,30 +95,24 @@ const readSessionText = async (path: string) => {
   }
 };
 
-// Finds parent sessions under `sessions/` and worker sessions beside a task record under `tau/`.
+// Finds parent sessions under `sessions/` and worker sessions in an assignment or task directory
+// under `tau/`.
 export const findUsageRecords = async (
   agentDirectory: string,
   since: number,
 ): Promise<UsageRecords> => {
-  const parentPaths = await listFiles(join(agentDirectory, 'sessions'));
-  const workerFiles = await listFiles(join(agentDirectory, 'tau'));
-  const taskPaths = workerFiles.filter((path) => basename(path) === 'task.json');
-  const taskDirectories = new Set(taskPaths.map((path) => dirname(path)));
-  const tasks = await readInTurn(taskPaths, readTask);
+  const files = await findSessionFiles(agentDirectory);
+  const tasks = await readInTurn(files.workerRecords, readTask);
   const records = tasks.filter((record) => record !== undefined);
+  const recordDirectories = new Set(records.map((record) => record.directory));
 
   const tasksOf = (path: string) =>
     records
       .filter((record) => ownsSession(record.task, record.directory, path))
       .map((record) => record.task);
 
-  const parentSessions = parentPaths
-    .filter((path) => path.endsWith('.jsonl'))
-    .map((path) => ({ path, side: 'parent' as const }));
-
-  const workerSessions = workerFiles
-    .filter((path) => path.endsWith('.jsonl') && taskDirectories.has(dirname(path)))
-    .map((path) => ({ path, side: 'worker' as const }));
+  const parentSessions = files.managerSessions.map((path) => ({ path, side: 'parent' as const }));
+  const workerSessions = files.workerSessions.map((path) => ({ path, side: 'worker' as const }));
 
   const read = await readInTurn([...parentSessions, ...workerSessions], ({ path, side }) => {
     const owners = side === 'parent' ? [] : tasksOf(path);
@@ -147,11 +125,10 @@ export const findUsageRecords = async (
   );
 
   const unreadableSessions = read.filter((session) => session === undefined).length;
-  const readDirectories = new Set(sessions.map((session) => dirname(session.path)));
 
-  // A broken task record matters only when its session is part of this window.
-  const unreadableTasks = taskPaths.filter(
-    (path, index) => tasks[index] === undefined && readDirectories.has(dirname(path)),
+  // A missing or broken record matters only when its session is part of this window.
+  const sessionsWithoutRecord = sessions.filter(
+    (session) => session.side === 'worker' && !recordDirectories.has(dirname(session.path)),
   ).length;
 
   const otherHarnessTasks = records
@@ -160,7 +137,7 @@ export const findUsageRecords = async (
 
   return {
     sessions,
-    skipped: { unreadableFiles: unreadableTasks + unreadableSessions, otherHarnessTasks },
+    skipped: { unreadableFiles: sessionsWithoutRecord + unreadableSessions, otherHarnessTasks },
   };
 };
 

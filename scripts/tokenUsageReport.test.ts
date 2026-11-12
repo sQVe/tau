@@ -1,12 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  formatTokenUsageReport,
-  ownsSession,
-  parseWorkerTask,
-  tokenUsageReport,
-} from './tokenUsageReport.js';
-import type { SkippedRecords, TokenUsageReport, WorkerTask } from './tokenUsageReport.js';
+import { formatTokenUsageReport, tokenUsageReport } from './tokenUsageReport.js';
+import type { SkippedRecords, TokenUsageReport } from './tokenUsageReport.js';
+import type { WorkerTask } from './workerRecord.js';
 
 interface SessionText {
   path: string;
@@ -390,104 +386,5 @@ describe('formatTokenUsageReport', () => {
     expect(formatTokenUsageReport(result, 5)).toMatch(
       /parent +bridge\/opus +4 +8 +1,620 +25 +250\n/,
     );
-  });
-});
-
-describe('parseWorkerTask', () => {
-  it.each([
-    {
-      rule: 'reads a current record',
-      source:
-        '{"taskId":"t","name":"scout-1","createdAt":5,"nativeSessionFile":"/w/s.jsonl","loadout":{"profile":"scout"}}',
-      parsed: {
-        taskId: 't',
-        harness: 'pi',
-        name: 'scout-1',
-        profile: 'scout',
-        createdAt: 5,
-        sessionFile: '/w/s.jsonl',
-      },
-    },
-    {
-      rule: 'reads an old record without a session file or profile',
-      source: '{"taskId":"t","createdAt":5}',
-      parsed: {
-        taskId: 't',
-        harness: 'pi',
-        name: 't',
-        profile: 'unknown',
-        createdAt: 5,
-        sessionFile: undefined,
-      },
-    },
-    {
-      rule: 'reads the harness of a Codex worker',
-      source: '{"taskId":"t","createdAt":5,"loadout":{"harness":"generic","profile":"worker"}}',
-      parsed: {
-        taskId: 't',
-        harness: 'generic',
-        name: 't',
-        profile: 'worker',
-        createdAt: 5,
-        sessionFile: undefined,
-      },
-    },
-    {
-      rule: 'rejects a profile that is not text',
-      source: '{"taskId":"t","createdAt":5,"loadout":{"profile":7}}',
-      parsed: undefined,
-    },
-    {
-      rule: 'rejects a harness that is not text',
-      source: '{"taskId":"t","createdAt":5,"loadout":{"harness":["generic"]}}',
-      parsed: undefined,
-    },
-    {
-      rule: 'rejects a session file that is not text',
-      source: '{"taskId":"t","createdAt":5,"nativeSessionFile":null}',
-      parsed: undefined,
-    },
-    {
-      rule: 'rejects a loadout that is not an object',
-      source: '{"taskId":"t","createdAt":5,"loadout":"pi"}',
-      parsed: undefined,
-    },
-    { rule: 'rejects a record without a start time', source: '{"taskId":"t"}', parsed: undefined },
-    { rule: 'rejects malformed JSON', source: '{"taskId":', parsed: undefined },
-  ])('$rule', ({ source, parsed }) => {
-    expect(parseWorkerTask(source)).toEqual(parsed);
-  });
-});
-
-describe('ownsSession', () => {
-  it.each([
-    {
-      rule: 'owns the session beside its record',
-      directory: '/w/a',
-      sessionFile: undefined,
-      owns: true,
-    },
-    {
-      rule: 'owns the session a follow-up names',
-      directory: '/w/b',
-      sessionFile: '/w/a/s.jsonl',
-      owns: true,
-    },
-    {
-      rule: 'owns a session named by a copied record',
-      directory: '/w/b',
-      sessionFile: '/old/w/a/s.jsonl',
-      owns: true,
-    },
-    {
-      rule: 'does not own another session',
-      directory: '/w/c',
-      sessionFile: '/w/c/other.jsonl',
-      owns: false,
-    },
-  ])('$rule', ({ directory, sessionFile, owns }) => {
-    expect(
-      ownsSession({ ...task('t', 'worker', 11), sessionFile }, directory, '/w/a/s.jsonl'),
-    ).toBe(owns);
   });
 });

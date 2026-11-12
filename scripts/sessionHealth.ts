@@ -1,10 +1,10 @@
-import { open, readdir, readFile, stat } from 'node:fs/promises';
+import { open, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { isMissingFile } from '../src/errors.ts';
 import { isRecord } from '../src/schema.ts';
+import { findSessionFiles } from './sessionFiles.ts';
 import {
   collectSessionFile,
   createHealthCollection,
@@ -24,24 +24,6 @@ interface SessionPath {
 const usage = `Usage: node scripts/sessionHealth.ts [--since 7d] [--until <time>]
 
 --since and --until take an ISO date or time, or an age such as 12h or 3d.`;
-
-const listFiles = async (directory: string) => {
-  try {
-    const names = await readdir(directory, { recursive: true, encoding: 'utf8' });
-
-    return names.map((name) => join(directory, name));
-  } catch (error) {
-    // A missing directory holds no sessions; any other failure would fake a healthy window.
-    if (isMissingFile(error)) {
-      return [];
-    }
-
-    throw error;
-  }
-};
-
-const isWorkerSession = (path: string) =>
-  path.endsWith('.jsonl') && ['assignments', 'workers'].includes(basename(dirname(dirname(path))));
 
 const headerBytes = 65_536;
 
@@ -89,14 +71,11 @@ const findSession = async (
 };
 
 const findSessions = async (agentDirectory: string, window: TimeWindow) => {
-  const managerPaths = await listFiles(join(agentDirectory, 'sessions'));
-  const workerPaths = await listFiles(join(agentDirectory, 'tau'));
+  const { managerSessions, workerSessions } = await findSessionFiles(agentDirectory);
 
   const found = await Promise.all([
-    ...managerPaths
-      .filter((path) => path.endsWith('.jsonl'))
-      .map((path) => findSession(path, 'manager', window)),
-    ...workerPaths.filter(isWorkerSession).map((path) => findSession(path, 'worker', window)),
+    ...managerSessions.map((path) => findSession(path, 'manager', window)),
+    ...workerSessions.map((path) => findSession(path, 'worker', window)),
   ]);
 
   const sessions = found

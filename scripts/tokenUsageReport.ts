@@ -1,15 +1,7 @@
 import { isRecord } from '../src/schema.ts';
+import type { WorkerTask } from './workerRecord.ts';
 
 export type Side = 'parent' | 'worker';
-
-export interface WorkerTask {
-  taskId: string;
-  harness: string;
-  name: string;
-  profile: string;
-  createdAt: number;
-  sessionFile: string | undefined;
-}
 
 export interface SessionFile {
   path: string;
@@ -94,68 +86,8 @@ interface CountedFile {
 
 const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
 
-const isOptionalText = (value: unknown) => value === undefined || typeof value === 'string';
-
 const count = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
-
-export const parseWorkerTask = (source: string): WorkerTask | undefined => {
-  let record: unknown;
-
-  try {
-    record = JSON.parse(source);
-  } catch {
-    return undefined;
-  }
-
-  if (!isRecord(record)) {
-    return undefined;
-  }
-
-  const taskId = text(record.taskId);
-
-  if (taskId === undefined || typeof record.createdAt !== 'number') {
-    return undefined;
-  }
-
-  const loadout = record.loadout ?? {};
-
-  if (!isRecord(loadout)) {
-    return undefined;
-  }
-
-  // Older records omit these fields; a present field of another type is a broken record.
-  const optionalFields = [record.name, record.nativeSessionFile, loadout.profile, loadout.harness];
-
-  if (!optionalFields.every(isOptionalText)) {
-    return undefined;
-  }
-
-  return {
-    taskId,
-    harness: text(loadout.harness) ?? 'pi',
-    name: text(record.name) ?? taskId,
-    profile: text(loadout.profile) ?? 'unknown',
-    createdAt: record.createdAt,
-    sessionFile: text(record.nativeSessionFile),
-  };
-};
-
-const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
-
-// A follow-up names its predecessor's session file, and older records keep it beside the task
-// record. Records copied from another agent directory keep stale absolute paths, so compare the
-// file name, which is the unique native session ID.
-export const ownsSession = (
-  task: WorkerTask,
-  taskDirectory: string,
-  sessionPath: string,
-): boolean => {
-  const named =
-    task.sessionFile !== undefined && fileName(task.sessionFile) === fileName(sessionPath);
-
-  return named || `${taskDirectory}/${fileName(sessionPath)}` === sessionPath;
-};
 
 const contextTokens = (usage: Usage) => usage.input + usage.cacheRead + usage.cacheWrite;
 
