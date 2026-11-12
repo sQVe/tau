@@ -24,6 +24,13 @@ No launch, and unclear impact:
   that shows only in the terminal user interface. See "Not testable".
 - When the impact on a section is unclear, include the section.
 
+## Journeys
+
+| Journey | Goal | Run it when the change touches | Test |
+| ------- | ---- | ------------------------------ | ---- |
+| [Day token use](qa/journeys/day-token-use.md) | Learn where the last day's tokens went and whether the sessions were healthy. | `pnpm token-usage`, `pnpm session-health`, their `package.json` entries, `src/errors.ts`, `src/schema.ts`, or session-log and worker-record readers | By hand |
+| [Delegate a check](qa/journeys/delegate-a-check.md) | Delegate a check to a `qa` worker and get its report. | Worker-launch behavior under `src/`, or the `package.json` `pi` manifest | By hand, manager only |
+
 ## Before a launch
 
 The manager starts nothing. For "Pi sessions", the brief must give these two lines:
