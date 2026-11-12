@@ -47,6 +47,9 @@ be a code call site, a CLI command, or user steps. Ground existing call sites in
 paths, and label proposed interfaces as proposed. Skip this section for a design with no interface.>
 
 - <Flow name>: <The call, command, or steps, with inputs.> Result: <What the caller or user sees.>
+- <Flow name> (new journey / new steps of <indexed journey>): <Use the journey shape from the
+  [QA-guide template](../../../extensions/subagents/templates/qa-guide.md#rules). Write the steps
+  here once, not again as an ordinary flow.>
 
 ## Architecture
 

@@ -44,7 +44,8 @@ unclear. Do not use it for a design the user already agreed on. Use the
    Read the [structure criteria](../code-quality/structure-criteria.md) and answer all its plan
    questions except the file-size question. Record the module that owns the concept, the existing
    helpers and patterns to reuse, with paths, and each refactor the change needs first. Leave its
-   file-size question to `start-slice`.
+   file-size question to `start-slice`. If `.pi/qa.md` exists, read its `## Journeys` index and the
+   file of each indexed journey the request extends, for its current steps and end state.
 
 3. Ask a few frontier questions in each round. A frontier question is one whose prerequisites are
    settled. A question that depends on an open question waits for a later round. Research still
@@ -66,6 +67,16 @@ unclear. Do not use it for a design the user already agreed on. Use the
    rejected approaches with the condition to revisit each, the dead ends, the acceptance criteria,
    the non-goals with reasons, and the open risks. In Structure, name the owning module, the modules
    and helpers to reuse, and each prerequisite refactor, with a reason for each.
+
+   - Use the [QA-guide template](../../extensions/subagents/templates/qa-guide.md#rules) to identify
+     journey flows and follow its journey shape.
+   - With `.pi/qa.md`, mark each journey flow in `## Usage` as a new journey or new steps of an
+     indexed journey.
+   - Write each marked flow's steps once, in its journey shape, rather than repeating them as an
+     ordinary usage flow.
+   - Keep code call sites and single-command flows in the ordinary usage format.
+   - Without `.pi/qa.md`, tell the user that journeys need a QA guide.
+   - Without `.pi/qa.md`, mark no journey and write `## Usage` in the ordinary usage format.
 
 7. For an architectural or hard-to-reverse design, ask the user with `ask_user_question` whether to
    run a premortem. When the user accepts, send `design.md` to a fresh `scout`. Ask it to assume the
