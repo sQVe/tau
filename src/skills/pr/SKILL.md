@@ -46,7 +46,9 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
   and PR, including bot status or reviews for a failed post: it may have landed.
 - Do not watch CI, wait for reviews, request human reviewers, or merge.
 - Before saving any file, call the `pr` tool's `prepare` action. Stop if it fails. Use the returned
-  directory as `$prdir` for every saved file. Never use `/tmp` or another shared path.
+  directory as `$prdir` for saved files, except the step 5 refresh of the slice's `finish.md`. Find
+  that file in the slice draft directory returned by the `slice` tool's `prepare` action. Never use
+  `/tmp` or another shared path.
 
 ## Procedure
 
@@ -158,8 +160,17 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      Rerun the evidence script and carry any non-passed result into step 6 as a required action.
      Leave its log in place without copying it or adding headers.
    - Send a change with user-visible behavior to `qa` on the committed tree before the preview, by
-     [the QA launch procedure](../shared/qa-launch.md).
+     [the QA launch procedure](../shared/qa-launch.md). Reuse the slice's saved QA run when the
+     procedure's reuse condition holds; run QA again when the tree changed.
    - Record what QA tested and found, or why it did not run, for step 6 and the preview.
+
+   After the checks, refresh rows only when the slice has a saved `finish.md`. Refresh rows whose
+   evidence changed: the full check, QA, and acceptance rows these checks cover.
+   - Keep the verdicts met, deferred, not met, and not run. Name the evidence's commit in each
+     refreshed row.
+   - Reuse every other row. Keep the audited-commit header and `Comment ID:` line, so reused rows
+     still name the commit they cover.
+   - Keep this refresh local. Do not post the Linear audit comment again.
 
 6. Suggest a draft status. Any open required action makes draft the suggested status; otherwise
    suggest ready. A required action needs a basis and a completion condition. Name both in the
@@ -174,9 +185,10 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    - A concrete risk that this change introduced, exposed, or worsened. An open finding is one, and
      so is user-visible behavior that QA found failing.
    - An audit item with the verdict not met or not run, and each uncovered item of a missing or old
-     audit. It closes when a check that step 5 ran passes for it. A decision-evidence row also
-     closes when step 4's assessment supports a conclusion for HEAD. A deferred item is not a
-     required action.
+     audit. Read the rows from the slice's saved `finish.md`, or from the audit comment when no
+     saved file exists. It closes when a check that step 5 ran passes for it. A decision-evidence
+     row also closes when step 4's assessment supports a conclusion for HEAD. A deferred item is not
+     a required action.
 
    A coverage number, missing assertion, untested platform, or record-format mismatch alone is not a
    required action. Missing evidence for promised behavior can still require a test or review.
@@ -263,6 +275,8 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    - Include the session report from earlier steps: commits, comment removals, review and check
      sources, reviewed commits, coverage and manual judgments, fixes and their purposes, rebase
      notes, non-blocking machine-local failures, reviewer notes, and the combined gap list.
+   - Only when the slice has a saved `finish.md`, show its refreshed rows with their evidence
+     commits in the visible preview, not in the PR body.
    - For a self-review, show the top-level body and each comment's text, file, line, anchor head
      SHA, and side (`LEFT` for deleted lines, `RIGHT` otherwise). The Hard rules approval rule
      covers changes to the body, text, or anchor.
