@@ -92,8 +92,6 @@ const readInspectionReuse = async (
   }
 };
 
-// Inspects the root of the selected chain. Without a selected chain it inspects the review the
-// caller named.
 const readReview = async (
   root: string,
   request: PublicationRequest,

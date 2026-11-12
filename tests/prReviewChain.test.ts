@@ -127,7 +127,6 @@ it('reports unsupported when the root is a version 2 record', async () => {
   delete record['endpoint'];
   await writeFile(recordPath, JSON.stringify({ ...record, version: 2 }));
 
-  // The fixes recorded the identity of the root before this rewrite, so the root stays alone.
   await Promise.all(fixes.map((fix) => rm(fix, { recursive: true })));
 
   const details = await readEvidence(root, review);

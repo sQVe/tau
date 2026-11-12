@@ -25,8 +25,6 @@ const root = (name: string, fields: Partial<RootFacts> = {}): ChainEntryFacts =>
   ...fields,
 });
 
-// A fix records its predecessor's identity as `recorded-<predecessor>`, which differs from the
-// `own-<name>` hash of the predecessor's file.
 const fix = (
   name: string,
   predecessor: string,

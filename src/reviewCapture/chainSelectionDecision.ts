@@ -65,8 +65,6 @@ const isFix = (entry: ReadEntryFacts): entry is FixEntryFacts => entry.kind === 
 const isRoot = (entry: ReadEntryFacts, mergeBase: string) =>
   rootKinds.has(entry.kind) && entry.base === mergeBase && entry.hasWorkerReports;
 
-// Lists the fixes that follow a link, one list per tip. It ends because each fix names one
-// predecessor and each directory has one entry, so no walk from a root meets a link twice.
 const tailsFrom = (link: ReadEntryFacts, fixes: FixEntryFacts[]): FixEntryFacts[][] => {
   const name = baseName(link.directory);
   const successors = fixes.filter((fix) => baseName(fix.review) === name);
@@ -88,8 +86,6 @@ const directoriesOf = ({ root, fixes }: Chain) => [root, ...fixes].map((link) =>
 const containsReview = (chain: Chain, review: string) =>
   directoriesOf(chain).some((directory) => baseName(directory) === baseName(review));
 
-// An earlier link takes the identity its successor recorded. Only the last link takes the hash of
-// its own file.
 const identifiedLinks = ({ root, fixes }: Chain) =>
   [root, ...fixes].map((link, index) => {
     const successor = fixes[index];

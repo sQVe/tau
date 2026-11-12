@@ -16,7 +16,6 @@ export interface ChainSelectionRequest {
   review?: string;
 }
 
-// Sorted by name, so the order of gaps and candidates does not depend on the filesystem.
 const listReviewDirectories = async (workers: string): Promise<string[]> => {
   let entries;
 
@@ -70,8 +69,6 @@ const readEntry = async (root: string, directory: string): Promise<ChainEntryFac
   return [entry];
 };
 
-// Reads the saved captures under .tau/workers and writes nothing. A filesystem failure other than
-// a missing directory or record rejects.
 export const readChainSelection = async (
   root: string,
   { mergeBase, review }: ChainSelectionRequest,

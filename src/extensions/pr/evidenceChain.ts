@@ -34,8 +34,6 @@ const readCoverageEvidence = async (
   }
 };
 
-// Selects the review chain from the saved captures and reads its coverage. It never guesses a
-// chain: without exactly one selected chain, the chain and its coverage are null.
 export const readChainEvidence = async (
   root: string,
   mergeBase: string,
