@@ -23,6 +23,11 @@ interface Got {
   records: unknown[];
 }
 
+interface RefusalPaths {
+  cwd: string;
+  tau: string;
+}
+
 const scripts = dirname(fileURLToPath(import.meta.url));
 const command = join(scripts, 'piSession.ts');
 const fakePi = join(scripts, 'fixtures', 'fakePi.ts');
@@ -190,6 +195,26 @@ it('fails when Pi refuses the prompt', async ({ onTestFinished }) => {
   expect(existsSync(join(cwd, '.pi'))).toBe(false);
 });
 
+it('fails and names the event log when the model run ends with an error', async ({
+  onTestFinished,
+}) => {
+  const failed = {
+    type: 'message_end',
+    message: { role: 'assistant', stopReason: 'error', errorMessage: 'overloaded' },
+  };
+
+  const { cwd, tau } = await createSession(onTestFinished, {
+    onPrompt: [accepted, failed, settled],
+  });
+
+  const result = await run(['--pi', fakePi, '--tau', tau, '--cwd', cwd, '--prompt', 'fail']);
+
+  expect(result.code).toBe(1);
+  expect(result.stderr).toContain('ended with an error: overloaded');
+  expect(readFileSync(eventLogPath(result.stdout), 'utf8')).toContain('"stopReason":"error"');
+  expect(existsSync(join(cwd, '.pi'))).toBe(false);
+});
+
 it('fails after the timeout and names the worker that still runs', async ({ onTestFinished }) => {
   const { cwd, tau } = await createSession(onTestFinished, {
     onPrompt: [accepted, 'not JSON', launch, settled],
@@ -205,28 +230,88 @@ it('fails after the timeout and names the worker that still runs', async ({ onTe
   expect(existsSync(join(cwd, '.pi'))).toBe(false);
 });
 
-it.for([
-  { name: 'a missing --cwd', withCwd: false, extra: ['--prompt', 'hello'], cause: '--cwd' },
-  { name: 'a missing prompt', withCwd: true, extra: [], cause: 'prompt is required' },
+const refusals: { name: string; cause: string; arguments: (paths: RefusalPaths) => string[] }[] = [
+  {
+    name: 'a missing --cwd',
+    cause: '--cwd is required',
+    arguments: ({ tau }) => ['--tau', tau, '--prompt', 'hello'],
+  },
+  {
+    name: 'a missing prompt',
+    cause: 'prompt is required',
+    arguments: ({ cwd, tau }) => ['--tau', tau, '--cwd', cwd],
+  },
   {
     name: 'both prompt options',
-    withCwd: true,
-    extra: ['--prompt', 'hello', '--prompt-file', 'prompt.txt'],
     cause: 'not both',
+    arguments: ({ cwd, tau }) => [
+      '--tau',
+      tau,
+      '--cwd',
+      cwd,
+      '--prompt',
+      'hello',
+      '--prompt-file',
+      'prompt.txt',
+    ],
   },
   {
     name: 'a timeout that is no positive integer',
-    withCwd: true,
-    extra: ['--prompt', 'hello', '--timeout', '0'],
     cause: '--timeout',
+    arguments: ({ cwd, tau }) => [
+      '--tau',
+      tau,
+      '--cwd',
+      cwd,
+      '--prompt',
+      'hello',
+      '--timeout',
+      '0',
+    ],
   },
-])('refuses $name and starts no Pi', async ({ withCwd, extra, cause }, { onTestFinished }) => {
+  {
+    name: 'a --tau checkout without a package.json',
+    cause: 'has no package.json with a name',
+    arguments: ({ cwd }) => ['--tau', join(cwd, '.git'), '--cwd', cwd, '--prompt', 'hello'],
+  },
+  {
+    name: 'a --tau checkout that does not exist',
+    cause: 'has no package.json with a name',
+    arguments: ({ cwd }) => ['--tau', join(cwd, 'missing'), '--cwd', cwd, '--prompt', 'hello'],
+  },
+  {
+    name: 'a --cwd that is no directory',
+    cause: 'is not a directory',
+    arguments: ({ cwd, tau }) => [
+      '--tau',
+      tau,
+      '--cwd',
+      join(cwd, 'fake-pi.json'),
+      '--prompt',
+      'hello',
+    ],
+  },
+  {
+    name: 'an unreadable --prompt-file',
+    cause: 'missing.txt cannot be read',
+    arguments: ({ cwd, tau }) => [
+      '--tau',
+      tau,
+      '--cwd',
+      cwd,
+      '--prompt-file',
+      join(cwd, 'missing.txt'),
+    ],
+  },
+];
+
+it.for(refusals)('refuses $name and starts no Pi', async (refusal, { onTestFinished }) => {
   const { cwd, tau } = await createSession(onTestFinished, { onPrompt: [accepted, settled] });
-  const cwdArguments = withCwd ? ['--cwd', cwd] : [];
-  const result = await run(['--pi', fakePi, '--tau', tau, ...cwdArguments, ...extra]);
+  const result = await run(['--pi', fakePi, ...refusal.arguments({ cwd, tau })]);
 
   expect(result.code).toBe(1);
-  expect(result.stderr).toContain(cause);
+  expect(result.stderr).toContain(refusal.cause);
+  expect(result.stdout).toBe('');
   expect(existsSync(join(cwd, 'fake-pi-got.json'))).toBe(false);
   expect(existsSync(join(cwd, '.pi'))).toBe(false);
 });

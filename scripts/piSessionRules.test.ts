@@ -34,6 +34,14 @@ const settled = { type: 'agent_settled' };
 const report = (assignmentId: string) => workerMessage('tau-worker-report', assignmentId);
 const ended = (assignmentId: string) => workerMessage('tau-worker-ended', assignmentId);
 
+const assistant = (stopReason: string, errorMessage?: string) => ({
+  type: 'message_end',
+  message: { role: 'assistant', stopReason, errorMessage },
+});
+
+const launchWith = (details: unknown) => ({ ...launch('a', 't1'), result: { details } });
+const assignmentLabels = { 'tau.assignment': '/agent/tau/repo/assignments/a/assignment.json' };
+
 const stateAfter = (records: unknown[]) => records.reduce(nextSessionState, startState);
 
 it.each([
@@ -137,6 +145,92 @@ it.each([
     open: [],
   },
   { name: 'a record that is no object', records: ['text', settled], step: 'ended', open: [] },
+  {
+    name: 'subagent result without details',
+    records: [launchWith(undefined), settled],
+    step: 'ended',
+    open: [],
+  },
+  {
+    name: 'subagent result without an assignment',
+    records: [launchWith({ address: 't1', labels: {} }), settled],
+    step: 'ended',
+    open: [],
+  },
+  {
+    name: 'subagent result without an address',
+    records: [launchWith({ labels: assignmentLabels }), settled],
+    step: 'ended',
+    open: [],
+  },
+  {
+    name: 'worker message without an assignment identifier',
+    records: [
+      launch('a', 't1'),
+      { type: 'message_start', message: { role: 'custom', customType: 'tau-worker-report' } },
+      settled,
+    ],
+    step: 'running',
+    open: ['t1'],
+  },
+  {
+    name: 'settled after an assistant error',
+    records: [assistant('error', 'overloaded'), settled],
+    step: 'failed',
+    open: [],
+  },
+  {
+    name: 'assistant error without a settled',
+    records: [assistant('error', 'overloaded')],
+    step: 'running',
+    open: [],
+  },
+  {
+    name: 'assistant error with an open worker',
+    records: [launch('a', 't1'), assistant('error', 'overloaded'), settled],
+    step: 'running',
+    open: ['t1'],
+  },
+  {
+    name: 'assistant error, then a successful assistant message',
+    records: [assistant('error', 'overloaded'), assistant('stop'), settled],
+    step: 'ended',
+    open: [],
+  },
+  {
+    name: 'successful assistant message, then an assistant error',
+    records: [assistant('stop'), assistant('error', 'overloaded'), settled],
+    step: 'failed',
+    open: [],
+  },
+  {
+    name: 'error of a message that is no assistant message',
+    records: [
+      { type: 'message_end', message: { role: 'toolResult', stopReason: 'error' } },
+      settled,
+    ],
+    step: 'ended',
+    open: [],
+  },
+  {
+    name: 'assistant error at the start of a message',
+    records: [{ ...assistant('error'), type: 'message_update' }, settled],
+    step: 'ended',
+    open: [],
+  },
+  { name: 'aborted run', records: [{ ...settled, aborted: true }], step: 'failed', open: [] },
+  {
+    name: 'run that was not aborted',
+    records: [{ ...settled, aborted: false }],
+    step: 'ended',
+    open: [],
+  },
+  {
+    name: 'aborted run with an open worker',
+    records: [launch('a', 't1'), { ...settled, aborted: true }],
+    step: 'running',
+    open: ['t1'],
+  },
 ])('end rule: $name', ({ records, step, open }) => {
   const state = stateAfter(records);
 
@@ -151,6 +245,31 @@ it.each([
   const refused = { type: 'response', command: 'prompt', success: false, error };
 
   expect(stateAfter([refused]).step).toEqual({ kind: 'failed', cause });
+});
+
+it.each([
+  {
+    name: 'an assistant error with text',
+    records: [assistant('error', 'overloaded'), settled],
+    cause: 'The last assistant message ended with an error: overloaded',
+  },
+  {
+    name: 'an assistant error without text',
+    records: [assistant('error'), settled],
+    cause: 'The last assistant message ended with an error: no error text',
+  },
+  {
+    name: 'an aborted run',
+    records: [{ ...settled, aborted: true }],
+    cause: 'The run was aborted.',
+  },
+  {
+    name: 'an aborted run after an assistant error',
+    records: [assistant('error', 'overloaded'), { ...settled, aborted: true }],
+    cause: 'The run was aborted.',
+  },
+])('names the cause of $name', ({ records, cause }) => {
+  expect(stateAfter(records).step).toEqual({ kind: 'failed', cause });
 });
 
 it('reads the assignment identifier from the assignment path', () => {

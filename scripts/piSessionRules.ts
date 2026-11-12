@@ -31,8 +31,14 @@ export type SessionStep =
   | { kind: 'ended' }
   | { kind: 'failed'; cause: string };
 
+export type AssistantStop =
+  | { kind: 'none' }
+  | { kind: 'stopped' }
+  | { kind: 'error'; text: string };
+
 export interface SessionState {
   step: SessionStep;
+  lastAssistantStop: AssistantStop;
   launched: OpenWorker[];
   closedAssignments: string[];
 }
@@ -148,6 +154,7 @@ export const startState: SessionState = {
   step: { kind: 'running' },
   launched: [],
   closedAssignments: [],
+  lastAssistantStop: { kind: 'none' },
 };
 
 export const openWorkers = (state: SessionState): OpenWorker[] =>
@@ -194,6 +201,43 @@ const promptFailure = (record: Record<string, unknown>): string | undefined => {
   return `Pi refused the prompt: ${error}`;
 };
 
+const assistantStop = (record: Record<string, unknown>): AssistantStop | undefined => {
+  const message = isRecord(record.message) ? record.message : {};
+
+  if (message.role !== 'assistant') {
+    return undefined;
+  }
+
+  if (message.stopReason !== 'error') {
+    return { kind: 'stopped' };
+  }
+
+  const text = typeof message.errorMessage === 'string' ? message.errorMessage : 'no error text';
+
+  return { kind: 'error', text };
+};
+
+const settledStep = (state: SessionState, record: Record<string, unknown>): SessionStep => {
+  if (openWorkers(state).length > 0) {
+    return { kind: 'running' };
+  }
+
+  if (record.aborted === true) {
+    return { kind: 'failed', cause: 'The run was aborted.' };
+  }
+
+  const stop = state.lastAssistantStop;
+
+  if (stop.kind === 'error') {
+    return {
+      kind: 'failed',
+      cause: `The last assistant message ended with an error: ${stop.text}`,
+    };
+  }
+
+  return { kind: 'ended' };
+};
+
 export const nextSessionState = (state: SessionState, record: unknown): SessionState => {
   if (!isRecord(record) || state.step.kind !== 'running') {
     return state;
@@ -219,9 +263,13 @@ export const nextSessionState = (state: SessionState, record: unknown): SessionS
     return cause === undefined ? state : { ...state, step: { kind: 'failed', cause } };
   }
 
-  const settled = record.type === 'agent_settled' && openWorkers(state).length === 0;
+  if (record.type === 'message_end') {
+    const lastAssistantStop = assistantStop(record);
 
-  return settled ? { ...state, step: { kind: 'ended' } } : state;
+    return lastAssistantStop === undefined ? state : { ...state, lastAssistantStop };
+  }
+
+  return record.type === 'agent_settled' ? { ...state, step: settledStep(state, record) } : state;
 };
 
 export const dialogResponse = (record: unknown): string | undefined => {
