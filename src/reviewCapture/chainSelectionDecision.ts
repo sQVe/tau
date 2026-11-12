@@ -109,7 +109,7 @@ const selectOnly = (chain: Chain): ChainSelection => {
     .filter((link) => link.identity === undefined)
     .map(({ directory }): ChainGap => ({ kind: 'unavailableIdentity', directory }));
 
-  return { chain: gaps.length === 0 ? identified : null, gaps };
+  return { chain: identified.length === links.length ? identified : null, gaps };
 };
 
 const selectAmong = (chains: Chain[], review: string | undefined): ChainSelection => {

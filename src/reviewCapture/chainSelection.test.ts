@@ -1,4 +1,4 @@
-import { mkdir, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -164,4 +164,32 @@ it('rejects a review whose capture record is a symlink', async () => {
   await symlink(join(review, 'capture.json'), join(linked, 'capture.json'));
 
   await expect(readChainSelection(root, { mergeBase })).rejects.toThrow('capture.json');
+});
+
+it('rejects when .tau/workers is not a directory', async () => {
+  const { root, mergeBase } = await committedRepository();
+
+  await mkdir(join(root, '.tau'));
+  await writeFile(workers(root), 'not a directory\n');
+
+  await expect(readChainSelection(root, { mergeBase })).rejects.toMatchObject({ code: 'ENOTDIR' });
+});
+
+it('reports the review of a fix that records no predecessor identity', async () => {
+  const { root, mergeBase, review, fix } = await fixedRepository();
+  const path = join(fix, 'capture.json');
+
+  const record = JSON.parse(await readFile(path, 'utf8')) as {
+    target: { predecessor?: unknown };
+  };
+
+  delete record.target.predecessor;
+  await writeFile(path, JSON.stringify(record));
+
+  const selection = await readChainSelection(root, { mergeBase });
+
+  expect(selection).toEqual({
+    chain: null,
+    gaps: [{ kind: 'unavailableIdentity', directory: review }],
+  });
 });
