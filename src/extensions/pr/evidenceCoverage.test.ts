@@ -45,6 +45,8 @@ const setUp = async () => {
   await writeFile(join(root, 'feature.txt'), 'three\n');
   const fix = await createSavedFix(root, review, ['feature.txt']);
 
+  await writeFile(join(fix, 'reviewer.md'), 'No findings.\n');
+
   await commitFeature(root, 'three\n');
 
   const fake = createGhFake();

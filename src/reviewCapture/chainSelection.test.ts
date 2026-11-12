@@ -39,6 +39,8 @@ const fixedRepository = async () => {
 
   const fix = await createSavedFix(root, review, ['feature.txt']);
 
+  await writeFile(join(fix, 'reviewer.md'), '# Report\n');
+
   return { root, mergeBase, review, fix };
 };
 

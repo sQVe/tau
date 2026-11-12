@@ -39,10 +39,14 @@ const setUpChain = async (registerCleanup: typeof afterAll) => {
   await writeFile(join(root, 'feature.txt'), 'three\n');
   const firstFix = await createSavedFix(root, review, ['feature.txt']);
 
+  await writeFile(join(firstFix, 'reviewer.md'), 'No findings.\n');
+
   await commitFeature(root, 'three\n');
 
   await writeFile(join(root, 'feature.txt'), 'four\n');
   const secondFix = await createSavedFix(root, firstFix, ['feature.txt']);
+
+  await writeFile(join(secondFix, 'reviewer.md'), 'No findings.\n');
 
   await commitFeature(root, 'four\n');
 

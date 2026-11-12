@@ -35,7 +35,7 @@ const fix = (
   kind: 'fix',
   base: 'base',
   identity: `own-${name}`,
-  hasWorkerReports: false,
+  hasWorkerReports: true,
   review: directory(predecessor),
   predecessor: { identity: `recorded-${predecessor}` },
   ...fields,
@@ -209,6 +209,21 @@ const cases: { name: string; facts: ChainSelectionFacts; selection: ChainSelecti
     name: 'a root without worker reports',
     facts: facts([root('a', { hasWorkerReports: false }), root('b')]),
     selection: { chain: [link('b', 'own-b')], gaps: [] },
+  },
+  {
+    name: 'a fix capture without worker reports',
+    facts: facts([root('a'), fix('b', 'a', { hasWorkerReports: false })]),
+    selection: { chain: [link('a', 'own-a')], gaps: [] },
+  },
+  {
+    name: 'a fix review after a fix capture without worker reports',
+    facts: facts([root('a'), fix('b', 'a', { hasWorkerReports: false }), fix('c', 'a')]),
+    selection: { chain: [link('a', 'recorded-a'), link('c', 'own-c')], gaps: [] },
+  },
+  {
+    name: 'a fix capture without worker reports whose predecessor is missing',
+    facts: facts([root('a'), fix('c', 'b', { hasWorkerReports: false })]),
+    selection: { chain: [link('a', 'own-a')], gaps: [] },
   },
   {
     name: 'a root with another base',

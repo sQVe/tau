@@ -60,7 +60,8 @@ const baseName = (directory: string) =>
 
 const isRead = (entry: ChainEntryFacts): entry is ReadEntryFacts => entry.status === 'read';
 
-const isFix = (entry: ReadEntryFacts): entry is FixEntryFacts => entry.kind === 'fix';
+const isFixReview = (entry: ReadEntryFacts): entry is FixEntryFacts =>
+  entry.kind === 'fix' && entry.hasWorkerReports;
 
 const isRoot = (entry: ReadEntryFacts, mergeBase: string) =>
   rootKinds.has(entry.kind) && entry.base === mergeBase && entry.hasWorkerReports;
@@ -139,7 +140,7 @@ const recordGaps = (entries: ChainEntryFacts[], mergeBase: string): ChainGap[] =
   );
 
   const missing = read
-    .filter(isFix)
+    .filter(isFixReview)
     .filter((fix) => fix.base === mergeBase && !names.has(baseName(fix.review)))
     .map((fix): ChainGap => ({
       kind: 'missingLink',
@@ -156,7 +157,7 @@ export const decideChainSelection = ({
   entries,
 }: ChainSelectionFacts): ChainSelection => {
   const read = entries.filter(isRead);
-  const fixes = read.filter(isFix);
+  const fixes = read.filter(isFixReview);
 
   const chains = read
     .filter((entry) => isRoot(entry, mergeBase))
