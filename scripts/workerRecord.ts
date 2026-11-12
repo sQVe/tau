@@ -69,10 +69,15 @@ export const parseWorkerTask = (source: string): WorkerTask | undefined => {
   };
 };
 
+const currentAssignmentVersion = 3;
+
+// Versions 1 to 3 share every field read here.
+const readableAssignmentVersions = new Set<unknown>([1, 2, currentAssignmentVersion]);
+
 export const parseAssignment = (source: string): WorkerTask | undefined => {
   const record = parseRecord(source);
 
-  if (record === undefined) {
+  if (record === undefined || !readableAssignmentVersions.has(record.version)) {
     return undefined;
   }
 

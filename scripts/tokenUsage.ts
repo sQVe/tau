@@ -5,7 +5,7 @@ import { parseArgs } from 'node:util';
 
 import { findSessionFiles } from './sessionFiles.ts';
 import { formatTokenUsageReport, tokenUsageReport } from './tokenUsageReport.ts';
-import type { SessionFile, Side } from './tokenUsageReport.ts';
+import type { SessionFile, Side, SkippedRecords } from './tokenUsageReport.ts';
 import { ownsSession, parseAssignment, parseWorkerTask } from './workerRecord.ts';
 import type { WorkerTask } from './workerRecord.ts';
 
@@ -16,7 +16,7 @@ interface TaskRecord {
 
 interface UsageRecords {
   sessions: SessionFile[];
-  skipped: { unreadableFiles: number; otherHarnessTasks: WorkerTask[] };
+  skipped: SkippedRecords;
 }
 
 const usage = `Usage: node scripts/tokenUsage.ts [--since 7d] [--until <time>] [--top 10]
@@ -124,9 +124,9 @@ export const findUsageRecords = async (
 
   const unreadableSessions = read.filter((session) => session === undefined).length;
 
-  const sessionsWithoutRecord = sessions.filter(
-    (session) => session.side === 'worker' && !recordDirectories.has(dirname(session.path)),
-  ).length;
+  const sessionsWithoutRecord = sessions
+    .filter((session) => session.side === 'worker' && !recordDirectories.has(dirname(session.path)))
+    .map((session) => session.path);
 
   const otherHarnessTasks = records
     .map((record) => record.task)
@@ -134,7 +134,7 @@ export const findUsageRecords = async (
 
   return {
     sessions,
-    skipped: { unreadableFiles: sessionsWithoutRecord + unreadableSessions, otherHarnessTasks },
+    skipped: { unreadableSessions, sessionsWithoutRecord, otherHarnessTasks },
   };
 };
 

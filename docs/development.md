@@ -217,6 +217,9 @@ each session's first request, and the median final context from each task's last
 window, or for a parent, from each session's last request. The second line counts skipped records,
 so check it before comparing two reports.
 
+The tokens of a worker session still count when its own directory has no readable record. The report
+ends with a list of these session files, and the `unreadable` count includes them.
+
 Claude and Codex workers write no Pi session, so the report cannot measure their tokens. The second
 line counts those that started in the window. A cut looks larger than it is when work moves from Pi
 workers to them.

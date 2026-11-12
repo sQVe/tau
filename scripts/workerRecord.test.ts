@@ -120,10 +120,27 @@ describe('parseAssignment', () => {
       record: { ...current, loadout: { harness: 'generic' } },
       expected: { ...parsed, harness: 'generic' },
     },
+    { rule: 'reads a version 1 record', record: { ...current, version: 1 }, expected: parsed },
+    { rule: 'reads a version 2 record', record: { ...current, version: 2 }, expected: parsed },
     {
-      rule: 'reads a record of another version',
-      record: { ...current, version: 1 },
-      expected: parsed,
+      rule: 'rejects a record without a version',
+      record: { ...current, version: undefined },
+      expected: undefined,
+    },
+    {
+      rule: 'rejects a newer version',
+      record: { ...current, version: 4 },
+      expected: undefined,
+    },
+    {
+      rule: 'rejects a version that is not an integer',
+      record: { ...current, version: 2.5 },
+      expected: undefined,
+    },
+    {
+      rule: 'rejects a version that is not a number',
+      record: { ...current, version: '3' },
+      expected: undefined,
     },
     {
       rule: 'rejects a record without an assignment',

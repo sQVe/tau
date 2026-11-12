@@ -18,7 +18,8 @@ export interface TimeWindow {
 }
 
 export interface SkippedRecords {
-  unreadableFiles: number;
+  unreadableSessions: number;
+  sessionsWithoutRecord: string[];
   // Claude and Codex workers write no Pi session, so the report cannot measure them.
   otherHarnessTasks: WorkerTask[];
 }
@@ -65,7 +66,8 @@ interface ToolRow {
 export interface TokenUsageReport {
   window: TimeWindow;
   sessionFiles: number;
-  unreadableFiles: number;
+  unreadableSessions: number;
+  sessionsWithoutRecord: string[];
   malformedLines: number;
   copiedEntries: number;
   turnsWithoutUsage: number;
@@ -320,7 +322,7 @@ const countFile = (
   const header = entries.find((entry) => entry.type === 'session');
 
   if (header === undefined) {
-    report.unreadableFiles += 1;
+    report.unreadableSessions += 1;
 
     return;
   }
@@ -366,7 +368,8 @@ export const tokenUsageReport = async (
   const report: TokenUsageReport = {
     window,
     sessionFiles: 0,
-    unreadableFiles: skipped.unreadableFiles,
+    unreadableSessions: skipped.unreadableSessions,
+    sessionsWithoutRecord: skipped.sessionsWithoutRecord,
     malformedLines: 0,
     copiedEntries: 0,
     turnsWithoutUsage: 0,
@@ -385,7 +388,7 @@ export const tokenUsageReport = async (
     const source = await readText(file.path);
 
     if (source === undefined) {
-      report.unreadableFiles += 1;
+      report.unreadableSessions += 1;
 
       continue;
     }
@@ -485,13 +488,20 @@ const toolTable = (report: TokenUsageReport) => {
   return table(['side', 'tool', 'results', 'characters'], rows);
 };
 
+const sessionsWithoutRecordLines = (report: TokenUsageReport) =>
+  report.sessionsWithoutRecord.length === 0
+    ? []
+    : ['Worker sessions without a readable record', ...report.sessionsWithoutRecord.toSorted(), ''];
+
 export const formatTokenUsageReport = (report: TokenUsageReport, top: number): string => {
   const since = new Date(report.window.since).toISOString();
   const until = new Date(report.window.until).toISOString();
 
+  const unreadableFiles = report.unreadableSessions + report.sessionsWithoutRecord.length;
+
   const skipped = [
     `${formatNumber(report.sessionFiles)} session files`,
-    `${formatNumber(report.unreadableFiles)} unreadable`,
+    `${formatNumber(unreadableFiles)} unreadable`,
     `${formatNumber(report.malformedLines)} malformed lines skipped`,
     `${formatNumber(report.copiedEntries)} copied entries counted once`,
     `${formatNumber(report.turnsWithoutUsage)} assistant messages without usage`,
@@ -514,5 +524,6 @@ export const formatTokenUsageReport = (report: TokenUsageReport, top: number): s
     'Tool output characters',
     toolTable(report),
     '',
+    ...sessionsWithoutRecordLines(report),
   ].join('\n');
 };
