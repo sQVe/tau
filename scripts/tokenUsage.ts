@@ -95,8 +95,6 @@ const readSessionText = async (path: string) => {
   }
 };
 
-// Finds parent sessions under `sessions/` and worker sessions in an assignment or task directory
-// under `tau/`.
 export const findUsageRecords = async (
   agentDirectory: string,
   since: number,
@@ -126,7 +124,6 @@ export const findUsageRecords = async (
 
   const unreadableSessions = read.filter((session) => session === undefined).length;
 
-  // A missing or broken record matters only when its session is part of this window.
   const sessionsWithoutRecord = sessions.filter(
     (session) => session.side === 'worker' && !recordDirectories.has(dirname(session.path)),
   ).length;

@@ -53,7 +53,6 @@ export const parseWorkerTask = (source: string): WorkerTask | undefined => {
     return undefined;
   }
 
-  // Older records omit these fields; a present field of another type is a broken record.
   const optionalFields = [record.name, record.nativeSessionFile, loadout.profile, loadout.harness];
 
   if (!optionalFields.every(isOptionalText)) {
@@ -113,9 +112,6 @@ export const parseAssignment = (source: string): WorkerTask | undefined => {
 
 const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 
-// A follow-up names its predecessor's session file, and older records keep it beside the task
-// record. Records copied from another agent directory keep stale absolute paths, so compare the
-// file name, which is the unique native session ID.
 export const ownsSession = (
   task: WorkerTask,
   taskDirectory: string,
