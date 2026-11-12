@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises';
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -14,6 +14,7 @@ import type { CoverageLinkRequest } from '../../reviewCapture/coverage.js';
 import { readPublicationEvidence } from './evidence.js';
 import type { PublicationRequest } from './evidence.js';
 import { createPrTool } from './tool.js';
+import type { PrInput } from './tool.js';
 
 const commitFeature = async (root: string, text: string) => {
   await writeFile(join(root, 'feature.txt'), text);
@@ -39,8 +40,12 @@ const setUp = async () => {
   const reviewed = await commitFeature(root, 'two\n');
   const review = await createSavedReview(root, { kind: 'range', from: mergeBase, to: reviewed });
 
+  await writeFile(join(review, 'reviewer.md'), 'No findings.\n');
+
   await writeFile(join(root, 'feature.txt'), 'three\n');
   const fix = await createSavedFix(root, review, ['feature.txt']);
+
+  await writeFile(join(fix, 'reviewer.md'), 'No findings.\n');
 
   await commitFeature(root, 'three\n');
 
@@ -65,7 +70,22 @@ const setUp = async () => {
       config,
     );
 
-  return { root, review, fix, mergeBase, chain, run };
+  const runTool = async (input: Omit<PrInput, 'action'>) => {
+    const tool = createPrTool(fake.exec, { agentDirectory });
+    const context = { ...noUiContext(root), isProjectTrusted: () => true };
+
+    const result = await tool.execute(
+      'call',
+      { action: 'evidence', ...input },
+      undefined,
+      undefined,
+      context,
+    );
+
+    return result.details;
+  };
+
+  return { root, review, fix, mergeBase, chain, run, runTool };
 };
 
 const runCoverage = async (root: string, chain: CoverageLinkRequest[], mergeBase: string) => {
@@ -82,10 +102,18 @@ const runCoverage = async (root: string, chain: CoverageLinkRequest[], mergeBase
   return result.details;
 };
 
-it('reports coverage next to reuse and keeps the review freshness stale', async () => {
-  const { review, chain, run } = await setUp();
+it('selects the review chain and reads its coverage without a chain from the caller', async () => {
+  const { chain, runTool } = await setUp();
 
-  const evidence = await run({ remote: 'origin', review, chain });
+  const evidence = await runTool({ remote: 'origin' });
+
+  expect(evidence).toMatchObject({ chain, coverage: { status: 'match' } });
+});
+
+it('reports coverage next to reuse and keeps the review freshness stale', async () => {
+  const { review, run } = await setUp();
+
+  const evidence = await run({ remote: 'origin', review });
 
   expect(evidence.coverage).toMatchObject({ status: 'match' });
   expect(evidence.reuse).toMatchObject({ status: 'mismatch' });
@@ -93,23 +121,81 @@ it('reports coverage next to reuse and keeps the review freshness stale', async 
   expect(evidence.gaps).not.toContainEqual(expect.objectContaining({ kind: 'coverageMismatch' }));
 });
 
-it('adds no coverage field without a chain', async () => {
+it('returns no chain and no coverage when no review has worker reports', async () => {
   const { review, run } = await setUp();
+
+  await rm(join(review, 'reviewer.md'));
 
   const evidence = await run({ remote: 'origin', review });
 
-  expect(evidence).not.toHaveProperty('coverage');
-  expect(evidence.gaps).not.toContainEqual(expect.objectContaining({ kind: 'coverageMismatch' }));
+  expect(evidence.chain).toBeNull();
+  expect(evidence.coverage).toBeNull();
+  expect(evidence.review).toMatchObject({ target: { kind: 'range' } });
+
+  expect(evidence.gaps).toContainEqual({
+    kind: 'reviewChain',
+    gap: { kind: 'unknownReview', review },
+  });
+});
+
+it('returns an ambiguous chain as a gap until review names one candidate', async () => {
+  const { root, review, fix, mergeBase, chain, run } = await setUp();
+  const head = await git(root, 'rev-parse', 'HEAD');
+  const second = await createSavedReview(root, { kind: 'range', from: mergeBase, to: head });
+
+  await writeFile(join(second, 'reviewer.md'), 'No findings.\n');
+
+  const ambiguous = await run({ remote: 'origin' });
+  const selected = await run({ remote: 'origin', review: fix });
+
+  expect(ambiguous.chain).toBeNull();
+  expect(ambiguous.coverage).toBeNull();
+
+  expect(ambiguous.gaps).toContainEqual({
+    kind: 'reviewChain',
+    gap: {
+      kind: 'ambiguousChain',
+      candidates: expect.arrayContaining([[review, fix], [second]]) as unknown,
+    },
+  });
+
+  expect(selected.chain).toEqual(chain);
+  expect(selected.review).toMatchObject({ target: { kind: 'range' } });
+  expect(selected.reuse).toMatchObject({ reports: ['reviewer.md'] });
+  expect(selected.gaps).not.toContainEqual(expect.objectContaining({ kind: 'reviewChain' }));
+});
+
+it('reports a malformed capture in another review and keeps the other evidence', async () => {
+  const { root, chain, run } = await setUp();
+  const broken = join(root, '.tau', 'workers', 'review-broken');
+
+  await mkdir(broken);
+  await writeFile(join(broken, 'capture.json'), '{');
+
+  const evidence = await run({ remote: 'origin' });
+
+  expect(evidence.gaps).toContainEqual({
+    kind: 'reviewChain',
+    gap: { kind: 'malformedCapture', directory: broken, reason: expect.any(String) as unknown },
+  });
+
+  expect(evidence).toMatchObject({
+    chain,
+    coverage: { status: 'match' },
+    review: { target: { kind: 'range' } },
+    branch: 'feature',
+    subjects: ['change feature', 'change feature'],
+  });
 });
 
 it('reports a coverage mismatch as a gap with its status and reasons', async () => {
-  const { root, chain, run } = await setUp();
+  const { root, run } = await setUp();
 
   await writeFile(join(root, 'other.txt'), 'other\n');
   await git(root, 'add', 'other.txt');
   await git(root, 'commit', '--quiet', '-m', 'after the fix');
 
-  const evidence = await run({ remote: 'origin', chain });
+  const evidence = await run({ remote: 'origin' });
 
   expect(evidence.coverage).toMatchObject({ status: 'mismatch', link: 2 });
 
@@ -126,21 +212,41 @@ it('changes no review file, ref, or index when coverage and evidence read a chai
   const before = await repositorySnapshot(root, directories);
 
   await runCoverage(root, chain, mergeBase);
-  await run({ remote: 'origin', chain });
+  await run({ remote: 'origin' });
 
   expect(await repositorySnapshot(root, directories)).toEqual(before);
 });
 
-it('reports a coverage read error as a gap with no coverage result', async () => {
+it('reports a failed chain selection as a gap with no chain and no coverage', async () => {
   const { root, run } = await setUp();
-  const outside = [{ directory: join(root, 'review-outside'), identity: 'unused' }];
 
-  const evidence = await run({ remote: 'origin', chain: outside });
+  const evidence = await run({ remote: 'origin', review: join(root, 'review-outside') });
 
+  expect(evidence.chain).toBeNull();
   expect(evidence.coverage).toBeNull();
 
   expect(evidence.gaps).toContainEqual({
-    kind: 'coverage',
+    kind: 'chain',
     reason: expect.stringContaining('.tau/workers') as unknown,
+  });
+});
+
+it('reports a rejected coverage read as a gap and keeps the chain and the other evidence', async () => {
+  const { root, fix, chain, run } = await setUp();
+
+  await rm(join(fix, 'input.md'));
+  await symlink(join(root, 'feature.txt'), join(fix, 'input.md'));
+
+  const evidence = await run({ remote: 'origin' });
+
+  expect(evidence.coverage).toBeNull();
+  expect(evidence.gaps).toContainEqual({ kind: 'coverage', reason: expect.any(String) as unknown });
+
+  expect(evidence).toMatchObject({
+    chain,
+    review: { target: { kind: 'range' } },
+    reuse: { reports: ['reviewer.md'] },
+    branch: 'feature',
+    subjects: ['change feature', 'change feature'],
   });
 });

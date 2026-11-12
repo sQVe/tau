@@ -59,17 +59,13 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    updates. Start it with `// @options: {"max_output_tokens": 4000}`.
    - Call the `pr` tool's `evidence` action. Pass the user-named remote as `remote`, when given.
      Pass the stack parent for a tracked branch, otherwise the user-named base, as `base`. It wins
-     over an open PR's base, so the target and merge base follow the stack. Select the newest
-     `.tau/workers/review-*` for this branch from its saved input or session evidence. Read its
-     `report.md` target kind and identity. For a fix, follow its recorded predecessor directory back
-     to the full root, checking `capture.json` `target.review` at each link. Take each earlier
-     identity from its successor's recorded predecessor identity (`target.predecessor.identity`),
-     not from a fresh hash of that earlier capture. For the newest identity only, use
-     `git hash-object <directory>/capture.json` if its report has none. Pass `chain` as
-     `[{directory, identity}]`, root first, and the root directory as `review` together. Report
-     unclear ownership, missing links, or unavailable identities as evidence gaps; never invent a
-     link or identity. When these prevent selecting a chain, pass the available root as `review` and
-     assess the saved evidence manually in step 4.
+     over an open PR's base, so the target and merge base follow the stack. Use the returned `chain`
+     and `coverage`; pass no `chain` to `evidence`. On an `ambiguousChain` gap, read the candidates'
+     `report.md` files, pass the last directory of the code review's candidate as `review`, and
+     rerun. If the reports do not identify the code review, ask which candidate to use. Report every
+     other `reviewChain` gap, even with a selected chain, and unclear ownership as evidence gaps.
+     Never build a chain or identity by hand. With no selected chain, assess the saved evidence
+     manually in step 4.
    - Find ticket IDs in the user's links, `branch`, `subjects`, and `target.pr.body`. Read each
      distinct ticket with its service's CLI, using returned issue IDs rather than branch aliases.
      Keep its title and `## Acceptance` as intent. For slice children, follow the
@@ -103,10 +99,10 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    changes in the session report.
 
 3. Run the [prune-comments skill](../prune-comments/SKILL.md) on the commits added after the review.
-   - Run it on the diff since the newest link of step 1's chain: a `fix` target with that link's
-     directory as `review` and empty `findingPaths`. The diff starts at the content the review read,
-     so work that was uncommitted during the review stays out.
-   - With no saved review for this branch, run it on `<merge base>..HEAD`.
+   - Run it on the diff since the last entry of step 1's returned `chain`: a `fix` target with that
+     entry's directory as `review` and empty `findingPaths`. The diff starts at the content the
+     review read, so work that was uncommitted during the review stays out.
+   - When `chain` is null, run it on `<merge base>..HEAD`, with or without saved reviews.
    - It commits its own removals. Do not commit them here.
    - Later commits that add comments before the preview: run it again on those commits only.
    - Report each removal in the session report, not the PR body.
@@ -119,16 +115,17 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    - For `coverage.status: match`, accept content coverage without a new full review, even after a
      HEAD move or stale freshness when reviewed content was committed unchanged. Keep freshness and
      single-review reuse separate from coverage; content identity is not a clean verdict.
-   - Read each link's `report.md` and worker reports (`reviewer.md`, or `finder.md` and
-     `checker.md`). Check completion, verdicts, findings, dispositions, fix scope, and relevant
-     caller or rule changes outside captures. Unstated completion is unknown.
+   - Read each returned `chain` entry's `report.md` and worker reports (`reviewer.md`, or
+     `finder.md` and `checker.md`). Check completion, verdicts, findings, dispositions, fix scope,
+     and relevant caller or rule changes outside captures. Unstated completion is unknown.
    - An unfinished reviewer, unreadable required report, fix beyond its findings, or relevant
      outside change leaves a named required action, even with `match`. State the missing evidence or
      scope and its completion condition for step 6; shallow reading alone stays a note.
    - For `mismatch` or `unknown`, use `reasons` and `links` to restore evidence or review uncovered
      scope. Name genuinely missing evidence as a required action, not a generic mismatch. Recheck
      after repairs; neither result is a pass.
-   - When neither `review.reusable` nor a chain covers the content, assess manually without asking.
+   - When neither `review.reusable` nor the returned `chain` covers the content, assess manually
+     without asking.
    - Manually read the full review, its fix reviews, and the later diff, with the checks above.
    - Record the inspected paths and judgment in the session report, never as a match or fresh.
    - Missing evidence from a manual assessment stays a required action.

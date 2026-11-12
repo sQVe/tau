@@ -55,14 +55,14 @@ for the workspace.
    - Evidence must cover the audited commit. A check or report from before the last change to what
      it covers does not count. Rerun it, or mark the item not run.
    - For the decision-evidence row, follow the [shared guidance](../shared/decision-evidence.md).
-     Select the newest code-review report for the slice branch and its chain using the
-     [pr skill](../pr/SKILL.md) step 1's selection rules, including its merge-base resolution. Call
-     the `pr` tool's `coverage` with that `chain`, `mergeBase`, and `head` set to the audited SHA. A
-     `match` shows content coverage only. Read the reports' decision evidence and the relevant
-     policy and callers outside the capture under the shared reuse and recheck rules. Cite the
-     reports, coverage result, supporting sources, and conclusion in the row. Missing or stale
-     review evidence gives `not run`; name each gap and what would resolve it. A contradiction or
-     missing required record update gives `not met`.
+     Call the `pr` tool's `evidence` action with `base` as the [pr skill](../pr/SKILL.md) step 1
+     says. Use its returned `chain` and `coverage`, and handle gaps as that step says. Pass no
+     `chain` to `evidence`. The clean tree's `HEAD` is the audited SHA. A `match` shows content
+     coverage only. Read the reports' decision evidence and the relevant policy and callers outside
+     the capture under the shared reuse and recheck rules. Cite the reports, coverage result,
+     supporting sources, and conclusion in the row. Missing or stale review evidence gives
+     `not run`; name each gap and what would resolve it. A contradiction or missing required record
+     update gives `not met`.
    - Run each manual check yourself and cite its output. A check that cannot run is "not run", with
      the reason and the command you tried. It is never handed to the user.
    - Save the real output of each check you run in `$slicedir`, in a file named for the check, never

@@ -56,6 +56,8 @@ export const createEvidenceRepository = async (
   const target = kind === 'range' ? { kind, from: mergeBase, to: head } : { kind, base: mergeBase };
   const directory = await createSavedReview(root, target);
 
+  await writeFile(join(directory, 'reviewer.md'), 'No findings.\n');
+
   const fake = createGhFake();
 
   fake.repositories['github.com/sQVe/tau'] = { defaultBranch: 'main' };

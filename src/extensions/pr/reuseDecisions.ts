@@ -1,4 +1,5 @@
 import type { ReviewEvidence } from '../../reviewCapture/evidence.js';
+import { hasWorkerReports } from '../../reviewCapture/reports.js';
 
 export interface ReviewReuseFacts {
   reuse: Reuse | null;
@@ -61,12 +62,8 @@ export const decideReviewReuse = ({
     reasons.push(`Review freshness is ${freshness.status}. ${freshness.reasons.join(' ')}`.trim());
   }
 
-  if (reports !== null) {
-    const pairedReports = reports.includes('finder.md') && reports.includes('checker.md');
-
-    if (!reports.includes('reviewer.md') && !pairedReports) {
-      reasons.push('The review needs reviewer.md or both finder.md and checker.md.');
-    }
+  if (reports !== null && !hasWorkerReports(reports)) {
+    reasons.push('The review needs reviewer.md or both finder.md and checker.md.');
   }
 
   for (const gap of gaps) {

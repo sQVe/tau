@@ -2,7 +2,7 @@ import type { CheckState } from '../../checkRecord/identity.js';
 import { findStateRecord, sameArgv } from '../../checkRecord/reuseDecision.js';
 import type { SavedLog } from '../../checkRecord/reuseDecision.js';
 import type { ReviewEvidence } from '../../reviewCapture/evidence.js';
-import type { CoverageStatus } from '../../reviewCapture/reviewCapture.js';
+import type { ChainGap, CoverageStatus } from '../../reviewCapture/reviewCapture.js';
 
 export interface CheckHeaderIdentity {
   head: string;
@@ -42,10 +42,12 @@ export type PublicationGap =
         | 'review'
         | 'markers'
         | 'checks'
+        | 'chain'
         | 'coverage';
       reason: string;
     }
   | { kind: 'reuseMismatch'; reasons: string[] }
+  | { kind: 'reviewChain'; gap: ChainGap }
   | { kind: 'coverageMismatch'; status: Exclude<CoverageStatus, 'match'>; reasons: string[] }
   | { kind: 'reviewEvidence'; gap: ReviewEvidence['gaps'][number] }
   | { kind: 'check'; path: string; reasons: CheckReason[] }

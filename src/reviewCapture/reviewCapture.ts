@@ -1,4 +1,6 @@
 export { fixedDiffOptions } from './capture.js';
+export { readChainSelection } from './chainSelection.js';
+export type { ChainGap } from './chainSelectionDecision.js';
 export { readCoverage } from './coverage.js';
 export type { CoverageLinkRequest } from './coverage.js';
 export type { CoverageDecision, CoverageStatus } from './coverageDecision.js';
@@ -6,6 +8,7 @@ export { captureReviewDirectory } from './generation.js';
 export { readOwnership } from './ownership.js';
 export type { Ownership } from './ownershipDecision.js';
 export { checkReviewFreshness } from './pinnedCapture.js';
+export { listReports } from './reportListing.js';
 export { prepareReviewDirectory } from './reviewPrepare.js';
 export { checkReviewDirectory } from './reviewDirectory.js';
 export { inspectReview } from './reviewInspection.js';

@@ -1,9 +1,10 @@
-import { join } from 'node:path';
-
 import { readGit, runGit } from '../../git.js';
-import { fixedDiffOptions, readSavedRecapture } from '../../reviewCapture/reviewCapture.js';
+import {
+  fixedDiffOptions,
+  listReports,
+  readSavedRecapture,
+} from '../../reviewCapture/reviewCapture.js';
 import type { SavedRecapture } from '../../reviewCapture/reviewCapture.js';
-import { existingEntry } from '../../tauDirectory.js';
 import { compareDiffs, decideReuse } from './reuseDecisions.js';
 import type { DiffComparison, Reuse } from './reuseDecisions.js';
 
@@ -17,8 +18,6 @@ export interface ReuseResult extends Reuse {
   paths: DiffComparison;
   reports: string[];
 }
-
-const reportFileNames = ['reviewer.md', 'finder.md', 'checker.md'];
 
 const resolveCommit = (root: string, revision: string): Promise<string> =>
   readGit(root, ['rev-parse', '--verify', '--end-of-options', `${revision}^{commit}`]);
@@ -47,20 +46,6 @@ const readBranchDiff = async (root: string, mergeBase: string) => {
   }
 
   return result.stdout;
-};
-
-const isRegularFile = async (path: string) => {
-  const entry = await existingEntry(path);
-
-  return entry?.isFile() === true;
-};
-
-const listReports = async (directory: string) => {
-  const exists = await Promise.all(
-    reportFileNames.map((name) => isRegularFile(join(directory, name))),
-  );
-
-  return reportFileNames.filter((_, index) => exists[index] === true);
 };
 
 export const decideSavedReuse = async (
