@@ -30,6 +30,6 @@ Work that belongs to another slice or to no slice.
 
 - [ ] An observable result that shows the slice is done.
 - [ ] Journey <name>, steps <first>-<last>: <expected visible results>. Journey file:
-      `.pi/qa/journeys/<name>.md`. Test: <test file path, or "by hand">. For the slice with the last
-      step, also require that the end state holds and the whole journey passes.
+      `.pi/qa/journeys/<name>.md`. Test: <test file path, or "by hand" with the reason>. For the
+      slice with the last step, also require that the end state holds and the whole journey passes.
 ```
