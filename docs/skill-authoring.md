@@ -75,6 +75,7 @@ Skills grow when every mistake or review finding becomes a new paragraph. Before
 after a mistake:
 
 - Name the failure and the future decision the rule changes.
+- For each new noun, state which acceptance step it serves, what it reads, and what it writes.
 - Read the skill first. If the rule exists, sharpen or move it instead of adding a copy.
 - Prefer removing the invalid path. Next, prefer a type, a lint whose error names the fix, or a
   test. Keep prose for judgment.

@@ -71,7 +71,9 @@ verified and never tries them through another path.
 
 ## Rules
 
-- A section is an interface, a way to run it, or a feature area of one interface.
+- A section is an area to test: an interface, a way to run it, or a feature area of one interface.
+- A recipe is a check of one feature.
+- A journey is one user goal across features, through several commands or screens.
 - A section may drop an empty subsection, or say "same as <section>" for one.
 - "Reach it" holds the proof that the running instance serves this worktree, as exact commands with
   the expected output. It tells the worker to stop and ask the parent when the proof fails.
@@ -82,7 +84,7 @@ verified and never tries them through another path.
   starts only what the assigned sections need.
 - Give each bullet under "The manager starts" three labeled lines: Start, Check that it is up, and
   Stop.
-- A section is done only after you tried it against a running instance. Do not commit a guide with
+- Mark a section done only after you tried it against a running instance. Do not commit a guide with
   an untried section, and do not report it as done. When the app is not running, ask the user to
   start it and wait.
 - A section that no local instance can serve goes under "Not testable".
@@ -95,7 +97,6 @@ verified and never tries them through another path.
   into the "Cross-effects" list.
 - A recipe under `.pi/qa/` has four parts: Entry points, Driving steps, Observable results, and
   Gotchas.
-- A journey is a user goal that crosses several commands or screens.
 - A journey file at `.pi/qa/journeys/<name>.md` has five parts: Who, Goal, Test (a file path, or "by
   hand" with the reason), Steps (numbered, each with the action and its visible result), and End
   state (what proves the goal).

@@ -47,10 +47,10 @@ named files. It needs the `subagent` tools. Without them, tell the user and stop
 
 1. Resolve the target as in [Resolve the target](phases.md#resolve-the-target).
    - After an earlier review of this target in this session whose findings were fixed: a `fix`
-     target. Its `review` is the newest completed review in this target's chain: the full review or
+     target. Its `review` is the newest completed review in this target's chain: the first review or
      an earlier fix review, never an older link. Its `findingPaths` are the paths of the closed
-     findings. Capture the whole target instead when the user asks for a full review or the earlier
-     review left no usable snapshot.
+     findings. Capture the whole target instead when the user asks to review the whole target or the
+     earlier review left no usable snapshot.
    - Otherwise, when you or a calling skill review one ticket's work on a longer branch, such as one
      agent ticket, target only that work: a `range` of its commits, or a `workingTree` from the
      commit before it when the work is uncommitted. Never fall back to the merge base, which reads

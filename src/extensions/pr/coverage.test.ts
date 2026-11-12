@@ -91,7 +91,7 @@ it('fetches no missing commit of a partial clone and refuses the revision', asyn
   expect(String(failure)).toContain(missing);
 });
 
-it('reports a full review and a committed unchanged fix as match', async () => {
+it('reports a first review and a committed unchanged fix as match', async () => {
   const { root, base, links } = await setUpChain();
 
   const coverage = await runPr(root, { action: 'coverage', chain: links, mergeBase: base });

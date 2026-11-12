@@ -37,7 +37,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0055: Record Tau coding conventions in `AGENTS.md`](./0055-record-tau-coding-conventions-in-agents-md.md)
 - [0109: Keep action behavior out of extension roots](./0109-keep-action-behavior-out-of-extension-roots.md)
 - [0120: Capability modules with an enforced import table](./0120-capability-modules-with-an-enforced-import-table.md)
-- [0123: Patch Pi loaders to show no spinner](./0123-patch-pi-loaders-to-show-no-spinner.md)
+- [0134: Patch Pi loaders to show no spinner](./0134-patch-pi-loaders-to-show-no-spinner.md)
 - [0127: Version the draft review viewer protocol](./0127-version-the-draft-review-viewer-protocol.md)
 - [0128: Support Linux and macOS only](./0128-support-linux-and-macos-only.md)
 
@@ -69,7 +69,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0113: Mutation-test changed lines and list survivors as advice](./0113-run-diff-scoped-mutation-testing-by-hand.md)
 - [0119: Share the mutation script as one npm package](./0119-share-the-mutation-script-as-one-npm-package.md)
 - [0121: Test architecture rules for placement, naming, fakes, and fixtures](./0121-test-architecture-rules.md)
-- [0123: Run the full check only at the PR step](./0123-run-the-full-check-only-at-the-pr-step.md)
+- [0133: Run the full check only at the PR step](./0133-run-the-full-check-only-at-the-pr-step.md)
 - [0130: Select focused files through the project's Vitest API](./0130-select-focused-files-through-the-project-vitest-api.md)
 
 ## Commits

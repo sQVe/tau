@@ -111,8 +111,9 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
 
 4. Review `<merge base>..HEAD`, with both ends pinned. Rerun step 1's evidence script after commits
    or saved evidence changes. Coverage compares committed HEAD, not the working tree.
-   - Accept a single full review when `review.reusable` is true; otherwise act on `reusableReasons`.
-   - For `coverage.status: match`, accept content coverage without a new full review, even after a
+   - Accept a single first review when `review.reusable` is true; otherwise act on
+     `reusableReasons`.
+   - For `coverage.status: match`, accept content coverage without a new first review, even after a
      HEAD move or stale freshness when reviewed content was committed unchanged. Keep freshness and
      single-review reuse separate from coverage; content identity is not a clean verdict.
    - Read each returned `chain` entry's `report.md` and worker reports (`reviewer.md`, or
@@ -126,7 +127,7 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      after repairs; neither result is a pass.
    - When neither `review.reusable` nor the returned `chain` covers the content, assess manually
      without asking.
-   - Manually read the full review, its fix reviews, and the later diff, with the checks above.
+   - Manually read the first review, its fix reviews, and the later diff, with the checks above.
    - Record the inspected paths and judgment in the session report, never as a match or fresh.
    - Missing evidence from a manual assessment stays a required action.
    - If coverage stays unestablished, ask: rereview uncovered scope fast, or keep the action open.
