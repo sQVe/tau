@@ -152,7 +152,7 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
       [code-review ownership rule](../code-review/SKILL.md#hard-rules).
     - On the user's own branch, reused branches included, code-quality triage and the review fixes
       proceed without asking.
-    - Run a full review with the [code-review skill](../code-review/SKILL.md) on the whole slice,
+    - Run a first review with the [code-review skill](../code-review/SKILL.md) on the whole slice,
       not only the code-quality fixes, with the slice as the ticket under review. Run it once.
     - Apply the manager guideline on a first review's findings to the whole-slice review.
     - When the slice or an agent ticket has a user-visible acceptance item or a journey item, send

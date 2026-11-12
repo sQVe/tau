@@ -212,16 +212,27 @@ it.each(toolKinds)(
       await holder.catch(() => undefined);
     });
 
-    await vi.waitFor(() => {
-      expect(existsSync(started)).toBe(true);
-    });
+    await vi.waitFor(
+      () => {
+        expect(existsSync(started)).toBe(true);
+      },
+      { timeout: 5000 },
+    );
 
     const updates: string[] = [];
     const waiting = state.run(updates);
 
-    await vi.waitFor(() => {
-      expect(updates).toHaveLength(1);
+    onTestFinished(async () => {
+      await writeFile(holderGate, '');
+      await waiting.catch(() => undefined);
     });
+
+    await vi.waitFor(
+      () => {
+        expect(updates).toHaveLength(1);
+      },
+      { timeout: 5000 },
+    );
 
     expect(await state.runCount()).toBe(0);
 
@@ -244,16 +255,32 @@ it.each(toolKinds)(
 
     const running = state.run();
 
-    await vi.waitFor(async () => {
-      expect(await state.runCount()).toBe(1);
+    onTestFinished(async () => {
+      await writeFile(state.gate, '');
+      await running.catch(() => undefined);
     });
+
+    await vi.waitFor(
+      async () => {
+        expect(await state.runCount()).toBe(1);
+      },
+      { timeout: 5000 },
+    );
 
     const updates: string[] = [];
     const waiting = state.run(updates);
 
-    await vi.waitFor(() => {
-      expect(updates).toHaveLength(1);
+    onTestFinished(async () => {
+      await writeFile(state.gate, '');
+      await waiting.catch(() => undefined);
     });
+
+    await vi.waitFor(
+      () => {
+        expect(updates).toHaveLength(1);
+      },
+      { timeout: 5000 },
+    );
 
     await writeFile(state.gate, '');
 

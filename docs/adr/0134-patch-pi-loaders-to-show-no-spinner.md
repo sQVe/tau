@@ -1,4 +1,4 @@
-# ADR 0123: Patch Pi loaders to show no spinner
+# ADR 0134: Patch Pi loaders to show no spinner
 
 **Date**: 2026-10-26\
 **Status**: Accepted

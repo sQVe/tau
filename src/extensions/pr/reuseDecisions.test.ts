@@ -80,7 +80,7 @@ it.each([
     reusable: true,
     reasonCount: 0,
   },
-])('decides full review reuse: $name', ({ facts, reusable, reasonCount }) => {
+])('decides first review reuse: $name', ({ facts, reusable, reasonCount }) => {
   const decision = decideReviewReuse(facts);
 
   expect(decision.reusable).toBe(reusable);

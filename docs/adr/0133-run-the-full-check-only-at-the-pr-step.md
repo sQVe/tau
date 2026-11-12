@@ -1,4 +1,4 @@
-# ADR 0123: Run the full check only at the PR step
+# ADR 0133: Run the full check only at the PR step
 
 **Date**: 2026-10-26\
 **Status**: Accepted\
