@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -226,5 +226,25 @@ it('reports a failed chain selection as a gap with no chain and no coverage', as
   expect(evidence.gaps).toContainEqual({
     kind: 'chain',
     reason: expect.stringContaining('.tau/workers') as unknown,
+  });
+});
+
+it('reports a rejected coverage read as a gap and keeps the chain and the other evidence', async () => {
+  const { root, fix, chain, run } = await setUp();
+
+  await rm(join(fix, 'input.md'));
+  await symlink(join(root, 'feature.txt'), join(fix, 'input.md'));
+
+  const evidence = await run({ remote: 'origin' });
+
+  expect(evidence.coverage).toBeNull();
+  expect(evidence.gaps).toContainEqual({ kind: 'coverage', reason: expect.any(String) as unknown });
+
+  expect(evidence).toMatchObject({
+    chain,
+    review: { target: { kind: 'range' } },
+    reuse: { reports: ['reviewer.md'] },
+    branch: 'feature',
+    subjects: ['change feature', 'change feature'],
   });
 });
