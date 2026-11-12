@@ -67,7 +67,7 @@ PROMPT
 Last, run the session, and set `log` to the path it prints after `Event log:`.
 
 ```sh
-pnpm pi-session --cwd "$scratch" --model <pattern> --prompt-file "$scratch.prompt"
+pnpm pi-session --cwd "$scratch" --model <pattern> --timeout 300 --prompt-file "$scratch.prompt"
 ```
 
 ## Observable results
