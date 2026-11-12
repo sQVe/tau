@@ -18,6 +18,8 @@ Cross-effects:
 - A change to behavior that launches workers needs "Pi sessions", and the manager runs its
   worker-launch recipe. Launch no `qa` worker for that behavior.
 
+No launch, and unclear impact:
+
 - A change to another script under `scripts/` or to `shell/` needs no `qa` launch. So does a change
   that shows only in the terminal user interface. See "Not testable".
 - When the impact on a section is unclear, include the section.

@@ -18,6 +18,8 @@ Cross-effects:
 
 - Each effect that a path match misses, one per line.
 
+No launch, and unclear impact:
+
 - The changes that need no `qa` launch.
 - When the impact on a section is unclear, include the section.
 
@@ -34,8 +36,10 @@ Optional. For the manager, because the `qa` worker builds, starts, and stops not
 
 The manager starts:
 
-| Section | Start | Check that it is up | Stop |
-| ------- | ----- | ------------------- | ---- |
+- <Section name, or the thing to start>
+  - Start: the exact command.
+  - Check that it is up: the exact command and the output it must print.
+  - Stop: the exact command.
 
 Ask the user:
 
@@ -74,8 +78,10 @@ verified and never tries them through another path.
 - A step goes under "The manager starts" only when it reads no secret, costs no money, and touches
   no state that another worktree, another person, or the user's real environment shares. Every other
   step goes under "Ask the user".
-- List the steps under "The manager starts" per section, so the manager starts only what the
-  assigned sections need.
+- Under "The manager starts", write one bullet per section, or per thing to start, so the manager
+  starts only what the assigned sections need.
+- Give each bullet under "The manager starts" three labeled lines: Start, Check that it is up, and
+  Stop.
 - A section is done only after you tried it against a running instance. Do not commit a guide with
   an untried section, and do not report it as done. When the app is not running, ask the user to
   start it and wait.
@@ -86,7 +92,7 @@ verified and never tries them through another path.
   no general QA method.
 - Aim for at most about 150 lines. Move detail that only one feature needs into a recipe under
   `.pi/qa/`. Shorten a "Choose sections" cell that runs past two lines by moving its cross-effects
-  into the list under the table.
+  into the "Cross-effects" list.
 - A recipe under `.pi/qa/` has four parts: Entry points, Driving steps, Observable results, and
   Gotchas.
 - A journey is a user goal that crosses several commands or screens.
