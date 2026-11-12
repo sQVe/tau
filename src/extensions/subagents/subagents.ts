@@ -38,6 +38,7 @@ import { readProfileModels } from './profileModels.js';
 import { listProfiles } from './profiles.js';
 import type { ProfileSummary } from './profiles.js';
 import { qaGuidePath } from './qaBrief.js';
+import { qaLaunchProcedurePath } from './qaLaunch.js';
 import { defaultWorkerCapacity, readWorkerCapacity } from './workerCapacityConfig.js';
 import { createWorkerDelivery } from './workerDelivery.js';
 import { workerModelLine } from './workerModels.js';
@@ -324,7 +325,7 @@ export default function subagentsExtension(
   }
 
   const admission = new Admission();
-  let guidelines = delegationGuidelines(undefined, false);
+  let guidelines = delegationGuidelines(undefined, undefined);
 
   const delegating = currentTerminalAddress() !== undefined;
 
@@ -372,8 +373,9 @@ export default function subagentsExtension(
 
     if (delegating) {
       const qaGuideExists = existsSync(resolvePath(context.cwd, qaGuidePath));
+      const qaProcedurePath = qaGuideExists ? qaLaunchProcedurePath : undefined;
 
-      guidelines = delegationGuidelines(browserLoginCommand(context), qaGuideExists);
+      guidelines = delegationGuidelines(browserLoginCommand(context), qaProcedurePath);
     }
   });
 

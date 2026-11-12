@@ -62,8 +62,7 @@ this repository, and a shared way to reach or prove the instance.
 ## Not testable
 
 Optional. What a `qa` worker cannot reach, each with its reason. The worker reports these as not
-verified and never tries them through another path. When only this part applies to a change, the
-manager launches no `qa` worker and reports that QA did not run, with the reason.
+verified and never tries them through another path.
 ```
 
 ## Rules

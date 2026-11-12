@@ -3,23 +3,16 @@ import { expect, it } from 'vitest';
 import { delegationGuidelines } from './managerPrompt.js';
 import { qaGuidePath } from './qaBrief.js';
 
-const namesJourneyDirectory = (guideline: string): boolean =>
-  guideline.includes('.pi/qa/journeys/');
-
-it('names the journey directory only when the repository has a QA guide', () => {
-  expect(delegationGuidelines(undefined, true).some(namesJourneyDirectory)).toBe(true);
-  expect(delegationGuidelines(undefined, false).some(namesJourneyDirectory)).toBe(false);
-});
-
-const namesQaGuidePath = (guideline: string): boolean => guideline.includes(qaGuidePath);
-
-it('adds guidelines that point the manager to the QA guide only when the repository has one', () => {
-  const withGuide = delegationGuidelines(undefined, true);
-  const withoutGuide = delegationGuidelines(undefined, false);
+it('adds one line that names the QA procedure and the guide only when given a procedure path', () => {
+  const procedurePath = '/tau/src/skills/shared/qa-launch.md';
+  const withGuide = delegationGuidelines(undefined, procedurePath);
+  const withoutGuide = delegationGuidelines(undefined, undefined);
+  const addedGuidelines = withGuide.filter((guideline) => !withoutGuide.includes(guideline));
   const sharedGuidelines = withGuide.filter((guideline) => withoutGuide.includes(guideline));
 
-  expect(withGuide.some(namesQaGuidePath)).toBe(true);
-  expect(withoutGuide.some(namesQaGuidePath)).toBe(false);
-  expect(withGuide.length).toBeGreaterThan(withoutGuide.length);
+  expect(addedGuidelines).toHaveLength(1);
+  expect(addedGuidelines[0]).toContain(procedurePath);
+  expect(addedGuidelines[0]).toContain(qaGuidePath);
   expect(sharedGuidelines).toEqual(withoutGuide);
+  expect(withoutGuide.some((guideline) => guideline.includes(qaGuidePath))).toBe(false);
 });

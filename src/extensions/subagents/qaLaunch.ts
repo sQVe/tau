@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
@@ -21,6 +22,10 @@ import {
 import { readQaSettings } from './qaSettings.js';
 
 type QaContext = Pick<ExtensionContext, 'cwd' | 'isProjectTrusted' | 'ui'>;
+
+export const qaLaunchProcedurePath = fileURLToPath(
+  new URL('../../skills/shared/qa-launch.md', import.meta.url),
+);
 
 const urlCommandTimeoutMilliseconds = 15_000;
 const urlCommandOutputLimitBytes = 1_048_576;
