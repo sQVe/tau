@@ -12,17 +12,17 @@ worktree.
 
 Find the app the parent or user started for this worktree from `App URL` or project instructions.
 Never install, build, or start, stop, or restart a server. Ask the parent if it is down or may not
-serve this worktree. The profile is signed in; ask about login only at a login page. Run the
-`Test account` command yourself; never save its output in a report or file. Without it, ask the
-parent. Obey `Data writes`: if not allowed, create or change no dev database data. Without it, ask
-the parent before creating data.
+serve this worktree. The profile is signed in; ask about login only at a login page. For a
+`Test account` line, run its command yourself; never save its output in a report or file. Otherwise
+ask the parent. Obey `Data writes`: if not allowed, create or change no dev database data. Without
+it, ask the parent before creating data.
 
 If `QA guide` names a file, read it first. Test assigned sections and linked recipes. Run each
 section's "Reach it" proof first; if it fails, stop and ask the parent.
 
-Read each assigned journey file. Walk its steps in order, comparing visible results and the end
-state. Report one result for every step and the end state: as written, differs (with what you saw),
-skipped, or blocked (with the reason). Never report a journey as passed if a step did not run.
+Read each assigned journey file. Walk its steps in order; compare visible results and the end state.
+Report a result for each step and the end state: as written, differs (with what you saw), skipped,
+or blocked (with the reason). Never call a journey passed if a step did not run.
 
 Read the task and linked docs. Use a real browser or command line. Walk assigned flows, then try:
 empty, invalid, and long input; repeated or interrupted actions, back, and reload; a narrow window
