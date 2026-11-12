@@ -386,9 +386,10 @@ feature recipes. By convention they live under `.pi/qa/`.
 
 The optional "Journeys" index names journey files under `.pi/qa/journeys/`. The manager picks
 journeys the change touches and assigns their files in the brief. The worker reads each assigned
-file, walks its steps in order, and compares each visible result and the end state. It reports each
-step whose result differs. The template defines the journey file's five parts. Tau parses neither
-the index nor the journey files.
+file, walks its steps in order, and compares each visible result and the end state. It reports one
+result for every step and the end state: as written, differs (with what it saw), skipped, or blocked
+(with the reason). It never reports a journey as passed if a step did not run. The template defines
+the journey file's five parts. Tau parses neither the index nor the journey files.
 
 Tau checks only that `.pi/qa.md` exists in the worker's worktree. It does not parse the guide or
 read `.pi/qa/`, and there is no config key for it. Every `qa` brief gets one line, also when the

@@ -94,6 +94,6 @@ verified and never tries them through another path.
   hand" with the reason), Steps (numbered, each with the action and its visible result), and End
   state (what proves the goal).
 - A journey file names only visible results.
-- Keep five to eight journeys per product.
+- Aim for at most eight journeys per product. A product with three real goals writes three journeys.
 - A case for one command stays a normal test, not a journey.
 - Include a trouble journey when the product has failure paths.
