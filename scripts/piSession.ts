@@ -192,7 +192,6 @@ const parseRecord = (line: string): unknown => {
   }
 };
 
-// Resolves with how the run ended and the state at that moment. Pi is stopped before it resolves.
 const runPi = async (session: Session): Promise<{ end: SessionEnd; state: SessionState }> => {
   const { options, eventLog } = session;
   const sessionDirectory = mkdtempSync(join(tmpdir(), 'tau-pi-session-'));

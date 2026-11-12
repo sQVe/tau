@@ -77,7 +77,6 @@ const promptSource = (values: SessionArguments): PromptSource | string => {
   return 'A prompt is required: give --prompt or --prompt-file.';
 };
 
-/** Returns the checked options, or the reason the arguments are refused. */
 export const sessionOptions = (values: SessionArguments): SessionOptions | string => {
   if (values.cwd === undefined) {
     return '--cwd is required.';
@@ -112,7 +111,6 @@ const packageSource = (entry: unknown): string | undefined => {
   return isRecord(entry) && typeof entry.source === 'string' ? entry.source : undefined;
 };
 
-/** Lists the local package paths that a Pi settings value installs, as written. */
 export const localPackageSources = (settings: unknown): string[] => {
   const packages = isRecord(settings) ? settings.packages : undefined;
 
@@ -125,10 +123,6 @@ export const localPackageSources = (settings: unknown): string[] => {
     .filter((source) => !remotePackagePrefix.test(source));
 };
 
-/**
- * Returns the project settings that load the checkout, or undefined when the user's settings
- * already install it.
- */
 export const projectSettings = (
   checkout: { realPath: string; name: string },
   userPackages: LocalPackage[],
@@ -200,7 +194,6 @@ const promptFailure = (record: Record<string, unknown>): string | undefined => {
   return `Pi refused the prompt: ${error}`;
 };
 
-/** Applies one RPC record. The run ends at an agent_settled with no worker still open. */
 export const nextSessionState = (state: SessionState, record: unknown): SessionState => {
   if (!isRecord(record) || state.step.kind !== 'running') {
     return state;
@@ -231,7 +224,6 @@ export const nextSessionState = (state: SessionState, record: unknown): SessionS
   return settled ? { ...state, step: { kind: 'ended' } } : state;
 };
 
-/** Returns the answer line for a dialog request, or undefined for any other record. */
 export const dialogResponse = (record: unknown): string | undefined => {
   if (!isRecord(record) || record.type !== 'extension_ui_request') {
     return undefined;
@@ -260,7 +252,6 @@ const failureCause = (end: Exclude<SessionEnd, { kind: 'ended' }>): string => {
   return `Stopped by ${end.signal}.`;
 };
 
-/** Decides the exit code and the output lines of a finished run. */
 export const sessionExit = (
   end: SessionEnd,
   open: OpenWorker[],

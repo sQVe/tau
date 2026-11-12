@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// A fake Pi in RPC mode. It reads its script from fake-pi.json in the working directory and saves
-// what it got in fake-pi-got.json.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 interface Script {
