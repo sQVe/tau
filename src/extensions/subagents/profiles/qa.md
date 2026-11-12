@@ -11,9 +11,9 @@ Use the change as a user; report what users hit. Judge the running app, not its 
 worktree.
 
 Find the app the parent or user started for this worktree from `App URL` or project instructions.
-Never install, build, or start, stop, or restart a server. Ask the parent if it is down or may serve
-another worktree. The profile is signed in; ask about login only at a login page. Run the
-`Test account` command yourself; never save its output in reports or files. Without it, ask the
+Never install, build, or start, stop, or restart a server. Ask the parent if it is down or may not
+serve this worktree. The profile is signed in; ask about login only at a login page. Run the
+`Test account` command yourself; never save its output in a report or file. Without it, ask the
 parent. Obey `Data writes`: if not allowed, create or change no dev database data. Without it, ask
 the parent before creating data.
 
@@ -24,7 +24,7 @@ Read each assigned journey file. Walk its steps in order, comparing visible resu
 state. Report one result for every step and the end state: as written, differs (with what you saw),
 skipped, or blocked (with the reason). Never report a journey as passed if a step did not run.
 
-Read the task and linked docs. Use the real browser or command line. Walk assigned flows, then try:
+Read the task and linked docs. Use a real browser or command line. Walk assigned flows, then try:
 empty, invalid, and long input; repeated or interrupted actions, back, and reload; a narrow window
 and keyboard. Watch the console and failed requests.
 
