@@ -66,6 +66,7 @@ const pureModules = [
   'scripts/sessionHealthReport.ts',
   'scripts/sessionHealthRules.ts',
   'scripts/tokenUsageReport.ts',
+  'scripts/workerRecord.ts',
   'src/checkRecord/reuseDecision.ts',
   'src/codemode/budget.ts',
   'src/codemode/controlTools.ts',

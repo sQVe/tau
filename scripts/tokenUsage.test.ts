@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 
 import { parseTime, findUsageRecords } from './tokenUsage.js';
+import { tokenUsageReport } from './tokenUsageReport.js';
 
 let agentDirectory: string;
 
@@ -38,7 +39,24 @@ const taskRecord = (taskId: string, createdAt: number, sessionFile?: string, har
     loadout: { harness, profile: 'scout' },
   });
 
-const nothing = { sessions: [], skipped: { unreadableFiles: 0, otherHarnessTasks: [] } };
+const assignmentRecord = (assignmentId: string, createdAt: number, sessionFile: string) =>
+  JSON.stringify({
+    version: 3,
+    assignmentId,
+    label: null,
+    profile: 'scout',
+    loadout: { harness: 'pi' },
+    session: { file: sessionFile },
+    createdAt,
+  });
+
+const sessionLines = (lines: unknown[]) =>
+  lines.map((line) => `${JSON.stringify(line)}\n`).join('');
+
+const nothing = {
+  sessions: [],
+  skipped: { unreadableSessions: 0, sessionsWithoutRecord: [], otherHarnessTasks: [] },
+};
 
 const snapshot = async () => {
   const names = await readdir(agentDirectory, { recursive: true, encoding: 'utf8' });
@@ -75,7 +93,7 @@ it('reads parent sessions and worker sessions with every task that shares them',
   const records = await findUsageRecords(agentDirectory, since);
 
   expect(await snapshot()).toEqual(before);
-  expect(records.skipped.unreadableFiles).toBe(0);
+  expect(records.skipped.sessionsWithoutRecord).toEqual([]);
 
   const sessions = records.sessions
     .toSorted((left, right) => left.path.localeCompare(right.path))
@@ -89,6 +107,85 @@ it('reads parent sessions and worker sessions with every task that shares them',
     [parent, 'parent', []],
     [worker, 'worker', ['a', 'b']],
   ]);
+});
+
+it('counts the session of an assignment as worker tokens under its profile', async () => {
+  const createdAt = Date.parse('2026-09-01T12:00:00Z');
+
+  const text = sessionLines([
+    { type: 'session', timestamp: '2026-09-01T12:00:00Z', cwd: '/fixture' },
+    {
+      type: 'message',
+      id: 'turn',
+      timestamp: '2026-09-01T12:00:01Z',
+      message: { role: 'assistant', model: 'fixture', usage: { input: 10, output: 2 } },
+    },
+  ]);
+
+  const worker = await write('tau/repo-1/assignments/x/s.jsonl', text);
+  await write('tau/repo-1/assignments/x/assignment.json', assignmentRecord('x', createdAt, worker));
+  const before = await snapshot();
+
+  const records = await findUsageRecords(agentDirectory, since);
+
+  expect(await snapshot()).toEqual(before);
+
+  const report = await tokenUsageReport(
+    records.sessions,
+    { since, until: since + 86_400_000 },
+    records.skipped,
+    (path) => readFile(path, 'utf8'),
+  );
+
+  const kinds = [...report.kinds.values()].map((row) => [row.side, row.input, row.output]);
+  const groups = [...report.groups.values()].map((group) => [group.side, group.profile]);
+
+  expect(report.sessionsWithoutRecord).toEqual([]);
+  expect(kinds).toEqual([['worker', 10, 2]]);
+  expect(groups).toEqual([['worker', 'scout']]);
+});
+
+it('lists every assignment that continues one session', async () => {
+  const worker = await write('tau/repo-1/assignments/x/s.jsonl', '{}\n');
+  await write('tau/repo-1/assignments/x/assignment.json', assignmentRecord('x', 1, worker));
+  await write('tau/repo-1/assignments/y/assignment.json', assignmentRecord('y', 2, worker));
+
+  const records = await findUsageRecords(agentDirectory, since);
+
+  const sessions = records.sessions.map((session) => [
+    session.path,
+    session.side,
+    session.tasks.map((task) => task.taskId).toSorted(),
+  ]);
+
+  expect(records.skipped.sessionsWithoutRecord).toEqual([]);
+  expect(sessions).toEqual([[worker, 'worker', ['x', 'y']]]);
+});
+
+it('names the session beside a malformed assignment record and still reads it', async () => {
+  const worker = await write('tau/repo-1/assignments/x/s.jsonl', '{}\n');
+  await write('tau/repo-1/assignments/x/assignment.json', '{"assignmentId":');
+  const before = await snapshot();
+
+  const records = await findUsageRecords(agentDirectory, since);
+
+  expect(await snapshot()).toEqual(before);
+  expect(records.skipped.sessionsWithoutRecord).toEqual([worker]);
+  expect(records.sessions.map((session) => [session.path, session.tasks])).toEqual([[worker, []]]);
+});
+
+it('names a worker session without a record beside it', async () => {
+  const worker = await write('tau/repo-1/assignments/x/s.jsonl', '{}\n');
+  await write('tau/repo-1/assignments/y/assignment.json', assignmentRecord('y', 2, worker));
+  const before = await snapshot();
+
+  const records = await findUsageRecords(agentDirectory, since);
+
+  const owners = records.sessions.map((session) => session.tasks.map((task) => task.taskId));
+
+  expect(await snapshot()).toEqual(before);
+  expect(records.skipped.sessionsWithoutRecord).toEqual([worker]);
+  expect(owners).toEqual([['y']]);
 });
 
 it.each([
@@ -121,7 +218,7 @@ it('counts a malformed task record and still reads the session beside it', async
 
   const records = await findUsageRecords(agentDirectory, since);
 
-  expect(records.skipped.unreadableFiles).toBe(1);
+  expect(records.skipped.sessionsWithoutRecord).toEqual([worker]);
   expect(records.sessions.map((session) => [session.path, session.tasks])).toEqual([[worker, []]]);
 });
 

@@ -1,12 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  formatTokenUsageReport,
-  ownsSession,
-  parseWorkerTask,
-  tokenUsageReport,
-} from './tokenUsageReport.js';
-import type { SkippedRecords, TokenUsageReport, WorkerTask } from './tokenUsageReport.js';
+import { formatTokenUsageReport, tokenUsageReport } from './tokenUsageReport.js';
+import type { SkippedRecords, TokenUsageReport } from './tokenUsageReport.js';
+import type { WorkerTask } from './workerRecord.js';
 
 interface SessionText {
   path: string;
@@ -72,7 +68,7 @@ const session = (path: string, lines: string[], tasks: WorkerTask[] = []): Sessi
   tasks,
 });
 
-const noneSkipped = { unreadableFiles: 0, otherHarnessTasks: [] };
+const noneSkipped = { unreadableSessions: 0, sessionsWithoutRecord: [], otherHarnessTasks: [] };
 
 const report = (files: SessionText[], skipped: SkippedRecords = noneSkipped) => {
   const texts = new Map(files.map((file) => [file.path, file.text]));
@@ -330,7 +326,7 @@ describe('tokenUsageReport', () => {
       task('c', 'worker', 55),
     ];
 
-    const result = await report([], { unreadableFiles: 0, otherHarnessTasks });
+    const result = await report([], { ...noneSkipped, otherHarnessTasks });
 
     expect(result.otherHarnessTasks).toBe(1);
   });
@@ -341,10 +337,10 @@ describe('tokenUsageReport', () => {
         session('/bad.jsonl', ['not json', assistant('a1', 12, { output: 5 })]),
         session('/good.jsonl', [header(11), assistant('a2', 12, { output: 2 })]),
       ],
-      { unreadableFiles: 3, otherHarnessTasks: [] },
+      { ...noneSkipped, unreadableSessions: 3 },
     );
 
-    expect(result.unreadableFiles).toBe(4);
+    expect(result.unreadableSessions).toBe(4);
     expect(result.sessions.map((row) => row.path)).toEqual(['/good.jsonl']);
   });
 
@@ -365,7 +361,7 @@ describe('tokenUsageReport', () => {
       (path) => Promise.resolve(path === '/good.jsonl' ? good : undefined),
     );
 
-    expect(result.unreadableFiles).toBe(1);
+    expect(result.unreadableSessions).toBe(1);
     expect(result.sessionFiles).toBe(1);
     expect(result.sessions.map((row) => row.path)).toEqual(['/good.jsonl']);
   });
@@ -391,103 +387,25 @@ describe('formatTokenUsageReport', () => {
       /parent +bridge\/opus +4 +8 +1,620 +25 +250\n/,
     );
   });
-});
 
-describe('parseWorkerTask', () => {
-  it.each([
-    {
-      rule: 'reads a current record',
-      source:
-        '{"taskId":"t","name":"scout-1","createdAt":5,"nativeSessionFile":"/w/s.jsonl","loadout":{"profile":"scout"}}',
-      parsed: {
-        taskId: 't',
-        harness: 'pi',
-        name: 'scout-1',
-        profile: 'scout',
-        createdAt: 5,
-        sessionFile: '/w/s.jsonl',
-      },
-    },
-    {
-      rule: 'reads an old record without a session file or profile',
-      source: '{"taskId":"t","createdAt":5}',
-      parsed: {
-        taskId: 't',
-        harness: 'pi',
-        name: 't',
-        profile: 'unknown',
-        createdAt: 5,
-        sessionFile: undefined,
-      },
-    },
-    {
-      rule: 'reads the harness of a Codex worker',
-      source: '{"taskId":"t","createdAt":5,"loadout":{"harness":"generic","profile":"worker"}}',
-      parsed: {
-        taskId: 't',
-        harness: 'generic',
-        name: 't',
-        profile: 'worker',
-        createdAt: 5,
-        sessionFile: undefined,
-      },
-    },
-    {
-      rule: 'rejects a profile that is not text',
-      source: '{"taskId":"t","createdAt":5,"loadout":{"profile":7}}',
-      parsed: undefined,
-    },
-    {
-      rule: 'rejects a harness that is not text',
-      source: '{"taskId":"t","createdAt":5,"loadout":{"harness":["generic"]}}',
-      parsed: undefined,
-    },
-    {
-      rule: 'rejects a session file that is not text',
-      source: '{"taskId":"t","createdAt":5,"nativeSessionFile":null}',
-      parsed: undefined,
-    },
-    {
-      rule: 'rejects a loadout that is not an object',
-      source: '{"taskId":"t","createdAt":5,"loadout":"pi"}',
-      parsed: undefined,
-    },
-    { rule: 'rejects a record without a start time', source: '{"taskId":"t"}', parsed: undefined },
-    { rule: 'rejects malformed JSON', source: '{"taskId":', parsed: undefined },
-  ])('$rule', ({ source, parsed }) => {
-    expect(parseWorkerTask(source)).toEqual(parsed);
+  it('lists the worker sessions without a readable record, sorted, after the last table', async () => {
+    const result = await report([], {
+      ...noneSkipped,
+      unreadableSessions: 1,
+      sessionsWithoutRecord: ['/w/b/s.jsonl', '/w/a/s.jsonl'],
+    });
+
+    const text = formatTokenUsageReport(result, 5);
+
+    const list = '\n\nWorker sessions without a readable record\n/w/a/s.jsonl\n/w/b/s.jsonl\n';
+
+    expect(text).toContain('0 session files, 3 unreadable, ');
+    expect(text.endsWith(list)).toBe(true);
   });
-});
 
-describe('ownsSession', () => {
-  it.each([
-    {
-      rule: 'owns the session beside its record',
-      directory: '/w/a',
-      sessionFile: undefined,
-      owns: true,
-    },
-    {
-      rule: 'owns the session a follow-up names',
-      directory: '/w/b',
-      sessionFile: '/w/a/s.jsonl',
-      owns: true,
-    },
-    {
-      rule: 'owns a session named by a copied record',
-      directory: '/w/b',
-      sessionFile: '/old/w/a/s.jsonl',
-      owns: true,
-    },
-    {
-      rule: 'does not own another session',
-      directory: '/w/c',
-      sessionFile: '/w/c/other.jsonl',
-      owns: false,
-    },
-  ])('$rule', ({ directory, sessionFile, owns }) => {
-    expect(
-      ownsSession({ ...task('t', 'worker', 11), sessionFile }, directory, '/w/a/s.jsonl'),
-    ).toBe(owns);
+  it('prints no list when every worker session has a readable record', async () => {
+    const result = await report([]);
+
+    expect(formatTokenUsageReport(result, 5)).not.toContain('without a readable record');
   });
 });
