@@ -14,6 +14,7 @@ const allowedPaths: AllowedPaths = {
   '.pi/qa/journeys/': [
     'docs/configuration.md',
     'docs/adr/0132-keep-qa-journeys-in-separate-files.md',
+    'src/skills/shared/qa-launch.md',
   ],
   '.pi/qa/': ['docs/configuration.md', 'src/extensions/subagents/templates/qa-guide.md'],
   '.pi/settings.json': [

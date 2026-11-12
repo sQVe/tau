@@ -160,22 +160,9 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
    - For a configured full check, reuse passed `fullCheck` evidence; otherwise run `full_check`.
      Rerun the evidence script and carry any non-passed result into step 6 as a required action.
      Leave its log in place without copying it or adding headers.
-   - When the change has user-visible behavior, also send it to a `qa` worker on the committed tree
-     before the preview.
-   - When the repository has `.pi/qa.md`, read it first. State which of its sections apply to the
-     change and why, and assign them in the brief. When the impact on a section is unclear, include
-     it instead of skipping it.
-   - State which journeys from the guide's index apply and why, and assign their files in the brief.
-   - Do the guide's steps under "The manager starts" for those sections.
-   - Ask the user for the guide's steps under "Ask the user" for those sections.
-   - Put the lines the guide asks for in the brief.
-   - Stop what you started when every worker that uses it has reported, or when the launch fails.
-   - When only the guide's "Not testable" part applies, launch no `qa` worker. Record that QA did
-     not run, with the reason, for step 6 and the preview.
-   - Leave the app URL, test account, and data writes to Tau, which fills them from the user's
-     config. Ask the user nothing about them in advance.
-   - When the QA worker asks a blocking question, pass it to the user.
-   - Record what QA tested and found for step 6 and the preview.
+   - Send a change with user-visible behavior to `qa` on the committed tree before the preview, by
+     [the QA launch procedure](../shared/qa-launch.md).
+   - Record what QA tested and found, or why it did not run, for step 6 and the preview.
 
 6. Suggest a draft status. Any open required action makes draft the suggested status; otherwise
    suggest ready. A required action needs a basis and a completion condition. Name both in the

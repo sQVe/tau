@@ -113,7 +113,7 @@ metadata:
 
 5. Author mode: fix the supported findings at the root cause.
    - Make small fixes yourself. Send a fix that needs new tests or spans modules to a `worker`, then
-     a `reviewer`.
+     a fast review with the [code-review skill](../code-review/SKILL.md).
    - For a valid finding outside the PR's scope, ask the user. If they approve, file an issue in the
      repository's tracker and cite it in the reply. A repository uses Linear when its branches or
      commits name Linear IDs; file those with the [tracker skill](../tracker/SKILL.md).

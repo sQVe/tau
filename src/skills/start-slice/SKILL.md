@@ -149,9 +149,7 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
       proceed without asking.
     - Run a full review with the [code-review skill](../code-review/SKILL.md) on the whole slice,
       not only the code-quality fixes, with the slice as the ticket under review. Run it once.
-    - Send all in-scope findings to one fix round. Run at most one fix review, on the fix diff and
-      its callers. Report findings that remain after the fix review to the user, and do not start
-      triage-findings or another fix round for them.
+    - Apply the manager guideline on a first review's findings to the whole-slice review.
     - Audit with the [finish-slice skill](../finish-slice/SKILL.md). Delegate each fix ticket it
       creates, as the first bullet says, except that its worker runs the mutation check with `base`
       set to the `git rev-parse HEAD` from before the ticket starts. Then audit once more. Items
