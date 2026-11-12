@@ -21,6 +21,13 @@ Cross-effects:
 - The changes that need no `qa` launch.
 - When the impact on a section is unclear, include the section.
 
+## Journeys
+
+Optional. Index the journeys in `.pi/qa/journeys/`.
+
+| Journey | Goal | Run it when the change touches | Test |
+| ------- | ---- | ------------------------------ | ---- |
+
 ## Before a launch
 
 Optional. For the manager, because the `qa` worker builds, starts, and stops nothing.
@@ -83,3 +90,11 @@ manager launches no `qa` worker and reports that QA did not run, with the reason
   into the list under the table.
 - A recipe under `.pi/qa/` has four parts: Entry points, Driving steps, Observable results, and
   Gotchas.
+- A journey is a user goal that crosses several commands or screens.
+- A journey file at `.pi/qa/journeys/<name>.md` has five parts: Who, Goal, Test (a file path, or "by
+  hand" with the reason), Steps (numbered, each with the action and its visible result), and End
+  state (what proves the goal).
+- A journey file names only visible results.
+- Keep five to eight journeys per product.
+- A case for one command stays a normal test, not a journey.
+- Include a trouble journey when the product has failure paths.

@@ -3,6 +3,14 @@ import { expect, it } from 'vitest';
 import { delegationGuidelines } from './managerPrompt.js';
 import { qaGuidePath } from './qaBrief.js';
 
+const namesJourneyDirectory = (guideline: string): boolean =>
+  guideline.includes('.pi/qa/journeys/');
+
+it('names the journey directory only when the repository has a QA guide', () => {
+  expect(delegationGuidelines(undefined, true).some(namesJourneyDirectory)).toBe(true);
+  expect(delegationGuidelines(undefined, false).some(namesJourneyDirectory)).toBe(false);
+});
+
 const namesQaGuidePath = (guideline: string): boolean => guideline.includes(qaGuidePath);
 
 it('adds guidelines that point the manager to the QA guide only when the repository has one', () => {

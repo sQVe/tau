@@ -42,6 +42,7 @@ export const urlCommandResult = ({ command, source, stdout }: UrlCommandRun): Ur
 };
 
 export const qaGuidePath = '.pi/qa.md';
+export const qaJourneyDirectory = '.pi/qa/journeys/';
 
 export const qaGuideLine = (guideExists: boolean): string =>
   guideExists
