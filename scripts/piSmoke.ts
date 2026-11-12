@@ -1,13 +1,17 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { rmSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import { smokeCommitFile, smokeCommitSubject, smokeFailures } from './piSmokeChecks.ts';
 import type { GitFacts } from './piSmokeChecks.ts';
-import { createScratchRepository, git, piChildEnvironment } from './piSmokeSetup.ts';
+import {
+  createEventLog,
+  createScratchRepository,
+  git,
+  piChildEnvironment,
+} from './piSmokeSetup.ts';
 
 const usage = `Usage: node scripts/piSmoke.ts [--pi <binary>] [--tau <checkout>] [--model <pattern>]
 
@@ -58,7 +62,7 @@ const run = (): number => {
 
   const tau = resolve(values.tau ?? checkoutRoot);
   const repository = createScratchRepository(tau);
-  const eventLog = join(mkdtempSync(join(tmpdir(), 'tau-pi-smoke-log-')), 'events.jsonl');
+  const eventLog = createEventLog('tau-pi-smoke-log-');
 
   const piArguments = [
     '--print',

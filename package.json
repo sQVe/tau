@@ -36,6 +36,7 @@
     "test:coverage": "vp test --coverage",
     "test:unit": "vp test --project '!integration*'",
     "smoke:pi": "node scripts/piSmoke.ts",
+    "pi-session": "node scripts/piSession.ts",
     "mutation": "mutation",
     "token-usage": "node scripts/tokenUsage.ts",
     "typecheck": "pnpm exec tsc --noEmit",
