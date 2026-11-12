@@ -3,10 +3,10 @@ import type { ChildProcess } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
 
-import { groupStateFromTable, stateFromProbe } from './stateDecision.js';
-import type { ProcessState } from './stateDecision.js';
+import { groupStateFromTable, stateFromProbe } from './stateDecision.ts';
+import type { ProcessState } from './stateDecision.ts';
 
-export type { ProcessState } from './stateDecision.js';
+export type { ProcessState } from './stateDecision.ts';
 
 interface GroupCommandOptions {
   cwd: string;

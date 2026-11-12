@@ -180,6 +180,21 @@ pnpm smoke:pi [--pi <binary>] [--tau <checkout>] [--model <pattern>]
 command prints the path of the saved event log. On failure it prints one line per failed check and
 keeps the scratch repository.
 
+### Test one change in a Pi session
+
+To check how a change behaves inside a Pi session, run one headless session that loads this
+checkout:
+
+```sh
+pnpm pi-session --cwd <directory> (--prompt <text> | --prompt-file <file>) [--model <pattern>] [--timeout <seconds>]
+```
+
+Give `--cwd` a scratch directory, not a worktree. The command sends the prompt, waits until each
+worker that the session launched has reported or ended, and prints the path of the saved event log.
+It exits with code 1 and a `FAIL` line when the session fails or passes the timeout. A worker launch
+needs an `hc` terminal, as in [Try Tau](#try-tau). The [QA guide](../.pi/qa.md) holds the recipes
+and the `jq` checks of the event log.
+
 ## Versioning
 
 Add a changeset for user-facing changes:
@@ -244,7 +259,7 @@ call, also when its own tool has none that day.
 
 Use this procedure to test whether a prompt or skill change improves how models behave. CI never
 runs model trials. A trial that costs money needs the user's approval and a budget before the first
-run.
+run. A check of one slice with `pnpm pi-session` is not a trial and needs no budget approval.
 
 1. Fix the tasks, the rubric, the model settings, and the trial budget before the first run.
 2. Hold the model constant, so model and prompt effects stay separate.

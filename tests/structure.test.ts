@@ -59,6 +59,7 @@ const isFixture = (path: string) => path.split(/[/\\]/).includes('fixtures');
 // Register a module here once its decisions are split from its reads.
 const pureModules = [
   'scripts/pathCommands.ts',
+  'scripts/piSessionRules.ts',
   'scripts/piSmokeChecks.ts',
   'scripts/piVersionDrift.ts',
   'scripts/routeComparisonFormat.ts',

@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/tau.ts", "scripts/*.ts", "stryker.vitest.config.ts"],
+  "entry": ["src/tau.ts", "scripts/*.ts", "scripts/fixtures/fakePi.ts", "stryker.vitest.config.ts"],
   "ignoreDependencies": ["pi-web-access", "jiti"],
   "ignoreBinaries": ["hc"]
 }

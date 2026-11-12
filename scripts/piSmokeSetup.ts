@@ -49,6 +49,14 @@ export const createScratchRepository = (tau: string): string => {
   return directory;
 };
 
+export const createEventLog = (prefix: string): string => {
+  const path = join(mkdtempSync(join(tmpdir(), prefix)), 'events.jsonl');
+
+  writeFileSync(path, '');
+
+  return path;
+};
+
 export const piChildEnvironment = (path: string): NodeJS.ProcessEnv => ({
   ...gitEnvironment(),
   PATH: installedPiPath(path, delimiter),

@@ -66,6 +66,7 @@ Keep tests fast so the full suite stays practical as coverage grows.
 - Do not test wording, constants, types, removed features, or internal calls. Assert exact bytes
   only where another program parses them.
 - Keep tests next to source. Cross-module and package checks go in `tests/`.
+- Give a script under `scripts/` tests for its argument handling and its failure output.
 - Name a unit test `<owner>.test.ts` or `<owner><Behavior>.test.ts`. Never name a file after a test
   technique.
 - Put every case in the decision table. The adapter test holds one case per outcome kind and its
