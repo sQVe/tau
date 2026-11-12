@@ -17,7 +17,7 @@ import { initializeRepository } from '../../../tests/gitRepository.js';
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import type { LaunchParameters } from './launchParameters.js';
 import { qaGuideLine } from './qaBrief.js';
-import { applyQaSettings } from './qaLaunch.js';
+import { applyQaSettings, qaLaunchProcedurePath } from './qaLaunch.js';
 
 interface Fixture {
   worktree: string;
@@ -492,4 +492,8 @@ it('refuses a urlCommand that cannot start', async () => {
   vi.stubEnv('PATH', gitOnly);
 
   await expect(apply(launch(worktree), worktree)).rejects.toThrow('failed or timed out');
+});
+
+it('names a QA launch procedure file that exists', () => {
+  expect(existsSync(qaLaunchProcedurePath)).toBe(true);
 });

@@ -84,7 +84,7 @@ const managerSession = async (agentDirectory: string) => {
   }
 
   const prompt = event.systemPromptOptions.appendSystemPrompt;
-  const guidelines = delegationGuidelines(undefined, false);
+  const guidelines = delegationGuidelines(undefined, undefined);
   const missingGuidelines = guidelines.filter((guideline) => !prompt.includes(guideline));
 
   if (missingGuidelines.length > 0) {

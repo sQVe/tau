@@ -1,8 +1,4 @@
-import { fileURLToPath } from 'node:url';
-
 import { qaGuidePath } from './qaBrief.js';
-
-const qaLaunchPath = fileURLToPath(new URL('../../skills/shared/qa-launch.md', import.meta.url));
 
 const leadingDelegationGuidelines = [
   'You are the manager. You own the plan, the user conversation, acceptance criteria, integration, and commits.',
@@ -47,19 +43,19 @@ const browserGuideline =
 const browserLoginGuideline = (loginCommand: string | undefined): string =>
   `Start \`browser\` and \`qa\` workers as if the agent Chrome profile is already signed in. When one reports a login wall, ${browserLoginStep(loginCommand)}. Then cancel the waiting worker and start a new one. Each new worker copies the configured Chrome profile when it starts.`;
 
-const qaGuideGuidelines = (qaGuideExists: boolean): string[] =>
-  qaGuideExists
-    ? [
-        `Before a \`qa\` launch, follow \`${qaLaunchPath}\` with the repository guide \`${qaGuidePath}\`.`,
-      ]
-    : [];
+const qaGuideGuidelines = (qaProcedurePath: string | undefined): string[] =>
+  qaProcedurePath === undefined
+    ? []
+    : [
+        `Before a \`qa\` launch, follow \`${qaProcedurePath}\` with the repository guide \`${qaGuidePath}\`.`,
+      ];
 
 export const delegationGuidelines = (
   loginCommand: string | undefined,
-  qaGuideExists: boolean,
+  qaProcedurePath: string | undefined,
 ): string[] => [
   ...leadingDelegationGuidelines,
-  ...qaGuideGuidelines(qaGuideExists),
+  ...qaGuideGuidelines(qaProcedurePath),
   browserGuideline,
   browserLoginGuideline(loginCommand),
   ...trailingDelegationGuidelines,

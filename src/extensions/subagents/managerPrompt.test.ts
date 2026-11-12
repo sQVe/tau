@@ -1,26 +1,18 @@
-import { existsSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
-
 import { expect, it } from 'vitest';
 
 import { delegationGuidelines } from './managerPrompt.js';
 import { qaGuidePath } from './qaBrief.js';
 
-it('adds one existing QA procedure path only when the repository has a guide', () => {
-  const withGuide = delegationGuidelines(undefined, true);
-  const withoutGuide = delegationGuidelines(undefined, false);
+it('adds one line that names the QA procedure and the guide only when given a procedure path', () => {
+  const procedurePath = '/tau/src/skills/shared/qa-launch.md';
+  const withGuide = delegationGuidelines(undefined, procedurePath);
+  const withoutGuide = delegationGuidelines(undefined, undefined);
   const addedGuidelines = withGuide.filter((guideline) => !withoutGuide.includes(guideline));
   const sharedGuidelines = withGuide.filter((guideline) => withoutGuide.includes(guideline));
 
   expect(addedGuidelines).toHaveLength(1);
+  expect(addedGuidelines[0]).toContain(procedurePath);
+  expect(addedGuidelines[0]).toContain(qaGuidePath);
   expect(sharedGuidelines).toEqual(withoutGuide);
   expect(withoutGuide.some((guideline) => guideline.includes(qaGuidePath))).toBe(false);
-
-  const guideline = addedGuidelines[0] ?? '';
-  const paths = [...guideline.matchAll(/`([^`]+)`/g)].map((match) => match[1] ?? '');
-  const procedurePaths = paths.filter(isAbsolute);
-
-  expect(guideline).toContain(qaGuidePath);
-  expect(procedurePaths).toHaveLength(1);
-  expect(existsSync(procedurePaths[0] ?? '')).toBe(true);
 });
