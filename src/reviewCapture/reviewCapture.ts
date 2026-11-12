@@ -1,7 +1,6 @@
 export { fixedDiffOptions } from './capture.js';
 export { readChainSelection } from './chainSelection.js';
-export type { ChainSelectionRequest } from './chainSelection.js';
-export type { ChainGap, ChainLink, ChainSelection } from './chainSelectionDecision.js';
+export type { ChainGap } from './chainSelectionDecision.js';
 export { readCoverage } from './coverage.js';
 export type { CoverageLinkRequest } from './coverage.js';
 export type { CoverageDecision, CoverageStatus } from './coverageDecision.js';

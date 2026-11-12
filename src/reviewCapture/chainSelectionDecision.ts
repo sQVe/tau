@@ -26,7 +26,7 @@ export interface ChainSelectionFacts {
   entries: ChainEntryFacts[];
 }
 
-export interface ChainLink {
+interface ChainLink {
   directory: string;
   identity: string;
 }
