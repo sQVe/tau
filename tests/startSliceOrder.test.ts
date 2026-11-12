@@ -12,6 +12,15 @@ const finalStep = (markdown: string): string => {
   return markdown.slice(start, end);
 };
 
+it('launches QA before the slice audit', () => {
+  const step = finalStep(readFileSync(skillFile, 'utf8'));
+  const qaLaunch = step.indexOf('](../shared/qa-launch.md)');
+  const audit = step.indexOf('](../finish-slice/SKILL.md)');
+
+  expect(qaLaunch).toBeGreaterThanOrEqual(0);
+  expect(audit).toBeGreaterThan(qaLaunch);
+});
+
 const linkedSkills = (text: string): string[] =>
   [...text.matchAll(/\]\(\.\.\/([a-z-]+)\/SKILL\.md\)/g)].map((match) => match[1] ?? '');
 

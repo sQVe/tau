@@ -155,8 +155,13 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
     - Run a full review with the [code-review skill](../code-review/SKILL.md) on the whole slice,
       not only the code-quality fixes, with the slice as the ticket under review. Run it once.
     - Apply the manager guideline on a first review's findings to the whole-slice review.
+    - When the slice or an agent ticket has a user-visible acceptance item or a journey item, send
+      the committed tree to `qa` by [the QA launch procedure](../shared/qa-launch.md) before the
+      audit. Save the report in `$slicedir` with the commit it tested, for the audit to cite.
+    - A QA failure makes the item not met; the audit's existing fix-ticket loop handles it.
     - Audit with the [finish-slice skill](../finish-slice/SKILL.md). Delegate each fix ticket it
       creates, as the first bullet says, except that its worker runs the mutation check with `base`
-      set to the `git rev-parse HEAD` from before the ticket starts. Then audit once more. Items
-      still unmet go to the pr skill as required actions.
+      set to the `git rev-parse HEAD` from before the ticket starts. Before auditing once more,
+      apply the QA launch procedure's reuse condition. Items still unmet go to the pr skill as
+      required actions.
     - Open the PR with the [pr skill](../pr/SKILL.md), and link the slice as the tracker skill says.
