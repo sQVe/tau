@@ -1,7 +1,11 @@
 import { join } from 'node:path';
 
 import { readGit, runGit } from '../../git.js';
-import { fixedDiffOptions, readSavedRecapture } from '../../reviewCapture/reviewCapture.js';
+import {
+  fixedDiffOptions,
+  readSavedRecapture,
+  reportFileNames,
+} from '../../reviewCapture/reviewCapture.js';
 import type { SavedRecapture } from '../../reviewCapture/reviewCapture.js';
 import { existingEntry } from '../../tauDirectory.js';
 import { compareDiffs, decideReuse } from './reuseDecisions.js';
@@ -17,8 +21,6 @@ export interface ReuseResult extends Reuse {
   paths: DiffComparison;
   reports: string[];
 }
-
-const reportFileNames = ['reviewer.md', 'finder.md', 'checker.md'];
 
 const resolveCommit = (root: string, revision: string): Promise<string> =>
   readGit(root, ['rev-parse', '--verify', '--end-of-options', `${revision}^{commit}`]);
