@@ -116,7 +116,14 @@ it('returns publication evidence through the tool', async () => {
     subjects: ['feature'],
     reuse: null,
     review: null,
+    chain: null,
+    coverage: null,
     checks: [],
-    gaps: [{ kind: 'noReview' }, { kind: 'fullCheck', status: 'missing' }, { kind: 'noChecks' }],
+    gaps: [
+      { kind: 'reviewChain', gap: { kind: 'noChain' } },
+      { kind: 'noReview' },
+      { kind: 'fullCheck', status: 'missing' },
+      { kind: 'noChecks' },
+    ],
   });
 });

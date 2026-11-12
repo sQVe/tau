@@ -34,6 +34,8 @@ const setUpChain = async (registerCleanup: typeof afterAll) => {
   const reviewed = await commitFeature(root, 'two\n');
   const review = await createSavedReview(root, { kind: 'range', from: mergeBase, to: reviewed });
 
+  await writeFile(join(review, 'reviewer.md'), 'No findings.\n');
+
   await writeFile(join(root, 'feature.txt'), 'three\n');
   const firstFix = await createSavedFix(root, review, ['feature.txt']);
 
@@ -50,7 +52,7 @@ const setUpChain = async (registerCleanup: typeof afterAll) => {
     await savedReviewLink(root, secondFix),
   ];
 
-  return { root, review, links };
+  return { root, review, fixes: [firstFix, secondFix], links };
 };
 
 let builtChain: Awaited<ReturnType<typeof setUpChain>>;
@@ -68,11 +70,7 @@ beforeEach(async () => {
   await cp(snapshotDirectory, builtChain.root, { recursive: true });
 });
 
-const readEvidence = async (
-  root: string,
-  review: string,
-  chain: { directory: string; identity: string }[],
-) => {
+const readEvidence = async (root: string, review: string) => {
   const agentDirectory = temporaryDirectory(onTestFinished, 'tau-pr-chain-agent-');
   const fake = createGhFake();
 
@@ -82,7 +80,7 @@ const readEvidence = async (
 
   const result = await tool.execute(
     'call',
-    { action: 'evidence', remote: 'origin', review, chain },
+    { action: 'evidence', remote: 'origin', review },
     undefined,
     undefined,
     {
@@ -98,28 +96,29 @@ const readEvidence = async (
 it('matches a committed two-fix chain while the root freshness is stale', async () => {
   const { root, review, links } = builtChain;
 
-  const details = await readEvidence(root, review, links);
+  const details = await readEvidence(root, review);
 
   expect(details).toMatchObject({
+    chain: links,
     coverage: { status: 'match' },
     review: { freshness: { status: 'stale' } },
   });
 });
 
 it('reports a mismatch when a committed edit lies outside every review', async () => {
-  const { root, review, links } = builtChain;
+  const { root, review } = builtChain;
 
   await writeFile(join(root, 'other.txt'), 'other\n');
   await git(root, 'add', 'other.txt');
   await git(root, 'commit', '--quiet', '-m', 'unreviewed edit');
 
-  const details = await readEvidence(root, review, links);
+  const details = await readEvidence(root, review);
 
   expect(details).toMatchObject({ coverage: { status: 'mismatch', link: 3 } });
 });
 
 it('reports unsupported when the root is a version 2 record', async () => {
-  const { root, review } = builtChain;
+  const { root, review, fixes } = builtChain;
   const recordPath = join(review, 'capture.json');
   const record = JSON.parse(await readFile(recordPath, 'utf8')) as Record<string, unknown>;
 
@@ -128,7 +127,13 @@ it('reports unsupported when the root is a version 2 record', async () => {
   delete record['endpoint'];
   await writeFile(recordPath, JSON.stringify({ ...record, version: 2 }));
 
-  const details = await readEvidence(root, review, [await savedReviewLink(root, review)]);
+  // The fixes recorded the identity of the root before this rewrite, so the root stays alone.
+  await Promise.all(fixes.map((fix) => rm(fix, { recursive: true })));
 
-  expect(details).toMatchObject({ coverage: { status: 'unsupported', link: 1 } });
+  const details = await readEvidence(root, review);
+
+  expect(details).toMatchObject({
+    chain: [await savedReviewLink(root, review)],
+    coverage: { status: 'unsupported', link: 1 },
+  });
 });

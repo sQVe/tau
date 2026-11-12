@@ -17,7 +17,7 @@ import {
 } from '../../reviewCapture/reviewCapture.js';
 import { readCheckEvidence } from './checkEvidence.js';
 import type { FullCheckEvidence, PublicationConfig } from './checkEvidence.js';
-import { readChainCoverage } from './coverage.js';
+import { readChainEvidence } from './evidenceChain.js';
 import type { CheckLog, PublicationGap } from './evidenceDecisions.js';
 import { decideSavedReuse } from './reuse.js';
 import type { ReuseResult } from './reuse.js';
@@ -29,7 +29,6 @@ export interface PublicationRequest {
   remote?: string;
   base?: string;
   review?: string;
-  chain?: CoverageLinkRequest[];
 }
 
 interface PublicationReviewEvidence extends ReviewEvidence {
@@ -44,7 +43,8 @@ export interface PublicationEvidence {
   subjects: string[];
   reuse: ReuseResult | null;
   review: PublicationReviewEvidence | null;
-  coverage?: CoverageDecision | null;
+  chain: CoverageLinkRequest[] | null;
+  coverage: CoverageDecision | null;
   markers: Marker[];
   checks: CheckLog[];
   fullCheck: FullCheckEvidence | null;
@@ -52,7 +52,7 @@ export interface PublicationEvidence {
 }
 
 const readFailure = (
-  kind: 'target' | 'branch' | 'subjects' | 'reuse' | 'review' | 'markers' | 'coverage',
+  kind: 'target' | 'branch' | 'subjects' | 'reuse' | 'review' | 'markers',
   error: unknown,
 ): PublicationGap => ({
   kind,
@@ -92,12 +92,16 @@ const readInspectionReuse = async (
   }
 };
 
+// Inspects the root of the selected chain. Without a selected chain it inspects the review the
+// caller named.
 const readReview = async (
   root: string,
   request: PublicationRequest,
   evidence: PublicationEvidence,
 ) => {
-  if (request.review === undefined) {
+  const inspected = evidence.chain?.[0]?.directory ?? request.review;
+
+  if (inspected === undefined) {
     evidence.gaps.push({ kind: 'noReview' });
 
     return;
@@ -106,7 +110,7 @@ const readReview = async (
   let directory: string;
 
   try {
-    directory = await checkReviewDirectory(root, request.review);
+    directory = await checkReviewDirectory(root, inspected);
   } catch (error) {
     evidence.gaps.push(readFailure('review', error));
 
@@ -155,36 +159,24 @@ const readReview = async (
   }
 };
 
-const readCoverageEvidence = async (
+const readChain = async (
   root: string,
+  request: PublicationRequest,
   evidence: PublicationEvidence,
-  chain: CoverageLinkRequest[],
 ) => {
   if (evidence.target === null) {
-    evidence.coverage = null;
-
     return;
   }
 
-  try {
-    const coverage = await readChainCoverage(root, {
-      chain,
-      mergeBase: evidence.target.mergeBase,
-    });
+  const { chain, coverage, gaps } = await readChainEvidence(
+    root,
+    evidence.target.mergeBase,
+    request.review,
+  );
 
-    evidence.coverage = coverage;
-
-    if (coverage.status !== 'match') {
-      evidence.gaps.push({
-        kind: 'coverageMismatch',
-        status: coverage.status,
-        reasons: coverage.reasons,
-      });
-    }
-  } catch (error) {
-    evidence.coverage = null;
-    evidence.gaps.push(readFailure('coverage', error));
-  }
+  evidence.chain = chain;
+  evidence.coverage = coverage;
+  evidence.gaps.push(...gaps);
 };
 
 const readMarkers = async (root: string, evidence: PublicationEvidence, mergeBase: string) => {
@@ -234,6 +226,8 @@ export const readPublicationEvidence = async (
     subjects: [],
     reuse: null,
     review: null,
+    chain: null,
+    coverage: null,
     markers: [],
     checks: [],
     fullCheck: null,
@@ -263,11 +257,8 @@ export const readPublicationEvidence = async (
     await readMarkers(root, evidence, evidence.target.mergeBase);
   }
 
+  await readChain(root, request, evidence);
   await readReview(root, request, evidence);
-
-  if (request.chain !== undefined) {
-    await readCoverageEvidence(root, evidence, request.chain);
-  }
 
   const checkEvidence = await readCheckEvidence(root, evidence.target?.mergeBase, config);
 

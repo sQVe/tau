@@ -191,15 +191,26 @@ it('reports a stale working tree capture without hiding the reuse result', async
   expect(await readSavedFiles(root)).toEqual(before);
 });
 
-it('returns noReview when no review was given', async () => {
-  const { root, run } = await setUp();
+it('returns noReview when no review was given and no chain is selected', async () => {
+  const { root, directory, run } = await setUp();
+
+  await rm(join(directory, 'reviewer.md'));
+
   const before = await readSavedFiles(root);
   const evidence = await run({ remote: 'origin' });
 
   expect(evidence.target).not.toBeNull();
+  expect(evidence.chain).toBeNull();
   expect(evidence.review).toBeNull();
   expect(evidence.reuse).toBeNull();
-  expect(evidence.gaps).toContainEqual({ kind: 'noReview' });
+
+  expect(evidence.gaps).toEqual(
+    expect.arrayContaining([
+      { kind: 'reviewChain', gap: { kind: 'noChain' } },
+      { kind: 'noReview' },
+    ]),
+  );
+
   expect(await readSavedFiles(root)).toEqual(before);
 });
 
