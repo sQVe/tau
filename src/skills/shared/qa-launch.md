@@ -18,5 +18,6 @@ Use this procedure when sending a change to a `qa` worker.
 4. Leave the app URL, test account, and data writes to Tau, which fills them from the user's config.
    Ask the user nothing about them in advance.
 5. Launch the worker with the brief. Pass a blocking question from the worker to the user.
-6. Stop what you started when every worker that uses it has reported, or when the launch fails.
+6. Stop what you started when every worker that uses it has reported. When a launch fails, stop it
+   only when no running worker uses it.
 7. Record what QA tested and found, or why it did not run, for the calling workflow.
