@@ -96,6 +96,8 @@ design it follows in its Design section. The container has one sub-ticket per sl
    [QA-guide template's journey shape](../../extensions/subagents/templates/qa-guide.md#rules). Give
    each slice that delivers steps a normal journey acceptance item in the slice template's shape.
    The item for the last step also requires that the end state holds and the whole journey passes.
+   No item asks for a planned step in the journey file or its test: they hold only the steps built
+   so far.
 
    For a design with one slice, write `ticket.md` as the container's file, as the slice template
    describes, and list no slices. Keep each whole planned journey in that ticket's `## Design`.
