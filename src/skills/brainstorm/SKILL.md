@@ -44,7 +44,8 @@ unclear. Do not use it for a design the user already agreed on. Use the
    Read the [structure criteria](../code-quality/structure-criteria.md) and answer all its plan
    questions except the file-size question. Record the module that owns the concept, the existing
    helpers and patterns to reuse, with paths, and each refactor the change needs first. Leave its
-   file-size question to `start-slice`. If `.pi/qa.md` exists, read its `## Journeys` index.
+   file-size question to `start-slice`. If `.pi/qa.md` exists, read its `## Journeys` index and the
+   file of each indexed journey the request extends, for its current steps and end state.
 
 3. Ask a few frontier questions in each round. A frontier question is one whose prerequisites are
    settled. A question that depends on an open question waits for a later round. Research still
