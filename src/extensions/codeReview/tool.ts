@@ -33,7 +33,7 @@ export type CodeReviewInput = Static<typeof codeReviewToolParameters>;
 
 const description = `- prepare: start capture; {directory}.
 - capture: input.md must end in "## Capture". target kinds:
-  workingTree: base diff plus untracked; range: from..to; rootCommit: full commit; files: paths' diff (base default HEAD) plus full files; fix: diff since review's complete snapshot (workingTree/files).
+  workingTree: base diff plus untracked; range: from..to; rootCommit: full commit; files: paths' diff (base default HEAD) plus full files; fix: diff since review's capture (any kind, complete endpoint).
   {hash,head,base,empty,paths,gaps,identity,ownership}. base: null for roots; empty: nothing captured/written; identity: capture.json Git blob hash. ownership {status:own|other|unclear,reasons}: PR author/viewer or commit/Git emails; failed reads: unclear. gaps {kind,path}: binary|unreadable|excluded|unmatched (no file)|submodule (no contents). Fix adds {fixPaths,scope,outsidePaths}; scope: wholeTarget if outsidePaths nonempty, else fix.
 - freshness: saved target {status,reasons}: fresh if hash/HEAD match, stale if different, unknown if recapture fails.
 - evidence: {target,base,head,hash,freshness,paths,tests,markers,callers,rules,checks,gaps}, not a verdict. tests: changed/sibling; markers: added skips/suppressions/deleted tests; callers: outside importers. rules/checks {path,status}: input.md paths, readable|missing|unreadable. gaps: capture gaps, incomplete/mismatched/stale/truncated/unread evidence with reasons.`;
