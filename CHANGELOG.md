@@ -1,5 +1,95 @@
 # tau
 
+## 1.2.0
+
+### Minor Changes
+
+- [#656](https://github.com/sQVe/tau/pull/656)
+  [`24e14d6`](https://github.com/sQVe/tau/commit/24e14d6e43fa98deb1de290040cfe7a51fc9846e) Thanks
+  [@sQVe](https://github.com/sQVe)! - Carry planned journeys into slice tickets and assign each
+  journey item to one agent ticket for its journey file, test, and QA guide index row. Keep only
+  built steps in journey files and tests. The slice that delivers the last step depends on the
+  earlier steps and checks that the whole journey passes.
+
+- [#646](https://github.com/sQVe/tau/pull/646)
+  [`5e9305f`](https://github.com/sQVe/tau/commit/5e9305f6c4b6ef6422d5cbfbb1510074c443e143) Thanks
+  [@sQVe](https://github.com/sQVe)! - Name the repository's QA guide in every `qa` worker brief. A
+  `qa` launch adds `QA guide: read .pi/qa.md` when the worktree has that file, and says there is no
+  QA guide when it does not. The line also appears when the repository has no `qa.repositories`
+  entry. The manager reads the guide and assigns the sections that a change needs.
+
+- [#652](https://github.com/sQVe/tau/pull/652)
+  [`1da6f18`](https://github.com/sQVe/tau/commit/1da6f188e65ac6d71cdb76921b717004ea920a14) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add a QA guide template and make the manager and the `qa`
+  worker follow its parts. With a guide, the manager does the steps under "The manager starts" for
+  the assigned sections, puts the lines the guide asks for in the brief, and stops what it started
+  when every worker that uses it has reported, or when the launch fails. It launches no `qa` worker
+  when only "Not testable" applies. The `qa` worker runs a section's "Reach it" proof first and asks
+  the parent when it fails.
+
+- [#653](https://github.com/sQVe/tau/pull/653)
+  [`e051f8e`](https://github.com/sQVe/tau/commit/e051f8e122d98e46f66c65abe4e1390343804fbe) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add an optional journey index to the QA guide template, with
+  separate journey files for repeatable user flows. The manager assigns journeys that the change
+  touches. The `qa` worker reads each assigned file, walks its steps in order, and compares visible
+  results and the end state.
+
+- [#658](https://github.com/sQVe/tau/pull/658)
+  [`c295f79`](https://github.com/sQVe/tau/commit/c295f79d6cdd5f7ad3fc2b674094dd1b185328da) Thanks
+  [@sQVe](https://github.com/sQVe)! - Let `pr` `evidence` select the saved review chain and return
+  its coverage. It no longer takes `chain`; use `review` to choose a chain when several candidates
+  match. The `pr` and `finish-slice` skills use the returned chain instead of selecting and building
+  one themselves.
+
+### Patch Changes
+
+- [#661](https://github.com/sQVe/tau/pull/661)
+  [`50b3584`](https://github.com/sQVe/tau/commit/50b35841b18f8b11fbafd6d566affac5c7bc401a) Thanks
+  [@sQVe](https://github.com/sQVe)! - Run slice QA before the acceptance audit. Refresh affected
+  audit rows after PR checks and use their current evidence for the draft suggestion and preview.
+
+- [#664](https://github.com/sQVe/tau/pull/664)
+  [`efdd71f`](https://github.com/sQVe/tau/commit/efdd71f1a89113c4ed93645be83ae74205b68a6e) Thanks
+  [@sQVe](https://github.com/sQVe)! - Shorten the code_review, pr, pr_feedback, stack, draft_review,
+  and slice tool descriptions. Reduce the measured manager prompt from 58,445 to 49,705 characters.
+  No tool or behavior changed.
+
+- [#650](https://github.com/sQVe/tau/pull/650)
+  [`140d77c`](https://github.com/sQVe/tau/commit/140d77ca48430ad7779f21c705f38e84d1e7ce4e) Thanks
+  [@sQVe](https://github.com/sQVe)! - The `Merge when green` snippet now tells the session to report
+  the merge result and then close its space. The space stays open when the PR did not merge.
+
+- [#662](https://github.com/sQVe/tau/pull/662)
+  [`b6da958`](https://github.com/sQVe/tau/commit/b6da958f93631beeee33ec0955348b4719fa5f35) Thanks
+  [@sQVe](https://github.com/sQVe)! - Name reviews "first" or "fix" in skills. Define section,
+  recipe, and journey in the QA guide template.
+
+- [#659](https://github.com/sQVe/tau/pull/659)
+  [`d8ae5f1`](https://github.com/sQVe/tau/commit/d8ae5f136434bebab02275f2c8c18b3c587439e8) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add `pnpm pi-session`, which runs one headless Pi session that
+  loads a Tau checkout, sends one prompt, waits for the workers it launched, and saves the event
+  log. The finish-slice skill now tells the manager to run each manual check itself and never hand
+  it to the user.
+
+- [#660](https://github.com/sQVe/tau/pull/660)
+  [`d030195`](https://github.com/sQVe/tau/commit/d030195a9422b3580c14d56ad569c3309744897e) Thanks
+  [@sQVe](https://github.com/sQVe)! - Change two parts of the QA guide template so a reader can
+  follow them. Under "The manager starts", the template now shows one bullet per section with three
+  labeled lines, Start, Check that it is up, and Stop, instead of a table. Under "Choose sections",
+  the list of changes that need no `qa` launch now has its own lead-in line, "No launch, and unclear
+  impact:".
+
+- [#655](https://github.com/sQVe/tau/pull/655)
+  [`0c44369`](https://github.com/sQVe/tau/commit/0c4436905ff596de8d00951a014c9364232a22ab) Thanks
+  [@sQVe](https://github.com/sQVe)! - Report a result for every QA journey step and the end state:
+  as written, differs, skipped, or blocked. Never report a journey as passed when a step did not
+  run. Aim for at most eight journeys per product, without requiring a minimum.
+
+- [#654](https://github.com/sQVe/tau/pull/654)
+  [`19a0aef`](https://github.com/sQVe/tau/commit/19a0aefa53ab8bc0f6d52dee7a2417a4ac92a1ac) Thanks
+  [@sQVe](https://github.com/sQVe)! - Share QA launch and reuse rules across manager guidance and
+  pull requests, and keep review timing and fix round rules in one place.
+
 ## 1.1.0
 
 ### Minor Changes
