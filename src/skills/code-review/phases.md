@@ -33,7 +33,8 @@ fails, stop and report the error.
 Use one read-only `codemode` script. It returns the full `code_review` `evidence` result for `$dir`,
 and line-numbered excerpts of the rule files that bear on the changed paths, read with
 `git show <sha>:<path>` for a pinned commit. Save the result as `$dir/evidence.md`. If the script
-fails, record a gap and continue with `input.md` alone.
+fails, record a gap and continue with `input.md` alone. Treat `markers` as signs of possibly weaker
+checks, not findings.
 
 ## Run the workers
 

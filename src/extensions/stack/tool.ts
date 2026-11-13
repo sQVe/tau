@@ -48,26 +48,14 @@ export const stackToolParameters = Type.Object({
 
 export type StackInput = Static<typeof stackToolParameters>;
 
-const description = `Read-only stack decisions. evidence holds the facts or failed reads. Failed reads give unknown or stop, never a guess.
-- check {remote?, branch?}: check the current branch by default. Another branch gets only GitHub reads. result:
-  - tracked: a local stack holds the branch. Returns trunk, parent (nearest unmerged branch below, else trunk), layers (bottom to top), and basedOn (open PRs based on the branch).
-  - untracked: held lists githubStack, baseHasOpenPull, or openPullBasedOnBranch. Returns chain (PRs found, bottom to top, possibly incomplete), basedOn (each {branch, number, url}), chainBase (lowest PR's base), and githubStack ({number, pullRequests} bottom to top, or null).
-  - standalone: none of those hold.
-  - unknown: reason explains missing or ambiguous evidence.
-- history {remote, startTips?}: check every active local stack branch (not merged or queued), bottom to top. startTips maps branches to tips before their first rebase since their last push. Each layer has remoteTip (current remote SHA or null) and status:
-  - unpublished: no remote branch.
-  - current: remote has no commits the local tip lacks.
-  - behind: not rebased since the last push, and an ancestor of the remote branch.
-  - rewritten: remote holds the same changes as before a restack.
-  - diverged: none of the above.
-  - unknown: reason names a failed read.
-  - stop is set with no layers when stack branches could not be read.
-- chain {pullRequests, slicePullRequest?}: decide the parent for start-slice. pullRequests are open blocker PR URLs in one repository. slicePullRequest is the slice's own PR URL, excluded from above-parent checks. decision.result is stop (with reason) or parent: the highest blocker in the GitHub stack holding all blockers, or the only blocker. Returns parent {number, url, branch}, branchAbove (another open PR is based on the parent or listed above it in its stack), above (those PR numbers), githubStack ({number, pullRequests, topBranch, topPullRequest}, or null), and trunk (bottom stack PR's base, else default branch).
-- link {pr, remote}: plan linking the local stack's top PR, or check a completed link. pr is its number in the base repository. result:
-  - command: command is the exact gh stack link command to run after approval. It appends to the GitHub stack below, or creates one with open local PRs bottom to top and the local trunk as base.
-  - linked: GitHub lists this PR at the top and every open PR has the expected base.
-  - none: one open PR needs no link.
-  - stop: reason explains why linking is unsafe or evidence is missing. No command runs.`;
+const description = `Read-only stack decisions; evidence: facts/failed reads. Failed reads yield unknown/stop.
+- check {remote?,branch?}: current branch by default; other branches: GitHub only. result:
+  tracked: local stack; {trunk,parent,layers,basedOn}. parent: nearest unmerged branch below, else trunk; layers: bottom-to-top; basedOn: open PRs based on branch.
+  untracked: held lists githubStack|baseHasOpenPull|openPullBasedOnBranch; chain: bottom-to-top PRs, possibly incomplete; basedOn: [{branch,number,url}]; chainBase: lowest PR's base or null; githubStack: {number,pullRequests} bottom-to-top, or null.
+  standalone: none hold; unknown: reason names missing/ambiguous evidence.
+- history {remote,startTips?}: active local branches (not merged/queued), bottom-to-top. Layers: remoteTip (remote SHA or null), status: unpublished (no remote branch), current (no remote-only commits), behind (not rebased since push, ancestor of remote), rewritten (remote has pre-restack changes), diverged (otherwise), unknown (failed read, with reason). stop with no layers: unread stack branches.
+- chain {pullRequests,slicePullRequest?}: start-slice parent from open blocker PR URLs in one repository; excludes slicePullRequest from above-parent checks. decision.result: stop with reason, or parent (highest blocker in their shared GitHub stack, else sole blocker). parent: {number,url,branch}; branchAbove: another open PR based on parent or above it in stack; above: those PR numbers; githubStack: {number,pullRequests,topBranch,topPullRequest} or null; trunk: bottom stack PR's base, else default branch.
+- link {pr,remote}: plan/check local stack's top PR link. result: command (exact command, needs approval), linked (top PR and all bases match), none (one open PR), stop (unsafe/missing evidence, with reason).`;
 
 const runAction = async (
   exec: Exec,

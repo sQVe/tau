@@ -31,19 +31,12 @@ export const codeReviewToolParameters = Type.Object({
 
 export type CodeReviewInput = Static<typeof codeReviewToolParameters>;
 
-const description = `Capture review targets and read freshness and evidence. Follow the code-review skill.
-- prepare: creates a fresh ignored directory .tau/workers/review-XXXXXX. Returns {directory}.
-- capture {directory, target}: appends the capture and a "## Gaps" section to directory/input.md, whose last heading must be "## Capture". Saves the original patch and input under capture/, writes capture.json last, and refuses a claimed directory. Pins every revision to its SHA. target is one of:
-  - {kind: "workingTree", base}: the diff from base to the working tree, plus untracked files in full.
-  - {kind: "range", from, to}: the diff between commits.
-  - {kind: "rootCommit", commit}: a root commit in full.
-  - {kind: "files", paths, base?}: the named paths' diff from base (default HEAD), plus each listed file in full, even unchanged.
-  - {kind: "fix", review, findingPaths}: the diff since the earlier capture in review, of any target kind. A fix capture needs a complete endpoint; only workingTree and files save a snapshot.
-  Each target takes exclude: paths to leave out.
-  Returns {hash, head, base, empty, paths, gaps, identity, ownership}. ownership is {status: "own" | "other" | "unclear", reasons}: PR author versus viewer, otherwise commit emails versus your Git email. Failed reads return unclear. base is null for a root commit. empty means nothing was captured or written. identity is capture.json's Git blob hash. gaps lists {kind, path} with kind binary, unreadable, excluded, unmatched (a named path that lists no file), or submodule (contents not captured). A fix target also returns {fixPaths, scope, outsidePaths}: scope is "wholeTarget" when outsidePaths is not empty, else "fix".
-- freshness {directory}: captures the saved target again and compares its hash and HEAD with capture.json. Returns {status, reasons}: fresh when both match, stale when either differs, unknown when the recapture fails.
-- evidence {directory}: reads the freshness and evidence of the saved capture, and writes nothing. Returns {target, base, head, hash, freshness, paths, tests, markers, callers, rules, checks, gaps}. tests lists changed tests and each changed source file's sibling test. markers lists added lines that hold .skip(, .only(, .todo(, @ts-ignore, @ts-expect-error, eslint-disable, or oxlint-disable, and each deleted test file as {path, marker: "deleted test"}. They flag checks that may be weaker. callers lists lines outside the changed module that import a changed source module. rules and checks list {path, status} for each path in the "## Rules" and "## Checks" sections of input.md, with status readable, missing, or unreadable. gaps lists every capture gap, plus freshness, incompleteCapture, evidenceMismatch, truncated, missing, unreadable, binary, unsearched, and incompleteSearch gaps with their reasons. Evidence only, never a verdict.
-A bad directory, revision, or capture.json, or a failed capture, throws an error that names the cause and writes nothing.`;
+const description = `- prepare: start capture; {directory}.
+- capture: input.md must end in "## Capture". target kinds:
+  workingTree: base diff plus untracked; range: from..to; rootCommit: full commit; files: paths' diff (base default HEAD) plus full files; fix: diff since review's capture (any kind, complete endpoint).
+  {hash,head,base,empty,paths,gaps,identity,ownership}. base: null for roots; empty: nothing captured/written; identity: capture.json Git blob hash. ownership {status:own|other|unclear,reasons}: PR author/viewer or commit/Git emails; failed reads: unclear. gaps {kind,path}: binary|unreadable|excluded|unmatched (no file)|submodule (no contents). Fix adds {fixPaths,scope,outsidePaths}; scope: wholeTarget if outsidePaths nonempty, else fix.
+- freshness: saved target {status,reasons}: fresh if hash/HEAD match, stale if different, unknown if recapture fails.
+- evidence: {target,base,head,hash,freshness,paths,tests,markers,callers,rules,checks,gaps}, not a verdict. tests: changed/sibling; markers: added skips/suppressions/deleted tests; callers: outside importers. rules/checks {path,status}: input.md paths, readable|missing|unreadable. gaps: capture gaps, incomplete/mismatched/stale/truncated/unread evidence with reasons.`;
 
 const capture = async (
   runtime: CommandRuntime,
