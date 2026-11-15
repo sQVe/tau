@@ -84,6 +84,8 @@ rule reports an import, change the table or the module list instead of silencing
   parent folder does not rename it.
 - Feature code stays in `src/extensions/<feature>/`. Code moves to shared `src/` only once two
   extensions need it. The import rule does not enforce this threshold.
+- A move may come before its users when an agreed slice plan names the two extensions that will
+  import the module. The pull request names those slices.
 - `src/tau.ts` is the package entry and installs every extension. `package.json` points
   `pi.extensions` at that file, because Pi loads every `.ts` file of a folder it scans. `src/` has
   no `index.*` files and no barrel files.
