@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "id": "correction-session-1-toolcall-1",
+  "kind": "correction",
+  "createdAt": "2026-11-15T12:05:00.000Z",
+  "evidence": [
+    {
+      "kind": "transcript",
+      "path": "/home/user/.pi/agent/sessions/manager.jsonl",
+      "entryId": "d4e5f6"
+    }
+  ],
+  "summary": "The user asked to run the focused tests before the full check.",
+  "cwd": "/home/user/code/tau"
+}

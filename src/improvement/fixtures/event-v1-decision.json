@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "decision-review-sqve-tau-667-2",
+  "kind": "decision",
+  "createdAt": "2026-11-15T13:10:00.000Z",
+  "supersedes": "decision-review-sqve-tau-667-1",
+  "evidence": [],
+  "subject": "review-sqve-tau-667",
+  "choice": "approved"
+}

@@ -82,7 +82,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
   {
     name: 'improvement',
     entry: 'improvement/improvement',
-    publicFiles: ['improvement/workerRecord'],
+    publicFiles: ['improvement/event', 'improvement/projectRoot', 'improvement/workerRecord'],
   },
   { name: 'inbox', entry: 'inbox/inbox', publicFiles: ['inbox/receiptDecision'] },
   {
@@ -125,7 +125,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   git: ['errors'],
   github: ['command', 'errors', 'git', 'schema'],
   hc: ['command', 'errors', 'schema'],
-  improvement: ['errors', 'schema'],
+  improvement: ['errors', 'git', 'record', 'schema', 'tauDirectory'],
   inbox: ['errors', 'fileLock', 'hc', 'record', 'schema', 'wake'],
   instructions: [],
   linear: ['command', 'errors'],

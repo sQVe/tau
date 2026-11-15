@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "id": "facts-sqve-tau-667",
+  "kind": "facts",
+  "createdAt": "2026-11-15T12:00:01.000Z",
+  "evidence": [
+    {
+      "kind": "transcript",
+      "path": "/home/user/.pi/agent/sessions/manager.jsonl",
+      "entryId": "a1b2c3"
+    },
+    { "kind": "assignment", "directory": "/home/user/.pi/agent/tau/assignments/worker-1" }
+  ],
+  "pullRequest": "https://github.com/sqve/tau/pull/667",
+  "facts": { "reviewRounds": 2, "fullCheckFailures": 1 },
+  "coverage": "complete"
+}
