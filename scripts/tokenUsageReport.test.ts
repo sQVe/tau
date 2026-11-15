@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import type { WorkerTask } from '../src/improvement/workerRecord.ts';
 import { formatTokenUsageReport, tokenUsageReport } from './tokenUsageReport.js';
 import type { SkippedRecords, TokenUsageReport } from './tokenUsageReport.js';
-import type { WorkerTask } from './workerRecord.js';
 
 interface SessionText {
   path: string;

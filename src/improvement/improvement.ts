@@ -1,7 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
-import { isMissingFile } from '../src/errors.ts';
+import { isMissingFile } from '../errors.ts';
 
 interface SessionFiles {
   managerSessions: string[];

@@ -1,5 +1,5 @@
+import type { WorkerTask } from '../src/improvement/workerRecord.ts';
 import { isRecord } from '../src/schema.ts';
-import type { WorkerTask } from './workerRecord.ts';
 
 export type Side = 'parent' | 'worker';
 

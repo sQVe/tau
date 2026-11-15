@@ -59,6 +59,7 @@ The target shared modules and the modules each may import:
 | `hc`            | `command`, `errors`, `schema`                                            |
 | `tauDirectory`  | `errors`, `git`                                                          |
 | `wake`          | nothing                                                                  |
+| `improvement`   | `errors`, `schema`                                                       |
 | `inbox`         | `errors`, `fileLock`, `hc`, `record`, `schema`, `wake`                   |
 | `record`        | `errors`, `schema`, `tauDirectory`                                       |
 | `checkRecord`   | `errors`, `git`, `record`                                                |

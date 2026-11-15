@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { ownsSession, parseAssignment, parseWorkerTask } from './workerRecord.js';
-import type { WorkerTask } from './workerRecord.js';
+import { ownsSession, parseAssignment, parseWorkerTask } from './workerRecord.ts';
+import type { WorkerTask } from './workerRecord.ts';
 
 const task: WorkerTask = {
   taskId: 't',
@@ -73,6 +73,7 @@ describe('parseWorkerTask', () => {
     },
     { rule: 'rejects a record without a start time', source: '{"taskId":"t"}', parsed: undefined },
     { rule: 'rejects malformed JSON', source: '{"taskId":', parsed: undefined },
+    { rule: 'rejects an empty source', source: '', parsed: undefined },
   ])('$rule', ({ source, parsed }) => {
     expect(parseWorkerTask(source)).toEqual(parsed);
   });
@@ -200,6 +201,10 @@ describe('parseAssignment', () => {
     { rule: 'rejects a record that is not an object', record: [current], expected: undefined },
   ])('$rule', ({ record, expected }) => {
     expect(parseAssignment(JSON.stringify(record))).toEqual(expected);
+  });
+
+  it('rejects an empty source', () => {
+    expect(parseAssignment('')).toBeUndefined();
   });
 
   it('rejects malformed JSON', () => {
