@@ -19,6 +19,11 @@ export interface CommandRuntime {
   signal?: AbortSignal | undefined;
 }
 
+export const piExec =
+  (pi: ExtensionAPI): Exec =>
+  (command, commandArguments, options) =>
+    pi.exec(command, commandArguments, options);
+
 export const outputPreviewLength = 200;
 
 export const runCommand = async (

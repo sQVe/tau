@@ -1,5 +1,7 @@
 import { join } from 'node:path';
 
+import type { AgentToolResult } from '@earendil-works/pi-coding-agent';
+
 import { listSavedLogs, saveCheckRecord } from '../../checkRecord/checkRecord.js';
 import { readCheckIdentity } from '../../checkRecord/identity.js';
 import { decideReuse, sameReusableState } from '../../checkRecord/reuseDecision.js';
@@ -33,6 +35,12 @@ export interface CheckPolicy<Verdict extends { passed: boolean }> {
   settle: (result: CheckResult) => Promise<Verdict>;
   reuse: (saved: CheckResult) => Promise<(Verdict & { reused: true }) | undefined>;
 }
+
+export const waitingNotifier =
+  (onUpdate: ((update: AgentToolResult<undefined>) => void) | undefined) =>
+  (message: string): void => {
+    onUpdate?.({ content: [{ type: 'text', text: message }], details: undefined });
+  };
 
 const readRepository = async (runtime: CommandRuntime): Promise<Repository | undefined> => {
   const origin = await readOriginRepository(runtime);

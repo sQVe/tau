@@ -1,4 +1,5 @@
 import { isRecord } from '../../../schema.js';
+import { textField } from './cargoMetadata.js';
 
 export interface NextestBinary {
   binaryId: string;
@@ -13,12 +14,6 @@ export interface NextestBinary {
 export interface NextestList {
   binaries: NextestBinary[];
 }
-
-const textField = (record: Record<string, unknown>, key: string): string | null => {
-  const value = record[key];
-
-  return typeof value === 'string' && value !== '' ? value : null;
-};
 
 const binaryOf = (suite: unknown): NextestBinary | null => {
   if (!isRecord(suite) || !isRecord(suite['testcases'])) {

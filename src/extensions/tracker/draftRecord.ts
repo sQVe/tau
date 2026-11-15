@@ -5,7 +5,7 @@ import type { Static } from 'typebox';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { isMissingFile } from '../../errors.js';
+import { isMissingFile, toError } from '../../errors.js';
 import { readVersionedRecord, writeRecord } from '../../record.js';
 import { describeSchemaProblem } from '../../schema.js';
 
@@ -98,8 +98,6 @@ export const readDraftRecord = async (directory: string): Promise<DraftRecord | 
 
   return { version: currentVersion, identifier: saved.identifier, comments };
 };
-
-const toError = (error: unknown) => (error instanceof Error ? error : new Error(String(error)));
 
 const readSaved = (directory: string) =>
   readDraftRecord(directory).then(

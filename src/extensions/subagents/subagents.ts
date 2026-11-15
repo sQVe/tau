@@ -5,7 +5,7 @@ import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { isNestedControlCall, nestedControlCallReason } from '../../codemode/controlTools.js';
-import type { Exec } from '../../command.js';
+import { piExec } from '../../command.js';
 import {
   forgetReportedWarnings,
   readTauConfig,
@@ -48,11 +48,6 @@ import type { WorkerScan, WorkerScanContext } from './workerScan.js';
 interface CapacityRefusal {
   refuse: () => void;
 }
-
-const piExec =
-  (pi: ExtensionAPI): Exec =>
-  (command, commandArguments, options) =>
-    pi.exec(command, commandArguments, options);
 
 // An unreadable profile directory also fails every launch, which reports the read error.
 const launchProfiles = (

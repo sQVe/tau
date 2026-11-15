@@ -67,7 +67,7 @@ export class PartialApplyError<Summary = unknown>
   }
 }
 
-const bulletList = (lines: readonly string[]) =>
+export const bulletList = (lines: readonly string[]): string =>
   lines.length === 0 ? '- none' : lines.map((line) => `- ${line}`).join('\n');
 
 const failureMessage = <Summary>(

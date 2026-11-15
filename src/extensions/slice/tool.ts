@@ -7,7 +7,7 @@ import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
 import type { Exec } from '../../command.js';
-import { isMissingFile } from '../../errors.js';
+import { isMissingFile, toError } from '../../errors.js';
 import { ensureTauDirectory, findTauRoot, rejectLinkedEntries } from '../../tauDirectory.js';
 import { applySlicePlan } from './apply.js';
 import type { SliceApplyDetails, StepSummary } from './apply.js';
@@ -75,8 +75,6 @@ const createDraftDirectory = async (root: string, name: string) => {
 
   return directory;
 };
-
-const toError = (error: unknown) => (error instanceof Error ? error : new Error(String(error)));
 
 const readSavedPlan = (directory: string) =>
   readPlan(directory).then(

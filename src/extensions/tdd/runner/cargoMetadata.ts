@@ -9,7 +9,7 @@ export interface CargoMetadata {
   targets: CargoTarget[];
 }
 
-const textField = (record: Record<string, unknown>, key: string): string | null => {
+export const textField = (record: Record<string, unknown>, key: string): string | null => {
   const value = record[key];
 
   return typeof value === 'string' && value !== '' ? value : null;

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { errorMessage, hasErrorCode, isMissingFile } from './errors.js';
+import { errorMessage, hasErrorCode, isMissingFile, toError } from './errors.js';
 
 const withCode = (code: string) => Object.assign(new Error('failed'), { code });
 
@@ -32,4 +32,14 @@ it.for<[string, unknown, string]>([
   ['an object JSON cannot print', { size: 1n }, '[object Object]'],
 ])('describes %s', ([, error, expected]) => {
   expect(errorMessage(error)).toBe(expected);
+});
+
+it('keeps an Error as it is', () => {
+  const error = new Error('failed');
+
+  expect(toError(error)).toBe(error);
+});
+
+it('wraps a thrown value that is not an Error', () => {
+  expect(toError('plain')).toStrictEqual(new Error('plain'));
 });
