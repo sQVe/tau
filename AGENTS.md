@@ -26,8 +26,8 @@ verification.
   Give each new public read path over saved records or running workers a contract test for normal,
   missing, and malformed evidence.
 - Write a new decision rule as a pure function in a module registered in `tests/structure.test.ts`,
-  tested with a decision table like `workerState.test.ts`. The caller reads records, the clock, and
-  the environment, and passes the values in as facts
+  tested with a decision table like `src/extensions/subagents/workerDecision.test.ts`. The caller
+  reads records, the clock, and the environment, and passes the values in as facts
   ([ADR 0120](docs/adr/0120-capability-modules-with-an-enforced-import-table.md)).
 - Change a saved record format with a new version and fixtures
   ([ADR 0053](docs/adr/0053-version-each-saved-record-format.md)).
