@@ -126,6 +126,11 @@ const isSafeEventId = (id: string) => new RegExp(safeEventIdPattern, 'u').test(i
 
 const isUnpublished = (name: string) => name.startsWith('.receipt-');
 
+const eventDirectory = (projectRoot: string) => join(projectRoot, '.tau', eventDirectoryPath);
+
+export const eventPath = (projectRoot: string, id: string): string =>
+  join(eventDirectory(projectRoot), `${id}.json`);
+
 export const parseEvent = (path: string, eventText: string): ImprovementEvent =>
   parseVersionedRecord(path, eventText, eventOptions);
 
@@ -172,7 +177,7 @@ const listEventNames = async (directory: string): Promise<string[]> => {
 // Lists the events in file name order. The first damaged event file stops the read with an error
 // naming it, so no reader acts on a partial list.
 export const readEvents = async (projectRoot: string): Promise<ImprovementEvent[]> => {
-  const directory = join(projectRoot, '.tau', eventDirectoryPath);
+  const directory = eventDirectory(projectRoot);
   const names = await listEventNames(directory);
   const events: ImprovementEvent[] = [];
 

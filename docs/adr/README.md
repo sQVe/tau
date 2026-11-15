@@ -40,6 +40,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0134: Patch Pi loaders to show no spinner](./0134-patch-pi-loaders-to-show-no-spinner.md)
 - [0127: Version the draft review viewer protocol](./0127-version-the-draft-review-viewer-protocol.md)
 - [0128: Support Linux and macOS only](./0128-support-linux-and-macos-only.md)
+- [0135: Record improvement events in each project root](./0135-record-improvement-events-in-each-project-root.md)
 
 ## Documentation and writing
 
