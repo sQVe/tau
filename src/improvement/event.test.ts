@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -96,6 +96,14 @@ describe('readEvents', () => {
     expect(await readEvents(root)).toEqual([]);
   });
 
+  it('throws a read error other than a missing directory', async () => {
+    const root = await createProject();
+    await mkdir(join(root, '.tau'));
+    await writeFile(eventDirectory(root), 'not a directory');
+
+    await expect(readEvents(root)).rejects.toThrow('ENOTDIR');
+  });
+
   it('ignores an unpublished receipt file', async () => {
     const root = await createProject();
     const event = correction('correction-1', 'Run focused tests first.');
@@ -137,6 +145,17 @@ describe('writeEvent', () => {
       names: await readdir(eventDirectory(root)),
       events: await readEvents(root),
     }).toEqual({ outcomes: ['saved', 'existing'], names: ['correction-1.json'], events: [first] });
+  });
+
+  it('throws a write error other than an existing event', async () => {
+    const root = await createProject();
+    await mkdir(eventDirectory(root), { recursive: true });
+    await chmod(eventDirectory(root), 0o500);
+    cleanups.push(() => chmod(eventDirectory(root), 0o700));
+
+    await expect(writeEvent(root, correction('correction-1', 'Locked.'))).rejects.toThrow('EACCES');
+
+    expect(await readdir(eventDirectory(root))).toEqual([]);
   });
 
   it.each(['../escape', 'a/b', '.hidden', ''])('refuses the unsafe event ID %j', async (id) => {

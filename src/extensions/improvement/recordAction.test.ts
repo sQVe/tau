@@ -1,6 +1,8 @@
+import { existsSync } from 'node:fs';
 import { readdir, readFile, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -9,7 +11,7 @@ import {
   git,
 } from '../../../tests/gitRepository.js';
 import { parseEvent } from '../../improvement/event.js';
-import { recordCorrection } from './recordAction.js';
+import { recordCorrection, runRecord } from './recordAction.js';
 import type { CorrectionFacts } from './recordAction.js';
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -122,5 +124,26 @@ describe('recordCorrection', () => {
     const second = await recordCorrection(factsFor(root, { toolCallId: 'b' }));
 
     expect(first.id).not.toBe(second.id);
+  });
+});
+
+describe('runRecord', () => {
+  it('refuses a whitespace-only summary and saves nothing', async () => {
+    const root = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+
+    const context = {
+      cwd: root,
+      sessionManager: { getSessionId: () => 'session-1', getSessionFile: () => undefined },
+    } as unknown as ExtensionContext;
+
+    const failure = await runRecord('call-1', ' \n\t ', context).then(
+      () => 'no error',
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    );
+
+    expect({ failure, saved: existsSync(join(root, '.tau', 'improvement')) }).toEqual({
+      failure: 'record needs summary.',
+      saved: false,
+    });
   });
 });
