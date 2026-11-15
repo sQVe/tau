@@ -13,7 +13,6 @@ const parameters = Type.Object({
 const description = '- record: save a user correction. {id,path,outcome}; existing: saved before.';
 
 export default function improvementExtension(pi: ExtensionAPI): void {
-  // Workers do not talk to the user, so only a manager records corrections.
   if (isWorkerProcess()) {
     return;
   }

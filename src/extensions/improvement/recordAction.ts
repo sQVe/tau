@@ -23,8 +23,6 @@ interface RecordResult {
 
 const hashLength = 32;
 
-// A tool call ID may hold characters a file name cannot, so the ID hashes it with the session ID.
-// A retried call then maps to the same event.
 const correctionId = (sessionId: string, toolCallId: string) => {
   const hash = createHash('sha256').update(`${sessionId}\0${toolCallId}`).digest('hex');
 

@@ -101,8 +101,6 @@ const eventSchema = Type.Union([
 const isEventKind = (kind: unknown): kind is EventKind =>
   typeof kind === 'string' && Object.hasOwn(kindSchemas, kind);
 
-// The union schema reports a problem against its first member, so a known kind is checked against
-// its own schema to name the field that is wrong.
 const checkKindFields = (value: unknown): string | undefined => {
   const kind = isRecord(value) ? value['kind'] : undefined;
 
@@ -134,8 +132,6 @@ export const eventPath = (projectRoot: string, id: string): string =>
 export const parseEvent = (path: string, eventText: string): ImprovementEvent =>
   parseVersionedRecord(path, eventText, eventOptions);
 
-// Saves the event as `<project root>/.tau/improvement/<id>.json`. An event is never replaced, so a
-// second write of the same ID keeps the first file and returns `existing`.
 export const writeEvent = async (
   projectRoot: string,
   event: ImprovementEvent,
@@ -174,8 +170,6 @@ const listEventNames = async (directory: string): Promise<string[]> => {
   }
 };
 
-// Lists the events in file name order. The first damaged event file stops the read with an error
-// naming it, so no reader acts on a partial list.
 export const readEvents = async (projectRoot: string): Promise<ImprovementEvent[]> => {
   const directory = eventDirectory(projectRoot);
   const names = await listEventNames(directory);
