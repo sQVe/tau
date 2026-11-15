@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
-import type { Exec } from '../../command.js';
+import { piExec } from '../../command.js';
 import { connect } from '../../hc/connect.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
@@ -43,11 +43,6 @@ const currentSocketDirectory = (): string => {
 
   return socketDirectoryFor(uid);
 };
-
-const piExec =
-  (pi: ExtensionAPI): Exec =>
-  (command, commandArguments, options) =>
-    pi.exec(command, commandArguments, options);
 
 export default function inboxExtension(pi: ExtensionAPI): void {
   if (!claimRegistration()) {

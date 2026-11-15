@@ -11,7 +11,12 @@ import { approveForeignWrites, rejectChangedDraft } from './applyApproval.js';
 import type { Draft, Plan } from './draft.js';
 import { planFileName, writePlan } from './draft.js';
 import { changeBlockedBy, readContainer } from './linear.js';
-import { CreatedButNotRecordedError, failPartialApply, runApplySteps } from './partialApply.js';
+import {
+  bulletList,
+  CreatedButNotRecordedError,
+  failPartialApply,
+  runApplySteps,
+} from './partialApply.js';
 import type { ApplyRunner, PartialApplyStep } from './partialApply.js';
 import { readState, slicesPath } from './state.js';
 import type { Runtime, SliceState } from './state.js';
@@ -55,9 +60,6 @@ interface ApplyProgress {
   projectId: string | null;
   urls: Map<string, string>;
 }
-
-const bulletList = (lines: readonly string[]) =>
-  lines.length === 0 ? '- none' : lines.map((line) => `- ${line}`).join('\n');
 
 const planSlice = (plan: Plan, number: number) => {
   const slice = plan.slices[number - 1];

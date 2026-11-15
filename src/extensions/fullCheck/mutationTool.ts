@@ -8,7 +8,7 @@ import type { Exec } from '../../command.js';
 import { readLockScope } from '../../config/repositoryCommand.js';
 import { runGit } from '../../git.js';
 import { findTauRoot } from '../../tauDirectory.js';
-import { executeRecordedCheck } from './checkFlow.js';
+import { executeRecordedCheck, waitingNotifier } from './checkFlow.js';
 import type { CheckPolicy, Recorded } from './checkFlow.js';
 import { readMutationArgv } from './mutationConfig.js';
 import { parseMutationReport } from './mutationReport.js';
@@ -336,10 +336,6 @@ export const createMutationCheckTool = (
     parameters,
     executionMode: 'sequential',
     async execute(_toolCallId, toolParameters, signal, onUpdate, context) {
-      const notifyWaiting = (message: string) => {
-        onUpdate?.({ content: [{ type: 'text', text: message }], details: undefined });
-      };
-
-      return execute(options, toolParameters, signal, notifyWaiting, context);
+      return execute(options, toolParameters, signal, waitingNotifier(onUpdate), context);
     },
   });

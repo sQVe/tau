@@ -9,7 +9,7 @@ import {
   withIgnoredNote,
 } from '../../config/repositoryCommand.js';
 import { findTauRoot } from '../../tauDirectory.js';
-import { executeRecordedCheck } from './checkFlow.js';
+import { executeRecordedCheck, waitingNotifier } from './checkFlow.js';
 import type { Recorded } from './checkFlow.js';
 import { defaultIdleLimitMilliseconds } from './run.js';
 import type { CheckResult } from './run.js';
@@ -119,10 +119,6 @@ export const createFullCheckTool = (
     parameters,
     executionMode: 'sequential',
     async execute(_toolCallId, _toolParameters, signal, onUpdate, context) {
-      const notifyWaiting = (message: string) => {
-        onUpdate?.({ content: [{ type: 'text', text: message }], details: undefined });
-      };
-
-      return execute(options, signal, notifyWaiting, context);
+      return execute(options, signal, waitingNotifier(onUpdate), context);
     },
   });

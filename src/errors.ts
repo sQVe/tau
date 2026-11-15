@@ -21,6 +21,9 @@ export const errorMessage = (error: unknown): string => {
   return typeof message === 'string' ? message : describeObject(error);
 };
 
+export const toError = (error: unknown): Error =>
+  error instanceof Error ? error : new Error(String(error));
+
 export const hasErrorCode = (error: unknown, code: string): boolean =>
   error instanceof Error && 'code' in error && error.code === code;
 
