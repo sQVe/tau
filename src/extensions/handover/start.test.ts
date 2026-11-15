@@ -61,6 +61,8 @@ it('opens a tab in the space with the file text as its task', async () => {
         '["pi"]',
         '--task',
         'Next steps\n',
+        '--focus',
+        'false',
       ],
     },
   ]);
@@ -87,6 +89,8 @@ it('opens a new space with a tab when no space is given', async () => {
         '["pi"]',
         '--task',
         'Next steps\n',
+        '--focus',
+        'false',
       ],
     },
   ]);

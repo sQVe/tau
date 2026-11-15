@@ -31,6 +31,8 @@ const tabArguments = (space: string, folder: string, task: string): string[] => 
   '["pi"]',
   '--task',
   task,
+  '--focus',
+  'false',
 ];
 
 const spaceArguments = (name: string, folder: string, task: string): string[] => [
@@ -44,6 +46,8 @@ const spaceArguments = (name: string, folder: string, task: string): string[] =>
   '["pi"]',
   '--task',
   task,
+  '--focus',
+  'false',
 ];
 
 const startArguments = (request: StartHandoverRequest, task: string): string[] =>
