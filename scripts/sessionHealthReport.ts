@@ -1,3 +1,11 @@
+import {
+  assistantCalls,
+  codemodeCalls,
+  parseEntries,
+  text,
+  toolResult,
+} from '../src/improvement/transcript.ts';
+import type { Entry } from '../src/improvement/transcript.ts';
 import { isRecord } from '../src/schema.ts';
 
 export type Side = 'manager' | 'worker';
@@ -75,120 +83,57 @@ interface EntryFacts {
   pending: Map<string, ToolCall>;
 }
 
-type Entry = Record<string, unknown>;
-
 const topErrorCount = 3;
 const errorMessageLength = 120;
 const ellipsis = '...';
 const isoDateLength = 'YYYY-MM-DD'.length;
 const percentScale = 100;
 
-const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
-
-const parseObject = (source: string): Entry | undefined => {
-  try {
-    const value: unknown = JSON.parse(source);
-
-    return isRecord(value) ? value : undefined;
-  } catch {
-    return undefined;
-  }
-};
-
-const parseEntries = (collection: HealthCollection, source: string) => {
-  const entries: Entry[] = [];
-
-  for (const line of source.split('\n').filter((candidate) => candidate.trim() !== '')) {
-    const entry = parseObject(line);
-
-    if (entry === undefined) {
-      collection.malformedLines += 1;
-    } else {
-      entries.push(entry);
-    }
-  }
-
-  return entries;
-};
-
-const resultText = (content: unknown) => {
-  const parts = Array.isArray(content) ? content.filter(isRecord) : [];
-
-  return parts
-    .filter((part) => part.type === 'text')
-    .map((part) => text(part.text) ?? '')
-    .join('\n');
-};
-
-const codemodeCalls = (details: Entry, script: ToolCall): ToolCall[] => {
-  const calls = Array.isArray(details.calls) ? details.calls.filter(isRecord) : [];
-
-  return calls.flatMap((call) => {
-    const tool = text(call.name);
-
-    if (tool === undefined) {
-      return [];
-    }
-
-    const error = call.status === 'error' ? (text(call.error) ?? '') : undefined;
-
-    return [
-      {
-        tool,
-        day: script.day,
-        side: script.side,
-        viaCodemode: true,
-        arguments: parseObject(text(call.args) ?? ''),
-        details: undefined,
-        error,
-      },
-    ];
-  });
-};
-
 const addAssistantCalls = (collection: HealthCollection, message: Entry, facts: EntryFacts) => {
-  const parts = Array.isArray(message.content) ? message.content.filter(isRecord) : [];
-
-  for (const part of parts) {
-    const tool = text(part.name);
-    const id = text(part.id);
-
-    if (part.type !== 'toolCall' || tool === undefined || id === undefined) {
-      continue;
-    }
-
+  for (const called of assistantCalls(message)) {
     const call: ToolCall = {
-      tool,
+      tool: called.tool,
       day: facts.day,
       side: facts.side,
       viaCodemode: false,
-      arguments: isRecord(part.arguments) ? part.arguments : undefined,
+      arguments: called.arguments,
       details: undefined,
       error: undefined,
     };
 
     collection.calls.push(call);
-    facts.pending.set(id, call);
+    facts.pending.set(called.callId, call);
   }
 };
 
 const addResult = (collection: HealthCollection, message: Entry, facts: EntryFacts) => {
-  const call = facts.pending.get(text(message.toolCallId) ?? '');
+  const { callId, result } = toolResult(message);
+  const call = facts.pending.get(callId);
 
   if (call === undefined) {
     return;
   }
 
-  const details = isRecord(message.details) ? message.details : undefined;
+  call.details = result.details;
 
-  call.details = details;
-
-  if (message.isError === true) {
-    call.error = resultText(message.content);
+  if (result.error !== undefined) {
+    call.error = result.error;
   }
 
-  if (call.tool === 'codemode' && details !== undefined) {
-    collection.calls.push(...codemodeCalls(details, call));
+  if (call.tool !== 'codemode' || result.details === undefined) {
+    return;
+  }
+
+  for (const nested of codemodeCalls(result.details, callId)) {
+    collection.calls.push({
+      tool: nested.tool,
+      day: call.day,
+      side: call.side,
+      viaCodemode: true,
+      arguments: nested.arguments,
+      details: undefined,
+      error: nested.result?.error,
+    });
   }
 };
 
@@ -218,7 +163,11 @@ export const collectSessionFile = (collection: HealthCollection, file: SessionFi
     collection.workerFiles += 1;
   }
 
-  for (const entry of parseEntries(collection, file.text)) {
+  const { entries, malformedLines } = parseEntries(file.text);
+
+  collection.malformedLines += malformedLines;
+
+  for (const entry of entries) {
     const time = Date.parse(text(entry.timestamp) ?? '');
 
     if (Number.isNaN(time)) {
