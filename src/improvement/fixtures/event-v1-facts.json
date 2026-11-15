@@ -7,6 +7,7 @@
     {
       "kind": "transcript",
       "path": "/home/user/.pi/agent/sessions/manager.jsonl",
+      "toolCallId": "toolu_01GhIjKl",
       "entryId": "a1b2c3"
     },
     { "kind": "assignment", "directory": "/home/user/.pi/agent/tau/assignments/worker-1" }

@@ -23,7 +23,7 @@ const correction = (id: string, summary: string): ImprovementEvent => ({
   id,
   kind: 'correction',
   createdAt: '2026-11-15T12:05:00.000Z',
-  evidence: [{ kind: 'transcript', path: '/sessions/manager.jsonl', entryId: 'entry-1' }],
+  evidence: [{ kind: 'transcript', path: '/sessions/manager.jsonl', toolCallId: 'call-1' }],
   summary,
   cwd: '/code/tau',
 });
@@ -48,10 +48,34 @@ describe('parseEvent', () => {
     },
   );
 
-  it('refuses a kind field that belongs to another kind', () => {
-    const text = JSON.stringify({ ...correction('c-1', 'Use focused tests.'), choice: 'approved' });
+  it('names the invalid field of a known kind', () => {
+    const text = JSON.stringify({ ...correction('c-1', 'Use focused tests.'), cwd: 7 });
+
+    expect(() => parseEvent('/events/c-1.json', text)).toThrow(/\/events\/c-1\.json: \/cwd /u);
+  });
+
+  it('refuses an unknown kind with an error naming its path', () => {
+    const text = JSON.stringify({ ...correction('c-1', 'Use focused tests.'), kind: 'retired' });
 
     expect(() => parseEvent('/events/c-1.json', text)).toThrow('/events/c-1.json');
+  });
+
+  it('refuses JSON that is not an object with an error naming its path', () => {
+    expect(() => parseEvent('/events/c-1.json', '[1]')).toThrow('/events/c-1.json');
+  });
+
+  it.each([
+    { kind: 'transcript', path: '/sessions/manager.jsonl', toolCallId: 'call-1' },
+    { kind: 'transcript', path: '/sessions/manager.jsonl', toolCallId: 'call-1', entryId: 'e-1' },
+    { kind: 'session', sessionId: 'session-1', toolCallId: 'call-1' },
+  ] as const)('round-trips the evidence pointer %j', async (pointer) => {
+    const root = await createProject();
+    const evidence = [pointer];
+    const event = { ...correction('correction-1', 'Run focused tests first.'), evidence };
+
+    await writeEvent(root, event);
+
+    expect(await readEvents(root)).toEqual([event]);
   });
 });
 

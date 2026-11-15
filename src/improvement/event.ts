@@ -36,7 +36,16 @@ const pullRequestUrl = Type.String({ pattern: '^https://' });
 
 const evidenceSchema = Type.Union([
   Type.Object(
-    { kind: Type.Literal('transcript'), path: text, entryId: text },
+    {
+      kind: Type.Literal('transcript'),
+      path: text,
+      toolCallId: text,
+      entryId: Type.Optional(text),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    { kind: Type.Literal('session'), sessionId: text, toolCallId: text },
     { additionalProperties: false },
   ),
   Type.Object(
