@@ -15,10 +15,16 @@ interface SessionFiles {
   workerRecords: string[];
 }
 
-export interface WorkerRecord {
+interface WorkerRecord {
   task: WorkerTask;
   directory: string;
 }
+
+export type WorkerRecordRead =
+  | { status: 'read'; record: WorkerRecord }
+  | { status: 'missing' }
+  | { status: 'malformed' }
+  | { status: 'unreadable'; reason: string };
 
 const listFiles = async (directory: string) => {
   try {
@@ -55,12 +61,25 @@ export const findSessionFiles = async (agentDirectory: string): Promise<SessionF
   };
 };
 
-export const readWorkerRecord = async (path: string): Promise<WorkerRecord | undefined> => {
-  const source = await readFile(path, 'utf8').catch(() => '');
+export const readWorkerRecord = async (path: string): Promise<WorkerRecordRead> => {
+  let source: string;
+
+  try {
+    source = await readFile(path, 'utf8');
+  } catch (error) {
+    return isMissingFile(error)
+      ? { status: 'missing' }
+      : { status: 'unreadable', reason: errorMessage(error) };
+  }
+
   const parse = basename(path) === 'assignment.json' ? parseAssignment : parseWorkerTask;
   const task = parse(source);
 
-  return task === undefined ? undefined : { task, directory: dirname(path) };
+  if (task === undefined) {
+    return { status: 'malformed' };
+  }
+
+  return { status: 'read', record: { task, directory: dirname(path) } };
 };
 
 export const readTranscript = async (path: string): Promise<Transcript> => {
@@ -97,7 +116,8 @@ const combinedReadability = (results: readonly WorkerTranscript[]): WorkerTransc
   return results.includes('readable') ? 'readable' : 'missing';
 };
 
-// Finds the transcript of each worker with a readable record, by task or assignment ID.
+// Finds the transcript of each worker by task or assignment ID. A record that is malformed or
+// cannot be read makes its worker unreadable, keyed by the record folder, which carries the ID.
 export const readWorkerTranscripts = async (
   agentDirectory: string,
 ): Promise<Map<string, WorkerTranscript>> => {
@@ -106,11 +126,17 @@ export const readWorkerTranscripts = async (
 
   for (const recordPath of workerRecords) {
     // oxlint-disable-next-line no-await-in-loop -- Reads started together would open too many files.
-    const record = await readWorkerRecord(recordPath);
+    const read = await readWorkerRecord(recordPath);
 
-    if (record === undefined) {
+    if (read.status === 'malformed' || read.status === 'unreadable') {
+      workers.set(basename(dirname(recordPath)), 'unreadable');
+    }
+
+    if (read.status !== 'read') {
       continue;
     }
+
+    const { record } = read;
 
     const sessions = workerSessions.filter((path) =>
       ownsSession(record.task, record.directory, path),

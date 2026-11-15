@@ -258,6 +258,58 @@ describe('mapTasks', () => {
     });
   });
 
+  it('keeps the result of a copied call when another copy has no result', () => {
+    const sessionHeader = JSON.stringify({
+      type: 'session',
+      id: 's',
+      timestamp: '2026-11-03T08:00:00.000Z',
+      cwd: '/home/sqve/code/personal/tau/me-1023',
+    });
+
+    const verifyCall = JSON.stringify({
+      type: 'message',
+      id: 'verify',
+      timestamp: '2026-11-03T08:01:00.000Z',
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'toolCall',
+            id: 'c1',
+            name: 'pr',
+            arguments: { action: 'verify', repository, pr: 570 },
+          },
+        ],
+      },
+    });
+
+    const verifyResult = JSON.stringify({
+      type: 'message',
+      id: 'verify-result',
+      timestamp: '2026-11-03T08:02:00.000Z',
+      message: { role: 'toolResult', toolCallId: 'c1', details: { matches: true } },
+    });
+
+    const complete = [sessionHeader, verifyCall, verifyResult].join('\n');
+    const cut = [sessionHeader, verifyCall].join('\n');
+
+    const [task] = mapTasks(
+      facts({
+        pullRequests: [merged(570, 'me-1023-a-later-change')],
+        transcripts: [
+          { path: '/sessions/complete.jsonl', transcript: parseTranscript(complete) },
+          { path: '/sessions/cut.jsonl', transcript: parseTranscript(cut) },
+        ],
+      }),
+    ).tasks;
+
+    expect(task?.facts.map((fact) => `${fact.kind} ${fact.entryId}`)).toEqual([
+      'publication verify',
+    ]);
+
+    expect(task?.counts.publications).toBe(1);
+  });
+
   it('reports coverage unknown when a mapped transcript is malformed', () => {
     const transcript = parseTranscript(`${fixtureText('withoutPublication.jsonl')}{not json\n`);
 

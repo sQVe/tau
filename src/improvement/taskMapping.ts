@@ -192,12 +192,17 @@ const sourcesOf = (
     : fallbackSources(pullRequest, key, inRepository);
 };
 
-// Forked sessions copy entries, so each call counts once across transcripts.
+// Forked sessions copy entries, so each call counts once across transcripts. A copy cut before
+// its result must not hide the result of another copy.
 const combinedCalls = (sources: readonly TaskSource[]) => {
   const calls = new Map<string, ToolCall>();
 
   for (const call of sources.flatMap((source) => source.calls)) {
-    calls.set(`${call.entryId}\0${call.callId}`, call);
+    const key = `${call.entryId}\0${call.callId}`;
+
+    if (calls.get(key)?.result === undefined) {
+      calls.set(key, call);
+    }
   }
 
   return [...calls.values()].toSorted((left, right) =>

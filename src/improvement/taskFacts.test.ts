@@ -290,6 +290,16 @@ describe('countTaskFacts', () => {
     });
   });
 
+  it('counts only launches with the qa profile as QA launches', () => {
+    const evidence = extractTaskEvidence([
+      call('subagent', { profile: 'qa' }, done({ taskId: 'task-1' })),
+      call('subagent', { profile: 'worker' }, done({ taskId: 'task-2' })),
+      call('subagent', { profile: 'reviewer' }, done({ taskId: 'task-3' })),
+    ]);
+
+    expect(countTaskFacts(evidence)).toMatchObject({ qaLaunches: 1, launches: 3 });
+  });
+
   it('makes a count unknown, not zero, when a known tool has an unknown call shape', () => {
     const evidence = extractTaskEvidence([
       call('code_review', { action: 'capture', target: { kind: 'workingTree' } }),

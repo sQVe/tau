@@ -87,8 +87,8 @@ export const findUsageRecords = async (
   since: number,
 ): Promise<UsageRecords> => {
   const files = await findSessionFiles(agentDirectory);
-  const tasks = await readInTurn(files.workerRecords, readWorkerRecord);
-  const records = tasks.filter((record) => record !== undefined);
+  const reads = await readInTurn(files.workerRecords, readWorkerRecord);
+  const records = reads.flatMap((read) => (read.status === 'read' ? [read.record] : []));
   const recordDirectories = new Set(records.map((record) => record.directory));
 
   const tasksOf = (path: string) =>
