@@ -1,18 +1,13 @@
 import { open, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { findSessionFiles } from '../src/improvement/improvement.ts';
-import { ownsSession, parseAssignment, parseWorkerTask } from '../src/improvement/workerRecord.ts';
+import { findSessionFiles, readWorkerRecord } from '../src/improvement/improvement.ts';
+import { ownsSession } from '../src/improvement/workerRecord.ts';
 import type { WorkerTask } from '../src/improvement/workerRecord.ts';
 import { formatTokenUsageReport, tokenUsageReport } from './tokenUsageReport.ts';
 import type { SessionFile, Side, SkippedRecords } from './tokenUsageReport.ts';
-
-interface TaskRecord {
-  task: WorkerTask;
-  directory: string;
-}
 
 interface UsageRecords {
   sessions: SessionFile[];
@@ -33,14 +28,6 @@ const readInTurn = async <Item, Result>(items: Item[], read: (item: Item) => Pro
   }
 
   return results;
-};
-
-const readTask = async (path: string): Promise<TaskRecord | undefined> => {
-  const source = await readFile(path, 'utf8').catch(() => '');
-  const parse = basename(path) === 'assignment.json' ? parseAssignment : parseWorkerTask;
-  const task = parse(source);
-
-  return task === undefined ? undefined : { task, directory: dirname(path) };
 };
 
 const firstLineChunkBytes = 65_536;
@@ -100,7 +87,7 @@ export const findUsageRecords = async (
   since: number,
 ): Promise<UsageRecords> => {
   const files = await findSessionFiles(agentDirectory);
-  const tasks = await readInTurn(files.workerRecords, readTask);
+  const tasks = await readInTurn(files.workerRecords, readWorkerRecord);
   const records = tasks.filter((record) => record !== undefined);
   const recordDirectories = new Set(records.map((record) => record.directory));
 
