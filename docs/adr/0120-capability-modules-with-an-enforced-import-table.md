@@ -59,6 +59,7 @@ The target shared modules and the modules each may import:
 | `hc`            | `command`, `errors`, `schema`                                            |
 | `tauDirectory`  | `errors`, `git`                                                          |
 | `wake`          | nothing                                                                  |
+| `improvement`   | `errors`, `schema`                                                       |
 | `inbox`         | `errors`, `fileLock`, `hc`, `record`, `schema`, `wake`                   |
 | `record`        | `errors`, `schema`, `tauDirectory`                                       |
 | `checkRecord`   | `errors`, `git`, `record`                                                |
@@ -83,6 +84,9 @@ rule reports an import, change the table or the module list instead of silencing
   parent folder does not rename it.
 - Feature code stays in `src/extensions/<feature>/`. Code moves to shared `src/` only once two
   extensions need it. The import rule does not enforce this threshold.
+- A move may come before its users when an agreed slice plan names the two extensions that will
+  import the module. The pull request names those slices. Moving the code once, in its own pull
+  request, keeps later slices to new behavior.
 - `src/tau.ts` is the package entry and installs every extension. `package.json` points
   `pi.extensions` at that file, because Pi loads every `.ts` file of a folder it scans. `src/` has
   no `index.*` files and no barrel files.
@@ -171,3 +175,9 @@ profiles.
 
 Rejected. A rename changes importers, tests, and registry entries, so it widens the merge surface of
 the very feature work that overlaps other branches.
+
+### Move only when the first extension user lands
+
+Keep the two-extension threshold strict, and move shared code inside the first slice that imports
+it. Rejected for planned work because it mixes a file move into a behavior slice and makes that
+slice harder to review.

@@ -1,4 +1,4 @@
-import { isRecord } from '../src/schema.ts';
+import { isRecord } from '../schema.ts';
 
 export interface WorkerTask {
   taskId: string;

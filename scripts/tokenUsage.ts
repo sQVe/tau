@@ -3,11 +3,11 @@ import { homedir } from 'node:os';
 import { basename, dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { findSessionFiles } from './sessionFiles.ts';
+import { findSessionFiles } from '../src/improvement/improvement.ts';
+import { ownsSession, parseAssignment, parseWorkerTask } from '../src/improvement/workerRecord.ts';
+import type { WorkerTask } from '../src/improvement/workerRecord.ts';
 import { formatTokenUsageReport, tokenUsageReport } from './tokenUsageReport.ts';
 import type { SessionFile, Side, SkippedRecords } from './tokenUsageReport.ts';
-import { ownsSession, parseAssignment, parseWorkerTask } from './workerRecord.ts';
-import type { WorkerTask } from './workerRecord.ts';
 
 interface TaskRecord {
   task: WorkerTask;

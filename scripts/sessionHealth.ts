@@ -3,8 +3,8 @@ import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
+import { findSessionFiles } from '../src/improvement/improvement.ts';
 import { isRecord } from '../src/schema.ts';
-import { findSessionFiles } from './sessionFiles.ts';
 import {
   collectSessionFile,
   createHealthCollection,
