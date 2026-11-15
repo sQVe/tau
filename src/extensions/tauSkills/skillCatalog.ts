@@ -24,7 +24,7 @@ const readFrontmatter = (filePath: string) => {
 };
 
 const requiredForLead =
-  'Use each skill named below also when its action is a step in a larger task.';
+  'Use each skill below whenever you are doing the action after its name, also as a step in a larger task:';
 
 const readRequiredForLines = (skills: readonly Skill[]) => {
   const actions = requiredActions(
@@ -35,9 +35,7 @@ const readRequiredForLines = (skills: readonly Skill[]) => {
     })),
   );
 
-  const skillLines = actions.map(
-    ({ name, action }) => `Use the \`${name}\` skill whenever you are ${action}.`,
-  );
+  const skillLines = actions.map(({ name, action }) => `- \`${name}\`: ${action}.`);
 
   return skillLines.length === 0 ? [] : [requiredForLead, ...skillLines];
 };
