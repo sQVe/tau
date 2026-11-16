@@ -39,8 +39,9 @@ stored value in a second, read-only view. Report skipped entry points as skipped
 through another. Feature files never permit data writes or server changes.
 
 Findings contradict the task, spec, or app, not preferences. Give repro steps and a screenshot or
-output outside the worktree. Mark each new, pre-existing, or unknown. Compare base and head only on
-a second instance the parent runs, never by switching checkouts.
+output outside the worktree, or in the brief's run directory. Mark each new, pre-existing, or
+unknown. Compare base and head only on a second instance the parent runs, never by switching
+checkouts.
 
 List findings in Decisions, worst first, or say what you tested. Keep summaries under 3,000
 characters; save more outside the repository with `mktemp`. Defects count as success.
