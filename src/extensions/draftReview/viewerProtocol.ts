@@ -100,19 +100,17 @@ export const writeRequest = async (
   await writeRecord(join(recordDirectory, requestFileName), request);
 };
 
-const refuseRetiredRequest =
-  (path: string) =>
-  (value: unknown): string | undefined => {
-    if (savedVersion(value) !== retiredRequestVersion) {
-      return undefined;
-    }
+const refuseRetiredRequest = (path: string, value: unknown): string | undefined => {
+  if (savedVersion(value) !== retiredRequestVersion) {
+    return undefined;
+  }
 
-    throw new Error(
-      `Viewer request ${path} was saved by an older Tau, so this Tau cannot read it. Open a new review.`,
-    );
-  };
+  throw new Error(
+    `Viewer request ${path} was saved by an older Tau, so this Tau cannot read it. Open a new review.`,
+  );
+};
 
-const isStagedPathOutside = (stagedPath: string): boolean =>
+const isStagedPathRefused = (stagedPath: string): boolean =>
   isAbsolute(stagedPath) || stagedPath.split('/').includes('..');
 
 export const readViewerRequest = async (
@@ -124,7 +122,7 @@ export const readViewerRequest = async (
     label: 'viewer request',
     version: requestVersion,
     schema: requestSchema,
-    check: refuseRetiredRequest(path),
+    check: (value) => refuseRetiredRequest(path, value),
   });
 
   if (request === undefined) {
@@ -135,11 +133,11 @@ export const readViewerRequest = async (
     throw new Error(`Malformed viewer request ${path}: stagingDirectory must be an absolute path.`);
   }
 
-  const outside = request.files.find((file) => isStagedPathOutside(file.stagedPath));
+  const refused = request.files.find((file) => isStagedPathRefused(file.stagedPath));
 
-  if (outside !== undefined) {
+  if (refused !== undefined) {
     throw new Error(
-      `Malformed viewer request ${path}: staged path ${outside.stagedPath} is outside the staging directory.`,
+      `Malformed viewer request ${path}: staged path ${refused.stagedPath} must be relative with no ".." segment.`,
     );
   }
 

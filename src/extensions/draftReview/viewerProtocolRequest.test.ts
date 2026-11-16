@@ -94,7 +94,7 @@ it('refuses a staged path outside the staging directory', async () => {
   expect(failure).toBeInstanceOf(Error);
 
   expect((failure as Error).message).toMatch(
-    /staged path \.\.\/outside\.md is outside the staging directory/,
+    /staged path \.\.\/outside\.md must be relative with no "\.\." segment/,
   );
 
   expect((failure as Error).message).toContain(requestPath(directory));
@@ -141,7 +141,7 @@ it('refuses a dot-dot segment that stays inside', async () => {
   const { before, failure, after } = await refusal(directory);
 
   expect(failure).toBeInstanceOf(Error);
-  expect((failure as Error).message).toMatch(/is outside the staging directory/);
+  expect((failure as Error).message).toMatch(/must be relative with no "\.\." segment/);
   expect((failure as Error).message).toContain(requestPath(directory));
   expect(after).toEqual(before);
 });
@@ -164,9 +164,27 @@ it('refuses an absolute staged path', async () => {
   expect(failure).toBeInstanceOf(Error);
 
   expect((failure as Error).message).toMatch(
-    /staged path \/tmp\/outside\.md is outside the staging directory/,
+    /staged path \/tmp\/outside\.md must be relative with no "\.\." segment/,
   );
 
   expect((failure as Error).message).toContain(requestPath(directory));
   expect(after).toEqual(before);
+});
+
+it('accepts a backslash in a staged path as a name character', async () => {
+  const directory = await directoryWith('manual.json');
+
+  const fixture = JSON.parse(await readFile(requestPath(directory), 'utf8')) as {
+    files: { path: string; stagedPath: string }[];
+  };
+
+  const files = fixture.files.map((file, index) =>
+    index === 1 ? { ...file, stagedPath: '01-notes/1-a\\b.md' } : file,
+  );
+
+  await writeFile(requestPath(directory), textOf({ ...fixture, files }));
+
+  const request = await readViewerRequest(directory);
+
+  expect(request?.files[1]?.stagedPath).toBe('01-notes/1-a\\b.md');
 });

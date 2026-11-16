@@ -26,8 +26,8 @@ it.
   (`null` outside hc, and never the viewer's terminal); the absolute `stagingDirectory`; an optional
   `reviewedItem` with an identifier and an https URL; and the ordered file pairs the review staged.
   `open` writes it beside `review.json`. A viewer opens `join(stagingDirectory, stagedPath)`. A
-  stagedPath is relative and `/`-separated, and a reader refuses an absolute stagedPath or one with
-  any `..` segment. Version 1 is retired.
+  stagedPath is relative and `/`-separated; a backslash is a name character, not a separator. A
+  reader refuses an absolute stagedPath or one with any `..` segment. Version 1 is retired.
 - `comments.json` is a viewer's reply: the review ID, a state of `open`, `submitted`, or `error`
   with a reason, and comments that name a staged path with lines, type, and content.
 - `collect` validates a reply before any change. A newer version, malformed JSON, another review ID,
