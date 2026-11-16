@@ -234,8 +234,18 @@ describe('recordDecision', () => {
     expect(
       events
         .filter((event) => event.kind === 'decision')
-        .map((event) => ({ subject: event.subject, choice: event.choice })),
-    ).toEqual([{ subject: review.id, choice: 'approved' }]);
+        .map((event) => ({
+          subject: event.subject,
+          choice: event.choice,
+          evidence: event.evidence,
+        })),
+    ).toEqual([
+      {
+        subject: review.id,
+        choice: 'approved',
+        evidence: [{ kind: 'session', sessionId: 'session-1', toolCallId: 'call|decision' }],
+      },
+    ]);
   });
 });
 
@@ -335,7 +345,7 @@ it('refuses a decision when the named review has a newer format', async () => {
   const root = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
   const directory = join(await realpath(root), '.tau', 'improvement');
   const named = join(directory, 'review-newer.json');
-  const other = join(directory, 'review-other.json');
+  const other = join(directory, 'review-aaa.json');
 
   await mkdir(directory, { recursive: true });
   await writeFile(named, '{"version":2}', 'utf8');
@@ -350,8 +360,9 @@ it('refuses a decision when the named review has a newer format', async () => {
     `Improvement event ${named} has a newer format than this Tau reads. Update Tau, then restart the session.`,
   );
 
-  expect((await readdir(directory)).toSorted()).toEqual(['review-newer.json', 'review-other.json']);
+  expect((await readdir(directory)).toSorted()).toEqual(['review-aaa.json', 'review-newer.json']);
   expect(await readFile(named, 'utf8')).toBe('{"version":2}');
+  expect(await readFile(other, 'utf8')).toBe('{"version":2}');
 });
 
 describe('runRecord', () => {
