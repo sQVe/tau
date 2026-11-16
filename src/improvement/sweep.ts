@@ -77,20 +77,6 @@ const finishFailed = async (
   return { outcome: 'failed', reason: error ?? reason };
 };
 
-const withMergedUnknown = (
-  index: SweepIndex,
-  projectRoot: string,
-  repository: string | null,
-  at: string,
-  reason: string,
-): SweepIndex => ({
-  ...index,
-  projects: {
-    ...index.projects,
-    [projectRoot]: { repository, merged: { status: 'unknown', at, reason } },
-  },
-});
-
 const runProjects = async (
   options: SweepOptions,
   index: SweepIndex,
@@ -128,16 +114,6 @@ const runProjects = async (
 
     if (result.status === 'unknown') {
       failure ??= result.reason;
-
-      current = withMergedUnknown(
-        current,
-        projectRoot,
-        entry?.repository ?? null,
-        options.now().toISOString(),
-        result.reason,
-      );
-
-      continue;
     }
 
     current = result.index;

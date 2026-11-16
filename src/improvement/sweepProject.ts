@@ -32,6 +32,11 @@ export interface ProjectOptions {
 export type ProjectResult =
   | { status: 'done'; index: SweepIndex }
   | { status: 'budget' }
+  | { status: 'unknown'; reason: string; index: SweepIndex };
+
+type ProjectRead =
+  | { status: 'done'; index: SweepIndex }
+  | { status: 'budget' }
   | { status: 'unknown'; reason: string };
 
 type ResolvedEntry = Extract<SweepIndex['transcripts'][string], { status: 'resolved' }>;
@@ -313,7 +318,7 @@ const writePlannedEvents = async (
   return { status: 'ok' };
 };
 
-export const runProject = async (options: ProjectOptions): Promise<ProjectResult> => {
+const readProject = async (options: ProjectOptions): Promise<ProjectRead> => {
   const repository = options.repository;
 
   if (repository === null) {
@@ -398,5 +403,24 @@ export const runProject = async (options: ProjectOptions): Promise<ProjectResult
   return {
     status: 'done',
     index: { ...options.index, transcripts: read.transcripts, projects },
+  };
+};
+
+export const runProject = async (options: ProjectOptions): Promise<ProjectResult> => {
+  const result = await readProject(options);
+
+  if (result.status !== 'unknown') {
+    return result;
+  }
+
+  return {
+    ...result,
+    index: withMergedUnknown(
+      options.index,
+      options.projectRoot,
+      options.repository,
+      options.now().toISOString(),
+      result.reason,
+    ),
   };
 };

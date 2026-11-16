@@ -201,8 +201,12 @@ export const resolveTranscript = async (
   };
 };
 
-const projectEntry = (index: SweepIndex, projectRoot: string, repository: string | null) => {
-  const previous = index.projects[projectRoot];
+const projectEntry = (
+  projects: SweepIndex['projects'],
+  projectRoot: string,
+  repository: string | null,
+) => {
+  const previous = projects[projectRoot];
 
   return {
     repository,
@@ -250,10 +254,11 @@ const refreshNullRepository = async (
   });
 
   if (location.status === 'resolved') {
-    projects[entry.projectRoot] = {
-      repository: location.location.repository,
-      merged: project?.merged ?? { status: 'notRead' },
-    };
+    projects[entry.projectRoot] = projectEntry(
+      projects,
+      entry.projectRoot,
+      location.location.repository,
+    );
   }
 };
 
@@ -300,7 +305,7 @@ const discoverUnresolved = async (
     if (result.status === 'resolved') {
       const root = result.entry.projectRoot;
 
-      projects[root] = projectEntry({ ...options.index, projects }, root, result.repository);
+      projects[root] = projectEntry(projects, root, result.repository);
     }
 
     if (budgetReached(options)) {
