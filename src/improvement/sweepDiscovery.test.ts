@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -6,7 +6,7 @@ import { expect, it, onTestFinished } from 'vitest';
 import { git, initializeRepository } from '../../tests/gitRepository.ts';
 import { createSweepFixture, eventHash } from '../../tests/sweepHarness.ts';
 import { readEvents } from './event.ts';
-import { discoverTranscripts } from './sweepDiscovery.ts';
+import { discoverTranscripts, resolveTranscript } from './sweepDiscovery.ts';
 
 const merged = (number: number, headRefName: string) => ({
   number,
@@ -157,4 +157,131 @@ it('saves each transcript discovered before the budget ends', async () => {
   const events = await readEvents(fixture.repository);
 
   expect(events.events.some((event) => event.kind === 'merge')).toBe(true);
+});
+
+it('saves an unresolved entry when the cwd is below a file', async () => {
+  const fixture = await createSweepFixture(onTestFinished);
+  const blocker = join(fixture.agentDirectory, 'blocker');
+  const cwd = join(blocker, 'child');
+
+  writeFileSync(blocker, 'not a directory');
+  fixture.setMerged([]);
+
+  const path = fixture.writeSession('manager.jsonl', session(cwd));
+
+  expect(await fixture.run()).toEqual({ outcome: 'caughtUp' });
+
+  const before = await fixture.readIndex();
+
+  expect(before.transcripts[path]).toMatchObject({
+    status: 'unresolved',
+    cwd,
+    reason: expect.stringContaining('does not exist') as string,
+  });
+
+  rmSync(blocker);
+  mkdirSync(blocker);
+  await initializeRepository(blocker);
+
+  expect(await fixture.run()).toEqual({ outcome: 'caughtUp' });
+
+  const after = await fixture.readIndex();
+
+  expect(after.transcripts[path]).toMatchObject({ status: 'resolved', cwd });
+});
+
+it('saves an unresolved entry when no ancestor is a repository', async () => {
+  const fixture = await createSweepFixture(onTestFinished);
+  const cwd = join(fixture.agentDirectory, 'gone', 'deeper');
+  const path = fixture.writeSession('manager.jsonl', session(cwd));
+
+  fixture.setMerged([]);
+
+  expect(await fixture.run()).toEqual({ outcome: 'caughtUp' });
+
+  const before = await fixture.readIndex();
+
+  expect(before.transcripts[path]).toMatchObject({
+    status: 'unresolved',
+    cwd,
+    reason: expect.stringContaining('git rev-parse') as string,
+  });
+
+  await initializeRepository(fixture.agentDirectory);
+
+  expect(await fixture.run()).toEqual({ outcome: 'caughtUp' });
+
+  const after = await fixture.readIndex();
+
+  expect(after.transcripts[path]).toMatchObject({ status: 'resolved', cwd });
+});
+
+it('saves an unresolved entry when the first line is not a session header', async () => {
+  const fixture = await createSweepFixture(onTestFinished);
+  const path = fixture.writeSession('manager.jsonl', '{"type":"message"}\n');
+
+  fixture.setMerged([]);
+
+  expect(await fixture.run()).toEqual({ outcome: 'caughtUp' });
+
+  const before = await fixture.readIndex();
+
+  expect(before.transcripts[path]).toMatchObject({
+    status: 'unresolved',
+    reason: expect.stringContaining('first line is not a session header') as string,
+  });
+
+  writeFileSync(path, session(fixture.repository));
+
+  expect(await fixture.run()).toEqual({ outcome: 'caughtUp' });
+
+  const after = await fixture.readIndex();
+
+  expect(after.transcripts[path]).toMatchObject({
+    status: 'resolved',
+    cwd: fixture.repository,
+  });
+});
+
+it('retries a session file that disappeared before it was read', async () => {
+  const fixture = await createSweepFixture(onTestFinished);
+  const path = join(fixture.agentDirectory, 'sessions', 'vanished.jsonl');
+  const signal = new AbortController().signal;
+
+  const missing = await resolveTranscript({
+    path,
+    exec: fixture.fake.exec,
+    signal,
+    cache: new Map(),
+  });
+
+  expect(missing.entry).toMatchObject({
+    status: 'unresolved',
+    reason: expect.stringContaining('session file is missing') as string,
+  });
+
+  fixture.writeSession('vanished.jsonl', session(fixture.repository));
+
+  const start = new Date('2026-11-15T12:00:00.000Z');
+
+  const result = await discoverTranscripts({
+    agentDirectory: fixture.agentDirectory,
+    index: {
+      version: 1,
+      transcripts: { [path]: missing.entry },
+      projects: {},
+      lastSweep: null,
+    },
+    exec: fixture.fake.exec,
+    signal,
+    now: () => start,
+    deadline: start.getTime() + 1000,
+  });
+
+  expect(result.status).toBe('ok');
+
+  expect(result.status === 'ok' ? result.index.transcripts[path] : undefined).toMatchObject({
+    status: 'resolved',
+    cwd: fixture.repository,
+  });
 });
