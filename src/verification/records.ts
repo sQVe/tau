@@ -78,20 +78,37 @@ export const runRecordSchema = Type.Object(
 
 export type RunRecord = Static<typeof runRecordSchema>;
 
+const outcomeFields = {
+  passed: {},
+  differs: { observed: Type.String({ minLength: 1 }) },
+  blocked: { reason: Type.String({ minLength: 1 }) },
+  notRun: { reason: Type.String({ minLength: 1 }) },
+} as const;
+
+export const stepOutcomeSchemas = {
+  passed: Type.Object(
+    { status: Type.Literal('passed'), ...outcomeFields.passed },
+    { additionalProperties: false },
+  ),
+  differs: Type.Object(
+    { status: Type.Literal('differs'), ...outcomeFields.differs },
+    { additionalProperties: false },
+  ),
+  blocked: Type.Object(
+    { status: Type.Literal('blocked'), ...outcomeFields.blocked },
+    { additionalProperties: false },
+  ),
+  notRun: Type.Object(
+    { status: Type.Literal('notRun'), ...outcomeFields.notRun },
+    { additionalProperties: false },
+  ),
+} as const;
+
 export const stepOutcomeSchema = Type.Union([
-  Type.Object({ status: Type.Literal('passed') }, { additionalProperties: false }),
-  Type.Object(
-    { status: Type.Literal('differs'), observed: Type.String({ minLength: 1 }) },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    { status: Type.Literal('blocked'), reason: Type.String({ minLength: 1 }) },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    { status: Type.Literal('notRun'), reason: Type.String({ minLength: 1 }) },
-    { additionalProperties: false },
-  ),
+  stepOutcomeSchemas.passed,
+  stepOutcomeSchemas.differs,
+  stepOutcomeSchemas.blocked,
+  stepOutcomeSchemas.notRun,
 ]);
 
 export type StepOutcome = Static<typeof stepOutcomeSchema>;
@@ -112,20 +129,30 @@ const stepFields = {
   artifacts: Type.Array(artifactSchema),
 };
 
+export const stepSchemas = {
+  passed: Type.Object(
+    { ...stepFields, status: Type.Literal('passed'), ...outcomeFields.passed },
+    { additionalProperties: false },
+  ),
+  differs: Type.Object(
+    { ...stepFields, status: Type.Literal('differs'), ...outcomeFields.differs },
+    { additionalProperties: false },
+  ),
+  blocked: Type.Object(
+    { ...stepFields, status: Type.Literal('blocked'), ...outcomeFields.blocked },
+    { additionalProperties: false },
+  ),
+  notRun: Type.Object(
+    { ...stepFields, status: Type.Literal('notRun'), ...outcomeFields.notRun },
+    { additionalProperties: false },
+  ),
+} as const;
+
 export const stepSchema = Type.Union([
-  Type.Object({ ...stepFields, status: Type.Literal('passed') }, { additionalProperties: false }),
-  Type.Object(
-    { ...stepFields, status: Type.Literal('differs'), observed: Type.String({ minLength: 1 }) },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    { ...stepFields, status: Type.Literal('blocked'), reason: Type.String({ minLength: 1 }) },
-    { additionalProperties: false },
-  ),
-  Type.Object(
-    { ...stepFields, status: Type.Literal('notRun'), reason: Type.String({ minLength: 1 }) },
-    { additionalProperties: false },
-  ),
+  stepSchemas.passed,
+  stepSchemas.differs,
+  stepSchemas.blocked,
+  stepSchemas.notRun,
 ]);
 
 export type Step = Static<typeof stepSchema>;

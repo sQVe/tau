@@ -2,6 +2,7 @@ import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { Static, TSchema } from 'typebox';
+import { Value } from 'typebox/value';
 
 import { errorMessage, isMissingFile } from '../errors.js';
 import { parseVersionedRecord, readOptionalText } from '../record.js';
@@ -11,22 +12,13 @@ import {
   itemRecordVersion,
   runRecordSchema,
   runRecordVersion,
+  stepOutcomeSchemas,
+  stepSchemas,
 } from './records.js';
 import type { ItemRead, ItemRecord, RecordRead, RunRead, RunRecord } from './records.js';
 
-const outcomeFields = new Map<string, readonly string[]>([
-  ['passed', ['status']],
-  ['differs', ['status', 'observed']],
-  ['blocked', ['status', 'reason']],
-  ['notRun', ['status', 'reason']],
-]);
-
-const stepFields = new Map<string, readonly string[]>([
-  ['passed', ['number', 'artifacts', 'status']],
-  ['differs', ['number', 'artifacts', 'status', 'observed']],
-  ['blocked', ['number', 'artifacts', 'status', 'reason']],
-  ['notRun', ['number', 'artifacts', 'status', 'reason']],
-]);
+const isStepStatus = (value: unknown): value is keyof typeof stepOutcomeSchemas =>
+  typeof value === 'string' && Object.hasOwn(stepOutcomeSchemas, value);
 
 export const runRecordPath = (runDirectory: string): string => join(runDirectory, 'run.json');
 
@@ -36,7 +28,7 @@ export const itemRecordPath = (runDirectory: string, item: string): string =>
 const variantProblem = (
   value: unknown,
   path: string,
-  fields: ReadonlyMap<string, readonly string[]>,
+  schemas: typeof stepOutcomeSchemas | typeof stepSchemas,
 ): string | undefined => {
   if (!isRecord(value)) {
     return undefined;
@@ -44,25 +36,13 @@ const variantProblem = (
 
   const status = value['status'];
 
-  if (typeof status !== 'string') {
+  if (!isStepStatus(status)) {
     return undefined;
   }
 
-  const expected = fields.get(status);
+  const [error] = Value.Errors(schemas[status], value);
 
-  if (expected === undefined) {
-    return undefined;
-  }
-
-  const missing = expected.find((field) => !Object.hasOwn(value, field));
-
-  if (missing !== undefined) {
-    return `${path} ${status} needs ${missing}`;
-  }
-
-  const extra = Object.keys(value).find((field) => !expected.includes(field));
-
-  return extra === undefined ? undefined : `${path} ${status} has extra ${extra}`;
+  return error === undefined ? undefined : `${path}${error.instancePath} ${error.message}`;
 };
 
 const artifactProblem = (value: unknown, path: string): string | undefined => {
@@ -90,7 +70,7 @@ const artifactProblem = (value: unknown, path: string): string | undefined => {
 
 const stepProblem = (value: unknown, index: number): string | undefined => {
   const path = `/steps/${index}`;
-  const variant = variantProblem(value, path, stepFields);
+  const variant = variantProblem(value, path, stepSchemas);
 
   if (variant !== undefined) {
     return variant;
@@ -195,7 +175,7 @@ const itemRecordProblem = (value: unknown): string | undefined => {
     }
   }
 
-  return variantProblem(value['endState'], '/endState', outcomeFields);
+  return variantProblem(value['endState'], '/endState', stepOutcomeSchemas);
 };
 
 const readRecord = async <Schema extends TSchema>(
