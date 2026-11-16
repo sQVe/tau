@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { readCheckState } from '../../checkRecord/identity.js';
@@ -30,6 +31,16 @@ export interface StopResult {
 const exitCodeOf = (outcome: CommandOutcome): number | null =>
   outcome.kind === 'exited' ? outcome.exitCode : null;
 
+const stopLogName = (directory: string): string => {
+  for (let attempt = 1; ; attempt += 1) {
+    const name = attempt === 1 ? 'stop.log' : `stop-${attempt}.log`;
+
+    if (!existsSync(join(directory, name))) {
+      return name;
+    }
+  }
+};
+
 export const stopRun = async (context: StopContext): Promise<StopResult> => {
   const directory = runDirectory(context.root, context.run);
   const record = await readRunRecordOrThrow(directory, context.run);
@@ -40,11 +51,12 @@ export const stopRun = async (context: StopContext): Promise<StopResult> => {
   }
 
   const commands = context.readTarget(record.target);
+  const logName = stopLogName(directory);
 
   const outcome = await runCommand({
     argv: commands.stop,
     cwd: context.root,
-    logPath: join(directory, 'stop.log'),
+    logPath: join(directory, logName),
     environment: {
       TAU_VERIFICATION_RUN: record.run,
       TAU_VERIFICATION_DIRECTORY: directory,
@@ -62,7 +74,7 @@ export const stopRun = async (context: StopContext): Promise<StopResult> => {
 
   const updated: RunRecord = {
     ...record,
-    stop: { exitCode: exitCodeOf(outcome), logPath: 'stop.log' },
+    stop: { exitCode: exitCodeOf(outcome), logPath: logName },
     treeAtStop,
   };
 
@@ -72,7 +84,7 @@ export const stopRun = async (context: StopContext): Promise<StopResult> => {
     run: record.run,
     directory,
     exitCode: exitCodeOf(outcome),
-    logPath: join(directory, 'stop.log'),
+    logPath: join(directory, logName),
     freshness: decideFreshness(updated, treeAtStop),
   };
 };

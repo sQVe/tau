@@ -344,6 +344,71 @@ it('a cancelled stop writes nothing and a later stop succeeds', async () => {
   expect(stop).toMatchObject({ run: launch.run, exitCode: 0 });
 });
 
+it('a stop cancelled after it starts retries with a fresh log', async () => {
+  const { root, directory, marker, run } = await fixture();
+
+  const launched = await run({ action: 'launch', target: 'app' });
+  const launch = launched.details as LaunchResult;
+
+  if (launch.status !== 'ready') {
+    throw new Error('The launch did not become ready.');
+  }
+
+  const go = join(directory, 'go');
+  const configPath = join(root, '.pi', 'tau.json');
+
+  const config = JSON.parse(await readFile(configPath, 'utf8')) as {
+    verification: { targets: { app: { stop: string[] } } };
+  };
+
+  config.verification.targets.app.stop = [
+    'sh',
+    '-c',
+    `touch ${JSON.stringify(marker)}; while [ ! -f ${JSON.stringify(go)} ]; do sleep 0.05; done; exit 0`,
+  ];
+
+  await writeFile(configPath, JSON.stringify(config));
+
+  const controller = new AbortController();
+  const cancelled = run({ action: 'stop', run: launch.run }, undefined, controller.signal);
+
+  while (!existsSync(marker)) {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 10);
+    });
+  }
+
+  controller.abort();
+
+  await expect(cancelled).rejects.toThrow(
+    'The stop was cancelled. Call stop again to stop the run.',
+  );
+
+  const stopLog = join(launch.directory, 'stop.log');
+
+  expect(existsSync(stopLog)).toBe(true);
+
+  await writeFile(go, '');
+
+  const stopped = await run({ action: 'stop', run: launch.run });
+  const stop = stopped.details as StopResult;
+
+  expect(stop).toMatchObject({ run: launch.run, exitCode: 0 });
+  expect(stop.logPath.endsWith('stop-2.log')).toBe(true);
+
+  const read = await readRunRecord(runRecordPath(launch.directory));
+
+  expect(read.status).toBe('valid');
+
+  if (read.status !== 'valid') {
+    return;
+  }
+
+  expect(read.record.stop?.logPath).toBe('stop-2.log');
+  expect(existsSync(stopLog)).toBe(true);
+  expect(existsSync(join(launch.directory, 'stop-2.log'))).toBe(true);
+});
+
 it('stops a run after a malformed second target is added', async () => {
   const { root, run } = await fixture();
 
