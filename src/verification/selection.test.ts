@@ -315,6 +315,60 @@ it.each([
     ],
   },
   {
+    name: 'two ascending items under one target in their input order',
+    runs: [
+      runRead(runRecord({ run: 'run-a', target: '482' }), [
+        validItem(itemRecord({ run: 'run-a', item: 'journeys/alpha' })),
+        validItem(itemRecord({ run: 'run-a', item: 'journeys/zeta' })),
+      ]),
+    ],
+    expected: [
+      {
+        target: '482',
+        item: 'journeys/alpha',
+        run: 'run-a',
+        freshness: fresh,
+        outcome: 'passed',
+        counts: passedCounts,
+      },
+      {
+        target: '482',
+        item: 'journeys/zeta',
+        run: 'run-a',
+        freshness: fresh,
+        outcome: 'passed',
+        counts: passedCounts,
+      },
+    ],
+  },
+  {
+    name: 'the newer stale result when nothing is fresh',
+    runs: [
+      runWithItem(
+        runRecord({ run: 'run-old', treeAtStop: 'tree-two' }),
+        itemRecord({ run: 'run-old' }),
+      ),
+      runWithItem(
+        runRecord({
+          run: 'run-new',
+          startedAt: '2026-11-16T11:00:00.000Z',
+          treeAtStop: 'tree-two',
+        }),
+        itemRecord({ run: 'run-new', steps: [differsStep(1)] }),
+      ),
+    ],
+    expected: [
+      {
+        target: '482',
+        item: 'journeys/check',
+        run: 'run-new',
+        freshness: { fresh: false, reason: 'treeChangedDuringRun' },
+        outcome: 'failed',
+        counts: { passed: 0, differs: 1, blocked: 0, notRun: 0 },
+      },
+    ],
+  },
+  {
     name: 'results sorted by target then item from an unsorted input',
     runs: [
       runRead(runRecord({ run: 'run-b', target: '483' }), [

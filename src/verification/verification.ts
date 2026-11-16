@@ -156,8 +156,36 @@ const duplicateItemProblem = (value: unknown): string | undefined => {
   return undefined;
 };
 
+const itemNameProblem = (value: unknown): string | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const items = value['items'];
+
+  if (!Array.isArray(items)) {
+    return undefined;
+  }
+
+  for (const [index, item] of items.entries()) {
+    const name = isRecord(item) ? item['item'] : undefined;
+
+    if (typeof name !== 'string') {
+      continue;
+    }
+
+    const collides = name.split('/').some((segment) => segment.endsWith('.json'));
+
+    if (collides) {
+      return `/items/${index} item ${name} has a segment ending in .json, which collides with an item file path`;
+    }
+  }
+
+  return undefined;
+};
+
 const runRecordProblem = (value: unknown): string | undefined =>
-  canonicalTimestampProblem(value) ?? duplicateItemProblem(value);
+  canonicalTimestampProblem(value) ?? itemNameProblem(value) ?? duplicateItemProblem(value);
 
 const itemRecordProblem = (value: unknown): string | undefined => {
   if (!isRecord(value)) {
@@ -186,7 +214,13 @@ const readRecord = async <Schema extends TSchema>(
   schema: Schema,
   check: (value: unknown) => string | undefined,
 ): Promise<RecordRead<Static<Schema>>> => {
-  const text = await readOptionalText(path);
+  let text: string | undefined;
+
+  try {
+    text = await readOptionalText(path);
+  } catch (error) {
+    return { status: 'malformed', problem: errorMessage(error) };
+  }
 
   if (text === undefined) {
     return { status: 'missing' };

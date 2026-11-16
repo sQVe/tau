@@ -67,8 +67,11 @@ run, and reads those records instead of parsing QA prose.
 
 ### Selection
 
-- Selection returns the newest fresh result per target and item from stopped runs. A newer failure
+- Selection prefers the newest fresh result per target and item from stopped runs. A newer failure
   wins over an older pass, and a narrower newer run does not hide an earlier item.
+- When no fresh result exists for a target and item, selection returns the newest stale result with
+  its reason, so a reader can show stale evidence as stale. A stale result never counts as passing
+  evidence.
 
 ### What Tau parses
 
