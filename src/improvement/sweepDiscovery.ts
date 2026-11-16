@@ -25,11 +25,14 @@ interface LocationRead {
 
 type LocationResult = LocationRead | { status: 'unresolved'; reason: string };
 
-export interface ResolveTranscriptOptions {
-  path: string;
+interface LocationOptions {
   exec: Exec;
   signal: AbortSignal;
   cache: Map<string, Promise<LocationResult>>;
+}
+
+export interface ResolveTranscriptOptions extends LocationOptions {
+  path: string;
 }
 
 export interface ResolvedTranscript {
@@ -52,10 +55,13 @@ export interface DiscoveryOptions {
   index: SweepIndex;
   exec: Exec;
   signal: AbortSignal;
+  now: () => Date;
+  deadline: number;
 }
 
 export type DiscoveryResult =
   | { status: 'ok'; index: SweepIndex; repositories: ReadonlyMap<string, string> }
+  | { status: 'budget' }
   | { status: 'failed'; reason: string };
 
 const emptyTranscriptState: TranscriptState = {
@@ -105,7 +111,7 @@ const readLocation = async (
   let projectRoot: string;
 
   try {
-    projectRoot = await findProjectRoot(existingDirectory);
+    projectRoot = await findProjectRoot(existingDirectory, { signal });
   } catch (error) {
     return { status: 'unresolved', reason: errorMessage(error) };
   }
@@ -120,10 +126,7 @@ const readLocation = async (
   }
 };
 
-const cachedLocation = (
-  cwd: string,
-  options: ResolveTranscriptOptions,
-): Promise<LocationResult> => {
+const cachedLocation = (cwd: string, options: LocationOptions): Promise<LocationResult> => {
   const cached = options.cache.get(cwd);
 
   if (cached !== undefined) {
@@ -225,6 +228,35 @@ const repositoriesOf = (index: SweepIndex): Map<string, string> => {
   return repositories;
 };
 
+const budgetReached = (options: DiscoveryOptions) =>
+  options.signal.aborted || options.now().getTime() >= options.deadline;
+
+const refreshNullRepository = async (
+  entry: Extract<TranscriptEntry, { status: 'resolved' }>,
+  projects: SweepIndex['projects'],
+  options: DiscoveryOptions,
+  cache: Map<string, Promise<LocationResult>>,
+) => {
+  const project = projects[entry.projectRoot];
+
+  if (project !== undefined && project.repository !== null) {
+    return;
+  }
+
+  const location = await cachedLocation(entry.cwd, {
+    exec: options.exec,
+    signal: options.signal,
+    cache,
+  });
+
+  if (location.status === 'resolved') {
+    projects[entry.projectRoot] = {
+      repository: location.location.repository,
+      merged: project?.merged ?? { status: 'notRead' },
+    };
+  }
+};
+
 export const discoverTranscripts = async (options: DiscoveryOptions): Promise<DiscoveryResult> => {
   let sessions: string[];
 
@@ -241,9 +273,16 @@ export const discoverTranscripts = async (options: DiscoveryOptions): Promise<Di
   const cache = new Map<string, Promise<LocationResult>>();
 
   for (const path of sessions) {
+    if (budgetReached(options)) {
+      return { status: 'budget' };
+    }
+
     const existing = transcripts[path];
 
     if (existing?.status === 'resolved') {
+      // oxlint-disable-next-line no-await-in-loop -- Each repository is resolved before the next starts.
+      await refreshNullRepository(existing, projects, options, cache);
+
       continue;
     }
 
@@ -255,6 +294,10 @@ export const discoverTranscripts = async (options: DiscoveryOptions): Promise<Di
       cache,
     });
 
+    if (budgetReached(options)) {
+      return { status: 'budget' };
+    }
+
     transcripts[path] = result.entry;
 
     if (result.status === 'resolved') {
@@ -262,6 +305,10 @@ export const discoverTranscripts = async (options: DiscoveryOptions): Promise<Di
 
       projects[root] = projectEntry({ ...options.index, projects }, root, result.repository);
     }
+  }
+
+  if (budgetReached(options)) {
+    return { status: 'budget' };
   }
 
   const index = { ...options.index, transcripts, projects };

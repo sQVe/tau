@@ -102,7 +102,7 @@ const runProjects = async (
   let failure: string | undefined;
 
   for (const projectRoot of Object.keys(current.projects).toSorted()) {
-    if (options.now().getTime() >= deadline) {
+    if (signal.aborted || options.now().getTime() >= deadline) {
       return { status: 'budget', index: current };
     }
 
@@ -169,7 +169,13 @@ const runLocked = async (
     index,
     exec: options.exec,
     signal,
+    now: options.now,
+    deadline,
   });
+
+  if (discovery.status === 'budget') {
+    return finishBudget(options, index, startedAt);
+  }
 
   if (discovery.status === 'failed') {
     return finishFailed(options, index, startedAt, discovery.reason);

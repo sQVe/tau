@@ -188,16 +188,17 @@ const sshHostResolver = (runtime: CommandRuntime): ResolveHost => {
 
 // Session start waits for this, so a checkout outside a repository, a missing origin, and a Git
 // failure all read as no origin.
-const readOriginUrl = async (cwd: string): Promise<string | undefined> => {
+const readOriginUrl = async (cwd: string, signal?: AbortSignal): Promise<string | undefined> => {
   const result = await runGit(cwd, ['remote', 'get-url', 'origin'], {
     timeoutMilliseconds: originTimeoutMilliseconds,
+    ...(signal === undefined ? {} : { signal }),
   });
 
   return result.exitCode === 0 ? result.stdout.toString('utf8').trim() : undefined;
 };
 
 export const readOriginRepository = async (runtime: CommandRuntime): Promise<OriginRepository> => {
-  const url = await readOriginUrl(runtime.cwd);
+  const url = await readOriginUrl(runtime.cwd, runtime.signal);
 
   if (url === undefined) {
     return { status: 'missing' };

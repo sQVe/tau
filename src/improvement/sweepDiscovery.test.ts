@@ -4,7 +4,17 @@ import { join } from 'node:path';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { git, initializeRepository } from '../../tests/gitRepository.ts';
-import { createSweepFixture } from '../../tests/sweepHarness.ts';
+import { createSweepFixture, eventHash } from '../../tests/sweepHarness.ts';
+import { readEvents } from './event.ts';
+import { discoverTranscripts } from './sweepDiscovery.ts';
+
+const merged = (number: number, headRefName: string) => ({
+  number,
+  url: `https://github.com/sQVe/tau/pull/${number}`,
+  headRefName,
+  createdAt: '2026-11-01T00:00:00.000Z',
+  mergedAt: '2026-11-15T11:58:00.000Z',
+});
 
 const session = (cwd: string) =>
   `${JSON.stringify({
@@ -72,4 +82,39 @@ it('records a project without an origin repository as unknown', async () => {
 
   expect(project?.repository).toBeNull();
   expect(project?.merged.status).toBe('unknown');
+
+  await git(fixture.repository, 'remote', 'add', 'origin', 'https://github.com/sQVe/tau.git');
+  fixture.setMerged([merged(562, 'me-1023-change')]);
+
+  expect(await fixture.run()).toEqual({ outcome: 'caughtUp' });
+
+  const events = await readEvents(fixture.repository);
+  const after = await fixture.readIndex();
+
+  expect(events.events.map((event) => event.id)).toContain(
+    `merge-${eventHash('github.com/sQVe/tau', 562)}`,
+  );
+
+  expect(after.projects[fixture.repository]?.repository).toBe('github.com/sQVe/tau');
+  expect(after.projects[fixture.repository]?.merged.status).toBe('read');
+});
+
+it('stops discovery at the budget before reading a transcript', async () => {
+  const fixture = await createSweepFixture(onTestFinished);
+
+  fixture.writeSession('manager.jsonl', session(join(fixture.repository, 'gone')));
+  fixture.setMerged([]);
+
+  const start = new Date('2026-11-15T12:00:00.000Z');
+
+  const result = await discoverTranscripts({
+    agentDirectory: fixture.agentDirectory,
+    index: { version: 1, transcripts: {}, projects: {}, lastSweep: null },
+    exec: fixture.fake.exec,
+    signal: new AbortController().signal,
+    now: () => new Date(start.getTime() + 1),
+    deadline: start.getTime(),
+  });
+
+  expect(result).toEqual({ status: 'budget' });
 });
