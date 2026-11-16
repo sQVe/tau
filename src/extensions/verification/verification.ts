@@ -2,6 +2,9 @@ import { findTauRoot } from '../../tauDirectory.js';
 import { isRunName } from '../../verification/records.js';
 import { runDirectoryPath } from '../../verification/verification.js';
 
+export { decideRegister, decideStop } from './runDecision.js';
+export type { RegisterDecision, StopDecision } from './runDecision.js';
+
 export interface RunDirectory {
   root: string;
   directory: string;
