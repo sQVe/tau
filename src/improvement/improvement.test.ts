@@ -29,8 +29,8 @@ const snapshot = (paths: readonly string[]) =>
 
 const header = `${JSON.stringify({ type: 'session', id: 's', timestamp: 't', cwd: '/work' })}\n`;
 
-const assignmentRecord = (assignmentId: string, sessionFile: string) =>
-  JSON.stringify({ version: 3, assignmentId, createdAt: 1, session: { file: sessionFile } });
+const assignmentRecord = (assignmentId: string, sessionFile: string, version = 3) =>
+  JSON.stringify({ version, assignmentId, createdAt: 1, session: { file: sessionFile } });
 
 describe('readTranscript', () => {
   it('reads a transcript file and leaves it unchanged', async () => {
@@ -94,6 +94,34 @@ describe('readWorkerRecord', () => {
     const path = join(improvementDirectory(), 'workers', 't1', 'task.json');
 
     writeFile(path, '{"createdAt":1}');
+
+    const before = snapshot([path]);
+
+    expect(await readWorkerRecord(path)).toEqual({ status: 'malformed' });
+    expect(snapshot([path])).toEqual(before);
+  });
+
+  it('reports an assignment record with a newer version as newer and leaves it unchanged', async () => {
+    const path = join(improvementDirectory(), 'assignments', 'a1', 'assignment.json');
+
+    writeFile(path, assignmentRecord('a1', '/s.jsonl', 4));
+
+    const before = snapshot([path]);
+    const read = await readWorkerRecord(path);
+
+    const notice = read.status === 'newer' ? read.notice : undefined;
+
+    expect(notice).toContain(path);
+    expect(snapshot([path])).toEqual(before);
+  });
+
+  it.each([
+    { name: 'an older unknown version', version: 0 },
+    { name: 'a version that is not a number', version: '4' },
+  ])('reports an assignment record with $name as malformed', async ({ version }) => {
+    const path = join(improvementDirectory(), 'assignments', 'a1', 'assignment.json');
+
+    writeFile(path, JSON.stringify({ version, assignmentId: 'a1', createdAt: 1 }));
 
     const before = snapshot([path]);
 
@@ -206,6 +234,15 @@ describe('worker coverage from the records on disk', () => {
 
     writeFile(record, '{"taskId":"w1","createdAt":1}');
     lock(record);
+
+    expect(coverageWith(await readWorkerTranscripts(agent))).toBe('unknown');
+  });
+
+  it('gives coverage unknown when a worker record has a newer format', async () => {
+    const agent = improvementDirectory();
+    const record = join(agent, 'tau', 'main-1', 'assignments', 'w1', 'assignment.json');
+
+    writeFile(record, assignmentRecord('w1', '/s.jsonl', 4));
 
     expect(coverageWith(await readWorkerTranscripts(agent))).toBe('unknown');
   });

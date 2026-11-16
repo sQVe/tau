@@ -89,6 +89,7 @@ export const findUsageRecords = async (
   const files = await findSessionFiles(agentDirectory);
   const reads = await readInTurn(files.workerRecords, readWorkerRecord);
   const records = reads.flatMap((read) => (read.status === 'read' ? [read.record] : []));
+  const newerRecords = reads.flatMap((read) => (read.status === 'newer' ? [read.notice] : []));
   const recordDirectories = new Set(records.map((record) => record.directory));
 
   const tasksOf = (path: string) =>
@@ -121,7 +122,7 @@ export const findUsageRecords = async (
 
   return {
     sessions,
-    skipped: { unreadableSessions, sessionsWithoutRecord, otherHarnessTasks },
+    skipped: { unreadableSessions, sessionsWithoutRecord, otherHarnessTasks, newerRecords },
   };
 };
 

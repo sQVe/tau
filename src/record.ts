@@ -14,9 +14,9 @@ import { basename, dirname, join } from 'node:path';
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
-import { isMissingFile } from './errors.js';
-import { describeSchemaProblem, isRecord } from './schema.js';
-import { isSymlink } from './tauDirectory.js';
+import { isMissingFile } from './errors.ts';
+import { describeSchemaProblem, isRecord } from './schema.ts';
+import { isSymlink } from './tauDirectory.ts';
 
 export interface VersionedRecordOptions<Schema extends TSchema> {
   // Names the record in error messages, such as `capture record`.

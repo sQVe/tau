@@ -68,7 +68,12 @@ const session = (path: string, lines: string[], tasks: WorkerTask[] = []): Sessi
   tasks,
 });
 
-const noneSkipped = { unreadableSessions: 0, sessionsWithoutRecord: [], otherHarnessTasks: [] };
+const noneSkipped = {
+  unreadableSessions: 0,
+  sessionsWithoutRecord: [],
+  otherHarnessTasks: [],
+  newerRecords: [],
+};
 
 const report = (files: SessionText[], skipped: SkippedRecords = noneSkipped) => {
   const texts = new Map(files.map((file) => [file.path, file.text]));

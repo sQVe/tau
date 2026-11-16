@@ -11,8 +11,8 @@ import {
 } from 'node:fs/promises';
 import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 
-import { isMissingFile } from './errors.js';
-import { findCheckoutRoot, runGit } from './git.js';
+import { isMissingFile } from './errors.ts';
+import { findCheckoutRoot, runGit } from './git.ts';
 
 export type TauChild =
   | { kind: 'outside' }

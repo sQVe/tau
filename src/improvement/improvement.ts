@@ -3,10 +3,16 @@ import { access, readdir, readFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.ts';
+import { newerFormatNotice } from '../record.ts';
 import type { WorkerTranscript } from './taskMapping.ts';
 import { parseTranscript } from './transcript.ts';
 import type { Transcript } from './transcript.ts';
-import { ownsSession, parseAssignment, parseWorkerTask } from './workerRecord.ts';
+import {
+  currentAssignmentVersion,
+  ownsSession,
+  parseAssignment,
+  parseWorkerTask,
+} from './workerRecord.ts';
 import type { WorkerTask } from './workerRecord.ts';
 
 interface SessionFiles {
@@ -24,6 +30,7 @@ export type WorkerRecordRead =
   | { status: 'read'; record: WorkerRecord }
   | { status: 'missing' }
   | { status: 'malformed' }
+  | { status: 'newer'; notice: string }
   | { status: 'unreadable'; reason: string };
 
 const listFiles = async (directory: string) => {
@@ -72,14 +79,21 @@ export const readWorkerRecord = async (path: string): Promise<WorkerRecordRead> 
       : { status: 'unreadable', reason: errorMessage(error) };
   }
 
-  const parse = basename(path) === 'assignment.json' ? parseAssignment : parseWorkerTask;
-  const task = parse(source);
+  const isAssignment = basename(path) === 'assignment.json';
+  const task = isAssignment ? parseAssignment(source) : parseWorkerTask(source);
 
-  if (task === undefined) {
-    return { status: 'malformed' };
+  if (task !== undefined) {
+    return { status: 'read', record: { task, directory: dirname(path) } };
   }
 
-  return { status: 'read', record: { task, directory: dirname(path) } };
+  const notice = isAssignment
+    ? newerFormatNotice(path, source, {
+        label: 'assignment record',
+        version: currentAssignmentVersion,
+      })
+    : undefined;
+
+  return notice === undefined ? { status: 'malformed' } : { status: 'newer', notice };
 };
 
 export const readTranscript = async (path: string): Promise<Transcript> => {
@@ -126,7 +140,7 @@ export const readWorkerTranscripts = async (
     // oxlint-disable-next-line no-await-in-loop -- Reads started together would open too many files.
     const read = await readWorkerRecord(recordPath);
 
-    if (read.status === 'malformed' || read.status === 'unreadable') {
+    if (read.status !== 'read' && read.status !== 'missing') {
       workers.set(basename(dirname(recordPath)), 'unreadable');
     }
 

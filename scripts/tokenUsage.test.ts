@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 
 import { parseTime, findUsageRecords } from './tokenUsage.js';
-import { tokenUsageReport } from './tokenUsageReport.js';
+import { formatTokenUsageReport, tokenUsageReport } from './tokenUsageReport.js';
 
 let agentDirectory: string;
 
@@ -39,9 +39,14 @@ const taskRecord = (taskId: string, createdAt: number, sessionFile?: string, har
     loadout: { harness, profile: 'scout' },
   });
 
-const assignmentRecord = (assignmentId: string, createdAt: number, sessionFile: string) =>
+const assignmentRecord = (
+  assignmentId: string,
+  createdAt: number,
+  sessionFile: string,
+  version = 3,
+) =>
   JSON.stringify({
-    version: 3,
+    version,
     assignmentId,
     label: null,
     profile: 'scout',
@@ -55,7 +60,12 @@ const sessionLines = (lines: unknown[]) =>
 
 const nothing = {
   sessions: [],
-  skipped: { unreadableSessions: 0, sessionsWithoutRecord: [], otherHarnessTasks: [] },
+  skipped: {
+    unreadableSessions: 0,
+    sessionsWithoutRecord: [],
+    otherHarnessTasks: [],
+    newerRecords: [],
+  },
 };
 
 const snapshot = async () => {
@@ -172,6 +182,23 @@ it('names the session beside a malformed assignment record and still reads it', 
   expect(await snapshot()).toEqual(before);
   expect(records.skipped.sessionsWithoutRecord).toEqual([worker]);
   expect(records.sessions.map((session) => [session.path, session.tasks])).toEqual([[worker, []]]);
+});
+
+it('skips an assignment record with a newer format and prints a notice to update Tau', async () => {
+  const worker = await write('tau/repo-1/assignments/x/s.jsonl', '{}\n');
+  const newer = assignmentRecord('x', 2, worker, 4);
+  const record = await write('tau/repo-1/assignments/x/assignment.json', newer);
+  const before = await snapshot();
+
+  const records = await findUsageRecords(agentDirectory, since);
+  const window = { since, until: since + 1 };
+  const report = await tokenUsageReport(records.sessions, window, records.skipped, async () => '');
+  const text = formatTokenUsageReport(report, 5);
+
+  expect(await snapshot()).toEqual(before);
+  expect(records.sessions.map((session) => [session.path, session.tasks])).toEqual([[worker, []]]);
+  expect(text).toContain(`Assignment record ${record} has a newer format than this Tau reads.`);
+  expect(text).toContain('Update Tau, then restart the session.');
 });
 
 it('names a worker session without a record beside it', async () => {

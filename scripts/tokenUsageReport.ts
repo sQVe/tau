@@ -22,6 +22,7 @@ export interface SkippedRecords {
   sessionsWithoutRecord: string[];
   // Claude and Codex workers write no Pi session, so the report cannot measure them.
   otherHarnessTasks: WorkerTask[];
+  newerRecords: string[];
 }
 
 interface Usage {
@@ -72,6 +73,7 @@ export interface TokenUsageReport {
   copiedEntries: number;
   turnsWithoutUsage: number;
   otherHarnessTasks: number;
+  newerRecords: string[];
   kinds: Map<string, KindRow>;
   groups: Map<string, Group>;
   sessions: SessionRow[];
@@ -374,6 +376,7 @@ export const tokenUsageReport = async (
     copiedEntries: 0,
     turnsWithoutUsage: 0,
     otherHarnessTasks: skipped.otherHarnessTasks.filter(inWindow).length,
+    newerRecords: skipped.newerRecords,
     kinds: new Map(),
     groups: new Map(),
     sessions: [],
@@ -493,6 +496,11 @@ const sessionsWithoutRecordLines = (report: TokenUsageReport) =>
     ? []
     : ['Worker sessions without a readable record', ...report.sessionsWithoutRecord.toSorted(), ''];
 
+const newerRecordLines = (report: TokenUsageReport) =>
+  report.newerRecords.length === 0
+    ? []
+    : ['Records skipped', ...report.newerRecords.toSorted(), ''];
+
 export const formatTokenUsageReport = (report: TokenUsageReport, top: number): string => {
   const since = new Date(report.window.since).toISOString();
   const until = new Date(report.window.until).toISOString();
@@ -525,5 +533,6 @@ export const formatTokenUsageReport = (report: TokenUsageReport, top: number): s
     toolTable(report),
     '',
     ...sessionsWithoutRecordLines(report),
+    ...newerRecordLines(report),
   ].join('\n');
 };
