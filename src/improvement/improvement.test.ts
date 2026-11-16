@@ -207,6 +207,20 @@ describe('readWorkerTranscripts', () => {
     expect(snapshot([malformed])).toEqual(before);
   });
 
+  it('reads only the workers whose directory or task ID was requested', async () => {
+    const agent = improvementDirectory();
+    const workers = join(agent, 'tau', 'main-1', 'workers');
+
+    writeFile(join(workers, 't7', 'task.json'), '{"taskId":"t7","createdAt":1}');
+    writeFile(join(workers, 't8', 'task.json'), '{"taskId":"t8","createdAt":1}');
+    writeFile(join(workers, 'renamed', 'task.json'), '{"taskId":"t9","createdAt":1}');
+
+    expect(Object.fromEntries(await readWorkerTranscripts(agent, new Set(['t7', 't9'])))).toEqual({
+      t7: 'missing',
+      t9: 'missing',
+    });
+  });
+
   it('reports no workers when the agent directory has no worker records', async () => {
     const agent = improvementDirectory();
 
