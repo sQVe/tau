@@ -14,6 +14,8 @@ export interface MergedPullRequest {
   repository: string;
   number: number;
   headBranch: string;
+  // ISO time the pull request was opened. Earlier calls naming its number belong to another PR.
+  createdAt: string;
 }
 
 export interface TranscriptFact {
@@ -113,9 +115,29 @@ const namedKey = (call: ToolCall, repository: string) => {
   return pr === undefined ? undefined : pullRequestKey(named, pr);
 };
 
+// A renamed repository can reuse a key, so a call naming a pull request before that pull request
+// was created belongs to an older one.
+const namesOlderPullRequest = (
+  call: ToolCall,
+  repository: string,
+  createdTimes: ReadonlyMap<string, number>,
+) => {
+  const created = createdTimes.get(namedKey(call, repository) ?? '');
+
+  return created !== undefined && Date.parse(call.timestamp) < created;
+};
+
 // A call naming a pull request goes to it. Any other call goes to the next publication after it,
 // or to the last publication when none follows.
-const attributeCalls = (calls: readonly ToolCall[], repository: string) => {
+const attributeCalls = (
+  transcriptCalls: readonly ToolCall[],
+  repository: string,
+  createdTimes: ReadonlyMap<string, number>,
+) => {
+  const calls = transcriptCalls.filter(
+    (call) => !namesOlderPullRequest(call, repository, createdTimes),
+  );
+
   const publications = calls.flatMap((call, index) => {
     const publication = publicationOf(call);
 
@@ -137,6 +159,7 @@ const attributeCalls = (calls: readonly ToolCall[], repository: string) => {
 const attributeTranscript = (
   fact: TranscriptFact,
   repositories: ReadonlyMap<string, string>,
+  createdTimes: ReadonlyMap<string, number>,
 ): AttributedTranscript | undefined => {
   const { transcript } = fact;
   const cwd = 'cwd' in transcript ? transcript.cwd : undefined;
@@ -151,7 +174,7 @@ const attributeTranscript = (
     malformed: transcript.status === 'malformed',
     repository,
     folder: folderOf(cwd),
-    ...attributeCalls(transcript.calls, repository),
+    ...attributeCalls(transcript.calls, repository, createdTimes),
   };
 };
 
@@ -270,8 +293,15 @@ const isUnattributed = (fact: TranscriptFact) =>
   !('cwd' in fact.transcript) || fact.transcript.cwd === undefined;
 
 export const mapTasks = (facts: MappingFacts): TaskMapping => {
+  const createdTimes = new Map(
+    facts.pullRequests.map((pullRequest) => [
+      pullRequestKey(pullRequest.repository, pullRequest.number),
+      Date.parse(pullRequest.createdAt),
+    ]),
+  );
+
   const transcripts = facts.transcripts.flatMap((fact) => {
-    const attributed = attributeTranscript(fact, facts.repositories);
+    const attributed = attributeTranscript(fact, facts.repositories, createdTimes);
 
     return attributed === undefined ? [] : [attributed];
   });

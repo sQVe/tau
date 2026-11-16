@@ -25,11 +25,11 @@ const fixture = (name: string, path = `/sessions/${name}`): TranscriptFact => ({
 const ticketlessBranch = 'qa-guide-template-readable-shape';
 const fallbackBranch = 'me-1449-remove-copied-helpers-and-stale-examples-that-agents';
 
-const merged = (number: number, headBranch: string): MergedPullRequest => ({
-  repository,
-  number,
-  headBranch,
-});
+const merged = (
+  number: number,
+  headBranch: string,
+  createdAt = '2026-01-01T00:00:00Z',
+): MergedPullRequest => ({ repository, number, headBranch, createdAt });
 
 const facts = (input: Partial<MappingFacts>): MappingFacts => ({
   pullRequests: [],
@@ -355,6 +355,89 @@ describe('mapTasks', () => {
 
     expect(coverageWith(new Map([[workerId, 'readable']]))).toBe('complete');
     expect(coverageWith(new Map())).toBe('managerOnly');
+  });
+});
+
+const entry = (id: string, timestamp: string, message: Record<string, unknown>) =>
+  JSON.stringify({ type: 'message', id, timestamp, message });
+
+describe('mapTasks time bound', () => {
+  const renamedCwd = '/home/sqve/code/personal/koja/me-80';
+
+  const called = (id: string, timestamp: string, name: string, parameters: unknown) => [
+    entry(id, timestamp, {
+      role: 'assistant',
+      content: [{ type: 'toolCall', id, name, arguments: parameters }],
+    }),
+    entry(`${id}-result`, timestamp, { role: 'toolResult', toolCallId: id, details: {} }),
+  ];
+
+  // An old repository published its own #80 in October under the same key as the merged #80.
+  const transcript = parseTranscript(
+    [
+      JSON.stringify({ type: 'session', id: 's', timestamp: 't', cwd: renamedCwd }),
+      ...called('old-read', '2026-10-20T10:00:00.000Z', 'pr_feedback', {
+        action: 'read',
+        repository,
+        pr: 80,
+      }),
+      ...called('old-verify', '2026-10-21T10:00:00.000Z', 'pr', {
+        action: 'verify',
+        repository,
+        pr: 80,
+      }),
+      ...called('new-capture', '2026-11-02T10:00:00.000Z', 'code_review', {
+        action: 'capture',
+        target: { kind: 'range' },
+      }),
+      ...called('new-verify', '2026-11-03T10:00:00.000Z', 'pr', {
+        action: 'verify',
+        repository,
+        pr: 80,
+      }),
+    ].join('\n'),
+  );
+
+  const table: { rule: string; createdAt: string; facts: string[] }[] = [
+    {
+      rule: 'attributes every call when the pull request was created before them',
+      createdAt: '2026-10-01T00:00:00Z',
+      facts: [
+        'feedbackRound old-read',
+        'publication old-verify',
+        'reviewCapture new-capture',
+        'publication new-verify',
+      ],
+    },
+    {
+      rule: 'ignores a publication and a numbered call made before the pull request was created',
+      createdAt: '2026-11-01T00:00:00Z',
+      facts: ['reviewCapture new-capture', 'publication new-verify'],
+    },
+    {
+      rule: 'compares the times, not their text',
+      createdAt: '2026-11-03T10:00:00Z',
+      facts: ['reviewCapture new-capture', 'publication new-verify'],
+    },
+    {
+      rule: 'maps nothing when every publication is older than the pull request',
+      createdAt: '2026-11-04T00:00:00Z',
+      facts: [],
+    },
+  ];
+
+  it.each(table.map((row) => [row.rule, row] as const))('%s', (_rule, row) => {
+    const { createdAt, facts: expectedFacts } = row;
+
+    const [task] = mapTasks(
+      facts({
+        pullRequests: [merged(80, 'normal-mode-picker-keys', createdAt)],
+        transcripts: [{ path: '/sessions/koja.jsonl', transcript }],
+        repositories: new Map([[renamedCwd, repository]]),
+      }),
+    ).tasks;
+
+    expect(task?.facts.map((fact) => `${fact.kind} ${fact.entryId}`)).toEqual(expectedFacts);
   });
 });
 

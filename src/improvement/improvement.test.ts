@@ -200,7 +200,9 @@ describe('worker coverage from the records on disk', () => {
 
   const coverageWith = (workers: ReadonlyMap<string, WorkerTranscript>) =>
     mapTasks({
-      pullRequests: [{ repository, number: 7, headBranch: 'me-7-change' }],
+      pullRequests: [
+        { repository, number: 7, headBranch: 'me-7-change', createdAt: '2026-11-01T00:00:00Z' },
+      ],
       transcripts: [{ path: '/m.jsonl', transcript: parseTranscript(launchTranscript) }],
       repositories: new Map([['/work/me-7', repository]]),
       workers,
