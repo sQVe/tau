@@ -48,8 +48,10 @@ Tau saves each improvement fact as one versioned JSON event file in the project 
 - A tool call whose shape or result the reader does not know is missing evidence. The counts it
   affects read unknown, not zero. Each task also reports whether its manager and worker transcripts
   were found.
-- Review signals are pure rules over those counts, with thresholds set on past merged tasks. A
-  signal whose facts are missing, or a task without transcript coverage, reads unknown.
+- Review signals are pure rules over those counts, with thresholds set on past merged tasks. A count
+  at its threshold fires even when some of its facts are missing. A count below its threshold with
+  missing facts, or on a task without transcript coverage, reads unknown. The revert signal comes
+  from merged pull requests and default-branch commits, not transcripts.
 
 ### No background timer
 
