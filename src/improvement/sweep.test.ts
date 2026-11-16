@@ -1,14 +1,22 @@
-import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { open } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTemporaryRepository, git } from '../../tests/gitRepository.ts';
 import { createSweepFixture, eventHash } from '../../tests/sweepHarness.ts';
+import { withFileLock } from '../fileLock/fileLock.ts';
 import { readEvents } from './event.ts';
-import { sweepIndexPath } from './sweepIndex.ts';
+import { readSweepIndex, sweepIndexPath } from './sweepIndex.ts';
 
 type PositionalRead = (
   this: FileHandle,
@@ -300,4 +308,65 @@ it('refuses to publish over a newer event', async () => {
 
   expect(project?.merged).toMatchObject({ status: 'unknown' });
   expect(fixture.eventFiles()).toEqual(['newer.json']);
+});
+
+it('returns budget and writes nothing when the lock wait runs out', async () => {
+  const fixture = await createSweepFixture(onTestFinished);
+  const acquired = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  const lockPath = join(fixture.agentDirectory, 'tau', 'improvement', 'sweep.lock');
+
+  const holder = withFileLock(
+    {
+      cancelled: () => new Error('The holder was cancelled.'),
+      lockPath,
+      checkout: 'holder',
+      signal: undefined,
+      pollMilliseconds: 1000,
+      onWaiting: () => undefined,
+    },
+    () => {
+      acquired.resolve(undefined);
+
+      return release.promise;
+    },
+  );
+
+  await acquired.promise;
+
+  try {
+    expect(await fixture.run({ budgetMilliseconds: 20 })).toEqual({ outcome: 'budget' });
+    expect(await readSweepIndex(fixture.agentDirectory)).toEqual({ status: 'missing' });
+    expect(fixture.eventFiles()).toEqual([]);
+  } finally {
+    release.resolve(undefined);
+    await holder;
+  }
+});
+
+it('returns failed for a newer index without changing it', async () => {
+  const fixture = await createSweepFixture(onTestFinished);
+  const path = sweepIndexPath(fixture.agentDirectory);
+
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify({ version: 2 }));
+
+  const before = readFileSync(path, 'utf8');
+  const outcome = await fixture.run();
+
+  expect(outcome).toEqual({
+    outcome: 'failed',
+    reason: expect.stringContaining(path) as string,
+  });
+
+  expect(readFileSync(path, 'utf8')).toBe(before);
+  expect(fixture.eventFiles()).toEqual([]);
+});
+
+it('rejects a budget that is not a positive integer', async () => {
+  const fixture = await createSweepFixture(onTestFinished);
+
+  await expect(fixture.run({ budgetMilliseconds: 0 })).rejects.toThrow(RangeError);
+  await expect(fixture.run({ budgetMilliseconds: 1.5 })).rejects.toThrow(RangeError);
+  expect(await readSweepIndex(fixture.agentDirectory)).toEqual({ status: 'missing' });
 });
