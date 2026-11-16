@@ -115,6 +115,12 @@ const table: { rule: string; call: ToolCall; facts: string[]; missing: string[][
     missing: [['reviewCapture', 'fixCapture']],
   },
   {
+    rule: 'a capture without a result and with an unknown target kind is missing evidence for both captures',
+    call: withoutResult('code_review', { action: 'capture', target: { kind: 'futureTarget' } }),
+    facts: [],
+    missing: [['reviewCapture', 'fixCapture']],
+  },
+  {
     rule: 'a full check without a result is missing evidence for a failure',
     call: withoutResult('full_check', {}),
     facts: [],
@@ -173,6 +179,30 @@ const table: { rule: string; call: ToolCall; facts: string[]; missing: string[][
     call: call('code_review', { action: 'capture', target: { kind: 'range' } }),
     facts: ['reviewCapture'],
     missing: [],
+  },
+  {
+    rule: 'a root commit capture is a review capture',
+    call: call('code_review', { action: 'capture', target: { kind: 'rootCommit' } }),
+    facts: ['reviewCapture'],
+    missing: [],
+  },
+  {
+    rule: 'a files capture is a review capture',
+    call: call('code_review', { action: 'capture', target: { kind: 'files' } }),
+    facts: ['reviewCapture'],
+    missing: [],
+  },
+  {
+    rule: 'a capture with an unknown target kind is missing evidence for both captures',
+    call: call('code_review', { action: 'capture', target: { kind: 'futureTarget' } }),
+    facts: [],
+    missing: [['reviewCapture', 'fixCapture']],
+  },
+  {
+    rule: 'a capture whose target kind is an object property name is missing evidence',
+    call: call('code_review', { action: 'capture', target: { kind: 'constructor' } }),
+    facts: [],
+    missing: [['reviewCapture', 'fixCapture']],
   },
   {
     rule: 'a fix capture is a fix capture',
@@ -327,6 +357,18 @@ describe('extractTaskEvidence', () => {
         affects: ['publication'],
       },
     ]);
+  });
+
+  it('gives an unknown target kind a reason apart from a missing target kind', () => {
+    const evidence = extractTaskEvidence([
+      call('code_review', { action: 'capture', target: { kind: 'futureTarget' } }),
+      call('code_review', { action: 'capture' }),
+    ]);
+
+    const [unknownKind, missingKind] = evidence.missing.map((item) => item.reason);
+
+    expect(unknownKind).toContain('futureTarget');
+    expect(unknownKind).not.toBe(missingKind);
   });
 });
 

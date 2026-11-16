@@ -75,10 +75,20 @@ const factActions: Readonly<Record<string, string>> = {
 
 const noResult = 'The call has no result.';
 
+const bothCaptures: EvidenceKind[] = ['reviewCapture', 'fixCapture'];
+
+const captureKinds: ReadonlyMap<string, 'reviewCapture' | 'fixCapture'> = new Map([
+  ['workingTree', 'reviewCapture'],
+  ['range', 'reviewCapture'],
+  ['rootCommit', 'reviewCapture'],
+  ['files', 'reviewCapture'],
+  ['fix', 'fixCapture'],
+]);
+
 const affectedByTool: Readonly<Record<string, EvidenceKind[]>> = {
   pr: ['publication'],
   pr_feedback: ['feedbackRound'],
-  code_review: ['reviewCapture', 'fixCapture'],
+  code_review: bothCaptures,
 };
 
 const placeOf = (call: ToolCall): FactPlace => ({
@@ -148,22 +158,29 @@ const feedbackEvidence = (call: ToolCall): CallEvidence => {
   return { fact: { ...placeOf(call), kind: 'feedbackRound', pr } };
 };
 
-const captureKindOf = (call: ToolCall): 'reviewCapture' | 'fixCapture' | undefined => {
+const targetKindOf = (call: ToolCall) => {
   const target = call.arguments?.target;
-  const kind = isRecord(target) ? text(target.kind) : undefined;
 
-  if (kind === undefined) {
-    return undefined;
-  }
+  return isRecord(target) ? text(target.kind) : undefined;
+};
 
-  return kind === 'fix' ? 'fixCapture' : 'reviewCapture';
+const captureKindOf = (call: ToolCall) => {
+  const targetKind = targetKindOf(call);
+
+  return targetKind === undefined ? undefined : captureKinds.get(targetKind);
 };
 
 const reviewEvidence = (call: ToolCall): CallEvidence => {
-  const kind = captureKindOf(call);
+  const targetKind = targetKindOf(call);
+
+  if (targetKind === undefined) {
+    return missing(call, 'capture has no target kind.', bothCaptures);
+  }
+
+  const kind = captureKinds.get(targetKind);
 
   if (kind === undefined) {
-    return missing(call, 'capture has no target kind.', ['reviewCapture', 'fixCapture']);
+    return missing(call, `The target kind ${JSON.stringify(targetKind)} is unknown.`, bothCaptures);
   }
 
   return { fact: { ...placeOf(call), kind } };
