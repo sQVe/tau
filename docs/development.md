@@ -161,8 +161,9 @@ that the message appears once.
 ### Statusbar
 
 Check that the footer stays on one line and shows only the cost, context usage, model, and thinking
-level. Run a tool and check that the cost and context usage update after its result. Narrow the
-terminal and check that the line truncates to its width.
+level. Check that a second line shows extension statuses when any is set, and that it is absent when
+none is set. Run a tool and check that the cost and context usage update after its result. Narrow
+the terminal and check that the line truncates to its width.
 
 ### Commits
 
