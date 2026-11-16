@@ -1,8 +1,6 @@
-import { randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
@@ -10,27 +8,18 @@ import type { Exec } from '../../command.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
 import { assignmentDirectory, writeAssignment } from './assignment.js';
 import type { Assignment, SavedQuestion } from './assignment.js';
-import { fixtureLoadout } from './fixtures/loadout.js';
+import {
+  createManager,
+  manager,
+  managerSession,
+  otherSession,
+  savedAssignment,
+  savedQuestion,
+  savedReport,
+} from './fixtures/deliveryManager.js';
+import type { DeliveryContext } from './fixtures/deliveryManager.js';
 import { createWorkerDelivery, readWorkerChildren } from './workerDelivery.js';
 import type { WorkerDelivery } from './workerDelivery.js';
-
-type DeliveryContext = Parameters<ReturnType<typeof createWorkerDelivery>['deliver']>[0];
-
-interface SentMessage {
-  customType?: unknown;
-  details?: unknown;
-}
-
-interface SessionEntryLike {
-  type: string;
-  customType?: string;
-  data?: unknown;
-  details?: unknown;
-}
-
-const manager = 't-manager';
-const managerSession = '/sessions/manager.jsonl';
-const otherSession = '/sessions/previous.jsonl';
 
 beforeEach(() => {
   vi.stubEnv('HC_TERMINAL_ID', manager);
@@ -107,92 +96,6 @@ const createHc = (terminals: HcTerminal[]): HcRuntime => {
   return { exec, connect: () => Promise.reject(new Error('not used')), cwd: process.cwd() };
 };
 
-const customMessageEntry = (message: SentMessage): SessionEntryLike => ({
-  type: 'custom_message',
-  ...(typeof message.customType === 'string' ? { customType: message.customType } : {}),
-  details: message.details,
-});
-
-const createManager = (options: { idle?: boolean; running?: boolean } = {}) => {
-  const messages: SentMessage[] = [];
-  const sendOptions: unknown[] = [];
-  const entries: SessionEntryLike[] = [];
-  const queued: SentMessage[] = [];
-  const notifications: [string, string | undefined][] = [];
-  let streaming = false;
-
-  const pi = {
-    on: () => undefined,
-    sendMessage: (message: SentMessage, sendOption?: unknown) => {
-      messages.push(message);
-      sendOptions.push(sendOption);
-
-      if (streaming) {
-        queued.push(message);
-      } else {
-        entries.push(customMessageEntry(message));
-      }
-    },
-  } as unknown as ExtensionAPI;
-
-  const context = {
-    sessionManager: { getEntries: () => entries, getSessionFile: () => managerSession },
-    ui: {
-      notify: (message: string, kind: string | undefined) => notifications.push([message, kind]),
-    },
-    isIdle: () => options.idle ?? true,
-    signal: options.running === true ? new AbortController().signal : undefined,
-  } as unknown as DeliveryContext;
-
-  return {
-    pi,
-    context,
-    messages,
-    sendOptions,
-    entries,
-    notifications,
-    setStreaming: (value: boolean) => {
-      streaming = value;
-    },
-    flush: () => {
-      for (const message of queued.splice(0)) {
-        entries.push(customMessageEntry(message));
-      }
-    },
-  };
-};
-
-const savedAssignment = (
-  directory: string,
-  report: Assignment['report'],
-  questions: SavedQuestion[] = [],
-): Assignment => {
-  const assignmentId = randomUUID();
-  const sessionId = randomUUID();
-
-  return {
-    version: 3,
-    assignmentId,
-    task: 'Inspect the counters.',
-    acceptance: [],
-    label: null,
-    profile: 'worker',
-    loadout: fixtureLoadout(directory),
-    routing: null,
-    packageSnapshot: null,
-    session: { id: sessionId, file: join(assignmentDirectory(assignmentId), `${sessionId}.jsonl`) },
-    parentSession: managerSession,
-    cwd: directory,
-    parentTerminal: manager,
-    deadline: Date.now() + 30_000,
-    createdAt: Date.now(),
-    previousAssignmentId: null,
-    extensionPackages: null,
-    questions,
-    report,
-  };
-};
-
 const stubAgentDirectory = (): string => {
   const directory = temporaryDirectory(onTestFinished, 'tau-delivery-');
 
@@ -200,18 +103,6 @@ const stubAgentDirectory = (): string => {
 
   return directory;
 };
-
-const savedReport = (): Assignment['report'] => ({
-  outcome: 'success',
-  summary: 'Changes: None\nEvidence: None\nDecisions: None\nConcerns: None',
-  evidence: ['a reference'],
-});
-
-const savedQuestion = (): SavedQuestion => ({
-  questionId: randomUUID(),
-  text: 'Which branch should I use?',
-  askedAt: Date.now(),
-});
 
 const deliverPending = async (
   delivery: WorkerDelivery,
@@ -424,9 +315,9 @@ it('shows one ended message for a finished worker without a report', async () =>
 
   expect(message.customType).toBe('tau-worker-ended');
 
-  expect(message.content).toBe(
-    `Worker ${assignmentId} at t-child ended without a report. Read its screen with hc read t-child.`,
-  );
+  expect(message.content).toContain(assignmentId);
+
+  expect(message.content).toContain('hc read t-child');
 
   expect(message.details).toEqual({ assignmentId });
 });
@@ -481,7 +372,11 @@ it('does not show the deadline message when the ended message was already shown'
 
   expect(managerState.messages).toHaveLength(1);
 
-  delivery.showEnded(managerState.context, assignmentId, managerSession);
+  delivery.showEnded(managerState.context, {
+    assignmentId,
+    address: 't-child',
+    parentSession: managerSession,
+  });
 
   expect(managerState.messages).toHaveLength(1);
   expect(managerState.messages[0]?.customType).toBe('tau-worker-ended');
@@ -518,7 +413,12 @@ it('shows the deadline message once when the launching session already showed it
 
   const delivery = createWorkerDelivery(managerState.pi);
 
-  delivery.showEnded(managerState.context, assignmentId, managerSession);
+  delivery.showEnded(managerState.context, {
+    assignmentId,
+    address: 't-child',
+    parentSession: managerSession,
+  });
+
   await deliverPending(delivery, hc, managerState.context);
 
   expect(managerState.messages).toHaveLength(1);

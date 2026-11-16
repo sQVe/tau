@@ -37,6 +37,13 @@ Style commands run [Seam](https://github.com/sQVe/seam) and accept file paths, f
 `pnpm style:fix tests/lint.test.ts`. Rename bindings and move helpers manually. Staged-file hooks
 enforce the same rules.
 
+`TAU_PROPERTY_SEED` sets the seed of a generated order test. Unset, the test uses its fixed seed, as
+`pnpm check` needs. `random` picks a seed and prints it, and an integer replays one:
+
+```sh
+TAU_PROPERTY_SEED=random pnpm vitest run src/extensions/subagents/workerDeliveryOrdering.test.ts
+```
+
 Seam provides the shared lint and format settings. Configure Tau's own settings in
 [vite.config.ts](../vite.config.ts), and Tau's own lint rules in
 [lint/plugin.ts](../lint/plugin.ts). Keep the installed Vitest version the same as the version

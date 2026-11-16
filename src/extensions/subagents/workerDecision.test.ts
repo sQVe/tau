@@ -338,6 +338,30 @@ const table: {
     expected: { reports: [], questions: [], ended: [], deadlines: [], errors: [] },
   },
   {
+    name: 'does not show a deadline message when the ended key is shown',
+    facts: {
+      shownKeys: [endedKey('assignment-a')],
+      facts: [assignment('assignment-a', { state: 'finished', endedAtDeadline: true })],
+    },
+    expected: { reports: [], questions: [], ended: [], deadlines: [], errors: [] },
+  },
+  {
+    name: 'does not show an ended message when the report key is shown',
+    facts: {
+      shownKeys: [reportKey('assignment-a')],
+      facts: [assignment('assignment-a', { state: 'finished' })],
+    },
+    expected: { reports: [], questions: [], ended: [], deadlines: [], errors: [] },
+  },
+  {
+    name: 'does not show a deadline message when the report key is shown',
+    facts: {
+      shownKeys: [reportKey('assignment-a')],
+      facts: [assignment('assignment-a', { state: 'finished', endedAtDeadline: true })],
+    },
+    expected: { reports: [], questions: [], ended: [], deadlines: [], errors: [] },
+  },
+  {
     name: 'does not show a deadline message for a live worker with the deadline label',
     facts: {
       shownKeys: [],

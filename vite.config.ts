@@ -74,6 +74,7 @@ export const testEnvironment = [
   'CARGO_HOME',
   'RUSTUP_HOME',
   'TAU_COLLECTION_TIMEOUT_MS',
+  'TAU_PROPERTY_SEED',
   'TMPDIR',
   'TMP',
   'TEMP',

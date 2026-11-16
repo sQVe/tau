@@ -46,8 +46,8 @@ it('shows one ended-at-deadline message per assignment', () => {
   const { pi, context, messages, entries } = createManagerSession();
   const delivery = createWorkerDelivery(pi);
 
-  delivery.showEnded(context, assignmentId, managerSession);
-  delivery.showEnded(context, assignmentId, managerSession);
+  delivery.showEnded(context, { assignmentId, address: 't-child', parentSession: managerSession });
+  delivery.showEnded(context, { assignmentId, address: 't-child', parentSession: managerSession });
 
   expect(messages).toHaveLength(1);
 
@@ -76,7 +76,11 @@ it('restores the ended-at-deadline message from the saved session', () => {
     details: { assignmentId },
   });
 
-  createWorkerDelivery(pi).showEnded(context, assignmentId, managerSession);
+  createWorkerDelivery(pi).showEnded(context, {
+    assignmentId,
+    address: 't-child',
+    parentSession: managerSession,
+  });
 
   expect(messages).toEqual([]);
 });
@@ -85,7 +89,11 @@ it('does not show the ended-at-deadline message for a worker of another manager 
   const assignmentId = randomUUID();
   const { pi, context, messages, entries } = createManagerSession();
 
-  createWorkerDelivery(pi).showEnded(context, assignmentId, otherSession);
+  createWorkerDelivery(pi).showEnded(context, {
+    assignmentId,
+    address: 't-child',
+    parentSession: otherSession,
+  });
 
   expect(messages).toEqual([]);
   expect(entries).toEqual([]);

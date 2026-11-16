@@ -73,6 +73,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0133: Run the full check only at the PR step](./0133-run-the-full-check-only-at-the-pr-step.md)
 - [0130: Select focused files through the project's Vitest API](./0130-select-focused-files-through-the-project-vitest-api.md)
 - [0136: Verify apps with targets and run records](./0136-verify-apps-with-targets-and-run-records.md)
+- [0137: Replay generated order failures as decision table rows](./0137-replay-generated-order-failures-as-decision-table-rows.md)
 
 ## Commits
 
