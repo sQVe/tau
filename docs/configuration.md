@@ -382,14 +382,15 @@ A repository may commit one QA guide at `.pi/qa.md`. Write it from the
 [QA guide template](../src/extensions/subagents/templates/qa-guide.md), which gives the headings and
 the rules. Give it one section per app or interface, such as a web app, a CLI, or a TUI. Each
 section says how to reach the app, how to use it safely, and what to check. A section may link
-feature recipes. By convention they live under `.pi/qa/`.
+feature files at `.pi/qa/features/<name>.md`.
 
-The optional "Journeys" index names journey files under `.pi/qa/journeys/`. The manager picks
-journeys the change touches and assigns their files in the brief. The worker reads each assigned
-file, walks its steps in order, and compares each visible result and the end state. It reports one
-result for every step and the end state: as written, differs (with what it saw), skipped, or blocked
-(with the reason). It never reports a journey as passed if a step did not run. The template defines
-the journey file's five parts. Tau parses neither the index nor the journey files.
+The optional "Journeys" index names journey files under `.pi/qa/journeys/`. The optional "Features"
+index names feature files at `.pi/qa/features/<name>.md`. The manager picks journeys the change
+touches and assigns their files in the brief. The worker reads each assigned file, walks its steps
+in order, and compares each visible result and the end state. It reports one result for every step
+and the end state: as written, differs (with what it saw), skipped, or blocked (with the reason). It
+never reports a journey as passed if a step did not run. The template defines the journey file's
+five parts. Tau parses neither the index nor the journey files.
 
 Tau checks only that `.pi/qa.md` exists in the worker's worktree. It does not parse the guide or
 read `.pi/qa/`, and there is no config key for it. Every `qa` brief gets one line, also when the
@@ -403,7 +404,7 @@ it to read the guide before it launches a `qa` worker and to assign the sections
 needs. The manager does the guide's steps under "The manager starts" for those sections, and stops
 what it started when every worker that uses it has reported, or when the launch fails. It launches
 no `qa` worker when only the guide's "Not testable" part applies. The worker reads the guide first,
-runs each section's "Reach it" proof, and follows the recipes that those sections link.
+runs each section's "Reach it" proof, and follows the feature files that those sections link.
 
 ## Code reviews (`reviews`, user file)
 

@@ -17,20 +17,26 @@ serve this worktree. The profile is signed in; ask about login only at a login p
 ask the parent. Obey `Data writes`: if not allowed, create or change no dev database data. Without
 it, ask the parent before creating data.
 
-If `QA guide` names a file, read it first. Test assigned sections and linked recipes. Run each
+If `QA guide` names a file, read it first. Test assigned sections and linked feature files. Run each
 section's "Reach it" proof first; if it fails, stop and ask the parent.
 
 Read each assigned journey file. Walk its steps in order; compare visible results and the end state.
 Report a result for each step and the end state: as written, differs (with what you saw), skipped,
 or blocked (with the reason). Never call a journey passed if a step did not run.
 
+When the brief has a `Verification run:` line, call `verification_record` once for each assigned
+journey or feature file after you walk it. Use the file's path under `.pi/qa/` without `.md` as the
+item name, such as `features/new-ticket`. Pass one step result per numbered step, in order, and the
+end state. Save screenshots and output in the run directory the brief names, and pass their paths
+relative to it.
+
 Read the task and linked docs. Use a real browser or command line. Walk assigned flows, then try:
 empty, invalid, and long input; repeated or interrupted actions, back, and reload; a narrow window
 and keyboard. Watch the console and failed requests.
 
-For recipes, exercise each entry point; record each action and result. Show changed data's stored
-value in a second, read-only view. Report skipped entry points as skipped, not verified through
-another. Recipes never permit data writes or server changes.
+For feature files, exercise each entry point; record each action and result. Show changed data's
+stored value in a second, read-only view. Report skipped entry points as skipped, not verified
+through another. Feature files never permit data writes or server changes.
 
 Findings contradict the task, spec, or app, not preferences. Give repro steps and a screenshot or
 output outside the worktree. Mark each new, pre-existing, or unknown. Compare base and head only on

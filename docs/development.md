@@ -200,8 +200,8 @@ pnpm pi-session --cwd <directory> (--prompt <text> | --prompt-file <file>) [--mo
 Give `--cwd` a scratch directory, not a worktree. The command sends the prompt, waits until each
 worker that the session launched has reported or ended, and prints the path of the saved event log.
 It exits with code 1 and a `FAIL` line when the session fails or passes the timeout. A worker launch
-needs an `hc` terminal, as in [Try Tau](#try-tau). The [QA guide](../.pi/qa.md) holds the recipes
-and the `jq` checks of the event log.
+needs an `hc` terminal, as in [Try Tau](#try-tau). The [QA guide](../.pi/qa.md) holds the feature
+files at `.pi/qa/features/<name>.md` and the `jq` checks of the event log.
 
 ## Versioning
 
