@@ -1,28 +1,9 @@
+import { Type } from 'typebox';
+import type { Static } from 'typebox';
+
 import { isRecord } from '../schema.ts';
 
 export type Entry = Record<string, unknown>;
-
-export interface CallResult {
-  error: string | undefined;
-  details: Entry | undefined;
-}
-
-interface CalledTool {
-  callId: string;
-  tool: string;
-  arguments: Entry | undefined;
-}
-
-export interface NestedCall extends CalledTool {
-  result: CallResult | undefined;
-}
-
-export interface ToolCall extends CalledTool {
-  entryId: string;
-  timestamp: string;
-  viaCodemode: boolean;
-  result: CallResult | undefined;
-}
 
 export type Transcript =
   | { status: 'read'; cwd: string; calls: ToolCall[] }
@@ -40,13 +21,56 @@ interface AssistantCalls {
   dropped: DroppedCall[];
 }
 
-interface TranscriptLines {
-  cwd: string | undefined;
-  calls: ToolCall[];
-  nested: Map<string, NestedCall[]>;
+interface EntryUpdate {
   malformedLines: number;
   droppedCallReasons: string[];
 }
+
+const entrySchema = Type.Record(Type.String(), Type.Unknown());
+
+const callResultSchema = Type.Object({
+  error: Type.Optional(Type.String()),
+  details: Type.Optional(entrySchema),
+});
+
+const calledToolSchema = Type.Object({
+  callId: Type.String(),
+  tool: Type.String(),
+  arguments: Type.Optional(entrySchema),
+});
+
+const nestedCallSchema = Type.Intersect([
+  calledToolSchema,
+  Type.Object({ result: Type.Optional(callResultSchema) }),
+]);
+
+const toolCallSchema = Type.Intersect([
+  calledToolSchema,
+  Type.Object({
+    entryId: Type.String(),
+    timestamp: Type.String(),
+    viaCodemode: Type.Boolean(),
+    result: Type.Optional(callResultSchema),
+  }),
+]);
+
+export const transcriptStateSchema = Type.Object({
+  header: Type.Union([Type.Literal('pending'), Type.Literal('found'), Type.Literal('invalid')]),
+  cwd: Type.Optional(Type.String()),
+  calls: Type.Array(toolCallSchema),
+  malformedLines: Type.Number(),
+  droppedCallReasons: Type.Array(Type.String()),
+});
+
+export type CallResult = Static<typeof callResultSchema>;
+
+export type CalledTool = Static<typeof calledToolSchema>;
+
+export type NestedCall = Static<typeof nestedCallSchema>;
+
+export type ToolCall = Static<typeof toolCallSchema>;
+
+export type TranscriptState = Static<typeof transcriptStateSchema>;
 
 export const text = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
@@ -100,27 +124,36 @@ export const assistantCalls = (message: Entry): AssistantCalls => {
     } else {
       const parameters = isRecord(part.arguments) ? part.arguments : undefined;
 
-      found.calls.push({ callId, tool, arguments: parameters });
+      found.calls.push({
+        callId,
+        tool,
+        ...(parameters === undefined ? {} : { arguments: parameters }),
+      });
     }
   }
 
   return found;
 };
 
-export const toolResult = (message: Entry): { callId: string; result: CallResult } => ({
-  callId: text(message.toolCallId) ?? '',
-  result: {
-    error: message.isError === true ? resultText(message.content) : undefined,
-    details: isRecord(message.details) ? message.details : undefined,
-  },
-});
+export const toolResult = (message: Entry): { callId: string; result: CallResult } => {
+  const error = message.isError === true ? resultText(message.content) : undefined;
+  const details = isRecord(message.details) ? message.details : undefined;
+
+  return {
+    callId: text(message.toolCallId) ?? '',
+    result: {
+      ...(error === undefined ? {} : { error }),
+      ...(details === undefined ? {} : { details }),
+    },
+  };
+};
 
 const nestedResult = (call: Entry): CallResult | undefined => {
   if (call.status === 'error') {
-    return { error: text(call.error) ?? '', details: undefined };
+    return { error: text(call.error) ?? '' };
   }
 
-  return call.status === 'ok' ? { error: undefined, details: undefined } : undefined;
+  return call.status === 'ok' ? {} : undefined;
 };
 
 // Codemode cuts the args text of details.calls[] at a fixed length, and cut text does not parse.
@@ -157,117 +190,182 @@ export const codemodeCalls = (message: Entry, scriptCallId: string): NestedCall[
     const callId = text(call.id) ?? `${scriptCallId}/${index + 1}`;
 
     const parameters = fullArguments.get(callId) ?? parseEntry(text(call.args) ?? '');
+    const result = nestedResult(call);
 
-    return [{ callId, tool, arguments: parameters, result: nestedResult(call) }];
+    return [
+      {
+        callId,
+        tool,
+        ...(parameters === undefined ? {} : { arguments: parameters }),
+        ...(result === undefined ? {} : { result }),
+      },
+    ];
   });
 };
 
-const headerCwd = (entry: Entry | undefined) =>
-  entry?.type === 'session' ? text(entry.cwd) : undefined;
+const latestCallIndex = (calls: readonly ToolCall[], callId: string) =>
+  calls.findLastIndex((call) => call.callId === callId);
 
-const addEntry = (lines: TranscriptLines, entry: Entry, pending: Map<string, ToolCall>) => {
+const nestedToolCall = (inner: NestedCall, call: ToolCall): ToolCall => ({
+  entryId: call.entryId,
+  callId: inner.callId,
+  timestamp: call.timestamp,
+  tool: inner.tool,
+  ...(inner.arguments === undefined ? {} : { arguments: inner.arguments }),
+  viaCodemode: true,
+  ...(inner.result === undefined ? {} : { result: inner.result }),
+});
+
+const replaceNestedCalls = (calls: ToolCall[], index: number, call: ToolCall, message: Entry) => {
+  let end = index + 1;
+
+  while (calls[end]?.viaCodemode === true) {
+    end += 1;
+  }
+
+  const nested = codemodeCalls(message, call.callId).map((inner) => nestedToolCall(inner, call));
+
+  calls.splice(index + 1, end - index - 1, ...nested);
+};
+
+const addAssistantCalls = (
+  calls: ToolCall[],
+  message: Entry,
+  entryId: string,
+  timestamp: string,
+  droppedCallReasons: string[],
+) => {
+  const { calls: found, dropped } = assistantCalls(message);
+
+  for (const called of found) {
+    calls.push({ ...called, entryId, timestamp, viaCodemode: false });
+  }
+
+  for (const call of dropped) {
+    const named = JSON.stringify({ id: call.callId, name: call.tool });
+
+    droppedCallReasons.push(`The tool call ${named} in entry ${entryId} has no id or name.`);
+  }
+};
+
+const addToolResult = (calls: ToolCall[], message: Entry) => {
+  const { callId, result } = toolResult(message);
+  const index = latestCallIndex(calls, callId);
+  const call = index === -1 ? undefined : calls[index];
+
+  if (call === undefined) {
+    return;
+  }
+
+  calls[index] = { ...call, result };
+
+  if (call.tool === 'codemode' && !call.viaCodemode) {
+    replaceNestedCalls(calls, index, call, message);
+  }
+};
+
+const addEntry = (calls: ToolCall[], entry: Entry): EntryUpdate => {
   const message = entry.message;
 
   if (entry.type !== 'message' || !isRecord(message)) {
-    return;
+    return { malformedLines: 0, droppedCallReasons: [] };
   }
 
   const entryId = text(entry.id);
   const timestamp = text(entry.timestamp);
 
   if (entryId === undefined || timestamp === undefined) {
-    lines.malformedLines += 1;
-
-    return;
+    return { malformedLines: 1, droppedCallReasons: [] };
   }
 
+  const droppedCallReasons: string[] = [];
+
   if (message.role === 'assistant') {
-    const { calls, dropped } = assistantCalls(message);
-
-    for (const called of calls) {
-      const call = { ...called, entryId, timestamp, viaCodemode: false, result: undefined };
-
-      lines.calls.push(call);
-      pending.set(call.callId, call);
-    }
-
-    for (const call of dropped) {
-      const named = JSON.stringify({ id: call.callId, name: call.tool });
-
-      lines.droppedCallReasons.push(
-        `The tool call ${named} in entry ${entryId} has no id or name.`,
-      );
-    }
+    addAssistantCalls(calls, message, entryId, timestamp, droppedCallReasons);
   }
 
   if (message.role === 'toolResult') {
-    const { callId, result } = toolResult(message);
-    const call = pending.get(callId);
-
-    if (call !== undefined) {
-      call.result = result;
-    }
-
-    if (call?.tool === 'codemode') {
-      lines.nested.set(callId, codemodeCalls(message, callId));
-    }
+    addToolResult(calls, message);
   }
+
+  return { malformedLines: 0, droppedCallReasons };
 };
 
-const withNestedCalls = (lines: TranscriptLines): ToolCall[] =>
-  lines.calls.flatMap((call) => {
-    const nested = lines.nested.get(call.callId) ?? [];
+export const continueTranscript = (
+  state: TranscriptState | undefined,
+  chunk: string,
+): TranscriptState => {
+  const base: TranscriptState = state ?? {
+    header: 'pending',
+    calls: [],
+    malformedLines: 0,
+    droppedCallReasons: [],
+  };
 
-    const placed = nested.map((inner) => ({
-      entryId: call.entryId,
-      callId: inner.callId,
-      timestamp: call.timestamp,
-      tool: inner.tool,
-      arguments: inner.arguments,
-      viaCodemode: true,
-      result: inner.result,
-    }));
+  let header = base.header;
+  let cwd = base.cwd;
+  let malformedLines = base.malformedLines;
+  const calls = [...base.calls];
+  const droppedCallReasons = [...base.droppedCallReasons];
 
-    return [call, ...placed];
-  });
+  for (const line of chunk.split('\n').filter((candidate) => candidate.trim() !== '')) {
+    const entry = parseEntry(line);
+
+    if (entry === undefined) {
+      malformedLines += 1;
+
+      continue;
+    }
+
+    if (header === 'pending') {
+      header = entry.type === 'session' ? 'found' : 'invalid';
+      cwd = entry.type === 'session' ? text(entry.cwd) : undefined;
+    }
+
+    const update = addEntry(calls, entry);
+
+    malformedLines += update.malformedLines;
+    droppedCallReasons.push(...update.droppedCallReasons);
+  }
+
+  return {
+    header,
+    ...(cwd === undefined ? {} : { cwd }),
+    calls,
+    malformedLines,
+    droppedCallReasons,
+  };
+};
+
+export const finishTranscript = (state: TranscriptState): Transcript => {
+  const cwd = state.header === 'found' ? state.cwd : undefined;
+
+  if (cwd === undefined) {
+    return {
+      status: 'malformed',
+      cwd,
+      calls: state.calls,
+      reason: 'The first line is not a session header.',
+    };
+  }
+
+  const reasons = [...state.droppedCallReasons];
+
+  if (state.malformedLines > 0) {
+    reasons.unshift(`${state.malformedLines} lines are malformed.`);
+  }
+
+  if (reasons.length > 0) {
+    return { status: 'malformed', cwd, calls: state.calls, reason: reasons.join(' ') };
+  }
+
+  return { status: 'read', cwd, calls: state.calls };
+};
 
 export const parseTranscript = (source: string | undefined): Transcript => {
   if (source === undefined) {
     return { status: 'missing' };
   }
 
-  const { entries, malformedLines } = parseEntries(source);
-
-  const lines: TranscriptLines = {
-    cwd: headerCwd(entries[0]),
-    calls: [],
-    nested: new Map(),
-    malformedLines,
-    droppedCallReasons: [],
-  };
-
-  const pending = new Map<string, ToolCall>();
-
-  for (const entry of entries) {
-    addEntry(lines, entry, pending);
-  }
-
-  const { cwd } = lines;
-  const calls = withNestedCalls(lines);
-
-  if (cwd === undefined) {
-    return { status: 'malformed', cwd, calls, reason: 'The first line is not a session header.' };
-  }
-
-  const reasons = [...lines.droppedCallReasons];
-
-  if (lines.malformedLines > 0) {
-    reasons.unshift(`${lines.malformedLines} lines are malformed.`);
-  }
-
-  if (reasons.length > 0) {
-    return { status: 'malformed', cwd, calls, reason: reasons.join(' ') };
-  }
-
-  return { status: 'read', cwd, calls };
+  return finishTranscript(continueTranscript(undefined, source));
 };

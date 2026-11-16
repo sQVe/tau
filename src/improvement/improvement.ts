@@ -1,4 +1,5 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { open, readdir, readFile } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.ts';
@@ -31,6 +32,11 @@ export type WorkerRecordRead =
   | { status: 'missing' }
   | { status: 'malformed' }
   | { status: 'newer'; notice: string }
+  | { status: 'unreadable'; reason: string };
+
+export type TranscriptChunk =
+  | { status: 'read'; text: string; nextOffset: number; size: number }
+  | { status: 'missing' }
   | { status: 'unreadable'; reason: string };
 
 const listFiles = async (directory: string) => {
@@ -162,4 +168,119 @@ export const readWorkerTranscripts = async (
   }
 
   return workers;
+};
+
+const newlineByte = 0x0a;
+
+// oxlint-disable-next-line no-magic-numbers -- A 64 KiB read keeps short reads rare without allocating much.
+const readChunkSize = 64 * 1024;
+
+const parseChunkArguments = (offset: number, byteLimit: number) => {
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw new RangeError('offset must be a non-negative integer.');
+  }
+
+  if (!Number.isInteger(byteLimit) || byteLimit < 1) {
+    throw new RangeError('byteLimit must be an integer of at least 1.');
+  }
+};
+
+const readBytes = async (handle: FileHandle, position: number, length: number) => {
+  const buffer = Buffer.alloc(length);
+  let filled = 0;
+
+  while (filled < length) {
+    // oxlint-disable-next-line no-await-in-loop -- A short read must finish before the next read starts.
+    const { bytesRead } = await handle.read(buffer, filled, length - filled, position + filled);
+
+    if (bytesRead === 0) {
+      break;
+    }
+
+    filled += bytesRead;
+  }
+
+  return buffer.subarray(0, filled);
+};
+
+const readToNewline = async (
+  handle: FileHandle,
+  first: Buffer,
+  offset: number,
+  size: number,
+): Promise<{ text: string; nextOffset: number }> => {
+  const parts = [first];
+  let position = offset + first.length;
+
+  while (position < size) {
+    // oxlint-disable-next-line no-await-in-loop -- Each read starts where the previous one ended.
+    const chunk = await readBytes(handle, position, Math.min(readChunkSize, size - position));
+
+    if (chunk.length === 0) {
+      break;
+    }
+
+    parts.push(chunk);
+    position += chunk.length;
+
+    const newline = chunk.indexOf(newlineByte);
+
+    if (newline !== -1) {
+      const before = parts.slice(0, -1).reduce((sum, part) => sum + part.length, 0);
+      const cut = before + newline + 1;
+      const text = Buffer.concat(parts).subarray(0, cut).toString('utf8');
+
+      return { text, nextOffset: offset + cut };
+    }
+  }
+
+  return { text: '', nextOffset: offset };
+};
+
+export const readTranscriptChunk = async (
+  path: string,
+  offset: number,
+  byteLimit: number,
+): Promise<TranscriptChunk> => {
+  parseChunkArguments(offset, byteLimit);
+
+  let handle: FileHandle;
+
+  try {
+    handle = await open(path, 'r');
+  } catch (error) {
+    return isMissingFile(error)
+      ? { status: 'missing' }
+      : { status: 'unreadable', reason: errorMessage(error) };
+  }
+
+  try {
+    const { size } = await handle.stat();
+    const firstLength = Math.min(byteLimit, Math.max(0, size - offset));
+    const first = await readBytes(handle, offset, firstLength);
+    const newline = first.lastIndexOf(newlineByte);
+
+    if (newline !== -1) {
+      const cut = newline + 1;
+
+      return {
+        status: 'read',
+        text: first.subarray(0, cut).toString('utf8'),
+        nextOffset: offset + cut,
+        size,
+      };
+    }
+
+    if (offset + first.length >= size) {
+      return { status: 'read', text: '', nextOffset: offset, size };
+    }
+
+    const found = await readToNewline(handle, first, offset, size);
+
+    return { status: 'read', ...found, size };
+  } catch (error) {
+    return { status: 'unreadable', reason: errorMessage(error) };
+  } finally {
+    await handle.close();
+  }
 };

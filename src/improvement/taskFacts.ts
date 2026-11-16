@@ -2,7 +2,7 @@ import { basename, dirname } from 'node:path';
 
 import { isRecord } from '../schema.ts';
 import { text } from './transcript.ts';
-import type { ToolCall } from './transcript.ts';
+import type { CallResult, ToolCall } from './transcript.ts';
 
 interface FactPlace {
   entryId: string;
@@ -110,6 +110,111 @@ const positiveInteger = (value: unknown) =>
 
 export const namedPullRequest = (call: ToolCall): number | undefined =>
   positiveInteger(call.arguments?.pr);
+
+const factTools = new Set(['pr', 'pr_feedback', 'code_review', 'full_check', 'subagent']);
+
+const keptArgumentKeys = ['action', 'pr', 'repository', 'profile'] as const;
+
+const keptDetailKeys = ['passed', 'taskId'] as const;
+
+const keptLabelKeys = ['tau.assignment', 'tau.profile'] as const;
+
+const errorLimit = 200;
+
+const pickKeys = (source: Record<string, unknown>, keys: readonly string[]) => {
+  const picked: Record<string, unknown> = {};
+
+  for (const key of keys) {
+    if (Object.hasOwn(source, key)) {
+      picked[key] = source[key];
+    }
+  }
+
+  return picked;
+};
+
+const keptArguments = (call: ToolCall): Record<string, unknown> | undefined => {
+  const source = call.arguments;
+
+  if (source === undefined) {
+    return undefined;
+  }
+
+  const kept = pickKeys(source, keptArgumentKeys);
+  const target = source.target;
+
+  if (isRecord(target) && Object.hasOwn(target, 'kind')) {
+    kept.target = { kind: target.kind };
+  }
+
+  return kept;
+};
+
+const keptLabels = (labels: unknown): Record<string, unknown> | undefined =>
+  isRecord(labels) ? pickKeys(labels, keptLabelKeys) : undefined;
+
+const keptDetails = (details: Record<string, unknown> | undefined) => {
+  if (details === undefined) {
+    return undefined;
+  }
+
+  const kept = pickKeys(details, keptDetailKeys);
+  const labels = keptLabels(details.labels);
+
+  if (labels !== undefined) {
+    kept.labels = labels;
+  }
+
+  return kept;
+};
+
+const keptResult = (result: CallResult | undefined): CallResult | undefined => {
+  if (result === undefined) {
+    return undefined;
+  }
+
+  const error = result.error === undefined ? undefined : result.error.slice(0, errorLimit);
+  const details = keptDetails(result.details);
+
+  return {
+    ...(error === undefined ? {} : { error }),
+    ...(details === undefined ? {} : { details }),
+  };
+};
+
+const keptCall = (call: ToolCall): ToolCall => {
+  const parameters = keptArguments(call);
+  const result = keptResult(call.result);
+
+  return {
+    entryId: call.entryId,
+    callId: call.callId,
+    timestamp: call.timestamp,
+    tool: call.tool,
+    viaCodemode: call.viaCodemode,
+    ...(parameters === undefined ? {} : { arguments: parameters }),
+    ...(result === undefined ? {} : { result }),
+  };
+};
+
+const withoutArguments = (call: ToolCall): ToolCall => ({
+  entryId: call.entryId,
+  callId: call.callId,
+  timestamp: call.timestamp,
+  tool: call.tool,
+  viaCodemode: call.viaCodemode,
+});
+
+export const keepFactCalls = (calls: readonly ToolCall[]): ToolCall[] =>
+  calls.flatMap((call) => {
+    if (call.tool === 'codemode') {
+      return call.result === undefined ? [withoutArguments(call)] : [];
+    }
+
+    const isFact = factTools.has(call.tool) || namedPullRequest(call) !== undefined;
+
+    return isFact ? [keptCall(call)] : [];
+  });
 
 export const publicationOf = (call: ToolCall): { repository: string; pr: number } | undefined => {
   const repository = text(call.arguments?.repository);
