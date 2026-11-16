@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { decideReviewSignals } from './signals.ts';
+import { decideReviewSignals, decideStoredSignals } from './signals.ts';
 import type { ReviewSignals } from './signals.ts';
 import type { MissingEvidence, TaskEvidence, TaskFact } from './taskFacts.ts';
 import type { Coverage } from './taskMapping.ts';
@@ -207,4 +207,55 @@ it.each(table.map((row) => [row.name, row] as const))('%s', (_name, row) => {
   };
 
   expect(decideReviewSignals(facts)).toStrictEqual(row.expected);
+});
+
+const storedTable: {
+  name: string;
+  counts: Readonly<Record<string, number>>;
+  expected: Omit<ReviewSignals, 'revert'>;
+}[] = [
+  {
+    name: 'fires review rounds at 5 stored review captures',
+    counts: { reviewCaptures: 5 },
+    expected: { reviewRounds: 'fired', feedbackRounds: 'unknown', checkFailures: 'unknown' },
+  },
+  {
+    name: 'does not fire review rounds at 4 stored review captures',
+    counts: { reviewCaptures: 4 },
+    expected: { reviewRounds: 'notFired', feedbackRounds: 'unknown', checkFailures: 'unknown' },
+  },
+  {
+    name: 'fires feedback rounds at 3 stored feedback rounds',
+    counts: { feedbackRounds: 3 },
+    expected: { reviewRounds: 'unknown', feedbackRounds: 'fired', checkFailures: 'unknown' },
+  },
+  {
+    name: 'does not fire feedback rounds at 2 stored feedback rounds',
+    counts: { feedbackRounds: 2 },
+    expected: { reviewRounds: 'unknown', feedbackRounds: 'notFired', checkFailures: 'unknown' },
+  },
+  {
+    name: 'fires check failures at 2 stored check failures',
+    counts: { checkFailures: 2 },
+    expected: { reviewRounds: 'unknown', feedbackRounds: 'unknown', checkFailures: 'fired' },
+  },
+  {
+    name: 'does not fire check failures at 1 stored check failure',
+    counts: { checkFailures: 1 },
+    expected: { reviewRounds: 'unknown', feedbackRounds: 'unknown', checkFailures: 'notFired' },
+  },
+  {
+    name: 'reports an absent count as unknown',
+    counts: {},
+    expected: { reviewRounds: 'unknown', feedbackRounds: 'unknown', checkFailures: 'unknown' },
+  },
+  {
+    name: 'reports all three counts not fired when all are present and low',
+    counts: { reviewCaptures: 4, feedbackRounds: 2, checkFailures: 1 },
+    expected: { reviewRounds: 'notFired', feedbackRounds: 'notFired', checkFailures: 'notFired' },
+  },
+];
+
+it.each(storedTable.map((row) => [row.name, row] as const))('%s', (_name, row) => {
+  expect(decideStoredSignals(row.counts)).toStrictEqual(row.expected);
 });

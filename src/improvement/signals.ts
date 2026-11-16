@@ -5,6 +5,8 @@ type EvidenceKind = MissingEvidence['affects'][number];
 
 type SignalState = 'fired' | 'notFired' | 'unknown';
 
+export type StoredSignals = Omit<ReviewSignals, 'revert'>;
+
 export interface ReviewSignals {
   reviewRounds: SignalState;
   feedbackRounds: SignalState;
@@ -43,6 +45,16 @@ const countSignal = (
   return countState(count, threshold, affects(evidence.missing, [kind]));
 };
 
+const storedSignal = (
+  counts: Readonly<Record<string, number>>,
+  key: string,
+  threshold: number,
+): SignalState => {
+  const count = counts[key];
+
+  return count === undefined ? 'unknown' : countState(count, threshold, false);
+};
+
 const revert = (reverted: boolean | 'unknown'): SignalState => {
   if (reverted === 'unknown') {
     return 'unknown';
@@ -60,6 +72,12 @@ const transcriptSignals = (facts: ReviewSignalFacts): ReviewSignals => ({
 
 const readsTranscripts = (coverage: Coverage) =>
   coverage === 'complete' || coverage === 'managerOnly';
+
+export const decideStoredSignals = (counts: Readonly<Record<string, number>>): StoredSignals => ({
+  reviewRounds: storedSignal(counts, 'reviewCaptures', reviewRoundThreshold),
+  feedbackRounds: storedSignal(counts, 'feedbackRounds', feedbackRoundThreshold),
+  checkFailures: storedSignal(counts, 'checkFailures', checkFailureThreshold),
+});
 
 export const decideReviewSignals = (facts: ReviewSignalFacts): ReviewSignals => {
   if (!readsTranscripts(facts.coverage)) {
