@@ -3,6 +3,7 @@ import { basename, dirname, join } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.ts';
 import { newerFormatNotice } from '../record.ts';
+import { combinedReadability } from './taskMapping.ts';
 import type { WorkerTranscript } from './taskMapping.ts';
 import { parseTranscript } from './transcript.ts';
 import type { Transcript } from './transcript.ts';
@@ -128,14 +129,6 @@ const readSessions = async (paths: readonly string[]) => {
   }
 
   return results;
-};
-
-const combinedReadability = (results: readonly WorkerTranscript[]): WorkerTranscript => {
-  if (results.includes('unreadable')) {
-    return 'unreadable';
-  }
-
-  return results.includes('readable') ? 'readable' : 'missing';
 };
 
 export const readWorkerTranscripts = async (

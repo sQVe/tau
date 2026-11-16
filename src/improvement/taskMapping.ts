@@ -88,6 +88,14 @@ const ticketIdOf = (branch: string) => ticketPattern.exec(branch)?.[1]?.toLowerC
 
 const folderOf = (cwd: string) => basename(cwd).toLowerCase();
 
+export const combinedReadability = (sessions: readonly WorkerTranscript[]): WorkerTranscript => {
+  if (sessions.includes('unreadable')) {
+    return 'unreadable';
+  }
+
+  return sessions.includes('readable') ? 'readable' : 'missing';
+};
+
 export const decideCoverage = (facts: CoverageFacts): Coverage => {
   const workerReadFailed = facts.workers.includes('unreadable');
 

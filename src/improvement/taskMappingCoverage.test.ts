@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
-import { decideCoverage } from './taskMapping.ts';
-import type { Coverage, CoverageFacts } from './taskMapping.ts';
+import { combinedReadability, decideCoverage } from './taskMapping.ts';
+import type { Coverage, CoverageFacts, WorkerTranscript } from './taskMapping.ts';
 
 const table: { rule: string; facts: CoverageFacts; coverage: Coverage }[] = [
   {
@@ -43,4 +43,32 @@ const table: { rule: string; facts: CoverageFacts; coverage: Coverage }[] = [
 
 it.each(table)('decideCoverage $rule', ({ facts, coverage }) => {
   expect(decideCoverage(facts)).toBe(coverage);
+});
+
+const readabilityTable: {
+  rule: string;
+  sessions: WorkerTranscript[];
+  readability: WorkerTranscript;
+}[] = [
+  { rule: 'missing when the worker has no session', sessions: [], readability: 'missing' },
+  { rule: 'missing when every session is missing', sessions: ['missing'], readability: 'missing' },
+  {
+    rule: 'readable when one session is readable and another is missing',
+    sessions: ['readable', 'missing'],
+    readability: 'readable',
+  },
+  {
+    rule: 'unreadable when any session is unreadable',
+    sessions: ['readable', 'unreadable', 'missing'],
+    readability: 'unreadable',
+  },
+  {
+    rule: 'readable when every session is readable',
+    sessions: ['readable', 'readable'],
+    readability: 'readable',
+  },
+];
+
+it.each(readabilityTable)('combinedReadability $rule', ({ sessions, readability }) => {
+  expect(combinedReadability(sessions)).toBe(readability);
 });
