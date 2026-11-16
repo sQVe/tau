@@ -8,6 +8,7 @@ const state = new Int32Array(workerData.state);
 const label = new Uint8Array(workerData.label);
 const startedAt = performance.now();
 let lastBeat = Atomics.load(state, 0);
+let lastBudget = Atomics.load(state, 1);
 let lastChange = startedAt;
 const startParent = workerData.parent;
 // Reads /proc without spawning, because a spawn can block while the worker is wedged.
@@ -71,8 +72,9 @@ setInterval(() => {
   }
   const beat = Atomics.load(state, 0);
   const budget = Atomics.load(state, 1);
-  if (beat !== lastBeat || budget === 0) {
+  if (beat !== lastBeat || budget !== lastBudget || budget === 0) {
     lastBeat = beat;
+    lastBudget = budget;
     lastChange = now;
     return;
   }
