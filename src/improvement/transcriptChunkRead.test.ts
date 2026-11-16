@@ -277,4 +277,36 @@ describe('readTranscriptChunk', () => {
     await expect(readTranscriptChunk(path, 0, 10, 0)).rejects.toThrow(/maxLineBytes/u);
     await expect(readTranscriptChunk(path, 0, 10, 1.5)).rejects.toThrow(/maxLineBytes/u);
   });
+
+  it('skips a line over the cap that spans several reads', async () => {
+    const path = join(directory(), 'session.jsonl');
+    const longLength = 80 * 1024;
+    const size = longLength + 4;
+
+    write(path, `${'x'.repeat(longLength)}\nok\n`);
+
+    await mockRead(
+      path,
+      (read) =>
+        function (buffer, offset, length, position) {
+          return read.call(this, buffer, offset, Math.min(length, 4096), position);
+        },
+    );
+
+    expect(await readTranscriptChunk(path, 0, 10, 100)).toEqual({
+      status: 'read',
+      text: '',
+      nextOffset: longLength + 1,
+      size,
+      skippedLines: 1,
+    });
+
+    expect(await readTranscriptChunk(path, longLength + 1, 10, 100)).toEqual({
+      status: 'read',
+      text: 'ok\n',
+      nextOffset: size,
+      size,
+      skippedLines: 0,
+    });
+  });
 });
