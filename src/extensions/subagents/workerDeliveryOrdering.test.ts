@@ -67,6 +67,7 @@ const expectedSteps = [
   'deadline check report',
   'deadline mark pending',
   'deadline kill',
+  'deadline clear pending',
   'deadline showEnded',
   'deadline write label',
   'switch session',
@@ -453,6 +454,7 @@ class DeadlineStepCommand extends WorldCommand {
         return;
       }
 
+      recordStep('deadline clear pending');
       model.delivery.clearDeadlinePending(state.assignment.assignmentId);
       model.phases[this.index] = 0;
 

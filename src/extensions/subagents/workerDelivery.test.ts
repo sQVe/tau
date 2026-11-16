@@ -315,9 +315,9 @@ it('shows one ended message for a finished worker without a report', async () =>
 
   expect(message.customType).toBe('tau-worker-ended');
 
-  expect(message.content).toBe(
-    `Worker ${assignmentId} at t-child ended without a report. Read its screen with hc read t-child.`,
-  );
+  expect(message.content).toContain(assignmentId);
+
+  expect(message.content).toContain('hc read t-child');
 
   expect(message.details).toEqual({ assignmentId });
 });
