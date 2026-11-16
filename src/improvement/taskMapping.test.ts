@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
+import { decideReviewSignals } from './signals.ts';
 import { mapTasks } from './taskMapping.ts';
 import type { MappingFacts, MergedPullRequest, TranscriptFact } from './taskMapping.ts';
 import { parseTranscript } from './transcript.ts';
@@ -353,6 +354,37 @@ describe('mapTasks', () => {
     ).tasks;
 
     expect(task?.coverage).toBe('unknown');
+  });
+
+  it('makes the check failure signal unknown when a full_check call has no id', () => {
+    const time = '2026-11-03T08:00:00.000Z';
+
+    const session = [
+      sessionHeader('/home/sqve/code/personal/tau/me-1023'),
+      entry('check', time, {
+        role: 'assistant',
+        content: [{ type: 'toolCall', name: 'full_check', arguments: {} }],
+      }),
+      ...called('verify', '2026-11-03T08:01:00.000Z', 'pr', {
+        action: 'verify',
+        repository,
+        pr: 572,
+      }),
+    ].join('\n');
+
+    const [task] = mapTasks(
+      facts({
+        pullRequests: [merged(572, 'me-1023-a-check-without-id')],
+        transcripts: [{ path: '/sessions/check.jsonl', transcript: parseTranscript(session) }],
+      }),
+    ).tasks;
+
+    const evidence = { facts: task?.facts ?? [], missing: task?.missing ?? [] };
+    const coverage = task?.coverage ?? 'missing';
+    const signals = decideReviewSignals({ evidence, reverted: false, coverage });
+
+    expect(coverage).toBe('unknown');
+    expect(signals.checkFailures).toBe('unknown');
   });
 
   it('lists transcripts without a cwd as unattributed', () => {

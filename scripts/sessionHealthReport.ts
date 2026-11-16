@@ -90,7 +90,7 @@ const isoDateLength = 'YYYY-MM-DD'.length;
 const percentScale = 100;
 
 const addAssistantCalls = (collection: HealthCollection, message: Entry, facts: EntryFacts) => {
-  for (const called of assistantCalls(message)) {
+  for (const called of assistantCalls(message).calls) {
     const call: ToolCall = {
       tool: called.tool,
       day: facts.day,

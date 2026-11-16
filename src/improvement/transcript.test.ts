@@ -181,6 +181,37 @@ describe('parseTranscript', () => {
     expect('calls' in transcript && transcript.calls.map((call) => call.callId)).toEqual(['a']);
   });
 
+  it('reports a transcript with a tool call without an id as malformed and names the call', () => {
+    const withoutId = message('call-x', {
+      role: 'assistant',
+      content: [{ type: 'toolCall', name: 'full_check', arguments: {} }],
+    });
+
+    const transcript = parseTranscript(lines(header, withoutId, toolCall('a', 'pr')));
+
+    expect(transcript).toMatchObject({ status: 'malformed', cwd: '/work/me-1' });
+
+    const reason = 'reason' in transcript ? transcript.reason : '';
+
+    expect(reason).toContain('call-x');
+    expect(reason).toContain('full_check');
+    expect('calls' in transcript && transcript.calls.map((call) => call.callId)).toEqual(['a']);
+  });
+
+  it('reports a transcript with a tool call without a name as malformed and names the call', () => {
+    const withoutName = message('call-y', {
+      role: 'assistant',
+      content: [{ type: 'toolCall', id: 'y', arguments: {} }],
+    });
+
+    const transcript = parseTranscript(lines(header, withoutName));
+    const reason = 'reason' in transcript ? transcript.reason : '';
+
+    expect(transcript.status).toBe('malformed');
+    expect(reason).toContain('call-y');
+    expect(reason).toContain('"y"');
+  });
+
   it('reports a transcript without a session header as malformed', () => {
     const transcript = parseTranscript(lines(toolCall('a', 'full_check')));
 

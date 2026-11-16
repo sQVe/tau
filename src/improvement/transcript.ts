@@ -7,7 +7,7 @@ export interface CallResult {
   details: Entry | undefined;
 }
 
-export interface CalledTool {
+interface CalledTool {
   callId: string;
   tool: string;
   arguments: Entry | undefined;
@@ -30,11 +30,22 @@ export type Transcript =
   | { status: 'missing' }
   | { status: 'unreadable'; reason: string };
 
+interface DroppedCall {
+  callId: string | undefined;
+  tool: string | undefined;
+}
+
+interface AssistantCalls {
+  calls: CalledTool[];
+  dropped: DroppedCall[];
+}
+
 interface TranscriptLines {
   cwd: string | undefined;
   calls: ToolCall[];
   nested: Map<string, NestedCall[]>;
   malformedLines: number;
+  droppedCallReasons: string[];
 }
 
 export const text = (value: unknown): string | undefined =>
@@ -76,19 +87,24 @@ const resultText = (content: unknown) => {
     .join('\n');
 };
 
-export const assistantCalls = (message: Entry): CalledTool[] => {
+export const assistantCalls = (message: Entry): AssistantCalls => {
   const parts = Array.isArray(message.content) ? message.content.filter(isRecord) : [];
+  const found: AssistantCalls = { calls: [], dropped: [] };
 
-  return parts.flatMap((part) => {
+  for (const part of parts.filter((candidate) => candidate.type === 'toolCall')) {
     const tool = text(part.name);
     const callId = text(part.id);
 
-    if (part.type !== 'toolCall' || tool === undefined || callId === undefined) {
-      return [];
-    }
+    if (tool === undefined || callId === undefined) {
+      found.dropped.push({ callId, tool });
+    } else {
+      const parameters = isRecord(part.arguments) ? part.arguments : undefined;
 
-    return [{ callId, tool, arguments: isRecord(part.arguments) ? part.arguments : undefined }];
-  });
+      found.calls.push({ callId, tool, arguments: parameters });
+    }
+  }
+
+  return found;
 };
 
 export const toolResult = (message: Entry): { callId: string; result: CallResult } => ({
@@ -166,11 +182,21 @@ const addEntry = (lines: TranscriptLines, entry: Entry, pending: Map<string, Too
   }
 
   if (message.role === 'assistant') {
-    for (const called of assistantCalls(message)) {
+    const { calls, dropped } = assistantCalls(message);
+
+    for (const called of calls) {
       const call = { ...called, entryId, timestamp, viaCodemode: false, result: undefined };
 
       lines.calls.push(call);
       pending.set(call.callId, call);
+    }
+
+    for (const call of dropped) {
+      const named = JSON.stringify({ id: call.callId, name: call.tool });
+
+      lines.droppedCallReasons.push(
+        `The tool call ${named} in entry ${entryId} has no id or name.`,
+      );
     }
   }
 
@@ -217,6 +243,7 @@ export const parseTranscript = (source: string | undefined): Transcript => {
     calls: [],
     nested: new Map(),
     malformedLines,
+    droppedCallReasons: [],
   };
 
   const pending = new Map<string, ToolCall>();
@@ -232,13 +259,14 @@ export const parseTranscript = (source: string | undefined): Transcript => {
     return { status: 'malformed', cwd, calls, reason: 'The first line is not a session header.' };
   }
 
+  const reasons = [...lines.droppedCallReasons];
+
   if (lines.malformedLines > 0) {
-    return {
-      status: 'malformed',
-      cwd,
-      calls,
-      reason: `${lines.malformedLines} lines are malformed.`,
-    };
+    reasons.unshift(`${lines.malformedLines} lines are malformed.`);
+  }
+
+  if (reasons.length > 0) {
+    return { status: 'malformed', cwd, calls, reason: reasons.join(' ') };
   }
 
   return { status: 'read', cwd, calls };
