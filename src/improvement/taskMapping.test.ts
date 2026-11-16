@@ -151,6 +151,48 @@ describe('mapTasks', () => {
     expect(task?.publication).toBeUndefined();
   });
 
+  it('leaves out calls that name another pull request when it falls back to the ticket ID', () => {
+    const otherRead = JSON.stringify({
+      type: 'message',
+      id: 'other-read',
+      timestamp: '2026-11-15T06:30:00.000Z',
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'toolCall',
+            id: 'c-other',
+            name: 'pr_feedback',
+            arguments: { action: 'read', repository, pr: 700 },
+          },
+        ],
+      },
+    });
+
+    const otherResult = JSON.stringify({
+      type: 'message',
+      id: 'other-read-result',
+      timestamp: '2026-11-15T06:30:01.000Z',
+      message: { role: 'toolResult', toolCallId: 'c-other', details: {} },
+    });
+
+    const source = `${fixtureText('withoutPublication.jsonl')}${otherRead}\n${otherResult}\n`;
+
+    const [task] = mapTasks(
+      facts({
+        pullRequests: [merged(665, fallbackBranch)],
+        transcripts: [{ path: '/sessions/me-1449.jsonl', transcript: parseTranscript(source) }],
+      }),
+    ).tasks;
+
+    expect(task?.facts.map((fact) => `${fact.kind} ${fact.entryId}`)).toEqual([
+      'checkFailure bc113404',
+      'reviewCapture ec7ff06b',
+      'launch 10b3b158',
+      'feedbackRound 4c7bc974',
+    ]);
+  });
+
   it('does not fall back to a transcript that publishes other pull requests', () => {
     const [task] = mapTasks(
       facts({

@@ -233,17 +233,12 @@ const combinedCalls = (sources: readonly TaskSource[]) => {
   );
 };
 
-const latestPublication = (key: string, sources: readonly TaskSource[]) => {
+// Sources hold only calls attributed to this pull request, and a publication is attributed to
+// the pull request it names, so every publication in them is this pull request's.
+const latestPublication = (sources: readonly TaskSource[]) => {
   const publications = sources.flatMap(({ transcript, calls }) =>
     calls
-      .filter((call) => {
-        const publication = publicationOf(call);
-
-        return (
-          publication !== undefined &&
-          pullRequestKey(publication.repository, publication.pr) === key
-        );
-      })
+      .filter((call) => publicationOf(call) !== undefined)
       .map((call) => ({ path: transcript.path, entryId: call.entryId, timestamp: call.timestamp })),
   );
 
@@ -268,7 +263,6 @@ const buildTask = (
   transcripts: readonly AttributedTranscript[],
   workers: MappingFacts['workers'],
 ): Task => {
-  const key = pullRequestKey(pullRequest.repository, pullRequest.number);
   const sources = sourcesOf(pullRequest, transcripts);
   const evidence = extractTaskEvidence(combinedCalls(sources));
 
@@ -281,7 +275,7 @@ const buildTask = (
   return {
     pullRequest,
     transcripts: sources.map((source) => source.transcript.path),
-    publication: latestPublication(key, sources),
+    publication: latestPublication(sources),
     facts: evidence.facts,
     missing: evidence.missing,
     counts: countTaskFacts(evidence),

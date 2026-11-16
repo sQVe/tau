@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { countTaskFacts, extractTaskEvidence } from './taskFacts.ts';
+import { countTaskFacts, extractTaskEvidence, publicationOf } from './taskFacts.ts';
 import type { TaskFact } from './taskFacts.ts';
 import type { CallResult, ToolCall } from './transcript.ts';
 
@@ -223,6 +223,12 @@ const table: { rule: string; call: ToolCall; facts: string[]; missing: string[][
     missing: [['workerId']],
   },
   {
+    rule: 'a nested launch ignores worker IDs in its result details',
+    call: call('subagent', { profile: 'qa' }, done({ taskId: 'task-1' }), true),
+    facts: ['launch qa ?'],
+    missing: [['workerId']],
+  },
+  {
     rule: 'a launch without a profile is missing evidence for QA launches',
     call: call('subagent', undefined, done({ taskId: 'task-1' })),
     facts: ['launch ? task-1'],
@@ -263,6 +269,28 @@ describe('extractTaskEvidence', () => {
         affects: ['publication'],
       },
     ]);
+  });
+});
+
+describe('publicationOf', () => {
+  it.each([
+    { rule: 'a pr verify is a publication', tool: 'pr', action: 'verify', published: true },
+    {
+      rule: 'a pr call with another action is not',
+      tool: 'pr',
+      action: 'reviewBots',
+      published: false,
+    },
+    {
+      rule: 'another tool with a verify action is not',
+      tool: 'stack',
+      action: 'verify',
+      published: false,
+    },
+  ])('$rule', ({ tool, action, published }) => {
+    const publication = publicationOf(call(tool, { action, repository, pr: 560 }));
+
+    expect(publication !== undefined).toBe(published);
   });
 });
 
