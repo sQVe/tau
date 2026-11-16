@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { readCheckState } from '../../checkRecord/identity.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { withIgnoredNote } from '../../config/repositoryCommand.js';
-import { readVerificationTargets } from '../../config/verificationTargets.js';
+import { readVerificationTarget } from '../../config/verificationTargets.js';
 import type { VerificationTarget } from '../../config/verificationTargets.js';
 import { readGit, runGit } from '../../git.js';
 import { findTauRoot, requireTauChild } from '../../tauDirectory.js';
@@ -67,30 +67,22 @@ export const readRunRecordOrThrow = async (directory: string, run: string): Prom
   throw new Error(`The run record ${path} is malformed: ${read.problem}`);
 };
 
-export const readTargets = (
+export const readTarget = (
   location: ConfigLocation,
   ui: ConfigWarnings,
-): ReadonlyMap<string, VerificationTarget> => {
-  const targets = readVerificationTargets(location, ui);
-
-  if (targets.kind === 'notConfigured') {
-    throw new Error(notConfiguredMessage(targets.ignored));
-  }
-
-  return targets.targets;
-};
-
-export const requireTarget = (
-  targets: ReadonlyMap<string, VerificationTarget>,
   name: string,
 ): VerificationTarget => {
-  const target = targets.get(name);
+  const read = readVerificationTarget(location, ui, name);
 
-  if (target !== undefined) {
-    return target;
+  if (read.kind === 'notConfigured') {
+    throw new Error(notConfiguredMessage(read.ignored));
   }
 
-  const names = [...targets.keys()].join(', ');
+  if (read.kind === 'unknown') {
+    throw new Error(
+      `Unknown verification target ${name}. Configured targets: ${read.names.join(', ')}.`,
+    );
+  }
 
-  throw new Error(`Unknown verification target ${name}. Configured targets: ${names}.`);
+  return read.target;
 };

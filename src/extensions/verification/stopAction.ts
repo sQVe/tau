@@ -16,7 +16,7 @@ export interface StopContext {
   deadlineMilliseconds: number;
   signal: AbortSignal | undefined;
   run: string;
-  targets: ReadonlyMap<string, VerificationTarget>;
+  readTarget: (name: string) => VerificationTarget;
 }
 
 export interface StopResult {
@@ -39,11 +39,7 @@ export const stopRun = async (context: StopContext): Promise<StopResult> => {
     throw new Error(decision.reason);
   }
 
-  const commands = context.targets.get(record.target);
-
-  if (commands === undefined) {
-    throw new Error(`The run's target ${record.target} is no longer configured.`);
-  }
+  const commands = context.readTarget(record.target);
 
   const outcome = await runCommand({
     argv: commands.stop,

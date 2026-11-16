@@ -9,7 +9,7 @@ import { launchRun } from './launchAction.js';
 import type { LaunchResult } from './launchAction.js';
 import { registerItems } from './registerAction.js';
 import type { RegisterResult } from './registerAction.js';
-import { findVerificationRoot, readRunFacts, readTargets, requireTarget } from './runFacts.js';
+import { findVerificationRoot, readRunFacts, readTarget } from './runFacts.js';
 import { stopRun } from './stopAction.js';
 import type { StopResult } from './stopAction.js';
 
@@ -116,8 +116,7 @@ const execute = async (
 
   if (parsed.action === 'launch') {
     const location = readConfigLocation(root, options, context);
-    const targets = readTargets(location, context.ui);
-    const commands = requireTarget(targets, parsed.target);
+    const commands = readTarget(location, context.ui, parsed.target);
     const facts = await readRunFacts(root);
 
     const details = await launchRun({
@@ -142,14 +141,13 @@ const execute = async (
   }
 
   const location = readConfigLocation(root, options, context);
-  const targets = readTargets(location, context.ui);
 
   const details = await stopRun({
     root,
     deadlineMilliseconds,
     signal,
     run: parsed.run,
-    targets,
+    readTarget: (name) => readTarget(location, context.ui, name),
   });
 
   return toToolResult(details);

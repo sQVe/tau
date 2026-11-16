@@ -10,9 +10,10 @@ export interface VerificationTarget {
   stop: string[];
 }
 
-type VerificationTargets =
-  | { kind: 'configured'; targets: ReadonlyMap<string, VerificationTarget> }
-  | { kind: 'notConfigured'; ignored: string | undefined };
+export type VerificationTargetRead =
+  | { kind: 'configured'; target: VerificationTarget }
+  | { kind: 'notConfigured'; ignored: string | undefined }
+  | { kind: 'unknown'; names: string[] };
 
 const example =
   '{"launch": ["pnpm", "app:up"], "doctor": ["pnpm", "app:doctor"], "stop": ["pnpm", "app:down"]}';
@@ -102,10 +103,11 @@ const readTarget = (source: string, name: string, value: unknown): VerificationT
   };
 };
 
-export const readVerificationTargets = (
+export const readVerificationTarget = (
   location: ConfigLocation,
   ui: ConfigWarnings,
-): VerificationTargets => {
+  name: string,
+): VerificationTargetRead => {
   const { project, ignored } = findRepositoryFile(location, 'verification');
 
   if (project === undefined) {
@@ -117,12 +119,13 @@ export const readVerificationTargets = (
   warnUnknownKeys(ui, project.source, section, { targets: targetKeys }, 'verification');
 
   const targets = requireTargets(project.source, section.targets);
-  const map = new Map<string, VerificationTarget>();
+  const names = Object.keys(targets).toSorted();
 
-  for (const [name, value] of Object.entries(targets)) {
-    requireTargetName(project.source, name);
-    map.set(name, readTarget(project.source, name, value));
+  if (!Object.hasOwn(targets, name)) {
+    return { kind: 'unknown', names };
   }
 
-  return { kind: 'configured', targets: map };
+  requireTargetName(project.source, name);
+
+  return { kind: 'configured', target: readTarget(project.source, name, targets[name]) };
 };

@@ -344,6 +344,31 @@ it('a cancelled stop writes nothing and a later stop succeeds', async () => {
   expect(stop).toMatchObject({ run: launch.run, exitCode: 0 });
 });
 
+it('stops a run after a malformed second target is added', async () => {
+  const { root, run } = await fixture();
+
+  const launched = await run({ action: 'launch', target: 'app' });
+  const launch = launched.details as LaunchResult;
+
+  if (launch.status !== 'ready') {
+    throw new Error('The launch did not become ready.');
+  }
+
+  const configPath = join(root, '.pi', 'tau.json');
+
+  const config = JSON.parse(await readFile(configPath, 'utf8')) as {
+    verification: { targets: Record<string, unknown> };
+  };
+
+  config.verification.targets['broken'] = { launch: ['pnpm'] };
+  await writeFile(configPath, JSON.stringify(config));
+
+  const stopped = await run({ action: 'stop', run: launch.run });
+  const stop = stopped.details as StopResult;
+
+  expect(stop).toMatchObject({ run: launch.run, exitCode: 0 });
+});
+
 it('refuses a field from another action', async () => {
   const { root, run } = await fixture();
 

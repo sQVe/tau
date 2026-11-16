@@ -121,7 +121,7 @@ export const launchRun = async (context: LaunchContext): Promise<LaunchResult> =
       deadlineMilliseconds: context.deadlineMilliseconds,
       signal: undefined,
       run,
-      targets: new Map([[context.target, context.commands]]),
+      readTarget: () => context.commands,
     });
 
     return failedResult(run, directory, 'launch', launchOutcome, 'launch.log', true);
