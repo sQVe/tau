@@ -7,5 +7,18 @@
   },
   "fullCheck": {
     "argv": ["pnpm", "check"]
+  },
+  "verification": {
+    "targets": {
+      "pi-session": {
+        "launch": ["sh", "-c", "mkdir \"/tmp/tau-verification-$TAU_VERIFICATION_RUN\""],
+        "doctor": [
+          "sh",
+          "-c",
+          "test -d \"/tmp/tau-verification-$TAU_VERIFICATION_RUN\" && pnpm pi-version:check"
+        ],
+        "stop": ["true"]
+      }
+    }
   }
 }
