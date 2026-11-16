@@ -174,7 +174,9 @@ const itemNameProblem = (value: unknown): string | undefined => {
       continue;
     }
 
-    const collides = name.split('/').some((segment) => segment.endsWith('.json'));
+    const segments = name.split('/');
+    const earlierSegments = segments.slice(0, -1);
+    const collides = earlierSegments.some((segment) => segment.endsWith('.json'));
 
     if (collides) {
       return `/items/${index} item ${name} has a segment ending in .json, which collides with an item file path`;

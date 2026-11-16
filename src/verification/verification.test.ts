@@ -328,6 +328,34 @@ it('reads every run directory with its registered items', async () => {
   ]);
 });
 
+it('reads an item whose name ends in .json from its doubled extension file', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-verification-');
+  const runs = join(directory, 'runs');
+
+  const runDirectory = await setupRun(runs, 'json-item', [
+    { item: 'reports/summary.json', steps: 1 },
+  ]);
+
+  await writeJson(itemRecordPath(runDirectory, 'reports/summary.json'), {
+    ...validItemRecord,
+    run: 'json-item',
+    item: 'reports/summary.json',
+    steps: [passedStep],
+  });
+
+  const [result] = await readRuns(runs);
+
+  expect(result?.read.status).toBe('valid');
+
+  expect(result?.items).toMatchObject([
+    {
+      item: 'reports/summary.json',
+      path: join(runDirectory, 'items', 'reports', 'summary.json.json'),
+      read: { status: 'valid' },
+    },
+  ]);
+});
+
 it('reports mixed run and item envelopes without changing saved records', async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-verification-');
   const runs = join(directory, 'runs');
@@ -544,6 +572,39 @@ it('ignores an item file the run does not register', async () => {
   expect(alpha?.items[0]?.read.status).toBe('valid');
 });
 
+it('reports an unreadable item as malformed while keeping its run and other items', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-verification-');
+  const runs = join(directory, 'runs');
+
+  const runDirectory = await setupRun(runs, 'unreadable-item', [
+    { item: 'journeys/present', steps: 1 },
+    { item: 'journeys/unreadable', steps: 1 },
+  ]);
+
+  await writeJson(itemRecordPath(runDirectory, 'journeys/present'), {
+    ...validItemRecord,
+    run: 'unreadable-item',
+    item: 'journeys/present',
+    steps: [passedStep],
+  });
+
+  await mkdir(itemRecordPath(runDirectory, 'journeys/unreadable'), { recursive: true });
+
+  const [result] = await readRuns(runs);
+
+  expect(result?.read.status).toBe('valid');
+
+  expect(result?.items.map(({ item, read }) => ({ item, status: read.status }))).toEqual([
+    { item: 'journeys/present', status: 'valid' },
+    { item: 'journeys/unreadable', status: 'malformed' },
+  ]);
+
+  expect(result?.items[1]?.read).toMatchObject({
+    status: 'malformed',
+    problem: containing('EISDIR'),
+  });
+});
+
 it('reports a read error that is not a missing file as malformed', async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-verification-');
 
@@ -569,13 +630,21 @@ it.each([
     name: 'a run name with a parent segment',
     record: { ...validRunRecord, run: '../x' },
     read: readRunRecord,
+    expected: '/run',
   },
   {
-    name: 'an item name with an empty segment',
+    name: 'a registered item name with an empty segment',
+    record: { ...validRunRecord, items: [{ item: 'a//b', steps: 1 }] },
+    read: readRunRecord,
+    expected: '/items/0',
+  },
+  {
+    name: 'an item record name with an empty segment',
     record: { ...validItemRecord, item: 'a//b' },
     read: readItemRecord,
+    expected: '/item',
   },
-])('rejects $name', async ({ record, read }) => {
+])('rejects $name', async ({ record, read, expected }) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-verification-');
   const path = join(directory, 'record.json');
 
@@ -583,6 +652,6 @@ it.each([
 
   expect(await read(path)).toMatchObject({
     status: 'malformed',
-    problem: matching(/.+/u),
+    problem: containing(expected),
   });
 });
