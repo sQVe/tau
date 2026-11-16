@@ -132,9 +132,12 @@ only the worker writes its report and its questions into it.
 - The launching session shows one "ended at its deadline" message for each assignment ID, even when
   another session in the same terminal performed the kill. The label keeps that fact until the
   launching session reads the worker. A finished worker with no report and this label gets the
-  deadline message, not the generic "ended without a report" message. When the label write failed,
-  the launching session has no label to read and shows the generic "ended without a report" message
-  when another session performed the kill.
+  deadline message, not the generic "ended without a report" message.
+- Each worker gets at most one of the deadline message and the generic "ended without a report"
+  message, and neither after its report. When the launching session showed the generic message
+  before the label appeared, it shows no deadline message later. A report saved after either message
+  still shows. When the label write failed, the launching session has no label to read and shows the
+  generic "ended without a report" message when another session performed the kill.
 
 ### Tools
 
