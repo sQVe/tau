@@ -1,5 +1,5 @@
-import { cp, mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { dirname, join, relative } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
@@ -71,6 +71,22 @@ const setupRun = async (
   await writeJson(runRecordPath(directory), { ...validRunRecord, run, items });
 
   return directory;
+};
+
+const snapshotFiles = async (directory: string): Promise<Record<string, string>> => {
+  const entries = await readdir(directory, { recursive: true, withFileTypes: true });
+  const files = entries.filter((entry) => entry.isFile());
+
+  const contents = await Promise.all(
+    files.map(async (entry) => {
+      const path = join(entry.parentPath, entry.name);
+      const text = await readFile(path, 'utf8');
+
+      return [relative(directory, path), text] as const;
+    }),
+  );
+
+  return Object.fromEntries(contents);
 };
 
 it('reads a valid run record fixture', async () => {
@@ -193,6 +209,72 @@ it('reports malformed item records', async () => {
   });
 });
 
+it.each([
+  {
+    name: 'a backslash in an artifact path',
+    steps: [
+      {
+        number: 1,
+        status: 'passed',
+        artifacts: [{ kind: 'screenshot', path: 'screenshots\\step-1.png' }],
+      },
+    ],
+    endState: { status: 'passed' },
+    expected: ['/steps/0/artifacts/0'],
+  },
+  {
+    name: 'an empty artifact path segment',
+    steps: [
+      {
+        number: 1,
+        status: 'passed',
+        artifacts: [{ kind: 'screenshot', path: 'screenshots//step-1.png' }],
+      },
+    ],
+    endState: { status: 'passed' },
+    expected: ['/steps/0/artifacts/0'],
+  },
+  {
+    name: 'a dot artifact path segment',
+    steps: [
+      {
+        number: 1,
+        status: 'passed',
+        artifacts: [{ kind: 'screenshot', path: 'screenshots/./step-1.png' }],
+      },
+    ],
+    endState: { status: 'passed' },
+    expected: ['/steps/0/artifacts/0'],
+  },
+  {
+    name: 'an extra step variant field',
+    steps: [{ ...passedStep, observed: 'unexpected' }],
+    endState: { status: 'passed' },
+    expected: ['/steps/0', 'observed'],
+  },
+  {
+    name: 'a malformed endState',
+    steps: [passedStep],
+    endState: { status: 'differs' },
+    expected: ['/endState', 'observed'],
+  },
+])('rejects an item record with $name', async ({ steps, endState, expected }) => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-verification-');
+  const path = join(directory, 'item.json');
+
+  await writeJson(path, { ...validItemRecord, steps, endState });
+
+  const read = await readItemRecord(path);
+
+  expect(read.status).toBe('malformed');
+
+  const problem = read.status === 'malformed' ? read.problem : '';
+
+  for (const text of expected) {
+    expect(problem).toContain(text);
+  }
+});
+
 it('reports a newer run record and item record as malformed with the update notice', async () => {
   expect(await readRunRecord(fixturePath('runV2.json'))).toMatchObject({
     status: 'malformed',
@@ -227,6 +309,102 @@ it('reads every run directory with its registered items', async () => {
     },
     { run: 'beta', status: 'valid', items: [{ item: 'checks/smoke', status: 'valid' }] },
   ]);
+});
+
+it('reports mixed run and item envelopes without changing saved records', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-verification-');
+  const runs = join(directory, 'runs');
+
+  const validRun = await setupRun(runs, 'valid', [
+    { item: 'journeys/present', steps: 2 },
+    { item: 'journeys/missing', steps: 1 },
+    { item: 'journeys/malformed', steps: 1 },
+  ]);
+
+  await writeJson(itemRecordPath(validRun, 'journeys/present'), {
+    ...validItemRecord,
+    run: 'valid',
+    item: 'journeys/present',
+  });
+
+  await writeFile(itemRecordPath(validRun, 'journeys/malformed'), '{ broken');
+
+  const retainedRun = await setupRun(runs, 'retained', [{ item: 'checks/retained', steps: 1 }]);
+
+  await writeJson(itemRecordPath(retainedRun, 'checks/retained'), {
+    ...validItemRecord,
+    run: 'retained',
+    item: 'checks/retained',
+    steps: [passedStep],
+  });
+
+  await mkdir(join(runs, 'missing-run'), { recursive: true });
+
+  const malformedRun = join(runs, 'malformed-run');
+
+  await writeJson(runRecordPath(malformedRun), {
+    ...validRunRecord,
+    run: 'malformed-run',
+    dirty: 'yes',
+  });
+
+  await writeJson(itemRecordPath(malformedRun, 'journeys/delegate-a-check'), {
+    ...validItemRecord,
+    run: 'malformed-run',
+  });
+
+  const newerRun = join(runs, 'newer-run');
+
+  await writeJson(runRecordPath(newerRun), {
+    ...validRunRecord,
+    version: 2,
+    run: 'newer-run',
+  });
+
+  await writeJson(itemRecordPath(newerRun, 'journeys/delegate-a-check'), {
+    ...validItemRecord,
+    run: 'newer-run',
+  });
+
+  const before = await snapshotFiles(runs);
+  const result = await readRuns(runs);
+  const after = await snapshotFiles(runs);
+  const byRun = Object.fromEntries(result.map((run) => [run.run, run]));
+
+  expect(byRun['valid']?.read.status).toBe('valid');
+
+  expect(byRun['valid']?.items.map(({ item, read }) => ({ item, status: read.status }))).toEqual([
+    { item: 'journeys/present', status: 'valid' },
+    { item: 'journeys/missing', status: 'missing' },
+    { item: 'journeys/malformed', status: 'malformed' },
+  ]);
+
+  expect(byRun['valid']?.items[2]?.read).toMatchObject({
+    status: 'malformed',
+    problem: matching(/.+/u),
+  });
+
+  expect(byRun['retained']?.read.status).toBe('valid');
+  expect(byRun['retained']?.items[0]?.read.status).toBe('valid');
+
+  expect(byRun['missing-run']?.read).toEqual({ status: 'missing' });
+  expect(byRun['missing-run']?.items).toEqual([]);
+
+  expect(byRun['malformed-run']?.read).toMatchObject({
+    status: 'malformed',
+    problem: matching(/.+/u),
+  });
+
+  expect(byRun['malformed-run']?.items).toEqual([]);
+
+  expect(byRun['newer-run']?.read).toMatchObject({
+    status: 'malformed',
+    problem: containing('newer format'),
+  });
+
+  expect(byRun['newer-run']?.items).toEqual([]);
+
+  expect(after).toEqual(before);
 });
 
 it('reports an item file that does not match its run as malformed', async () => {
