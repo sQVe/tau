@@ -4,13 +4,13 @@ import type { ConfigLocation, ConfigWarnings } from './config.js';
 import { warnUnknownKeys } from './config.js';
 import { findRepositoryFile, readArgv, sectionOf } from './repositoryCommand.js';
 
-interface VerificationTarget {
+export interface VerificationTarget {
   launch: string[];
   doctor: string[];
   stop: string[];
 }
 
-type VerificationTargets =
+export type VerificationTargets =
   | { kind: 'configured'; targets: ReadonlyMap<string, VerificationTarget> }
   | { kind: 'notConfigured'; ignored: string | undefined };
 

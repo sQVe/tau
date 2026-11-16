@@ -29,6 +29,7 @@ import subagentsExtension, { registerCapacityRefusal } from './extensions/subage
 import tauSkillsExtension from './extensions/tauSkills/tauSkills.js';
 import tddExtension from './extensions/tdd/tdd.js';
 import trackerExtension from './extensions/tracker/tracker.js';
+import verificationExtension from './extensions/verification/verification.js';
 import webAccessExtension from './extensions/webAccess.js';
 
 const skillsDirectory = fileURLToPath(new URL('./skills/', import.meta.url));
@@ -53,6 +54,7 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   inboxExtension(pi);
   draftReviewExtension(pi);
   trackerExtension(pi);
+  verificationExtension(pi);
   piResumeExtension(pi);
   prExtension(pi);
   prFeedbackExtension(pi);
