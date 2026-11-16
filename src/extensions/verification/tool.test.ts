@@ -32,8 +32,6 @@ const fixture = async (options: FixtureOptions = {}) => {
 
   await writeFile(seen, '');
   await writeFile(join(root, 'tracked.txt'), 'one\n');
-  await git(root, 'add', '.');
-  await git(root, 'commit', '--quiet', '-m', 'first');
   await mkdir(join(root, '.pi'));
 
   const record = `printf '%s|%s\\n' "$TAU_VERIFICATION_RUN" "$TAU_VERIFICATION_DIRECTORY" >> ${JSON.stringify(seen)}`;
@@ -55,6 +53,9 @@ const fixture = async (options: FixtureOptions = {}) => {
       },
     }),
   );
+
+  await git(root, 'add', '.');
+  await git(root, 'commit', '--quiet', '-m', 'first');
 
   const run = (input: ToolInput, deadlineMilliseconds?: number) =>
     createVerificationTool({
@@ -120,12 +121,18 @@ it('a failed doctor returns failed with its log, and register refuses before and
   const launched = await run({ action: 'launch', target: 'app' });
   const launch = launched.details as LaunchResult;
 
-  expect(launch).toMatchObject({ status: 'failed', command: 'doctor', exitCode: 1 });
+  expect(launch).toMatchObject({
+    status: 'failed',
+    command: 'doctor',
+    exitCode: 1,
+    stopped: false,
+  });
 
   if (launch.status !== 'failed') {
     return;
   }
 
+  expect(launch.logPath.endsWith('doctor.log')).toBe(true);
   expect(existsSync(launch.logPath)).toBe(true);
 
   await expect(
@@ -178,6 +185,80 @@ it('a launch past its deadline is stopped, stop runs, and launch returns failed'
 
   expect(read.record.launch?.exitCode).toBeNull();
   expect(read.record.stop?.exitCode).toBe(0);
+});
+
+it('a non-zero launch returns failed for launch and skips doctor', async () => {
+  const { run, seen } = await fixture({ launchScript: 'exit 3' });
+
+  const launched = await run({ action: 'launch', target: 'app' });
+  const launch = launched.details as LaunchResult;
+
+  expect(launch).toMatchObject({
+    status: 'failed',
+    command: 'launch',
+    exitCode: 3,
+    stopped: false,
+  });
+
+  if (launch.status !== 'failed') {
+    return;
+  }
+
+  expect(launch.logPath.endsWith('launch.log')).toBe(true);
+  expect(await readFile(seen, 'utf8')).toBe('');
+
+  const read = await readRunRecord(runRecordPath(launch.directory));
+
+  expect(read.status).toBe('valid');
+
+  if (read.status !== 'valid') {
+    return;
+  }
+
+  expect(read.record.doctor).toBeNull();
+});
+
+it('records the head and dirty state of the tree', async () => {
+  const { root, run } = await fixture();
+  const head = await git(root, 'rev-parse', 'HEAD');
+
+  const clean = await run({ action: 'launch', target: 'app' });
+  const cleanLaunch = clean.details as LaunchResult;
+
+  if (cleanLaunch.status !== 'ready') {
+    throw new Error('The launch did not become ready.');
+  }
+
+  const cleanRead = await readRunRecord(runRecordPath(cleanLaunch.directory));
+
+  expect(cleanRead.status).toBe('valid');
+
+  if (cleanRead.status !== 'valid') {
+    return;
+  }
+
+  expect(cleanRead.record.head).toBe(head);
+  expect(cleanRead.record.dirty).toBe(false);
+
+  await writeFile(join(root, 'tracked.txt'), 'two\n');
+
+  const dirty = await run({ action: 'launch', target: 'app' });
+  const dirtyLaunch = dirty.details as LaunchResult;
+
+  if (dirtyLaunch.status !== 'ready') {
+    throw new Error('The launch did not become ready.');
+  }
+
+  const dirtyRead = await readRunRecord(runRecordPath(dirtyLaunch.directory));
+
+  expect(dirtyRead.status).toBe('valid');
+
+  if (dirtyRead.status !== 'valid') {
+    return;
+  }
+
+  expect(dirtyRead.record.head).toBe(head);
+  expect(dirtyRead.record.dirty).toBe(true);
 });
 
 it('launch, doctor, and stop receive the run and its directory', async () => {

@@ -133,6 +133,26 @@ it('stops the process group on cancel', async () => {
   expect(await groupState(groupId)).toBe('gone');
 });
 
+it('returns stopped for an already-aborted signal without creating the log', async () => {
+  const cwd = temporaryCommandDirectory();
+  const controller = new AbortController();
+  const logPath = join(cwd, 'command.log');
+
+  controller.abort();
+
+  const outcome = await runCommand(
+    optionsIn(cwd, {
+      argv: ['sh', '-c', 'touch ran'],
+      signal: controller.signal,
+      logPath,
+    }),
+  );
+
+  expect(outcome).toEqual({ kind: 'stopped', reason: 'cancelled' });
+  expect(existsSync(logPath)).toBe(false);
+  expect(existsSync(join(cwd, 'ran'))).toBe(false);
+});
+
 it('reports a command killed by a signal', async () => {
   const cwd = temporaryCommandDirectory();
 
