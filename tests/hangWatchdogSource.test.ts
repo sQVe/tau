@@ -1,11 +1,24 @@
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { watchdogSource } from './hangWatchdogSource.js';
 import { temporaryDirectory } from './temporaryDirectoryHarness.js';
+
+const killProcess = (processId: number) => {
+  if (processId <= 0) {
+    return;
+  }
+
+  try {
+    process.kill(processId, 'SIGKILL');
+  } catch {
+    // Already gone.
+  }
+};
 
 const processIsAlive = (processId: number): boolean => {
   try {
@@ -68,6 +81,94 @@ spawn(process.execPath, ['-e', ${JSON.stringify(forkScript)}, process.argv[1]], 
 setInterval(() => {}, 1000);
 `;
 
+// The reader sees a budget lowered after silence that was valid under the longer budget. It must
+// treat that change as progress instead of applying the shorter budget to the earlier silence.
+const startWatchdog = () => {
+  const state = new Int32Array(new SharedArrayBuffer(12));
+  const kills: { processId: number; signal: string }[] = [];
+  let clock = 0;
+  let tick: (() => void) | undefined;
+
+  Atomics.store(state, 1, 1500);
+
+  const context = {
+    Atomics,
+    Buffer,
+    Int32Array,
+    Uint8Array,
+    performance: { now: () => clock },
+    process: {
+      pid: 4242,
+      ppid: 1000,
+      platform: 'linux',
+      kill: (processId: number, signal: string) => {
+        kills.push({ processId, signal });
+      },
+    },
+    require: (specifier: string) => {
+      if (specifier === 'node:worker_threads') {
+        return {
+          workerData: {
+            state: state.buffer,
+            label: new SharedArrayBuffer(8),
+            parent: 1000,
+          },
+        };
+      }
+
+      if (specifier === 'node:fs') {
+        return {
+          readdirSync: () => [],
+          readFileSync: () => {
+            throw new Error('The watchdog must not read /proc when it lists no processes.');
+          },
+          writeSync: () => {},
+        };
+      }
+
+      throw new Error(`Unexpected require: ${specifier}`);
+    },
+    setInterval: (callback: () => void) => {
+      tick = callback;
+    },
+  };
+
+  runInNewContext(watchdogSource, context);
+
+  if (tick === undefined) {
+    throw new Error('The watchdog did not register its interval.');
+  }
+
+  const interval = tick;
+
+  return {
+    state,
+    kills,
+    tickAt: (now: number) => {
+      clock = now;
+      interval();
+    },
+  };
+};
+
+it('treats a lowered blocking budget as progress before it times out', () => {
+  const watchdog = startWatchdog();
+
+  watchdog.tickAt(1000);
+  expect(watchdog.kills).toEqual([]);
+
+  Atomics.store(watchdog.state, 1, 600);
+
+  watchdog.tickAt(1050);
+  expect(watchdog.kills).toEqual([]);
+
+  watchdog.tickAt(1649);
+  expect(watchdog.kills).toEqual([]);
+
+  watchdog.tickAt(1650);
+  expect(watchdog.kills).toEqual([{ processId: 4242, signal: 'SIGKILL' }]);
+});
+
 // Descendants are found through /proc, so other platforms kill only the fork.
 it.skipIf(process.platform !== 'linux')(
   'kills a blocked fork and its descendants after its parent is killed',
@@ -76,24 +177,29 @@ it.skipIf(process.platform !== 'linux')(
     const file = join(directory, 'pids');
 
     const parent = spawn(process.execPath, ['-e', parentScript, file], { stdio: 'ignore' });
-    const parentId = parent.pid ?? 0;
+
+    parent.on('error', () => {
+      // The missing pid check below reports the spawn failure.
+    });
+
+    const parentId = parent.pid;
+
+    if (parentId === undefined) {
+      throw new Error('Failed to spawn the watchdog parent process.');
+    }
 
     let pids: number[] = [];
 
     onTestFinished(() => {
       for (const processId of [parentId, ...pids]) {
-        try {
-          process.kill(processId, 'SIGKILL');
-        } catch {
-          // Already gone.
-        }
+        killProcess(processId);
       }
     });
 
     await waitFor(async () => (await readProcessIds(file)).length === 2);
     pids = await readProcessIds(file);
 
-    process.kill(parentId, 'SIGKILL');
+    killProcess(parentId);
 
     await waitFor(() => pids.every((processId) => !processIsAlive(processId)));
 

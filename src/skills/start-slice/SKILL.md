@@ -75,10 +75,16 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
    [structure criteria](../code-quality/structure-criteria.md) plan questions for the slice's files:
    where each change goes, which helper it reuses, and which files would pass 500 lines. Without
    structure rules, also answer the module questions: which module owns the concept, what deletes
-   branches or layers, and what gets more tangled.
+   branches or layers, and what gets more tangled. Then decide every design choice before drafting:
+   new or changed signatures and types, data shapes, error cases, and the existing pattern or helper
+   to copy. A worker route picks a cheaper model for a fully specified ticket, and a stronger one
+   for a ticket that leaves judgment open.
 6. Write the draft in `$slicedir`: `agent-<n>.md` per agent ticket in work order, from the
-   [tracker skill](../tracker/SKILL.md) template, one worker task each, with the step 5 answers in
-   `## Files`. Give each ticket the record links and rules it needs in `## Constraints`. Write
+   [tracker skill](../tracker/SKILL.md) template, one worker task each. Write the step 5 answers and
+   decisions into each ticket's `## Files` and `## Test cases`. Put each part that still needs
+   judgment in its own small ticket, ordered before the tickets that build on it, such as an unknown
+   root cause, a new shared interface, concurrency, or a migration. Later tickets state that part's
+   contract. Give each ticket the record links and rules it needs in `## Constraints`. Write
    `start.json` as the `start_slice` tool describes, with the tickets in work order. Take label IDs
    from the agent team's label list, as the tracker skill says, or use `[]`. Keep existing
    identifiers; new ones stay `null`. The tickets together cover every acceptance criterion. Give
@@ -97,13 +103,14 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
    Brief it with the body file path, the step 5 tree, and the plan questions. It reads the body file
    with `read` and the named files with `git show <tree>:<path>`. It searches with
    `git grep <pattern> <tree>` and `git ls-tree -r --name-only <tree>` for unnamed helpers. It lists
-   its questions and plan answers, or says none.
+   its questions, plan answers, and any design choice the ticket leaves open, or says none.
    - Revise the body file to answer each question, or proceed when the ticket or code answers it. A
      scout never blocks the start.
+   - Decide each open design choice in the ticket, or split it into its own ticket as step 6 says.
    - Revise `## Files` for each plan answer that changes structure.
    - After any revision, check the draft again as step 7 says.
-   - A ticket with no questions and no plan answer to record goes to step 9 unchanged. A scout that
-     fails to launch or stops without a report does not stop the start; step 10 names it.
+   - A ticket with no questions, plan answers, or open choices goes to step 9 unchanged. A scout
+     that fails to launch or stops without a report does not stop the start; step 10 names it.
 9. Start in this order.
    - `git status --porcelain` must print nothing, and no worker may run. Check workers with the
      `hc ls --json` check from the [stack skill](../stack/SKILL.md). Stop and report either failure.
@@ -128,6 +135,9 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
     - Do not review a finished agent ticket. When a later ticket in the slice builds on a contract
       it changes, such as a type, tool schema, or file format, run one fast review of it before the
       dependent ticket starts.
+    - When a ticket split out for judgment finishes, revise the body files of the tickets that build
+      on it to match its result before they start. Check them as step 7 says, and write them to
+      Linear with `start_slice` `read` and `apply` as step 9 says.
     - After the last worker, run `mutation_check` once with `mode: "changed"` and `base` set to
       `git merge-base <base> HEAD`, where `<base>` is the step 4 base. Skip it, and say so, when the
       repository has no `mutation.argv`. Report a tool error and go on to prune-comments.
