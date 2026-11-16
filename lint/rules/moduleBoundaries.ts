@@ -82,7 +82,12 @@ export const moduleList: readonly ModuleDeclaration[] = [
   {
     name: 'improvement',
     entry: 'improvement/improvement',
-    publicFiles: ['improvement/event', 'improvement/projectRoot', 'improvement/workerRecord'],
+    publicFiles: [
+      'improvement/event',
+      'improvement/projectRoot',
+      'improvement/transcript',
+      'improvement/workerRecord',
+    ],
   },
   { name: 'inbox', entry: 'inbox/inbox', publicFiles: ['inbox/receiptDecision'] },
   {

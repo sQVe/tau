@@ -39,6 +39,20 @@ Tau saves each improvement fact as one versioned JSON event file in the project 
   event with the `improvement` tool, and proposes a rule or check. Later reviews count repeated
   corrections from these events.
 
+### Task facts and signals
+
+- The loop reads each merged task's facts from the tool calls in its Pi transcripts, without a
+  model. The `pr` tool call that verified a pull request ties the transcript to that task. When no
+  transcript publishes the pull request, the transcript in the folder named by the branch's ticket
+  ID stands in for it.
+- A tool call whose shape or result the reader does not know is missing evidence. The counts it
+  affects read unknown, not zero. Each task also reports whether its manager and worker transcripts
+  were found.
+- Review signals are pure rules over those counts, with thresholds set on past merged tasks. A count
+  at its threshold fires even when some of its facts are missing. A count below its threshold with
+  missing facts, or on a task without transcript coverage, reads unknown. The revert signal comes
+  from merged pull requests and default-branch commits, not transcripts.
+
 ### No background timer
 
 Recording and review start only inside a Pi session the user runs, or from the user's command.
@@ -56,11 +70,13 @@ or ticket.
 - One project keeps one history across all its worktrees.
 - Saving a correction is safe to retry.
 - The user sees and approves every change the loop makes.
+- Each task fact names the transcript entry it comes from, so a signal can be checked by hand.
 
 ### Negative
 
 - Days without a Pi session record nothing until the next session catches up.
 - A history that spans projects must read each project root.
+- A mistake that leaves no tool call behind, such as a skipped test-first step, raises no signal.
 
 ## Alternatives considered
 
@@ -68,6 +84,11 @@ or ticket.
 
 Keep all events of all projects in one file in the agent directory. Rejected because concurrent
 sessions would append to one file, and a project's history would live apart from the project.
+
+### Classify transcripts with a model
+
+Ask a model whether each task went wrong. Rejected because its answer changes between runs and names
+no tool call it rests on, while counts from tool calls can be checked against the transcript.
 
 ### A systemd timer
 
