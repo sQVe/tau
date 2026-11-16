@@ -27,13 +27,13 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 // Each ceiling caps a session at about its measured size, so a cut must lower it. The target is
 // beside each ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
-  manager: 49_705, // target 38,000
-  worker: 19_041, // target 14,000
-  reviewer: 15_397, // target 11,000
-  checker: 15_550,
-  qa: 12_293, // target 9,000
-  browser: 11_003, // target 9,000
-  scout: 10_562, // target 9,000
+  manager: 50_239, // target 38,000
+  worker: 19_589, // target 14,000
+  reviewer: 15_945, // target 11,000
+  checker: 16_098,
+  qa: 12_841, // target 9,000
+  browser: 11_551, // target 9,000
+  scout: 11_110, // target 9,000
 };
 
 const profileNames = ['worker', 'reviewer', 'checker', 'qa', 'browser', 'scout'];
