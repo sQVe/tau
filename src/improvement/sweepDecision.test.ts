@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ImprovementEvent } from './event.ts';
 import { decideTranscriptRead, plannedEvents } from './sweepDecision.ts';
 import type { TaskCounts } from './taskFacts.ts';
 import type { Task } from './taskMapping.ts';
@@ -52,91 +53,117 @@ describe('decideTranscriptRead', () => {
 });
 
 describe('plannedEvents', () => {
-  const planned = (overrides: Parameters<typeof task>[0] = {}, existingIds: string[] = []) =>
-    plannedEvents({
-      tasks: [{ task: task(overrides), hash: 'abc123' }],
-      existingIds: new Set(existingIds),
-      now,
-    });
+  const pullRequest = 'https://github.com/sQVe/tau/pull/562';
 
-  it('gives each task a merge event and a facts event', () => {
-    expect(planned()).toEqual([
-      {
-        version: 1,
-        id: 'merge-abc123',
-        kind: 'merge',
-        createdAt: now,
-        evidence: [{ kind: 'pullRequest', url: 'https://github.com/sQVe/tau/pull/562' }],
-        repository: 'github.com/sQVe/tau',
-        pullRequest: 'https://github.com/sQVe/tau/pull/562',
-        mergedAt: '2026-11-15T11:58:00.000Z',
-      },
-      {
-        version: 1,
-        id: 'facts-abc123',
-        kind: 'facts',
-        createdAt: now,
-        evidence: [{ kind: 'pullRequest', url: 'https://github.com/sQVe/tau/pull/562' }],
-        pullRequest: 'https://github.com/sQVe/tau/pull/562',
-        facts: {
-          publications: 1,
-          reviewCaptures: 2,
-          fixCaptures: 0,
-          feedbackRounds: 1,
-          checkFailures: 0,
-          qaLaunches: 0,
-          launches: 1,
-        },
-        coverage: 'complete',
-      },
-    ]);
+  const mergeEvent = (): ImprovementEvent => ({
+    version: 1,
+    id: 'merge-abc123',
+    kind: 'merge',
+    createdAt: now,
+    evidence: [{ kind: 'pullRequest', url: pullRequest }],
+    repository: 'github.com/sQVe/tau',
+    pullRequest,
+    mergedAt: '2026-11-15T11:58:00.000Z',
   });
 
-  it('keeps only the numeric counts', () => {
-    const facts = planned({ counts: counts({ publications: 'unknown', launches: 2 }) }).find(
-      (event) => event.kind === 'facts',
-    );
-
-    expect(facts?.kind === 'facts' ? facts.facts : undefined).toEqual({
+  const factsEvent = (
+    overrides: Partial<Extract<ImprovementEvent, { kind: 'facts' }>> = {},
+  ): ImprovementEvent => ({
+    version: 1,
+    id: 'facts-abc123',
+    kind: 'facts',
+    createdAt: now,
+    evidence: [{ kind: 'pullRequest', url: pullRequest }],
+    pullRequest,
+    facts: {
+      publications: 1,
       reviewCaptures: 2,
       fixCaptures: 0,
       feedbackRounds: 1,
       checkFailures: 0,
       qaLaunches: 0,
-      launches: 2,
-    });
+      launches: 1,
+    },
+    coverage: 'complete',
+    ...overrides,
   });
 
-  it('adds the publication as transcript evidence', () => {
-    const facts = planned({
-      publication: {
-        path: '/sessions/manager.jsonl',
-        callId: 'call-1',
-        entryId: 'entry-1',
-        timestamp: '2026-11-03T08:03:00.000Z',
-      },
-    }).find((event) => event.kind === 'facts');
+  const publication = {
+    path: '/sessions/manager.jsonl',
+    callId: 'call-1',
+    entryId: 'entry-1',
+    timestamp: '2026-11-03T08:03:00.000Z',
+  };
 
-    expect(facts?.evidence).toEqual([
-      { kind: 'pullRequest', url: 'https://github.com/sQVe/tau/pull/562' },
-      {
-        kind: 'transcript',
-        path: '/sessions/manager.jsonl',
-        toolCallId: 'call-1',
-        entryId: 'entry-1',
-      },
-    ]);
-  });
-
-  it('writes no facts event while coverage is unknown', () => {
-    expect(planned({ coverage: 'unknown' }).map((event) => event.kind)).toEqual(['merge']);
-  });
-
-  it('skips an ID that already exists', () => {
-    expect(planned({}, ['merge-abc123']).map((event) => event.id)).toEqual(['facts-abc123']);
-  });
-
-  it('skips a task whose every ID exists', () => {
-    expect(planned({}, ['merge-abc123', 'facts-abc123'])).toEqual([]);
+  it.each([
+    {
+      rule: 'gives each task a merge event and a facts event',
+      overrides: {},
+      existingIds: [],
+      events: [mergeEvent(), factsEvent()],
+    },
+    {
+      rule: 'keeps only the numeric counts',
+      overrides: { counts: counts({ publications: 'unknown', launches: 2 }) },
+      existingIds: [],
+      events: [
+        mergeEvent(),
+        factsEvent({
+          facts: {
+            reviewCaptures: 2,
+            fixCaptures: 0,
+            feedbackRounds: 1,
+            checkFailures: 0,
+            qaLaunches: 0,
+            launches: 2,
+          },
+        }),
+      ],
+    },
+    {
+      rule: 'adds the publication as transcript evidence',
+      overrides: { publication },
+      existingIds: [],
+      events: [
+        mergeEvent(),
+        factsEvent({
+          evidence: [
+            { kind: 'pullRequest', url: pullRequest },
+            {
+              kind: 'transcript',
+              path: '/sessions/manager.jsonl',
+              toolCallId: 'call-1',
+              entryId: 'entry-1',
+            },
+          ],
+        }),
+      ],
+    },
+    {
+      rule: 'writes no facts event while coverage is unknown',
+      overrides: { coverage: 'unknown' as const },
+      existingIds: [],
+      events: [mergeEvent()],
+    },
+    {
+      rule: 'skips an ID that already exists',
+      overrides: {},
+      existingIds: ['merge-abc123'],
+      events: [factsEvent()],
+    },
+    {
+      rule: 'skips a task whose every ID exists',
+      overrides: {},
+      existingIds: ['merge-abc123', 'facts-abc123'],
+      events: [],
+    },
+  ])('$rule', ({ overrides, existingIds, events }) => {
+    expect(
+      plannedEvents({
+        tasks: [{ task: task(overrides), hash: 'abc123' }],
+        existingIds: new Set(existingIds),
+        now,
+      }),
+    ).toEqual(events);
   });
 });
