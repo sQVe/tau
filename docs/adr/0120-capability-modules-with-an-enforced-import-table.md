@@ -60,7 +60,7 @@ The target shared modules and the modules each may import:
 | `tauDirectory`  | `errors`, `git`                                                          |
 | `verification`  | `errors`, `record`, `schema`                                             |
 | `wake`          | nothing                                                                  |
-| `improvement`   | `errors`, `git`, `record`, `schema`, `tauDirectory`                      |
+| `improvement`   | `command`, `errors`, `git`, `github`, `record`, `schema`, `tauDirectory` |
 | `inbox`         | `errors`, `fileLock`, `hc`, `record`, `schema`, `wake`                   |
 | `record`        | `errors`, `schema`, `tauDirectory`                                       |
 | `checkRecord`   | `errors`, `git`, `record`                                                |

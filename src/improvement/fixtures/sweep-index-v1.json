@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "transcripts": {
+    "/sessions/manager.jsonl": {
+      "status": "resolved",
+      "cwd": "/code/tau",
+      "projectRoot": "/code/tau",
+      "cursor": 128,
+      "state": {
+        "header": "found",
+        "cwd": "/code/tau",
+        "calls": [
+          {
+            "callId": "call-1",
+            "tool": "read",
+            "entryId": "entry-1",
+            "timestamp": "2026-11-15T12:00:00.000Z",
+            "viaCodemode": false
+          }
+        ],
+        "malformedLines": 0,
+        "droppedCallReasons": []
+      }
+    },
+    "/sessions/worker.jsonl": {
+      "status": "unresolved",
+      "cwd": null,
+      "reason": "The first line is not a session header."
+    }
+  },
+  "projects": {
+    "/code/tau": {
+      "repository": "sqve/tau",
+      "merged": { "status": "read", "at": "2026-11-15T12:00:00.000Z", "count": 3 }
+    },
+    "/code/other": {
+      "repository": null,
+      "merged": {
+        "status": "unknown",
+        "at": "2026-11-15T12:00:00.000Z",
+        "reason": "gh failed"
+      }
+    },
+    "/code/third": {
+      "repository": "sqve/third",
+      "merged": { "status": "notRead" }
+    }
+  },
+  "lastSweep": {
+    "startedAt": "2026-11-15T12:00:00.000Z",
+    "outcome": "budget"
+  }
+}
