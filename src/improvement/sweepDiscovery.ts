@@ -147,11 +147,15 @@ const transcriptCwd = (state: TranscriptState): HeaderRead => {
     return { status: 'resolved', cwd: transcript.cwd };
   }
 
-  if (transcript.status === 'malformed') {
-    return { status: 'unresolved', cwd: transcript.cwd ?? null, reason: transcript.reason };
+  if (transcript.status !== 'malformed') {
+    return { status: 'unresolved', cwd: null, reason: 'The session file could not be read.' };
   }
 
-  return { status: 'unresolved', cwd: null, reason: 'The session file could not be read.' };
+  if (transcript.cwd === undefined) {
+    return { status: 'unresolved', cwd: null, reason: transcript.reason };
+  }
+
+  return { status: 'resolved', cwd: transcript.cwd };
 };
 
 export const resolveTranscript = async (

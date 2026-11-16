@@ -243,6 +243,23 @@ it('saves an unresolved entry when the first line is not a session header', asyn
   });
 });
 
+it('resolves a session header followed by a malformed line', async () => {
+  const fixture = await createSweepFixture(onTestFinished);
+  const path = fixture.writeSession('manager.jsonl', `${session(fixture.repository)}{not json\n`);
+
+  fixture.setMerged([]);
+
+  expect(await fixture.run()).toEqual({ outcome: 'caughtUp' });
+
+  const index = await fixture.readIndex();
+
+  expect(index.transcripts[path]).toMatchObject({
+    status: 'resolved',
+    cwd: fixture.repository,
+    projectRoot: fixture.repository,
+  });
+});
+
 it('retries a session file that disappeared before it was read', async () => {
   const fixture = await createSweepFixture(onTestFinished);
   const path = join(fixture.agentDirectory, 'sessions', 'vanished.jsonl');
