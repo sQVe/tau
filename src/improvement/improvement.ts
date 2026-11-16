@@ -1,5 +1,4 @@
-import { constants } from 'node:fs';
-import { access, readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.ts';
@@ -112,14 +111,23 @@ export const readTranscript = async (path: string): Promise<Transcript> => {
   return parseTranscript(source);
 };
 
-const readability = async (path: string): Promise<WorkerTranscript> => {
-  try {
-    await access(path, constants.R_OK);
-
+const readability = (transcript: Transcript): WorkerTranscript => {
+  if (transcript.status === 'read') {
     return 'readable';
-  } catch (error) {
-    return isMissingFile(error) ? 'missing' : 'unreadable';
   }
+
+  return transcript.status === 'missing' ? 'missing' : 'unreadable';
+};
+
+const readSessions = async (paths: readonly string[]) => {
+  const results: WorkerTranscript[] = [];
+
+  for (const path of paths) {
+    // oxlint-disable-next-line no-await-in-loop -- Reads started together would open too many files.
+    results.push(readability(await readTranscript(path)));
+  }
+
+  return results;
 };
 
 const combinedReadability = (results: readonly WorkerTranscript[]): WorkerTranscript => {
@@ -155,7 +163,7 @@ export const readWorkerTranscripts = async (
     );
 
     // oxlint-disable-next-line no-await-in-loop -- Reads started together would open too many files.
-    const results = await Promise.all(sessions.map(readability));
+    const results = await readSessions(sessions);
 
     workers.set(record.task.taskId, combinedReadability(results));
   }

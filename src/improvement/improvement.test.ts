@@ -169,6 +169,19 @@ describe('readWorkerTranscripts', () => {
     expect(Object.fromEntries(await readWorkerTranscripts(agent))).toEqual({ t2: 'unreadable' });
   });
 
+  it('reports a worker session that is malformed as unreadable and leaves it unchanged', async () => {
+    const agent = improvementDirectory();
+    const session = join(agent, 'tau', 'main-1', 'workers', 't6', 'session-c.jsonl');
+
+    writeFile(join(dirname(session), 'task.json'), '{"taskId":"t6","createdAt":1}');
+    writeFile(session, `${header}{not json\n`);
+
+    const before = snapshot([session]);
+
+    expect(Object.fromEntries(await readWorkerTranscripts(agent))).toEqual({ t6: 'unreadable' });
+    expect(snapshot([session])).toEqual(before);
+  });
+
   it('reports a worker whose record is malformed or cannot be read as unreadable', async () => {
     const agent = improvementDirectory();
     const workers = join(agent, 'tau', 'main-1', 'workers');
