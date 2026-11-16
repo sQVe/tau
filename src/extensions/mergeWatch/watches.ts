@@ -2,10 +2,13 @@ import type { ExtensionContext, ToolResultEvent } from '@earendil-works/pi-codin
 import { isBashToolResult } from '@earendil-works/pi-coding-agent';
 
 import type { Exec } from '../../command.js';
+import { readTaskSignals } from '../../improvement/taskSignals.js';
 import { parseAutoMergeRequests } from './autoMergeRequest.js';
 import type { AutoMergeRequest } from './autoMergeRequest.js';
 import type { Deliver } from './delivery.js';
+import { decideMergeOffer, describeMergedPullRequest } from './mergeOffer.js';
 import {
+  readMergedPullRequest,
   readPullRequestState,
   readRequiredChecks,
   resolvePullRequest,
@@ -14,7 +17,9 @@ import { decideWatchOutcome, describeWatchOutcome } from './watchOutcome.js';
 import type { WatchOutcome } from './watchOutcome.js';
 import { decideWatchStart } from './watchStart.js';
 
-type WatchContext = Pick<ExtensionContext, 'cwd' | 'isIdle' | 'signal'>;
+type WatchContext = Pick<ExtensionContext, 'cwd' | 'isIdle' | 'signal'> & {
+  sessionManager: Pick<ExtensionContext['sessionManager'], 'getSessionDir'>;
+};
 
 interface Watch {
   // Undefined until the resolve read returns.
@@ -61,7 +66,13 @@ const stop = (watch: Watch) => {
   clearTimeout(watch.deadlineTimer);
 };
 
-export const createMergeWatches = (exec: Exec, deliver: Deliver): MergeWatches => {
+const isAborted = (watch: Watch) => watch.reads.signal.aborted;
+
+export const createMergeWatches = (
+  exec: Exec,
+  deliver: Deliver,
+  agentDirectory: string,
+): MergeWatches => {
   const watches = new Set<Watch>();
 
   const end = (watch: Watch) => {
@@ -69,9 +80,44 @@ export const createMergeWatches = (exec: Exec, deliver: Deliver): MergeWatches =
     watches.delete(watch);
   };
 
+  const finishMerged = async (watch: Watch, url: string) => {
+    const runtime = { exec, cwd: watch.context.cwd, signal: watch.reads.signal };
+    const pullRequest = await readMergedPullRequest(runtime, url);
+
+    if (isAborted(watch)) {
+      return;
+    }
+
+    const read =
+      pullRequest === undefined
+        ? undefined
+        : await readTaskSignals({
+            agentDirectory,
+            sessionDirectory: watch.context.sessionManager.getSessionDir(),
+            cwd: watch.context.cwd,
+            pullRequest,
+          });
+
+    if (isAborted(watch)) {
+      return;
+    }
+
+    end(watch);
+    deliver(watch.context, describeMergedPullRequest(url, decideMergeOffer(read)));
+  };
+
   const settle = (watch: Watch, url: string, outcome: WatchOutcome): boolean => {
     if (outcome.kind === 'waiting') {
       return true;
+    }
+
+    if (outcome.kind === 'merged') {
+      clearTimeout(watch.pollTimer);
+      clearTimeout(watch.deadlineTimer);
+      // oxlint-disable-next-line typescript/no-floating-promises -- readMergedPullRequest and readTaskSignals turn every failure into undefined, so a finish cannot reject.
+      void finishMerged(watch, url);
+
+      return false;
     }
 
     end(watch);

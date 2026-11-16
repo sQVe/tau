@@ -3,6 +3,8 @@ import { Value } from 'typebox/value';
 
 import { checkOutput, parseJson, runCommand } from '../../command.js';
 import type { CommandRuntime } from '../../command.js';
+import { formatRepository, parseRemoteUrl } from '../../github/repositoryTargetDecisions.js';
+import type { MergedPullRequest } from '../../improvement/taskSignals.js';
 import type { AutoMergeRequest } from './autoMergeRequest.js';
 import type { WatchFacts } from './watchOutcome.js';
 import type { WatchStartFacts } from './watchStart.js';
@@ -19,6 +21,12 @@ const stateSchema = Type.Object({
 });
 
 const checksSchema = Type.Array(Type.Object({ name: Type.String(), bucket: Type.String() }));
+
+const mergedSchema = Type.Object({
+  number: Type.Integer({ minimum: 1 }),
+  headRefName: Type.String({ minLength: 1 }),
+  createdAt: Type.String({ minLength: 1 }),
+});
 
 const failingChecksExitCode = 1;
 const pendingChecksExitCode = 8;
@@ -81,6 +89,58 @@ export const readPullRequestState = async (
     checkOutput(label, stateSchema, value);
 
     return value;
+  } catch {
+    return undefined;
+  }
+};
+
+const repositoryOfPullRequestUrl = (url: string): string | undefined => {
+  const location = parseRemoteUrl(url);
+
+  if (location === undefined) {
+    return undefined;
+  }
+
+  const [owner, name, pull, number, ...rest] = location.path.split('/');
+
+  const hasOwnerAndName = owner !== undefined && name !== undefined;
+  const hasPullRequestPath = pull === 'pull' && number !== undefined && /^\d+$/u.test(number);
+  const hasNoExtraSegments = rest.length === 0;
+
+  if (!hasOwnerAndName || !hasPullRequestPath || !hasNoExtraSegments) {
+    return undefined;
+  }
+
+  return formatRepository({ host: location.host, owner, name });
+};
+
+export const readMergedPullRequest = async (
+  runtime: CommandRuntime,
+  url: string,
+): Promise<MergedPullRequest | undefined> => {
+  const repository = repositoryOfPullRequestUrl(url);
+
+  if (repository === undefined) {
+    return undefined;
+  }
+
+  try {
+    const { label, value } = await readJson(runtime, [
+      'pr',
+      'view',
+      url,
+      '--json',
+      'number,headRefName,createdAt',
+    ]);
+
+    checkOutput(label, mergedSchema, value);
+
+    return {
+      repository,
+      number: value.number,
+      headBranch: value.headRefName,
+      createdAt: value.createdAt,
+    };
   } catch {
     return undefined;
   }

@@ -39,11 +39,10 @@ export const decideWatchOutcome = (facts: WatchFacts): PollOutcome => {
   return { kind: 'waiting' };
 };
 
-export const describeWatchOutcome = (url: string, outcome: FinalOutcome): string => {
-  if (outcome.kind === 'merged') {
-    return `Pull request ${url} merged.`;
-  }
-
+export const describeWatchOutcome = (
+  url: string,
+  outcome: Exclude<FinalOutcome, { kind: 'merged' }>,
+): string => {
   if (outcome.kind === 'closed') {
     return `Pull request ${url} closed without merging. Its state is ${outcome.state}.`;
   }
