@@ -5,12 +5,16 @@ import { fileURLToPath } from 'node:url';
 import { expect, it, onTestFinished } from 'vitest';
 
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.js';
+import { isItemName, isRunName } from './records.js';
+import type { ItemRecord, RunRecord, Step } from './records.js';
 import {
   itemRecordPath,
   readItemRecord,
   readRuns,
   readRunRecord,
+  runDirectoryPath,
   runRecordPath,
+  validateItemRecord,
 } from './verification.js';
 
 const fixturePath = (name: string) => fileURLToPath(new URL(`fixtures/${name}`, import.meta.url));
@@ -19,7 +23,7 @@ const containing = (text: string): unknown => expect.stringContaining(text);
 
 const matching = (pattern: RegExp): unknown => expect.stringMatching(pattern);
 
-const validRunRecord = {
+const validRunRecord: RunRecord = {
   version: 1,
   run: 'delegate-a-check',
   target: '482',
@@ -35,20 +39,20 @@ const validRunRecord = {
   items: [{ item: 'journeys/delegate-a-check', steps: 2 }],
 };
 
-const passedStep = {
+const passedStep: Step = {
   number: 1,
   status: 'passed',
   artifacts: [{ kind: 'screenshot', path: 'screenshots/step-1.png' }],
 };
 
-const differsStep = {
+const differsStep: Step = {
   number: 2,
   status: 'differs',
   observed: 'The dialog stays open.',
   artifacts: [{ kind: 'output', path: 'output/step-2.txt' }],
 };
 
-const validItemRecord = {
+const validItemRecord: ItemRecord = {
   version: 1,
   run: 'delegate-a-check',
   item: 'journeys/delegate-a-check',
@@ -687,4 +691,30 @@ it.each([
     status: 'malformed',
     problem: containing(`: ${expected} must match pattern`),
   });
+});
+
+it('builds a run directory path below .tau/verification', () => {
+  expect(runDirectoryPath('/repo', 'delegate-a-check')).toBe(
+    join('/repo', '.tau', 'verification', 'delegate-a-check'),
+  );
+});
+
+it('validates an item record with the reader rules', () => {
+  expect(validateItemRecord('/run/items/item.json', validItemRecord)).toEqual(validItemRecord);
+
+  expect(() =>
+    validateItemRecord('/run/items/item.json', {
+      ...validItemRecord,
+      steps: [{ ...passedStep, number: 2 }],
+    }),
+  ).toThrow('Malformed item record');
+});
+
+it('recognizes run and item names', () => {
+  expect([
+    isRunName('delegate-a-check'),
+    isRunName('../run'),
+    isItemName('journeys/delegate-a-check'),
+    isItemName('a//b'),
+  ]).toEqual([true, false, true, false]);
 });
