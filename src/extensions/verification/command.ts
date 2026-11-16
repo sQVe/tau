@@ -31,7 +31,6 @@ interface CommandState {
 
 const stopGraceMilliseconds = 5000;
 
-// Node timers set a longer delay to 1 ms, which would stop the command at once.
 const largestTimerDelayMilliseconds = 2_147_483_647;
 
 const isPositiveSafeInteger = (value: number): boolean => Number.isSafeInteger(value) && value > 0;
