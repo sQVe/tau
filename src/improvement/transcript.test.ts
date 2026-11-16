@@ -131,22 +131,31 @@ describe('parseTranscript', () => {
     ]);
   });
 
-  it('reads no nested arguments from args text when nestedCalls lacks the call', () => {
+  it('reads complete args text, or none when cut, for a call that nestedCalls lacks', () => {
     const details = {
-      calls: [{ id: 'a/1', name: 'pr', args: '{"action":"verify"}', status: 'ok' }],
+      calls: [
+        { id: 'a/1', name: 'pr', args: '{"action":"verify","pr":5}', status: 'ok' },
+        { id: 'a/2', name: 'pr', args: '{"action":"verify","title":"cut...', status: 'ok' },
+        { id: 'a/3', name: 'pr', args: '{"action":"cut...', status: 'ok' },
+      ],
+    };
+
+    const nestedCalls = {
+      calls: [{ id: 'a/3', name: 'pr', arguments: { action: 'verify', pr: 7 } }],
+      complete: false,
     };
 
     const transcript = parseTranscript(
-      lines(
-        header,
-        toolCall('a', 'codemode'),
-        toolResult('a', { details, nestedCalls: { calls: [], complete: false } }),
-      ),
+      lines(header, toolCall('a', 'codemode'), toolResult('a', { details, nestedCalls })),
     );
 
     const calls = 'calls' in transcript ? transcript.calls.slice(1) : [];
 
-    expect(calls.map((call) => [call.callId, call.arguments])).toEqual([['a/1', undefined]]);
+    expect(calls.map((call) => [call.callId, call.arguments])).toEqual([
+      ['a/1', { action: 'verify', pr: 5 }],
+      ['a/2', undefined],
+      ['a/3', { action: 'verify', pr: 7 }],
+    ]);
   });
 
   it('reports a missing transcript', () => {

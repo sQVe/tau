@@ -107,14 +107,12 @@ const nestedResult = (call: Entry): CallResult | undefined => {
   return call.status === 'ok' ? { error: undefined, details: undefined } : undefined;
 };
 
+// Codemode cuts the args text of details.calls[] at a fixed length, and cut text does not parse.
+// nestedCalls holds the whole arguments, but older results lack it.
 const nestedArguments = (message: Entry) => {
   const { nestedCalls } = message;
-
-  if (!isRecord(nestedCalls)) {
-    return undefined;
-  }
-
-  const calls = Array.isArray(nestedCalls.calls) ? nestedCalls.calls.filter(isRecord) : [];
+  const listed = isRecord(nestedCalls) ? nestedCalls.calls : undefined;
+  const calls = Array.isArray(listed) ? listed.filter(isRecord) : [];
   const byId = new Map<string, Entry>();
 
   for (const call of calls) {
@@ -142,8 +140,7 @@ export const codemodeCalls = (message: Entry, scriptCallId: string): NestedCall[
 
     const callId = text(call.id) ?? `${scriptCallId}/${index + 1}`;
 
-    const parameters =
-      fullArguments === undefined ? parseEntry(text(call.args) ?? '') : fullArguments.get(callId);
+    const parameters = fullArguments.get(callId) ?? parseEntry(text(call.args) ?? '');
 
     return [{ callId, tool, arguments: parameters, result: nestedResult(call) }];
   });
