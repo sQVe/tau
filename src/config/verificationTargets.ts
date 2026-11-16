@@ -10,7 +10,7 @@ export interface VerificationTarget {
   stop: string[];
 }
 
-export type VerificationTargets =
+type VerificationTargets =
   | { kind: 'configured'; targets: ReadonlyMap<string, VerificationTarget> }
   | { kind: 'notConfigured'; ignored: string | undefined };
 
