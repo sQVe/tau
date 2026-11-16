@@ -57,7 +57,7 @@ const requireText = (input: KindedInput, field: TextField): string => {
   }
 
   if (value.trim() === '') {
-    throw new Error(`record kind ${input.kind} needs ${field}.`);
+    throw new Error(`record kind ${input.kind} needs a non-blank ${field}.`);
   }
 
   return value;
@@ -93,38 +93,6 @@ const requireChoice = (input: KindedInput): Choice => {
   return value;
 };
 
-const parseCorrection = (input: KindedInput): RecordRequest => ({
-  kind: 'correction',
-  summary: requireText(input, 'summary'),
-});
-
-const parseReview = (input: KindedInput): RecordRequest => ({
-  kind: 'review',
-  pullRequest: requirePullRequest(input),
-  outcome: requireText(input, 'outcome'),
-});
-
-const parseBacklog = (input: KindedInput): RecordRequest => ({
-  kind: 'backlog',
-  review: requireText(input, 'review'),
-  item: requireItem(input),
-  summary: requireText(input, 'summary'),
-});
-
-const parseDecision = (input: KindedInput): RecordRequest => ({
-  kind: 'decision',
-  review: requireText(input, 'review'),
-  item: requireItem(input),
-  choice: requireChoice(input),
-});
-
-const parsers: Readonly<Record<RecordKind, (input: KindedInput) => RecordRequest>> = {
-  correction: parseCorrection,
-  review: parseReview,
-  backlog: parseBacklog,
-  decision: parseDecision,
-};
-
 export const parseRecordRequest = (input: RecordInput): RecordRequest => {
   const { kind } = input;
 
@@ -136,5 +104,30 @@ export const parseRecordRequest = (input: RecordInput): RecordRequest => {
 
   rejectExtraFields(recordInput);
 
-  return parsers[kind](recordInput);
+  switch (recordInput.kind) {
+    case 'correction':
+      return { kind: 'correction', summary: requireText(recordInput, 'summary') };
+    case 'review':
+      return {
+        kind: 'review',
+        pullRequest: requirePullRequest(recordInput),
+        outcome: requireText(recordInput, 'outcome'),
+      };
+    case 'backlog':
+      return {
+        kind: 'backlog',
+        review: requireText(recordInput, 'review'),
+        item: requireItem(recordInput),
+        summary: requireText(recordInput, 'summary'),
+      };
+    case 'decision':
+      return {
+        kind: 'decision',
+        review: requireText(recordInput, 'review'),
+        item: requireItem(recordInput),
+        choice: requireChoice(recordInput),
+      };
+    default:
+      return recordInput.kind satisfies never;
+  }
 };

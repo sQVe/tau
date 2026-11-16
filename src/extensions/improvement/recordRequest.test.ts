@@ -106,7 +106,32 @@ const table: {
   {
     name: 'refuses a blank summary',
     input: { action: 'record', kind: 'correction', summary: ' \n\t ' },
-    expected: { error: 'record kind correction needs summary.' },
+    expected: { error: 'record kind correction needs a non-blank summary.' },
+  },
+  {
+    name: 'refuses a blank pull request',
+    input: {
+      action: 'record',
+      kind: 'review',
+      pullRequest: ' ',
+      outcome: 'The task passed.',
+    },
+    expected: { error: 'record kind review needs a non-blank pullRequest.' },
+  },
+  {
+    name: 'refuses a blank outcome',
+    input: {
+      action: 'record',
+      kind: 'review',
+      pullRequest: 'https://github.com/example/repo/pull/1',
+      outcome: '\n',
+    },
+    expected: { error: 'record kind review needs a non-blank outcome.' },
+  },
+  {
+    name: 'refuses a blank review',
+    input: { action: 'record', kind: 'backlog', review: '\t', item: 2, summary: 'Split it.' },
+    expected: { error: 'record kind backlog needs a non-blank review.' },
   },
   {
     name: 'refuses a pull request that is not https',

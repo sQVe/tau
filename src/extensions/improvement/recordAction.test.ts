@@ -331,6 +331,29 @@ it('refuses a decision when an event file is damaged', async () => {
   expect(failure).toContain(damaged);
 });
 
+it('refuses a decision when the named review has a newer format', async () => {
+  const root = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+  const directory = join(await realpath(root), '.tau', 'improvement');
+  const named = join(directory, 'review-newer.json');
+  const other = join(directory, 'review-other.json');
+
+  await mkdir(directory, { recursive: true });
+  await writeFile(named, '{"version":2}', 'utf8');
+  await writeFile(other, '{"version":2}', 'utf8');
+
+  const failure = await recordDecision(decisionFactsFor(root, { review: 'review-newer' })).then(
+    () => 'no error',
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  );
+
+  expect(failure).toBe(
+    `Improvement event ${named} has a newer format than this Tau reads. Update Tau, then restart the session.`,
+  );
+
+  expect((await readdir(directory)).toSorted()).toEqual(['review-newer.json', 'review-other.json']);
+  expect(await readFile(named, 'utf8')).toBe('{"version":2}');
+});
+
 describe('runRecord', () => {
   it('refuses a whitespace-only summary and saves nothing', async () => {
     const root = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
@@ -350,7 +373,7 @@ describe('runRecord', () => {
     );
 
     expect({ failure, saved: existsSync(join(root, '.tau', 'improvement')) }).toEqual({
-      failure: 'record kind correction needs summary.',
+      failure: 'record kind correction needs a non-blank summary.',
       saved: false,
     });
   });

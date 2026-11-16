@@ -104,6 +104,11 @@ const runManagerToolResult = async (
   return tool.execute('call-1', input, undefined, undefined, sessionContext(cwd, setStatus));
 };
 
+interface RecordDetails {
+  id: string;
+  path: string;
+}
+
 const runManagerTool = async <Details>(
   cwd: string,
   input: Record<string, unknown>,
@@ -142,7 +147,7 @@ it('starts no sweep in a worker session', () => {
 it('records a correction from the session the manager runs', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  const { path } = await runManagerTool<{ path: string }>(root, {
+  const { path } = await runManagerTool<RecordDetails>(root, {
     action: 'record',
     kind: 'correction',
     summary: 'Use run_tests for tests.',
@@ -347,7 +352,7 @@ it('refreshes the status item after a record call', async () => {
 it('records a review from the session the manager runs', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  const { id, path } = await runManagerTool<{ id: string; path: string }>(root, {
+  const { id, path } = await runManagerTool<RecordDetails>(root, {
     action: 'record',
     kind: 'review',
     pullRequest: 'https://github.com/example/repo/pull/1',
@@ -370,10 +375,68 @@ it('records a review from the session the manager runs', async () => {
   });
 });
 
+it('records a backlog item from the session the manager runs', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const review = await runManagerTool<RecordDetails>(root, {
+    action: 'record',
+    kind: 'review',
+    pullRequest: 'https://github.com/example/repo/pull/1',
+    outcome: 'The task passed.',
+  });
+
+  const { id, path } = await runManagerTool<RecordDetails>(root, {
+    action: 'record',
+    kind: 'backlog',
+    review: review.id,
+    item: 2,
+    summary: 'Split the module.',
+  });
+
+  const event = parseEvent(path, await readFile(path, 'utf8'));
+
+  expect(id).toBe(`backlog-${review.id}-2`);
+
+  expect(event).toMatchObject({
+    id,
+    kind: 'backlog',
+    summary: 'Split the module.',
+    pullRequest: 'https://github.com/example/repo/pull/1',
+  });
+});
+
+it('records a decision from the session the manager runs', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const review = await runManagerTool<RecordDetails>(root, {
+    action: 'record',
+    kind: 'review',
+    pullRequest: 'https://github.com/example/repo/pull/1',
+    outcome: 'The task passed.',
+  });
+
+  const { id, path } = await runManagerTool<RecordDetails>(root, {
+    action: 'record',
+    kind: 'decision',
+    review: review.id,
+    item: 2,
+    choice: 'approved',
+  });
+
+  const event = parseEvent(path, await readFile(path, 'utf8'));
+
+  expect(id).toBe(`decision-${review.id}-2`);
+
+  expect(event).toMatchObject({ id, kind: 'decision', subject: review.id, choice: 'approved' });
+});
+
 it('refuses a record call without a summary', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  const failure = await runManagerTool(root, { action: 'record', kind: 'correction' }).then(
+  const failure = await runManagerTool<RecordDetails>(root, {
+    action: 'record',
+    kind: 'correction',
+  }).then(
     () => 'no error',
     (error: unknown) => (error instanceof Error ? error.message : String(error)),
   );
