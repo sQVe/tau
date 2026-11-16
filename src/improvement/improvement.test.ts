@@ -1,22 +1,15 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { describe, expect, it, onTestFinished } from 'vitest';
 
+import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.ts';
 import { readTranscript, readWorkerRecord, readWorkerTranscripts } from './improvement.ts';
 import { mapTasks } from './taskMapping.ts';
 import type { WorkerTranscript } from './taskMapping.ts';
 import { parseTranscript } from './transcript.ts';
 
-const temporaryDirectory = () => {
-  const root = mkdtempSync('/tmp/tau-improvement-');
-
-  onTestFinished(() => {
-    rmSync(root, { recursive: true, force: true });
-  });
-
-  return root;
-};
+const improvementDirectory = () => temporaryDirectory(onTestFinished, 'tau-improvement-');
 
 const writeFile = (path: string, content: string) => {
   mkdirSync(dirname(path), { recursive: true });
@@ -41,7 +34,7 @@ const assignmentRecord = (assignmentId: string, sessionFile: string) =>
 
 describe('readTranscript', () => {
   it('reads a transcript file and leaves it unchanged', async () => {
-    const path = join(temporaryDirectory(), 'session.jsonl');
+    const path = join(improvementDirectory(), 'session.jsonl');
 
     writeFile(path, header);
 
@@ -52,13 +45,13 @@ describe('readTranscript', () => {
   });
 
   it('reports a transcript file that does not exist as missing', async () => {
-    const path = join(temporaryDirectory(), 'gone.jsonl');
+    const path = join(improvementDirectory(), 'gone.jsonl');
 
     expect(await readTranscript(path)).toEqual({ status: 'missing' });
   });
 
   it('reports a malformed transcript file and leaves it unchanged', async () => {
-    const path = join(temporaryDirectory(), 'session.jsonl');
+    const path = join(improvementDirectory(), 'session.jsonl');
 
     writeFile(path, `${header}{not json\n`);
 
@@ -69,7 +62,7 @@ describe('readTranscript', () => {
   });
 
   it('reports a transcript that cannot be read as unreadable', async () => {
-    const path = temporaryDirectory();
+    const path = improvementDirectory();
 
     expect(await readTranscript(path)).toMatchObject({ status: 'unreadable' });
   });
@@ -77,7 +70,7 @@ describe('readTranscript', () => {
 
 describe('readWorkerRecord', () => {
   it('reads an assignment record and leaves it unchanged', async () => {
-    const path = join(temporaryDirectory(), 'assignments', 'a1', 'assignment.json');
+    const path = join(improvementDirectory(), 'assignments', 'a1', 'assignment.json');
 
     writeFile(path, assignmentRecord('a1', '/s.jsonl'));
 
@@ -92,13 +85,13 @@ describe('readWorkerRecord', () => {
   });
 
   it('reports a record file that does not exist as missing', async () => {
-    const path = join(temporaryDirectory(), 'workers', 't1', 'task.json');
+    const path = join(improvementDirectory(), 'workers', 't1', 'task.json');
 
     expect(await readWorkerRecord(path)).toEqual({ status: 'missing' });
   });
 
   it('reports a malformed record and leaves it unchanged', async () => {
-    const path = join(temporaryDirectory(), 'workers', 't1', 'task.json');
+    const path = join(improvementDirectory(), 'workers', 't1', 'task.json');
 
     writeFile(path, '{"createdAt":1}');
 
@@ -109,7 +102,7 @@ describe('readWorkerRecord', () => {
   });
 
   it('reports a record that cannot be read as unreadable', async () => {
-    const path = join(temporaryDirectory(), 'workers', 't1', 'task.json');
+    const path = join(improvementDirectory(), 'workers', 't1', 'task.json');
 
     writeFile(path, '{"taskId":"t1","createdAt":1}');
     lock(path);
@@ -120,7 +113,7 @@ describe('readWorkerRecord', () => {
 
 describe('readWorkerTranscripts', () => {
   it('finds the transcript of each worker by its record and leaves the files unchanged', async () => {
-    const agent = temporaryDirectory();
+    const agent = improvementDirectory();
     const tau = join(agent, 'tau', 'main-1');
     const assignmentPath = join(tau, 'assignments', 'a1', 'assignment.json');
     const assignmentSession = join(tau, 'assignments', 'a1', 'session-a.jsonl');
@@ -138,7 +131,7 @@ describe('readWorkerTranscripts', () => {
   });
 
   it('reports a worker session that cannot be read as unreadable', async () => {
-    const agent = temporaryDirectory();
+    const agent = improvementDirectory();
     const session = join(agent, 'tau', 'main-1', 'workers', 't2', 'session-b.jsonl');
 
     writeFile(join(dirname(session), 'task.json'), '{"taskId":"t2","createdAt":1}');
@@ -149,7 +142,7 @@ describe('readWorkerTranscripts', () => {
   });
 
   it('reports a worker whose record is malformed or cannot be read as unreadable', async () => {
-    const agent = temporaryDirectory();
+    const agent = improvementDirectory();
     const workers = join(agent, 'tau', 'main-1', 'workers');
     const locked = join(workers, 't5', 'task.json');
     const malformed = join(workers, 't4', 'task.json');
@@ -169,7 +162,7 @@ describe('readWorkerTranscripts', () => {
   });
 
   it('reports no workers when the agent directory has no worker records', async () => {
-    const agent = temporaryDirectory();
+    const agent = improvementDirectory();
 
     expect(await readWorkerTranscripts(join(agent, 'absent'))).toEqual(new Map());
   });
@@ -208,7 +201,7 @@ describe('worker coverage from the records on disk', () => {
     }).tasks[0]?.coverage;
 
   it('gives coverage unknown when a worker record cannot be read', async () => {
-    const agent = temporaryDirectory();
+    const agent = improvementDirectory();
     const record = join(agent, 'tau', 'main-1', 'workers', 'w1', 'task.json');
 
     writeFile(record, '{"taskId":"w1","createdAt":1}');
@@ -218,7 +211,7 @@ describe('worker coverage from the records on disk', () => {
   });
 
   it('gives coverage managerOnly when a worker record is missing', async () => {
-    const agent = temporaryDirectory();
+    const agent = improvementDirectory();
 
     mkdirSync(join(agent, 'tau', 'main-1', 'workers', 'w1'), { recursive: true });
 
