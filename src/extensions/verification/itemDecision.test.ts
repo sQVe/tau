@@ -88,6 +88,29 @@ const table: { name: string; facts: ItemFacts; expected: ItemDecision }[] = [
     },
   },
   {
+    name: 'lists every registered item in the unregistered refusal',
+    facts: facts({
+      runRead: validRunRead({
+        items: [
+          { item: 'journeys/one', steps: 1 },
+          { item: 'journeys/two', steps: 1 },
+        ],
+      }),
+    }),
+    expected: {
+      kind: 'refuse',
+      reason: `Item ${item} is not registered in run ${run}. Registered: journeys/one, journeys/two.`,
+    },
+  },
+  {
+    name: 'says none when the run registers no items',
+    facts: facts({ runRead: validRunRead({ items: [] }) }),
+    expected: {
+      kind: 'refuse',
+      reason: `Item ${item} is not registered in run ${run}. Registered: none.`,
+    },
+  },
+  {
     name: 'refuses a wrong step count',
     facts: facts({ steps: steps.slice(0, 1) }),
     expected: {

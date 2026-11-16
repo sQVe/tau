@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdir, readdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -161,6 +162,30 @@ it('refuses an artifact path under a regular file as missing', async () => {
     failure: 'Step 1 artifact screenshots/step-1.png does not exist in the run directory.',
     items: before,
   });
+});
+
+it('refuses an input only the record check rejects before creating the items folder', async () => {
+  const { root, directory } = await createRunDirectory(onTestFinished, run, {
+    items: [{ item, steps: 2 }],
+  });
+
+  await writeFile(join(directory, 'step-1.png'), 'png');
+
+  const input = validInput();
+
+  input.steps[0] = {
+    status: 'passed',
+    artifacts: [{ kind: 'screenshot', path: './step-1.png' }],
+  };
+
+  const failure = await failureMessage(recordItem(root, input));
+
+  expect(failure).toContain('Malformed item record');
+
+  expect({
+    itemsFolder: existsSync(join(directory, 'items')),
+    itemFile: existsSync(itemRecordPath(directory, item)),
+  }).toEqual({ itemsFolder: false, itemFile: false });
 });
 
 it.each(refusalCases)('refuses $name and writes no item file', async (refusal) => {
