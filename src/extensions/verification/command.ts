@@ -31,6 +31,9 @@ interface CommandState {
 
 const stopGraceMilliseconds = 5000;
 
+// Node timers set a longer delay to 1 ms, which would stop the command at once.
+const largestTimerDelayMilliseconds = 2_147_483_647;
+
 const isPositiveSafeInteger = (value: number): boolean => Number.isSafeInteger(value) && value > 0;
 
 const isAborted = (signal: AbortSignal | undefined): boolean => signal?.aborted === true;
@@ -43,6 +46,12 @@ const checkCommandOptions = (options: CommandOptions): void => {
   if (!isPositiveSafeInteger(options.deadlineMilliseconds)) {
     throw new RangeError(
       `The deadline must be a positive safe integer, got ${options.deadlineMilliseconds}.`,
+    );
+  }
+
+  if (options.deadlineMilliseconds > largestTimerDelayMilliseconds) {
+    throw new RangeError(
+      `The deadline must be at most ${largestTimerDelayMilliseconds} ms, got ${options.deadlineMilliseconds}.`,
     );
   }
 };

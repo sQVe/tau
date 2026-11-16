@@ -152,6 +152,7 @@ it('refuses an invalid deadline or an empty argv', async () => {
     { deadlineMilliseconds: -1, message: 'got -1.' },
     { deadlineMilliseconds: Infinity, message: 'got Infinity.' },
     { deadlineMilliseconds: 1.5, message: 'got 1.5.' },
+    { deadlineMilliseconds: 2_147_483_648, message: 'got 2147483648.' },
   ];
 
   for (const { deadlineMilliseconds, message } of cases) {
@@ -171,4 +172,14 @@ it('refuses an invalid deadline or an empty argv', async () => {
   );
 
   expect(existsSync(logPath)).toBe(false);
+});
+
+it('accepts the largest timer delay', async () => {
+  const cwd = temporaryCommandDirectory();
+
+  const outcome = await runCommand(
+    optionsIn(cwd, { argv: ['sh', '-c', 'true'], deadlineMilliseconds: 2_147_483_647 }),
+  );
+
+  expect(outcome).toEqual({ kind: 'exited', exitCode: 0 });
 });
