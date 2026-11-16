@@ -114,6 +114,13 @@ it('loads the inbox extension without saved Tau settings', () => {
   expect(commandLine[commandLine.indexOf(inboxPath) - 1]).toBe('-e');
 });
 
+it('loads the verification record extension in every worker', () => {
+  const commandLine = workerArguments(sessionFile, fixtureLoadout('/tmp'), [], skillTools);
+  const recordPath = fileURLToPath(new URL('../verification/workerRecord.ts', import.meta.url));
+
+  expect(commandLine[commandLine.indexOf(recordPath) - 1]).toBe('-e');
+});
+
 it('passes the session file after --session', () => {
   expect(workerArguments(sessionFile, fixtureLoadout('/tmp'), [], skillTools).slice(0, 3)).toEqual([
     '--approve',

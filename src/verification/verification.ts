@@ -23,6 +23,9 @@ const stepSchemaByStatus = new Map<unknown, TSchema>(Object.entries(stepSchemas)
 
 export const runRecordPath = (runDirectory: string): string => join(runDirectory, 'run.json');
 
+export const runDirectoryPath = (root: string, run: string): string =>
+  join(root, '.tau', 'verification', run);
+
 export const itemRecordPath = (runDirectory: string, item: string): string =>
   join(runDirectory, 'items', `${item}.json`);
 
@@ -246,6 +249,14 @@ export const readRunRecord = async (path: string): Promise<RecordRead<RunRecord>
 
 export const readItemRecord = async (path: string): Promise<RecordRead<ItemRecord>> =>
   readRecord(path, 'item record', itemRecordVersion, itemRecordSchema, itemRecordProblem);
+
+export const validateItemRecord = (path: string, record: ItemRecord): ItemRecord =>
+  parseVersionedRecord(path, JSON.stringify(record), {
+    label: 'item record',
+    version: itemRecordVersion,
+    schema: itemRecordSchema,
+    check: itemRecordProblem,
+  });
 
 const runDirectoryProblem = (record: RunRecord, run: string): string | undefined =>
   record.run === run ? undefined : `/run ${record.run} does not match the directory name ${run}`;

@@ -2,7 +2,7 @@
 name: qa
 description: Tests the running app as a user would, through a browser or its command line.
 role: investigation
-tools: read, bash, write, agent_browser, agent_browser_code
+tools: read, bash, write, verification_record, agent_browser, agent_browser_code
 packages: npm:pi-agent-browser-native@0.9.3
 instruction-sets: writing, workflow, browser
 ---

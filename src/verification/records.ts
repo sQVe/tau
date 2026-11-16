@@ -24,11 +24,17 @@ export const itemRecordVersion = 1;
 
 const nameSegmentPattern = '[A-Za-z0-9][A-Za-z0-9._-]*';
 
-const runNameSchema = Type.String({ pattern: `^${nameSegmentPattern}$` });
+const runNamePattern = `^${nameSegmentPattern}$`;
 
-const itemNameSchema = Type.String({
-  pattern: `^${nameSegmentPattern}(?:/${nameSegmentPattern})*$`,
-});
+const itemNamePattern = `^${nameSegmentPattern}(?:/${nameSegmentPattern})*$`;
+
+const runNameSchema = Type.String({ pattern: runNamePattern });
+
+const itemNameSchema = Type.String({ pattern: itemNamePattern });
+
+export const isRunName = (name: string): boolean => new RegExp(runNamePattern, 'u').test(name);
+
+export const isItemName = (name: string): boolean => new RegExp(itemNamePattern, 'u').test(name);
 
 const commandResultSchema = Type.Object(
   {
@@ -102,7 +108,7 @@ export const stepOutcomeSchemas = {
   ),
 } as const;
 
-const stepOutcomeSchema = Type.Union([
+export const stepOutcomeSchema = Type.Union([
   stepOutcomeSchemas.passed,
   stepOutcomeSchemas.differs,
   stepOutcomeSchemas.blocked,
@@ -111,11 +117,11 @@ const stepOutcomeSchema = Type.Union([
 
 export type StepOutcome = Static<typeof stepOutcomeSchema>;
 
-const artifactSchema = Type.Object(
+export const artifactSchema = Type.Object(
   {
     kind: Type.Union([Type.Literal('screenshot'), Type.Literal('output'), Type.Literal('trace')]),
     // Relative to the run directory.
-    path: Type.String({ minLength: 1 }),
+    path: Type.String({ minLength: 1, description: 'Relative to the run directory.' }),
   },
   { additionalProperties: false },
 );

@@ -29,6 +29,7 @@ import { resolveProfile } from '../src/extensions/subagents/profiles.js';
 import workerExtension from '../src/extensions/subagents/workerExtension.js';
 import { workerStartMessage } from '../src/extensions/subagents/workerStart.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
+import workerRecordExtension from '../src/extensions/verification/workerRecord.js';
 import { skillTools } from '../src/skillTools.js';
 import { createHcFake } from './hcFake.js';
 import { createPiSession } from './piSession.js';
@@ -177,6 +178,7 @@ const startProfileWorker = async (
     createCodemodeExtension({ mode: 'on' }),
     packageToolFixtures(executed),
     fullCheckExtension,
+    workerRecordExtension,
   ];
 
   if (workflow) {
