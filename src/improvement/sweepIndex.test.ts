@@ -66,6 +66,38 @@ it('reads a missing index as missing', async () => {
   expect(await directoryState(agentDirectory)).toEqual(before);
 });
 
+const validIndex = {
+  version: 1,
+  transcripts: {
+    '/sessions/manager.jsonl': {
+      status: 'resolved',
+      cwd: '/code/tau',
+      projectRoot: '/code/tau',
+      cursor: 0,
+      state: {
+        header: 'found',
+        calls: [],
+        malformedLines: 0,
+        droppedCallReasons: [],
+      },
+    },
+  },
+  projects: {},
+  lastSweep: null,
+};
+
+const resolvedState = validIndex.transcripts['/sessions/manager.jsonl'].state;
+
+const withState = (state: Record<string, unknown>) => ({
+  ...validIndex,
+  transcripts: {
+    '/sessions/manager.jsonl': {
+      ...validIndex.transcripts['/sessions/manager.jsonl'],
+      state,
+    },
+  },
+});
+
 it.each([
   { rule: 'not JSON', text: '{' },
   {
@@ -76,6 +108,36 @@ it.each([
       projects: {},
       lastSweep: { startedAt: 'yesterday', outcome: 'budget' },
     }),
+  },
+  {
+    rule: 'an unknown state field',
+    text: JSON.stringify(withState({ ...resolvedState, extra: true })),
+  },
+  {
+    rule: 'an unknown call field',
+    text: JSON.stringify(
+      withState({
+        ...resolvedState,
+        calls: [
+          {
+            callId: 'call-1',
+            tool: 'read',
+            entryId: 'entry-1',
+            timestamp: '2026-11-15T12:00:00.000Z',
+            viaCodemode: false,
+            extra: true,
+          },
+        ],
+      }),
+    ),
+  },
+  {
+    rule: 'a negative malformed line count',
+    text: JSON.stringify(withState({ ...resolvedState, malformedLines: -1 })),
+  },
+  {
+    rule: 'a fractional malformed line count',
+    text: JSON.stringify(withState({ ...resolvedState, malformedLines: 1.5 })),
   },
 ])('reports a damaged index as malformed: $rule', async ({ text }) => {
   const agentDirectory = temporaryDirectory(onTestFinished, 'tau-sweep-index-');

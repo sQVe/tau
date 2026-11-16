@@ -28,39 +28,47 @@ interface EntryUpdate {
 
 const entrySchema = Type.Record(Type.String(), Type.Unknown());
 
-const callResultSchema = Type.Object({
+const callResultProperties = {
   error: Type.Optional(Type.String()),
   details: Type.Optional(entrySchema),
-});
+};
 
-const calledToolSchema = Type.Object({
+const calledToolProperties = {
   callId: Type.String(),
   tool: Type.String(),
   arguments: Type.Optional(entrySchema),
-});
+};
 
-const nestedCallSchema = Type.Intersect([
-  calledToolSchema,
-  Type.Object({ result: Type.Optional(callResultSchema) }),
-]);
+const callResultSchema = Type.Object(callResultProperties, { additionalProperties: false });
 
-const toolCallSchema = Type.Intersect([
-  calledToolSchema,
-  Type.Object({
+const calledToolSchema = Type.Object(calledToolProperties, { additionalProperties: false });
+
+const nestedCallSchema = Type.Object(
+  { ...calledToolProperties, result: Type.Optional(callResultSchema) },
+  { additionalProperties: false },
+);
+
+const toolCallSchema = Type.Object(
+  {
+    ...calledToolProperties,
     entryId: Type.String(),
     timestamp: Type.String(),
     viaCodemode: Type.Boolean(),
     result: Type.Optional(callResultSchema),
-  }),
-]);
+  },
+  { additionalProperties: false },
+);
 
-export const transcriptStateSchema = Type.Object({
-  header: Type.Union([Type.Literal('pending'), Type.Literal('found'), Type.Literal('invalid')]),
-  cwd: Type.Optional(Type.String()),
-  calls: Type.Array(toolCallSchema),
-  malformedLines: Type.Number(),
-  droppedCallReasons: Type.Array(Type.String()),
-});
+export const transcriptStateSchema = Type.Object(
+  {
+    header: Type.Union([Type.Literal('pending'), Type.Literal('found'), Type.Literal('invalid')]),
+    cwd: Type.Optional(Type.String()),
+    calls: Type.Array(toolCallSchema),
+    malformedLines: Type.Integer({ minimum: 0 }),
+    droppedCallReasons: Type.Array(Type.String()),
+  },
+  { additionalProperties: false },
+);
 
 export type CallResult = Static<typeof callResultSchema>;
 
