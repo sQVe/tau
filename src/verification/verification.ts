@@ -1,11 +1,11 @@
 import { readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import type { Static, TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { errorMessage, isMissingFile } from '../errors.js';
-import { parseVersionedRecord, readOptionalText } from '../record.js';
+import { parseVersionedRecord, readOptionalText, writeRecord } from '../record.js';
 import { isRecord } from '../schema.js';
 import {
   itemRecordSchema,
@@ -260,6 +260,30 @@ export const validateItemRecord = (path: string, record: ItemRecord): ItemRecord
 
 const runDirectoryProblem = (record: RunRecord, run: string): string | undefined =>
   record.run === run ? undefined : `/run ${record.run} does not match the directory name ${run}`;
+
+export const writeRunRecord = async (runDirectory: string, record: RunRecord): Promise<void> => {
+  const path = runRecordPath(runDirectory);
+  let problem: string | undefined;
+
+  try {
+    parseVersionedRecord(path, JSON.stringify(record), {
+      label: 'run record',
+      version: runRecordVersion,
+      schema: runRecordSchema,
+      check: runRecordProblem,
+    });
+  } catch (error) {
+    problem = errorMessage(error);
+  }
+
+  problem ??= runDirectoryProblem(record, basename(runDirectory));
+
+  if (problem !== undefined) {
+    throw new Error(`Refusing to write an invalid run record ${path}: ${problem}`);
+  }
+
+  await writeRecord(path, record);
+};
 
 const registeredItemProblem = (
   record: ItemRecord,
