@@ -137,7 +137,7 @@ const duplicateItemProblem = (value: unknown): string | undefined => {
     return undefined;
   }
 
-  const seen = new Set<string>();
+  const seen = new Map<string, string>();
 
   for (const [index, item] of items.entries()) {
     const name = isRecord(item) ? item['item'] : undefined;
@@ -146,11 +146,14 @@ const duplicateItemProblem = (value: unknown): string | undefined => {
       continue;
     }
 
-    if (seen.has(name)) {
-      return `/items/${index} duplicates item ${name}`;
+    const folded = name.toLowerCase();
+    const earlier = seen.get(folded);
+
+    if (earlier !== undefined) {
+      return `/items/${index} duplicates item ${earlier}`;
     }
 
-    seen.add(name);
+    seen.set(folded, name);
   }
 
   return undefined;
@@ -176,7 +179,8 @@ const itemNameProblem = (value: unknown): string | undefined => {
 
     const segments = name.split('/');
     const earlierSegments = segments.slice(0, -1);
-    const collides = earlierSegments.some((segment) => segment.endsWith('.json'));
+
+    const collides = earlierSegments.some((segment) => segment.toLowerCase().endsWith('.json'));
 
     if (collides) {
       return `/items/${index} item ${name} has a segment ending in .json, which collides with an item file path`;

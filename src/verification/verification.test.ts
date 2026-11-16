@@ -163,6 +163,39 @@ it('reports malformed run records', async () => {
   expect(collision.status === 'malformed' ? collision.problem : '').toContain('.json');
 });
 
+it('rejects registered item names that differ only in case', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-verification-');
+  const path = join(directory, 'case-duplicate.json');
+
+  await writeJson(path, {
+    ...validRunRecord,
+    items: [
+      { item: 'checks/smoke', steps: 1 },
+      { item: 'checks/SMOKE', steps: 1 },
+    ],
+  });
+
+  expect(await readRunRecord(path)).toMatchObject({
+    status: 'malformed',
+    problem: containing('/items/1'),
+  });
+});
+
+it('rejects an item name with an earlier segment ending in .json in any case', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-verification-');
+  const path = join(directory, 'case-json-segment.json');
+
+  await writeJson(path, {
+    ...validRunRecord,
+    items: [{ item: 'checks/smoke.JSON/details', steps: 1 }],
+  });
+
+  expect(await readRunRecord(path)).toMatchObject({
+    status: 'malformed',
+    problem: containing('/items/0'),
+  });
+});
+
 it('reports malformed item records', async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-verification-');
 
@@ -636,7 +669,7 @@ it.each([
     name: 'a registered item name with an empty segment',
     record: { ...validRunRecord, items: [{ item: 'a//b', steps: 1 }] },
     read: readRunRecord,
-    expected: '/items/0',
+    expected: '/items/0/item',
   },
   {
     name: 'an item record name with an empty segment',
@@ -652,6 +685,6 @@ it.each([
 
   expect(await read(path)).toMatchObject({
     status: 'malformed',
-    problem: containing(expected),
+    problem: containing(`: ${expected} must match pattern`),
   });
 });
