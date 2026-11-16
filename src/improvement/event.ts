@@ -12,7 +12,7 @@ import { ensureTauDirectory, rejectLinkedFile } from '../tauDirectory.ts';
 
 export type ImprovementEvent = Static<typeof eventSchema>;
 
-export type EventKind = ImprovementEvent['kind'];
+type EventKind = ImprovementEvent['kind'];
 
 export type WriteOutcome = 'saved' | 'existing';
 
@@ -21,7 +21,7 @@ export interface WrittenEvent {
   outcome: WriteOutcome;
 }
 
-export interface SkippedEvent {
+interface SkippedEvent {
   path: string;
   notice: string;
 }
