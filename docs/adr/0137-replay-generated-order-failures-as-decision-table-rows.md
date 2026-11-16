@@ -29,8 +29,10 @@ table.
 - The test runs with a fixed seed in `pnpm check`, so a check and a mutation reuse see the same
   orders. `TAU_PROPERTY_SEED=random` picks a seed by hand and prints it, and an integer replays that
   seed.
-- A shrunk failing order is replayed as its own row in the decision table. The table still holds
-  every case, and the generated test keeps looking for orders that no row names.
+- A shrunk failing order is replayed as a row of the facts and plan it reduces to. Orders that
+  reduce to the same facts and plan share one row, because the decision function sees only those
+  facts. The table still holds every case, and the generated test keeps looking for orders that no
+  row names.
 
 ### The library
 

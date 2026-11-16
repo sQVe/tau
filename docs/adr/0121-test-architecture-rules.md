@@ -29,9 +29,9 @@ capability module or an extension feature folder, as ADR 0120 uses the word.
 1. A unit test sits beside its owner and is named `<owner>.test.ts` or `<owner><Behavior>.test.ts`.
    No file is named after a campaign or a test technique. `checkFakeGit.test.ts` and
    `toolLstat.test.ts` are bad names.
-2. A decision table holds every case, including each shrunk failing order of a generated order test
-   as its own row. The adapter test holds one case per outcome kind and its side effects, and a
-   module may add one generated order test beside it, as ADR 0137 decides. A shared module's
+2. A decision table holds every case, including the facts each shrunk failing order of a generated
+   order test reduces to. The adapter test holds one case per outcome kind and its side effects, and
+   a module may add one generated order test beside it, as ADR 0137 decides. A shared module's
    behavior is tested once, in that module.
 3. A test that kills a mutation survivor follows the placement rule in step 5 of
    [the TDD skill](../../src/skills/tdd/SKILL.md).
