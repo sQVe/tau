@@ -63,6 +63,14 @@ for the workspace.
      supporting sources, and conclusion in the row. Missing or stale review evidence gives
      `not run`; name each gap and what would resolve it. A contradiction or missing required record
      update gives `not met`.
+   - For an acceptance item that names a journey or feature file, read `verification` from the same
+     `evidence` call. A result matches the item when its `item` is that file's path under `.pi/qa/`
+     without `.md`, such as `journeys/delegate-a-check`, whichever target it came from. A fresh
+     `passed` result is evidence the item is met, and a fresh `failed` result is evidence it is not
+     met; cite the result's run and item. Fresh results for one item that disagree count as not met.
+     A stale result, a missing result, a `verificationRecord` gap for the run, or a `null` field is
+     not evidence. Name the stale `reason` or the gap. Without other evidence for the audited
+     commit, the item is not run.
    - Run each manual check yourself and cite its output. A check that cannot run is "not run", with
      the reason and the command you tried. It is never handed to the user.
    - Save the real output of each check you run in `$slicedir`, in a file named for the check, never
