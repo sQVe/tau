@@ -64,7 +64,7 @@ export const transcriptStateSchema = Type.Object({
 
 export type CallResult = Static<typeof callResultSchema>;
 
-export type CalledTool = Static<typeof calledToolSchema>;
+type CalledTool = Static<typeof calledToolSchema>;
 
 export type NestedCall = Static<typeof nestedCallSchema>;
 
