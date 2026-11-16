@@ -75,7 +75,7 @@ Target: <the `verification.targets` entry in `.pi/tau.json` that serves this sec
 
 ### Features
 
-- [<Feature name>](./features/<name>.md)
+- [<Feature name>](./qa/features/<name>.md)
 
 ## Not testable
 
