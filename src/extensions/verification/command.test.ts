@@ -21,14 +21,21 @@ const optionsIn = (cwd: string, overrides: Partial<CommandOptions> = {}): Comman
   ...overrides,
 });
 
+// An empty or partly written file must never give 0: process.kill(-0) signals the test runner's own
+// process group.
 const readGroupId = async (path: string): Promise<number> => {
   const text = await readFile(path, 'utf8');
+  const groupId = Number(text.trim());
 
-  return Number(text.trim());
+  if (!Number.isSafeInteger(groupId) || groupId <= 1) {
+    throw new Error(`The group file ${path} holds no process group id: ${JSON.stringify(text)}`);
+  }
+
+  return groupId;
 };
 
 const waitForGroupId = async (path: string): Promise<number> => {
-  while (!existsSync(path)) {
+  while (!existsSync(path) || (await readFile(path, 'utf8')).trim() === '') {
     await new Promise((resolve) => {
       setTimeout(resolve, 10);
     });
