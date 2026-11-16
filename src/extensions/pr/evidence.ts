@@ -1,3 +1,6 @@
+import { join } from 'node:path';
+
+import { readCheckState } from '../../checkRecord/identity.js';
 import type { CommandRuntime } from '../../command.js';
 import { errorMessage } from '../../errors.js';
 import { readGit } from '../../git.js';
@@ -15,6 +18,11 @@ import {
   inspectReview,
   readOwnership,
 } from '../../reviewCapture/reviewCapture.js';
+import type { Freshness } from '../../verification/freshness.js';
+import type { RunRead } from '../../verification/records.js';
+import { listRecordProblems, selectEvidence } from '../../verification/selection.js';
+import type { SelectedResult } from '../../verification/selection.js';
+import { readRuns } from '../../verification/verification.js';
 import { readCheckEvidence } from './checkEvidence.js';
 import type { FullCheckEvidence, PublicationConfig } from './checkEvidence.js';
 import { readChainEvidence } from './evidenceChain.js';
@@ -48,8 +56,17 @@ export interface PublicationEvidence {
   markers: Marker[];
   checks: CheckLog[];
   fullCheck: FullCheckEvidence | null;
+  verification: VerificationEvidence[] | null;
   gaps: PublicationGap[];
 }
+
+type VerificationEvidence = {
+  target: string;
+  item: string;
+  run: string;
+  result: 'passed' | 'failed';
+  counts: SelectedResult['counts'];
+} & Freshness;
 
 const readFailure = (
   kind: 'target' | 'branch' | 'subjects' | 'reuse' | 'review' | 'markers',
@@ -212,6 +229,56 @@ const readPublicationTarget = async (
   }
 };
 
+const toVerificationEvidence = ({
+  target,
+  item,
+  run,
+  freshness,
+  outcome,
+  counts,
+}: SelectedResult): VerificationEvidence => ({
+  target,
+  item,
+  run,
+  ...freshness,
+  result: outcome,
+  counts,
+});
+
+const readVerification = async (root: string, evidence: PublicationEvidence) => {
+  let tree: string | null;
+
+  try {
+    const state = await readCheckState(root);
+
+    tree = state.tree;
+  } catch (error) {
+    evidence.gaps.push({ kind: 'verification', reason: errorMessage(error) });
+    tree = null;
+  }
+
+  let runs: RunRead[];
+
+  try {
+    runs = await readRuns(join(root, '.tau', 'verification'));
+  } catch (error) {
+    evidence.gaps.push({ kind: 'verification', reason: errorMessage(error) });
+
+    return;
+  }
+
+  evidence.verification = selectEvidence(runs, tree).map(toVerificationEvidence);
+
+  evidence.gaps.push(
+    ...listRecordProblems(runs).map((problem): PublicationGap => ({
+      kind: 'verificationRecord',
+      run: problem.run,
+      item: problem.item,
+      problem: problem.problem,
+    })),
+  );
+};
+
 export const readPublicationEvidence = async (
   runtime: CommandRuntime,
   root: string,
@@ -229,6 +296,7 @@ export const readPublicationEvidence = async (
     markers: [],
     checks: [],
     fullCheck: null,
+    verification: null,
   };
 
   try {
@@ -263,6 +331,8 @@ export const readPublicationEvidence = async (
   evidence.checks = checkEvidence.checks;
   evidence.fullCheck = checkEvidence.fullCheck;
   evidence.gaps.push(...checkEvidence.gaps);
+
+  await readVerification(root, evidence);
 
   return evidence;
 };

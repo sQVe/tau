@@ -43,7 +43,8 @@ export type PublicationGap =
         | 'markers'
         | 'checks'
         | 'chain'
-        | 'coverage';
+        | 'coverage'
+        | 'verification';
       reason: string;
     }
   | { kind: 'reuseMismatch'; reasons: string[] }
@@ -52,7 +53,8 @@ export type PublicationGap =
   | { kind: 'reviewEvidence'; gap: ReviewEvidence['gaps'][number] }
   | { kind: 'check'; path: string; reasons: CheckReason[] }
   | { kind: 'checkExcerpt'; path: string }
-  | { kind: 'fullCheck'; status: 'failed' | 'missing' | 'malformed' };
+  | { kind: 'fullCheck'; status: 'failed' | 'missing' | 'malformed' }
+  | { kind: 'verificationRecord'; run: string; item: string | null; problem: string };
 
 export type FullCheckDecision =
   | { status: 'passed' | 'failed'; logPath: string; argv: string[] }

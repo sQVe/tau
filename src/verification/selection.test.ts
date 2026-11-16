@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
 import type { ItemRead, ItemRecord, RunRead, RunRecord, Step, StepOutcome } from './records.js';
-import { selectEvidence } from './selection.js';
+import { listRecordProblems, selectEvidence } from './selection.js';
 import type { SelectedResult } from './selection.js';
 
 const tree = 'tree-one';
@@ -454,6 +454,66 @@ it.each([
   );
 
   expect(result?.outcome).toBe(expected);
+});
+
+it.each([
+  {
+    name: 'a valid run with valid items',
+    runs: [runWithItem(runRecord(), itemRecord())],
+    expected: [],
+  },
+  {
+    name: 'a malformed run',
+    runs: [
+      {
+        run: 'run-a',
+        directory: '/verification/run-a',
+        read: { status: 'malformed' as const, problem: 'bad run record' },
+        items: [validItem(itemRecord())],
+      },
+    ],
+    expected: [{ run: 'run-a', item: null, problem: 'bad run record' }],
+  },
+  {
+    name: 'a malformed item',
+    runs: [
+      runRead(runRecord(), [
+        {
+          item: 'journeys/check',
+          path: '/verification/run-a/items/journeys/check.json',
+          read: { status: 'malformed' as const, problem: 'bad item record' },
+        },
+      ]),
+    ],
+    expected: [{ run: 'run-a', item: 'journeys/check', problem: 'bad item record' }],
+  },
+  {
+    name: 'a missing run',
+    runs: [
+      {
+        run: 'run-a',
+        directory: '/verification/run-a',
+        read: { status: 'missing' as const },
+        items: [],
+      },
+    ],
+    expected: [],
+  },
+  {
+    name: 'a missing item',
+    runs: [
+      runRead(runRecord(), [
+        {
+          item: 'journeys/check',
+          path: '/verification/run-a/items/journeys/check.json',
+          read: { status: 'missing' as const },
+        },
+      ]),
+    ],
+    expected: [],
+  },
+])('lists record problems for $name', ({ runs, expected }) => {
+  expect(listRecordProblems(runs)).toEqual(expected);
 });
 
 it('counts steps by status', () => {

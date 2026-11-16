@@ -2,6 +2,12 @@ import { decideFreshness } from './freshness.js';
 import type { Freshness } from './freshness.js';
 import type { ItemRecord, RunRead } from './records.js';
 
+export interface RecordProblem {
+  run: string;
+  item: string | null;
+  problem: string;
+}
+
 export interface SelectedResult {
   target: string;
   item: string;
@@ -95,6 +101,19 @@ const compareResults = (left: SelectedResult, right: SelectedResult): number => 
 
   return byTarget === 0 ? compareCodePoints(left.item, right.item) : byTarget;
 };
+
+export const listRecordProblems = (runs: readonly RunRead[]): RecordProblem[] =>
+  runs.flatMap((run): RecordProblem[] => {
+    if (run.read.status === 'malformed') {
+      return [{ run: run.run, item: null, problem: run.read.problem }];
+    }
+
+    return run.items.flatMap((item): RecordProblem[] =>
+      item.read.status === 'malformed'
+        ? [{ run: run.run, item: item.item, problem: item.read.problem }]
+        : [],
+    );
+  });
 
 export const selectEvidence = (
   runs: readonly RunRead[],
