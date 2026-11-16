@@ -133,7 +133,7 @@ it('stops the process group on cancel', async () => {
   expect(await groupState(groupId)).toBe('gone');
 });
 
-it('returns stopped for an already-aborted signal without creating the log', async () => {
+it('returns stopped for an already-aborted signal and creates an empty log', async () => {
   const cwd = temporaryCommandDirectory();
   const controller = new AbortController();
   const logPath = join(cwd, 'command.log');
@@ -149,7 +149,8 @@ it('returns stopped for an already-aborted signal without creating the log', asy
   );
 
   expect(outcome).toEqual({ kind: 'stopped', reason: 'cancelled' });
-  expect(existsSync(logPath)).toBe(false);
+  expect(existsSync(logPath)).toBe(true);
+  expect(await readFile(logPath, 'utf8')).toBe('');
   expect(existsSync(join(cwd, 'ran'))).toBe(false);
 });
 

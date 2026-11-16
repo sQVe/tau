@@ -161,11 +161,6 @@ export const runCommand = async (options: CommandOptions): Promise<CommandOutcom
   checkCommandOptions(options);
 
   const { signal } = options;
-
-  if (isAborted(signal)) {
-    return { kind: 'stopped', reason: 'cancelled' };
-  }
-
   const log = await open(options.logPath, 'wx');
 
   try {
