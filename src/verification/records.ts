@@ -24,13 +24,13 @@ export const itemRecordVersion = 1;
 
 const nameSegmentPattern = '[A-Za-z0-9][A-Za-z0-9._-]*';
 
-export const runNameSchema = Type.String({ pattern: `^${nameSegmentPattern}$` });
+const runNameSchema = Type.String({ pattern: `^${nameSegmentPattern}$` });
 
-export const itemNameSchema = Type.String({
+const itemNameSchema = Type.String({
   pattern: `^${nameSegmentPattern}(?:/${nameSegmentPattern})*$`,
 });
 
-export const commandResultSchema = Type.Object(
+const commandResultSchema = Type.Object(
   {
     // null means the command was killed or timed out.
     exitCode: Type.Union([Type.Integer(), Type.Null()]),
@@ -38,8 +38,6 @@ export const commandResultSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-
-export type CommandResult = Static<typeof commandResultSchema>;
 
 const platformSchema = Type.Object(
   {
@@ -104,7 +102,7 @@ export const stepOutcomeSchemas = {
   ),
 } as const;
 
-export const stepOutcomeSchema = Type.Union([
+const stepOutcomeSchema = Type.Union([
   stepOutcomeSchemas.passed,
   stepOutcomeSchemas.differs,
   stepOutcomeSchemas.blocked,
@@ -113,7 +111,7 @@ export const stepOutcomeSchema = Type.Union([
 
 export type StepOutcome = Static<typeof stepOutcomeSchema>;
 
-export const artifactSchema = Type.Object(
+const artifactSchema = Type.Object(
   {
     kind: Type.Union([Type.Literal('screenshot'), Type.Literal('output'), Type.Literal('trace')]),
     // Relative to the run directory.
@@ -121,8 +119,6 @@ export const artifactSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-
-export type Artifact = Static<typeof artifactSchema>;
 
 const stepFields = {
   number: Type.Integer({ minimum: 1 }),
@@ -148,7 +144,7 @@ export const stepSchemas = {
   ),
 } as const;
 
-export const stepSchema = Type.Union([
+const stepSchema = Type.Union([
   stepSchemas.passed,
   stepSchemas.differs,
   stepSchemas.blocked,
