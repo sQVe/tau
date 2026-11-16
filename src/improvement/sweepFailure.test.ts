@@ -1,9 +1,11 @@
-import { appendFileSync, chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
-import { createSweepFixture } from '../../tests/sweepHarness.ts';
+import { createSweepFixture, eventHash } from '../../tests/sweepHarness.ts';
+
+const repository = 'github.com/sQVe/tau';
 
 const laterLine = `${JSON.stringify({
   type: 'message',
@@ -117,7 +119,7 @@ it('keeps entries and events when an event write fails', async () => {
   expect(fixture.eventFiles()).toEqual(files);
 });
 
-it('stops at the budget before publishing an event', async () => {
+it('stops at the budget during publication', async () => {
   const fixture = await createSweepFixture(onTestFinished);
   const path = fixture.writeFixtureSession('manager.jsonl', 'multiplePublications.jsonl');
 
@@ -134,14 +136,11 @@ it('stops at the budget before publishing an event', async () => {
 
   const start = new Date('2026-11-15T12:00:00.000Z');
   const budget = 1000;
-  let calls = 0;
+  const mergeName = `merge-${eventHash(repository, 564)}.json`;
+  const mergePath = join(fixture.repository, '.tau', 'improvement', mergeName);
 
-  // The sixth clock read is the deadline check before the first event write.
-  const clock = () => {
-    calls += 1;
-
-    return calls >= 6 ? new Date(start.getTime() + budget) : start;
-  };
+  // The new merge event marks the publication step, so the budget ends after the transcripts were read.
+  const clock = () => (existsSync(mergePath) ? new Date(start.getTime() + budget) : start);
 
   expect(await fixture.run({ now: clock, budgetMilliseconds: budget })).toEqual({
     outcome: 'budget',
@@ -149,6 +148,7 @@ it('stops at the budget before publishing an event', async () => {
 
   const after = await fixture.readIndex();
 
+  expect(existsSync(mergePath)).toBe(true);
   expect(after.transcripts[path]).toEqual(before.transcripts[path]);
-  expect(fixture.eventFiles()).toEqual(files);
+  expect(fixture.eventFiles()).toEqual([...files, mergeName].toSorted());
 });
