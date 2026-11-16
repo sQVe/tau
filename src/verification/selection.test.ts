@@ -274,6 +274,84 @@ it.each([
       },
     ],
   },
+  {
+    name: 'the newer run when it comes first in the input',
+    runs: [
+      runWithItem(
+        runRecord({ run: 'run-new', startedAt: '2026-11-16T11:00:00.000Z' }),
+        itemRecord({ run: 'run-new', steps: [differsStep(1)] }),
+      ),
+      runWithItem(runRecord({ run: 'run-old' }), itemRecord({ run: 'run-old' })),
+    ],
+    expected: [
+      {
+        target: '482',
+        item: 'journeys/check',
+        run: 'run-new',
+        freshness: fresh,
+        outcome: 'failed',
+        counts: { passed: 0, differs: 1, blocked: 0, notRun: 0 },
+      },
+    ],
+  },
+  {
+    name: 'the greater run name when it comes first in the input',
+    runs: [
+      runWithItem(
+        runRecord({ run: 'run-b' }),
+        itemRecord({ run: 'run-b', steps: [differsStep(1)] }),
+      ),
+      runWithItem(runRecord({ run: 'run-a' }), itemRecord({ run: 'run-a' })),
+    ],
+    expected: [
+      {
+        target: '482',
+        item: 'journeys/check',
+        run: 'run-b',
+        freshness: fresh,
+        outcome: 'failed',
+        counts: { passed: 0, differs: 1, blocked: 0, notRun: 0 },
+      },
+    ],
+  },
+  {
+    name: 'results sorted by target then item from an unsorted input',
+    runs: [
+      runRead(runRecord({ run: 'run-b', target: '483' }), [
+        validItem(itemRecord({ run: 'run-b', item: 'journeys/check' })),
+      ]),
+      runRead(runRecord({ run: 'run-a', target: '482' }), [
+        validItem(itemRecord({ run: 'run-a', item: 'journeys/zeta' })),
+        validItem(itemRecord({ run: 'run-a', item: 'journeys/alpha' })),
+      ]),
+    ],
+    expected: [
+      {
+        target: '482',
+        item: 'journeys/alpha',
+        run: 'run-a',
+        freshness: fresh,
+        outcome: 'passed',
+        counts: passedCounts,
+      },
+      {
+        target: '482',
+        item: 'journeys/zeta',
+        run: 'run-a',
+        freshness: fresh,
+        outcome: 'passed',
+        counts: passedCounts,
+      },
+      {
+        target: '483',
+        item: 'journeys/check',
+        run: 'run-b',
+        freshness: fresh,
+        outcome: 'passed',
+        counts: passedCounts,
+      },
+    ],
+  },
 ])('selects $name', ({ runs, expected }) => {
   expect(selectEvidence(runs, tree).map(summary)).toEqual(expected);
 });

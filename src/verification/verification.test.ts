@@ -459,6 +459,17 @@ it('reports an item file that does not match its run as malformed', async () => 
   });
 });
 
+it('ignores a plain file in the verification directory', async () => {
+  const directory = temporaryDirectory(onTestFinished, 'tau-verification-');
+
+  await setupRun(directory, 'run-a', [{ item: 'journeys/delegate-a-check', steps: 2 }]);
+  await writeFile(join(directory, 'notes.txt'), 'not a run');
+
+  const result = await readRuns(directory);
+
+  expect(result.map(({ run }) => run)).toEqual(['run-a']);
+});
+
 it('lists no runs when the verification directory is missing', async () => {
   const directory = temporaryDirectory(onTestFinished, 'tau-verification-');
 
