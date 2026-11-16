@@ -2,11 +2,12 @@ import { execFile } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { promisify } from 'node:util';
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
-import { merged, minute, setup, url } from './fixtures/mergeWatchSetup.js';
+import { hours, merged, minute, setup, url } from './fixtures/mergeWatchSetup.js';
 
 const repository = 'github.com/owner/repo';
 
@@ -110,8 +111,8 @@ it('says review signals unknown when the merged pull request cannot be read', as
   expect(content).not.toContain('retrospective skill');
 });
 
-it('delivers nothing when the session shuts down during the signal read', async () => {
-  const { fake, handlers, runBash, emit, sessionDirectory } = setup();
+it('keeps the merged watch from its deadline and next poll while the signal read is open', async () => {
+  const { fake, handlers, runBash, emit, polls, sessionDirectory } = setup();
 
   mkdirSync(sessionDirectory, { recursive: true });
   const transcriptPath = join(sessionDirectory, 'main.jsonl');
@@ -122,12 +123,15 @@ it('delivers nothing when the session shuts down during the signal read', async 
   await vi.advanceTimersByTimeAsync(minute);
 
   const writer = await open(transcriptPath, 'w');
+
+  await vi.advanceTimersByTimeAsync(2 * hours);
+
+  expect(fake.sendMessage).not.toHaveBeenCalled();
+  expect(polls()).toHaveLength(1);
+
   await emit('session_shutdown', { reason: 'quit' });
   await writer.close();
-
-  await new Promise((resolve) => {
-    setImmediate(resolve);
-  });
+  await delay(50);
 
   expect(fake.sendMessage).not.toHaveBeenCalled();
 });

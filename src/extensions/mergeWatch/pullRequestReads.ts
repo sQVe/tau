@@ -101,13 +101,12 @@ const repositoryOfPullRequestUrl = (url: string): string | undefined => {
     return undefined;
   }
 
-  const [owner, name, pull, number, ...rest] = location.path.split('/');
+  const [owner = '', name = '', pull, number, ...rest] = location.path.split('/');
 
-  const hasOwnerAndName = owner !== undefined && name !== undefined;
-  const hasPullRequestPath = pull === 'pull' && number !== undefined && /^\d+$/u.test(number);
+  const hasPullPath = pull === 'pull' && /^\d+$/u.test(number ?? '');
   const hasNoExtraSegments = rest.length === 0;
 
-  if (!hasOwnerAndName || !hasPullRequestPath || !hasNoExtraSegments) {
+  if (!hasPullPath || !hasNoExtraSegments) {
     return undefined;
   }
 

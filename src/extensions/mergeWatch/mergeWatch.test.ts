@@ -153,6 +153,25 @@ it('retries a failed read on the next poll', async () => {
   expect(polls()).toHaveLength(3);
 });
 
+it('delivers nothing when the session shuts down during the merged pull request read', async () => {
+  const { fake, handlers, runBash, emit } = setup();
+  const mergedRead = Promise.withResolvers<ExecResult>();
+
+  handlers.merged = () => mergedRead.promise;
+  await runBash('gh pr merge --auto');
+  handlers.state = () => merged;
+  await vi.advanceTimersByTimeAsync(minute);
+  await emit('session_shutdown', { reason: 'quit' });
+
+  mergedRead.resolve(failedResult('HTTP 502'));
+
+  await new Promise((resolve) => {
+    setImmediate(resolve);
+  });
+
+  expect(fake.sendMessage).not.toHaveBeenCalled();
+});
+
 it('stops every watcher and timer at session shutdown', async () => {
   const { fake, handlers, runBash, emit, polls } = setup();
 
@@ -277,6 +296,31 @@ it('watches a pull request again after its watch ended', async () => {
   handlers.state = () => merged;
   await vi.advanceTimersByTimeAsync(minute);
   await delivered;
+
+  expect(fake.sendMessage).toHaveBeenCalledTimes(2);
+});
+
+it('watches the same pull request again after its merge message', async () => {
+  const { fake, handlers, runBash, polls, nextDelivery } = setup();
+
+  await runBash('gh pr merge --auto');
+  handlers.state = () => merged;
+  const first = nextDelivery();
+  await vi.advanceTimersByTimeAsync(minute);
+  await first;
+
+  expect(fake.sendMessage).toHaveBeenCalledTimes(1);
+
+  await runBash('gh pr merge --auto');
+  handlers.state = () => stateOutput('OPEN');
+  await vi.advanceTimersByTimeAsync(minute);
+
+  expect(polls()).toHaveLength(2);
+
+  handlers.state = () => merged;
+  const second = nextDelivery();
+  await vi.advanceTimersByTimeAsync(minute);
+  await second;
 
   expect(fake.sendMessage).toHaveBeenCalledTimes(2);
 });

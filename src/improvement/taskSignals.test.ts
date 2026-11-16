@@ -323,4 +323,36 @@ describe('readTaskSignals', () => {
 
     expect(read).toMatchObject({ status: 'read', coverage: 'missing' });
   });
+
+  it('reads complete coverage when only the launched worker has a readable record', async () => {
+    const agent = directory();
+    const sessionDirectory = join(agent, 'sessions');
+    const workers = join(agent, 'tau', 'main-1', 'workers');
+
+    writeTranscript(sessionDirectory, [
+      sessionHeader('/repository'),
+      ...published(7),
+      ...workerLaunch('w1'),
+    ]);
+
+    writeFile(join(workers, 'w1', 'task.json'), '{"taskId":"w1","createdAt":1}');
+    writeFile(join(workers, 'w1', 'session.jsonl'), sessionHeader('/worker'));
+    writeFile(join(workers, 'w2', 'task.json'), '{"createdAt":1}');
+
+    const read = await readTaskSignals(sources(sessionDirectory));
+
+    expect(read).toMatchObject({ status: 'read', coverage: 'complete' });
+  });
+
+  it('fails when the session folder is a regular file', async () => {
+    const agent = directory();
+    const sessionDirectory = join(agent, 'sessions');
+
+    writeFile(sessionDirectory, 'not a directory');
+
+    const read = await readTaskSignals(sources(sessionDirectory));
+
+    expect(read.status).toBe('failed');
+    expect(read.status === 'failed' ? read.reason : '').toContain('sessions');
+  });
 });

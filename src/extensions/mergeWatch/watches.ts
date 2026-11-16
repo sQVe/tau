@@ -66,8 +66,6 @@ const stop = (watch: Watch) => {
   clearTimeout(watch.deadlineTimer);
 };
 
-const isAborted = (watch: Watch) => watch.reads.signal.aborted;
-
 export const createMergeWatches = (
   exec: Exec,
   deliver: Deliver,
@@ -84,10 +82,6 @@ export const createMergeWatches = (
     const runtime = { exec, cwd: watch.context.cwd, signal: watch.reads.signal };
     const pullRequest = await readMergedPullRequest(runtime, url);
 
-    if (isAborted(watch)) {
-      return;
-    }
-
     const read =
       pullRequest === undefined
         ? undefined
@@ -98,7 +92,7 @@ export const createMergeWatches = (
             pullRequest,
           });
 
-    if (isAborted(watch)) {
+    if (watch.reads.signal.aborted) {
       return;
     }
 
@@ -112,7 +106,6 @@ export const createMergeWatches = (
     }
 
     if (outcome.kind === 'merged') {
-      clearTimeout(watch.pollTimer);
       clearTimeout(watch.deadlineTimer);
       // oxlint-disable-next-line typescript/no-floating-promises -- readMergedPullRequest and readTaskSignals turn every failure into undefined, so a finish cannot reject.
       void finishMerged(watch, url);
