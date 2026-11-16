@@ -17,8 +17,9 @@ import {
 } from './records.js';
 import type { ItemRead, ItemRecord, RecordRead, RunRead, RunRecord } from './records.js';
 
-const isStepStatus = (value: unknown): value is keyof typeof stepOutcomeSchemas =>
-  typeof value === 'string' && Object.hasOwn(stepOutcomeSchemas, value);
+const outcomeSchemaByStatus = new Map<unknown, TSchema>(Object.entries(stepOutcomeSchemas));
+
+const stepSchemaByStatus = new Map<unknown, TSchema>(Object.entries(stepSchemas));
 
 export const runRecordPath = (runDirectory: string): string => join(runDirectory, 'run.json');
 
@@ -28,19 +29,19 @@ export const itemRecordPath = (runDirectory: string, item: string): string =>
 const variantProblem = (
   value: unknown,
   path: string,
-  schemas: typeof stepOutcomeSchemas | typeof stepSchemas,
+  schemas: ReadonlyMap<unknown, TSchema>,
 ): string | undefined => {
   if (!isRecord(value)) {
     return undefined;
   }
 
-  const status = value['status'];
+  const schema = schemas.get(value['status']);
 
-  if (!isStepStatus(status)) {
+  if (schema === undefined) {
     return undefined;
   }
 
-  const [error] = Value.Errors(schemas[status], value);
+  const [error] = Value.Errors(schema, value);
 
   return error === undefined ? undefined : `${path}${error.instancePath} ${error.message}`;
 };
@@ -70,7 +71,7 @@ const artifactProblem = (value: unknown, path: string): string | undefined => {
 
 const stepProblem = (value: unknown, index: number): string | undefined => {
   const path = `/steps/${index}`;
-  const variant = variantProblem(value, path, stepSchemas);
+  const variant = variantProblem(value, path, stepSchemaByStatus);
 
   if (variant !== undefined) {
     return variant;
@@ -175,7 +176,7 @@ const itemRecordProblem = (value: unknown): string | undefined => {
     }
   }
 
-  return variantProblem(value['endState'], '/endState', stepOutcomeSchemas);
+  return variantProblem(value['endState'], '/endState', outcomeSchemaByStatus);
 };
 
 const readRecord = async <Schema extends TSchema>(

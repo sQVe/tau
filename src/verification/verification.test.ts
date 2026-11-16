@@ -1,5 +1,6 @@
 import { cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { expect, it, onTestFinished } from 'vitest';
 
@@ -12,7 +13,7 @@ import {
   runRecordPath,
 } from './verification.js';
 
-const fixturePath = (name: string) => new URL(`fixtures/${name}`, import.meta.url).pathname;
+const fixturePath = (name: string) => fileURLToPath(new URL(`fixtures/${name}`, import.meta.url));
 
 const containing = (text: string): unknown => expect.stringContaining(text);
 
