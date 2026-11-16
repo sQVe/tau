@@ -19,12 +19,7 @@ const feedback = (): TaskFact => ({ ...place, kind: 'feedbackRound', pr: 560 });
 
 const checkFailure = (): TaskFact => ({ ...place, kind: 'checkFailure' });
 
-const launch = (profile: string | undefined): TaskFact => ({
-  ...place,
-  kind: 'launch',
-  profile,
-  workerId: 'worker-a',
-});
+const reviews = (count: number) => Array.from({ length: count }, review);
 
 const missing = (affects: MissingEvidence['affects']): MissingEvidence => ({
   ...place,
@@ -39,13 +34,18 @@ const evidence = (facts: TaskFact[], gaps: MissingEvidence[] = []): TaskEvidence
 });
 
 const expected = (overrides: Partial<ReviewSignals>): ReviewSignals => ({
-  reviewFixRounds: 'notFired',
+  reviewRounds: 'notFired',
   feedbackRounds: 'notFired',
   checkFailures: 'notFired',
   revert: 'notFired',
-  qaAfterReview: 'notFired',
   ...overrides,
 });
+
+const allTranscriptUnknown = {
+  reviewRounds: 'unknown',
+  feedbackRounds: 'unknown',
+  checkFailures: 'unknown',
+} as const;
 
 const table: {
   name: string;
@@ -55,40 +55,40 @@ const table: {
   expected: ReviewSignals;
 }[] = [
   {
-    name: 'fires review fix rounds at 3 fix captures after a review capture',
-    evidence: evidence([review(), fix(), fix(), fix()]),
+    name: 'fires review rounds at 5 review captures',
+    evidence: evidence(reviews(5)),
     reverted: false,
-    expected: expected({ reviewFixRounds: 'fired' }),
+    expected: expected({ reviewRounds: 'fired' }),
   },
   {
-    name: 'does not fire review fix rounds at 2 fix captures',
-    evidence: evidence([review(), fix(), fix()]),
+    name: 'does not fire review rounds at 4 review captures',
+    evidence: evidence(reviews(4)),
     reverted: false,
     expected: expected({}),
   },
   {
-    name: 'does not count fix captures before the first review capture',
-    evidence: evidence([fix(), fix(), fix(), review()]),
+    name: 'does not count fix captures as review rounds',
+    evidence: evidence([...reviews(4), fix(), fix()]),
     reverted: false,
     expected: expected({}),
   },
   {
-    name: 'fires review fix rounds when the threshold is reached despite missing evidence',
-    evidence: evidence([review(), fix(), fix(), fix()], [missing(['fixCapture'])]),
+    name: 'fires review rounds when the threshold is reached despite missing evidence',
+    evidence: evidence(reviews(5), [missing(['reviewCapture'])]),
     reverted: false,
-    expected: expected({ reviewFixRounds: 'fired' }),
+    expected: expected({ reviewRounds: 'fired' }),
   },
   {
-    name: 'reports review fix rounds unknown when a fix capture is missing evidence',
-    evidence: evidence([review(), fix()], [missing(['fixCapture'])]),
+    name: 'reports review rounds unknown when a review capture is missing evidence',
+    evidence: evidence(reviews(4), [missing(['reviewCapture', 'fixCapture'])]),
     reverted: false,
-    expected: expected({ reviewFixRounds: 'unknown' }),
+    expected: expected({ reviewRounds: 'unknown' }),
   },
   {
-    name: 'reports review fix rounds unknown when a review capture is missing evidence',
-    evidence: evidence([], [missing(['reviewCapture'])]),
+    name: 'keeps review rounds known when only a fix capture is missing evidence',
+    evidence: evidence(reviews(4), [missing(['fixCapture'])]),
     reverted: false,
-    expected: expected({ reviewFixRounds: 'unknown', qaAfterReview: 'unknown' }),
+    expected: expected({}),
   },
   {
     name: 'fires feedback rounds at 3 read rounds',
@@ -103,8 +103,14 @@ const table: {
     expected: expected({}),
   },
   {
+    name: 'fires feedback rounds when the threshold is reached despite missing evidence',
+    evidence: evidence([feedback(), feedback(), feedback()], [missing(['feedbackRound'])]),
+    reverted: false,
+    expected: expected({ feedbackRounds: 'fired' }),
+  },
+  {
     name: 'reports feedback rounds unknown when a read round is missing evidence',
-    evidence: evidence([feedback()], [missing(['feedbackRound'])]),
+    evidence: evidence([feedback(), feedback()], [missing(['feedbackRound'])]),
     reverted: false,
     expected: expected({ feedbackRounds: 'unknown' }),
   },
@@ -119,6 +125,12 @@ const table: {
     evidence: evidence([checkFailure()]),
     reverted: false,
     expected: expected({}),
+  },
+  {
+    name: 'fires full check failures when the threshold is reached despite missing evidence',
+    evidence: evidence([checkFailure(), checkFailure()], [missing(['checkFailure'])]),
+    reverted: false,
+    expected: expected({ checkFailures: 'fired' }),
   },
   {
     name: 'reports full check failures unknown when a run is missing evidence',
@@ -145,100 +157,45 @@ const table: {
     expected: expected({ revert: 'unknown' }),
   },
   {
-    name: 'fires QA after review when a QA launch follows the last review capture',
-    evidence: evidence([review(), launch('qa')]),
-    reverted: false,
-    expected: expected({ qaAfterReview: 'fired' }),
-  },
-  {
-    name: 'does not fire QA after review when the QA launch comes before the review capture',
-    evidence: evidence([launch('qa'), review()]),
-    reverted: false,
-    expected: expected({}),
-  },
-  {
-    name: 'does not fire QA after review when there is no review capture',
-    evidence: evidence([launch('qa')]),
-    reverted: false,
-    expected: expected({}),
-  },
-  {
-    name: 'does not fire QA after review for a launch with another profile',
-    evidence: evidence([review(), launch('worker')]),
-    reverted: false,
-    expected: expected({}),
-  },
-  {
-    name: 'reports QA after review unknown when a launch profile is missing evidence',
-    evidence: evidence([review()], [missing(['qaLaunch'])]),
-    reverted: false,
-    expected: expected({ qaAfterReview: 'unknown' }),
-  },
-  {
-    name: 'reports QA after review unknown when a review capture is missing evidence',
-    evidence: evidence([launch('qa')], [missing(['reviewCapture'])]),
-    reverted: false,
-    expected: expected({ reviewFixRounds: 'unknown', qaAfterReview: 'unknown' }),
-  },
-  {
     name: 'keeps signals whose facts are known when another fact is missing evidence',
-    evidence: evidence([review(), fix(), fix(), fix()], [missing(['feedbackRound'])]),
+    evidence: evidence(reviews(5), [missing(['feedbackRound'])]),
     reverted: false,
-    expected: expected({ reviewFixRounds: 'fired', feedbackRounds: 'unknown' }),
+    expected: expected({ reviewRounds: 'fired', feedbackRounds: 'unknown' }),
   },
   {
     name: 'reports transcript signals unknown when no transcript maps, and fires a revert',
     evidence: evidence([]),
     reverted: true,
     coverage: 'missing',
-    expected: {
-      reviewFixRounds: 'unknown',
-      feedbackRounds: 'unknown',
-      checkFailures: 'unknown',
-      revert: 'fired',
-      qaAfterReview: 'unknown',
-    },
+    expected: { ...allTranscriptUnknown, revert: 'fired' },
   },
   {
     name: 'reports transcript signals unknown when no transcript maps, and no revert',
     evidence: evidence([]),
     reverted: false,
     coverage: 'missing',
-    expected: {
-      reviewFixRounds: 'unknown',
-      feedbackRounds: 'unknown',
-      checkFailures: 'unknown',
-      revert: 'notFired',
-      qaAfterReview: 'unknown',
-    },
+    expected: { ...allTranscriptUnknown, revert: 'notFired' },
   },
   {
     name: 'reports transcript signals unknown, even with firing facts, when coverage is unknown',
     evidence: evidence([
-      review(),
-      fix(),
-      fix(),
-      fix(),
+      ...reviews(5),
+      feedback(),
+      feedback(),
+      feedback(),
       checkFailure(),
       checkFailure(),
-      launch('qa'),
     ]),
     reverted: 'unknown',
     coverage: 'unknown',
-    expected: {
-      reviewFixRounds: 'unknown',
-      feedbackRounds: 'unknown',
-      checkFailures: 'unknown',
-      revert: 'unknown',
-      qaAfterReview: 'unknown',
-    },
+    expected: { ...allTranscriptUnknown, revert: 'unknown' },
   },
   {
     name: 'decides transcript signals from the facts when only the manager transcript maps',
-    evidence: evidence([review(), fix(), fix(), fix()]),
+    evidence: evidence(reviews(5)),
     reverted: false,
     coverage: 'managerOnly',
-    expected: expected({ reviewFixRounds: 'fired' }),
+    expected: expected({ reviewRounds: 'fired' }),
   },
 ];
 
