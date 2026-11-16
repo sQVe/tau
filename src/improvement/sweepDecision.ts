@@ -51,7 +51,7 @@ const mergeEvent = (task: Task, hash: string, now: string): ImprovementEvent => 
 });
 
 const factsEvent = (task: Task, hash: string, now: string): ImprovementEvent | undefined => {
-  if (task.coverage === 'unknown') {
+  if (task.coverage === 'unknown' || task.coverage === 'missing') {
     return undefined;
   }
 

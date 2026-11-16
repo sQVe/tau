@@ -146,6 +146,12 @@ describe('plannedEvents', () => {
       events: [mergeEvent()],
     },
     {
+      rule: 'writes no facts event while coverage is missing',
+      overrides: { coverage: 'missing' as const },
+      existingIds: [],
+      events: [mergeEvent()],
+    },
+    {
       rule: 'skips an ID that already exists',
       overrides: {},
       existingIds: ['merge-abc123'],

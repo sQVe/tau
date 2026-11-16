@@ -88,6 +88,28 @@ it('writes one merge event per merged pull request', async () => {
   expect(fixture.eventFiles()).toEqual(files);
 });
 
+it('writes facts once the publishing calls reach a transcript', async () => {
+  const fixture = await createSweepFixture(onTestFinished);
+  const path = fixture.writeFixtureSession('manager.jsonl', 'multiplePublications.jsonl');
+  const [header = '', ...body] = readFileSync(path, 'utf8').split(/(?<=\n)/u);
+
+  writeFileSync(path, header);
+  fixture.setMerged(twoMerged());
+
+  expect(await fixture.run()).toEqual({ outcome: 'caughtUp' });
+
+  expect(fixture.eventFiles()).toEqual(
+    [`merge-${eventHash(repository, 562)}`, `merge-${eventHash(repository, 564)}`]
+      .toSorted()
+      .map((id) => `${id}.json`),
+  );
+
+  appendFileSync(path, body.join(''));
+
+  expect(await fixture.run()).toEqual({ outcome: 'caughtUp' });
+  expect(fixture.eventFiles()).toEqual(expectedIds([562, 564]).map((id) => `${id}.json`));
+});
+
 it('writes each event once across concurrent sweeps', async () => {
   const fixture = await createSweepFixture(onTestFinished);
 

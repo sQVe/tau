@@ -69,6 +69,10 @@ none, and nothing runs while Pi is closed.
 - One lock lets one sweep run at a time.
 - A cursor moves only in the index write after its events exist.
 - A failed `gh` read records unknown and moves no cursor of that project.
+- The sweep writes a `merge` event for each merged pull request. It writes the `facts` event only
+  once a transcript maps to the pull request's task, because events are never replaced. A later
+  sweep writes it when that transcript appears. A reader treats a `merge` event without a `facts`
+  event as missing coverage.
 
 ### Approval
 
