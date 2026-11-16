@@ -402,9 +402,11 @@ repository has no `qa.repositories` entry:
 When the session's working directory has the guide at session start, the manager's guidelines tell
 it to read the guide before it launches a `qa` worker and to assign the sections that the change
 needs. The manager does the guide's steps under "The manager starts" for those sections, and stops
-what it started when every worker that uses it has reported, or when the launch fails. It launches
-no `qa` worker when only the guide's "Not testable" part applies. The worker reads the guide first,
-runs each section's "Reach it" proof, and follows the feature files that those sections link.
+what it started when every worker that uses it has reported, or when the launch fails. For a section
+with a target, the manager launches it with the `verification` tool, registers the assigned items,
+names the run in the brief, and stops it after the workers report. It launches no `qa` worker when
+only the guide's "Not testable" part applies. The worker reads the guide first, runs each section's
+"Reach it" proof, and follows the feature files that those sections link.
 
 ## Code reviews (`reviews`, user file)
 

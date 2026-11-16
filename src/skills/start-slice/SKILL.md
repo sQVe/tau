@@ -89,16 +89,18 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
    from the agent team's label list, as the tracker skill says, or use `[]`. Keep existing
    identifiers; new ones stay `null`. The tickets together cover every acceptance criterion. Give
    each journey item to one agent ticket that writes the journey file, the test, and the QA guide's
-   index row together. An item marked "by hand" needs no test file. The journey file and test hold
-   only built steps, following the
+   index row together. Give each change to a feature to the agent ticket that makes it, with its
+   feature file and `## Features` index row updated in that ticket, as for journeys. An item marked
+   "by hand" needs no test file. The journey file and test hold only built steps, following the
    [QA-guide template](../../extensions/subagents/templates/qa-guide.md#rules).
 
 7. Map each slice criterion, record update, and mechanical-check change to its tickets. Check that
-   each journey item maps to one ticket with its journey file, test or "by hand", and index row.
-   Change the draft until none is uncovered. Each `## Acceptance` item must name a test, a command,
-   or a manual observation, with its expected result. Rewrite an item when the slice or step 5 says
-   what to check. Before step 9, list each item with no check and its body file, and tell the user
-   the worker gets a vague task. Say nothing when all pass; the list never stops a launch.
+   each journey item maps to one ticket with its journey file, test or "by hand", and index row, and
+   that each changed feature maps to one ticket with its feature file and index row. Change the
+   draft until none is uncovered. Each `## Acceptance` item must name a test, a command, or a manual
+   observation, with its expected result. Rewrite an item when the slice or step 5 says what to
+   check. Before step 9, list each item with no check and its body file, and tell the user the
+   worker gets a vague task. Say nothing when all pass; the list never stops a launch.
 8. For each new ticket (`identifier` is `null`), launch one fresh default-model `scout` in one turn.
    Brief it with the body file path, the step 5 tree, and the plan questions. It reads the body file
    with `read` and the named files with `git show <tree>:<path>`. It searches with
@@ -169,6 +171,8 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
       the committed tree to `qa` by [the QA launch procedure](../shared/qa-launch.md) before the
       audit. Save the report in `$slicedir` with the commit it tested, for the audit to cite.
     - A QA failure makes the item not met; the audit's existing fix-ticket loop handles it.
+    - A step that differs is either map drift (the feature or journey file is out of date: fix the
+      file in the slice) or a product bug (the item is not met).
     - Audit with the [finish-slice skill](../finish-slice/SKILL.md). Delegate each fix ticket it
       creates, as the first bullet says, except that its worker runs the mutation check with `base`
       set to the `git rev-parse HEAD` from before the ticket starts. Before auditing once more,
