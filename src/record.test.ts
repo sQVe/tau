@@ -6,6 +6,7 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { temporaryDirectory } from '../tests/temporaryDirectoryHarness.js';
 import {
+  newerFormatNotice,
   parseVersionedRecord,
   publishTextSync,
   readOptionalText,
@@ -102,6 +103,21 @@ it('rejects a newer version before it checks the schema', () => {
   expect(() => parseVersionedRecord('a.json', '{"version":3,"other":1}', options)).toThrow(
     /newer format/,
   );
+});
+
+it.each([
+  {
+    rule: 'names a newer record',
+    text: '{"version":3}',
+    notice:
+      'Sample record a.json has a newer format than this Tau reads. Update Tau, then restart the session.',
+  },
+  { rule: 'passes the current version', text: '{"version":2}', notice: undefined },
+  { rule: 'passes an older version', text: '{"version":1}', notice: undefined },
+  { rule: 'passes a version that is not a number', text: '{"version":"3"}', notice: undefined },
+  { rule: 'passes text that is not JSON', text: '{"version":3,', notice: undefined },
+])('newerFormatNotice $rule', ({ text, notice }) => {
+  expect(newerFormatNotice('a.json', text, options)).toBe(notice);
 });
 
 it('rejects a known version that fails the schema', () => {

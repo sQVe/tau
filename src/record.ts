@@ -29,12 +29,39 @@ export interface VersionedRecordOptions<Schema extends TSchema> {
   check?: (value: unknown) => string | undefined;
 }
 
+type FormatOptions = Pick<VersionedRecordOptions<TSchema>, 'label' | 'version'>;
+
 const capitalize = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 
-const isNewerVersion = (value: unknown, version: number) => {
+const describeNewerFormat = (
+  path: string,
+  value: unknown,
+  options: FormatOptions,
+): string | undefined => {
   const claimed = isRecord(value) ? value['version'] : undefined;
+  const newer = typeof claimed === 'number' && claimed > options.version;
 
-  return typeof claimed === 'number' && claimed > version;
+  return newer
+    ? `${capitalize(options.label)} ${path} has a newer format than this Tau reads. Update Tau, then restart the session.`
+    : undefined;
+};
+
+// Returns the notice for a record whose version is above `options.version`. Text that is not JSON
+// is not newer, so parseVersionedRecord can refuse it as malformed.
+export const newerFormatNotice = (
+  path: string,
+  text: string,
+  options: FormatOptions,
+): string | undefined => {
+  let value: unknown;
+
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+
+  return describeNewerFormat(path, value, options);
 };
 
 export const parseVersionedRecord = <Schema extends TSchema>(
@@ -42,7 +69,7 @@ export const parseVersionedRecord = <Schema extends TSchema>(
   text: string,
   options: VersionedRecordOptions<Schema>,
 ): Static<Schema> => {
-  const { label, version, schema, check } = options;
+  const { label, schema, check } = options;
   let value: unknown;
 
   try {
@@ -51,10 +78,10 @@ export const parseVersionedRecord = <Schema extends TSchema>(
     throw new Error(`Malformed ${label} ${path}: not JSON.`, { cause: error });
   }
 
-  if (isNewerVersion(value, version)) {
-    throw new Error(
-      `${capitalize(label)} ${path} has a newer format than this Tau reads. Update Tau, then restart the session.`,
-    );
+  const newerNotice = describeNewerFormat(path, value, options);
+
+  if (newerNotice !== undefined) {
+    throw new Error(newerNotice);
   }
 
   const checkProblem = check?.(value);

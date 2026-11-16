@@ -6,7 +6,7 @@ import type { Static, TProperties } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { hasErrorCode, isMissingFile } from '../errors.ts';
-import { parseVersionedRecord, publishTextSync, savedVersion } from '../record.ts';
+import { newerFormatNotice, parseVersionedRecord, publishTextSync } from '../record.ts';
 import { describeSchemaProblem, isRecord, stringEnum } from '../schema.ts';
 import { ensureTauDirectory, rejectLinkedFile } from '../tauDirectory.ts';
 
@@ -184,24 +184,6 @@ const listEventNames = async (directory: string): Promise<string[]> => {
   }
 };
 
-// Text that is not JSON is not newer; parseEvent then refuses it as damaged.
-const isNewerEvent = (eventText: string): boolean => {
-  let value: unknown;
-
-  try {
-    value = JSON.parse(eventText);
-  } catch {
-    return false;
-  }
-
-  const version = savedVersion(value);
-
-  return typeof version === 'number' && version > eventVersion;
-};
-
-const newerNotice = (path: string) =>
-  `Improvement event ${path} has a newer format than this Tau reads. Update Tau, then restart the session.`;
-
 export const readEvents = async (projectRoot: string): Promise<EventRead> => {
   const directory = eventDirectory(projectRoot);
   const names = await listEventNames(directory);
@@ -216,8 +198,10 @@ export const readEvents = async (projectRoot: string): Promise<EventRead> => {
     // oxlint-disable-next-line no-await-in-loop -- Reading in name order names the first damaged file.
     const eventText = await readFile(path, 'utf8');
 
-    if (isNewerEvent(eventText)) {
-      skipped.push({ path, notice: newerNotice(path) });
+    const notice = newerFormatNotice(path, eventText, eventOptions);
+
+    if (notice !== undefined) {
+      skipped.push({ path, notice });
     } else {
       events.push(parseEvent(path, eventText));
     }
