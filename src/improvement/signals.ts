@@ -3,7 +3,7 @@ import type { Coverage } from './taskMapping.ts';
 
 type EvidenceKind = MissingEvidence['affects'][number];
 
-export type SignalState = 'fired' | 'notFired' | 'unknown';
+type SignalState = 'fired' | 'notFired' | 'unknown';
 
 export interface ReviewSignals {
   reviewFixRounds: SignalState;

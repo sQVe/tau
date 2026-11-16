@@ -9,9 +9,6 @@ import type { Transcript } from './transcript.ts';
 import { ownsSession, parseAssignment, parseWorkerTask } from './workerRecord.ts';
 import type { WorkerTask } from './workerRecord.ts';
 
-export { decideReviewSignals } from './signals.ts';
-export type { ReviewSignalFacts, ReviewSignals, SignalState } from './signals.ts';
-
 interface SessionFiles {
   managerSessions: string[];
   workerSessions: string[];
