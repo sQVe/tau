@@ -152,7 +152,7 @@ describe('readWorkerTranscripts', () => {
     writeFile(taskPath, '{"taskId":"t3","createdAt":1}');
 
     const before = snapshot([assignmentPath, assignmentSession, taskPath]);
-    const workers = await readWorkerTranscripts(agent);
+    const workers = await readWorkerTranscripts(agent, new Set(['a1', 't3']));
 
     expect(Object.fromEntries(workers)).toEqual({ a1: 'readable', t3: 'missing' });
     expect(snapshot([assignmentPath, assignmentSession, taskPath])).toEqual(before);
@@ -166,7 +166,9 @@ describe('readWorkerTranscripts', () => {
     writeFile(session, header);
     lock(session);
 
-    expect(Object.fromEntries(await readWorkerTranscripts(agent))).toEqual({ t2: 'unreadable' });
+    expect(Object.fromEntries(await readWorkerTranscripts(agent, new Set(['t2'])))).toEqual({
+      t2: 'unreadable',
+    });
   });
 
   it('reports a worker session that is malformed as unreadable and leaves it unchanged', async () => {
@@ -178,7 +180,10 @@ describe('readWorkerTranscripts', () => {
 
     const before = snapshot([session]);
 
-    expect(Object.fromEntries(await readWorkerTranscripts(agent))).toEqual({ t6: 'unreadable' });
+    expect(Object.fromEntries(await readWorkerTranscripts(agent, new Set(['t6'])))).toEqual({
+      t6: 'unreadable',
+    });
+
     expect(snapshot([session])).toEqual(before);
   });
 
@@ -194,7 +199,7 @@ describe('readWorkerTranscripts', () => {
 
     const before = snapshot([malformed]);
 
-    expect(Object.fromEntries(await readWorkerTranscripts(agent))).toEqual({
+    expect(Object.fromEntries(await readWorkerTranscripts(agent, new Set(['t4', 't5'])))).toEqual({
       t4: 'unreadable',
       t5: 'unreadable',
     });
@@ -205,7 +210,7 @@ describe('readWorkerTranscripts', () => {
   it('reports no workers when the agent directory has no worker records', async () => {
     const agent = improvementDirectory();
 
-    expect(await readWorkerTranscripts(join(agent, 'absent'))).toEqual(new Map());
+    expect(await readWorkerTranscripts(join(agent, 'absent'), new Set())).toEqual(new Map());
   });
 });
 
@@ -234,7 +239,14 @@ describe('worker coverage from the records on disk', () => {
   const coverageWith = (workers: ReadonlyMap<string, WorkerTranscript>) =>
     mapTasks({
       pullRequests: [
-        { repository, number: 7, headBranch: 'me-7-change', createdAt: '2026-11-01T00:00:00Z' },
+        {
+          repository,
+          number: 7,
+          url: 'https://github.com/sQVe/tau/pull/7',
+          headBranch: 'me-7-change',
+          createdAt: '2026-11-01T00:00:00Z',
+          mergedAt: '2026-11-02T00:00:00Z',
+        },
       ],
       transcripts: [{ path: '/m.jsonl', transcript: parseTranscript(launchTranscript) }],
       repositories: new Map([['/work/me-7', repository]]),
@@ -248,7 +260,7 @@ describe('worker coverage from the records on disk', () => {
     writeFile(record, '{"taskId":"w1","createdAt":1}');
     lock(record);
 
-    expect(coverageWith(await readWorkerTranscripts(agent))).toBe('unknown');
+    expect(coverageWith(await readWorkerTranscripts(agent, new Set(['w1'])))).toBe('unknown');
   });
 
   it('gives coverage unknown when a worker record has a newer format', async () => {
@@ -257,7 +269,7 @@ describe('worker coverage from the records on disk', () => {
 
     writeFile(record, assignmentRecord('w1', '/s.jsonl', 4));
 
-    expect(coverageWith(await readWorkerTranscripts(agent))).toBe('unknown');
+    expect(coverageWith(await readWorkerTranscripts(agent, new Set(['w1'])))).toBe('unknown');
   });
 
   it('gives coverage managerOnly when a worker record is missing', async () => {
@@ -265,6 +277,6 @@ describe('worker coverage from the records on disk', () => {
 
     mkdirSync(join(agent, 'tau', 'main-1', 'workers', 'w1'), { recursive: true });
 
-    expect(coverageWith(await readWorkerTranscripts(agent))).toBe('managerOnly');
+    expect(coverageWith(await readWorkerTranscripts(agent, new Set(['w1'])))).toBe('managerOnly');
   });
 });

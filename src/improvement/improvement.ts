@@ -139,6 +139,7 @@ const readSessions = async (paths: readonly string[]) => {
 
 export const readWorkerTranscripts = async (
   agentDirectory: string,
+  taskIds: ReadonlySet<string>,
 ): Promise<Map<string, WorkerTranscript>> => {
   const { workerRecords, workerSessions } = await findSessionFiles(agentDirectory);
   const workers = new Map<string, WorkerTranscript>();
@@ -146,9 +147,17 @@ export const readWorkerTranscripts = async (
   for (const recordPath of workerRecords) {
     // oxlint-disable-next-line no-await-in-loop -- Reads started together would open too many files.
     const read = await readWorkerRecord(recordPath);
+    const directoryName = basename(dirname(recordPath));
+    const taskId = read.status === 'read' ? read.record.task.taskId : undefined;
+    const namesTask = taskId !== undefined && taskIds.has(taskId);
+    const isWanted = taskIds.has(directoryName) || namesTask;
+
+    if (!isWanted) {
+      continue;
+    }
 
     if (read.status !== 'read' && read.status !== 'missing') {
-      workers.set(basename(dirname(recordPath)), 'unreadable');
+      workers.set(directoryName, 'unreadable');
     }
 
     if (read.status !== 'read') {
