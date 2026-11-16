@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "id": "backlog-sqve-tau-667-1",
+  "kind": "backlog",
+  "createdAt": "2026-11-15T13:05:00.000Z",
+  "evidence": [{ "kind": "pullRequest", "url": "https://github.com/sqve/tau/pull/667" }],
+  "summary": "Split the fact extractor by tool name.",
+  "pullRequest": "https://github.com/sqve/tau/pull/667"
+}

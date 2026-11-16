@@ -28,12 +28,12 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 // beside each ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
   manager: 49_705, // target 38,000
-  worker: 18_890, // target 14,000
-  reviewer: 15_246, // target 11,000
-  checker: 15_399,
-  qa: 12_142, // target 9,000
-  browser: 10_852, // target 9,000
-  scout: 10_411, // target 9,000
+  worker: 19_041, // target 14,000
+  reviewer: 15_397, // target 11,000
+  checker: 15_550,
+  qa: 12_293, // target 9,000
+  browser: 11_003, // target 9,000
+  scout: 10_562, // target 9,000
 };
 
 const profileNames = ['worker', 'reviewer', 'checker', 'qa', 'browser', 'scout'];

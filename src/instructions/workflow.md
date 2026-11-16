@@ -32,3 +32,5 @@ when you stop. Follow explicit user instructions and repository conventions over
 - While you follow a skill, ask the user only with `ask_user_question`, never in prose.
 - As manager, start a new session when a batch is finished and no workers run. Carry state in
   handover files and Linear, not the conversation.
+- As manager, when the user corrects you, fix the mistake, save it with `improvement` `record`, and
+  propose a rule or check for the user to approve.

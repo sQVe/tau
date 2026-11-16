@@ -34,14 +34,14 @@ const trailingDelegationGuidelines = [
 
 const browserLoginStep = (loginCommand: string | undefined): string =>
   loginCommand === undefined
-    ? 'ask the user to sign in once in the Chrome profile that the browser package config uses and close the window'
+    ? 'ask the user to sign in once in the Chrome profile the browser package config uses, and close the window'
     : `ask the user to run \`${loginCommand}\`, sign in, and close the window`;
 
 const browserGuideline =
   'Send other browser work to `browser`, and pass `url` when it works on a local app.';
 
 const browserLoginGuideline = (loginCommand: string | undefined): string =>
-  `Start \`browser\` and \`qa\` workers as if the agent Chrome profile is already signed in. When one reports a login wall, ${browserLoginStep(loginCommand)}. Then cancel the waiting worker and start a new one. Each new worker copies the configured Chrome profile when it starts.`;
+  `Start \`browser\` and \`qa\` workers as if the agent Chrome profile is signed in. When one reports a login wall, ${browserLoginStep(loginCommand)}. Then cancel the waiting worker and start a new one, which copies the configured profile at start.`;
 
 const qaGuideGuidelines = (qaProcedurePath: string | undefined): string[] =>
   qaProcedurePath === undefined

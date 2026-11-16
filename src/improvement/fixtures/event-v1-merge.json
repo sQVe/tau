@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "merge-sqve-tau-667",
+  "kind": "merge",
+  "createdAt": "2026-11-15T12:00:00.000Z",
+  "evidence": [{ "kind": "pullRequest", "url": "https://github.com/sqve/tau/pull/667" }],
+  "repository": "sqve/tau",
+  "pullRequest": "https://github.com/sqve/tau/pull/667",
+  "mergedAt": "2026-11-15T11:58:00.000Z"
+}

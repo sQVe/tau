@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "id": "review-sqve-tau-667",
+  "kind": "review",
+  "createdAt": "2026-11-15T13:00:00.000Z",
+  "evidence": [{ "kind": "reviewCapture", "ref": "refs/tau/review/667" }],
+  "pullRequest": "https://github.com/sqve/tau/pull/667",
+  "outcome": "Two findings accepted, one rejected."
+}

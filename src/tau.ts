@@ -13,6 +13,7 @@ import compactionExtension from './extensions/compaction/compaction.js';
 import draftReviewExtension from './extensions/draftReview/draftReview.js';
 import fullCheckExtension from './extensions/fullCheck/fullCheck.js';
 import handoverExtension from './extensions/handover/handover.js';
+import improvementExtension from './extensions/improvement/improvement.js';
 import inboxExtension from './extensions/inbox/inbox.js';
 import instructionsExtension from './extensions/instructions.js';
 import mergeWatchExtension from './extensions/mergeWatch/mergeWatch.js';
@@ -58,6 +59,7 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   mergeWatchExtension(pi);
   stackExtension(pi);
   codeReviewExtension(pi);
+  improvementExtension(pi);
   staticLoaderExtension(pi);
   statusbarExtension(pi);
   subagentsExtension(pi, capacityRefusal);
