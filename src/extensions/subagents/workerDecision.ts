@@ -38,7 +38,7 @@ export const endedKey = (assignmentId: string): string => `ended:${assignmentId}
 export const isCurrentSession = (parentSession: string, sessionFile: string | undefined): boolean =>
   parentSession === sessionFile;
 
-export const finalNoticeShown = (shown: ReadonlySet<string>, assignmentId: string): boolean =>
+const finalNoticeShown = (shown: ReadonlySet<string>, assignmentId: string): boolean =>
   shown.has(reportKey(assignmentId)) ||
   shown.has(endedKey(assignmentId)) ||
   shown.has(deadlineKey(assignmentId));

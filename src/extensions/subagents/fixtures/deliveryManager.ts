@@ -10,12 +10,12 @@ import { fixtureLoadout } from './loadout.js';
 
 export type DeliveryContext = Parameters<ReturnType<typeof createWorkerDelivery>['deliver']>[0];
 
-export interface SentMessage {
+interface SentMessage {
   customType?: unknown;
   details?: unknown;
 }
 
-export interface SessionEntryLike {
+interface SessionEntryLike {
   type: string;
   customType?: string;
   data?: unknown;
@@ -39,7 +39,7 @@ export const manager = 't-manager';
 export const managerSession = '/sessions/manager.jsonl';
 export const otherSession = '/sessions/previous.jsonl';
 
-export const customMessageEntry = (message: SentMessage): SessionEntryLike => ({
+const customMessageEntry = (message: SentMessage): SessionEntryLike => ({
   type: 'custom_message',
   ...(typeof message.customType === 'string' ? { customType: message.customType } : {}),
   details: message.details,
