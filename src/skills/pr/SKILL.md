@@ -162,13 +162,14 @@ choose draft or override step 6's draft suggestion to ready. Neither choice comp
      Leave its log in place without copying it or adding headers.
    - Read `verification` from step 1's evidence. An assigned journey or feature item matches the
      result whose `item` is that file's path under `.pi/qa/` without `.md`, such as
-     `journeys/delegate-a-check`, whichever target it came from. A fresh result replaces a new QA
-     run for that item when the QA launch procedure's reuse condition also holds. Record its `run`
-     and `item` for step 6 and the preview, and record a fresh failure as a QA failure.
-   - A stale result, a missing result, a `verificationRecord` gap for the run, or a `null` field is
-     not evidence. Report a stale result as stale with its `reason`; it never counts as passing.
-     Assign each such item to the QA run in the next bullet. When QA does not run, the item is not
-     run.
+     `journeys/delegate-a-check`, whichever target it came from. Check every fresh result for the
+     item; any fresh failure with a `differs` step or end state is a QA failure. Fresh results
+     replace a new QA run for that item when the QA launch procedure's reuse condition also holds.
+     Record each `run` and `item` for step 6 and the preview.
+   - A stale result, a missing result, a fresh `failed` result with no `differs` step or end state,
+     a `verificationRecord` gap for the run, or a `null` field is not evidence. Report a stale
+     result as stale with its `reason`; it never counts as passing. Assign each such item to the QA
+     run in the next bullet. When QA does not run, the item is not run.
    - Send a change with user-visible behavior to `qa` on the committed tree before the preview, by
      [the QA launch procedure](../shared/qa-launch.md). Reuse the slice's saved QA run when the
      procedure's reuse condition holds; run QA again when the tree changed.
