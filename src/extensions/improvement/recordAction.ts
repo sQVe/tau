@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
-import { eventPath, writeEvent } from '../../improvement/event.js';
+import { writeEvent } from '../../improvement/event.js';
 import type { ImprovementEvent, WriteOutcome } from '../../improvement/event.js';
 import { findProjectRoot } from '../../improvement/projectRoot.js';
 
@@ -41,7 +41,7 @@ export const recordCorrection = async (facts: CorrectionFacts): Promise<RecordRe
   const projectRoot = await findProjectRoot(facts.cwd);
   const id = correctionId(facts.sessionId, facts.toolCallId);
 
-  const outcome = await writeEvent(projectRoot, {
+  const { path, outcome } = await writeEvent(projectRoot, {
     version: 1,
     id,
     kind: 'correction',
@@ -51,7 +51,7 @@ export const recordCorrection = async (facts: CorrectionFacts): Promise<RecordRe
     cwd: facts.cwd,
   });
 
-  return { id, path: eventPath(projectRoot, id), outcome };
+  return { id, path, outcome };
 };
 
 export const runRecord = async (

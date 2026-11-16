@@ -6,7 +6,7 @@ import type { Static, TProperties } from 'typebox';
 import { Value } from 'typebox/value';
 
 import { hasErrorCode, isMissingFile } from '../errors.ts';
-import { parseVersionedRecord, publishTextSync } from '../record.ts';
+import { parseVersionedRecord, publishTextSync, savedVersion } from '../record.ts';
 import { describeSchemaProblem, isRecord, stringEnum } from '../schema.ts';
 import { ensureTauDirectory, rejectLinkedFile } from '../tauDirectory.ts';
 
@@ -15,6 +15,22 @@ export type ImprovementEvent = Static<typeof eventSchema>;
 export type EventKind = ImprovementEvent['kind'];
 
 export type WriteOutcome = 'saved' | 'existing';
+
+export interface WrittenEvent {
+  path: string;
+  outcome: WriteOutcome;
+}
+
+export interface SkippedEvent {
+  path: string;
+  notice: string;
+}
+
+// A newer-format event is skipped, not refused, so callers must show `skipped` to the user.
+export interface EventRead {
+  events: ImprovementEvent[];
+  skipped: SkippedEvent[];
+}
 
 const eventVersion = 1;
 
@@ -126,34 +142,32 @@ const isUnpublished = (name: string) => name.startsWith('.receipt-');
 
 const eventDirectory = (projectRoot: string) => join(projectRoot, '.tau', eventDirectoryPath);
 
-export const eventPath = (projectRoot: string, id: string): string =>
-  join(eventDirectory(projectRoot), `${id}.json`);
-
 export const parseEvent = (path: string, eventText: string): ImprovementEvent =>
   parseVersionedRecord(path, eventText, eventOptions);
 
 export const writeEvent = async (
   projectRoot: string,
   event: ImprovementEvent,
-): Promise<WriteOutcome> => {
+): Promise<WrittenEvent> => {
   if (!isSafeEventId(event.id)) {
     throw new Error(`Improvement event ID ${JSON.stringify(event.id)} is not a safe file name.`);
   }
 
   const directory = await ensureTauDirectory(projectRoot, eventDirectoryPath);
+  const path = join(directory, `${event.id}.json`);
   const eventText = `${JSON.stringify(event, null, 2)}\n`;
 
   try {
-    publishTextSync(join(directory, `${event.id}.json`), eventText, { mode: eventFileMode });
+    publishTextSync(path, eventText, { mode: eventFileMode });
   } catch (error) {
     if (hasErrorCode(error, 'EEXIST')) {
-      return 'existing';
+      return { path, outcome: 'existing' };
     }
 
     throw error;
   }
 
-  return 'saved';
+  return { path, outcome: 'saved' };
 };
 
 const listEventNames = async (directory: string): Promise<string[]> => {
@@ -170,10 +184,29 @@ const listEventNames = async (directory: string): Promise<string[]> => {
   }
 };
 
-export const readEvents = async (projectRoot: string): Promise<ImprovementEvent[]> => {
+// Text that is not JSON is not newer; parseEvent then refuses it as damaged.
+const isNewerEvent = (eventText: string): boolean => {
+  let value: unknown;
+
+  try {
+    value = JSON.parse(eventText);
+  } catch {
+    return false;
+  }
+
+  const version = savedVersion(value);
+
+  return typeof version === 'number' && version > eventVersion;
+};
+
+const newerNotice = (path: string) =>
+  `Improvement event ${path} has a newer format than this Tau reads. Update Tau, then restart the session.`;
+
+export const readEvents = async (projectRoot: string): Promise<EventRead> => {
   const directory = eventDirectory(projectRoot);
   const names = await listEventNames(directory);
   const events: ImprovementEvent[] = [];
+  const skipped: SkippedEvent[] = [];
 
   for (const name of names) {
     const path = join(directory, name);
@@ -181,8 +214,14 @@ export const readEvents = async (projectRoot: string): Promise<ImprovementEvent[
     // oxlint-disable-next-line no-await-in-loop -- Reading in name order names the first damaged file.
     await rejectLinkedFile(path, 'read');
     // oxlint-disable-next-line no-await-in-loop -- Reading in name order names the first damaged file.
-    events.push(parseEvent(path, await readFile(path, 'utf8')));
+    const eventText = await readFile(path, 'utf8');
+
+    if (isNewerEvent(eventText)) {
+      skipped.push({ path, notice: newerNotice(path) });
+    } else {
+      events.push(parseEvent(path, eventText));
+    }
   }
 
-  return events;
+  return { events, skipped };
 };

@@ -75,7 +75,7 @@ describe('parseEvent', () => {
 
     await writeEvent(root, event);
 
-    expect(await readEvents(root)).toEqual([event]);
+    expect(await readEvents(root)).toEqual({ events: [event], skipped: [] });
   });
 });
 
@@ -87,13 +87,13 @@ describe('readEvents', () => {
     await writeEvent(root, second);
     await writeEvent(root, first);
 
-    expect(await readEvents(root)).toEqual([first, second]);
+    expect(await readEvents(root)).toEqual({ events: [first, second], skipped: [] });
   });
 
   it('returns no events when .tau/improvement is missing', async () => {
     const root = await createProject();
 
-    expect(await readEvents(root)).toEqual([]);
+    expect(await readEvents(root)).toEqual({ events: [], skipped: [] });
   });
 
   it('throws a read error other than a missing directory', async () => {
@@ -110,7 +110,7 @@ describe('readEvents', () => {
     await writeEvent(root, event);
     await writeEventFile(root, '.receipt-0f6b', 'partial');
 
-    expect(await readEvents(root)).toEqual([event]);
+    expect(await readEvents(root)).toEqual({ events: [event], skipped: [] });
   });
 
   it('refuses a malformed event file with an error naming its path', async () => {
@@ -121,12 +121,22 @@ describe('readEvents', () => {
     await expect(readEvents(root)).rejects.toThrow(path);
   });
 
-  it('refuses an event with a newer version with an error naming its path', async () => {
+  it('skips an event with a newer version and lists it with its path', async () => {
     const root = await createProject();
+    const event = correction('correction-1', 'Run focused tests first.');
     const newer = { ...correction('correction-9', 'Later format.'), version: 2 };
+    await writeEvent(root, event);
     const path = await writeEventFile(root, 'correction-9.json', JSON.stringify(newer));
 
-    await expect(readEvents(root)).rejects.toThrow(path);
+    const { events, skipped } = await readEvents(root);
+
+    const notices = skipped.map((entry) => entry.notice.includes('restart the session'));
+
+    expect({ events, paths: skipped.map((entry) => entry.path), notices }).toEqual({
+      events: [event],
+      paths: [path],
+      notices: [true],
+    });
   });
 });
 
@@ -135,16 +145,25 @@ describe('writeEvent', () => {
     const root = await createProject();
     const first = correction('correction-1', 'Run focused tests first.');
 
-    const outcomes = [
+    const writes = [
       await writeEvent(root, first),
       await writeEvent(root, correction('correction-1', 'A different summary.')),
     ];
 
+    const path = join(eventDirectory(root), 'correction-1.json');
+
     expect({
-      outcomes,
+      writes,
       names: await readdir(eventDirectory(root)),
-      events: await readEvents(root),
-    }).toEqual({ outcomes: ['saved', 'existing'], names: ['correction-1.json'], events: [first] });
+      read: await readEvents(root),
+    }).toEqual({
+      writes: [
+        { path, outcome: 'saved' },
+        { path, outcome: 'existing' },
+      ],
+      names: ['correction-1.json'],
+      read: { events: [first], skipped: [] },
+    });
   });
 
   it('throws a write error other than an existing event', async () => {

@@ -29,6 +29,12 @@ Tau saves each improvement fact as one versioned JSON event file in the project 
 - Each event is its own file, named by its ID, and is never replaced. A second write of the same ID
   keeps the first file. A retried tool call then saves no duplicate, and concurrent sessions need no
   lock across files.
+- A reader skips an event with a newer format and returns it with its path and a notice to restart
+  the session, as [ADR 0053](./0053-version-each-saved-record-format.md) says.
+- A damaged event is an exception to [ADR 0053](./0053-version-each-saved-record-format.md). An
+  event that is not JSON, or that claims a known version and fails its schema, stops the read with
+  an error naming its path. A skipped damaged event would silently change the counts the loop relies
+  on.
 - A user correction is saved when it happens. The manager fixes the mistake, saves a `correction`
   event with the `improvement` tool, and proposes a rule or check. Later reviews count repeated
   corrections from these events.
