@@ -57,11 +57,11 @@ const fixture = async (options: FixtureOptions = {}) => {
   await git(root, 'add', '.');
   await git(root, 'commit', '--quiet', '-m', 'first');
 
-  const run = (input: ToolInput, deadlineMilliseconds?: number) =>
+  const run = (input: ToolInput, deadlineMilliseconds?: number, signal?: AbortSignal) =>
     createVerificationTool({
       agentDirectory: directory,
       ...(deadlineMilliseconds === undefined ? {} : { deadlineMilliseconds }),
-    }).execute('call', input, undefined, undefined, {
+    }).execute('call', input, signal, undefined, {
       cwd: root,
       isProjectTrusted: () => true,
       ui: { notify: () => undefined },
@@ -307,6 +307,41 @@ it('refuses a second stop', async () => {
   await expect(run({ action: 'stop', run: launch.run })).rejects.toThrow(
     'The run is already stopped.',
   );
+});
+
+it('a cancelled stop writes nothing and a later stop succeeds', async () => {
+  const { run } = await fixture();
+
+  const launched = await run({ action: 'launch', target: 'app' });
+  const launch = launched.details as LaunchResult;
+
+  if (launch.status !== 'ready') {
+    throw new Error('The launch did not become ready.');
+  }
+
+  const controller = new AbortController();
+
+  controller.abort();
+
+  await expect(
+    run({ action: 'stop', run: launch.run }, undefined, controller.signal),
+  ).rejects.toThrow('The stop was cancelled. Call stop again to stop the run.');
+
+  const cancelled = await readRunRecord(runRecordPath(launch.directory));
+
+  expect(cancelled.status).toBe('valid');
+
+  if (cancelled.status !== 'valid') {
+    return;
+  }
+
+  expect(cancelled.record.stop).toBeNull();
+  expect(cancelled.record.treeAtStop).toBeNull();
+
+  const stopped = await run({ action: 'stop', run: launch.run });
+  const stop = stopped.details as StopResult;
+
+  expect(stop).toMatchObject({ run: launch.run, exitCode: 0 });
 });
 
 it('refuses a field from another action', async () => {

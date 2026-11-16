@@ -57,6 +57,10 @@ export const stopRun = async (context: StopContext): Promise<StopResult> => {
     signal: context.signal,
   });
 
+  if (outcome.kind === 'stopped' && outcome.reason === 'cancelled') {
+    throw new Error('The stop was cancelled. Call stop again to stop the run.');
+  }
+
   const state = await readCheckState(context.root);
   const treeAtStop = state.tree;
 

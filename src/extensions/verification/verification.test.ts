@@ -1,9 +1,14 @@
 import { join } from 'node:path';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
+import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import { createTemporaryRepository } from '../../../tests/gitRepository.js';
-import { findRunDirectory } from './verification.js';
+import verificationExtension, { findRunDirectory } from './verification.js';
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 const failureMessage = async (promise: Promise<unknown>): Promise<string> =>
   promise.then(
@@ -26,4 +31,22 @@ it('finds the run directory below .tau/verification', async () => {
     root,
     directory: join(root, '.tau', 'verification', 'delegate-a-check'),
   });
+});
+
+it('registers the verification tool in a manager', () => {
+  vi.stubEnv('TAU_ROLE', undefined);
+  const fake = fakeExtensionApi();
+
+  verificationExtension(fake.pi);
+
+  expect(fake.tools.has('verification')).toBe(true);
+});
+
+it('registers no verification tool in a worker', () => {
+  vi.stubEnv('TAU_ROLE', 'worker');
+  const fake = fakeExtensionApi();
+
+  verificationExtension(fake.pi);
+
+  expect(fake.tools.has('verification')).toBe(false);
 });
