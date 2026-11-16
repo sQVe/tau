@@ -21,7 +21,7 @@ import {
   targetArguments,
   toolConfig,
 } from './nextestArguments.js';
-import { planFocus } from './nextestFocus.js';
+import { affectedRequestedFiles, planForScope } from './nextestFocus.js';
 import { parseNextestList } from './nextestList.js';
 import { listOutcome, metadataOutcome, runOutcome } from './nextestResult.js';
 import { buildBinarySources } from './nextestSources.js';
@@ -174,6 +174,12 @@ const runStageArguments = (
 ): string[] => {
   const request = { profileName, toolConfigPath, targets };
 
+  if (input.scope === 'affected') {
+    const affected = binaryIds === undefined ? request : { ...request, binaryIds };
+
+    return runArguments(affected);
+  }
+
   if (input.scope === 'focused') {
     const focused = { ...request, testNames: input.testNames };
 
@@ -310,10 +316,8 @@ const runStages = async (
     return { report: { kind: 'timeout', stage: 'list' }, stages };
   }
 
-  const requestedFiles = input.scope === 'focused' ? input.files : [];
-
-  const focus =
-    input.scope === 'full' ? { kind: 'unscoped' as const } : planFocus(binaries, requestedFiles);
+  const requestedFiles = input.scope === 'full' ? [] : input.files;
+  const focus = planForScope(input.scope, binaries, requestedFiles);
 
   if (focus.kind === 'collect-none') {
     return { report: { kind: 'no-tests-collected', tests: [] }, stages };
@@ -366,6 +370,10 @@ const runInDirectory = async (
     return { report: { kind: 'no-tests-collected', tests: [] }, stages: [] };
   }
 
+  if (input.scope === 'affected' && affectedRequestedFiles(input.files).length === 0) {
+    return { report: { kind: 'no-tests-collected', tests: [] }, stages: [] };
+  }
+
   if (executableOnPath([executableName], dependencies.searchPath) === undefined) {
     return { report: runnerMissing(dependencies.searchPath), stages: [] };
   }
@@ -377,12 +385,6 @@ export const runTests = async (
   input: RunTestsInput,
   dependencies: NextestDeps = defaultDeps(input.scope),
 ): Promise<RunnerResult> => {
-  if (input.scope === 'affected') {
-    throw new Error(
-      'The nextest runner does not support scope "affected" yet; use "focused" or "full".',
-    );
-  }
-
   return runWithDiagnostics(
     { reportFileName: 'report.xml', reportFormat: 'junit', timeoutMs: dependencies.timeoutMs },
     (directory, reportPath) => runInDirectory(input, dependencies, directory, reportPath),

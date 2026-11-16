@@ -1,4 +1,5 @@
 import type { RustBinarySources } from './rustAttribution.js';
+import type { RunTestsInput } from './types.js';
 
 export type FocusPlan =
   | { kind: 'collect-none' }
@@ -10,10 +11,10 @@ const binariesContainingFile = (binaries: RustBinarySources[], file: string): st
     .filter((binary) => binary.sources?.includes(file) === true)
     .map((binary) => binary.binaryId);
 
-export const planFocus = (binaries: RustBinarySources[], requestedFiles: string[]): FocusPlan => {
+const planSelection = (binaries: RustBinarySources[], requestedFiles: string[]): FocusPlan => {
   const depInfoMissing = binaries.some((binary) => binary.sources === null);
 
-  if (depInfoMissing || requestedFiles.length === 0) {
+  if (depInfoMissing) {
     return { kind: 'unscoped' };
   }
 
@@ -30,4 +31,31 @@ export const planFocus = (binaries: RustBinarySources[], requestedFiles: string[
   }
 
   return { kind: 'scoped', binaryIds: [...binaryIds] };
+};
+
+export const planFocus = (binaries: RustBinarySources[], requestedFiles: string[]): FocusPlan =>
+  requestedFiles.length === 0 ? { kind: 'unscoped' } : planSelection(binaries, requestedFiles);
+
+export const affectedRequestedFiles = (files: string[]): string[] =>
+  files.filter((file) => file.trim().length > 0);
+
+export const planAffectedFocus = (
+  binaries: RustBinarySources[],
+  requestedFiles: string[],
+): FocusPlan => planSelection(binaries, affectedRequestedFiles(requestedFiles));
+
+export const planForScope = (
+  scope: RunTestsInput['scope'],
+  binaries: RustBinarySources[],
+  requestedFiles: string[],
+): FocusPlan => {
+  if (scope === 'full') {
+    return { kind: 'unscoped' };
+  }
+
+  if (scope === 'affected') {
+    return planAffectedFocus(binaries, requestedFiles);
+  }
+
+  return planFocus(binaries, requestedFiles);
 };

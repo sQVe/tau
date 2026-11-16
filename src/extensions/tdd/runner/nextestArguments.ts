@@ -20,6 +20,10 @@ const binaryFilter = (binaryIds: readonly string[]): string => {
 };
 
 const selectionFilter = (testNames: readonly string[], binaryIds: readonly string[]): string => {
+  if (testNames.length === 0) {
+    return binaryFilter(binaryIds);
+  }
+
   if (binaryIds.length === 0) {
     return nameFilter(testNames);
   }
@@ -84,8 +88,8 @@ export const runArguments = ({
     '--ignore-default-filter',
   ];
 
-  if (testNames !== undefined) {
-    argumentsList.push('-E', selectionFilter(testNames, binaryIds));
+  if (testNames !== undefined || binaryIds.length > 0) {
+    argumentsList.push('-E', selectionFilter(testNames ?? [], binaryIds));
   }
 
   return argumentsList;

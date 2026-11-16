@@ -106,6 +106,17 @@ it('wraps several test names when scoping to binaries', () => {
   expect(argumentsList.at(-1)).toBe('binary_id(demo) & (test(=a::b) | test(=c::d))');
 });
 
+it('scopes an affected run to the binaries without a name filter', () => {
+  const argumentsList = runArguments({
+    profileName: 'tau-1',
+    toolConfigPath: '/diagnostics/tool-config.toml',
+    targets: scope,
+    binaryIds: ['demo', 'demo::bin/demo'],
+  });
+
+  expect(argumentsList.at(-1)).toBe('(binary_id(demo) | binary_id(demo::bin/demo))');
+});
+
 it('runs every test without a filter in a full run', () => {
   const argumentsList = runArguments({
     profileName: 'tau-1',
