@@ -86,8 +86,9 @@ counts as never run, so any review or correction makes it due.
 
 ### Approval
 
-Automatic steps only propose. The user approves each change before Tau edits a skill, check, rule,
-or ticket.
+Automatic steps only propose. The user approves each row of a review before Tau edits a skill,
+check, rule, or ticket. An approved row opens a worktree and a handover in the owning project, and
+that session files the ticket. A review saves `review`, `backlog`, and `decision` events.
 
 ## Consequences
 

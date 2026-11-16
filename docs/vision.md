@@ -70,8 +70,8 @@ Utility skills support the stages rather than adding stages:
   [triage-findings](../src/skills/triage-findings/SKILL.md): checked findings and fixes;
   [benchmark-checklist](../src/skills/benchmark-checklist/SKILL.md): performance evidence.
 - [diagram](../src/skills/diagram/SKILL.md): system connections; [bro](../src/skills/bro/SKILL.md):
-  plain-language explanations; [retrospective](../src/skills/retrospective/SKILL.md): diagnosis of
-  completed work.
+  plain-language explanations; [retrospective](../src/skills/retrospective/SKILL.md): the fast
+  review of one task's saved logs.
 
 ## In scope
 
