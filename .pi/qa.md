@@ -100,8 +100,8 @@ Target: pi-session
 
 `pnpm pi-session` loads Tau from this worktree's source, so the code under test is this checkout.
 The launch creates the scratch root `/tmp/tau-verification-<run>`. The doctor checks the scratch
-root and, with `pnpm pi-version:check`, that the installed Pi has the minor version Tau builds
-against. The stop keeps the scratch root.
+root, that `pi` runs, and, with `pnpm pi-version:check`, that the installed Pi has the minor
+version Tau builds against. The stop keeps the scratch root.
 
 ### Reach it
 

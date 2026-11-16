@@ -15,7 +15,7 @@
         "doctor": [
           "sh",
           "-c",
-          "test -d \"/tmp/tau-verification-$TAU_VERIFICATION_RUN\" && pnpm pi-version:check"
+          "test -d \"/tmp/tau-verification-$TAU_VERIFICATION_RUN\" && pi --version >/dev/null && pnpm pi-version:check"
         ],
         "stop": ["true"]
       }
