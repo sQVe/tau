@@ -135,6 +135,9 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
     - Do not review a finished agent ticket. When a later ticket in the slice builds on a contract
       it changes, such as a type, tool schema, or file format, run one fast review of it before the
       dependent ticket starts.
+    - When a ticket split out for judgment finishes, revise the body files of the tickets that build
+      on it to match its result before they start. Check them as step 7 says, and write them to
+      Linear with `start_slice` `read` and `apply` as step 9 says.
     - After the last worker, run `mutation_check` once with `mode: "changed"` and `base` set to
       `git merge-base <base> HEAD`, where `<base>` is the step 4 base. Skip it, and say so, when the
       repository has no `mutation.argv`. Report a tool error and go on to prune-comments.
