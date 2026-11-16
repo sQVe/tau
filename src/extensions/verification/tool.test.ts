@@ -17,6 +17,13 @@ interface FixtureOptions {
   launchScript?: string;
 }
 
+interface ToolInput {
+  action: 'launch' | 'register' | 'stop';
+  target?: string;
+  run?: string;
+  items?: { item: string; steps: number }[];
+}
+
 const fixture = async (options: FixtureOptions = {}) => {
   const directory = temporaryDirectory(onTestFinished, 'tau-verification-tool-');
   const root = await createTemporaryRepository(onTestFinished, 'tau-verification-tool-repo-');
@@ -49,7 +56,7 @@ const fixture = async (options: FixtureOptions = {}) => {
     }),
   );
 
-  const run = (input: Record<string, unknown>, deadlineMilliseconds?: number) =>
+  const run = (input: ToolInput, deadlineMilliseconds?: number) =>
     createVerificationTool({
       agentDirectory: directory,
       ...(deadlineMilliseconds === undefined ? {} : { deadlineMilliseconds }),
