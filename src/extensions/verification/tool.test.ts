@@ -95,7 +95,7 @@ it('launch, register, and stop save a valid run record', async () => {
   const stopped = await run({ action: 'stop', run: launch.run });
   const stop = stopped.details as StopResult;
 
-  expect(stop).toMatchObject({ run: launch.run, exitCode: 0 });
+  expect(stop).toMatchObject({ run: launch.run, exitCode: 0, freshness: { fresh: true } });
 
   const read = await readRunRecord(runRecordPath(launch.directory));
 
@@ -434,14 +434,97 @@ it('stops a run after a malformed second target is added', async () => {
   expect(stop).toMatchObject({ run: launch.run, exitCode: 0 });
 });
 
-it('refuses a field from another action', async () => {
+it('refuses a command that cannot start and a later stop succeeds', async () => {
   const { root, run } = await fixture();
 
-  await expect(run({ action: 'launch', target: 'app', run: 'other' })).rejects.toThrow(
-    'launch does not take run.',
+  const launched = await run({ action: 'launch', target: 'app' });
+  const launch = launched.details as LaunchResult;
+
+  if (launch.status !== 'ready') {
+    throw new Error('The launch did not become ready.');
+  }
+
+  const configPath = join(root, '.pi', 'tau.json');
+
+  const config = JSON.parse(await readFile(configPath, 'utf8')) as {
+    verification: { targets: { app: { stop: string[] } } };
+  };
+
+  config.verification.targets.app.stop = ['tau-command-that-does-not-exist'];
+  await writeFile(configPath, JSON.stringify(config));
+
+  await expect(run({ action: 'stop', run: launch.run })).rejects.toThrow(
+    new RegExp(
+      `^The stop for run ${launch.run} could not start: .*tau-command-that-does-not-exist.*See ${join(launch.directory, 'stop.log')}.*Call stop again after fixing the command\\.$`,
+      'u',
+    ),
   );
 
-  await expect(readdir(join(root, '.tau', 'verification'))).rejects.toThrow(/ENOENT/u);
+  const failed = await readRunRecord(runRecordPath(launch.directory));
+
+  expect(failed.status).toBe('valid');
+
+  if (failed.status !== 'valid') {
+    return;
+  }
+
+  expect(failed.record.stop).toBeNull();
+  expect(failed.record.treeAtStop).toBeNull();
+  expect(existsSync(join(launch.directory, 'stop.log'))).toBe(true);
+
+  config.verification.targets.app.stop = ['sh', '-c', 'exit 0'];
+  await writeFile(configPath, JSON.stringify(config));
+
+  const stopped = await run({ action: 'stop', run: launch.run });
+  const stop = stopped.details as StopResult;
+
+  expect(stop).toMatchObject({ run: launch.run, exitCode: 0 });
+});
+
+it('refuses to stop a run whose directory has no run record', async () => {
+  const { root, run } = await fixture();
+  const runName = 'orphan';
+  const directory = join(root, '.tau', 'verification', runName);
+
+  await mkdir(directory, { recursive: true });
+
+  await expect(run({ action: 'stop', run: runName })).rejects.toThrow(
+    `The run ${runName} has no run record at ${join(directory, 'run.json')}.`,
+  );
+});
+
+it.each([
+  {
+    input: { action: 'launch' as const, target: 'app', run: 'other' },
+    message: 'launch does not take run.',
+  },
+  {
+    input: { action: 'launch' as const, target: 'app', items: [{ item: 'login', steps: 1 }] },
+    message: 'launch does not take items.',
+  },
+  { input: { action: 'launch' as const }, message: 'launch needs target.' },
+  {
+    input: { action: 'register' as const, target: 'app', run: 'other', items: [] },
+    message: 'register does not take target.',
+  },
+  {
+    input: { action: 'register' as const, items: [{ item: 'login', steps: 1 }] },
+    message: 'register needs run.',
+  },
+  { input: { action: 'register' as const, run: 'other' }, message: 'register needs items.' },
+  {
+    input: { action: 'stop' as const, target: 'app', run: 'other' },
+    message: 'stop does not take target.',
+  },
+  {
+    input: { action: 'stop' as const, run: 'other', items: [{ item: 'login', steps: 1 }] },
+    message: 'stop does not take items.',
+  },
+  { input: { action: 'stop' as const }, message: 'stop needs run.' },
+])('refuses $message', async ({ input, message }) => {
+  const { run } = await fixture();
+
+  await expect(run(input)).rejects.toThrow(message);
 });
 
 it('refuses to stop a run whose record names another run', async () => {
