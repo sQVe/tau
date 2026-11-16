@@ -19,7 +19,8 @@ or changes things where they cannot see it.
 ## Decision
 
 Tau saves each improvement fact as one versioned JSON event file in the project root's
-`.tau/improvement/`, starts no background work, and changes nothing without the user's approval.
+`.tau/improvement/`, changes nothing without the user's approval, and starts one background task:
+the sweep at manager session start.
 
 ### Events
 
@@ -55,8 +56,19 @@ Tau saves each improvement fact as one versioned JSON event file in the project 
 
 ### No background timer
 
-Recording and review start only inside a Pi session the user runs, or from the user's command.
-Nothing runs on a schedule outside Pi.
+Recording and review start only inside a Pi session the user runs, or from the user's command. Each
+manager session start runs the sweep in the background with a time budget. A worker session runs
+none, and nothing runs while Pi is closed.
+
+### Sweep index
+
+- The index lives at `tau/improvement/index.json` under the agent directory. It keeps a byte cursor
+  per transcript, because transcripts grow in place.
+- The index is a cache rebuilt from events and transcripts. A damaged index is replaced, not
+  refused.
+- One lock lets one sweep run at a time.
+- A cursor moves only in the index write after its events exist.
+- A failed `gh` read records unknown and moves no cursor of that project.
 
 ### Approval
 
@@ -69,7 +81,10 @@ or ticket.
 
 - One project keeps one history across all its worktrees.
 - Saving a correction is safe to retry.
-- The user sees and approves every change the loop makes.
+- The user sees and approves every skill, check, rule, and ticket change the loop makes. The sweep
+  writes events and the index without asking.
+- A manager session catches up on saved transcripts and merged pull requests without a separate
+  command.
 - Each task fact names the transcript entry it comes from, so a signal can be checked by hand.
 
 ### Negative

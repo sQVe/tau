@@ -1,9 +1,12 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import { defineTool } from '@earendil-works/pi-coding-agent';
+import { defineTool, getAgentDir } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 
+import { piExec } from '../../command.js';
+import { runSweep } from '../../improvement/sweep.js';
 import { isWorkerProcess } from '../../worker.js';
 import { runRecord } from './recordAction.js';
+import { startSweep } from './sweepStart.js';
 
 const parameters = Type.Object({
   action: Type.Literal('record'),
@@ -12,7 +15,10 @@ const parameters = Type.Object({
 
 const description = '- record: save a user correction. {id,path,outcome}; existing: saved before.';
 
-export default function improvementExtension(pi: ExtensionAPI): void {
+export default function improvementExtension(
+  pi: ExtensionAPI,
+  options: { runSweep?: typeof runSweep } = {},
+): void {
   if (isWorkerProcess()) {
     return;
   }
@@ -31,4 +37,14 @@ export default function improvementExtension(pi: ExtensionAPI): void {
       },
     }),
   );
+
+  const sweepRunner = options.runSweep ?? runSweep;
+
+  pi.on('session_start', (_event, context) => {
+    // oxlint-disable-next-line typescript/no-floating-promises -- startSweep turns every failure into undefined, so the sweep cannot reject.
+    void startSweep(
+      { cwd: context.cwd, agentDirectory: getAgentDir(), exec: piExec(pi) },
+      sweepRunner,
+    );
+  });
 }
