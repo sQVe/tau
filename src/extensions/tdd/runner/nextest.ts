@@ -21,8 +21,7 @@ import {
   targetArguments,
   toolConfig,
 } from './nextestArguments.js';
-import { affectedRequestedFiles, planAffectedFocus, planFocus } from './nextestFocus.js';
-import type { FocusPlan } from './nextestFocus.js';
+import { affectedRequestedFiles, planForScope } from './nextestFocus.js';
 import { parseNextestList } from './nextestList.js';
 import { listOutcome, metadataOutcome, runOutcome } from './nextestResult.js';
 import { buildBinarySources } from './nextestSources.js';
@@ -188,22 +187,6 @@ const runStageArguments = (
   }
 
   return runArguments(request);
-};
-
-const planForScope = (
-  scope: RunTestsInput['scope'],
-  binaries: RustBinarySources[],
-  requestedFiles: string[],
-): FocusPlan => {
-  if (scope === 'full') {
-    return { kind: 'unscoped' };
-  }
-
-  if (scope === 'affected') {
-    return planAffectedFocus(binaries, requestedFiles);
-  }
-
-  return planFocus(binaries, requestedFiles);
 };
 
 const unreadableJson = (command: string, stdout: string): RunnerResult => {

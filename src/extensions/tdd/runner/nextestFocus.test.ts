@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { planAffectedFocus, planFocus } from './nextestFocus.js';
+import { planAffectedFocus, planFocus, planForScope } from './nextestFocus.js';
 import type { FocusPlan } from './nextestFocus.js';
 import type { RustBinarySources } from './rustAttribution.js';
 
@@ -110,4 +110,40 @@ it.for<{
   },
 ])('plans affected focus for $name', ({ binaries, requestedFiles, expected }) => {
   expect(planAffectedFocus(binaries, requestedFiles)).toEqual(expected);
+});
+
+it.for<{
+  name: string;
+  scope: 'focused' | 'affected' | 'full';
+  requestedFiles: string[];
+  expected: FocusPlan;
+}>([
+  {
+    name: 'full ignores requested files',
+    scope: 'full',
+    requestedFiles: ['src/sub.rs'],
+    expected: { kind: 'unscoped' },
+  },
+  {
+    name: 'focused without files is unscoped',
+    scope: 'focused',
+    requestedFiles: [],
+    expected: { kind: 'unscoped' },
+  },
+  {
+    name: 'affected without files collects none',
+    scope: 'affected',
+    requestedFiles: [],
+    expected: { kind: 'collect-none' },
+  },
+  {
+    name: 'affected scopes to the binary',
+    scope: 'affected',
+    requestedFiles: ['src/sub.rs'],
+    expected: { kind: 'scoped', binaryIds: ['demo'] },
+  },
+])('plans by scope: $name', ({ scope, requestedFiles, expected }) => {
+  const binaries = [binary('demo', { sources: ['src/lib.rs', 'src/sub.rs'] })];
+
+  expect(planForScope(scope, binaries, requestedFiles)).toEqual(expected);
 });

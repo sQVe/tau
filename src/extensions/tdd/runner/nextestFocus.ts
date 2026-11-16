@@ -1,4 +1,5 @@
 import type { RustBinarySources } from './rustAttribution.js';
+import type { RunTestsInput } from './types.js';
 
 export type FocusPlan =
   | { kind: 'collect-none' }
@@ -42,3 +43,19 @@ export const planAffectedFocus = (
   binaries: RustBinarySources[],
   requestedFiles: string[],
 ): FocusPlan => planSelection(binaries, affectedRequestedFiles(requestedFiles));
+
+export const planForScope = (
+  scope: RunTestsInput['scope'],
+  binaries: RustBinarySources[],
+  requestedFiles: string[],
+): FocusPlan => {
+  if (scope === 'full') {
+    return { kind: 'unscoped' };
+  }
+
+  if (scope === 'affected') {
+    return planAffectedFocus(binaries, requestedFiles);
+  }
+
+  return planFocus(binaries, requestedFiles);
+};
