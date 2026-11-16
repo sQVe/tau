@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { readdir, readFile, realpath } from 'node:fs/promises';
+import { mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
@@ -10,9 +10,15 @@ import {
   createTemporaryRepository,
   git,
 } from '../../../tests/gitRepository.js';
-import { parseEvent } from '../../improvement/event.js';
-import { recordCorrection, runRecord } from './recordAction.js';
-import type { CorrectionFacts } from './recordAction.js';
+import { parseEvent, writeEvent } from '../../improvement/event.js';
+import {
+  recordBacklog,
+  recordCorrection,
+  recordDecision,
+  recordReview,
+  runRecord,
+} from './recordAction.js';
+import type { BacklogFacts, CorrectionFacts, DecisionFacts, ReviewFacts } from './recordAction.js';
 
 const cleanups: (() => Promise<void>)[] = [];
 
@@ -26,6 +32,41 @@ const factsFor = (cwd: string, overrides: Partial<CorrectionFacts> = {}): Correc
   sessionFile: undefined,
   toolCallId: 'call|1',
   summary: 'The user said to run tests through run_tests.',
+  createdAt: '2026-11-15T12:00:00.000Z',
+  ...overrides,
+});
+
+const reviewFactsFor = (cwd: string, overrides: Partial<ReviewFacts> = {}): ReviewFacts => ({
+  cwd,
+  sessionId: 'session-1',
+  sessionFile: undefined,
+  toolCallId: 'call|review',
+  pullRequest: 'https://github.com/example/repo/pull/1',
+  outcome: 'The task passed.',
+  createdAt: '2026-11-15T12:00:00.000Z',
+  ...overrides,
+});
+
+const backlogFactsFor = (cwd: string, overrides: Partial<BacklogFacts> = {}): BacklogFacts => ({
+  cwd,
+  sessionId: 'session-1',
+  sessionFile: undefined,
+  toolCallId: 'call|backlog',
+  review: 'review-1',
+  item: 1,
+  summary: 'Split the module.',
+  createdAt: '2026-11-15T12:00:00.000Z',
+  ...overrides,
+});
+
+const decisionFactsFor = (cwd: string, overrides: Partial<DecisionFacts> = {}): DecisionFacts => ({
+  cwd,
+  sessionId: 'session-1',
+  sessionFile: undefined,
+  toolCallId: 'call|decision',
+  review: 'review-1',
+  item: 1,
+  choice: 'approved',
   createdAt: '2026-11-15T12:00:00.000Z',
   ...overrides,
 });
@@ -127,6 +168,169 @@ describe('recordCorrection', () => {
   });
 });
 
+describe('recordReview', () => {
+  it('saves a review event with its pull request and keeps it on retry', async () => {
+    const root = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+
+    const first = await recordReview(reviewFactsFor(root));
+
+    const second = await recordReview(
+      reviewFactsFor(root, { outcome: 'A retry.', createdAt: '2026-11-15T12:01:00.000Z' }),
+    );
+
+    const events = await readEventFiles(await realpath(root));
+
+    expect({
+      first: first.outcome,
+      second: second.outcome,
+      sameId: first.id === second.id,
+    }).toEqual({ first: 'saved', second: 'existing', sameId: true });
+
+    expect(first.id).toMatch(/^review-[0-9a-f]{32}$/u);
+
+    expect(
+      events.map(
+        (event) =>
+          event.kind === 'review' && {
+            pullRequest: event.pullRequest,
+            outcome: event.outcome,
+            evidence: event.evidence,
+          },
+      ),
+    ).toEqual([
+      {
+        pullRequest: 'https://github.com/example/repo/pull/1',
+        outcome: 'The task passed.',
+        evidence: [
+          { kind: 'session', sessionId: 'session-1', toolCallId: 'call|review' },
+          { kind: 'pullRequest', url: 'https://github.com/example/repo/pull/1' },
+        ],
+      },
+    ]);
+  });
+});
+
+describe('recordDecision', () => {
+  it('saves one decision per review item and keeps the first on retry', async () => {
+    const root = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+    const review = await recordReview(reviewFactsFor(root));
+
+    const first = await recordDecision(
+      decisionFactsFor(root, { review: review.id, item: 2, choice: 'approved' }),
+    );
+
+    const second = await recordDecision(
+      decisionFactsFor(root, { review: review.id, item: 2, choice: 'rejected' }),
+    );
+
+    const events = await readEventFiles(await realpath(root));
+
+    expect({ id: first.id, first: first.outcome, second: second.outcome }).toEqual({
+      id: `decision-${review.id}-2`,
+      first: 'saved',
+      second: 'existing',
+    });
+
+    expect(
+      events
+        .filter((event) => event.kind === 'decision')
+        .map((event) => ({ subject: event.subject, choice: event.choice })),
+    ).toEqual([{ subject: review.id, choice: 'approved' }]);
+  });
+});
+
+describe('recordBacklog', () => {
+  it("saves a backlog item with the review's pull request", async () => {
+    const root = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+    const review = await recordReview(reviewFactsFor(root));
+
+    const saved = await recordBacklog(
+      backlogFactsFor(root, { review: review.id, item: 3, summary: 'Split the module.' }),
+    );
+
+    const events = await readEventFiles(await realpath(root));
+    const backlog = events.find((event) => event.kind === 'backlog');
+
+    expect(saved.id).toBe(`backlog-${review.id}-3`);
+
+    expect(backlog).toMatchObject({
+      summary: 'Split the module.',
+      pullRequest: 'https://github.com/example/repo/pull/1',
+      evidence: [
+        { kind: 'session', sessionId: 'session-1', toolCallId: 'call|backlog' },
+        { kind: 'pullRequest', url: 'https://github.com/example/repo/pull/1' },
+      ],
+    });
+  });
+});
+
+it('refuses a decision or backlog item for a review that does not exist', async () => {
+  const root = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+  const projectRoot = await realpath(root);
+
+  await writeEvent(projectRoot, {
+    version: 1,
+    id: 'merge-1',
+    kind: 'merge',
+    createdAt: '2026-11-15T12:00:00.000Z',
+    evidence: [],
+    repository: 'example/repo',
+    pullRequest: 'https://github.com/example/repo/pull/1',
+    mergedAt: '2026-11-15T12:00:00.000Z',
+  });
+
+  const failures = [];
+
+  for (const review of ['review-missing', 'merge-1']) {
+    const expected = `No review event ${review} in ${join(projectRoot, '.tau', 'improvement')}.`;
+
+    const decision = await recordDecision(decisionFactsFor(root, { review })).then(
+      () => 'no error',
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    );
+
+    const backlog = await recordBacklog(backlogFactsFor(root, { review })).then(
+      () => 'no error',
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    );
+
+    failures.push({ decision, backlog, expected });
+  }
+
+  expect(failures).toEqual([
+    {
+      decision: `No review event review-missing in ${join(projectRoot, '.tau', 'improvement')}.`,
+      backlog: `No review event review-missing in ${join(projectRoot, '.tau', 'improvement')}.`,
+      expected: `No review event review-missing in ${join(projectRoot, '.tau', 'improvement')}.`,
+    },
+    {
+      decision: `No review event merge-1 in ${join(projectRoot, '.tau', 'improvement')}.`,
+      backlog: `No review event merge-1 in ${join(projectRoot, '.tau', 'improvement')}.`,
+      expected: `No review event merge-1 in ${join(projectRoot, '.tau', 'improvement')}.`,
+    },
+  ]);
+
+  expect((await readdir(join(projectRoot, '.tau', 'improvement'))).toSorted()).toEqual([
+    'merge-1.json',
+  ]);
+});
+
+it('refuses a decision when an event file is damaged', async () => {
+  const root = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+  const directory = join(await realpath(root), '.tau', 'improvement');
+  const damaged = join(directory, 'review-damaged.json');
+
+  await mkdir(directory, { recursive: true });
+  await writeFile(damaged, '{not json', 'utf8');
+
+  const failure = await recordDecision(decisionFactsFor(root, { review: 'review-damaged' })).then(
+    () => 'no error',
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  );
+
+  expect(failure).toContain(damaged);
+});
+
 describe('runRecord', () => {
   it('refuses a whitespace-only summary and saves nothing', async () => {
     const root = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
@@ -136,13 +340,17 @@ describe('runRecord', () => {
       sessionManager: { getSessionId: () => 'session-1', getSessionFile: () => undefined },
     } as unknown as ExtensionContext;
 
-    const failure = await runRecord('call-1', ' \n\t ', context).then(
+    const failure = await runRecord(
+      'call-1',
+      { action: 'record', kind: 'correction', summary: ' \n\t ' },
+      context,
+    ).then(
       () => 'no error',
       (error: unknown) => (error instanceof Error ? error.message : String(error)),
     );
 
     expect({ failure, saved: existsSync(join(root, '.tau', 'improvement')) }).toEqual({
-      failure: 'record needs summary.',
+      failure: 'record kind correction needs summary.',
       saved: false,
     });
   });

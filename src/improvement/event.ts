@@ -140,7 +140,8 @@ const isSafeEventId = (id: string) => new RegExp(safeEventIdPattern, 'u').test(i
 
 const isUnpublished = (name: string) => name.startsWith('.receipt-');
 
-const eventDirectory = (projectRoot: string) => join(projectRoot, '.tau', eventDirectoryPath);
+export const eventDirectory = (projectRoot: string): string =>
+  join(projectRoot, '.tau', eventDirectoryPath);
 
 export const parseEvent = (path: string, eventText: string): ImprovementEvent =>
   parseVersionedRecord(path, eventText, eventOptions);

@@ -86,6 +86,7 @@ const pureModules = [
   'src/extensions/draftReview/reviewDecisions.ts',
   'src/extensions/fullCheck/idleDecision.ts',
   'src/extensions/fullCheck/mutationVerdict.ts',
+  'src/extensions/improvement/recordRequest.ts',
   'src/extensions/inbox/arrivalDecision.ts',
   'src/extensions/inbox/guardDecision.ts',
   'src/extensions/mergeWatch/autoMergeRequest.ts',
@@ -252,6 +253,7 @@ const findingLines = (found: string[]) => found.map((finding) => Number(finding.
 
 // The outside libraries a registered module may import, by module path.
 const pureLibraries: Readonly<Record<string, readonly string[]>> = {
+  'src/extensions/improvement/recordRequest.ts': ['typebox'],
   'src/extensions/tdd/inputGlob.ts': ['minimatch'],
   'src/extensions/tdd/projectPath.ts': ['node:path'],
   'src/extensions/tdd/runner/cargoInputFiles.ts': ['node:path'],

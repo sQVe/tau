@@ -144,6 +144,7 @@ it('records a correction from the session the manager runs', async () => {
 
   const { path } = await runManagerTool<{ path: string }>(root, {
     action: 'record',
+    kind: 'correction',
     summary: 'Use run_tests for tests.',
   });
 
@@ -332,23 +333,53 @@ it('refreshes the status item after a record call', async () => {
   await writeSweepIndex(agentDirectory, sweepIndex(projectRoot, 'caughtUp'));
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
 
-  await runManagerTool(root, { action: 'record', summary: 'Use run_tests.' }, setStatus);
+  await runManagerTool(
+    root,
+    { action: 'record', kind: 'correction', summary: 'Use run_tests.' },
+    setStatus,
+  );
 
   await vi.waitFor(() => {
     expect(setStatus).toHaveBeenCalledWith('improvement', 'improve: correct due');
   });
 });
 
+it('records a review from the session the manager runs', async () => {
+  const root = await createTemporaryRepository(onTestFinished);
+
+  const { id, path } = await runManagerTool<{ id: string; path: string }>(root, {
+    action: 'record',
+    kind: 'review',
+    pullRequest: 'https://github.com/example/repo/pull/1',
+    outcome: 'The task passed.',
+  });
+
+  const event = parseEvent(path, await readFile(path, 'utf8'));
+
+  expect(id).toMatch(/^review-[0-9a-f]{32}$/u);
+
+  expect(event).toMatchObject({
+    id,
+    kind: 'review',
+    pullRequest: 'https://github.com/example/repo/pull/1',
+    outcome: 'The task passed.',
+    evidence: [
+      { kind: 'transcript', path: '/sessions/one.jsonl', toolCallId: 'call-1' },
+      { kind: 'pullRequest', url: 'https://github.com/example/repo/pull/1' },
+    ],
+  });
+});
+
 it('refuses a record call without a summary', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  const failure = await runManagerTool(root, { action: 'record' }).then(
+  const failure = await runManagerTool(root, { action: 'record', kind: 'correction' }).then(
     () => 'no error',
     (error: unknown) => (error instanceof Error ? error.message : String(error)),
   );
 
   expect({ failure, saved: existsSync(join(root, '.tau', 'improvement')) }).toEqual({
-    failure: 'record needs summary.',
+    failure: 'record kind correction needs summary.',
     saved: false,
   });
 });
