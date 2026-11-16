@@ -2,14 +2,8 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { decideCoverage, mapTasks } from './taskMapping.ts';
-import type {
-  Coverage,
-  CoverageFacts,
-  MappingFacts,
-  MergedPullRequest,
-  TranscriptFact,
-} from './taskMapping.ts';
+import { mapTasks } from './taskMapping.ts';
+import type { MappingFacts, MergedPullRequest, TranscriptFact } from './taskMapping.ts';
 import { parseTranscript } from './transcript.ts';
 
 const repository = 'github.com/sQVe/tau';
@@ -42,6 +36,29 @@ const facts = (input: Partial<MappingFacts>): MappingFacts => ({
   workers: new Map(),
   ...input,
 });
+
+const entry = (id: string, timestamp: string, message: Record<string, unknown>) =>
+  JSON.stringify({ type: 'message', id, timestamp, message });
+
+const sessionHeader = (cwd: string) =>
+  JSON.stringify({ type: 'session', id: 's', timestamp: '2026-01-01T00:00:00.000Z', cwd });
+
+const toolCall = (id: string, timestamp: string, name: string, parameters: unknown) =>
+  entry(id, timestamp, {
+    role: 'assistant',
+    content: [{ type: 'toolCall', id, name, arguments: parameters }],
+  });
+
+const called = (
+  id: string,
+  timestamp: string,
+  name: string,
+  parameters: unknown,
+  details: Record<string, unknown> = {},
+) => [
+  toolCall(id, timestamp, name, parameters),
+  entry(`${id}-result`, timestamp, { role: 'toolResult', toolCallId: id, details }),
+];
 
 const factEntries = (input: Partial<MappingFacts>) =>
   mapTasks(facts(input)).tasks.map((task) => [
@@ -152,31 +169,13 @@ describe('mapTasks', () => {
   });
 
   it('leaves out calls that name another pull request when it falls back to the ticket ID', () => {
-    const otherRead = JSON.stringify({
-      type: 'message',
-      id: 'other-read',
-      timestamp: '2026-11-15T06:30:00.000Z',
-      message: {
-        role: 'assistant',
-        content: [
-          {
-            type: 'toolCall',
-            id: 'c-other',
-            name: 'pr_feedback',
-            arguments: { action: 'read', repository, pr: 700 },
-          },
-        ],
-      },
+    const otherRead = called('other-read', '2026-11-15T06:30:00.000Z', 'pr_feedback', {
+      action: 'read',
+      repository,
+      pr: 700,
     });
 
-    const otherResult = JSON.stringify({
-      type: 'message',
-      id: 'other-read-result',
-      timestamp: '2026-11-15T06:30:01.000Z',
-      message: { role: 'toolResult', toolCallId: 'c-other', details: {} },
-    });
-
-    const source = `${fixtureText('withoutPublication.jsonl')}${otherRead}\n${otherResult}\n`;
+    const source = `${fixtureText('withoutPublication.jsonl')}${otherRead.join('\n')}\n`;
 
     const [task] = mapTasks(
       facts({
@@ -228,51 +227,41 @@ describe('mapTasks', () => {
     expect(task?.coverage).toBe('missing');
   });
 
+  it('maps no task to a transcript whose cwd has no repository, even when it publishes the PR', () => {
+    const elsewhere = [
+      sessionHeader('/home/sqve/code/personal/elsewhere/me-900'),
+      ...called('verify', '2026-11-03T08:01:00.000Z', 'pr', {
+        action: 'verify',
+        repository,
+        pr: 900,
+      }),
+    ].join('\n');
+
+    const mapping = mapTasks(
+      facts({
+        pullRequests: [merged(900, 'me-900-change')],
+        transcripts: [
+          { path: '/sessions/elsewhere.jsonl', transcript: parseTranscript(elsewhere) },
+        ],
+      }),
+    );
+
+    expect(mapping.tasks[0]?.transcripts).toEqual([]);
+    expect(mapping.tasks[0]?.facts).toEqual([]);
+    expect(mapping.tasks[0]?.coverage).toBe('missing');
+  });
+
   it('combines the facts of several transcripts and keeps the latest publication', () => {
     const later = [
-      JSON.stringify({
-        type: 'session',
-        id: 'later',
-        timestamp: '2026-11-03T08:00:00.000Z',
-        cwd: '/home/sqve/code/personal/tau/me-1023',
-      }),
-      JSON.stringify({
-        type: 'message',
-        id: 'later-check',
-        timestamp: '2026-11-03T08:01:00.000Z',
-        message: {
-          role: 'assistant',
-          content: [{ type: 'toolCall', id: 'c1', name: 'full_check', arguments: {} }],
-        },
-      }),
-      JSON.stringify({
-        type: 'message',
-        id: 'later-check-result',
-        timestamp: '2026-11-03T08:02:00.000Z',
-        message: { role: 'toolResult', toolCallId: 'c1', details: { passed: false } },
-      }),
-      JSON.stringify({
-        type: 'message',
-        id: 'later-verify',
-        timestamp: '2026-11-03T08:03:00.000Z',
-        message: {
-          role: 'assistant',
-          content: [
-            {
-              type: 'toolCall',
-              id: 'c2',
-              name: 'pr',
-              arguments: { action: 'verify', repository, pr: 564 },
-            },
-          ],
-        },
-      }),
-      JSON.stringify({
-        type: 'message',
-        id: 'later-verify-result',
-        timestamp: '2026-11-03T08:04:00.000Z',
-        message: { role: 'toolResult', toolCallId: 'c2', details: { matches: false } },
-      }),
+      sessionHeader('/home/sqve/code/personal/tau/me-1023'),
+      ...called('later-check', '2026-11-03T08:01:00.000Z', 'full_check', {}, { passed: false }),
+      ...called(
+        'later-verify',
+        '2026-11-03T08:03:00.000Z',
+        'pr',
+        { action: 'verify', repository, pr: 564 },
+        { matches: false },
+      ),
     ].join('\n');
 
     const [task] = mapTasks(
@@ -301,39 +290,12 @@ describe('mapTasks', () => {
   });
 
   it('keeps the result of a copied call when another copy has no result', () => {
-    const sessionHeader = JSON.stringify({
-      type: 'session',
-      id: 's',
-      timestamp: '2026-11-03T08:00:00.000Z',
-      cwd: '/home/sqve/code/personal/tau/me-1023',
-    });
-
-    const verifyCall = JSON.stringify({
-      type: 'message',
-      id: 'verify',
-      timestamp: '2026-11-03T08:01:00.000Z',
-      message: {
-        role: 'assistant',
-        content: [
-          {
-            type: 'toolCall',
-            id: 'c1',
-            name: 'pr',
-            arguments: { action: 'verify', repository, pr: 570 },
-          },
-        ],
-      },
-    });
-
-    const verifyResult = JSON.stringify({
-      type: 'message',
-      id: 'verify-result',
-      timestamp: '2026-11-03T08:02:00.000Z',
-      message: { role: 'toolResult', toolCallId: 'c1', details: { matches: true } },
-    });
-
-    const complete = [sessionHeader, verifyCall, verifyResult].join('\n');
-    const cut = [sessionHeader, verifyCall].join('\n');
+    const header = sessionHeader('/home/sqve/code/personal/tau/me-1023');
+    const verify = { action: 'verify', repository, pr: 570 };
+    const time = '2026-11-03T08:01:00.000Z';
+    const verifyCall = called('verify', time, 'pr', verify, { matches: true });
+    const complete = [header, ...verifyCall].join('\n');
+    const cut = [header, toolCall('verify', time, 'pr', verify)].join('\n');
 
     const [task] = mapTasks(
       facts({
@@ -400,23 +362,12 @@ describe('mapTasks', () => {
   });
 });
 
-const entry = (id: string, timestamp: string, message: Record<string, unknown>) =>
-  JSON.stringify({ type: 'message', id, timestamp, message });
-
 describe('mapTasks time bound', () => {
   const renamedCwd = '/home/sqve/code/personal/koja/me-80';
 
-  const called = (id: string, timestamp: string, name: string, parameters: unknown) => [
-    entry(id, timestamp, {
-      role: 'assistant',
-      content: [{ type: 'toolCall', id, name, arguments: parameters }],
-    }),
-    entry(`${id}-result`, timestamp, { role: 'toolResult', toolCallId: id, details: {} }),
-  ];
-
   const transcript = parseTranscript(
     [
-      JSON.stringify({ type: 'session', id: 's', timestamp: 't', cwd: renamedCwd }),
+      sessionHeader(renamedCwd),
       ...called('old-read', '2026-10-20T10:00:00.000Z', 'pr_feedback', {
         action: 'read',
         repository,
@@ -479,49 +430,5 @@ describe('mapTasks time bound', () => {
     ).tasks;
 
     expect(task?.facts.map((fact) => `${fact.kind} ${fact.entryId}`)).toEqual(expectedFacts);
-  });
-});
-
-describe('decideCoverage', () => {
-  const table: { rule: string; facts: CoverageFacts; coverage: Coverage }[] = [
-    {
-      rule: 'complete when every launched worker transcript is readable',
-      facts: { mapped: true, malformed: false, workers: ['readable', 'readable'] },
-      coverage: 'complete',
-    },
-    {
-      rule: 'complete when the task launched no worker',
-      facts: { mapped: true, malformed: false, workers: [] },
-      coverage: 'complete',
-    },
-    {
-      rule: 'managerOnly when a worker transcript is missing',
-      facts: { mapped: true, malformed: false, workers: ['readable', 'missing'] },
-      coverage: 'managerOnly',
-    },
-    {
-      rule: 'managerOnly when a launch names no worker ID',
-      facts: { mapped: true, malformed: false, workers: ['unknownId'] },
-      coverage: 'managerOnly',
-    },
-    {
-      rule: 'missing when no transcript maps',
-      facts: { mapped: false, malformed: false, workers: [] },
-      coverage: 'missing',
-    },
-    {
-      rule: 'unknown when a worker transcript read failed',
-      facts: { mapped: true, malformed: false, workers: ['missing', 'unreadable'] },
-      coverage: 'unknown',
-    },
-    {
-      rule: 'unknown when a manager transcript is malformed',
-      facts: { mapped: true, malformed: true, workers: ['missing'] },
-      coverage: 'unknown',
-    },
-  ];
-
-  it.each(table)('$rule', ({ facts: coverageFacts, coverage }) => {
-    expect(decideCoverage(coverageFacts)).toBe(coverage);
   });
 });

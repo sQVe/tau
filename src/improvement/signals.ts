@@ -1,4 +1,4 @@
-import type { MissingEvidence, TaskEvidence } from './taskFacts.ts';
+import type { MissingEvidence, TaskEvidence, TaskFact } from './taskFacts.ts';
 import type { Coverage } from './taskMapping.ts';
 
 type EvidenceKind = MissingEvidence['affects'][number];
@@ -33,25 +33,14 @@ const countState = (count: number, threshold: number, unknown: boolean): SignalS
   return unknown ? 'unknown' : 'notFired';
 };
 
-const reviewRounds = (evidence: TaskEvidence): SignalState => {
-  const count = evidence.facts.filter((fact) => fact.kind === 'reviewCapture').length;
-  const unknown = affects(evidence.missing, ['reviewCapture']);
+const countSignal = (
+  evidence: TaskEvidence,
+  kind: TaskFact['kind'] & EvidenceKind,
+  threshold: number,
+): SignalState => {
+  const count = evidence.facts.filter((fact) => fact.kind === kind).length;
 
-  return countState(count, reviewRoundThreshold, unknown);
-};
-
-const feedbackRounds = (evidence: TaskEvidence): SignalState => {
-  const count = evidence.facts.filter((fact) => fact.kind === 'feedbackRound').length;
-  const unknown = affects(evidence.missing, ['feedbackRound']);
-
-  return countState(count, feedbackRoundThreshold, unknown);
-};
-
-const checkFailures = (evidence: TaskEvidence): SignalState => {
-  const count = evidence.facts.filter((fact) => fact.kind === 'checkFailure').length;
-  const unknown = affects(evidence.missing, ['checkFailure']);
-
-  return countState(count, checkFailureThreshold, unknown);
+  return countState(count, threshold, affects(evidence.missing, [kind]));
 };
 
 const revert = (reverted: boolean | 'unknown'): SignalState => {
@@ -63,9 +52,9 @@ const revert = (reverted: boolean | 'unknown'): SignalState => {
 };
 
 const transcriptSignals = (facts: ReviewSignalFacts): ReviewSignals => ({
-  reviewRounds: reviewRounds(facts.evidence),
-  feedbackRounds: feedbackRounds(facts.evidence),
-  checkFailures: checkFailures(facts.evidence),
+  reviewRounds: countSignal(facts.evidence, 'reviewCapture', reviewRoundThreshold),
+  feedbackRounds: countSignal(facts.evidence, 'feedbackRound', feedbackRoundThreshold),
+  checkFailures: countSignal(facts.evidence, 'checkFailure', checkFailureThreshold),
   revert: revert(facts.reverted),
 });
 
