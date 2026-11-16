@@ -17,6 +17,12 @@ type VerificationTargets =
 const example =
   '{"launch": ["pnpm", "app:up"], "doctor": ["pnpm", "app:doctor"], "stop": ["pnpm", "app:down"]}';
 
+const commandExamples = {
+  launch: '["pnpm", "app:up"]',
+  doctor: '["pnpm", "app:doctor"]',
+  stop: '["pnpm", "app:down"]',
+};
+
 const targetKeys = { [anyKey]: { launch: true, doctor: true, stop: true } } satisfies KnownKeys;
 
 const targetNamePattern = /^[a-z0-9][a-z0-9-]*$/u;
@@ -74,12 +80,12 @@ const requireTarget = (source: string, name: string, value: unknown): Record<str
 const requireCommand = (
   source: string,
   name: string,
-  command: string,
+  command: keyof typeof commandExamples,
   value: unknown,
 ): string[] => {
   if (value === undefined) {
     throw new Error(
-      `Invalid Tau config ${source}: verification.targets.${name}.${command} is missing. Give it an argv such as ["pnpm", "app:down"].`,
+      `Invalid Tau config ${source}: verification.targets.${name}.${command} is missing. Give it an argv such as ${commandExamples[command]}.`,
     );
   }
 

@@ -48,6 +48,13 @@ it.each([
     reason: 'stop is missing',
   },
   {
+    name: 'a target without launch',
+    value: { targets: { app: { doctor: ['pnpm'], stop: ['pnpm'] } } },
+    field: 'verification.targets.app.launch',
+    example: '["pnpm", "app:up"]',
+    reason: 'launch is missing',
+  },
+  {
     name: 'an empty launch argv',
     value: {
       targets: { app: { launch: [], doctor: ['pnpm'], stop: ['pnpm'] } },
