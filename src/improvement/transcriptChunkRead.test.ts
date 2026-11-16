@@ -1,16 +1,40 @@
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { open } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { describe, expect, it, onTestFinished } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.ts';
 import { readTranscriptChunk } from './improvement.ts';
+
+type PositionalRead = (
+  this: FileHandle,
+  buffer: Buffer,
+  offset: number,
+  length: number,
+  position: number,
+) => ReturnType<FileHandle['read']>;
 
 const directory = () => temporaryDirectory(onTestFinished, 'tau-transcript-chunk-');
 
 const write = (path: string, content: string) => {
   mkdirSync(join(path, '..'), { recursive: true });
   writeFileSync(path, content);
+};
+
+const mockRead = async (path: string, makeRead: (read: PositionalRead) => PositionalRead) => {
+  const probe = await open(path);
+  const handle = Object.getPrototypeOf(probe) as FileHandle;
+
+  await probe.close();
+
+  const read = handle.read as PositionalRead;
+  const spy = vi.spyOn(handle, 'read').mockImplementation(makeRead(read) as FileHandle['read']);
+
+  onTestFinished(() => {
+    spy.mockRestore();
+  });
 };
 
 describe('readTranscriptChunk', () => {
@@ -102,5 +126,54 @@ describe('readTranscriptChunk', () => {
     await expect(readTranscriptChunk(path, -1, 10)).rejects.toThrow(/offset/u);
     await expect(readTranscriptChunk(path, 1.5, 10)).rejects.toThrow(/offset/u);
     await expect(readTranscriptChunk(path, 0, 0)).rejects.toThrow(/byteLimit/u);
+    await expect(readTranscriptChunk(path, 0, 1.5)).rejects.toThrow(/byteLimit/u);
+  });
+
+  it('assembles a chunk from short reads', async () => {
+    const path = join(directory(), 'session.jsonl');
+
+    write(path, 'aaaa\n');
+
+    await mockRead(
+      path,
+      (read) =>
+        function (buffer, offset, length, position) {
+          return read.call(this, buffer, offset, Math.min(length, 1), position);
+        },
+    );
+
+    expect(await readTranscriptChunk(path, 0, 2)).toEqual({
+      status: 'read',
+      text: 'aaaa\n',
+      nextOffset: 5,
+      size: 5,
+    });
+  });
+
+  it('stops when a read returns no bytes', async () => {
+    const path = join(directory(), 'session.jsonl');
+
+    write(path, 'one\n');
+
+    await mockRead(path, (read) => {
+      let zeroReads = 2;
+
+      return function (buffer, offset, length, position) {
+        if (zeroReads > 0) {
+          zeroReads -= 1;
+
+          return Promise.resolve({ bytesRead: 0, buffer });
+        }
+
+        return read.call(this, buffer, offset, length, position);
+      };
+    });
+
+    expect(await readTranscriptChunk(path, 0, 10)).toEqual({
+      status: 'read',
+      text: '',
+      nextOffset: 0,
+      size: 4,
+    });
   });
 });

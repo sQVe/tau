@@ -40,6 +40,7 @@ const merged = (number: number, headBranch: string): MergedPullRequest => ({
 
 const pullRequests = [
   merged(1, 'me-1-special'),
+  merged(2, 'me-2-repeated-codemode'),
   merged(560, 'me-1023-launch-subagent-workers-as-hc-children-with-assignment-files'),
   merged(562, 'me-1024-carry-worker-questions-and-replies-over-hc'),
   merged(564, 'me-1025-enforce-worker-deadlines-with-an-hc-watchdog'),
@@ -87,6 +88,26 @@ const special = lines(
   toolResult('b', { details: { matches: true } }),
 );
 
+const codemodeResult = (pr: number) =>
+  toolResult('a', {
+    details: {
+      calls: [
+        {
+          name: 'pr',
+          args: JSON.stringify({ action: 'verify', repository, pr }),
+          status: 'ok',
+        },
+      ],
+    },
+  });
+
+const repeatedCodemode = lines(
+  header,
+  toolCall('a', 'codemode', { code: 'x' }),
+  codemodeResult(1),
+  codemodeResult(2),
+);
+
 const fixtureFacts = (name: string): TranscriptFact => ({
   path: `/sessions/${name}`,
   transcript: parseTranscript(fixtureText(name)),
@@ -113,5 +134,24 @@ describe('mapTasks', () => {
     expect('calls' in kept.transcript && kept.transcript.calls.map((call) => call.tool)).toContain(
       'bash',
     );
+
+    const repeatedFull = {
+      path: '/sessions/repeated-codemode.jsonl',
+      transcript: parseTranscript(repeatedCodemode),
+    };
+
+    const repeatedKept = {
+      path: '/sessions/repeated-codemode.jsonl',
+      transcript: chunkedTranscript(repeatedCodemode),
+    };
+
+    expect(mapTasks(facts([repeatedKept]))).toEqual(mapTasks(facts([repeatedFull])));
+
+    const nested =
+      'calls' in repeatedKept.transcript
+        ? repeatedKept.transcript.calls.filter((call) => call.viaCodemode)
+        : [];
+
+    expect(nested.map((call) => call.arguments?.pr)).toEqual([2]);
   });
 });

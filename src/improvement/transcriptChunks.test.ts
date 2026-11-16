@@ -138,4 +138,33 @@ describe('continueTranscript', () => {
       details: { passed: true },
     });
   });
+
+  it('replaces nested calls when a codemode result repeats', () => {
+    const first = toolResult('a', {
+      details: {
+        calls: [{ name: 'pr', args: '{"action":"verify","pr":1}', status: 'ok' }],
+      },
+    });
+
+    const second = toolResult('a', {
+      details: {
+        calls: [{ name: 'pr', args: '{"action":"verify","pr":2}', status: 'ok' }],
+      },
+    });
+
+    const source = lines(header, toolCall('a', 'codemode'), first, second);
+
+    const transcript = chunked(
+      `${header}\n`,
+      `${toolCall('a', 'codemode')}\n`,
+      `${first}\n`,
+      `${second}\n`,
+    );
+
+    expect(transcript).toEqual(parseTranscript(source));
+
+    const nested = 'calls' in transcript ? transcript.calls.filter((call) => call.viaCodemode) : [];
+
+    expect(nested.map((call) => call.arguments)).toEqual([{ action: 'verify', pr: 2 }]);
+  });
 });

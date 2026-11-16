@@ -197,18 +197,28 @@ const keptCall = (call: ToolCall): ToolCall => {
   };
 };
 
-const withoutArguments = (call: ToolCall): ToolCall => ({
-  entryId: call.entryId,
-  callId: call.callId,
-  timestamp: call.timestamp,
-  tool: call.tool,
-  viaCodemode: call.viaCodemode,
-});
+const keptCodemodeCall = (call: ToolCall): ToolCall => {
+  let result: CallResult | undefined;
+
+  if (call.result !== undefined) {
+    result =
+      call.result.error === undefined ? {} : { error: call.result.error.slice(0, errorLimit) };
+  }
+
+  return {
+    entryId: call.entryId,
+    callId: call.callId,
+    timestamp: call.timestamp,
+    tool: call.tool,
+    viaCodemode: call.viaCodemode,
+    ...(result === undefined ? {} : { result }),
+  };
+};
 
 export const keepFactCalls = (calls: readonly ToolCall[]): ToolCall[] =>
   calls.flatMap((call) => {
     if (call.tool === 'codemode') {
-      return call.result === undefined ? [withoutArguments(call)] : [];
+      return [keptCodemodeCall(call)];
     }
 
     const isFact = factTools.has(call.tool) || namedPullRequest(call) !== undefined;

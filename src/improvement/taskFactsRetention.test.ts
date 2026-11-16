@@ -150,9 +150,14 @@ const table: { rule: string; call: ToolCall; kept: ToolCall[] }[] = [
     kept: [withoutArguments('codemode')],
   },
   {
-    rule: 'drops a codemode call with a result',
+    rule: 'keeps a codemode call with a result and removes its arguments and details',
     call: call('codemode', { code: 'x' }, result({ details: { calls: [] } })),
-    kept: [],
+    kept: [call('codemode', undefined, result({}))],
+  },
+  {
+    rule: 'keeps a codemode error without its details',
+    call: call('codemode', { code: 'x' }, result({ error: 'failed', details: { calls: [] } })),
+    kept: [call('codemode', undefined, result({ error: 'failed' }))],
   },
   {
     rule: 'cuts a long error to 200 characters',
