@@ -73,7 +73,8 @@ in the owning project, and that session files the ticket. A rejected row changes
     - Pick the owning project from its route. A Tau skill, tool, or instruction goes to the Tau
       repository. A repository check goes to the task's repository. A stomme rule goes to stomme.
     - Resolve the owning project's root. For the task's own repository, use the `projectRoot`
-      returned in step 3. For another project, ask the user for its root path.
+      returned in step 3. When it is null, ask the user for the task repository's root. For another
+      project, ask the user for its root path.
     - Follow the [worktree skill](../worktree/SKILL.md) with `grove add <branch>` run from that
       root. Grove creates the worktree under the current directory. The branch is a descriptive
       kebab-case name from the proposal, because no ticket exists yet.

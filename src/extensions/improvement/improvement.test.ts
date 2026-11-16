@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -519,6 +519,29 @@ it('reads a merged task through the improvement tool', async () => {
   });
 });
 
+it('creates no session folder when reading a task', async () => {
+  const worktree = await createTemporaryRepository(onTestFinished);
+  const agent = temporaryDirectory(onTestFinished, 'tau-improvement-task-');
+  const exec = mergedPullRequestExec();
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', agent);
+
+  const before = readdirSync(agent);
+
+  const details = await runTaskTool(
+    worktree,
+    {
+      action: 'task',
+      pullRequest: 'https://github.com/owner/repo/pull/7',
+      worktree,
+    },
+    exec.exec,
+  );
+
+  expect(details).toMatchObject({ coverage: 'missing' });
+  expect(readdirSync(agent)).toEqual(before);
+});
+
 it('refuses a task whose merged pull request cannot be read', async () => {
   const worktree = await createTemporaryRepository(onTestFinished);
   const agent = temporaryDirectory(onTestFinished, 'tau-improvement-task-');
@@ -558,7 +581,7 @@ it('refuses a task whose session folder cannot be read', async () => {
   rmSync(sessionDirectory, { recursive: true, force: true });
   writeFile(sessionDirectory, 'not a directory');
 
-  const failure = await runManagerTool(
+  const failure = await runTaskTool(
     worktree,
     {
       action: 'task',

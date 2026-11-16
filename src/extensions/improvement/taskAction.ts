@@ -1,11 +1,9 @@
-import { basename, join } from 'node:path';
-
-import { SessionManager } from '@earendil-works/pi-coding-agent';
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import type { Exec } from '../../command.js';
 import { readMergedPullRequest } from '../../github/mergedPullRequest.js';
 import { findProjectRoot } from '../../improvement/projectRoot.js';
+import { sessionDirectoryFor } from '../../improvement/sessionDirectory.js';
 import type { Coverage } from '../../improvement/taskMapping.js';
 import { readTaskTranscripts } from '../../improvement/taskTranscripts.js';
 import type { TaskRequest } from './recordRequest.js';
@@ -17,12 +15,6 @@ export interface TaskResult {
   coverage: Coverage;
   projectRoot: string | null;
 }
-
-const sessionDirectoryFor = (worktree: string, agentDirectory: string): string => {
-  const defaultDirectory = SessionManager.create(worktree).getSessionDir();
-
-  return join(agentDirectory, 'sessions', basename(defaultDirectory));
-};
 
 const projectRootFor = async (worktree: string): Promise<string | null> => {
   try {
