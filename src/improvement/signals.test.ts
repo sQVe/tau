@@ -3,6 +3,7 @@ import { expect, it } from 'vitest';
 import { decideReviewSignals } from './signals.ts';
 import type { ReviewSignals } from './signals.ts';
 import type { MissingEvidence, TaskEvidence, TaskFact } from './taskFacts.ts';
+import type { Coverage } from './taskMapping.ts';
 
 const place = {
   entryId: 'e1',
@@ -50,6 +51,7 @@ const table: {
   name: string;
   evidence: TaskEvidence;
   reverted: boolean | 'unknown';
+  coverage?: Coverage;
   expected: ReviewSignals;
 }[] = [
   {
@@ -184,10 +186,68 @@ const table: {
     reverted: false,
     expected: expected({ reviewFixRounds: 'fired', feedbackRounds: 'unknown' }),
   },
+  {
+    name: 'reports transcript signals unknown when no transcript maps, and fires a revert',
+    evidence: evidence([]),
+    reverted: true,
+    coverage: 'missing',
+    expected: {
+      reviewFixRounds: 'unknown',
+      feedbackRounds: 'unknown',
+      checkFailures: 'unknown',
+      revert: 'fired',
+      qaAfterReview: 'unknown',
+    },
+  },
+  {
+    name: 'reports transcript signals unknown when no transcript maps, and no revert',
+    evidence: evidence([]),
+    reverted: false,
+    coverage: 'missing',
+    expected: {
+      reviewFixRounds: 'unknown',
+      feedbackRounds: 'unknown',
+      checkFailures: 'unknown',
+      revert: 'notFired',
+      qaAfterReview: 'unknown',
+    },
+  },
+  {
+    name: 'reports transcript signals unknown, even with firing facts, when coverage is unknown',
+    evidence: evidence([
+      review(),
+      fix(),
+      fix(),
+      fix(),
+      checkFailure(),
+      checkFailure(),
+      launch('qa'),
+    ]),
+    reverted: 'unknown',
+    coverage: 'unknown',
+    expected: {
+      reviewFixRounds: 'unknown',
+      feedbackRounds: 'unknown',
+      checkFailures: 'unknown',
+      revert: 'unknown',
+      qaAfterReview: 'unknown',
+    },
+  },
+  {
+    name: 'decides transcript signals from the facts when only the manager transcript maps',
+    evidence: evidence([review(), fix(), fix(), fix()]),
+    reverted: false,
+    coverage: 'managerOnly',
+    expected: expected({ reviewFixRounds: 'fired' }),
+  },
 ];
 
 it.each(table.map((row) => [row.name, row] as const))('%s', (_name, row) => {
-  expect(decideReviewSignals({ evidence: row.evidence, reverted: row.reverted })).toStrictEqual(
-    row.expected,
-  );
+  const facts = {
+    evidence: row.evidence,
+    reverted: row.reverted,
+    coverage: row.coverage ?? 'complete',
+  };
+
+  expect(decideReviewSignals(facts)).toStrictEqual(row.expected);
 });

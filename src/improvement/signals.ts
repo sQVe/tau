@@ -1,4 +1,5 @@
 import type { MissingEvidence, TaskEvidence, TaskFact } from './taskFacts.ts';
+import type { Coverage } from './taskMapping.ts';
 
 type EvidenceKind = MissingEvidence['affects'][number];
 
@@ -15,6 +16,7 @@ export interface ReviewSignals {
 export interface ReviewSignalFacts {
   evidence: TaskEvidence;
   reverted: boolean | 'unknown';
+  coverage: Coverage;
 }
 
 const reviewFixRoundThreshold = 3;
@@ -92,10 +94,28 @@ const qaAfterReview = (evidence: TaskEvidence): SignalState => {
   return affects(evidence.missing, ['reviewCapture', 'qaLaunch']) ? 'unknown' : 'notFired';
 };
 
-export const decideReviewSignals = (facts: ReviewSignalFacts): ReviewSignals => ({
+const transcriptSignals = (facts: ReviewSignalFacts): ReviewSignals => ({
   reviewFixRounds: reviewFixRounds(facts.evidence),
   feedbackRounds: feedbackRounds(facts.evidence),
   checkFailures: checkFailures(facts.evidence),
   revert: revert(facts.reverted),
   qaAfterReview: qaAfterReview(facts.evidence),
 });
+
+// Without a mapped, readable manager transcript, an absent fact says nothing about the task.
+const readsTranscripts = (coverage: Coverage) =>
+  coverage === 'complete' || coverage === 'managerOnly';
+
+export const decideReviewSignals = (facts: ReviewSignalFacts): ReviewSignals => {
+  if (!readsTranscripts(facts.coverage)) {
+    return {
+      reviewFixRounds: 'unknown',
+      feedbackRounds: 'unknown',
+      checkFailures: 'unknown',
+      revert: revert(facts.reverted),
+      qaAfterReview: 'unknown',
+    };
+  }
+
+  return transcriptSignals(facts);
+};
