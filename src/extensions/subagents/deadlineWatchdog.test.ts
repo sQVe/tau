@@ -110,7 +110,7 @@ const savedAssignment = async (
 
 const harness = (hcFake: HcFake) => {
   const hc: HcRuntime = { exec: hcFake.exec, connect: hcFake.connect, cwd: process.cwd() };
-  const ended: string[] = [];
+  const ended: { assignmentId: string; address: string; parentSession: string }[] = [];
   const order: string[] = [];
   const notifications: [string, string | undefined][] = [];
 
@@ -118,7 +118,7 @@ const harness = (hcFake: HcFake) => {
     deliver: () => undefined,
     showEnded: (_context, worker) => {
       order.push('showEnded');
-      ended.push(worker.assignmentId);
+      ended.push(worker);
     },
     markDeadlinePending: () => undefined,
     clearDeadlinePending: () => undefined,
@@ -176,7 +176,9 @@ const standalone = (hcFake: HcFake) => {
 };
 
 it('kills at the deadline without sending a warning', async () => {
-  const { context, scanner, deadline, ended, commands } = await setup({ deadline: now + 120_000 });
+  const { context, scanner, deadline, ended, commands, path } = await setup({
+    deadline: now + 120_000,
+  });
 
   await scanner.scan(context);
 
@@ -186,8 +188,17 @@ it('kills at the deadline without sending a warning', async () => {
     expect(commands('kill')).toHaveLength(1);
   });
 
+  const assignment = await readAssignment(path);
+
   expect(commands('send')).toHaveLength(0);
-  expect(ended).toHaveLength(1);
+
+  expect(ended).toEqual([
+    {
+      assignmentId: assignment?.assignmentId,
+      address: 't-child',
+      parentSession: assignment?.parentSession,
+    },
+  ]);
 });
 
 it('labels the worker as ended at its deadline after the kill, once the deadline message is shown', async () => {
