@@ -5,7 +5,7 @@ import type { Static } from 'typebox';
 
 import { errorMessage } from '../../errors.js';
 import { readVersionedRecord, savedVersion, writeRecord } from '../../record.js';
-import { decideViewerReply } from './reviewDecisions.js';
+import { decideViewerReply, isStagedPathRefused } from './reviewDecisions.js';
 import type { ViewerReplyDecision, ViewerReplyState } from './reviewDecisions.js';
 
 export interface ViewerFile {
@@ -109,9 +109,6 @@ const refuseRetiredRequest = (path: string, value: unknown): string | undefined 
     `Viewer request ${path} was saved by an older Tau, so this Tau cannot read it. Open a new review.`,
   );
 };
-
-const isStagedPathRefused = (stagedPath: string): boolean =>
-  isAbsolute(stagedPath) || stagedPath.split('/').includes('..');
 
 export const readViewerRequest = async (
   recordDirectory: string,
