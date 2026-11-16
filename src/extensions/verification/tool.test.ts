@@ -318,3 +318,17 @@ it('refuses a field from another action', async () => {
 
   await expect(readdir(join(root, '.tau', 'verification'))).rejects.toThrow(/ENOENT/u);
 });
+
+it('refuses to stop a run whose record names another run', async () => {
+  const { run, marker } = await fixture();
+  const first = (await run({ action: 'launch', target: 'app' })).details as LaunchResult;
+  const second = (await run({ action: 'launch', target: 'app' })).details as LaunchResult;
+  const otherRecord = await readFile(runRecordPath(second.directory), 'utf8');
+
+  await writeFile(runRecordPath(first.directory), otherRecord);
+
+  await expect(run({ action: 'stop', run: first.run })).rejects.toThrow(second.run);
+  expect(existsSync(marker)).toBe(false);
+  expect(await readFile(runRecordPath(first.directory), 'utf8')).toBe(otherRecord);
+  expect(await readdir(first.directory)).not.toContain('stop.log');
+});

@@ -8,7 +8,7 @@ import type { VerificationTarget } from '../../config/verificationTargets.js';
 import { readGit, runGit } from '../../git.js';
 import { findTauRoot, requireTauChild } from '../../tauDirectory.js';
 import type { RunRecord } from '../../verification/records.js';
-import { readRunRecord, runRecordPath } from '../../verification/verification.js';
+import { readRun, runRecordPath } from '../../verification/verification.js';
 
 export interface RunFacts {
   head: string | null;
@@ -54,7 +54,7 @@ export const runDirectory = (root: string, run: string): string => {
 
 export const readRunRecordOrThrow = async (directory: string, run: string): Promise<RunRecord> => {
   const path = runRecordPath(directory);
-  const read = await readRunRecord(path);
+  const read = await readRun(directory);
 
   if (read.status === 'valid') {
     return read.record;

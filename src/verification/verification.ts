@@ -285,6 +285,18 @@ export const writeRunRecord = async (runDirectory: string, record: RunRecord): P
   await writeRecord(path, record);
 };
 
+export const readRun = async (runDirectory: string): Promise<RecordRead<RunRecord>> => {
+  const read = await readRunRecord(runRecordPath(runDirectory));
+
+  if (read.status !== 'valid') {
+    return read;
+  }
+
+  const problem = runDirectoryProblem(read.record, basename(runDirectory));
+
+  return problem === undefined ? read : { status: 'malformed', problem };
+};
+
 const registeredItemProblem = (
   record: ItemRecord,
   run: RunRecord,
@@ -345,16 +357,10 @@ export const readRuns = async (verificationDirectory: string): Promise<RunRead[]
   return Promise.all(
     names.map(async (run) => {
       const directory = join(verificationDirectory, run);
-      const read = await readRunRecord(runRecordPath(directory));
+      const read = await readRun(directory);
 
       if (read.status !== 'valid') {
         return { run, directory, read, items: [] };
-      }
-
-      const problem = runDirectoryProblem(read.record, run);
-
-      if (problem !== undefined) {
-        return { run, directory, read: { status: 'malformed', problem }, items: [] };
       }
 
       const items = await Promise.all(
