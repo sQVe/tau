@@ -24,7 +24,14 @@ const merged = (
   number: number,
   headBranch: string,
   createdAt = '2026-01-01T00:00:00Z',
-): MergedPullRequest => ({ repository, number, headBranch, createdAt });
+): MergedPullRequest => ({
+  repository,
+  number,
+  url: `https://github.com/sQVe/tau/pull/${number}`,
+  headBranch,
+  createdAt,
+  mergedAt: '2026-11-15T12:00:00Z',
+});
 
 const facts = (input: Partial<MappingFacts>): MappingFacts => ({
   pullRequests: [],
@@ -126,6 +133,7 @@ describe('mapTasks', () => {
 
     expect(task?.publication).toEqual({
       path: '/sessions/branchWithoutTicket.jsonl',
+      callId: 'toolu_01KPUpwjsRnJxnLDxkDy3GkR',
       entryId: '0775c033',
       timestamp: '2026-11-12T18:29:23.498Z',
     });
@@ -285,6 +293,7 @@ describe('mapTasks', () => {
 
     expect(task?.publication).toEqual({
       path: '/sessions/later.jsonl',
+      callId: 'later-verify',
       entryId: 'later-verify',
       timestamp: '2026-11-03T08:03:00.000Z',
     });

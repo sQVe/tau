@@ -34,8 +34,10 @@ const chunkedTranscript = (source: string) => {
 const merged = (number: number, headBranch: string): MergedPullRequest => ({
   repository,
   number,
+  url: `https://github.com/sQVe/tau/pull/${number}`,
   headBranch,
   createdAt: '2026-01-01T00:00:00Z',
+  mergedAt: '2026-11-15T12:00:00Z',
 });
 
 const pullRequests = [
