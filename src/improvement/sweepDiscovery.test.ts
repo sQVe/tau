@@ -116,5 +116,45 @@ it('stops discovery at the budget before reading a transcript', async () => {
     deadline: start.getTime(),
   });
 
-  expect(result).toEqual({ status: 'budget' });
+  expect(result).toMatchObject({ status: 'budget', index: { transcripts: {} } });
+});
+
+it('saves each transcript discovered before the budget ends', async () => {
+  const fixture = await createSweepFixture(onTestFinished);
+
+  for (let index = 0; index < 4; index += 1) {
+    fixture.writeSession(`manager-${index}.jsonl`, session(fixture.repository));
+  }
+
+  fixture.setMerged([merged(562, 'me-1023-change')]);
+
+  const start = new Date('2026-11-15T12:00:00.000Z');
+  const budget = 1000;
+  let previous = 0;
+
+  while (previous < 4) {
+    let calls = 0;
+
+    const clock = () => {
+      calls += 1;
+
+      return calls >= 4 ? new Date(start.getTime() + budget) : start;
+    };
+
+    const outcome = await fixture.run({ now: clock, budgetMilliseconds: budget });
+    const index = await fixture.readIndex();
+    const count = Object.keys(index.transcripts).length;
+
+    expect(count).toBeGreaterThan(previous);
+    expect(outcome.outcome === 'budget' || count === 4).toBe(true);
+    previous = count;
+  }
+
+  fixture.setNow(start);
+
+  expect(await fixture.run()).toEqual({ outcome: 'caughtUp' });
+
+  const events = await readEvents(fixture.repository);
+
+  expect(events.events.some((event) => event.kind === 'merge')).toBe(true);
 });

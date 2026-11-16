@@ -174,7 +174,7 @@ const runLocked = async (
   });
 
   if (discovery.status === 'budget') {
-    return finishBudget(options, index, startedAt);
+    return finishBudget(options, discovery.index, startedAt);
   }
 
   if (discovery.status === 'failed') {

@@ -61,7 +61,7 @@ export interface DiscoveryOptions {
 
 export type DiscoveryResult =
   | { status: 'ok'; index: SweepIndex; repositories: ReadonlyMap<string, string> }
-  | { status: 'budget' }
+  | { status: 'budget'; index: SweepIndex; repositories: ReadonlyMap<string, string> }
   | { status: 'failed'; reason: string };
 
 const emptyTranscriptState: TranscriptState = {
@@ -257,6 +257,89 @@ const refreshNullRepository = async (
   }
 };
 
+const discoveredIndex = (
+  options: DiscoveryOptions,
+  transcripts: SweepIndex['transcripts'],
+  projects: SweepIndex['projects'],
+): SweepIndex => ({ ...options.index, transcripts, projects });
+
+const budgetResult = (
+  options: DiscoveryOptions,
+  transcripts: SweepIndex['transcripts'],
+  projects: SweepIndex['projects'],
+): DiscoveryResult => {
+  const index = discoveredIndex(options, transcripts, projects);
+
+  return { status: 'budget', index, repositories: repositoriesOf(index) };
+};
+
+const discoverUnresolved = async (
+  sessions: readonly string[],
+  transcripts: SweepIndex['transcripts'],
+  projects: SweepIndex['projects'],
+  options: DiscoveryOptions,
+  cache: Map<string, Promise<LocationResult>>,
+): Promise<DiscoveryResult | undefined> => {
+  const unresolved = sessions.filter((path) => transcripts[path]?.status !== 'resolved');
+
+  for (const path of unresolved) {
+    if (budgetReached(options)) {
+      return budgetResult(options, transcripts, projects);
+    }
+
+    // oxlint-disable-next-line no-await-in-loop -- Each transcript is resolved before the next starts.
+    const result = await resolveTranscript({
+      path,
+      exec: options.exec,
+      signal: options.signal,
+      cache,
+    });
+
+    transcripts[path] = result.entry;
+
+    if (result.status === 'resolved') {
+      const root = result.entry.projectRoot;
+
+      projects[root] = projectEntry({ ...options.index, projects }, root, result.repository);
+    }
+
+    if (budgetReached(options)) {
+      return budgetResult(options, transcripts, projects);
+    }
+  }
+
+  return undefined;
+};
+
+const refreshRepositories = async (
+  sessions: readonly string[],
+  transcripts: SweepIndex['transcripts'],
+  projects: SweepIndex['projects'],
+  options: DiscoveryOptions,
+  cache: Map<string, Promise<LocationResult>>,
+): Promise<DiscoveryResult | undefined> => {
+  for (const path of sessions) {
+    const entry = transcripts[path];
+
+    if (entry?.status !== 'resolved' || projects[entry.projectRoot]?.repository !== null) {
+      continue;
+    }
+
+    if (budgetReached(options)) {
+      return budgetResult(options, transcripts, projects);
+    }
+
+    // oxlint-disable-next-line no-await-in-loop -- Each repository is resolved before the next starts.
+    await refreshNullRepository(entry, projects, options, cache);
+
+    if (budgetReached(options)) {
+      return budgetResult(options, transcripts, projects);
+    }
+  }
+
+  return undefined;
+};
+
 export const discoverTranscripts = async (options: DiscoveryOptions): Promise<DiscoveryResult> => {
   let sessions: string[];
 
@@ -272,46 +355,19 @@ export const discoverTranscripts = async (options: DiscoveryOptions): Promise<Di
   const projects = { ...options.index.projects };
   const cache = new Map<string, Promise<LocationResult>>();
 
-  for (const path of sessions) {
-    if (budgetReached(options)) {
-      return { status: 'budget' };
-    }
+  const unresolved = await discoverUnresolved(sessions, transcripts, projects, options, cache);
 
-    const existing = transcripts[path];
-
-    if (existing?.status === 'resolved') {
-      // oxlint-disable-next-line no-await-in-loop -- Each repository is resolved before the next starts.
-      await refreshNullRepository(existing, projects, options, cache);
-
-      continue;
-    }
-
-    // oxlint-disable-next-line no-await-in-loop -- Each transcript is resolved before the next starts.
-    const result = await resolveTranscript({
-      path,
-      exec: options.exec,
-      signal: options.signal,
-      cache,
-    });
-
-    if (budgetReached(options)) {
-      return { status: 'budget' };
-    }
-
-    transcripts[path] = result.entry;
-
-    if (result.status === 'resolved') {
-      const root = result.entry.projectRoot;
-
-      projects[root] = projectEntry({ ...options.index, projects }, root, result.repository);
-    }
+  if (unresolved !== undefined) {
+    return unresolved;
   }
 
-  if (budgetReached(options)) {
-    return { status: 'budget' };
+  const refreshed = await refreshRepositories(sessions, transcripts, projects, options, cache);
+
+  if (refreshed !== undefined) {
+    return refreshed;
   }
 
-  const index = { ...options.index, transcripts, projects };
+  const index = discoveredIndex(options, transcripts, projects);
 
   return { status: 'ok', index, repositories: repositoriesOf(index) };
 };
