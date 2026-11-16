@@ -7,6 +7,7 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.ts';
 import { readTranscriptChunk } from './improvement.ts';
+import { continueTranscript, finishTranscript } from './transcript.ts';
 
 type PositionalRead = (
   this: FileHandle,
@@ -46,13 +47,25 @@ describe('readTranscriptChunk', () => {
 
     const first = await readTranscriptChunk(path, 0, 100);
 
-    expect(first).toEqual({ status: 'read', text: 'one\ntwo\n', nextOffset: 8, size: 15 });
+    expect(first).toEqual({
+      status: 'read',
+      text: 'one\ntwo\n',
+      nextOffset: 8,
+      size: 15,
+      skippedLines: 0,
+    });
 
     appendFileSync(path, ' line\n');
 
     const second = await readTranscriptChunk(path, 8, 100);
 
-    expect(second).toEqual({ status: 'read', text: 'partial line\n', nextOffset: 21, size: 21 });
+    expect(second).toEqual({
+      status: 'read',
+      text: 'partial line\n',
+      nextOffset: 21,
+      size: 21,
+      skippedLines: 0,
+    });
   });
 
   it('reads past the byte limit to the next newline', async () => {
@@ -65,6 +78,7 @@ describe('readTranscriptChunk', () => {
       text: 'aaaa\n',
       nextOffset: 5,
       size: 15,
+      skippedLines: 0,
     });
   });
 
@@ -78,6 +92,7 @@ describe('readTranscriptChunk', () => {
       text: '😀\n',
       nextOffset: 5,
       size: 8,
+      skippedLines: 0,
     });
 
     expect(await readTranscriptChunk(path, 5, 1)).toEqual({
@@ -85,6 +100,7 @@ describe('readTranscriptChunk', () => {
       text: 'é\n',
       nextOffset: 8,
       size: 8,
+      skippedLines: 0,
     });
   });
 
@@ -98,6 +114,7 @@ describe('readTranscriptChunk', () => {
       text: 'complete\n',
       nextOffset: 9,
       size: 16,
+      skippedLines: 0,
     });
 
     expect(await readTranscriptChunk(path, 9, 100)).toEqual({
@@ -105,6 +122,7 @@ describe('readTranscriptChunk', () => {
       text: '',
       nextOffset: 9,
       size: 16,
+      skippedLines: 0,
     });
   });
 
@@ -147,6 +165,7 @@ describe('readTranscriptChunk', () => {
       text: 'aaaa\n',
       nextOffset: 5,
       size: 5,
+      skippedLines: 0,
     });
   });
 
@@ -174,6 +193,88 @@ describe('readTranscriptChunk', () => {
       text: '',
       nextOffset: 0,
       size: 4,
+      skippedLines: 0,
     });
+  });
+
+  it('skips a line over the cap and counts it', async () => {
+    const path = join(directory(), 'session.jsonl');
+
+    write(path, '123456\nok\n');
+
+    expect(await readTranscriptChunk(path, 0, 100, 5)).toEqual({
+      status: 'read',
+      text: 'ok\n',
+      nextOffset: 10,
+      size: 10,
+      skippedLines: 1,
+    });
+  });
+
+  it('skips a long line that crosses the read window', async () => {
+    const path = join(directory(), 'session.jsonl');
+
+    write(path, '123456789\nok\n');
+
+    expect(await readTranscriptChunk(path, 0, 2, 5)).toEqual({
+      status: 'read',
+      text: '',
+      nextOffset: 10,
+      size: 13,
+      skippedLines: 1,
+    });
+
+    expect(await readTranscriptChunk(path, 10, 2, 5)).toEqual({
+      status: 'read',
+      text: 'ok\n',
+      nextOffset: 13,
+      size: 13,
+      skippedLines: 0,
+    });
+  });
+
+  it('leaves a partial line unread even when it is over the cap', async () => {
+    const path = join(directory(), 'session.jsonl');
+
+    write(path, '123456');
+
+    expect(await readTranscriptChunk(path, 0, 100, 5)).toEqual({
+      status: 'read',
+      text: '',
+      nextOffset: 0,
+      size: 6,
+      skippedLines: 0,
+    });
+  });
+
+  it('marks a transcript malformed when a line is skipped', async () => {
+    const path = join(directory(), 'session.jsonl');
+    const header = '{"type":"session","cwd":"/w"}\n';
+
+    write(path, `${header}${'x'.repeat(50)}\n`);
+
+    const chunk = await readTranscriptChunk(path, 0, 200, 40);
+
+    if (chunk.status !== 'read') {
+      throw new Error('The chunk is not readable.');
+    }
+
+    const state = continueTranscript(undefined, chunk.text);
+
+    const finished = finishTranscript({
+      ...state,
+      malformedLines: state.malformedLines + chunk.skippedLines,
+    });
+
+    expect(finished.status).toBe('malformed');
+  });
+
+  it('rejects an invalid line cap', async () => {
+    const path = join(directory(), 'session.jsonl');
+
+    write(path, 'one\n');
+
+    await expect(readTranscriptChunk(path, 0, 10, 0)).rejects.toThrow(/maxLineBytes/u);
+    await expect(readTranscriptChunk(path, 0, 10, 1.5)).rejects.toThrow(/maxLineBytes/u);
   });
 });

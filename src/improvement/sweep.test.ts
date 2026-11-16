@@ -123,7 +123,10 @@ it('reads only bytes after the cursor', async () => {
   await recordReads(path, reads);
 
   expect(await fixture.run()).toEqual({ outcome: 'caughtUp' });
-  expect(reads).toContainEqual({ length: Buffer.byteLength(line), position: entry.cursor });
+
+  const afterCursor = reads.filter(({ position }) => position >= entry.cursor);
+
+  expect(afterCursor).toEqual([{ length: Buffer.byteLength(line), position: entry.cursor }]);
 
   const after = await fixture.readIndex();
   const advanced = after.transcripts[path];

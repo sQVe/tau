@@ -104,8 +104,13 @@ const advanceEntry = async (
       return { status: 'unknown', reason: chunk.reason };
     }
 
-    state = continueTranscript(state, chunk.text);
-    state = { ...state, calls: keepFactCalls(state.calls) };
+    const continued = continueTranscript(state, chunk.text);
+
+    state = {
+      ...continued,
+      malformedLines: continued.malformedLines + chunk.skippedLines,
+      calls: keepFactCalls(continued.calls),
+    };
 
     const next = chunk.nextOffset;
 
@@ -165,6 +170,14 @@ const readEntry = async (
     return { status: 'ok', entry: current };
   }
 
+  if (current.projectRoot !== options.projectRoot) {
+    return {
+      status: 'ok',
+      entry: current,
+      ...(repository === undefined ? {} : { repository }),
+    };
+  }
+
   const advanced = await advanceEntry(path, current, options);
 
   if (advanced.status !== 'ok') {
@@ -175,6 +188,24 @@ const readEntry = async (
     status: 'ok',
     entry: { ...current, cursor: advanced.cursor, state: advanced.state },
     ...(repository === undefined ? {} : { repository }),
+  };
+};
+
+const recordMovedTranscript = (
+  projects: SweepIndex['projects'],
+  entry: SweepIndex['transcripts'][string],
+  repository: string | null | undefined,
+  currentRoot: string,
+) => {
+  if (entry.status !== 'resolved' || entry.projectRoot === currentRoot) {
+    return;
+  }
+
+  const previous = projects[entry.projectRoot];
+
+  projects[entry.projectRoot] = {
+    repository: repository ?? previous?.repository ?? null,
+    merged: previous?.merged ?? { status: 'notRead' },
   };
 };
 
@@ -212,13 +243,7 @@ const readProjectTranscripts = async (
     }
 
     transcripts[path] = result.entry;
-
-    if (result.entry.status === 'resolved' && result.entry.projectRoot !== options.projectRoot) {
-      projects[result.entry.projectRoot] = {
-        repository: result.repository ?? null,
-        merged: { status: 'notRead' },
-      };
-    }
+    recordMovedTranscript(projects, result.entry, result.repository, options.projectRoot);
   }
 
   return { status: 'ok', transcripts, projects };

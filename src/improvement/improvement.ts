@@ -35,9 +35,14 @@ export type WorkerRecordRead =
   | { status: 'unreadable'; reason: string };
 
 export type TranscriptChunk =
-  | { status: 'read'; text: string; nextOffset: number; size: number }
+  | { status: 'read'; text: string; nextOffset: number; size: number; skippedLines: number }
   | { status: 'missing' }
   | { status: 'unreadable'; reason: string };
+
+type LongLineRead =
+  | { status: 'line'; text: string; nextOffset: number }
+  | { status: 'skipped'; nextOffset: number }
+  | { status: 'partial'; nextOffset: number };
 
 const listFiles = async (directory: string) => {
   try {
@@ -212,13 +217,42 @@ const readBytes = async (handle: FileHandle, position: number, length: number) =
   return buffer.subarray(0, filled);
 };
 
-const readToNewline = async (
+const splitCompleteLines = (buffer: Buffer, maxLineBytes: number) => {
+  const text: string[] = [];
+  let skippedLines = 0;
+  let start = 0;
+
+  while (start < buffer.length) {
+    const newline = buffer.indexOf(newlineByte, start);
+
+    if (newline === -1) {
+      break;
+    }
+
+    const end = newline + 1;
+
+    if (end - start > maxLineBytes) {
+      skippedLines += 1;
+    } else {
+      text.push(buffer.subarray(start, end).toString('utf8'));
+    }
+
+    start = end;
+  }
+
+  return { text: text.join(''), skippedLines };
+};
+
+const readLongLine = async (
   handle: FileHandle,
   first: Buffer,
   offset: number,
   size: number,
-): Promise<{ text: string; nextOffset: number }> => {
-  const parts = [first];
+  maxLineBytes: number,
+): Promise<LongLineRead> => {
+  let parts = first.length > maxLineBytes ? [] : [first];
+  let length = first.length;
+  let overCap = first.length > maxLineBytes;
   let position = offset + first.length;
 
   while (position < size) {
@@ -229,29 +263,53 @@ const readToNewline = async (
       break;
     }
 
-    parts.push(chunk);
-    position += chunk.length;
-
     const newline = chunk.indexOf(newlineByte);
 
     if (newline !== -1) {
-      const before = parts.slice(0, -1).reduce((sum, part) => sum + part.length, 0);
-      const cut = before + newline + 1;
-      const text = Buffer.concat(parts).subarray(0, cut).toString('utf8');
+      const lineLength = length + newline + 1;
 
-      return { text, nextOffset: offset + cut };
+      if (overCap || lineLength > maxLineBytes) {
+        return { status: 'skipped', nextOffset: offset + lineLength };
+      }
+
+      parts.push(chunk.subarray(0, newline + 1));
+
+      return {
+        status: 'line',
+        text: Buffer.concat(parts).toString('utf8'),
+        nextOffset: offset + lineLength,
+      };
     }
+
+    length += chunk.length;
+
+    if (length > maxLineBytes) {
+      overCap = true;
+      parts = [];
+    } else {
+      parts.push(chunk);
+    }
+
+    position += chunk.length;
   }
 
-  return { text: '', nextOffset: offset };
+  return { status: 'partial', nextOffset: offset };
 };
+
+// oxlint-disable-next-line no-magic-numbers -- A 32 MiB line cap bounds the memory of one read.
+const defaultMaxLineBytes = 32 * 1024 * 1024;
 
 export const readTranscriptChunk = async (
   path: string,
   offset: number,
   byteLimit: number,
+  maxLineBytes = defaultMaxLineBytes,
 ): Promise<TranscriptChunk> => {
   parseChunkArguments(offset, byteLimit);
+
+  if (!Number.isInteger(maxLineBytes) || maxLineBytes < 1) {
+    throw new RangeError('maxLineBytes must be an integer of at least 1.');
+  }
 
   let handle: FileHandle;
 
@@ -271,22 +329,44 @@ export const readTranscriptChunk = async (
 
     if (newline !== -1) {
       const cut = newline + 1;
+      const lines = splitCompleteLines(first.subarray(0, cut), maxLineBytes);
 
       return {
         status: 'read',
-        text: first.subarray(0, cut).toString('utf8'),
+        text: lines.text,
         nextOffset: offset + cut,
         size,
+        skippedLines: lines.skippedLines,
       };
     }
 
     if (offset + first.length >= size) {
-      return { status: 'read', text: '', nextOffset: offset, size };
+      return { status: 'read', text: '', nextOffset: offset, size, skippedLines: 0 };
     }
 
-    const found = await readToNewline(handle, first, offset, size);
+    const found = await readLongLine(handle, first, offset, size, maxLineBytes);
 
-    return { status: 'read', ...found, size };
+    if (found.status === 'line') {
+      return {
+        status: 'read',
+        text: found.text,
+        nextOffset: found.nextOffset,
+        size,
+        skippedLines: 0,
+      };
+    }
+
+    if (found.status === 'skipped') {
+      return {
+        status: 'read',
+        text: '',
+        nextOffset: found.nextOffset,
+        size,
+        skippedLines: 1,
+      };
+    }
+
+    return { status: 'read', text: '', nextOffset: offset, size, skippedLines: 0 };
   } catch (error) {
     return { status: 'unreadable', reason: errorMessage(error) };
   } finally {
