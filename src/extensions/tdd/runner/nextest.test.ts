@@ -220,26 +220,174 @@ const run = async (
   return result;
 };
 
-it('rejects affected scope before looking up or spawning nextest', async () => {
+const affected = (cwd: string, files: string[], testNames: string[] = []): RunTestsInput => ({
+  scope: 'affected',
+  cwd,
+  verificationArgv: ['cargo', 'nextest', 'run'],
+  files,
+  testNames,
+});
+
+const listWithBinaries = (
+  workspace: string,
+  binaries: { binaryId: string; binaryPath: string; testNames: string[] }[],
+): string =>
+  JSON.stringify({
+    'rust-suites': Object.fromEntries(
+      binaries.map(({ binaryId, binaryPath, testNames }) => [
+        binaryId,
+        {
+          'binary-id': binaryId,
+          'binary-name': binaryId,
+          kind: 'lib',
+          'binary-path': binaryPath,
+          'package-id': 'package',
+          cwd: workspace,
+          testcases: Object.fromEntries(
+            testNames.map((name) => [
+              name,
+              { kind: 'test', ignored: false, 'filter-match': { status: 'matches' } },
+            ]),
+          ),
+        },
+      ]),
+    ),
+  });
+
+const writeTwoCrates = async (
+  workspace: string,
+): Promise<{ demoPath: string; otherPath: string }> => {
+  await mkdir(join(workspace, 'src'), { recursive: true });
+  await writeFile(join(workspace, 'src/lib.rs'), 'pub mod sub;\n', 'utf8');
+  await writeFile(join(workspace, 'src/sub.rs'), 'mod tests {}\n', 'utf8');
+  await writeFile(join(workspace, 'src/other.rs'), 'mod tests {}\n', 'utf8');
+
+  const demoPath = join(workspace, 'demo-abc');
+  const otherPath = join(workspace, 'other-def');
+
+  await writeFile(`${demoPath}.d`, `${demoPath}.d: src/lib.rs src/sub.rs\n`, 'utf8');
+  await writeFile(`${otherPath}.d`, `${otherPath}.d: src/other.rs\n`, 'utf8');
+
+  return { demoPath, otherPath };
+};
+
+it('runs only the binary whose sources include a changed file for affected scope', async ({
+  onTestFinished: cleanup,
+}) => {
+  const workspace = temporaryDirectory(cleanup, 'tau-nextest-affected-');
+  const { demoPath, otherPath } = await writeTwoCrates(workspace);
+
+  const report =
+    '<testsuites><testsuite name="demo"><testcase name="sub::tests::passes" classname="demo" time="0.001"/></testsuite></testsuites>';
+
+  const nextest = fakeNextest({
+    list: {
+      stdout: listWithBinaries(workspace, [
+        { binaryId: 'demo', binaryPath: demoPath, testNames: ['sub::tests::passes'] },
+        { binaryId: 'other', binaryPath: otherPath, testNames: ['other::tests::passes'] },
+      ]),
+    },
+    metadata: { stdout: metadataWithRoot(workspace, join(workspace, 'src/lib.rs')) },
+    run: { report },
+  });
+
+  const result = await run(affected(workspace, ['src/sub.rs'], ['ignored::name']), nextest.spawn);
+
+  expect(result.kind).toBe('pass');
+  expect(nextest.stages()).toEqual(['metadata', 'list', 'run']);
+  expect(nextest.calls.at(-1)?.argumentsList.slice(-2)).toEqual(['-E', 'binary_id(demo)']);
+});
+
+it('runs every listed test for affected scope when a binary has no dep-info', async ({
+  onTestFinished: cleanup,
+}) => {
+  const workspace = temporaryDirectory(cleanup, 'tau-nextest-affected-unscoped-');
+  const { demoPath } = await writeTwoCrates(workspace);
+  const missingPath = join(workspace, 'missing-ghi');
+
+  const report =
+    '<testsuites><testsuite name="demo"><testcase name="sub::tests::passes" classname="demo" time="0.001"/></testsuite></testsuites>';
+
+  const nextest = fakeNextest({
+    list: {
+      stdout: listWithBinaries(workspace, [
+        { binaryId: 'demo', binaryPath: demoPath, testNames: ['sub::tests::passes'] },
+        { binaryId: 'missing', binaryPath: missingPath, testNames: ['missing::tests::passes'] },
+      ]),
+    },
+    metadata: { stdout: metadataWithRoot(workspace, join(workspace, 'src/lib.rs')) },
+    run: { report },
+  });
+
+  const result = await run(affected(workspace, ['src/sub.rs'], ['ignored::name']), nextest.spawn);
+
+  expect(result.kind).toBe('pass');
+  expect(nextest.stages()).toEqual(['metadata', 'list', 'run']);
+  expect(nextest.calls.at(-1)?.argumentsList).not.toContain('-E');
+});
+
+it('runs focused names without requested files when dep-info is readable', async ({
+  onTestFinished: cleanup,
+}) => {
+  const workspace = temporaryDirectory(cleanup, 'tau-nextest-focused-no-files-');
+  const { demoPath, otherPath } = await writeTwoCrates(workspace);
+
+  const report =
+    '<testsuites><testsuite name="demo"><testcase name="sub::tests::passes" classname="demo" time="0.001"/></testsuite></testsuites>';
+
+  const nextest = fakeNextest({
+    list: {
+      stdout: listWithBinaries(workspace, [
+        { binaryId: 'demo', binaryPath: demoPath, testNames: ['sub::tests::passes'] },
+        { binaryId: 'other', binaryPath: otherPath, testNames: ['other::tests::passes'] },
+      ]),
+    },
+    metadata: { stdout: metadataWithRoot(workspace, join(workspace, 'src/lib.rs')) },
+    run: { report },
+  });
+
+  const result = await run(focusedIn(workspace, [], ['sub::tests::passes']), nextest.spawn);
+
+  expect(result.kind).toBe('pass');
+
+  expect(nextest.calls.at(-1)?.argumentsList.slice(-2)).toEqual([
+    '-E',
+    'test(=sub::tests::passes)',
+  ]);
+});
+
+it('collects no tests for affected scope without non-blank files and starts nothing', async () => {
   const nextest = fakeNextest({});
 
-  await expect(
-    run(
-      {
-        scope: 'affected',
-        cwd: '/repo',
-        verificationArgv: ['cargo', 'nextest', 'run'],
-        files: ['src/lib.rs'],
-        testNames: ['ignored'],
-      },
-      nextest.spawn,
-      { searchPath: '/missing' },
-    ),
-  ).rejects.toThrow(
-    'The nextest runner does not support scope "affected" yet; use "focused" or "full".',
-  );
+  const result = await run(affected('/repo', ['', '   ']), nextest.spawn, {
+    searchPath: '/missing',
+  });
 
+  expect(result.kind).toBe('no-tests-collected');
+  expect(result.diagnostics?.stages).toEqual([]);
   expect(nextest.calls).toEqual([]);
+});
+
+it('collects no tests for affected scope when no binary contains a changed file', async ({
+  onTestFinished: cleanup,
+}) => {
+  const workspace = temporaryDirectory(cleanup, 'tau-nextest-affected-none-');
+  const { demoPath, otherPath } = await writeTwoCrates(workspace);
+
+  const nextest = fakeNextest({
+    list: {
+      stdout: listWithBinaries(workspace, [
+        { binaryId: 'demo', binaryPath: demoPath, testNames: ['sub::tests::passes'] },
+        { binaryId: 'other', binaryPath: otherPath, testNames: ['other::tests::passes'] },
+      ]),
+    },
+    metadata: { stdout: metadataWithRoot(workspace, join(workspace, 'src/lib.rs')) },
+  });
+
+  const result = await run(affected(workspace, ['src/missing.rs']), nextest.spawn);
+
+  expect(result.kind).toBe('no-tests-collected');
+  expect(nextest.stages()).toEqual(['metadata', 'list']);
 });
 
 it('reports a build failure during list with the compiler output and starts no run', async () => {

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { planFocus } from './nextestFocus.js';
+import { planAffectedFocus, planFocus } from './nextestFocus.js';
 import type { FocusPlan } from './nextestFocus.js';
 import type { RustBinarySources } from './rustAttribution.js';
 
@@ -73,4 +73,41 @@ it.for<{
   },
 ])('plans focus for $name', ({ binaries, requestedFiles, expected }) => {
   expect(planFocus(binaries, requestedFiles)).toEqual(expected);
+});
+
+it.for<{
+  name: string;
+  binaries: RustBinarySources[];
+  requestedFiles: string[];
+  expected: FocusPlan;
+}>([
+  {
+    name: 'scopes to the binaries for the non-blank requested files',
+    binaries: [
+      binary('demo', { sources: ['src/lib.rs', 'src/sub.rs'] }),
+      binary('other', { sources: ['src/other.rs'] }),
+    ],
+    requestedFiles: ['', 'src/sub.rs', '   '],
+    expected: { kind: 'scoped', binaryIds: ['demo'] },
+  },
+  {
+    name: 'collects no tests when every requested file is blank',
+    binaries: [binary('demo', { sources: ['src/lib.rs'] })],
+    requestedFiles: ['', '  '],
+    expected: { kind: 'collect-none' },
+  },
+  {
+    name: 'collects no tests when no binary contains a requested file',
+    binaries: [binary('demo', { sources: ['src/lib.rs'] })],
+    requestedFiles: ['src/other.rs'],
+    expected: { kind: 'collect-none' },
+  },
+  {
+    name: 'stays unscoped when any binary has no dep-info',
+    binaries: [binary('demo', { sources: null })],
+    requestedFiles: ['src/lib.rs'],
+    expected: { kind: 'unscoped' },
+  },
+])('plans affected focus for $name', ({ binaries, requestedFiles, expected }) => {
+  expect(planAffectedFocus(binaries, requestedFiles)).toEqual(expected);
 });
