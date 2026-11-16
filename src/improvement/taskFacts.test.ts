@@ -42,6 +42,16 @@ const summary = (fact: TaskFact) => {
 
 const assignment = '/home/a/.pi/agent/tau/main-1/assignments/8f9d646e/assignment.json';
 const verify = { action: 'verify', repository, pr: 560 };
+const read = { action: 'read', repository, pr: 560 };
+const capture = { action: 'capture', target: { kind: 'workingTree' } };
+
+const withoutResult = (
+  tool: string,
+  parameters: Record<string, unknown> | undefined,
+): ToolCall => ({
+  ...call(tool, parameters),
+  result: undefined,
+});
 
 const table: { rule: string; call: ToolCall; facts: string[]; missing: string[][] }[] = [
   {
@@ -63,10 +73,46 @@ const table: { rule: string; call: ToolCall; facts: string[]; missing: string[][
     missing: [],
   },
   {
-    rule: 'a verify without a result is no publication',
-    call: { ...call('pr', verify), result: undefined },
+    rule: 'a verify without a result is missing evidence for a publication',
+    call: withoutResult('pr', verify),
+    facts: [],
+    missing: [['publication']],
+  },
+  {
+    rule: 'a pr action that is no fact is ignored without a result',
+    call: withoutResult('pr', { action: 'prepare' }),
     facts: [],
     missing: [],
+  },
+  {
+    rule: 'a pr_feedback read without a result is missing evidence for a round',
+    call: withoutResult('pr_feedback', read),
+    facts: [],
+    missing: [['feedbackRound']],
+  },
+  {
+    rule: 'a pr_feedback read that failed is no round',
+    call: call('pr_feedback', read, failed()),
+    facts: [],
+    missing: [],
+  },
+  {
+    rule: 'a capture without a result is missing evidence for both captures',
+    call: withoutResult('code_review', capture),
+    facts: [],
+    missing: [['reviewCapture', 'fixCapture']],
+  },
+  {
+    rule: 'a full check without a result is missing evidence for a failure',
+    call: withoutResult('full_check', {}),
+    facts: [],
+    missing: [['checkFailure']],
+  },
+  {
+    rule: 'a launch without a result is a launch with an unknown worker ID',
+    call: withoutResult('subagent', { profile: 'qa' }),
+    facts: ['launch qa ?'],
+    missing: [['workerId']],
   },
   {
     rule: 'a verify that failed is no publication',
@@ -295,6 +341,23 @@ describe('publicationOf', () => {
 });
 
 describe('countTaskFacts', () => {
+  it('makes counts unknown, not zero, when fact-bearing calls have no result', () => {
+    const evidence = extractTaskEvidence([
+      withoutResult('pr', verify),
+      withoutResult('pr_feedback', read),
+      withoutResult('code_review', capture),
+      withoutResult('full_check', {}),
+    ]);
+
+    expect(countTaskFacts(evidence)).toMatchObject({
+      publications: 'unknown',
+      reviewCaptures: 'unknown',
+      fixCaptures: 'unknown',
+      feedbackRounds: 'unknown',
+      checkFailures: 'unknown',
+    });
+  });
+
   it('counts each fact kind', () => {
     const evidence = extractTaskEvidence([
       call('code_review', { action: 'capture', target: { kind: 'workingTree' } }),

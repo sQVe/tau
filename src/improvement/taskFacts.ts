@@ -67,6 +67,14 @@ const actions: Readonly<Record<string, ReadonlySet<string>>> = {
   code_review: new Set(['prepare', 'capture', 'freshness', 'evidence']),
 };
 
+const factActions: Readonly<Record<string, string>> = {
+  pr: 'verify',
+  pr_feedback: 'read',
+  code_review: 'capture',
+};
+
+const noResult = 'The call has no result.';
+
 const affectedByTool: Readonly<Record<string, EvidenceKind[]>> = {
   pr: ['publication'],
   pr_feedback: ['feedbackRound'],
@@ -84,6 +92,8 @@ const missing = (call: ToolCall, reason: string, affects: EvidenceKind[]): CallE
 });
 
 const succeeded = (call: ToolCall) => call.result !== undefined && call.result.error === undefined;
+
+const returnedError = (call: ToolCall) => call.result?.error !== undefined;
 
 const positiveInteger = (value: unknown) =>
   typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
@@ -118,11 +128,7 @@ const actionOf = (call: ToolCall): { action: string } | { reason: string } => {
   return { action };
 };
 
-const prEvidence = (call: ToolCall, action: string): CallEvidence => {
-  if (action !== 'verify') {
-    return undefined;
-  }
-
+const prEvidence = (call: ToolCall): CallEvidence => {
   const publication = publicationOf(call);
 
   if (publication === undefined) {
@@ -132,11 +138,7 @@ const prEvidence = (call: ToolCall, action: string): CallEvidence => {
   return { fact: { ...placeOf(call), kind: 'publication', ...publication } };
 };
 
-const feedbackEvidence = (call: ToolCall, action: string): CallEvidence => {
-  if (action !== 'read') {
-    return undefined;
-  }
-
+const feedbackEvidence = (call: ToolCall): CallEvidence => {
   const pr = namedPullRequest(call);
 
   if (pr === undefined) {
@@ -146,11 +148,7 @@ const feedbackEvidence = (call: ToolCall, action: string): CallEvidence => {
   return { fact: { ...placeOf(call), kind: 'feedbackRound', pr } };
 };
 
-const reviewEvidence = (call: ToolCall, action: string): CallEvidence => {
-  if (action !== 'capture') {
-    return undefined;
-  }
-
+const reviewEvidence = (call: ToolCall): CallEvidence => {
   const target = call.arguments?.target;
   const kind = isRecord(target) ? text(target.kind) : undefined;
 
@@ -163,18 +161,25 @@ const reviewEvidence = (call: ToolCall, action: string): CallEvidence => {
 
 const actionEvidence = (call: ToolCall): CallEvidence => {
   const shape = actionOf(call);
+  const affects = affectedByTool[call.tool] ?? [];
 
   if ('reason' in shape) {
-    return missing(call, shape.reason, affectedByTool[call.tool] ?? []);
+    return missing(call, shape.reason, affects);
+  }
+
+  if (shape.action !== factActions[call.tool]) {
+    return undefined;
+  }
+
+  if (call.result === undefined) {
+    return missing(call, noResult, affects);
   }
 
   if (call.tool === 'pr') {
-    return prEvidence(call, shape.action);
+    return prEvidence(call);
   }
 
-  return call.tool === 'pr_feedback'
-    ? feedbackEvidence(call, shape.action)
-    : reviewEvidence(call, shape.action);
+  return call.tool === 'pr_feedback' ? feedbackEvidence(call) : reviewEvidence(call);
 };
 
 const checkEvidence = (call: ToolCall): CallEvidence => {
@@ -184,8 +189,12 @@ const checkEvidence = (call: ToolCall): CallEvidence => {
     return { fact: { ...placeOf(call), kind: 'checkFailure' } };
   }
 
-  if (passed === true || !succeeded(call)) {
+  if (passed === true || returnedError(call)) {
     return undefined;
+  }
+
+  if (call.result === undefined) {
+    return missing(call, noResult, ['checkFailure']);
   }
 
   return call.viaCodemode
@@ -207,8 +216,12 @@ const workerIdOf = (call: ToolCall): { workerId: string } | { reason: string } =
     return { reason: 'A nested call has no result details.' };
   }
 
+  if (call.result === undefined) {
+    return { reason: noResult };
+  }
+
   const workerId =
-    text(call.result?.details?.taskId) ?? assignmentIdOf(text(labelsOf(call)['tau.assignment']));
+    text(call.result.details?.taskId) ?? assignmentIdOf(text(labelsOf(call)['tau.assignment']));
 
   return workerId === undefined || workerId === ''
     ? { reason: 'The result names no task ID or assignment.' }
@@ -216,7 +229,7 @@ const workerIdOf = (call: ToolCall): { workerId: string } | { reason: string } =
 };
 
 const launchEvidence = (call: ToolCall): CallEvidence[] => {
-  if (!succeeded(call)) {
+  if (returnedError(call)) {
     return [];
   }
 
@@ -248,7 +261,7 @@ const callEvidence = (call: ToolCall): CallEvidence[] => {
     return [checkEvidence(call)];
   }
 
-  return actions[call.tool] !== undefined && succeeded(call) ? [actionEvidence(call)] : [];
+  return actions[call.tool] !== undefined && !returnedError(call) ? [actionEvidence(call)] : [];
 };
 
 export const extractTaskEvidence = (calls: readonly ToolCall[]): TaskEvidence => {

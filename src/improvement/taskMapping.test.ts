@@ -296,22 +296,50 @@ describe('mapTasks', () => {
     const verifyCall = called('verify', time, 'pr', verify, { matches: true });
     const complete = [header, ...verifyCall].join('\n');
     const cut = [header, toolCall('verify', time, 'pr', verify)].join('\n');
+    const completeFact = { path: '/sessions/full.jsonl', transcript: parseTranscript(complete) };
+    const cutFact = { path: '/sessions/cut.jsonl', transcript: parseTranscript(cut) };
+
+    for (const transcripts of [
+      [completeFact, cutFact],
+      [cutFact, completeFact],
+    ]) {
+      const [task] = mapTasks(
+        facts({ pullRequests: [merged(570, 'me-1023-a-later-change')], transcripts }),
+      ).tasks;
+
+      expect(task?.facts.map((fact) => `${fact.kind} ${fact.entryId}`)).toEqual([
+        'publication verify',
+      ]);
+
+      expect(task?.missing).toEqual([]);
+      expect(task?.counts.publications).toBe(1);
+    }
+  });
+
+  it('reports coverage managerOnly when a launch has no result', () => {
+    const launched = [
+      sessionHeader('/home/sqve/code/personal/tau/me-1023'),
+      toolCall('launch', '2026-11-03T08:00:00.000Z', 'subagent', { profile: 'worker' }),
+      ...called('verify', '2026-11-03T08:01:00.000Z', 'pr', {
+        action: 'verify',
+        repository,
+        pr: 571,
+      }),
+    ].join('\n');
 
     const [task] = mapTasks(
       facts({
-        pullRequests: [merged(570, 'me-1023-a-later-change')],
-        transcripts: [
-          { path: '/sessions/complete.jsonl', transcript: parseTranscript(complete) },
-          { path: '/sessions/cut.jsonl', transcript: parseTranscript(cut) },
-        ],
+        pullRequests: [merged(571, 'me-1023-a-launch-without-result')],
+        transcripts: [{ path: '/sessions/launch.jsonl', transcript: parseTranscript(launched) }],
       }),
     ).tasks;
 
     expect(task?.facts.map((fact) => `${fact.kind} ${fact.entryId}`)).toEqual([
+      'launch launch',
       'publication verify',
     ]);
 
-    expect(task?.counts.publications).toBe(1);
+    expect(task?.coverage).toBe('managerOnly');
   });
 
   it('reports coverage unknown when a mapped transcript is malformed', () => {
