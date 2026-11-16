@@ -146,6 +146,41 @@ describe('sessionHealthReport', () => {
     ]);
   });
 
+  it('gives rules the arguments of nested calls from nestedCalls or from complete args text', () => {
+    const seen: unknown[] = [];
+
+    const rule: HealthRule = {
+      tool: 'run_tests',
+      name: 'scopes',
+      check: (calls) => {
+        seen.push(...calls.map((call) => call.arguments?.scope));
+
+        return undefined;
+      },
+    };
+
+    const nestedResult = entry(at(2), {
+      message: {
+        role: 'toolResult',
+        toolCallId: 'a',
+        content: [{ type: 'text', text: 'done' }],
+        details: {
+          calls: [
+            { id: 'a/1', name: 'run_tests', args: '{"scope":"aff...', status: 'ok' },
+            { id: 'a/2', name: 'run_tests', args: '{"scope":"focused"}', status: 'ok' },
+          ],
+        },
+        nestedCalls: {
+          calls: [{ id: 'a/1', name: 'run_tests', arguments: { scope: 'affected' } }],
+        },
+      },
+    });
+
+    report([session([toolCall(at(2), 'a', 'codemode'), nestedResult])], [rule]);
+
+    expect(seen).toEqual(['affected', 'focused']);
+  });
+
   it('attaches a result that arrives after the window to its call inside it', () => {
     const lines = [
       toolCall(at(4, 23), 'a', 'bash'),
