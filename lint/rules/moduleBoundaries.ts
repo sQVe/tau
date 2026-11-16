@@ -42,6 +42,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
       'config/repositoryCommand',
       'config/repositoryEntry',
       'config/repositorySection',
+      'config/verificationTargets',
     ],
   },
   {
