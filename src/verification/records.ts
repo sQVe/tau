@@ -108,7 +108,7 @@ export const stepOutcomeSchemas = {
   ),
 } as const;
 
-const stepOutcomeSchema = Type.Union([
+export const stepOutcomeSchema = Type.Union([
   stepOutcomeSchemas.passed,
   stepOutcomeSchemas.differs,
   stepOutcomeSchemas.blocked,

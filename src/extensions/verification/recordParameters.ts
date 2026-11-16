@@ -1,7 +1,11 @@
 import { Type } from 'typebox';
 import type { Static, TObject, TProperties } from 'typebox';
 
-import { artifactSchema, stepOutcomeSchemas } from '../../verification/records.js';
+import {
+  artifactSchema,
+  stepOutcomeSchema,
+  stepOutcomeSchemas,
+} from '../../verification/records.js';
 
 const withArtifacts = <Properties extends TProperties>(schema: TObject<Properties>) =>
   Type.Object(
@@ -21,13 +25,6 @@ const stepResultSchema = Type.Union([
   withArtifacts(stepOutcomeSchemas.notRun),
 ]);
 
-const endStateSchema = Type.Union([
-  stepOutcomeSchemas.passed,
-  stepOutcomeSchemas.differs,
-  stepOutcomeSchemas.blocked,
-  stepOutcomeSchemas.notRun,
-]);
-
 export const recordParameters = Type.Object(
   {
     run: Type.String({ description: 'Verification run name.' }),
@@ -35,7 +32,7 @@ export const recordParameters = Type.Object(
     steps: Type.Array(stepResultSchema, {
       description: 'One result per registered step, in order.',
     }),
-    endState: Type.Optional(endStateSchema),
+    endState: Type.Optional(stepOutcomeSchema),
   },
   { additionalProperties: false },
 );
