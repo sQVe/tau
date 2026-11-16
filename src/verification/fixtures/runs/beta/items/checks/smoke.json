@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "run": "beta",
+  "item": "checks/smoke",
+  "drive": "hand",
+  "steps": [
+    {
+      "number": 1,
+      "status": "blocked",
+      "reason": "The environment was not ready.",
+      "artifacts": []
+    }
+  ],
+  "endState": {
+    "status": "notRun",
+    "reason": "The environment was not ready."
+  }
+}

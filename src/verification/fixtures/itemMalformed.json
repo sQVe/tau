@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "run": "delegate-a-check",
+  "item": "journeys/delegate-a-check",
+  "drive": "hand",
+  "steps": [
+    {
+      "number": 2,
+      "status": "passed",
+      "artifacts": []
+    }
+  ],
+  "endState": {
+    "status": "passed"
+  }
+}

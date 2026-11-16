@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "run": "beta",
+  "target": "483",
+  "head": "4444444444444444444444444444444444444444",
+  "dirty": false,
+  "platform": {
+    "os": "linux",
+    "arch": "x64"
+  },
+  "startedAt": "2026-11-16T11:00:00.000Z",
+  "treeAtLaunch": "5555555555555555555555555555555555555555",
+  "treeAtStop": "6666666666666666666666666666666666666666",
+  "launch": {
+    "exitCode": 0,
+    "logPath": "launch.log"
+  },
+  "doctor": null,
+  "stop": null,
+  "items": [
+    {
+      "item": "checks/smoke",
+      "steps": 1
+    }
+  ]
+}

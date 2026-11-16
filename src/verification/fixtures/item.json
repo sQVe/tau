@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "run": "delegate-a-check",
+  "item": "journeys/delegate-a-check",
+  "drive": "hand",
+  "steps": [
+    {
+      "number": 1,
+      "status": "passed",
+      "artifacts": [
+        {
+          "kind": "screenshot",
+          "path": "screenshots/step-1.png"
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "status": "differs",
+      "observed": "The dialog stays open.",
+      "artifacts": [
+        {
+          "kind": "output",
+          "path": "output/step-2.txt"
+        }
+      ]
+    }
+  ],
+  "endState": {
+    "status": "passed"
+  }
+}
