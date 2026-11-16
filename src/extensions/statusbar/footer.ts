@@ -5,7 +5,7 @@ import type {
   SessionManager,
 } from '@earendil-works/pi-coding-agent';
 
-import { footerTheme, renderFooterLine } from './render.js';
+import { footerTheme, renderFooterLine, renderStatusLine } from './render.js';
 import { decideReuse } from './reuseDecision.js';
 import type { SessionKey } from './reuseDecision.js';
 
@@ -90,7 +90,7 @@ const readSessionStats = (
 };
 
 export const createFooter = (pi: ExtensionAPI, context: ExtensionContext): FooterFactory => {
-  return () => {
+  return (_tui, _theme, footerData) => {
     let stats: SessionStats | undefined;
 
     return {
@@ -101,19 +101,26 @@ export const createFooter = (pi: ExtensionAPI, context: ExtensionContext): Foote
         stats = readSessionStats(context, stats, performance.now());
         const usage = stats.contextUsage.contextUsage;
 
-        return [
-          renderFooterLine(
-            {
-              cost: stats.cost.cost,
-              contextPercent: usage?.percent ?? null,
-              contextWindow: usage?.contextWindow ?? context.model?.contextWindow ?? 0,
-              modelId: context.model?.id ?? 'no-model',
-              thinkingLevel: context.model?.reasoning === true ? pi.getThinkingLevel() : undefined,
-            },
-            width,
-            footerTheme,
-          ),
-        ];
+        const line = renderFooterLine(
+          {
+            cost: stats.cost.cost,
+            contextPercent: usage?.percent ?? null,
+            contextWindow: usage?.contextWindow ?? context.model?.contextWindow ?? 0,
+            modelId: context.model?.id ?? 'no-model',
+            thinkingLevel: context.model?.reasoning === true ? pi.getThinkingLevel() : undefined,
+          },
+          width,
+          footerTheme,
+        );
+
+        const statusLine = renderStatusLine(footerData.getExtensionStatuses(), width, footerTheme);
+        const lines = [line];
+
+        if (statusLine !== undefined) {
+          lines.push(statusLine);
+        }
+
+        return lines;
       },
     };
   };
