@@ -97,8 +97,20 @@ const table: { rule: string; call: ToolCall; facts: string[]; missing: string[][
     missing: [],
   },
   {
-    rule: 'a capture without a result is missing evidence for both captures',
+    rule: 'a review capture without a result is missing evidence for review captures',
     call: withoutResult('code_review', capture),
+    facts: [],
+    missing: [['reviewCapture']],
+  },
+  {
+    rule: 'a fix capture without a result is missing evidence for fix captures',
+    call: withoutResult('code_review', { action: 'capture', target: { kind: 'fix' } }),
+    facts: [],
+    missing: [['fixCapture']],
+  },
+  {
+    rule: 'a capture without a result or target kind is missing evidence for both captures',
+    call: withoutResult('code_review', { action: 'capture' }),
     facts: [],
     missing: [['reviewCapture', 'fixCapture']],
   },
@@ -352,7 +364,7 @@ describe('countTaskFacts', () => {
     expect(countTaskFacts(evidence)).toMatchObject({
       publications: 'unknown',
       reviewCaptures: 'unknown',
-      fixCaptures: 'unknown',
+      fixCaptures: 0,
       feedbackRounds: 'unknown',
       checkFailures: 'unknown',
     });

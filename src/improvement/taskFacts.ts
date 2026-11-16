@@ -148,15 +148,31 @@ const feedbackEvidence = (call: ToolCall): CallEvidence => {
   return { fact: { ...placeOf(call), kind: 'feedbackRound', pr } };
 };
 
-const reviewEvidence = (call: ToolCall): CallEvidence => {
+const captureKindOf = (call: ToolCall): 'reviewCapture' | 'fixCapture' | undefined => {
   const target = call.arguments?.target;
   const kind = isRecord(target) ? text(target.kind) : undefined;
+
+  if (kind === undefined) {
+    return undefined;
+  }
+
+  return kind === 'fix' ? 'fixCapture' : 'reviewCapture';
+};
+
+const reviewEvidence = (call: ToolCall): CallEvidence => {
+  const kind = captureKindOf(call);
 
   if (kind === undefined) {
     return missing(call, 'capture has no target kind.', ['reviewCapture', 'fixCapture']);
   }
 
-  return { fact: { ...placeOf(call), kind: kind === 'fix' ? 'fixCapture' : 'reviewCapture' } };
+  return { fact: { ...placeOf(call), kind } };
+};
+
+const withoutResultEvidence = (call: ToolCall, affects: EvidenceKind[]): CallEvidence => {
+  const captureKind = call.tool === 'code_review' ? captureKindOf(call) : undefined;
+
+  return missing(call, noResult, captureKind === undefined ? affects : [captureKind]);
 };
 
 const actionEvidence = (call: ToolCall): CallEvidence => {
@@ -172,7 +188,7 @@ const actionEvidence = (call: ToolCall): CallEvidence => {
   }
 
   if (call.result === undefined) {
-    return missing(call, noResult, affects);
+    return withoutResultEvidence(call, affects);
   }
 
   if (call.tool === 'pr') {
