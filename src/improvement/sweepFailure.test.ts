@@ -139,7 +139,6 @@ it('stops at the budget during publication', async () => {
   const mergeName = `merge-${eventHash(repository, 564)}.json`;
   const mergePath = join(fixture.repository, '.tau', 'improvement', mergeName);
 
-  // The new merge event marks the publication step, so the budget ends after the transcripts were read.
   const clock = () => (existsSync(mergePath) ? new Date(start.getTime() + budget) : start);
 
   expect(await fixture.run({ now: clock, budgetMilliseconds: budget })).toEqual({

@@ -47,7 +47,6 @@ const chunkSize = 16 * 1024 * 1024;
 
 const deadlineReached = (options: ProjectOptions) => options.now().getTime() >= options.deadline;
 
-// 32 hex characters name a task without a collision risk.
 const hashLength = 32;
 
 const taskHash = (repository: string, number: number) =>
