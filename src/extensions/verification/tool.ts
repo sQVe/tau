@@ -9,7 +9,8 @@ import { launchRun } from './launchAction.js';
 import type { LaunchResult } from './launchAction.js';
 import { registerItems } from './registerAction.js';
 import type { RegisterResult } from './registerAction.js';
-import { findVerificationRoot, readRunFacts, readTarget } from './runFacts.js';
+import { findRunDirectory, findVerificationRoot } from './runDirectory.js';
+import { readRunFacts, readTarget } from './runFacts.js';
 import { stopRun } from './stopAction.js';
 import type { StopResult } from './stopAction.js';
 
@@ -111,10 +112,10 @@ const execute = async (
   context: Pick<ExtensionToolContext, 'cwd' | 'isProjectTrusted' | 'ui'>,
 ) => {
   const parsed = parseAction(input);
-  const root = await findVerificationRoot(context.cwd);
   const deadlineMilliseconds = options.deadlineMilliseconds ?? defaultDeadlineMilliseconds;
 
   if (parsed.action === 'launch') {
+    const root = await findVerificationRoot(context.cwd, 'verification');
     const location = readConfigLocation(root, options, context);
     const commands = readTarget(location, context.ui, parsed.target);
     const facts = await readRunFacts(root);
@@ -131,9 +132,16 @@ const execute = async (
     return toToolResult(details);
   }
 
+  const { root, directory } = await findRunDirectory(context.cwd, parsed.run, 'verification');
+
   if (parsed.action === 'register') {
     const details = await registerItems(
-      { root, deadlineMilliseconds, signal, run: parsed.run },
+      {
+        directory,
+        deadlineMilliseconds,
+        signal,
+        run: parsed.run,
+      },
       parsed.items,
     );
 
@@ -144,6 +152,7 @@ const execute = async (
 
   const details = await stopRun({
     root,
+    directory,
     deadlineMilliseconds,
     signal,
     run: parsed.run,

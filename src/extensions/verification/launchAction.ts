@@ -118,6 +118,7 @@ export const launchRun = async (context: LaunchContext): Promise<LaunchResult> =
   if (launchOutcome.kind === 'stopped') {
     await stopRun({
       root: context.root,
+      directory,
       deadlineMilliseconds: context.deadlineMilliseconds,
       signal: undefined,
       run,

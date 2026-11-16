@@ -1,12 +1,9 @@
-import { join } from 'node:path';
-
 import { readCheckState } from '../../checkRecord/identity.js';
 import type { ConfigLocation, ConfigWarnings } from '../../config/config.js';
 import { withIgnoredNote } from '../../config/repositoryCommand.js';
 import { readVerificationTarget } from '../../config/verificationTargets.js';
 import type { VerificationTarget } from '../../config/verificationTargets.js';
 import { readGit, runGit } from '../../git.js';
-import { findTauRoot, requireTauChild } from '../../tauDirectory.js';
 import type { RunRecord } from '../../verification/records.js';
 import { readRun, runRecordPath } from '../../verification/verification.js';
 
@@ -32,9 +29,6 @@ const readHead = async (root: string): Promise<string | null> => {
 const readDirty = async (root: string): Promise<boolean> =>
   (await readGit(root, ['status', '--porcelain'])) !== '';
 
-export const findVerificationRoot = (cwd: string): Promise<string> =>
-  findTauRoot(cwd, 'verification');
-
 export const readRunFacts = async (root: string): Promise<RunFacts> => {
   const state = await readCheckState(root);
 
@@ -44,12 +38,6 @@ export const readRunFacts = async (root: string): Promise<RunFacts> => {
     platform: { os: process.platform, arch: process.arch },
     tree: state.tree,
   };
-};
-
-export const runDirectory = (root: string, run: string): string => {
-  const name = requireTauChild(root, 'verification', '', join('.tau', 'verification', run), 'run');
-
-  return join(root, '.tau', 'verification', name);
 };
 
 export const readRunRecordOrThrow = async (directory: string, run: string): Promise<RunRecord> => {

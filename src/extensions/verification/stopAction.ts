@@ -10,10 +10,11 @@ import { writeRunRecord } from '../../verification/verification.js';
 import { runCommand } from './command.js';
 import type { CommandOutcome } from './command.js';
 import { decideStop } from './runDecision.js';
-import { readRunRecordOrThrow, runDirectory } from './runFacts.js';
+import { readRunRecordOrThrow } from './runFacts.js';
 
 export interface StopContext {
   root: string;
+  directory: string;
   deadlineMilliseconds: number;
   signal: AbortSignal | undefined;
   run: string;
@@ -42,7 +43,7 @@ const stopLogName = (directory: string): string => {
 };
 
 export const stopRun = async (context: StopContext): Promise<StopResult> => {
-  const directory = runDirectory(context.root, context.run);
+  const { directory } = context;
   const record = await readRunRecordOrThrow(directory, context.run);
   const decision = decideStop(record);
 
@@ -52,11 +53,12 @@ export const stopRun = async (context: StopContext): Promise<StopResult> => {
 
   const commands = context.readTarget(record.target);
   const logName = stopLogName(directory);
+  const logPath = join(directory, logName);
 
   const outcome = await runCommand({
     argv: commands.stop,
     cwd: context.root,
-    logPath: join(directory, logName),
+    logPath,
     environment: {
       TAU_VERIFICATION_RUN: record.run,
       TAU_VERIFICATION_DIRECTORY: directory,
@@ -84,7 +86,7 @@ export const stopRun = async (context: StopContext): Promise<StopResult> => {
     run: record.run,
     directory,
     exitCode: exitCodeOf(outcome),
-    logPath: join(directory, logName),
+    logPath,
     freshness: decideFreshness(updated, treeAtStop),
   };
 };

@@ -1,12 +1,12 @@
 import type { RunRecord } from '../../verification/records.js';
 import { writeRunRecord } from '../../verification/verification.js';
 import { decideRegister } from './runDecision.js';
-import { readRunRecordOrThrow, runDirectory } from './runFacts.js';
+import { readRunRecordOrThrow } from './runFacts.js';
 
 type RegisteredItem = RunRecord['items'][number];
 
 export interface RunContext {
-  root: string;
+  directory: string;
   deadlineMilliseconds: number;
   signal: AbortSignal | undefined;
   run: string;
@@ -22,8 +22,7 @@ export const registerItems = async (
   context: RunContext,
   items: readonly RegisteredItem[],
 ): Promise<RegisterResult> => {
-  const directory = runDirectory(context.root, context.run);
-  const record = await readRunRecordOrThrow(directory, context.run);
+  const record = await readRunRecordOrThrow(context.directory, context.run);
   const decision = decideRegister(record, items);
 
   if (decision.kind === 'refuse') {
@@ -32,7 +31,7 @@ export const registerItems = async (
 
   const updated: RunRecord = { ...record, items: decision.items };
 
-  await writeRunRecord(directory, updated);
+  await writeRunRecord(context.directory, updated);
 
-  return { run: record.run, directory, items: updated.items };
+  return { run: record.run, directory: context.directory, items: updated.items };
 };
