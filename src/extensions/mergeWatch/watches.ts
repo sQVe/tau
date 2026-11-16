@@ -2,13 +2,13 @@ import type { ExtensionContext, ToolResultEvent } from '@earendil-works/pi-codin
 import { isBashToolResult } from '@earendil-works/pi-coding-agent';
 
 import type { Exec } from '../../command.js';
+import { readMergedPullRequest } from '../../github/mergedPullRequest.js';
 import { readTaskSignals } from '../../improvement/taskSignals.js';
 import { parseAutoMergeRequests } from './autoMergeRequest.js';
 import type { AutoMergeRequest } from './autoMergeRequest.js';
 import type { Deliver } from './delivery.js';
 import { decideMergeOffer, describeMergedPullRequest } from './mergeOffer.js';
 import {
-  readMergedPullRequest,
   readPullRequestState,
   readRequiredChecks,
   resolvePullRequest,
