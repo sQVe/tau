@@ -12,7 +12,7 @@ import type { Collected } from './collect.js';
 import {
   endReviewTerminal,
   openReviewTerminal,
-  reviewSpace,
+  readRequestingManager,
   reviewWaitTimeoutSeconds,
   TuicrExitTimeoutError,
   waitForReviewExit,
@@ -23,6 +23,7 @@ import {
   removeReview,
   saveStartingTerminal,
   saveTerminal,
+  saveViewerRequest,
   stageReview,
 } from './stage.js';
 import type { Review } from './stage.js';
@@ -188,7 +189,12 @@ const open = async (
   let failure: unknown;
 
   try {
-    const space = await reviewSpace(hc);
+    const manager = await readRequestingManager(hc);
+    const managerTerminal = manager?.address ?? null;
+
+    await saveViewerRequest(staged, managerTerminal);
+
+    const space = manager?.space;
 
     if (space === undefined) {
       result = { status: 'manual', command, directory: staged.recordDirectory };

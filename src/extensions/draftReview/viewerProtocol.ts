@@ -1,10 +1,10 @@
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
 import { Type } from 'typebox';
 import type { Static } from 'typebox';
 
 import { errorMessage } from '../../errors.js';
-import { readVersionedRecord, writeRecord } from '../../record.js';
+import { readVersionedRecord, savedVersion, writeRecord } from '../../record.js';
 import { decideViewerReply } from './reviewDecisions.js';
 import type { ViewerReplyDecision, ViewerReplyState } from './reviewDecisions.js';
 
@@ -23,13 +23,25 @@ export interface ViewerComment {
 
 const requestFileName = 'request.json';
 const commentsFileName = 'comments.json';
-const requestVersion = 1;
+const requestVersion = 2;
+const retiredRequestVersion = 1;
 const commentsVersion = 1;
 
 const requestSchema = Type.Object(
   {
     version: Type.Literal(requestVersion),
     reviewId: Type.String({ minLength: 1 }),
+    managerTerminal: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
+    stagingDirectory: Type.String({ minLength: 1 }),
+    reviewedItem: Type.Optional(
+      Type.Object(
+        {
+          identifier: Type.String({ minLength: 1 }),
+          url: Type.String({ pattern: '^https://' }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     files: Type.Array(
       Type.Object(
         { path: Type.String({ minLength: 1 }), stagedPath: Type.String({ minLength: 1 }) },
@@ -86,6 +98,52 @@ export const writeRequest = async (
   request: ViewerRequest,
 ): Promise<void> => {
   await writeRecord(join(recordDirectory, requestFileName), request);
+};
+
+const refuseRetiredRequest =
+  (path: string) =>
+  (value: unknown): string | undefined => {
+    if (savedVersion(value) !== retiredRequestVersion) {
+      return undefined;
+    }
+
+    throw new Error(
+      `Viewer request ${path} was saved by an older Tau, so this Tau cannot read it. Open a new review.`,
+    );
+  };
+
+const isStagedPathOutside = (stagedPath: string): boolean =>
+  isAbsolute(stagedPath) || stagedPath.split('/').includes('..');
+
+export const readViewerRequest = async (
+  recordDirectory: string,
+): Promise<ViewerRequest | undefined> => {
+  const path = join(recordDirectory, requestFileName);
+
+  const request = await readVersionedRecord(path, {
+    label: 'viewer request',
+    version: requestVersion,
+    schema: requestSchema,
+    check: refuseRetiredRequest(path),
+  });
+
+  if (request === undefined) {
+    return undefined;
+  }
+
+  if (!isAbsolute(request.stagingDirectory)) {
+    throw new Error(`Malformed viewer request ${path}: stagingDirectory must be an absolute path.`);
+  }
+
+  const outside = request.files.find((file) => isStagedPathOutside(file.stagedPath));
+
+  if (outside !== undefined) {
+    throw new Error(
+      `Malformed viewer request ${path}: staged path ${outside.stagedPath} is outside the staging directory.`,
+    );
+  }
+
+  return request;
 };
 
 const refusalOf = (

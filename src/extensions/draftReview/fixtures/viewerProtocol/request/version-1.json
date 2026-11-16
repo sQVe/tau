@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "reviewId": "review-AbC123",
+  "files": [
+    {
+      "path": "notes/title.md",
+      "stagedPath": "01-notes/1-title.md"
+    },
+    {
+      "path": "notes/body.md",
+      "stagedPath": "01-notes/2-body.md"
+    }
+  ]
+}

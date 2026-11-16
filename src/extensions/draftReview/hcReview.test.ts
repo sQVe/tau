@@ -5,7 +5,7 @@ import type { HcFake } from '../../../tests/hcFake.js';
 import { errorMessage } from '../../errors.js';
 import type { HcRuntime } from '../../hc/hc.js';
 import type { HcWaitResult } from '../../hc/replies.js';
-import { reviewSpace, TuicrExitTimeoutError, waitForReviewExit } from './hcReview.js';
+import { readRequestingManager, TuicrExitTimeoutError, waitForReviewExit } from './hcReview.js';
 
 const recordDirectory = '/records/draft-review-1';
 
@@ -81,7 +81,7 @@ it.each<{ name: string; results: HcWaitResult[]; calls: number }>([
   expect(waitCallCount(fake)).toBe(calls);
 });
 
-it('returns the space label of the manager terminal', async () => {
+it('returns the address and space label of the manager terminal', async () => {
   const fake = createHcFake();
 
   vi.stubEnv('HC_TERMINAL_ID', 't7');
@@ -91,15 +91,18 @@ it('returns the space label of the manager terminal', async () => {
     JSON.stringify({ address: 't7', state: 'live', labels: { 'herdr.space': 'a' } }),
   );
 
-  await expect(reviewSpace(runtimeOf(fake))).resolves.toBe('a');
+  await expect(readRequestingManager(runtimeOf(fake))).resolves.toEqual({
+    address: 't7',
+    space: 'a',
+  });
 });
 
-it('returns no space without a manager terminal', async () => {
+it('returns no manager without a manager terminal', async () => {
   const fake = createHcFake();
 
   vi.stubEnv('HC_TERMINAL_ID', undefined);
 
-  await expect(reviewSpace(runtimeOf(fake))).resolves.toBeUndefined();
+  await expect(readRequestingManager(runtimeOf(fake))).resolves.toBeUndefined();
   expect(fake.calls).toHaveLength(0);
 });
 
@@ -109,17 +112,32 @@ it('rejects a manager terminal that hc reports malformed', async () => {
   vi.stubEnv('HC_TERMINAL_ID', 't7');
   fake.reply('get', 'not-json');
 
-  await expect(reviewSpace(runtimeOf(fake))).rejects.toMatchObject({
+  await expect(readRequestingManager(runtimeOf(fake))).rejects.toMatchObject({
     name: 'HcError',
     kind: 'malformed',
   });
 });
 
-it('returns no space when the manager terminal has no space label', async () => {
+it('returns the manager address when the terminal has no labels', async () => {
+  const fake = createHcFake();
+
+  vi.stubEnv('HC_TERMINAL_ID', 't7');
+  fake.reply('get', JSON.stringify({ address: 't7', state: 'live' }));
+
+  await expect(readRequestingManager(runtimeOf(fake))).resolves.toEqual({
+    address: 't7',
+    space: undefined,
+  });
+});
+
+it('returns the manager address without a space when it has no space label', async () => {
   const fake = createHcFake();
 
   vi.stubEnv('HC_TERMINAL_ID', 't7');
   fake.reply('get', JSON.stringify({ address: 't7', state: 'live', labels: { role: 'worker' } }));
 
-  await expect(reviewSpace(runtimeOf(fake))).resolves.toBeUndefined();
+  await expect(readRequestingManager(runtimeOf(fake))).resolves.toEqual({
+    address: 't7',
+    space: undefined,
+  });
 });
