@@ -6,6 +6,7 @@ import {
   constant,
   constantFrom,
   modelRun,
+  oneof,
   property,
   tuple,
 } from 'fast-check';
@@ -54,6 +55,27 @@ interface Notice {
 }
 
 const fixedSeed = 15;
+
+const executedSteps = new Set<string>();
+
+const expectedSteps = [
+  'poll',
+  'ask question',
+  'save report',
+  'normal finish',
+  'deadline read terminal',
+  'deadline check report',
+  'deadline mark pending',
+  'deadline kill',
+  'deadline showEnded',
+  'deadline write label',
+  'switch session',
+  'restart',
+];
+
+const recordStep = (step: string): void => {
+  executedSteps.add(step);
+};
 
 const resolveSeed = (): number => {
   const value = process.env.TAU_PROPERTY_SEED;
@@ -244,6 +266,8 @@ class PollCommand extends WorldCommand {
   }
 
   apply(model: World, real: Manager): void {
+    recordStep('poll');
+
     const sessionFile = real.context.sessionManager.getSessionFile();
 
     model.delivery.deliver(
@@ -276,6 +300,8 @@ class AskQuestionCommand extends WorldCommand {
   }
 
   apply(model: World): void {
+    recordStep('ask question');
+
     const state = model.assignments[this.index];
 
     if (state === undefined) {
@@ -309,6 +335,8 @@ class SaveReportCommand extends WorldCommand {
   }
 
   apply(model: World): void {
+    recordStep('save report');
+
     const state = model.assignments[this.index];
 
     if (state === undefined) {
@@ -337,6 +365,8 @@ class NormalFinishCommand extends WorldCommand {
   }
 
   apply(model: World): void {
+    recordStep('normal finish');
+
     const state = model.assignments[this.index];
 
     if (state !== undefined) {
@@ -389,6 +419,10 @@ class DeadlineStepCommand extends WorldCommand {
     }
 
     const phase = model.phases[this.index];
+
+    if (phase !== 5 || this.labelSuccess) {
+      recordStep(`deadline ${this.step}`);
+    }
 
     if (phase === 0) {
       if (state.state === 'live') {
@@ -459,6 +493,8 @@ class SwitchSessionCommand extends WorldCommand {
   }
 
   apply(_model: World, real: Manager): void {
+    recordStep('switch session');
+
     const current = real.context.sessionManager.getSessionFile();
 
     real.switchSession(current === managerSession ? otherSession : managerSession);
@@ -475,6 +511,8 @@ class RestartCommand extends WorldCommand {
   }
 
   apply(model: World, real: Manager): void {
+    recordStep('restart');
+
     model.delivery = createWorkerDelivery(real.pi);
     model.phases = [0, 0];
   }
@@ -486,28 +524,33 @@ class RestartCommand extends WorldCommand {
 
 const assignmentIndex = constantFrom(0, 1);
 
-const commandArbitraries = [
-  constant(new PollCommand()),
-  assignmentIndex.map((index) => new AskQuestionCommand(index)),
-  assignmentIndex.map((index) => new SaveReportCommand(index)),
-  assignmentIndex.map((index) => new NormalFinishCommand(index)),
-  tuple(assignmentIndex, boolean(), boolean()).map(([index, killSuccess, labelSuccess]) => {
-    return new DeadlineStepCommand(index, killSuccess, labelSuccess);
-  }),
-  constant(new SwitchSessionCommand()),
-  constant(new RestartCommand()),
-];
+const commandArbitrary = oneof(
+  { arbitrary: constant(new PollCommand()), weight: 1 },
+  { arbitrary: assignmentIndex.map((index) => new AskQuestionCommand(index)), weight: 1 },
+  { arbitrary: assignmentIndex.map((index) => new SaveReportCommand(index)), weight: 1 },
+  { arbitrary: assignmentIndex.map((index) => new NormalFinishCommand(index)), weight: 1 },
+  {
+    arbitrary: tuple(assignmentIndex, boolean(), boolean()).map(
+      ([index, killSuccess, labelSuccess]) => {
+        return new DeadlineStepCommand(index, killSuccess, labelSuccess);
+      },
+    ),
+    weight: 5,
+  },
+  { arbitrary: constant(new SwitchSessionCommand()), weight: 1 },
+  { arbitrary: constant(new RestartCommand()), weight: 1 },
+);
 
 it('keeps one report notice and at most one final notice per worker', () => {
   const seed = resolveSeed();
 
   process.stdout.write(`TAU_PROPERTY_SEED=${seed}\n`);
 
-  expect(seed).toBeGreaterThanOrEqual(0);
+  executedSteps.clear();
 
   assert(
     property(
-      commands(commandArbitraries, { maxCommands: 30, size: 'max' }),
+      commands([commandArbitrary], { maxCommands: 100, size: 'max' }),
       (generatedCommands) => {
         modelRun(() => {
           const managerState = createManager();
@@ -518,4 +561,8 @@ it('keeps one report notice and at most one final notice per worker', () => {
     ),
     { seed, numRuns: 100 },
   );
+
+  const missingSteps = expectedSteps.filter((step) => !executedSteps.has(step));
+
+  expect(missingSteps, `command steps never executed: ${missingSteps.join(', ')}`).toEqual([]);
 });
