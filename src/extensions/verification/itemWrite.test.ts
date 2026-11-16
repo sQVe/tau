@@ -130,6 +130,39 @@ const refusalCases: RefusalCase[] = [
   },
 ];
 
+it('refuses a stopped run before probing an artifact under a regular file', async () => {
+  const { root, directory } = await createRunDirectory(onTestFinished, run, {
+    items: [{ item, steps: 2 }],
+    stop: { exitCode: 0, logPath: 'stop.log' },
+  });
+
+  await writeFile(join(directory, 'screenshots'), 'not a directory');
+
+  const before = await listItems(directory);
+  const failure = await failureMessage(recordItem(root, validInput()));
+
+  expect({ failure, items: await listItems(directory) }).toEqual({
+    failure: `Run ${run} is stopped; record results before the manager stops it.`,
+    items: before,
+  });
+});
+
+it('refuses an artifact path under a regular file as missing', async () => {
+  const { root, directory } = await createRunDirectory(onTestFinished, run, {
+    items: [{ item, steps: 2 }],
+  });
+
+  await writeFile(join(directory, 'screenshots'), 'not a directory');
+
+  const before = await listItems(directory);
+  const failure = await failureMessage(recordItem(root, validInput()));
+
+  expect({ failure, items: await listItems(directory) }).toEqual({
+    failure: 'Step 1 artifact screenshots/step-1.png does not exist in the run directory.',
+    items: before,
+  });
+});
+
 it.each(refusalCases)('refuses $name and writes no item file', async (refusal) => {
   const { root, directory } = await createRunDirectory(onTestFinished, run, {
     items: refusal.items ?? [{ item, steps: 2 }],

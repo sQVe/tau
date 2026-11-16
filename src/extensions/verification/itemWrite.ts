@@ -1,7 +1,7 @@
 import { mkdir, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 
-import { isMissingFile } from '../../errors.js';
+import { hasErrorCode, isMissingFile } from '../../errors.js';
 import { writeRecord } from '../../record.js';
 import { checkTauDirectory, climbsOut, existingEntry, findTauRoot } from '../../tauDirectory.js';
 import { isItemName, itemRecordVersion } from '../../verification/records.js';
@@ -30,7 +30,7 @@ const artifactLocation = async (
   try {
     real = await realpath(join(directory, path));
   } catch (error) {
-    if (isMissingFile(error)) {
+    if (isMissingFile(error) || hasErrorCode(error, 'ENOTDIR')) {
       return 'missing';
     }
 
