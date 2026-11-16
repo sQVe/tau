@@ -10,7 +10,7 @@ import {
   repository,
   sessionHeader,
   workerLaunch,
-} from '../../tests/transcriptBuilders.js';
+} from '../../tests/transcriptHarness.js';
 import { readTaskSignals } from './taskSignals.ts';
 import type { TaskSignalSources } from './taskSignals.ts';
 

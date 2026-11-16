@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
-import { feedbackRead, published, sessionHeader } from '../../../tests/transcriptBuilders.js';
+import { feedbackRead, published, sessionHeader } from '../../../tests/transcriptHarness.js';
 import { hours, merged, minute, setup, url } from './fixtures/mergeWatchSetup.js';
 
 vi.mock(import('node:fs/promises'), { spy: true });
