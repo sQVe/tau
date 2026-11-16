@@ -132,6 +132,10 @@ const refusalCases: RefusalCase[] = [
     },
   },
   {
+    name: 'an artifact that does not exist',
+    reason: 'Step 1 artifact screenshots/step-1.png does not exist in the run directory.',
+  },
+  {
     name: 'an artifact outside the run directory',
     reason: 'Step 1 artifact ../outside.png is outside the run directory.',
     input: (input) => ({
@@ -157,7 +161,7 @@ const refusalCases: RefusalCase[] = [
   },
 ];
 
-it('refuses a stopped run before probing an artifact under a regular file', async () => {
+it('returns the stopped-run refusal for a stopped run with an artifact under a regular file', async () => {
   const { root, directory } = await createRunDirectory(onTestFinished, run, {
     items: [{ item, steps: 2 }],
     stop: { exitCode: 0, logPath: 'stop.log' },
@@ -190,7 +194,7 @@ it('refuses an artifact path under a regular file as missing', async () => {
   });
 });
 
-it('refuses a stopped run before probing an unreadable artifact', async () => {
+it('returns the stopped-run refusal for a stopped run with an unreadable artifact', async () => {
   const { root, directory } = await createRunDirectory(onTestFinished, run, {
     items: [{ item, steps: 2 }],
     stop: { exitCode: 0, logPath: 'stop.log' },

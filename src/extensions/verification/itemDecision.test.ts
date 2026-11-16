@@ -80,8 +80,32 @@ const table: { name: string; facts: ItemFacts; expected: ItemDecision }[] = [
     },
   },
   {
+    name: 'refuses a stopped run before an unregistered item',
+    facts: facts({
+      runRead: validRunRead({
+        stop: { exitCode: 0, logPath: 'stop.log' },
+        items: [{ item: 'journeys/other', steps: 2 }],
+      }),
+    }),
+    expected: {
+      kind: 'refuse',
+      reason: `Run ${run} is stopped; record results before the manager stops it.`,
+    },
+  },
+  {
     name: 'refuses an unregistered item',
     facts: facts({ runRead: validRunRead({ items: [{ item: 'journeys/other', steps: 2 }] }) }),
+    expected: {
+      kind: 'refuse',
+      reason: `Item ${item} is not registered in run ${run}. Registered: journeys/other.`,
+    },
+  },
+  {
+    name: 'refuses an unregistered item before an existing item file',
+    facts: facts({
+      runRead: validRunRead({ items: [{ item: 'journeys/other', steps: 2 }] }),
+      itemFileExists: true,
+    }),
     expected: {
       kind: 'refuse',
       reason: `Item ${item} is not registered in run ${run}. Registered: journeys/other.`,
@@ -113,6 +137,14 @@ const table: { name: string; facts: ItemFacts; expected: ItemDecision }[] = [
   {
     name: 'refuses a wrong step count',
     facts: facts({ steps: steps.slice(0, 1) }),
+    expected: {
+      kind: 'refuse',
+      reason: `Item ${item} has 2 registered steps in run ${run}, but 1 results were given.`,
+    },
+  },
+  {
+    name: 'refuses a wrong step count before a missing end state',
+    facts: facts({ steps: steps.slice(0, 1), endState: undefined }),
     expected: {
       kind: 'refuse',
       reason: `Item ${item} has 2 registered steps in run ${run}, but 1 results were given.`,
