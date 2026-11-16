@@ -102,6 +102,53 @@ describe('parseTranscript', () => {
     ]);
   });
 
+  it('reads the full arguments of a nested call from nestedCalls when its args text is cut', () => {
+    const source = readFileSync(new URL('./fixtures/nestedVerify.jsonl', import.meta.url), 'utf8');
+    const transcript = parseTranscript(source);
+    const calls = 'calls' in transcript ? transcript.calls.slice(1) : [];
+
+    expect(calls.map((call) => [call.callId, call.tool, call.arguments, call.result])).toEqual([
+      [
+        'toolu_015VJVK4p2jsf5czPgqCYrYC/1',
+        'pr',
+        {
+          action: 'verify',
+          directory: '/home/sqve/code/personal/tau/me-1450/.tau/pr/run-kYRJE7',
+          pr: 667,
+          repository: 'github.com/sQVe/tau',
+          title: 'refactor: move the session log readers into a shared improvement module',
+          base: 'main',
+          draft: false,
+        },
+        { error: undefined, details: undefined },
+      ],
+      [
+        'toolu_015VJVK4p2jsf5czPgqCYrYC/2',
+        'pr',
+        { action: 'reviewBots', pr: 667, repository: 'github.com/sQVe/tau' },
+        { error: undefined, details: undefined },
+      ],
+    ]);
+  });
+
+  it('reads no nested arguments from args text when nestedCalls lacks the call', () => {
+    const details = {
+      calls: [{ id: 'a/1', name: 'pr', args: '{"action":"verify"}', status: 'ok' }],
+    };
+
+    const transcript = parseTranscript(
+      lines(
+        header,
+        toolCall('a', 'codemode'),
+        toolResult('a', { details, nestedCalls: { calls: [], complete: false } }),
+      ),
+    );
+
+    const calls = 'calls' in transcript ? transcript.calls.slice(1) : [];
+
+    expect(calls.map((call) => [call.callId, call.arguments])).toEqual([['a/1', undefined]]);
+  });
+
   it('reports a missing transcript', () => {
     expect(parseTranscript(undefined)).toEqual({ status: 'missing' });
   });

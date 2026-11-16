@@ -34,6 +34,7 @@ export type Transcript =
 interface TranscriptLines {
   cwd: string | undefined;
   calls: ToolCall[];
+  nested: Map<string, NestedCall[]>;
   malformedLines: number;
 }
 
@@ -107,10 +108,34 @@ const nestedResult = (call: Entry): CallResult | undefined => {
   return call.status === 'ok' ? { error: undefined, details: undefined } : undefined;
 };
 
-// Codemode saves each nested call with its arguments as JSON text and a status, without the
-// result details of the tool.
-export const codemodeCalls = (details: Entry, scriptCallId: string): NestedCall[] => {
+// Codemode saves each nested call in details.calls with a status and its arguments as JSON text,
+// cut at a fixed length. Newer results also hold the whole arguments in nestedCalls; then the cut
+// text is never read. No nested call carries the result details of its tool.
+const nestedArguments = (message: Entry) => {
+  const { nestedCalls } = message;
+
+  if (!isRecord(nestedCalls)) {
+    return undefined;
+  }
+
+  const calls = Array.isArray(nestedCalls.calls) ? nestedCalls.calls.filter(isRecord) : [];
+  const byId = new Map<string, Entry>();
+
+  for (const call of calls) {
+    const callId = text(call.id);
+
+    if (callId !== undefined && isRecord(call.arguments)) {
+      byId.set(callId, call.arguments);
+    }
+  }
+
+  return byId;
+};
+
+export const codemodeCalls = (message: Entry, scriptCallId: string): NestedCall[] => {
+  const details = isRecord(message.details) ? message.details : {};
   const calls = Array.isArray(details.calls) ? details.calls.filter(isRecord) : [];
+  const fullArguments = nestedArguments(message);
 
   return calls.flatMap((call, index) => {
     const tool = text(call.name);
@@ -119,14 +144,12 @@ export const codemodeCalls = (details: Entry, scriptCallId: string): NestedCall[
       return [];
     }
 
-    return [
-      {
-        callId: text(call.id) ?? `${scriptCallId}/${index + 1}`,
-        tool,
-        arguments: parseEntry(text(call.args) ?? ''),
-        result: nestedResult(call),
-      },
-    ];
+    const callId = text(call.id) ?? `${scriptCallId}/${index + 1}`;
+
+    const parameters =
+      fullArguments === undefined ? parseEntry(text(call.args) ?? '') : fullArguments.get(callId);
+
+    return [{ callId, tool, arguments: parameters, result: nestedResult(call) }];
   });
 };
 
@@ -165,14 +188,16 @@ const addEntry = (lines: TranscriptLines, entry: Entry, pending: Map<string, Too
     if (call !== undefined) {
       call.result = result;
     }
+
+    if (call?.tool === 'codemode') {
+      lines.nested.set(callId, codemodeCalls(message, callId));
+    }
   }
 };
 
-const withNestedCalls = (calls: ToolCall[]): ToolCall[] =>
-  calls.flatMap((call) => {
-    const details = call.tool === 'codemode' ? call.result?.details : undefined;
-
-    const nested = details === undefined ? [] : codemodeCalls(details, call.callId);
+const withNestedCalls = (lines: TranscriptLines): ToolCall[] =>
+  lines.calls.flatMap((call) => {
+    const nested = lines.nested.get(call.callId) ?? [];
 
     const placed = nested.map((inner) => ({
       entryId: call.entryId,
@@ -193,7 +218,14 @@ export const parseTranscript = (source: string | undefined): Transcript => {
   }
 
   const { entries, malformedLines } = parseEntries(source);
-  const lines: TranscriptLines = { cwd: headerCwd(entries[0]), calls: [], malformedLines };
+
+  const lines: TranscriptLines = {
+    cwd: headerCwd(entries[0]),
+    calls: [],
+    nested: new Map(),
+    malformedLines,
+  };
+
   const pending = new Map<string, ToolCall>();
 
   for (const entry of entries) {
@@ -201,7 +233,7 @@ export const parseTranscript = (source: string | undefined): Transcript => {
   }
 
   const { cwd } = lines;
-  const calls = withNestedCalls(lines.calls);
+  const calls = withNestedCalls(lines);
 
   if (cwd === undefined) {
     return { status: 'malformed', cwd, calls, reason: 'The first line is not a session header.' };

@@ -124,7 +124,7 @@ const addResult = (collection: HealthCollection, message: Entry, facts: EntryFac
     return;
   }
 
-  for (const nested of codemodeCalls(result.details, callId)) {
+  for (const nested of codemodeCalls(message, callId)) {
     collection.calls.push({
       tool: nested.tool,
       day: call.day,
