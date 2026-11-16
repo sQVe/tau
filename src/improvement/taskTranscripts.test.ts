@@ -96,6 +96,19 @@ it('reads unknown coverage from a damaged transcript', async () => {
   expect(read.status === 'read' ? read.coverage : 'failed').not.toBe('complete');
 });
 
+it('fails when the session folder is a regular file', async () => {
+  const cwd = await createTemporaryRepository(onTestFinished);
+  const agent = temporaryDirectory(onTestFinished, 'tau-task-transcripts-');
+  const sessionDirectory = join(agent, 'sessions');
+
+  writeFile(sessionDirectory, 'not a directory');
+
+  const read = await readTaskTranscripts(sources(cwd, sessionDirectory));
+
+  expect(read.status).toBe('failed');
+  expect(read.status === 'failed' ? read.reason : '').toContain(sessionDirectory);
+});
+
 it('reads unknown coverage from an unreadable worker record', async () => {
   const cwd = await createTemporaryRepository(onTestFinished);
   const agent = temporaryDirectory(onTestFinished, 'tau-task-transcripts-');
@@ -106,6 +119,6 @@ it('reads unknown coverage from an unreadable worker record', async () => {
 
   const read = await readTaskTranscripts(sources(cwd, sessionDirectory));
 
-  expect(read).toMatchObject({ status: 'read', coverage: 'unknown' });
+  expect(read).toMatchObject({ status: 'read', workers: [], coverage: 'unknown' });
   expect(read.status === 'read' ? read.coverage : 'failed').not.toBe('complete');
 });

@@ -200,6 +200,20 @@ const table: {
     expected: { error: 'task worktree must be absolute.' },
   },
   {
+    name: 'refuses a blank task pull request',
+    input: { action: 'task', pullRequest: ' ', worktree: '/repository/me-1' },
+    expected: { error: 'task needs a non-blank pullRequest.' },
+  },
+  {
+    name: 'refuses a blank task worktree',
+    input: {
+      action: 'task',
+      pullRequest: 'https://github.com/example/repo/pull/1',
+      worktree: ' ',
+    },
+    expected: { error: 'task needs a non-blank worktree.' },
+  },
+  {
     name: 'refuses a field the task does not take',
     input: {
       action: 'task',

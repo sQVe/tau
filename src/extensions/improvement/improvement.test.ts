@@ -546,6 +546,34 @@ it('refuses a task whose merged pull request cannot be read', async () => {
   expect(failure).toContain('https://github.com/owner/repo/pull/7');
 });
 
+it('refuses a task whose session folder cannot be read', async () => {
+  const worktree = await createTemporaryRepository(onTestFinished);
+  const agent = temporaryDirectory(onTestFinished, 'tau-improvement-task-');
+  const exec = mergedPullRequestExec();
+
+  vi.stubEnv('PI_CODING_AGENT_DIR', agent);
+
+  const sessionDirectory = SessionManager.create(worktree).getSessionDir();
+
+  rmSync(sessionDirectory, { recursive: true, force: true });
+  writeFile(sessionDirectory, 'not a directory');
+
+  const failure = await runManagerTool(
+    worktree,
+    {
+      action: 'task',
+      pullRequest: 'https://github.com/owner/repo/pull/7',
+      worktree,
+    },
+    exec.exec,
+  ).then(
+    () => 'no error',
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  );
+
+  expect(failure).toContain(sessionDirectory);
+});
+
 it('returns no project root when the task worktree is gone', async () => {
   const worktree = await createTemporaryRepository(onTestFinished);
   const agent = temporaryDirectory(onTestFinished, 'tau-improvement-task-');
