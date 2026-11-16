@@ -1,52 +1,11 @@
-import { execFile } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
-import { open } from 'node:fs/promises';
-import { join } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
-import { promisify } from 'node:util';
+import { readFile } from 'node:fs/promises';
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
+import { feedbackRead, published, sessionHeader } from '../../../tests/transcriptBuilders.js';
 import { hours, merged, minute, setup, url } from './fixtures/mergeWatchSetup.js';
 
-const repository = 'github.com/owner/repo';
-
-const sessionHeader = (cwd: string) =>
-  JSON.stringify({ type: 'session', id: 's', timestamp: '2026-11-01T00:00:00.000Z', cwd });
-
-const entry = (id: string, timestamp: string, message: Record<string, unknown>) =>
-  JSON.stringify({ type: 'message', id, timestamp, message });
-
-const call = (
-  id: string,
-  timestamp: string,
-  name: string,
-  parameters: Record<string, unknown>,
-  details: Record<string, unknown> = {},
-) => [
-  entry(id, timestamp, {
-    role: 'assistant',
-    content: [{ type: 'toolCall', id, name, arguments: parameters }],
-  }),
-  entry(`${id}-result`, timestamp, {
-    role: 'toolResult',
-    toolCallId: id,
-    details,
-  }),
-];
-
-const published = (pr: number) =>
-  call('verify', '2026-11-01T00:01:00.000Z', 'pr', {
-    action: 'verify',
-    repository,
-    pr,
-  });
-
-const feedbackRead = (index: number, pr: number) =>
-  call(`feedback-${index}`, `2026-11-01T00:0${index + 2}:00.000Z`, 'pr_feedback', {
-    action: 'read',
-    pr,
-  });
+vi.mock(import('node:fs/promises'), { spy: true });
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
@@ -112,17 +71,26 @@ it('says review signals unknown when the merged pull request cannot be read', as
 });
 
 it('keeps the merged watch from its deadline and next poll while the signal read is open', async () => {
-  const { fake, handlers, runBash, emit, polls, sessionDirectory } = setup();
+  const { fake, handlers, runBash, emit, polls, writeTranscript } = setup();
+  const readHeld = Promise.withResolvers<undefined>();
+  const finishReturned = Promise.withResolvers<undefined>();
+  const transcript = sessionHeader('/repository');
 
-  mkdirSync(sessionDirectory, { recursive: true });
-  const transcriptPath = join(sessionDirectory, 'main.jsonl');
-  await promisify(execFile)('mkfifo', [transcriptPath]);
+  writeTranscript([transcript]);
+
+  vi.mocked(readFile).mockImplementationOnce(async () => {
+    await readHeld.promise;
+
+    setImmediate(() => {
+      finishReturned.resolve(undefined);
+    });
+
+    return transcript;
+  });
 
   await runBash('gh pr merge --auto');
   handlers.state = () => merged;
   await vi.advanceTimersByTimeAsync(minute);
-
-  const writer = await open(transcriptPath, 'w');
 
   await vi.advanceTimersByTimeAsync(2 * hours);
 
@@ -130,8 +98,8 @@ it('keeps the merged watch from its deadline and next poll while the signal read
   expect(polls()).toHaveLength(1);
 
   await emit('session_shutdown', { reason: 'quit' });
-  await writer.close();
-  await delay(50);
+  readHeld.resolve(undefined);
+  await finishReturned.promise;
 
   expect(fake.sendMessage).not.toHaveBeenCalled();
 });
