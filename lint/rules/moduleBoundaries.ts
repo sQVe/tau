@@ -114,6 +114,11 @@ export const moduleList: readonly ModuleDeclaration[] = [
   { name: 'skillTools', entry: 'skillTools', publicFiles: [] },
   { name: 'tau', entry: 'tau', publicFiles: [] },
   { name: 'tauDirectory', entry: 'tauDirectory', publicFiles: [] },
+  {
+    name: 'verification',
+    entry: 'verification/verification',
+    publicFiles: ['verification/freshness', 'verification/records', 'verification/selection'],
+  },
   { name: 'wake', entry: 'wake/wake', publicFiles: [] },
   { name: 'worker', entry: 'worker', publicFiles: [] },
 ];
@@ -143,6 +148,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   shell: [],
   skillTools: [],
   tauDirectory: ['errors', 'git'],
+  verification: ['errors', 'record', 'schema'],
   wake: [],
   worker: ['schema'],
 };

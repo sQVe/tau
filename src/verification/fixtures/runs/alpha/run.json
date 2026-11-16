@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "run": "alpha",
+  "target": "482",
+  "head": null,
+  "dirty": true,
+  "platform": {
+    "os": "linux",
+    "arch": "x64"
+  },
+  "startedAt": "2026-11-16T10:00:00.000Z",
+  "treeAtLaunch": null,
+  "treeAtStop": null,
+  "launch": null,
+  "doctor": {
+    "exitCode": 1,
+    "logPath": "doctor.log"
+  },
+  "stop": {
+    "exitCode": null,
+    "logPath": "stop.log"
+  },
+  "items": [
+    {
+      "item": "journeys/delegate-a-check",
+      "steps": 2
+    }
+  ]
+}

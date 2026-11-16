@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "run": "delegate-a-check",
+  "target": "482",
+  "head": "1111111111111111111111111111111111111111",
+  "dirty": false,
+  "platform": {
+    "os": "linux",
+    "arch": "x64"
+  },
+  "startedAt": "2026-11-16T10:00:00.000Z",
+  "treeAtLaunch": "2222222222222222222222222222222222222222",
+  "treeAtStop": "3333333333333333333333333333333333333333",
+  "launch": {
+    "exitCode": 0,
+    "logPath": "launch.log"
+  },
+  "doctor": {
+    "exitCode": 0,
+    "logPath": "doctor.log"
+  },
+  "stop": {
+    "exitCode": 0,
+    "logPath": "stop.log"
+  },
+  "items": [
+    {
+      "item": "journeys/delegate-a-check",
+      "steps": 2
+    }
+  ]
+}

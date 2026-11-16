@@ -200,6 +200,8 @@ const pureModules = [
   'src/reviewCapture/reports.ts',
   'src/schema.ts',
   'src/shell.ts',
+  'src/verification/freshness.ts',
+  'src/verification/selection.ts',
   'src/wake/deliveryStep.ts',
   'tests/adrIndexMark.ts',
   'tests/hcIsolationHarness.ts',
