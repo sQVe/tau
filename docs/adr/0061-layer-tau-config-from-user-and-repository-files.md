@@ -60,6 +60,7 @@ check that code.
 | `qa`            | yes       | no              | `repositories` with URL and test-account commands, and `dataWrites`                                               |
 | `reviews`       | yes       | no              | `repositories` with the review bots per entry                                                                     |
 | `fullCheck`     | yes       | yes             | User file: `repositories` with the lock scope per entry. Repository file: `argv`, read only in a trusted project  |
+| `verification`  | no        | yes             | `targets` with launch, doctor, and stop argv per target, read only in a trusted project                           |
 
 A key in the wrong file is an error. The error names the file and the file the key belongs in.
 `tdd.verificationArgv` is validated by the selected `tdd.runner`; the Vitest runner's command must
