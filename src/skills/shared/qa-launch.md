@@ -27,8 +27,9 @@ Use this procedure when sending a change to a `qa` worker.
 4. Leave the app URL, test account, and data writes to Tau, which fills them from the user's config.
    Ask the user nothing about them in advance.
 5. Launch the worker with the brief. Pass a blocking question from the worker to the user.
-6. Call `verification` `stop` on each run after every worker that uses it has reported. When a `qa`
-   worker fails to start, stop its run only when no running worker uses it. A failed target launch
-   is handled in step 3.
+6. Call `verification` `stop` on each run, and do the guide's Stop step for each thing you started
+   by hand, after every worker that uses it has reported. When a `qa` worker fails to start, stop
+   what it would have used only when no running worker uses it. A failed target launch is handled in
+   step 3.
 7. Report each run's name and directory, and each registered item with no saved result file, which
    counts as not run. The manager never records a result for a worker.
