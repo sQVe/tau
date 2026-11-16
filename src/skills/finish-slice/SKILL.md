@@ -68,9 +68,10 @@ for the workspace.
      without `.md`, such as `journeys/delegate-a-check`, whichever target it came from. A fresh
      `passed` result is evidence the item is met, and a fresh `failed` result is evidence it is not
      met; cite the result's run and item. Fresh results for one item that disagree count as not met.
-     A stale result, a missing result, a `verificationRecord` gap for the run, or a `null` field is
-     not evidence. Name the stale `reason` or the gap. Without other evidence for the audited
-     commit, the item is not run.
+     A fresh `failed` result with no `differs` step or end state was not fully checked: count it as
+     not run and cite its `counts`. A stale result, a missing result, a `verificationRecord` gap for
+     the run, or a `null` field is not evidence. Name the stale `reason` or the gap. Without other
+     evidence for the audited commit, the item is not run.
    - Run each manual check yourself and cite its output. A check that cannot run is "not run", with
      the reason and the command you tried. It is never handed to the user.
    - Save the real output of each check you run in `$slicedir`, in a file named for the check, never
