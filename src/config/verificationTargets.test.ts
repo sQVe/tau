@@ -45,6 +45,7 @@ it.each([
     value: { targets: { app: { launch: ['pnpm'], doctor: ['pnpm'] } } },
     field: 'verification.targets.app.stop',
     example: '["pnpm"',
+    reason: 'stop is missing',
   },
   {
     name: 'an empty launch argv',
@@ -53,6 +54,7 @@ it.each([
     },
     field: 'verification.targets.app.launch',
     example: '["pnpm"',
+    reason: 'must be a non-empty array',
   },
   {
     name: 'a non-string doctor argument',
@@ -61,31 +63,42 @@ it.each([
     },
     field: 'verification.targets.app.doctor',
     example: '["pnpm"',
+    reason: 'must be a non-empty array',
   },
   {
     name: 'targets as an array',
     value: { targets: [] },
     field: 'verification.targets',
     example: '["pnpm"',
+    reason: 'keyed by target name',
   },
   {
     name: 'targets as a string',
     value: { targets: 'app' },
     field: 'verification.targets',
     example: '["pnpm"',
+    reason: 'keyed by target name',
   },
   {
     name: 'verification as an array',
     value: [],
     field: 'verification',
     example: '["pnpm"',
+    reason: 'verification must be an object',
   },
-  { name: 'no targets', value: {}, field: 'verification.targets', example: '["pnpm"' },
+  {
+    name: 'no targets',
+    value: {},
+    field: 'verification.targets',
+    example: '["pnpm"',
+    reason: 'targets is missing',
+  },
   {
     name: 'empty targets',
     value: { targets: {} },
     field: 'verification.targets',
     example: '["pnpm"',
+    reason: 'must name at least one target',
   },
   {
     name: 'an invalid target name',
@@ -94,14 +107,16 @@ it.each([
     },
     field: 'verification.targets',
     example: '"sandbox"',
+    reason: 'must use lower-case letters',
   },
   {
     name: 'a target that is not an object',
     value: { targets: { app: true } },
     field: 'verification.targets.app',
     example: '["pnpm"',
+    reason: 'must be an object such as',
   },
-])('rejects $name', ({ value, field, example }) => {
+])('rejects $name', ({ value, field, example, reason }) => {
   const { location, writeRepository, repositoryFile } = fixture();
 
   writeRepository({ verification: value });
@@ -111,6 +126,7 @@ it.each([
   expect(read).toThrow(repositoryFile);
   expect(read).toThrow(field);
   expect(read).toThrow(example);
+  expect(read).toThrow(reason);
 });
 
 it('ignores the repository file in an untrusted project', () => {
