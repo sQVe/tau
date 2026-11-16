@@ -13,6 +13,7 @@ import codeReviewExtension from '../src/extensions/codeReview/codeReview.js';
 import draftReviewExtension from '../src/extensions/draftReview/draftReview.js';
 import fullCheckExtension from '../src/extensions/fullCheck/fullCheck.js';
 import handoverExtension from '../src/extensions/handover/handover.js';
+import improvementExtension from '../src/extensions/improvement/improvement.js';
 import prExtension from '../src/extensions/pr/pr.js';
 import prFeedbackExtension from '../src/extensions/prFeedback/prFeedback.js';
 import sliceExtension from '../src/extensions/slice/slice.js';
@@ -30,6 +31,7 @@ const registerTools = (pi: ExtensionAPI) => {
   fullCheckExtension(pi);
   codeReviewExtension(pi);
   handoverExtension(pi);
+  improvementExtension(pi);
   prExtension(pi);
   prFeedbackExtension(pi);
   sliceExtension(pi);
