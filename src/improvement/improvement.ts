@@ -22,6 +22,11 @@ interface SessionFiles {
   workerRecords: string[];
 }
 
+interface WorkerFiles {
+  workerSessions: string[];
+  workerRecords: string[];
+}
+
 interface WorkerRecord {
   task: WorkerTask;
   directory: string;
@@ -68,14 +73,23 @@ const isWorkerSession = (path: string) => isSession(path) && isInWorkerDirectory
 const isWorkerRecord = (path: string) =>
   ['assignment.json', 'task.json'].includes(basename(path)) && isInWorkerDirectory(path);
 
-export const findSessionFiles = async (agentDirectory: string): Promise<SessionFiles> => {
-  const managerFiles = await listFiles(join(agentDirectory, 'sessions'));
+const findWorkerFiles = async (agentDirectory: string): Promise<WorkerFiles> => {
   const workerFiles = await listFiles(join(agentDirectory, 'tau'));
 
   return {
-    managerSessions: managerFiles.filter(isSession),
     workerSessions: workerFiles.filter(isWorkerSession),
     workerRecords: workerFiles.filter(isWorkerRecord),
+  };
+};
+
+export const findSessionFiles = async (agentDirectory: string): Promise<SessionFiles> => {
+  const managerFiles = await listFiles(join(agentDirectory, 'sessions'));
+  const { workerSessions, workerRecords } = await findWorkerFiles(agentDirectory);
+
+  return {
+    managerSessions: managerFiles.filter(isSession),
+    workerSessions,
+    workerRecords,
   };
 };
 
@@ -146,7 +160,7 @@ export const readWorkerTranscripts = async (
   agentDirectory: string,
   taskIds: ReadonlySet<string>,
 ): Promise<Map<string, WorkerTranscript>> => {
-  const { workerRecords, workerSessions } = await findSessionFiles(agentDirectory);
+  const { workerRecords, workerSessions } = await findWorkerFiles(agentDirectory);
   const workers = new Map<string, WorkerTranscript>();
 
   for (const recordPath of workerRecords) {

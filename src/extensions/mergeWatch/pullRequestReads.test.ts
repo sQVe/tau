@@ -10,6 +10,7 @@ const mergedOutput = JSON.stringify({
   number: 42,
   headRefName: 'me-7-change',
   createdAt: '2026-11-01T00:00:00.000Z',
+  mergedAt: '2026-11-02T00:00:00.000Z',
 });
 
 const readWith = (result: ExecResult, target = url) => {
@@ -23,14 +24,16 @@ const readWith = (result: ExecResult, target = url) => {
   return { execFake, read };
 };
 
-it('reads the repository, branch, and creation time of a merged pull request', async () => {
+it('reads the repository, branch, creation time, and merge time of a merged pull request', async () => {
   const { execFake, read } = readWith(succeededResult(mergedOutput));
 
   await expect(read).resolves.toEqual({
     repository: 'github.com/owner/repo',
     number: 42,
+    url,
     headBranch: 'me-7-change',
     createdAt: '2026-11-01T00:00:00.000Z',
+    mergedAt: '2026-11-02T00:00:00.000Z',
   });
 
   expect(execFake.calls[0]?.commandArguments).toEqual([
@@ -38,7 +41,7 @@ it('reads the repository, branch, and creation time of a merged pull request', a
     'view',
     url,
     '--json',
-    'number,headRefName,createdAt',
+    'number,headRefName,createdAt,mergedAt',
   ]);
 });
 

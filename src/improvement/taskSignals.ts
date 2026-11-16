@@ -29,30 +29,21 @@ export type TaskSignalsRead =
   | { status: 'read'; signals: ReviewSignals; coverage: Coverage }
   | { status: 'failed'; reason: string };
 
-type ReadResult<Value> = { status: 'read'; value: Value } | { status: 'failed'; reason: string };
-
-const listSessionPaths = async (directory: string): Promise<ReadResult<string[]>> => {
+const listSessionPaths = async (directory: string): Promise<string[]> => {
   try {
     const names = await readdir(directory, { encoding: 'utf8' });
 
-    const paths = names
-      .filter((name) => name.endsWith('.jsonl'))
-      .map((name) => join(directory, name));
-
-    return { status: 'read', value: paths };
+    return names.filter((name) => name.endsWith('.jsonl')).map((name) => join(directory, name));
   } catch (error) {
     if (isMissingFile(error)) {
-      return { status: 'read', value: [] };
+      return [];
     }
 
-    return { status: 'failed', reason: errorMessage(error) };
+    throw error;
   }
 };
 
-const changedSince = async (
-  paths: readonly string[],
-  createdAt: number,
-): Promise<ReadResult<string[]>> => {
+const changedSince = async (paths: readonly string[], createdAt: number): Promise<string[]> => {
   const kept: string[] = [];
 
   for (const path of paths) {
@@ -68,7 +59,7 @@ const changedSince = async (
         continue;
       }
 
-      return { status: 'failed', reason: `${path}: ${errorMessage(error)}` };
+      throw new Error(`${path}: ${errorMessage(error)}`, { cause: error });
     }
 
     if (lastChanged >= createdAt) {
@@ -76,12 +67,10 @@ const changedSince = async (
     }
   }
 
-  return { status: 'read', value: kept };
+  return kept;
 };
 
-const readSessionTranscripts = async (
-  paths: readonly string[],
-): Promise<ReadResult<TranscriptFact[]>> => {
+const readSessionTranscripts = async (paths: readonly string[]): Promise<TranscriptFact[]> => {
   const transcripts: TranscriptFact[] = [];
 
   for (const path of paths) {
@@ -89,13 +78,13 @@ const readSessionTranscripts = async (
     const transcript = await readTranscript(path);
 
     if (transcript.status === 'unreadable') {
-      return { status: 'failed', reason: `${path}: ${transcript.reason}` };
+      throw new Error(`${path}: ${transcript.reason}`);
     }
 
     transcripts.push({ path, transcript });
   }
 
-  return { status: 'read', value: transcripts };
+  return transcripts;
 };
 
 const workerIdsOf = (facts: readonly TaskFact[]): ReadonlySet<string> => {
@@ -113,18 +102,31 @@ const workerIdsOf = (facts: readonly TaskFact[]): ReadonlySet<string> => {
 const readWorkersFor = async (
   agentDirectory: string,
   workerIds: ReadonlySet<string>,
-): Promise<ReadResult<MappingFacts['workers']>> => {
+): Promise<MappingFacts['workers']> => {
   if (workerIds.size === 0) {
-    return { status: 'read', value: new Map<string, WorkerTranscript>() };
+    return new Map<string, WorkerTranscript>();
   }
 
-  try {
-    const workers = await readWorkerTranscripts(agentDirectory, workerIds);
+  return readWorkerTranscripts(agentDirectory, workerIds);
+};
 
-    return { status: 'read', value: workers };
-  } catch (error) {
-    return { status: 'failed', reason: errorMessage(error) };
+const mapOneTask = (
+  sources: TaskSignalSources,
+  transcripts: readonly TranscriptFact[],
+  workers: MappingFacts['workers'],
+) => {
+  const [task] = mapTasks({
+    pullRequests: [sources.pullRequest],
+    transcripts,
+    repositories: new Map([[sources.cwd, sources.pullRequest.repository]]),
+    workers,
+  }).tasks;
+
+  if (task === undefined) {
+    throw new Error('The task mapping returned no task.');
   }
+
+  return task;
 };
 
 export const readTaskSignals = async (sources: TaskSignalSources): Promise<TaskSignalsRead> => {
@@ -137,53 +139,26 @@ export const readTaskSignals = async (sources: TaskSignalSources): Promise<TaskS
     };
   }
 
-  const listing = await listSessionPaths(sources.sessionDirectory);
+  try {
+    const paths = await listSessionPaths(sources.sessionDirectory);
+    const recent = await changedSince(paths, createdAt);
+    const transcripts = await readSessionTranscripts(recent);
 
-  if (listing.status === 'failed') {
-    return listing;
-  }
+    const firstTask = mapOneTask(sources, transcripts, new Map<string, WorkerTranscript>());
+    const workerIds = workerIdsOf(firstTask.facts);
+    const workers = await readWorkersFor(sources.agentDirectory, workerIds);
+    const task = mapOneTask(sources, transcripts, workers);
 
-  const recent = await changedSince(listing.value, createdAt);
-
-  if (recent.status === 'failed') {
-    return recent;
-  }
-
-  const transcripts = await readSessionTranscripts(recent.value);
-
-  if (transcripts.status === 'failed') {
-    return transcripts;
-  }
-
-  const mapping = (workers: MappingFacts['workers']) =>
-    mapTasks({
-      pullRequests: [sources.pullRequest],
-      transcripts: transcripts.value,
-      repositories: new Map([[sources.cwd, sources.pullRequest.repository]]),
-      workers,
-    });
-
-  const firstTask = mapping(new Map<string, WorkerTranscript>()).tasks[0];
-  const workerIds = workerIdsOf(firstTask?.facts ?? []);
-  const workers = await readWorkersFor(sources.agentDirectory, workerIds);
-
-  if (workers.status === 'failed') {
-    return workers;
-  }
-
-  const task = mapping(workers.value).tasks[0];
-
-  if (task === undefined) {
-    return { status: 'failed', reason: 'The task mapping returned no task.' };
-  }
-
-  return {
-    status: 'read',
-    signals: decideReviewSignals({
-      evidence: { facts: task.facts, missing: task.missing },
-      reverted: false,
+    return {
+      status: 'read',
+      signals: decideReviewSignals({
+        evidence: { facts: task.facts, missing: task.missing },
+        reverted: false,
+        coverage: task.coverage,
+      }),
       coverage: task.coverage,
-    }),
-    coverage: task.coverage,
-  };
+    };
+  } catch (error) {
+    return { status: 'failed', reason: errorMessage(error) };
+  }
 };

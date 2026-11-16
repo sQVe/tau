@@ -59,14 +59,15 @@ const mergedPullRequestOutput = (
   number = 7,
   headRefName = 'me-7-change',
   createdAt = '2026-11-01T00:00:00.000Z',
-): ExecResult => succeededResult(JSON.stringify({ number, headRefName, createdAt }));
+  mergedAt = '2026-11-02T00:00:00.000Z',
+): ExecResult => succeededResult(JSON.stringify({ number, headRefName, createdAt, mergedAt }));
 
 export const keyOf = (_command: string, commandArguments: readonly string[]): Key | undefined => {
   if (commandArguments[1] === 'checks') {
     return 'checks';
   }
 
-  if (commandArguments.includes('number,headRefName,createdAt')) {
+  if (commandArguments.includes('number,headRefName,createdAt,mergedAt')) {
     return 'merged';
   }
 

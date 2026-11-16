@@ -4,12 +4,7 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.ts';
-import {
-  readTranscript,
-  readWorkerRecord,
-  readWorkerTranscripts,
-  readWorkerTranscriptsFor,
-} from './improvement.ts';
+import { readTranscript, readWorkerRecord, readWorkerTranscripts } from './improvement.ts';
 import { mapTasks } from './taskMapping.ts';
 import type { WorkerTranscript } from './taskMapping.ts';
 import { parseTranscript } from './transcript.ts';
@@ -232,19 +227,17 @@ describe('readWorkerTranscripts', () => {
     expect(await readWorkerTranscripts(join(agent, 'absent'), new Set())).toEqual(new Map());
   });
 
-  it('reads only the worker records the caller names', async () => {
+  it('reads workers when the manager session folder cannot be listed', async () => {
     const agent = improvementDirectory();
     const workers = join(agent, 'tau', 'main-1', 'workers');
 
     writeFile(join(workers, 'w1', 'task.json'), '{"taskId":"w1","createdAt":1}');
     writeFile(join(workers, 'w1', 'session.jsonl'), header);
-    writeFile(join(workers, 'w2', 'task.json'), '{"createdAt":1}');
-    writeFile(join(workers, 'w3', 'task.json'), '{"taskId":"w3","createdAt":1}');
-    writeFile(join(workers, 'w3', 'session.jsonl'), header);
+    writeFile(join(agent, 'sessions'), 'not a directory');
 
-    const selected = await readWorkerTranscriptsFor(agent, new Set(['w1']));
-
-    expect(Object.fromEntries(selected)).toEqual({ w1: 'readable' });
+    expect(Object.fromEntries(await readWorkerTranscripts(agent, new Set(['w1'])))).toEqual({
+      w1: 'readable',
+    });
   });
 });
 

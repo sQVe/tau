@@ -26,6 +26,7 @@ const mergedSchema = Type.Object({
   number: Type.Integer({ minimum: 1 }),
   headRefName: Type.String({ minLength: 1 }),
   createdAt: Type.String({ minLength: 1 }),
+  mergedAt: Type.String({ minLength: 1 }),
 });
 
 const failingChecksExitCode = 1;
@@ -129,7 +130,7 @@ export const readMergedPullRequest = async (
       'view',
       url,
       '--json',
-      'number,headRefName,createdAt',
+      'number,headRefName,createdAt,mergedAt',
     ]);
 
     checkOutput(label, mergedSchema, value);
@@ -137,8 +138,10 @@ export const readMergedPullRequest = async (
     return {
       repository,
       number: value.number,
+      url,
       headBranch: value.headRefName,
       createdAt: value.createdAt,
+      mergedAt: value.mergedAt,
     };
   } catch {
     return undefined;

@@ -100,17 +100,13 @@ export const createMergeWatches = (
     deliver(watch.context, describeMergedPullRequest(url, decideMergeOffer(read)));
   };
 
-  const settle = (watch: Watch, url: string, outcome: WatchOutcome): boolean => {
+  const settle = (
+    watch: Watch,
+    url: string,
+    outcome: Exclude<WatchOutcome, { kind: 'merged' }>,
+  ): boolean => {
     if (outcome.kind === 'waiting') {
       return true;
-    }
-
-    if (outcome.kind === 'merged') {
-      clearTimeout(watch.deadlineTimer);
-      // oxlint-disable-next-line typescript/no-floating-promises -- readMergedPullRequest and readTaskSignals turn every failure into undefined, so a finish cannot reject.
-      void finishMerged(watch, url);
-
-      return false;
     }
 
     end(watch);
@@ -127,7 +123,18 @@ export const createMergeWatches = (
     const poll = async () => {
       const outcome = await readOutcome(exec, watch, url);
 
-      if (!watch.reads.signal.aborted && settle(watch, url, outcome)) {
+      if (watch.reads.signal.aborted) {
+        return;
+      }
+
+      if (outcome.kind === 'merged') {
+        clearTimeout(watch.deadlineTimer);
+        await finishMerged(watch, url);
+
+        return;
+      }
+
+      if (settle(watch, url, outcome)) {
         schedule(watch, url);
       }
     };

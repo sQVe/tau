@@ -75,8 +75,10 @@ const sources = (
   pullRequest: {
     repository,
     number: 7,
+    url: 'https://github.com/owner/repo/pull/7',
     headBranch: 'me-7-change',
     createdAt: '2026-11-01T00:00:00.000Z',
+    mergedAt: '2026-11-02T00:00:00.000Z',
   },
   ...overrides,
 });
@@ -214,8 +216,10 @@ describe('readTaskSignals', () => {
         pullRequest: {
           repository,
           number: 7,
+          url: 'https://github.com/owner/repo/pull/7',
           headBranch: 'me-7-change',
           createdAt: 'soon',
+          mergedAt: '2026-11-02T00:00:00.000Z',
         },
       }),
     );
