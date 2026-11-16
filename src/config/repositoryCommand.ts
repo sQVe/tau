@@ -26,7 +26,7 @@ const knownSectionKeys: Readonly<Record<RepositoryCommandKey, KnownKeys>> = {
 
 const lockScopes: readonly LockScope[] = ['checkout', 'repository'];
 
-const readArgv = (source: string, field: string, value: unknown): string[] => {
+export const readArgv = (source: string, field: string, value: unknown): string[] => {
   const expected = `${field} must be a non-empty array of non-empty strings, such as ["pnpm", "check"].`;
 
   if (!Array.isArray(value) || value.length === 0) {
@@ -69,7 +69,7 @@ const readSection = (
   return readArgv(source, `${key}.argv`, section.argv);
 };
 
-const sectionOf = ({ value }: ConfigFile, key: string): unknown =>
+export const sectionOf = ({ value }: ConfigFile, key: string): unknown =>
   isRecord(value) ? value[key] : undefined;
 
 export const withIgnoredNote = (message: string, ignored: string | undefined): string =>
@@ -77,7 +77,7 @@ export const withIgnoredNote = (message: string, ignored: string | undefined): s
     ? message
     : `${message} Tau ignored ${ignored} because the project is not trusted.`;
 
-const findRepositoryFile = (
+export const findRepositoryFile = (
   location: ConfigLocation,
   key: string,
 ): { project: ConfigFile | undefined; ignored: string | undefined } => {
