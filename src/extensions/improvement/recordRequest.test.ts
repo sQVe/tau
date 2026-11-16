@@ -1,6 +1,7 @@
+import { Value } from 'typebox/value';
 import { expect, it } from 'vitest';
 
-import { parseRecordRequest } from './recordRequest.js';
+import { parameters, parseRecordRequest } from './recordRequest.js';
 import type { RecordInput, RecordRequest } from './recordRequest.js';
 
 const table: {
@@ -160,4 +161,53 @@ it.each(table.map((row) => [row.name, row] as const))('%s', (_name, { input, exp
   })();
 
   expect(result).toEqual(expected);
+});
+
+it('accepts a valid decision input', () => {
+  expect(
+    Value.Check(parameters, {
+      action: 'record',
+      kind: 'decision',
+      review: 'review-1',
+      item: 2,
+      choice: 'approved',
+    }),
+  ).toBe(true);
+});
+
+it.each(
+  [
+    {
+      name: 'an item below 1',
+      input: {
+        action: 'record',
+        kind: 'decision',
+        review: 'review-1',
+        item: 0,
+        choice: 'approved',
+      },
+    },
+    {
+      name: 'a fractional item',
+      input: {
+        action: 'record',
+        kind: 'decision',
+        review: 'review-1',
+        item: 1.5,
+        choice: 'approved',
+      },
+    },
+    {
+      name: 'an unknown choice',
+      input: {
+        action: 'record',
+        kind: 'decision',
+        review: 'review-1',
+        item: 2,
+        choice: 'maybe',
+      },
+    },
+  ].map((row) => [row.name, row] as const),
+)('refuses %s', (_name, { input }) => {
+  expect(Value.Check(parameters, input)).toBe(false);
 });
