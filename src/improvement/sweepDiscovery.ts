@@ -1,0 +1,270 @@
+import { stat } from 'node:fs/promises';
+import { dirname } from 'node:path';
+
+import type { Exec } from '../command.ts';
+import { errorMessage, isMissingFile } from '../errors.ts';
+import { readOriginRepository } from '../github/repositoryTarget.ts';
+import { formatRepository } from '../github/repositoryTargetDecisions.ts';
+import { findSessionFiles, readTranscriptChunk } from './improvement.ts';
+import { findProjectRoot } from './projectRoot.ts';
+import type { SweepIndex } from './sweepIndex.ts';
+import { continueTranscript, finishTranscript } from './transcript.ts';
+import type { TranscriptState } from './transcript.ts';
+
+type TranscriptEntry = SweepIndex['transcripts'][string];
+
+interface TranscriptLocation {
+  projectRoot: string;
+  repository: string | null;
+}
+
+interface LocationRead {
+  status: 'resolved';
+  location: TranscriptLocation;
+}
+
+type LocationResult = LocationRead | { status: 'unresolved'; reason: string };
+
+export interface ResolveTranscriptOptions {
+  path: string;
+  exec: Exec;
+  signal: AbortSignal;
+  cache: Map<string, Promise<LocationResult>>;
+}
+
+export interface ResolvedTranscript {
+  status: 'resolved';
+  entry: Extract<TranscriptEntry, { status: 'resolved' }>;
+  repository: string | null;
+}
+
+export interface UnresolvedTranscript {
+  status: 'unresolved';
+  entry: Extract<TranscriptEntry, { status: 'unresolved' }>;
+}
+
+type HeaderRead =
+  | { status: 'resolved'; cwd: string }
+  | { status: 'unresolved'; cwd: string | null; reason: string };
+
+export interface DiscoveryOptions {
+  agentDirectory: string;
+  index: SweepIndex;
+  exec: Exec;
+  signal: AbortSignal;
+}
+
+export type DiscoveryResult =
+  | { status: 'ok'; index: SweepIndex; repositories: ReadonlyMap<string, string> }
+  | { status: 'failed'; reason: string };
+
+const emptyTranscriptState: TranscriptState = {
+  header: 'pending',
+  calls: [],
+  malformedLines: 0,
+  droppedCallReasons: [],
+};
+
+// oxlint-disable-next-line no-magic-numbers -- A 64 KiB read keeps short reads rare without allocating much.
+const headerByteLimit = 64 * 1024;
+
+const nearestExistingDirectory = async (cwd: string): Promise<string | undefined> => {
+  let current: string | undefined = cwd;
+
+  while (current !== undefined) {
+    try {
+      // oxlint-disable-next-line no-await-in-loop -- Each parent is checked before the next.
+      const facts = await stat(current);
+
+      return facts.isDirectory() ? current : undefined;
+    } catch (error) {
+      if (!isMissingFile(error)) {
+        return undefined;
+      }
+    }
+
+    const parent = dirname(current);
+
+    current = parent === current ? undefined : parent;
+  }
+
+  return undefined;
+};
+
+const readLocation = async (
+  cwd: string,
+  exec: Exec,
+  signal: AbortSignal,
+): Promise<LocationResult> => {
+  const existingDirectory = await nearestExistingDirectory(cwd);
+
+  if (existingDirectory === undefined) {
+    return { status: 'unresolved', reason: `The directory ${cwd} does not exist.` };
+  }
+
+  let projectRoot: string;
+
+  try {
+    projectRoot = await findProjectRoot(existingDirectory);
+  } catch (error) {
+    return { status: 'unresolved', reason: errorMessage(error) };
+  }
+
+  try {
+    const origin = await readOriginRepository({ exec, cwd: existingDirectory, signal });
+    const repository = origin.status === 'named' ? formatRepository(origin.repository) : null;
+
+    return { status: 'resolved', location: { projectRoot, repository } };
+  } catch (error) {
+    return { status: 'unresolved', reason: errorMessage(error) };
+  }
+};
+
+const cachedLocation = (
+  cwd: string,
+  options: ResolveTranscriptOptions,
+): Promise<LocationResult> => {
+  const cached = options.cache.get(cwd);
+
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const read = readLocation(cwd, options.exec, options.signal);
+
+  options.cache.set(cwd, read);
+
+  return read;
+};
+
+const transcriptCwd = (state: TranscriptState): HeaderRead => {
+  const transcript = finishTranscript(state);
+
+  if (transcript.status === 'read') {
+    return { status: 'resolved', cwd: transcript.cwd };
+  }
+
+  if (transcript.status === 'malformed') {
+    return { status: 'unresolved', cwd: transcript.cwd ?? null, reason: transcript.reason };
+  }
+
+  return { status: 'unresolved', cwd: null, reason: 'The session file could not be read.' };
+};
+
+export const resolveTranscript = async (
+  options: ResolveTranscriptOptions,
+): Promise<ResolvedTranscript | UnresolvedTranscript> => {
+  const chunk = await readTranscriptChunk(options.path, 0, headerByteLimit);
+
+  if (chunk.status !== 'read') {
+    return {
+      status: 'unresolved',
+      entry: {
+        status: 'unresolved',
+        cwd: null,
+        reason: chunk.status === 'missing' ? 'The session file is missing.' : chunk.reason,
+      },
+    };
+  }
+
+  const header = transcriptCwd(continueTranscript(undefined, chunk.text));
+
+  if (header.status === 'unresolved') {
+    return {
+      status: 'unresolved',
+      entry: { status: 'unresolved', cwd: header.cwd, reason: header.reason },
+    };
+  }
+
+  const location = await cachedLocation(header.cwd, options);
+
+  if (location.status === 'unresolved') {
+    return {
+      status: 'unresolved',
+      entry: { status: 'unresolved', cwd: header.cwd, reason: location.reason },
+    };
+  }
+
+  return {
+    status: 'resolved',
+    entry: {
+      status: 'resolved',
+      cwd: header.cwd,
+      projectRoot: location.location.projectRoot,
+      cursor: 0,
+      state: emptyTranscriptState,
+    },
+    repository: location.location.repository,
+  };
+};
+
+const projectEntry = (index: SweepIndex, projectRoot: string, repository: string | null) => {
+  const previous = index.projects[projectRoot];
+
+  return {
+    repository,
+    merged: previous?.merged ?? { status: 'notRead' as const },
+  };
+};
+
+const repositoriesOf = (index: SweepIndex): Map<string, string> => {
+  const repositories = new Map<string, string>();
+
+  for (const entry of Object.values(index.transcripts)) {
+    if (entry.status !== 'resolved') {
+      continue;
+    }
+
+    const repository = index.projects[entry.projectRoot]?.repository;
+
+    if (repository !== null && repository !== undefined) {
+      repositories.set(entry.cwd, repository);
+    }
+  }
+
+  return repositories;
+};
+
+export const discoverTranscripts = async (options: DiscoveryOptions): Promise<DiscoveryResult> => {
+  let sessions: string[];
+
+  try {
+    const files = await findSessionFiles(options.agentDirectory);
+
+    sessions = files.managerSessions;
+  } catch (error) {
+    return { status: 'failed', reason: errorMessage(error) };
+  }
+
+  const transcripts = { ...options.index.transcripts };
+  const projects = { ...options.index.projects };
+  const cache = new Map<string, Promise<LocationResult>>();
+
+  for (const path of sessions) {
+    const existing = transcripts[path];
+
+    if (existing?.status === 'resolved') {
+      continue;
+    }
+
+    // oxlint-disable-next-line no-await-in-loop -- Each transcript is resolved before the next starts.
+    const result = await resolveTranscript({
+      path,
+      exec: options.exec,
+      signal: options.signal,
+      cache,
+    });
+
+    transcripts[path] = result.entry;
+
+    if (result.status === 'resolved') {
+      const root = result.entry.projectRoot;
+
+      projects[root] = projectEntry({ ...options.index, projects }, root, result.repository);
+    }
+  }
+
+  const index = { ...options.index, transcripts, projects };
+
+  return { status: 'ok', index, repositories: repositoriesOf(index) };
+};
