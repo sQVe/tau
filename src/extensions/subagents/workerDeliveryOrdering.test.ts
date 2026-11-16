@@ -413,6 +413,7 @@ class DeadlineStepCommand extends WorldCommand {
 
     if (phase === 3) {
       if (this.killSuccess) {
+        state.state = 'finished';
         model.phases[this.index] = 4;
 
         return;
