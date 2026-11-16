@@ -201,6 +201,7 @@ const assertInvariants = (world: World, managerState: Manager): void => {
   const noticeCounts = new Map<string, number>();
   const finalCounts = new Map<string, number>();
   const reportCounts = new Map<string, number>();
+  const reportedAssignments = new Set<string>();
 
   for (const notice of notices) {
     const state = world.assignments.find(
@@ -223,9 +224,15 @@ const assertInvariants = (world: World, managerState: Manager): void => {
 
     if (notice.kind === 'report') {
       reportCounts.set(notice.assignmentId, (reportCounts.get(notice.assignmentId) ?? 0) + 1);
+      reportedAssignments.add(notice.assignmentId);
     }
 
     if (notice.kind === 'ended' || notice.kind === 'deadline') {
+      expect(
+        reportedAssignments.has(notice.assignmentId),
+        `${notice.kind} notice for ${notice.assignmentId} after its report`,
+      ).toBe(false);
+
       finalCounts.set(notice.assignmentId, (finalCounts.get(notice.assignmentId) ?? 0) + 1);
     }
   }
