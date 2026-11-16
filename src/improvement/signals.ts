@@ -69,7 +69,6 @@ const transcriptSignals = (facts: ReviewSignalFacts): ReviewSignals => ({
   revert: revert(facts.reverted),
 });
 
-// Without a mapped, readable manager transcript, an absent fact says nothing about the task.
 const readsTranscripts = (coverage: Coverage) =>
   coverage === 'complete' || coverage === 'managerOnly';
 

@@ -414,7 +414,6 @@ describe('mapTasks time bound', () => {
     entry(`${id}-result`, timestamp, { role: 'toolResult', toolCallId: id, details: {} }),
   ];
 
-  // An old repository published its own #80 in October under the same key as the merged #80.
   const transcript = parseTranscript(
     [
       JSON.stringify({ type: 'session', id: 's', timestamp: 't', cwd: renamedCwd }),

@@ -104,7 +104,6 @@ export const publicationOf = (call: ToolCall): { repository: string; pr: number 
   return { repository, pr };
 };
 
-// Returns the action of a pr, pr_feedback, or code_review call, or the reason its shape is unknown.
 const actionOf = (call: ToolCall): { action: string } | { reason: string } => {
   if (call.arguments === undefined) {
     return { reason: 'The arguments are not an object.' };
@@ -200,7 +199,6 @@ const labelsOf = (call: ToolCall) => {
   return isRecord(labels) ? labels : {};
 };
 
-// An assignment record lives in a folder named after its assignment ID.
 const assignmentIdOf = (path: string | undefined) =>
   path === undefined ? undefined : basename(dirname(path));
 

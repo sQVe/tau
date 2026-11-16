@@ -31,7 +31,6 @@ const lock = (path: string) => {
   });
 };
 
-// Records each file's content so a test can assert that a reader left it unchanged.
 const snapshot = (paths: readonly string[]) =>
   Object.fromEntries(paths.map((path) => [path, readFileSync(path, 'utf8')]));
 

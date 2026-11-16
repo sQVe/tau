@@ -24,7 +24,6 @@ export interface ToolCall extends CalledTool {
   result: CallResult | undefined;
 }
 
-// parseTranscript returns read, malformed, or missing; a file reader adds unreadable.
 export type Transcript =
   | { status: 'read'; cwd: string; calls: ToolCall[] }
   | { status: 'malformed'; cwd: string | undefined; calls: ToolCall[]; reason: string }
@@ -108,9 +107,6 @@ const nestedResult = (call: Entry): CallResult | undefined => {
   return call.status === 'ok' ? { error: undefined, details: undefined } : undefined;
 };
 
-// Codemode saves each nested call in details.calls with a status and its arguments as JSON text,
-// cut at a fixed length. Newer results also hold the whole arguments in nestedCalls; then the cut
-// text is never read. No nested call carries the result details of its tool.
 const nestedArguments = (message: Entry) => {
   const { nestedCalls } = message;
 

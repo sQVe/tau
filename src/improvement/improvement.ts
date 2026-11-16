@@ -116,8 +116,6 @@ const combinedReadability = (results: readonly WorkerTranscript[]): WorkerTransc
   return results.includes('readable') ? 'readable' : 'missing';
 };
 
-// Finds the transcript of each worker by task or assignment ID. A record that is malformed or
-// cannot be read makes its worker unreadable, keyed by the record folder, which carries the ID.
 export const readWorkerTranscripts = async (
   agentDirectory: string,
 ): Promise<Map<string, WorkerTranscript>> => {

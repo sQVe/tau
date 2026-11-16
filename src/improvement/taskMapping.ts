@@ -14,7 +14,6 @@ export interface MergedPullRequest {
   repository: string;
   number: number;
   headBranch: string;
-  // ISO time the pull request was opened. Earlier calls naming its number belong to another PR.
   createdAt: string;
 }
 
@@ -30,7 +29,6 @@ export interface MappingFacts {
   transcripts: readonly TranscriptFact[];
   // The repository of each transcript cwd, as <host>/<owner>/<name>.
   repositories: ReadonlyMap<string, string>;
-  // The transcript of each launched worker, by task or assignment ID.
   workers: ReadonlyMap<string, WorkerTranscript>;
 }
 
@@ -39,7 +37,6 @@ export type Coverage = 'complete' | 'managerOnly' | 'missing' | 'unknown';
 export interface CoverageFacts {
   mapped: boolean;
   malformed: boolean;
-  // One item per launched worker; unknownId when the launch names no worker.
   workers: readonly (WorkerTranscript | 'unknownId')[];
 }
 
@@ -61,7 +58,6 @@ interface Task {
 
 export interface TaskMapping {
   tasks: Task[];
-  // Transcripts without a cwd, which no pull request can map to.
   unattributed: string[];
 }
 
@@ -115,8 +111,6 @@ const namedKey = (call: ToolCall, repository: string) => {
   return pr === undefined ? undefined : pullRequestKey(named, pr);
 };
 
-// A renamed repository can reuse a key, so a call naming a pull request before that pull request
-// was created belongs to an older one.
 const namesOlderPullRequest = (
   call: ToolCall,
   repository: string,
@@ -215,8 +209,6 @@ const sourcesOf = (
     : fallbackSources(pullRequest, key, inRepository);
 };
 
-// Forked sessions copy entries, so each call counts once across transcripts. A copy cut before
-// its result must not hide the result of another copy.
 const combinedCalls = (sources: readonly TaskSource[]) => {
   const calls = new Map<string, ToolCall>();
 
@@ -233,8 +225,6 @@ const combinedCalls = (sources: readonly TaskSource[]) => {
   );
 };
 
-// Sources hold only calls attributed to this pull request, and a publication is attributed to
-// the pull request it names, so every publication in them is this pull request's.
 const latestPublication = (sources: readonly TaskSource[]) => {
   const publications = sources.flatMap(({ transcript, calls }) =>
     calls
