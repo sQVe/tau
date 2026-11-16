@@ -34,7 +34,7 @@ export type ProjectResult =
   | { status: 'budget' }
   | { status: 'unknown'; reason: string; index: SweepIndex };
 
-type ProjectRead =
+type ProjectSync =
   | { status: 'done'; index: SweepIndex }
   | { status: 'budget' }
   | { status: 'unknown'; reason: string };
@@ -318,7 +318,7 @@ const writePlannedEvents = async (
   return { status: 'ok' };
 };
 
-const readProject = async (options: ProjectOptions): Promise<ProjectRead> => {
+const syncProject = async (options: ProjectOptions): Promise<ProjectSync> => {
   const repository = options.repository;
 
   if (repository === null) {
@@ -407,7 +407,7 @@ const readProject = async (options: ProjectOptions): Promise<ProjectRead> => {
 };
 
 export const runProject = async (options: ProjectOptions): Promise<ProjectResult> => {
-  const result = await readProject(options);
+  const result = await syncProject(options);
 
   if (result.status !== 'unknown') {
     return result;
