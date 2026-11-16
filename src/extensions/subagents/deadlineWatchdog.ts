@@ -211,7 +211,11 @@ export const createDeadlineWatchdog = (
       return;
     }
 
-    delivery.showEnded(context, target.assignmentId, target.parentSession);
+    delivery.showEnded(context, {
+      assignmentId: target.assignmentId,
+      address: target.address,
+      parentSession: target.parentSession,
+    });
   };
 
   const killAtDeadline = async (

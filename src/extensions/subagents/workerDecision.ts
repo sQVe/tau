@@ -38,6 +38,11 @@ export const endedKey = (assignmentId: string): string => `ended:${assignmentId}
 export const isCurrentSession = (parentSession: string, sessionFile: string | undefined): boolean =>
   parentSession === sessionFile;
 
+export const finalNoticeShown = (shown: ReadonlySet<string>, assignmentId: string): boolean =>
+  shown.has(reportKey(assignmentId)) ||
+  shown.has(endedKey(assignmentId)) ||
+  shown.has(deadlineKey(assignmentId));
+
 const takeReport = (
   fact: Extract<WorkerReadFact, { kind: 'assignment' }>,
   shown: Set<string>,
@@ -86,13 +91,11 @@ const takeEnded = (
     return false;
   }
 
-  const key = endedKey(fact.assignmentId);
-
-  if (shown.has(key) || shown.has(deadlineKey(fact.assignmentId))) {
+  if (finalNoticeShown(shown, fact.assignmentId)) {
     return false;
   }
 
-  shown.add(key);
+  shown.add(endedKey(fact.assignmentId));
 
   return true;
 };
@@ -105,13 +108,11 @@ const takeDeadline = (
     return false;
   }
 
-  const key = deadlineKey(fact.assignmentId);
-
-  if (shown.has(key)) {
+  if (finalNoticeShown(shown, fact.assignmentId)) {
     return false;
   }
 
-  shown.add(key);
+  shown.add(deadlineKey(fact.assignmentId));
 
   return true;
 };

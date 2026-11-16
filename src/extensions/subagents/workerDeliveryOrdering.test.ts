@@ -425,11 +425,11 @@ class DeadlineStepCommand extends WorldCommand {
     }
 
     if (phase === 4) {
-      model.delivery.showEnded(
-        real.context,
-        state.assignment.assignmentId,
-        state.assignment.parentSession,
-      );
+      model.delivery.showEnded(real.context, {
+        assignmentId: state.assignment.assignmentId,
+        address: state.address,
+        parentSession: state.assignment.parentSession,
+      });
 
       model.phases[this.index] = 5;
 

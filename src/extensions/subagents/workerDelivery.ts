@@ -17,7 +17,7 @@ import {
   questionKey,
   reportKey,
 } from './workerDecision.js';
-import type { WorkerReadFact } from './workerDecision.js';
+import type { WorkerDeliveryPlan, WorkerReadFact } from './workerDecision.js';
 import {
   deadlineMessageType,
   endedMessageType,
@@ -29,7 +29,10 @@ type WorkerDeliveryContext = Pick<ExtensionContext, 'sessionManager' | 'ui' | 'i
 
 export interface WorkerDelivery {
   deliver: (context: WorkerDeliveryContext, children: readonly WorkerChildRead[]) => void;
-  showEnded: (context: WorkerDeliveryContext, assignmentId: string, parentSession: string) => void;
+  showEnded: (
+    context: WorkerDeliveryContext,
+    worker: { assignmentId: string; address: string; parentSession: string },
+  ) => void;
   markDeadlinePending: (assignmentId: string) => void;
   clearDeadlinePending: (assignmentId: string) => void;
 }
@@ -219,17 +222,10 @@ export const createWorkerDelivery = (pi: ExtensionAPI): WorkerDelivery => {
     });
   };
 
-  const deliver = (context: WorkerDeliveryContext, children: readonly WorkerChildRead[]): void => {
-    const sessionFile = context.sessionManager.getSessionFile();
+  const currentShownKeys = (context: WorkerDeliveryContext): Set<string> =>
+    new Set([...restoreShownKeys(context), ...queuedKeys]);
 
-    const facts = children.map((child) =>
-      deliveryFact(child, sessionFile, (assignmentId) => deadlinePending.has(assignmentId)),
-    );
-
-    const shownKeys = new Set([...restoreShownKeys(context), ...queuedKeys]);
-
-    const plan = decideWorkerDelivery({ shownKeys: [...shownKeys], facts });
-
+  const showPlan = (context: WorkerDeliveryContext, plan: WorkerDeliveryPlan): void => {
     for (const error of plan.errors) {
       notifyOnce(context.ui, 'worker-report-delivery', error, error, 'error');
     }
@@ -272,28 +268,39 @@ export const createWorkerDelivery = (pi: ExtensionAPI): WorkerDelivery => {
     }
   };
 
+  const deliver = (context: WorkerDeliveryContext, children: readonly WorkerChildRead[]): void => {
+    const sessionFile = context.sessionManager.getSessionFile();
+
+    const facts = children.map((child) =>
+      deliveryFact(child, sessionFile, (assignmentId) => deadlinePending.has(assignmentId)),
+    );
+
+    const plan = decideWorkerDelivery({ shownKeys: [...currentShownKeys(context)], facts });
+
+    showPlan(context, plan);
+  };
+
   const showEnded = (
     context: WorkerDeliveryContext,
-    assignmentId: string,
-    parentSession: string,
+    worker: { assignmentId: string; address: string; parentSession: string },
   ): void => {
-    if (!isCurrentSession(parentSession, context.sessionManager.getSessionFile())) {
+    if (!isCurrentSession(worker.parentSession, context.sessionManager.getSessionFile())) {
       return;
     }
 
-    const key = deadlineKey(assignmentId);
-    const ended = endedKey(assignmentId);
-    const shown = restoreShownKeys(context);
+    const fact: WorkerReadFact = {
+      kind: 'assignment',
+      assignmentId: worker.assignmentId,
+      address: worker.address,
+      state: 'finished',
+      report: null,
+      questions: [],
+      endedAtDeadline: true,
+    };
 
-    if (shown.has(ended) || queuedKeys.has(ended)) {
-      return;
-    }
+    const plan = decideWorkerDelivery({ shownKeys: [...currentShownKeys(context)], facts: [fact] });
 
-    if (shown.has(key) || queuedKeys.has(key)) {
-      return;
-    }
-
-    showDeadline(context, assignmentId);
+    showPlan(context, plan);
   };
 
   const markDeadlinePending = (assignmentId: string): void => {

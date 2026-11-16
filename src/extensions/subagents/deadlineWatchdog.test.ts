@@ -116,9 +116,9 @@ const harness = (hcFake: HcFake) => {
 
   const delivery: WorkerDelivery = {
     deliver: () => undefined,
-    showEnded: (_context, assignmentId) => {
+    showEnded: (_context, worker) => {
       order.push('showEnded');
-      ended.push(assignmentId);
+      ended.push(worker.assignmentId);
     },
     markDeadlinePending: () => undefined,
     clearDeadlinePending: () => undefined,

@@ -372,7 +372,11 @@ it('does not show the deadline message when the ended message was already shown'
 
   expect(managerState.messages).toHaveLength(1);
 
-  delivery.showEnded(managerState.context, assignmentId, managerSession);
+  delivery.showEnded(managerState.context, {
+    assignmentId,
+    address: 't-child',
+    parentSession: managerSession,
+  });
 
   expect(managerState.messages).toHaveLength(1);
   expect(managerState.messages[0]?.customType).toBe('tau-worker-ended');
@@ -409,7 +413,12 @@ it('shows the deadline message once when the launching session already showed it
 
   const delivery = createWorkerDelivery(managerState.pi);
 
-  delivery.showEnded(managerState.context, assignmentId, managerSession);
+  delivery.showEnded(managerState.context, {
+    assignmentId,
+    address: 't-child',
+    parentSession: managerSession,
+  });
+
   await deliverPending(delivery, hc, managerState.context);
 
   expect(managerState.messages).toHaveLength(1);
