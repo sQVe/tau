@@ -12,7 +12,7 @@ const table: {
   {
     name: 'accepts a correction',
     input: { action: 'record', kind: 'correction', summary: 'Use run_tests.' },
-    expected: { kind: 'correction', summary: 'Use run_tests.' },
+    expected: { action: 'record', kind: 'correction', summary: 'Use run_tests.' },
   },
   {
     name: 'accepts a review',
@@ -23,6 +23,7 @@ const table: {
       outcome: 'The task passed.',
     },
     expected: {
+      action: 'record',
       kind: 'review',
       pullRequest: 'https://github.com/example/repo/pull/1',
       outcome: 'The task passed.',
@@ -37,7 +38,13 @@ const table: {
       item: 2,
       summary: 'Split the module.',
     },
-    expected: { kind: 'backlog', review: 'review-1', item: 2, summary: 'Split the module.' },
+    expected: {
+      action: 'record',
+      kind: 'backlog',
+      review: 'review-1',
+      item: 2,
+      summary: 'Split the module.',
+    },
   },
   {
     name: 'accepts a decision',
@@ -48,7 +55,13 @@ const table: {
       item: 2,
       choice: 'approved',
     },
-    expected: { kind: 'decision', review: 'review-1', item: 2, choice: 'approved' },
+    expected: {
+      action: 'record',
+      kind: 'decision',
+      review: 'review-1',
+      item: 2,
+      choice: 'approved',
+    },
   },
   {
     name: 'needs a correction summary',
@@ -148,6 +161,53 @@ const table: {
     name: 'refuses a field the kind does not take',
     input: { action: 'record', kind: 'correction', summary: 'Use run_tests.', item: 2 },
     expected: { error: 'record kind correction does not take item.' },
+  },
+  {
+    name: 'accepts a task',
+    input: {
+      action: 'task',
+      pullRequest: 'https://github.com/example/repo/pull/1',
+      worktree: '/repository/me-1',
+    },
+    expected: {
+      action: 'task',
+      pullRequest: 'https://github.com/example/repo/pull/1',
+      worktree: '/repository/me-1',
+    },
+  },
+  {
+    name: 'needs a record kind',
+    input: { action: 'record', summary: 'Use run_tests.' },
+    expected: { error: 'record needs kind.' },
+  },
+  {
+    name: 'needs a task pull request',
+    input: { action: 'task', worktree: '/repository/me-1' },
+    expected: { error: 'task needs pullRequest.' },
+  },
+  {
+    name: 'needs a task worktree',
+    input: { action: 'task', pullRequest: 'https://github.com/example/repo/pull/1' },
+    expected: { error: 'task needs worktree.' },
+  },
+  {
+    name: 'refuses a relative task worktree',
+    input: {
+      action: 'task',
+      pullRequest: 'https://github.com/example/repo/pull/1',
+      worktree: 'me-1',
+    },
+    expected: { error: 'task worktree must be absolute.' },
+  },
+  {
+    name: 'refuses a field the task does not take',
+    input: {
+      action: 'task',
+      kind: 'review',
+      pullRequest: 'https://github.com/example/repo/pull/1',
+      worktree: '/repository/me-1',
+    },
+    expected: { error: 'task does not take kind.' },
   },
 ];
 

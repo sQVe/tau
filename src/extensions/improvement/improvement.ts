@@ -6,13 +6,15 @@ import { readImprovementStatus } from '../../improvement/status.js';
 import { runSweep } from '../../improvement/sweep.js';
 import { isWorkerProcess } from '../../worker.js';
 import { runRecord } from './recordAction.js';
-import { parameters } from './recordRequest.js';
+import { parseRecordRequest, parameters } from './recordRequest.js';
 import { createStatusRefresh } from './statusAction.js';
 import { startSweep } from './sweepStart.js';
 import { createSweepState } from './sweepState.js';
+import { runTask } from './taskAction.js';
 
 const description = `- record: save an improvement event: correction (summary), review (pullRequest, outcome), backlog or decision (review, item, plus summary or choice). {id,path,outcome}; existing: saved before.
-- status: tasks to review, correct due, coverage, sweep. {projectRoot,tasks,correctDue,coverage,sweep,skipped}`;
+- status: tasks to review, correct due, coverage, sweep. {projectRoot,tasks,correctDue,coverage,sweep,skipped}
+- task: read a merged task's transcript paths, coverage, and project root (pullRequest, worktree). {pullRequest,manager,workers,coverage,projectRoot}.`;
 
 export default function improvementExtension(
   pi: ExtensionAPI,
@@ -42,10 +44,18 @@ export default function improvementExtension(
       promptSnippet: 'Record a correction or a task review result.',
       parameters,
       async execute(toolCallId, input, _signal, _onUpdate, context) {
-        if (input.action === 'status') {
+        const request = parseRecordRequest(input);
+
+        if (request.action === 'status') {
           const status = await readStatus(context.cwd);
 
           return { content: [{ type: 'text', text: JSON.stringify(status) }], details: status };
+        }
+
+        if (request.action === 'task') {
+          const task = await runTask(piExec(pi), getAgentDir(), request, context);
+
+          return { content: [{ type: 'text', text: JSON.stringify(task) }], details: task };
         }
 
         const details = await runRecord(toolCallId, input, context);

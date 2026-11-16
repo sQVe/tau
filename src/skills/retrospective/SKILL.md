@@ -48,15 +48,9 @@ in the owning project, and that session files the ticket. A rejected row changes
    - linked Linear tickets with `linear issue view`;
    - reverts of its commits on the default branch.
    - A source with no result is still a fact.
-3. Find the task's transcripts.
-   - Manager transcripts are under `~/.pi/agent/sessions/<folder>/`. Pi names the folder `--`, then
-     the worktree path without its leading `/` and with each `/`, `\`, and `:` replaced by `-`, then
-     `--`. Example: `/home/sqve/code/personal/tau/me-1471` gives
-     `--home-sqve-code-personal-tau-me-1471--`. The name is lossy, so the header `cwd` must match.
-     The transcript must hold the `pr` call for the PR.
-   - Worker transcripts come from the `assignment.json` records of the workers those managers
-     launched.
-   - State coverage as complete, manager only, or missing.
+3. Read the task's transcripts with `improvement` action `task`, with the PR URL as `pullRequest`
+   and the worktree path from step 1 as `worktree`. Use the returned `manager` and `workers` paths
+   and `coverage`. State coverage as the tool returns it.
 4. Launch one `reviewer` worker with [lenses.md](lenses.md). Give it:
    - the transcript paths;
    - the shared-record facts;
@@ -78,9 +72,8 @@ in the owning project, and that session files the ticket. A rejected row changes
 10. For each approved or redirected row:
     - Pick the owning project from its route. A Tau skill, tool, or instruction goes to the Tau
       repository. A repository check goes to the task's repository. A stomme rule goes to stomme.
-    - Resolve the owning project's root. It is the parent of
-      `git -C <checkout> rev-parse --path-format=absolute --git-common-dir`, for a checkout of that
-      project. Ask the user for the path when no checkout of it is known.
+    - Resolve the owning project's root. For the task's own repository, use the `projectRoot`
+      returned in step 3. For another project, ask the user for its root path.
     - Follow the [worktree skill](../worktree/SKILL.md) with `grove add <branch>` run from that
       root. Grove creates the worktree under the current directory. The branch is a descriptive
       kebab-case name from the proposal, because no ticket exists yet.

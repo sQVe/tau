@@ -1,3 +1,5 @@
+import { isAbsolute } from 'node:path';
+
 import type { Static } from 'typebox';
 import { Type } from 'typebox';
 
@@ -10,13 +12,17 @@ type TextField = 'summary' | 'pullRequest' | 'outcome' | 'review';
 type Choice = 'approved' | 'rejected' | 'redirected';
 
 export type RecordRequest =
-  | { kind: 'correction'; summary: string }
-  | { kind: 'review'; pullRequest: string; outcome: string }
-  | { kind: 'backlog'; review: string; item: number; summary: string }
-  | { kind: 'decision'; review: string; item: number; choice: Choice };
+  | { action: 'record'; kind: 'correction'; summary: string }
+  | { action: 'record'; kind: 'review'; pullRequest: string; outcome: string }
+  | { action: 'record'; kind: 'backlog'; review: string; item: number; summary: string }
+  | { action: 'record'; kind: 'decision'; review: string; item: number; choice: Choice }
+  | { action: 'task'; pullRequest: string; worktree: string }
+  | { action: 'status' };
+
+export type TaskRequest = Extract<RecordRequest, { action: 'task' }>;
 
 export const parameters = Type.Object({
-  action: stringEnum(['record', 'status']),
+  action: stringEnum(['record', 'status', 'task']),
   kind: Type.Optional(stringEnum(['correction', 'review', 'backlog', 'decision'])),
   summary: Type.Optional(Type.String()),
   pullRequest: Type.Optional(Type.String()),
@@ -24,11 +30,10 @@ export const parameters = Type.Object({
   review: Type.Optional(Type.String()),
   item: Type.Optional(Type.Integer({ minimum: 1 })),
   choice: Type.Optional(stringEnum(['approved', 'rejected', 'redirected'])),
+  worktree: Type.Optional(Type.String()),
 });
 
 export type RecordInput = Static<typeof parameters>;
-
-type KindedInput = RecordInput & { kind: RecordKind };
 
 const fieldsByKind: Readonly<Record<RecordKind, readonly string[]>> = {
   correction: ['summary'],
@@ -37,97 +42,153 @@ const fieldsByKind: Readonly<Record<RecordKind, readonly string[]>> = {
   decision: ['review', 'item', 'choice'],
 };
 
-const rejectExtraFields = (input: KindedInput): void => {
-  const allowed = fieldsByKind[input.kind];
+const rejectExtraFields = (input: RecordInput, kind: RecordKind): void => {
+  const allowed = fieldsByKind[kind];
 
   for (const field of Object.keys(input)) {
     if (field === 'action' || field === 'kind' || allowed.includes(field)) {
       continue;
     }
 
-    throw new Error(`record kind ${input.kind} does not take ${field}.`);
+    throw new Error(`record kind ${kind} does not take ${field}.`);
   }
 };
 
-const requireText = (input: KindedInput, field: TextField): string => {
+const requireText = (input: RecordInput, kind: RecordKind, field: TextField): string => {
   const value = input[field];
 
   if (value === undefined) {
-    throw new Error(`record kind ${input.kind} needs ${field}.`);
+    throw new Error(`record kind ${kind} needs ${field}.`);
   }
 
   if (value.trim() === '') {
-    throw new Error(`record kind ${input.kind} needs a non-blank ${field}.`);
+    throw new Error(`record kind ${kind} needs a non-blank ${field}.`);
   }
 
   return value;
 };
 
-const requirePullRequest = (input: KindedInput): string => {
-  const value = requireText(input, 'pullRequest');
+const requirePullRequest = (input: RecordInput, kind: RecordKind): string => {
+  const value = requireText(input, kind, 'pullRequest');
 
   if (!value.startsWith('https://')) {
-    throw new Error(`record kind ${input.kind} pullRequest must start with https://.`);
+    throw new Error(`record kind ${kind} pullRequest must start with https://.`);
   }
 
   return value;
 };
 
-const requireItem = (input: KindedInput): number => {
+const requireItem = (input: RecordInput, kind: RecordKind): number => {
   const value = input.item;
 
   if (value === undefined) {
-    throw new Error(`record kind ${input.kind} needs item.`);
+    throw new Error(`record kind ${kind} needs item.`);
   }
 
   return value;
 };
 
-const requireChoice = (input: KindedInput): Choice => {
+const requireChoice = (input: RecordInput, kind: RecordKind): Choice => {
   const value = input.choice;
 
   if (value === undefined) {
-    throw new Error(`record kind ${input.kind} needs choice.`);
+    throw new Error(`record kind ${kind} needs choice.`);
   }
 
   return value;
 };
 
-export const parseRecordRequest = (input: RecordInput): RecordRequest => {
-  const { kind } = input;
+const parseRecord = (input: RecordInput): RecordRequest => {
+  const kind = input.kind;
 
   if (kind === undefined) {
     throw new Error('record needs kind.');
   }
 
-  const recordInput = { ...input, kind };
+  rejectExtraFields(input, kind);
 
-  rejectExtraFields(recordInput);
-
-  switch (recordInput.kind) {
+  switch (kind) {
     case 'correction':
-      return { kind: 'correction', summary: requireText(recordInput, 'summary') };
+      return { action: 'record', kind: 'correction', summary: requireText(input, kind, 'summary') };
     case 'review':
       return {
+        action: 'record',
         kind: 'review',
-        pullRequest: requirePullRequest(recordInput),
-        outcome: requireText(recordInput, 'outcome'),
+        pullRequest: requirePullRequest(input, kind),
+        outcome: requireText(input, kind, 'outcome'),
       };
     case 'backlog':
       return {
+        action: 'record',
         kind: 'backlog',
-        review: requireText(recordInput, 'review'),
-        item: requireItem(recordInput),
-        summary: requireText(recordInput, 'summary'),
+        review: requireText(input, kind, 'review'),
+        item: requireItem(input, kind),
+        summary: requireText(input, kind, 'summary'),
       };
     case 'decision':
       return {
+        action: 'record',
         kind: 'decision',
-        review: requireText(recordInput, 'review'),
-        item: requireItem(recordInput),
-        choice: requireChoice(recordInput),
+        review: requireText(input, kind, 'review'),
+        item: requireItem(input, kind),
+        choice: requireChoice(input, kind),
       };
     default:
-      return recordInput.kind satisfies never;
+      return kind satisfies never;
+  }
+};
+
+const taskFields = new Set(['pullRequest', 'worktree']);
+
+const rejectTaskExtraFields = (input: RecordInput): void => {
+  for (const field of Object.keys(input)) {
+    if (field === 'action' || taskFields.has(field)) {
+      continue;
+    }
+
+    throw new Error(`task does not take ${field}.`);
+  }
+};
+
+const requireTaskText = (input: RecordInput, field: 'pullRequest' | 'worktree'): string => {
+  const value = input[field];
+
+  if (value === undefined) {
+    throw new Error(`task needs ${field}.`);
+  }
+
+  if (value.trim() === '') {
+    throw new Error(`task needs a non-blank ${field}.`);
+  }
+
+  return value;
+};
+
+const parseTask = (input: RecordInput): RecordRequest => {
+  rejectTaskExtraFields(input);
+
+  const worktree = requireTaskText(input, 'worktree');
+
+  if (!isAbsolute(worktree)) {
+    throw new Error('task worktree must be absolute.');
+  }
+
+  return {
+    action: 'task',
+    pullRequest: requireTaskText(input, 'pullRequest'),
+    worktree,
+  };
+};
+
+export const parseRecordRequest = (input: RecordInput): RecordRequest => {
+  switch (input.action) {
+    case 'record':
+      return parseRecord(input);
+    case 'task':
+      return parseTask(input);
+    case 'status':
+      return { action: 'status' };
+    default:
+      return input.action satisfies never;
   }
 };

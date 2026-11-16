@@ -2,7 +2,8 @@ import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { errorMessage, isMissingFile } from '../errors.ts';
-import { readTranscript, readWorkerTranscripts } from './improvement.ts';
+import { readTranscript, readWorkerTranscriptsWithPaths } from './improvement.ts';
+import type { WorkerTranscriptRead } from './improvement.ts';
 import { decideReviewSignals } from './signals.ts';
 import type { ReviewSignals } from './signals.ts';
 import type { TaskFact } from './taskFacts.ts';
@@ -11,11 +12,12 @@ import type {
   Coverage,
   MappingFacts,
   MergedPullRequest,
+  Task,
   TranscriptFact,
   WorkerTranscript,
 } from './taskMapping.ts';
 
-export type { Coverage, MergedPullRequest } from './taskMapping.ts';
+export type { Coverage } from './taskMapping.ts';
 export type { ReviewSignals } from './signals.ts';
 
 export interface TaskSignalSources {
@@ -27,6 +29,14 @@ export interface TaskSignalSources {
 
 export type TaskSignalsRead =
   | { status: 'read'; signals: ReviewSignals; coverage: Coverage }
+  | { status: 'failed'; reason: string };
+
+export type TaskRead =
+  | {
+      status: 'read';
+      task: Task;
+      workerReads: ReadonlyMap<string, WorkerTranscriptRead>;
+    }
   | { status: 'failed'; reason: string };
 
 const listSessionPaths = async (directory: string): Promise<string[]> => {
@@ -102,13 +112,18 @@ const workerIdsOf = (facts: readonly TaskFact[]): ReadonlySet<string> => {
 const readWorkersFor = async (
   agentDirectory: string,
   workerIds: ReadonlySet<string>,
-): Promise<MappingFacts['workers']> => {
+): Promise<Map<string, WorkerTranscriptRead>> => {
   if (workerIds.size === 0) {
-    return new Map<string, WorkerTranscript>();
+    return new Map<string, WorkerTranscriptRead>();
   }
 
-  return readWorkerTranscripts(agentDirectory, workerIds);
+  return readWorkerTranscriptsWithPaths(agentDirectory, workerIds);
 };
+
+const readabilityOf = (
+  workers: ReadonlyMap<string, WorkerTranscriptRead>,
+): MappingFacts['workers'] =>
+  new Map([...workers].map(([workerId, read]) => [workerId, read.readability]));
 
 const mapOneTask = (
   sources: TaskSignalSources,
@@ -129,7 +144,7 @@ const mapOneTask = (
   return task;
 };
 
-export const readTaskSignals = async (sources: TaskSignalSources): Promise<TaskSignalsRead> => {
+export const readTask = async (sources: TaskSignalSources): Promise<TaskRead> => {
   const createdAt = Date.parse(sources.pullRequest.createdAt);
 
   if (Number.isNaN(createdAt)) {
@@ -146,19 +161,31 @@ export const readTaskSignals = async (sources: TaskSignalSources): Promise<TaskS
 
     const firstTask = mapOneTask(sources, transcripts, new Map<string, WorkerTranscript>());
     const workerIds = workerIdsOf(firstTask.facts);
-    const workers = await readWorkersFor(sources.agentDirectory, workerIds);
-    const task = mapOneTask(sources, transcripts, workers);
+    const workerReads = await readWorkersFor(sources.agentDirectory, workerIds);
+    const task = mapOneTask(sources, transcripts, readabilityOf(workerReads));
 
-    return {
-      status: 'read',
-      signals: decideReviewSignals({
-        evidence: { facts: task.facts, missing: task.missing },
-        reverted: false,
-        coverage: task.coverage,
-      }),
-      coverage: task.coverage,
-    };
+    return { status: 'read', task, workerReads };
   } catch (error) {
     return { status: 'failed', reason: errorMessage(error) };
   }
+};
+
+export const readTaskSignals = async (sources: TaskSignalSources): Promise<TaskSignalsRead> => {
+  const read = await readTask(sources);
+
+  if (read.status === 'failed') {
+    return read;
+  }
+
+  const { task } = read;
+
+  return {
+    status: 'read',
+    signals: decideReviewSignals({
+      evidence: { facts: task.facts, missing: task.missing },
+      reverted: false,
+      coverage: task.coverage,
+    }),
+    coverage: task.coverage,
+  };
 };

@@ -160,6 +160,10 @@ export const runRecord = async (
 ): Promise<RecordResult> => {
   const request = parseRecordRequest(input);
 
+  if (request.action !== 'record') {
+    throw new Error('runRecord takes a record request.');
+  }
+
   const facts = {
     cwd: context.cwd,
     sessionId: context.sessionManager.getSessionId(),
