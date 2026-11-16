@@ -22,7 +22,8 @@ it.each(['../run', 'a/b'])('refuses run name %s', async (run) => {
 it('finds the run directory below .tau/verification', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  expect(await findRunDirectory(root, 'delegate-a-check')).toBe(
-    join(root, '.tau', 'verification', 'delegate-a-check'),
-  );
+  expect(await findRunDirectory(root, 'delegate-a-check')).toEqual({
+    root,
+    directory: join(root, '.tau', 'verification', 'delegate-a-check'),
+  });
 });

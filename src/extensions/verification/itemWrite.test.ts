@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -51,6 +51,32 @@ const failureMessage = async (promise: Promise<unknown>): Promise<string> =>
     () => 'no error',
     (error: unknown) => (error instanceof Error ? error.message : String(error)),
   );
+
+const inputWithArtifact = (path: string): RecordInput => {
+  const input = validInput();
+
+  input.steps[0] = { status: 'passed', artifacts: [{ kind: 'screenshot', path }] };
+
+  return input;
+};
+
+const unreadableArtifact = async (directory: string): Promise<string> => {
+  const folder = join(directory, 'screenshots');
+
+  await mkdir(folder);
+  await writeFile(join(folder, 'step-1.png'), 'png');
+
+  if (process.getuid?.() === 0) {
+    await symlink('loop.png', join(folder, 'loop.png'));
+
+    return 'screenshots/loop.png';
+  }
+
+  await chmod(folder, 0o000);
+  onTestFinished(() => chmod(folder, 0o700));
+
+  return 'screenshots/step-1.png';
+};
 
 it('saves a valid hand result as a readable item file', async () => {
   const { root, directory } = await createRunDirectory(onTestFinished, run, {
@@ -160,6 +186,37 @@ it('refuses an artifact path under a regular file as missing', async () => {
 
   expect({ failure, items: await listItems(directory) }).toEqual({
     failure: 'Step 1 artifact screenshots/step-1.png does not exist in the run directory.',
+    items: before,
+  });
+});
+
+it('refuses a stopped run before probing an unreadable artifact', async () => {
+  const { root, directory } = await createRunDirectory(onTestFinished, run, {
+    items: [{ item, steps: 2 }],
+    stop: { exitCode: 0, logPath: 'stop.log' },
+  });
+
+  const artifactPath = await unreadableArtifact(directory);
+  const before = await listItems(directory);
+  const failure = await failureMessage(recordItem(root, inputWithArtifact(artifactPath)));
+
+  expect({ failure, items: await listItems(directory) }).toEqual({
+    failure: `Run ${run} is stopped; record results before the manager stops it.`,
+    items: before,
+  });
+});
+
+it('refuses an unreadable artifact in an open run', async () => {
+  const { root, directory } = await createRunDirectory(onTestFinished, run, {
+    items: [{ item, steps: 2 }],
+  });
+
+  const artifactPath = await unreadableArtifact(directory);
+  const before = await listItems(directory);
+  const failure = await failureMessage(recordItem(root, inputWithArtifact(artifactPath)));
+
+  expect({ failure, items: await listItems(directory) }).toEqual({
+    failure: `Step 1 artifact ${artifactPath} cannot be read in the run directory.`,
     items: before,
   });
 });

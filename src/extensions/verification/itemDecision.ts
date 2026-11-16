@@ -10,7 +10,7 @@ import type { RecordInput } from './recordParameters.js';
 export interface ArtifactFact {
   step: number;
   path: string;
-  location: 'inside' | 'outside' | 'missing';
+  location: 'inside' | 'outside' | 'missing' | 'unreadable';
 }
 
 export interface ItemFacts {
@@ -115,6 +115,15 @@ export const decideItemWrite = (facts: ItemFacts): ItemDecision => {
     return {
       kind: 'refuse',
       reason: `Step ${missing.step} artifact ${missing.path} does not exist in the run directory.`,
+    };
+  }
+
+  const unreadable = firstArtifact(artifacts, 'unreadable');
+
+  if (unreadable !== undefined) {
+    return {
+      kind: 'refuse',
+      reason: `Step ${unreadable.step} artifact ${unreadable.path} cannot be read in the run directory.`,
     };
   }
 

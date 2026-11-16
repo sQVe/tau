@@ -152,6 +152,16 @@ const table: { name: string; facts: ItemFacts; expected: ItemDecision }[] = [
     },
   },
   {
+    name: 'refuses an unreadable artifact',
+    facts: facts({
+      artifacts: [{ step: 1, path: 'screenshots/step-1.png', location: 'unreadable' }],
+    }),
+    expected: {
+      kind: 'refuse',
+      reason: 'Step 1 artifact screenshots/step-1.png cannot be read in the run directory.',
+    },
+  },
+  {
     name: 'writes a hand result with numbered steps',
     facts: facts(),
     expected: {
