@@ -348,6 +348,24 @@ it('leaves a label that names another socket at shutdown', async () => {
   });
 });
 
+it('refuses an answer request when a non-worker session has no answer-request check', async () => {
+  const harness = startHarness();
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+
+  await harness.start(sessionId);
+  cleanups.push(() => harness.shutdown(sessionId));
+
+  await expect(
+    exchange(socketOf(sessionId), answerRequestTo(sessionId, messageId)),
+  ).resolves.toEqual({
+    protocol: 'rpc1',
+    kind: 'refused',
+    reason: 'This session does not accept answer-request messages.',
+    messageId,
+  });
+});
+
 it.each([
   { role: '', family: 'answer', kind: 'refused' },
   { role: 'worker', family: 'answer', kind: 'queued' },
