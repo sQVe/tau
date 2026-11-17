@@ -1,5 +1,233 @@
 # tau
 
+## 1.2.0
+
+### Minor Changes
+
+- [#690](https://github.com/sQVe/tau/pull/690)
+  [`e27a01f`](https://github.com/sQVe/tau/commit/e27a01f67e40f67661fb5895bcdccee29bde6758) Thanks
+  [@sQVe](https://github.com/sQVe)! - The retrospective skill gains a deep mode that reviews one
+  task with three lens workers on mixed model families and one synthesizer worker.
+
+- [#686](https://github.com/sQVe/tau/pull/686)
+  [`7d5e471`](https://github.com/sQVe/tau/commit/7d5e471ef52c09a0b00d8d0f24224c1bd34e8cb8) Thanks
+  [@sQVe](https://github.com/sQVe)! - The retrospective skill now runs a fast review of one task's
+  saved logs and proposes routed fixes for approval. The `improvement` tool's `task` action returns
+  a merged task's transcript paths, coverage, and project root.
+
+- [#668](https://github.com/sQVe/tau/pull/668)
+  [`647fde2`](https://github.com/sQVe/tau/commit/647fde28a15fd3239dad7e172ecf53c002280577) Thanks
+  [@sQVe](https://github.com/sQVe)! - Write fully specified agent tickets when a slice starts. The
+  manager decides signatures, data shapes, error cases, and the helper to copy before drafting, and
+  writes them into each ticket. Each part that still needs judgment gets its own earlier ticket.
+  Scouts also report design choices a ticket leaves open. The agent-ticket template replaces
+  `## First test` with `## Test cases`, a list of named tests with input and expected result.
+
+- [#684](https://github.com/sQVe/tau/pull/684)
+  [`dee4c3e`](https://github.com/sQVe/tau/commit/dee4c3e72425c481c19022c86071000275e3d53e) Thanks
+  [@sQVe](https://github.com/sQVe)! - MergeWatch now names the review signals a merged task raised
+  and offers a review of that task.
+
+- [#656](https://github.com/sQVe/tau/pull/656)
+  [`24e14d6`](https://github.com/sQVe/tau/commit/24e14d6e43fa98deb1de290040cfe7a51fc9846e) Thanks
+  [@sQVe](https://github.com/sQVe)! - Carry planned journeys into slice tickets and assign each
+  journey item to one agent ticket for its journey file, test, and QA guide index row. Keep only
+  built steps in journey files and tests. The slice that delivers the last step depends on the
+  earlier steps and checks that the whole journey passes.
+
+- [#646](https://github.com/sQVe/tau/pull/646)
+  [`5e9305f`](https://github.com/sQVe/tau/commit/5e9305f6c4b6ef6422d5cbfbb1510074c443e143) Thanks
+  [@sQVe](https://github.com/sQVe)! - Name the repository's QA guide in every `qa` worker brief. A
+  `qa` launch adds `QA guide: read .pi/qa.md` when the worktree has that file, and says there is no
+  QA guide when it does not. The line also appears when the repository has no `qa.repositories`
+  entry. The manager reads the guide and assigns the sections that a change needs.
+
+- [#652](https://github.com/sQVe/tau/pull/652)
+  [`1da6f18`](https://github.com/sQVe/tau/commit/1da6f188e65ac6d71cdb76921b717004ea920a14) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add a QA guide template and make the manager and the `qa`
+  worker follow its parts. With a guide, the manager does the steps under "The manager starts" for
+  the assigned sections, puts the lines the guide asks for in the brief, and stops what it started
+  when every worker that uses it has reported, or when the launch fails. It launches no `qa` worker
+  when only "Not testable" applies. The `qa` worker runs a section's "Reach it" proof first and asks
+  the parent when it fails.
+
+- [#653](https://github.com/sQVe/tau/pull/653)
+  [`e051f8e`](https://github.com/sQVe/tau/commit/e051f8e122d98e46f66c65abe4e1390343804fbe) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add an optional journey index to the QA guide template, with
+  separate journey files for repeatable user flows. The manager assigns journeys that the change
+  touches. The `qa` worker reads each assigned file, walks its steps in order, and compares visible
+  results and the end state.
+
+- [#676](https://github.com/sQVe/tau/pull/676)
+  [`4460bc2`](https://github.com/sQVe/tau/commit/4460bc23e19c05b0f3f9da4fd9fc1508b4b350b2) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add the `verification_record` tool. It saves one hand-driven
+  item result in a verification run and refuses an incomplete or out-of-place result without
+  writing.
+
+- [#669](https://github.com/sQVe/tau/pull/669)
+  [`5c40873`](https://github.com/sQVe/tau/commit/5c40873ad65a244c420edebdade699cf11adacc2) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add the manager `improvement` tool. Its `record` action saves
+  a user correction as a `correction` event in the project root's `.tau/improvement/`. The workflow
+  instructions tell the manager to fix a correction, record it, and propose a rule or check. List
+  required-for skills under one lead line to keep the manager prompt within its ceiling.
+
+- [#658](https://github.com/sQVe/tau/pull/658)
+  [`c295f79`](https://github.com/sQVe/tau/commit/c295f79d6cdd5f7ad3fc2b674094dd1b185328da) Thanks
+  [@sQVe](https://github.com/sQVe)! - Let `pr` `evidence` select the saved review chain and return
+  its coverage. It no longer takes `chain`; use `review` to choose a chain when several candidates
+  match. The `pr` and `finish-slice` skills use the returned chain instead of selecting and building
+  one themselves.
+
+### Patch Changes
+
+- [#674](https://github.com/sQVe/tau/pull/674)
+  [`89a860a`](https://github.com/sQVe/tau/commit/89a860a81c1e4152a807ca5c6ceec58800ddf412) Thanks
+  [@sQVe](https://github.com/sQVe)! - The nextest runner now supports `run_tests` scope `affected`.
+  It runs every test in the test binaries that compile any of the given files.
+
+- [#661](https://github.com/sQVe/tau/pull/661)
+  [`50b3584`](https://github.com/sQVe/tau/commit/50b35841b18f8b11fbafd6d566affac5c7bc401a) Thanks
+  [@sQVe](https://github.com/sQVe)! - Run slice QA before the acceptance audit. Refresh affected
+  audit rows after PR checks and use their current evidence for the draft suggestion and preview.
+
+- [#670](https://github.com/sQVe/tau/pull/670)
+  [`eeda0bb`](https://github.com/sQVe/tau/commit/eeda0bb8f8f2c4ac8d2cf53826d2fbec7bd682eb) Thanks
+  [@sQVe](https://github.com/sQVe)! - The improvement module reads a Pi transcript into its tool
+  calls, extracts task facts from them, and maps each merged PR to its task with a coverage status.
+  A tool call with an unknown shape becomes missing evidence and makes its count unknown, not zero.
+  So does a call without a result. Review signals decide from those facts whether a task had many
+  review rounds, PR feedback rounds, full check failures, or a revert, and report unknown when a
+  needed fact is missing. `pnpm session-health` now reads transcripts through the same parser and
+  prints the same report.
+
+- [#664](https://github.com/sQVe/tau/pull/664)
+  [`efdd71f`](https://github.com/sQVe/tau/commit/efdd71f1a89113c4ed93645be83ae74205b68a6e) Thanks
+  [@sQVe](https://github.com/sQVe)! - Shorten the code_review, pr, pr_feedback, stack, draft_review,
+  and slice tool descriptions. Reduce the measured manager prompt from 58,445 to 49,705 characters.
+  No tool or behavior changed.
+
+- [#650](https://github.com/sQVe/tau/pull/650)
+  [`140d77c`](https://github.com/sQVe/tau/commit/140d77ca48430ad7779f21c705f38e84d1e7ce4e) Thanks
+  [@sQVe](https://github.com/sQVe)! - The `Merge when green` snippet now tells the session to report
+  the merge result and then close its space. The space stays open when the PR did not merge.
+
+- [#662](https://github.com/sQVe/tau/pull/662)
+  [`b6da958`](https://github.com/sQVe/tau/commit/b6da958f93631beeee33ec0955348b4719fa5f35) Thanks
+  [@sQVe](https://github.com/sQVe)! - Name reviews "first" or "fix" in skills. Define section,
+  recipe, and journey in the QA guide template.
+
+- [#672](https://github.com/sQVe/tau/pull/672)
+  [`800b359`](https://github.com/sQVe/tau/commit/800b35935a0f397c01c77d1ae0099c3a91268ec5) Thanks
+  [@sQVe](https://github.com/sQVe)! - Show at most one ended or deadline notice per worker, and
+  never after its report.
+
+- [#666](https://github.com/sQVe/tau/pull/666)
+  [`9e3a15e`](https://github.com/sQVe/tau/commit/9e3a15e68d5ac9631307420fa5220bc3450a7980) Thanks
+  [@sQVe](https://github.com/sQVe)! - Spaces and tabs that agents open now stay in the background.
+  The `handover` tool's `start` action and the worktree skill pass `focus: false` to Herdr, so the
+  user keeps the shown space, the selected tab, and keyboard focus. This needs Herdr 0.1.16 or
+  later.
+
+- [#659](https://github.com/sQVe/tau/pull/659)
+  [`d8ae5f1`](https://github.com/sQVe/tau/commit/d8ae5f136434bebab02275f2c8c18b3c587439e8) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add `pnpm pi-session`, which runs one headless Pi session that
+  loads a Tau checkout, sends one prompt, waits for the workers it launched, and saves the event
+  log. The finish-slice skill now tells the manager to run each manual check itself and never hand
+  it to the user.
+
+- [#667](https://github.com/sQVe/tau/pull/667)
+  [`57e53e0`](https://github.com/sQVe/tau/commit/57e53e0668fb2b49f67db7af77f454320c7b79c8) Thanks
+  [@sQVe](https://github.com/sQVe)! - Move session log readers into the shared improvement module
+  without changing report output.
+
+- [#675](https://github.com/sQVe/tau/pull/675)
+  [`bcdf5b3`](https://github.com/sQVe/tau/commit/bcdf5b35fe431084e3d28132a63d3d3e70fde836) Thanks
+  [@sQVe](https://github.com/sQVe)! - pr evidence reports saved verification results and their
+  freshness. finish-slice and pr cite fresh verification results and treat stale ones as not run.
+
+- [#679](https://github.com/sQVe/tau/pull/679)
+  [`f1524cf`](https://github.com/sQVe/tau/commit/f1524cff6e8e4ec95e606918cdf4815a2b282832) Thanks
+  [@sQVe](https://github.com/sQVe)! - The coding instructions now say when a module gets a property
+  test. The `tdd` and `fix-bug` skills apply the rule, and a PR states in one line why examples are
+  enough when a trigger holds without a property test.
+
+- [#681](https://github.com/sQVe/tau/pull/681)
+  [`1c4a8e8`](https://github.com/sQVe/tau/commit/1c4a8e893a4dc53de34a1aea60998bf1b575df46) Thanks
+  [@sQVe](https://github.com/sQVe)! - Assign feature files in the QA brief and register their items
+  on a verification run. The manager launches each section's target, names the run in the brief, and
+  stops it after the workers report.
+
+- [#660](https://github.com/sQVe/tau/pull/660)
+  [`d030195`](https://github.com/sQVe/tau/commit/d030195a9422b3580c14d56ad569c3309744897e) Thanks
+  [@sQVe](https://github.com/sQVe)! - Change two parts of the QA guide template so a reader can
+  follow them. Under "The manager starts", the template now shows one bullet per section with three
+  labeled lines, Start, Check that it is up, and Stop, instead of a table. Under "Choose sections",
+  the list of changes that need no `qa` launch now has its own lead-in line, "No launch, and unclear
+  impact:".
+
+- [#655](https://github.com/sQVe/tau/pull/655)
+  [`0c44369`](https://github.com/sQVe/tau/commit/0c4436905ff596de8d00951a014c9364232a22ab) Thanks
+  [@sQVe](https://github.com/sQVe)! - Report a result for every QA journey step and the end state:
+  as written, differs, skipped, or blocked. Never report a journey as passed when a step did not
+  run. Aim for at most eight journeys per product, without requiring a minimum.
+
+- [#669](https://github.com/sQVe/tau/pull/669)
+  [`5c40873`](https://github.com/sQVe/tau/commit/5c40873ad65a244c420edebdade699cf11adacc2) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add the version 1 improvement event record. Events are saved
+  one file per event in `<project root>/.tau/improvement/`. A damaged event file stops the read with
+  an error naming it, and an event in a newer format is skipped with a notice to restart the
+  session.
+
+- [#665](https://github.com/sQVe/tau/pull/665)
+  [`ae74f52`](https://github.com/sQVe/tau/commit/ae74f52d961c8fe8c968da16e414e5992d8b4da8) Thanks
+  [@sQVe](https://github.com/sQVe)! - Give five copied helpers one owner each, so `piExec`,
+  `toError`, `bulletList`, `textField`, and the full-check waiting notice each have one definition.
+  No tool or behavior changed.
+
+- [#654](https://github.com/sQVe/tau/pull/654)
+  [`19a0aef`](https://github.com/sQVe/tau/commit/19a0aefa53ab8bc0f6d52dee7a2417a4ac92a1ac) Thanks
+  [@sQVe](https://github.com/sQVe)! - Share QA launch and reuse rules across manager guidance and
+  pull requests, and keep review timing and fix round rules in one place.
+
+- [#688](https://github.com/sQVe/tau/pull/688)
+  [`5061852`](https://github.com/sQVe/tau/commit/5061852425afeecaaaac5bb270dbbbbe55388138) Thanks
+  [@sQVe](https://github.com/sQVe)! - The footer now shows extension statuses on a second line. The
+  improvement status appears there: merged tasks to review, `correct due`, and `sweep incomplete`
+  after a failed sweep. It refreshes at session start, after the sweep, and after a correction is
+  recorded. The `improvement` tool has a new `status` action that returns the same facts with
+  coverage counts.
+
+- [#685](https://github.com/sQVe/tau/pull/685)
+  [`7d54352`](https://github.com/sQVe/tau/commit/7d543525b254dbd14f3fd96794538387170c51c9) Thanks
+  [@sQVe](https://github.com/sQVe)! - Each manager session start now sweeps new Pi transcripts and
+  merged pull requests in the background, with a 20-second budget and no model. It saves a `merge`
+  event per merged pull request, and a `facts` event once a transcript maps to the pull request's
+  task, in each project root. A byte cursor per transcript in `tau/improvement/index.json` under the
+  agent directory lets later sweeps read only new bytes. A worker session runs no sweep.
+
+- [#677](https://github.com/sQVe/tau/pull/677)
+  [`13707f2`](https://github.com/sQVe/tau/commit/13707f2315ead060dbd7930ba90fcd8ae95fd7cb) Thanks
+  [@sQVe](https://github.com/sQVe)! - The workflow instructions now tell agents to open herdr-app
+  panes beside their own pane. An agent passes its own pane to `pane.split`, starts the terminal in
+  a folder with `env -C`, and checks the new terminal's space and folder with `hc get` before it
+  reports where it runs.
+
+- [#673](https://github.com/sQVe/tau/pull/673)
+  [`6896812`](https://github.com/sQVe/tau/commit/6896812061acf4d10cec2a1b19a70c8bd8f04116) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add the verification record readers. They read run and item
+  records and report each as valid, missing, or malformed.
+
+- [#671](https://github.com/sQVe/tau/pull/671)
+  [`c646389`](https://github.com/sQVe/tau/commit/c646389fc2c940ebe0b80fc22b501e9fb3aa97f8) Thanks
+  [@sQVe](https://github.com/sQVe)! - Read `verification.targets` from the trusted repository file
+  `.pi/tau.json`.
+
+- [#678](https://github.com/sQVe/tau/pull/678)
+  [`2cf8c4e`](https://github.com/sQVe/tau/commit/2cf8c4e91754ccb44c1754f6af1d1735a866b45c) Thanks
+  [@sQVe](https://github.com/sQVe)! - Add the manager `verification` tool to launch, register items
+  on, and stop a verification run. It refuses to write a run record that the reader would call
+  malformed.
+
 ## 1.1.0
 
 ### Minor Changes
