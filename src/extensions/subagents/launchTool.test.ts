@@ -548,7 +548,11 @@ it('gives the manager the configured browser login command', async ({ onTestFini
 
   const context = {
     ...toolContext(fixture),
-    sessionManager: { getEntries: () => [], getSessionId: () => 'parent' },
+    sessionManager: {
+      getEntries: () => [],
+      getSessionFile: () => undefined,
+      getSessionId: () => 'parent',
+    },
   };
 
   for (const handler of pi.handlers.get('session_start') ?? []) {
@@ -587,7 +591,11 @@ it.for([
 
     const context = {
       ...toolContext(fixture),
-      sessionManager: { getEntries: () => [], getSessionId: () => 'parent' },
+      sessionManager: {
+        getEntries: () => [],
+        getSessionFile: () => undefined,
+        getSessionId: () => 'parent',
+      },
     };
 
     for (const handler of pi.handlers.get('session_start') ?? []) {
@@ -624,7 +632,11 @@ it('reports a broken browser login command and leaves it out of the prompt', asy
 
   const context = {
     ...toolContext(fixture),
-    sessionManager: { getEntries: () => [], getSessionId: () => 'parent' },
+    sessionManager: {
+      getEntries: () => [],
+      getSessionFile: () => undefined,
+      getSessionId: () => 'parent',
+    },
   };
 
   for (const handler of pi.handlers.get('session_start') ?? []) {

@@ -1,6 +1,6 @@
 import { isRecord } from '../schema.js';
-import { families } from './protocol.js';
-import type { Family, MessageBody } from './protocol.js';
+import { savableFamilies } from './protocol.js';
+import type { SavableFamily, SavableMessageBody } from './protocol.js';
 
 interface ReceiptIdentity {
   version: 2;
@@ -42,7 +42,8 @@ export interface SettleFacts {
 export const inboxMessageType = 'tau-inbox-message';
 export const inboxReceiptVersion = 2;
 
-const isFamily = (value: unknown): value is Family => families.some((family) => family === value);
+const isFamily = (value: unknown): value is SavableFamily =>
+  savableFamilies.some((family) => family === value);
 
 const questionDetails = (questionId: unknown): { questionId?: string } =>
   typeof questionId === 'string' ? { questionId } : {};
@@ -77,13 +78,13 @@ export const answeredQuestionId = (message: InboxMessageFact): string | undefine
   return receipt?.family === 'answer' ? receipt.questionId : undefined;
 };
 
-export const messageText = (body: MessageBody): string =>
+export const messageText = (body: SavableMessageBody): string =>
   body.family === 'handover' ? body.payload.text : body.payload.answer;
 
 // A retry matches when it would show the same text for the same question as the saved entry.
 export const matchesReceipt = (
   { receipt, content }: ReceiptedMessage,
-  body: MessageBody,
+  body: SavableMessageBody,
 ): boolean => {
   const receiptQuestionId = receipt.family === 'answer' ? receipt.questionId : undefined;
   const bodyQuestionId = body.family === 'answer' ? body.payload.questionId : undefined;

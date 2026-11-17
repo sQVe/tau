@@ -274,6 +274,21 @@ it('returns unknown with the same message ID when the message reply is lost', as
   );
 });
 
+it('reports an unknown reply as an unknown result', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+  const reason = 'No reply within 5000 ms.';
+
+  const path = await scriptedServer(sessionId, (socket) => {
+    socket.end(`${JSON.stringify({ protocol: 'rpc1', kind: 'unknown', messageId, reason })}\n`);
+  });
+
+  const result = await sendInboxMessage(request(hcFor(liveTarget(path)), messageId));
+
+  expect(result).toMatchObject({ status: 'unknown', terminal: 't7', sessionId, messageId });
+  expect(result.note).toContain(reason);
+});
+
 it('refuses a message larger than the frame limit before sending it', async () => {
   const receiver = await startReceiver('t7');
 

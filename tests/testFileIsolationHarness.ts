@@ -81,6 +81,12 @@ afterAll(() => {
   if (slot?.endpoint !== undefined) {
     throw new Error('This file left an inbox socket open for later files.');
   }
+
+  if (slot !== undefined) {
+    for (const family of Object.keys(slot.checks)) {
+      Reflect.deleteProperty(slot.checks, family);
+    }
+  }
 });
 
 afterAll(() => {

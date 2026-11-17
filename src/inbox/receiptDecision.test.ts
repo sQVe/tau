@@ -75,6 +75,15 @@ const readTable = [
     receipt: undefined,
   },
   {
+    name: 'a version 2 receipt of an answer-request family',
+    entry: {
+      type: 'custom_message',
+      customType: inboxMessageType,
+      details: { version: 2, messageId: 'm1', sessionId: 's1', family: 'answer-request' },
+    },
+    receipt: undefined,
+  },
+  {
     name: 'a version 2 receipt of an unknown family',
     entry: {
       type: 'custom_message',

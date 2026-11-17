@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 
 import { createReceiptStore, createReceiver } from './inbox.js';
-import type { MessageRequest } from './protocol.js';
+import type { MessageReply, MessageRequest } from './protocol.js';
 import type { ReceiverOptions } from './receive.js';
 
 let root = '';
@@ -84,6 +84,79 @@ it('refuses a message its family check rejects and saves nothing', async () => {
   });
 
   expect(existsSync(join(root, 'records', sessionId))).toBe(false);
+});
+
+it('refuses to save an answer-request message and saves nothing', async () => {
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+
+  const { receiver, woken } = directReceiver(sessionId, {
+    'answer-request': (_request, save) => save(),
+  });
+
+  const request: MessageRequest = {
+    ...messageRequest(sessionId, messageId),
+    family: 'answer-request',
+    payload: {
+      assignmentId: randomUUID(),
+      questionId: randomUUID(),
+      answer: 'Use option A.',
+    },
+  };
+
+  await expect(receiver.accept(request)).resolves.toEqual({
+    protocol: 'rpc1',
+    kind: 'refused',
+    reason: 'This session does not save answer-request messages.',
+    messageId,
+  });
+
+  expect(existsSync(join(root, 'records', sessionId))).toBe(false);
+  expect(woken).toEqual([]);
+});
+
+it('accepts a handover while an answer-request check is still waiting', async () => {
+  const sessionId = randomUUID();
+  const requestMessageId = randomUUID();
+  const handoverId = randomUUID();
+  const pending = Promise.withResolvers<MessageReply>();
+
+  const { receiver } = directReceiver(sessionId, {
+    'answer-request': () => pending.promise,
+    handover: (_request, save) => save(),
+  });
+
+  const answerRequest: MessageRequest = {
+    ...messageRequest(sessionId, requestMessageId),
+    family: 'answer-request',
+    payload: {
+      assignmentId: randomUUID(),
+      questionId: randomUUID(),
+      answer: 'Use option A.',
+    },
+  };
+
+  const waiting = receiver.accept(answerRequest);
+
+  await expect(receiver.accept(messageRequest(sessionId, handoverId))).resolves.toEqual(
+    queued(sessionId, handoverId),
+  );
+
+  pending.resolve({
+    protocol: 'rpc1',
+    kind: 'queued',
+    messageId: requestMessageId,
+    terminal: 't7',
+    sessionId,
+  });
+
+  await expect(waiting).resolves.toEqual({
+    protocol: 'rpc1',
+    kind: 'queued',
+    messageId: requestMessageId,
+    terminal: 't7',
+    sessionId,
+  });
 });
 
 it('saves an accepted answer and wakes with its answer text', async () => {

@@ -48,6 +48,29 @@ it.each([
   });
 });
 
+it('reports a saved answer-request record as malformed', async () => {
+  const directory = directoryFixture();
+  const path = join(directory, `${messageId}.json`);
+
+  mkdirSync(directory, { recursive: true });
+
+  writeFileSync(
+    path,
+    JSON.stringify({
+      version: 1,
+      messageId,
+      family: 'answer-request',
+      payload: {
+        assignmentId: '22222222-2222-4222-8222-222222222222',
+        questionId: '33333333-3333-4333-8333-333333333333',
+        answer: 'Use 42.',
+      },
+    }),
+  );
+
+  await expect(readMessage(directory, messageId)).resolves.toMatchObject({ kind: 'malformed' });
+});
+
 it('reports a missing record', async () => {
   await expect(readMessage(directoryFixture(), messageId)).resolves.toEqual({ kind: 'missing' });
 });

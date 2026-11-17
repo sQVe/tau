@@ -168,6 +168,10 @@ const deliver = async (
     return refuse(request, reply.reason);
   }
 
+  if (reply.kind === 'unknown') {
+    return unknownResult(target, messageId, reply.reason);
+  }
+
   if (!answersFor(reply, target, messageId)) {
     return unknownResult(target, messageId, 'The receiver sent an unexpected reply.');
   }

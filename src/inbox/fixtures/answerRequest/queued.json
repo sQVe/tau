@@ -1,0 +1,7 @@
+{
+  "protocol": "rpc1",
+  "kind": "queued",
+  "messageId": "0190c1d2-0000-7000-8000-000000000001",
+  "terminal": "t-manager",
+  "sessionId": "0190c1d2-0000-7000-8000-000000000002"
+}

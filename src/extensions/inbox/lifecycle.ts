@@ -44,7 +44,15 @@ const signalState = (signal: AbortSignal | undefined): ArrivalFacts['signal'] =>
   return signal.aborted ? 'aborted' : 'live';
 };
 
-const familyChecks = () => (isWorkerProcess() ? acceptChecks() : {});
+const familyChecks = () => {
+  if (isWorkerProcess()) {
+    return acceptChecks();
+  }
+
+  const answerRequest = acceptChecks()['answer-request'];
+
+  return answerRequest === undefined ? {} : { 'answer-request': answerRequest };
+};
 
 const notifyError = (context: ExtensionContext, message: string): void => {
   context.ui.notify(message, 'error');

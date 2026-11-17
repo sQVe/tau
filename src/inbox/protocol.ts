@@ -6,7 +6,7 @@ export type MessageRequest = Static<typeof requestSchema>;
 
 export type MessageBody = Static<typeof bodySchema>;
 
-export type MessageReply = QueuedReply | RefusedReply;
+export type MessageReply = QueuedReply | RefusedReply | UnknownReply;
 
 export type FrameDecision<Decoded> =
   | { kind: 'frame'; value: Decoded }
@@ -18,7 +18,11 @@ export type InboxLabel =
 
 const protocolName = 'rpc1';
 
-export const families = ['handover', 'answer'] as const;
+export const savableFamilies = ['handover', 'answer'] as const;
+
+const families = [...savableFamilies, 'answer-request'] as const;
+
+export type SavableFamily = (typeof savableFamilies)[number];
 
 export type Family = (typeof families)[number];
 
@@ -67,16 +71,50 @@ const answerBody = {
   ),
 };
 
-const bodySchema = Type.Union([Type.Object(handoverBody, strict), Type.Object(answerBody, strict)]);
+const answerRequestBody = {
+  family: Type.Literal('answer-request'),
+  payload: Type.Object(
+    {
+      assignmentId: uuidSchema,
+      questionId: uuidSchema,
+      answer: Type.String({ minLength: 1, maxLength: 32_000 }),
+    },
+    strict,
+  ),
+};
+
+const savableBodySchema = Type.Union([
+  Type.Object(handoverBody, strict),
+  Type.Object(answerBody, strict),
+]);
+
+const bodySchema = Type.Union([savableBodySchema, Type.Object(answerRequestBody, strict)]);
+
+export type SavableMessageBody = Static<typeof savableBodySchema>;
 
 type WithBody<Fields extends TProperties> = TUnion<
   [TObject<Fields & typeof handoverBody>, TObject<Fields & typeof answerBody>]
 >;
 
-export const withBody = <Fields extends TProperties>(fields: Fields): WithBody<Fields> =>
+type WithRequestBody<Fields extends TProperties> = TUnion<
+  [
+    TObject<Fields & typeof handoverBody>,
+    TObject<Fields & typeof answerBody>,
+    TObject<Fields & typeof answerRequestBody>,
+  ]
+>;
+
+export const withSavableBody = <Fields extends TProperties>(fields: Fields): WithBody<Fields> =>
   Type.Union([
     Type.Object({ ...fields, ...handoverBody }, strict),
     Type.Object({ ...fields, ...answerBody }, strict),
+  ]);
+
+const withBody = <Fields extends TProperties>(fields: Fields): WithRequestBody<Fields> =>
+  Type.Union([
+    Type.Object({ ...fields, ...handoverBody }, strict),
+    Type.Object({ ...fields, ...answerBody }, strict),
+    Type.Object({ ...fields, ...answerRequestBody }, strict),
   ]);
 
 const requestSchema = withBody({
@@ -108,10 +146,21 @@ const refusedSchema = Type.Object(
   strict,
 );
 
+const unknownSchema = Type.Object(
+  {
+    protocol: protocolField,
+    kind: Type.Literal('unknown'),
+    messageId: uuidSchema,
+    reason: Type.String({ minLength: 1 }),
+  },
+  strict,
+);
+
 type QueuedReply = Static<typeof queuedSchema>;
 type RefusedReply = Static<typeof refusedSchema>;
+type UnknownReply = Static<typeof unknownSchema>;
 
-const replySchema = Type.Union([queuedSchema, refusedSchema]);
+const replySchema = Type.Union([queuedSchema, refusedSchema, unknownSchema]);
 
 const newline = 0x0a;
 

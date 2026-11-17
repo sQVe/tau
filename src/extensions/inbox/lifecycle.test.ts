@@ -200,6 +200,16 @@ const answerTo = (sessionId: string, messageId = randomUUID()) => ({
   },
 });
 
+const answerRequestTo = (sessionId: string, messageId = randomUUID()) => ({
+  ...handoverTo(sessionId, messageId),
+  family: 'answer-request',
+  payload: {
+    assignmentId: randomUUID(),
+    questionId: randomUUID(),
+    answer: 'Use option A.',
+  },
+});
+
 const settle = () =>
   new Promise((resolve) => {
     setTimeout(resolve, 20);
@@ -338,25 +348,54 @@ it('leaves a label that names another socket at shutdown', async () => {
   });
 });
 
+it('refuses an answer request when a non-worker session has no answer-request check', async () => {
+  const harness = startHarness();
+  const sessionId = randomUUID();
+  const messageId = randomUUID();
+
+  await harness.start(sessionId);
+  cleanups.push(() => harness.shutdown(sessionId));
+
+  await expect(
+    exchange(socketOf(sessionId), answerRequestTo(sessionId, messageId)),
+  ).resolves.toEqual({
+    protocol: 'rpc1',
+    kind: 'refused',
+    reason: 'This session does not accept answer-request messages.',
+    messageId,
+  });
+});
+
 it.each([
-  { role: '', kind: 'refused' },
-  { role: 'worker', kind: 'queued' },
+  { role: '', family: 'answer', kind: 'refused' },
+  { role: 'worker', family: 'answer', kind: 'queued' },
+  { role: '', family: 'answer-request', kind: 'queued' },
 ])(
   'answers a worker answer check as $kind in a session with role "$role"',
-  async ({ role, kind }) => {
+  async ({ role, family, kind }) => {
     vi.stubEnv('TAU_ROLE', role);
-    setAcceptCheck('answer', (_request, save) => save());
 
     const harness = startHarness();
     const sessionId = randomUUID();
     const messageId = randomUUID();
 
+    setAcceptCheck('answer', (_request, save) => save());
+
+    setAcceptCheck('answer-request', async () => ({
+      protocol: 'rpc1',
+      kind: 'queued',
+      messageId,
+      terminal: 't7',
+      sessionId,
+    }));
+
     await harness.start(sessionId);
     cleanups.push(() => harness.shutdown(sessionId));
 
-    await expect(
-      exchange(socketOf(sessionId), answerTo(sessionId, messageId)),
-    ).resolves.toMatchObject({
+    const request =
+      family === 'answer' ? answerTo(sessionId, messageId) : answerRequestTo(sessionId, messageId);
+
+    await expect(exchange(socketOf(sessionId), request)).resolves.toMatchObject({
       kind,
       messageId,
     });

@@ -1,0 +1,6 @@
+{
+  "protocol": "rpc1",
+  "kind": "refused",
+  "reason": "Assignment 0190c1d2-0000-7000-8000-000000000003 already has a report. Nothing was queued.",
+  "messageId": "0190c1d2-0000-7000-8000-000000000001"
+}

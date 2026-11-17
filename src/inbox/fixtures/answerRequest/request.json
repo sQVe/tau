@@ -1,0 +1,13 @@
+{
+  "protocol": "rpc1",
+  "kind": "message",
+  "messageId": "0190c1d2-0000-7000-8000-000000000001",
+  "targetTerminal": "t-manager",
+  "targetSessionId": "0190c1d2-0000-7000-8000-000000000002",
+  "family": "answer-request",
+  "payload": {
+    "assignmentId": "0190c1d2-0000-7000-8000-000000000003",
+    "questionId": "0190c1d2-0000-7000-8000-000000000004",
+    "answer": "Use 42."
+  }
+}

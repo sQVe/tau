@@ -1,4 +1,4 @@
-import type { Family, MessageBody, MessageReply, MessageRequest } from './protocol.js';
+import type { Family, MessageReply, MessageRequest, SavableMessageBody } from './protocol.js';
 import { refusedReply } from './protocol.js';
 import {
   decideCandidate,
@@ -55,10 +55,18 @@ const queuedReply = (options: ReceiverOptions, messageId: string): MessageReply 
   sessionId: options.sessionId,
 });
 
-const bodyOf = (request: MessageRequest): MessageBody =>
-  request.family === 'handover'
-    ? { family: 'handover', payload: request.payload }
-    : { family: 'answer', payload: request.payload };
+const bodyOf = (request: MessageRequest): SavableMessageBody | undefined => {
+  switch (request.family) {
+    case 'handover':
+      return { family: 'handover', payload: request.payload };
+    case 'answer':
+      return { family: 'answer', payload: request.payload };
+    case 'answer-request':
+      return undefined;
+    default:
+      return undefined;
+  }
+};
 
 const changedReply = (messageId: string): MessageReply =>
   refusedReply(`Message ${messageId} is already saved with different content.`, messageId);
@@ -66,6 +74,10 @@ const changedReply = (messageId: string): MessageReply =>
 const save = async (options: ReceiverOptions, request: MessageRequest): Promise<MessageReply> => {
   const { messageId } = request;
   const body = bodyOf(request);
+
+  if (body === undefined) {
+    return refusedReply(`This session does not save ${request.family} messages.`, messageId);
+  }
 
   options.receipts.restore(options.entries());
 
@@ -98,7 +110,7 @@ const accept = async (options: ReceiverOptions, request: MessageRequest): Promis
 const receiptOf = (
   options: ReceiverOptions,
   messageId: string,
-  body: MessageBody,
+  body: SavableMessageBody,
 ): InboxReceipt => {
   const identity = {
     version: inboxReceiptVersion,
@@ -111,7 +123,7 @@ const receiptOf = (
     : { ...identity, family: body.family };
 };
 
-const wakeOnce = (options: ReceiverOptions, messageId: string, body: MessageBody): void => {
+const wakeOnce = (options: ReceiverOptions, messageId: string, body: SavableMessageBody): void => {
   const arrival = options.receipts.isRecovered(messageId) ? 'recovered' : 'arrived';
 
   options.receipts.markQueued(messageId);
@@ -183,6 +195,11 @@ export const createReceiver = (options: ReceiverOptions): Receiver => {
 
   return {
     accept: (request) => {
+      // The queue orders saves, so a family this receiver never saves skips it.
+      if (bodyOf(request) === undefined) {
+        return accept(options, request);
+      }
+
       const reply = accepting.then(() => accept(options, request));
 
       accepting = reply.catch(() => undefined);
