@@ -102,7 +102,9 @@ const runUrlCommand = (
     });
 
     child.on('close', (code) => {
-      finish(code === 0 ? Buffer.concat(chunks).toString() : undefined);
+      const commandOutput = code === 0 ? Buffer.concat(chunks).toString() : undefined;
+
+      finish(commandOutput);
     });
   });
 

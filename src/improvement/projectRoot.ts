@@ -1,8 +1,11 @@
 import { errorMessage } from '../errors.ts';
 import { findSharedRepositoryRoot } from '../tauDirectory.ts';
 
-export const projectRootsOf = (indexed: readonly string[], current: string | null): string[] =>
-  [...new Set(current === null ? indexed : [...indexed, current])].toSorted();
+export const projectRootsOf = (indexed: readonly string[], current: string | null): string[] => {
+  const allRoots = current === null ? indexed : [...indexed, current];
+
+  return [...new Set(allRoots)].toSorted();
+};
 
 const isNotARepository = (message: string) => message.includes('not a git repository');
 

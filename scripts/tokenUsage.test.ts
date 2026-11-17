@@ -71,18 +71,18 @@ const nothing = {
 const snapshot = async () => {
   const names = await readdir(agentDirectory, { recursive: true, encoding: 'utf8' });
 
-  return Promise.all(
-    names.toSorted().map(async (name) => {
-      const path = join(agentDirectory, name);
+  const fileSnapshots = names.toSorted().map(async (name) => {
+    const path = join(agentDirectory, name);
 
-      const { mtimeMs, isFile } = await stat(path).then((info) => ({
-        mtimeMs: info.mtimeMs,
-        isFile: info.isFile(),
-      }));
+    const { mtimeMs, isFile } = await stat(path).then((info) => ({
+      mtimeMs: info.mtimeMs,
+      isFile: info.isFile(),
+    }));
 
-      return [name, mtimeMs, isFile ? await readFile(path, 'utf8') : ''];
-    }),
-  );
+    return [name, mtimeMs, isFile ? await readFile(path, 'utf8') : ''];
+  });
+
+  return Promise.all(fileSnapshots);
 };
 
 beforeEach(async () => {

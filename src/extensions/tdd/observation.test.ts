@@ -1089,9 +1089,11 @@ it.for<{ name: string; file: (root: string) => string; accepted: string | undefi
     const requested = runTests.mock.calls.map(([input]) => ('files' in input ? input.files : []));
     const rejected = failure?.includes('Expected a test file inside the worktree') === true;
 
+    const requestedPaths = accepted === undefined ? [] : [[accepted]];
+
     expect({ rejected, requested }).toEqual({
       rejected: accepted === undefined,
-      requested: accepted === undefined ? [] : [[accepted]],
+      requested: requestedPaths,
     });
   },
 );

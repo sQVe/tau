@@ -267,7 +267,9 @@ const splitCompleteLines = (buffer: Buffer, maxLineBytes: number) => {
     if (end - start > maxLineBytes) {
       skippedLines += 1;
     } else {
-      text.push(buffer.subarray(start, end).toString('utf8'));
+      const decodedText = buffer.subarray(start, end).toString('utf8');
+
+      text.push(decodedText);
     }
 
     start = end;

@@ -624,8 +624,10 @@ describe.skipIf(!hasZsh)('resume-pi shell snippet', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('AFTER');
     expect(result.stdout).not.toContain('HELPER_LEAK');
-    expect(result.piArgs).toBe(row.pi ? `--session ${result.sessionFile}` : undefined);
-    expect(result.piCwd).toBe(row.pi ? result.cwd : undefined);
+    const expectedPiArgs = row.pi ? `--session ${result.sessionFile}` : undefined;
+    expect(result.piArgs).toBe(expectedPiArgs);
+    const expectedPiCwd = row.pi ? result.cwd : undefined;
+    expect(result.piCwd).toBe(expectedPiCwd);
     const hcCallsToCheck = row.getCalls === undefined ? undefined : result.hcCalls;
 
     const measuredMs =

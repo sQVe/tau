@@ -55,16 +55,17 @@ const savedAssignment = (directory: string): Assignment => {
   };
 };
 
-const snapshotFiles = (directory: string): Record<string, string> =>
-  Object.fromEntries(
-    readdirSync(directory, { recursive: true, withFileTypes: true })
-      .filter((entry) => entry.isFile())
-      .map((entry) => {
-        const path = join(entry.parentPath, entry.name);
+const snapshotFiles = (directory: string): Record<string, string> => {
+  const fileEntries = readdirSync(directory, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => {
+      const path = join(entry.parentPath, entry.name);
 
-        return [path, readFileSync(path, 'utf8')];
-      }),
-  );
+      return [path, readFileSync(path, 'utf8')] as const;
+    });
+
+  return Object.fromEntries(fileEntries);
+};
 
 const readChildWithAssignment = async (path: string) => {
   const hcFake = createHcFake();

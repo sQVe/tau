@@ -52,8 +52,10 @@ const toolsSize = (tools: ToolDefinition[]): number =>
   tools.reduce((total, tool) => total + toolSize(tool), 0);
 
 const loadTools = async (role: RoleKind, agentDirectory: string) => {
-  vi.stubEnv('TAU_ROLE', role === 'lead' ? undefined : role);
-  vi.stubEnv('TAU_WORKER_RECORD', role === 'worker' ? 'worker-record' : '');
+  const tauRole = role === 'lead' ? undefined : role;
+  vi.stubEnv('TAU_ROLE', tauRole);
+  const workerRecord = role === 'worker' ? 'worker-record' : '';
+  vi.stubEnv('TAU_WORKER_RECORD', workerRecord);
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
 
   if (role !== 'worker') {
@@ -163,11 +165,13 @@ afterAll(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-const allTools = (): ToolDefinition[] => [
-  ...new Map(
-    [...sessions.values()].flatMap((session) => session.tools).map((tool) => [tool.name, tool]),
-  ).values(),
-];
+const allTools = (): ToolDefinition[] => {
+  const toolEntries = [...sessions.values()]
+    .flatMap((session) => session.tools)
+    .map((tool) => [tool.name, tool] as const);
+
+  return [...new Map(toolEntries).values()];
+};
 
 describe('prompt budget', () => {
   it('a lead prompt holds the lead rules and no architect rules', () => {
@@ -205,7 +209,8 @@ describe('prompt budget', () => {
   });
 
   it('keeps each excepted tool within its recorded length', () => {
-    const tools = new Map(allTools().map((tool) => [tool.name, tool]));
+    const toolEntries = allTools().map((tool) => [tool.name, tool] as const);
+    const tools = new Map(toolEntries);
 
     const over = Object.entries(descriptionExceptions)
       .map(([name, ceiling]) => ({ name, ceiling, length: tools.get(name)?.description.length }))
@@ -219,7 +224,8 @@ describe('prompt budget', () => {
   });
 
   it('keeps each session within its ceiling', () => {
-    expect([...sessions.keys()].toSorted()).toEqual(Object.keys(sessionCeilings).toSorted());
+    const sessionCeilingNames = Object.keys(sessionCeilings).toSorted();
+    expect([...sessions.keys()].toSorted()).toEqual(sessionCeilingNames);
 
     const over = [...sessions]
       .filter(([name, { size }]) => size > (sessionCeilings[name] ?? 0))

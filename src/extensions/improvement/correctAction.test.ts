@@ -16,7 +16,8 @@ import { runCorrect } from './correctAction.js';
 const cleanups: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
-  await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
+  const cleanupTasks = cleanups.splice(0).map((cleanup) => cleanup());
+  await Promise.all(cleanupTasks);
 });
 
 const createProject = async () =>
@@ -110,7 +111,9 @@ it('returns the ranked classes and measures', async () => {
     ],
   });
 
-  expect('classes' in result ? result.classes : []).toEqual([
+  const resultClasses = 'classes' in result ? result.classes : [];
+
+  expect(resultClasses).toEqual([
     {
       ...proposed({ identity: 'lint-b', occurrences: ['a', 'b', 'c'] }),
       id: classEventId('lint-b', ['a', 'b', 'c']),
@@ -152,11 +155,14 @@ it('returns the evidence, measures, and gaps without classes', async () => {
 
   const result = await runCorrect(agentDirectory, project, { action: 'correct' });
 
-  expect('events' in result ? result.events : []).toEqual(
+  const resultEvents = 'events' in result ? result.events : [];
+
+  expect(resultEvents).toEqual(
     expect.arrayContaining([rejected, expect.objectContaining({ subject: rejected.id })]),
   );
 
-  expect('rejected' in result ? result.rejected : []).toEqual([rejected.id]);
+  const resultRejected = 'rejected' in result ? result.rejected : [];
+  expect(resultRejected).toEqual([rejected.id]);
 
   expect(result.measures).toEqual({
     repeatRateAfterCheck: { value: undefined, coverage: 0 },
@@ -190,7 +196,8 @@ it('reports a failed project and keeps the other evidence', async () => {
 
   const result = await runCorrect(agentDirectory, readable, { action: 'correct' });
 
-  expect('events' in result ? result.events : []).toEqual([saved]);
+  const resultEvents = 'events' in result ? result.events : [];
+  expect(resultEvents).toEqual([saved]);
   expect(result.failed).toHaveLength(1);
   expect(result.failed[0]?.projectRoot).toBe(unlistable);
   expect(result.failed[0]?.reason).toContain(eventDirectory(unlistable));

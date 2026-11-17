@@ -152,12 +152,11 @@ describe('runTests', () => {
       expect(result).toMatchObject({ kind: 'no-tests-collected', tests: [] });
       expect(result).toHaveProperty('message', expect.stringContaining(`Vitest ${version}`));
 
-      expect(result).toHaveProperty(
-        'message',
-        expect.stringContaining(
-          version.startsWith('5.') ? 'outer > inner > works' : 'outer inner works',
-        ),
-      );
+      const expectedMessage = version.startsWith('5.')
+        ? 'outer > inner > works'
+        : 'outer inner works';
+
+      expect(result).toHaveProperty('message', expect.stringContaining(expectedMessage));
 
       expect(result).toHaveProperty('message', expect.stringContaining('Do not restructure tests'));
       expect(spawn).toHaveBeenCalledTimes(1);

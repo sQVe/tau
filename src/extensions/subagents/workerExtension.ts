@@ -68,12 +68,13 @@ const inOrder = <Result>(state: WorkerState, step: () => Promise<Result>): Promi
   return next;
 };
 
-const readLoadoutInstructionSets = (loadout: Loadout): Promise<string[]> =>
-  Promise.all(
-    instructionSetNames
-      .filter((name) => loadout.instructionSets.includes(name))
-      .map((name) => readInstructionSet(name)),
-  );
+const readLoadoutInstructionSets = (loadout: Loadout): Promise<string[]> => {
+  const instructionSetReads = instructionSetNames
+    .filter((name) => loadout.instructionSets.includes(name))
+    .map((name) => readInstructionSet(name));
+
+  return Promise.all(instructionSetReads);
+};
 
 const workerCodemodeGuidelines = (loadout: Loadout): string[] =>
   loadout.tools.includes('codemode') ? [guidelineLines(codemodeGuidelines)] : [];

@@ -253,7 +253,9 @@ const assertionMessage = (messages: string[], cwd: string): string => {
     return capMessage(frame ?? '');
   }
 
-  return capMessage(frame == null ? headline : `${headline} (${frame})`);
+  const assertionText = frame == null ? headline : `${headline} (${frame})`;
+
+  return capMessage(assertionText);
 };
 
 const hasFailedAssertion = (file: VitestTestFile): boolean =>

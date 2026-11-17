@@ -46,14 +46,16 @@ export const failedExit = (command: string, output: CommandOutput): FailedRead =
   const status =
     output.exitCode === null ? 'did not finish' : `exited with code ${output.exitCode}`;
 
-  return readFailed(command, detail === '' ? status : `${status}: ${detail}`);
+  const failureSummary = detail === '' ? status : `${status}: ${detail}`;
+
+  return readFailed(command, failureSummary);
 };
 
-export const malformedOutput = (command: string, output: CommandOutput): FailedRead =>
-  readFailed(
-    command,
-    `printed output that cannot be read: ${output.stdout.trim().slice(0, outputPreviewLength)}`,
-  );
+export const malformedOutput = (command: string, output: CommandOutput): FailedRead => {
+  const outputPreview = output.stdout.trim().slice(0, outputPreviewLength);
+
+  return readFailed(command, `printed output that cannot be read: ${outputPreview}`);
+};
 
 export const failures = (reads: readonly (Read<unknown> | null)[]): FailedRead[] =>
   reads.flatMap((read) => (read !== null && !read.ok ? [read] : []));

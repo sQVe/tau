@@ -33,7 +33,9 @@ export default function trackerExtension(pi: ExtensionAPI): void {
 
   pi.on('before_agent_start', (event) => {
     if (promptLines.length > 0) {
-      appendSystemPrompt(event, promptLines.map((line) => `- ${line}`).join('\n'));
+      const promptList = promptLines.map((line) => `- ${line}`).join('\n');
+
+      appendSystemPrompt(event, promptList);
     }
   });
 }

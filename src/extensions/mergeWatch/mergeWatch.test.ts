@@ -266,7 +266,9 @@ it('reads the state of the watched pull request and its required checks', async 
   await runBash('gh pr merge --auto');
   await vi.advanceTimersByTimeAsync(minute);
 
-  expect(execFake.calls.slice(1).map((call) => call.commandArguments)).toEqual([
+  const commandArguments = execFake.calls.slice(1).map((call) => call.commandArguments);
+
+  expect(commandArguments).toEqual([
     ['pr', 'view', url, '--json', 'state,mergedAt'],
     ['pr', 'checks', url, '--required', '--json', 'name,bucket,state'],
   ]);

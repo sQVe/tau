@@ -269,14 +269,14 @@ const readVerification = async (root: string, evidence: PublicationEvidence) => 
 
   evidence.verification = selectEvidence(runs, tree).map(toVerificationEvidence);
 
-  evidence.gaps.push(
-    ...listRecordProblems(runs).map((problem): PublicationGap => ({
-      kind: 'verificationRecord',
-      run: problem.run,
-      item: problem.item,
-      problem: problem.problem,
-    })),
-  );
+  const verificationGaps = listRecordProblems(runs).map((problem): PublicationGap => ({
+    kind: 'verificationRecord',
+    run: problem.run,
+    item: problem.item,
+    problem: problem.problem,
+  }));
+
+  evidence.gaps.push(...verificationGaps);
 };
 
 export const readPublicationEvidence = async (

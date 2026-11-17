@@ -69,11 +69,11 @@ it('writes a request.json that pins the review and its staged paths', async () =
   const written = await readFile(join(context.directory, 'request.json'), 'utf8');
   const expected = await protocolText('request/manual.json');
 
-  expect(written).toBe(
-    expected
-      .replaceAll('/tmp/tau-draft-review-AbC123', context.staging)
-      .replaceAll('review-AbC123', context.reviewId),
-  );
+  const expectedRequest = expected
+    .replaceAll('/tmp/tau-draft-review-AbC123', context.staging)
+    .replaceAll('review-AbC123', context.reviewId);
+
+  expect(written).toBe(expectedRequest);
 });
 
 it('returns the comments.json comments with absolute .tau paths and never reads tuicr', async () => {

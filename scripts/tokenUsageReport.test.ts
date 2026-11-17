@@ -363,7 +363,11 @@ describe('tokenUsageReport', () => {
       [found('/gone.jsonl', 10), found('/good.jsonl', 11)],
       window,
       noneSkipped,
-      (path) => Promise.resolve(path === '/good.jsonl' ? good : undefined),
+      (path) => {
+        const transcript = path === '/good.jsonl' ? good : undefined;
+
+        return Promise.resolve(transcript);
+      },
     );
 
     expect(result.unreadableSessions).toBe(1);

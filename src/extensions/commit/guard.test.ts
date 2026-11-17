@@ -311,9 +311,11 @@ describe('guardToolCall', () => {
 });
 
 const createFakePi = () => {
+  const getFlagMock = vi.fn<ExtensionAPI['getFlag']>().mockReturnValue(false);
+
   const fake = fakeExtensionApi({
     registerFlag: vi.fn<ExtensionAPI['registerFlag']>(),
-    getFlag: vi.fn<ExtensionAPI['getFlag']>().mockReturnValue(false),
+    getFlag: getFlagMock,
   });
 
   return {

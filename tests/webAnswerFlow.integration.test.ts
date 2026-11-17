@@ -156,11 +156,12 @@ it.for(Object.keys(passedModels) as (keyof typeof passedModels)[])(
       fauxAssistantMessage('Done.'),
     ]);
 
-    configured.setResponses([
+    const assistantResponse =
       scenario === 'provider'
         ? fauxAssistantMessage('', { stopReason: 'error', errorMessage: 'provider unavailable' })
-        : fauxAssistantMessage('Requests retry once.'),
-    ]);
+        : fauxAssistantMessage('Requests retry once.');
+
+    configured.setResponses([assistantResponse]);
 
     override.setResponses([fauxAssistantMessage('Override: requests retry once.')]);
 
@@ -195,7 +196,9 @@ it.for(Object.keys(passedModels) as (keyof typeof passedModels)[])(
     expect(text.toLowerCase()).toContain(expected);
     expect(session.model?.provider).toBe('web-session');
     expect(sessionModel.state.callCount).toBe(2);
-    expect(override.state.callCount).toBe(scenario === 'override' ? 1 : 0);
-    expect(configured.state.callCount).toBe(['configured', 'provider'].includes(scenario) ? 1 : 0);
+    const overrideCallCount = scenario === 'override' ? 1 : 0;
+    expect(override.state.callCount).toBe(overrideCallCount);
+    const configuredCallCount = ['configured', 'provider'].includes(scenario) ? 1 : 0;
+    expect(configured.state.callCount).toBe(configuredCallCount);
   },
 );

@@ -835,7 +835,8 @@ it('captures the saved target once per evidence read', async () => {
 
   await readReviewEvidence(root, directory);
 
-  expect((await readFile(log, 'utf8')).trimEnd().split('\n')).toHaveLength(1);
+  const logLines = (await readFile(log, 'utf8')).trimEnd().split('\n');
+  expect(logLines).toHaveLength(1);
 });
 
 it('reports a failed HEAD read with its reason', async () => {

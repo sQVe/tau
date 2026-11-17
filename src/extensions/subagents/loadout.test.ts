@@ -288,8 +288,10 @@ it('refuses profile files that set a model or use the reserved default name', ({
   const withModel = join(directory, 'agents', 'worker.md');
   const named = join(directory, 'agents', 'reserved.md');
 
-  writeFileSync(withModel, profile('Task.').replace('thinking: off', 'model: a/model'));
-  writeFileSync(named, profile('Task.').replace('name: worker', 'name: default'));
+  const profileWithModel = profile('Task.').replace('thinking: off', 'model: a/model');
+  writeFileSync(withModel, profileWithModel);
+  const defaultNamedProfile = profile('Task.').replace('name: worker', 'name: default');
+  writeFileSync(named, defaultNamedProfile);
 
   const modelProfile = () => resolveProfile(directory, directory, false, 'worker');
   expect(modelProfile).toThrow(withModel);
@@ -734,7 +736,8 @@ it('validates only the requested winning profile and rejects malformed overrides
   mkdirSync(user);
   mkdirSync(project, { recursive: true });
   writeFileSync(join(user, 'unrelated.md'), 'Not a profile.');
-  writeFileSync(join(user, 'renamed.md'), profile('Invalid overridden.').replace('editing', 'bad'));
+  const invalidProfile = profile('Invalid overridden.').replace('editing', 'bad');
+  writeFileSync(join(user, 'renamed.md'), invalidProfile);
   const winner = join(project, 'custom.md');
   writeFileSync(winner, profile('Chosen project instructions.'));
   const selected = () => resolveProfile(directory, directory, true, 'worker');
@@ -766,10 +769,8 @@ it('validates only the requested winning profile and rejects malformed overrides
     expect(selected).toThrow(/Invalid profile|Unsupported|Malformed/);
   }
 
-  writeFileSync(
-    join(project, 'worker.md'),
-    profile('Renamed instructions.').replace('name: worker', 'name: custom'),
-  );
+  const renamedProfile = profile('Renamed instructions.').replace('name: worker', 'name: custom');
+  writeFileSync(join(project, 'worker.md'), renamedProfile);
 
   expect(resolveProfile(directory, directory, true, 'custom')?.instructions).toBe(
     'Renamed instructions.',
@@ -800,17 +801,21 @@ it('lists bundled, user, and trusted project profiles without changing profile f
   mkdirSync(user);
   mkdirSync(project, { recursive: true });
 
-  writeFileSync(
-    join(user, 'triage.md'),
-    profile('Triage.').replace('name: worker', 'name: triage\ndescription: Sorts bug reports'),
+  const triageProfile = profile('Triage.').replace(
+    'name: worker',
+    'name: triage\ndescription: Sorts bug reports',
   );
+
+  writeFileSync(join(user, 'triage.md'), triageProfile);
 
   writeFileSync(join(user, 'broken.md'), 'Not a profile.');
 
-  writeFileSync(
-    join(project, 'worker.md'),
-    profile('Project worker.').replace('role:', 'description: Project editor\nrole:'),
+  const projectProfile = profile('Project worker.').replace(
+    'role:',
+    'description: Project editor\nrole:',
   );
+
+  writeFileSync(join(project, 'worker.md'), projectProfile);
 
   const files = () =>
     [user, project].flatMap((folder) =>

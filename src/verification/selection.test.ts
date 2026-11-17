@@ -407,7 +407,8 @@ it.each([
     ],
   },
 ])('selects $name', ({ runs, expected }) => {
-  expect(selectEvidence(runs, tree).map(summary)).toEqual(expected);
+  const summaries = selectEvidence(runs, tree).map(summary);
+  expect(summaries).toEqual(expected);
 });
 
 it.each([

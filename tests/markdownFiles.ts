@@ -2,13 +2,10 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 
-import { adrIndexMark } from './adrIndexMark.js';
-
 export type DocumentProblemKind =
   | 'broken-link'
   | 'missing-heading'
   | 'missing-path'
-  | 'adr-index'
   | 'stale-allowlist';
 
 export interface DocumentProblem {
@@ -30,12 +27,6 @@ export interface Files {
 export interface Document {
   file: string;
   markdown: string;
-}
-
-interface AdrIndexEntry {
-  label: string;
-  name: string;
-  mark: string;
 }
 
 // Maps each backticked path that names no repository file on purpose to the documents that may
@@ -66,13 +57,12 @@ const frontmatter = /^---\n[\s\S]*?\n---\n/;
 const headingLink = /\[([^\]]*)\]\([^)]*\)/g;
 const notSlugCharacter = /[^\p{L}\p{M}\p{N}\p{Pc} -]/gu;
 const notPathCharacter = /[\s<>*?$~{}[\]:@|"'=,()]/;
-const adrFile = /^docs\/adr\/(\d{4})-[^/]+\.md$/;
-const adrIndexEntry = /^- \[([^\n]+)\]\(\.\/(\d{4}-[^)\s]+\.md)\)([^\n]*(?:\n {2}\S[^\n]*)*)$/gm;
-const adrTitle = /^ADR (\d{4}): (.+)$/;
-const adrIndexFile = 'docs/adr/README.md';
 
 // The changelog records history, so it may name paths that no longer exist.
 const historyFiles = new Set(['CHANGELOG.md']);
+
+// Synced stomme files describe several projects, so they may name paths that Tau does not have.
+const syncedDocumentPrefix = 'docs/stomme/';
 
 // Top-level directories that Tau no longer has, so a path below one is stale rather than a name.
 const formerRoots = new Set(['extensions', 'skills', 'vendor']);
@@ -189,10 +179,15 @@ const targetProblem = (
   return { kind: 'missing-heading', detail: `links to missing heading ${target}` };
 };
 
-export const linkProblems = (file: string, markdown: string, files: Files): LinkProblem[] =>
-  linkTargets(withoutFences(markdown).replaceAll(htmlCommentBlock, '').replaceAll(inlineCode, ''))
+export const linkProblems = (file: string, markdown: string, files: Files): LinkProblem[] => {
+  const linkableMarkdown = withoutFences(markdown)
+    .replaceAll(htmlCommentBlock, '')
+    .replaceAll(inlineCode, '');
+
+  return linkTargets(linkableMarkdown)
     .filter((target) => !externalTarget.test(target))
     .flatMap((target) => targetProblem(file, markdown, target, files) ?? []);
+};
 
 export const diskFiles: Files = {
   exists: existsSync,
@@ -207,7 +202,8 @@ const repositoryPathsOf = (repositoryFiles: readonly string[]) => {
     const segments = file.split('/');
 
     for (let length = 1; length <= segments.length; length += 1) {
-      paths.add(segments.slice(0, length).join('/'));
+      const pathPrefix = segments.slice(0, length).join('/');
+      paths.add(pathPrefix);
     }
   }
 
@@ -233,77 +229,6 @@ const backtickedPaths = (markdown: string, repositoryPaths: ReadonlySet<string>)
 
 const pathExists = (path: string, repositoryPaths: ReadonlySet<string>) =>
   repositoryPaths.has(path.replace(/\/+$/, ''));
-
-const adrLabel = (file: string, markdown: string) => {
-  const [, fileNumber] = adrFile.exec(file) ?? [];
-  const [heading = ''] = headingsOf(markdown);
-  const [, headingNumber, title] = adrTitle.exec(heading) ?? [];
-
-  if (title === undefined) {
-    return { problem: `${file} must start with a heading "ADR NNNN: Title"` };
-  }
-
-  if (headingNumber !== fileNumber) {
-    return { problem: `${file} has heading number ${headingNumber}` };
-  }
-
-  return { label: `${fileNumber}: ${title}` };
-};
-
-const collapsedSpace = (text: string) => text.replaceAll(/\s+/g, ' ').trim();
-
-const adrProblems = (adr: Document, entries: readonly AdrIndexEntry[]) => {
-  const name = adr.file.slice('docs/adr/'.length);
-  const listed = entries.filter((entry) => entry.name === name);
-  const [entry] = listed;
-
-  if (entry === undefined || listed.length > 1) {
-    return [`lists ${name} ${listed.length} times`];
-  }
-
-  const { label, problem } = adrLabel(adr.file, adr.markdown);
-
-  if (problem !== undefined) {
-    return [problem];
-  }
-
-  const expected = adrIndexMark(adr.markdown);
-
-  if ('problem' in expected) {
-    return [`${adr.file} ${expected.problem}`];
-  }
-
-  const { mark } = expected;
-
-  const problems: string[] = [];
-
-  if (entry.label !== label) {
-    problems.push(`lists ${name} as "${entry.label}", not "${label}"`);
-  }
-
-  if (entry.mark !== mark) {
-    problems.push(`lists ${name} with "${entry.mark}", but its status needs "${mark}"`);
-  }
-
-  return problems;
-};
-
-// The index must list each ADR once, titled as its first heading and marked as its status says.
-const adrIndexProblems = (index: string, adrs: readonly Document[]): string[] => {
-  const entries = [...index.matchAll(adrIndexEntry)].map((match) => ({
-    label: match[1] ?? '',
-    name: match[2] ?? '',
-    mark: collapsedSpace(match[3] ?? ''),
-  }));
-
-  const names = new Set(adrs.map((adr) => adr.file.slice('docs/adr/'.length)));
-
-  const unknownEntries = entries
-    .filter((entry) => !names.has(entry.name))
-    .map((entry) => `lists ${entry.name}, which is not an ADR`);
-
-  return [...unknownEntries, ...adrs.flatMap((adr) => adrProblems(adr, entries))];
-};
 
 const repositoryFilesOf = (
   root: string,
@@ -344,7 +269,8 @@ export const documentProblems = (
       problems.push({ file, kind, detail });
     }
 
-    const paths = historyFiles.has(file) ? [] : backtickedPaths(markdown, repositoryPaths);
+    const skipsPaths = historyFiles.has(file) || file.startsWith(syncedDocumentPrefix);
+    const paths = skipsPaths ? [] : backtickedPaths(markdown, repositoryPaths);
 
     for (const path of paths) {
       const allowed = allowedPaths[path]?.includes(file) ?? false;
@@ -357,15 +283,6 @@ export const documentProblems = (
     }
   }
 
-  const index = documents.find((document) => document.file === adrIndexFile);
-  const adrs = documents.filter((document) => adrFile.test(document.file));
-
-  const indexProblems = adrIndexProblems(index?.markdown ?? '', adrs).map((detail) => ({
-    file: adrIndexFile,
-    kind: 'adr-index' as const,
-    detail,
-  }));
-
   const staleEntries = Object.entries(allowedPaths).flatMap(([path, allowedFiles]) =>
     allowedFiles
       .filter((file) => !named.has(`${file}\0${path}`) || pathExists(path, repositoryPaths))
@@ -376,7 +293,7 @@ export const documentProblems = (
       })),
   );
 
-  return [...problems, ...indexProblems, ...staleEntries];
+  return [...problems, ...staleEntries];
 };
 
 // Untracked files count unless Git ignores them, so a new file may be documented before `git add`.

@@ -236,8 +236,10 @@ const missingTrees = async (root: string, endpoint: CompleteEndpoint) => {
 };
 
 const missingBlobs = async (root: string, blobs: string[]) => {
+  const blobBatchInput = blobs.map((blob) => `${blob}\n`).join('');
+
   const result = await runGit(root, ['cat-file', '--batch-check'], {
-    input: blobs.map((blob) => `${blob}\n`).join(''),
+    input: blobBatchInput,
   });
 
   if (result.exitCode !== 0) {

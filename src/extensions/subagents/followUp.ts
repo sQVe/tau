@@ -164,7 +164,8 @@ export const executeFollowUp = async (
 
     const deadline = request.startedAt.wall + followUpTimeout(source, parameters);
     const skillTools = (runtime.readSkillTools ?? readCurrentSkillTools)();
-    const registeredToolNames = new Set(runtime.pi.getAllTools().map((tool) => tool.name));
+    const registeredNames = runtime.pi.getAllTools().map((tool) => tool.name);
+    const registeredToolNames = new Set(registeredNames);
     const skillToolsRefused = skillToolsRefusal(skillTools, registeredToolNames);
 
     if (skillToolsRefused !== undefined) {

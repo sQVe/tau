@@ -153,7 +153,9 @@ const readReport = async (stdoutPath: string, logPath: string): Promise<Mutation
   try {
     return parseMutationReport(text);
   } catch (error) {
-    throw new Error(`${String(error instanceof Error ? error.message : error)} Log: ${logPath}`, {
+    const reportError = error instanceof Error ? error.message : error;
+
+    throw new Error(`${String(reportError)} Log: ${logPath}`, {
       cause: error,
     });
   }

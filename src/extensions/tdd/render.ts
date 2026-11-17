@@ -78,11 +78,12 @@ const testSummary = (report: RunnerResult): string[] => {
   ];
 
   if (report.kind === 'no-tests-collected') {
-    lines.push(
+    const noTestsMessage =
       report.tests.length === 0
         ? 'No matching tests in the report.'
-        : 'No tests ran successfully; inspect the reported skipped/todo tests and runner output.',
-    );
+        : 'No tests ran successfully; inspect the reported skipped/todo tests and runner output.';
+
+    lines.push(noTestsMessage);
   }
 
   return lines;
@@ -216,7 +217,9 @@ export const summarize = (cwd: string, observation: Observation): string => {
     lines.push('further failures were not collected');
   }
 
-  pushDurations(lines, scope === 'full' ? slowTests(cwd, report) : focusedDurations(report));
+  const durations = scope === 'full' ? slowTests(cwd, report) : focusedDurations(report);
+
+  pushDurations(lines, durations);
 
   return cap(printable(lines.join('\n')), maximumSummaryCharacters);
 };

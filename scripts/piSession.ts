@@ -328,8 +328,12 @@ const runSession = async (values: {
     const { end, state } = await runPi(session);
     const exit = sessionExit(end, openWorkers(state), eventLog);
 
-    process.stdout.write(exit.output.map((line) => `${line}\n`).join(''));
-    process.stderr.write(exit.errors.map((line) => `${line}\n`).join(''));
+    const standardOutput = exit.output.map((line) => `${line}\n`).join('');
+
+    process.stdout.write(standardOutput);
+    const standardError = exit.errors.map((line) => `${line}\n`).join('');
+
+    process.stderr.write(standardError);
 
     return exit.code;
   } finally {

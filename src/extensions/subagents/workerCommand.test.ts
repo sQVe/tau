@@ -97,14 +97,14 @@ it('starts the worker without waiting for an approval prompt', () => {
 });
 
 it('ends the Pi arguments with the start message after the extension flags', () => {
-  expect(
-    workerArguments(
-      sessionFile,
-      fixtureLoadout('/tmp'),
-      [{ path: '/ext/package.ts' }],
-      skillTools,
-    ).slice(-3),
-  ).toEqual(['-e', '/ext/package.ts', workerStartMessage]);
+  const trailingArguments = workerArguments(
+    sessionFile,
+    fixtureLoadout('/tmp'),
+    [{ path: '/ext/package.ts' }],
+    skillTools,
+  ).slice(-3);
+
+  expect(trailingArguments).toEqual(['-e', '/ext/package.ts', workerStartMessage]);
 });
 
 it('loads the inbox extension without saved Tau settings', () => {
@@ -122,11 +122,14 @@ it('loads the verification record extension in every worker', () => {
 });
 
 it('passes the session file after --session', () => {
-  expect(workerArguments(sessionFile, fixtureLoadout('/tmp'), [], skillTools).slice(0, 3)).toEqual([
-    '--approve',
-    '--session',
+  const leadingArguments = workerArguments(
     sessionFile,
-  ]);
+    fixtureLoadout('/tmp'),
+    [],
+    skillTools,
+  ).slice(0, 3);
+
+  expect(leadingArguments).toEqual(['--approve', '--session', sessionFile]);
 });
 
 it('runs the first executable pi found on PATH', () => {

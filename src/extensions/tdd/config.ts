@@ -128,8 +128,10 @@ const tddLayer = (
   const runnerName = values.runner;
 
   if (runnerName !== undefined && findRunner(runnerName, runnerTable) === undefined) {
+    const knownRunnerList = knownRunnerNames(runnerTable).join(', ');
+
     throw new Error(
-      `Invalid TDD config ${source}: runner "${runnerName}" is unknown. Known runners: ${knownRunnerNames(runnerTable).join(', ')}. Fix the file; Tau does not fall back to another config.`,
+      `Invalid TDD config ${source}: runner "${runnerName}" is unknown. Known runners: ${knownRunnerList}. Fix the file; Tau does not fall back to another config.`,
     );
   }
 
@@ -142,8 +144,10 @@ const validateVerificationArgv = (merged: MergedTddConfig, runnerTable: RunnerTa
   const runner = findRunner(merged.config.runner, runnerTable);
 
   if (runner === undefined) {
+    const knownRunnerList = knownRunnerNames(runnerTable).join(', ');
+
     throw new Error(
-      `Invalid TDD config ${merged.sources.runner}: runner "${merged.config.runner}" is unknown. Known runners: ${knownRunnerNames(runnerTable).join(', ')}. Fix the file; Tau does not fall back to another config.`,
+      `Invalid TDD config ${merged.sources.runner}: runner "${merged.config.runner}" is unknown. Known runners: ${knownRunnerList}. Fix the file; Tau does not fall back to another config.`,
     );
   }
 

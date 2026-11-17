@@ -51,9 +51,12 @@ it('raises the cap on the options line and keeps the other fields and lines', ()
     `// @options: {"max_output_tokens": 1500, "timeout_ms": 5000}\n// @budget: x\n${body}`,
   );
 
-  expect(raised.split('\n').slice(1)).toEqual(['// @budget: x', body]);
+  const linesAfterOptions = raised.split('\n').slice(1);
+  expect(linesAfterOptions).toEqual(['// @budget: x', body]);
 
-  expect(JSON.parse(raised.split('\n')[0]?.replace('// @options:', '') ?? '')).toEqual({
+  const optionsLine = raised.split('\n')[0]?.replace('// @options:', '') ?? '';
+
+  expect(JSON.parse(optionsLine)).toEqual({
     max_output_tokens: 100_000_000,
     timeout_ms: 5000,
   });
@@ -118,7 +121,8 @@ it('reads options and the reason line with leading whitespace', () => {
   expect(readOutputBudget(`${options}\n${body}`)).toBe(8000);
   expect(decideBudgetRefusal(`${options}\n${body}`)).toBeDefined();
   expect(decideBudgetRefusal(`${options}\n  \t// @budget: why\n${body}`)).toBeUndefined();
-  expect(raiseOutputCap(`${options}\n${body}`).split('\n')).toHaveLength(2);
+  const raisedLines = raiseOutputCap(`${options}\n${body}`).split('\n');
+  expect(raisedLines).toHaveLength(2);
   expect(readOutputBudget(raiseOutputCap(`${options}\n${body}`))).toBe(100_000_000);
 });
 

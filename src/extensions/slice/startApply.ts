@@ -270,12 +270,15 @@ const confirmForeignUpdates = async (
 ) => {
   const { draft, slice } = state;
 
+  const foreignUpdateCandidates =
+    slice === undefined || draft === undefined
+      ? []
+      : [{ identifier: draft.start.slice, ...slice }, ...slice.children];
+
   const foreign = decideForeignUpdates(
     slice?.viewer ?? '',
     state.plan.writes,
-    slice === undefined || draft === undefined
-      ? []
-      : [{ identifier: draft.start.slice, ...slice }, ...slice.children],
+    foreignUpdateCandidates,
   );
 
   if (draft === undefined || foreign.length === 0) {

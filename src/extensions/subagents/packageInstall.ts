@@ -212,11 +212,11 @@ export const installWorkerPackages = async (
 
   const manager = packageManager(loadout);
 
-  const configured = manager
-    .listConfiguredPackages()
-    .map(({ source, scope }) =>
-      absoluteSource(source, scope === 'user' ? loadout.agentDirectory : join(loadout.cwd, '.pi')),
-    );
+  const configured = manager.listConfiguredPackages().map(({ source, scope }) => {
+    const packageDirectory = scope === 'user' ? loadout.agentDirectory : join(loadout.cwd, '.pi');
+
+    return absoluteSource(source, packageDirectory);
+  });
 
   const profile = loadout.packages.map((source) => absoluteSource(source, loadout.cwd));
   const sources = packagesToLoad(profile, configured);

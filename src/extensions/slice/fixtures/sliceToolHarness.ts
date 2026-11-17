@@ -81,9 +81,11 @@ export const savedPlan = async (
 export const snapshotDraft = async (directory: string): Promise<string[][]> => {
   const names = await readdir(directory);
 
-  return Promise.all(
-    names.toSorted().map(async (name) => [name, await readFile(join(directory, name), 'utf8')]),
-  );
+  const savedFiles = names
+    .toSorted()
+    .map(async (name) => [name, await readFile(join(directory, name), 'utf8')]);
+
+  return Promise.all(savedFiles);
 };
 
 export const expectReadOnly = async <Value>(

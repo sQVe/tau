@@ -152,7 +152,8 @@ it.each([
   const read = await readSweepIndex(agentDirectory);
 
   expect(read).toMatchObject({ status: 'malformed' });
-  expect(read.status === 'malformed' ? read.reason : '').toContain(sweepIndexPath(agentDirectory));
+  const failureReason = read.status === 'malformed' ? read.reason : '';
+  expect(failureReason).toContain(sweepIndexPath(agentDirectory));
   expect(await directoryState(agentDirectory)).toEqual(before);
 });
 
@@ -164,7 +165,8 @@ it('reports a newer index with its notice', async () => {
   const read = await readSweepIndex(agentDirectory);
 
   expect(read.status).toBe('newer');
-  expect(read.status === 'newer' ? read.notice : '').toContain(sweepIndexPath(agentDirectory));
+  const noticeText = read.status === 'newer' ? read.notice : '';
+  expect(noticeText).toContain(sweepIndexPath(agentDirectory));
   expect(await directoryState(agentDirectory)).toEqual(before);
 });
 

@@ -14,11 +14,13 @@ const setUp = async (foreign = false) => {
   const root = await createTemporaryRepository(onTestFinished);
   const fake = createLinearFake();
 
+  const creatorId = foreign ? 'other' : 'user-viewer';
+
   const slice = fake.addIssue({
     identifier: 'ME-700',
     title: 'Slice',
     state: { name: 'Todo', type: 'unstarted' },
-    creatorId: foreign ? 'other' : 'user-viewer',
+    creatorId: creatorId,
   });
 
   const context = noUiContext(root);
@@ -99,9 +101,12 @@ it.each([true, false])('confirms a foreign slice move with answer %s', async (an
   expect(messages).toHaveLength(1);
   expect(messages[0]).toContain('Todo');
   expect(messages[0]).toContain('In Progress');
-  expect(result.details).toMatchObject({ status: answer ? 'applied' : 'declined' });
-  expect(slice.state.name).toBe(answer ? 'In Progress' : 'Todo');
-  expect(fake.writes()).toHaveLength(answer ? 1 : 0);
+  const expectedStatus = answer ? 'applied' : 'declined';
+  expect(result.details).toMatchObject({ status: expectedStatus });
+  const nextStateName = answer ? 'In Progress' : 'Todo';
+  expect(slice.state.name).toBe(nextStateName);
+  const writeCount = answer ? 1 : 0;
+  expect(fake.writes()).toHaveLength(writeCount);
 });
 
 it.each(['no UI', 'worker'])('refuses a foreign move with %s', async (mode) => {

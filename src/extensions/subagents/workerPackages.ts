@@ -106,7 +106,9 @@ const gitIdentity = (source: string): string | undefined => {
 // passes local sources as absolute paths.
 const packageIdentity = (source: string): string => {
   if (source.startsWith('npm:')) {
-    return `npm:${npmName(source.slice('npm:'.length).trim())}`;
+    const packageName = source.slice('npm:'.length).trim();
+
+    return `npm:${npmName(packageName)}`;
   }
 
   const trimmed = source.trim();

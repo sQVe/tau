@@ -255,7 +255,8 @@ export const checkWorkerRuntime = (
   }
 
   // Pi's --tools skips unknown names without an error.
-  const registered = new Set(pi.getAllTools().map((tool) => tool.name));
+  const registeredNames = pi.getAllTools().map((tool) => tool.name);
+  const registered = new Set(registeredNames);
   const missing = tools.filter((tool) => !registered.has(tool));
 
   if (missing.length > 0) {

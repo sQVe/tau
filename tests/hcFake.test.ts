@@ -14,7 +14,8 @@ it('answers the configured connect requests', async () => {
   const result = await fake.connect([helloLine, runLine]);
 
   expect(result).toMatchObject({ code: 0, signal: null });
-  expect(result.stdout.split('\n').filter((line) => line !== '')).toHaveLength(2);
+  const outputLines = result.stdout.split('\n').filter((line) => line !== '');
+  expect(outputLines).toHaveLength(2);
 });
 
 it('refuses a connect call with no setup', async () => {

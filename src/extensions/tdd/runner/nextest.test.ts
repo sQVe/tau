@@ -35,13 +35,15 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
       const [path] = writeArguments;
 
       await actual.writeFile(...writeArguments);
-      fileWrites.written(typeof path === 'string' ? path : '');
+      const writtenPath = typeof path === 'string' ? path : '';
+      fileWrites.written(writtenPath);
     },
     readFile: (async (...readArguments: Parameters<typeof actual.readFile>) => {
       const [path] = readArguments;
       const content = await actual.readFile(...readArguments);
 
-      fileWrites.read(typeof path === 'string' ? path : '');
+      const readPath = typeof path === 'string' ? path : '';
+      fileWrites.read(readPath);
 
       return content;
     }) as typeof actual.readFile,
@@ -296,7 +298,8 @@ it('runs only the binary whose sources include a changed file for affected scope
 
   expect(result.kind).toBe('pass');
   expect(nextest.stages()).toEqual(['metadata', 'list', 'run']);
-  expect(nextest.calls.at(-1)?.argumentsList.slice(-2)).toEqual(['-E', 'binary_id(demo)']);
+  const filterArguments = nextest.calls.at(-1)?.argumentsList.slice(-2);
+  expect(filterArguments).toEqual(['-E', 'binary_id(demo)']);
 });
 
 it('runs every listed test for affected scope when a binary has no dep-info', async ({
@@ -351,10 +354,8 @@ it('runs focused names without requested files when dep-info is readable', async
 
   expect(result.kind).toBe('pass');
 
-  expect(nextest.calls.at(-1)?.argumentsList.slice(-2)).toEqual([
-    '-E',
-    'test(=sub::tests::passes)',
-  ]);
+  const filterArguments = nextest.calls.at(-1)?.argumentsList.slice(-2);
+  expect(filterArguments).toEqual(['-E', 'test(=sub::tests::passes)']);
 });
 
 it('collects no tests for affected scope without non-blank files and starts nothing', async () => {
@@ -987,7 +988,8 @@ it('passes the focused names to run as a filter', async () => {
 
   await run(focused(['tests::same']), nextest.spawn);
 
-  expect(nextest.calls.at(-1)?.argumentsList.slice(-2)).toEqual(['-E', 'test(=tests::same)']);
+  const filterArguments = nextest.calls.at(-1)?.argumentsList.slice(-2);
+  expect(filterArguments).toEqual(['-E', 'test(=tests::same)']);
 });
 
 it('runs every test in a full run', async () => {

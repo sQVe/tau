@@ -272,7 +272,8 @@ it.for([
   const directory = piAgentDirectory('tau-profile-codemode-');
   const worker = await startProfileWorker(directory, profileName, stopWithoutReport);
 
-  expect(worker.session.getActiveToolNames().includes('codemode')).toBe(expected);
+  const hasCodemode = worker.session.getActiveToolNames().includes('codemode');
+  expect(hasCodemode).toBe(expected);
 });
 
 it('refuses a scout script call to a tool the profile does not list', async () => {

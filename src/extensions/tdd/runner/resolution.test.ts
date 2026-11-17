@@ -373,7 +373,8 @@ it('names only a package root other than the session cwd', async () => {
   const local = await run(['value.test.ts', 'src/value.test.ts']);
   const elsewhere = await run([join(unpackaged, 'x.test.ts'), 'src/a.test.ts', 'other/a.test.ts']);
 
-  expect(local).toHaveProperty('message', 'message' in unexplained ? unexplained.message : '');
+  const messageText = 'message' in unexplained ? unexplained.message : '';
+  expect(local).toHaveProperty('message', messageText);
   expect(elsewhere).toHaveProperty('message', expect.stringContaining(join(cwd, 'other')));
 });
 

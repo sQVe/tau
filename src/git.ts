@@ -169,7 +169,9 @@ export const runGit = (
       }
     } catch (error) {
       stopDraining?.();
-      resolve(unfinished(error instanceof Error ? error.message : String(error)));
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      resolve(unfinished(errorMessage));
     }
   });
 

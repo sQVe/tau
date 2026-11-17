@@ -202,9 +202,10 @@ const runGroup = async (
   }
 
   if (outcome.kind === 'cancelled' && groupCount > 1) {
-    throw new Error(
-      cleanupFailure === null ? 'Commit cancelled' : `Commit cancelled\n${cleanupFailure}`,
-    );
+    const cancellationMessage =
+      cleanupFailure === null ? 'Commit cancelled' : `Commit cancelled\n${cleanupFailure}`;
+
+    throw new Error(cancellationMessage);
   }
 
   return result;

@@ -197,7 +197,8 @@ it.each([
 
   expect(await readFile(draftPath, 'utf8')).toBe(draft);
   expect([...state.fake.comments]).toEqual(before);
-  expect(state.fake.writes()).toHaveLength(reason === 'failed write' ? 1 : 0);
+  const expectedWriteCount = reason === 'failed write' ? 1 : 0;
+  expect(state.fake.writes()).toHaveLength(expectedWriteCount);
 });
 
 it.each(['add', 'update'])(
@@ -432,7 +433,8 @@ it.each(['declined', 'no UI', 'worker'])('handles foreign ticket approval: %s', 
   });
 
   expect(state.fake.writes()).toHaveLength(0);
-  expect(prompts).toHaveLength(mode === 'declined' ? 1 : 0);
+  const expectedPromptCount = mode === 'declined' ? 1 : 0;
+  expect(prompts).toHaveLength(expectedPromptCount);
 
   await expect(readFile(join(state.prepared.directory, 'draft.json'))).rejects.toMatchObject({
     code: 'ENOENT',

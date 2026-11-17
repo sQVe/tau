@@ -56,14 +56,15 @@ const setUpReview = async () => {
   return { root, directory, forkPoint, run };
 };
 
-const readEvidence = async (directory: string) =>
-  Promise.all(
-    (await readdir(directory, { recursive: true, withFileTypes: true }))
-      .filter((entry) => entry.isFile())
-      .map((entry) => join(entry.parentPath, entry.name))
-      .toSorted()
-      .map(async (path) => [path, await readFile(path)] as const),
-  );
+const readEvidence = async (directory: string) => {
+  const evidenceFiles = (await readdir(directory, { recursive: true, withFileTypes: true }))
+    .filter((entry) => entry.isFile())
+    .map((entry) => join(entry.parentPath, entry.name))
+    .toSorted()
+    .map(async (path) => [path, await readFile(path)] as const);
+
+  return Promise.all(evidenceFiles);
+};
 
 // Captures changes from forkPoint and writes recheck.diff with freshness.
 const captureReview = async (

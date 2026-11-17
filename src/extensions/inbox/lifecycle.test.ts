@@ -172,7 +172,8 @@ const exchange = (path: string, request: unknown): Promise<unknown> =>
       try {
         resolve(JSON.parse(reply));
       } catch (error) {
-        reject(error instanceof Error ? error : new Error(String(error)));
+        const socketError = error instanceof Error ? error : new Error(String(error));
+        reject(socketError);
       }
     });
 

@@ -90,7 +90,8 @@ it('lists the untracked files whole for a working tree and compares none with th
   const added = result.addedBytes?.toString('utf8') ?? '';
 
   expect(result.errors).toEqual([]);
-  expect(added.split('\n').filter((line) => /^\+[^+]/.test(line))).toEqual(['+one', '+two']);
+  const addedLines = added.split('\n').filter((line) => /^\+[^+]/.test(line));
+  expect(addedLines).toEqual(['+one', '+two']);
 });
 
 it('treats a working line that equals the size of the base text as added', async () => {
@@ -102,7 +103,8 @@ it('treats a working line that equals the size of the base text as added', async
   const result = await capture(root, { kind: 'files', paths: ['a.txt'] });
   const added = result.addedBytes?.toString('utf8') ?? '';
 
-  expect(added.split('\n').filter((line) => /^\+[^+]/.test(line))).toEqual(['+2']);
+  const addedLines = added.split('\n').filter((line) => /^\+[^+]/.test(line));
+  expect(addedLines).toEqual(['+2']);
 });
 
 it('reports a committed Git link in a files target as a gap and keeps the other named files', async () => {

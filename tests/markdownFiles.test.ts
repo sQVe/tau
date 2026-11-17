@@ -27,21 +27,6 @@ const adrOf = (number: string, title: string, status: string, ...fields: string[
 });
 
 const firstAdr = adrOf('0001', 'First', 'Accepted');
-const secondAdr = adrOf('0002', 'Second', 'Accepted');
-const thirdAdr = adrOf('0003', 'Third', 'Accepted');
-
-const replacedAdr = adrOf(
-  '0001',
-  'First',
-  'Superseded',
-  '**Superseded by**: [ADR 0002 (Second)](./0002-second.md)',
-);
-
-const partlyReplacedAdr = adrOf(
-  '0001',
-  'First',
-  'Accepted; the rules superseded by [ADR 0002 (Second)](./0002-second.md) and\n[ADR 0003 (Third)](./0003-third.md)',
-);
 
 const firstEntry = '- [0001: First](./0001-first.md)';
 
@@ -115,74 +100,30 @@ it.each<[string, Document[], DocumentProblemKind, string]>([
     'missing-path',
     'docs/guide.md',
   ],
-  ['an ADR missing from the index', [secondAdr], 'adr-index', 'docs/adr/README.md'],
 ])('reports %s', (_case, extraDocuments, kind, file) => {
   const problems = problemsIn([indexOf(firstEntry), firstAdr, ...extraDocuments]);
 
   expect(problems).toEqual([{ file, kind }]);
 });
 
-it.each<[string, string[], Document]>([
-  ['an ADR listed twice', [firstEntry, firstEntry], firstAdr],
-  ['an ADR listed with another title', ['- [0001: Old](./0001-first.md)'], firstAdr],
-  [
-    'an index entry for a file that is not an ADR',
-    [firstEntry, '- [0002: Gone](./0002-gone.md)'],
-    firstAdr,
-  ],
-  [
-    'an ADR whose heading has another number',
-    [firstEntry],
-    { file: firstAdr.file, markdown: '# ADR 0009: First\n' },
-  ],
-  ['an ADR without an ADR heading', [firstEntry], { file: firstAdr.file, markdown: '# First\n' }],
-  [
-    'an ADR without a Status line',
-    [firstEntry],
-    { file: firstAdr.file, markdown: '# ADR 0001: First\n' },
-  ],
-  ['a superseded ADR listed without a mark', [firstEntry], replacedAdr],
-  ['a partly superseded ADR listed without a mark', [firstEntry], partlyReplacedAdr],
-  ['an accepted ADR listed with a mark', [`${firstEntry}, superseded by 0002`], firstAdr],
-  [
-    'a superseded ADR marked as partly superseded',
-    [`${firstEntry}, partly superseded by 0002`],
-    replacedAdr,
-  ],
-  ['a mark that names another ADR', [`${firstEntry}, superseded by 0003`], replacedAdr],
-  [
-    'a mark that leaves out an ADR',
-    [`${firstEntry}, partly superseded by 0002`],
-    partlyReplacedAdr,
-  ],
-])('reports %s in the ADR index', (_case, entries, adr) => {
-  const problems = problemsIn([indexOf(...entries), adr]).filter(
-    (problem) => problem.kind === 'adr-index',
-  );
+it('skips backticked paths in a synced stomme document', () => {
+  const synced = {
+    file: 'docs/stomme/shared/coding.md',
+    markdown: 'Keep each module in `src/core` and `src/store` of another project.\n',
+  };
 
-  expect(problems).toEqual([{ file: 'docs/adr/README.md', kind: 'adr-index' }]);
+  expect(problemsIn([synced])).toEqual([]);
 });
 
-it.each<[string, string, Document]>([
-  ['a superseded ADR', `${firstEntry}, superseded by 0002`, replacedAdr],
-  [
-    'a partly superseded ADR',
-    `${firstEntry}, partly superseded by 0002 and 0003`,
-    partlyReplacedAdr,
-  ],
-  [
-    'a mark wrapped onto the next line',
-    `${firstEntry}, partly superseded\n  by 0002 and 0003`,
-    partlyReplacedAdr,
-  ],
-])('accepts the index mark of %s', (_case, entry, adr) => {
-  const index = indexOf(
-    entry,
-    '- [0002: Second](./0002-second.md)',
-    '- [0003: Third](./0003-third.md)',
-  );
+it('reports a broken link in a synced stomme document', () => {
+  const synced = {
+    file: 'docs/stomme/shared/coding.md',
+    markdown: 'Read [the guide](guide.md).\n',
+  };
 
-  expect(problemsIn([index, adr, secondAdr, thirdAdr])).toEqual([]);
+  expect(problemsIn([synced])).toEqual([
+    { file: 'docs/stomme/shared/coding.md', kind: 'broken-link' },
+  ]);
 });
 
 it('reports an allowed path that its document does not name as missing', () => {

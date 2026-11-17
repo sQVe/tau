@@ -92,12 +92,12 @@ const readTree = async (directory: string): Promise<[string, Buffer][]> => {
   const entries = await readdir(directory, { recursive: true, withFileTypes: true });
   const files = entries.filter((entry) => entry.isFile());
 
-  return Promise.all(
-    files
-      .map((entry) => join(entry.parentPath, entry.name))
-      .toSorted()
-      .map(async (path) => [relative(directory, path), await readFile(path)] as [string, Buffer]),
-  );
+  const treeEntries = files
+    .map((entry) => join(entry.parentPath, entry.name))
+    .toSorted()
+    .map(async (path) => [relative(directory, path), await readFile(path)] as [string, Buffer]);
+
+  return Promise.all(treeEntries);
 };
 
 const refusal = async (root: string, review: string) => {

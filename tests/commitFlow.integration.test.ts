@@ -67,6 +67,8 @@ const createHarness = async (
   const overlays: string[] = [];
   const { hasUI = true } = options;
 
+  const uiOptions = hasUI ? { uiContext: createScriptedUI(overlays) } : {};
+
   const { session } = await createBoundSession(
     registerCleanup,
     {
@@ -77,7 +79,7 @@ const createHarness = async (
       extensionPaths: [bundledWebAccessExtensionPath],
       extensionFactories: [tauExtension],
     },
-    hasUI ? { uiContext: createScriptedUI(overlays) } : {},
+    uiOptions,
   );
 
   const events: AgentSessionEvent[] = [];

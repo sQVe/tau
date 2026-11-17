@@ -42,7 +42,8 @@ const execFileAsync = promisify(execFile);
 afterEach(async () => {
   vi.restoreAllMocks();
 
-  await Promise.all(repositoryCleanups.splice(0).map((cleanup) => cleanup()));
+  const repositoryCleanupTasks = repositoryCleanups.splice(0).map((cleanup) => cleanup());
+  await Promise.all(repositoryCleanupTasks);
 });
 
 export const runCommand = async (

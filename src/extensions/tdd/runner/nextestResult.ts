@@ -74,7 +74,9 @@ export const listOutcome = (facts: ListFacts): RunnerResult | undefined => {
   const excerpt = buildExcerpt(facts.stderr);
   const exit = `cargo nextest list exited with code ${exitText(facts.code)}`;
 
-  return compileError(excerpt === '' ? `${exit}.` : `${exit}:\n${excerpt}`);
+  const compileMessage = excerpt === '' ? `${exit}.` : `${exit}:\n${excerpt}`;
+
+  return compileError(compileMessage);
 };
 
 export const metadataOutcome = (facts: ListFacts): RunnerResult | undefined => {

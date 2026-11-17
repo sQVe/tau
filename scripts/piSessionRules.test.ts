@@ -235,7 +235,8 @@ it.each([
   const state = stateAfter(records);
 
   expect(state.step.kind).toBe(step);
-  expect(openWorkers(state).map((worker) => worker.address)).toEqual(open);
+  const workerAddresses = openWorkers(state).map((worker) => worker.address);
+  expect(workerAddresses).toEqual(open);
 });
 
 it.each([

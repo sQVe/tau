@@ -343,11 +343,11 @@ export const createDeadlineWatchdog = (
 
     const wanted = new Set(plan.armed.map((timer) => timer.address));
 
-    const inconclusive = new Set(
-      children
-        .filter((child) => child.assignment.kind === 'unread')
-        .map((child) => child.terminal.address),
-    );
+    const unreadAddresses = children
+      .filter((child) => child.assignment.kind === 'unread')
+      .map((child) => child.terminal.address);
+
+    const inconclusive = new Set(unreadAddresses);
 
     for (const timer of plan.armed) {
       const current = armed.get(timer.address);

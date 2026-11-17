@@ -381,7 +381,9 @@ class QuestionDialog implements Component {
         return this.theme.bg('selectedBg', this.theme.fg('text', text));
       }
 
-      return this.theme.fg(answered ? 'success' : 'muted', text);
+      const answerColor = answered ? 'success' : 'muted';
+
+      return this.theme.fg(answerColor, text);
     });
 
     const tabRows = wrapTextWithAnsi(` ${tabs.join(' ')}`, width);
@@ -403,7 +405,8 @@ class QuestionDialog implements Component {
 
     return facts.options.map((option, index) => {
       const prefix = this.rowPrefix(facts, index, question?.checked.includes(index) === true);
-      const label = theme.fg(question?.cursor === index ? 'accent' : 'text', option.label);
+      const optionColor = question?.cursor === index ? 'accent' : 'text';
+      const label = theme.fg(optionColor, option.label);
       const badge = option.recommended === true ? ` ${theme.fg('success', '★ Recommended')}` : '';
 
       return [

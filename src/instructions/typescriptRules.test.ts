@@ -256,6 +256,7 @@ it.for([true, false])('explicitly activates rules with idle state %s', async (id
   await command?.handler('', fixture.context as ExtensionCommandContext);
   expect(fixture.appendEntry).toHaveBeenCalledExactlyOnceWith(customType, { version: 1 });
   expect(fixture.notify).toHaveBeenCalled();
-  expect(fixture.api.sendMessage).toHaveBeenCalledTimes(idle ? 0 : 1);
+  const messageCount = idle ? 0 : 1;
+  expect(fixture.api.sendMessage).toHaveBeenCalledTimes(messageCount);
   expect(fixture.prompt()).toBe(rules);
 });

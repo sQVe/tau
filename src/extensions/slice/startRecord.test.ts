@@ -89,12 +89,13 @@ describe('readStartDraft without writes', () => {
   ])('leaves every file unchanged for a $case record', async ({ fixture }) => {
     const directory = await recordDirectory(fixture);
 
-    const snapshot = async () =>
-      Promise.all(
-        (await readdir(directory))
-          .toSorted()
-          .map(async (name) => [name, await readFile(join(directory, name), 'utf8')]),
-      );
+    const snapshot = async () => {
+      const savedFiles = (await readdir(directory))
+        .toSorted()
+        .map(async (name) => [name, await readFile(join(directory, name), 'utf8')]);
+
+      return Promise.all(savedFiles);
+    };
 
     const before = await snapshot();
 

@@ -54,12 +54,8 @@ const fixture = async (kind: ToolKind) => {
   const configure = async (
     options: { gate?: boolean; edit?: boolean; repositoryLock?: boolean } = {},
   ) => {
-    const source = commandSource(
-      counter,
-      options.gate === true ? gate : undefined,
-      printReport,
-      options.edit === true,
-    );
+    const gatePath = options.gate === true ? gate : undefined;
+    const source = commandSource(counter, gatePath, printReport, options.edit === true);
 
     const sections: Record<string, Record<string, unknown>> = {
       [key]: { argv: [process.execPath, '-e', source] },
@@ -83,7 +79,8 @@ const fixture = async (kind: ToolKind) => {
     const onUpdate = (update: { content: { type: string; text?: string }[] }) => {
       const [first] = update.content;
 
-      updates.push(first?.type === 'text' ? (first.text ?? '') : '');
+      const updateText = first?.type === 'text' ? (first.text ?? '') : '';
+      updates.push(updateText);
     };
 
     if (kind === 'full_check') {

@@ -179,7 +179,8 @@ it('ignores a repository default filter, fail-fast, and a Tau-like profile', asy
   const result = await run(focusedInput(crate, ['tests::passes', 'tests::fails']));
 
   expect(result.kind).toBe('fail');
-  expect(testNamesOf(result).toSorted()).toEqual(['tests::fails', 'tests::passes']);
+  const testNames = testNamesOf(result).toSorted();
+  expect(testNames).toEqual(['tests::fails', 'tests::passes']);
 });
 
 it('reads the JUnit file even when a test prints a testsuite to stdout', async () => {

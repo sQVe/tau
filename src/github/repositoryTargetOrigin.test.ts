@@ -9,14 +9,17 @@ import type { Exec } from '../command.js';
 import { readOriginRepository } from './repositoryTarget.js';
 import type { OriginRepository } from './repositoryTarget.js';
 
-const sshAlias: Exec = (_command, commandArguments) =>
-  Promise.resolve({
+const sshAlias: Exec = (_command, commandArguments) => {
+  const stdout = commandArguments.includes('git@work') ? 'hostname github.com\n' : '';
+
+  return Promise.resolve({
     code: 0,
     killed: false,
     truncated: false,
-    stdout: commandArguments.includes('git@work') ? 'hostname github.com\n' : '',
+    stdout: stdout,
     stderr: '',
   });
+};
 
 const originOf = async (url: string | undefined, exec: Exec = sshAlias) => {
   const directory = await createTemporaryRepository(onTestFinished);

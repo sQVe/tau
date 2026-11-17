@@ -108,7 +108,8 @@ it('gives the model the result as JSON text in the tool content', async () => {
   const [block] = result.content;
 
   expect(block?.type).toBe('text');
-  expect(JSON.parse(block?.type === 'text' ? block.text : '')).toEqual(result.details);
+  const jsonText = block?.type === 'text' ? block.text : '';
+  expect(JSON.parse(jsonText)).toEqual(result.details);
   expect(result.details['paths']).toEqual(['tracked.txt']);
 });
 

@@ -160,7 +160,8 @@ it('clears both labels on a quit without a signal', async () => {
   await resume.start();
   await resume.shutdown();
 
-  expect(labelCalls(fake).at(-1)).toEqual(['t7', 'pi.session=', 'pi.cwd=']);
+  const lastLabels = labelCalls(fake).at(-1);
+  expect(lastLabels).toEqual(['t7', 'pi.session=', 'pi.cwd=']);
 });
 
 it.each(['SIGTERM', 'SIGHUP'] as const)('makes no hc call after %s', async (signal) => {
@@ -191,11 +192,8 @@ it('overwrites the labels when a new session starts', async () => {
   await resume.start();
   await resume.start(buildContext({ sessionFile: '/sessions/b.jsonl' }));
 
-  expect(labelCalls(fake).at(-1)).toEqual([
-    't7',
-    'pi.session=/sessions/b.jsonl',
-    'pi.cwd=/repository',
-  ]);
+  const lastLabels = labelCalls(fake).at(-1);
+  expect(lastLabels).toEqual(['t7', 'pi.session=/sessions/b.jsonl', 'pi.cwd=/repository']);
 
   await resume.shutdown();
 });

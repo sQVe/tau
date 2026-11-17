@@ -290,9 +290,11 @@ it('runs no gh command that writes', async () => {
 
   await run([url(2), url(3)]);
 
-  expect(
-    joinedCalls(fake).filter((call) => !/^(pr (view|list)|api|repo view)/u.test(call)),
-  ).toEqual([]);
+  const writeCalls = joinedCalls(fake).filter(
+    (call) => !/^(pr (view|list)|api|repo view)/u.test(call),
+  );
+
+  expect(writeCalls).toEqual([]);
 });
 
 it('treats URLs that differ only in the case of the owner and name as one repository', async () => {

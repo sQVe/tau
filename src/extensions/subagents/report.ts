@@ -185,10 +185,8 @@ export const reportToParent = async (
     ...handover
   } = parameters;
 
-  const summary = withBlocker(
-    handover.summary,
-    handover.outcome === 'incomplete' ? blocker : undefined,
-  );
+  const blockerDetail = handover.outcome === 'incomplete' ? blocker : undefined;
+  const summary = withBlocker(handover.summary, blockerDetail);
 
   try {
     refuseMissingSections(summary);

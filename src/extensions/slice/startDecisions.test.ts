@@ -36,11 +36,12 @@ describe('decideStartPlan', () => {
 
     const writes = [{ kind: 'createTicket', number: 1 }];
 
-    expect(result.writes).toEqual(
+    const expectedWrites =
       state === 'In Progress'
         ? writes
-        : [{ kind: 'moveToInProgress', identifier: 'ME-700' }, ...writes],
-    );
+        : [{ kind: 'moveToInProgress', identifier: 'ME-700' }, ...writes];
+
+    expect(result.writes).toEqual(expectedWrites);
   });
 
   it.each([

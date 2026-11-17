@@ -370,7 +370,8 @@ it('runs hc connect in the runtime directory', async () => {
   );
 
   expect(result.address).toBe('t7');
-  expect(readFileSync(outputPath, 'utf8').trim()).toBe(directory);
+  const recordedDirectory = readFileSync(outputPath, 'utf8').trim();
+  expect(recordedDirectory).toBe(directory);
 });
 
 it('reports the exit code when hc exits non-zero before reply 2', async () => {

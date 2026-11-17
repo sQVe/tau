@@ -128,9 +128,8 @@ it('saves the report then labels it for the manager', async () => {
 
   const content = result.content[0];
 
-  expect(content?.type === 'text' ? content.text : '').toBe(
-    'Handover durably accepted. Report label set. Stop working.',
-  );
+  const reportText = content?.type === 'text' ? content.text : '';
+  expect(reportText).toBe('Handover durably accepted. Report label set. Stop working.');
 });
 
 it('keeps the saved report and names the failed label', async () => {
@@ -144,7 +143,8 @@ it('keeps the saved report and names the failed label', async () => {
   const content = result.content[0];
 
   expect(content?.type).toBe('text');
-  expect(content?.type === 'text' ? content.text : '').toContain('Report label failed');
+  const reportText = content?.type === 'text' ? content.text : '';
+  expect(reportText).toContain('Report label failed');
   expect(reportCommandCalls(fake)).toEqual(['label']);
 
   expect((await readAssignment(target.assignmentPath))?.report?.outcome).toBe('success');

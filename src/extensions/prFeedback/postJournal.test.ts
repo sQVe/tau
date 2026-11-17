@@ -65,16 +65,19 @@ describe('post uncertain writes', () => {
       expect(posted).toEqual(expectedPosted.slice(0, attempt - 1));
       expect(fake.writes).toEqual(expectedWrites.slice(0, attempt));
 
+      const commentText = kind === 'reply' ? 'Added.' : 'Done.';
+      const earlierCommentIds = kind === 'reply' ? [201] : [302];
+
       expect(await readPosted(details.directory)).toMatchObject({
         version: 2,
         writes: [
           ...posted,
           {
             kind,
-            text: kind === 'reply' ? 'Added.' : 'Done.',
+            text: commentText,
             state: 'uncertain',
             commentId: null,
-            earlierCommentIds: kind === 'reply' ? [201] : [302],
+            earlierCommentIds: earlierCommentIds,
           },
         ],
       });
@@ -93,7 +96,8 @@ describe('post uncertain writes', () => {
 
       expect(fake.writes.filter((made) => made.kind === kind)).toEqual([write]);
       expect(fake.writes).toHaveLength(2);
-      expect(retry).toMatchObject({ status: kind === 'reply' ? 'posted' : 'unchanged' });
+      const retryStatus = kind === 'reply' ? 'posted' : 'unchanged';
+      expect(retry).toMatchObject({ status: retryStatus });
 
       expect(await readPosted(details.directory)).toMatchObject({
         writes: expect.arrayContaining([
@@ -154,7 +158,8 @@ describe('post uncertain writes', () => {
     const retry = await post(details);
 
     expect(fake.writes).toEqual([{ kind: 'resolve', threadId: 'thread-bot' }]);
-    expect(retry).toMatchObject({ status: retried ? 'posted' : 'unchanged' });
+    const retryStatus = retried ? 'posted' : 'unchanged';
+    expect(retry).toMatchObject({ status: retryStatus });
 
     expect(await readPosted(details.directory)).toMatchObject({
       writes: [{ kind: 'resolve', state: 'posted' }],

@@ -82,7 +82,8 @@ it.each([
 
   expect(bodies.map((chunks) => chunks.length)).toEqual([count, count, count]);
   expect(bodies.map((chunks) => chunks.join(''))).toEqual([body, body, body]);
-  expect(bodies.flat().every((chunk) => chunk.length <= 4000)).toBe(true);
+  const allChunksWithinLimit = bodies.flat().every((chunk) => chunk.length <= 4000);
+  expect(allChunksWithinLimit).toBe(true);
   expect(saved.stateToken).toBe(full.stateToken);
   expect(full).toEqual(original);
 });
@@ -162,9 +163,8 @@ it.each([
   expect(kept).toBeGreaterThan(0);
   expect(kept).toBeLessThan(full[list].length);
 
-  expect(result[list].map((item) => item.id)).toEqual(
-    full[list].slice(0, kept).map((item) => item.id),
-  );
+  const expectedIds = full[list].slice(0, kept).map((item) => item.id);
+  expect(result[list].map((item) => item.id)).toEqual(expectedIds);
 
   expect(result.gaps).toContainEqual({
     kind: 'truncatedList',

@@ -78,9 +78,11 @@ it('plans a new GitHub stack from two open local pull requests', async () => {
     command: 'gh stack link --remote origin --base main 2 3',
   });
 
-  expect(
-    joinedCalls(fake).filter((call) => !/^(stack view|pr view|api|repo view)/u.test(call)),
-  ).toEqual([]);
+  const unexpectedCalls = joinedCalls(fake).filter(
+    (call) => !/^(stack view|pr view|api|repo view)/u.test(call),
+  );
+
+  expect(unexpectedCalls).toEqual([]);
 });
 
 it('reads PRs by branch when local tracking has no PR numbers', async () => {
@@ -132,7 +134,8 @@ it('stops with a reason when the PR branch is in no local stack', async () => {
     reason: containing('no local stack'),
   });
 
-  expect(joinedCalls(fake).filter((call) => call.startsWith('stack link'))).toEqual([]);
+  const linkCalls = joinedCalls(fake).filter((call) => call.startsWith('stack link'));
+  expect(linkCalls).toEqual([]);
 });
 
 it.each([
@@ -162,9 +165,11 @@ it.each([
     evidence: anyEvidence,
   });
 
-  expect(
-    joinedCalls(fake).filter((call) => !/^(stack view|pr view|api|repo view)/u.test(call)),
-  ).toEqual([]);
+  const unexpectedCalls = joinedCalls(fake).filter(
+    (call) => !/^(stack view|pr view|api|repo view)/u.test(call),
+  );
+
+  expect(unexpectedCalls).toEqual([]);
 });
 
 it('stops with the lower stacks API failure instead of planning a link', async () => {
@@ -184,9 +189,8 @@ it('stops with the lower stacks API failure instead of planning a link', async (
     reason: containing('gh api --hostname github.com repos/sQVe/tau/stacks?pull_request=2'),
   });
 
-  expect(joinedCalls(fake).at(-1)).toBe(
-    'api --hostname github.com repos/sQVe/tau/stacks?pull_request=2',
-  );
+  const lastCall = joinedCalls(fake).at(-1);
+  expect(lastCall).toBe('api --hostname github.com repos/sQVe/tau/stacks?pull_request=2');
 });
 
 it('stops with the failed PR read from the GitHub stack', async () => {
@@ -196,7 +200,8 @@ it('stops with the failed PR read from the GitHub stack', async () => {
   fake.failCommand('pr view 1', 'stack PR unavailable');
 
   expect(await run()).toMatchObject({ result: 'stop', reason: containing('gh pr view 1') });
-  expect(joinedCalls(fake).filter((call) => call.startsWith('stack link'))).toEqual([]);
+  const linkCalls = joinedCalls(fake).filter((call) => call.startsWith('stack link'));
+  expect(linkCalls).toEqual([]);
 });
 
 it('skips merged local layers without reading their PRs', async () => {
@@ -217,7 +222,8 @@ it('skips merged local layers without reading their PRs', async () => {
     command: 'gh stack link --remote origin --base main 2 3',
   });
 
-  expect(joinedCalls(fake).filter((call) => call.startsWith('pr view 1 '))).toEqual([]);
+  const pullViewCalls = joinedCalls(fake).filter((call) => call.startsWith('pr view 1 '));
+  expect(pullViewCalls).toEqual([]);
 });
 
 it('stops when stacked pull requests are off', async () => {
@@ -244,11 +250,11 @@ it('reads PRs and stacks from the base repository of a fork', async () => {
 
   const calls = joinedCalls(fake);
 
-  expect(
-    calls
-      .filter((call) => call.startsWith('pr view'))
-      .every((call) => call.includes('--repo github.com/upstream/project')),
-  ).toBe(true);
+  const allUseBaseRepository = calls
+    .filter((call) => call.startsWith('pr view'))
+    .every((call) => call.includes('--repo github.com/upstream/project'));
+
+  expect(allUseBaseRepository).toBe(true);
 
   expect(calls.filter((call) => call.startsWith('api'))).toEqual([
     'api --hostname github.com repos/upstream/project/stacks?pull_request=3',

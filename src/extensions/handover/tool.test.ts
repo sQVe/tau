@@ -221,7 +221,9 @@ it('gives the model the directory as JSON text in the tool content', async () =>
 
   expect(block?.type).toBe('text');
 
-  expect(JSON.parse(block?.type === 'text' ? block.text : '')).toEqual({
+  const textContent = block?.type === 'text' ? block.text : '';
+
+  expect(JSON.parse(textContent)).toEqual({
     directory: join(root, '.tau', 'handovers'),
   });
 });
@@ -285,9 +287,8 @@ it('sends the handover file to the receiver inbox and returns queued as JSON tex
 
   expect(result.details).toEqual(queued);
 
-  expect(JSON.parse(result.content[0]?.type === 'text' ? result.content[0].text : '')).toEqual(
-    queued,
-  );
+  const textContent = result.content[0]?.type === 'text' ? result.content[0].text : '';
+  expect(JSON.parse(textContent)).toEqual(queued);
 });
 
 it('sends a handover with final true and returns queued', async () => {
@@ -335,15 +336,15 @@ it('refuses a send without a terminal before any hc call', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const fake = createHcFake();
 
-  await expect(
-    createHandoverTool(runtimeOf(fake)).execute(
-      'call',
-      { action: 'send', file: join(root, 'message.md') },
-      undefined,
-      undefined,
-      noUiContext(root),
-    ),
-  ).rejects.toThrow(/send needs a terminal/);
+  const execution = createHandoverTool(runtimeOf(fake)).execute(
+    'call',
+    { action: 'send', file: join(root, 'message.md') },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow(/send needs a terminal/);
 
   expect(fake.calls).toEqual([]);
 });
@@ -352,20 +353,20 @@ it('refuses a retry without the session of the unknown result before any hc call
   const root = await createTemporaryRepository(onTestFinished);
   const fake = createHcFake();
 
-  await expect(
-    createHandoverTool(runtimeOf(fake)).execute(
-      'call',
-      {
-        action: 'send',
-        terminal: 't7',
-        file: join(root, 'message.md'),
-        messageId: '11111111-1111-4111-8111-111111111111',
-      },
-      undefined,
-      undefined,
-      noUiContext(root),
-    ),
-  ).rejects.toThrow(/send retry needs the sessionId/);
+  const execution = createHandoverTool(runtimeOf(fake)).execute(
+    'call',
+    {
+      action: 'send',
+      terminal: 't7',
+      file: join(root, 'message.md'),
+      messageId: '11111111-1111-4111-8111-111111111111',
+    },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow(/send retry needs the sessionId/);
 
   expect(fake.calls).toEqual([]);
 });
@@ -420,15 +421,15 @@ it('refuses an already-aborted send before any hc call', async () => {
   const fake = createHcFake();
   const file = await writeHandover(root, 'Next steps\n');
 
-  await expect(
-    createHandoverTool(runtimeOf(fake)).execute(
-      'call',
-      { action: 'send', terminal: 't7', file },
-      abortedSignal(),
-      undefined,
-      noUiContext(root),
-    ),
-  ).rejects.toMatchObject({ name: 'AbortError' });
+  const execution = createHandoverTool(runtimeOf(fake)).execute(
+    'call',
+    { action: 'send', terminal: 't7', file },
+    abortedSignal(),
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toMatchObject({ name: 'AbortError' });
 
   expect(fake.calls).toEqual([]);
 });
@@ -479,15 +480,15 @@ it('refuses a start without a space or name before any herdr-app call', async ()
   const file = await writeHandover(root, 'Next steps\n');
   const app = createAppFake();
 
-  await expect(
-    createStartTool(app).execute(
-      'call',
-      { action: 'start', file, folder: root },
-      undefined,
-      undefined,
-      noUiContext(root),
-    ),
-  ).rejects.toThrow(/start needs a name when it has no space/);
+  const execution = createStartTool(app).execute(
+    'call',
+    { action: 'start', file, folder: root },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow(/start needs a name when it has no space/);
 
   expect(app.calls).toEqual([]);
 });
@@ -500,15 +501,15 @@ it.each([
   const file = await writeHandover(root, 'Next steps\n');
   const app = createAppFake();
 
-  await expect(
-    createStartTool(app).execute(
-      'call',
-      { action: 'start', file, folder, name: 'me-1' },
-      undefined,
-      undefined,
-      noUiContext(root),
-    ),
-  ).rejects.toThrow(/start needs an absolute folder/);
+  const execution = createStartTool(app).execute(
+    'call',
+    { action: 'start', file, folder, name: 'me-1' },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow(/start needs an absolute folder/);
 
   expect(app.calls).toEqual([]);
 });
@@ -518,15 +519,15 @@ it('refuses a malformed start model before any herdr-app call', async () => {
   const file = await writeHandover(root, 'Next steps\n');
   const app = createAppFake();
 
-  await expect(
-    createStartTool(app).execute(
-      'call',
-      { action: 'start', file, folder: root, space: 'space-1', model: 'no-slash' },
-      undefined,
-      undefined,
-      modelContext(root, onTestFinished),
-    ),
-  ).rejects.toThrow(/Invalid model "no-slash"/);
+  const execution = createStartTool(app).execute(
+    'call',
+    { action: 'start', file, folder: root, space: 'space-1', model: 'no-slash' },
+    undefined,
+    undefined,
+    modelContext(root, onTestFinished),
+  );
+
+  await expect(execution).rejects.toThrow(/Invalid model "no-slash"/);
 
   expect(app.calls).toEqual([]);
 });
@@ -543,21 +544,21 @@ it('refuses a start model outside allowedModels before any herdr-app call', asyn
     JSON.stringify({ allowedModels: ['other/model'] }),
   );
 
-  await expect(
-    createStartTool(app).execute(
-      'call',
-      {
-        action: 'start',
-        file,
-        folder: root,
-        space: 'space-1',
-        model: 'morph/morph-dsv41flash-1017',
-      },
-      undefined,
-      undefined,
-      modelContext(root, onTestFinished),
-    ),
-  ).rejects.toThrow(/morph\/morph-dsv41flash-1017 is not allowed/);
+  const execution = createStartTool(app).execute(
+    'call',
+    {
+      action: 'start',
+      file,
+      folder: root,
+      space: 'space-1',
+      model: 'morph/morph-dsv41flash-1017',
+    },
+    undefined,
+    undefined,
+    modelContext(root, onTestFinished),
+  );
+
+  await expect(execution).rejects.toThrow(/morph\/morph-dsv41flash-1017 is not allowed/);
 
   expect(app.calls).toEqual([]);
 });
@@ -565,15 +566,15 @@ it('refuses a start model outside allowedModels before any herdr-app call', asyn
 it('refuses a model with prepare and creates no directory', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  await expect(
-    createTool().execute(
-      'call',
-      { action: 'prepare', model: 'morph/morph-dsv41flash-1017' },
-      undefined,
-      undefined,
-      noUiContext(root),
-    ),
-  ).rejects.toThrow('model is only for action start.');
+  const execution = createTool().execute(
+    'call',
+    { action: 'prepare', model: 'morph/morph-dsv41flash-1017' },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow('model is only for action start.');
 
   expect(existsSync(join(root, '.tau'))).toBe(false);
 });
@@ -582,15 +583,15 @@ it('refuses a model with send before any hc call', async () => {
   const root = await createTemporaryRepository(onTestFinished);
   const fake = createHcFake();
 
-  await expect(
-    createHandoverTool(runtimeOf(fake)).execute(
-      'call',
-      { action: 'send', terminal: 't7', file: join(root, 'message.md'), model: 'a/b' },
-      undefined,
-      undefined,
-      noUiContext(root),
-    ),
-  ).rejects.toThrow('model is only for action start.');
+  const execution = createHandoverTool(runtimeOf(fake)).execute(
+    'call',
+    { action: 'send', terminal: 't7', file: join(root, 'message.md'), model: 'a/b' },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow('model is only for action start.');
 
   expect(fake.calls).toEqual([]);
 });
@@ -616,15 +617,15 @@ it('refuses an already-aborted start before any herdr-app call', async () => {
   const file = await writeHandover(root, 'Next steps\n');
   const app = createAppFake();
 
-  await expect(
-    createStartTool(app).execute(
-      'call',
-      { action: 'start', file, folder: root, space: 'space-1' },
-      abortedSignal(),
-      undefined,
-      noUiContext(root),
-    ),
-  ).rejects.toMatchObject({ name: 'AbortError' });
+  const execution = createStartTool(app).execute(
+    'call',
+    { action: 'start', file, folder: root, space: 'space-1' },
+    abortedSignal(),
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toMatchObject({ name: 'AbortError' });
 
   expect(app.calls).toEqual([]);
 });

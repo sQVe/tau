@@ -114,17 +114,18 @@ const workingIdentity = async (root: string, path: string): Promise<string | nul
   }
 };
 
-const skippedPaths = (root: string, gaps: Gap[]): Promise<Snapshot['skipped']> =>
-  Promise.all(
-    gaps
-      .flatMap((gap) => (isSnapshotGapKind(gap.kind) ? [{ kind: gap.kind, path: gap.path }] : []))
-      .map(async (entry) => {
-        const identity = await workingIdentity(root, entry.path);
-        const existed = (await readWorkingFile(root, entry.path)) !== 'absent';
+const skippedPaths = (root: string, gaps: Gap[]): Promise<Snapshot['skipped']> => {
+  const skippedEntries = gaps
+    .flatMap((gap) => (isSnapshotGapKind(gap.kind) ? [{ kind: gap.kind, path: gap.path }] : []))
+    .map(async (entry) => {
+      const identity = await workingIdentity(root, entry.path);
+      const existed = (await readWorkingFile(root, entry.path)) !== 'absent';
 
-        return { kind: entry.kind, path: entry.path, identity, existed };
-      }),
-  );
+      return { kind: entry.kind, path: entry.path, identity, existed };
+    });
+
+  return Promise.all(skippedEntries);
+};
 
 // Copies the working tree content of each captured path into the review directory, so a later
 // fix review can diff against what the reviewer saw. Removes the folder again when a copy fails.
@@ -369,7 +370,8 @@ const keepNotExcludedInGroup = async (paths: string[], exclude: readonly string[
       throw new Error(`git ls-files failed: ${listed.stderr.trim()}`);
     }
 
-    const kept = new Set(listed.stdout.toString('utf8').split('\0'));
+    const listedPaths = listed.stdout.toString('utf8').split('\0');
+    const kept = new Set(listedPaths);
 
     return paths.filter((path) => kept.has(nameOf(path)));
   } finally {

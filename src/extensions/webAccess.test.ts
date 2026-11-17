@@ -124,9 +124,8 @@ it.each(['invalid', 'missing/model'])(
   (reference) => {
     const app = setup();
 
-    expect(() => app.emit({ mode: 'answer', answerModel: reference })).toThrow(
-      reference === 'invalid' ? 'Invalid model' : 'not found',
-    );
+    const errorMessage = reference === 'invalid' ? 'Invalid model' : 'not found';
+    expect(() => app.emit({ mode: 'answer', answerModel: reference })).toThrow(errorMessage);
 
     expect(app.emit({ mode: 'raw' })).toEqual({ mode: 'raw' });
   },

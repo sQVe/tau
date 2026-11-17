@@ -204,7 +204,8 @@ it('takes over a lock whose command group holds only zombies', async () => {
     parent.once('error', reject);
 
     parent.stdout.once('data', (data: Buffer) => {
-      resolve(Number(data.toString().trim()));
+      const holderProcessId = data.toString().trim();
+      resolve(Number(holderProcessId));
     });
   });
 

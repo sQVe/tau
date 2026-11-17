@@ -122,8 +122,9 @@ export const fingerprintInputs = async (
 
   const digest = createHash('sha256');
 
-  const entries = await Promise.all(
-    [...new Set(paths.map((path) => resolve(cwd, path)))].toSorted().map(async (file) => {
+  const inputEntries = [...new Set(paths.map((path) => resolve(cwd, path)))]
+    .toSorted()
+    .map(async (file) => {
       try {
         const content = await readFile(file);
 
@@ -140,8 +141,9 @@ export const fingerprintInputs = async (
 
         return [file, null];
       }
-    }),
-  );
+    });
+
+  const entries = await Promise.all(inputEntries);
 
   digest.update(JSON.stringify(entries.filter((entry) => entry !== null)));
 

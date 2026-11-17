@@ -574,9 +574,12 @@ it.each(['declined', 'worker', 'approved'])('handles foreign update approval: %s
     stateToken: plan.stateToken,
   });
 
-  expect(result.status).toBe(mode === 'approved' ? 'updated' : 'declined');
-  expect(state.fake.writes()).toHaveLength(mode === 'approved' ? 1 : 0);
-  expect(prompts).toHaveLength(mode === 'worker' ? 0 : 1);
+  const expectedStatus = mode === 'approved' ? 'updated' : 'declined';
+  expect(result.status).toBe(expectedStatus);
+  const expectedWriteCount = mode === 'approved' ? 1 : 0;
+  expect(state.fake.writes()).toHaveLength(expectedWriteCount);
+  const expectedPromptCount = mode === 'worker' ? 0 : 1;
+  expect(prompts).toHaveLength(expectedPromptCount);
 
   const expectedPrompt: unknown = expect.stringMatching(
     /Old title[\s\S]*Reproduction details\.[\s\S]*Fix the failure[\s\S]*Reproduction details\./u,

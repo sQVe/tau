@@ -121,7 +121,8 @@ it.for([
   'fingerprints the parent workspace Cargo.toml above $name',
   async ({ manifest }, { onTestFinished }) => {
     const root = temporaryDirectory(onTestFinished, 'tau-input-fingerprint-workspace-manifest-');
-    const cwd = join(root, manifest === undefined ? 'pkg_b' : 'other');
+    const workspaceName = manifest === undefined ? 'pkg_b' : 'other';
+    const cwd = join(root, workspaceName);
     const chosen = manifest === undefined ? {} : { cargoManifestPath: manifest };
     const config = { ...nextestRunner.defaults, ...chosen };
     await mkdir(join(root, 'pkg_b'));

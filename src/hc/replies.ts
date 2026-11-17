@@ -148,7 +148,9 @@ const jsonRpcError = (label: string, value: unknown): HcError => {
 
   const hint = typeof data.hint === 'string' ? data.hint : undefined;
 
-  return new HcError(kind, message, hint === undefined ? {} : { hint });
+  const hintDetails = hint === undefined ? {} : { hint };
+
+  return new HcError(kind, message, hintDetails);
 };
 
 export const parseCommandReply = <Command extends HcCommand>(
@@ -166,7 +168,9 @@ export const parseCliError = (label: string, stderr: string, exitCode: number): 
   } catch {
     const output = stderr.trim();
 
-    return new HcError('failed', `${label} failed: ${output === '' ? 'no output' : output}`, {
+    const outputText = output === '' ? 'no output' : output;
+
+    return new HcError('failed', `${label} failed: ${outputText}`, {
       exitCode,
     });
   }

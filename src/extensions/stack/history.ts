@@ -72,11 +72,13 @@ const readLayerFacts = async (
 
   const rebasedSincePush = tips.has(branch);
 
+  const ancestorCheck = rebasedSincePush
+    ? undefined
+    : gather(cwd, ['merge-base', '--is-ancestor', branchRef(branch), remoteBranch]);
+
   const [unseen, ancestor, newCherry, oldCherry] = await Promise.all([
     gather(cwd, ['log', '--oneline', `${tip}..${remoteBranch}`]),
-    rebasedSincePush
-      ? undefined
-      : gather(cwd, ['merge-base', '--is-ancestor', branchRef(branch), remoteBranch]),
+    ancestorCheck,
     gather(cwd, ['cherry', tip, remoteBranch, remoteRef(remote, newParent)]),
     gather(cwd, ['cherry', remoteBranch, tip, tipRef(tips, oldParent)]),
   ]);

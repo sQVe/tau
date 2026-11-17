@@ -193,13 +193,14 @@ export const assignmentFor = (directory: string): Assignment => ({
 export const sendStartMessage = (
   pi: ReturnType<typeof setup>['pi'],
   context: ExtensionToolContext,
-): Promise<unknown> =>
-  Promise.resolve(
-    pi.handler('input')(
-      { type: 'input', text: workerStartMessage, source: 'interactive' },
-      context,
-    ),
+): Promise<unknown> => {
+  const inputResult = pi.handler('input')(
+    { type: 'input', text: workerStartMessage, source: 'interactive' },
+    context,
   );
+
+  return Promise.resolve(inputResult);
+};
 
 export const dispatch = (
   pi: ReturnType<typeof setup>['pi'],

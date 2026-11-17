@@ -118,9 +118,8 @@ it('restarts a replaced transcript at zero and resolves its cwd again', async ()
   const final = await fixture.readIndex();
   const advanced = final.transcripts[path];
 
-  expect(advanced?.status === 'resolved' ? advanced.cursor : undefined).toBe(
-    Buffer.byteLength(`${replacement}\n`),
-  );
+  const advancedCursor = advanced?.status === 'resolved' ? advanced.cursor : undefined;
+  expect(advancedCursor).toBe(Buffer.byteLength(`${replacement}\n`));
 
   const events = await readEvents(secondRepository);
 

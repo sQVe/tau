@@ -15,7 +15,8 @@ vi.mock(import('node:fs/promises'), async (importOriginal) => {
       const [path] = readArguments;
       const content = await actual.readFile(...readArguments);
 
-      fileReads.read(typeof path === 'string' ? path : '');
+      const readPath = typeof path === 'string' ? path : '';
+      fileReads.read(readPath);
 
       return content;
     }) as typeof actual.readFile,

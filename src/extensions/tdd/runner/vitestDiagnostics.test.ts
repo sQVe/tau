@@ -288,7 +288,8 @@ describe('runTests', () => {
 
       const result = await runTests({ scope: 'full', verificationArgv, cwd });
 
-      expect(result.kind).toBe(expected === 1 ? 'pass' : 'fail');
+      const expectedKind = expected === 1 ? 'pass' : 'fail';
+      expect(result.kind).toBe(expectedKind);
       expect(result.diagnostics?.stages[0]?.stdout?.truncated).toBe(true);
 
       expect(result.diagnostics?.stages[0]?.stdout?.savedBytes).toBeLessThanOrEqual(

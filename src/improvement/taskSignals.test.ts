@@ -137,7 +137,8 @@ describe('readTaskSignals', () => {
     const read = await readTaskSignals(sources(sessionDirectory));
 
     expect(read.status).toBe('failed');
-    expect(read.status === 'failed' ? read.reason : '').toContain(broken);
+    const failureReason = read.status === 'failed' ? read.reason : '';
+    expect(failureReason).toContain(broken);
   });
 
   it('skips transcripts last changed before the pull request was created', async () => {
@@ -235,7 +236,8 @@ describe('readTaskSignals', () => {
     const read = await readTaskSignals(sources(sessionDirectory));
 
     expect(read.status).toBe('failed');
-    expect(read.status === 'failed' ? read.reason : '').toContain('tau');
+    const failureReason = read.status === 'failed' ? read.reason : '';
+    expect(failureReason).toContain('tau');
   });
 
   it('leaves transcripts and worker records unchanged while reading signals', async () => {
@@ -316,6 +318,7 @@ describe('readTaskSignals', () => {
     const read = await readTaskSignals(sources(sessionDirectory));
 
     expect(read.status).toBe('failed');
-    expect(read.status === 'failed' ? read.reason : '').toContain('sessions');
+    const failureReason = read.status === 'failed' ? read.reason : '';
+    expect(failureReason).toContain('sessions');
   });
 });

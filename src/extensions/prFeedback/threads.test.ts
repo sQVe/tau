@@ -229,7 +229,8 @@ it.each([
 ])('an unresolved thread is listed when $case: $shown', ({ comments, shown }) => {
   const threads = threadsToShow(unresolvedThreads(withThreadComments(comments)));
 
-  expect(threads).toHaveLength(shown ? 1 : 0);
+  const threadCount = shown ? 1 : 0;
+  expect(threads).toHaveLength(threadCount);
 });
 
 it('lists state entries in the same order however GitHub orders the comments', () => {
