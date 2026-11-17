@@ -49,7 +49,7 @@ const freshTask = async (root: string, leadTerminal: string): Promise<string> =>
       ? 'Read AGENTS.md before you design anything.'
       : `Read the slice design: ${design}.`;
 
-  return `You are the architect for ${root}. ${context} The lead terminal is ${leadTerminal}. Talk to the user about design, write the tickets the slice needs, then send the lead the step 11 values with handover send to ${leadTerminal} and end your turn.`;
+  return `You are the architect for ${root}. ${context} The lead terminal is ${leadTerminal}. Talk to the user about design, write the tickets the slice needs, then send the lead the step 11 values with handover send to ${leadTerminal} with final set to true, and end your turn.`;
 };
 
 const resumeTask = (root: string, leadTerminal: string): string =>

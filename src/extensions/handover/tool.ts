@@ -49,6 +49,12 @@ const parameters = Type.Object({
       description: "start: the new Pi's model as provider/model-id. Omit it for the default model.",
     }),
   ),
+  final: Type.Optional(
+    Type.Boolean({
+      description:
+        "send: true for the architect's last handover to the lead. The architect session closes after it is queued.",
+    }),
+  ),
   messageId: Type.Optional(
     Type.String({
       description: 'send retry: messageId of an unknown result.',
@@ -137,6 +143,10 @@ const runAction = async (
     throw new Error('model is only for action start.');
   }
 
+  if (input.action !== 'send' && input.final !== undefined) {
+    throw new Error('final is only for action send.');
+  }
+
   if (input.action === 'prepare') {
     return prepare(context.cwd);
   }
@@ -156,7 +166,7 @@ export const createHandoverTool = (
     label: 'Handover',
     description: `Prepare, send, and start handover messages.
 - action prepare: creates .tau/handovers in the checkout or bare repository root. Returns {directory}, an absolute path. Reuses an existing directory.
-- action send: sends the file's text to the inbox of the Pi session at terminal (hc address or name). Needs file (from prepare). Returns {status, terminal, sessionId, messageId}.
+- action send: sends the file's text to the inbox of the Pi session at terminal (hc address or name). Needs file (from prepare). final: true marks the architect's last handover; the architect closes after it is queued. Returns {status, terminal, sessionId, messageId}.
   - queued: saved and shown once. Never resend it.
   - unknown: it may be saved; see note. Retry with the same file, messageId, and sessionId.
   - An error ending "Nothing was queued." is a refusal.

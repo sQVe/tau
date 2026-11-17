@@ -4,7 +4,7 @@ import { piExec } from '../../command.js';
 import { connect } from '../../hc/connect.js';
 import { currentRole } from '../../role.js';
 import { registerAskMode } from './askMode.js';
-import { isQueuedHandover } from './queuedHandover.js';
+import { isFinalHandover } from './queuedHandover.js';
 import { endArchitectSession, startArchitectSession } from './session.js';
 import type { ArchitectSession } from './session.js';
 import { createArchitectTool } from './tool.js';
@@ -17,7 +17,7 @@ export default function architectExtension(pi: ExtensionAPI): void {
     registerAskMode(pi, askRecordPath);
   } else if (currentRole() === 'architect') {
     pi.on('tool_result', (event, context) => {
-      if (isQueuedHandover(event)) {
+      if (isFinalHandover(event)) {
         context.shutdown();
       }
     });
