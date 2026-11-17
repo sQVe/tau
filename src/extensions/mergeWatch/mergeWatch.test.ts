@@ -1,79 +1,21 @@
-import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
-import { createExecFake, failedResult, succeededResult } from '../../../tests/execFake.js';
-import type { ExecHandler, ExecResult } from '../../../tests/execFake.js';
-import { fakeExtensionApi } from '../../../tests/extensionApi.js';
-import mergeWatchExtension from './mergeWatch.js';
-
-type Key = 'resolve' | 'state' | 'checks';
-
-const url = 'https://github.com/owner/repo/pull/7';
-const minute = 60_000;
-const hours = 60 * minute;
-
-const stateOutput = (state: string, mergedAt: string | null = null) =>
-  succeededResult(JSON.stringify({ state, mergedAt }));
-
-const checksOutput = (checks: { name: string; bucket: string }[], code = 8): ExecResult => ({
-  code,
-  killed: false,
-  truncated: false,
-  stdout: JSON.stringify(checks.map((check) => ({ ...check, state: check.bucket }))),
-  stderr: '',
-});
-
-const pending = checksOutput([{ name: 'test', bucket: 'pending' }]);
-const open = stateOutput('OPEN');
-const merged = stateOutput('MERGED', '2026-10-27T10:00:00Z');
-
-const resolvedOutput = (autoMergeRequest: { mergeMethod: string } | null, state = 'OPEN') =>
-  succeededResult(JSON.stringify({ url, state, autoMergeRequest }));
-
-const autoMergeOn = resolvedOutput({ mergeMethod: 'SQUASH' });
-const autoMergeOff = resolvedOutput(null);
-
-const keyOf = (_command: string, commandArguments: readonly string[]): Key | undefined => {
-  if (commandArguments[1] === 'checks') {
-    return 'checks';
-  }
-
-  return commandArguments.includes('state,mergedAt') ? 'state' : 'resolve';
-};
-
-const setup = (options: { idle?: boolean } = {}) => {
-  const handlers: Record<Key, ExecHandler> = {
-    resolve: () => autoMergeOn,
-    state: () => open,
-    checks: () => pending,
-  };
-
-  const execFake = createExecFake<Key>({ keyOf, handlerFor: (key) => handlers[key] });
-  const fake = fakeExtensionApi({ exec: execFake.exec });
-  const idle = options.idle ?? true;
-
-  const context = {
-    cwd: '/repository',
-    isIdle: () => idle,
-    signal: idle ? undefined : new AbortController().signal,
-  } as unknown as ExtensionContext;
-
-  mergeWatchExtension(fake.pi);
-
-  const emit = async (name: string, event: unknown) => {
-    for (const handler of fake.handlers.get(name) ?? []) {
-      await handler(event as never, context);
-    }
-  };
-
-  const runBash = (command: string, isError = false) =>
-    emit('tool_result', { toolName: 'bash', input: { command }, content: [], isError });
-
-  const polls = () =>
-    execFake.calls.filter((call) => keyOf('gh', call.commandArguments) === 'state');
-
-  return { fake, handlers, execFake, emit, runBash, polls };
-};
+import { failedResult, succeededResult } from '../../../tests/execFake.js';
+import type { ExecResult } from '../../../tests/execFake.js';
+import {
+  autoMergeOff,
+  autoMergeOn,
+  checksOutput,
+  hours,
+  keyOf,
+  merged,
+  minute,
+  pending,
+  resolvedOutput,
+  setup,
+  stateOutput,
+  url,
+} from './fixtures/mergeWatchSetup.js';
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
@@ -84,7 +26,7 @@ afterEach(() => {
 });
 
 it('starts a turn that says the pull request merged', async () => {
-  const { fake, handlers, runBash } = setup();
+  const { fake, handlers, runBash, nextDelivery } = setup();
 
   await runBash('gh pr merge --auto --squash');
   handlers.state = () => merged;
@@ -92,7 +34,9 @@ it('starts a turn that says the pull request merged', async () => {
 
   expect(fake.sendMessage).not.toHaveBeenCalled();
 
+  const delivered = nextDelivery();
   await vi.advanceTimersByTimeAsync(1);
+  await delivered;
 
   expect(fake.sendMessage).toHaveBeenCalledTimes(1);
 
@@ -188,7 +132,7 @@ it('aborts a pending checks read at session shutdown', async () => {
 });
 
 it('retries a failed read on the next poll', async () => {
-  const { fake, handlers, runBash, polls } = setup();
+  const { fake, handlers, runBash, polls, nextDelivery } = setup();
 
   await runBash('gh pr merge --auto');
   handlers.state = () => failedResult('HTTP 502');
@@ -200,11 +144,32 @@ it('retries a failed read on the next poll', async () => {
 
   expect(fake.sendMessage).not.toHaveBeenCalled();
 
+  const delivered = nextDelivery();
   handlers.state = () => merged;
   await vi.advanceTimersByTimeAsync(minute);
+  await delivered;
 
   expect(fake.sendMessage).toHaveBeenCalledTimes(1);
   expect(polls()).toHaveLength(3);
+});
+
+it('delivers nothing when the session shuts down during the merged pull request read', async () => {
+  const { fake, handlers, runBash, emit } = setup();
+  const mergedRead = Promise.withResolvers<ExecResult>();
+
+  handlers.merged = () => mergedRead.promise;
+  await runBash('gh pr merge --auto');
+  handlers.state = () => merged;
+  await vi.advanceTimersByTimeAsync(minute);
+  await emit('session_shutdown', { reason: 'quit' });
+
+  mergedRead.resolve(failedResult('HTTP 502'));
+
+  await new Promise((resolve) => {
+    setImmediate(resolve);
+  });
+
+  expect(fake.sendMessage).not.toHaveBeenCalled();
 });
 
 it('stops every watcher and timer at session shutdown', async () => {
@@ -263,7 +228,7 @@ it('aborts a pending resolve read at session shutdown', async () => {
 });
 
 it('keeps one watcher when auto-merge runs again on a watched pull request', async () => {
-  const { fake, handlers, runBash, polls } = setup();
+  const { fake, handlers, runBash, polls, nextDelivery } = setup();
 
   await runBash('gh pr merge --auto');
   await runBash('gh pr merge 7 --auto --squash');
@@ -271,8 +236,10 @@ it('keeps one watcher when auto-merge runs again on a watched pull request', asy
 
   expect(polls()).toHaveLength(1);
 
+  const delivered = nextDelivery();
   handlers.state = () => merged;
   await vi.advanceTimersByTimeAsync(minute);
+  await delivered;
 
   expect(fake.sendMessage).toHaveBeenCalledTimes(1);
 });
@@ -317,15 +284,43 @@ it('keeps watching when gh pr checks fails with checks in its output', async () 
 });
 
 it('watches a pull request again after its watch ended', async () => {
-  const { fake, handlers, runBash } = setup();
+  const { fake, handlers, runBash, nextDelivery } = setup();
 
   await runBash('gh pr merge --auto');
   handlers.checks = () => checksOutput([{ name: 'test', bucket: 'fail' }], 1);
   await vi.advanceTimersByTimeAsync(minute);
   handlers.checks = () => pending;
   await runBash('gh pr merge --auto');
+
+  const delivered = nextDelivery();
   handlers.state = () => merged;
   await vi.advanceTimersByTimeAsync(minute);
+  await delivered;
+
+  expect(fake.sendMessage).toHaveBeenCalledTimes(2);
+});
+
+it('watches the same pull request again after its merge message', async () => {
+  const { fake, handlers, runBash, polls, nextDelivery } = setup();
+
+  await runBash('gh pr merge --auto');
+  handlers.state = () => merged;
+  const first = nextDelivery();
+  await vi.advanceTimersByTimeAsync(minute);
+  await first;
+
+  expect(fake.sendMessage).toHaveBeenCalledTimes(1);
+
+  await runBash('gh pr merge --auto');
+  handlers.state = () => stateOutput('OPEN');
+  await vi.advanceTimersByTimeAsync(minute);
+
+  expect(polls()).toHaveLength(2);
+
+  handlers.state = () => merged;
+  const second = nextDelivery();
+  await vi.advanceTimersByTimeAsync(minute);
+  await second;
 
   expect(fake.sendMessage).toHaveBeenCalledTimes(2);
 });
@@ -350,12 +345,14 @@ it('watches a pull request with auto-merge on when a later command failed', asyn
 });
 
 it('watches a pull request that merged before the resolve read', async () => {
-  const { fake, handlers, runBash } = setup();
+  const { fake, handlers, runBash, nextDelivery } = setup();
 
   handlers.resolve = () => resolvedOutput(null, 'MERGED');
   handlers.state = () => merged;
   await runBash('gh pr merge --auto');
+  const delivered = nextDelivery();
   await vi.advanceTimersByTimeAsync(minute);
+  await delivered;
 
   expect(fake.sendMessage).toHaveBeenCalledTimes(1);
 });
@@ -378,11 +375,13 @@ it('watches nothing after a plain merge or another tool', async () => {
 });
 
 it('steers the turn into a running agent', async () => {
-  const { fake, handlers, runBash } = setup({ idle: false });
+  const { fake, handlers, runBash, nextDelivery } = setup({ idle: false });
 
   await runBash('gh pr merge --auto');
   handlers.state = () => merged;
+  const delivered = nextDelivery();
   await vi.advanceTimersByTimeAsync(minute);
+  await delivered;
 
   expect(fake.sendMessage).toHaveBeenCalledWith(expect.anything(), {
     deliverAs: 'steer',

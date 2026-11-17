@@ -30,6 +30,7 @@ No launch, and unclear impact:
 | ------- | ---- | ------------------------------ | ---- |
 | [Day token use](qa/journeys/day-token-use.md) | Learn where the last day's tokens went and whether the sessions were healthy. | `pnpm token-usage`, `pnpm session-health`, their `package.json` entries, `src/errors.ts`, `src/schema.ts`, or session-log and worker-record readers | By hand |
 | [Delegate a check](qa/journeys/delegate-a-check.md) | Delegate a check to a `qa` worker and get its report. | Worker-launch behavior under `src/`, or the `package.json` `pi` manifest | By hand, manager only |
+| [Review a task at merge](qa/journeys/review-a-task-at-merge.md) | Learn from a task that went badly while it is fresh. | `src/extensions/mergeWatch/` or `src/improvement/` | By hand |
 
 ## Before a launch
 

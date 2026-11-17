@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import { getAgentDir } from '@earendil-works/pi-coding-agent';
 
 import { createDelivery } from './delivery.js';
 import { createMergeWatches } from './watches.js';
@@ -7,6 +8,7 @@ export default function mergeWatchExtension(pi: ExtensionAPI): void {
   const watches = createMergeWatches(
     (command, commandArguments, options) => pi.exec(command, commandArguments, options),
     createDelivery(pi),
+    getAgentDir(),
   );
 
   pi.on('tool_result', (event, context) => {

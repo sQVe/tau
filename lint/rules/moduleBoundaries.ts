@@ -90,6 +90,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
       'improvement/statusDecision',
       'improvement/sweep',
       'improvement/sweepIndex',
+      'improvement/taskSignals',
       'improvement/transcript',
       'improvement/workerRecord',
     ],

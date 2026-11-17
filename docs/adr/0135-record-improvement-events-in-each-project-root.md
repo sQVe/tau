@@ -53,6 +53,9 @@ the sweep at manager session start.
   at its threshold fires even when some of its facts are missing. A count below its threshold with
   missing facts, or on a task without transcript coverage, reads unknown. The revert signal comes
   from merged pull requests and default-branch commits, not transcripts.
+- When MergeWatch sees a pull request merge, it reads the task's signals from the session's own
+  transcript folder and offers a review in that session. It never starts one, and a failed read says
+  the signals are unknown.
 
 ### No background timer
 

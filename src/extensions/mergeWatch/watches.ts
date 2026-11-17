@@ -2,10 +2,13 @@ import type { ExtensionContext, ToolResultEvent } from '@earendil-works/pi-codin
 import { isBashToolResult } from '@earendil-works/pi-coding-agent';
 
 import type { Exec } from '../../command.js';
+import { readTaskSignals } from '../../improvement/taskSignals.js';
 import { parseAutoMergeRequests } from './autoMergeRequest.js';
 import type { AutoMergeRequest } from './autoMergeRequest.js';
 import type { Deliver } from './delivery.js';
+import { decideMergeOffer, describeMergedPullRequest } from './mergeOffer.js';
 import {
+  readMergedPullRequest,
   readPullRequestState,
   readRequiredChecks,
   resolvePullRequest,
@@ -14,7 +17,9 @@ import { decideWatchOutcome, describeWatchOutcome } from './watchOutcome.js';
 import type { WatchOutcome } from './watchOutcome.js';
 import { decideWatchStart } from './watchStart.js';
 
-type WatchContext = Pick<ExtensionContext, 'cwd' | 'isIdle' | 'signal'>;
+type WatchContext = Pick<ExtensionContext, 'cwd' | 'isIdle' | 'signal'> & {
+  sessionManager: Pick<ExtensionContext['sessionManager'], 'getSessionDir'>;
+};
 
 interface Watch {
   // Undefined until the resolve read returns.
@@ -61,7 +66,11 @@ const stop = (watch: Watch) => {
   clearTimeout(watch.deadlineTimer);
 };
 
-export const createMergeWatches = (exec: Exec, deliver: Deliver): MergeWatches => {
+export const createMergeWatches = (
+  exec: Exec,
+  deliver: Deliver,
+  agentDirectory: string,
+): MergeWatches => {
   const watches = new Set<Watch>();
 
   const end = (watch: Watch) => {
@@ -69,7 +78,33 @@ export const createMergeWatches = (exec: Exec, deliver: Deliver): MergeWatches =
     watches.delete(watch);
   };
 
-  const settle = (watch: Watch, url: string, outcome: WatchOutcome): boolean => {
+  const finishMerged = async (watch: Watch, url: string) => {
+    const runtime = { exec, cwd: watch.context.cwd, signal: watch.reads.signal };
+    const pullRequest = await readMergedPullRequest(runtime, url);
+
+    const read =
+      pullRequest === undefined
+        ? undefined
+        : await readTaskSignals({
+            agentDirectory,
+            sessionDirectory: watch.context.sessionManager.getSessionDir(),
+            cwd: watch.context.cwd,
+            pullRequest,
+          });
+
+    if (watch.reads.signal.aborted) {
+      return;
+    }
+
+    end(watch);
+    deliver(watch.context, describeMergedPullRequest(url, decideMergeOffer(read)));
+  };
+
+  const settle = (
+    watch: Watch,
+    url: string,
+    outcome: Exclude<WatchOutcome, { kind: 'merged' }>,
+  ): boolean => {
     if (outcome.kind === 'waiting') {
       return true;
     }
@@ -88,7 +123,18 @@ export const createMergeWatches = (exec: Exec, deliver: Deliver): MergeWatches =
     const poll = async () => {
       const outcome = await readOutcome(exec, watch, url);
 
-      if (!watch.reads.signal.aborted && settle(watch, url, outcome)) {
+      if (watch.reads.signal.aborted) {
+        return;
+      }
+
+      if (outcome.kind === 'merged') {
+        clearTimeout(watch.deadlineTimer);
+        await finishMerged(watch, url);
+
+        return;
+      }
+
+      if (settle(watch, url, outcome)) {
         schedule(watch, url);
       }
     };

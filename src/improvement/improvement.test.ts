@@ -226,6 +226,19 @@ describe('readWorkerTranscripts', () => {
 
     expect(await readWorkerTranscripts(join(agent, 'absent'), new Set())).toEqual(new Map());
   });
+
+  it('reads workers when the manager session folder cannot be listed', async () => {
+    const agent = improvementDirectory();
+    const workers = join(agent, 'tau', 'main-1', 'workers');
+
+    writeFile(join(workers, 'w1', 'task.json'), '{"taskId":"w1","createdAt":1}');
+    writeFile(join(workers, 'w1', 'session.jsonl'), header);
+    writeFile(join(agent, 'sessions'), 'not a directory');
+
+    expect(Object.fromEntries(await readWorkerTranscripts(agent, new Set(['w1'])))).toEqual({
+      w1: 'readable',
+    });
+  });
 });
 
 describe('worker coverage from the records on disk', () => {
