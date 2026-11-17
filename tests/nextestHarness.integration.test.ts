@@ -12,7 +12,11 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve as resolvePath } from 'node:path';
 
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
+
+// Each test spawns a nested Vitest run, which took 5.2 s to 8.0 s with every CPU busy. The nested
+// run has its own 25 s bound, so this timeout must stay above that bound.
+vi.setConfig({ testTimeout: 60_000 });
 
 const repositoryRoot = resolvePath(import.meta.dirname, '..');
 
