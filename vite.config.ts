@@ -202,7 +202,15 @@ export default defineConfig({
           // Shared scenario runners assert inside the helper.
           'vitest/expect-expect': [
             'error',
-            { assertFunctionNames: ['expect', 'runPiWorkerScenario', 'hangs', 'passes'] },
+            {
+              assertFunctionNames: [
+                'expect',
+                'expectCleanSuite',
+                'runPiWorkerScenario',
+                'hangs',
+                'passes',
+              ],
+            },
           ],
         },
       },
