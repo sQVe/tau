@@ -86,6 +86,8 @@ export const moduleList: readonly ModuleDeclaration[] = [
     publicFiles: [
       'improvement/event',
       'improvement/projectRoot',
+      'improvement/status',
+      'improvement/statusDecision',
       'improvement/sweep',
       'improvement/sweepIndex',
       'improvement/transcript',

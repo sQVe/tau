@@ -73,6 +73,33 @@ const thinkingColors = {
   max: 'thinkingMax',
 } satisfies Record<NonNullable<FooterInput['thinkingLevel']>, ThemeColor>;
 
+export const renderStatusLine = (
+  statuses: ReadonlyMap<string, string>,
+  width: number,
+  theme: Pick<Theme, 'fg'>,
+): string | undefined => {
+  if (width <= 0) {
+    return undefined;
+  }
+
+  const entries = [...statuses.entries()].toSorted(([left], [right]) => left.localeCompare(right));
+  const texts: string[] = [];
+
+  for (const [, status] of entries) {
+    const text = sanitizeText(status).replace(/\s+/gu, ' ').trim();
+
+    if (text !== '') {
+      texts.push(text);
+    }
+  }
+
+  if (texts.length === 0) {
+    return undefined;
+  }
+
+  return truncateToWidth(theme.fg('muted', texts.join('  ')), width);
+};
+
 export const renderFooterLine = (
   input: FooterInput,
   width: number,

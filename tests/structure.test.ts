@@ -173,6 +173,7 @@ const pureModules = [
   'src/github/pullRequestDecisions.ts',
   'src/github/repositoryTargetDecisions.ts',
   'src/improvement/signals.ts',
+  'src/improvement/statusDecision.ts',
   'src/improvement/sweepDecision.ts',
   'src/improvement/taskFacts.ts',
   'src/improvement/taskMapping.ts',

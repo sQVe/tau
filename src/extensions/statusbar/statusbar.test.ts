@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fakeExtensionApi } from '../../../tests/extensionApi.js';
 import statusbarExtension from './statusbar.js';
 
-const setup = (mode = 'tui') => {
+const setup = (mode = 'tui', statuses: ReadonlyMap<string, string> = new Map()) => {
   const fake = fakeExtensionApi({ getThinkingLevel: () => 'high' });
   const setFooter = vi.fn<ExtensionContext['ui']['setFooter']>();
   const session = { id: 'session-1', leafId: 'entry-1' as string | null, entryCount: 1 };
@@ -43,7 +43,7 @@ const setup = (mode = 'tui') => {
         getGitBranch: () => 'main',
         getAvailableProviderCount: () => 1,
         onBranchChange: () => () => {},
-        getExtensionStatuses: () => new Map([['hidden', 'HIDDEN']]),
+        getExtensionStatuses: () => statuses,
       },
     );
 
@@ -161,6 +161,39 @@ describe('statusbar extension', () => {
     expect(application.setFooter).toHaveBeenCalledOnce();
 
     footer.dispose?.();
+  });
+
+  it('shows extension statuses on a second line', async () => {
+    const application = setup(
+      'tui',
+      new Map([['improvement', 'improve: 1 task to review · correct due']]),
+    );
+
+    await application.emit('session_start');
+
+    const lines = application.mount().component.render(100);
+
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toBe('improve: 1 task to review · correct due');
+  });
+
+  it('shows only the existing line without extension statuses', async () => {
+    const application = setup();
+
+    await application.emit('session_start');
+
+    expect(application.mount().component.render(100)).toHaveLength(1);
+  });
+
+  it('shows an incomplete improvement sweep status', async () => {
+    const application = setup('tui', new Map([['improvement', 'improve: sweep incomplete']]));
+
+    await application.emit('session_start');
+
+    const lines = application.mount().component.render(100);
+
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toBe('improve: sweep incomplete');
   });
 
   it('counts cache warmer usage entries in the session cost', async () => {

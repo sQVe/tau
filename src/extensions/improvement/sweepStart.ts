@@ -1,4 +1,5 @@
 import type { Exec } from '../../command.js';
+import { errorMessage } from '../../errors.js';
 import type { SweepOptions, SweepOutcome } from '../../improvement/sweep.js';
 
 interface SweepSession {
@@ -9,9 +10,12 @@ interface SweepSession {
 
 type SweepRunner = (options: SweepOptions) => Promise<SweepOutcome>;
 
-export const startSweep = async (session: SweepSession, run: SweepRunner): Promise<void> => {
+export const startSweep = async (
+  session: SweepSession,
+  run: SweepRunner,
+): Promise<SweepOutcome> => {
   try {
-    await run({
+    return await run({
       agentDirectory: session.agentDirectory,
       cwd: session.cwd,
       exec: session.exec,
@@ -19,7 +23,7 @@ export const startSweep = async (session: SweepSession, run: SweepRunner): Promi
       budgetMilliseconds: 20_000,
       since: '2026-04-09',
     });
-  } catch {
-    // A failed sweep must not interrupt the session.
+  } catch (error) {
+    return { outcome: 'failed', reason: errorMessage(error) };
   }
 };

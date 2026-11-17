@@ -4,7 +4,7 @@ import type { Theme } from '@earendil-works/pi-coding-agent';
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui';
 import { describe, expect, it, vi } from 'vitest';
 
-import { footerTheme, renderFooterLine } from './render.js';
+import { footerTheme, renderFooterLine, renderStatusLine } from './render.js';
 
 const input = {
   cost: 0.412,
@@ -84,6 +84,47 @@ describe('statusbar rendering', () => {
     ] as const) {
       expect(renderFooterLine({ ...input, contextWindow }, 80, theme)).toContain(`/${text}`);
     }
+  });
+
+  it('renders no status line without statuses or with blank texts only', () => {
+    expect(renderStatusLine(new Map(), 80, theme)).toBeUndefined();
+
+    expect(
+      renderStatusLine(
+        new Map([
+          ['a', '   '],
+          ['b', '\t\n'],
+        ]),
+        80,
+        theme,
+      ),
+    ).toBeUndefined();
+  });
+
+  it('sorts statuses by key and joins them with two spaces', () => {
+    const statuses = new Map([
+      ['zeta', 'last'],
+      ['alpha', 'first'],
+    ]);
+
+    expect(renderStatusLine(statuses, 80, theme)).toBe('first  last');
+  });
+
+  it('replaces control characters and collapses repeated spaces', () => {
+    expect(renderStatusLine(new Map([['a', 'one\ttwo   three']]), 80, theme)).toBe('one two three');
+  });
+
+  it('truncates the status line to the width', () => {
+    const statuses = new Map([['a', 'a long status text that does not fit']]);
+
+    for (let width = 1; width <= 20; width += 1) {
+      const line = renderStatusLine(statuses, width, theme);
+
+      expect(line).toBeDefined();
+      expect(visibleWidth(line ?? '')).toBeLessThanOrEqual(width);
+    }
+
+    expect(renderStatusLine(statuses, 0, theme)).toBeUndefined();
   });
 
   it('shows each thinking level with its color only when supplied', () => {
