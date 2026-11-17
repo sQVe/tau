@@ -15,7 +15,7 @@ import {
 import { decideItemWrite } from './itemDecision.js';
 import type { ArtifactFact } from './itemDecision.js';
 import type { RecordInput } from './recordParameters.js';
-import { findRunDirectory } from './verification.js';
+import { findRunDirectory } from './runDirectory.js';
 
 const artifactLocation = async (
   directory: string,
@@ -61,7 +61,7 @@ export const recordItem = async (
   cwd: string,
   input: RecordInput,
 ): Promise<{ run: string; item: string; path: string }> => {
-  const { root, directory } = await findRunDirectory(cwd, input.run);
+  const { root, directory } = await findRunDirectory(cwd, input.run, 'verification_record');
   const runRead = await readRunRecord(runRecordPath(directory));
 
   const itemFileExists = isItemName(input.item)

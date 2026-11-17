@@ -2,13 +2,13 @@ import { expect, it, onTestFinished, vi } from 'vitest';
 
 import { temporaryTauConfig } from '../../tests/tauConfigHarness.js';
 import type { ConfigWarnings } from './config.js';
-import { readVerificationTargets } from './verificationTargets.js';
+import { readVerificationTarget } from './verificationTargets.js';
 
 const fixture = () => temporaryTauConfig(onTestFinished, 'tau-verification-targets-');
 
 const ui = { notify: () => undefined };
 
-it('reads two targets from the repository file in a trusted project', () => {
+it('reads a chosen target from the repository file in a trusted project', () => {
   const { location, writeRepository } = fixture();
 
   const app = {
@@ -25,23 +25,77 @@ it('reads two targets from the repository file in a trusted project', () => {
 
   writeRepository({ verification: { targets: { app, sandbox } } });
 
-  const result = readVerificationTargets(location, ui);
+  expect(readVerificationTarget(location, ui, 'app')).toEqual({
+    kind: 'configured',
+    target: app,
+  });
 
-  expect(result.kind).toBe('configured');
+  expect(readVerificationTarget(location, ui, 'sandbox')).toEqual({
+    kind: 'configured',
+    target: sandbox,
+  });
+});
 
-  if (result.kind !== 'configured') {
-    throw new Error('expected configured targets');
-  }
+it('reads a valid target when a second target is malformed', () => {
+  const { location, writeRepository } = fixture();
 
-  expect([...result.targets.entries()]).toEqual([
-    ['app', app],
-    ['sandbox', sandbox],
-  ]);
+  const app = { launch: ['pnpm'], doctor: ['pnpm'], stop: ['pnpm'] };
+
+  writeRepository({
+    verification: {
+      targets: {
+        app,
+        broken: { launch: ['pnpm'] },
+      },
+    },
+  });
+
+  expect(readVerificationTarget(location, ui, 'app')).toEqual({
+    kind: 'configured',
+    target: app,
+  });
+});
+
+it('returns unknown with the sorted names when the chosen target is missing', () => {
+  const { location, writeRepository } = fixture();
+
+  writeRepository({
+    verification: {
+      targets: {
+        sandbox: { launch: ['pnpm'], doctor: ['pnpm'], stop: ['pnpm'] },
+        app: { launch: ['pnpm'], doctor: ['pnpm'], stop: ['pnpm'] },
+      },
+    },
+  });
+
+  expect(readVerificationTarget(location, ui, 'missing')).toEqual({
+    kind: 'unknown',
+    names: ['app', 'sandbox'],
+  });
+});
+
+it('rejects a malformed chosen target even when another target is valid', () => {
+  const { location, writeRepository, repositoryFile } = fixture();
+
+  writeRepository({
+    verification: {
+      targets: {
+        app: { launch: ['pnpm'], doctor: ['pnpm'], stop: ['pnpm'] },
+        broken: { launch: ['pnpm'] },
+      },
+    },
+  });
+
+  const read = () => readVerificationTarget(location, ui, 'broken');
+
+  expect(read).toThrow(repositoryFile);
+  expect(read).toThrow('verification.targets.broken.doctor');
 });
 
 it.each([
   {
     name: 'a target without stop',
+    target: 'app',
     value: { targets: { app: { launch: ['pnpm'], doctor: ['pnpm'] } } },
     field: 'verification.targets.app.stop',
     example: '["pnpm"',
@@ -49,6 +103,7 @@ it.each([
   },
   {
     name: 'a target without launch',
+    target: 'app',
     value: { targets: { app: { doctor: ['pnpm'], stop: ['pnpm'] } } },
     field: 'verification.targets.app.launch',
     example: '["pnpm", "app:up"]',
@@ -56,6 +111,7 @@ it.each([
   },
   {
     name: 'an empty launch argv',
+    target: 'app',
     value: {
       targets: { app: { launch: [], doctor: ['pnpm'], stop: ['pnpm'] } },
     },
@@ -65,6 +121,7 @@ it.each([
   },
   {
     name: 'a non-string doctor argument',
+    target: 'app',
     value: {
       targets: { app: { launch: ['pnpm'], doctor: ['pnpm', 1], stop: ['pnpm'] } },
     },
@@ -74,6 +131,7 @@ it.each([
   },
   {
     name: 'targets as an array',
+    target: 'app',
     value: { targets: [] },
     field: 'verification.targets',
     example: '["pnpm"',
@@ -81,6 +139,7 @@ it.each([
   },
   {
     name: 'targets as a string',
+    target: 'app',
     value: { targets: 'app' },
     field: 'verification.targets',
     example: '["pnpm"',
@@ -88,6 +147,7 @@ it.each([
   },
   {
     name: 'verification as an array',
+    target: 'app',
     value: [],
     field: 'verification',
     example: '["pnpm"',
@@ -95,6 +155,7 @@ it.each([
   },
   {
     name: 'no targets',
+    target: 'app',
     value: {},
     field: 'verification.targets',
     example: '["pnpm"',
@@ -102,6 +163,7 @@ it.each([
   },
   {
     name: 'empty targets',
+    target: 'app',
     value: { targets: {} },
     field: 'verification.targets',
     example: '["pnpm"',
@@ -109,6 +171,7 @@ it.each([
   },
   {
     name: 'an invalid target name',
+    target: 'App',
     value: {
       targets: { App: { launch: ['pnpm'], doctor: ['pnpm'], stop: ['pnpm'] } },
     },
@@ -118,17 +181,18 @@ it.each([
   },
   {
     name: 'a target that is not an object',
+    target: 'app',
     value: { targets: { app: true } },
     field: 'verification.targets.app',
     example: '["pnpm"',
     reason: 'must be an object such as',
   },
-])('rejects $name', ({ value, field, example, reason }) => {
+])('rejects $name', ({ target, value, field, example, reason }) => {
   const { location, writeRepository, repositoryFile } = fixture();
 
   writeRepository({ verification: value });
 
-  const read = () => readVerificationTargets(location, ui);
+  const read = () => readVerificationTarget(location, ui, target);
 
   expect(read).toThrow(repositoryFile);
   expect(read).toThrow(field);
@@ -141,18 +205,18 @@ it('ignores the repository file in an untrusted project', () => {
 
   writeRepository({ verification: { targets: {} } });
 
-  expect(readVerificationTargets({ ...location, projectTrusted: false }, ui)).toEqual({
+  expect(readVerificationTarget({ ...location, projectTrusted: false }, ui, 'app')).toEqual({
     kind: 'notConfigured',
     ignored: repositoryFile,
   });
 });
 
-it('gives no targets when the repository file has no verification key', () => {
+it('gives no target when the repository file has no verification key', () => {
   const { location, writeRepository } = fixture();
 
   writeRepository({ mutation: { argv: ['pnpm', 'test'] } });
 
-  expect(readVerificationTargets(location, ui)).toEqual({
+  expect(readVerificationTarget(location, ui, 'app')).toEqual({
     kind: 'notConfigured',
     ignored: undefined,
   });
@@ -165,13 +229,13 @@ it('rejects verification in the user file', () => {
   writeUser({ verification: { targets } });
   writeRepository({ verification: { targets } });
 
-  const read = () => readVerificationTargets(location, ui);
+  const read = () => readVerificationTarget(location, ui, 'app');
 
   expect(read).toThrow(userFile);
   expect(read).toThrow('verification belongs in .pi/tau.json');
 });
 
-it('warns once about an unknown key and still reads the targets', () => {
+it('warns once about an unknown key and still reads the target', () => {
   const { location, writeRepository, repositoryFile } = fixture();
   const notify = vi.fn<ConfigWarnings['notify']>();
   const session = { notify };
@@ -185,8 +249,8 @@ it('warns once about an unknown key and still reads the targets', () => {
 
   writeRepository({ verification: { targets: { app: target } } });
 
-  const first = readVerificationTargets(location, session);
-  const second = readVerificationTargets(location, session);
+  const first = readVerificationTarget(location, session, 'app');
+  const second = readVerificationTarget(location, session, 'app');
 
   const messages = notify.mock.calls.map(([message]) => message);
 
@@ -194,12 +258,8 @@ it('warns once about an unknown key and still reads the targets', () => {
   expect(messages[0]).toContain(repositoryFile);
   expect(messages[0]).toContain('verification.targets.app.drive');
 
-  if (first.kind !== 'configured' || second.kind !== 'configured') {
-    throw new Error('expected configured targets');
-  }
-
   const expected = { launch: ['pnpm'], doctor: ['pnpm'], stop: ['pnpm'] };
 
-  expect(first.targets.get('app')).toEqual(expected);
-  expect(second.targets.get('app')).toEqual(expected);
+  expect(first).toEqual({ kind: 'configured', target: expected });
+  expect(second).toEqual({ kind: 'configured', target: expected });
 });

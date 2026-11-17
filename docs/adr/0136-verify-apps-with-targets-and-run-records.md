@@ -32,8 +32,10 @@ run, and reads those records instead of parsing QA prose.
 
 ### Entry commands
 
-- Each entry command must exit. Tau runs it with a deadline, and runs stop after a launch timeout,
-  so a hung launcher cannot hold the run.
+- Each entry command must exit. Tau runs it with a deadline, and runs stop after a launch timeout or
+  a cancelled launch, so a hung or abandoned launcher cannot hold the run.
+- A stop that is cancelled or cannot start saves nothing, so the manager can call stop again. A stop
+  that ran is saved, even when it was killed or timed out.
 - Tau passes `TAU_VERIFICATION_RUN` and `TAU_VERIFICATION_DIRECTORY`. Each app derives its instance,
   such as a port or socket, from the run, so two runs do not collide.
 - Doctor exits non-zero when the running build does not match the checkout, not only when the app is

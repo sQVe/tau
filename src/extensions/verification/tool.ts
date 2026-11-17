@@ -1,0 +1,178 @@
+import { defineTool } from '@earendil-works/pi-coding-agent';
+import type { ExtensionToolContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { Type } from 'typebox';
+import type { Static } from 'typebox';
+
+import { readConfigLocation } from '../../config/config.js';
+import type { RunRecord } from '../../verification/records.js';
+import { launchRun } from './launchAction.js';
+import type { LaunchResult } from './launchAction.js';
+import { registerItems } from './registerAction.js';
+import type { RegisterResult } from './registerAction.js';
+import { findRunDirectory, findVerificationRoot } from './runDirectory.js';
+import { readRunFacts, readTarget } from './runFacts.js';
+import { stopRun } from './stopAction.js';
+import type { StopResult } from './stopAction.js';
+
+type RegisteredItem = RunRecord['items'][number];
+
+export interface VerificationToolOptions {
+  agentDirectory?: string;
+  deadlineMilliseconds?: number;
+}
+
+export type VerificationDetails = LaunchResult | RegisterResult | StopResult;
+
+type ParsedAction =
+  | { action: 'launch'; target: string }
+  | { action: 'register'; run: string; items: RegisteredItem[] }
+  | { action: 'stop'; run: string };
+
+const millisecondsPerMinute = 60_000;
+const defaultDeadlineMinutes = 5;
+const defaultDeadlineMilliseconds = defaultDeadlineMinutes * millisecondsPerMinute;
+
+const parameters = Type.Object({
+  action: Type.Union([Type.Literal('launch'), Type.Literal('register'), Type.Literal('stop')]),
+  target: Type.Optional(Type.String({ minLength: 1 })),
+  run: Type.Optional(Type.String({ minLength: 1 })),
+  items: Type.Optional(
+    Type.Array(
+      Type.Object({
+        item: Type.String({ minLength: 1 }),
+        steps: Type.Integer({ minimum: 1 }),
+      }),
+    ),
+  ),
+});
+
+const description = `Manage a verification run on a configured target. A run is saved in .tau/verification/<run>/run.json and keeps its logs.
+- launch: start the target's launch and doctor commands and save a run. Needs target. Returns status ready with run and directory, or status failed with command, exitCode, logPath, and stopped. A launch stopped by the deadline or a cancel runs stop at once and returns stopped true. A failed launch or doctor returns stopped false; call stop yourself.
+- register: add items to a ready run. Needs run and items, each {item, steps}. Returns run, directory, and every registered item. Refuses a stopped run or a run whose doctor did not pass.
+- stop: run the target's stop command and keep the run directory. Needs run. Returns run, directory, exitCode, logPath, and freshness. freshness says whether the run's tree still matches the current tree.
+Call stop when you finish with a run.`;
+
+const parseAction = (input: Static<typeof parameters>): ParsedAction => {
+  if (input.action === 'launch') {
+    if (input.run !== undefined) {
+      throw new Error('launch does not take run.');
+    }
+
+    if (input.items !== undefined) {
+      throw new Error('launch does not take items.');
+    }
+
+    if (input.target === undefined) {
+      throw new Error('launch needs target.');
+    }
+
+    return { action: 'launch', target: input.target };
+  }
+
+  if (input.action === 'register') {
+    if (input.target !== undefined) {
+      throw new Error('register does not take target.');
+    }
+
+    if (input.run === undefined) {
+      throw new Error('register needs run.');
+    }
+
+    if (input.items === undefined) {
+      throw new Error('register needs items.');
+    }
+
+    return { action: 'register', run: input.run, items: input.items };
+  }
+
+  if (input.target !== undefined) {
+    throw new Error('stop does not take target.');
+  }
+
+  if (input.items !== undefined) {
+    throw new Error('stop does not take items.');
+  }
+
+  if (input.run === undefined) {
+    throw new Error('stop needs run.');
+  }
+
+  return { action: 'stop', run: input.run };
+};
+
+const toToolResult = (details: VerificationDetails) => ({
+  content: [{ type: 'text' as const, text: JSON.stringify(details) }],
+  details,
+});
+
+const execute = async (
+  options: VerificationToolOptions,
+  input: Static<typeof parameters>,
+  signal: AbortSignal | undefined,
+  context: Pick<ExtensionToolContext, 'cwd' | 'isProjectTrusted' | 'ui'>,
+) => {
+  const parsed = parseAction(input);
+  const deadlineMilliseconds = options.deadlineMilliseconds ?? defaultDeadlineMilliseconds;
+
+  if (parsed.action === 'launch') {
+    const root = await findVerificationRoot(context.cwd, 'verification');
+    const location = readConfigLocation(root, options, context);
+    const commands = readTarget(location, context.ui, parsed.target);
+    const facts = await readRunFacts(root);
+
+    const details = await launchRun({
+      root,
+      deadlineMilliseconds,
+      signal,
+      target: parsed.target,
+      commands,
+      facts,
+    });
+
+    return toToolResult(details);
+  }
+
+  const { root, directory } = await findRunDirectory(context.cwd, parsed.run, 'verification');
+
+  if (parsed.action === 'register') {
+    const details = await registerItems(
+      {
+        directory,
+        deadlineMilliseconds,
+        signal,
+        run: parsed.run,
+      },
+      parsed.items,
+    );
+
+    return toToolResult(details);
+  }
+
+  const location = readConfigLocation(root, options, context);
+
+  const details = await stopRun({
+    root,
+    directory,
+    deadlineMilliseconds,
+    signal,
+    run: parsed.run,
+    readTarget: (name) => readTarget(location, context.ui, name),
+  });
+
+  return toToolResult(details);
+};
+
+export const createVerificationTool = (
+  options: VerificationToolOptions = {},
+): ToolDefinition<typeof parameters, VerificationDetails> =>
+  defineTool({
+    name: 'verification',
+    label: 'Verification',
+    description,
+    promptSnippet: 'Launch, register items on, and stop a verification run.',
+    parameters,
+    executionMode: 'sequential',
+    async execute(_toolCallId, input, signal, _onUpdate, context) {
+      return execute(options, input, signal, context);
+    },
+  });
