@@ -8,7 +8,12 @@ import { acceptChecks, createReceiptStore, createReceiver } from '../../inbox/in
 import type { MessageRequest } from '../../inbox/inbox.js';
 import { writeAssignment } from './assignment.js';
 import type { Assignment } from './assignment.js';
-import { assignmentFor, dispatch, setup } from './fixtures/workerExtensionHarness.js';
+import {
+  assignmentFor,
+  dispatch,
+  savePassingFullCheck,
+  setup,
+} from './fixtures/workerExtensionHarness.js';
 
 const questionId = '6c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
 const sessionId = '11111111-1111-1111-1111-111111111111';
@@ -22,6 +27,7 @@ const startWorker = async () => {
   };
 
   await writeAssignment(assignment);
+  await savePassingFullCheck(worker.directory);
 
   Object.assign(worker.context.sessionManager, {
     getBranch: () => [
@@ -117,9 +123,9 @@ it('refuses an answer after the report is saved', async () => {
     context,
   );
 
-  const reply = await receiver.accept(answerTo(assignment, 'Use 42.'));
-
   await reporting;
+
+  const reply = await receiver.accept(answerTo(assignment, 'Use 42.'));
 
   expect(reply).toMatchObject({
     kind: 'refused',

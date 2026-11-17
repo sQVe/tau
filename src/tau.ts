@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
+import architectExtension from './extensions/architect/architect.js';
 import askUserQuestionExtension from './extensions/askUserQuestion/askUserQuestion.js';
 import bareRootExtension from './extensions/bareRoot.js';
 import checkoutWarningExtension from './extensions/checkoutWarning/checkoutWarning.js';
@@ -51,6 +52,7 @@ export default async function tauExtension(pi: ExtensionAPI): Promise<void> {
   sliceExtension(pi);
   fullCheckExtension(pi);
   handoverExtension(pi);
+  architectExtension(pi);
   inboxExtension(pi);
   draftReviewExtension(pi);
   trackerExtension(pi);

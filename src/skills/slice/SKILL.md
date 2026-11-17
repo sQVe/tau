@@ -11,6 +11,8 @@ metadata:
 
 # Slice
 
+> **Role: architect.** A lead hands this step to the architect with the `architect` tool.
+
 ## When to use
 
 Use this skill to plan an agreed design as slices in Linear. Each slice becomes one branch and one

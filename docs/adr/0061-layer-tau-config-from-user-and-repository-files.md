@@ -35,8 +35,8 @@ already run on the user's machine, so Pi's project trust already guards it.
 ## Decision
 
 Tau reads `<agentDir>/tau.json` and, in a project Pi trusts, `<cwd>/.pi/tau.json`. Each feature owns
-one top-level key and validates it where it reads it. The user file owns every model, route, and
-user command. The repository file holds only what belongs with the code, including the commands that
+one top-level key and validates it where it reads it. The user file owns every model and user
+command. The repository file holds only what belongs with the code, including the commands that
 check that code.
 
 ### Files and trust
@@ -54,7 +54,8 @@ check that code.
 | `allowedModels` | yes       | yes             | Each file may only remove models from the list before it                                                          |
 | `mutation`      | no        | yes             | `argv` is the mutation command, beside the package pin it runs                                                    |
 | `subagents`     | yes       | no              | `capacity`, the live workers at once: an integer from 1 to 256                                                    |
-| `profiles`      | yes       | no              | Worker models and model routes                                                                                    |
+| `profiles`      | yes       | no              | Worker models                                                                                                     |
+| `roles`         | yes       | no              | Per-role worker model overrides                                                                                   |
 | `browser`       | yes       | no              | `loginCommand`, which the manager asks the user to run                                                            |
 | `tracker`       | yes       | no              | `agentTeam`, and `repositories` with a Linear route per entry                                                     |
 | `qa`            | yes       | no              | `repositories` with URL and test-account commands, and `dataWrites`                                               |
@@ -84,23 +85,19 @@ start with `vitest`.
 
 ### Models
 
-- Tau's code names no model. Each model comes from a call argument or from the user file.
-- A worker launch uses the launch `model`, then `profiles.<name>.model`, then
-  `profiles.default.model`. Without any of them, the launch fails and names
-  `profiles.default.model`. Profile files may not set `model:`.
+- Tau's code names no model, except the gate's fixed classifier. Every other model comes from a call
+  argument or from the user file.
+- A worker launch uses the launch `model`, then `roles.<role>.profiles.<name>.model` for the
+  launching role, then `profiles.<name>.model`, then `profiles.default.model`. Without any of them,
+  the launch fails and names `profiles.default.model`. Profile files may not set `model:`. `roles`
+  is user-file only, like `profiles`, because it chooses a model.
 - A worker's model is chosen once at launch. The `subagent` tool's model line is fixed for the
   session, so the prompt cache holds. The manager guidance says to use the profile default unless
   the user asks for another model or a multi-model discussion.
-- A profile may have a `route`. It has a `question`, two `labels` that each hold a `criterion` and a
-  `model`, and a `classifier` as `provider/model-id`. An optional `confidence` sets the least
-  confidence that keeps the classifier's label.
-- A profile with a `route` still needs its own `profiles.<name>.model`. That model runs when the
-  classifier gives no confident answer.
 - Web answers use `pi-web-access`'s own `fetch.answerModel`, unless the caller passes one.
 - `allowedModels` limits every model Tau selects or passes on. Each file that sets it may only
   remove models from the list before it. Tau refuses a model outside the list, names the list and
-  its files, and never falls back to another model. A route's classifier outside the list is skipped
-  instead, because a shadow pick never blocks a launch, and the profile's own model runs.
+  its files, and never falls back to another model.
 
 ### Unknown, removed, and bad keys
 
@@ -118,7 +115,7 @@ start with `vitest`.
 ### Positive
 
 - A user sets defaults once, and a repository overrides only what belongs to its code.
-- A repository cannot choose a model or a route for the user.
+- A repository cannot choose a model for the user.
 - A newer Tau adds keys without breaking older checkouts, and one bad entry blocks only its own
   work.
 - Each error names the file and the field to fix.

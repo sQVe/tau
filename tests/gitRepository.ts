@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,6 +16,10 @@ export const git = async (cwd: string, ...commandArguments: string[]): Promise<s
 
 // vite.config.ts sets the Git environment for every test process. The repository and the Git calls
 // of the code under test then ignore the developer's configuration.
+export const initializeRepositorySync = (directory: string): void => {
+  execFileSync('git', ['init', '--quiet', '--initial-branch=main'], { cwd: directory });
+};
+
 export const initializeRepository = async (directory: string): Promise<void> => {
   await promisify(execFile)('git', ['init', '--quiet', '--initial-branch=main'], {
     cwd: directory,
@@ -36,6 +40,17 @@ export const createTemporaryRepository = async (
   });
 
   await initializeRepository(repositoryDirectory);
+
+  return repositoryDirectory;
+};
+
+export const createTemporaryBareRepository = async (
+  registerCleanup: RegisterCleanup,
+): Promise<string> => {
+  const repositoryDirectory = await mkdtemp(join(tmpdir(), 'tau-bare-repository-'));
+  registerCleanup(() => rm(repositoryDirectory, { recursive: true, force: true }));
+
+  await promisify(execFile)('git', ['init', '--quiet', '--bare'], { cwd: repositoryDirectory });
 
   return repositoryDirectory;
 };

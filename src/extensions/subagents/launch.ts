@@ -7,8 +7,10 @@ import { errorMessage } from '../../errors.js';
 import { runWithEnvironment } from '../../hc/connect.js';
 import { currentTerminalAddress, get, HcError, ls, readCurrentTerminal } from '../../hc/hc.js';
 import type { HcRuntime, HcTerminal } from '../../hc/hc.js';
+import { currentRole } from '../../role.js';
 import type { SkillTools } from '../../skillTools.js';
 import { readSkillTools as readCurrentSkillTools } from '../../skillTools.js';
+import { acceptanceRefusal } from './acceptanceRefusal.js';
 import { assignmentDirectory, writeAssignment } from './assignment.js';
 import type { Assignment } from './assignment.js';
 import { WorkerCapacityFullError } from './capacityRefusal.js';
@@ -16,9 +18,7 @@ import { launchErrorResult } from './errorResult.js';
 import type { ToolResult } from './errorResult.js';
 import { briefWithAppUrl } from './launchEnvironment.js';
 import type { LaunchParameters } from './launchParameters.js';
-import { resolveRoutedLoadout } from './loadout.js';
-import { describeModelChoice } from './modelRoutes.js';
-import type { ModelChoice } from './modelRoutes.js';
+import { resolveLoadout } from './loadout.js';
 import { installWorkerPackages } from './packageInstall.js';
 import type { WorkerPackageManager } from './packageInstall.js';
 import { removeSnapshotDirectory, snapshotDirectoryFor } from './packageSnapshot.js';
@@ -72,7 +72,7 @@ export interface WorkerStart {
   label: string | undefined;
   extensionPackages: readonly { path: string }[];
   skillTools: SkillTools;
-  modelChoice: ModelChoice;
+  modelReason: string;
   signal: AbortSignal | undefined;
 }
 
@@ -221,7 +221,7 @@ const launchStatus = (terminal: HcTerminal, model: string, modelReason: string):
 const buildAssignment = (
   assignmentId: string,
   parameters: LaunchParameters,
-  resolved: Awaited<ReturnType<typeof resolveRoutedLoadout>>,
+  loadout: Assignment['loadout'],
   deadline: number,
   parentSession: string,
   parentTerminal: string,
@@ -237,13 +237,13 @@ const buildAssignment = (
     task: briefWithAppUrl(parameters.task, parameters.url),
     acceptance: parameters.acceptance ?? [],
     label: parameters.label ?? null,
-    profile: resolved.loadout.profile,
-    loadout: resolved.loadout,
-    routing: resolved.routing ?? null,
+    profile: loadout.profile,
+    loadout,
+    routing: null,
     packageSnapshot: packageSnapshot ?? null,
     session: { file: sessionFile, id: sessionId },
     parentSession,
-    cwd: resolved.loadout.cwd,
+    cwd: loadout.cwd,
     parentTerminal,
     deadline,
     createdAt: Date.now(),
@@ -344,7 +344,7 @@ export const startReservedWorker = async (
 
     runtime.admission.remove(assignmentId);
 
-    const modelReason = describeModelChoice(facts.modelChoice);
+    const modelReason = facts.modelReason;
     const status = launchStatus(terminal, assignment.loadout.model, modelReason);
 
     return {
@@ -383,12 +383,15 @@ export const executeLaunch = async (
       throw new Error(skillToolsRefused);
     }
 
-    const { loadout, routing, choice } = await resolveRoutedLoadout(
-      request.parameters,
-      context,
-      runtime.pi.getCommands(),
-      signal,
-    );
+    const loadout = resolveLoadout(request.parameters, context, runtime.pi.getCommands(), {
+      launchingRole: currentRole(),
+    });
+
+    const refusal = acceptanceRefusal(loadout.role, request.parameters.acceptance);
+
+    if (refusal !== undefined) {
+      throw new Error(refusal);
+    }
 
     const timeout =
       (request.parameters.timeoutSeconds ?? defaultTimeoutSeconds[loadout.role]) *
@@ -449,7 +452,7 @@ export const executeLaunch = async (
         assignment = buildAssignment(
           assignmentId,
           request.parameters,
-          { loadout, routing, choice },
+          loadout,
           deadline,
           request.parentSession,
           parentTerminal,
@@ -470,7 +473,7 @@ export const executeLaunch = async (
           label: request.parameters.label,
           extensionPackages,
           skillTools: currentSkillTools ?? {},
-          modelChoice: choice,
+          modelReason: 'Tau runs the profile model; it has no model routes.',
           signal,
         },
         { onDefiniteFailure: errorAfterCleanup },

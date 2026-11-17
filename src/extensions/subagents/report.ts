@@ -12,6 +12,8 @@ import { stringEnum } from '../../schema.js';
 import { saveReport } from './assignment.js';
 import type { Assignment, SavedReport } from './assignment.js';
 import { blockerKinds, decideIncompleteReport } from './incompleteReport.js';
+import { checkRefusal } from './reportChecks.js';
+import type { ReportCheckFacts } from './reportChecks.js';
 import { shortenSummary, summaryLengthLimit } from './summaryLength.js';
 
 export interface ReportRefusalState {
@@ -168,6 +170,7 @@ export const reportToParent = async (
   target: ReportTarget,
   parameters: ReportInput,
   deadlineWarning: { clear: () => void },
+  check: Pick<ReportCheckFacts, 'root' | 'argv'>,
 ): Promise<AgentToolResult<SavedReport>> => {
   const { assignment } = target;
 
@@ -192,6 +195,18 @@ export const reportToParent = async (
 
     if (handover.outcome === 'incomplete') {
       refuseEarlyIncomplete(target, parameters);
+    }
+
+    if (handover.outcome === 'success') {
+      const refusal = await checkRefusal({
+        role: assignment.loadout.role,
+        root: check.root,
+        argv: check.argv,
+      });
+
+      if (refusal !== undefined) {
+        throw new Error(refusal);
+      }
     }
   } catch (error) {
     target.refusal.remindAfterRefusal = true;

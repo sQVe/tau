@@ -41,7 +41,12 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
    `ask_user_question` when none or several fit. Call `start_slice` `read` with that identifier as
    `pick` and the prompt's agent team as `agentTeam`. Use its `pick` result for steps 2 and 4. Name
    `chosen` in step 10 and say its `reason` in one line.
+
+   > **Role: architect.** A lead hands this step to the architect with the `architect` tool.
+
 2. Check readiness from the result before any write, even for a named slice.
+
+   > **Role: architect.** A lead hands this step to the architect with the `architect` tool.
    - Ask the user when the named slice has status `completedWithoutMergedPr`, or a container child
      before `chosen` has that status. When no slice is chosen, check all children for that status.
    - When the user approves such a slice, it is the slice. Stop if a blocker's state is `other`.
@@ -57,16 +62,23 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
      the slice not ready. Stacking makes `topBranch` the parent.
    - When another worktree has the parent branch checked out, stop and offer the
      [handover skill](../handover/SKILL.md).
+
 3. Read the slice with `linear issue view <slice> --json --no-pager`: its `branchName`, team, and
    `## Acceptance`. If `$slicedir/start.json` exists, read it and its body files. Read the children:
    `linear api 'query($id: String!) { issue(id: $id) { children { nodes { identifier title description team { key } project { name } } } } }' --variable id=<slice>`.
+
+   > **Role: architect.** A lead hands this step to the architect with the `architect` tool.
    - When a ticket with a recorded identifier lacks its body file, save its description as one.
    - When a body file differs from the description, either may be newer. Show the difference and ask
      with `ask_user_question` which to keep. A kept body goes to Linear in step 9. Keeping Linear's
      text means saving the description as the body file.
+
 4. Choose the base from the `start_slice` `read` result, which fetched every branch of origin and
    returned `defaultBranch`. Without a parent, use `origin/<defaultBranch>`. With a parent, use
    `origin/<parent>` as the base and the `trunk` from `chain`.
+
+   > **Role: architect.** A lead hands this step to the architect with the `architect` tool.
+
 5. Read the tree the workers use: the branch when
    `git rev-parse --verify --quiet refs/heads/<branchName>` finds it, else the base. Use
    `git ls-tree -r --name-only <tree>` and `git show <tree>:<path>` without switching. Follow the
@@ -79,6 +91,9 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
    new or changed signatures and types, data shapes, error cases, and the existing pattern or helper
    to copy. A worker route picks a cheaper model for a fully specified ticket, and a stronger one
    for a ticket that leaves judgment open.
+
+   > **Role: architect.** A lead hands this step to the architect with the `architect` tool.
+
 6. Write the draft in `$slicedir`: `agent-<n>.md` per agent ticket in work order, from the
    [tracker skill](../tracker/SKILL.md) template, one worker task each. Write the step 5 answers and
    decisions into each ticket's `## Files` and `## Test cases`. Put each part that still needs
@@ -94,6 +109,8 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
    "by hand" needs no test file. The journey file and test hold only built steps, following the
    [QA-guide template](../../extensions/subagents/templates/qa-guide.md#rules).
 
+   > **Role: architect.** A lead hands this step to the architect with the `architect` tool.
+
 7. Map each slice criterion, record update, and mechanical-check change to its tickets. Check that
    each journey item maps to one ticket with its journey file, test or "by hand", and index row, and
    that each changed feature maps to one ticket with its feature file and index row. Change the
@@ -105,11 +122,16 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
    loaded the branch, and keep the public-interface item open until that session proves the
    interface. Before step 9, list each item with no check and its body file, and tell the user the
    worker gets a vague task. Say nothing when all pass; the list never stops a launch.
+
+   > **Role: architect.** A lead hands this step to the architect with the `architect` tool.
+
 8. For each new ticket (`identifier` is `null`), launch one fresh default-model `scout` in one turn.
    Brief it with the body file path, the step 5 tree, and the plan questions. It reads the body file
    with `read` and the named files with `git show <tree>:<path>`. It searches with
    `git grep <pattern> <tree>` and `git ls-tree -r --name-only <tree>` for unnamed helpers. It lists
    its questions, plan answers, and any design choice the ticket leaves open, or says none.
+
+   > **Role: architect.** A lead hands this step to the architect with the `architect` tool.
    - Revise the body file to answer each question, or proceed when the ticket or code answers it. A
      scout never blocks the start.
    - Decide each open design choice in the ticket, or split it into its own ticket as step 6 says.
@@ -117,7 +139,10 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
    - After any revision, check the draft again as step 7 says.
    - A ticket with no questions, plan answers, or open choices goes to step 9 unchanged. A scout
      that fails to launch or stops without a report does not stop the start; step 10 names it.
+
 9. Start in this order.
+
+   > **Role: architect.** A lead hands this step to the architect with the `architect` tool.
    - `git status --porcelain` must print nothing, and no worker may run. Check workers with the
      `hc ls --json` check from the [stack skill](../stack/SKILL.md). Stop and report either failure.
    - Stacked: create the branch on the parent with step 2 of the stack skill, passing the step 4
@@ -129,11 +154,17 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
      `apply` with `stateToken` to move the slice to In Progress and write its agent tickets. On an
      error, stop and report the completed steps. On `status: declined`, stop and report that nothing
      was written and which tickets were unchanged.
+
 10. Report in about 30 lines, with no raw commands: the slice and why; the branch, base, and whether
     it existed; for a stack, the parent slice and PR, trunk, PR target, and any added dependency;
     each agent ticket's `apply` status (`new`, `updated`, or `unchanged`), identifier, URL, title,
     and one `## Outcome` line; each scout's questions, whether you revised or proceeded, and each
-    failed scout; each slice criterion with its ticket numbers.
+    failed scout; each slice criterion with its ticket numbers. End with `handover` `send` to the
+    terminal that opened the architect, carrying the step 4 base, the step 7 check results, the step
+    9 ticket identifiers, and `$slicedir`. Never call `handover` `start`.
+
+    > **Role: architect.** A lead hands this step to the architect with the `architect` tool.
+
 11. Run the slice in this order.
     - Delegate each agent ticket to a worker with its body file path, such as
       `$slicedir/agent-1.md`. Copy its `## Acceptance` items word for word, in order, into
@@ -190,3 +221,5 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
       apply the QA launch procedure's reuse condition. Items still unmet go to the pr skill as
       required actions.
     - Open the PR with the [pr skill](../pr/SKILL.md), and link the slice as the tracker skill says.
+
+    > **Role: lead.** The architect sends this step to the lead in a handover.

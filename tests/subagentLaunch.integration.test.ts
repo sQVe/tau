@@ -7,7 +7,7 @@ import { expect, it, vi } from 'vitest';
 import {
   workerFixture,
   workerSkillCommands,
-} from '../src/extensions/subagents/fixtures/routedLoadout.js';
+} from '../src/extensions/subagents/fixtures/workerLoadout.js';
 import { Admission, executeLaunch } from '../src/extensions/subagents/launch.js';
 import type { LaunchRuntime } from '../src/extensions/subagents/launch.js';
 import { runWithEnvironment } from '../src/hc/connect.js';

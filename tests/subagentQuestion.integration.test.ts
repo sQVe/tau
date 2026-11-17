@@ -263,6 +263,7 @@ it('shows a question once across repeated delivery scans', async () => {
     model: fixtureModel,
     task: `${questionTaskMarker} Ask which value the report should hold.`,
     acceptance: ['Report the answer.'],
+    tauPackage: true,
   });
 
   const assignment = await waitForQuestion(worker);

@@ -231,69 +231,19 @@ integer from 1 to 256. The default is 12.
 name, such as `scout`. `profiles.default.model` applies to every profile without its own entry.
 `default` is reserved and cannot name a profile.
 
-A model passed on a launch overrides both keys. A worker launch with none of them fails. Tau fails a
-model that Pi does not list, or a model outside `allowedModels`.
+A worker launch uses the launch `model`, then `roles.<kind>.profiles.<profile>.model` for the
+launching role, then `profiles.<profile>.model`, then `profiles.default.model`. A worker launch with
+none of them fails. Tau fails a model that Pi does not list, or a model outside `allowedModels`.
 
 `profiles.<name>.thinking` is optional. It sets the worker thinking level and overrides the
-`thinking` in the profile file. A route label's `thinking` overrides it when that label runs. The
-levels are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`.
+`thinking` in the profile file. The levels are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`,
+and `max`.
 
 ```json
 {
   "profiles": {
     "default": { "model": "claude-bridge/claude-opus-5-5" },
     "scout": { "model": "openai-codex/gpt-6.1-sol", "thinking": "high" }
-  }
-}
-```
-
-#### Model routes
-
-`profiles.<name>.route` lets a classifier model choose the worker model for each brief. It takes
-these keys:
-
-- `classifier`: `provider/model-id` of the model that chooses a label.
-- `question`: non-empty text that the classifier answers.
-- `labels`: an object with exactly two labels. Each label name maps to:
-  - `criterion`: non-empty text that says when the label fits.
-  - `model`: `provider/model-id` that runs when the label is chosen.
-  - `thinking`: optional. One of the levels above. It overrides `profiles.<name>.thinking` when this
-    label runs.
-- `confidence`: number from 0 to 1. This is the lowest confidence that keeps the chosen label. The
-  default is 0.7.
-
-`profiles.<name>.model` still applies. Tau runs it when the classifier gives no usable answer, when
-the answer is below `confidence`, or when `allowedModels` excludes the classifier. Tau does not
-refuse the launch in those cases. A label's `model` outside `allowedModels` fails the launch.
-
-Tau applies the chosen label's `thinking` when the route picks that label. Otherwise it applies
-`profiles.<name>.thinking`, then the profile file's `thinking:`, then `medium`.
-
-Without `route`, the profile runs on `model` alone. A route that fails these rules turns routing off
-for its profile and shows an error. The profile model still runs. Use `route`, not `routes`. A
-`routes` key is the same case: routing is off, and the error names `route`.
-
-```json
-{
-  "profiles": {
-    "scout": {
-      "model": "claude-bridge/claude-opus-5-5",
-      "route": {
-        "classifier": "my-provider/my-classifier",
-        "question": "How wide is this scout brief?",
-        "labels": {
-          "narrow": {
-            "criterion": "A lookup about known code.",
-            "model": "claude-bridge/claude-haiku-5-5",
-            "thinking": "low"
-          },
-          "wide": {
-            "criterion": "An investigation across many files.",
-            "model": "claude-bridge/claude-opus-5-5"
-          }
-        }
-      }
-    }
   }
 }
 ```
@@ -346,6 +296,30 @@ The bundled `browser` and `qa` profiles load `npm:pi-agent-browser-native` for t
 Its `agent_browser_code` tool needs Node on `PATH` when Pi runs as the compiled binary. If the
 parent session does not use the browser itself, remove `npm:pi-agent-browser-native` from the
 `packages` list in `~/.pi/agent/settings.json`, because the workers load it on their own.
+
+### Roles (user file)
+
+`roles.lead.model` and `roles.architect.model` are the `provider/model-id` for a lead and an
+architect session. Tau reads them from the user file only.
+
+`roles.<kind>.profiles.<profile>.model` overrides the profile model for subagents that role
+launches. A launch uses its `model`, then the role override, then `profiles.<name>.model`, then
+`profiles.default.model`.
+
+A lead whose session model differs from `roles.lead.model` warns at session start. Tau does not
+switch the model of a session that already started.
+
+```json
+{
+  "roles": {
+    "lead": {
+      "model": "morph/morph-dsv41flash-1017",
+      "profiles": { "scout": { "model": "openai-codex/gpt-6.1-sol" } }
+    },
+    "architect": { "model": "claude-bridge/claude-opus-5-5" }
+  }
+}
+```
 
 ### `browser.loginCommand` (user file)
 
@@ -461,8 +435,9 @@ prompt reports each setting:
 
 ## Removed settings
 
-These settings no longer work. Set the replacement instead:
+These settings no longer work. Set the replacement instead, or remove the key when it has none:
 
 - The `TAU_SUBAGENT_CAP` environment variable. Tau no longer reads it. Set `subagents.capacity`.
 - A top-level `slice` key. Tau fails on it. Set `tracker.agentTeam` and `tracker.repositories`.
-- `profiles.<name>.routes`. Rename it to `route`.
+- `profiles.<name>.route` and `profiles.<name>.routes`. Tau warns about them as unknown keys and
+  ignores them. Set `profiles.<name>.model`, or use a role model for a subagent profile.

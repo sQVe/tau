@@ -115,8 +115,8 @@ metadata:
    - Report threads started by other reviewers. Do not reply to or resolve them.
 
 5. Author mode: fix the supported findings at the root cause.
-   - Make small fixes yourself. Send a fix that needs new tests or spans modules to a `worker`, then
-     a fast review with the [code-review skill](../code-review/SKILL.md).
+   - Send every fix to a `worker`, then run a fast review with the
+     [code-review skill](../code-review/SKILL.md). The lead never edits code.
    - For a valid finding outside the PR's scope, ask the user. If they approve, file an issue in the
      repository's tracker and cite it in the reply. A repository uses Linear when its branches or
      commits name Linear IDs; file those with the [tracker skill](../tracker/SKILL.md).
@@ -129,8 +129,8 @@ metadata:
      on the PR's branch and on each branch above that the restack changed, since step 7 pushes them
      all. If you cannot check a branch, report it and stop before you push.
    - A failure is the round's, the rebase included, unless the matching check also failed in the
-     script's result or fails the same way on the trunk. Fix the round's failures. In a stack,
-     restack again after each fix commit. Then run the affected checks again.
+     script's result or fails the same way on the trunk. Send the round's failures to a `worker`. In
+     a stack, restack again after each fix commit. Then run the affected checks again.
    - After a rebase, read `pr evidence` for each manual item the slice required. Rerun a stale item,
      or report it as not run, before recommending merge.
    - Push past any other failure only when you report it. Otherwise stop before you push.

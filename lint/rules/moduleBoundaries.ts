@@ -28,6 +28,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
     entry: 'checkRecord/checkRecord',
     publicFiles: ['checkRecord/identity', 'checkRecord/reuseDecision'],
   },
+  { name: 'classifier', entry: 'classifier/classifier', publicFiles: [] },
   {
     name: 'codemode',
     entry: 'codemode/codemode',
@@ -42,6 +43,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
       'config/repositoryCommand',
       'config/repositoryEntry',
       'config/repositorySection',
+      'config/roleModels',
       'config/verificationTargets',
     ],
   },
@@ -117,6 +119,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
     entry: 'linear/linear',
     publicFiles: ['linear/descriptionMatch', 'linear/ownership'],
   },
+  { name: 'piStart', entry: 'piStart/piStart', publicFiles: ['piStart/piArguments'] },
   { name: 'process', entry: 'process/process', publicFiles: [] },
   { name: 'record', entry: 'record', publicFiles: [] },
   { name: 'reviewBots', entry: 'reviewBots/reviewBots', publicFiles: [] },
@@ -125,6 +128,8 @@ export const moduleList: readonly ModuleDeclaration[] = [
     entry: 'reviewCapture/reviewCapture',
     publicFiles: ['reviewCapture/evidence', 'reviewCapture/reports'],
   },
+  { name: 'role', entry: 'role', publicFiles: [] },
+  { name: 'roleGuidelines', entry: 'roleGuidelines', publicFiles: [] },
   { name: 'schema', entry: 'schema', publicFiles: [] },
   { name: 'shell', entry: 'shell', publicFiles: [] },
   { name: 'skillTools', entry: 'skillTools', publicFiles: [] },
@@ -136,17 +141,17 @@ export const moduleList: readonly ModuleDeclaration[] = [
     publicFiles: ['verification/freshness', 'verification/records', 'verification/selection'],
   },
   { name: 'wake', entry: 'wake/wake', publicFiles: [] },
-  { name: 'worker', entry: 'worker', publicFiles: [] },
 ];
 
 // The shared modules each module may import, one row per module. src/tau.ts is the composition
 // root and has no row.
 export const importTable: Readonly<Record<string, readonly string[]>> = {
   checkRecord: ['errors', 'git', 'record'],
+  classifier: ['config'],
   codemode: [],
   command: ['schema'],
-  config: ['errors', 'schema'],
-  dialog: ['worker'],
+  config: ['errors', 'role', 'schema'],
+  dialog: ['role'],
   errors: [],
   fileLock: ['errors', 'process', 'schema'],
   git: ['errors'],
@@ -165,17 +170,19 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   inbox: ['errors', 'fileLock', 'hc', 'record', 'schema', 'wake'],
   instructions: [],
   linear: ['command', 'errors'],
+  piStart: ['command', 'config', 'errors', 'tauDirectory'],
   process: ['errors'],
   record: ['errors', 'schema', 'tauDirectory'],
   reviewBots: ['command', 'config', 'github', 'schema'],
   reviewCapture: ['command', 'errors', 'git', 'github', 'record', 'schema', 'tauDirectory'],
+  role: ['schema'],
+  roleGuidelines: [],
   schema: [],
   shell: [],
   skillTools: [],
   tauDirectory: ['errors', 'git'],
   verification: ['errors', 'record', 'schema'],
   wake: [],
-  worker: ['schema'],
 };
 
 const publicPaths = new Set(moduleList.flatMap((module) => [module.entry, ...module.publicFiles]));

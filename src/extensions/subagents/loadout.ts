@@ -18,13 +18,10 @@ import {
   readAllowedModels,
   requireAllowedModel,
 } from '../../config/models.js';
-import { acceptanceRefusal } from './acceptanceRefusal.js';
-import { pickRoutedModel, routedThinking } from './modelRoutes.js';
-import type { ModelChoice, RoutedLaunch } from './modelRoutes.js';
-import { readProfileModel, readProfileRoute, readProfileThinking } from './profileModels.js';
+import { readRoleProfileModel } from '../../config/roleModels.js';
+import type { RoleKind } from '../../role.js';
+import { readProfileModel, readProfileThinking } from './profileModels.js';
 import { resolveProfile } from './profiles.js';
-import { classifierAllowed, classifyRoute } from './routeClassifier.js';
-import type { Classification } from './routeClassifier.js';
 import type { Loadout, Profile, ThinkingLevel } from './types.js';
 import { availableModels, defaultProfileName } from './workerModels.js';
 
@@ -37,12 +34,6 @@ interface LaunchRequest {
   cwd?: string;
   model?: string;
   acceptance?: string[];
-}
-
-export interface RoutedLoadout {
-  loadout: Loadout;
-  routing: RoutedLaunch | undefined;
-  choice: ModelChoice;
 }
 
 const nodeRequire = createRequire(import.meta.url);
@@ -84,11 +75,18 @@ const resolveModel = (
   profile: Profile,
   context: ModelContext,
   location: ConfigLocation,
+  launchingRole: RoleKind,
 ) => {
+  const roleModel = readRoleProfileModel(location, launchingRole, profile.name, context.ui);
   const profileModel = readProfileModel(location, profile.name, context.ui);
+  const earlierModel = explicit ?? roleModel ?? profileModel;
 
-  const model =
-    explicit ?? profileModel ?? readProfileModel(location, defaultProfileName, context.ui);
+  const defaultModel =
+    earlierModel === undefined
+      ? readProfileModel(location, defaultProfileName, context.ui)
+      : undefined;
+
+  const model = earlierModel ?? defaultModel;
 
   if (model === undefined) {
     throw new Error(
@@ -179,14 +177,14 @@ export const resolveLoadout = (
   context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'scopedModels' | 'isProjectTrusted'> & {
     ui: ConfigWarnings;
   },
-  commands: SlashCommandInfo[] = [],
-  thinkingOverride?: ThinkingLevel,
+  commands: SlashCommandInfo[],
+  options: { thinkingOverride?: ThinkingLevel; launchingRole: RoleKind },
 ): Loadout => {
   const { cwd, agentDirectory, profile } = resolveLaunchPlan(input, context);
   // The launch plan already requires a trusted project.
   const location = { cwd, agentDirectory, projectTrusted: true };
-  const model = resolveModel(input.model, profile, context, location);
-  const thinking = thinkingOverride ?? resolveProfileThinking(profile, context, location);
+  const model = resolveModel(input.model, profile, context, location, options.launchingRole);
+  const thinking = options.thinkingOverride ?? resolveProfileThinking(profile, context, location);
 
   return {
     harness: 'pi',
@@ -203,72 +201,6 @@ export const resolveLoadout = (
     instructionSets: profile.instructionSets,
     packages: profile.packages,
   };
-};
-
-export const resolveRoutedLoadout = async (
-  input: LaunchRequest & { task: string },
-  context: Pick<ExtensionContext, 'cwd' | 'modelRegistry' | 'scopedModels' | 'isProjectTrusted'> & {
-    ui: ConfigWarnings;
-  },
-  commands: SlashCommandInfo[] = [],
-  signal?: AbortSignal,
-): Promise<RoutedLoadout> => {
-  const loadout = resolveLoadout(input, context, commands);
-  const refusal = acceptanceRefusal(loadout.role, input.acceptance);
-
-  if (refusal !== undefined) {
-    throw new Error(refusal);
-  }
-
-  if (input.model !== undefined) {
-    return { loadout, routing: undefined, choice: { kind: 'launch' } };
-  }
-
-  const location = {
-    cwd: loadout.cwd,
-    agentDirectory: loadout.agentDirectory,
-    projectTrusted: true,
-  };
-
-  const route = readProfileRoute(location, loadout.profile, context.ui);
-
-  if (route === undefined) {
-    return { loadout, routing: undefined, choice: { kind: 'profileWithoutRoute' } };
-  }
-
-  const { outcome, ticketSent }: Classification = classifierAllowed(location, route)
-    ? await classifyRoute(
-        context,
-        route,
-        { brief: input.task, profile: loadout.profile, cwd: loadout.cwd },
-        signal,
-      )
-    : { outcome: { kind: 'skipped' }, ticketSent: false };
-
-  const pick = pickRoutedModel({
-    profileModel: loadout.model,
-    route,
-    outcome,
-  });
-
-  const routing = { ...pick, ticketSent };
-  const choice: ModelChoice = { kind: 'routed', pick };
-
-  const labelThinking = routedThinking(route, pick);
-
-  if (labelThinking === undefined && pick.shadowPick === loadout.model) {
-    return { loadout, routing, choice };
-  }
-
-  // The routed model passes the same checks as an explicit launch model.
-  const routedLoadout = resolveLoadout(
-    { ...input, model: pick.shadowPick },
-    context,
-    commands,
-    labelThinking,
-  );
-
-  return { loadout: routedLoadout, routing, choice };
 };
 
 const requireSavedWorkerDirectory = (loadout: Loadout, context: { cwd: string }): void => {

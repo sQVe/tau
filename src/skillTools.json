@@ -1,17 +1,18 @@
 {
-  "code-review": ["code_review", "ticket"],
+  "code-review": ["code_review", "ticket", "architect"],
   "code-quality": ["code_review", "ticket"],
   "prune-comments": ["code_review"],
-  "brainstorm": ["slice", "draft_review"],
-  "slice": ["slice", "draft_review"],
+  "brainstorm": ["slice", "draft_review", "architect"],
+  "slice": ["slice", "draft_review", "architect"],
   "finish-slice": ["slice", "start_slice", "pr", "stack", "ticket"],
-  "start-slice": ["slice", "start_slice", "stack", "stack_branch", "mutation_check"],
+  "start-slice": ["slice", "start_slice", "stack", "stack_branch", "mutation_check", "architect"],
   "handover": ["handover"],
   "stack": ["stack", "stack_branch"],
   "update-branch": ["stack"],
   "pr": ["pr", "full_check", "stack", "draft_review"],
   "tdd": ["mutation_check"],
-  "pr-feedback": ["pr_feedback"],
+  "pr-feedback": ["pr_feedback", "architect"],
   "retrospective": ["improvement"],
-  "tracker": ["tracker_evidence", "ticket", "draft_review"]
+  "tracker": ["tracker_evidence", "ticket", "draft_review"],
+  "triage-findings": ["architect"]
 }

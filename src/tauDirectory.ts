@@ -215,7 +215,7 @@ const rejectUnignored = async (root: string, relativeDirectory: string) => {
   await rejectTracked(root, relativeDirectory);
 };
 
-const isBareRoot = async (root: string) => {
+export const isBareRoot = async (root: string): Promise<boolean> => {
   const output = await readQuickly(root, ['rev-parse', '--is-bare-repository']);
 
   return output?.trim() === 'true';

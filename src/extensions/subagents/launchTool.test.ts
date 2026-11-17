@@ -19,7 +19,7 @@ import { connect } from '../../hc/connect.js';
 import { HcError } from '../../hc/hc.js';
 import { skillTools } from '../../skillTools.js';
 import { writeFakePackage } from './fixtures/packageCache.js';
-import { answered, haiku, routedFixture, workerFixture } from './fixtures/routedLoadout.js';
+import { workerFixture } from './fixtures/workerLoadout.js';
 import type { LaunchStatus } from './launch.js';
 import { checkLaunchEnvironment } from './launchCheck.js';
 import type { WorkerPackageManager } from './packageInstall.js';
@@ -143,12 +143,15 @@ const resultText = (result: Awaited<ReturnType<ToolDefinition['execute']>>): str
   return first?.type === 'text' ? first.text : '';
 };
 
-it('launches the model the classifier routes to', async ({ onTestFinished }) => {
+it('launches on the profile model', async ({ onTestFinished }) => {
   vi.stubEnv('HC_TERMINAL_ID', manager);
 
-  const fixture = await routedFixture(onTestFinished);
+  const fixture = await workerFixture(onTestFinished);
 
-  fixture.classify.mockResolvedValue(answered('narrow', 0.9));
+  writeFileSync(
+    join(fixture.directory, 'tau.json'),
+    JSON.stringify({ profiles: { scout: { model: fixture.request.model } } }),
+  );
 
   const fake = hcSetup();
   const { tool } = registerTool(fake);
@@ -160,11 +163,11 @@ it('launches the model the classifier routes to', async ({ onTestFinished }) => 
   );
 
   expect(result.isError).not.toBe(true);
-  expect(terminalRun(fake)?.labels['tau.model']).toBe(haiku);
+  expect(terminalRun(fake)?.labels['tau.model']).toBe(fixture.request.model);
   const details = result.details as LaunchStatus;
 
-  expect(details.model).toBe(haiku);
-  expect(details.modelReason).toContain('narrow');
+  expect(details.model).toBe(fixture.request.model);
+  expect(details.modelReason).toContain('profile model');
 });
 
 it('places an editing worker in the manager tab', async ({ onTestFinished }) => {

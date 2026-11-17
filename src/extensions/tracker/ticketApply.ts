@@ -11,13 +11,13 @@ import { errorMessage } from '../../errors.js';
 import { createIssue, readRouteIds, updateIssue } from '../../linear/linear.js';
 import { isViewersTicket } from '../../linear/ownership.js';
 import { readOptionalText } from '../../record.js';
+import { isWorkerProcess } from '../../role.js';
 import {
   checkTauDirectory,
   findTauRoot,
   rejectLinkedFile,
   requireTauChild,
 } from '../../tauDirectory.js';
-import { isWorkerProcess } from '../../worker.js';
 import { readRepositorySetup } from './config.js';
 import type { TrackerRoute } from './config.js';
 import { readDraftRecord, writeDraftRecord } from './draftRecord.js';

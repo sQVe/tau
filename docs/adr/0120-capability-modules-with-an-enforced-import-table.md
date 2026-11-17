@@ -39,33 +39,36 @@ every agent the same answer to "where does this go" and "may this import that".
 
 The target shared modules and the modules each may import:
 
-| Module          | May import                                                                           |
-| --------------- | ------------------------------------------------------------------------------------ |
-| `errors`        | nothing                                                                              |
-| `schema`        | nothing                                                                              |
-| `command`       | `schema`                                                                             |
-| `instructions`  | nothing                                                                              |
-| `codemode`      | nothing                                                                              |
-| `shell`         | nothing                                                                              |
-| `skillTools`    | nothing                                                                              |
-| `worker`        | `schema`                                                                             |
-| `dialog`        | `worker`                                                                             |
-| `process`       | `errors`                                                                             |
-| `fileLock`      | `errors`, `process`, `schema`                                                        |
-| `git`           | `errors`                                                                             |
-| `config`        | `errors`, `schema`                                                                   |
-| `linear`        | `command`, `errors`                                                                  |
-| `github`        | `command`, `errors`, `git`, `schema`                                                 |
-| `hc`            | `command`, `errors`, `schema`                                                        |
-| `tauDirectory`  | `errors`, `git`                                                                      |
-| `verification`  | `errors`, `record`, `schema`                                                         |
-| `wake`          | nothing                                                                              |
-| `improvement`   | `command`, `errors`, `fileLock`, `git`, `github`, `record`, `schema`, `tauDirectory` |
-| `inbox`         | `errors`, `fileLock`, `hc`, `record`, `schema`, `wake`                               |
-| `record`        | `errors`, `schema`, `tauDirectory`                                                   |
-| `checkRecord`   | `errors`, `git`, `record`                                                            |
-| `reviewBots`    | `command`, `config`, `github`, `schema`                                              |
-| `reviewCapture` | `command`, `errors`, `git`, `github`, `record`, `schema`, `tauDirectory`             |
+| Module           | May import                                                                           |
+| ---------------- | ------------------------------------------------------------------------------------ |
+| `errors`         | nothing                                                                              |
+| `schema`         | nothing                                                                              |
+| `command`        | `schema`                                                                             |
+| `instructions`   | nothing                                                                              |
+| `codemode`       | nothing                                                                              |
+| `shell`          | nothing                                                                              |
+| `skillTools`     | nothing                                                                              |
+| `role`           | `schema`                                                                             |
+| `roleGuidelines` | nothing                                                                              |
+| `dialog`         | `role`                                                                               |
+| `process`        | `errors`                                                                             |
+| `fileLock`       | `errors`, `process`, `schema`                                                        |
+| `git`            | `errors`                                                                             |
+| `config`         | `errors`, `role`, `schema`                                                           |
+| `linear`         | `command`, `errors`                                                                  |
+| `github`         | `command`, `errors`, `git`, `schema`                                                 |
+| `hc`             | `command`, `errors`, `schema`                                                        |
+| `tauDirectory`   | `errors`, `git`                                                                      |
+| `verification`   | `errors`, `record`, `schema`                                                         |
+| `wake`           | nothing                                                                              |
+| `improvement`    | `command`, `errors`, `fileLock`, `git`, `github`, `record`, `schema`, `tauDirectory` |
+| `inbox`          | `errors`, `fileLock`, `hc`, `record`, `schema`, `wake`                               |
+| `record`         | `errors`, `schema`, `tauDirectory`                                                   |
+| `piStart`        | `command`, `config`, `errors`, `tauDirectory`                                        |
+| `checkRecord`    | `errors`, `git`, `record`                                                            |
+| `classifier`     | `config`                                                                             |
+| `reviewBots`     | `command`, `config`, `github`, `schema`                                              |
+| `reviewCapture`  | `command`, `errors`, `git`, `github`, `record`, `schema`, `tauDirectory`             |
 
 `skillTools`, `tauDirectory`, and `reviewCapture` keep the edges they have today, renamed to the
 target modules. Shared modules never import extensions, and no module imports `src/tau.ts`.

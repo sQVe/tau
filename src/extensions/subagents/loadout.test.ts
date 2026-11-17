@@ -13,18 +13,14 @@ import { skillTools } from '../../skillTools.js';
 import { fixtureLoadout } from './fixtures/loadout.js';
 import {
   allowModels,
-  answered,
   benchmarkChecklistPath,
   haiku,
-  resolveRoutedLoadout,
-  routedFixture,
   skillCommand,
   tddPath,
-  thinkingRoutedFixture,
   thinkingWorkerFixture,
   workerFixture,
   workerSkillCommands,
-} from './fixtures/routedLoadout.js';
+} from './fixtures/workerLoadout.js';
 import * as loadoutModule from './loadout.js';
 import { checkWorkerRuntime } from './loadout.js';
 import { listProfiles, resolveProfile, parseProfile } from './profiles.js';
@@ -32,11 +28,14 @@ import { workerTools } from './workerTools.js';
 
 const profile = (body: string) => `---\nname: worker\nrole: editing\nthinking: off\n---\n${body}`;
 
+const defaultLaunchOptions = { launchingRole: 'lead' } as const;
+
 const resolveLoadout = (
   input: Parameters<typeof loadoutModule.resolveLoadout>[0],
   context: Parameters<typeof loadoutModule.resolveLoadout>[1],
   commands: SlashCommandInfo[] = workerSkillCommands,
-) => loadoutModule.resolveLoadout(input, context, commands);
+  options: Parameters<typeof loadoutModule.resolveLoadout>[3] = defaultLaunchOptions,
+) => loadoutModule.resolveLoadout(input, context, commands, options);
 
 const startup =
   (...startupArguments: Parameters<typeof checkWorkerRuntime>) =>
@@ -104,41 +103,6 @@ const writeConfig = (path: string, value: unknown) => {
   writeFileSync(path, JSON.stringify(value));
 };
 
-const setRouteThinking = (
-  directory: string,
-  profileThinking: string | undefined,
-  labelThinking: Readonly<Record<string, string>>,
-) => {
-  const path = join(directory, 'tau.json');
-
-  const config = JSON.parse(readFileSync(path, 'utf8')) as {
-    profiles: Record<
-      string,
-      { thinking?: string; route?: { labels: Record<string, { thinking?: string }> } }
-    >;
-  };
-
-  const scout = config.profiles['scout'];
-
-  if (scout === undefined) {
-    throw new Error('The routed fixture has no scout profile.');
-  }
-
-  if (profileThinking !== undefined) {
-    scout.thinking = profileThinking;
-  }
-
-  for (const [label, thinking] of Object.entries(labelThinking)) {
-    const entry = scout.route?.labels[label];
-
-    if (entry !== undefined) {
-      entry.thinking = thinking;
-    }
-  }
-
-  writeFileSync(path, JSON.stringify(config));
-};
-
 const bundledFixture = async (onTestFinished: (callback: () => void) => void) => {
   const fixture = await workerFixture(onTestFinished);
   const bundled = fauxProvider({ provider: 'claude-bridge', models: [{ id: 'claude-opus-5-5' }] });
@@ -192,6 +156,67 @@ it('selects the launch model, then the profile entry, then the default entry', a
   writeConfig(join(directory, 'tau.json'), { profiles: { default: { model: request.model } } });
 
   expect(resolveLoadout({ profile: 'reviewer' }, context).model).toBe(request.model);
+});
+
+it('ignores a malformed default model when the profile model resolves', async ({
+  onTestFinished,
+}) => {
+  const { directory, context, request } = await bundledFixture(onTestFinished);
+
+  writeConfig(join(directory, 'tau.json'), {
+    profiles: { scout: { model: request.model }, default: { model: 'no-provider' } },
+  });
+
+  expect(resolveLoadout({ profile: 'scout' }, context).model).toBe(request.model);
+});
+
+it('an explicit model wins over the profile model', async ({ onTestFinished }) => {
+  const { directory, context, request } = await workerFixture(onTestFinished);
+  const haikuModel = context.modelRegistry.find('tau-worker-fixture', 'haiku');
+
+  if (haikuModel === undefined) {
+    throw new Error('The worker fixture has no haiku model.');
+  }
+
+  const scoped = { ...context, scopedModels: [...context.scopedModels, { model: haikuModel }] };
+
+  writeConfig(join(directory, 'tau.json'), { profiles: { scout: { model: request.model } } });
+
+  expect(resolveLoadout({ profile: 'scout', model: haiku }, scoped).model).toBe(haiku);
+  expect(resolveLoadout({ profile: 'scout' }, scoped).model).toBe(request.model);
+});
+
+it('a role override wins over the profile model', async ({ onTestFinished }) => {
+  const { directory, context, request } = await workerFixture(onTestFinished);
+
+  writeConfig(join(directory, 'tau.json'), {
+    profiles: { scout: { model: request.model } },
+    roles: { lead: { profiles: { scout: { model: haiku } } } },
+  });
+
+  expect(
+    resolveLoadout({ profile: 'scout' }, context, workerSkillCommands, {
+      launchingRole: 'lead',
+    }).model,
+  ).toBe(haiku);
+
+  expect(
+    resolveLoadout({ profile: 'scout' }, context, workerSkillCommands, {
+      launchingRole: 'architect',
+    }).model,
+  ).toBe(request.model);
+});
+
+it('an explicit model wins over the role override', async ({ onTestFinished }) => {
+  const { directory, context, request } = await workerFixture(onTestFinished);
+
+  writeConfig(join(directory, 'tau.json'), {
+    roles: { lead: { profiles: { scout: { model: haiku } } } },
+  });
+
+  expect(resolveLoadout({ profile: 'scout', model: request.model }, context).model).toBe(
+    request.model,
+  );
 });
 
 it('refuses a configured profile model that is unavailable or malformed', async ({
@@ -552,14 +577,14 @@ it('loads the tdd and benchmark-checklist skills in the bundled worker profile',
   expect(() => resolveLoadout(request, context, [])).toThrow('Worker profile skill not found: tdd');
 });
 
-it('gives the bundled worker the run_tests and mutation_check tools without full_check', async ({
+it('gives the bundled editing worker the run_tests, mutation_check, and full_check tools', async ({
   onTestFinished,
 }) => {
   const { context, request } = await workerFixture(onTestFinished);
   const tools = workerTools(resolveLoadout(request, context), skillTools);
 
   expect(tools).toEqual(expect.arrayContaining(['run_tests', 'mutation_check']));
-  expect(tools).not.toContain('full_check');
+  expect(tools).toContain('full_check');
 });
 
 const parseSettings = (settings: string) =>
@@ -865,215 +890,6 @@ it('rejects an empty profile package', () => {
   );
 });
 
-it('records the shadow pick of a scout launch and runs on the routed model', async ({
-  onTestFinished,
-}) => {
-  const { context, classify } = await routedFixture(onTestFinished);
-  classify.mockResolvedValue(answered('narrow', 0.9));
-
-  const { loadout, routing } = await resolveRoutedLoadout(
-    { profile: 'scout', task: 'Find the parser.' },
-    context,
-  );
-
-  expect(loadout.model).toBe(haiku);
-
-  expect(routing).toEqual({
-    shadowPick: haiku,
-    label: 'narrow',
-    confidence: 0.9,
-    confidenceCutoff: 0.7,
-    ticketSent: false,
-  });
-
-  expect(classify).toHaveBeenCalledOnce();
-
-  expect(classify.mock.calls[0]?.[1]).toMatchObject({
-    state: { brief: 'Find the parser.', profile: 'scout' },
-    questions: {
-      route: {
-        type: 'choice',
-        instructions: 'How wide is this brief?',
-        criteria: {
-          narrow: 'A lookup about known code.',
-          wide: 'An investigation across many files.',
-        },
-      },
-    },
-  });
-});
-
-it('uses the route confidence cutoff and records it on the pick', async ({ onTestFinished }) => {
-  const { context, classify, profileModel } = await routedFixture(onTestFinished, 0.5);
-
-  const brief = { profile: 'scout', task: 'Find it.' };
-
-  classify.mockResolvedValue(answered('narrow', 0.5));
-
-  expect((await resolveRoutedLoadout(brief, context)).routing).toEqual({
-    shadowPick: haiku,
-    label: 'narrow',
-    confidence: 0.5,
-    confidenceCutoff: 0.5,
-    ticketSent: false,
-  });
-
-  classify.mockResolvedValue(answered('narrow', 0.49));
-
-  expect((await resolveRoutedLoadout(brief, context)).routing).toEqual({
-    shadowPick: profileModel,
-    label: 'narrow',
-    confidence: 0.49,
-    fallbackReason: 'lowConfidence',
-    confidenceCutoff: 0.5,
-    ticketSent: false,
-  });
-});
-
-it('classifies nothing and records no routing when the launch names a model', async ({
-  onTestFinished,
-}) => {
-  const { context, classify, request } = await routedFixture(onTestFinished);
-
-  const result = await resolveRoutedLoadout(
-    { ...request, task: 'Edit the parser.', acceptance: ['Parser is fixed.'] },
-    context,
-  );
-
-  expect(result.routing).toBeUndefined();
-  expect(classify).not.toHaveBeenCalled();
-});
-
-it.for([
-  ['no criteria', undefined],
-  ['an empty list', []],
-  ['a blank item', ['Done.', ' ']],
-] as const)(
-  'refuses an editing launch with %s before classifying',
-  async ([, acceptance], { onTestFinished }) => {
-    const { context, classify } = await routedFixture(onTestFinished);
-
-    await expect(
-      resolveRoutedLoadout(
-        {
-          profile: 'worker',
-          task: 'Fix it.',
-          ...(acceptance === undefined ? {} : { acceptance: [...acceptance] }),
-        },
-        context,
-      ),
-    ).rejects.toThrow(/acceptance/i);
-
-    expect(classify).not.toHaveBeenCalled();
-  },
-);
-
-it.for(['scout', 'reviewer', 'checker', 'qa', 'browser'])(
-  'launches the bundled %s without acceptance criteria',
-  async (name, { onTestFinished }) => {
-    const { context, request } = await workerFixture(onTestFinished);
-
-    const result = await resolveRoutedLoadout(
-      { ...request, profile: name, task: 'Look.' },
-      context,
-    );
-
-    expect(result.loadout.profile).toBe(name);
-  },
-);
-
-it('classifies nothing for a profile without a route', async ({ onTestFinished }) => {
-  const { context, classify } = await routedFixture(onTestFinished);
-
-  const result = await resolveRoutedLoadout({ profile: 'reviewer', task: 'Review.' }, context);
-
-  expect(result.routing).toBeUndefined();
-  expect(classify).not.toHaveBeenCalled();
-});
-
-it('records a low confidence answer and a missing classifier model as fallbacks', async ({
-  onTestFinished,
-}) => {
-  const { context, classify, hasClassifier, profileModel } = await routedFixture(onTestFinished);
-
-  classify.mockResolvedValue(answered('narrow', 0.5));
-  const brief = { profile: 'scout', task: 'Find it.' };
-
-  expect((await resolveRoutedLoadout(brief, context)).routing).toEqual({
-    shadowPick: profileModel,
-    label: 'narrow',
-    confidence: 0.5,
-    fallbackReason: 'lowConfidence',
-    confidenceCutoff: 0.7,
-    ticketSent: false,
-  });
-
-  classify.mockClear();
-  hasClassifier.value = false;
-
-  expect((await resolveRoutedLoadout(brief, context)).routing).toEqual({
-    shadowPick: profileModel,
-    fallbackReason: 'noRoute',
-    confidenceCutoff: 0.7,
-    ticketSent: false,
-  });
-
-  expect(classify).not.toHaveBeenCalled();
-});
-
-it.for([
-  ['a low confidence answer', () => Promise.resolve(answered('narrow', 0.5))],
-  ['an unknown label', () => Promise.resolve(answered('medium', 0.95))],
-  ['an error result', () => Promise.resolve({ stopReason: 'error', answers: {} })],
-  ['a rejection', () => Promise.reject(new Error('offline'))],
-] as const)('keeps the profile model after %s', async ([, outcome], { onTestFinished }) => {
-  const { context, classify, profileModel } = await routedFixture(onTestFinished);
-  classify.mockImplementation(outcome);
-
-  const { loadout, routing } = await resolveRoutedLoadout(
-    { profile: 'scout', task: 'Find it.' },
-    context,
-  );
-
-  expect(loadout.model).toBe(profileModel);
-  expect(routing?.fallbackReason).toBeDefined();
-});
-
-it('keeps the profile model when no route applies', async ({ onTestFinished }) => {
-  const { context, classify, hasClassifier, profileModel } = await routedFixture(onTestFinished);
-
-  hasClassifier.value = false;
-
-  const { loadout, routing } = await resolveRoutedLoadout(
-    { profile: 'scout', task: 'Find it.' },
-    context,
-  );
-
-  expect(loadout.model).toBe(profileModel);
-
-  expect(routing).toEqual({
-    shadowPick: profileModel,
-    fallbackReason: 'noRoute',
-    confidenceCutoff: 0.7,
-    ticketSent: false,
-  });
-
-  expect(classify).not.toHaveBeenCalled();
-});
-
-it('keeps an explicit launch model and skips routing', async ({ onTestFinished }) => {
-  const { context, classify, request } = await routedFixture(onTestFinished);
-
-  const { loadout, routing } = await resolveRoutedLoadout(
-    { ...request, profile: 'scout', task: 'Find it.' },
-    context,
-  );
-
-  expect(loadout.model).toBe(request.model);
-  expect(routing).toBeUndefined();
-  expect(classify).not.toHaveBeenCalled();
-});
-
 it('applies the user file profile thinking to a profile launch', async ({ onTestFinished }) => {
   const { directory, context, request } = await thinkingWorkerFixture(onTestFinished);
 
@@ -1122,98 +938,6 @@ it('refuses a launch whose user file profile thinking is invalid', async ({ onTe
   expect(launch).toThrow('profiles.worker.thinking');
 });
 
-it('uses the chosen label thinking for a routed launch', async ({ onTestFinished }) => {
-  const { directory, context, classify } = await thinkingRoutedFixture(onTestFinished);
-
-  setRouteThinking(directory, 'high', { narrow: 'low' });
-  classify.mockResolvedValue(answered('narrow', 0.9));
-
-  const { loadout } = await resolveRoutedLoadout({ profile: 'scout', task: 'Find it.' }, context);
-
-  expect(loadout.model).toBe(haiku);
-  expect(loadout.thinking).toBe('low');
-});
-
-it('falls back to the profile thinking when the route keeps the profile model', async ({
-  onTestFinished,
-}) => {
-  const { directory, context, classify, profileModel } =
-    await thinkingRoutedFixture(onTestFinished);
-
-  setRouteThinking(directory, 'high', { narrow: 'low' });
-  classify.mockResolvedValue(answered('narrow', 0.5));
-
-  const { loadout } = await resolveRoutedLoadout({ profile: 'scout', task: 'Find it.' }, context);
-
-  expect(loadout.model).toBe(profileModel);
-  expect(loadout.thinking).toBe('high');
-});
-
-it('uses the label thinking when the chosen label runs the profile model', async ({
-  onTestFinished,
-}) => {
-  const { directory, context, classify, profileModel } =
-    await thinkingRoutedFixture(onTestFinished);
-
-  setRouteThinking(directory, 'high', { wide: 'low' });
-  classify.mockResolvedValue(answered('wide', 0.9));
-
-  const { loadout } = await resolveRoutedLoadout({ profile: 'scout', task: 'Find it.' }, context);
-
-  expect(loadout.model).toBe(profileModel);
-  expect(loadout.thinking).toBe('low');
-});
-
-it('uses the profile thinking for an explicit-model launch', async ({ onTestFinished }) => {
-  const { directory, context, request, classify } = await thinkingRoutedFixture(onTestFinished);
-
-  setRouteThinking(directory, 'high', { narrow: 'low' });
-
-  const { loadout, routing } = await resolveRoutedLoadout(
-    { ...request, profile: 'scout', task: 'Find it.' },
-    context,
-  );
-
-  expect(loadout.thinking).toBe('high');
-  expect(routing).toBeUndefined();
-  expect(classify).not.toHaveBeenCalled();
-});
-
-it('refuses a routed model outside allowedModels or missing from the registry', async ({
-  onTestFinished,
-}) => {
-  const { directory, context, classify, profileModel } = await routedFixture(onTestFinished);
-  classify.mockResolvedValue(answered('narrow', 0.9));
-  const configPath = join(directory, 'tau.json');
-  const entriesBefore = readdirSync(directory).toSorted();
-
-  const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
-    profiles: { scout: { route: { labels: { narrow: { model: string } } } } };
-  };
-
-  const brief = { profile: 'scout', task: 'Find it.' };
-
-  writeFileSync(
-    configPath,
-    JSON.stringify({
-      ...config,
-      allowedModels: [profileModel, 'tau-classifier-fixture/router'],
-    }),
-  );
-
-  await expect(resolveRoutedLoadout(brief, context)).rejects.toThrow(haiku);
-  expect(readdirSync(directory).toSorted()).toEqual(entriesBefore);
-
-  config.profiles.scout.route.labels.narrow.model = 'tau-worker-fixture/missing';
-  writeFileSync(configPath, JSON.stringify(config));
-
-  await expect(resolveRoutedLoadout(brief, context)).rejects.toThrow(
-    'Worker model unavailable: tau-worker-fixture/missing',
-  );
-
-  expect(readdirSync(directory).toSorted()).toEqual(entriesBefore);
-});
-
 it('fails only the launch whose own profile entry is bad', async ({ onTestFinished }) => {
   const { directory, context, model, notify } = await workerFixture(onTestFinished);
   const reference = `${model.provider}/${model.id}`;
@@ -1235,49 +959,6 @@ it('fails only the launch whose own profile entry is bad', async ({ onTestFinish
     expect.stringContaining('profiles.worker.futureKey'),
     'warning',
   );
-});
-
-it('launches on the profile model with no routing when its route is broken', async ({
-  onTestFinished,
-}) => {
-  const { directory, context, model, notify } = await workerFixture(onTestFinished);
-  const reference = `${model.provider}/${model.id}`;
-
-  writeFileSync(
-    join(directory, 'tau.json'),
-    JSON.stringify({ profiles: { worker: { model: reference, route: { question: 5 } } } }),
-  );
-
-  const { loadout, routing } = await resolveRoutedLoadout(
-    { profile: 'worker', task: 'Fix it.', acceptance: ['It is fixed.'] },
-    context,
-  );
-
-  expect(loadout.model).toBe(reference);
-  expect(routing).toBeUndefined();
-  expect(notify).toHaveBeenCalledWith(expect.stringContaining('profiles.worker.route'), 'error');
-});
-
-it('reports an unchanged broken route once per session and still launches on the profile model', async ({
-  onTestFinished,
-}) => {
-  const { directory, context, profileModel } = await routedFixture(onTestFinished);
-  const notify = vi.fn<(message: string, level?: string) => void>();
-
-  writeFileSync(
-    join(directory, 'tau.json'),
-    JSON.stringify({ profiles: { scout: { model: profileModel, route: { question: 5 } } } }),
-  );
-
-  const sessionContext = { ...context, ui: { notify } };
-  const request = { profile: 'scout', task: 'Find the parser.' };
-  const first = await resolveRoutedLoadout(request, sessionContext);
-  const second = await resolveRoutedLoadout(request, sessionContext);
-
-  expect(first.loadout.model).toBe(profileModel);
-  expect(second.loadout.model).toBe(profileModel);
-  expect(notify).toHaveBeenCalledTimes(1);
-  expect(notify).toHaveBeenCalledWith(expect.stringContaining('profiles.scout.route'), 'error');
 });
 
 it('accepts a suffixed Safety Net command among other commands', async ({ onTestFinished }) => {

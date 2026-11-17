@@ -17,9 +17,10 @@ import { expect, it, vi } from 'vitest';
 
 import manifest from '../package.json' with { type: 'json' };
 import { commitToolGuidelines } from '../src/extensions/commit/tool.js';
-import { delegationGuidelines } from '../src/extensions/subagents/managerPrompt.js';
+import { qaGuidePath } from '../src/extensions/subagents/qaBrief.js';
 import { releaseRegistration } from '../src/inbox/inbox.js';
 import { readInstructionSet } from '../src/instructions/instructions.js';
+import { managerGuidelines } from '../src/roleGuidelines.js';
 import { emptySessionRefusal, installHcCommand } from './hcCommandHarness.js';
 import { isolateWebAccessConfig } from './isolateWebAccessConfig.js';
 import { createPiSession } from './piSession.js';
@@ -203,7 +204,11 @@ it('loads Tau through Pi with commit features, question and bundled web tools, a
     codingInstructions.trim(),
     workflowInstructions.trim(),
     String(prRequiredFor),
-    ...delegationGuidelines(undefined, undefined),
+    ...managerGuidelines('lead', {
+      loginCommand: undefined,
+      qaProcedurePath: undefined,
+      qaGuidePath,
+    }),
     ...commitToolGuidelines,
   ];
 

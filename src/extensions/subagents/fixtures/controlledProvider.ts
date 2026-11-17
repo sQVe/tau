@@ -155,7 +155,11 @@ const firstTaskPresent = (context: TranscriptContext): boolean => {
   return text.includes(firstTaskMarker);
 };
 
+const fullCheckStep = (): FauxResponseStep =>
+  fauxAssistantMessage([fauxToolCall('full_check', {})]);
+
 const followUpResponses = (): FauxResponseStep[] => [
+  fullCheckStep(),
   (context) => {
     const present = firstTaskPresent(context);
 
@@ -179,17 +183,19 @@ const waitForRelease = async (): Promise<void> => {
 
 const questionResponses = (): FauxResponseStep[] => [
   fauxAssistantMessage([fauxToolCall('subagent_question', { question: fixtureQuestion })]),
-  async (context) => {
+  async () => {
     await waitForRelease();
 
-    return fauxAssistantMessage([
+    return fauxAssistantMessage([fauxToolCall('full_check', {})]);
+  },
+  (context) =>
+    fauxAssistantMessage([
       fauxToolCall('subagent_report', {
         outcome: 'success',
         summary: fixtureSummary,
         evidence: [managerAnswer(context)],
       }),
-    ]);
-  },
+    ]),
 ];
 
 const reportResponses = (): FauxResponseStep[] => [
@@ -203,6 +209,7 @@ const reportResponses = (): FauxResponseStep[] => [
     fauxToolCall('bash', { command: 'test "$(cat source.txt)" = after && printf command-ok' }),
     fauxToolCall('bash', { command: 'find ./delete-fixture/.git -delete' }),
   ]),
+  fullCheckStep(),
   (context) => {
     const blocked = context.messages.some(
       (message) =>

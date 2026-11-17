@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 
 import { runGit } from '../../git.js';
-import { isWorkerProcess } from '../../worker.js';
+import { isWorkerProcess } from '../../role.js';
 import { checkoutWarningMessage } from './message.js';
 
 export default function checkoutWarningExtension(pi: ExtensionAPI, checkout: string): void {

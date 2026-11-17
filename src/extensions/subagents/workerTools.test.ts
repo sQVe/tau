@@ -17,7 +17,11 @@ it.each([
     expected: ['tracker_evidence'],
   },
 ])('adds only the tools for loaded skills: $skills', ({ skills, expected }) => {
-  const loadout = { tools: ['read', 'read', 'subagent_report'], skills };
+  const loadout = {
+    tools: ['read', 'read', 'subagent_report'],
+    skills,
+    role: 'investigation' as const,
+  };
 
   const skillTools = {
     tracker: ['tracker_evidence', 'read'],
@@ -32,23 +36,18 @@ it.each([
   ]);
 });
 
-it('does not give a worker the full_check tool that its profile lists', () => {
+it('an editing worker keeps full_check and an investigator does not', () => {
   const loadout = { tools: ['read', 'full_check'], skills: [] };
 
-  expect(workerTools(loadout, bundledSkillTools)).not.toContain('full_check');
+  expect(workerTools({ ...loadout, role: 'editing' }, bundledSkillTools)).toContain('full_check');
+
+  expect(workerTools({ ...loadout, role: 'investigation' }, bundledSkillTools)).not.toContain(
+    'full_check',
+  );
 });
 
-it.each(['tdd', 'fix-bug', 'pr'])(
-  'does not give a worker that loads the %s skill the full_check tool',
-  (skill) => {
-    const loadout = { tools: ['read'], skills: [`/skills/${skill}/SKILL.md`] };
-
-    expect(workerTools(loadout, bundledSkillTools)).not.toContain('full_check');
-  },
-);
-
 it('gives a worker that loads the tdd skill the mutation_check tool', () => {
-  const loadout = { tools: ['read'], skills: ['/skills/tdd/SKILL.md'] };
+  const loadout = { tools: ['read'], skills: ['/skills/tdd/SKILL.md'], role: 'editing' as const };
 
   expect(workerTools(loadout, bundledSkillTools)).toContain('mutation_check');
 });
@@ -56,25 +55,26 @@ it('gives a worker that loads the tdd skill the mutation_check tool', () => {
 it('finds the skill by the directory above SKILL.md at any depth', () => {
   const skills = ['/home/user/.pi/agent/skills/tracker/SKILL.md'];
 
-  expect(workerTools({ tools: [], skills }, { tracker: ['tracker_evidence'] })).toContain(
-    'tracker_evidence',
-  );
+  expect(
+    workerTools({ tools: [], skills, role: 'investigation' }, { tracker: ['tracker_evidence'] }),
+  ).toContain('tracker_evidence');
 });
 
 it('finds the skill when the path holds a doubled slash', () => {
   const skills = ['/home/user/skills/tracker//SKILL.md'];
 
-  expect(workerTools({ tools: [], skills }, { tracker: ['tracker_evidence'] })).toContain(
-    'tracker_evidence',
-  );
+  expect(
+    workerTools({ tools: [], skills, role: 'investigation' }, { tracker: ['tracker_evidence'] }),
+  ).toContain('tracker_evidence');
 });
 
 it('adds no skill tool for a skill that has none', () => {
   const skills = ['/home/user/skills/other/SKILL.md'];
 
-  expect(workerTools({ tools: ['read'], skills }, { tracker: ['tracker_evidence'] })).toEqual([
-    'read',
-    'subagent_report',
-    'subagent_question',
-  ]);
+  expect(
+    workerTools(
+      { tools: ['read'], skills, role: 'investigation' },
+      { tracker: ['tracker_evidence'] },
+    ),
+  ).toEqual(['read', 'subagent_report', 'subagent_question']);
 });

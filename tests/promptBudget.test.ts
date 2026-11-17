@@ -6,14 +6,16 @@ import { fileURLToPath } from 'node:url';
 import type { ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { delegationGuidelines } from '../src/extensions/subagents/managerPrompt.js';
 import { bundledProfileDirectory, resolveProfile } from '../src/extensions/subagents/profiles.js';
+import { qaGuidePath } from '../src/extensions/subagents/qaBrief.js';
 import type { Loadout } from '../src/extensions/subagents/types.js';
 import workerExtension, {
   workerSystemPrompt,
 } from '../src/extensions/subagents/workerExtension.js';
 import { workerTools } from '../src/extensions/subagents/workerTools.js';
 import { releaseRegistration } from '../src/inbox/inbox.js';
+import type { RoleKind } from '../src/role.js';
+import { managerGuidelines } from '../src/roleGuidelines.js';
 import { skillTools } from '../src/skillTools.js';
 import tauExtension from '../src/tau.js';
 import { fakeExtensionApi } from './extensionApi.js';
@@ -27,8 +29,9 @@ const descriptionExceptions: Readonly<Record<string, number>> = {};
 // Each ceiling caps a session at about its measured size, so a cut must lower it. The target is
 // beside each ceiling.
 const sessionCeilings: Readonly<Record<string, number>> = {
-  manager: 54_919, // target 38,000
-  worker: 20_521, // target 14,000
+  lead: 56_549, // target 38,000
+  architect: 53_500,
+  worker: 21_423, // target 14,000
   reviewer: 16_877, // target 11,000
   checker: 17_030,
   qa: 13_706, // target 9,000
@@ -48,12 +51,12 @@ const toolSize = (tool: ToolDefinition): number =>
 const toolsSize = (tools: ToolDefinition[]): number =>
   tools.reduce((total, tool) => total + toolSize(tool), 0);
 
-const loadTools = async (workerRecord: string, agentDirectory: string) => {
-  vi.stubEnv('TAU_ROLE', workerRecord === '' ? undefined : 'worker');
-  vi.stubEnv('TAU_WORKER_RECORD', workerRecord);
+const loadTools = async (role: RoleKind, agentDirectory: string) => {
+  vi.stubEnv('TAU_ROLE', role === 'lead' ? undefined : role);
+  vi.stubEnv('TAU_WORKER_RECORD', role === 'worker' ? 'worker-record' : '');
   vi.stubEnv('PI_CODING_AGENT_DIR', agentDirectory);
 
-  if (workerRecord === '') {
+  if (role !== 'worker') {
     vi.stubEnv('HC_TERMINAL_ID', 'manager');
   }
 
@@ -63,7 +66,7 @@ const loadTools = async (workerRecord: string, agentDirectory: string) => {
   // No session starts, so no session_shutdown releases the inbox that loading Tau claimed.
   releaseRegistration();
 
-  if (workerRecord !== '') {
+  if (role === 'worker') {
     workerExtension(fake.pi);
   }
 
@@ -72,8 +75,14 @@ const loadTools = async (workerRecord: string, agentDirectory: string) => {
   return fake;
 };
 
-const managerSession = async (agentDirectory: string) => {
-  const fake = await loadTools('', agentDirectory);
+const roleOptions = {
+  loginCommand: undefined,
+  qaProcedurePath: undefined,
+  qaGuidePath,
+};
+
+const roleSession = async (role: 'lead' | 'architect', agentDirectory: string) => {
+  const fake = await loadTools(role, agentDirectory);
 
   const event = {
     systemPromptOptions: { appendSystemPrompt: '', selectedTools: [...fake.tools.keys()] },
@@ -84,18 +93,18 @@ const managerSession = async (agentDirectory: string) => {
   }
 
   const prompt = event.systemPromptOptions.appendSystemPrompt;
-  const guidelines = delegationGuidelines(undefined, undefined);
+  const guidelines = managerGuidelines(role, roleOptions);
   const missingGuidelines = guidelines.filter((guideline) => !prompt.includes(guideline));
 
   if (missingGuidelines.length > 0) {
     throw new Error(
-      `manager prompt lacks ${missingGuidelines.length} of ${guidelines.length} delegation guidelines`,
+      `${role} prompt lacks ${missingGuidelines.length} of ${guidelines.length} delegation guidelines`,
     );
   }
 
   const tools = [...fake.tools.values()];
 
-  return { tools, size: prompt.length + toolsSize(tools) };
+  return { tools, size: prompt.length + toolsSize(tools), prompt };
 };
 
 const loadoutFor = (profileName: string, directory: string): Loadout => {
@@ -115,10 +124,15 @@ const loadoutFor = (profileName: string, directory: string): Loadout => {
 };
 
 const workerSession = async (profileName: string, directory: string) => {
-  const fake = await loadTools('worker-record', directory);
+  const fake = await loadTools('worker', directory);
   const loadout = loadoutFor(profileName, directory);
   const names = new Set(workerTools(loadout, skillTools));
-  const tauTools = workerTools({ tools: [], skills: loadout.skills }, skillTools);
+
+  const tauTools = workerTools(
+    { tools: [], skills: loadout.skills, role: loadout.role },
+    skillTools,
+  );
+
   const missing = tauTools.filter((name) => !fake.tools.has(name));
 
   if (missing.length > 0) {
@@ -128,16 +142,17 @@ const workerSession = async (profileName: string, directory: string) => {
   const tools = [...fake.tools.values()].filter((tool) => names.has(tool.name));
   const prompt = await workerSystemPrompt(loadout);
 
-  return { tools, size: prompt.length + toolsSize(tools) };
+  return { tools, size: prompt.length + toolsSize(tools), prompt };
 };
 
-const sessions = new Map<string, { tools: ToolDefinition[]; size: number }>();
+const sessions = new Map<string, { tools: ToolDefinition[]; size: number; prompt: string }>();
 let directory = '';
 
 beforeAll(async () => {
   // The directory is shared by every test, so `afterAll` removes it.
   directory = mkdtempSync(join(tmpdir(), 'tau-prompt-budget-'));
-  sessions.set('manager', await managerSession(directory));
+  sessions.set('lead', await roleSession('lead', directory));
+  sessions.set('architect', await roleSession('architect', directory));
 
   for (const name of profileNames) {
     sessions.set(name, await workerSession(name, directory));
@@ -155,6 +170,26 @@ const allTools = (): ToolDefinition[] => [
 ];
 
 describe('prompt budget', () => {
+  it('a lead prompt holds the lead rules and no architect rules', () => {
+    const prompt = sessions.get('lead')?.prompt ?? '';
+    const lead = managerGuidelines('lead', roleOptions);
+    const architect = managerGuidelines('architect', roleOptions);
+    const architectOnly = architect.filter((guideline) => !lead.includes(guideline));
+
+    expect(lead.filter((guideline) => !prompt.includes(guideline))).toEqual([]);
+    expect(architectOnly.filter((guideline) => prompt.includes(guideline))).toEqual([]);
+  });
+
+  it('an architect prompt holds the architect rules', () => {
+    const prompt = sessions.get('architect')?.prompt ?? '';
+    const lead = managerGuidelines('lead', roleOptions);
+    const architect = managerGuidelines('architect', roleOptions);
+    const leadOnly = lead.filter((guideline) => !architect.includes(guideline));
+
+    expect(architect.filter((guideline) => !prompt.includes(guideline))).toEqual([]);
+    expect(leadOnly.filter((guideline) => prompt.includes(guideline))).toEqual([]);
+  });
+
   it('keeps every tool description within its budget', () => {
     const over = allTools()
       .filter((tool) => !Object.hasOwn(descriptionExceptions, tool.name))

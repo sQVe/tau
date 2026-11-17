@@ -5,7 +5,7 @@ import { confirmWithUser } from '../../dialog/dialog.js';
 import { errorMessage } from '../../errors.js';
 import { isPullRequestUrl, readPullRequestState } from '../../github/github.js';
 import { run } from '../../linear/linear.js';
-import { isWorkerProcess } from '../../worker.js';
+import { isWorkerProcess } from '../../role.js';
 import { decideCancel, decideConfirmedCancel } from './cancelDecision.js';
 import type { PullRequestEvidence } from './cancelDecision.js';
 import { readCancellation } from './linear.js';
