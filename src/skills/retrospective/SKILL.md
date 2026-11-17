@@ -71,8 +71,8 @@ nothing.
      - Give each the same inputs as the fast reviewer.
      - After all three report, launch one `reviewer` worker on `claude-bridge/claude-fable-5-2` with
        [synthesizer.md](synthesizer.md), [synthesis.md](synthesis.md), and the three report paths.
-   - If any launch fails, or a lens worker ends without a report, report it and stop. Do not retry,
-     and do not fall back to the fast review.
+   - If any launch fails, or any launched worker ends without a report, report it and stop. Do not
+     retry, and do not fall back to the fast review.
 5. In fast mode, synthesize as the manager and apply the eight criteria in
    [synthesis.md](synthesis.md). In deep mode, take the synthesizer's tables instead. In both modes,
    move anything a check could enforce to Backlog.
