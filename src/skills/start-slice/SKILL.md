@@ -159,9 +159,10 @@ terminal runs it in one worktree, with `linear` authenticated and `gh`. To split
     it existed; for a stack, the parent slice and PR, trunk, PR target, and any added dependency;
     each agent ticket's `apply` status (`new`, `updated`, or `unchanged`), identifier, URL, title,
     and one `## Outcome` line; each scout's questions, whether you revised or proceeded, and each
-    failed scout; each slice criterion with its ticket numbers. End with `handover` `send` to the
-    terminal that opened the architect, carrying the step 4 base, the step 7 check results, the step
-    9 ticket identifiers, and `$slicedir`. Never call `handover` `start`.
+    failed scout; each slice criterion with its ticket numbers. End with `handover` `send`, with
+    `final` set to true, to the terminal that opened the architect, carrying the step 4 base, the
+    step 7 check results, the step 9 ticket identifiers, and `$slicedir`. Never call `handover`
+    `start`.
 
     > **Role: architect.** A lead hands this step to the architect with the `architect` tool.
 
