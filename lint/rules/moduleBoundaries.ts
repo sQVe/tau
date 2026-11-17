@@ -92,6 +92,7 @@ export const moduleList: readonly ModuleDeclaration[] = [
       'improvement/correctDecision',
       'improvement/correctSources',
       'improvement/event',
+      'improvement/historyRead',
       'improvement/projectRoot',
       'improvement/sessionDirectory',
       'improvement/status',

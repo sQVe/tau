@@ -569,6 +569,43 @@ const table: {
     },
     expected: { error: 'task does not take kind.' },
   },
+  {
+    name: 'accepts a history request',
+    input: {
+      action: 'history',
+      projectRoots: ['/repository/me-1'],
+      pullRequests: ['https://github.com/example/repo/pull/1'],
+    },
+    expected: {
+      action: 'history',
+      projectRoots: ['/repository/me-1'],
+      pullRequests: ['https://github.com/example/repo/pull/1'],
+    },
+  },
+  {
+    name: 'needs history project roots',
+    input: { action: 'history', pullRequests: ['https://github.com/example/repo/pull/1'] },
+    expected: { error: 'history needs projectRoots.' },
+  },
+  {
+    name: 'needs history pull requests',
+    input: { action: 'history', projectRoots: ['/repository/me-1'] },
+    expected: { error: 'history needs pullRequests.' },
+  },
+  {
+    name: 'refuses a relative history project root',
+    input: {
+      action: 'history',
+      projectRoots: ['me-1'],
+      pullRequests: ['https://github.com/example/repo/pull/1'],
+    },
+    expected: { error: 'history projectRoots[1] must be absolute.' },
+  },
+  {
+    name: 'refuses a blank history pull request',
+    input: { action: 'history', projectRoots: ['/repository/me-1'], pullRequests: [' '] },
+    expected: { error: 'history pullRequests[1] must be non-blank.' },
+  },
 ];
 
 it.each(table.map((row) => [row.name, row] as const))('%s', (_name, { input, expected }) => {

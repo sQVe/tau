@@ -56,7 +56,8 @@ export type RecordRequest =
     }
   | { action: 'task'; pullRequest: string; worktree: string }
   | { action: 'status' }
-  | { action: 'correct'; classes?: ProposedClass[] };
+  | { action: 'correct'; classes?: ProposedClass[] }
+  | { action: 'history'; projectRoots: string[]; pullRequests: string[] };
 
 export type TaskRequest = Extract<RecordRequest, { action: 'task' }>;
 
@@ -76,7 +77,7 @@ const proposedClassParameters = Type.Object({
 type ProposedClassInput = Static<typeof proposedClassParameters>;
 
 export const parameters = Type.Object({
-  action: stringEnum(['record', 'status', 'task', 'correct']),
+  action: stringEnum(['record', 'status', 'task', 'correct', 'history']),
   kind: Type.Optional(stringEnum(['correction', 'review', 'backlog', 'decision', 'pass', 'class'])),
   summary: Type.Optional(Type.String()),
   pullRequest: Type.Optional(Type.String()),
@@ -91,6 +92,8 @@ export const parameters = Type.Object({
   occurrences: Type.Optional(Type.Array(Type.String(), { minItems: 1 })),
   class: Type.Optional(Type.String()),
   classes: Type.Optional(Type.Array(proposedClassParameters)),
+  projectRoots: Type.Optional(Type.Array(Type.String())),
+  pullRequests: Type.Optional(Type.Array(Type.String())),
 });
 
 export type RecordInput = Static<typeof parameters>;
@@ -412,6 +415,60 @@ const parseCorrect = (input: RecordInput): RecordRequest => {
   };
 };
 
+const historyFields = new Set(['action', 'projectRoots', 'pullRequests']);
+
+const rejectHistoryExtraFields = (input: RecordInput): void => {
+  for (const field of Object.keys(input)) {
+    if (historyFields.has(field)) {
+      continue;
+    }
+
+    throw new Error(`history does not take ${field}.`);
+  }
+};
+
+const requireHistoryRoots = (value: readonly string[] | undefined): string[] => {
+  if (value === undefined) {
+    throw new Error('history needs projectRoots.');
+  }
+
+  for (const [index, projectRoot] of value.entries()) {
+    if (projectRoot.trim() === '') {
+      throw new Error(`history projectRoots[${index + 1}] must be non-blank.`);
+    }
+
+    if (!isAbsolute(projectRoot)) {
+      throw new Error(`history projectRoots[${index + 1}] must be absolute.`);
+    }
+  }
+
+  return [...value];
+};
+
+const requireHistoryPullRequests = (value: readonly string[] | undefined): string[] => {
+  if (value === undefined) {
+    throw new Error('history needs pullRequests.');
+  }
+
+  for (const [index, pullRequest] of value.entries()) {
+    if (pullRequest.trim() === '') {
+      throw new Error(`history pullRequests[${index + 1}] must be non-blank.`);
+    }
+  }
+
+  return [...value];
+};
+
+const parseHistory = (input: RecordInput): RecordRequest => {
+  rejectHistoryExtraFields(input);
+
+  return {
+    action: 'history',
+    projectRoots: requireHistoryRoots(input.projectRoots),
+    pullRequests: requireHistoryPullRequests(input.pullRequests),
+  };
+};
+
 export const parseRecordRequest = (input: RecordInput): RecordRequest => {
   switch (input.action) {
     case 'record':
@@ -422,6 +479,8 @@ export const parseRecordRequest = (input: RecordInput): RecordRequest => {
       return { action: 'status' };
     case 'correct':
       return parseCorrect(input);
+    case 'history':
+      return parseHistory(input);
     default:
       return input.action satisfies never;
   }

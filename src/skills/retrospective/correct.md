@@ -13,26 +13,24 @@ proposed checks.
    - `rejected`: the class IDs whose latest decision is `rejected`.
    - `coverage`, `gaps`, and `failed`: how many tasks are complete, manager only, or missing; the
      event files skipped and why; the project roots that failed. The measures cover every saved
-     event. They do not include reverts or review comments, which step 2 adds.
+     event. They do not include reverts or review comments, which step 3 adds.
    - `indexProblem`: why the sweep index could not be read, or `null`. When it is set, the pass read
      only the roots it could find. Report it in the TLDR.
-2. Read the last 30 days of evidence outside the event log:
-   - For each root in `projectRoots`, run
-     `git -C <root> log --since=30.days --grep=Revert --oneline`.
-   - For each PR URL in the events, run `gh pr view <url> --json reviews,comments`.
-   - For each of those PRs, run `gh api repos/<owner>/<name>/pulls/<number>/comments`.
-   - A source with no result is a fact. A failed read is unknown, not empty.
-3. Group the evidence into classes. Give each class a stable kebab-case `identity`, and reuse a
+2. Group the evidence into classes. Give each class a stable kebab-case `identity`, and reuse a
    prior class's identity for the same rule. Each class also has:
    - a `level` in fix order: `architecture`, `type`, `lint`, `test`, or `prose`;
    - a one-sentence `summary`;
-   - `occurrences`: the event IDs or PR URLs where it happened;
+   - `occurrences`: the event IDs or PR URLs where it happened. A class counts at 2 different
+     occurrences, or 1 revert or QA miss. The `correct` action drops a class whose identity matches
+     a rejected class and whose occurrences are all in that rejected class's occurrences. A new
+     occurrence makes it a new class.
+3. Call `improvement` with `action: history`, `projectRoots` set to the deduplicated roots of the
+   classes' occurrences taken from `eventOwners`, and `pullRequests` set to the deduplicated PR URLs
+   among those occurrences. Use its result to set each class's `reverted` and `qaMiss`:
    - `reverted`: whether a revert caused it;
-   - `qaMiss`: whether a QA run missed it. A class counts at 2 different occurrences, or 1 revert or
-     QA miss. The `correct` action drops a class whose identity matches a rejected class and whose
-     occurrences are all in that rejected class's occurrences. A new occurrence makes it a new
-     class.
-4. Call `improvement` with `action: correct` and `classes` set to the classes from step 3. Show only
+   - `qaMiss`: whether a QA run missed it. When `coverage` is `partial` or `unknown`, say so in the
+     TLDR and do not claim a class was not reverted. Do not run `git` or `gh` by hand.
+4. Call `improvement` with `action: correct` and `classes` set to the classes from step 2. Show only
    the classes it returns. A class it does not return is carried over or dropped; do not show it as
    a proposal.
 5. Write the report:
