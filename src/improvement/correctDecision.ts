@@ -60,7 +60,6 @@ const compareClasses = (left: RankedClass, right: RankedClass): number => {
   return left.identity.localeCompare(right.identity);
 };
 
-// A rejected class stays rejected while the proposal adds no occurrence it did not already have.
 const isRejected = (proposed: RankedClass, rejected: readonly RejectedClass[]): boolean =>
   rejected.some((entry) => {
     if (entry.identity !== proposed.identity) {

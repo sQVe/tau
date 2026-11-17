@@ -17,7 +17,6 @@ export const findProjectRoot = async (
   return dirname(commonDirectory);
 };
 
-// The roots a pass reads or writes: every indexed root plus the current one, without repeats.
 export const projectRootsOf = (indexed: readonly string[], current: string | null): string[] =>
   [...new Set(current === null ? indexed : [...indexed, current])].toSorted();
 
