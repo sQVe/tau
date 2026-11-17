@@ -80,6 +80,9 @@ metadata:
 
 3. Sort the evidence from step 1's script.
    - Skip bot walkthroughs, link comments, and summaries that hold no findings.
+   - A review that did not complete, or whose state is failed or contradictory, is unknown, not
+     clean. Report it as a limitation. Do not invent a defect and do not request another
+     quota-limited review.
    - Read what we already posted, and judge whether each thread or comment still needs something
      from us. It does not when our reply settled it and the reviewer has not pushed back. It does
      again when the reviewer answered, or when our reply promised a fix that is not in the code.
@@ -128,6 +131,8 @@ metadata:
    - A failure is the round's, the rebase included, unless the matching check also failed in the
      script's result or fails the same way on the trunk. Fix the round's failures. In a stack,
      restack again after each fix commit. Then run the affected checks again.
+   - After a rebase, read `pr evidence` for each manual item the slice required. Rerun a stale item,
+     or report it as not run, before recommending merge.
    - Push past any other failure only when you report it. Otherwise stop before you push.
 
 7. Author mode: push once to the PR's head repository `<remote>`. A round without a rebase or a new
