@@ -399,8 +399,6 @@ const moduleFolderOf = (path: string) => {
   return segments.length > depth && !groupingFolders.has(folder) ? folder : undefined;
 };
 
-// Lists folders with one production source file and folder modules without an entry file named
-// after the folder. Takes every file below src/ as a POSIX path.
 const layoutProblems = (paths: readonly string[]) => {
   const sources = paths.filter(isProductionSource);
 

@@ -11,7 +11,10 @@ import { findSharedRepositoryRoot } from './tauDirectory.ts';
 const cleanups: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
-  await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
+  const pendingCleanups = cleanups.splice(0);
+  const cleanupPromises = pendingCleanups.map((cleanup) => cleanup());
+
+  await Promise.all(cleanupPromises);
 });
 
 describe('findSharedRepositoryRoot', () => {

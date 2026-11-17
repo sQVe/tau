@@ -599,15 +599,15 @@ it('refuses a model with send before any hc call', async () => {
 it('refuses final outside send', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
-  await expect(
-    createTool().execute(
-      'call',
-      { action: 'prepare', final: true },
-      undefined,
-      undefined,
-      noUiContext(root),
-    ),
-  ).rejects.toThrow('final is only for action send.');
+  const execution = createTool().execute(
+    'call',
+    { action: 'prepare', final: true },
+    undefined,
+    undefined,
+    noUiContext(root),
+  );
+
+  await expect(execution).rejects.toThrow('final is only for action send.');
 
   expect(existsSync(join(root, '.tau'))).toBe(false);
 });

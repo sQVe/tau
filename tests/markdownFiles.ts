@@ -61,7 +61,6 @@ const notPathCharacter = /[\s<>*?$~{}[\]:@|"'=,()]/;
 // The changelog records history, so it may name paths that no longer exist.
 const historyFiles = new Set(['CHANGELOG.md']);
 
-// Synced stomme files describe several projects, so they may name paths that Tau does not have.
 const syncedDocumentPrefix = 'docs/stomme/';
 
 // Top-level directories that Tau no longer has, so a path below one is stale rather than a name.
