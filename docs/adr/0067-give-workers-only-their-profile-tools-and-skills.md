@@ -114,36 +114,6 @@ tools, and the worker reads only the listed skills.
   loadout.
 - The worker uses that saved loadout when it starts, not the current profile file.
 
-### Model routes
-
-A profile may route its brief to a classifier. The classifier is a model that picks one of two
-labels. Each label names the model for that launch.
-
-A narrow lookup and a wide investigation often need different models. One profile can get both kinds
-of brief, and one model for every launch fits only one of them. The classifier reads the brief and
-then chooses, so the launch can use the model that fits.
-
-Route config belongs only in the user file, under `profiles.<name>.route`. It is not a profile
-frontmatter setting. The route names:
-
-- `classifier`: the model that picks the label.
-- `question`: the question the classifier answers.
-- `labels`: exactly two names, each with a `criterion` and a `model`.
-- `confidence`: optional. It defaults to 0.7.
-
-The profile's `model` stays the fallback. Routing works like this:
-
-- The classifier must pass `allowedModels`, because the brief leaves the machine. A classifier that
-  `allowedModels` excludes skips routing.
-- The classifier sees the brief and the profile. It may also see a bounded part of the ticket.
-- Tau stops waiting for the classifier after five seconds.
-- A pick at or above the confidence cutoff launches on that label's model.
-- Low confidence, an unknown label, an error, a timeout, or a skipped classifier keeps the profile's
-  `model`.
-- An explicit launch model skips routing.
-- The routed model passes the normal launch checks. An invalid routed model is not replaced.
-- A bad `route` turns off routing for that profile only. Its `model` still applies.
-
 ## Consequences
 
 ### Positive
@@ -222,13 +192,3 @@ paying, no profile can use the package either.
 
 Load the `diagram` skill in every worker profile. Rejected because worker reports would carry
 Mermaid source that nobody sees rendered, and each worker would load a skill it cannot use well.
-
-### Always one model
-
-Use one model for every launch of a profile. Rejected because it loses the difference between narrow
-and wide briefs, as the Model routes section explains.
-
-### Tau never routes
-
-Never route a brief, and make the user choose a model for each launch. Rejected because every launch
-would then need a manual model choice to gain the difference between briefs.

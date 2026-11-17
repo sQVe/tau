@@ -165,6 +165,5 @@ The scratch repository holds a run whose item has every step passed and whose st
 - On a timeout the command exits with code 1 and names each worker that still runs, with its `hc`
   address. Stop that worker before the next run.
 - The command refuses a `--cwd` that already holds Pi project settings.
-- The launched worker costs model tokens too, on the model that Tau routes its profile to, not on
-  `--model`.
+- The launched worker costs model tokens too, on its profile model, not on `--model`.
 - The inner run refuses a record after its stop, so the worker records before the session stops it.

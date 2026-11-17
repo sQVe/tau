@@ -41,6 +41,7 @@ line. Delete those files and add them to the Retired table. Numbers are never re
 - [0127: Version the draft review viewer protocol](./0127-version-the-draft-review-viewer-protocol.md)
 - [0128: Support Linux and macOS only](./0128-support-linux-and-macos-only.md)
 - [0135: Record improvement events in each project root](./0135-record-improvement-events-in-each-project-root.md)
+- [0138: Split the manager role into a lead and an architect](./0138-split-the-manager-role-into-a-lead-and-an-architect.md)
 
 ## Documentation and writing
 
