@@ -5,9 +5,13 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { hasErrorCode, isMissingFile } from '../errors.js';
 import { groupState, processState } from '../process/process.js';
 import { isRecord } from '../schema.js';
-import type { LiveLockHolder } from './liveLockHolder.js';
 import { holderIsGone, recordNeedsRereading } from './lockHolderDecision.js';
 import type { LockHolderFacts } from './lockHolderDecision.js';
+
+export interface LiveLockHolder {
+  pid: number;
+  checkout: string;
+}
 
 interface LockOwner {
   pid: number;
