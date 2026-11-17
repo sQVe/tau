@@ -37,9 +37,46 @@ const answer = {
   payload: { assignmentId, questionId, parentSession: 'manager-session', answer: 'Use option A.' },
 } as const;
 
+const answerRequest = {
+  ...handover,
+  family: 'answer-request',
+  payload: { assignmentId, questionId, answer: 'Use 42.' },
+} as const;
+
 const requestCases: [string, Uint8Array, ReturnType<typeof decodeRequest>][] = [
   ['a handover message', line(handover), { kind: 'frame', value: handover }],
   ['an answer message', line(answer), { kind: 'frame', value: answer }],
+  [
+    'an answer-request with an assignment ID that is not a UUID',
+    line({ ...answerRequest, payload: { ...answerRequest.payload, assignmentId: 'job-1' } }),
+    { kind: 'refused', reason: 'The frame is not an rpc1 request.' },
+  ],
+  [
+    'an answer-request with a question ID that is not a UUID',
+    line({ ...answerRequest, payload: { ...answerRequest.payload, questionId: 'job-1' } }),
+    { kind: 'refused', reason: 'The frame is not an rpc1 request.' },
+  ],
+  [
+    'an answer-request with an empty answer',
+    line({ ...answerRequest, payload: { ...answerRequest.payload, answer: '' } }),
+    { kind: 'refused', reason: 'The frame is not an rpc1 request.' },
+  ],
+  [
+    'an answer-request with 32000 answer characters',
+    line({ ...answerRequest, payload: { ...answerRequest.payload, answer: 'a'.repeat(32_000) } }),
+    {
+      kind: 'frame',
+      value: {
+        ...answerRequest,
+        payload: { ...answerRequest.payload, answer: 'a'.repeat(32_000) },
+      },
+    },
+  ],
+  [
+    'an answer-request with 32001 answer characters',
+    line({ ...answerRequest, payload: { ...answerRequest.payload, answer: 'a'.repeat(32_001) } }),
+    { kind: 'refused', reason: 'The frame is not an rpc1 request.' },
+  ],
   [
     'a handover message to a custom Pi session ID',
     line({ ...handover, targetSessionId: 'job-1' }),
