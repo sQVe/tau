@@ -13,8 +13,10 @@ import type { ToolCall, Transcript } from './transcript.ts';
 export interface MergedPullRequest {
   repository: string;
   number: number;
+  url: string;
   headBranch: string;
   createdAt: string;
+  mergedAt: string;
 }
 
 export interface TranscriptFact {
@@ -42,11 +44,12 @@ export interface CoverageFacts {
 
 interface Publication {
   path: string;
+  callId: string;
   entryId: string;
   timestamp: string;
 }
 
-interface Task {
+export interface Task {
   pullRequest: MergedPullRequest;
   transcripts: string[];
   publication: Publication | undefined;
@@ -237,7 +240,12 @@ const latestPublication = (sources: readonly TaskSource[]) => {
   const publications = sources.flatMap(({ transcript, calls }) =>
     calls
       .filter((call) => publicationOf(call) !== undefined)
-      .map((call) => ({ path: transcript.path, entryId: call.entryId, timestamp: call.timestamp })),
+      .map((call) => ({
+        path: transcript.path,
+        callId: call.callId,
+        entryId: call.entryId,
+        timestamp: call.timestamp,
+      })),
   );
 
   return publications

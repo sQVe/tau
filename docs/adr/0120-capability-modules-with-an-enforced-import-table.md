@@ -39,33 +39,33 @@ every agent the same answer to "where does this go" and "may this import that".
 
 The target shared modules and the modules each may import:
 
-| Module          | May import                                                               |
-| --------------- | ------------------------------------------------------------------------ |
-| `errors`        | nothing                                                                  |
-| `schema`        | nothing                                                                  |
-| `command`       | `schema`                                                                 |
-| `instructions`  | nothing                                                                  |
-| `codemode`      | nothing                                                                  |
-| `shell`         | nothing                                                                  |
-| `skillTools`    | nothing                                                                  |
-| `worker`        | `schema`                                                                 |
-| `dialog`        | `worker`                                                                 |
-| `process`       | `errors`                                                                 |
-| `fileLock`      | `errors`, `process`, `schema`                                            |
-| `git`           | `errors`                                                                 |
-| `config`        | `errors`, `schema`                                                       |
-| `linear`        | `command`, `errors`                                                      |
-| `github`        | `command`, `errors`, `git`, `schema`                                     |
-| `hc`            | `command`, `errors`, `schema`                                            |
-| `tauDirectory`  | `errors`, `git`                                                          |
-| `verification`  | `errors`, `record`, `schema`                                             |
-| `wake`          | nothing                                                                  |
-| `improvement`   | `errors`, `git`, `record`, `schema`, `tauDirectory`                      |
-| `inbox`         | `errors`, `fileLock`, `hc`, `record`, `schema`, `wake`                   |
-| `record`        | `errors`, `schema`, `tauDirectory`                                       |
-| `checkRecord`   | `errors`, `git`, `record`                                                |
-| `reviewBots`    | `command`, `config`, `github`, `schema`                                  |
-| `reviewCapture` | `command`, `errors`, `git`, `github`, `record`, `schema`, `tauDirectory` |
+| Module          | May import                                                                           |
+| --------------- | ------------------------------------------------------------------------------------ |
+| `errors`        | nothing                                                                              |
+| `schema`        | nothing                                                                              |
+| `command`       | `schema`                                                                             |
+| `instructions`  | nothing                                                                              |
+| `codemode`      | nothing                                                                              |
+| `shell`         | nothing                                                                              |
+| `skillTools`    | nothing                                                                              |
+| `worker`        | `schema`                                                                             |
+| `dialog`        | `worker`                                                                             |
+| `process`       | `errors`                                                                             |
+| `fileLock`      | `errors`, `process`, `schema`                                                        |
+| `git`           | `errors`                                                                             |
+| `config`        | `errors`, `schema`                                                                   |
+| `linear`        | `command`, `errors`                                                                  |
+| `github`        | `command`, `errors`, `git`, `schema`                                                 |
+| `hc`            | `command`, `errors`, `schema`                                                        |
+| `tauDirectory`  | `errors`, `git`                                                                      |
+| `verification`  | `errors`, `record`, `schema`                                                         |
+| `wake`          | nothing                                                                              |
+| `improvement`   | `command`, `errors`, `fileLock`, `git`, `github`, `record`, `schema`, `tauDirectory` |
+| `inbox`         | `errors`, `fileLock`, `hc`, `record`, `schema`, `wake`                               |
+| `record`        | `errors`, `schema`, `tauDirectory`                                                   |
+| `checkRecord`   | `errors`, `git`, `record`                                                            |
+| `reviewBots`    | `command`, `config`, `github`, `schema`                                              |
+| `reviewCapture` | `command`, `errors`, `git`, `github`, `record`, `schema`, `tauDirectory`             |
 
 `skillTools`, `tauDirectory`, and `reviewCapture` keep the edges they have today, renamed to the
 target modules. Shared modules never import extensions, and no module imports `src/tau.ts`.
@@ -105,7 +105,8 @@ rule reports an import, change the table or the module list instead of silencing
   imports dynamically, or reads the clock, randomness, or the environment. The caller reads those
   values and passes them in as facts. The outside libraries a registered module may import are
   `typebox` and `typebox/value` in `src/schema.ts` and `src/inbox/protocol.ts`, whose schema
-  builders and checks are pure, and `minimatch` in `src/extensions/tdd/inputGlob.ts`, which only
+  builders and checks are pure, and in `src/improvement/transcript.ts`, whose transcript state is a
+  saved record checked by a schema, and `minimatch` in `src/extensions/tdd/inputGlob.ts`, which only
   compiles and matches strings, and `@xmldom/xmldom` in `src/extensions/tdd/runner/junit.ts`, which
   only parses a string into a document, and `node:path` in `src/extensions/tdd/runner/report.ts`,
   `src/extensions/tdd/runner/cargoInputFiles.ts`, `src/extensions/tdd/projectPath.ts`,

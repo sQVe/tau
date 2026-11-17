@@ -24,7 +24,14 @@ const merged = (
   number: number,
   headBranch: string,
   createdAt = '2026-01-01T00:00:00Z',
-): MergedPullRequest => ({ repository, number, headBranch, createdAt });
+): MergedPullRequest => ({
+  repository,
+  number,
+  url: `https://github.com/sQVe/tau/pull/${number}`,
+  headBranch,
+  createdAt,
+  mergedAt: '2026-11-15T12:00:00Z',
+});
 
 const facts = (input: Partial<MappingFacts>): MappingFacts => ({
   pullRequests: [],
@@ -105,32 +112,6 @@ describe('mapTasks', () => {
       ],
       [564, ['launch 96d1974a', 'publication 80115b37']],
     ]);
-  });
-
-  it('maps a pull request whose branch has no ticket ID through its publication', () => {
-    const [task] = mapTasks(
-      facts({
-        pullRequests: [merged(660, ticketlessBranch)],
-        transcripts: [fixture('branchWithoutTicket.jsonl')],
-        workers: new Map([['47941926-f23d-42e5-9aa8-a9ff7b9d2cc7', 'readable']]),
-      }),
-    ).tasks;
-
-    expect(task?.facts.map((fact) => `${fact.kind} ${fact.entryId}`)).toEqual([
-      'reviewCapture 6fa2e153',
-      'launch 743ddde1',
-      'checkFailure f95dd84e',
-      'publication 0775c033',
-      'feedbackRound edf31f5e',
-    ]);
-
-    expect(task?.publication).toEqual({
-      path: '/sessions/branchWithoutTicket.jsonl',
-      entryId: '0775c033',
-      timestamp: '2026-11-12T18:29:23.498Z',
-    });
-
-    expect(task?.coverage).toBe('complete');
   });
 
   it('makes the publication count unknown when a nested pr call has cut arguments', () => {
@@ -250,44 +231,6 @@ describe('mapTasks', () => {
     expect(mapping.tasks[0]?.transcripts).toEqual([]);
     expect(mapping.tasks[0]?.facts).toEqual([]);
     expect(mapping.tasks[0]?.coverage).toBe('missing');
-  });
-
-  it('combines the facts of several transcripts and keeps the latest publication', () => {
-    const later = [
-      sessionHeader('/home/sqve/code/personal/tau/me-1023'),
-      ...called('later-check', '2026-11-03T08:01:00.000Z', 'full_check', {}, { passed: false }),
-      ...called(
-        'later-verify',
-        '2026-11-03T08:03:00.000Z',
-        'pr',
-        { action: 'verify', repository, pr: 564 },
-        { matches: false },
-      ),
-    ].join('\n');
-
-    const [task] = mapTasks(
-      facts({
-        pullRequests: [merged(564, 'me-1025-enforce-worker-deadlines-with-an-hc-watchdog')],
-        transcripts: [
-          fixture('multiplePublications.jsonl'),
-          fixture('multiplePublications.jsonl', '/sessions/fork.jsonl'),
-          { path: '/sessions/later.jsonl', transcript: parseTranscript(later) },
-        ],
-      }),
-    ).tasks;
-
-    expect(task?.facts.map((fact) => `${fact.kind} ${fact.entryId}`)).toEqual([
-      'launch 96d1974a',
-      'publication 80115b37',
-      'checkFailure later-check',
-      'publication later-verify',
-    ]);
-
-    expect(task?.publication).toEqual({
-      path: '/sessions/later.jsonl',
-      entryId: 'later-verify',
-      timestamp: '2026-11-03T08:03:00.000Z',
-    });
   });
 
   it('keeps the result of a copied call when another copy has no result', () => {

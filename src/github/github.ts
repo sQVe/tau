@@ -211,3 +211,51 @@ export const readPullRequestList = async (
 
   return listed;
 };
+
+const mergedPullRequestListSchema = Type.Array(
+  Type.Object({
+    number: Type.Integer(),
+    url: Type.String(),
+    headRefName: Type.String(),
+    createdAt: Type.String(),
+    mergedAt: Type.String(),
+  }),
+);
+
+export type MergedPullRequestListing = Static<typeof mergedPullRequestListSchema>[number];
+
+const mergedListLimit = 1000;
+
+const mergedPullRequestFields = 'number,url,headRefName,createdAt,mergedAt';
+
+const mergedPullRequestListArguments = (repository: string, since: string): string[] => [
+  'pr',
+  'list',
+  '--repo',
+  repository,
+  '--state',
+  'merged',
+  '--search',
+  `merged:>=${since}`,
+  '--limit',
+  String(mergedListLimit),
+  '--json',
+  mergedPullRequestFields,
+];
+
+export const readMergedPullRequests = async (
+  runtime: CommandRuntime,
+  repository: Repository,
+  since: string,
+): Promise<MergedPullRequestListing[]> => {
+  const commandArguments = mergedPullRequestListArguments(formatRepository(repository), since);
+  const listed = await readChecked(runtime, commandArguments, mergedPullRequestListSchema);
+
+  if (listed.length >= mergedListLimit) {
+    throw new Error(
+      `${label(commandArguments)} printed ${listed.length} pull requests, the limit, so the list may be incomplete.`,
+    );
+  }
+
+  return listed;
+};

@@ -173,6 +173,7 @@ const pureModules = [
   'src/github/pullRequestDecisions.ts',
   'src/github/repositoryTargetDecisions.ts',
   'src/improvement/signals.ts',
+  'src/improvement/sweepDecision.ts',
   'src/improvement/taskFacts.ts',
   'src/improvement/taskMapping.ts',
   'src/improvement/transcript.ts',
@@ -256,6 +257,7 @@ const pureLibraries: Readonly<Record<string, readonly string[]>> = {
   'src/extensions/tdd/runner/report.ts': ['node:path'],
   'src/improvement/taskFacts.ts': ['node:path'],
   'src/improvement/taskMapping.ts': ['node:path'],
+  'src/improvement/transcript.ts': ['typebox'],
   'src/inbox/protocol.ts': ['typebox', 'typebox/value'],
   'src/schema.ts': ['typebox', 'typebox/value'],
 };

@@ -5,11 +5,14 @@ import type { TaskFact } from './taskFacts.ts';
 import type { CallResult, ToolCall } from './transcript.ts';
 
 const repository = 'github.com/sQVe/tau';
-const ok: CallResult = { error: undefined, details: undefined };
+const ok: CallResult = {};
 
-const failed = (details?: Record<string, unknown>): CallResult => ({ error: 'failed', details });
+const failed = (details?: Record<string, unknown>): CallResult => ({
+  error: 'failed',
+  ...(details === undefined ? {} : { details }),
+});
 
-const done = (details: Record<string, unknown>): CallResult => ({ error: undefined, details });
+const done = (details: Record<string, unknown>): CallResult => ({ details });
 
 const call = (
   tool: string,
@@ -21,9 +24,10 @@ const call = (
   callId: 'c1',
   timestamp: '2026-11-02T18:00:00.000Z',
   tool,
-  arguments: parameters,
   viaCodemode,
-  result,
+  ...(parameters === undefined ? {} : { arguments: parameters }),
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- A caller passes undefined to omit the result.
+  ...(result === undefined ? {} : { result }),
 });
 
 const summary = (fact: TaskFact) => {
@@ -45,13 +49,13 @@ const verify = { action: 'verify', repository, pr: 560 };
 const read = { action: 'read', repository, pr: 560 };
 const capture = { action: 'capture', target: { kind: 'workingTree' } };
 
-const withoutResult = (
-  tool: string,
-  parameters: Record<string, unknown> | undefined,
-): ToolCall => ({
-  ...call(tool, parameters),
-  result: undefined,
-});
+const withoutResult = (tool: string, parameters: Record<string, unknown> | undefined): ToolCall => {
+  const callWithResult = call(tool, parameters);
+
+  delete callWithResult.result;
+
+  return callWithResult;
+};
 
 const table: { rule: string; call: ToolCall; facts: string[]; missing: string[][] }[] = [
   {

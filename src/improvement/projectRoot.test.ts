@@ -36,4 +36,12 @@ describe('findProjectRoot', () => {
 
     expect(await findProjectRoot(root)).toBe(await realpath(root));
   });
+
+  it('stops when its signal is aborted', async () => {
+    const root = await createTemporaryRepository((cleanup) => cleanups.push(cleanup));
+
+    await expect(findProjectRoot(root, { signal: AbortSignal.abort() })).rejects.toThrow(
+      /git rev-parse/u,
+    );
+  });
 });
