@@ -11,7 +11,7 @@ proposed checks.
    - `measures`: `repeatRateAfterCheck`, `medianFixRounds`, and `acceptanceRate`. Each has a `value`
      and a `coverage`.
    - `rejected`: the class IDs whose latest decision is `rejected`.
-   - `coverage`, `skipped`, and `failed`: how many tasks are complete, manager only, or missing; the
+   - `coverage`, `gaps`, and `failed`: how many tasks are complete, manager only, or missing; the
      event files skipped and why; the project roots that failed. The measures cover every saved
      event. They do not include reverts or review comments, which step 2 adds.
    - `indexProblem`: why the sweep index could not be read, or `null`. When it is set, the pass read

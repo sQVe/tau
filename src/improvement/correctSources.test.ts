@@ -139,15 +139,15 @@ it('adds the current project root when the index is missing', async () => {
   expect(correctEventOwners(sources)).toEqual([{ id: event.id, projectRoot: project }]);
 });
 
-it('reports a project whose events cannot be read as unknown', async () => {
+it('reports a project whose event directory cannot be listed as unknown', async () => {
   const first = await createProject();
   const second = await createProject();
   const agentDirectory = createAgentDirectory();
   const firstEvent = correction('correction-first', '2026-11-15T12:00:00.000Z');
 
   await writeEvent(first, firstEvent);
-  await mkdir(eventDirectory(second), { recursive: true });
-  await writeFile(join(eventDirectory(second), 'broken.json'), '{');
+  await mkdir(join(second, '.tau'), { recursive: true });
+  await writeFile(eventDirectory(second), 'not a directory');
   await writeSweepIndex(agentDirectory, indexFor([first, second]));
 
   const sources = await readCorrectSources({ agentDirectory, cwd: first });
@@ -155,7 +155,7 @@ it('reports a project whose events cannot be read as unknown', async () => {
   const failed = correctFailed(sources);
 
   expect(failed.map(({ projectRoot }) => projectRoot)).toEqual([second]);
-  expect(failed[0]?.reason).toContain(join(eventDirectory(second), 'broken.json'));
+  expect(failed[0]?.reason).toContain(eventDirectory(second));
   expect(correctEvents(sources)).toEqual([firstEvent]);
   expect(correctProjectRoots(sources)).toEqual([first]);
   expect(correctEventOwners(sources)).toEqual([{ id: firstEvent.id, projectRoot: first }]);

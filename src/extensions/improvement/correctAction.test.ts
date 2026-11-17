@@ -139,7 +139,7 @@ it('returns the ranked classes and measures', async () => {
   );
 });
 
-it('returns the evidence, measures, and skipped notices without classes', async () => {
+it('returns the evidence, measures, and gaps without classes', async () => {
   const project = await createProject();
   const agentDirectory = temporaryDirectory(onTestFinished, 'tau-agent-');
   const rejected = classEvent({ identity: 'lint-rejected', occurrences: ['a', 'b'] });
@@ -164,8 +164,8 @@ it('returns the evidence, measures, and skipped notices without classes', async 
     acceptanceRate: { value: 0, coverage: 1 },
   });
 
-  expect(result.skipped).toHaveLength(1);
-  expect(result.skipped[0]?.path).toBe(newerPath);
+  expect(result.gaps).toHaveLength(1);
+  expect(result.gaps[0]?.path).toBe(newerPath);
   expect(result.coverage).toEqual({ complete: 0, managerOnly: 0, missing: 0 });
   expect(result.projectRoots).toEqual([project]);
 
@@ -179,22 +179,21 @@ it('returns the evidence, measures, and skipped notices without classes', async 
 
 it('reports a failed project and keeps the other evidence', async () => {
   const readable = await createProject();
-  const malformed = await createProject();
+  const unlistable = await createProject();
   const agentDirectory = temporaryDirectory(onTestFinished, 'tau-agent-');
   const saved = classEvent({ identity: 'lint-readable', occurrences: ['a', 'b'] });
-  const brokenPath = join(eventDirectory(malformed), 'class-broken.json');
 
   await writeEvent(readable, saved);
-  await mkdir(eventDirectory(malformed), { recursive: true });
-  await writeFile(brokenPath, '{');
-  await writeSweepIndex(agentDirectory, indexFor([readable, malformed]));
+  await mkdir(join(unlistable, '.tau'), { recursive: true });
+  await writeFile(eventDirectory(unlistable), 'not a directory');
+  await writeSweepIndex(agentDirectory, indexFor([readable, unlistable]));
 
   const result = await runCorrect(agentDirectory, readable, { action: 'correct' });
 
   expect('events' in result ? result.events : []).toEqual([saved]);
   expect(result.failed).toHaveLength(1);
-  expect(result.failed[0]?.projectRoot).toBe(malformed);
-  expect(result.failed[0]?.reason).toContain(brokenPath);
+  expect(result.failed[0]?.projectRoot).toBe(unlistable);
+  expect(result.failed[0]?.reason).toContain(eventDirectory(unlistable));
   expect(result.projectRoots).toEqual([readable]);
   expect(result.eventOwners).toEqual([{ id: saved.id, projectRoot: readable }]);
 });

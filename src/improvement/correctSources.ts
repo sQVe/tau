@@ -5,14 +5,14 @@ import { findOptionalProjectRoot, projectRootsOf } from './projectRoot.ts';
 import { readSweepIndex } from './sweepIndex.ts';
 import type { SweepIndexRead } from './sweepIndex.ts';
 
-type SkippedEvent = EventRead['skipped'][number];
+type EventGap = EventRead['gaps'][number];
 
 type ProjectEventRead =
   | {
       projectRoot: string;
       status: 'read';
       events: ImprovementEvent[];
-      skipped: SkippedEvent[];
+      gaps: EventGap[];
     }
   | { projectRoot: string; status: 'failed'; reason: string };
 
@@ -53,8 +53,8 @@ const projectRoots = async (sources: {
 export const correctEvents = (sources: CorrectSources): ImprovementEvent[] =>
   sources.projects.flatMap((project) => (project.status === 'read' ? project.events : []));
 
-export const correctSkipped = (sources: CorrectSources): SkippedEvent[] =>
-  sources.projects.flatMap((project) => (project.status === 'read' ? project.skipped : []));
+export const correctGaps = (sources: CorrectSources): EventGap[] =>
+  sources.projects.flatMap((project) => (project.status === 'read' ? project.gaps : []));
 
 export const correctFailed = (sources: CorrectSources): FailedProject[] =>
   sources.projects.flatMap((project) =>
@@ -91,7 +91,7 @@ export const readCorrectSources = async (sources: {
         projectRoot,
         status: 'read',
         events: read.events,
-        skipped: read.skipped,
+        gaps: read.gaps,
       });
     } catch (error) {
       projects.push({ projectRoot, status: 'failed', reason: errorMessage(error) });

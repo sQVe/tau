@@ -14,7 +14,7 @@ import {
   correctFailed,
   correctIndexProblem,
   correctProjectRoots,
-  correctSkipped,
+  correctGaps,
   readCorrectSources,
 } from '../../improvement/correctSources.js';
 import type { EventOwner, FailedProject } from '../../improvement/correctSources.js';
@@ -34,7 +34,7 @@ type CorrectRequest = Extract<RecordRequest, { action: 'correct' }>;
 interface CorrectBase {
   measures: CorrectMeasures;
   coverage: CoverageCounts;
-  skipped: { path: string; notice: string }[];
+  gaps: { path: string; reason: string }[];
   failed: FailedProject[];
   projectRoots: string[];
   eventOwners: EventOwner[];
@@ -88,7 +88,7 @@ export const runCorrect = async (
   const base = {
     measures,
     coverage,
-    skipped: correctSkipped(sources),
+    gaps: correctGaps(sources),
     failed: correctFailed(sources),
     projectRoots: correctProjectRoots(sources),
     eventOwners: correctEventOwners(sources),
