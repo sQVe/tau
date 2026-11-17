@@ -14,6 +14,8 @@ proposed checks.
    - `coverage`, `skipped`, and `failed`: how many tasks are complete, manager only, or missing; the
      event files skipped and why; the project roots that failed. The measures cover every saved
      event. They do not include reverts or review comments, which step 2 adds.
+   - `indexProblem`: why the sweep index could not be read, or `null`. When it is set, the pass read
+     only the roots it could find. Report it in the TLDR.
 2. Read the last 30 days of evidence outside the event log:
    - For each root in `projectRoots`, run
      `git -C <root> log --since=30.days --grep=Revert --oneline`.
@@ -27,7 +29,9 @@ proposed checks.
    - `occurrences`: the event IDs or PR URLs where it happened;
    - `reverted`: whether a revert caused it;
    - `qaMiss`: whether a QA run missed it. A class counts at 2 different occurrences, or 1 revert or
-     QA miss. The `correct` action drops a class whose ID is in `rejected`.
+     QA miss. The `correct` action drops a class whose identity matches a rejected class and whose
+     occurrences are all in that rejected class's occurrences. A new occurrence makes it a new
+     class.
 4. Call `improvement` with `action: correct` and `classes` set to the classes from step 3. Show only
    the classes it returns. A class it does not return is carried over or dropped; do not show it as
    a proposal.

@@ -23,6 +23,11 @@ export interface RankedClass extends ProposedClass {
   repeatCount: number;
 }
 
+export interface RejectedClass {
+  identity: string;
+  occurrences: readonly string[];
+}
+
 interface Measure {
   value: number | undefined;
   coverage: number;
@@ -55,9 +60,21 @@ const compareClasses = (left: RankedClass, right: RankedClass): number => {
   return left.identity.localeCompare(right.identity);
 };
 
+// A rejected class stays rejected while the proposal adds no occurrence it did not already have.
+const isRejected = (proposed: RankedClass, rejected: readonly RejectedClass[]): boolean =>
+  rejected.some((entry) => {
+    if (entry.identity !== proposed.identity) {
+      return false;
+    }
+
+    const known = new Set(entry.occurrences);
+
+    return proposed.occurrences.every((occurrence) => known.has(occurrence));
+  });
+
 export const decideClasses = (facts: {
   classes: readonly ProposedClass[];
-  rejected: ReadonlySet<string>;
+  rejected: readonly RejectedClass[];
 }): RankedClass[] => {
   const unique = new Map<string, RankedClass>();
 
@@ -70,7 +87,7 @@ export const decideClasses = (facts: {
   }
 
   const counted = [...unique.values()].filter(
-    (ranked) => !facts.rejected.has(ranked.id) && countsAsClass(ranked),
+    (ranked) => !isRejected(ranked, facts.rejected) && countsAsClass(ranked),
   );
 
   return counted.toSorted(compareClasses).slice(0, maximumClasses);

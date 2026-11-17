@@ -2,7 +2,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { errorMessage } from '../../errors.js';
 import { writeEvent } from '../../improvement/event.js';
-import { findProjectRoot } from '../../improvement/projectRoot.js';
+import { findProjectRoot, projectRootsOf } from '../../improvement/projectRoot.js';
 import { readSweepIndex } from '../../improvement/sweepIndex.js';
 import { evidenceOf, eventId, sessionFacts } from './recordAction.js';
 import type { SessionFacts } from './recordAction.js';
@@ -20,16 +20,9 @@ export interface PassResult {
 
 const passRoots = async (agentDirectory: string, cwd: string): Promise<string[]> => {
   const index = await readSweepIndex(agentDirectory);
+  const indexed = index.status === 'read' ? Object.keys(index.index.projects) : [];
 
-  if (index.status === 'read') {
-    const roots = Object.keys(index.index.projects).toSorted();
-
-    if (roots.length > 0) {
-      return roots;
-    }
-  }
-
-  return [await findProjectRoot(cwd)];
+  return projectRootsOf(indexed, await findProjectRoot(cwd));
 };
 
 export const recordPass = async (

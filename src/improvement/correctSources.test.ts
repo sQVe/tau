@@ -1,5 +1,5 @@
 import { mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { afterEach, expect, it, onTestFinished } from 'vitest';
 
@@ -10,6 +10,7 @@ import {
   correctEventOwners,
   correctEvents,
   correctFailed,
+  correctIndexProblem,
   correctProjectRoots,
   readCorrectSources,
 } from './correctSources.ts';
@@ -166,7 +167,40 @@ it('returns no events when no project root is known', async () => {
 
   const sources = await readCorrectSources({ agentDirectory, cwd: directory });
 
-  expect(sources).toEqual({ projects: [] });
+  expect(sources).toEqual({ projects: [], indexProblem: null });
+});
+
+it('reports a malformed index and reads the current root', async () => {
+  const project = await createProject();
+  const agentDirectory = createAgentDirectory();
+  const event = correction('correction-1', '2026-11-15T12:00:00.000Z');
+  const path = sweepIndexPath(agentDirectory);
+
+  await writeEvent(project, event);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, 'not JSON');
+
+  const sources = await readCorrectSources({ agentDirectory, cwd: project });
+
+  expect(correctIndexProblem(sources)).toContain(path);
+  expect(correctEvents(sources)).toEqual([event]);
+  expect(correctProjectRoots(sources)).toEqual([project]);
+});
+
+it('reports a newer index and reads the current root', async () => {
+  const project = await createProject();
+  const agentDirectory = createAgentDirectory();
+  const event = correction('correction-1', '2026-11-15T12:00:00.000Z');
+  const path = sweepIndexPath(agentDirectory);
+
+  await writeEvent(project, event);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify({ version: 2 }));
+
+  const sources = await readCorrectSources({ agentDirectory, cwd: project });
+
+  expect(correctIndexProblem(sources)).toContain(path);
+  expect(correctEvents(sources)).toEqual([event]);
 });
 
 it('writes nothing while reading', async () => {

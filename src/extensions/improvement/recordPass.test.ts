@@ -76,6 +76,22 @@ it('writes a pass event to every project root', async () => {
   }
 });
 
+it('writes a pass event to the current root when the index lists another project', async () => {
+  const indexed = await createProject();
+  const current = await createProject();
+  const agentDirectory = createAgentDirectory();
+
+  await writeSweepIndex(agentDirectory, indexFor([indexed]));
+
+  const result = await recordPass(agentDirectory, factsFor(current));
+
+  expect(result.failed).toEqual([]);
+
+  expect(result.paths.toSorted()).toEqual(
+    [indexed, current].map((root) => join(eventDirectory(root), `${result.id}.json`)).toSorted(),
+  );
+});
+
 it('writes a pass event to the current root when the index is missing', async () => {
   const project = await createProject();
   const agentDirectory = createAgentDirectory();

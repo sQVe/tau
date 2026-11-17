@@ -453,10 +453,19 @@ it('keeps registered pure modules free of reads and effects', () => {
 });
 
 const versionedRecords = [
-  { writer: 'src/inbox/store.ts', fixtures: 'src/inbox/fixtures/handover' },
+  {
+    writer: 'src/inbox/store.ts',
+    fixtures: 'src/inbox/fixtures/handover',
+    names: ['current.json', 'newer.json', 'malformed.json'],
+  },
+  {
+    writer: 'src/improvement/event.ts',
+    fixtures: 'src/improvement/fixtures',
+    names: ['event-v1-merge.json', 'event-v2-pass.json', 'event-v2-class.json'],
+  },
 ];
 
-const recordFormatProblems = ({ writer, fixtures }: (typeof versionedRecords)[number]) => {
+const recordFormatProblems = ({ writer, fixtures, names }: (typeof versionedRecords)[number]) => {
   const source = readFileSync(join(root, writer), 'utf8');
   const problems: string[] = [];
 
@@ -464,7 +473,7 @@ const recordFormatProblems = ({ writer, fixtures }: (typeof versionedRecords)[nu
     problems.push(`${writer} has no version literal`);
   }
 
-  for (const name of ['current.json', 'newer.json', 'malformed.json']) {
+  for (const name of names) {
     if (!repositoryFiles().includes(`${fixtures}/${name}`)) {
       problems.push(`${fixtures} has no ${name}`);
     }

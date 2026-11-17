@@ -12,6 +12,7 @@ import {
   correctEventOwners,
   correctEvents,
   correctFailed,
+  correctIndexProblem,
   correctProjectRoots,
   correctSkipped,
   readCorrectSources,
@@ -37,6 +38,7 @@ interface CorrectBase {
   failed: FailedProject[];
   projectRoots: string[];
   eventOwners: EventOwner[];
+  indexProblem: string | null;
 }
 
 export type CorrectResult =
@@ -61,6 +63,15 @@ const rejectedClassIds = (
     .toSorted();
 };
 
+const rejectedClasses = (
+  classes: readonly ClassEvent[],
+  decisions: readonly DecisionEvent[],
+): ClassEvent[] => {
+  const rejected = new Set(rejectedClassIds(classes, decisions));
+
+  return classes.filter((event) => rejected.has(event.id));
+};
+
 export const runCorrect = async (
   agentDirectory: string,
   cwd: string,
@@ -81,6 +92,7 @@ export const runCorrect = async (
     failed: correctFailed(sources),
     projectRoots: correctProjectRoots(sources),
     eventOwners: correctEventOwners(sources),
+    indexProblem: correctIndexProblem(sources),
   };
 
   if (request.classes === undefined) {
@@ -93,7 +105,7 @@ export const runCorrect = async (
 
   const ranked = decideClasses({
     classes: proposed,
-    rejected: new Set(rejectedClassIds(classes, decisions)),
+    rejected: rejectedClasses(classes, decisions),
   });
 
   return { ...base, classes: ranked };

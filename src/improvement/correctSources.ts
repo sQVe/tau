@@ -1,8 +1,9 @@
 import { errorMessage } from '../errors.ts';
 import { readEvents } from './event.ts';
 import type { EventRead, ImprovementEvent } from './event.ts';
-import { findOptionalProjectRoot } from './projectRoot.ts';
+import { findOptionalProjectRoot, projectRootsOf } from './projectRoot.ts';
 import { readSweepIndex } from './sweepIndex.ts';
+import type { SweepIndexRead } from './sweepIndex.ts';
 
 type SkippedEvent = EventRead['skipped'][number];
 
@@ -17,6 +18,7 @@ type ProjectEventRead =
 
 export interface CorrectSources {
   projects: ProjectEventRead[];
+  indexProblem: string | null;
 }
 
 export interface FailedProject {
@@ -29,21 +31,23 @@ export interface EventOwner {
   projectRoot: string;
 }
 
-const indexProjectRoots = async (agentDirectory: string): Promise<string[]> => {
-  const index = await readSweepIndex(agentDirectory);
+const indexProblemOf = (index: SweepIndexRead): string | null => {
+  if (index.status === 'malformed') {
+    return index.reason;
+  }
 
-  return index.status === 'read' ? Object.keys(index.index.projects) : [];
+  return index.status === 'newer' ? index.notice : null;
 };
 
 const projectRoots = async (sources: {
   agentDirectory: string;
   cwd: string;
-}): Promise<string[]> => {
-  const indexed = await indexProjectRoots(sources.agentDirectory);
+}): Promise<{ roots: string[]; indexProblem: string | null }> => {
+  const index = await readSweepIndex(sources.agentDirectory);
+  const indexed = index.status === 'read' ? Object.keys(index.index.projects) : [];
   const current = await findOptionalProjectRoot(sources.cwd);
-  const roots = current === null ? indexed : [...indexed, current];
 
-  return [...new Set(roots)].toSorted();
+  return { roots: projectRootsOf(indexed, current), indexProblem: indexProblemOf(index) };
 };
 
 export const correctEvents = (sources: CorrectSources): ImprovementEvent[] =>
@@ -69,13 +73,16 @@ export const correctEventOwners = (sources: CorrectSources): EventOwner[] =>
       : [],
   );
 
+export const correctIndexProblem = (sources: CorrectSources): string | null => sources.indexProblem;
+
 export const readCorrectSources = async (sources: {
   agentDirectory: string;
   cwd: string;
 }): Promise<CorrectSources> => {
   const projects: ProjectEventRead[] = [];
+  const { roots, indexProblem } = await projectRoots(sources);
 
-  for (const projectRoot of await projectRoots(sources)) {
+  for (const projectRoot of roots) {
     try {
       // oxlint-disable-next-line no-await-in-loop -- Each project root is read in sorted order.
       const read = await readEvents(projectRoot);
@@ -91,5 +98,5 @@ export const readCorrectSources = async (sources: {
     }
   }
 
-  return { projects };
+  return { projects, indexProblem };
 };

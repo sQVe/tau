@@ -1,7 +1,13 @@
 import { expect, it } from 'vitest';
 
 import { classEventId } from './classIdentity.ts';
-import type { ClassLevel, CorrectMeasures, ProposedClass, RankedClass } from './correctDecision.ts';
+import type {
+  ClassLevel,
+  CorrectMeasures,
+  ProposedClass,
+  RankedClass,
+  RejectedClass,
+} from './correctDecision.ts';
 import { decideClasses, decideMeasures } from './correctDecision.ts';
 import type { ImprovementEvent } from './event.ts';
 
@@ -30,7 +36,7 @@ const ranked = (input: ProposedClass): RankedClass => ({
 const classTable: {
   name: string;
   classes: ProposedClass[];
-  rejected?: string[];
+  rejected?: RejectedClass[];
   expected: RankedClass[];
 }[] = [
   {
@@ -62,14 +68,26 @@ const classTable: {
   {
     name: 'skips a rejected class with the same occurrences',
     classes: [proposed()],
-    rejected: [classEventId('lint-await', ['occurrence-1', 'occurrence-2'])],
+    rejected: [{ identity: 'lint-await', occurrences: ['occurrence-1', 'occurrence-2'] }],
+    expected: [],
+  },
+  {
+    name: 'skips a rejected class whose occurrences are a subset',
+    classes: [proposed({ occurrences: ['a', 'b'] })],
+    rejected: [{ identity: 'lint-await', occurrences: ['a', 'b', 'c'] }],
     expected: [],
   },
   {
     name: 'proposes a rejected class again with a new occurrence',
     classes: [proposed({ occurrences: ['a', 'b', 'c'] })],
-    rejected: [classEventId('lint-await', ['a', 'b'])],
+    rejected: [{ identity: 'lint-await', occurrences: ['a', 'b'] }],
     expected: [ranked(proposed({ occurrences: ['a', 'b', 'c'] }))],
+  },
+  {
+    name: 'proposes a class whose identity differs from the rejected class',
+    classes: [proposed({ identity: 'lint-other', occurrences: ['a', 'b'] })],
+    rejected: [{ identity: 'lint-await', occurrences: ['a', 'b', 'c'] }],
+    expected: [ranked(proposed({ identity: 'lint-other', occurrences: ['a', 'b'] }))],
   },
   {
     name: 'ranks by repeat count and then identity',
@@ -101,7 +119,7 @@ const classTable: {
 ];
 
 it.each(classTable.map((row) => [row.name, row] as const))('%s', (_name, row) => {
-  expect(decideClasses({ classes: row.classes, rejected: new Set(row.rejected) })).toStrictEqual(
+  expect(decideClasses({ classes: row.classes, rejected: row.rejected ?? [] })).toStrictEqual(
     row.expected,
   );
 });
