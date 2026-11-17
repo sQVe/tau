@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process';
+import { existsSync, rmSync } from 'node:fs';
 import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
 import { expect, it, vi } from 'vitest';
@@ -64,4 +66,24 @@ it('ignores a hostile user Git configuration, also for Git calls the code under 
   });
 
   expect(stdout.trim()).toBe('HEAD -> main|Tau Test|tau@example.com|2005-04-07T22:13:13Z|N');
+});
+
+const repositoryUrl = pathToFileURL(join(import.meta.dirname, 'gitRepository.ts')).href;
+
+it('removes a repository when the process exits before cleanup runs', async ({
+  onTestFinished,
+}) => {
+  const { stdout } = await executeFile(process.execPath, [
+    '--input-type=module',
+    '--eval',
+    `import { createTemporaryRepository } from ${JSON.stringify(repositoryUrl)}; const directory = await createTemporaryRepository(() => {}, 'tau-repository-exit-'); process.stdout.write(directory);`,
+  ]);
+
+  const directory = stdout.trim();
+
+  onTestFinished(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  expect(existsSync(directory)).toBe(false);
 });

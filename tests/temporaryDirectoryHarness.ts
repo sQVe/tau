@@ -8,6 +8,58 @@ type Cleanup = () => Promise<void> | void;
 
 export type SuiteCleanup = (cleanup: Cleanup) => void;
 
+const trackedDirectories = new Set<string>();
+const handledSignals = ['SIGHUP', 'SIGINT', 'SIGTERM'] as const;
+
+const removeTrackedDirectories = (): void => {
+  for (const directory of trackedDirectories) {
+    try {
+      rmSync(directory, { recursive: true, force: true });
+    } catch {
+      // The process is leaving; a directory that cannot be removed stays.
+    }
+  }
+};
+
+const installExitHandlers = (): void => {
+  process.on('exit', removeTrackedDirectories);
+
+  for (const signal of handledSignals) {
+    const handleSignal = () => {
+      removeTrackedDirectories();
+      process.off(signal, handleSignal);
+      process.kill(process.pid, signal);
+    };
+
+    process.on(signal, handleSignal);
+  }
+};
+
+let exitHandlersInstalled = false;
+
+const installOnce = (): void => {
+  if (exitHandlersInstalled) {
+    return;
+  }
+
+  exitHandlersInstalled = true;
+  installExitHandlers();
+};
+
+export const trackTemporaryDirectory = (directory: string): void => {
+  installOnce();
+  trackedDirectories.add(directory);
+};
+
+export const forgetTemporaryDirectory = (directory: string): void => {
+  trackedDirectories.delete(directory);
+};
+
+const removeTemporaryDirectory = (directory: string): void => {
+  rmSync(directory, { recursive: true, force: true });
+  forgetTemporaryDirectory(directory);
+};
+
 // Vitest ignores a hook registered inside another hook, so call this during suite definition.
 export const suiteCleanup = (): SuiteCleanup => {
   const cleanups: Cleanup[] = [];
@@ -29,8 +81,10 @@ export const temporaryDirectory = (
 ): string => {
   const directory = mkdtempSync(join(tmpdir(), prefix));
 
+  trackTemporaryDirectory(directory);
+
   onTestFinished(() => {
-    rmSync(directory, { recursive: true, force: true });
+    removeTemporaryDirectory(directory);
   });
 
   return directory;
