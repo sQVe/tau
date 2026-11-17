@@ -61,7 +61,7 @@ export const recordItem = async (
   cwd: string,
   input: RecordInput,
 ): Promise<{ run: string; item: string; path: string }> => {
-  const { root, directory } = await findRunDirectory(cwd, input.run, 'verification_record');
+  const { recordRoot, directory } = await findRunDirectory(cwd, input.run, 'verification_record');
   const runRead = await readRunRecord(runRecordPath(directory));
 
   const itemFileExists = isItemName(input.item)
@@ -89,9 +89,9 @@ export const recordItem = async (
 
   validateItemRecord(path, record);
 
-  const folder = relative(join(root, '.tau'), dirname(path)).split(sep).join('/');
+  const folder = relative(join(recordRoot, '.tau'), dirname(path)).split(sep).join('/');
 
-  await checkTauDirectory(root, folder);
+  await checkTauDirectory(recordRoot, folder);
   await mkdir(dirname(path), { recursive: true });
   await writeRecord(path, record);
 

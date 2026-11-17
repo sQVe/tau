@@ -13,7 +13,7 @@ import { decideStop } from './runDecision.js';
 import { readRunRecordOrThrow } from './runFacts.js';
 
 export interface StopContext {
-  root: string;
+  checkoutRoot: string;
   directory: string;
   deadlineMilliseconds: number;
   signal: AbortSignal | undefined;
@@ -57,7 +57,7 @@ export const stopRun = async (context: StopContext): Promise<StopResult> => {
 
   const outcome = await runCommand({
     argv: commands.stop,
-    cwd: context.root,
+    cwd: context.checkoutRoot,
     logPath,
     environment: {
       TAU_VERIFICATION_RUN: record.run,
@@ -77,7 +77,7 @@ export const stopRun = async (context: StopContext): Promise<StopResult> => {
     );
   }
 
-  const state = await readCheckState(context.root);
+  const state = await readCheckState(context.checkoutRoot);
   const treeAtStop = state.tree;
 
   const updated: RunRecord = {

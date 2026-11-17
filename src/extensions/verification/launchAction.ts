@@ -11,7 +11,8 @@ import type { RunFacts } from './runFacts.js';
 import { stopRun } from './stopAction.js';
 
 export interface LaunchContext {
-  root: string;
+  checkoutRoot: string;
+  recordRoot: string;
   deadlineMilliseconds: number;
   signal: AbortSignal | undefined;
   target: string;
@@ -65,7 +66,7 @@ const runStep = (
 ): Promise<CommandOutcome> =>
   runCommand({
     argv,
-    cwd: context.root,
+    cwd: context.checkoutRoot,
     logPath: join(directory, logPath),
     environment,
     deadlineMilliseconds: context.deadlineMilliseconds,
@@ -74,7 +75,7 @@ const runStep = (
 
 export const launchRun = async (context: LaunchContext): Promise<LaunchResult> => {
   const directory = await createFreshTauDirectory(
-    context.root,
+    context.recordRoot,
     'verification',
     `${context.target}-`,
   );
@@ -117,7 +118,7 @@ export const launchRun = async (context: LaunchContext): Promise<LaunchResult> =
 
   if (launchOutcome.kind === 'stopped') {
     await stopRun({
-      root: context.root,
+      checkoutRoot: context.checkoutRoot,
       directory,
       deadlineMilliseconds: context.deadlineMilliseconds,
       signal: undefined,

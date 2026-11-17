@@ -1,9 +1,10 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
 import { git } from '../../../tests/gitRepository.js';
+import { temporaryDirectory } from '../../../tests/temporaryDirectoryHarness.js';
 import { readCheckState } from '../../checkRecord/identity.js';
 import { createEvidenceRepository } from './fixtures/evidenceRepository.js';
 
@@ -127,6 +128,68 @@ it('keeps the result fresh after a commit of identical content', async () => {
       counts: { passed: 1, differs: 0, blocked: 0, notRun: 0 },
     },
   ]);
+});
+
+it("lists a worktree's run from the main checkout and after the worktree is removed", async () => {
+  const { root, run, runFrom } = await setUp();
+  const launching = join(temporaryDirectory(onTestFinished, 'tau-pr-worktree-'), 'launching');
+  const preparing = join(temporaryDirectory(onTestFinished, 'tau-pr-worktree-'), 'preparing');
+
+  await git(root, 'add', '.pi/tau.json');
+  await git(root, 'commit', '--quiet', '-m', 'commit the config');
+  await git(root, 'worktree', 'add', '--quiet', launching, 'HEAD');
+  await git(root, 'worktree', 'add', '--quiet', preparing, 'HEAD');
+  await writeRun(root, await currentTree(launching));
+
+  const expected = [
+    {
+      target: '482',
+      item: itemName,
+      run: runName,
+      fresh: true,
+      result: 'passed',
+      counts: { passed: 1, differs: 0, blocked: 0, notRun: 0 },
+    },
+  ];
+
+  expect((await run()).verification).toEqual(expected);
+  expect((await runFrom(preparing)).verification).toEqual(expected);
+
+  await git(root, 'worktree', 'remove', '--force', launching);
+
+  expect((await run()).verification).toEqual(expected);
+  expect((await runFrom(preparing)).verification).toEqual(expected);
+
+  await writeFile(join(preparing, 'feature.txt'), 'changed\n');
+
+  expect((await runFrom(preparing)).verification).toEqual([
+    {
+      target: '482',
+      item: itemName,
+      run: runName,
+      fresh: false,
+      reason: 'treeChangedSinceRun',
+      result: 'passed',
+      counts: { passed: 1, differs: 0, blocked: 0, notRun: 0 },
+    },
+  ]);
+});
+
+it('reports a failed shared-root resolution as a verification gap', async () => {
+  const { root, run } = await setUp();
+
+  await rm(join(root, '.git'), { recursive: true, force: true });
+
+  const evidence = await run();
+
+  expect(evidence.verification).toBeNull();
+
+  expect(evidence.gaps).toContainEqual({
+    kind: 'verification',
+    reason: expect.stringContaining(
+      'git rev-parse --path-format=absolute --git-common-dir failed',
+    ) as unknown,
+  });
 });
 
 it('reports a malformed run.json as a gap', async () => {

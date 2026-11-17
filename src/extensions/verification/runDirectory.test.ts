@@ -23,7 +23,8 @@ it('finds the run directory below .tau/verification', async () => {
   const root = await createTemporaryRepository(onTestFinished);
 
   expect(await findRunDirectory(root, 'delegate-a-check', 'verification')).toEqual({
-    root,
+    checkoutRoot: root,
+    recordRoot: root,
     directory: join(root, '.tau', 'verification', 'delegate-a-check'),
   });
 });

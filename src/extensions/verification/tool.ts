@@ -9,7 +9,7 @@ import { launchRun } from './launchAction.js';
 import type { LaunchResult } from './launchAction.js';
 import { registerItems } from './registerAction.js';
 import type { RegisterResult } from './registerAction.js';
-import { findRunDirectory, findVerificationRoot } from './runDirectory.js';
+import { findRunDirectory, findVerificationRoots } from './runDirectory.js';
 import { readRunFacts, readTarget } from './runFacts.js';
 import { stopRun } from './stopAction.js';
 import type { StopResult } from './stopAction.js';
@@ -46,11 +46,11 @@ const parameters = Type.Object({
   ),
 });
 
-const description = `Manage a verification run on a configured target. A run is saved in .tau/verification/<run>/run.json and keeps its logs.
-- launch: start the target's launch and doctor commands and save a run. Needs target. Returns status ready with run and directory, or status failed with command, exitCode, logPath, and stopped. A launch stopped by the deadline or a cancel runs stop at once and returns stopped true. A failed launch or doctor returns stopped false; call stop yourself.
-- register: add items to a ready run. Needs run and items, each {item, steps}. Returns run, directory, and every registered item. Refuses a stopped run or a run whose doctor did not pass.
-- stop: run the target's stop command and keep the run directory. Needs run. Returns run, directory, exitCode, logPath, and freshness. freshness says whether the run's tree still matches the current tree.
-Call stop when you finish with a run.`;
+const description = `Manage a verification run on a target. A run is saved in the shared repository root's .tau/verification/<run>/run.json. Configuration, commands, and the tree stay on the checkout.
+- launch: start the target's launch and doctor commands. Needs target. Returns status ready with run and directory, or status failed with command, exitCode, logPath, stopped. A launch stopped by the deadline or a cancel runs stop and returns stopped true. A failed launch or doctor returns stopped false; call stop.
+- register: add items to a ready run. Needs run and items, each {item, steps}. Returns run, directory, and items. Refuses a stopped run or a run whose doctor did not pass.
+- stop: run the target's stop command and keep the run directory. Needs run. Returns run, directory, exitCode, logPath, and freshness. freshness says whether the run's tree matches the current tree.
+Call stop when done.`;
 
 const parseAction = (input: Static<typeof parameters>): ParsedAction => {
   if (input.action === 'launch') {
@@ -115,13 +115,14 @@ const execute = async (
   const deadlineMilliseconds = options.deadlineMilliseconds ?? defaultDeadlineMilliseconds;
 
   if (parsed.action === 'launch') {
-    const root = await findVerificationRoot(context.cwd, 'verification');
-    const location = readConfigLocation(root, options, context);
+    const { checkoutRoot, recordRoot } = await findVerificationRoots(context.cwd, 'verification');
+    const location = readConfigLocation(checkoutRoot, options, context);
     const commands = readTarget(location, context.ui, parsed.target);
-    const facts = await readRunFacts(root);
+    const facts = await readRunFacts(checkoutRoot);
 
     const details = await launchRun({
-      root,
+      checkoutRoot,
+      recordRoot,
       deadlineMilliseconds,
       signal,
       target: parsed.target,
@@ -132,7 +133,11 @@ const execute = async (
     return toToolResult(details);
   }
 
-  const { root, directory } = await findRunDirectory(context.cwd, parsed.run, 'verification');
+  const { checkoutRoot, directory } = await findRunDirectory(
+    context.cwd,
+    parsed.run,
+    'verification',
+  );
 
   if (parsed.action === 'register') {
     const details = await registerItems(
@@ -148,10 +153,10 @@ const execute = async (
     return toToolResult(details);
   }
 
-  const location = readConfigLocation(root, options, context);
+  const location = readConfigLocation(checkoutRoot, options, context);
 
   const details = await stopRun({
-    root,
+    checkoutRoot,
     directory,
     deadlineMilliseconds,
     signal,

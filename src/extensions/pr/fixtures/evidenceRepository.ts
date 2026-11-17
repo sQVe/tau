@@ -25,6 +25,11 @@ interface EvidenceRepository {
   mergeBase: string;
   fake: GhFake;
   run: (request?: PublicationRequest, projectTrusted?: boolean) => Promise<PublicationEvidence>;
+  runFrom: (
+    cwd: string,
+    request?: PublicationRequest,
+    projectTrusted?: boolean,
+  ) => Promise<PublicationEvidence>;
 }
 
 export const commitFile = async (root: string, text: string): Promise<string> => {
@@ -78,13 +83,20 @@ export const createEvidenceRepository = async (
 
   const defaultRequest = { remote: 'origin', review: directory };
 
-  const run = (request: PublicationRequest = defaultRequest, projectTrusted = true) =>
-    readPublicationEvidence({ exec: fake.exec, cwd: root, signal: undefined }, root, request, {
+  const runFrom = (
+    cwd: string,
+    request: PublicationRequest = defaultRequest,
+    projectTrusted = true,
+  ) =>
+    readPublicationEvidence({ exec: fake.exec, cwd, signal: undefined }, cwd, request, {
       ...config,
-      location: { ...config.location, projectTrusted },
+      location: { ...config.location, cwd, projectTrusted },
     });
 
-  return { root, directory, mergeBase, fake, run };
+  const run = (request: PublicationRequest = defaultRequest, projectTrusted = true) =>
+    runFrom(root, request, projectTrusted);
+
+  return { root, directory, mergeBase, fake, run, runFrom };
 };
 
 export const readSavedFiles = async (root: string): Promise<[string, Buffer][]> => {

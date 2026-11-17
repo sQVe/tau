@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
@@ -57,17 +57,18 @@ const fixture = async (options: FixtureOptions = {}) => {
   await git(root, 'add', '.');
   await git(root, 'commit', '--quiet', '-m', 'first');
 
-  const run = (input: ToolInput, deadlineMilliseconds?: number, signal?: AbortSignal) =>
-    createVerificationTool({
-      agentDirectory: directory,
-      ...(deadlineMilliseconds === undefined ? {} : { deadlineMilliseconds }),
-    }).execute('call', input, signal, undefined, {
-      cwd: root,
-      isProjectTrusted: () => true,
-      ui: { notify: () => undefined },
-    } as never);
+  const runIn =
+    (cwd: string) => (input: ToolInput, deadlineMilliseconds?: number, signal?: AbortSignal) =>
+      createVerificationTool({
+        agentDirectory: directory,
+        ...(deadlineMilliseconds === undefined ? {} : { deadlineMilliseconds }),
+      }).execute('call', input, signal, undefined, {
+        cwd,
+        isProjectTrusted: () => true,
+        ui: { notify: () => undefined },
+      } as never);
 
-  return { root, directory, seen, marker, run };
+  return { root, directory, seen, marker, run: runIn(root), runIn };
 };
 
 it('launch, register, and stop save a valid run record', async () => {
@@ -113,6 +114,36 @@ it('launch, register, and stop save a valid run record', async () => {
   expect(read.record.stop?.exitCode).toBe(0);
   expect(read.record.items).toEqual([{ item: 'login', steps: 1 }]);
   expect((await stat(launch.directory)).isDirectory()).toBe(true);
+});
+
+it('runs a launch in the worktree and stores the run under the shared root', async () => {
+  const pwdFile = join(temporaryDirectory(onTestFinished, 'tau-verification-pwd-'), 'pwd.txt');
+
+  const { root, directory, runIn } = await fixture({
+    launchScript: `pwd > ${JSON.stringify(pwdFile)}; exit 0`,
+  });
+
+  const worktree = join(directory, 'worktree');
+
+  await git(root, 'worktree', 'add', '--quiet', worktree, 'HEAD');
+
+  const run = runIn(worktree);
+  const launched = await run({ action: 'launch', target: 'app' });
+  const launch = launched.details as LaunchResult;
+
+  expect(launch.status).toBe('ready');
+
+  if (launch.status !== 'ready') {
+    return;
+  }
+
+  expect(launch.directory.startsWith(join(root, '.tau', 'verification'))).toBe(true);
+  expect(await realpath((await readFile(pwdFile, 'utf8')).trim())).toBe(await realpath(worktree));
+
+  const stopped = await run({ action: 'stop', run: launch.run });
+  const stop = stopped.details as StopResult;
+
+  expect(stop).toMatchObject({ run: launch.run, exitCode: 0, freshness: { fresh: true } });
 });
 
 it('a failed doctor returns failed with its log, and register refuses before and after stop', async () => {
