@@ -19,6 +19,9 @@ it.for(['tui', 'rpc'] as const)(
       uiContext: { ...session.extensionRunner.getUIContext(), notify },
     });
 
+    // Binding starts the session, and Tau warns there about the real checkout's upstream state.
+    notify.mockClear();
+
     await mkdir(join(cwd, 'src'));
     await writeFile(join(cwd, 'src/value.ts'), 'export const value = 1;');
 
