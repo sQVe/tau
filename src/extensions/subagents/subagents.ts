@@ -16,10 +16,13 @@ import { connect } from '../../hc/connect.js';
 import { subscribeEvents } from '../../hc/events.js';
 import { currentTerminalAddress } from '../../hc/hc.js';
 import type { HcRuntime } from '../../hc/hc.js';
+import { setAcceptCheck } from '../../inbox/inbox.js';
 import { appendSystemPrompt } from '../../instructions/systemPrompt.js';
 import { isWorkerProcess } from '../../worker.js';
 import { executeAnswer } from './answer.js';
 import { answerParameters } from './answerParameters.js';
+import { answerRequestCheck } from './answerRequest.js';
+import type { AnswerRequestFacts } from './answerRequest.js';
 import { readBrowserLoginCommand } from './browserLogin.js';
 import { capacityRefusalBlock, clearsCapacityRefusal } from './capacityRefusal.js';
 import { createDeadlineWatchdog } from './deadlineWatchdog.js';
@@ -330,6 +333,8 @@ export default function subagentsExtension(
     cwd: process.cwd(),
   };
 
+  let facts: AnswerRequestFacts | undefined;
+
   const delivery = createWorkerDelivery(pi);
   const watchdog = createDeadlineWatchdog(hc, delivery);
   const scan = createWorkerScan(hc, delivery, watchdog);
@@ -353,6 +358,13 @@ export default function subagentsExtension(
   });
 
   pi.on('session_start', (_event, context) => {
+    facts = {
+      hc,
+      parentSession: context.sessionManager.getSessionFile(),
+      terminal: currentTerminalAddress(),
+      sessionId: context.sessionManager.getSessionId(),
+    };
+
     forgetReportedWarnings(context.ui);
     warnUnknownConfigKeys(context);
 
@@ -373,6 +385,15 @@ export default function subagentsExtension(
       guidelines = delegationGuidelines(browserLoginCommand(context), qaProcedurePath);
     }
   });
+
+  pi.on('session_shutdown', () => {
+    facts = undefined;
+  });
+
+  setAcceptCheck(
+    'answer-request',
+    answerRequestCheck(() => facts),
+  );
 
   registerDeadlineWatchdog(pi, watchdog);
   registerWorkerScan(pi, scan, events);
