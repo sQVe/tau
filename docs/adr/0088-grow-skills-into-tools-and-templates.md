@@ -8,7 +8,7 @@ and tool split in
 [ADR 0083 (Turn on skill tools when the skill runs, and confirm outside writes)](./README.md#retired)\
 **Related**:
 [Skill authoring guide](../skill-authoring.md),
-[ADR 0010 (Documentation scope)](./0010-documentation-scope.md)
+[shared ADR 0001 (Documentation scope)](../stomme/shared/adr/0001-documentation-scope.md)
 
 ## Context
 

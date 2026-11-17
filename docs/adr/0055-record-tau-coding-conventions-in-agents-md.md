@@ -6,7 +6,6 @@
 [ADR 0043 (Run subagents as Pi workers with a thin task layer over herdr)](./README.md#retired),
 [ADR 0034 (Check house style outside the editor)](./0034-check-house-style-outside-the-editor.md),
 [ADR 0036 (Allowlist worker content and label states from one table)](./README.md#retired),
-[ADR 0052 (Drop backwards compatibility by default)](./0052-drop-backwards-compatibility-by-default.md),
 [ADR 0053 (Version each saved record format)](./0053-version-each-saved-record-format.md),
 [ADR 0120 (Capability modules with an enforced import table)](./0120-capability-modules-with-an-enforced-import-table.md)
 
@@ -46,13 +45,11 @@ agent needs before designing: the contract test for read paths, and record versi
 
 ### Outcomes versus failures
 
-- Return a discriminated union when callers branch on expected outcomes. Throw for invalid input and
-  failed operations.
-- Add an `Error` subclass only when production code catches that exact condition, such as
-  `WorkerCapacityFullError` in `src/extensions/subagents/capacityRefusal.ts`.
-- Turn errors into user text once, at the tool boundary. `launchErrorResult` in
-  `src/extensions/subagents/errorResult.ts` is the example.
-- Tau adds no generic `Result` type and does not migrate existing code.
+Follow [shared ADR 0005](../stomme/shared/adr/0005-results-and-parse-once.md) for typed outcomes,
+failures, and parsing once. Tau's examples are `WorkerCapacityFullError` in
+`src/extensions/subagents/capacityRefusal.ts` for an error subclass, and `launchErrorResult` in
+`src/extensions/subagents/errorResult.ts` for turning errors into user text at the tool boundary.
+Tau adds no generic `Result` type and does not migrate existing code.
 
 ### Tables keyed by a union
 
@@ -62,9 +59,9 @@ for control flow.
 
 ### Record compatibility
 
-The `AGENTS.md` line links to [ADR 0053](./0053-version-each-saved-record-format.md).
-[ADR 0052](./0052-drop-backwards-compatibility-by-default.md) lets that repository decision apply
-without asking the user.
+Follow [shared ADR 0008](../stomme/shared/adr/0008-backwards-compatibility.md) for record versions,
+and [ADR 0053](./0053-version-each-saved-record-format.md) for Tau's record path and fixtures. The
+`AGENTS.md` line links to ADR 0053.
 
 ### Rejected conventions
 

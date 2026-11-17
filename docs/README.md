@@ -11,4 +11,5 @@
 - [Agent workflow instructions](../src/instructions/workflow.md): rules for how the agent works,
   loaded into Pi.
 
-[ADR 0010](./adr/0010-documentation-scope.md) states what belongs in this directory.
+[shared ADR 0001](./stomme/shared/adr/0001-documentation-scope.md) states what belongs in this
+directory.

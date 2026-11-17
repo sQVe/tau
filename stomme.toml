@@ -599,7 +599,7 @@ public = [
   "src/verification/records.ts",
   "src/verification/selection.ts",
 ]
-imports = ["errors", "record", "schema"]
+imports = ["errors", "record", "schema", "tauDirectory"]
 
 [modules.wake]
 entry = "src/wake/wake.ts"

@@ -8,7 +8,7 @@ verification.
 - Format with `pnpm format`; configuration lives in `vite.config.ts`.
 - Follow the structure and naming decisions in [docs/adr](docs/adr/README.md), and record new
   decisions there. Read that guide before adding an ADR. Do not write documents that explain how a
-  feature works; see [ADR 0010](docs/adr/0010-documentation-scope.md).
+  feature works; see [shared ADR 0001](docs/stomme/shared/adr/0001-documentation-scope.md).
 - Follow the [coding instructions](src/instructions/coding.md) for all code. Pi loads them through
   Tau; other agents must read the file.
 - Follow the [writing instructions](src/instructions/writing.md) for every document.
@@ -46,11 +46,11 @@ tier, with one folder or file per feature. Shared modules never import extension
 `src/tau.ts`, and extensions never import each other
 ([ADR 0120](docs/adr/0120-capability-modules-with-an-enforced-import-table.md)).
 
-Shared code under `src/` forms capability modules, and `tau/module-boundaries` in
-`lint/rules/moduleBoundaries.ts` enforces them
-([ADR 0120](docs/adr/0120-capability-modules-with-an-enforced-import-table.md)). The rule keeps a
-closed module list and an import table. When the rule reports an import, change the import table or
-the module list instead of silencing the rule.
+Shared code under `src/` forms capability modules. The module list and import table live in
+`stomme.toml` ([ADR 0120](docs/adr/0120-capability-modules-with-an-enforced-import-table.md)). Until
+`@sqve/stomme-ts-imports` ships, `tau/module-boundaries` in `lint/rules/moduleBoundaries.ts`
+enforces them, and `tests/stommeModules.test.ts` keeps the two copies equal. When the rule reports
+an import, change the import table or the module list instead of silencing the rule.
 
 ## Skills and tools
 
@@ -93,16 +93,32 @@ check are owned by the human reviewer.
 
 Shared coding, writing, and workflow rules live in [stomme](https://github.com/sQVe/stomme).
 
-| Rule                                                                 | Enforced by                                                 |
-| -------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Run the full check before a pull request                             | `pnpm check`                                                |
-| Format with `pnpm format`                                            | `pnpm format:check`                                         |
-| Keep each ADR in the index with its status                           | `tests/markdownFiles.test.ts`                               |
-| Check that local links resolve                                       | `tests/markdownFiles.test.ts`                               |
-| Add a changeset for a `src/` change                                  | `.github/workflows/changeset.yml`                           |
-| Keep modules and imports inside the import table                     | `lint/rules/moduleBoundaries.ts`, `tests/structure.test.ts` |
-| Change the import table or module list instead of silencing the rule | `lint/rules/moduleBoundaries.ts`                            |
-| Keep a registered pure module free of reads and effects              | `tests/structure.test.ts`                                   |
-| Version each saved record format with fixtures                       | `tests/structure.test.ts`                                   |
-| Name each unit test after its owner                                  | `tests/structure.test.ts`                                   |
-| Keep fixtures out of production modules                              | `tests/structure.test.ts`                                   |
+| Rule                                                                 | Enforced by                                                     |
+| -------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Run the full check before a pull request                             | `pnpm check`                                                    |
+| Format with `pnpm format`                                            | `pnpm format:check`                                             |
+| Check that local links resolve                                       | `tests/markdownFiles.test.ts`                                   |
+| Add a changeset for a `src/` change                                  | `.github/workflows/changeset.yml`                               |
+| Keep modules and imports inside the import table                     | `lint/rules/moduleBoundaries.ts`, `tests/stommeModules.test.ts` |
+| Change the import table or module list instead of silencing the rule | `lint/rules/moduleBoundaries.ts`                                |
+| Keep a registered pure module free of reads and effects              | `tests/structure.test.ts`                                       |
+| Version each saved record format with fixtures                       | `tests/structure.test.ts`                                       |
+| Keep fixtures out of production modules                              | `tests/structure.test.ts`                                       |
+
+<!-- prettier-ignore-start -->
+<!-- stomme:start -->
+# Shared rules
+
+- Run the full check before finishing changes: `pnpm check`.
+- Format with the `format` script in `package.json`.
+- Follow the decisions in [docs/adr](docs/adr/README.md).
+- Follow the shared ADRs in [docs/stomme/shared/adr](docs/stomme/shared/adr/README.md).
+- Record new decisions in [docs/adr](docs/adr/README.md).
+- Edit an ADR in place when its details change.
+- Comment only what the code cannot say. Never describe history.
+- Document decisions, not features. See [ADR 0001](docs/stomme/shared/adr/0001-documentation-scope.md).
+- Read [the general guide](docs/stomme/shared/coding.md).
+- Read [the TypeScript guide](docs/stomme/languages/typescript/guide.md).
+- Read [the pi guide](docs/stomme/layers/pi/guide.md).
+<!-- stomme:end -->
+<!-- prettier-ignore-end -->
