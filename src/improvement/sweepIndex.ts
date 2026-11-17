@@ -13,6 +13,7 @@ import {
 } from '../record.ts';
 import { stringEnum } from '../schema.ts';
 import { transcriptStateSchema } from './transcript.ts';
+import { assertWriteWithinTestRoot } from './writeGuard.ts';
 
 export type SweepIndexRead =
   | { status: 'read'; index: SweepIndex }
@@ -131,6 +132,7 @@ export const readSweepIndex = async (agentDirectory: string): Promise<SweepIndex
 export const writeSweepIndex = async (agentDirectory: string, index: SweepIndex): Promise<void> => {
   const directory = sweepIndexDirectory(agentDirectory);
 
+  assertWriteWithinTestRoot(sweepIndexPath(agentDirectory));
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await writeRecord(sweepIndexPath(agentDirectory), index);
 };

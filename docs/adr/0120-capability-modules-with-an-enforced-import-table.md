@@ -110,9 +110,9 @@ rule reports an import, change the table or the module list instead of silencing
   compiles and matches strings, and `@xmldom/xmldom` in `src/extensions/tdd/runner/junit.ts`, which
   only parses a string into a document, and `node:path` in `src/extensions/tdd/runner/report.ts`,
   `src/extensions/tdd/runner/cargoInputFiles.ts`, `src/extensions/tdd/projectPath.ts`,
-  `src/improvement/taskFacts.ts`, and `src/improvement/taskMapping.ts`, which handle paths as
-  strings without touching the filesystem. The check follows imports, not names, so renaming a file
-  does not escape it.
+  `src/improvement/taskFacts.ts`, `src/improvement/taskMapping.ts`, and
+  `src/improvement/writeDecision.ts`, which handle paths as strings without touching the filesystem.
+  The check follows imports, not names, so renaming a file does not escape it.
 
 ### File names
 

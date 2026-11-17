@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTemporaryRepository } from '../../tests/gitRepository.ts';
 import { parseEvent, readEvents, writeEvent } from './event.ts';
@@ -11,6 +11,7 @@ import type { ImprovementEvent } from './event.ts';
 const cleanups: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
 });
 
@@ -141,6 +142,19 @@ describe('readEvents', () => {
 });
 
 describe('writeEvent', () => {
+  it('refuses a write outside the test write root and creates nothing', async () => {
+    const allowed = await createProject();
+    const outside = await createProject();
+
+    vi.stubEnv('TAU_TEST_WRITE_ROOT', allowed);
+
+    await expect(writeEvent(outside, correction('correction-1', 'Escape.'))).rejects.toThrow(
+      `outside the test write root ${allowed}`,
+    );
+
+    expect(existsSync(join(outside, '.tau'))).toBe(false);
+  });
+
   it('keeps the first content when the same event ID is written twice', async () => {
     const root = await createProject();
     const first = correction('correction-1', 'Run focused tests first.');

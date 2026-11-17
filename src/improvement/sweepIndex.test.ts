@@ -1,12 +1,17 @@
+import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { expect, it, onTestFinished } from 'vitest';
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import { temporaryDirectory } from '../../tests/temporaryDirectoryHarness.ts';
 import { isMissingFile } from '../errors.ts';
 import { readSweepIndex, sweepIndexPath, writeSweepIndex } from './sweepIndex.ts';
 import type { SweepIndex } from './sweepIndex.ts';
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 const fixturePath = join(import.meta.dirname, 'fixtures', 'sweep-index-v1.json');
 
@@ -161,6 +166,19 @@ it('reports a newer index with its notice', async () => {
   expect(read.status).toBe('newer');
   expect(read.status === 'newer' ? read.notice : '').toContain(sweepIndexPath(agentDirectory));
   expect(await directoryState(agentDirectory)).toEqual(before);
+});
+
+it('refuses an index outside the test write root and creates nothing', async () => {
+  const allowed = temporaryDirectory(onTestFinished, 'tau-sweep-index-');
+  const outside = temporaryDirectory(onTestFinished, 'tau-sweep-index-');
+
+  vi.stubEnv('TAU_TEST_WRITE_ROOT', allowed);
+
+  await expect(writeSweepIndex(outside, await readFixture())).rejects.toThrow(
+    `outside the test write root ${allowed}`,
+  );
+
+  expect(existsSync(join(outside, 'tau'))).toBe(false);
 });
 
 it('writes an index that reads back equal', async () => {
