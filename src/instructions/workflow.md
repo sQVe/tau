@@ -34,6 +34,17 @@ when you stop. Follow explicit user instructions and repository conventions over
 - Run commands non-interactively: pass every value a prompt would ask for and set `GIT_EDITOR=true`
   for `git rebase --continue`.
 
+## Verify a tool's capability and effect
+
+- Before saying a tool cannot do something, read the loaded tool's current schema or its help
+  output. A running subagent worker can get more input mid-task: the `handover` `send` action
+  reaches a live Pi session's inbox by terminal address.
+- Before relying on a tool parameter, read the loaded tool's current schema. A loaded tool that
+  predates a parameter drops it without an error, so the call does something other than what you
+  asked.
+- After a call, check the effect it produced, such as a started process's argv or its model name,
+  instead of assuming the arguments were used.
+
 ## Keep to the task
 
 - Editing comments does not permit refactoring or scope growth.
