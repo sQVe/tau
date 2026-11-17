@@ -72,6 +72,7 @@ it('records a class decision and returns the class from correct', async () => {
   const classRecord = await runTool(project, {
     action: 'record',
     kind: 'class',
+    projectRoot: project,
     identity: 'lint-await',
     level: 'lint',
     summary: 'The await keyword was missing before an async call.',
@@ -81,6 +82,7 @@ it('records a class decision and returns the class from correct', async () => {
   await runTool(project, {
     action: 'record',
     kind: 'decision',
+    projectRoot: project,
     class: classRecord['id'],
     choice: 'approved',
   });

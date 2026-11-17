@@ -79,6 +79,7 @@ const table: {
     input: {
       action: 'record',
       kind: 'class',
+      projectRoot: '/repository/me-1',
       identity: 'lint-await',
       level: 'lint',
       summary: 'The await keyword was missing before an async call.',
@@ -87,6 +88,7 @@ const table: {
     expected: {
       action: 'record',
       kind: 'class',
+      projectRoot: '/repository/me-1',
       identity: 'lint-await',
       level: 'lint',
       summary: 'The await keyword was missing before an async call.',
@@ -95,14 +97,27 @@ const table: {
   },
   {
     name: 'parses a class decision',
-    input: { action: 'record', kind: 'decision', class: 'class-x', choice: 'approved' },
-    expected: { action: 'record', kind: 'decision', class: 'class-x', choice: 'approved' },
+    input: {
+      action: 'record',
+      kind: 'decision',
+      projectRoot: '/repository/me-1',
+      class: 'class-x',
+      choice: 'approved',
+    },
+    expected: {
+      action: 'record',
+      kind: 'decision',
+      projectRoot: '/repository/me-1',
+      class: 'class-x',
+      choice: 'approved',
+    },
   },
   {
     name: 'needs a class identity',
     input: {
       action: 'record',
       kind: 'class',
+      projectRoot: '/repository/me-1',
       level: 'lint',
       summary: 'The await keyword was missing before an async call.',
       occurrences: ['correction-1'],
@@ -114,6 +129,7 @@ const table: {
     input: {
       action: 'record',
       kind: 'class',
+      projectRoot: '/repository/me-1',
       identity: ' ',
       level: 'lint',
       summary: 'The await keyword was missing before an async call.',
@@ -126,6 +142,7 @@ const table: {
     input: {
       action: 'record',
       kind: 'class',
+      projectRoot: '/repository/me-1',
       identity: 'Lint_Await',
       level: 'lint',
       summary: 'The await keyword was missing before an async call.',
@@ -138,6 +155,7 @@ const table: {
     input: {
       action: 'record',
       kind: 'class',
+      projectRoot: '/repository/me-1',
       identity: 'lint-await',
       summary: 'The await keyword was missing before an async call.',
       occurrences: ['correction-1'],
@@ -149,6 +167,7 @@ const table: {
     input: {
       action: 'record',
       kind: 'class',
+      projectRoot: '/repository/me-1',
       identity: 'lint-await',
       level: 'lint',
       occurrences: ['correction-1'],
@@ -160,6 +179,7 @@ const table: {
     input: {
       action: 'record',
       kind: 'class',
+      projectRoot: '/repository/me-1',
       identity: 'lint-await',
       level: 'lint',
       summary: '\n',
@@ -172,6 +192,7 @@ const table: {
     input: {
       action: 'record',
       kind: 'class',
+      projectRoot: '/repository/me-1',
       identity: 'lint-await',
       level: 'lint',
       summary: 'The await keyword was missing before an async call.',
@@ -184,6 +205,7 @@ const table: {
     input: {
       action: 'record',
       kind: 'decision',
+      projectRoot: '/repository/me-1',
       class: 'class-x',
       item: 2,
       choice: 'approved',
@@ -217,6 +239,7 @@ const table: {
     input: {
       action: 'record',
       kind: 'class',
+      projectRoot: '/repository/me-1',
       identity: 'lint-await',
       level: 'lint',
       summary: 'The await keyword was missing before an async call.',
@@ -228,6 +251,7 @@ const table: {
     input: {
       action: 'record',
       kind: 'class',
+      projectRoot: '/repository/me-1',
       identity: 'lint-await',
       level: 'style' as NonNullable<RecordInput['level']>,
       summary: 'The await keyword was missing before an async call.',

@@ -4,7 +4,6 @@ import { classEventId } from '../../improvement/classIdentity.js';
 import type { ClassLevel } from '../../improvement/correctDecision.js';
 import { writeEvent } from '../../improvement/event.js';
 import type { ImprovementEvent } from '../../improvement/event.js';
-import { findProjectRoot } from '../../improvement/projectRoot.js';
 import { evidenceOf, sessionFacts } from './recordAction.js';
 import type { RecordResult, SessionFacts } from './recordAction.js';
 import type { RecordRequest } from './recordRequest.js';
@@ -15,6 +14,7 @@ type ClassEvent = Extract<ImprovementEvent, { kind: 'class' }>;
 type Choice = 'approved' | 'rejected' | 'redirected';
 
 export interface ClassFacts extends SessionFacts {
+  projectRoot: string;
   identity: string;
   level: ClassLevel;
   summary: string;
@@ -22,6 +22,7 @@ export interface ClassFacts extends SessionFacts {
 }
 
 export interface ClassDecisionFacts extends SessionFacts {
+  projectRoot: string;
   class: string;
   choice: Choice;
 }
@@ -34,7 +35,7 @@ const findClass = (projectRoot: string, id: string): Promise<ClassEvent> =>
   findSavedEvent(projectRoot, id, 'class');
 
 export const recordClass = async (facts: ClassFacts): Promise<RecordResult> => {
-  const projectRoot = await findProjectRoot(facts.cwd);
+  const { projectRoot } = facts;
   const id = classEventId(facts.identity, facts.occurrences);
 
   const { path, outcome } = await writeEvent(projectRoot, {
@@ -53,7 +54,7 @@ export const recordClass = async (facts: ClassFacts): Promise<RecordResult> => {
 };
 
 export const recordClassDecision = async (facts: ClassDecisionFacts): Promise<RecordResult> => {
-  const projectRoot = await findProjectRoot(facts.cwd);
+  const { projectRoot } = facts;
 
   await findClass(projectRoot, facts.class);
 
@@ -83,5 +84,10 @@ export const runClass = async (
     return recordClass({ ...facts, ...request });
   }
 
-  return recordClassDecision({ ...facts, class: request.class, choice: request.choice });
+  return recordClassDecision({
+    ...facts,
+    projectRoot: request.projectRoot,
+    class: request.class,
+    choice: request.choice,
+  });
 };

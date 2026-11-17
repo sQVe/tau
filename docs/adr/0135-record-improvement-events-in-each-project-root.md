@@ -30,6 +30,10 @@ the sweep at manager session start.
 - A review of another project's task saves that task's `review`, `backlog`, and `decision` events in
   the project root that the record call names: the value `task` returns for the task, not the
   reviewing session's.
+- A `class` and its `decision` name the project root that must fix the class: the root with the most
+  occurrences of it. A `pass` names no root and is written to every project root the correct pass
+  read, because it clears `correct due` in each of them. A `correction` stays in the session's
+  project root, because it records what the user said in that session.
 - Each event is its own file, named by its ID, and is never replaced. A second write of the same ID
   keeps the first file. A retried tool call then saves no duplicate, and concurrent sessions need no
   lock across files.

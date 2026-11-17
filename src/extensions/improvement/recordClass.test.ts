@@ -26,9 +26,10 @@ const sessionFacts = {
   createdAt: '2026-11-15T12:00:00.000Z',
 };
 
-const classFactsFor = (cwd: string, overrides: Partial<ClassFacts> = {}): ClassFacts => ({
+const classFactsFor = (projectRoot: string, overrides: Partial<ClassFacts> = {}): ClassFacts => ({
   ...sessionFacts,
-  cwd,
+  cwd: projectRoot,
+  projectRoot,
   identity: 'lint-await',
   level: 'lint',
   summary: 'The await keyword was missing before an async call.',
@@ -59,12 +60,24 @@ it('writes a class event with the class ID', async () => {
   });
 });
 
+it('writes a class event to the named project root, not the session cwd', async () => {
+  const session = await createProject();
+  const owning = await createProject();
+  const facts = classFactsFor(owning, { cwd: session });
+
+  const result = await recordClass(facts);
+
+  expect(result.path).toBe(join(eventDirectory(owning), `${result.id}.json`));
+  expect(existsSync(eventDirectory(session))).toBe(false);
+});
+
 it('refuses a class decision without its class event', async () => {
   const project = await createProject();
 
   const facts: ClassDecisionFacts = {
     ...sessionFacts,
     cwd: project,
+    projectRoot: project,
     class: 'class-lint-await-0123456789abcdef',
     choice: 'approved',
   };
@@ -89,6 +102,7 @@ it('refuses a class decision when the class event is malformed', async () => {
   const failure = await recordClassDecision({
     ...sessionFacts,
     cwd: project,
+    projectRoot: project,
     class: id,
     choice: 'approved',
   }).then(
@@ -111,6 +125,7 @@ it('refuses a class decision when the class event has a newer format', async () 
   const failure = await recordClassDecision({
     ...sessionFacts,
     cwd: project,
+    projectRoot: project,
     class: id,
     choice: 'approved',
   }).then(

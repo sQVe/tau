@@ -43,13 +43,14 @@ proposed checks.
      structural-to-Backlog rule. The check is the proposal.
 6. Ask approve, reject, or redirect for each class with `ask_user_question`. Ask at most 4 classes
    per call.
-7. For each answered class, call `improvement` with `action: record`, `kind: class`, and the
-   `identity`, `level`, `summary`, and `occurrences` fields. Then call it with `action: record`,
-   `kind: decision`, `class` set to the returned class ID, and `choice` set to `approved`,
-   `rejected`, or `redirected`.
+7. For each answered class, find its owning project: the project root with the most occurrences in
+   `eventOwners`. Ask when two roots tie or an occurrence has no owner. Then call `improvement` with
+   `action: record`, `kind: class`, `projectRoot` set to that root, and the `identity`, `level`,
+   `summary`, and `occurrences` fields. Then call it with `action: record`, `kind: decision`,
+   `projectRoot` set to the same root, `class` set to the returned class ID, and `choice` set to
+   `approved`, `rejected`, or `redirected`.
 8. For each approved or redirected class, follow [SKILL.md](SKILL.md) step 10 to open a worktree tab
-   and hand over the fix. The owning project is the project root with the most occurrences in
-   `eventOwners`. Ask when two roots tie or an occurrence has no owner.
+   in its owning project and hand over the fix.
 9. Call `improvement` with `action: record` and `kind: pass` after the answers are saved, so
    `correct due` clears. With no classes, record the pass at once. On cancellation, record nothing.
    A failed worktree or handover is reported and does not block the pass.
