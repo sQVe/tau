@@ -181,7 +181,7 @@ export const importTable: Readonly<Record<string, readonly string[]>> = {
   shell: [],
   skillTools: [],
   tauDirectory: ['errors', 'git'],
-  verification: ['errors', 'record', 'schema'],
+  verification: ['errors', 'record', 'schema', 'tauDirectory'],
   wake: [],
 };
 

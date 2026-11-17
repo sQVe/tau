@@ -59,7 +59,7 @@ The target shared modules and the modules each may import:
 | `github`         | `command`, `errors`, `git`, `schema`                                                 |
 | `hc`             | `command`, `errors`, `schema`                                                        |
 | `tauDirectory`   | `errors`, `git`                                                                      |
-| `verification`   | `errors`, `record`, `schema`                                                         |
+| `verification`   | `errors`, `record`, `schema`, `tauDirectory`                                         |
 | `wake`           | nothing                                                                              |
 | `improvement`    | `command`, `errors`, `fileLock`, `git`, `github`, `record`, `schema`, `tauDirectory` |
 | `inbox`          | `errors`, `fileLock`, `hc`, `record`, `schema`, `wake`                               |

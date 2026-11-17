@@ -5,8 +5,8 @@ import type { Exec } from '../command.ts';
 import { errorMessage, isMissingFile } from '../errors.ts';
 import { readOriginRepository } from '../github/repositoryTarget.ts';
 import { formatRepository } from '../github/repositoryTargetDecisions.ts';
+import { findSharedRepositoryRoot } from '../tauDirectory.ts';
 import { findSessionFiles, readTranscriptChunk } from './improvement.ts';
-import { findProjectRoot } from './projectRoot.ts';
 import { discoveryOrder } from './sweepDecision.ts';
 import type { DiscoveryCandidate } from './sweepDecision.ts';
 import type { SweepIndex } from './sweepIndex.ts';
@@ -113,7 +113,7 @@ const readLocation = async (
   let projectRoot: string;
 
   try {
-    projectRoot = await findProjectRoot(existingDirectory, { signal });
+    projectRoot = await findSharedRepositoryRoot(existingDirectory, { signal });
   } catch (error) {
     return { status: 'unresolved', reason: errorMessage(error) };
   }

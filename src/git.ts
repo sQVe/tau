@@ -187,9 +187,14 @@ export const readGit = async (
   return result.stdout.toString('utf8').trim();
 };
 
-export const findCheckoutRoot = async (cwd: string, toolName: string): Promise<string> => {
+export const findCheckoutRoot = async (
+  cwd: string,
+  toolName: string,
+  options: GitOptions = {},
+): Promise<string> => {
   const result = await runGit(cwd, ['rev-parse', '--show-toplevel'], {
     timeoutMilliseconds: 5000,
+    ...options,
   });
 
   const root = result.exitCode === 0 ? result.stdout.toString('utf8').trim() : '';

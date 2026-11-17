@@ -43,6 +43,7 @@ run, and reads those records instead of parsing QA prose.
 
 ### Run directory and writers
 
+- Repository roots come from `findSharedRepositoryRoot` in `src/tauDirectory.ts`.
 - Each run lives in `.tau/verification/<run>/`, and stop never deletes it, so the proof survives
   cleanup.
 - Only the manager's tool writes `run.json`. Each item result is its own file, `items/<item>.json`,

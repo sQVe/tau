@@ -9,10 +9,11 @@ import {
   realpath,
   stat,
 } from 'node:fs/promises';
-import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 
 import { isMissingFile } from './errors.ts';
-import { findCheckoutRoot, runGit } from './git.ts';
+import { findCheckoutRoot, readGit, runGit } from './git.ts';
+import type { GitOptions } from './git.ts';
 
 export type TauChild =
   | { kind: 'outside' }
@@ -221,7 +222,7 @@ export const isBareRoot = async (root: string): Promise<boolean> => {
   return output?.trim() === 'true';
 };
 
-const findBareRoot = async (cwd: string, toolName: string) => {
+const gitDirectoryOf = async (cwd: string, toolName: string): Promise<string> => {
   const output = await readQuickly(cwd, ['rev-parse', '--absolute-git-dir']);
   const path = output?.trim();
 
@@ -229,7 +230,10 @@ const findBareRoot = async (cwd: string, toolName: string) => {
     throw new Error(`The ${toolName} tool could not resolve the bare Git directory from ${cwd}.`);
   }
 
-  const gitDirectory = await realpath(path);
+  return realpath(path);
+};
+
+const bareRootOf = async (gitDirectory: string): Promise<string> => {
   const parent = dirname(gitDirectory);
   const gitFile = join(parent, '.git');
 
@@ -264,7 +268,33 @@ const findBareRoot = async (cwd: string, toolName: string) => {
 export const findTauRoot = async (cwd: string, toolName: string): Promise<string> => {
   const bare = await isBareRoot(cwd);
 
-  return bare ? findBareRoot(cwd, toolName) : findCheckoutRoot(cwd, toolName);
+  if (!bare) {
+    return findCheckoutRoot(cwd, toolName);
+  }
+
+  return bareRootOf(await gitDirectoryOf(cwd, toolName));
+};
+
+// Resolves the repository root that every worktree shares: the bare root for this repository's
+// bare-plus-worktrees layout, the checkout for a normal clone, and the repository itself for a
+// conventional bare repository.
+export const findSharedRepositoryRoot = async (
+  cwd: string,
+  options: Pick<GitOptions, 'signal'> = {},
+): Promise<string> => {
+  const commonDirectory = await readGit(
+    cwd,
+    ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+    options,
+  );
+
+  const resolved = await realpath(commonDirectory);
+
+  if (basename(resolved) === '.git') {
+    return dirname(resolved);
+  }
+
+  return bareRootOf(resolved);
 };
 
 // Refuses `<root>/.tau/<path>` when a path a write would go through is a symlink, or

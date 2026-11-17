@@ -4,7 +4,7 @@ import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 import { writeEvent } from '../../improvement/event.js';
 import type { ImprovementEvent, WriteOutcome } from '../../improvement/event.js';
-import { findProjectRoot } from '../../improvement/projectRoot.js';
+import { findSharedRepositoryRoot } from '../../tauDirectory.js';
 import type { RecordRequest } from './recordRequest.js';
 import { findSavedEvent } from './savedEvent.js';
 
@@ -74,7 +74,7 @@ const findReview = (projectRoot: string, review: string): Promise<ReviewEvent> =
   findSavedEvent(projectRoot, review, 'review');
 
 export const recordCorrection = async (facts: CorrectionFacts): Promise<RecordResult> => {
-  const projectRoot = await findProjectRoot(facts.cwd);
+  const projectRoot = await findSharedRepositoryRoot(facts.cwd);
   const id = eventId('correction', facts.sessionId, facts.toolCallId);
 
   const { path, outcome } = await writeEvent(projectRoot, {
